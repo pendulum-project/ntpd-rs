@@ -1,3 +1,30 @@
+use std::{net::{UdpSocket, SocketAddr}, sync::mpsc::channel};
+
 fn main() {
-    println!("Hello, world!");
+    let (tx, rx) = channel::<(SocketAddr, Vec<u8>)>();
+    let tx_319 = tx.clone();
+    std::thread::spawn(move || {
+        let socket = UdpSocket::bind("0.0.0.0:319").unwrap();
+        socket.join_multicast_v4(&"224.0.1.129".parse().unwrap(), &"0.0.0.0".parse().unwrap()).unwrap();
+        let mut buf = [0;511];
+        loop {
+            let (amt, src) = socket.recv_from(&mut buf).unwrap();
+            tx_319.send((src, buf[..amt].to_vec())).unwrap();
+        }
+    });
+    let tx_320 = tx.clone();
+    std::thread::spawn(move || {
+        let socket = UdpSocket::bind("0.0.0.0:320").unwrap();
+        socket.join_multicast_v4(&"224.0.1.129".parse().unwrap(), &"0.0.0.0".parse().unwrap()).unwrap();
+        let mut buf = [0;511];
+        loop {
+            let (amt, src) = socket.recv_from(&mut buf).unwrap();
+            tx_320.send((src, buf[..amt].to_vec())).unwrap();
+        }
+    });
+
+    loop {
+        let (src, data) = rx.recv().unwrap();
+        println!("Received {:?} from {:?}", data, src);
+    }
 }
