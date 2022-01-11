@@ -1,12 +1,14 @@
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
+mod control_field;
 mod flag_field;
 mod header;
 
+pub use control_field::*;
 pub use flag_field::*;
 pub use header::*;
 
-#[derive(Debug, Clone, Copy, TryFromPrimitive, IntoPrimitive)]
+#[derive(Debug, Clone, Copy, TryFromPrimitive, IntoPrimitive, PartialEq, Eq)]
 #[repr(u8)]
 pub enum MessageType {
     Sync = 0x0,

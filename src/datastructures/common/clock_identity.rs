@@ -1,35 +1,21 @@
-use crate::datastructures::WireFormat;
-use bitvec::{order::Lsb0, view::BitView};
+use crate::datastructures::{WireFormat, WireFormatError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClockIdentity(pub [u8; 8]);
 
 impl WireFormat for ClockIdentity {
-    const BITSIZE: usize = 64;
-
-    fn serialize<T>(&self, buffer: &mut bitvec::slice::BitSlice<bitvec::order::Lsb0, T>)
-    where
-        T: bitvec::store::BitStore,
-    {
-        buffer[0..64].clone_from_bitslice(self.0.view_bits::<Lsb0>());
+    fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
+        buffer[0..8].copy_from_slice(&self.0);
+        Ok(8)
     }
 
-    fn deserialize<T>(buffer: &bitvec::slice::BitSlice<bitvec::order::Lsb0, T>) -> Self
-    where
-        T: bitvec::store::BitStore,
-    {
-        let mut id_value = [0; 8];
-        id_value
-            .view_bits_mut::<Lsb0>()
-            .clone_from_bitslice(&buffer[0..64]);
-        Self(id_value)
+    fn deserialize(buffer: &[u8]) -> Result<(Self, usize), WireFormatError> {
+        Ok((Self(buffer[0..8].try_into().unwrap()), 8))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use bitvec::{bitarr, order::Lsb0, store::BitStore, view::BitView};
-
     use super::*;
 
     #[test]
@@ -39,15 +25,16 @@ mod tests {
             ClockIdentity([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]),
         )];
 
-        for (bit_representation, object_representation) in representations {
+        for (byte_representation, object_representation) in representations {
             // Test the serialization output
-            let mut serialization_buffer = bitarr![const Lsb0, u8; 0; 64];
-            object_representation.serialize(&mut serialization_buffer);
-            assert_eq!(serialization_buffer, bit_representation.view_bits::<Lsb0>());
+            let mut serialization_buffer = [0; 8];
+            object_representation
+                .serialize(&mut serialization_buffer)
+                .unwrap();
+            assert_eq!(serialization_buffer, byte_representation);
 
             // Test the deserialization output
-            let deserialized_data =
-                ClockIdentity::deserialize(bit_representation.view_bits::<Lsb0>());
+            let deserialized_data = ClockIdentity::deserialize(&byte_representation).unwrap().0;
             assert_eq!(deserialized_data, object_representation);
         }
     }

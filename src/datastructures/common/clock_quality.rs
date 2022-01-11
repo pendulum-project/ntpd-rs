@@ -1,6 +1,5 @@
 use super::clock_accuracy::ClockAccuracy;
-use crate::datastructures::WireFormat;
-use bitvec::field::BitField;
+use crate::datastructures::{WireFormat, WireFormatError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClockQuality {
@@ -10,33 +9,27 @@ pub struct ClockQuality {
 }
 
 impl WireFormat for ClockQuality {
-    const BITSIZE: usize = 32;
-
-    fn serialize<T>(&self, buffer: &mut bitvec::slice::BitSlice<bitvec::order::Lsb0, T>)
-    where
-        T: bitvec::store::BitStore,
-    {
-        buffer[0..8].store_be(self.clock_class);
-        buffer[8..16].store_be(self.clock_accuracy.to_primitive());
-        buffer[16..32].store_be(self.offset_scaled_log_variance);
+    fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
+        buffer[0] = self.clock_class;
+        buffer[1] = self.clock_accuracy.to_primitive();
+        buffer[2..4].copy_from_slice(&self.offset_scaled_log_variance.to_be_bytes());
+        Ok(4)
     }
 
-    fn deserialize<T>(buffer: &bitvec::slice::BitSlice<bitvec::order::Lsb0, T>) -> Self
-    where
-        T: bitvec::store::BitStore,
-    {
-        Self {
-            clock_class: buffer[0..8].load_be(),
-            clock_accuracy: ClockAccuracy::from_primitive(buffer[8..16].load_be()),
-            offset_scaled_log_variance: buffer[16..32].load_be(),
-        }
+    fn deserialize(buffer: &[u8]) -> Result<(Self, usize), WireFormatError> {
+        Ok((
+            Self {
+                clock_class: buffer[0],
+                clock_accuracy: ClockAccuracy::from_primitive(buffer[1]),
+                offset_scaled_log_variance: u16::from_be_bytes(buffer[2..4].try_into().unwrap()),
+            },
+            4,
+        ))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use bitvec::{bitarr, order::Lsb0, store::BitStore, view::BitView};
-
     use super::*;
 
     #[test]
@@ -50,15 +43,16 @@ mod tests {
             },
         )];
 
-        for (bit_representation, object_representation) in representations {
+        for (byte_representation, object_representation) in representations {
             // Test the serialization output
-            let mut serialization_buffer = bitarr![const Lsb0, u8; 0; ClockQuality::BITSIZE];
-            object_representation.serialize(&mut serialization_buffer);
-            assert_eq!(serialization_buffer, bit_representation.view_bits::<Lsb0>());
+            let mut serialization_buffer = [0; 4];
+            object_representation
+                .serialize(&mut serialization_buffer)
+                .unwrap();
+            assert_eq!(serialization_buffer, byte_representation);
 
             // Test the deserialization output
-            let deserialized_data =
-                ClockQuality::deserialize(bit_representation.view_bits::<Lsb0>());
+            let deserialized_data = ClockQuality::deserialize(&byte_representation).unwrap().0;
             assert_eq!(deserialized_data, object_representation);
         }
     }

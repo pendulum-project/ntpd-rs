@@ -1,16 +1,28 @@
-use bitvec::{order::Lsb0, slice::BitSlice, store::BitStore};
+use core::fmt::Debug;
 
 pub mod common;
 pub mod messages;
 
-pub trait WireFormat: core::fmt::Debug + Clone + Eq {
-    const BITSIZE: usize;
+#[derive(Debug, Clone)]
+pub enum WireFormatError {
+    EnumConversionError,
+    BufferTooShort,
+}
 
-    fn serialize<T>(&self, buffer: &mut BitSlice<Lsb0, T>)
-    where
-        T: BitStore;
+impl<Enum: num_enum::TryFromPrimitive> From<num_enum::TryFromPrimitiveError<Enum>> for WireFormatError {
+    fn from(_: num_enum::TryFromPrimitiveError<Enum>) -> Self {
+        Self::EnumConversionError
+    }
+}
 
-    fn deserialize<T>(buffer: &BitSlice<Lsb0, T>) -> Self
-    where
-        T: BitStore;
+pub trait WireFormat: Debug + Clone + Eq {
+    /// Serializes the object into the PTP wire format.
+    /// 
+    /// Returns the used buffer size that contains the message or an error.
+    fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError>;
+
+    /// Deserializes the object from the PTP wire format.
+    /// 
+    /// Returns the object and the size in the buffer that it takes up or an error.
+    fn deserialize(buffer: &[u8]) -> Result<(Self, usize), WireFormatError>;
 }

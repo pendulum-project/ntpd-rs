@@ -1,7 +1,6 @@
 use super::network_protocol::NetworkProtocol;
-use crate::datastructures::WireFormat;
+use crate::datastructures::{WireFormat, WireFormatError};
 use arrayvec::ArrayVec;
-use bitvec::{field::BitField, order::Lsb0, view::BitView};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PortAddress {
@@ -10,40 +9,30 @@ pub struct PortAddress {
 }
 
 impl WireFormat for PortAddress {
-    const BITSIZE: usize = 160;
-
-    fn serialize<T>(&self, buffer: &mut bitvec::slice::BitSlice<bitvec::order::Lsb0, T>)
-    where
-        T: bitvec::store::BitStore,
-    {
-        buffer[0..16].store_be(self.network_protocol.to_primitive());
-        buffer[16..32].store_be(self.address.len() as u16);
-        buffer[32..][..self.address.len() * 8]
-            .clone_from_bitslice(self.address.view_bits::<Lsb0>());
+    fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
+        buffer[0..2].copy_from_slice(&self.network_protocol.to_primitive().to_be_bytes());
+        buffer[2..4].copy_from_slice(&(self.address.len() as u16).to_be_bytes());
+        buffer[4..][..self.address.len()].clone_from_slice(&self.address);
+        Ok(4 + self.address.len())
     }
 
-    fn deserialize<T>(buffer: &bitvec::slice::BitSlice<bitvec::order::Lsb0, T>) -> Self
-    where
-        T: bitvec::store::BitStore,
-    {
-        let length: u16 = buffer[16..32].load_be();
+    fn deserialize(buffer: &[u8]) -> Result<(Self, usize), WireFormatError> {
+        let length: usize = u16::from_be_bytes(buffer[2..4].try_into().unwrap()) as usize;
 
-        Self {
-            network_protocol: NetworkProtocol::from_primitive(buffer[0..16].load_be()),
-            address: ArrayVec::from_iter(
-                buffer[32..160]
-                    .chunks_exact(8)
-                    .take(length as usize)
-                    .map(|slice| slice.load()),
-            ),
-        }
+        Ok((
+            Self {
+                network_protocol: NetworkProtocol::from_primitive(u16::from_be_bytes(
+                    buffer[0..2].try_into().unwrap(),
+                )),
+                address: ArrayVec::from_iter(buffer[4..][..length].iter().copied()),
+            },
+            4 + length,
+        ))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use bitvec::{bitarr, order::Lsb0, store::BitStore, view::BitView};
-
     use super::*;
 
     #[test]
@@ -71,15 +60,15 @@ mod tests {
             ),
         ];
 
-        for (bit_representation, object_representation) in representations {
+        for (byte_representation, object_representation) in representations {
             // Test the serialization output
-            let mut serialization_buffer = bitarr![const Lsb0, u8; 0; PortAddress::BITSIZE];
-            object_representation.serialize(&mut serialization_buffer);
-            assert_eq!(serialization_buffer, bit_representation.view_bits::<Lsb0>());
+            let mut serialization_buffer = [0; 20];
+            object_representation.serialize(&mut serialization_buffer).unwrap();
+            assert_eq!(serialization_buffer, byte_representation);
 
             // Test the deserialization output
             let deserialized_data =
-                PortAddress::deserialize(bit_representation.view_bits::<Lsb0>());
+                PortAddress::deserialize(&byte_representation).unwrap().0;
             assert_eq!(deserialized_data, object_representation);
         }
     }

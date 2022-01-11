@@ -1,7 +1,5 @@
-use crate::datastructures::WireFormat;
-use bitvec::field::BitField;
-
 use super::clock_identity::ClockIdentity;
+use crate::datastructures::{WireFormat, WireFormatError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PortIdentity {
@@ -10,31 +8,29 @@ pub struct PortIdentity {
 }
 
 impl WireFormat for PortIdentity {
-    const BITSIZE: usize = ClockIdentity::BITSIZE + 16;
-
-    fn serialize<T>(&self, buffer: &mut bitvec::slice::BitSlice<bitvec::order::Lsb0, T>)
-    where
-        T: bitvec::store::BitStore,
-    {
-        self.clock_identity.serialize(&mut buffer[0..64]);
-        buffer[64..80].store_be(self.port_number);
+    fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
+        let clock_identity_length = self.clock_identity.serialize(&mut buffer[0..])?;
+        buffer[clock_identity_length..][..2].copy_from_slice(&self.port_number.to_be_bytes());
+        Ok(clock_identity_length + 2)
     }
 
-    fn deserialize<T>(buffer: &bitvec::slice::BitSlice<bitvec::order::Lsb0, T>) -> Self
-    where
-        T: bitvec::store::BitStore,
-    {
-        Self {
-            clock_identity: ClockIdentity::deserialize(&buffer[0..64]),
-            port_number: buffer[64..80].load_be(),
-        }
+    fn deserialize(buffer: &[u8]) -> Result<(Self, usize), WireFormatError> {
+        let (clock_identity, clock_identity_length) = ClockIdentity::deserialize(&buffer[0..])?;
+
+        Ok((
+            Self {
+                clock_identity,
+                port_number: u16::from_be_bytes(
+                    buffer[clock_identity_length..][..2].try_into().unwrap(),
+                ),
+            },
+            clock_identity_length + 2,
+        ))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use bitvec::{bitarr, order::Lsb0, store::BitStore, view::BitView};
-
     use super::*;
 
     #[test]
@@ -56,15 +52,16 @@ mod tests {
             ),
         ];
 
-        for (bit_representation, object_representation) in representations {
+        for (byte_representation, object_representation) in representations {
             // Test the serialization output
-            let mut serialization_buffer = bitarr![const Lsb0, u8; 0; 80];
-            object_representation.serialize(&mut serialization_buffer);
-            assert_eq!(serialization_buffer, bit_representation.view_bits::<Lsb0>());
+            let mut serialization_buffer = [0; 10];
+            object_representation
+                .serialize(&mut serialization_buffer)
+                .unwrap();
+            assert_eq!(serialization_buffer, byte_representation);
 
             // Test the deserialization output
-            let deserialized_data =
-                PortIdentity::deserialize(bit_representation.view_bits::<Lsb0>());
+            let deserialized_data = PortIdentity::deserialize(&byte_representation).unwrap().0;
             assert_eq!(deserialized_data, object_representation);
         }
     }

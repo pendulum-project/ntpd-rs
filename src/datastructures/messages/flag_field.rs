@@ -1,5 +1,4 @@
-use crate::datastructures::WireFormat;
-use bitvec::order::Lsb0;
+use crate::datastructures::{WireFormat, WireFormatError};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FlagField {
@@ -18,51 +17,50 @@ pub struct FlagField {
 }
 
 impl WireFormat for FlagField {
-    const BITSIZE: usize = 16;
+    fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
+        buffer[0] = 0;
+        buffer[1] = 0;
 
-    fn serialize<T>(&self, buffer: &mut bitvec::slice::BitSlice<Lsb0, T>)
-    where
-        T: bitvec::store::BitStore,
-    {
-        buffer.set(0, self.alternate_master_flag);
-        buffer.set(1, self.two_step_flag);
-        buffer.set(2, self.unicast_flag);
-        buffer.set(5, self.ptp_profile_specific_1);
-        buffer.set(6, self.ptp_profile_specific_2);
-        buffer.set(8, self.leap61);
-        buffer.set(9, self.leap59);
-        buffer.set(10, self.current_utc_offset_valid);
-        buffer.set(11, self.ptp_timescale);
-        buffer.set(12, self.time_tracable);
-        buffer.set(13, self.frequency_tracable);
-        buffer.set(14, self.synchronization_uncertain);
+        buffer[0] |= (self.alternate_master_flag as u8) << 0;
+        buffer[0] |= (self.two_step_flag as u8) << 1;
+        buffer[0] |= (self.unicast_flag as u8) << 2;
+        buffer[0] |= (self.ptp_profile_specific_1 as u8) << 5;
+        buffer[0] |= (self.ptp_profile_specific_2 as u8) << 6;
+        buffer[1] |= (self.leap61 as u8) << 0;
+        buffer[1] |= (self.leap59 as u8) << 1;
+        buffer[1] |= (self.current_utc_offset_valid as u8) << 2;
+        buffer[1] |= (self.ptp_timescale as u8) << 3;
+        buffer[1] |= (self.time_tracable as u8) << 4;
+        buffer[1] |= (self.frequency_tracable as u8) << 5;
+        buffer[1] |= (self.synchronization_uncertain as u8) << 6;
+
+        Ok(2)
     }
 
-    fn deserialize<T>(buffer: &bitvec::slice::BitSlice<Lsb0, T>) -> Self
-    where
-        T: bitvec::store::BitStore,
-    {
-        Self {
-            alternate_master_flag: buffer[0],
-            two_step_flag: buffer[1],
-            unicast_flag: buffer[2],
-            ptp_profile_specific_1: buffer[5],
-            ptp_profile_specific_2: buffer[6],
-            leap61: buffer[8],
-            leap59: buffer[9],
-            current_utc_offset_valid: buffer[10],
-            ptp_timescale: buffer[11],
-            time_tracable: buffer[12],
-            frequency_tracable: buffer[13],
-            synchronization_uncertain: buffer[14],
-        }
+    fn deserialize(buffer: &[u8]) -> Result<(Self, usize), WireFormatError> {
+        Ok((
+            Self {
+                alternate_master_flag: (buffer[0] & (1 << 0)) > 0,
+                two_step_flag: (buffer[0] & (1 << 1)) > 0,
+                unicast_flag: (buffer[0] & (1 << 2)) > 0,
+                ptp_profile_specific_1: (buffer[0] & (1 << 5)) > 0,
+                ptp_profile_specific_2: (buffer[0] & (1 << 6)) > 0,
+                leap61: (buffer[1] & (1 << 0)) > 0,
+                leap59: (buffer[1] & (1 << 1)) > 0,
+                current_utc_offset_valid: (buffer[1] & (1 << 2)) > 0,
+                ptp_timescale: (buffer[1] & (1 << 3)) > 0,
+                time_tracable: (buffer[1] & (1 << 4)) > 0,
+                frequency_tracable: (buffer[1] & (1 << 5)) > 0,
+                synchronization_uncertain: (buffer[1] & (1 << 6)) > 0,
+            },
+            2,
+        ))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitvec::{bitarr, order::Lsb0, store::BitStore, view::BitView};
 
     #[test]
     fn flagfield_wireformat() {
@@ -83,22 +81,24 @@ mod tests {
             ([0x00, 0x40u8], FlagField { synchronization_uncertain: true, ..Default::default() }),
         ];
 
-        for (i, (bit_representation, flag_representation)) in representations.iter().enumerate() {
+        for (i, (byte_representation, flag_representation)) in
+            representations.into_iter().enumerate()
+        {
             // Test the serialization output
-            let mut serialization_buffer = bitarr![const Lsb0, u8; 0; FlagField::BITSIZE];
-            flag_representation.serialize(&mut serialization_buffer);
+            let mut serialization_buffer = [0; 2];
+            flag_representation
+                .serialize(&mut serialization_buffer)
+                .unwrap();
             assert_eq!(
-                serialization_buffer,
-                bit_representation.view_bits::<Lsb0>(),
+                serialization_buffer, byte_representation,
                 "The serialized flag field is not what it's supposed to for variant {}",
                 i
             );
 
             // Test the deserialization output
-            let deserialized_flag_field =
-                FlagField::deserialize(bit_representation.view_bits::<Lsb0>());
+            let deserialized_flag_field = FlagField::deserialize(&byte_representation).unwrap().0;
             assert_eq!(
-                &deserialized_flag_field, flag_representation,
+                deserialized_flag_field, flag_representation,
                 "The deserialized flag field is not what it's supposed to for variant {}",
                 i
             );

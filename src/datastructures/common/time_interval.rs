@@ -1,7 +1,6 @@
-use crate::datastructures::WireFormat;
-use bitvec::field::BitField;
+use crate::datastructures::{WireFormat, WireFormatError};
+use core::ops::{Deref, DerefMut};
 use fixed::types::I48F16;
-use std::ops::{Deref, DerefMut};
 
 /// Represents time intervals in nanoseconds
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,27 +21,23 @@ impl DerefMut for TimeInterval {
 }
 
 impl WireFormat for TimeInterval {
-    const BITSIZE: usize = 64;
-
-    fn serialize<T>(&self, buffer: &mut bitvec::slice::BitSlice<bitvec::order::Lsb0, T>)
-    where
-        T: bitvec::store::BitStore,
-    {
-        buffer[0..64].store_be(self.0.to_bits() as u64)
+    fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
+        buffer[0..8].copy_from_slice(&self.0.to_bits().to_be_bytes());
+        Ok(8)
     }
 
-    fn deserialize<T>(buffer: &bitvec::slice::BitSlice<bitvec::order::Lsb0, T>) -> Self
-    where
-        T: bitvec::store::BitStore,
-    {
-        Self(I48F16::from_bits(buffer[0..64].load_be::<u64>() as i64))
+    fn deserialize(buffer: &[u8]) -> Result<(Self, usize), WireFormatError> {
+        Ok((
+            Self(I48F16::from_bits(i64::from_be_bytes(
+                buffer[0..8].try_into().unwrap(),
+            ))),
+            8,
+        ))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use bitvec::{bitarr, order::Lsb0, store::BitStore, view::BitView};
-
     use super::*;
 
     #[test]
@@ -62,15 +57,16 @@ mod tests {
             ),
         ];
 
-        for (bit_representation, object_representation) in representations {
+        for (byte_representation, object_representation) in representations {
             // Test the serialization output
-            let mut serialization_buffer = bitarr![const Lsb0, u8; 0; TimeInterval::BITSIZE];
-            object_representation.serialize(&mut serialization_buffer);
-            assert_eq!(serialization_buffer, bit_representation.view_bits::<Lsb0>());
+            let mut serialization_buffer = [0; 8];
+            object_representation
+                .serialize(&mut serialization_buffer)
+                .unwrap();
+            assert_eq!(serialization_buffer, byte_representation);
 
             // Test the deserialization output
-            let deserialized_data =
-                TimeInterval::deserialize(bit_representation.view_bits::<Lsb0>());
+            let deserialized_data = TimeInterval::deserialize(&byte_representation).unwrap().0;
             assert_eq!(deserialized_data, object_representation);
         }
     }
