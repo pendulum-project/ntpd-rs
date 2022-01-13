@@ -1,0 +1,68 @@
+From 6ecf8bcd6c369505ac68609bfef7cef229427257 Mon Sep 17 00:00:00 2001
+From: Andrea Galbusera <gizero@gmail.com>
+Date: Tue, 20 Feb 2018 09:38:28 +0000
+Subject: [PATCH 2/3] add DT overlay for pps-gen-gpio generator
+
+Signed-off-by: Andrea Galbusera <gizero@gmail.com>
+---
+ arch/arm/boot/dts/overlays/Makefile           |  1 +
+ .../dts/overlays/pps-gen-gpio-overlay.dts     | 35 +++++++++++++++++++
+ 2 files changed, 36 insertions(+)
+ create mode 100644 arch/arm/boot/dts/overlays/pps-gen-gpio-overlay.dts
+
+diff --git a/arch/arm/boot/dts/overlays/Makefile b/arch/arm/boot/dts/overlays/Makefile
+index b36c618b01d0..dd4ea4e03126 100644
+--- a/arch/arm/boot/dts/overlays/Makefile
++++ b/arch/arm/boot/dts/overlays/Makefile
+@@ -157,6 +157,7 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
+ 	pitft28-resistive.dtbo \
+ 	pitft35-resistive.dtbo \
+ 	pps-gpio.dtbo \
++	pps-gen-gpio.dtbo \
+ 	pwm.dtbo \
+ 	pwm-2chan.dtbo \
+ 	pwm-ir-tx.dtbo \
+diff --git a/arch/arm/boot/dts/overlays/pps-gen-gpio-overlay.dts b/arch/arm/boot/dts/overlays/pps-gen-gpio-overlay.dts
+new file mode 100644
+index 000000000000..a0f085cf45a5
+--- /dev/null
++++ b/arch/arm/boot/dts/overlays/pps-gen-gpio-overlay.dts
+@@ -0,0 +1,35 @@
++/dts-v1/;
++/plugin/;
++
++/ {
++	compatible = "brcm,bcm2708";
++	fragment@0 {
++		target-path = "/";
++		__overlay__ {
++			pps_gen: pps_gen {
++				compatible = "pps-gen-gpios";
++                                pps-gen-gpios = <&gpio 18 0>;
++				pinctrl-names = "default";
++				pinctrl-0 = <&pps_pins>;
++				status = "okay";
++			};
++		};
++	};
++
++	fragment@1 {
++		target = <&gpio>;
++		__overlay__ {
++			pps_pins: pps_pins {
++				brcm,pins =     <18>;
++				brcm,function = <1>;    // out
++				brcm,pull =     <0>;    // off
++			};
++		};
++	};
++
++	__overrides__ {
++		gpiopin = <&pps_gen>,"gpios:4",
++			  <&pps_pins>,"brcm,pins:0";
++		assert_falling_edge = <&pps_gen>,"assert-falling-edge?";
++	};
++};
+-- 
+2.25.1
+
