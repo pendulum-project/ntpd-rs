@@ -4,6 +4,8 @@ use std::{
     time::SystemTime,
 };
 
+use ptp::datastructures::{messages::Message, WireFormat};
+
 fn main() {
     let (tx, rx) = channel::<(SocketAddr, Option<SystemTime>, Vec<u8>)>();
     let tx_319 = tx.clone();
@@ -34,10 +36,11 @@ fn main() {
 
     loop {
         let (src, ts, data) = rx.recv().unwrap();
+        let message = Message::deserialize(&data).unwrap();
         if let Some(ts) = ts {
-            println!("Received {:?} from {:?} at {:?}", data, src, ts);
+            println!("Received {:?} from {:?} at {:?}", message, src, ts);
         } else {
-            println!("Received {:?} from {:?}", data, src);
+            println!("Received {:?} from {:?}", message, src);
         }
     }
 }
