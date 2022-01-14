@@ -1,6 +1,6 @@
 use crate::datastructures::{WireFormat, WireFormatError};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Timestamp {
     /// The seconds field of the timestamp.
     /// 48-bit, must be less than 281474976710656
@@ -11,25 +11,24 @@ pub struct Timestamp {
 }
 
 impl WireFormat for Timestamp {
-    const STATIC_SIZE: Option<usize> = Some(10);
-
-    fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
-        buffer[0..6].copy_from_slice(&self.seconds.to_be_bytes()[2..8]);
-        buffer[6..10].copy_from_slice(&self.nanos.to_be_bytes());
-        Ok(10)
+    fn wire_size(&self) -> usize {
+        10
     }
 
-    fn deserialize(buffer: &[u8]) -> Result<(Self, usize), WireFormatError> {
+    fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
+        buffer[0..6].copy_from_slice(&self.seconds.to_be_bytes()[2..8]);
+        buffer[6..10].copy_from_slice(&self.nanos.to_be_bytes());
+        Ok(())
+    }
+
+    fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
         let mut seconds_buffer = [0; 8];
         seconds_buffer[2..8].copy_from_slice(&buffer[0..6]);
 
-        Ok((
-            Self {
-                seconds: u64::from_be_bytes(seconds_buffer),
-                nanos: u32::from_be_bytes(buffer[6..10].try_into().unwrap()),
-            },
-            10,
-        ))
+        Ok(Self {
+            seconds: u64::from_be_bytes(seconds_buffer),
+            nanos: u32::from_be_bytes(buffer[6..10].try_into().unwrap()),
+        })
     }
 }
 
@@ -65,7 +64,7 @@ mod tests {
             assert_eq!(serialization_buffer, byte_representation);
 
             // Test the deserialization output
-            let deserialized_data = Timestamp::deserialize(&byte_representation).unwrap().0;
+            let deserialized_data = Timestamp::deserialize(&byte_representation).unwrap();
             assert_eq!(deserialized_data, object_representation);
         }
     }

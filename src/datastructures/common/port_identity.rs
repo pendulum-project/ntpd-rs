@@ -1,29 +1,28 @@
 use super::clock_identity::ClockIdentity;
 use crate::datastructures::{WireFormat, WireFormatError};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PortIdentity {
     pub clock_identity: ClockIdentity,
     pub port_number: u16,
 }
 
 impl WireFormat for PortIdentity {
-    const STATIC_SIZE: Option<usize> = Some(10);
-
-    fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
-        self.clock_identity.serialize(&mut buffer[0..8])?;
-        buffer[8..10].copy_from_slice(&self.port_number.to_be_bytes());
-        Ok(10)
+    fn wire_size(&self) -> usize {
+        10
     }
 
-    fn deserialize(buffer: &[u8]) -> Result<(Self, usize), WireFormatError> {
-        Ok((
-            Self {
-                clock_identity: ClockIdentity::deserialize(&buffer[0..8])?.0,
-                port_number: u16::from_be_bytes(buffer[8..10].try_into().unwrap()),
-            },
-            10,
-        ))
+    fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
+        self.clock_identity.serialize(&mut buffer[0..8])?;
+        buffer[8..10].copy_from_slice(&self.port_number.to_be_bytes());
+        Ok(())
+    }
+
+    fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
+        Ok(Self {
+            clock_identity: ClockIdentity::deserialize(&buffer[0..8])?,
+            port_number: u16::from_be_bytes(buffer[8..10].try_into().unwrap()),
+        })
     }
 }
 
@@ -59,7 +58,7 @@ mod tests {
             assert_eq!(serialization_buffer, byte_representation);
 
             // Test the deserialization output
-            let deserialized_data = PortIdentity::deserialize(&byte_representation).unwrap().0;
+            let deserialized_data = PortIdentity::deserialize(&byte_representation).unwrap();
             assert_eq!(deserialized_data, object_representation);
         }
     }

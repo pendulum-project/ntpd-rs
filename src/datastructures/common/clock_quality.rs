@@ -9,24 +9,23 @@ pub struct ClockQuality {
 }
 
 impl WireFormat for ClockQuality {
-    const STATIC_SIZE: Option<usize> = Some(4);
+    fn wire_size(&self) -> usize {
+        4
+    }
 
-    fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
+    fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
         buffer[0] = self.clock_class;
         buffer[1] = self.clock_accuracy.to_primitive();
         buffer[2..4].copy_from_slice(&self.offset_scaled_log_variance.to_be_bytes());
-        Ok(4)
+        Ok(())
     }
 
-    fn deserialize(buffer: &[u8]) -> Result<(Self, usize), WireFormatError> {
-        Ok((
-            Self {
-                clock_class: buffer[0],
-                clock_accuracy: ClockAccuracy::from_primitive(buffer[1]),
-                offset_scaled_log_variance: u16::from_be_bytes(buffer[2..4].try_into().unwrap()),
-            },
-            4,
-        ))
+    fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
+        Ok(Self {
+            clock_class: buffer[0],
+            clock_accuracy: ClockAccuracy::from_primitive(buffer[1]),
+            offset_scaled_log_variance: u16::from_be_bytes(buffer[2..4].try_into().unwrap()),
+        })
     }
 }
 
@@ -54,7 +53,7 @@ mod tests {
             assert_eq!(serialization_buffer, byte_representation);
 
             // Test the deserialization output
-            let deserialized_data = ClockQuality::deserialize(&byte_representation).unwrap().0;
+            let deserialized_data = ClockQuality::deserialize(&byte_representation).unwrap();
             assert_eq!(deserialized_data, object_representation);
         }
     }

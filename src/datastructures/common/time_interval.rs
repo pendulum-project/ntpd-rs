@@ -3,7 +3,7 @@ use core::ops::{Deref, DerefMut};
 use fixed::types::I48F16;
 
 /// Represents time intervals in nanoseconds
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TimeInterval(pub I48F16);
 
 impl Deref for TimeInterval {
@@ -21,20 +21,19 @@ impl DerefMut for TimeInterval {
 }
 
 impl WireFormat for TimeInterval {
-    const STATIC_SIZE: Option<usize> = Some(8);
-
-    fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
-        buffer[0..8].copy_from_slice(&self.0.to_bits().to_be_bytes());
-        Ok(8)
+    fn wire_size(&self) -> usize {
+        8
     }
 
-    fn deserialize(buffer: &[u8]) -> Result<(Self, usize), WireFormatError> {
-        Ok((
-            Self(I48F16::from_bits(i64::from_be_bytes(
-                buffer[0..8].try_into().unwrap(),
-            ))),
-            8,
-        ))
+    fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
+        buffer[0..8].copy_from_slice(&self.0.to_bits().to_be_bytes());
+        Ok(())
+    }
+
+    fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
+        Ok(Self(I48F16::from_bits(i64::from_be_bytes(
+            buffer[0..8].try_into().unwrap(),
+        ))))
     }
 }
 
@@ -68,7 +67,7 @@ mod tests {
             assert_eq!(serialization_buffer, byte_representation);
 
             // Test the deserialization output
-            let deserialized_data = TimeInterval::deserialize(&byte_representation).unwrap().0;
+            let deserialized_data = TimeInterval::deserialize(&byte_representation).unwrap();
             assert_eq!(deserialized_data, object_representation);
         }
     }

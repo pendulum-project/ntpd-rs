@@ -17,9 +17,11 @@ pub struct FlagField {
 }
 
 impl WireFormat for FlagField {
-    const STATIC_SIZE: Option<usize> = Some(2);
+    fn wire_size(&self) -> usize {
+        2
+    }
 
-    fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
+    fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
         buffer[0] = 0;
         buffer[1] = 0;
 
@@ -36,27 +38,24 @@ impl WireFormat for FlagField {
         buffer[1] |= (self.frequency_tracable as u8) << 5;
         buffer[1] |= (self.synchronization_uncertain as u8) << 6;
 
-        Ok(2)
+        Ok(())
     }
 
-    fn deserialize(buffer: &[u8]) -> Result<(Self, usize), WireFormatError> {
-        Ok((
-            Self {
-                alternate_master_flag: (buffer[0] & (1 << 0)) > 0,
-                two_step_flag: (buffer[0] & (1 << 1)) > 0,
-                unicast_flag: (buffer[0] & (1 << 2)) > 0,
-                ptp_profile_specific_1: (buffer[0] & (1 << 5)) > 0,
-                ptp_profile_specific_2: (buffer[0] & (1 << 6)) > 0,
-                leap61: (buffer[1] & (1 << 0)) > 0,
-                leap59: (buffer[1] & (1 << 1)) > 0,
-                current_utc_offset_valid: (buffer[1] & (1 << 2)) > 0,
-                ptp_timescale: (buffer[1] & (1 << 3)) > 0,
-                time_tracable: (buffer[1] & (1 << 4)) > 0,
-                frequency_tracable: (buffer[1] & (1 << 5)) > 0,
-                synchronization_uncertain: (buffer[1] & (1 << 6)) > 0,
-            },
-            2,
-        ))
+    fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
+        Ok(Self {
+            alternate_master_flag: (buffer[0] & (1 << 0)) > 0,
+            two_step_flag: (buffer[0] & (1 << 1)) > 0,
+            unicast_flag: (buffer[0] & (1 << 2)) > 0,
+            ptp_profile_specific_1: (buffer[0] & (1 << 5)) > 0,
+            ptp_profile_specific_2: (buffer[0] & (1 << 6)) > 0,
+            leap61: (buffer[1] & (1 << 0)) > 0,
+            leap59: (buffer[1] & (1 << 1)) > 0,
+            current_utc_offset_valid: (buffer[1] & (1 << 2)) > 0,
+            ptp_timescale: (buffer[1] & (1 << 3)) > 0,
+            time_tracable: (buffer[1] & (1 << 4)) > 0,
+            frequency_tracable: (buffer[1] & (1 << 5)) > 0,
+            synchronization_uncertain: (buffer[1] & (1 << 6)) > 0,
+        })
     }
 }
 
@@ -98,7 +97,7 @@ mod tests {
             );
 
             // Test the deserialization output
-            let deserialized_flag_field = FlagField::deserialize(&byte_representation).unwrap().0;
+            let deserialized_flag_field = FlagField::deserialize(&byte_representation).unwrap();
             assert_eq!(
                 deserialized_flag_field, flag_representation,
                 "The deserialized flag field is not what it's supposed to for variant {}",

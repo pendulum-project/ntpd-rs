@@ -9,27 +9,26 @@ pub struct PortAddress {
 }
 
 impl WireFormat for PortAddress {
-    const STATIC_SIZE: Option<usize> = None;
+    fn wire_size(&self) -> usize {
+        4 + self.address.len()
+    }
 
-    fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
+    fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
         buffer[0..2].copy_from_slice(&self.network_protocol.to_primitive().to_be_bytes());
         buffer[2..4].copy_from_slice(&(self.address.len() as u16).to_be_bytes());
         buffer[4..][..self.address.len()].clone_from_slice(&self.address);
-        Ok(4 + self.address.len())
+        Ok(())
     }
 
-    fn deserialize(buffer: &[u8]) -> Result<(Self, usize), WireFormatError> {
+    fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
         let length: usize = u16::from_be_bytes(buffer[2..4].try_into().unwrap()) as usize;
 
-        Ok((
-            Self {
-                network_protocol: NetworkProtocol::from_primitive(u16::from_be_bytes(
-                    buffer[0..2].try_into().unwrap(),
-                )),
-                address: ArrayVec::from_iter(buffer[4..][..length].iter().copied()),
-            },
-            4 + length,
-        ))
+        Ok(Self {
+            network_protocol: NetworkProtocol::from_primitive(u16::from_be_bytes(
+                buffer[0..2].try_into().unwrap(),
+            )),
+            address: ArrayVec::from_iter(buffer[4..][..length].iter().copied()),
+        })
     }
 }
 
@@ -71,7 +70,7 @@ mod tests {
             assert_eq!(serialization_buffer, byte_representation);
 
             // Test the deserialization output
-            let deserialized_data = PortAddress::deserialize(&byte_representation).unwrap().0;
+            let deserialized_data = PortAddress::deserialize(&byte_representation).unwrap();
             assert_eq!(deserialized_data, object_representation);
         }
     }

@@ -3,29 +3,54 @@ use crate::datastructures::{
     common::{PortIdentity, TimeInterval},
     WireFormat, WireFormatError,
 };
+use getset::CopyGetters;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
+#[getset(get_copy = "pub")]
 pub struct Header {
-    pub major_sdo_id: u8,
-    pub message_type: MessageType,
-    pub minor_version_ptp: u8,
-    pub version_ptp: u8,
-    pub message_length: u16,
-    pub domain_number: u8,
-    pub minor_sdo_id: u8,
-    pub flag_field: FlagField,
-    pub correction_field: TimeInterval,
-    pub message_type_specific: [u8; 4],
-    pub source_port_identity: PortIdentity,
-    pub sequence_id: u16,
-    pub control_field: ControlField,
-    pub log_message_interval: u8,
+    pub(super) major_sdo_id: u8,
+    pub(super) message_type: MessageType,
+    pub(super) minor_version_ptp: u8,
+    pub(super) version_ptp: u8,
+    pub(super) message_length: u16,
+    pub(super) domain_number: u8,
+    pub(super) minor_sdo_id: u8,
+    pub(super) flag_field: FlagField,
+    pub(super) correction_field: TimeInterval,
+    pub(super) message_type_specific: [u8; 4],
+    pub(super) source_port_identity: PortIdentity,
+    pub(super) sequence_id: u16,
+    pub(super) control_field: ControlField,
+    pub(super) log_message_interval: u8,
+}
+
+impl Header {
+    pub(super) fn new() -> Self {
+        Self {
+            major_sdo_id: 0,
+            message_type: MessageType::Sync,
+            minor_version_ptp: 0,
+            version_ptp: 0,
+            message_length: 0,
+            domain_number: 0,
+            minor_sdo_id: 0,
+            flag_field: FlagField::default(),
+            correction_field: TimeInterval::default(),
+            message_type_specific: [0, 0, 0, 0],
+            source_port_identity: PortIdentity::default(),
+            sequence_id: 0,
+            control_field: ControlField::Sync,
+            log_message_interval: 0,
+        }
+    }
 }
 
 impl WireFormat for Header {
-    const STATIC_SIZE: Option<usize> = Some(34);
+    fn wire_size(&self) -> usize {
+        34
+    }
 
-    fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
+    fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
         buffer[0] = ((self.major_sdo_id & 0x0F) << 4) | (u8::from(self.message_type) & 0x0F);
         buffer[1] = ((self.minor_version_ptp & 0x0F) << 4) | (self.version_ptp & 0x0F);
         buffer[2..4].copy_from_slice(&self.message_length.to_be_bytes());
@@ -39,29 +64,26 @@ impl WireFormat for Header {
         buffer[32] = self.control_field.to_primitive();
         buffer[33] = self.log_message_interval;
 
-        Ok(34)
+        Ok(())
     }
 
-    fn deserialize(buffer: &[u8]) -> Result<(Self, usize), WireFormatError> {
-        Ok((
-            Self {
-                major_sdo_id: (buffer[0] >> 4) & 0x0F,
-                message_type: (buffer[0] & 0x0F).try_into()?,
-                minor_version_ptp: (buffer[1] >> 4) & 0x0F,
-                version_ptp: buffer[1] & 0x0F,
-                message_length: u16::from_be_bytes(buffer[2..4].try_into().unwrap()),
-                domain_number: buffer[4],
-                minor_sdo_id: buffer[5],
-                flag_field: FlagField::deserialize(&buffer[6..8])?.0,
-                correction_field: TimeInterval::deserialize(&buffer[8..16])?.0,
-                message_type_specific: buffer[16..20].try_into().unwrap(),
-                source_port_identity: PortIdentity::deserialize(&buffer[20..30])?.0,
-                sequence_id: u16::from_be_bytes(buffer[30..32].try_into().unwrap()),
-                control_field: ControlField::from_primitive(buffer[32]),
-                log_message_interval: buffer[33],
-            },
-            34,
-        ))
+    fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
+        Ok(Self {
+            major_sdo_id: (buffer[0] >> 4) & 0x0F,
+            message_type: (buffer[0] & 0x0F).try_into()?,
+            minor_version_ptp: (buffer[1] >> 4) & 0x0F,
+            version_ptp: buffer[1] & 0x0F,
+            message_length: u16::from_be_bytes(buffer[2..4].try_into().unwrap()),
+            domain_number: buffer[4],
+            minor_sdo_id: buffer[5],
+            flag_field: FlagField::deserialize(&buffer[6..8])?,
+            correction_field: TimeInterval::deserialize(&buffer[8..16])?,
+            message_type_specific: buffer[16..20].try_into().unwrap(),
+            source_port_identity: PortIdentity::deserialize(&buffer[20..30])?,
+            sequence_id: u16::from_be_bytes(buffer[30..32].try_into().unwrap()),
+            control_field: ControlField::from_primitive(buffer[32]),
+            log_message_interval: buffer[33],
+        })
     }
 }
 
@@ -154,7 +176,7 @@ mod tests {
             assert_eq!(serialization_buffer, byte_representation);
 
             // Test the deserialization output
-            let deserialized_data = Header::deserialize(&byte_representation).unwrap().0;
+            let deserialized_data = Header::deserialize(&byte_representation).unwrap();
             assert_eq!(deserialized_data, object_representation);
         }
     }

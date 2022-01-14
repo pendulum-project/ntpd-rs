@@ -1,18 +1,20 @@
 use crate::datastructures::{WireFormat, WireFormatError};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ClockIdentity(pub [u8; 8]);
 
 impl WireFormat for ClockIdentity {
-    const STATIC_SIZE: Option<usize> = Some(8);
-
-    fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
-        buffer[0..8].copy_from_slice(&self.0);
-        Ok(8)
+    fn wire_size(&self) -> usize {
+        8
     }
 
-    fn deserialize(buffer: &[u8]) -> Result<(Self, usize), WireFormatError> {
-        Ok((Self(buffer[0..8].try_into().unwrap()), 8))
+    fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
+        buffer[0..8].copy_from_slice(&self.0);
+        Ok(())
+    }
+
+    fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
+        Ok(Self(buffer[0..8].try_into().unwrap()))
     }
 }
 
@@ -36,7 +38,7 @@ mod tests {
             assert_eq!(serialization_buffer, byte_representation);
 
             // Test the deserialization output
-            let deserialized_data = ClockIdentity::deserialize(&byte_representation).unwrap().0;
+            let deserialized_data = ClockIdentity::deserialize(&byte_representation).unwrap();
             assert_eq!(deserialized_data, object_representation);
         }
     }

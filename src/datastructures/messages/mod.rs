@@ -7,6 +7,7 @@ mod delay_resp;
 mod flag_field;
 mod follow_up;
 mod header;
+mod message_builder;
 mod sync;
 
 pub use announce::*;
@@ -16,6 +17,7 @@ pub use delay_resp::*;
 pub use flag_field::*;
 pub use follow_up::*;
 pub use header::*;
+pub use message_builder::*;
 pub use sync::*;
 
 use super::WireFormat;
@@ -36,68 +38,90 @@ pub enum MessageType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Message {
+pub enum MessageContent {
     Sync(SyncMessage),
     DelayReq(DelayReqMessage),
-    PDelayReq(Header),  // TODO
-    PDelayResp(Header), // TODO
+    PDelayReq,  // TODO
+    PDelayResp, // TODO
     FollowUp(FollowUpMessage),
     DelayResp(DelayRespMessage),
-    PDelayRespFollowUp(Header), // TODO
+    PDelayRespFollowUp, // TODO
     Announce(AnnounceMessage),
-    Signaling(Header),  // TODO
-    Management(Header), // TODO
+    Signaling,  // TODO
+    Management, // TODO
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Message {
+    header: Header,
+    content: MessageContent,
+}
+
+impl Message {
+    pub fn builder() -> MessageBuilder<HeaderBuilding> {
+        MessageBuilder::new()
+    }
 }
 
 impl WireFormat for Message {
-    const STATIC_SIZE: Option<usize> = None;
-
-    fn serialize_vec(&self) -> Result<Vec<u8>, super::WireFormatError> {
-        match self {
-            Message::Sync(m) => m.serialize_vec(),
-            Message::DelayReq(m) => m.serialize_vec(),
-            Message::PDelayReq(_) => todo!(),
-            Message::PDelayResp(_) => todo!(),
-            Message::FollowUp(m) => m.serialize_vec(),
-            Message::DelayResp(m) => m.serialize_vec(),
-            Message::PDelayRespFollowUp(_) => todo!(),
-            Message::Announce(m) => m.serialize_vec(),
-            Message::Signaling(_) => todo!(),
-            Message::Management(_) => todo!(),
-        }
-    }
-
-    fn serialize(&self, buffer: &mut [u8]) -> Result<usize, super::WireFormatError> {
-        match self {
-            Message::Sync(m) => m.serialize(buffer),
-            Message::DelayReq(m) => m.serialize(buffer),
-            Message::PDelayReq(_) => todo!(),
-            Message::PDelayResp(_) => todo!(),
-            Message::FollowUp(m) => m.serialize(buffer),
-            Message::DelayResp(m) => m.serialize(buffer),
-            Message::PDelayRespFollowUp(_) => todo!(),
-            Message::Announce(m) => m.serialize(buffer),
-            Message::Signaling(_) => todo!(),
-            Message::Management(_) => todo!(),
-        }
-    }
-
-    fn deserialize(buffer: &[u8]) -> Result<(Self, usize), super::WireFormatError> {
-        let header = Header::deserialize(buffer)?.0;
-
-        let message = match header.message_type {
-            MessageType::Sync => Self::Sync(SyncMessage::deserialize(buffer)?.0),
-            MessageType::DelayReq => Self::DelayReq(DelayReqMessage::deserialize(buffer)?.0),
-            MessageType::PDelayReq => Self::PDelayReq(header),
-            MessageType::PDelayResp => Self::PDelayResp(header),
-            MessageType::FollowUp => Self::FollowUp(FollowUpMessage::deserialize(buffer)?.0),
-            MessageType::DelayResp => Self::DelayResp(DelayRespMessage::deserialize(buffer)?.0),
-            MessageType::PDelayRespFollowUp => Self::PDelayRespFollowUp(header),
-            MessageType::Announce => Self::Announce(AnnounceMessage::deserialize(buffer)?.0),
-            MessageType::Signaling => Self::Signaling(header),
-            MessageType::Management => Self::Management(header),
+    fn wire_size(&self) -> usize {
+        let header_length = self.header.wire_size();
+        let content_length = match self.content {
+            MessageContent::Sync(m) => m.wire_size(),
+            MessageContent::DelayReq(m) => m.wire_size(),
+            MessageContent::PDelayReq => todo!(),
+            MessageContent::PDelayResp => todo!(),
+            MessageContent::FollowUp(m) => m.wire_size(),
+            MessageContent::DelayResp(m) => m.wire_size(),
+            MessageContent::PDelayRespFollowUp => todo!(),
+            MessageContent::Announce(m) => m.wire_size(),
+            MessageContent::Signaling => todo!(),
+            MessageContent::Management => todo!(),
         };
 
-        Ok((message, header.message_length as usize))
+        header_length + content_length
+    }
+
+    fn serialize(&self, buffer: &mut [u8]) -> Result<(), super::WireFormatError> {
+        self.header.serialize(&mut buffer[0..34])?;
+        match self.content {
+            MessageContent::Sync(m) => m.serialize(&mut buffer[34..]),
+            MessageContent::DelayReq(m) => m.serialize(&mut buffer[34..]),
+            MessageContent::PDelayReq => todo!(),
+            MessageContent::PDelayResp => todo!(),
+            MessageContent::FollowUp(m) => m.serialize(&mut buffer[34..]),
+            MessageContent::DelayResp(m) => m.serialize(&mut buffer[34..]),
+            MessageContent::PDelayRespFollowUp => todo!(),
+            MessageContent::Announce(m) => m.serialize(&mut buffer[34..]),
+            MessageContent::Signaling => todo!(),
+            MessageContent::Management => todo!(),
+        }
+    }
+
+    fn deserialize(buffer: &[u8]) -> Result<Self, super::WireFormatError> {
+        let header = Header::deserialize(buffer)?;
+
+        let content = match header.message_type() {
+            MessageType::Sync => MessageContent::Sync(SyncMessage::deserialize(buffer)?),
+            MessageType::DelayReq => {
+                MessageContent::DelayReq(DelayReqMessage::deserialize(buffer)?)
+            }
+            MessageType::PDelayReq => MessageContent::PDelayReq,
+            MessageType::PDelayResp => MessageContent::PDelayResp,
+            MessageType::FollowUp => {
+                MessageContent::FollowUp(FollowUpMessage::deserialize(buffer)?)
+            }
+            MessageType::DelayResp => {
+                MessageContent::DelayResp(DelayRespMessage::deserialize(buffer)?)
+            }
+            MessageType::PDelayRespFollowUp => MessageContent::PDelayRespFollowUp,
+            MessageType::Announce => {
+                MessageContent::Announce(AnnounceMessage::deserialize(buffer)?)
+            }
+            MessageType::Signaling => MessageContent::Signaling,
+            MessageType::Management => MessageContent::Management,
+        };
+
+        Ok(Self { header, content })
     }
 }
