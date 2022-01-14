@@ -8,23 +8,21 @@ pub struct PortIdentity {
 }
 
 impl WireFormat for PortIdentity {
+    const STATIC_SIZE: Option<usize> = Some(10);
+
     fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
-        let clock_identity_length = self.clock_identity.serialize(&mut buffer[0..])?;
-        buffer[clock_identity_length..][..2].copy_from_slice(&self.port_number.to_be_bytes());
-        Ok(clock_identity_length + 2)
+        self.clock_identity.serialize(&mut buffer[0..8])?;
+        buffer[8..10].copy_from_slice(&self.port_number.to_be_bytes());
+        Ok(10)
     }
 
     fn deserialize(buffer: &[u8]) -> Result<(Self, usize), WireFormatError> {
-        let (clock_identity, clock_identity_length) = ClockIdentity::deserialize(&buffer[0..])?;
-
         Ok((
             Self {
-                clock_identity,
-                port_number: u16::from_be_bytes(
-                    buffer[clock_identity_length..][..2].try_into().unwrap(),
-                ),
+                clock_identity: ClockIdentity::deserialize(&buffer[0..8])?.0,
+                port_number: u16::from_be_bytes(buffer[8..10].try_into().unwrap()),
             },
-            clock_identity_length + 2,
+            10,
         ))
     }
 }

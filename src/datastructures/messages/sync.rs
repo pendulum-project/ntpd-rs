@@ -8,6 +8,8 @@ pub struct SyncMessage {
 }
 
 impl WireFormat for SyncMessage {
+    const STATIC_SIZE: Option<usize> = Some(44);
+
     fn serialize(
         &self,
         buffer: &mut [u8],

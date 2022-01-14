@@ -9,6 +9,8 @@ pub struct PortAddress {
 }
 
 impl WireFormat for PortAddress {
+    const STATIC_SIZE: Option<usize> = None;
+
     fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
         buffer[0..2].copy_from_slice(&self.network_protocol.to_primitive().to_be_bytes());
         buffer[2..4].copy_from_slice(&(self.address.len() as u16).to_be_bytes());

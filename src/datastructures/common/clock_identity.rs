@@ -4,6 +4,8 @@ use crate::datastructures::{WireFormat, WireFormatError};
 pub struct ClockIdentity(pub [u8; 8]);
 
 impl WireFormat for ClockIdentity {
+    const STATIC_SIZE: Option<usize> = Some(8);
+
     fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
         buffer[0..8].copy_from_slice(&self.0);
         Ok(8)

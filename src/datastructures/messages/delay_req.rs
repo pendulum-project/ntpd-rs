@@ -8,6 +8,8 @@ pub struct DelayReqMessage {
 }
 
 impl WireFormat for DelayReqMessage {
+    const STATIC_SIZE: Option<usize> = Some(44);
+
     fn serialize(
         &self,
         buffer: &mut [u8],

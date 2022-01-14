@@ -23,6 +23,8 @@ pub struct Header {
 }
 
 impl WireFormat for Header {
+    const STATIC_SIZE: Option<usize> = Some(34);
+
     fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
         buffer[0] = ((self.major_sdo_id & 0x0F) << 4) | (u8::from(self.message_type) & 0x0F);
         buffer[1] = ((self.minor_version_ptp & 0x0F) << 4) | (self.version_ptp & 0x0F);

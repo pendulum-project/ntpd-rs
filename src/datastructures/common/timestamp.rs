@@ -11,6 +11,8 @@ pub struct Timestamp {
 }
 
 impl WireFormat for Timestamp {
+    const STATIC_SIZE: Option<usize> = Some(10);
+
     fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
         buffer[0..6].copy_from_slice(&self.seconds.to_be_bytes()[2..8]);
         buffer[6..10].copy_from_slice(&self.nanos.to_be_bytes());

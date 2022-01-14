@@ -18,6 +18,8 @@ pub struct AnnounceMessage {
 }
 
 impl WireFormat for AnnounceMessage {
+    const STATIC_SIZE: Option<usize> = Some(64);
+
     fn serialize(
         &self,
         buffer: &mut [u8],

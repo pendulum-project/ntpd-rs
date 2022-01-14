@@ -17,6 +17,8 @@ pub struct FlagField {
 }
 
 impl WireFormat for FlagField {
+    const STATIC_SIZE: Option<usize> = Some(2);
+
     fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
         buffer[0] = 0;
         buffer[1] = 0;

@@ -9,6 +9,8 @@ pub struct ClockQuality {
 }
 
 impl WireFormat for ClockQuality {
+    const STATIC_SIZE: Option<usize> = Some(4);
+
     fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
         buffer[0] = self.clock_class;
         buffer[1] = self.clock_accuracy.to_primitive();
