@@ -63,12 +63,13 @@ mod tests {
         for (byte_representation, object_representation) in representations {
             // Test the serialization output
             let mut serialization_buffer = [0; 20];
-            object_representation.serialize(&mut serialization_buffer).unwrap();
+            object_representation
+                .serialize(&mut serialization_buffer)
+                .unwrap();
             assert_eq!(serialization_buffer, byte_representation);
 
             // Test the deserialization output
-            let deserialized_data =
-                PortAddress::deserialize(&byte_representation).unwrap().0;
+            let deserialized_data = PortAddress::deserialize(&byte_representation).unwrap().0;
             assert_eq!(deserialized_data, object_representation);
         }
     }

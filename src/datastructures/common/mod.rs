@@ -5,6 +5,7 @@ mod network_protocol;
 mod port_address;
 mod port_identity;
 mod time_interval;
+mod time_source;
 mod timestamp;
 
 pub use clock_accuracy::*;
@@ -14,4 +15,5 @@ pub use network_protocol::*;
 pub use port_address::*;
 pub use port_identity::*;
 pub use time_interval::*;
+pub use time_source::*;
 pub use timestamp::*;

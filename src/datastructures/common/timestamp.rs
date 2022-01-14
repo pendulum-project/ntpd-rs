@@ -23,7 +23,7 @@ impl WireFormat for Timestamp {
 
         Ok((
             Self {
-                seconds: u64::from_be_bytes(seconds_buffer.try_into().unwrap()),
+                seconds: u64::from_be_bytes(seconds_buffer),
                 nanos: u32::from_be_bytes(buffer[6..10].try_into().unwrap()),
             },
             10,

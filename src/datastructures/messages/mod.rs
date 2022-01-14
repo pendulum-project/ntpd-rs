@@ -1,12 +1,22 @@
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
+mod announce;
 mod control_field;
+mod delay_req;
+mod delay_resp;
 mod flag_field;
+mod follow_up;
 mod header;
+mod sync;
 
+pub use announce::*;
 pub use control_field::*;
+pub use delay_req::*;
+pub use delay_resp::*;
 pub use flag_field::*;
+pub use follow_up::*;
 pub use header::*;
+pub use sync::*;
 
 #[derive(Debug, Clone, Copy, TryFromPrimitive, IntoPrimitive, PartialEq, Eq)]
 #[repr(u8)]

@@ -7,6 +7,5 @@ edition = "2021"
 
 [dependencies]
 num_enum = { version = "0.5.1", default-features = false }
-bitvec = { version = "0.22.3", default-features = false }
 fixed = "1.11.0"
 arrayvec = { version = "0.7.2", default-features = false }

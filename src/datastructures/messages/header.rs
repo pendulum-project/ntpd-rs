@@ -4,7 +4,7 @@ use crate::datastructures::{
     WireFormat, WireFormatError,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Header {
     pub major_sdo_id: u8,
     pub message_type: MessageType,

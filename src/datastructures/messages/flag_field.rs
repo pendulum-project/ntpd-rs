@@ -1,6 +1,6 @@
 use crate::datastructures::{WireFormat, WireFormatError};
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Copy, PartialEq, Eq)]
 pub struct FlagField {
     pub alternate_master_flag: bool,
     pub two_step_flag: bool,
@@ -21,12 +21,12 @@ impl WireFormat for FlagField {
         buffer[0] = 0;
         buffer[1] = 0;
 
-        buffer[0] |= (self.alternate_master_flag as u8) << 0;
+        buffer[0] |= self.alternate_master_flag as u8;
         buffer[0] |= (self.two_step_flag as u8) << 1;
         buffer[0] |= (self.unicast_flag as u8) << 2;
         buffer[0] |= (self.ptp_profile_specific_1 as u8) << 5;
         buffer[0] |= (self.ptp_profile_specific_2 as u8) << 6;
-        buffer[1] |= (self.leap61 as u8) << 0;
+        buffer[1] |= self.leap61 as u8;
         buffer[1] |= (self.leap59 as u8) << 1;
         buffer[1] |= (self.current_utc_offset_valid as u8) << 2;
         buffer[1] |= (self.ptp_timescale as u8) << 3;
