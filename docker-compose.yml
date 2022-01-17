@@ -1,0 +1,16 @@
+version: '3'
+services:
+  ptpd:
+    build: docker/ptpd
+    image: ptpd
+
+  client:
+    build: docker/client
+    image: ptp-client
+    depends_on: [ptpd]
+    user: "$DOCKER_USER"
+    command: ["cargo", "watch", "-x", "run"]
+    working_dir: /usr/src/ptp
+    volumes:
+      - ".:/usr/src/ptp"
+    stop_signal: SIGKILL

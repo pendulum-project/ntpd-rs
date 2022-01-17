@@ -9,3 +9,5 @@ edition = "2021"
 num_enum = { version = "0.5.1", default-features = false }
 fixed = "1.11.0"
 arrayvec = { version = "0.7.2", default-features = false }
+nix = { git = "https://github.com/nix-rust/nix.git", branch = "master" }
+time = "0.3.5"
