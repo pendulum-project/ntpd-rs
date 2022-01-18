@@ -1,0 +1,23 @@
+@startuml
+agent ptp_gm [
+    PTP Grand Master
+    (Endrun Ninja with PTP and PPS)
+]
+agent switch [
+    ethernet switch (dumb)
+]
+agent dut [
+    device under test
+    (raspberry pi 4 with ptp-enabled networking)
+]
+
+agent scope [
+    oscilloscope (Keysight DSOX1204G)
+    measuring leading edge time delta
+]
+
+switch <--> ptp_gm : ethernet (ptp)
+switch <--> dut : ethernet (ptp)
+dut --> scope : pps (gpio)
+ptp_gm --> scope : pulse signal\n(1Hz to 10Mhz)
+@enduml
