@@ -17,7 +17,7 @@ use nix::{
         uio::IoVec,
     },
 };
-use ptp::datastructures::{messages::Message, WireFormat};
+use ptp::datastructures::{messages::{Message, MessageContent}, WireFormat};
 use time::OffsetDateTime;
 
 fn to_datetime(spec: &TimeSpec) -> OffsetDateTime {
@@ -91,10 +91,10 @@ fn main() {
 
     loop {
         let (src, ts, data) = rx.recv().unwrap();
-        let (message, _) = Message::deserialize(&data).unwrap();
+        let message = Message::deserialize(&data).unwrap();
         if let Some(ts) = ts {
-            if let Message::Sync(syncmessage) = message {
-                let send_time_nanos = (syncmessage.origin_timestamp.seconds as i128) * 1_000_000_000i128 + (syncmessage.origin_timestamp.nanos as i128);
+            if let MessageContent::Sync(syncmessage) = message.content() {
+                let send_time_nanos = (syncmessage.origin_timestamp().seconds as i128) * 1_000_000_000i128 + (syncmessage.origin_timestamp().nanos as i128);
                 let send_ts = OffsetDateTime::from_unix_timestamp_nanos(send_time_nanos).unwrap();
                 println!("Sync offset incl transmission delay: {:?}", ts-send_ts);
             } else {
