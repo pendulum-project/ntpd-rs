@@ -15,6 +15,14 @@ pub enum MessageBuilderError {
     IllegalValue,
 }
 
+/// A builder to build messages with.
+/// 
+/// This pattern is used because it is possible to construct messages that are invalid.
+/// The length field in the header has to match the length of the message (this might not be strictly necessary when using UDP, but there are other transports as well).
+/// The message type field in the header has to match the content type.
+/// These are the two major ones, but there are more.
+/// 
+/// By using a builder and then making the messages immutable, we guarantee that all messages are valid.
 pub struct MessageBuilder<S: MessageBuilderState> {
     header: Header,
     content: Option<MessageContent>,
@@ -22,6 +30,7 @@ pub struct MessageBuilder<S: MessageBuilderState> {
 }
 
 impl MessageBuilder<HeaderBuilding> {
+    /// Start the process of building a new message
     pub fn new() -> MessageBuilder<HeaderBuilding> {
         MessageBuilder {
             header: Header::new(),
@@ -32,6 +41,7 @@ impl MessageBuilder<HeaderBuilding> {
 }
 
 impl MessageBuilder<HeaderBuilding> {
+    /// Assign the fields of the header
     pub fn header(
         mut self,
         major_sdo_id: u8,

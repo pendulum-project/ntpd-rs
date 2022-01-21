@@ -4,7 +4,7 @@ use getset::CopyGetters;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
 #[getset(get_copy = "pub")]
 pub struct DelayReqMessage {
-    pub(crate) origin_timestamp: Timestamp,
+    pub(super) origin_timestamp: Timestamp,
 }
 
 impl WireFormat for DelayReqMessage {
