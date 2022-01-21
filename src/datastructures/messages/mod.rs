@@ -1,3 +1,4 @@
+use getset::CopyGetters;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 mod announce;
@@ -51,7 +52,8 @@ pub enum MessageContent {
     Management, // TODO
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
+#[getset(get_copy = "pub")]
 pub struct Message {
     header: Header,
     content: MessageContent,
