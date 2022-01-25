@@ -103,22 +103,25 @@ impl WireFormat for Message {
     fn deserialize(buffer: &[u8]) -> Result<Self, super::WireFormatError> {
         let header = Header::deserialize(buffer)?;
 
+        // Skip the header bytes and only keep the content
+        let content_buffer = &buffer[34..];
+        
         let content = match header.message_type() {
-            MessageType::Sync => MessageContent::Sync(SyncMessage::deserialize(buffer)?),
+            MessageType::Sync => MessageContent::Sync(SyncMessage::deserialize(content_buffer)?),
             MessageType::DelayReq => {
-                MessageContent::DelayReq(DelayReqMessage::deserialize(buffer)?)
+                MessageContent::DelayReq(DelayReqMessage::deserialize(content_buffer)?)
             }
             MessageType::PDelayReq => MessageContent::PDelayReq,
             MessageType::PDelayResp => MessageContent::PDelayResp,
             MessageType::FollowUp => {
-                MessageContent::FollowUp(FollowUpMessage::deserialize(buffer)?)
+                MessageContent::FollowUp(FollowUpMessage::deserialize(content_buffer)?)
             }
             MessageType::DelayResp => {
-                MessageContent::DelayResp(DelayRespMessage::deserialize(buffer)?)
+                MessageContent::DelayResp(DelayRespMessage::deserialize(content_buffer)?)
             }
             MessageType::PDelayRespFollowUp => MessageContent::PDelayRespFollowUp,
             MessageType::Announce => {
-                MessageContent::Announce(AnnounceMessage::deserialize(buffer)?)
+                MessageContent::Announce(AnnounceMessage::deserialize(content_buffer)?)
             }
             MessageType::Signaling => MessageContent::Signaling,
             MessageType::Management => MessageContent::Management,
