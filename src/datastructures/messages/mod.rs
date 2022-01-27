@@ -105,7 +105,7 @@ impl WireFormat for Message {
 
         // Skip the header bytes and only keep the content
         let content_buffer = &buffer[34..];
-        
+
         let content = match header.message_type() {
             MessageType::Sync => MessageContent::Sync(SyncMessage::deserialize(content_buffer)?),
             MessageType::DelayReq => {
