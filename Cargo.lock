@@ -166,8 +166,10 @@ name = "ptp"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
+ "bitflags",
  "fixed",
  "getset",
+ "libc 0.2.113",
  "nix",
  "num_enum",
  "time",
