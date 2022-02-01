@@ -1,0 +1,121 @@
+From 2416d57c10ba0e501ad425a979c8d244b6d045a8 Mon Sep 17 00:00:00 2001
+From: David Venhoek <david@tweedegolf.com>
+Date: Thu, 13 Jan 2022 08:43:46 +0100
+Subject: [PATCH 3/3] Updated gpio pps to work with timespec64 similar to the
+ parport variant.
+
+---
+ drivers/pps/generators/pps_gen_gpio.c | 38 +++++++++++++--------------
+ 1 file changed, 19 insertions(+), 19 deletions(-)
+
+diff --git a/drivers/pps/generators/pps_gen_gpio.c b/drivers/pps/generators/pps_gen_gpio.c
+index a1fb74241662..3e68d1b6001e 100644
+--- a/drivers/pps/generators/pps_gen_gpio.c
++++ b/drivers/pps/generators/pps_gen_gpio.c
+@@ -54,7 +54,7 @@ static long hrtimer_error = SAFETY_INTERVAL;
+ /* the kernel hrtimer event */
+ static enum hrtimer_restart hrtimer_event(struct hrtimer *timer)
+ {
+-	struct timespec expire_time, ts1, ts2, ts3, dts;
++	struct timespec64 expire_time, ts1, ts2, ts3, dts;
+ 	struct pps_gen_gpio_devdata *devdata;
+ 	long lim, delta;
+ 	unsigned long flags;
+@@ -71,22 +71,22 @@ static enum hrtimer_restart hrtimer_event(struct hrtimer *timer)
+ 	local_irq_save(flags);
+ 
+ 	/* first of all we get the time stamp... */
+-	getnstimeofday(&ts1);
+-	expire_time = ktime_to_timespec(hrtimer_get_softexpires(timer));
++	ktime_get_real_ts64(&ts1);
++	expire_time = ktime_to_timespec64(hrtimer_get_softexpires(timer));
+ 	devdata = container_of(timer, struct pps_gen_gpio_devdata, timer);
+ 	lim = NSEC_PER_SEC - send_delay - devdata->port_write_time;
+ 
+ 	/* check if we are late */
+ 	if (expire_time.tv_sec != ts1.tv_sec || ts1.tv_nsec > lim) {
+ 		local_irq_restore(flags);
+-		pr_err("we are late this time %ld.%09ld\n",
+-		       ts1.tv_sec, ts1.tv_nsec);
++		pr_err("we are late this time %lld.%09ld\n",
++		       (s64)ts1.tv_sec, ts1.tv_nsec);
+ 		goto done;
+ 	}
+ 
+ 	/* busy loop until the time is right for an assert edge */
+ 	do {
+-		getnstimeofday(&ts2);
++		ktime_get_real_ts64(&ts2);
+ 	} while (expire_time.tv_sec == ts2.tv_sec && ts2.tv_nsec < lim);
+ 
+ 	/* set the signal */
+@@ -95,25 +95,25 @@ static enum hrtimer_restart hrtimer_event(struct hrtimer *timer)
+ 	/* busy loop until the time is right for a clear edge */
+ 	lim = NSEC_PER_SEC - devdata->port_write_time;
+ 	do {
+-		getnstimeofday(&ts2);
++		ktime_get_real_ts64(&ts2);
+ 	} while (expire_time.tv_sec == ts2.tv_sec && ts2.tv_nsec < lim);
+ 
+ 	/* unset the signal */
+ 	gpiod_set_value(devdata->pps_gpio, 0);
+ 
+-	getnstimeofday(&ts3);
++	ktime_get_real_ts64(&ts3);
+ 
+ 	local_irq_restore(flags);
+ 
+ 	/* update calibrated port write time */
+-	dts = timespec_sub(ts3, ts2);
++	dts = timespec64_sub(ts3, ts2);
+ 	devdata->port_write_time =
+-		(devdata->port_write_time + timespec_to_ns(&dts)) >> 1;
++		(devdata->port_write_time + timespec64_to_ns(&dts)) >> 1;
+ 
+ done:
+ 	/* update calibrated hrtimer error */
+-	dts = timespec_sub(ts1, expire_time);
+-	delta = timespec_to_ns(&dts);
++	dts = timespec64_sub(ts1, expire_time);
++	delta = timespec64_to_ns(&dts);
+ 
+ 	/* If the new error value is bigger then the old, use the new
+ 	 * value, if not then slowly move towards the new value. This
+@@ -144,17 +144,17 @@ static void calibrate_port(struct pps_gen_gpio_devdata *devdata)
+ 	long acc = 0;
+ 
+ 	for (i = 0; i < (1 << PORT_NTESTS_SHIFT); i++) {
+-		struct timespec a, b;
++		struct timespec64 a, b;
+ 		unsigned long irq_flags;
+ 
+ 		local_irq_save(irq_flags);
+-		getnstimeofday(&a);
++		ktime_get_real_ts64(&a);
+ 		gpiod_set_value(devdata->pps_gpio, 0);
+-		getnstimeofday(&b);
++		ktime_get_real_ts64(&b);
+ 		local_irq_restore(irq_flags);
+ 
+-		b = timespec_sub(b, a);
+-		acc += timespec_to_ns(&b);
++		b = timespec64_sub(b, a);
++		acc += timespec64_to_ns(&b);
+ 	}
+ 
+ 	devdata->port_write_time = acc >> PORT_NTESTS_SHIFT;
+@@ -163,9 +163,9 @@ static void calibrate_port(struct pps_gen_gpio_devdata *devdata)
+ 
+ static inline ktime_t next_intr_time(struct pps_gen_gpio_devdata *devdata)
+ {
+-	struct timespec ts;
++	struct timespec64 ts;
+ 
+-	getnstimeofday(&ts);
++	ktime_get_real_ts64(&ts);
+ 	return ktime_set(ts.tv_sec +
+ 			((ts.tv_nsec > 990 * NSEC_PER_MSEC) ? 1 : 0),
+ 			NSEC_PER_SEC - (send_delay +
+-- 
+2.25.1
+
