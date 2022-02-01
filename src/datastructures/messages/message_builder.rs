@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use crate::datastructures::{
     common::{ClockIdentity, ClockQuality, PortIdentity, TimeInterval, TimeSource, Timestamp},
     WireFormat,
@@ -23,125 +21,127 @@ pub enum MessageBuilderError {
 /// These are the two major ones, but there are more.
 ///
 /// By using a builder and then making the messages immutable, we guarantee that all messages are valid.
-pub struct MessageBuilder<S: MessageBuilderState> {
+pub struct MessageBuilder {
     header: Header,
-    content: Option<MessageContent>,
-    phantom: PhantomData<S>,
 }
 
-impl MessageBuilder<HeaderBuilding> {
+impl MessageBuilder {
     /// Start the process of building a new message
-    pub fn new() -> MessageBuilder<HeaderBuilding> {
+    pub fn new() -> MessageBuilder {
         MessageBuilder {
             header: Header::new(),
-            content: Default::default(),
-            phantom: Default::default(),
         }
     }
 }
 
-impl MessageBuilder<HeaderBuilding> {
-    /// Assign the fields of the header
-    pub fn header(
-        mut self,
-        sdo_id: u16,
-        minor_version_ptp: u8,
-        version_ptp: u8,
-        domain_number: u8,
-        flag_field: FlagField,
-        correction_field: TimeInterval,
-        message_type_specific: [u8; 4],
-        source_port_identity: PortIdentity,
-        sequence_id: u16,
-        log_message_interval: u8,
-    ) -> Result<MessageBuilder<ContentBuilding>, MessageBuilderError> {
-        if sdo_id >= 0x1000 || minor_version_ptp >= 0x10 || version_ptp >= 0x10 {
-            Err(MessageBuilderError::IllegalValue)
-        } else {
-            self.header.sdo_id = sdo_id;
-            self.header.minor_version_ptp = minor_version_ptp;
-            self.header.version_ptp = version_ptp;
-            self.header.domain_number = domain_number;
-            self.header.flag_field = flag_field;
-            self.header.correction_field = correction_field;
-            self.header.message_type_specific = message_type_specific;
-            self.header.source_port_identity = source_port_identity;
-            self.header.sequence_id = sequence_id;
-            self.header.log_message_interval = log_message_interval;
-
-            Ok(MessageBuilder {
-                header: self.header,
-                content: self.content,
-                phantom: Default::default(),
-            })
+impl MessageBuilder {
+    pub fn sdo_id(mut self, sdo_id: u16) -> Result<Self, MessageBuilderError> {
+        if sdo_id >= 0x1000 {
+            return Err(MessageBuilderError::IllegalValue);
         }
+        self.header.sdo_id = sdo_id;
+        Ok(self)
     }
-}
 
-impl MessageBuilder<ContentBuilding> {
-    pub fn sync_message(mut self, origin_timestamp: Timestamp) -> MessageBuilder<FinishBuilding> {
+    pub fn version_ptp(mut self, major: u8, minor: u8) -> Result<Self, MessageBuilderError> {
+        if major >= 0x10 || minor >= 0x10 {
+            return Err(MessageBuilderError::IllegalValue);
+        }
+        self.header.version_ptp = major;
+        self.header.minor_version_ptp = minor;
+        Ok(self)
+    }
+
+    pub fn domain_number(mut self, domain_number: u8) -> Self {
+        self.header.domain_number = domain_number;
+        self
+    }
+
+    pub fn flag_field(mut self, flag_field: FlagField) -> Self {
+        self.header.flag_field = flag_field;
+        self
+    }
+
+    pub fn correction_field(mut self, correction_field: TimeInterval) -> Self {
+        self.header.correction_field = correction_field;
+        self
+    }
+
+    pub fn message_type_specific(mut self, message_type_specific: [u8; 4]) -> Self {
+        self.header.message_type_specific = message_type_specific;
+        self
+    }
+
+    pub fn source_port_identity(mut self, source_port_identity: PortIdentity) -> Self {
+        self.header.source_port_identity = source_port_identity;
+        self
+    }
+
+    pub fn sequence_id(mut self, sequence_id: u16) -> Self {
+        self.header.sequence_id = sequence_id;
+        self
+    }
+
+    pub fn log_message_interval(mut self, log_message_interval: u8) -> Self {
+        self.header.log_message_interval = log_message_interval;
+        self
+    }
+
+    pub fn sync_message(mut self, origin_timestamp: Timestamp) -> Message {
         self.header.message_type = MessageType::Sync;
         self.header.control_field = ControlField::Sync;
-        self.content = Some(MessageContent::Sync(SyncMessage { origin_timestamp }));
 
-        MessageBuilder {
+        let mut message = Message {
             header: self.header,
-            content: self.content,
-            phantom: Default::default(),
-        }
+            content: MessageContent::Sync(SyncMessage { origin_timestamp }),
+        };
+        message.header.message_length = message.wire_size() as u16;
+        message
     }
 
-    pub fn delay_req_message(
-        mut self,
-        origin_timestamp: Timestamp,
-    ) -> MessageBuilder<FinishBuilding> {
+    pub fn delay_req_message(mut self, origin_timestamp: Timestamp) -> Message {
         self.header.message_type = MessageType::DelayReq;
         self.header.control_field = ControlField::DelayReq;
-        self.content = Some(MessageContent::DelayReq(DelayReqMessage {
-            origin_timestamp,
-        }));
 
-        MessageBuilder {
+        let mut message = Message {
             header: self.header,
-            content: self.content,
-            phantom: Default::default(),
-        }
+            content: MessageContent::DelayReq(DelayReqMessage { origin_timestamp }),
+        };
+        message.header.message_length = message.wire_size() as u16;
+        message
     }
 
-    pub fn follow_up_message(
-        mut self,
-        precise_origin_timestamp: Timestamp,
-    ) -> MessageBuilder<FinishBuilding> {
+    pub fn follow_up_message(mut self, precise_origin_timestamp: Timestamp) -> Message {
         self.header.message_type = MessageType::FollowUp;
         self.header.control_field = ControlField::FollowUp;
-        self.content = Some(MessageContent::FollowUp(FollowUpMessage {
-            precise_origin_timestamp,
-        }));
 
-        MessageBuilder {
+        let mut message = Message {
             header: self.header,
-            content: self.content,
-            phantom: Default::default(),
-        }
+            content: MessageContent::FollowUp(FollowUpMessage {
+                precise_origin_timestamp,
+            }),
+        };
+        message.header.message_length = message.wire_size() as u16;
+        message
     }
 
     pub fn delay_resp_message(
         mut self,
         receive_timestamp: Timestamp,
         requesting_port_identity: PortIdentity,
-    ) -> MessageBuilder<FinishBuilding> {
+    ) -> Message {
         self.header.message_type = MessageType::DelayResp;
         self.header.control_field = ControlField::DelayResp;
-        self.content = Some(MessageContent::DelayResp(DelayRespMessage {
-            receive_timestamp,
-            requesting_port_identity,
-        }));
 
-        MessageBuilder {
+        let mut message = Message {
             header: self.header,
-            content: self.content,
-            phantom: Default::default(),
-        }
+            content: MessageContent::DelayResp(DelayRespMessage {
+                receive_timestamp,
+                requesting_port_identity,
+            }),
+        };
+        message.header.message_length = message.wire_size() as u16;
+        message
     }
 
     pub fn announce_message(
@@ -154,49 +154,27 @@ impl MessageBuilder<ContentBuilding> {
         grandmaster_identity: ClockIdentity,
         steps_removed: u16,
         time_source: TimeSource,
-    ) -> MessageBuilder<FinishBuilding> {
+    ) -> Message {
         self.header.message_type = MessageType::Announce;
         self.header.control_field = ControlField::AllOthers;
-        self.content = Some(MessageContent::Announce(AnnounceMessage {
-            origin_timestamp,
-            current_utc_offset,
-            grandmaster_priority_1,
-            grandmaster_clock_quality,
-            grandmaster_priority_2,
-            grandmaster_identity,
-            steps_removed,
-            time_source,
-        }));
 
-        MessageBuilder {
-            header: self.header,
-            content: self.content,
-            phantom: Default::default(),
-        }
-    }
-}
-
-impl MessageBuilder<FinishBuilding> {
-    pub fn finish(self) -> Message {
         let mut message = Message {
             header: self.header,
-            content: self.content.unwrap(),
+            content: MessageContent::Announce(AnnounceMessage {
+                origin_timestamp,
+                current_utc_offset,
+                grandmaster_priority_1,
+                grandmaster_clock_quality,
+                grandmaster_priority_2,
+                grandmaster_identity,
+                steps_removed,
+                time_source,
+            }),
         };
-
         message.header.message_length = message.wire_size() as u16;
-
         message
     }
 }
-
-pub trait MessageBuilderState {}
-
-pub struct HeaderBuilding;
-impl MessageBuilderState for HeaderBuilding {}
-pub struct ContentBuilding;
-impl MessageBuilderState for ContentBuilding {}
-pub struct FinishBuilding;
-impl MessageBuilderState for FinishBuilding {}
 
 #[cfg(test)]
 mod tests {
@@ -204,22 +182,7 @@ mod tests {
 
     #[test]
     fn build_sync_message() {
-        let built_message = Message::builder()
-            .header(
-                0,
-                0,
-                0,
-                0,
-                FlagField::default(),
-                TimeInterval::default(),
-                [0, 0, 0, 0],
-                PortIdentity::default(),
-                0,
-                0,
-            )
-            .unwrap()
-            .sync_message(Timestamp::default())
-            .finish();
+        let built_message = Message::builder().sync_message(Timestamp::default());
 
         assert_eq!(
             built_message.header.message_length() as usize,

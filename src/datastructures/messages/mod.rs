@@ -60,7 +60,7 @@ pub struct Message {
 }
 
 impl Message {
-    pub fn builder() -> MessageBuilder<HeaderBuilding> {
+    pub fn builder() -> MessageBuilder {
         MessageBuilder::new()
     }
 }

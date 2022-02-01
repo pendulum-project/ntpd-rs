@@ -28,8 +28,8 @@ impl Header {
         Self {
             sdo_id: 0,
             message_type: MessageType::Sync,
-            minor_version_ptp: 0,
-            version_ptp: 0,
+            minor_version_ptp: 1,
+            version_ptp: 2,
             message_length: 0,
             domain_number: 0,
             flag_field: FlagField::default(),

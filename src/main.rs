@@ -2,8 +2,8 @@ use std::sync::mpsc::channel;
 
 use statime::{
     datastructures::{
-        common::{PortIdentity, TimeInterval},
-        messages::{FlagField, Message, MessageBuilder, MessageContent},
+        common::PortIdentity,
+        messages::{Message, MessageBuilder, MessageContent},
         WireFormat,
     },
     network::{get_clock_id, NetworkPort},
@@ -206,24 +206,13 @@ fn main() {
 fn send_delay_request(clock_identity: [u8; 8], delay_req_seq_id: u16, port319: &NetworkPort) {
     let ts = OffsetTime::now();
     let delay_req = MessageBuilder::new()
-        .header(
-            0,
-            0,
-            2,
-            0,
-            FlagField::default(),
-            TimeInterval::default(),
-            [0, 0, 0, 0],
-            PortIdentity {
-                clock_identity: statime::datastructures::common::ClockIdentity(clock_identity),
-                port_number: 0,
-            },
-            delay_req_seq_id,
-            0x7F,
-        )
-        .unwrap()
-        .delay_req_message(ts.to_timestamp().unwrap())
-        .finish();
+        .source_port_identity(PortIdentity {
+            clock_identity: statime::datastructures::common::ClockIdentity(clock_identity),
+            port_number: 0,
+        })
+        .sequence_id(delay_req_seq_id)
+        .log_message_interval(0x7F)
+        .delay_req_message(ts.to_timestamp().unwrap());
     let delay_req_encode = delay_req.serialize_vec().unwrap();
     port319.send(&delay_req_encode);
 }
