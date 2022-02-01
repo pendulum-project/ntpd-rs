@@ -8,13 +8,12 @@ use getset::CopyGetters;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
 #[getset(get_copy = "pub")]
 pub struct Header {
-    pub(super) major_sdo_id: u8,
+    pub(super) sdo_id: u16,
     pub(super) message_type: MessageType,
     pub(super) minor_version_ptp: u8,
     pub(super) version_ptp: u8,
     pub(super) message_length: u16,
     pub(super) domain_number: u8,
-    pub(super) minor_sdo_id: u8,
     pub(super) flag_field: FlagField,
     pub(super) correction_field: TimeInterval,
     pub(super) message_type_specific: [u8; 4],
@@ -27,13 +26,12 @@ pub struct Header {
 impl Header {
     pub(super) fn new() -> Self {
         Self {
-            major_sdo_id: 0,
+            sdo_id: 0,
             message_type: MessageType::Sync,
             minor_version_ptp: 0,
             version_ptp: 0,
             message_length: 0,
             domain_number: 0,
-            minor_sdo_id: 0,
             flag_field: FlagField::default(),
             correction_field: TimeInterval::default(),
             message_type_specific: [0, 0, 0, 0],
@@ -51,11 +49,11 @@ impl WireFormat for Header {
     }
 
     fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
-        buffer[0] = ((self.major_sdo_id & 0x0F) << 4) | (u8::from(self.message_type) & 0x0F);
+        buffer[0] = (((self.sdo_id & 0xF00) >> 4) as u8) | (u8::from(self.message_type) & 0x0F);
         buffer[1] = ((self.minor_version_ptp & 0x0F) << 4) | (self.version_ptp & 0x0F);
         buffer[2..4].copy_from_slice(&self.message_length.to_be_bytes());
         buffer[4] = self.domain_number;
-        buffer[5] = self.minor_sdo_id;
+        buffer[5] = (self.sdo_id & 0xFF) as u8;
         self.flag_field.serialize(&mut buffer[6..8])?;
         self.correction_field.serialize(&mut buffer[8..16])?;
         buffer[16..20].copy_from_slice(&self.message_type_specific);
@@ -69,13 +67,12 @@ impl WireFormat for Header {
 
     fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
         Ok(Self {
-            major_sdo_id: (buffer[0] >> 4) & 0x0F,
+            sdo_id: (((buffer[0] & 0xF0) as u16) << 4) | (buffer[5] as u16),
             message_type: (buffer[0] & 0x0F).try_into()?,
             minor_version_ptp: (buffer[1] >> 4) & 0x0F,
             version_ptp: buffer[1] & 0x0F,
             message_length: u16::from_be_bytes(buffer[2..4].try_into().unwrap()),
             domain_number: buffer[4],
-            minor_sdo_id: buffer[5],
             flag_field: FlagField::deserialize(&buffer[6..8])?,
             correction_field: TimeInterval::deserialize(&buffer[8..16])?,
             message_type_specific: buffer[16..20].try_into().unwrap(),
@@ -134,13 +131,12 @@ mod tests {
                 0x16,
             ],
             Header {
-                major_sdo_id: 0x5,
+                sdo_id: 0x5BB,
                 message_type: MessageType::DelayResp,
                 minor_version_ptp: 0xA,
                 version_ptp: 0x1,
                 message_length: 0x1234,
                 domain_number: 0xAA,
-                minor_sdo_id: 0xBB,
                 flag_field: FlagField {
                     alternate_master_flag: true,
                     two_step_flag: false,

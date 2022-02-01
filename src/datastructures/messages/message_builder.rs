@@ -44,11 +44,10 @@ impl MessageBuilder<HeaderBuilding> {
     /// Assign the fields of the header
     pub fn header(
         mut self,
-        major_sdo_id: u8,
+        sdo_id: u16,
         minor_version_ptp: u8,
         version_ptp: u8,
         domain_number: u8,
-        minor_sdo_id: u8,
         flag_field: FlagField,
         correction_field: TimeInterval,
         message_type_specific: [u8; 4],
@@ -56,14 +55,13 @@ impl MessageBuilder<HeaderBuilding> {
         sequence_id: u16,
         log_message_interval: u8,
     ) -> Result<MessageBuilder<ContentBuilding>, MessageBuilderError> {
-        if major_sdo_id >= 0x10 || minor_version_ptp >= 0x10 || version_ptp >= 0x10 {
+        if sdo_id >= 0x1000 || minor_version_ptp >= 0x10 || version_ptp >= 0x10 {
             Err(MessageBuilderError::IllegalValue)
         } else {
-            self.header.major_sdo_id = major_sdo_id;
+            self.header.sdo_id = sdo_id;
             self.header.minor_version_ptp = minor_version_ptp;
             self.header.version_ptp = version_ptp;
             self.header.domain_number = domain_number;
-            self.header.minor_sdo_id = minor_sdo_id;
             self.header.flag_field = flag_field;
             self.header.correction_field = correction_field;
             self.header.message_type_specific = message_type_specific;
@@ -208,7 +206,6 @@ mod tests {
     fn build_sync_message() {
         let built_message = Message::builder()
             .header(
-                0,
                 0,
                 0,
                 0,

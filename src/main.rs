@@ -211,7 +211,6 @@ fn send_delay_request(clock_identity: [u8; 8], delay_req_seq_id: u16, port319: &
             0,
             2,
             0,
-            0,
             FlagField::default(),
             TimeInterval::default(),
             [0, 0, 0, 0],
