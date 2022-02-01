@@ -53,7 +53,7 @@ impl SyncState {
         self.sync_recv_time = Some(recv_time);
         self.delay_send_time = None;
         self.delay_recv_time = None;
-        if message.header().flag_field().two_step_flag {
+        if message.header().two_step_flag() {
             self.sync_correction = Some(OffsetTime::from_interval(
                 &message.header().correction_field(),
             ));

@@ -4,8 +4,8 @@ use crate::datastructures::{
 };
 
 use super::{
-    AnnounceMessage, ControlField, DelayReqMessage, DelayRespMessage, FlagField, FollowUpMessage,
-    Header, Message, MessageContent, MessageType, SyncMessage,
+    AnnounceMessage, ControlField, DelayReqMessage, DelayRespMessage, FollowUpMessage, Header,
+    Message, MessageContent, MessageType, SyncMessage,
 };
 
 #[derive(Debug, Clone)]
@@ -57,8 +57,63 @@ impl MessageBuilder {
         self
     }
 
-    pub fn flag_field(mut self, flag_field: FlagField) -> Self {
-        self.header.flag_field = flag_field;
+    pub fn alternate_master_flag(mut self, alternate_master_flag: bool) -> Self {
+        self.header.alternate_master_flag = alternate_master_flag;
+        self
+    }
+
+    pub fn two_step_flag(mut self, two_step_flag: bool) -> Self {
+        self.header.two_step_flag = two_step_flag;
+        self
+    }
+
+    pub fn unicast_flag(mut self, unicast_flag: bool) -> Self {
+        self.header.unicast_flag = unicast_flag;
+        self
+    }
+
+    pub fn ptp_profile_specific_1(mut self, ptp_profile_specific_1: bool) -> Self {
+        self.header.ptp_profile_specific_1 = ptp_profile_specific_1;
+        self
+    }
+
+    pub fn ptp_profile_specific_2(mut self, ptp_profile_specific_2: bool) -> Self {
+        self.header.ptp_profile_specific_2 = ptp_profile_specific_2;
+        self
+    }
+
+    pub fn leap61(mut self, leap61: bool) -> Self {
+        self.header.leap61 = leap61;
+        self
+    }
+
+    pub fn leap59(mut self, leap59: bool) -> Self {
+        self.header.leap59 = leap59;
+        self
+    }
+
+    pub fn current_utc_offset_valid(mut self, current_utc_offset_valid: bool) -> Self {
+        self.header.current_utc_offset_valid = current_utc_offset_valid;
+        self
+    }
+
+    pub fn ptp_timescale(mut self, ptp_timescale: bool) -> Self {
+        self.header.ptp_timescale = ptp_timescale;
+        self
+    }
+
+    pub fn time_tracable(mut self, time_tracable: bool) -> Self {
+        self.header.time_tracable = time_tracable;
+        self
+    }
+
+    pub fn frequency_tracable(mut self, frequency_tracable: bool) -> Self {
+        self.header.frequency_tracable = frequency_tracable;
+        self
+    }
+
+    pub fn synchronization_uncertain(mut self, synchronization_uncertain: bool) -> Self {
+        self.header.synchronization_uncertain = synchronization_uncertain;
         self
     }
 
