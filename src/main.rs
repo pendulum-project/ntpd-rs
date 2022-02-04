@@ -1,6 +1,6 @@
 use std::sync::mpsc::channel;
 
-use ptp::{
+use statime::{
     datastructures::{
         common::{PortIdentity, TimeInterval},
         messages::{FlagField, Message, MessageBuilder, MessageContent},
@@ -216,7 +216,7 @@ fn send_delay_request(clock_identity: [u8; 8], delay_req_seq_id: u16, port319: &
             TimeInterval::default(),
             [0, 0, 0, 0],
             PortIdentity {
-                clock_identity: ptp::datastructures::common::ClockIdentity(clock_identity),
+                clock_identity: statime::datastructures::common::ClockIdentity(clock_identity),
                 port_number: 0,
             },
             delay_req_seq_id,

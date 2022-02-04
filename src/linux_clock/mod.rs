@@ -24,7 +24,7 @@ type Int = i32;
 /// # Example
 ///
 /// ```no_run
-/// use ptp::linux_clock::LinuxClock;
+/// use statime::linux_clock::LinuxClock;
 ///
 /// println!("Available clocks:");
 /// for clock in LinuxClock::get_clocks() {
