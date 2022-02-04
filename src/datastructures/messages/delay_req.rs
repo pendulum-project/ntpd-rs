@@ -1,9 +1,12 @@
 use crate::datastructures::{common::Timestamp, WireFormat};
 use getset::CopyGetters;
 
+use super::Header;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
 #[getset(get_copy = "pub")]
 pub struct DelayReqMessage {
+    pub(super) header: Header,
     pub(super) origin_timestamp: Timestamp,
 }
 
@@ -20,6 +23,7 @@ impl WireFormat for DelayReqMessage {
 
     fn deserialize(buffer: &[u8]) -> Result<Self, crate::datastructures::WireFormatError> {
         Ok(Self {
+            header: Header::default(),
             origin_timestamp: Timestamp::deserialize(&buffer[0..10])?,
         })
     }
@@ -34,6 +38,7 @@ mod tests {
         let representations = [(
             [0x00, 0x00, 0x45, 0xb1, 0x11, 0x5a, 0x0a, 0x64, 0xfa, 0xb0],
             DelayReqMessage {
+                header: Header::default(),
                 origin_timestamp: Timestamp {
                     seconds: 1169232218,
                     nanos: 174389936,

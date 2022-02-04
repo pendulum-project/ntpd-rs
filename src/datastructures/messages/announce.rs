@@ -4,9 +4,12 @@ use crate::datastructures::{
 };
 use getset::CopyGetters;
 
+use super::Header;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
 #[getset(get_copy = "pub")]
 pub struct AnnounceMessage {
+    pub(super) header: Header,
     pub(super) origin_timestamp: Timestamp,
     pub(super) current_utc_offset: u16,
     pub(super) grandmaster_priority_1: u8,
@@ -38,6 +41,7 @@ impl WireFormat for AnnounceMessage {
 
     fn deserialize(buffer: &[u8]) -> Result<Self, crate::datastructures::WireFormatError> {
         Ok(Self {
+            header: Header::default(),
             origin_timestamp: Timestamp::deserialize(&buffer[0..10])?,
             current_utc_offset: u16::from_be_bytes(buffer[10..12].try_into().unwrap()),
             grandmaster_priority_1: buffer[13],
@@ -64,6 +68,7 @@ mod tests {
                 0x80, 0x80,
             ],
             AnnounceMessage {
+                header: Header::default(),
                 origin_timestamp: Timestamp {
                     seconds: 1169232218,
                     nanos: 175326816,

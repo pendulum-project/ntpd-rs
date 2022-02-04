@@ -5,7 +5,7 @@ use crate::datastructures::{
 
 use super::{
     AnnounceMessage, ControlField, DelayReqMessage, DelayRespMessage, FollowUpMessage, Header,
-    Message, MessageContent, MessageType, SyncMessage,
+    Message, MessageType, SyncMessage,
 };
 
 #[derive(Debug, Clone)]
@@ -146,38 +146,36 @@ impl MessageBuilder {
         self.header.message_type = MessageType::Sync;
         self.header.control_field = ControlField::Sync;
 
-        let mut message = Message {
+        let mut message = SyncMessage {
             header: self.header,
-            content: MessageContent::Sync(SyncMessage { origin_timestamp }),
+            origin_timestamp,
         };
-        message.header.message_length = message.wire_size() as u16;
-        message
+        message.header.message_length = (message.wire_size() + message.header.wire_size()) as u16;
+        Message::Sync(message)
     }
 
     pub fn delay_req_message(mut self, origin_timestamp: Timestamp) -> Message {
         self.header.message_type = MessageType::DelayReq;
         self.header.control_field = ControlField::DelayReq;
 
-        let mut message = Message {
+        let mut message = DelayReqMessage {
             header: self.header,
-            content: MessageContent::DelayReq(DelayReqMessage { origin_timestamp }),
+            origin_timestamp,
         };
-        message.header.message_length = message.wire_size() as u16;
-        message
+        message.header.message_length = (message.wire_size() + message.header.wire_size()) as u16;
+        Message::DelayReq(message)
     }
 
     pub fn follow_up_message(mut self, precise_origin_timestamp: Timestamp) -> Message {
         self.header.message_type = MessageType::FollowUp;
         self.header.control_field = ControlField::FollowUp;
 
-        let mut message = Message {
+        let mut message = FollowUpMessage {
             header: self.header,
-            content: MessageContent::FollowUp(FollowUpMessage {
-                precise_origin_timestamp,
-            }),
+            precise_origin_timestamp,
         };
-        message.header.message_length = message.wire_size() as u16;
-        message
+        message.header.message_length = (message.wire_size() + message.header.wire_size()) as u16;
+        Message::FollowUp(message)
     }
 
     pub fn delay_resp_message(
@@ -188,15 +186,13 @@ impl MessageBuilder {
         self.header.message_type = MessageType::DelayResp;
         self.header.control_field = ControlField::DelayResp;
 
-        let mut message = Message {
+        let mut message = DelayRespMessage {
             header: self.header,
-            content: MessageContent::DelayResp(DelayRespMessage {
-                receive_timestamp,
-                requesting_port_identity,
-            }),
+            receive_timestamp,
+            requesting_port_identity,
         };
-        message.header.message_length = message.wire_size() as u16;
-        message
+        message.header.message_length = (message.wire_size() + message.header.wire_size()) as u16;
+        Message::DelayResp(message)
     }
 
     pub fn announce_message(
@@ -213,21 +209,19 @@ impl MessageBuilder {
         self.header.message_type = MessageType::Announce;
         self.header.control_field = ControlField::AllOthers;
 
-        let mut message = Message {
+        let mut message = AnnounceMessage {
             header: self.header,
-            content: MessageContent::Announce(AnnounceMessage {
-                origin_timestamp,
-                current_utc_offset,
-                grandmaster_priority_1,
-                grandmaster_clock_quality,
-                grandmaster_priority_2,
-                grandmaster_identity,
-                steps_removed,
-                time_source,
-            }),
+            origin_timestamp,
+            current_utc_offset,
+            grandmaster_priority_1,
+            grandmaster_clock_quality,
+            grandmaster_priority_2,
+            grandmaster_identity,
+            steps_removed,
+            time_source,
         };
-        message.header.message_length = message.wire_size() as u16;
-        message
+        message.header.message_length = (message.wire_size() + message.header.wire_size()) as u16;
+        Message::Announce(message)
     }
 }
 
@@ -240,9 +234,9 @@ mod tests {
         let built_message = Message::builder().sync_message(Timestamp::default());
 
         assert_eq!(
-            built_message.header.message_length() as usize,
+            built_message.header().message_length() as usize,
             built_message.wire_size()
         );
-        assert!(matches!(built_message.content, MessageContent::Sync(_)));
+        assert!(matches!(built_message, Message::Sync(_)));
     }
 }

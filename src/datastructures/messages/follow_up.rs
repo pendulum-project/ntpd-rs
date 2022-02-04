@@ -1,9 +1,12 @@
 use crate::datastructures::{common::Timestamp, WireFormat};
 use getset::CopyGetters;
 
+use super::Header;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
 #[getset(get_copy = "pub")]
 pub struct FollowUpMessage {
+    pub(super) header: Header,
     pub(super) precise_origin_timestamp: Timestamp,
 }
 
@@ -21,6 +24,7 @@ impl WireFormat for FollowUpMessage {
 
     fn deserialize(buffer: &[u8]) -> Result<Self, crate::datastructures::WireFormatError> {
         Ok(Self {
+            header: Header::default(),
             precise_origin_timestamp: Timestamp::deserialize(&buffer[0..10])?,
         })
     }
@@ -36,6 +40,7 @@ mod tests {
             (
                 [0x00, 0x00, 0x45, 0xb1, 0x11, 0x5a, 0x0a, 0x64, 0xfa, 0xb0],
                 FollowUpMessage {
+                    header: Header::default(),
                     precise_origin_timestamp: Timestamp {
                         seconds: 1169232218,
                         nanos: 174389936,
@@ -45,6 +50,7 @@ mod tests {
             (
                 [0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01u8],
                 FollowUpMessage {
+                    header: Header::default(),
                     precise_origin_timestamp: Timestamp {
                         seconds: 0x0000_0000_0002,
                         nanos: 0x0000_0001,
