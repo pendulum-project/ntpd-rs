@@ -10,19 +10,25 @@ pub struct SyncMessage {
     pub(super) origin_timestamp: Timestamp,
 }
 
-impl WireFormat for SyncMessage {
-    fn wire_size(&self) -> usize {
+impl SyncMessage {
+    pub fn content_size(&self) -> usize {
         10
     }
 
-    fn serialize(&self, buffer: &mut [u8]) -> Result<(), crate::datastructures::WireFormatError> {
+    pub fn serialize_content(
+        &self,
+        buffer: &mut [u8],
+    ) -> Result<(), crate::datastructures::WireFormatError> {
         self.origin_timestamp.serialize(&mut buffer[0..10])?;
         Ok(())
     }
 
-    fn deserialize(buffer: &[u8]) -> Result<Self, crate::datastructures::WireFormatError> {
+    pub fn deserialize_content(
+        header: Header,
+        buffer: &[u8],
+    ) -> Result<Self, crate::datastructures::WireFormatError> {
         Ok(Self {
-            header: Header::default(),
+            header,
             origin_timestamp: Timestamp::deserialize(&buffer[0..10])?,
         })
     }
@@ -49,12 +55,13 @@ mod tests {
             // Test the serialization output
             let mut serialization_buffer = [0; 10];
             object_representation
-                .serialize(&mut serialization_buffer)
+                .serialize_content(&mut serialization_buffer)
                 .unwrap();
             assert_eq!(serialization_buffer, byte_representation);
 
             // Test the deserialization output
-            let deserialized_data = SyncMessage::deserialize(&byte_representation).unwrap();
+            let deserialized_data =
+                SyncMessage::deserialize_content(Header::default(), &byte_representation).unwrap();
             assert_eq!(deserialized_data, object_representation);
         }
     }

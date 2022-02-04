@@ -7,7 +7,6 @@ use statime::{
             DelayReqMessage, DelayRespMessage, FollowUpMessage, Message, MessageBuilder,
             SyncMessage,
         },
-        WireFormat,
     },
     network::{get_clock_id, NetworkPort},
     time::{OffsetTime, TimeType},

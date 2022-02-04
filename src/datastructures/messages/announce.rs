@@ -20,12 +20,15 @@ pub struct AnnounceMessage {
     pub(super) time_source: TimeSource,
 }
 
-impl WireFormat for AnnounceMessage {
-    fn wire_size(&self) -> usize {
+impl AnnounceMessage {
+    pub fn content_size(&self) -> usize {
         30
     }
 
-    fn serialize(&self, buffer: &mut [u8]) -> Result<(), crate::datastructures::WireFormatError> {
+    pub fn serialize_content(
+        &self,
+        buffer: &mut [u8],
+    ) -> Result<(), crate::datastructures::WireFormatError> {
         self.origin_timestamp.serialize(&mut buffer[0..10])?;
         buffer[10..12].copy_from_slice(&self.current_utc_offset.to_be_bytes());
         buffer[13] = self.grandmaster_priority_1;
@@ -39,9 +42,12 @@ impl WireFormat for AnnounceMessage {
         Ok(())
     }
 
-    fn deserialize(buffer: &[u8]) -> Result<Self, crate::datastructures::WireFormatError> {
+    pub fn deserialize_content(
+        header: Header,
+        buffer: &[u8],
+    ) -> Result<Self, crate::datastructures::WireFormatError> {
         Ok(Self {
-            header: Header::default(),
+            header,
             origin_timestamp: Timestamp::deserialize(&buffer[0..10])?,
             current_utc_offset: u16::from_be_bytes(buffer[10..12].try_into().unwrap()),
             grandmaster_priority_1: buffer[13],
@@ -93,12 +99,14 @@ mod tests {
             // Test the serialization output
             let mut serialization_buffer = [0; 30];
             object_representation
-                .serialize(&mut serialization_buffer)
+                .serialize_content(&mut serialization_buffer)
                 .unwrap();
             assert_eq!(serialization_buffer, byte_representation);
 
             // Test the deserialization output
-            let deserialized_data = AnnounceMessage::deserialize(&byte_representation).unwrap();
+            let deserialized_data =
+                AnnounceMessage::deserialize_content(Header::default(), &byte_representation)
+                    .unwrap();
             assert_eq!(deserialized_data, object_representation);
         }
     }

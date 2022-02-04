@@ -150,7 +150,8 @@ impl MessageBuilder {
             header: self.header,
             origin_timestamp,
         };
-        message.header.message_length = (message.wire_size() + message.header.wire_size()) as u16;
+        message.header.message_length =
+            (message.content_size() + message.header.wire_size()) as u16;
         Message::Sync(message)
     }
 
@@ -162,7 +163,8 @@ impl MessageBuilder {
             header: self.header,
             origin_timestamp,
         };
-        message.header.message_length = (message.wire_size() + message.header.wire_size()) as u16;
+        message.header.message_length =
+            (message.content_size() + message.header.wire_size()) as u16;
         Message::DelayReq(message)
     }
 
@@ -174,7 +176,8 @@ impl MessageBuilder {
             header: self.header,
             precise_origin_timestamp,
         };
-        message.header.message_length = (message.wire_size() + message.header.wire_size()) as u16;
+        message.header.message_length =
+            (message.content_size() + message.header.wire_size()) as u16;
         Message::FollowUp(message)
     }
 
@@ -191,7 +194,8 @@ impl MessageBuilder {
             receive_timestamp,
             requesting_port_identity,
         };
-        message.header.message_length = (message.wire_size() + message.header.wire_size()) as u16;
+        message.header.message_length =
+            (message.content_size() + message.header.wire_size()) as u16;
         Message::DelayResp(message)
     }
 
@@ -220,7 +224,8 @@ impl MessageBuilder {
             steps_removed,
             time_source,
         };
-        message.header.message_length = (message.wire_size() + message.header.wire_size()) as u16;
+        message.header.message_length =
+            (message.content_size() + message.header.wire_size()) as u16;
         Message::Announce(message)
     }
 }

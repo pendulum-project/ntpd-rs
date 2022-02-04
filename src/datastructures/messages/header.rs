@@ -166,7 +166,10 @@ mod tests {
             representations.into_iter().enumerate()
         {
             // Test the serialization output
-            let mut serialization_buffer = flag_representation.serialize_vec().unwrap();
+            let mut serialization_buffer = [0; 34];
+            flag_representation
+                .serialize(&mut serialization_buffer)
+                .unwrap();
             assert_eq!(
                 serialization_buffer[6..8],
                 byte_representation,
