@@ -56,11 +56,7 @@ impl MessageBuilder<HeaderBuilding> {
         sequence_id: u16,
         log_message_interval: u8,
     ) -> Result<MessageBuilder<ContentBuilding>, MessageBuilderError> {
-        if major_sdo_id >= 0x10 {
-            Err(MessageBuilderError::IllegalValue)
-        } else if minor_version_ptp >= 0x10 {
-            Err(MessageBuilderError::IllegalValue)
-        } else if version_ptp >= 0x10 {
+        if major_sdo_id >= 0x10 || minor_version_ptp >= 0x10 || version_ptp >= 0x10 {
             Err(MessageBuilderError::IllegalValue)
         } else {
             self.header.major_sdo_id = major_sdo_id;
