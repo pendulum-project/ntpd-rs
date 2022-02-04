@@ -18,14 +18,14 @@ type Int = i32;
 /// Not every clock supports the used API so that's a bit trial and error.
 ///
 /// Probably best used with the CLOCK_REALTIME clock.
-/// 
+///
 /// Using the clocks probably requires root access.
 ///
 /// # Example
 ///
 /// ```no_run
 /// use ptp::linux_clock::LinuxClock;
-/// 
+///
 /// println!("Available clocks:");
 /// for clock in LinuxClock::get_clocks() {
 ///     println!("{}", clock);
@@ -59,12 +59,12 @@ impl LinuxClock {
     }
 
     /// Adjusts the clock
-    /// 
+    ///
     /// - The time_offset is given in seconds.
     /// - The frequency_multiplier is the value that the *current* frequency should be multiplied with to get to the target frequency.
-    /// 
+    ///
     /// For example, if the clock is at 10.0 mhz, but should run at 10.1 mhz, then the frequency_multiplier should be 1.01.
-    /// 
+    ///
     /// If the time offset is higher than 0.5 seconds, then the clock will be set directly and no frequency change will be made.
     pub fn adjust_clock(&mut self, time_offset: f64, frequency_multiplier: f64) -> Result<(), i32> {
         let (current_timex, _clock_state) = self.get_clock_state()?;
@@ -108,7 +108,7 @@ impl LinuxClock {
             new_timex.set_mode(
                 AdjustFlags::SETOFFSET // We have an offset to set
                 | AdjustFlags::FREQUENCY // We'll be setting the frequency as well
-                | AdjustFlags::NANO // We're using nanoseconds
+                | AdjustFlags::NANO, // We're using nanoseconds
             );
 
             // Start with a seconds value of 0 and express the full time offset in nanos
@@ -164,7 +164,9 @@ impl LinuxClock {
     }
 
     pub fn get_realtime_clock() -> Self {
-        Self::get_clocks().find(|c| c.id == libc::CLOCK_REALTIME).unwrap()
+        Self::get_clocks()
+            .find(|c| c.id == libc::CLOCK_REALTIME)
+            .unwrap()
     }
 }
 

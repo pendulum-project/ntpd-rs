@@ -85,7 +85,7 @@ bitflags! {
         const UNSYNC = libc::STA_UNSYNC;
         /// Hold frequency. Normally adjustments made via ADJ_OFFSET result in dampened frequency adjustments also being made.
         /// So a single call corrects the current offset, but as offsets in the same direction are made repeatedly, the small frequency adjustments will accumulate to fix the long-term skew.
-        /// 
+        ///
         /// This flag prevents the small frequency adjustment from being made when correcting for an ADJ_OFFSET value.
         const FREQHOLD = libc::STA_FREQHOLD;
         /// A valid PPS (pulse-per-second) signal is present.
@@ -123,16 +123,16 @@ bitflags! {
         const TIMECONST = libc::ADJ_TIMECONST;
         /// Add buf.time to the current time. If buf.status includes the ADJ_NANO flag, then buf.time.tv_usec is interpreted as a nanosecond value;
         /// otherwise it is interpreted as microseconds.
-        /// 
+        ///
         /// The value of buf.time is the sum of its two fields, but the field buf.time.tv_usec must always be nonnegative.
         /// The following example shows how to normalize a timeval with nanosecond resolution.
-        /// 
+        ///
         /// ```C
         /// while (buf.time.tv_usec < 0) {
         ///     buf.time.tv_sec  -= 1;
         ///     buf.time.tv_usec += 1000000000;
         /// }
-        /// ```   
+        /// ```
         const SETOFFSET = libc::ADJ_SETOFFSET;
         /// Select microsecond resolution.
         const MICRO = libc::ADJ_MICRO;
@@ -141,7 +141,7 @@ bitflags! {
         /// Set TAI (Atomic International Time) offset from buf.constant.
         ///
         /// ADJ_TAI should not be used in conjunction with ADJ_TIMECONST, since the latter mode also employs the buf.constant field.
-        /// For a complete explanation of TAI and the difference between TAI and UTC, see [BIPM](http://www.bipm.org/en/bipm/tai/tai.html) 
+        /// For a complete explanation of TAI and the difference between TAI and UTC, see [BIPM](http://www.bipm.org/en/bipm/tai/tai.html)
         const TAI = libc::ADJ_TAI;
         /// Set tick value from buf.tick.
         const TICK = libc::ADJ_TICK;
