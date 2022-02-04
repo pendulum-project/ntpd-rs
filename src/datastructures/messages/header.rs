@@ -1,4 +1,4 @@
-use super::{ControlField, MessageType};
+use super::{control_field::ControlField, MessageType};
 use crate::datastructures::{
     common::{PortIdentity, TimeInterval},
     WireFormat, WireFormatError,

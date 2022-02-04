@@ -10,7 +10,6 @@ mod message_builder;
 mod sync;
 
 pub use announce::*;
-pub use control_field::*;
 pub use delay_req::*;
 pub use delay_resp::*;
 pub use follow_up::*;
