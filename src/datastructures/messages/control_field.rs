@@ -1,3 +1,5 @@
+use super::MessageType;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ControlField {
     Sync,
@@ -31,6 +33,19 @@ impl ControlField {
             0x04 => ControlField::Management,
             0x05 => ControlField::AllOthers,
             0x06..=0xFF => ControlField::Reserved,
+        }
+    }
+}
+
+impl From<MessageType> for ControlField {
+    fn from(message_type: MessageType) -> Self {
+        match message_type {
+            MessageType::Sync => ControlField::Sync,
+            MessageType::DelayReq => ControlField::DelayReq,
+            MessageType::FollowUp => ControlField::FollowUp,
+            MessageType::DelayResp => ControlField::DelayResp,
+            MessageType::Management => ControlField::Management,
+            _ => ControlField::AllOthers,
         }
     }
 }

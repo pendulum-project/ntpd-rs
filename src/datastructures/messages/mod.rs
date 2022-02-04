@@ -18,8 +18,6 @@ pub use header::*;
 pub use message_builder::*;
 pub use sync::*;
 
-use super::WireFormat;
-
 #[derive(Debug, Clone, Copy, TryFromPrimitive, IntoPrimitive, PartialEq, Eq)]
 #[repr(u8)]
 pub enum MessageType {
@@ -71,8 +69,11 @@ impl Message {
 
     /// The byte size on the wire of this message
     pub fn wire_size(&self) -> usize {
-        let header_length = self.header().wire_size();
-        let content_length = match self {
+        self.header().wire_size() + self.content_size()
+    }
+
+    fn content_size(&self) -> usize {
+        match self {
             Message::Sync(m) => m.content_size(),
             Message::DelayReq(m) => m.content_size(),
             Message::PDelayReq(_) => todo!(),
@@ -83,16 +84,33 @@ impl Message {
             Message::Announce(m) => m.content_size(),
             Message::Signaling(_) => todo!(),
             Message::Management(_) => todo!(),
-        };
+        }
+    }
 
-        header_length + content_length
+    fn content_type(&self) -> MessageType {
+        match self {
+            Message::Sync(_) => MessageType::Sync,
+            Message::DelayReq(_) => MessageType::DelayReq,
+            Message::PDelayReq(_) => MessageType::PDelayReq,
+            Message::PDelayResp(_) => MessageType::PDelayResp,
+            Message::FollowUp(_) => MessageType::FollowUp,
+            Message::DelayResp(_) => MessageType::DelayResp,
+            Message::PDelayRespFollowUp(_) => MessageType::PDelayRespFollowUp,
+            Message::Announce(_) => MessageType::Announce,
+            Message::Signaling(_) => MessageType::Signaling,
+            Message::Management(_) => MessageType::Management,
+        }
     }
 
     /// Serializes the object into the PTP wire format.
     ///
     /// Returns the used buffer size that contains the message or an error.
     pub fn serialize(&self, buffer: &mut [u8]) -> Result<(), super::WireFormatError> {
-        self.header().serialize(&mut buffer[0..34])?;
+        self.header().serialize_header(
+            self.content_type(),
+            self.content_size(),
+            &mut buffer[0..34],
+        )?;
         match self {
             Message::Sync(m) => m.serialize_content(&mut buffer[34..]),
             Message::DelayReq(m) => m.serialize_content(&mut buffer[34..]),
@@ -118,38 +136,39 @@ impl Message {
 
     /// Deserializes a message from the PTP wire format.
     ///
-    /// Returns the object and the size in the buffer that it takes up or an error.
+    /// Returns the message or an error.
     pub fn deserialize(buffer: &[u8]) -> Result<Self, super::WireFormatError> {
-        let header = Header::deserialize(buffer)?;
+        let header_data = Header::deserialize_header(buffer)?;
 
         // Skip the header bytes and only keep the content
         let content_buffer = &buffer[34..];
 
-        Ok(match header.message_type() {
-            MessageType::Sync => {
-                Message::Sync(SyncMessage::deserialize_content(header, content_buffer)?)
-            }
-            MessageType::DelayReq => Message::DelayReq(DelayReqMessage::deserialize_content(
-                header,
+        Ok(match header_data.message_type {
+            MessageType::Sync => Message::Sync(SyncMessage::deserialize_content(
+                header_data.header,
                 content_buffer,
             )?),
-            MessageType::PDelayReq => Message::PDelayReq(header),
-            MessageType::PDelayResp => Message::PDelayResp(header),
+            MessageType::DelayReq => Message::DelayReq(DelayReqMessage::deserialize_content(
+                header_data.header,
+                content_buffer,
+            )?),
+            MessageType::PDelayReq => Message::PDelayReq(header_data.header),
+            MessageType::PDelayResp => Message::PDelayResp(header_data.header),
             MessageType::FollowUp => Message::FollowUp(FollowUpMessage::deserialize_content(
-                header,
+                header_data.header,
                 content_buffer,
             )?),
             MessageType::DelayResp => Message::DelayResp(DelayRespMessage::deserialize_content(
-                header,
+                header_data.header,
                 content_buffer,
             )?),
-            MessageType::PDelayRespFollowUp => Message::PDelayRespFollowUp(header),
+            MessageType::PDelayRespFollowUp => Message::PDelayRespFollowUp(header_data.header),
             MessageType::Announce => Message::Announce(AnnounceMessage::deserialize_content(
-                header,
+                header_data.header,
                 content_buffer,
             )?),
-            MessageType::Signaling => Message::Signaling(header),
-            MessageType::Management => Message::Management(header),
+            MessageType::Signaling => Message::Signaling(header_data.header),
+            MessageType::Management => Message::Management(header_data.header),
         })
     }
 }
