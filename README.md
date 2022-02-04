@@ -14,7 +14,7 @@ cargo build
 ```
 and then run it as root with
 ```
-sudo ./target/debug/ptp
+sudo ./target/debug/statime
 ```
 
 ## PTPd setup for testing
@@ -29,6 +29,6 @@ service ptpd disable
 ```
 Then, to start ptpd, as root run
 ```bash
-ptpd -n -M -i <INTERFACE>
+ptpd -V -n -M -i <INTERFACE>
 ```
 where `<INTERFACE>` is the netwerk interface you want ptpd to use. Here `-n` disables clock adjustment by ptpd, and `-M` ensures that it runs in master mode only.
