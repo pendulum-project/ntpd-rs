@@ -11,7 +11,7 @@ pub(super) enum ControlField {
 }
 
 impl ControlField {
-    pub fn to_primitive(&self) -> u8 {
+    pub fn to_primitive(self) -> u8 {
         match self {
             ControlField::Sync => 0x00,
             ControlField::DelayReq => 0x01,
