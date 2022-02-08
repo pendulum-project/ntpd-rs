@@ -2,6 +2,8 @@
 
 This repository is work in progress for a rust implementation of PTP version 2.1 (IEEE 1588-2019). It is far from complete and not yet usable in any capacity.
 
+The current state of the project is such that the main binary, when compiled, measures and outputs the time difference to any ptp master clock happening to be sending in the network it listens to.
+
 ## Rust version
 
 For compiling this software we advise using the latest version of cargo/rustc as available through rustup. At time of writing this is `1.58.1`.
@@ -19,7 +21,7 @@ sudo ./target/debug/statime
 
 ## PTPd setup for testing
 
-PTPd can be used as a ptp master clock for testing. On Ubuntu, it can be installed with
+PTPd can be used as a ptp master clock for testing. Because of the port usage required by the PTP standard, this master clock must be on a different machine than that used to run the code in this repository. On Ubuntu, it can be installed with
 ```bash
 apt install ptpd
 ```
