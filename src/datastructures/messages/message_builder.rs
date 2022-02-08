@@ -121,11 +121,6 @@ impl MessageBuilder {
         self
     }
 
-    pub fn message_type_specific(mut self, message_type_specific: [u8; 4]) -> Self {
-        self.header.message_type_specific = message_type_specific;
-        self
-    }
-
     pub fn source_port_identity(mut self, source_port_identity: PortIdentity) -> Self {
         self.header.source_port_identity = source_port_identity;
         self

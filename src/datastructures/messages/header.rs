@@ -25,7 +25,6 @@ pub struct Header {
     pub(super) frequency_tracable: bool,
     pub(super) synchronization_uncertain: bool,
     pub(super) correction_field: TimeInterval,
-    pub(super) message_type_specific: [u8; 4],
     pub(super) source_port_identity: PortIdentity,
     pub(super) sequence_id: u16,
     pub(super) log_message_interval: u8,
@@ -58,7 +57,6 @@ impl Header {
             frequency_tracable: false,
             synchronization_uncertain: false,
             correction_field: TimeInterval::default(),
-            message_type_specific: [0, 0, 0, 0],
             source_port_identity: PortIdentity::default(),
             sequence_id: 0,
             log_message_interval: 0,
@@ -95,7 +93,7 @@ impl Header {
         buffer[7] |= (self.frequency_tracable as u8) << 5;
         buffer[7] |= (self.synchronization_uncertain as u8) << 6;
         self.correction_field.serialize(&mut buffer[8..16])?;
-        buffer[16..20].copy_from_slice(&self.message_type_specific);
+        buffer[16..20].copy_from_slice(&[0, 0, 0, 0]);
         self.source_port_identity.serialize(&mut buffer[20..30])?;
         buffer[30..32].copy_from_slice(&self.sequence_id.to_be_bytes());
         buffer[32] = ControlField::from(content_type).to_primitive();
@@ -124,7 +122,6 @@ impl Header {
                 frequency_tracable: (buffer[7] & (1 << 5)) > 0,
                 synchronization_uncertain: (buffer[7] & (1 << 6)) > 0,
                 correction_field: TimeInterval::deserialize(&buffer[8..16])?,
-                message_type_specific: buffer[16..20].try_into().unwrap(),
                 source_port_identity: PortIdentity::deserialize(&buffer[20..30])?,
                 sequence_id: u16::from_be_bytes(buffer[30..32].try_into().unwrap()),
                 log_message_interval: buffer[33],
@@ -215,10 +212,10 @@ mod tests {
                 0x01,
                 0x80,
                 0x00,
-                5,
-                6,
-                7,
-                8,
+                0,
+                0,
+                0,
+                0,
                 0,
                 1,
                 2,
@@ -253,7 +250,6 @@ mod tests {
                     frequency_tracable: true,
                     synchronization_uncertain: false,
                     correction_field: TimeInterval(I48F16::from_num(1.5f64)),
-                    message_type_specific: [5, 6, 7, 8],
                     source_port_identity: PortIdentity {
                         clock_identity: ClockIdentity([0, 1, 2, 3, 4, 5, 6, 7]),
                         port_number: 0x5555,
