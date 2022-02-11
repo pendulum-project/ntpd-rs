@@ -5,6 +5,9 @@ use crate::datastructures::{
 };
 use std::cmp::Ordering;
 
+/// A collection of data that is gathered from other sources (mainly announce messages and the DefaultDS).
+/// When gathered from two different sources, the [compare] method can be used to find out which source
+/// is better according to the dataset comparison algorithm.
 #[derive(PartialEq, Default)]
 pub struct ComparisonDataset {
     gm_priority_1: u8,
@@ -25,6 +28,7 @@ pub struct DefaultDS {
 }
 
 impl ComparisonDataset {
+    /// Create a ComparisonDataset from the data in an announce message and the port identity of the port that received the announce message
     pub fn from_announce_message(
         announce_header: &Header,
         message: &AnnounceMessage,
@@ -151,21 +155,29 @@ impl ComparisonDataset {
     }
 }
 
+/// The ordering result of the dataset comparison algorithm
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DatasetOrdering {
+    /// The [ComparisonDataset] is better than the one being compared against
     Better,
+    /// The [ComparisonDataset] is of equal quality as the one being compared against,
+    /// but is preferred because of the network topology
     BetterByTopology,
+    /// The [ComparisonDataset] is equal in quality and topology
     Error1,
+    /// The [ComparisonDataset] is probably based on the same set of data
     Error2,
+    /// The [ComparisonDataset] is of equal quality as the one being compared against,
+    /// but is not preferred because of the network topology
     WorseByTopology,
+    /// The [ComparisonDataset] is worse than the one being compared against
     Worse,
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::datastructures::common::ClockAccuracy;
-
     use super::*;
+    use crate::datastructures::common::ClockAccuracy;
 
     const IDENTITY_A: ClockIdentity = ClockIdentity([1, 1, 1, 1, 1, 1, 1, 1]);
     const IDENTITY_B: ClockIdentity = ClockIdentity([2, 2, 2, 2, 2, 2, 2, 2]);
