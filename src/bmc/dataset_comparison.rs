@@ -1,7 +1,7 @@
 //! Implementation of chapter 9.3.4 Data set comparison algorithm
 use crate::datastructures::{
     common::{ClockIdentity, ClockQuality, PortIdentity},
-    messages::{AnnounceMessage, Header},
+    messages::AnnounceMessage,
 };
 use std::cmp::Ordering;
 
@@ -30,7 +30,6 @@ pub struct DefaultDS {
 impl ComparisonDataset {
     /// Create a ComparisonDataset from the data in an announce message and the port identity of the port that received the announce message
     pub fn from_announce_message(
-        announce_header: &Header,
         message: &AnnounceMessage,
         port_receiver_identity: &PortIdentity,
     ) -> Self {
@@ -40,7 +39,7 @@ impl ComparisonDataset {
             gm_clock_quality: message.grandmaster_clock_quality(),
             gm_priority_2: message.grandmaster_priority_2(),
             steps_removed: message.steps_removed(),
-            identity_of_senders: announce_header.source_port_identity().clock_identity,
+            identity_of_senders: message.header().source_port_identity().clock_identity,
             identity_of_receiver: *port_receiver_identity,
         }
     }
