@@ -1,7 +1,7 @@
 use crate::time::OffsetTime;
 
-trait NetworkRuntime {
-    type InterfaceName;
+pub trait NetworkRuntime {
+    type InterfaceName: Clone;
     type PortType: NetworkPort;
     fn open(&self, interface: Self::InterfaceName, time_critical: bool) -> Self::PortType;
 }
@@ -12,7 +12,7 @@ pub struct NetworkPacket {
     pub timestamp: Option<OffsetTime>,
 }
 
-trait NetworkPort {
+pub trait NetworkPort {
     fn send(&mut self, data: &[u8]) -> Option<usize>;
     // Recv is implicit, works using events passed through function calls
     // Similarly for timestamps on sent messages.
