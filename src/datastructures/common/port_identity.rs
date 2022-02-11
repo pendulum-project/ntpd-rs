@@ -1,7 +1,7 @@
 use super::clock_identity::ClockIdentity;
 use crate::datastructures::{WireFormat, WireFormatError};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
 pub struct PortIdentity {
     pub clock_identity: ClockIdentity,
     pub port_number: u16,
