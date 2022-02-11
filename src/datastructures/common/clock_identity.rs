@@ -1,6 +1,6 @@
 use crate::datastructures::{WireFormat, WireFormatError};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
 pub struct ClockIdentity(pub [u8; 8]);
 
 impl WireFormat for ClockIdentity {

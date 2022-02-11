@@ -1,7 +1,7 @@
 use super::clock_accuracy::ClockAccuracy;
 use crate::datastructures::{WireFormat, WireFormatError};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ClockQuality {
     pub clock_class: u8,
     pub clock_accuracy: ClockAccuracy,
