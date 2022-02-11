@@ -17,18 +17,9 @@ impl<Enum: num_enum::TryFromPrimitive> From<num_enum::TryFromPrimitiveError<Enum
     }
 }
 
-pub trait WireFormat: Debug + Clone + Eq {
+trait WireFormat: Debug + Clone + Eq {
     /// The byte size on the wire of this object
     fn wire_size(&self) -> usize;
-
-    /// Serializes the object into the PTP wire format.
-    ///
-    /// Returns a vector with the bytes of the message or an error.
-    fn serialize_vec(&self) -> Result<Vec<u8>, WireFormatError> {
-        let mut buffer = vec![0; self.wire_size()];
-        self.serialize(&mut buffer)?;
-        Ok(buffer)
-    }
 
     /// Serializes the object into the PTP wire format.
     ///

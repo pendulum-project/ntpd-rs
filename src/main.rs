@@ -1,10 +1,12 @@
 use std::sync::mpsc::channel;
 
-use ptp::{
+use statime::{
     datastructures::{
-        common::{PortIdentity, TimeInterval},
-        messages::{FlagField, Message, MessageBuilder, MessageContent},
-        WireFormat,
+        common::PortIdentity,
+        messages::{
+            DelayReqMessage, DelayRespMessage, FollowUpMessage, Message, MessageBuilder,
+            SyncMessage,
+        },
     },
     network::{get_clock_id, NetworkPort},
     time::{OffsetTime, TimeType},
@@ -41,19 +43,13 @@ struct TimeMeasurement {
 }
 
 impl SyncState {
-    pub fn handle_sync(&mut self, message: Message, recv_time: OffsetTime, delay_id: u16) {
-        // TODO: Improve message datastructures to better be able to pass around messages of known type
-        let content = match message.content() {
-            MessageContent::Sync(content) => content,
-            _ => panic!("wrong message type"),
-        };
-
+    pub fn handle_sync(&mut self, message: SyncMessage, recv_time: OffsetTime, delay_id: u16) {
         self.sync_id = Some(message.header().sequence_id());
         self.delay_id = Some(delay_id);
         self.sync_recv_time = Some(recv_time);
         self.delay_send_time = None;
         self.delay_recv_time = None;
-        if message.header().flag_field().two_step_flag {
+        if message.header().two_step_flag() {
             self.sync_correction = Some(OffsetTime::from_interval(
                 &message.header().correction_field(),
             ));
@@ -61,19 +57,13 @@ impl SyncState {
         } else {
             self.sync_correction = None;
             self.sync_send_time = Some(
-                OffsetTime::from_timestamp(&content.origin_timestamp())
+                OffsetTime::from_timestamp(&message.origin_timestamp())
                     + OffsetTime::from_interval(&message.header().correction_field()),
             );
         }
     }
 
-    pub fn handle_followup(&mut self, message: Message) {
-        // TODO: Improve message datastructures to better be able to pass around messages of known type
-        let content = match message.content() {
-            MessageContent::FollowUp(content) => content,
-            _ => panic!("wrong message type"),
-        };
-
+    pub fn handle_followup(&mut self, message: FollowUpMessage) {
         // Ignore messages not belonging to currently processing sync
         let expected_seq_id = match self.sync_id {
             Some(id) => id,
@@ -90,13 +80,13 @@ impl SyncState {
         // Absorb into state
         self.sync_correction = None;
         self.sync_send_time = Some(
-            OffsetTime::from_timestamp(&content.precise_origin_timestamp())
+            OffsetTime::from_timestamp(&message.precise_origin_timestamp())
                 + OffsetTime::from_interval(&message.header().correction_field())
                 + sync_correction,
         );
     }
 
-    pub fn handle_delayreq(&mut self, message: Message, recv_time: OffsetTime) {
+    pub fn handle_delayreq(&mut self, message: DelayReqMessage, recv_time: OffsetTime) {
         // Ignore messages not belonging to currently processing sync
         let expected_seq_id = match self.delay_id {
             Some(id) => id,
@@ -110,13 +100,7 @@ impl SyncState {
         self.delay_send_time = Some(recv_time);
     }
 
-    pub fn handle_delayresp(&mut self, message: Message) {
-        // TODO: Improve message datastructures to better be able to pass around messages of known type
-        let content = match message.content() {
-            MessageContent::DelayResp(content) => content,
-            _ => panic!("wrong message type"),
-        };
-
+    pub fn handle_delayresp(&mut self, message: DelayRespMessage) {
         // Ignore messages not belonging to currently processing sync
         let expected_seq_id = match self.delay_id {
             Some(id) => id,
@@ -128,7 +112,7 @@ impl SyncState {
 
         // Absorb into state
         self.delay_recv_time = Some(
-            OffsetTime::from_timestamp(&content.receive_timestamp())
+            OffsetTime::from_timestamp(&message.receive_timestamp())
                 - OffsetTime::from_interval(&message.header().correction_field()),
         );
     }
@@ -172,19 +156,19 @@ fn main() {
     loop {
         let packet = rx.recv().unwrap();
         let message = Message::deserialize(&packet.data).unwrap();
-        match message.content() {
-            MessageContent::Sync(_) => {
+        match message {
+            Message::Sync(message) => {
                 let delay_id = delay_sequencer.get();
                 send_delay_request(clock_identity, delay_id, &port319);
                 sync_state.handle_sync(message, packet.timestamp.unwrap(), delay_id);
             }
-            MessageContent::FollowUp(_) => {
+            Message::FollowUp(message) => {
                 sync_state.handle_followup(message);
             }
-            MessageContent::DelayReq(_) => {
+            Message::DelayReq(message) => {
                 sync_state.handle_delayreq(message, packet.timestamp.unwrap());
             }
-            MessageContent::DelayResp(_) => {
+            Message::DelayResp(message) => {
                 sync_state.handle_delayresp(message);
             }
             _ => {
@@ -206,25 +190,13 @@ fn main() {
 fn send_delay_request(clock_identity: [u8; 8], delay_req_seq_id: u16, port319: &NetworkPort) {
     let ts = OffsetTime::now();
     let delay_req = MessageBuilder::new()
-        .header(
-            0,
-            0,
-            2,
-            0,
-            0,
-            FlagField::default(),
-            TimeInterval::default(),
-            [0, 0, 0, 0],
-            PortIdentity {
-                clock_identity: ptp::datastructures::common::ClockIdentity(clock_identity),
-                port_number: 0,
-            },
-            delay_req_seq_id,
-            0x7F,
-        )
-        .unwrap()
-        .delay_req_message(ts.to_timestamp().unwrap())
-        .finish();
+        .source_port_identity(PortIdentity {
+            clock_identity: statime::datastructures::common::ClockIdentity(clock_identity),
+            port_number: 0,
+        })
+        .sequence_id(delay_req_seq_id)
+        .log_message_interval(0x7F)
+        .delay_req_message(ts.to_timestamp().unwrap());
     let delay_req_encode = delay_req.serialize_vec().unwrap();
     port319.send(&delay_req_encode);
 }
