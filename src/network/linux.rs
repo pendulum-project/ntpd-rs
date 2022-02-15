@@ -7,7 +7,7 @@ use nix::{
         socket::{
             recvmsg, sendmsg, setsockopt, socket,
             sockopt::{IpAddMembership, Timestamping},
-            AddressFamily, ControlMessageOwned, InetAddr, IpAddr, IpMembershipRequest, Ipv4Addr,
+            AddressFamily, ControlMessageOwned, InetAddr, IpMembershipRequest, Ipv4Addr,
             MsgFlags, SockAddr, SockFlag, SockType, TimestampingFlag, Timestamps,
         },
         uio::IoVec,
@@ -16,56 +16,61 @@ use nix::{
 
 use crate::time::{OffsetTime, TimeType};
 
-pub struct NetworkPacket {
-    pub data: Vec<u8>,
-    pub addr: SockAddr,
-    pub timestamp: Option<OffsetTime>,
-}
+use super::{NetworkPacket, NetworkRuntime, NetworkPort, NetworkError};
 
-pub struct NetworkPort {
-    socket: RawFd,
-    _recv_thread: JoinHandle<()>,
-    addr: SockAddr,
-}
+pub struct LinuxRuntime;
 
-impl NetworkPort {
-    pub fn new(port: u16, tx: Sender<NetworkPacket>, timestamping: bool) -> Self {
-        let sock_addr = SockAddr::new_inet(InetAddr::new(IpAddr::new_v4(0, 0, 0, 0), port));
-        let socket = socket(
-            AddressFamily::Inet,
-            SockType::Datagram,
-            SockFlag::empty(),
-            None,
-        )
-        .unwrap();
-        nix::sys::socket::bind(socket, &sock_addr).unwrap();
+impl NetworkRuntime for LinuxRuntime {
+    type InterfaceDescriptor = SockAddr;
+    type PortType = LinuxNetworkPort;
 
-        // join ipv4 multicast group
-        let multicast_req = IpMembershipRequest::new(
-            Ipv4Addr::new(224, 0, 1, 129),
-            Some(Ipv4Addr::new(0, 0, 0, 0)),
-        );
-        setsockopt(socket, IpAddMembership, &multicast_req).unwrap();
+    fn open(&self, interface: Self::InterfaceDescriptor, time_critical: bool) -> Result<Self::PortType, NetworkError> {
+        if let SockAddr::Inet(InetAddr::V4(addr)) = &interface {
+            let socket = socket(
+                AddressFamily::Inet,
+                SockType::Datagram,
+                SockFlag::empty(),
+                None,
+            ).map_err(|_e| NetworkError)?; // TODO: mapping errno to networkerror somehow, but errno depends on context, so no simple From<_>
+            nix::sys::socket::bind(socket, &interface).map_err(|_e| NetworkError)?;
 
-        // Setup timestamping if needed
-        if timestamping {
-            setsockopt(socket, Timestamping, &TimestampingFlag::all()).unwrap();
-        }
+            // TODO: extract interface from provided SockAddr, as the multicast should be on the same interface as we are listening on
+            let multicast_req = IpMembershipRequest::new(
+                Ipv4Addr::new(224, 0, 1, 129),
+                Some(Ipv4Addr::new(0, 0, 0, 0)),
+            );
+            setsockopt(socket, IpAddMembership, &multicast_req).map_err(|_e| NetworkError)?;
 
-        let recv_thread = std::thread::Builder::new()
-            .name(format!("ptp {}", port))
-            .spawn(move || NetworkPort::recv_thread(socket, tx))
-            .unwrap();
+            // Setup timestamping if needed
+            if time_critical {
+                setsockopt(socket, Timestamping, &TimestampingFlag::all()).map_err(|_e| NetworkError)?;
+            }
 
-        let addr = SockAddr::new_inet(InetAddr::new(IpAddr::new_v4(224, 0, 1, 129), port));
+            let recv_thread = std::thread::Builder::new()
+                .name(format!("ptp recv"))
+                .spawn(move || LinuxNetworkPort::recv_thread(socket, tx)) // TODO: store channel in runtime
+                .unwrap();
 
-        NetworkPort {
-            socket,
-            _recv_thread: recv_thread,
-            addr,
+            LinuxNetworkPort {
+                socket,
+                _recv_thread: recv_thread,
+            }
+        } else {
+            Err(NetworkError)
         }
     }
+}
 
+pub struct LinuxNetworkPort {
+    socket: RawFd,
+    _recv_thread: JoinHandle<()>,
+}
+
+impl NetworkPort for LinuxNetworkPort {
+
+}
+
+impl LinuxNetworkPort {
     pub fn send(&self, data: &[u8]) {
         let io_vec = [IoVec::from_slice(data)];
         sendmsg(
@@ -93,7 +98,6 @@ impl NetworkPort {
             }
             tx.send(NetworkPacket {
                 data: io_vec[0].as_slice()[0..recv.bytes].to_vec(),
-                addr: recv.address.unwrap(),
                 timestamp: ts,
             })
             .unwrap();

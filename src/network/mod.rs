@@ -1,9 +1,14 @@
+mod linux;
+
 use crate::time::OffsetTime;
 
+// Todo
+pub struct NetworkError;
+
 pub trait NetworkRuntime {
-    type InterfaceName: Clone;
+    type InterfaceDescriptor: Clone;
     type PortType: NetworkPort;
-    fn open(&self, interface: Self::InterfaceName, time_critical: bool) -> Self::PortType;
+    fn open(&self, interface: Self::InterfaceDescriptor, time_critical: bool) -> Result<Self::PortType, NetworkError>;
 }
 
 #[derive(Debug, Clone)]

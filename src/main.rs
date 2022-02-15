@@ -174,9 +174,9 @@ fn main() {
             }
             _ => {
                 if let Some(ts) = packet.timestamp {
-                    println!("Received {:?} from {} at {}", message, packet.addr, ts);
+                    println!("Received {:?} at {}", message, ts);
                 } else {
-                    println!("Received {:?} from {}", message, packet.addr);
+                    println!("Received {:?}", message);
                 }
             }
         }

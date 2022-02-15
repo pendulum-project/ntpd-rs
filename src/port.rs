@@ -1,6 +1,6 @@
 use fixed::traits::ToFixed;
 
-use crate::abstract_network::{NetworkPacket, NetworkPort, NetworkRuntime};
+use crate::network::{NetworkPacket, NetworkPort, NetworkRuntime};
 use crate::datastructures::messages::{
     DelayRespMessage, FollowUpMessage, MessageBuilder, SyncMessage,
 };
@@ -131,7 +131,7 @@ impl StateSlave {
         );
 
         // Calculate when we should next measure delay
-        //  note that sync_recv_time should always be set here, but if it isn't, 
+        //  note that sync_recv_time should always be set here, but if it isn't,
         //  taking the default (0) is safe for recovery.
         self.next_delay_measurement = Some(
             self.sync_recv_time.unwrap_or_default()
