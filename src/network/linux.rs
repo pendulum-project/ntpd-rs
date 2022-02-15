@@ -7,8 +7,8 @@ use nix::{
         socket::{
             recvmsg, sendmsg, setsockopt, socket,
             sockopt::{IpAddMembership, Timestamping},
-            AddressFamily, ControlMessageOwned, InetAddr, IpMembershipRequest, Ipv4Addr,
-            MsgFlags, SockAddr, SockFlag, SockType, TimestampingFlag, Timestamps,
+            AddressFamily, ControlMessageOwned, InetAddr, IpMembershipRequest, Ipv4Addr, MsgFlags,
+            SockAddr, SockFlag, SockType, TimestampingFlag, Timestamps,
         },
         uio::IoVec,
     },
@@ -16,22 +16,38 @@ use nix::{
 
 use crate::time::{OffsetTime, TimeType};
 
-use super::{NetworkPacket, NetworkRuntime, NetworkPort, NetworkError};
+use super::{NetworkError, NetworkPacket, NetworkPort, NetworkRuntime};
 
-pub struct LinuxRuntime;
+#[derive(Clone)]
+pub struct LinuxRuntime {
+    tx: Sender<NetworkPacket>,
+}
+
+impl LinuxRuntime {
+    pub fn new(tx: Sender<NetworkPacket>) -> Self {
+        LinuxRuntime { tx }
+    }
+}
 
 impl NetworkRuntime for LinuxRuntime {
     type InterfaceDescriptor = SockAddr;
     type PortType = LinuxNetworkPort;
 
-    fn open(&self, interface: Self::InterfaceDescriptor, time_critical: bool) -> Result<Self::PortType, NetworkError> {
+    fn open(
+        &self,
+        interface: Self::InterfaceDescriptor,
+        time_critical: bool,
+    ) -> Result<Self::PortType, NetworkError> {
         if let SockAddr::Inet(InetAddr::V4(addr)) = &interface {
+            // TODO: use interface descriptor only to determine ip address, and determine port based on time_critical flag.
+            //  (note david: SockAddr doesn't really map wel here, since it forces inclusion of the port, perhaps we should use a different type)
             let socket = socket(
                 AddressFamily::Inet,
                 SockType::Datagram,
                 SockFlag::empty(),
                 None,
-            ).map_err(|_e| NetworkError)?; // TODO: mapping errno to networkerror somehow, but errno depends on context, so no simple From<_>
+            )
+            .map_err(|_e| NetworkError)?; // TODO: mapping errno to networkerror somehow, but errno depends on context, so no simple From<_>
             nix::sys::socket::bind(socket, &interface).map_err(|_e| NetworkError)?;
 
             // TODO: extract interface from provided SockAddr, as the multicast should be on the same interface as we are listening on
@@ -43,18 +59,24 @@ impl NetworkRuntime for LinuxRuntime {
 
             // Setup timestamping if needed
             if time_critical {
-                setsockopt(socket, Timestamping, &TimestampingFlag::all()).map_err(|_e| NetworkError)?;
+                setsockopt(socket, Timestamping, &TimestampingFlag::all())
+                    .map_err(|_e| NetworkError)?;
             }
 
+            let tx = self.tx.clone();
             let recv_thread = std::thread::Builder::new()
                 .name(format!("ptp recv"))
                 .spawn(move || LinuxNetworkPort::recv_thread(socket, tx)) // TODO: store channel in runtime
                 .unwrap();
 
-            LinuxNetworkPort {
+            Ok(LinuxNetworkPort {
+                addr: SockAddr::Inet(InetAddr::new(
+                    nix::sys::socket::IpAddr::new_v4(224, 0, 1, 129),
+                    addr.sin_port,
+                )), // TODO: determine port from time_critical
                 socket,
                 _recv_thread: recv_thread,
-            }
+            })
         } else {
             Err(NetworkError)
         }
@@ -62,16 +84,13 @@ impl NetworkRuntime for LinuxRuntime {
 }
 
 pub struct LinuxNetworkPort {
+    addr: SockAddr,
     socket: RawFd,
     _recv_thread: JoinHandle<()>,
 }
 
 impl NetworkPort for LinuxNetworkPort {
-
-}
-
-impl LinuxNetworkPort {
-    pub fn send(&self, data: &[u8]) {
+    fn send(&mut self, data: &[u8]) -> Option<usize> {
         let io_vec = [IoVec::from_slice(data)];
         sendmsg(
             self.socket,
@@ -81,8 +100,12 @@ impl LinuxNetworkPort {
             Some(&self.addr),
         )
         .unwrap();
-    }
 
+        None
+    }
+}
+
+impl LinuxNetworkPort {
     fn recv_thread(socket: i32, tx: Sender<NetworkPacket>) {
         let mut read_buf = [0u8; 2048];
         let io_vec = [IoVec::from_mut_slice(&mut read_buf)];

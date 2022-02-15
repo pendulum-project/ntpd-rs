@@ -1,6 +1,5 @@
 use fixed::traits::ToFixed;
 
-use crate::network::{NetworkPacket, NetworkPort, NetworkRuntime};
 use crate::datastructures::messages::{
     DelayRespMessage, FollowUpMessage, MessageBuilder, SyncMessage,
 };
@@ -8,6 +7,7 @@ use crate::datastructures::{
     common::{ClockIdentity, PortIdentity},
     messages::Message,
 };
+use crate::network::{NetworkPacket, NetworkPort, NetworkRuntime};
 use crate::time::{OffsetTime, TimeType};
 
 #[derive(Debug, Clone, Default)]
@@ -187,6 +187,7 @@ impl StateSlave {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 enum State {
     Listening,
     Slave(StateSlave),
@@ -220,10 +221,14 @@ impl<NR: NetworkRuntime> Port<NR> {
         sdo: u16,
         domain: u8,
         runtime: NR,
-        interface: NR::InterfaceName,
+        interface: NR::InterfaceDescriptor,
     ) -> Self {
-        let tc_port = runtime.open(interface.clone(), true);
-        let nc_port = runtime.open(interface, false);
+        let tc_port = runtime
+            .open(interface.clone(), true)
+            .expect("Could not create time critical port");
+        let nc_port = runtime
+            .open(interface, false)
+            .expect("Could not create non time critical port");
         Port {
             portdata: PortData {
                 _runtime: runtime,
