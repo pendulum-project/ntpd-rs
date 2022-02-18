@@ -81,7 +81,8 @@ impl ForeignMaster {
         .unwrap()
         .0;
 
-        *self.announce_messages
+        *self
+            .announce_messages
             .iter()
             .find(|am| am.0 == best_announce_message)
             .unwrap()
