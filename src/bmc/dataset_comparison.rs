@@ -6,7 +6,7 @@ use crate::datastructures::{
 use std::cmp::Ordering;
 
 /// A collection of data that is gathered from other sources (mainly announce messages and the DefaultDS).
-/// When gathered from two different sources, the [compare] method can be used to find out which source
+/// When gathered from two different sources, the [compare](crate::bmc::dataset_comparison::ComparisonDataset) method can be used to find out which source
 /// is better according to the dataset comparison algorithm.
 #[derive(PartialEq, Default)]
 pub struct ComparisonDataset {
@@ -20,11 +20,12 @@ pub struct ComparisonDataset {
 }
 
 // TODO: replace with the proper implementation of our DefaultDS
+#[derive(Debug, Clone, Copy)]
 pub struct DefaultDS {
-    priority_1: u8,
-    clock_identity: ClockIdentity,
-    clock_quality: ClockQuality,
-    priority_2: u8,
+    pub priority_1: u8,
+    pub clock_identity: ClockIdentity,
+    pub clock_quality: ClockQuality,
+    pub priority_2: u8,
 }
 
 impl ComparisonDataset {
@@ -171,6 +172,19 @@ pub enum DatasetOrdering {
     WorseByTopology,
     /// The [ComparisonDataset] is worse than the one being compared against
     Worse,
+}
+
+impl DatasetOrdering {
+    pub fn is_better(&self) -> bool {
+        match self {
+            DatasetOrdering::Better
+            | DatasetOrdering::BetterByTopology
+            // We get errors if two announce messages are (functionally) the same, in that case we can just pick either one
+            | DatasetOrdering::Error1
+            | DatasetOrdering::Error2 => true,
+            DatasetOrdering::WorseByTopology | DatasetOrdering::Worse => false,
+        }
+    }
 }
 
 #[cfg(test)]
