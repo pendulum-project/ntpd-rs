@@ -2,6 +2,10 @@ pub mod linux;
 
 use crate::time::OffsetTime;
 
+// Todo
+#[derive(Debug)]
+pub struct NetworkError;
+
 pub trait NetworkRuntime : Clone {
     type InterfaceDescriptor: Clone;
     type PortType: NetworkPort;
