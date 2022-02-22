@@ -2,18 +2,16 @@ pub mod linux;
 
 use crate::time::OffsetTime;
 
-// Todo
-#[derive(Debug)]
-pub struct NetworkError;
-
 pub trait NetworkRuntime : Clone {
     type InterfaceDescriptor: Clone;
     type PortType: NetworkPort;
+    type Error: std::error::Error + std::fmt::Display;
+
     fn open(
         &self,
         interface: Self::InterfaceDescriptor,
         time_critical: bool,
-    ) -> Result<Self::PortType, NetworkError>;
+    ) -> Result<Self::PortType, Self::Error>;
 }
 
 #[derive(Debug, Clone)]

@@ -1,13 +1,30 @@
 use std::sync::mpsc;
 
-use nix::sys::socket::{InetAddr, SockAddr};
 use statime::{
     datastructures::common::ClockIdentity,
     network::linux::{get_clock_id, LinuxRuntime},
     port::Port,
 };
 
+fn setup_logger() -> Result<(), fern::InitError> {
+    fern::Dispatch::new()
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "{}[{}][{}] {}",
+                chrono::Local::now().format("[%Y-%m-%d][%H:%M:%S]"),
+                record.target(),
+                record.level(),
+                message
+            ))
+        })
+        .level(log::LevelFilter::Debug)
+        .chain(std::io::stdout())
+        .apply()?;
+    Ok(())
+}
+
 fn main() {
+    setup_logger().expect("Could not setup logging");
     let (tx, rx) = mpsc::channel();
     let network_runtime = LinuxRuntime::new(tx);
     let identity = ClockIdentity(get_clock_id().expect("Could not get clock identity"));
@@ -17,11 +34,8 @@ fn main() {
         0,
         0,
         0,
-        network_runtime.clone(),
-        SockAddr::Inet(InetAddr::new(
-            nix::sys::socket::IpAddr::new_v4(0, 0, 0, 0),
-            0,
-        )),
+        network_runtime,
+        "0.0.0.0".parse().unwrap(),
     );
 
     loop {
