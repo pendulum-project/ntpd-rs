@@ -1,19 +1,21 @@
-use std::{os::unix::prelude::RawFd, sync::mpsc::Sender, thread::JoinHandle, str::FromStr};
+use std::{os::unix::prelude::RawFd, str::FromStr, sync::mpsc::Sender, thread::JoinHandle};
 
+use crate::time::{OffsetTime, TimeType};
 use nix::{
     cmsg_space,
+    errno::Errno,
     ifaddrs::getifaddrs,
     sys::{
         socket::{
             recvmsg, sendmsg, setsockopt, socket,
-            sockopt::{IpAddMembership, Timestamping, Ipv6AddMembership},
-            AddressFamily, ControlMessageOwned, InetAddr, IpMembershipRequest, Ipv4Addr, MsgFlags,
-            SockAddr, SockFlag, SockType, TimestampingFlag, Timestamps, Ipv6Addr, IpAddr, Ipv6MembershipRequest,
+            sockopt::{IpAddMembership, Ipv6AddMembership, Timestamping},
+            AddressFamily, ControlMessageOwned, InetAddr, IpAddr, IpMembershipRequest, Ipv4Addr,
+            Ipv6Addr, Ipv6MembershipRequest, MsgFlags, SockAddr, SockFlag, SockType,
+            TimestampingFlag, Timestamps,
         },
         uio::IoVec,
-    }, errno::Errno,
+    },
 };
-use crate::time::{OffsetTime, TimeType};
 
 use super::{NetworkPacket, NetworkPort, NetworkRuntime};
 
@@ -51,12 +53,10 @@ impl FromStr for LinuxInterfaceDescriptor {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match std::net::IpAddr::from_str(s) {
             Ok(addr) => Ok(LinuxInterfaceDescriptor(IpAddr::from_std(&addr))),
-            Err(_) => {
-                match find_interface_with_name(s) {
-                    Some(v4) => Ok(LinuxInterfaceDescriptor(IpAddr::V4(v4))),
-                    None => Err(InvalidInterfaceError),
-                }
-            }
+            Err(_) => match find_interface_with_name(s) {
+                Some(v4) => Ok(LinuxInterfaceDescriptor(IpAddr::V4(v4))),
+                None => Err(InvalidInterfaceError),
+            },
         }
     }
 }
@@ -71,7 +71,7 @@ fn find_interface_with_name(s: &str) -> Option<Ipv4Addr> {
         if ifaddr.interface_name == s {
             match ifaddr.address {
                 Some(SockAddr::Inet(InetAddr::V4(addr))) => return Some(Ipv4Addr(addr.sin_addr)),
-                _ => {},
+                _ => {}
             }
         }
     }
@@ -89,7 +89,11 @@ impl NetworkRuntime for LinuxRuntime {
         time_critical: bool,
     ) -> Result<Self::PortType, NetworkError> {
         let port = if time_critical { 319 } else { 320 };
-        let is_ipv6 = if let IpAddr::V6(_) = interface.0 { true } else { false };
+        let is_ipv6 = if let IpAddr::V6(_) = interface.0 {
+            true
+        } else {
+            false
+        };
         let sock_addr = SockAddr::new_inet(InetAddr::new(interface.0, port));
         let socket = socket(
             AddressFamily::Inet,
@@ -103,20 +107,23 @@ impl NetworkRuntime for LinuxRuntime {
             Errno::EADDRINUSE => NetworkError::AddressInUse(port),
             _ => NetworkError::UnknownError,
         })?;
-        log::info!("Bound {}on {}", if time_critical { "time critical " } else { "" },  sock_addr);
+        log::info!(
+            "Bound {}on {}",
+            if time_critical { "time critical " } else { "" },
+            sock_addr
+        );
 
         if is_ipv6 {
             let multicast_req = Ipv6MembershipRequest::new(
                 // TODO: Which multicast address scope?
                 Ipv6Addr::new(0xFF, 0x02, 0, 0, 0, 0, 0x01, 0x81),
             );
-            setsockopt(socket, Ipv6AddMembership, &multicast_req).map_err(|_| NetworkError::UnknownError)?;
+            setsockopt(socket, Ipv6AddMembership, &multicast_req)
+                .map_err(|_| NetworkError::UnknownError)?;
         } else {
-            let multicast_req = IpMembershipRequest::new(
-                Ipv4Addr::new(224, 0, 1, 129),
-                None,
-            );
-            setsockopt(socket, IpAddMembership, &multicast_req).map_err(|_| NetworkError::UnknownError)?;
+            let multicast_req = IpMembershipRequest::new(Ipv4Addr::new(224, 0, 1, 129), None);
+            setsockopt(socket, IpAddMembership, &multicast_req)
+                .map_err(|_| NetworkError::UnknownError)?;
         }
 
         // Setup timestamping if needed
@@ -130,8 +137,6 @@ impl NetworkRuntime for LinuxRuntime {
             .name(format!("ptp {}", port))
             .spawn(move || LinuxNetworkPort::recv_thread(socket, tx))
             .unwrap();
-
-
 
         Ok(LinuxNetworkPort {
             addr: SockAddr::Inet(InetAddr::new(
@@ -162,7 +167,8 @@ impl NetworkPort for LinuxNetworkPort {
         )
         .unwrap();
 
-        None
+        // TODO: Implement better method for send timestamps
+        Some(u16::from_be_bytes(data[30..32].try_into().unwrap()) as usize)
     }
 }
 
