@@ -181,11 +181,21 @@ impl StateSlave {
                 / 2,
         );
 
+        self.delay_send_time = None;
+        self.delay_recv_time = None;
+        self.delay_id = None;
+
         Some(())
     }
 
     fn extract_measurement(&mut self) -> Option<OffsetTime> {
-        Some(self.sync_recv_time? - self.sync_send_time? - self.mean_delay?)
+        let result = self.sync_recv_time? - self.sync_send_time? - self.mean_delay?;
+
+        self.sync_recv_time = None;
+        self.sync_send_time = None;
+        self.sync_id = None;
+
+        Some(result)
     }
 }
 
