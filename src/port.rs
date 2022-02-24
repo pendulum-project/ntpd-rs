@@ -55,6 +55,7 @@ struct StateSlave {
     delay_send_time: Option<OffsetTime>,
     delay_recv_time: Option<OffsetTime>,
     next_delay_measurement: Option<OffsetTime>,
+    pending_followup: Option<FollowUpMessage>,
 }
 
 impl StateSlave {
@@ -99,14 +100,22 @@ impl StateSlave {
             self.delay_id = None;
         }
 
+        if let Some(follow_up) = self.pending_followup {
+            self.handle_followup(follow_up);
+        }
+
         Some(())
     }
 
     fn handle_followup(&mut self, message: FollowUpMessage) -> Option<()> {
         // Ignore messages not belonging to currently processing sync
-        if self.sync_id? != message.header().sequence_id() {
+        if self.sync_id != Some(message.header().sequence_id()) {
+            self.pending_followup = Some(message); // Store it for a potentially coming sync
             return None;
         }
+
+        // Remove any previous pending messages, they are no longer current
+        self.pending_followup = None;
 
         // Absorb into state
         self.sync_send_time = Some(
