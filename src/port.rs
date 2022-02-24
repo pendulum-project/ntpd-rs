@@ -269,6 +269,16 @@ impl<NR: NetworkRuntime> Port<NR> {
             .handle_message(&mut self.portdata, message, packet.timestamp);
 
         match message {
+            Message::Announce(announce) => {
+                if let State::Slave(inner) = &mut self.state {
+                    inner.remote_master = announce.header().source_port_identity();
+                } else {
+                    self.state = State::Slave(StateSlave {
+                        remote_master: announce.header().source_port_identity(),
+                        ..Default::default()
+                    })
+                }
+            }
             _ => {}
         };
 
