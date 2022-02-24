@@ -313,3 +313,320 @@ impl<NR: NetworkRuntime> Port<NR> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use fixed::traits::ToFixed;
+
+    use crate::datastructures::common::{PortIdentity, TimeInterval, Timestamp};
+    use crate::datastructures::messages::MessageBuilder;
+    use crate::network::test::TestRuntime;
+    use crate::network::NetworkRuntime;
+
+    use super::{IdSequencer, PortData, StateSlave};
+
+    #[test]
+    fn test_measurement_flow() {
+        let network_runtime = TestRuntime::default();
+
+        let master_id = PortIdentity::default();
+        let mut test_id = PortIdentity::default();
+        test_id.clock_identity.0[0] += 1;
+
+        let mut test_state = StateSlave {
+            remote_master: master_id,
+            ..Default::default()
+        };
+
+        let mut test_port_data = PortData {
+            _runtime: network_runtime.clone(),
+            tc_port: network_runtime.open("".to_owned(), true).unwrap(),
+            _nc_port: network_runtime.open("".to_owned(), false).unwrap(),
+            delay_req_ids: IdSequencer::default(),
+            identity: test_id,
+            sdo: 0,
+            domain: 0,
+        };
+
+        test_state.handle_message(
+            &mut test_port_data,
+            MessageBuilder::new()
+                .sdo_id(0)
+                .unwrap()
+                .domain_number(0)
+                .correction_field(TimeInterval((1 as i16).to_fixed()))
+                .sync_message(Timestamp {
+                    seconds: 0,
+                    nanos: 0,
+                }),
+            Some((5 as i16).to_fixed()),
+        );
+
+        assert_eq!(test_state.extract_measurement(), None);
+
+        let delay_req = network_runtime.get_sent().unwrap();
+        test_state.handle_send_timestamp(delay_req.index, (7 as i16).to_fixed());
+
+        assert_eq!(test_state.extract_measurement(), None);
+
+        test_state.handle_message(
+            &mut test_port_data,
+            MessageBuilder::new()
+                .sdo_id(0)
+                .unwrap()
+                .domain_number(0)
+                .correction_field(TimeInterval((2 as i16).to_fixed()))
+                .delay_resp_message(
+                    Timestamp {
+                        seconds: 0,
+                        nanos: 11,
+                    },
+                    test_id,
+                ),
+            None,
+        );
+
+        assert_eq!(
+            test_state.extract_measurement(),
+            Some((1 as i16).to_fixed())
+        );
+    }
+
+    #[test]
+    fn test_measurement_flow_timestamps_out_of_order() {
+        let network_runtime = TestRuntime::default();
+
+        let master_id = PortIdentity::default();
+        let mut test_id = PortIdentity::default();
+        test_id.clock_identity.0[0] += 1;
+
+        let mut test_state = StateSlave {
+            remote_master: master_id,
+            ..Default::default()
+        };
+
+        let mut test_port_data = PortData {
+            _runtime: network_runtime.clone(),
+            tc_port: network_runtime.open("".to_owned(), true).unwrap(),
+            _nc_port: network_runtime.open("".to_owned(), false).unwrap(),
+            delay_req_ids: IdSequencer::default(),
+            identity: test_id,
+            sdo: 0,
+            domain: 0,
+        };
+
+        test_state.handle_message(
+            &mut test_port_data,
+            MessageBuilder::new()
+                .sdo_id(0)
+                .unwrap()
+                .domain_number(0)
+                .correction_field(TimeInterval((1 as i16).to_fixed()))
+                .sync_message(Timestamp {
+                    seconds: 0,
+                    nanos: 0,
+                }),
+            Some((5 as i16).to_fixed()),
+        );
+
+        assert_eq!(test_state.extract_measurement(), None);
+
+        let delay_req = network_runtime.get_sent().unwrap();
+
+        test_state.handle_message(
+            &mut test_port_data,
+            MessageBuilder::new()
+                .sdo_id(0)
+                .unwrap()
+                .domain_number(0)
+                .correction_field(TimeInterval((2 as i16).to_fixed()))
+                .delay_resp_message(
+                    Timestamp {
+                        seconds: 0,
+                        nanos: 11,
+                    },
+                    test_id,
+                ),
+            None,
+        );
+
+        assert_eq!(test_state.extract_measurement(), None);
+
+        test_state.handle_send_timestamp(delay_req.index, (7 as i16).to_fixed());
+
+        assert_eq!(
+            test_state.extract_measurement(),
+            Some((1 as i16).to_fixed())
+        );
+    }
+
+    #[test]
+    fn test_measurement_flow_followup() {
+        let network_runtime = TestRuntime::default();
+
+        let master_id = PortIdentity::default();
+        let mut test_id = PortIdentity::default();
+        test_id.clock_identity.0[0] += 1;
+
+        let mut test_state = StateSlave {
+            remote_master: master_id,
+            ..Default::default()
+        };
+
+        let mut test_port_data = PortData {
+            _runtime: network_runtime.clone(),
+            tc_port: network_runtime.open("".to_owned(), true).unwrap(),
+            _nc_port: network_runtime.open("".to_owned(), false).unwrap(),
+            delay_req_ids: IdSequencer::default(),
+            identity: test_id,
+            sdo: 0,
+            domain: 0,
+        };
+
+        test_state.handle_message(
+            &mut test_port_data,
+            MessageBuilder::new()
+                .sdo_id(0)
+                .unwrap()
+                .domain_number(0)
+                .two_step_flag(true)
+                .correction_field(TimeInterval((1 as i16).to_fixed()))
+                .sync_message(Timestamp {
+                    seconds: 0,
+                    nanos: 0,
+                }),
+            Some((5 as i16).to_fixed()),
+        );
+
+        assert_eq!(test_state.extract_measurement(), None);
+
+        test_state.handle_message(
+            &mut test_port_data,
+            MessageBuilder::new()
+                .sdo_id(0)
+                .unwrap()
+                .domain_number(0)
+                .two_step_flag(true)
+                .correction_field(TimeInterval((1 as i16).to_fixed()))
+                .follow_up_message(Timestamp {
+                    seconds: 0,
+                    nanos: 1,
+                }),
+            None,
+        );
+
+        assert_eq!(test_state.extract_measurement(), None);
+
+        let delay_req = network_runtime.get_sent().unwrap();
+        test_state.handle_send_timestamp(delay_req.index, (7 as i16).to_fixed());
+
+        assert_eq!(test_state.extract_measurement(), None);
+
+        test_state.handle_message(
+            &mut test_port_data,
+            MessageBuilder::new()
+                .sdo_id(0)
+                .unwrap()
+                .domain_number(0)
+                .correction_field(TimeInterval((2 as i16).to_fixed()))
+                .delay_resp_message(
+                    Timestamp {
+                        seconds: 0,
+                        nanos: 11,
+                    },
+                    test_id,
+                ),
+            None,
+        );
+
+        assert_eq!(
+            test_state.extract_measurement(),
+            Some((0 as i16).to_fixed())
+        );
+    }
+
+    #[test]
+    fn test_measurement_flow_followup_out_of_order() {
+        let network_runtime = TestRuntime::default();
+
+        let master_id = PortIdentity::default();
+        let mut test_id = PortIdentity::default();
+        test_id.clock_identity.0[0] += 1;
+
+        let mut test_state = StateSlave {
+            remote_master: master_id,
+            ..Default::default()
+        };
+
+        let mut test_port_data = PortData {
+            _runtime: network_runtime.clone(),
+            tc_port: network_runtime.open("".to_owned(), true).unwrap(),
+            _nc_port: network_runtime.open("".to_owned(), false).unwrap(),
+            delay_req_ids: IdSequencer::default(),
+            identity: test_id,
+            sdo: 0,
+            domain: 0,
+        };
+
+        test_state.handle_message(
+            &mut test_port_data,
+            MessageBuilder::new()
+                .sdo_id(0)
+                .unwrap()
+                .domain_number(0)
+                .two_step_flag(true)
+                .correction_field(TimeInterval((1 as i16).to_fixed()))
+                .follow_up_message(Timestamp {
+                    seconds: 0,
+                    nanos: 1,
+                }),
+            None,
+        );
+
+        assert_eq!(test_state.extract_measurement(), None);
+
+        test_state.handle_message(
+            &mut test_port_data,
+            MessageBuilder::new()
+                .sdo_id(0)
+                .unwrap()
+                .domain_number(0)
+                .two_step_flag(true)
+                .correction_field(TimeInterval((1 as i16).to_fixed()))
+                .sync_message(Timestamp {
+                    seconds: 0,
+                    nanos: 0,
+                }),
+            Some((5 as i16).to_fixed()),
+        );
+
+        assert_eq!(test_state.extract_measurement(), None);
+
+        let delay_req = network_runtime.get_sent().unwrap();
+        test_state.handle_send_timestamp(delay_req.index, (7 as i16).to_fixed());
+
+        assert_eq!(test_state.extract_measurement(), None);
+
+        test_state.handle_message(
+            &mut test_port_data,
+            MessageBuilder::new()
+                .sdo_id(0)
+                .unwrap()
+                .domain_number(0)
+                .correction_field(TimeInterval((2 as i16).to_fixed()))
+                .delay_resp_message(
+                    Timestamp {
+                        seconds: 0,
+                        nanos: 11,
+                    },
+                    test_id,
+                ),
+            None,
+        );
+
+        assert_eq!(
+            test_state.extract_measurement(),
+            Some((0 as i16).to_fixed())
+        );
+    }
+}
