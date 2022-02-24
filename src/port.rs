@@ -42,7 +42,7 @@ pub struct Port<NR: NetworkRuntime> {
     state: State,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct StateSlave {
     remote_master: PortIdentity,
     mean_delay: Option<OffsetTime>,
@@ -165,7 +165,8 @@ impl StateSlave {
 
     fn handle_send_timestamp(&mut self, id: usize, timestamp: OffsetTime) -> Option<()> {
         if self.delay_send_id? == id {
-            self.delay_recv_time = Some(timestamp);
+            self.delay_send_time = Some(timestamp);
+            self.delay_send_id = None;
             self.finish_delay_measurement();
             Some(())
         } else {
