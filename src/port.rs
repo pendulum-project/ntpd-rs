@@ -1,5 +1,6 @@
 use fixed::traits::ToFixed;
 
+use crate::datastructures::common::Timestamp;
 use crate::datastructures::messages::{
     DelayRespMessage, FollowUpMessage, MessageBuilder, SyncMessage,
 };
@@ -85,7 +86,7 @@ impl StateSlave {
                 .source_port_identity(port.identity)
                 .sequence_id(delay_id)
                 .log_message_interval(0x7F)
-                .delay_req_message(timestamp.to_timestamp().unwrap());
+                .delay_req_message(Timestamp::default());
             let delay_req_encode = delay_req.serialize_vec().unwrap();
             self.delay_send_id = Some(
                 port.tc_port
