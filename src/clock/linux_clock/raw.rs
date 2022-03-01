@@ -1,18 +1,17 @@
-use self::timex::{StatusFlags, Timex};
-use crate::linux_clock::timex::AdjustFlags;
+use crate::datastructures::common::{ClockAccuracy, ClockQuality};
+
+use super::timex::{AdjustFlags, StatusFlags, Timex};
 use libc::{clockid_t, timespec};
 use std::{fmt::Display, ops::DerefMut};
 
-mod timex;
-
 #[cfg(target_pointer_width = "64")]
-type Fixed = fixed::types::I48F16;
+pub(super) type Fixed = fixed::types::I48F16;
 #[cfg(target_pointer_width = "32")]
-type Fixed = fixed::types::I16F16;
+pub(super) type Fixed = fixed::types::I16F16;
 #[cfg(target_pointer_width = "64")]
-type Int = i64;
+pub(super) type Int = i64;
 #[cfg(target_pointer_width = "32")]
-type Int = i32;
+pub(super) type Int = i32;
 
 /// A type for precisely adjusting the time of a linux clock.
 /// Not every clock supports the used API so that's a bit trial and error.
@@ -35,21 +34,22 @@ type Int = i32;
 /// test_clock.adjust_clock(0.000_001, 1.000_000_001).unwrap();
 /// ```
 #[derive(Debug, Clone)]
-pub struct LinuxClock {
+pub struct RawLinuxClock {
     id: clockid_t,
     name: String,
+    quality: ClockQuality,
 }
-impl LinuxClock {
+impl RawLinuxClock {
     /// https://manpages.debian.org/testing/manpages-dev/ntp_adjtime.3.en.html#DESCRIPTION
-    fn get_clock_state(&self) -> Result<(Timex, ClockState), i32> {
+    pub(super) fn get_clock_state(&self) -> Result<(Timex, ClockState), i32> {
         let mut value = Timex::new();
         match unsafe { libc::clock_adjtime(self.id, value.deref_mut() as *mut _) } {
-            libc::TIME_OK => Ok((value, ClockState::OK)),
-            libc::TIME_INS => Ok((value, ClockState::INS)),
-            libc::TIME_DEL => Ok((value, ClockState::DEL)),
-            libc::TIME_OOP => Ok((value, ClockState::OOP)),
-            libc::TIME_WAIT => Ok((value, ClockState::WAIT)),
-            libc::TIME_ERROR => Ok((value, ClockState::ERROR)),
+            libc::TIME_OK => Ok((value, ClockState::Ok)),
+            libc::TIME_INS => Ok((value, ClockState::Ins)),
+            libc::TIME_DEL => Ok((value, ClockState::Del)),
+            libc::TIME_OOP => Ok((value, ClockState::Oop)),
+            libc::TIME_WAIT => Ok((value, ClockState::Wait)),
+            libc::TIME_ERROR => Ok((value, ClockState::Error)),
             -1 => {
                 let errno = unsafe { *libc::__errno_location() };
                 Err(errno)
@@ -99,7 +99,8 @@ impl LinuxClock {
             let mut new_timex = current_timex.clone();
 
             new_timex.set_status(
-                StatusFlags::PLL // We want to change the PLL, a major component in the clock circuit
+                new_timex.get_status()
+                    | StatusFlags::PLL // We want to change the PLL, a major component in the clock circuit
                     | StatusFlags::PPSFREQ // We want the PPS signal to change as well
                     | StatusFlags::PPSTIME // The PPS time should be changed
                     | StatusFlags::FREQHOLD, // We want no automatic frequency updates
@@ -143,7 +144,7 @@ impl LinuxClock {
     }
 
     pub fn get_clocks() -> impl Iterator<Item = Self> {
-        const CLOCKS: [(clockid_t, &str); 11] = [
+        const SYSTEM_CLOCKS: [(clockid_t, &str); 11] = [
             (libc::CLOCK_BOOTTIME, "CLOCK_BOOTTIME"),
             (libc::CLOCK_BOOTTIME_ALARM, "CLOCK_BOOTTIME_ALARM"),
             (libc::CLOCK_MONOTONIC, "CLOCK_MONOTONIC"),
@@ -157,9 +158,14 @@ impl LinuxClock {
             (libc::CLOCK_THREAD_CPUTIME_ID, "CLOCK_THREAD_CPUTIME_ID"),
         ];
 
-        CLOCKS.into_iter().map(|(id, name)| Self {
+        SYSTEM_CLOCKS.into_iter().map(|(id, name)| Self {
             id,
             name: name.into(),
+            quality: ClockQuality {
+                clock_class: 248,
+                clock_accuracy: ClockAccuracy::MS10,
+                offset_scaled_log_variance: 0xFFFF,
+            },
         })
     }
 
@@ -168,9 +174,39 @@ impl LinuxClock {
             .find(|c| c.id == libc::CLOCK_REALTIME)
             .unwrap()
     }
+
+    pub fn quality(&self) -> crate::datastructures::common::ClockQuality {
+        self.quality
+    }
+
+    pub fn set_leap_seconds(&self, leap_61: bool, leap_59: bool) -> Result<(), i32> {
+        let (mut clock, _) = self.get_clock_state()?;
+
+        let mut status = clock.get_status();
+
+        if leap_61 {
+            status |= StatusFlags::INS;
+        } else {
+            status &= !StatusFlags::INS;
+        }
+        if leap_59 {
+            status |= StatusFlags::DEL;
+        } else {
+            status &= !StatusFlags::DEL;
+        }
+
+        clock.set_status(status);
+
+        // Adjust the clock time and handle its errors
+        let error = unsafe { libc::clock_adjtime(self.id, clock.deref_mut() as *mut _) };
+        match error {
+            -1 => Err(unsafe { *libc::__errno_location() }),
+            _ => Ok(()),
+        }
+    }
 }
 
-impl Display for LinuxClock {
+impl Display for RawLinuxClock {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         const SECS_IN_DAY: Int = 24 * 60 * 60;
 
@@ -228,10 +264,10 @@ impl Display for LinuxClock {
 /// Reflects: https://manpages.debian.org/testing/manpages-dev/ntp_adjtime.3.en.html#RETURN_VALUE
 #[derive(Debug, Clone)]
 pub enum ClockState {
-    OK,
-    INS,
-    DEL,
-    OOP,
-    WAIT,
-    ERROR,
+    Ok,
+    Ins,
+    Del,
+    Oop,
+    Wait,
+    Error,
 }

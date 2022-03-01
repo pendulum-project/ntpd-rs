@@ -8,6 +8,7 @@ use nix::sys::time::TimeSpec;
 
 use crate::datastructures::common::{TimeInterval, Timestamp};
 
+/// Time in nanoseconds
 pub type OffsetTime = I112F16;
 
 #[derive(Clone, Debug)]

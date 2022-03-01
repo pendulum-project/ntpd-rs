@@ -37,6 +37,7 @@ struct SyncState {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct TimeMeasurement {
     offset_master: OffsetTime,
     mean_delay: OffsetTime,

@@ -1,8 +1,9 @@
+use super::raw::Fixed;
+use crate::time::OffsetTime;
 use bitflags::bitflags;
+use fixed::traits::ToFixed;
 use libc::timex;
 use std::ops::{Deref, DerefMut};
-
-use super::Fixed;
 
 #[derive(Clone)]
 pub struct Timex(timex);
@@ -47,6 +48,20 @@ impl Timex {
     /// The stabil frequency offset in PPM
     pub fn get_stabil_frequency(&self) -> Fixed {
         Fixed::from_bits(self.stabil)
+    }
+
+    pub fn get_time(&self) -> OffsetTime {
+        let time = self.time;
+        let nanos = self.get_status().contains(StatusFlags::NANO);
+
+        let secs = time.tv_sec.to_fixed::<OffsetTime>() * 1_000_000_000;
+        let sub_secs: OffsetTime = if nanos {
+            time.tv_usec.to_fixed()
+        } else {
+            time.tv_usec.to_fixed::<OffsetTime>() * 1000
+        };
+
+        secs + sub_secs
     }
 }
 
