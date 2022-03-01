@@ -23,14 +23,14 @@ pub(super) type Int = i32;
 /// # Example
 ///
 /// ```no_run
-/// use statime::linux_clock::LinuxClock;
+/// use statime::clock::linux_clock::RawLinuxClock;
 ///
 /// println!("Available clocks:");
-/// for clock in LinuxClock::get_clocks() {
+/// for clock in RawLinuxClock::get_clocks() {
 ///     println!("{}", clock);
 /// }
 ///
-/// let mut test_clock = LinuxClock::get_realtime_clock();
+/// let mut test_clock = RawLinuxClock::get_realtime_clock();
 /// test_clock.adjust_clock(0.000_001, 1.000_000_001).unwrap();
 /// ```
 #[derive(Debug, Clone)]

@@ -1,4 +1,3 @@
-use self::raw::RawLinuxClock;
 use super::{Clock, Watch};
 use crate::{clock::TimeProperties, datastructures::common::ClockQuality, time::OffsetTime};
 use ringbuffer::{RingBuffer, RingBufferExt, RingBufferWrite};
@@ -6,6 +5,8 @@ use std::{collections::HashMap, sync::mpsc};
 
 mod raw;
 mod timex;
+
+pub use raw::RawLinuxClock;
 
 #[derive(Debug, Clone)]
 pub enum Error {
