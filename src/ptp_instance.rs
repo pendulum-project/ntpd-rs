@@ -24,7 +24,7 @@ impl<NR: NetworkRuntime> PtpInstance<NR> {
                 0,
                 config.sdo,
                 config.domain,
-                runtime.clone(),
+                runtime,
                 config.interface,
             ),
         }

@@ -89,11 +89,7 @@ impl NetworkRuntime for LinuxRuntime {
         time_critical: bool,
     ) -> Result<Self::PortType, NetworkError> {
         let port = if time_critical { 319 } else { 320 };
-        let is_ipv6 = if let IpAddr::V6(_) = interface.0 {
-            true
-        } else {
-            false
-        };
+        let is_ipv6 = matches!(interface.0, IpAddr::V6(_));
         let sock_addr = SockAddr::new_inet(InetAddr::new(interface.0, port));
         let socket = socket(
             AddressFamily::Inet,
@@ -198,16 +194,14 @@ impl LinuxNetworkPort {
 pub fn get_clock_id() -> Option<[u8; 8]> {
     let candidates = getifaddrs().unwrap();
     for candidate in candidates {
-        if let Some(address) = candidate.address {
-            if let SockAddr::Link(mac) = address {
-                // Ignore multicast and locally administered mac addresses
-                if mac.addr()[0] & 0x3 == 0 && mac.addr().iter().any(|x| *x != 0) {
-                    let mut result: [u8; 8] = [0; 8];
-                    for (i, v) in mac.addr().iter().enumerate() {
-                        result[i] = *v;
-                    }
-                    return Some(result);
+        if let Some(SockAddr::Link(mac)) = candidate.address {
+            // Ignore multicast and locally administered mac addresses
+            if mac.addr()[0] & 0x3 == 0 && mac.addr().iter().any(|x| *x != 0) {
+                let mut result: [u8; 8] = [0; 8];
+                for (i, v) in mac.addr().iter().enumerate() {
+                    result[i] = *v;
                 }
+                return Some(result);
             }
         }
     }
