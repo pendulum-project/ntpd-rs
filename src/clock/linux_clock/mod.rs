@@ -89,9 +89,15 @@ impl Clock for LinuxClock {
         }
 
         let adjust_result = self.clock.adjust_clock(
-            (average_offset * 1_000_000_000).to_num::<f64>(),
+            (average_offset / 1_000_000_000).to_num::<f64>()
+                / ((1 + self.offset_buffer.len()) as f64),
             average_frequency_multiplier,
         );
+
+        if (average_offset / 1_000_000_000).to_num::<f64>().abs() > 0.5 {
+            self.offset_buffer.clear();
+            self.frequency_buffer.clear();
+        }
 
         match adjust_result {
             Ok(_) => Ok(average_offset < 1000),

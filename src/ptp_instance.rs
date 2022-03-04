@@ -38,7 +38,7 @@ impl<NR: NetworkRuntime, C: Clock> PtpInstance<NR, C> {
         if let Some(data) = self.port.extract_measurement() {
             self.clock
                 .adjust(
-                    data,
+                    -data,
                     1.0,
                     TimeProperties::ArbitraryTime {
                         time_traceable: false,

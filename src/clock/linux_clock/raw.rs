@@ -83,10 +83,15 @@ impl RawLinuxClock {
             let new_seconds =
                 current_timex.time.tv_sec + time_offset.floor() as Int + new_nanos / 1_000_000_000;
 
-            let new_time = libc::timespec {
+            let mut new_time = libc::timespec {
                 tv_sec: new_seconds,
                 tv_nsec: new_nanos % 1_000_000_000,
             };
+
+            while new_time.tv_nsec < 0 {
+                new_time.tv_sec -= 1;
+                new_time.tv_nsec += 1_000_000_000;
+            }
 
             // Set the clock time using the 'normal' clock api
             let error = unsafe { libc::clock_settime(self.id, &new_time as *const _) };
