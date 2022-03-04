@@ -46,35 +46,25 @@ impl Bmca {
             .register_announce_message(announce_message, current_time);
     }
 
-    /// Takes the Erbest from this port. If called before two announce intervals have passed since the last call
-    /// the returned value will like to be None. So don't do that.
+    /// Takes the Erbest from this port
     pub fn take_best_port_announce_message(
         &mut self,
         current_time: Timestamp,
-        port_state: PortState,
     ) -> Option<(AnnounceMessage, PortIdentity)> {
+        // Find the announce message we want to use from each foreign master that has qualified messages
         let announce_messages = self
             .foreign_master_list
-            .take_qualified_announce_messages(current_time)
-            .map(|fm| {
-                let (best_announce_message, best_timestamp) = fm.get_best_announce_message();
-                (
-                    best_announce_message,
-                    best_timestamp,
-                    self.own_port_identity,
-                )
-            });
+            .take_qualified_announce_messages(current_time);
 
-        let erbest = Self::find_best_announce_message(announce_messages);
+        // The best of the foreign master messages is our erbest
+        let erbest = Self::find_best_announce_message(
+            announce_messages.map(|(message, ts)| (message, ts, self.own_port_identity)),
+        );
 
         if let Some((erbest, erbest_ts, _)) = erbest {
-            // If the port is in the slave, uncalibrated or passive state, then the best announce message must be reconsidered the next time
-            if matches!(
-                port_state,
-                PortState::Slave | PortState::Uncalibrated | PortState::Passive
-            ) {
-                self.register_announce_message(&erbest, erbest_ts);
-            }
+            // All messages that were considered have been removed from the foreignmasterlist.
+            // However, the one that has been selected as the Erbest must not be removed, so let's just reregister it.
+            self.register_announce_message(&erbest, erbest_ts);
         }
 
         erbest.map(|erbest| (erbest.0, erbest.2))
