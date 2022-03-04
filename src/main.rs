@@ -1,6 +1,8 @@
-use std::sync::mpsc;
+use std::{sync::mpsc, time::Duration};
 
+use fixed::traits::LossyFrom;
 use statime::{
+    clock::linux_clock::{LinuxClock, RawLinuxClock},
     datastructures::{common::ClockIdentity, messages::Message},
     network::linux::{get_clock_id, LinuxRuntime},
     ptp_instance::{Config, PtpInstance},
@@ -27,6 +29,7 @@ fn main() {
     setup_logger().expect("Could not setup logging");
     let (tx, rx) = mpsc::channel();
     let network_runtime = LinuxRuntime::new(tx);
+    let (clock, mut clock_runtime) = LinuxClock::new(RawLinuxClock::get_realtime_clock());
     let clock_id = ClockIdentity(get_clock_id().expect("Could not get clock identity"));
 
     let config = Config {
@@ -36,26 +39,42 @@ fn main() {
         interface: "0.0.0.0".parse().unwrap(),
     };
 
-    let mut instance = PtpInstance::new(config, network_runtime);
+    let mut instance = PtpInstance::new(config, network_runtime, clock);
 
     loop {
-        let packet = rx.recv().expect("Could not get further network packets");
-        // TODO: Implement better mechanism for send timestamps
-        let parsed_message = Message::deserialize(&packet.data).unwrap();
-        if parsed_message
-            .header()
-            .source_port_identity()
-            .clock_identity
-            == clock_id
-        {
-            if let Some(timestamp) = packet.timestamp {
-                instance.handle_send_timestamp(
-                    parsed_message.header().sequence_id() as usize,
-                    timestamp,
-                );
+        let packet = if let Some(timeout) = clock_runtime.interval_to_next_alarm() {
+            match rx.recv_timeout(Duration::from_millis(
+                i128::lossy_from(timeout / 1000) as u64
+            )) {
+                Ok(data) => Some(data),
+                Err(mpsc::RecvTimeoutError::Timeout) => None,
+                Err(e) => Err(e).expect("Could not get further network packets"),
             }
         } else {
-            instance.handle_network(packet);
+            Some(rx.recv().expect("Could not get further network packets"))
+        };
+        if let Some(packet) = packet {
+            // TODO: Implement better mechanism for send timestamps
+            let parsed_message = Message::deserialize(&packet.data).unwrap();
+            if parsed_message
+                .header()
+                .source_port_identity()
+                .clock_identity
+                == clock_id
+            {
+                if let Some(timestamp) = packet.timestamp {
+                    instance.handle_send_timestamp(
+                        parsed_message.header().sequence_id() as usize,
+                        timestamp,
+                    );
+                }
+            } else {
+                instance.handle_network(packet);
+            }
+        }
+
+        while let Some(timer_id) = clock_runtime.check() {
+            instance.handle_alarm(timer_id);
         }
     }
 }

@@ -134,6 +134,20 @@ pub struct AlarmReceiver {
 impl AlarmReceiver {
     /// Checks if an alarm went off
     pub fn check(&mut self) -> Option<u32> {
+        // Check if we have an alarm and if it would go off
+        match self.earliest_alarm() {
+            Some((alarm_id, alarm_time))
+                if alarm_time < self.clock.get_clock_state().unwrap().0.get_time() =>
+            {
+                let alarm_id = alarm_id;
+                self.alarms.remove(&alarm_id);
+                Some(alarm_id)
+            }
+            _ => None,
+        }
+    }
+
+    fn earliest_alarm(&mut self) -> Option<(u32, OffsetTime)> {
         // Gather all alarms into the hashmap
         while let Ok((clock_id, alarm_time)) = self.alarm_receiver.try_recv() {
             self.alarms.insert(clock_id, alarm_time);
@@ -144,15 +158,18 @@ impl AlarmReceiver {
             .alarms
             .iter()
             .reduce(|l, r| if l.1 <= r.1 { l } else { r });
+        earliest_alarm.map(|(a, b)| (a.to_owned(), b.to_owned()))
+    }
 
-        // Check if we have an alarm and if it would go off
-        match earliest_alarm {
-            Some((alarm_id, alarm_time))
-                if alarm_time < &self.clock.get_clock_state().unwrap().0.get_time() =>
-            {
-                let alarm_id = *alarm_id;
-                self.alarms.remove(&alarm_id);
-                Some(alarm_id)
+    pub fn interval_to_next_alarm(&mut self) -> Option<OffsetTime> {
+        match self.earliest_alarm() {
+            Some((_, alarm_time)) => {
+                let cur_time = self.clock.get_clock_state().unwrap().0.get_time();
+                if cur_time > alarm_time {
+                    Some(0.into())
+                } else {
+                    Some(alarm_time - cur_time)
+                }
             }
             _ => None,
         }
