@@ -20,10 +20,7 @@ pub struct ForeignMaster {
 }
 
 impl ForeignMaster {
-    fn new(
-        announce_message: AnnounceMessage,
-        current_time: Timestamp,
-    ) -> Self {
+    fn new(announce_message: AnnounceMessage, current_time: Timestamp) -> Self {
         Self {
             foreign_master_port_identity: announce_message.header().source_port_identity(),
             announce_messages: Vec::from([(announce_message, current_time)]),
@@ -136,10 +133,8 @@ impl ForeignMasterList {
             );
         } else {
             // No, insert a new foreign master
-            self.foreign_masters.push(ForeignMaster::new(
-                *announce_message,
-                current_time,
-            ));
+            self.foreign_masters
+                .push(ForeignMaster::new(*announce_message, current_time));
         }
     }
 
