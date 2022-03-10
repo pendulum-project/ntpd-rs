@@ -1,1 +1,6 @@
 /target
+validation/measurement_report.aux
+validation/measurement_report.fdb_latexmk
+validation/measurement_report.fls
+validation/measurement_report.log
+validation/measurement_report.pdf
