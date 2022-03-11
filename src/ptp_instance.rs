@@ -7,7 +7,7 @@ use crate::{
 };
 
 fixed::const_fixed_from_int! {
-    const BMCA_INTERVAL: OffsetTime = 1_000_000_000;
+    const BMCA_INTERVAL: OffsetTime = 100_000_000; // Every 100ms
 }
 
 pub struct Config<NR: NetworkRuntime> {
@@ -36,9 +36,9 @@ impl<NR: NetworkRuntime, C: Clock> PtpInstance<NR, C> {
                 config.sdo,
                 config.domain,
                 PortConfig {
-                    log_announce_interval: 0,
-                    priority_1: 0,
-                    priority_2: 0,
+                    log_announce_interval: 1,
+                    priority_1: 255,
+                    priority_2: 255,
                 },
                 runtime,
                 config.interface,

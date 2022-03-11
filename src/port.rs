@@ -411,7 +411,6 @@ impl<NR: NetworkRuntime> Port<NR> {
         );
 
         if let Some(recommended_state) = recommended_state {
-            println!("Got a new recommended state: {:?}", recommended_state);
             self.state.handle_recommended_state(&recommended_state);
             match &recommended_state {
                 RecommendedState::M1(_) => todo!(),

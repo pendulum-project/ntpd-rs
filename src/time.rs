@@ -36,9 +36,8 @@ impl TimeType for OffsetTime {
     }
 
     fn to_timestamp(&self) -> Result<Timestamp, RangeError> {
-        let seconds: u64 = self.checked_to_num().ok_or(RangeError {})?;
         Ok(Timestamp {
-            seconds,
+            seconds: self.secs().checked_abs().unwrap() as u64,
             nanos: self.sub_nanos(),
         })
     }
@@ -60,5 +59,17 @@ impl TimeType for OffsetTime {
         let seconds = 2.0f64.powi(log_interval as i32);
         let nanos = seconds * 1_000_000_000.0;
         nanos.to_fixed()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn log_interval() {
+        assert_eq!(OffsetTime::from_log_interval(0), 1000000000u64.to_fixed::<OffsetTime>());
+        assert_eq!(OffsetTime::from_log_interval(-1), 500000000u64.to_fixed::<OffsetTime>());
+        assert_eq!(OffsetTime::from_log_interval(1), 2000000000u64.to_fixed::<OffsetTime>());
     }
 }

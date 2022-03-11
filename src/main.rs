@@ -43,8 +43,8 @@ fn main() {
 
     loop {
         let packet = if let Some(timeout) = clock_runtime.interval_to_next_alarm() {
-            match rx.recv_timeout(Duration::from_millis(
-                i128::lossy_from(timeout / 1000) as u64
+            match rx.recv_timeout(Duration::from_nanos(
+                i128::lossy_from(timeout) as u64
             )) {
                 Ok(data) => Some(data),
                 Err(mpsc::RecvTimeoutError::Timeout) => None,
