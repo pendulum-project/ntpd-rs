@@ -3,18 +3,15 @@ use crate::{
     datastructures::common::ClockIdentity,
     network::{NetworkPacket, NetworkRuntime},
     port::{Port, PortConfig},
-    time::OffsetTime,
+    time::{OffsetTime, TimeType},
 };
-
-fixed::const_fixed_from_int! {
-    const BMCA_INTERVAL: OffsetTime = 100_000_000; // Every 100ms
-}
 
 pub struct Config<NR: NetworkRuntime> {
     pub identity: ClockIdentity,
     pub sdo: u16,
     pub domain: u8,
     pub interface: NR::InterfaceDescriptor,
+    pub port_config: PortConfig,
 }
 
 pub struct PtpInstance<NR: NetworkRuntime, C: Clock> {
@@ -27,7 +24,9 @@ impl<NR: NetworkRuntime, C: Clock> PtpInstance<NR, C> {
     pub fn new(config: Config<NR>, runtime: NR, mut clock: C) -> Self {
         let mut bmca_watch = clock.get_watch();
 
-        bmca_watch.set_alarm(BMCA_INTERVAL);
+        bmca_watch.set_alarm(OffsetTime::from_log_interval(
+            config.port_config.log_announce_interval,
+        ));
 
         PtpInstance {
             port: Port::new(
@@ -35,11 +34,7 @@ impl<NR: NetworkRuntime, C: Clock> PtpInstance<NR, C> {
                 0,
                 config.sdo,
                 config.domain,
-                PortConfig {
-                    log_announce_interval: 1,
-                    priority_1: 255,
-                    priority_2: 255,
-                },
+                config.port_config,
                 runtime,
                 config.interface,
                 clock.quality(),
@@ -67,7 +62,7 @@ impl<NR: NetworkRuntime, C: Clock> PtpInstance<NR, C> {
         if id == self.bmca_watch.id() {
             // The bmca watch triggered, we must run the bmca
             // But first set a new alarm
-            self.bmca_watch.set_alarm(BMCA_INTERVAL);
+            self.bmca_watch.set_alarm(self.port.get_announce_interval());
 
             // Currently we only have one port, so erbest is also automatically our ebest
             let current_time = self.clock.now();

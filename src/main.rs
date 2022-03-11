@@ -37,6 +37,11 @@ fn main() {
         sdo: 0,
         domain: 0,
         interface: "0.0.0.0".parse().unwrap(),
+        port_config: statime::port::PortConfig {
+            log_announce_interval: 1,
+            priority_1: 255,
+            priority_2: 255,
+        },
     };
 
     let mut instance = PtpInstance::new(config, network_runtime, clock);

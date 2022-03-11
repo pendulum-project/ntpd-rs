@@ -286,11 +286,6 @@ impl State {
 
     fn handle_recommended_state(&mut self, recommended_state: &RecommendedState) {
         match recommended_state {
-            RecommendedState::M1(_) => todo!(),
-            RecommendedState::M2(_) => todo!(),
-            RecommendedState::M3(_) => todo!(),
-            RecommendedState::P1(_) => todo!(),
-            RecommendedState::P2(_) => todo!(),
             // TODO set things like steps_removed once they are added
             RecommendedState::S1(announce_message) => match self {
                 State::Listening => {
@@ -303,6 +298,7 @@ impl State {
                     slave_state.remote_master = announce_message.header().source_port_identity();
                 }
             },
+            _ => *self = State::Listening,
         }
     }
 }
@@ -413,16 +409,16 @@ impl<NR: NetworkRuntime> Port<NR> {
         if let Some(recommended_state) = recommended_state {
             self.state.handle_recommended_state(&recommended_state);
             match &recommended_state {
-                RecommendedState::M1(_) => todo!(),
-                RecommendedState::M2(_) => todo!(),
-                RecommendedState::M3(_) => todo!(),
-                RecommendedState::P1(_) => todo!(),
-                RecommendedState::P2(_) => todo!(),
                 RecommendedState::S1(announce_message) => {
                     self.portdata.time_properties = announce_message.time_properties();
                 }
+                _ => {}
             }
         }
+    }
+
+    pub fn get_announce_interval(&self) -> OffsetTime {
+        OffsetTime::from_log_interval(self.portdata.port_config.log_announce_interval)
     }
 }
 
