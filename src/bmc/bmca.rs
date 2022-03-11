@@ -1,13 +1,13 @@
 use super::{
     dataset_comparison::{ComparisonDataset, DatasetOrdering, DefaultDS},
     foreign_master::ForeignMasterList,
-    PortState,
 };
 use crate::{
     datastructures::{
         common::{PortIdentity, TimeInterval, Timestamp},
         messages::AnnounceMessage,
     },
+    port::State,
     time::{OffsetTime, TimeType},
 };
 
@@ -50,7 +50,7 @@ impl Bmca {
     pub fn take_best_port_announce_message(
         &mut self,
         current_time: Timestamp,
-    ) -> Option<(AnnounceMessage, PortIdentity)> {
+    ) -> Option<(AnnounceMessage, Timestamp, PortIdentity)> {
         // Find the announce message we want to use from each foreign master that has qualified messages
         let announce_messages = self
             .foreign_master_list
@@ -67,7 +67,7 @@ impl Bmca {
             self.register_announce_message(&erbest, erbest_ts);
         }
 
-        erbest.map(|erbest| (erbest.0, erbest.2))
+        erbest
     }
 
     /// Finds the best announce message in the given iterator.
@@ -108,7 +108,7 @@ impl Bmca {
         own_data: &DefaultDS,
         best_global_announce_message: Option<(&AnnounceMessage, &PortIdentity)>,
         best_port_announce_message: Option<(&AnnounceMessage, &PortIdentity)>,
-        port_state: PortState,
+        port_state: &State,
     ) -> Option<RecommendedState> {
         let d0 = ComparisonDataset::from_own_data(own_data);
         let ebest = best_global_announce_message
@@ -116,7 +116,7 @@ impl Bmca {
         let erbest = best_port_announce_message
             .map(|(announce, pid)| ComparisonDataset::from_announce_message(announce, pid));
 
-        if best_global_announce_message.is_none() && matches!(port_state, PortState::Listening) {
+        if best_global_announce_message.is_none() && matches!(port_state, State::Listening) {
             return None;
         }
 
@@ -163,6 +163,7 @@ impl Bmca {
     }
 }
 
+#[derive(Debug)]
 pub enum RecommendedState {
     M1(DefaultDS),
     M2(DefaultDS),

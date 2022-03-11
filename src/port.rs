@@ -1,8 +1,9 @@
-use fixed::traits::ToFixed;
-
-use crate::datastructures::common::Timestamp;
+use crate::bmc::bmca::{Bmca, RecommendedState};
+use crate::bmc::dataset_comparison::DefaultDS;
+use crate::clock::TimeProperties;
+use crate::datastructures::common::{ClockQuality, Timestamp};
 use crate::datastructures::messages::{
-    DelayRespMessage, FollowUpMessage, MessageBuilder, SyncMessage,
+    AnnounceMessage, DelayRespMessage, FollowUpMessage, MessageBuilder, SyncMessage,
 };
 use crate::datastructures::{
     common::{ClockIdentity, PortIdentity},
@@ -10,6 +11,7 @@ use crate::datastructures::{
 };
 use crate::network::{NetworkPacket, NetworkPort, NetworkRuntime};
 use crate::time::{OffsetTime, TimeType};
+use fixed::traits::ToFixed;
 
 #[derive(Debug, Clone, Default)]
 struct IdSequencer {
@@ -34,16 +36,64 @@ pub struct PortData<NR: NetworkRuntime> {
     identity: PortIdentity,
     sdo: u16,
     domain: u8,
+    clock_quality: ClockQuality,
+
+    time_properties: TimeProperties,
+
+    port_config: PortConfig,
+    bmca: Bmca,
+}
+
+impl<NR: NetworkRuntime> PortData<NR> {
+    pub fn new(
+        _runtime: NR,
+        tc_port: NR::PortType,
+        _nc_port: NR::PortType,
+        identity: PortIdentity,
+        sdo: u16,
+        domain: u8,
+        port_config: PortConfig,
+        clock_quality: ClockQuality,
+    ) -> Self {
+        let bmca = Bmca::new(
+            OffsetTime::from_log_interval(port_config.log_announce_interval)
+                .to_interval()
+                .unwrap(),
+            identity,
+        );
+
+        Self {
+            _runtime,
+            tc_port,
+            _nc_port,
+            delay_req_ids: IdSequencer::default(),
+            identity,
+            sdo,
+            domain,
+            clock_quality,
+            time_properties: TimeProperties::ArbitraryTime {
+                time_traceable: false,
+                frequency_traceable: false,
+            },
+            port_config,
+            bmca,
+        }
+    }
+}
+
+pub struct PortConfig {
+    pub log_announce_interval: i8,
+    pub priority_1: u8,
+    pub priority_2: u8,
 }
 
 pub struct Port<NR: NetworkRuntime> {
     portdata: PortData<NR>,
-
     state: State,
 }
 
 #[derive(Debug, Default)]
-struct StateSlave {
+pub struct StateSlave {
     remote_master: PortIdentity,
     mean_delay: Option<OffsetTime>,
     sync_id: Option<u16>,
@@ -209,7 +259,7 @@ impl StateSlave {
 }
 
 #[allow(clippy::large_enum_variant)]
-enum State {
+pub enum State {
     Listening,
     Slave(StateSlave),
 }
@@ -233,6 +283,28 @@ impl State {
             _ => None,
         }
     }
+
+    fn handle_recommended_state(&mut self, recommended_state: &RecommendedState) {
+        match recommended_state {
+            RecommendedState::M1(_) => todo!(),
+            RecommendedState::M2(_) => todo!(),
+            RecommendedState::M3(_) => todo!(),
+            RecommendedState::P1(_) => todo!(),
+            RecommendedState::P2(_) => todo!(),
+            // TODO set things like steps_removed once they are added
+            RecommendedState::S1(announce_message) => match self {
+                State::Listening => {
+                    *self = State::Slave(StateSlave {
+                        remote_master: announce_message.header().source_port_identity(),
+                        ..Default::default()
+                    })
+                }
+                State::Slave(slave_state) => {
+                    slave_state.remote_master = announce_message.header().source_port_identity();
+                }
+            },
+        }
+    }
 }
 
 impl<NR: NetworkRuntime> Port<NR> {
@@ -241,8 +313,10 @@ impl<NR: NetworkRuntime> Port<NR> {
         port_number: u16,
         sdo: u16,
         domain: u8,
+        port_config: PortConfig,
         runtime: NR,
         interface: NR::InterfaceDescriptor,
+        clock_quality: ClockQuality,
     ) -> Self {
         let tc_port = runtime
             .open(interface.clone(), true)
@@ -250,35 +324,34 @@ impl<NR: NetworkRuntime> Port<NR> {
         let nc_port = runtime
             .open(interface, false)
             .expect("Could not create non time critical port");
+
         Port {
-            portdata: PortData {
-                _runtime: runtime,
-
+            portdata: PortData::new(
+                runtime,
                 tc_port,
-                _nc_port: nc_port,
-
-                delay_req_ids: IdSequencer::default(),
-
-                identity: PortIdentity {
+                nc_port,
+                PortIdentity {
                     clock_identity,
                     port_number,
                 },
                 sdo,
                 domain,
-            },
+                port_config,
+                clock_quality,
+            ),
             state: State::Listening,
         }
     }
 
-    pub fn handle_network(&mut self, packet: NetworkPacket) {
-        self.process_message(packet);
+    pub fn handle_network(&mut self, packet: NetworkPacket, current_time: OffsetTime) {
+        self.process_message(packet, current_time);
     }
 
     pub fn handle_send_timestamp(&mut self, id: usize, timestamp: OffsetTime) {
         self.state.handle_send_timestamp(id, timestamp);
     }
 
-    fn process_message(&mut self, packet: NetworkPacket) -> Option<()> {
+    fn process_message(&mut self, packet: NetworkPacket, current_time: OffsetTime) -> Option<()> {
         let message = Message::deserialize(&packet.data).ok()?;
         if message.header().sdo_id() != self.portdata.sdo
             || message.header().domain_number() != self.portdata.domain
@@ -290,40 +363,80 @@ impl<NR: NetworkRuntime> Port<NR> {
             .handle_message(&mut self.portdata, message, packet.timestamp);
 
         match message {
-            Message::Announce(announce) => {
-                if let State::Slave(inner) = &mut self.state {
-                    inner.remote_master = announce.header().source_port_identity();
-                } else {
-                    self.state = State::Slave(StateSlave {
-                        remote_master: announce.header().source_port_identity(),
-                        ..Default::default()
-                    })
-                }
-            }
+            Message::Announce(announce) => self
+                .portdata
+                .bmca
+                .register_announce_message(&announce, current_time.to_timestamp().unwrap()),
             _ => {}
         };
 
         None
     }
 
-    pub fn extract_measurement(&mut self) -> Option<OffsetTime> {
+    pub fn extract_measurement(&mut self) -> Option<(OffsetTime, TimeProperties)> {
         match &mut self.state {
-            State::Slave(state) => state.extract_measurement(),
+            State::Slave(state) => state
+                .extract_measurement()
+                .map(|measurement| (measurement, self.portdata.time_properties)),
             _ => None,
+        }
+    }
+
+    pub fn take_best_port_announce_message(
+        &mut self,
+        current_time: OffsetTime,
+    ) -> Option<(AnnounceMessage, Timestamp, PortIdentity)> {
+        self.portdata
+            .bmca
+            .take_best_port_announce_message(current_time.to_timestamp().unwrap())
+    }
+
+    pub fn perform_state_decision(
+        &mut self,
+        best_global_announce_message: Option<(&AnnounceMessage, &PortIdentity)>,
+        best_port_announce_message: Option<(&AnnounceMessage, &PortIdentity)>,
+    ) {
+        let own_data = DefaultDS {
+            priority_1: self.portdata.port_config.priority_1,
+            clock_identity: self.portdata.identity.clock_identity,
+            clock_quality: self.portdata.clock_quality,
+            priority_2: self.portdata.port_config.priority_2,
+        };
+
+        let recommended_state = Bmca::calculate_recommended_state(
+            &own_data,
+            best_global_announce_message,
+            best_port_announce_message,
+            &self.state,
+        );
+
+        if let Some(recommended_state) = recommended_state {
+            println!("Got a new recommended state: {:?}", recommended_state);
+            self.state.handle_recommended_state(&recommended_state);
+            match &recommended_state {
+                RecommendedState::M1(_) => todo!(),
+                RecommendedState::M2(_) => todo!(),
+                RecommendedState::M3(_) => todo!(),
+                RecommendedState::P1(_) => todo!(),
+                RecommendedState::P2(_) => todo!(),
+                RecommendedState::S1(announce_message) => {
+                    self.portdata.time_properties = announce_message.time_properties();
+                }
+            }
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use fixed::traits::ToFixed;
-
-    use crate::datastructures::common::{PortIdentity, TimeInterval, Timestamp};
+    use super::{IdSequencer, PortData, StateSlave};
+    use crate::bmc::bmca::Bmca;
+    use crate::datastructures::common::{ClockQuality, PortIdentity, TimeInterval, Timestamp};
     use crate::datastructures::messages::MessageBuilder;
     use crate::network::test::TestRuntime;
     use crate::network::NetworkRuntime;
-
-    use super::{IdSequencer, PortData, StateSlave};
+    use crate::port::PortConfig;
+    use fixed::traits::ToFixed;
 
     #[test]
     fn test_measurement_flow() {
@@ -346,6 +459,17 @@ mod tests {
             identity: test_id,
             sdo: 0,
             domain: 0,
+            port_config: PortConfig {
+                log_announce_interval: 0,
+                priority_1: 0,
+                priority_2: 0,
+            },
+            bmca: Bmca::new(TimeInterval(2_000_000_000u64.to_fixed()), test_id),
+            clock_quality: ClockQuality::default(),
+            time_properties: crate::clock::TimeProperties::ArbitraryTime {
+                time_traceable: false,
+                frequency_traceable: false,
+            },
         };
 
         test_state.handle_message(
@@ -413,6 +537,17 @@ mod tests {
             identity: test_id,
             sdo: 0,
             domain: 0,
+            port_config: PortConfig {
+                log_announce_interval: 0,
+                priority_1: 0,
+                priority_2: 0,
+            },
+            bmca: Bmca::new(TimeInterval(2_000_000_000u64.to_fixed()), test_id),
+            clock_quality: ClockQuality::default(),
+            time_properties: crate::clock::TimeProperties::ArbitraryTime {
+                time_traceable: false,
+                frequency_traceable: false,
+            },
         };
 
         test_state.handle_message(
@@ -481,6 +616,17 @@ mod tests {
             identity: test_id,
             sdo: 0,
             domain: 0,
+            port_config: PortConfig {
+                log_announce_interval: 0,
+                priority_1: 0,
+                priority_2: 0,
+            },
+            bmca: Bmca::new(TimeInterval(2_000_000_000u64.to_fixed()), test_id),
+            clock_quality: ClockQuality::default(),
+            time_properties: crate::clock::TimeProperties::ArbitraryTime {
+                time_traceable: false,
+                frequency_traceable: false,
+            },
         };
 
         test_state.handle_message(
@@ -566,6 +712,17 @@ mod tests {
             identity: test_id,
             sdo: 0,
             domain: 0,
+            port_config: PortConfig {
+                log_announce_interval: 0,
+                priority_1: 0,
+                priority_2: 0,
+            },
+            bmca: Bmca::new(TimeInterval(2_000_000_000u64.to_fixed()), test_id),
+            clock_quality: ClockQuality::default(),
+            time_properties: crate::clock::TimeProperties::ArbitraryTime {
+                time_traceable: false,
+                frequency_traceable: false,
+            },
         };
 
         test_state.handle_message(

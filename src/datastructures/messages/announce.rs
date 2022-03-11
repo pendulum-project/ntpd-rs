@@ -1,6 +1,9 @@
-use crate::datastructures::{
-    common::{ClockIdentity, ClockQuality, TimeSource, Timestamp},
-    WireFormat,
+use crate::{
+    clock::TimeProperties,
+    datastructures::{
+        common::{ClockIdentity, ClockQuality, TimeSource, Timestamp},
+        WireFormat,
+    },
 };
 use getset::CopyGetters;
 
@@ -57,6 +60,26 @@ impl AnnounceMessage {
             steps_removed: u16::from_be_bytes(buffer[27..29].try_into().unwrap()),
             time_source: TimeSource::from_primitive(buffer[29]),
         })
+    }
+
+    pub fn time_properties(&self) -> TimeProperties {
+        if self.header.ptp_timescale {
+            TimeProperties::PtpTime {
+                current_utc_offset: self
+                    .header
+                    .current_utc_offset_valid
+                    .then(|| self.current_utc_offset),
+                leap_61: self.header.leap61,
+                leap_59: self.header.leap59,
+                time_traceable: self.header.time_tracable,
+                frequency_traceable: self.header.frequency_tracable,
+            }
+        } else {
+            TimeProperties::ArbitraryTime {
+                time_traceable: self.header.time_tracable,
+                frequency_traceable: self.header.frequency_tracable,
+            }
+        }
     }
 }
 

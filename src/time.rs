@@ -1,12 +1,9 @@
-use std::time::SystemTime;
-
+use crate::datastructures::common::{TimeInterval, Timestamp};
 use fixed::{
     traits::{LosslessTryInto, ToFixed},
     types::I112F16,
 };
 use nix::sys::time::TimeSpec;
-
-use crate::datastructures::common::{TimeInterval, Timestamp};
 
 /// Time in nanoseconds
 pub type OffsetTime = I112F16;
@@ -15,10 +12,10 @@ pub type OffsetTime = I112F16;
 pub struct RangeError {}
 
 pub trait TimeType {
-    fn now() -> Self;
     fn from_timespec(spec: &TimeSpec) -> Self;
     fn from_timestamp(ts: &Timestamp) -> Self;
     fn from_interval(interval: &TimeInterval) -> Self;
+    fn from_log_interval(log_interval: i8) -> Self;
     fn to_timestamp(&self) -> Result<Timestamp, RangeError>;
     fn to_interval(&self) -> Result<TimeInterval, RangeError>;
     fn secs(&self) -> i128;
@@ -26,13 +23,6 @@ pub trait TimeType {
 }
 
 impl TimeType for OffsetTime {
-    fn now() -> Self {
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap();
-        now.as_nanos().to_fixed()
-    }
-
     fn from_timespec(spec: &TimeSpec) -> Self {
         (spec.tv_sec() as i128 * 1_000_000_000i128 + spec.tv_nsec() as i128).to_fixed()
     }
@@ -64,5 +54,11 @@ impl TimeType for OffsetTime {
 
     fn sub_nanos(&self) -> u32 {
         (self.to_num::<i128>() % 1000000000i128) as u32
+    }
+
+    fn from_log_interval(log_interval: i8) -> Self {
+        let seconds = 2.0f64.powi(log_interval as i32);
+        let nanos = seconds * 1_000_000_000.0;
+        nanos.to_fixed()
     }
 }
