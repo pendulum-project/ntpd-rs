@@ -3,12 +3,6 @@
 version = 3
 
 [[package]]
-name = "array-init"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6945cc5422176fc5e602e590c2878d2c2acd9a4fe20a4baa7c28022521698ec6"
-
-[[package]]
 name = "arrayvec"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -222,15 +216,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ringbuffer"
-version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72dfeba9c94fdc308dcfe165efa6855c698f317484b736605ff859c5fa81d992"
-dependencies = [
- "array-init",
-]
-
-[[package]]
 name = "statime"
 version = "0.1.0"
 dependencies = [
@@ -244,7 +229,6 @@ dependencies = [
  "log",
  "nix",
  "num_enum",
- "ringbuffer",
  "thiserror",
  "time 0.3.7",
 ]

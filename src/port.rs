@@ -92,6 +92,12 @@ pub struct Port<NR: NetworkRuntime> {
     state: State,
 }
 
+#[derive(Debug, PartialEq)]
+pub struct Measurement {
+    pub event_time: OffsetTime,
+    pub master_offset: OffsetTime,
+}
+
 #[derive(Debug, Default)]
 pub struct StateSlave {
     remote_master: PortIdentity,
@@ -247,8 +253,11 @@ impl StateSlave {
         Some(())
     }
 
-    fn extract_measurement(&mut self) -> Option<OffsetTime> {
-        let result = self.sync_recv_time? - self.sync_send_time? - self.mean_delay?;
+    fn extract_measurement(&mut self) -> Option<Measurement> {
+        let result = Measurement {
+            master_offset: self.sync_recv_time? - self.sync_send_time? - self.mean_delay?,
+            event_time: self.sync_recv_time?,
+        };
 
         self.sync_recv_time = None;
         self.sync_send_time = None;
@@ -369,7 +378,7 @@ impl<NR: NetworkRuntime> Port<NR> {
         None
     }
 
-    pub fn extract_measurement(&mut self) -> Option<(OffsetTime, TimeProperties)> {
+    pub fn extract_measurement(&mut self) -> Option<(Measurement, TimeProperties)> {
         match &mut self.state {
             State::Slave(state) => state
                 .extract_measurement()
@@ -430,6 +439,7 @@ mod tests {
     use crate::datastructures::messages::MessageBuilder;
     use crate::network::test::TestRuntime;
     use crate::network::NetworkRuntime;
+    use crate::port::Measurement;
     use crate::port::PortConfig;
     use fixed::traits::ToFixed;
 
@@ -507,7 +517,10 @@ mod tests {
 
         assert_eq!(
             test_state.extract_measurement(),
-            Some((1 as i16).to_fixed())
+            Some(Measurement {
+                master_offset: (1 as i16).to_fixed(),
+                event_time: (5 as i16).to_fixed(),
+            })
         );
     }
 
@@ -586,7 +599,10 @@ mod tests {
 
         assert_eq!(
             test_state.extract_measurement(),
-            Some((1 as i16).to_fixed())
+            Some(Measurement {
+                master_offset: (1 as i16).to_fixed(),
+                event_time: (5 as i16).to_fixed(),
+            })
         );
     }
 
@@ -682,7 +698,10 @@ mod tests {
 
         assert_eq!(
             test_state.extract_measurement(),
-            Some((0 as i16).to_fixed())
+            Some(Measurement {
+                master_offset: (0 as i16).to_fixed(),
+                event_time: (5 as i16).to_fixed(),
+            })
         );
     }
 
@@ -778,7 +797,10 @@ mod tests {
 
         assert_eq!(
             test_state.extract_measurement(),
-            Some((0 as i16).to_fixed())
+            Some(Measurement {
+                master_offset: (0 as i16).to_fixed(),
+                event_time: (5 as i16).to_fixed(),
+            })
         );
     }
 }

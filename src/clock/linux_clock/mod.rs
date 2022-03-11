@@ -1,6 +1,6 @@
 use super::{Clock, Watch};
 use crate::{clock::TimeProperties, datastructures::common::ClockQuality, time::OffsetTime};
-use ringbuffer::{RingBuffer, RingBufferExt, RingBufferWrite};
+use fixed::traits::LossyInto;
 use std::{collections::HashMap, sync::mpsc};
 
 mod raw;
@@ -16,8 +16,6 @@ pub enum Error {
 pub struct LinuxClock {
     clock: RawLinuxClock,
     next_watch_id: u32,
-    offset_buffer: ringbuffer::ConstGenericRingBuffer<OffsetTime, 32>,
-    frequency_buffer: ringbuffer::ConstGenericRingBuffer<f64, 32>,
     alarm_sender: mpsc::Sender<(<<Self as Clock>::W as Watch>::WatchId, OffsetTime)>,
 }
 
@@ -29,8 +27,6 @@ impl LinuxClock {
             Self {
                 clock: clock.clone(),
                 next_watch_id: 0,
-                offset_buffer: Default::default(),
-                frequency_buffer: Default::default(),
                 alarm_sender,
             },
             AlarmReceiver {
@@ -71,14 +67,6 @@ impl Clock for LinuxClock {
         frequency_multiplier: f64,
         time_properties: TimeProperties,
     ) -> Result<bool, Self::E> {
-        self.offset_buffer.push(time_offset);
-        self.frequency_buffer.push(frequency_multiplier);
-
-        let average_offset =
-            self.offset_buffer.iter().sum::<OffsetTime>() / self.offset_buffer.len() as i128;
-        let average_frequency_multiplier =
-            self.frequency_buffer.iter().sum::<f64>() / self.offset_buffer.len() as f64;
-
         if let TimeProperties::PtpTime {
             leap_61, leap_59, ..
         } = time_properties
@@ -88,19 +76,13 @@ impl Clock for LinuxClock {
                 .map_err(Error::LinuxError)?;
         }
 
-        let adjust_result = self.clock.adjust_clock(
-            (average_offset / 1_000_000_000).to_num::<f64>()
-                / ((1 + self.offset_buffer.len()) as f64),
-            average_frequency_multiplier,
-        );
-
-        if (average_offset / 1_000_000_000).to_num::<f64>().abs() > 0.5 {
-            self.offset_buffer.clear();
-            self.frequency_buffer.clear();
-        }
+        let time_offset_float: f64 = time_offset.lossy_into();
+        let adjust_result = self
+            .clock
+            .adjust_clock(time_offset_float / 1e9, frequency_multiplier);
 
         match adjust_result {
-            Ok(_) => Ok(average_offset < 1000),
+            Ok(_) => Ok(true),
             Err(e) => Err(Error::LinuxError(e)),
         }
     }

@@ -4,6 +4,7 @@ use fixed::traits::LossyFrom;
 use statime::{
     clock::linux_clock::{LinuxClock, RawLinuxClock},
     datastructures::{common::ClockIdentity, messages::Message},
+    filters::basic::BasicFilter,
     network::linux::{get_clock_id, LinuxRuntime},
     ptp_instance::{Config, PtpInstance},
 };
@@ -44,7 +45,7 @@ fn main() {
         },
     };
 
-    let mut instance = PtpInstance::new(config, network_runtime, clock);
+    let mut instance = PtpInstance::new(config, network_runtime, clock, BasicFilter::new(0.25));
 
     loop {
         let packet = if let Some(timeout) = clock_runtime.interval_to_next_alarm() {

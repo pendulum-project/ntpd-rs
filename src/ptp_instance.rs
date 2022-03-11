@@ -1,6 +1,7 @@
 use crate::{
     clock::{Clock, Watch},
     datastructures::common::ClockIdentity,
+    filters::Filter,
     network::{NetworkPacket, NetworkRuntime},
     port::{Port, PortConfig},
     time::{OffsetTime, TimeType},
@@ -14,14 +15,15 @@ pub struct Config<NR: NetworkRuntime> {
     pub port_config: PortConfig,
 }
 
-pub struct PtpInstance<NR: NetworkRuntime, C: Clock> {
+pub struct PtpInstance<NR: NetworkRuntime, C: Clock, F: Filter> {
     port: Port<NR>,
     clock: C,
     bmca_watch: C::W,
+    filter: F,
 }
 
-impl<NR: NetworkRuntime, C: Clock> PtpInstance<NR, C> {
-    pub fn new(config: Config<NR>, runtime: NR, mut clock: C) -> Self {
+impl<NR: NetworkRuntime, C: Clock, F: Filter> PtpInstance<NR, C, F> {
+    pub fn new(config: Config<NR>, runtime: NR, mut clock: C, filter: F) -> Self {
         let mut bmca_watch = clock.get_watch();
 
         bmca_watch.set_alarm(OffsetTime::from_log_interval(
@@ -41,16 +43,17 @@ impl<NR: NetworkRuntime, C: Clock> PtpInstance<NR, C> {
             ),
             clock,
             bmca_watch,
+            filter,
         }
     }
 
     pub fn handle_network(&mut self, packet: NetworkPacket) {
-        self.port.handle_network(packet, self.clock.now());
+        self.port.handle_network(packet, self.bmca_watch.now());
         if let Some((data, time_properties)) = self.port.extract_measurement() {
+            let (offset, freq_corr) = self.filter.absorb(data);
             self.clock
-                .adjust(-data, 1.0, time_properties)
+                .adjust(offset, freq_corr, time_properties)
                 .expect("Unexpected error adjusting clock");
-            println!("Offset to master: {}", data);
         }
     }
 
