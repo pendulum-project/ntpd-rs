@@ -68,8 +68,17 @@ mod tests {
 
     #[test]
     fn log_interval() {
-        assert_eq!(OffsetTime::from_log_interval(0), 1000000000u64.to_fixed::<OffsetTime>());
-        assert_eq!(OffsetTime::from_log_interval(-1), 500000000u64.to_fixed::<OffsetTime>());
-        assert_eq!(OffsetTime::from_log_interval(1), 2000000000u64.to_fixed::<OffsetTime>());
+        assert_eq!(
+            OffsetTime::from_log_interval(0),
+            1000000000u64.to_fixed::<OffsetTime>()
+        );
+        assert_eq!(
+            OffsetTime::from_log_interval(-1),
+            500000000u64.to_fixed::<OffsetTime>()
+        );
+        assert_eq!(
+            OffsetTime::from_log_interval(1),
+            2000000000u64.to_fixed::<OffsetTime>()
+        );
     }
 }
