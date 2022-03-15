@@ -21,7 +21,7 @@ struct IdSequencer {
 impl IdSequencer {
     pub fn get(&mut self) -> u16 {
         let result = self.cur_id;
-        self.cur_id += 1;
+        self.cur_id = self.cur_id.wrapping_add(1);
         result
     }
 }
