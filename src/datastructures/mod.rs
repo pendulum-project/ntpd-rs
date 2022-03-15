@@ -1,3 +1,5 @@
+//! General datastructures as defined by the ptp spec
+
 use core::fmt::Debug;
 
 pub mod common;

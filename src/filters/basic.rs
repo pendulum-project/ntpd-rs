@@ -1,8 +1,8 @@
-use fixed::traits::{LossyInto, ToFixed};
-
-use crate::{port::Measurement, time::OffsetTime};
+//! Implementation of [BasicFilter]
 
 use super::Filter;
+use crate::{port::Measurement, time::OffsetTime};
+use fixed::traits::{LossyInto, ToFixed};
 
 #[derive(Debug)]
 struct PrevStepData {
@@ -10,6 +10,7 @@ struct PrevStepData {
     correction: OffsetTime,
 }
 
+/// A basic filter implementation that should work in most circumstances
 #[derive(Debug)]
 pub struct BasicFilter {
     last_step: Option<PrevStepData>,

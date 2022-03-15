@@ -1,3 +1,5 @@
+//! Implementation of the abstract clock for the linux platform
+
 use super::{Clock, Watch};
 use crate::{clock::TimeProperties, datastructures::common::ClockQuality, time::OffsetTime};
 use fixed::traits::LossyInto;

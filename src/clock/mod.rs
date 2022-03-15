@@ -1,3 +1,5 @@
+//! Definitions and implementations of the abstract clock types
+
 use crate::{datastructures::common::ClockQuality, time::OffsetTime};
 
 pub mod linux_clock;

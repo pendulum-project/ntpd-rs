@@ -1,27 +1,29 @@
-use std::{os::unix::prelude::RawFd, str::FromStr, sync::mpsc::Sender, thread::JoinHandle};
+//! Implementation of the abstract network types for the linux platform
 
 use crate::time::{OffsetTime, TimeType};
 use nix::{
     cmsg_space,
     errno::Errno,
     ifaddrs::{getifaddrs, InterfaceAddress, InterfaceAddressIterator},
+    net::if_::if_nametoindex,
     sys::{
+        select::{select, FdSet},
         socket::{
             recvmsg, sendmsg, setsockopt, socket,
-            sockopt::{Timestamping, ReuseAddr, BindToDevice},
-            AddressFamily, ControlMessageOwned, InetAddr, IpAddr, Ipv4Addr,
-            Ipv6Addr, MsgFlags, SockAddr, SockFlag, SockType,
-            TimestampingFlag, Timestamps, SetSockOpt,
+            sockopt::{BindToDevice, ReuseAddr, Timestamping},
+            AddressFamily, ControlMessageOwned, InetAddr, IpAddr, Ipv4Addr, Ipv6Addr, MsgFlags,
+            SetSockOpt, SockAddr, SockFlag, SockType, TimestampingFlag, Timestamps,
         },
-        uio::IoVec, select::{select, FdSet},
-    }, net::if_::if_nametoindex,
+        uio::IoVec,
+    },
 };
+use std::{os::unix::prelude::RawFd, str::FromStr, sync::mpsc::Sender, thread::JoinHandle};
 
 use super::{NetworkPacket, NetworkPort, NetworkRuntime};
 
 #[derive(Clone)]
 pub struct LinuxRuntime {
-    tx: Sender<NetworkPacket>
+    tx: Sender<NetworkPacket>,
 }
 
 impl LinuxRuntime {
@@ -97,7 +99,9 @@ impl LinuxInterfaceDescriptor {
             Err(NetworkError::InterfaceDoesNotExist)
         } else {
             if self.mode == LinuxNetworkMode::Ipv6 {
-                Ok(IpAddr::V6(Ipv6Addr::from_std(&std::net::Ipv6Addr::UNSPECIFIED)))
+                Ok(IpAddr::V6(Ipv6Addr::from_std(
+                    &std::net::Ipv6Addr::UNSPECIFIED,
+                )))
             } else {
                 Ok(IpAddr::V4(Ipv4Addr::any()))
             }
@@ -119,7 +123,11 @@ impl FromStr for LinuxInterfaceDescriptor {
                 if addr.is_unspecified() {
                     return Ok(LinuxInterfaceDescriptor {
                         interface_name: None,
-                        mode: if addr.is_ipv4() { LinuxNetworkMode::Ipv4 } else { LinuxNetworkMode::Ipv6 },
+                        mode: if addr.is_ipv4() {
+                            LinuxNetworkMode::Ipv4
+                        } else {
+                            LinuxNetworkMode::Ipv6
+                        },
                     });
                 }
 
@@ -134,7 +142,7 @@ impl FromStr for LinuxInterfaceDescriptor {
                 }
 
                 Err(NetworkError::InterfaceDoesNotExist)
-            },
+            }
             Err(_) => {
                 if if_name_exists(interfaces, s) {
                     Ok(LinuxInterfaceDescriptor {
@@ -144,7 +152,6 @@ impl FromStr for LinuxInterfaceDescriptor {
                 } else {
                     Err(NetworkError::InterfaceDoesNotExist)
                 }
-
             }
         }
     }
@@ -153,19 +160,14 @@ impl FromStr for LinuxInterfaceDescriptor {
 fn if_has_address(ifaddr: &InterfaceAddress, address: &InetAddr) -> bool {
     if let Some(SockAddr::Inet(a)) = ifaddr.address {
         match (a, address) {
-            (InetAddr::V4(if_v4), InetAddr::V4(req_v4)) => {
-                if_v4.sin_addr == req_v4.sin_addr
-            },
-            (InetAddr::V6(if_v6), InetAddr::V6(req_v6)) => {
-                if_v6.sin6_addr == req_v6.sin6_addr
-            },
-            _ => false
+            (InetAddr::V4(if_v4), InetAddr::V4(req_v4)) => if_v4.sin_addr == req_v4.sin_addr,
+            (InetAddr::V6(if_v6), InetAddr::V6(req_v6)) => if_v6.sin6_addr == req_v6.sin6_addr,
+            _ => false,
         }
     } else {
         false
     }
 }
-
 
 fn if_name_exists(interfaces: InterfaceAddressIterator, name: &str) -> bool {
     for i in interfaces {
@@ -243,7 +245,13 @@ impl SetSockOpt for Ipv6AddMembership {
         let ptr = val as *const Self::Val as *const libc::c_void;
         let ptr_len = std::mem::size_of::<Self::Val>() as libc::socklen_t;
         let res = unsafe {
-            libc::setsockopt(fd, libc::IPPROTO_IPV6, libc::IPV6_ADD_MEMBERSHIP, ptr, ptr_len)
+            libc::setsockopt(
+                fd,
+                libc::IPPROTO_IPV6,
+                libc::IPV6_ADD_MEMBERSHIP,
+                ptr,
+                ptr_len,
+            )
         };
         Errno::result(res).map(drop)
     }
@@ -259,8 +267,6 @@ impl<'a> NetworkRuntime for LinuxRuntime {
         interface: Self::InterfaceDescriptor,
         time_critical: bool,
     ) -> Result<Self::PortType, NetworkError> {
-
-
         // create the socket
         let socket = socket(
             AddressFamily::Inet,
@@ -274,15 +280,11 @@ impl<'a> NetworkRuntime for LinuxRuntime {
         let port = if time_critical { 319 } else { 320 };
         let sock_addr = SockAddr::new_inet(InetAddr::new(
             if interface.mode == LinuxNetworkMode::Ipv6 {
-                IpAddr::V6(
-                    Ipv6Addr::from_std(
-                        &std::net::Ipv6Addr::UNSPECIFIED
-                    )
-                )
+                IpAddr::V6(Ipv6Addr::from_std(&std::net::Ipv6Addr::UNSPECIFIED))
             } else {
                 IpAddr::V4(Ipv4Addr::any())
             },
-            port
+            port,
         ));
 
         // we want to allow multiple listening sockets, as we bind to a specific interface later
@@ -299,7 +301,8 @@ impl<'a> NetworkRuntime for LinuxRuntime {
 
         // bind to device specified
         if let Some(ref name) = interface.interface_name {
-            setsockopt(socket, BindToDevice, &name.into()).map_err(|_| NetworkError::BindToDeviceFailed)?;
+            setsockopt(socket, BindToDevice, &name.into())
+                .map_err(|_| NetworkError::BindToDeviceFailed)?;
         }
 
         // TODO: multicast ttl limit for ipv4/multicast hops limit for ipv6
@@ -309,31 +312,23 @@ impl<'a> NetworkRuntime for LinuxRuntime {
         // join the multicast groups
         if interface.mode == LinuxNetworkMode::Ipv6 {
             // TODO: set the scope for the primary multicast
-            let multicast_req = Ipv6MembershipRequest::new(
-                LinuxRuntime::IPV6_PRIMARY_MULTICAST,
-                interface_idx,
-            );
+            let multicast_req =
+                Ipv6MembershipRequest::new(LinuxRuntime::IPV6_PRIMARY_MULTICAST, interface_idx);
             setsockopt(socket, Ipv6AddMembership, &multicast_req)
                 .map_err(|_| NetworkError::UnknownError)?;
 
-            let multicast_req = Ipv6MembershipRequest::new(
-                LinuxRuntime::IPV6_PDELAY_MULTICAST,
-                interface_idx,
-            );
+            let multicast_req =
+                Ipv6MembershipRequest::new(LinuxRuntime::IPV6_PDELAY_MULTICAST, interface_idx);
             setsockopt(socket, Ipv6AddMembership, &multicast_req)
                 .map_err(|_| NetworkError::UnknownError)?;
         } else {
-            let multicast_req = IpMembershipRequest::new(
-                LinuxRuntime::IPV4_PRIMARY_MULTICAST,
-                interface_idx,
-            );
+            let multicast_req =
+                IpMembershipRequest::new(LinuxRuntime::IPV4_PRIMARY_MULTICAST, interface_idx);
             setsockopt(socket, IpAddMembership, &multicast_req)
                 .map_err(|_| NetworkError::UnknownError)?;
 
-            let multicast_req = IpMembershipRequest::new(
-                LinuxRuntime::IPV4_PDELAY_MULTICAST,
-                interface_idx,
-            );
+            let multicast_req =
+                IpMembershipRequest::new(LinuxRuntime::IPV4_PDELAY_MULTICAST, interface_idx);
             setsockopt(socket, IpAddMembership, &multicast_req)
                 .map_err(|_| NetworkError::UnknownError)?;
         }
@@ -372,13 +367,8 @@ impl<'a> NetworkRuntime for LinuxRuntime {
         // for s in self.sockets {
         //     read_set.insert(s);
         // }
-        let _res = select(
-            None,
-            &mut read_set,
-            None,
-            None,
-            None
-        ).map_err(|_| NetworkError::UnknownError)?;
+        let _res = select(None, &mut read_set, None, None, None)
+            .map_err(|_| NetworkError::UnknownError)?;
         todo!()
     }
 }
