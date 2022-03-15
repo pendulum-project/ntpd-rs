@@ -169,6 +169,7 @@ impl MessageBuilder {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn announce_message(
         self,
         origin_timestamp: Timestamp,
