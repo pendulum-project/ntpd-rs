@@ -444,7 +444,7 @@ mod tests {
 
     #[test]
     fn test_measurement_flow() {
-        let network_runtime = TestRuntime::default();
+        let mut network_runtime = TestRuntime::default();
 
         let master_id = PortIdentity::default();
         let mut test_id = PortIdentity::default();
@@ -525,7 +525,7 @@ mod tests {
 
     #[test]
     fn test_measurement_flow_timestamps_out_of_order() {
-        let network_runtime = TestRuntime::default();
+        let mut network_runtime = TestRuntime::default();
 
         let master_id = PortIdentity::default();
         let mut test_id = PortIdentity::default();
@@ -607,7 +607,7 @@ mod tests {
 
     #[test]
     fn test_measurement_flow_followup() {
-        let network_runtime = TestRuntime::default();
+        let mut network_runtime = TestRuntime::default();
 
         let master_id = PortIdentity::default();
         let mut test_id = PortIdentity::default();
@@ -706,7 +706,7 @@ mod tests {
 
     #[test]
     fn test_measurement_flow_followup_out_of_order() {
-        let network_runtime = TestRuntime::default();
+        let mut network_runtime = TestRuntime::default();
 
         let master_id = PortIdentity::default();
         let mut test_id = PortIdentity::default();

@@ -43,7 +43,7 @@ impl NetworkRuntime for TestRuntime {
     type Error = TestError;
 
     fn open(
-        &self,
+        &mut self,
         interface: Self::InterfaceDescriptor,
         time_critical: bool,
     ) -> Result<Self::PortType, Self::Error> {
@@ -53,6 +53,10 @@ impl NetworkRuntime for TestRuntime {
             time_critical,
             send_index: 0,
         })
+    }
+
+    fn recv(&mut self) -> Result<super::NetworkPacket, Self::Error> {
+        todo!()
     }
 }
 
