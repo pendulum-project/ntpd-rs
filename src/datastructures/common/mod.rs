@@ -1,3 +1,5 @@
+//! Common data structures that are used throughout the protocol
+
 mod clock_accuracy;
 mod clock_identity;
 mod clock_quality;

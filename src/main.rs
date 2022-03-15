@@ -1,5 +1,3 @@
-use std::{sync::mpsc, time::Duration};
-
 use fixed::traits::LossyFrom;
 use statime::{
     clock::linux_clock::{LinuxClock, RawLinuxClock},
@@ -8,6 +6,7 @@ use statime::{
     network::linux::{get_clock_id, LinuxInterfaceDescriptor, LinuxRuntime},
     ptp_instance::{Config, PtpInstance},
 };
+use std::{sync::mpsc, time::Duration};
 
 use clap::{AppSettings, Parser};
 

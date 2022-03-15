@@ -4,6 +4,12 @@ This repository is work in progress for a rust implementation of PTP version 2.1
 
 The current state of the project is such that the main binary, when compiled, measures and outputs the time difference to any ptp master clock happening to be sending in the network it listens to.
 
+## Structure
+
+The library has been built in a way to try and be platform-agnostic. To do that, the network and clock have been abstracted.
+
+Many things are event-based where the user needs to call a function on the ptp instance object to let it handle e.g. an incoming network packet.
+
 ## Rust version
 
 For compiling this software we advise using the latest version of cargo/rustc as available through rustup. At time of writing this is `1.58.1`.

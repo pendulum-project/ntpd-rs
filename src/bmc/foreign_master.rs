@@ -1,3 +1,5 @@
+//! Implementation of the [ForeignMasterList]
+
 use crate::{
     datastructures::{
         common::{PortIdentity, TimeInterval, Timestamp},

@@ -1,4 +1,5 @@
 //! Implementation of chapter 9.3.4 Data set comparison algorithm
+
 use crate::datastructures::{
     common::{ClockIdentity, ClockQuality, PortIdentity},
     messages::AnnounceMessage,

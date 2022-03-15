@@ -1,4 +1,4 @@
-use std::{os::unix::prelude::RawFd, str::FromStr, sync::mpsc::Sender, thread::JoinHandle};
+//! Implementation of the abstract network types for the linux platform
 
 use crate::time::{OffsetTime, TimeType};
 use nix::{
@@ -16,6 +16,7 @@ use nix::{
         uio::IoVec,
     },
 };
+use std::{os::unix::prelude::RawFd, str::FromStr, sync::mpsc::Sender, thread::JoinHandle};
 
 use super::{NetworkPacket, NetworkPort, NetworkRuntime};
 

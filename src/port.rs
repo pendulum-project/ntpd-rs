@@ -10,12 +10,14 @@ use crate::network::{NetworkPacket, NetworkPort, NetworkRuntime};
 use crate::time::{OffsetTime, TimeType};
 use fixed::traits::ToFixed;
 
+/// Object for keeping track of the current id
 #[derive(Debug, Clone, Default)]
 struct IdSequencer {
     cur_id: u16,
 }
 
 impl IdSequencer {
+    /// Get the next id
     pub fn get(&mut self) -> u16 {
         let result = self.cur_id;
         self.cur_id = self.cur_id.wrapping_add(1);
@@ -23,6 +25,7 @@ impl IdSequencer {
     }
 }
 
+/// Object containing all non-state specific data
 pub struct PortData<NR: NetworkRuntime> {
     _runtime: NR,
     tc_port: NR::PortType,
@@ -319,6 +322,7 @@ impl<NR: NetworkRuntime> Port<NR> {
         interface: NR::InterfaceDescriptor,
         clock_quality: ClockQuality,
     ) -> Self {
+        // Ptp needs two ports, 1 time critical one and 1 general port
         let tc_port = runtime
             .open(interface.clone(), true)
             .expect("Could not create time critical port");

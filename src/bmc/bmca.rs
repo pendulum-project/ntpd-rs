@@ -1,3 +1,5 @@
+//! Implementation of the best master clock algorithm [Bmca]
+
 use super::{
     dataset_comparison::{ComparisonDataset, DatasetOrdering, DefaultDS},
     foreign_master::ForeignMasterList,

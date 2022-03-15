@@ -1,3 +1,5 @@
+//! Ptp network messages
+
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 mod announce;
