@@ -5,10 +5,7 @@ use crate::datastructures::common::{ClockQuality, Timestamp};
 use crate::datastructures::messages::{
     AnnounceMessage, DelayRespMessage, FollowUpMessage, MessageBuilder, SyncMessage,
 };
-use crate::datastructures::{
-    common::{ClockIdentity, PortIdentity},
-    messages::Message,
-};
+use crate::datastructures::{common::PortIdentity, messages::Message};
 use crate::network::{NetworkPacket, NetworkPort, NetworkRuntime};
 use crate::time::{OffsetTime, TimeType};
 use fixed::traits::ToFixed;
@@ -314,8 +311,7 @@ impl State {
 
 impl<NR: NetworkRuntime> Port<NR> {
     pub fn new(
-        clock_identity: ClockIdentity,
-        port_number: u16,
+        identity: PortIdentity,
         sdo: u16,
         domain: u8,
         port_config: PortConfig,
@@ -335,10 +331,7 @@ impl<NR: NetworkRuntime> Port<NR> {
                 runtime,
                 tc_port,
                 nc_port,
-                PortIdentity {
-                    clock_identity,
-                    port_number,
-                },
+                identity,
                 sdo,
                 domain,
                 port_config,
