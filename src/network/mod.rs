@@ -14,10 +14,12 @@ pub trait NetworkRuntime: Clone {
     type Error: std::error::Error + std::fmt::Display;
 
     fn open(
-        &self,
+        &mut self,
         interface: Self::InterfaceDescriptor,
         time_critical: bool,
     ) -> Result<Self::PortType, Self::Error>;
+
+    fn recv(&mut self) -> Result<NetworkPacket, Self::Error>;
 }
 
 #[derive(Debug, Clone)]

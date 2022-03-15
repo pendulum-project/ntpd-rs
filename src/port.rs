@@ -315,7 +315,7 @@ impl<NR: NetworkRuntime> Port<NR> {
         sdo: u16,
         domain: u8,
         port_config: PortConfig,
-        runtime: NR,
+        mut runtime: NR,
         interface: NR::InterfaceDescriptor,
         clock_quality: ClockQuality,
     ) -> Self {
