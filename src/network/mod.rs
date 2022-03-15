@@ -25,10 +25,12 @@ pub trait NetworkRuntime: Clone {
     /// For example, when using IPv4, the socket should connect to the multicast address 244.0.1.129.
     /// If time_critical is true, then port 319 must be used. If not, then port 320 is to be used.
     fn open(
-        &self,
+        &mut self,
         interface: Self::InterfaceDescriptor,
         time_critical: bool,
     ) -> Result<Self::PortType, Self::Error>;
+
+    fn recv(&mut self) -> Result<NetworkPacket, Self::Error>;
 }
 
 /// The representation of a network packet
