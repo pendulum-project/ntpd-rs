@@ -1,6 +1,6 @@
 use crate::{
     clock::{Clock, Watch},
-    datastructures::common::ClockIdentity,
+    datastructures::common::{ClockIdentity, PortIdentity},
     filters::Filter,
     network::{NetworkPacket, NetworkRuntime},
     port::{Port, PortConfig},
@@ -32,8 +32,10 @@ impl<NR: NetworkRuntime, C: Clock, F: Filter> PtpInstance<NR, C, F> {
 
         PtpInstance {
             port: Port::new(
-                config.identity,
-                0,
+                PortIdentity {
+                    clock_identity: config.identity,
+                    port_number: 0,
+                },
                 config.sdo,
                 config.domain,
                 config.port_config,
