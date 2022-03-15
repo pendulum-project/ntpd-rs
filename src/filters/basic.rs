@@ -81,7 +81,7 @@ impl Filter for BasicFilter {
             1.0
         };
 
-        log::debug!(
+        log::info!(
             "Offset to master: {}, corrected with phase change {} and freq change {}",
             measurement.master_offset,
             correction,
