@@ -367,6 +367,7 @@ impl<NR: NetworkRuntime> Port<NR> {
         self.state
             .handle_message(&mut self.portdata, message, packet.timestamp);
 
+        #[allow(clippy::single_match)]
         match message {
             Message::Announce(announce) => self
                 .portdata
@@ -417,6 +418,7 @@ impl<NR: NetworkRuntime> Port<NR> {
 
         if let Some(recommended_state) = recommended_state {
             self.state.handle_recommended_state(&recommended_state);
+            #[allow(clippy::single_match)]
             match &recommended_state {
                 RecommendedState::S1(announce_message) => {
                     self.portdata.time_properties = announce_message.time_properties();
