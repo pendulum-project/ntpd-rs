@@ -45,7 +45,7 @@ impl Clock for LinuxClock {
     type W = LinuxWatch;
 
     fn now(&self) -> OffsetTime {
-        self.clock.get_clock_state().unwrap().0.get_time()
+        self.clock.get_time().unwrap()
     }
 
     fn quality(&self) -> ClockQuality {
@@ -100,7 +100,7 @@ impl Watch for LinuxWatch {
     type WatchId = u32;
 
     fn now(&self) -> OffsetTime {
-        self.clock.get_clock_state().unwrap().0.get_time()
+        self.clock.get_time().unwrap()
     }
 
     fn set_alarm(&mut self, from_now: OffsetTime) {

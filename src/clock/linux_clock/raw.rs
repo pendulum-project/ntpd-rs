@@ -1,6 +1,9 @@
-use crate::datastructures::common::{ClockAccuracy, ClockQuality};
-
 use super::timex::{AdjustFlags, StatusFlags, Timex};
+use crate::{
+    datastructures::common::{ClockAccuracy, ClockQuality},
+    time::OffsetTime,
+};
+use fixed::traits::ToFixed;
 use libc::{clockid_t, timespec};
 use std::{fmt::Display, ops::DerefMut};
 
@@ -207,6 +210,23 @@ impl RawLinuxClock {
         match error {
             -1 => Err(unsafe { *libc::__errno_location() }),
             _ => Ok(()),
+        }
+    }
+
+    pub fn get_time(&self) -> Result<OffsetTime, i32> {
+        let mut time = timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        let error = unsafe { libc::clock_gettime(self.id, &mut time as *mut _) };
+        match error {
+            -1 => Err(unsafe { *libc::__errno_location() }),
+            _ => {
+                let secs = time.tv_sec.to_fixed::<OffsetTime>() * 1_000_000_000;
+                let nanos = time.tv_nsec.to_fixed::<OffsetTime>();
+
+                Ok(secs + nanos)
+            }
         }
     }
 }
