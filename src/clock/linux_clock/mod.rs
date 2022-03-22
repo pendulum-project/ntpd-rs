@@ -126,9 +126,7 @@ impl AlarmReceiver {
     pub fn check(&mut self) -> Option<u32> {
         // Check if we have an alarm and if it would go off
         match self.earliest_alarm() {
-            Some((alarm_id, alarm_time))
-                if alarm_time < self.clock.get_time().unwrap() =>
-            {
+            Some((alarm_id, alarm_time)) if alarm_time < self.clock.get_time().unwrap() => {
                 let alarm_id = alarm_id;
                 self.alarms.remove(&alarm_id);
                 Some(alarm_id)

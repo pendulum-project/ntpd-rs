@@ -1,7 +1,7 @@
 use super::timex::{AdjustFlags, StatusFlags, Timex};
 use crate::{
     datastructures::common::{ClockAccuracy, ClockQuality},
-    time::OffsetTime,
+    time::{OffsetTime, TimeType},
 };
 use fixed::traits::ToFixed;
 use libc::{clockid_t, timespec};
@@ -70,31 +70,18 @@ impl RawLinuxClock {
     ///
     /// If the time offset is higher than 0.5 seconds, then the clock will be set directly and no frequency change will be made.
     pub fn adjust_clock(&mut self, time_offset: f64, frequency_multiplier: f64) -> Result<(), i32> {
-        let (current_timex, _clock_state) = self.get_clock_state()?;
-
         if time_offset.abs() > 0.5 {
+            let current_time = self.get_time()?;
+            let new_time: OffsetTime =
+                current_time + (time_offset / 1_000_000_000.0).to_fixed::<OffsetTime>();
+            let new_time = new_time.to_timestamp().unwrap();
+
             // The time offset is more than we can change with precision, so we're just going to set the current time
 
-            let current_nanos = if current_timex.get_status().contains(StatusFlags::NANO) {
-                current_timex.time.tv_usec
-            } else {
-                current_timex.time.tv_usec * 1000
+            let new_time = libc::timespec {
+                tv_sec: new_time.seconds as _,
+                tv_nsec: new_time.nanos as _,
             };
-
-            // We need to be careful. The nanos may only be 1_000_000_000 at the most
-            let new_nanos = current_nanos + (time_offset.fract() * 1_000_000_000.0) as Int;
-            let new_seconds =
-                current_timex.time.tv_sec + time_offset.floor() as Int + new_nanos / 1_000_000_000;
-
-            let mut new_time = libc::timespec {
-                tv_sec: new_seconds,
-                tv_nsec: new_nanos % 1_000_000_000,
-            };
-
-            while new_time.tv_nsec < 0 {
-                new_time.tv_sec -= 1;
-                new_time.tv_nsec += 1_000_000_000;
-            }
 
             // Set the clock time using the 'normal' clock api
             let error = unsafe { libc::clock_settime(self.id, &new_time as *const _) };
@@ -103,6 +90,8 @@ impl RawLinuxClock {
                 _ => Ok(()),
             }
         } else {
+            let (current_timex, _clock_state) = self.get_clock_state()?;
+
             // We do an offset with precision
             let mut new_timex = current_timex.clone();
 
