@@ -20,7 +20,7 @@ All these pulses are measured by the FPGA relative to its internal clock. Althou
 
 The grandmaster configuration is the default provided by endrun, and the grandmaster is given time to fully lock onto the GPS signal before start of measurement (specifically, we wait until the clock quality reported by gpsstat is at level 3).
 
-On the raspberry pi, depending on the run we either start the linuxptp stack or statime. We then wait with starting the measurement until the self-reported offset to the grandmaster appears stable.
+On the raspberry pi, depending on the run we either start the LinuxPTP stack or statime. We then wait with starting the measurement until the self-reported offset to the grandmaster appears stable.
 
 \section{Error estimates}
 
@@ -36,14 +36,30 @@ The clock in the fpga is of relatively low quality, and may therefore be somewha
 
 \section{FPGA clock callibration}
 
-We callibrate the FPGA clock using the data from the GM pulse-per-second signal. Note that this process purely uses difference between arrival times of these pulses, hence errors from cable length can be ignored in the following analysis.
+We callibrate the FPGA clock using the data from the GM pulse-per-second signal. This process purely uses difference between arrival times of these pulses, hence errors from cable length can be ignored in the following analysis. Note that over short time intervals, the clock frequency seems quite stable, with the second interval only varying by 1 clock cycle around a central value over short time periods.
+
+\begin{figure}[h]
+\includegraphics[width=0.5\textwidth]{gm_clocks_overtime_ref.pdf}
+\caption{FPGA clock cycles per second over time, time axis is arbitrary. On the left is data from the LinuxPTP run, on the right from the statime run. Glitch marks points where some seconds of data have been removed due to jiggling of connectors causing spurious edges.}
+\label{fig:gm_cycles_over_time}
+\end{figure}
 
 \begin{figure}[h]
 \includegraphics[width=0.5\textwidth]{gm_clocks_per_sec_ref.pdf}
-\caption{FPGA clock cycles per second as measured using the GM pulse-per-second output. On the left is data from the linuxptp run, from the right from the statime run.}
+\caption{FPGA clock cycles per second as measured using the GM pulse-per-second output. On the left is data from the LinuxPTP run, on the right from the statime run.}
 \label{fig:gm_cycles_per_second}
 \end{figure}
 
-For the linuxptp run, the measurement data are plotted in Figure~\ref{fig:gm_cycles_per_second}. Analysing this shows that 1 second takes $9.99996\cdot 10^7 \pm 7.5\cdot 10^2 (\text{stat}) \pm 0.01\cdot 10^2 (\text{sys})$ cycles. This gives us an estimated clock period of $10.0000370 \pm 7.5\cdot 10^{-5} (\text{stat}) \pm 0.01\cdot 10^{-5} (\text{sys})$ nanoseconds.
+For the LinuxPTP run, the measurement data are plotted in Figure~\ref{fig:gm_cycles_per_second}. Analysing this shows the fpga clock ticks $99999599\pm 1.7 (\text{stat.}) \pm 1.0 (\text{sys.})$. Hence, a single clock tick of the fpga clock takes $10.00004010 \pm 0.00000017 (\text{stat.}) \pm 0.00000010 (\text{sys.})$ nanoseconds.
+
+\section {LinuxPTP performance analysis}
+
+\begin{figure}[h]
+\includegraphics[width=0.5\textwidth]{gm_ref_offset_overtime.pdf}\includegraphics[width=0.5\textwidth]{gm_ref_offset.pdf}
+\caption{NIC clock offset to GM, both overtime and frequency of observations}
+\label{fig:ref_nic_offset}
+\end{figure}
+
+Analysing the offset data for the NIC clock synchronized by LinuxPTP, we find that this gives a constant offset $-3439\pm 11 (\text{stat.}) \pm 25(\text{sys.})$ nanoseconds, which could be eliminated by tuning the port assymetry. Furthermore, we see 99\% of all observations fall within $61 \pm 10 (\text{stat.})$ nanoseconds of this constant offset.
 
 \end{document}
