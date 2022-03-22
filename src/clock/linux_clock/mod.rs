@@ -48,7 +48,7 @@ impl Clock for LinuxClock {
     type E = Error;
     type W = LinuxWatch;
 
-    fn now(&self) -> OffsetTime {
+    fn now(&self) -> Instant {
         self.clock.get_time().unwrap()
     }
 
@@ -103,7 +103,7 @@ pub struct LinuxWatch {
 impl Watch for LinuxWatch {
     type WatchId = u32;
 
-    fn now(&self) -> OffsetTime {
+    fn now(&self) -> Instant {
         self.clock.get_time().unwrap()
     }
 

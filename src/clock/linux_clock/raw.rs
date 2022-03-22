@@ -1,9 +1,8 @@
 use super::timex::{AdjustFlags, StatusFlags, Timex};
 use crate::{
     datastructures::common::{ClockAccuracy, ClockQuality},
-    time::{OffsetTime, TimeType},
+    time::{Duration, Instant},
 };
-use fixed::traits::ToFixed;
 use libc::{clockid_t, timespec};
 use std::{fmt::Display, ops::DerefMut};
 
@@ -72,9 +71,8 @@ impl RawLinuxClock {
     pub fn adjust_clock(&mut self, time_offset: f64, frequency_multiplier: f64) -> Result<(), i32> {
         if time_offset.abs() > 0.5 {
             let current_time = self.get_time()?;
-            let new_time: OffsetTime =
-                current_time + (time_offset / 1_000_000_000.0).to_fixed::<OffsetTime>();
-            let new_time = new_time.to_timestamp().unwrap();
+            let new_time = current_time + Duration::from_fixed_nanos(time_offset / 1_000_000_000.0);
+            let new_time = new_time.to_timestamp();
 
             // The time offset is more than we can change with precision, so we're just going to set the current time
 
@@ -202,7 +200,7 @@ impl RawLinuxClock {
         }
     }
 
-    pub fn get_time(&self) -> Result<OffsetTime, i32> {
+    pub fn get_time(&self) -> Result<Instant, i32> {
         let mut time = timespec {
             tv_sec: 0,
             tv_nsec: 0,
@@ -211,8 +209,8 @@ impl RawLinuxClock {
         match error {
             -1 => Err(unsafe { *libc::__errno_location() }),
             _ => {
-                let secs = time.tv_sec.to_fixed::<OffsetTime>() * 1_000_000_000;
-                let nanos = time.tv_nsec.to_fixed::<OffsetTime>();
+                let secs = Instant::from_secs(time.tv_sec.unsigned_abs() as _);
+                let nanos = Duration::from_nanos(time.tv_nsec);
 
                 Ok(secs + nanos)
             }
