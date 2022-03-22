@@ -10,7 +10,7 @@ use crate::{
         messages::AnnounceMessage,
     },
     port::State,
-    time::{OffsetTime, TimeType},
+    time::Instant,
 };
 
 /// Object implementing the Best Master Clock Algorithm
@@ -84,7 +84,7 @@ impl Bmca {
                 DatasetOrdering::Better | DatasetOrdering::BetterByTopology => (l, lts, lpid),
                 // We get errors if two announce messages are (functionally) the same, in that case we just pick the newer one
                 DatasetOrdering::Error1 | DatasetOrdering::Error2 => {
-                    if OffsetTime::from_timestamp(&lts) >= OffsetTime::from_timestamp(&rts) {
+                    if Instant::from_timestamp(&lts) >= Instant::from_timestamp(&rts) {
                         (l, lts, lpid)
                     } else {
                         (r, rts, rpid)

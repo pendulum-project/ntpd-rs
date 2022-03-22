@@ -131,7 +131,7 @@ impl MessageBuilder {
         self
     }
 
-    pub fn log_message_interval(mut self, log_message_interval: u8) -> Self {
+    pub fn log_message_interval(mut self, log_message_interval: i8) -> Self {
         self.header.log_message_interval = log_message_interval;
         self
     }

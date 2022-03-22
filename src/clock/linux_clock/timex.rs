@@ -1,7 +1,7 @@
+use crate::time::{Duration, Instant};
+
 use super::raw::Fixed;
-use crate::time::OffsetTime;
 use bitflags::bitflags;
-use fixed::traits::ToFixed;
 use libc::timex;
 use std::ops::{Deref, DerefMut};
 
@@ -50,15 +50,15 @@ impl Timex {
         Fixed::from_bits(self.stabil)
     }
 
-    pub fn get_time(&self) -> OffsetTime {
+    pub fn get_time(&self) -> Instant {
         let time = self.time;
         let nanos = self.get_status().contains(StatusFlags::NANO);
 
-        let secs = time.tv_sec.to_fixed::<OffsetTime>() * 1_000_000_000;
-        let sub_secs: OffsetTime = if nanos {
-            time.tv_usec.to_fixed()
+        let secs = Instant::from_secs(time.tv_sec.unsigned_abs() as _);
+        let sub_secs = if nanos {
+            Duration::from_nanos(time.tv_usec as _)
         } else {
-            time.tv_usec.to_fixed::<OffsetTime>() * 1000
+            Duration::from_micros(time.tv_usec as _)
         };
 
         secs + sub_secs

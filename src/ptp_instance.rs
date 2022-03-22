@@ -4,7 +4,7 @@ use crate::{
     filters::Filter,
     network::{NetworkPacket, NetworkRuntime},
     port::{Port, PortConfig},
-    time::{OffsetTime, TimeType},
+    time::{Duration, Instant},
 };
 
 pub struct Config<NR: NetworkRuntime> {
@@ -36,7 +36,7 @@ impl<NR: NetworkRuntime, C: Clock, F: Filter> PtpInstance<NR, C, F> {
     pub fn new(config: Config<NR>, runtime: NR, mut clock: C, filter: F) -> Self {
         // We always need a loop for the BMCA, so we create a watch immediately and set the alarm
         let mut bmca_watch = clock.get_watch();
-        bmca_watch.set_alarm(OffsetTime::from_log_interval(
+        bmca_watch.set_alarm(Duration::from_log_interval(
             config.port_config.log_announce_interval,
         ));
 
@@ -75,7 +75,7 @@ impl<NR: NetworkRuntime, C: Clock, F: Filter> PtpInstance<NR, C, F> {
     /// Let the instance know what the TX or send timestamp was of a packet that was recently sent.
     ///
     /// When sending a time critical message we need to know exactly when it was sent to do all of the arithmetic.
-    pub fn handle_send_timestamp(&mut self, id: usize, timestamp: OffsetTime) {
+    pub fn handle_send_timestamp(&mut self, id: usize, timestamp: Instant) {
         self.port.handle_send_timestamp(id, timestamp);
     }
 

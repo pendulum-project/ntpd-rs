@@ -1,13 +1,13 @@
 //! Implementation of [BasicFilter]
 
 use super::Filter;
-use crate::{port::Measurement, time::OffsetTime};
-use fixed::traits::{LossyInto, ToFixed};
+use crate::{port::Measurement, time::Duration};
+use fixed::traits::LossyInto;
 
 #[derive(Debug)]
 struct PrevStepData {
     measurement: Measurement,
-    correction: OffsetTime,
+    correction: Duration,
 }
 
 /// A basic filter implementation that should work in most circumstances
@@ -15,7 +15,7 @@ struct PrevStepData {
 pub struct BasicFilter {
     last_step: Option<PrevStepData>,
 
-    offset_confidence: OffsetTime,
+    offset_confidence: Duration,
     freq_confidence: f64,
 
     gain: f64,
@@ -25,7 +25,7 @@ impl BasicFilter {
     pub fn new(gain: f64) -> Self {
         Self {
             last_step: None,
-            offset_confidence: 1_000_000_000_i64.to_fixed(),
+            offset_confidence: Duration::from_nanos(1_000_000_000),
             freq_confidence: 1e-4,
             gain,
         }
@@ -33,11 +33,11 @@ impl BasicFilter {
 }
 
 impl Filter for BasicFilter {
-    fn absorb(&mut self, measurement: Measurement) -> (OffsetTime, f64) {
+    fn absorb(&mut self, measurement: Measurement) -> (Duration, f64) {
         // Reset on too-large difference
-        if measurement.master_offset.abs() > 1_000_000_000_i64.to_fixed::<OffsetTime>() {
+        if measurement.master_offset.abs() > Duration::from_nanos(1_000_000_000) {
             log::debug!("Offset too large, stepping {}", measurement.master_offset);
-            self.offset_confidence = 1_000_000_000_i64.to_fixed();
+            self.offset_confidence = Duration::from_nanos(1_000_000_000);
             self.freq_confidence = 1e-4;
             return (-measurement.master_offset, 1.0);
         }
@@ -46,23 +46,24 @@ impl Filter for BasicFilter {
         let mut offset = measurement.master_offset;
         if offset.abs() > self.offset_confidence {
             offset = offset.clamp(-self.offset_confidence, self.offset_confidence);
-            self.offset_confidence *= 2;
+            self.offset_confidence *= 2i32;
         } else {
-            self.offset_confidence -=
-                (self.offset_confidence - offset.abs()) * self.gain.to_fixed::<OffsetTime>();
+            self.offset_confidence -= (self.offset_confidence - offset.abs()) * self.gain;
         }
 
         // And decide it's correction
-        let correction = -offset * self.gain.to_fixed::<OffsetTime>();
+        let correction = -offset * self.gain;
 
         let freq_corr = if let Some(last_step) = &self.last_step {
             // Calculate interval for us
             let interval_local: f64 =
                 (measurement.event_time - last_step.measurement.event_time - last_step.correction)
+                    .nanos()
                     .lossy_into();
             // and for the master
             let interval_master: f64 = ((measurement.event_time - measurement.master_offset)
                 - (last_step.measurement.event_time - last_step.measurement.master_offset))
+                .nanos()
                 .lossy_into();
 
             // get relative frequency difference

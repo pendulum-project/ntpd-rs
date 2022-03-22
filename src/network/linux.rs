@@ -1,6 +1,8 @@
 //! Implementation of the abstract network types for the linux platform
 
-use crate::time::{OffsetTime, TimeType};
+use crate::time::Instant;
+
+use super::{NetworkPacket, NetworkPort, NetworkRuntime};
 use nix::{
     cmsg_space,
     errno::Errno,
@@ -18,8 +20,6 @@ use nix::{
     },
 };
 use std::{os::unix::prelude::RawFd, str::FromStr, sync::mpsc::Sender, thread::JoinHandle};
-
-use super::{NetworkPacket, NetworkPort, NetworkRuntime};
 
 #[derive(Clone)]
 pub struct LinuxRuntime {
@@ -407,7 +407,7 @@ impl LinuxNetworkPort {
             let mut ts = None;
             for c in recv.cmsgs() {
                 if let ControlMessageOwned::ScmTimestampsns(timestamps) = c {
-                    ts = Some(OffsetTime::from_timespec(&timestamps.system));
+                    ts = Some(Instant::from_timespec(&timestamps.system));
                 }
             }
             tx.send(NetworkPacket {
