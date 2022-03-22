@@ -1,6 +1,9 @@
 //! Definitions and implementations of the abstract clock types
 
-use crate::{datastructures::common::ClockQuality, time::OffsetTime};
+use crate::{
+    datastructures::common::ClockQuality,
+    time::{Duration, Instant},
+};
 
 pub mod linux_clock;
 
@@ -10,7 +13,7 @@ pub trait Clock {
     type W: Watch;
 
     /// Get the current time of the clock
-    fn now(&self) -> OffsetTime;
+    fn now(&self) -> Instant;
 
     /// Get the quality of the clock
     fn quality(&self) -> ClockQuality;
@@ -25,7 +28,7 @@ pub trait Clock {
     /// The clock can (and should) do some filtering.
     fn adjust(
         &mut self,
-        time_offset: OffsetTime,
+        time_offset: Duration,
         frequency_multiplier: f64,
         time_properties: TimeProperties,
     ) -> Result<bool, Self::E>;
@@ -38,9 +41,9 @@ pub trait Watch {
     type WatchId: std::fmt::Debug + Eq;
 
     /// Get the current time
-    fn now(&self) -> OffsetTime;
+    fn now(&self) -> Instant;
     /// Set an alarm. A previously set alarm will be overwritten
-    fn set_alarm(&mut self, from_now: OffsetTime);
+    fn set_alarm(&mut self, from_now: Duration);
     /// The id of the watch.
     ///
     /// Used by the alarm API to know which watch went off

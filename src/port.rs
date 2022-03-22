@@ -7,8 +7,7 @@ use crate::datastructures::messages::{
 };
 use crate::datastructures::{common::PortIdentity, messages::Message};
 use crate::network::{NetworkPacket, NetworkPort, NetworkRuntime};
-use crate::time::{OffsetTime, TimeType};
-use fixed::traits::ToFixed;
+use crate::time::{Duration, Instant};
 
 /// Object for keeping track of the current id
 #[derive(Debug, Clone, Default)]
@@ -56,9 +55,7 @@ impl<NR: NetworkRuntime> PortData<NR> {
         clock_quality: ClockQuality,
     ) -> Self {
         let bmca = Bmca::new(
-            OffsetTime::from_log_interval(port_config.log_announce_interval)
-                .to_interval()
-                .unwrap(),
+            Duration::from_log_interval(port_config.log_announce_interval).to_interval(),
             identity,
         );
 
@@ -94,23 +91,23 @@ pub struct Port<NR: NetworkRuntime> {
 
 #[derive(Debug, PartialEq)]
 pub struct Measurement {
-    pub event_time: OffsetTime,
-    pub master_offset: OffsetTime,
+    pub event_time: Instant,
+    pub master_offset: Duration,
 }
 
 #[derive(Debug, Default)]
 pub struct StateSlave {
     remote_master: PortIdentity,
-    mean_delay: Option<OffsetTime>,
+    mean_delay: Option<Duration>,
     sync_id: Option<u16>,
     delay_id: Option<u16>,
     delay_send_id: Option<usize>,
-    sync_correction: Option<OffsetTime>,
-    sync_send_time: Option<OffsetTime>,
-    sync_recv_time: Option<OffsetTime>,
-    delay_send_time: Option<OffsetTime>,
-    delay_recv_time: Option<OffsetTime>,
-    next_delay_measurement: Option<OffsetTime>,
+    sync_correction: Option<Duration>,
+    sync_send_time: Option<Instant>,
+    sync_recv_time: Option<Instant>,
+    delay_send_time: Option<Instant>,
+    delay_recv_time: Option<Instant>,
+    next_delay_measurement: Option<Instant>,
     pending_followup: Option<FollowUpMessage>,
 }
 
@@ -119,22 +116,22 @@ impl StateSlave {
         &mut self,
         port: &mut PortData<NR>,
         message: SyncMessage,
-        timestamp: OffsetTime,
+        timestamp: Instant,
     ) -> Option<()> {
         self.sync_id = Some(message.header().sequence_id());
         self.sync_recv_time = Some(timestamp);
         self.delay_send_time = None;
         self.delay_recv_time = None;
         if message.header().two_step_flag() {
-            self.sync_correction = Some(OffsetTime::from_interval(
+            self.sync_correction = Some(Duration::from_interval(
                 &message.header().correction_field(),
             ));
             self.sync_send_time = None;
         } else {
             self.sync_correction = None;
             self.sync_send_time = Some(
-                OffsetTime::from_timestamp(&message.origin_timestamp())
-                    + OffsetTime::from_interval(&message.header().correction_field()),
+                Instant::from_timestamp(&message.origin_timestamp())
+                    + Duration::from_interval(&message.header().correction_field()),
             );
         }
         if self.mean_delay == None || self.next_delay_measurement.unwrap_or_default() < timestamp {
@@ -175,8 +172,8 @@ impl StateSlave {
 
         // Absorb into state
         self.sync_send_time = Some(
-            OffsetTime::from_timestamp(&message.precise_origin_timestamp())
-                + OffsetTime::from_interval(&message.header().correction_field())
+            Instant::from_timestamp(&message.precise_origin_timestamp())
+                + Duration::from_interval(&message.header().correction_field())
                 + self.sync_correction?,
         );
         self.sync_correction = None;
@@ -192,8 +189,8 @@ impl StateSlave {
 
         // Absorb into state
         self.delay_recv_time = Some(
-            OffsetTime::from_timestamp(&message.receive_timestamp())
-                - OffsetTime::from_interval(&message.header().correction_field()),
+            Instant::from_timestamp(&message.receive_timestamp())
+                - Duration::from_interval(&message.header().correction_field()),
         );
 
         // Calculate when we should next measure delay
@@ -201,8 +198,8 @@ impl StateSlave {
         //  taking the default (0) is safe for recovery.
         self.next_delay_measurement = Some(
             self.sync_recv_time.unwrap_or_default()
-                + (1 << message.header().log_message_interval()).to_fixed::<OffsetTime>()
-                - 0.1.to_fixed::<OffsetTime>(),
+                + Duration::from_log_interval(message.header().log_message_interval())
+                - Duration::from_fixed_nanos(0.1f64),
         );
 
         self.finish_delay_measurement();
@@ -214,7 +211,7 @@ impl StateSlave {
         &mut self,
         port: &mut PortData<NR>,
         message: Message,
-        timestamp: Option<OffsetTime>,
+        timestamp: Option<Instant>,
     ) -> Option<()> {
         if message.header().source_port_identity() != self.remote_master {
             return None;
@@ -228,7 +225,7 @@ impl StateSlave {
         }
     }
 
-    fn handle_send_timestamp(&mut self, id: usize, timestamp: OffsetTime) -> Option<()> {
+    fn handle_send_timestamp(&mut self, id: usize, timestamp: Instant) -> Option<()> {
         if self.delay_send_id? == id {
             self.delay_send_time = Some(timestamp);
             self.delay_send_id = None;
@@ -241,8 +238,8 @@ impl StateSlave {
 
     fn finish_delay_measurement(&mut self) -> Option<()> {
         self.mean_delay = Some(
-            (self.sync_recv_time? - self.sync_send_time? + self.delay_recv_time?
-                - self.delay_send_time?)
+            (self.sync_recv_time? - self.sync_send_time?
+                + (self.delay_recv_time? - self.delay_send_time?))
                 / 2,
         );
 
@@ -278,7 +275,7 @@ impl State {
         &mut self,
         port: &mut PortData<NR>,
         message: Message,
-        timestamp: Option<OffsetTime>,
+        timestamp: Option<Instant>,
     ) -> Option<()> {
         match self {
             State::Slave(state) => state.handle_message(port, message, timestamp),
@@ -286,7 +283,7 @@ impl State {
         }
     }
 
-    fn handle_send_timestamp(&mut self, id: usize, timestamp: OffsetTime) -> Option<()> {
+    fn handle_send_timestamp(&mut self, id: usize, timestamp: Instant) -> Option<()> {
         match self {
             State::Slave(state) => state.handle_send_timestamp(id, timestamp),
             _ => None,
@@ -345,15 +342,15 @@ impl<NR: NetworkRuntime> Port<NR> {
         }
     }
 
-    pub fn handle_network(&mut self, packet: NetworkPacket, current_time: OffsetTime) {
+    pub fn handle_network(&mut self, packet: NetworkPacket, current_time: Instant) {
         self.process_message(packet, current_time);
     }
 
-    pub fn handle_send_timestamp(&mut self, id: usize, timestamp: OffsetTime) {
+    pub fn handle_send_timestamp(&mut self, id: usize, timestamp: Instant) {
         self.state.handle_send_timestamp(id, timestamp);
     }
 
-    fn process_message(&mut self, packet: NetworkPacket, current_time: OffsetTime) -> Option<()> {
+    fn process_message(&mut self, packet: NetworkPacket, current_time: Instant) -> Option<()> {
         let message = Message::deserialize(&packet.data).ok()?;
         if message.header().sdo_id() != self.portdata.sdo
             || message.header().domain_number() != self.portdata.domain
@@ -369,7 +366,7 @@ impl<NR: NetworkRuntime> Port<NR> {
             Message::Announce(announce) => self
                 .portdata
                 .bmca
-                .register_announce_message(&announce, current_time.to_timestamp().unwrap()),
+                .register_announce_message(&announce, current_time.to_timestamp()),
             _ => {}
         };
 
@@ -387,11 +384,11 @@ impl<NR: NetworkRuntime> Port<NR> {
 
     pub fn take_best_port_announce_message(
         &mut self,
-        current_time: OffsetTime,
+        current_time: Instant,
     ) -> Option<(AnnounceMessage, Timestamp, PortIdentity)> {
         self.portdata
             .bmca
-            .take_best_port_announce_message(current_time.to_timestamp().unwrap())
+            .take_best_port_announce_message(current_time.to_timestamp())
     }
 
     pub fn perform_state_decision(
@@ -425,8 +422,8 @@ impl<NR: NetworkRuntime> Port<NR> {
         }
     }
 
-    pub fn get_announce_interval(&self) -> OffsetTime {
-        OffsetTime::from_log_interval(self.portdata.port_config.log_announce_interval)
+    pub fn get_announce_interval(&self) -> Duration {
+        Duration::from_log_interval(self.portdata.port_config.log_announce_interval)
     }
 }
 
@@ -440,6 +437,7 @@ mod tests {
     use crate::network::NetworkRuntime;
     use crate::port::Measurement;
     use crate::port::PortConfig;
+    use crate::time::{Duration, Instant};
     use fixed::traits::ToFixed;
 
     #[test]
@@ -487,13 +485,13 @@ mod tests {
                     seconds: 0,
                     nanos: 0,
                 }),
-            Some((5 as i16).to_fixed()),
+            Some(Instant::from_nanos(5)),
         );
 
         assert_eq!(test_state.extract_measurement(), None);
 
         let delay_req = network_runtime.get_sent().unwrap();
-        test_state.handle_send_timestamp(delay_req.index, (7 as i16).to_fixed());
+        test_state.handle_send_timestamp(delay_req.index, Instant::from_nanos(7));
 
         assert_eq!(test_state.extract_measurement(), None);
 
@@ -517,8 +515,8 @@ mod tests {
         assert_eq!(
             test_state.extract_measurement(),
             Some(Measurement {
-                master_offset: (1 as i16).to_fixed(),
-                event_time: (5 as i16).to_fixed(),
+                master_offset: Duration::from_nanos(1),
+                event_time: Instant::from_nanos(5),
             })
         );
     }
@@ -568,7 +566,7 @@ mod tests {
                     seconds: 0,
                     nanos: 0,
                 }),
-            Some((5 as i16).to_fixed()),
+            Some(Instant::from_nanos(5)),
         );
 
         assert_eq!(test_state.extract_measurement(), None);
@@ -594,13 +592,13 @@ mod tests {
 
         assert_eq!(test_state.extract_measurement(), None);
 
-        test_state.handle_send_timestamp(delay_req.index, (7 as i16).to_fixed());
+        test_state.handle_send_timestamp(delay_req.index, Instant::from_nanos(7));
 
         assert_eq!(
             test_state.extract_measurement(),
             Some(Measurement {
-                master_offset: (1 as i16).to_fixed(),
-                event_time: (5 as i16).to_fixed(),
+                master_offset: Duration::from_nanos(1),
+                event_time: Instant::from_nanos(5),
             })
         );
     }
@@ -651,7 +649,7 @@ mod tests {
                     seconds: 0,
                     nanos: 0,
                 }),
-            Some((5 as i16).to_fixed()),
+            Some(Instant::from_nanos(5)),
         );
 
         assert_eq!(test_state.extract_measurement(), None);
@@ -674,7 +672,7 @@ mod tests {
         assert_eq!(test_state.extract_measurement(), None);
 
         let delay_req = network_runtime.get_sent().unwrap();
-        test_state.handle_send_timestamp(delay_req.index, (7 as i16).to_fixed());
+        test_state.handle_send_timestamp(delay_req.index, Instant::from_nanos(7));
 
         assert_eq!(test_state.extract_measurement(), None);
 
@@ -698,8 +696,8 @@ mod tests {
         assert_eq!(
             test_state.extract_measurement(),
             Some(Measurement {
-                master_offset: (0 as i16).to_fixed(),
-                event_time: (5 as i16).to_fixed(),
+                master_offset: Duration::from_nanos(0),
+                event_time: Instant::from_nanos(5),
             })
         );
     }
@@ -767,13 +765,13 @@ mod tests {
                     seconds: 0,
                     nanos: 0,
                 }),
-            Some((5 as i16).to_fixed()),
+            Some(Instant::from_nanos(5)),
         );
 
         assert_eq!(test_state.extract_measurement(), None);
 
         let delay_req = network_runtime.get_sent().unwrap();
-        test_state.handle_send_timestamp(delay_req.index, (7 as i16).to_fixed());
+        test_state.handle_send_timestamp(delay_req.index, Instant::from_nanos(7));
 
         assert_eq!(test_state.extract_measurement(), None);
 
@@ -797,8 +795,8 @@ mod tests {
         assert_eq!(
             test_state.extract_measurement(),
             Some(Measurement {
-                master_offset: (0 as i16).to_fixed(),
-                event_time: (5 as i16).to_fixed(),
+                master_offset: Duration::from_nanos(0),
+                event_time: Instant::from_nanos(5),
             })
         );
     }

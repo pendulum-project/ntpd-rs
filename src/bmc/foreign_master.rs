@@ -5,7 +5,7 @@ use crate::{
         common::{PortIdentity, TimeInterval, Timestamp},
         messages::AnnounceMessage,
     },
-    time::{OffsetTime, TimeType},
+    time::{Duration, Instant},
 };
 
 /// The time window in which announce messages are valid.
@@ -41,11 +41,10 @@ impl ForeignMaster {
         current_time: Timestamp,
         announce_interval: TimeInterval,
     ) -> bool {
-        let cutoff_time = OffsetTime::from_timestamp(&current_time)
-            - OffsetTime::from_interval(&announce_interval)
-                * OffsetTime::from_num(FOREIGN_MASTER_TIME_WINDOW);
+        let cutoff_time = Instant::from_timestamp(&current_time)
+            - Duration::from_interval(&announce_interval) * FOREIGN_MASTER_TIME_WINDOW;
         self.announce_messages
-            .retain(|(_, ts)| OffsetTime::from_timestamp(ts) > cutoff_time);
+            .retain(|(_, ts)| Instant::from_timestamp(ts) > cutoff_time);
 
         self.announce_messages.is_empty()
     }

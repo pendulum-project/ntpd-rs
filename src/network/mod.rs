@@ -1,10 +1,10 @@
 //! Definitions and implementations of the abstract network types
 
+use crate::time::Instant;
+
 pub mod linux;
 #[cfg(test)]
 pub mod test;
-
-use crate::time::OffsetTime;
 
 /// Abstraction for the network
 ///
@@ -43,7 +43,7 @@ pub struct NetworkPacket {
     ///
     /// The timestamp must be Some when the packet comes from a time-critical port.
     /// The timestamp will be ignored when it comes from a non-time-critical port, so it may as well be None.
-    pub timestamp: Option<OffsetTime>,
+    pub timestamp: Option<Instant>,
 }
 
 /// Abstraction for a port or socket

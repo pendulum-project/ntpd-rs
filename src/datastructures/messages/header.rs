@@ -27,7 +27,7 @@ pub struct Header {
     pub(super) correction_field: TimeInterval,
     pub(super) source_port_identity: PortIdentity,
     pub(super) sequence_id: u16,
-    pub(super) log_message_interval: u8,
+    pub(super) log_message_interval: i8,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,7 +97,7 @@ impl Header {
         self.source_port_identity.serialize(&mut buffer[20..30])?;
         buffer[30..32].copy_from_slice(&self.sequence_id.to_be_bytes());
         buffer[32] = ControlField::from(content_type).to_primitive();
-        buffer[33] = self.log_message_interval;
+        buffer[33] = self.log_message_interval as u8;
 
         Ok(())
     }
@@ -124,7 +124,7 @@ impl Header {
                 correction_field: TimeInterval::deserialize(&buffer[8..16])?,
                 source_port_identity: PortIdentity::deserialize(&buffer[20..30])?,
                 sequence_id: u16::from_be_bytes(buffer[30..32].try_into().unwrap()),
-                log_message_interval: buffer[33],
+                log_message_interval: buffer[33] as i8,
             },
             message_type: (buffer[0] & 0x0F).try_into()?,
             message_length: u16::from_be_bytes(buffer[2..4].try_into().unwrap()),

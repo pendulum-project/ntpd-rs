@@ -2,7 +2,7 @@
 
 pub mod basic;
 
-use crate::{port::Measurement, time::OffsetTime};
+use crate::{port::Measurement, time::Duration};
 
 /// A filter abstraction with which time measurements are post-processed.
 /// This allows for the development of multiple filter kinds that work better or worse depending on the rest of the setup.
@@ -13,5 +13,5 @@ pub trait Filter {
     ///
     /// *Note*: The returned values aren't necessarily the 'real' offset from the master time. To prevent overshooting,
     /// oscillating, etc, the filter will apply some algorithms to prevent that.
-    fn absorb(&mut self, m: Measurement) -> (OffsetTime, f64);
+    fn absorb(&mut self, m: Measurement) -> (Duration, f64);
 }

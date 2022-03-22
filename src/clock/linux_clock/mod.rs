@@ -1,7 +1,11 @@
 //! Implementation of the abstract clock for the linux platform
 
 use super::{Clock, Watch};
-use crate::{clock::TimeProperties, datastructures::common::ClockQuality, time::OffsetTime};
+use crate::{
+    clock::TimeProperties,
+    datastructures::common::ClockQuality,
+    time::{Duration, Instant},
+};
 use fixed::traits::LossyInto;
 use std::{collections::HashMap, sync::mpsc};
 
@@ -18,7 +22,7 @@ pub enum Error {
 pub struct LinuxClock {
     clock: RawLinuxClock,
     next_watch_id: u32,
-    alarm_sender: mpsc::Sender<(<<Self as Clock>::W as Watch>::WatchId, OffsetTime)>,
+    alarm_sender: mpsc::Sender<(<<Self as Clock>::W as Watch>::WatchId, Instant)>,
 }
 
 impl LinuxClock {
@@ -44,7 +48,7 @@ impl Clock for LinuxClock {
     type E = Error;
     type W = LinuxWatch;
 
-    fn now(&self) -> OffsetTime {
+    fn now(&self) -> Instant {
         self.clock.get_clock_state().unwrap().0.get_time()
     }
 
@@ -65,7 +69,7 @@ impl Clock for LinuxClock {
 
     fn adjust(
         &mut self,
-        time_offset: OffsetTime,
+        time_offset: Duration,
         frequency_multiplier: f64,
         time_properties: TimeProperties,
     ) -> Result<bool, Self::E> {
@@ -78,7 +82,7 @@ impl Clock for LinuxClock {
                 .map_err(Error::LinuxError)?;
         }
 
-        let time_offset_float: f64 = time_offset.lossy_into();
+        let time_offset_float: f64 = time_offset.nanos().lossy_into();
         let adjust_result = self
             .clock
             .adjust_clock(time_offset_float / 1e9, frequency_multiplier);
@@ -93,17 +97,17 @@ impl Clock for LinuxClock {
 pub struct LinuxWatch {
     clock: RawLinuxClock,
     id: u32,
-    alarm_sender: mpsc::Sender<(<Self as Watch>::WatchId, OffsetTime)>,
+    alarm_sender: mpsc::Sender<(<Self as Watch>::WatchId, Instant)>,
 }
 
 impl Watch for LinuxWatch {
     type WatchId = u32;
 
-    fn now(&self) -> OffsetTime {
+    fn now(&self) -> Instant {
         self.clock.get_clock_state().unwrap().0.get_time()
     }
 
-    fn set_alarm(&mut self, from_now: OffsetTime) {
+    fn set_alarm(&mut self, from_now: Duration) {
         let alarm_time = self.now() + from_now;
         // Send the alarm time to the alarm receiver
         self.alarm_sender.send((self.id, alarm_time)).unwrap();
@@ -117,8 +121,8 @@ impl Watch for LinuxWatch {
 /// Object that receives all set alarms of all watches
 pub struct AlarmReceiver {
     clock: RawLinuxClock,
-    alarm_receiver: mpsc::Receiver<(u32, OffsetTime)>,
-    alarms: HashMap<u32, OffsetTime>,
+    alarm_receiver: mpsc::Receiver<(u32, Instant)>,
+    alarms: HashMap<u32, Instant>,
 }
 
 impl AlarmReceiver {
@@ -137,7 +141,7 @@ impl AlarmReceiver {
         }
     }
 
-    fn earliest_alarm(&mut self) -> Option<(u32, OffsetTime)> {
+    fn earliest_alarm(&mut self) -> Option<(u32, Instant)> {
         // Gather all alarms into the hashmap
         while let Ok((clock_id, alarm_time)) = self.alarm_receiver.try_recv() {
             self.alarms.insert(clock_id, alarm_time);
@@ -151,12 +155,12 @@ impl AlarmReceiver {
         earliest_alarm.map(|(a, b)| (a.to_owned(), b.to_owned()))
     }
 
-    pub fn interval_to_next_alarm(&mut self) -> Option<OffsetTime> {
+    pub fn interval_to_next_alarm(&mut self) -> Option<Duration> {
         match self.earliest_alarm() {
             Some((_, alarm_time)) => {
                 let cur_time = self.clock.get_clock_state().unwrap().0.get_time();
                 if cur_time > alarm_time {
-                    Some(0.into())
+                    Some(Duration::default())
                 } else {
                     Some(alarm_time - cur_time)
                 }
@@ -169,7 +173,6 @@ impl AlarmReceiver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
 
     #[test]
     fn linux_clock_alarm() {
@@ -182,19 +185,19 @@ mod tests {
 
         assert_eq!(alarm_receiver.alarms.len(), 0);
 
-        watch_1.set_alarm(2_000_000.into());
+        watch_1.set_alarm(Duration::from_nanos(2_000_000));
         assert_eq!(alarm_receiver.check(), None);
         assert_eq!(alarm_receiver.alarms.len(), 1);
 
-        watch_2.set_alarm(2_000_000.into());
+        watch_2.set_alarm(Duration::from_nanos(2_000_000));
         assert_eq!(alarm_receiver.check(), None);
         assert_eq!(alarm_receiver.alarms.len(), 2);
 
-        watch_1.set_alarm(4_000_000.into());
+        watch_1.set_alarm(Duration::from_nanos(4_000_000));
         assert_eq!(alarm_receiver.check(), None);
         assert_eq!(alarm_receiver.alarms.len(), 2);
 
-        std::thread::sleep(Duration::from_millis(10));
+        std::thread::sleep(std::time::Duration::from_millis(10));
 
         assert_eq!(alarm_receiver.check(), Some(watch_2.id()));
         assert_eq!(alarm_receiver.check(), Some(watch_1.id()));
