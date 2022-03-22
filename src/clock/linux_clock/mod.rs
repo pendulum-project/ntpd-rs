@@ -127,7 +127,7 @@ impl AlarmReceiver {
         // Check if we have an alarm and if it would go off
         match self.earliest_alarm() {
             Some((alarm_id, alarm_time))
-                if alarm_time < self.clock.get_clock_state().unwrap().0.get_time() =>
+                if alarm_time < self.clock.get_time().unwrap() =>
             {
                 let alarm_id = alarm_id;
                 self.alarms.remove(&alarm_id);
@@ -154,7 +154,7 @@ impl AlarmReceiver {
     pub fn interval_to_next_alarm(&mut self) -> Option<OffsetTime> {
         match self.earliest_alarm() {
             Some((_, alarm_time)) => {
-                let cur_time = self.clock.get_clock_state().unwrap().0.get_time();
+                let cur_time = self.clock.get_time().unwrap();
                 if cur_time > alarm_time {
                     Some(0.into())
                 } else {
