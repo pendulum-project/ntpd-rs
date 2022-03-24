@@ -84,7 +84,7 @@ impl Bmca {
                 DatasetOrdering::Better | DatasetOrdering::BetterByTopology => (l, lts, lpid),
                 // We get errors if two announce messages are (functionally) the same, in that case we just pick the newer one
                 DatasetOrdering::Error1 | DatasetOrdering::Error2 => {
-                    if Instant::from_timestamp(&lts) >= Instant::from_timestamp(&rts) {
+                    if Instant::from(lts) >= Instant::from(rts) {
                         (l, lts, lpid)
                     } else {
                         (r, rts, rpid)

@@ -41,10 +41,10 @@ impl ForeignMaster {
         current_time: Timestamp,
         announce_interval: TimeInterval,
     ) -> bool {
-        let cutoff_time = Instant::from_timestamp(&current_time)
-            - Duration::from_interval(&announce_interval) * FOREIGN_MASTER_TIME_WINDOW;
+        let cutoff_time = Instant::from(current_time)
+            - Duration::from(announce_interval) * FOREIGN_MASTER_TIME_WINDOW;
         self.announce_messages
-            .retain(|(_, ts)| Instant::from_timestamp(ts) > cutoff_time);
+            .retain(|(_, ts)| Instant::from(*ts) > cutoff_time);
 
         self.announce_messages.is_empty()
     }

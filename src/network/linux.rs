@@ -407,7 +407,7 @@ impl LinuxNetworkPort {
             let mut ts = None;
             for c in recv.cmsgs() {
                 if let ControlMessageOwned::ScmTimestampsns(timestamps) = c {
-                    ts = Some(Instant::from_timespec(&timestamps.system));
+                    ts = Some(Instant::from(timestamps.system));
                 }
             }
             tx.send(NetworkPacket {

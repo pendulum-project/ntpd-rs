@@ -55,7 +55,7 @@ impl<NR: NetworkRuntime> PortData<NR> {
         clock_quality: ClockQuality,
     ) -> Self {
         let bmca = Bmca::new(
-            Duration::from_log_interval(port_config.log_announce_interval).to_interval(),
+            Duration::from_log_interval(port_config.log_announce_interval).into(),
             identity,
         );
 
@@ -123,15 +123,13 @@ impl StateSlave {
         self.delay_send_time = None;
         self.delay_recv_time = None;
         if message.header().two_step_flag() {
-            self.sync_correction = Some(Duration::from_interval(
-                &message.header().correction_field(),
-            ));
+            self.sync_correction = Some(Duration::from(message.header().correction_field()));
             self.sync_send_time = None;
         } else {
             self.sync_correction = None;
             self.sync_send_time = Some(
-                Instant::from_timestamp(&message.origin_timestamp())
-                    + Duration::from_interval(&message.header().correction_field()),
+                Instant::from(message.origin_timestamp())
+                    + Duration::from(message.header().correction_field()),
             );
         }
         if self.mean_delay == None || self.next_delay_measurement.unwrap_or_default() < timestamp {
@@ -172,8 +170,8 @@ impl StateSlave {
 
         // Absorb into state
         self.sync_send_time = Some(
-            Instant::from_timestamp(&message.precise_origin_timestamp())
-                + Duration::from_interval(&message.header().correction_field())
+            Instant::from(message.precise_origin_timestamp())
+                + Duration::from(message.header().correction_field())
                 + self.sync_correction?,
         );
         self.sync_correction = None;
@@ -189,8 +187,8 @@ impl StateSlave {
 
         // Absorb into state
         self.delay_recv_time = Some(
-            Instant::from_timestamp(&message.receive_timestamp())
-                - Duration::from_interval(&message.header().correction_field()),
+            Instant::from(message.receive_timestamp())
+                - Duration::from(message.header().correction_field()),
         );
 
         // Calculate when we should next measure delay
@@ -366,7 +364,7 @@ impl<NR: NetworkRuntime> Port<NR> {
             Message::Announce(announce) => self
                 .portdata
                 .bmca
-                .register_announce_message(&announce, current_time.to_timestamp()),
+                .register_announce_message(&announce, current_time.into()),
             _ => {}
         };
 
@@ -388,7 +386,7 @@ impl<NR: NetworkRuntime> Port<NR> {
     ) -> Option<(AnnounceMessage, Timestamp, PortIdentity)> {
         self.portdata
             .bmca
-            .take_best_port_announce_message(current_time.to_timestamp())
+            .take_best_port_announce_message(current_time.into())
     }
 
     pub fn perform_state_decision(

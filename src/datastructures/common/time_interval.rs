@@ -1,4 +1,7 @@
-use crate::datastructures::{WireFormat, WireFormatError};
+use crate::{
+    datastructures::{WireFormat, WireFormatError},
+    time::Duration,
+};
 use core::ops::{Deref, DerefMut};
 use fixed::types::I48F16;
 
@@ -34,6 +37,13 @@ impl WireFormat for TimeInterval {
         Ok(Self(I48F16::from_bits(i64::from_be_bytes(
             buffer[0..8].try_into().unwrap(),
         ))))
+    }
+}
+
+impl From<Duration> for TimeInterval {
+    fn from(duration: Duration) -> Self {
+        let val = (duration.nanos().to_bits() >> 16) as i64;
+        TimeInterval(fixed::types::I48F16::from_bits(val))
     }
 }
 
