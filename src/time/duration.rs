@@ -8,7 +8,7 @@ use std::{
 };
 
 /// A duration is a span of time that can also be negative.
-/// 
+///
 /// For example, the difference between two instants is a duration.
 /// And an instant plus a duration is another instant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
@@ -210,4 +210,5 @@ mod tests {
             TimeInterval(2.25f64.to_fixed()),
             Duration::from_fixed_nanos(2.25f64).into()
         );
-    }}
+    }
+}

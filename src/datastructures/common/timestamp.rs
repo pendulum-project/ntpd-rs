@@ -1,4 +1,7 @@
-use crate::{datastructures::{WireFormat, WireFormatError}, time::Instant};
+use crate::{
+    datastructures::{WireFormat, WireFormatError},
+    time::Instant,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Timestamp {
