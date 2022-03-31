@@ -45,30 +45,30 @@ The clock in the fpga is of relatively low quality, and may therefore be somewha
 We callibrate the FPGA clock using the data from the GM pulse-per-second signal. This process purely uses difference between arrival times of these pulses, hence errors from cable length can be ignored in the following analysis. Note that over short time intervals, the clock frequency seems quite stable, with the second interval only varying by 1 clock cycle around a central value over short time periods. To compensate for any longer-term drift of the FPGA clock frequency, we do this calibration on a per-run basis.
 
 \begin{figure}[h]
-\includegraphics[width=0.5\textwidth]{gm_clocks_overtime_ref.pdf}
+\includegraphics[width=0.5\textwidth]{gm_clocks_overtime_ref.pdf}\includegraphics[width=0.5\textwidth]{gm_clocks_overtime_statime.pdf}
 \caption{FPGA clock cycles per second over time, time axis is arbitrary. On the left is data from the LinuxPTP run, on the right from the statime run. Glitch marks points where some seconds of data have been removed due to jiggling of connectors causing spurious edges.}
 \label{fig:gm_cycles_over_time}
 \end{figure}
 
 \begin{figure}[h]
-\includegraphics[width=0.5\textwidth]{gm_clocks_per_sec_ref.pdf}
+\includegraphics[width=0.5\textwidth]{gm_clocks_per_sec_ref.pdf}\includegraphics[width=0.5\textwidth]{gm_clocks_per_sec_statime.pdf}
 \caption{FPGA clock cycles per second as measured using the GM pulse-per-second output. On the left is data from the LinuxPTP run, on the right from the statime run.}
 \label{fig:gm_cycles_per_second}
 \end{figure}
 
-For the LinuxPTP run, the measurement data are plotted in Figure~\ref{fig:gm_cycles_per_second}. Analysing this shows the fpga clock ticks $99999599\pm 1.7 (\text{stat.}) \pm 1.0 (\text{sys.})$. Hence, a single clock tick of the fpga clock takes $10.00004010 \pm 0.00000017 (\text{stat.}) \pm 0.00000010 (\text{sys.})$ nanoseconds.
+For the LinuxPTP run, the measurement data are plotted in Figure~\ref{fig:gm_cycles_per_second}. Analysing this shows the fpga clock ticks $99999599\pm 1.7 (\text{stat.}) \pm 1.0 (\text{sys.})$ per second. Hence, a single clock tick of the fpga clock takes $10.00004010 \pm 0.00000017 (\text{stat.}) \pm 0.00000010 (\text{sys.})$ nanoseconds during the LinuxPTP run.
 
-For the statime run, analysis shows the fpga clock ticks $ \pm (\text{stat.}) \pm (\text{sys.})$, Hence, a single clock tick of the fpga clock takes $ \pm (\text{stat.}) \pm (\text{sys.})$.
+For the statime run, analysis shows the fpga clock ticks $ 99999638 \pm 7.8 (\text{stat.}) \pm 1.0 (\text{sys.})$ per second. Hence, a single clock tick of the fpga clock takes $10.00003620 \pm 0.00000078 (\text{stat.}) \pm 0.00000010 (\text{sys.})$ nanoseconds during the statime run.
 
 \section {LinuxPTP performance analysis}
 
 \begin{figure}[h]
 \includegraphics[width=0.5\textwidth]{gm_ref_offset_overtime.pdf}\includegraphics[width=0.5\textwidth]{gm_ref_offset.pdf}
-\caption{NIC clock offset to GM, both overtime and frequency of observations. (Negative values indicate that the clock is ahead of the GM.)}
-\label{fig:ref_nic_offset}
+\caption{System clock offset to GM, both overtime and frequency of observations. (Negative values indicate that the clock is ahead of the GM.)}
+\label{fig:ref_sys_offset}
 \end{figure}
 
-Analysing the offset data for the NIC clock synchronized by LinuxPTP, we find that this gives a constant offset $-3439\pm 11 (\text{stat.}) \pm 25(\text{sys.})$ nanoseconds, which could be eliminated by tuning the port assymetry. Furthermore, we see 99\% of all observations fall within $61 \pm 10 (\text{stat.})$ nanoseconds of this constant offset.
+Analysing the offset data for the system clock synchronized by LinuxPTP, we find that this gives a constant offset $-3576,40\pm 0.95 (\text{stat.}) \pm 25(\text{sys.})$ nanoseconds, which could be eliminated by tuning the port assymetry. Furthermore, we see 99\% of all observations fall within $186 \pm 10 (\text{stat.})$ nanoseconds of this constant offset.
 
 \section{Statime performance analysis}
 
