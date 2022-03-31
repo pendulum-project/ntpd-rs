@@ -101,7 +101,7 @@ impl Sub<Instant> for Instant {
     type Output = Duration;
 
     fn sub(self, rhs: Instant) -> Self::Output {
-        Duration::from_fixed_nanos(self.inner - rhs.inner)
+        Duration::from_fixed_nanos(self.inner) - Duration::from_fixed_nanos(rhs.inner)
     }
 }
 
