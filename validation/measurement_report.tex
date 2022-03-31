@@ -5,6 +5,12 @@
 
 \begin{document}
 
+\section{Introduction}
+
+In this paper, we present a quantitative comparison of statime synchronization performance as compared to the LinuxPTP implementation of PTP. In particular, we focus on comparing the precision and offset of the time synchronization of both setups.
+
+The comparison was done over relatively short time intervals of about two hours. Over these periods we find that, due to incomplete support for hardware timestamping, the precision of statime is still TODO orders of magnitude larger than that of LinuxPTP.
+
 \section{Measurement setup}
 
 Our measurement setup consists of 3 main parts:
@@ -24,7 +30,7 @@ On the raspberry pi, depending on the run we either start the LinuxPTP stack or 
 
 \section{Error estimates}
 
-In our analysis we will include the following 4 main error sources: Cable length differences, fpga input path differences, discretization error, and fpga clock instability. Below we will discuss each, including their contributions to our estimated error.
+In our analysis we have included the following 4 main error sources: Cable length differences, fpga input path differences, discretization error, and fpga clock instability. Below we will discuss each, including their contributions to our estimated error.
 \subsection{Cable length}
 The setup contains cables of multiple lengths and varying electrical characteristics. We will estimate these errors pessimistically and assume maximum systematic errors up to the propagation delay of our longest possible cable. As all our cables are below 1.5 meters in length, this gives us an estimated 15ns of systematic error.
 \subsection{FPGA input architecture}
@@ -36,7 +42,7 @@ The clock in the fpga is of relatively low quality, and may therefore be somewha
 
 \section{FPGA clock callibration}
 
-We callibrate the FPGA clock using the data from the GM pulse-per-second signal. This process purely uses difference between arrival times of these pulses, hence errors from cable length can be ignored in the following analysis. Note that over short time intervals, the clock frequency seems quite stable, with the second interval only varying by 1 clock cycle around a central value over short time periods.
+We callibrate the FPGA clock using the data from the GM pulse-per-second signal. This process purely uses difference between arrival times of these pulses, hence errors from cable length can be ignored in the following analysis. Note that over short time intervals, the clock frequency seems quite stable, with the second interval only varying by 1 clock cycle around a central value over short time periods. To compensate for any longer-term drift of the FPGA clock frequency, we do this calibration on a per-run basis.
 
 \begin{figure}[h]
 \includegraphics[width=0.5\textwidth]{gm_clocks_overtime_ref.pdf}
@@ -52,14 +58,27 @@ We callibrate the FPGA clock using the data from the GM pulse-per-second signal.
 
 For the LinuxPTP run, the measurement data are plotted in Figure~\ref{fig:gm_cycles_per_second}. Analysing this shows the fpga clock ticks $99999599\pm 1.7 (\text{stat.}) \pm 1.0 (\text{sys.})$. Hence, a single clock tick of the fpga clock takes $10.00004010 \pm 0.00000017 (\text{stat.}) \pm 0.00000010 (\text{sys.})$ nanoseconds.
 
+For the statime run, analysis shows the fpga clock ticks $ \pm (\text{stat.}) \pm (\text{sys.})$, Hence, a single clock tick of the fpga clock takes $ \pm (\text{stat.}) \pm (\text{sys.})$.
+
 \section {LinuxPTP performance analysis}
 
 \begin{figure}[h]
 \includegraphics[width=0.5\textwidth]{gm_ref_offset_overtime.pdf}\includegraphics[width=0.5\textwidth]{gm_ref_offset.pdf}
-\caption{NIC clock offset to GM, both overtime and frequency of observations}
+\caption{NIC clock offset to GM, both overtime and frequency of observations. (Negative values indicate that the clock is ahead of the GM.)}
 \label{fig:ref_nic_offset}
 \end{figure}
 
 Analysing the offset data for the NIC clock synchronized by LinuxPTP, we find that this gives a constant offset $-3439\pm 11 (\text{stat.}) \pm 25(\text{sys.})$ nanoseconds, which could be eliminated by tuning the port assymetry. Furthermore, we see 99\% of all observations fall within $61 \pm 10 (\text{stat.})$ nanoseconds of this constant offset.
 
+\section{Statime performance analysis}
+
+\section{Conclusions}
+
+Comparing the results of the statime and LinuxPTP, we observe that statime is $todo$ orders of magnitude less precise. We expect that this is primarily the result of the fact that statime does not yet have support for hardware timestamping.
+
+%Should offsets be similar
+Surprisingly, whilst the precision of both implementations is significantly different, we observe a similar offset in the synchronized time between statime and LinuxPTP. Although we do not know for certain why this is, it suggests that either asymmetry in the master or in the Linux network stack is the dominant cause of the offset.
+
+%Should offsets scale roughly with precision
+In line with the observed increas in precision, we also see an associated increase in fixed offset. This is likely primarily due to assymetry within the linux kernel's networking stack, which becomes more significant when relying on software timestamping.
 \end{document}
