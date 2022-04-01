@@ -77,7 +77,7 @@ impl Filter for BasicFilter {
             }
 
             // and decide the correction
-            1.0 + (freq_diff - 1.0) * self.gain
+            1.0 + (freq_diff - 1.0) * self.gain * 0.1
         } else {
             // No data, so no correction
             1.0

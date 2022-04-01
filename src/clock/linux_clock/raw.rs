@@ -69,95 +69,76 @@ impl RawLinuxClock {
     ///
     /// If the time offset is higher than 0.5 seconds, then the clock will be set directly and no frequency change will be made.
     pub fn adjust_clock(&mut self, time_offset: f64, frequency_multiplier: f64) -> Result<(), i32> {
-        if time_offset.abs() > 0.5 {
-            let current_time = self.get_time()?;
-            let new_time = current_time + Duration::from_fixed_nanos(time_offset / 1_000_000_000.0);
-            let new_time = new_time.to_timestamp();
+        log::trace!("Adjusting clock: {time_offset}s, {frequency_multiplier}x");
 
-            // The time offset is more than we can change with precision, so we're just going to set the current time
+        let (current_timex, _clock_state) = self.get_clock_state()?;
 
-            let new_time = libc::timespec {
-                tv_sec: new_time.seconds as _,
-                tv_nsec: new_time.nanos as _,
-            };
+        // We do an offset with precision
+        let mut frequency_timex = Timex::new();
 
-            // Set the clock time using the 'normal' clock api
-            let error = unsafe { libc::clock_settime(self.id, &new_time as *const _) };
-            match error {
-                -1 => Err(unsafe { *libc::__errno_location() }),
-                _ => Ok(()),
-            }
-        } else {
-            let (current_timex, _clock_state) = self.get_clock_state()?;
+        frequency_timex.set_status(
+            current_timex.get_status()
+                | StatusFlags::FREQHOLD // We want no automatic frequency updates
+            & !StatusFlags::PLL
+            & !StatusFlags::PPSFREQ
+            & !StatusFlags::FLL
+            & !StatusFlags::PPSTIME,
+        );
 
-            // We do an offset with precision
-            let mut frequency_timex = Timex::new();
+        frequency_timex.set_mode(
+            AdjustFlags::FREQUENCY, // We'll be setting the frequency as well
+        );
 
-            frequency_timex.set_status(
-                current_timex.get_status()
-                    | StatusFlags::FREQHOLD // We want no automatic frequency updates
-                & !StatusFlags::PLL
-                & !StatusFlags::PPSFREQ
-                & !StatusFlags::FLL
-                & !StatusFlags::PPSTIME,
-            );
+        // We need to change the ppm value to a speed factor so we can use multiplication to get the new frequency
+        let current_ppm = current_timex.get_frequency();
+        // The ppm is an offset from the main frequency, so it's the base +- the ppm expressed as a percentage.
+        // Ppm is in the opposite direction from the speed factor. A postive ppm means the clock is running slower, so we use its negative.
+        let current_frequency_multiplier = 1.0 + -current_ppm.to_num::<f64>() / 1_000_000.0;
+        // Now multiply the frequencies
+        let new_frequency_multiplier = current_frequency_multiplier * frequency_multiplier;
+        // Get back the new ppm value by subtracting the 1.0 base from it, changing the percentage to the ppm again and then taking the negative of that.
+        let new_ppm = -Fixed::from_num((new_frequency_multiplier - 1.0) * 1_000_000.0);
 
-            frequency_timex.set_mode(
-                AdjustFlags::FREQUENCY, // We'll be setting the frequency as well
-            );
+        frequency_timex.set_frequency(new_ppm);
 
-            // We need to change the ppm value to a speed factor so we can use multiplication to get the new frequency
-            let current_ppm = current_timex.get_frequency();
-            // The ppm is an offset from the main frequency, so it's the base +- the ppm expressed as a percentage.
-            // Ppm is in the opposite direction from the speed factor. A postive ppm means the clock is running slower, so we use its negative.
-            let current_frequency_multiplier = 1.0 + -current_ppm.to_num::<f64>() / 1_000_000.0;
-            // Now multiply the frequencies
-            let new_frequency_multiplier = current_frequency_multiplier * frequency_multiplier;
-            // Get back the new ppm value by subtracting the 1.0 base from it, changing the percentage to the ppm again and then taking the negative of that.
-            let new_ppm = -Fixed::from_num((new_frequency_multiplier - 1.0) * 1_000_000.0);
+        // Adjust the clock time and handle its errors
+        let error = unsafe { libc::clock_adjtime(self.id, frequency_timex.deref_mut() as *mut _) };
+        match error {
+            -1 => Err(unsafe { *libc::__errno_location() }),
+            _ => Ok(()),
+        }?;
 
-            frequency_timex.set_frequency(new_ppm);
+        let mut offset_timex = Timex::new();
 
-            // Adjust the clock time and handle its errors
-            let error =
-                unsafe { libc::clock_adjtime(self.id, frequency_timex.deref_mut() as *mut _) };
-            match error {
-                -1 => Err(unsafe { *libc::__errno_location() }),
-                _ => Ok(()),
-            }?;
+        offset_timex.set_status(
+            current_timex.get_status()
+                | StatusFlags::FREQHOLD // We want no automatic frequency updates
+            & !StatusFlags::PLL
+            & !StatusFlags::PPSFREQ
+            & !StatusFlags::FLL
+            & !StatusFlags::PPSTIME,
+        );
 
-            let mut offset_timex = Timex::new();
+        offset_timex.set_mode(
+            AdjustFlags::SETOFFSET // We have an offset to set
+            | AdjustFlags::NANO, // We're using nanoseconds
+        );
 
-            offset_timex.set_status(
-                current_timex.get_status()
-                    | StatusFlags::FREQHOLD // We want no automatic frequency updates
-                & !StatusFlags::PLL
-                & !StatusFlags::PPSFREQ
-                & !StatusFlags::FLL
-                & !StatusFlags::PPSTIME,
-            );
+        // Start with a seconds value of 0 and express the full time offset in nanos
+        offset_timex.time.tv_sec = time_offset as _;
+        offset_timex.time.tv_usec = (time_offset.fract() * 1_000_000_000.0) as Int;
 
-            offset_timex.set_mode(
-                AdjustFlags::SETOFFSET // We have an offset to set
-                | AdjustFlags::NANO, // We're using nanoseconds
-            );
+        // The nanos must not be negative. In that case the timestamp must be delivered as a negative seconds with a postive nanos value
+        while offset_timex.time.tv_usec < 0 {
+            offset_timex.time.tv_sec -= 1;
+            offset_timex.time.tv_usec += 1_000_000_000;
+        }
 
-            // Start with a seconds value of 0 and express the full time offset in nanos
-            offset_timex.time.tv_sec = 0;
-            offset_timex.time.tv_usec = (time_offset * 1_000_000_000.0) as Int;
-
-            // The nanos must not be negative. In that case the timestamp must be delivered as a negative seconds with a postive nanos value
-            while offset_timex.time.tv_usec < 0 {
-                offset_timex.time.tv_sec -= 1;
-                offset_timex.time.tv_usec += 1_000_000_000;
-            }
-
-            // Adjust the clock time and handle its errors
-            let error = unsafe { libc::clock_adjtime(self.id, offset_timex.deref_mut() as *mut _) };
-            match error {
-                -1 => Err(unsafe { *libc::__errno_location() }),
-                _ => Ok(()),
-            }
+        // Adjust the clock time and handle its errors
+        let error = unsafe { libc::clock_adjtime(self.id, offset_timex.deref_mut() as *mut _) };
+        match error {
+            -1 => Err(unsafe { *libc::__errno_location() }),
+            _ => Ok(()),
         }
     }
 
@@ -252,7 +233,7 @@ impl RawLinuxClock {
             -1 => Err(unsafe { *libc::__errno_location() }),
             _ => {
                 let secs = Instant::from_secs(time.tv_sec.unsigned_abs() as _);
-                let nanos = Duration::from_nanos(time.tv_nsec);
+                let nanos = Duration::from_nanos(time.tv_nsec as _);
 
                 Ok(secs + nanos)
             }
