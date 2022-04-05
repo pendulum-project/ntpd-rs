@@ -1,14 +1,8 @@
 use std::ops::Sub;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Default)]
 pub struct NtpTimestamp {
     timestamp: u64,
-}
-
-impl Default for NtpTimestamp {
-    fn default() -> Self {
-        Self::from_bits([0u8; 8])
-    }
 }
 
 impl NtpTimestamp {
@@ -38,15 +32,9 @@ impl Sub for NtpTimestamp {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Default)]
 pub struct NtpDuration {
     duration: i64,
-}
-
-impl Default for NtpDuration {
-    fn default() -> Self {
-        Self::from_bits_short([0u8; 4])
-    }
 }
 
 impl NtpDuration {
