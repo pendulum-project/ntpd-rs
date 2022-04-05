@@ -1,0 +1,10 @@
+[workspace]
+members = [
+    "ntp-daemon",
+    "ntp-proto",
+]
+exclude = [ ]
+
+# Without the `-p` flag, cargo ignores `--no-default-features` when you have a
+# workspace, and without `resolver = "2"` here, you can't use `-p` like this.
+resolver = "2"
