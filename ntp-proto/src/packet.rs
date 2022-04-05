@@ -169,7 +169,7 @@ impl NtpHeader {
             transmit_timestamp[4],
             transmit_timestamp[5],
             transmit_timestamp[6],
-            transmit_timestamp[7]
+            transmit_timestamp[7],
         ]
     }
 
@@ -238,6 +238,7 @@ mod tests {
         assert_eq!(reference, NtpHeader::deserialize(packet));
         assert_eq!(packet[..], reference.serialize()[..]);
     }
+<<<<<<< HEAD
 
     #[test]
     fn test_captured_server() {
