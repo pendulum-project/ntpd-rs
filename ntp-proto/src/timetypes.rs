@@ -52,6 +52,7 @@ impl NtpDuration {
 
     #[cfg(test)]
     pub(crate) fn from_fixed_int(duration: i64) -> NtpDuration {
-        NtpDuration{ duration }
+        NtpDuration { duration }
     }
 }
+
