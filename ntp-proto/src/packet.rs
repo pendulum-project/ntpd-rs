@@ -217,7 +217,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_captured() {
+    fn test_captured_client() {
         let packet = b"\x23\x02\x06\xe8\x00\x00\x03\xff\x00\x00\x03\x7d\x5e\xc6\x9f\x0f\xe5\xf6\x62\x98\x7b\x61\xb9\xaf\xe5\xf6\x63\x66\x7b\x64\x99\x5d\xe5\xf6\x63\x66\x81\x40\x55\x90\xe5\xf6\x63\xa8\x76\x1d\xde\x48";
         let reference = NtpHeader {
             leap: NtpLeapIndicator::NoWarning,
@@ -237,5 +237,67 @@ mod tests {
 
         assert_eq!(reference, NtpHeader::deserialize(packet));
         assert_eq!(packet[..], reference.serialize()[..]);
+    }
+
+    #[test]
+    fn test_captured_server() {
+        let packet = b"\x24\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
+        let reference = NtpHeader {
+            leap: NtpLeapIndicator::NoWarning,
+            version: 4,
+            mode: NtpAssociationMode::Server,
+            stratum: 2,
+            poll: 6,
+            precision: -23,
+            root_delay: NtpDuration::from_fixed_int(566 << 16),
+            root_dispersion: NtpDuration::from_fixed_int(951 << 16),
+            reference_id: 0xc035676c,
+            reference_timestamp: NtpTimestamp::from_fixed_int(0xe5f661fd6f165f03),
+            origin_timestamp: NtpTimestamp::from_fixed_int(0xeff663a87619ef40),
+            receive_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a8798c6581),
+            transmit_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a8798eae2b),
+        };
+
+        assert_eq!(reference, NtpHeader::deserialize(packet));
+        assert_eq!(packet[..], reference.serialize()[..])
+    }
+
+    #[test]
+    fn test_abstract() {
+        let packet = [0x0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47];
+        let a = NtpHeader::deserialize(&packet);
+        let b = a.serialize();
+        let c = NtpHeader::deserialize(&b);
+        assert_eq!(packet, b);
+        assert_eq!(a, c);
+    }
+
+    #[test]
+    fn test_packed_flags() {
+        let base = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47];
+        let base_structured = NtpHeader::deserialize(&base);
+
+        for leap_type in 0..3 {
+            for mode in 0..8 {
+                for version in 0..8 {
+                    let mut header = base_structured;
+                    header.leap = NtpLeapIndicator::from_bits(leap_type);
+                    header.mode = NtpAssociationMode::from_bits(mode);
+                    header.version = version;
+
+                    let data = header.serialize();
+                    let copy = NtpHeader::deserialize(&data);
+                    assert_eq!(header, copy);
+                }
+            }
+        }
+
+        for i in 0..=0xFF {
+            let mut packet = base;
+            packet[0] = i;
+            let a = NtpHeader::deserialize(&packet);
+            let b = a.serialize();
+            assert_eq!(packet,b);
+        }
     }
 }
