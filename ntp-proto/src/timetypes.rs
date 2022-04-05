@@ -12,7 +12,7 @@ impl NtpTimestamp {
         }
     }
 
-    pub(crate) fn to_bits(&self) -> [u8;8] {
+    pub(crate) fn to_bits(self) -> [u8; 8] {
         self.timestamp.to_be_bytes()
     }
 
