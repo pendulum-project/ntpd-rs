@@ -94,7 +94,7 @@ const KISS_RATE: u32 = 0x52415444;
 impl NtpHeader {
     pub fn deserialize(data: &[u8; 48]) -> NtpHeader {
         NtpHeader {
-            leap: NtpLeapIndicator::from_bits((data[0] & 0xC) >> 6),
+            leap: NtpLeapIndicator::from_bits((data[0] & 0xC0) >> 6),
             version: (data[0] & 0x38) >> 3,
             mode: NtpAssociationMode::from_bits(data[0] & 0x07),
             stratum: data[1],
