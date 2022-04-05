@@ -1,4 +1,4 @@
-use std::{ops::Sub, time::Duration};
+use std::ops::Sub;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Default)]
 pub struct NtpTimestamp {
@@ -42,11 +42,11 @@ impl NtpTimestamp {
     }
 
     #[cfg(test)]
-    pub(crate) fn duration_since_unix_epoch(self) -> Duration {
+    pub(crate) fn duration_since_unix_epoch(self) -> std::time::Duration {
         let seconds = (self.seconds() as u64) - EPOCH_OFFSET;
         let nanos = ((self.fraction() as u64) * 1_000_000_000 / (1u64 << 32)) as u32;
 
-        Duration::new(seconds, nanos)
+        std::time::Duration::new(seconds, nanos)
     }
 
     #[cfg(test)]
