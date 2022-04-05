@@ -2,11 +2,11 @@ use std::time::SystemTime;
 
 use crate::NtpTimestamp;
 
-trait NtpClock {
+pub trait NtpClock {
     fn now(&self) -> NtpTimestamp;
 }
 
-struct SystemClock;
+pub struct SystemClock;
 
 impl NtpClock for SystemClock {
     fn now(&self) -> NtpTimestamp {
@@ -56,7 +56,16 @@ mod test {
         let f = 0x92ebb341;
         let actual = NtpTimestamp::from_fixed_int((s << 32) | f).duration_since_unix_epoch();
 
-        assert!((expected - actual) < EPSILON)
+        assert!(
+            expected
+                .checked_sub(actual)
+                .map(|a| a < EPSILON)
+                .unwrap_or(true)
+                && actual
+                    .checked_sub(expected)
+                    .map(|a| a < EPSILON)
+                    .unwrap_or(true)
+        );
     }
 
     #[test]
@@ -68,6 +77,9 @@ mod test {
 
         let twice = intermediate.duration_since_unix_epoch();
 
-        assert!((once - twice) < EPSILON)
+        assert!(
+            once.checked_sub(twice).map(|a| a < EPSILON).unwrap_or(true)
+                && twice.checked_sub(once).map(|a| a < EPSILON).unwrap_or(true)
+        );
     }
 }
