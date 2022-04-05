@@ -1,4 +1,4 @@
-use crate::{NtpTimestamp, NtpDuration};
+use crate::{NtpDuration, NtpTimestamp};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum NtpLeapIndicator {
@@ -19,7 +19,7 @@ impl NtpLeapIndicator {
         }
     }
 
-    fn to_bits(&self) -> u8 {
+    fn to_bits(self) -> u8 {
         match self {
             NtpLeapIndicator::NoWarning => 0,
             NtpLeapIndicator::Leap61 => 1,
@@ -56,7 +56,7 @@ impl NtpAssociationMode {
         }
     }
 
-    fn to_bits(&self) -> u8 {
+    fn to_bits(self) -> u8 {
         match self {
             NtpAssociationMode::Reserved => 0,
             NtpAssociationMode::SymmetricActive => 1,
@@ -92,6 +92,25 @@ const KISS_RSTR: u32 = 0x52535452;
 const KISS_RATE: u32 = 0x52415444;
 
 impl NtpHeader {
+    /// A new, empty NtpHeader
+    pub fn new() -> Self {
+        Self {
+            leap: NtpLeapIndicator::NoWarning,
+            version: 4,
+            mode: NtpAssociationMode::Client,
+            stratum: 0,
+            poll: 0,
+            precision: 0,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            reference_id: 0,
+            reference_timestamp: NtpTimestamp::default(),
+            origin_timestamp: NtpTimestamp::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            transmit_timestamp: NtpTimestamp::default(),
+        }
+    }
+
     pub fn deserialize(data: &[u8; 48]) -> NtpHeader {
         NtpHeader {
             leap: NtpLeapIndicator::from_bits((data[0] & 0xC0) >> 6),
@@ -169,7 +188,7 @@ impl NtpHeader {
             transmit_timestamp[4],
             transmit_timestamp[5],
             transmit_timestamp[6],
-            transmit_timestamp[7]
+            transmit_timestamp[7],
         ]
     }
 
@@ -187,6 +206,12 @@ impl NtpHeader {
 
     pub fn is_kiss_rate(&self) -> bool {
         self.is_kiss() && self.reference_id == KISS_RATE
+    }
+}
+
+impl Default for NtpHeader {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -264,7 +289,11 @@ mod tests {
 
     #[test]
     fn test_abstract() {
-        let packet = [0x0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47];
+        let packet = [
+            0x0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47,
+        ];
         let a = NtpHeader::deserialize(&packet);
         let b = a.serialize();
         let c = NtpHeader::deserialize(&b);
@@ -274,7 +303,11 @@ mod tests {
 
     #[test]
     fn test_packed_flags() {
-        let base = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47];
+        let base = [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47,
+        ];
         let base_structured = NtpHeader::deserialize(&base);
 
         for leap_type in 0..3 {
@@ -297,7 +330,7 @@ mod tests {
             packet[0] = i;
             let a = NtpHeader::deserialize(&packet);
             let b = a.serialize();
-            assert_eq!(packet,b);
+            assert_eq!(packet, b);
         }
     }
 }
