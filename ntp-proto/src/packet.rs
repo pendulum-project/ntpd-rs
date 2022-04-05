@@ -278,7 +278,7 @@ mod tests {
             root_dispersion: NtpDuration::from_fixed_int(951 << 16),
             reference_id: 0xc035676c,
             reference_timestamp: NtpTimestamp::from_fixed_int(0xe5f661fd6f165f03),
-            origin_timestamp: NtpTimestamp::from_fixed_int(0xeff663a87619ef40),
+            origin_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a87619ef40),
             receive_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a8798c6581),
             transmit_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a8798eae2b),
         };
