@@ -1,0 +1,25 @@
+[package]
+name = "ntp-proto-fuzz"
+version = "0.0.0"
+authors = ["Automatically generated"]
+publish = false
+edition = "2018"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.ntp-proto]
+path = ".."
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "packet_parsing_sound"
+path = "fuzz_targets/packet_parsing_sound.rs"
+test = false
+doc = false
