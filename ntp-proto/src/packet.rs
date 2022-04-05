@@ -19,7 +19,7 @@ impl NtpLeapIndicator {
         }
     }
 
-    fn to_bits(&self) -> u8 {
+    fn to_bits(self) -> u8 {
         match self {
             NtpLeapIndicator::NoWarning => 0,
             NtpLeapIndicator::Leap61 => 1,
@@ -56,7 +56,7 @@ impl NtpAssociationMode {
         }
     }
 
-    fn to_bits(&self) -> u8 {
+    fn to_bits(self) -> u8 {
         match self {
             NtpAssociationMode::Reserved => 0,
             NtpAssociationMode::SymmetricActive => 1,

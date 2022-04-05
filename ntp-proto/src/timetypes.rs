@@ -56,7 +56,7 @@ impl NtpDuration {
         }
     }
 
-    pub(crate) const fn to_bits_short(&self) -> [u8; 4] {
+    pub(crate) const fn to_bits_short(self) -> [u8; 4] {
         assert!(self.duration >= 0);
         assert!(self.duration <= 0x0000FFFFFFFFFFFF);
         (((self.duration & 0x0000FFFFFFFF0000) >> 16) as u32).to_be_bytes()
