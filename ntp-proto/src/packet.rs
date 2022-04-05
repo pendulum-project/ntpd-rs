@@ -111,6 +111,8 @@ impl NtpHeader {
     }
 
     pub fn serialize(&self) -> [u8; 48] {
+        assert!(self.version < 8);
+
         let root_delay = self.root_delay.to_bits_short();
         let root_dispersion = self.root_dispersion.to_bits_short();
         let reference_id = self.reference_id.to_be_bytes();
