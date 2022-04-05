@@ -1,4 +1,4 @@
-use std::ops::Sub;
+use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Default)]
 pub struct NtpTimestamp {
@@ -65,6 +65,22 @@ impl NtpTimestamp {
     }
 }
 
+impl Add<NtpDuration> for NtpTimestamp {
+    type Output = NtpTimestamp;
+
+    fn add(self, rhs: NtpDuration) -> Self::Output {
+        NtpTimestamp {
+            timestamp: (self.timestamp as i64 + rhs.duration) as u64,
+        }
+    }
+}
+
+impl AddAssign<NtpDuration> for NtpTimestamp {
+    fn add_assign(&mut self, rhs: NtpDuration) {
+        self.timestamp = (self.timestamp as i64 + rhs.duration) as u64;
+    }
+}
+
 impl Sub for NtpTimestamp {
     type Output = NtpDuration;
 
@@ -72,6 +88,22 @@ impl Sub for NtpTimestamp {
         NtpDuration {
             duration: self.timestamp as i64 - rhs.timestamp as i64,
         }
+    }
+}
+
+impl Sub<NtpDuration> for NtpTimestamp {
+    type Output = NtpTimestamp;
+
+    fn sub(self, rhs: NtpDuration) -> Self::Output {
+        NtpTimestamp {
+            timestamp: (self.timestamp as i64 - rhs.duration) as u64,
+        }
+    }
+}
+
+impl SubAssign<NtpDuration> for NtpTimestamp {
+    fn sub_assign(&mut self, rhs: NtpDuration) {
+        self.timestamp = (self.timestamp as i64 - rhs.duration) as u64;
     }
 }
 
@@ -97,4 +129,173 @@ impl NtpDuration {
     pub(crate) const fn from_fixed_int(duration: i64) -> NtpDuration {
         NtpDuration { duration }
     }
+}
+
+impl Add for NtpDuration {
+    type Output = NtpDuration;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        NtpDuration {
+            duration: self.duration + rhs.duration,
+        }
+    }
+}
+
+impl AddAssign for NtpDuration {
+    fn add_assign(&mut self, rhs: Self) {
+        self.duration += rhs.duration;
+    }
+}
+
+impl Sub for NtpDuration {
+    type Output = NtpDuration;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        NtpDuration {
+            duration: self.duration - rhs.duration,
+        }
+    }
+}
+
+impl SubAssign for NtpDuration {
+    fn sub_assign(&mut self, rhs: Self) {
+        self.duration -= rhs.duration;
+    }
+}
+
+macro_rules! ntp_duration_scalar_mul {
+    ($scalar_type:ty) => {
+        impl Mul<NtpDuration> for $scalar_type {
+            type Output = NtpDuration;
+
+            fn mul(self, rhs: NtpDuration) -> NtpDuration {
+                NtpDuration {
+                    duration: (self as i64) * rhs.duration,
+                }
+            }
+        }
+
+        impl Mul<$scalar_type> for NtpDuration {
+            type Output = NtpDuration;
+
+            fn mul(self, rhs: $scalar_type) -> NtpDuration {
+                NtpDuration {
+                    duration: self.duration * (rhs as i64),
+                }
+            }
+        }
+
+        impl MulAssign<$scalar_type> for NtpDuration {
+            fn mul_assign(&mut self, rhs: $scalar_type) {
+                self.duration *= (rhs as i64);
+            }
+        }
+    };
+}
+
+ntp_duration_scalar_mul!(i8);
+ntp_duration_scalar_mul!(i16);
+ntp_duration_scalar_mul!(i32);
+ntp_duration_scalar_mul!(i64);
+ntp_duration_scalar_mul!(isize);
+ntp_duration_scalar_mul!(u8);
+ntp_duration_scalar_mul!(u16);
+ntp_duration_scalar_mul!(u32);
+ntp_duration_scalar_mul!(u64);
+ntp_duration_scalar_mul!(usize);
+
+macro_rules! ntp_duration_scalar_div {
+    ($scalar_type:ty) => {
+        impl Div<$scalar_type> for NtpDuration {
+            type Output = NtpDuration;
+
+            fn div(self, rhs: $scalar_type) -> NtpDuration {
+                NtpDuration {
+                    duration: self.duration / (rhs as i64),
+                }
+            }
+        }
+
+        impl DivAssign<$scalar_type> for NtpDuration {
+            fn div_assign(&mut self, rhs: $scalar_type) {
+                self.duration /= (rhs as i64);
+            }
+        }
+    };
+}
+
+ntp_duration_scalar_div!(i8);
+ntp_duration_scalar_div!(i16);
+ntp_duration_scalar_div!(i32);
+ntp_duration_scalar_div!(i64);
+ntp_duration_scalar_div!(isize);
+ntp_duration_scalar_div!(u8);
+ntp_duration_scalar_div!(u16);
+ntp_duration_scalar_div!(u32);
+ntp_duration_scalar_div!(u64);
+ntp_duration_scalar_div!(usize);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_timestamp_sub() {
+        let a = NtpTimestamp::from_fixed_int(5);
+        let b = NtpTimestamp::from_fixed_int(3);
+        assert_eq!(a - b, NtpDuration::from_fixed_int(2));
+        assert_eq!(b - a, NtpDuration::from_fixed_int(-2));
+    }
+
+    #[test]
+    fn test_timestamp_duration_math() {
+        let mut a = NtpTimestamp::from_fixed_int(5);
+        let b = NtpDuration::from_fixed_int(2);
+        assert_eq!(a + b, NtpTimestamp::from_fixed_int(7));
+        assert_eq!(a - b, NtpTimestamp::from_fixed_int(3));
+        a += b;
+        assert_eq!(a, NtpTimestamp::from_fixed_int(7));
+        a -= b;
+        assert_eq!(a, NtpTimestamp::from_fixed_int(5));
+    }
+
+    #[test]
+    fn test_duration_math() {
+        let mut a = NtpDuration::from_fixed_int(5);
+        let b = NtpDuration::from_fixed_int(2);
+        assert_eq!(a + b, NtpDuration::from_fixed_int(7));
+        assert_eq!(a - b, NtpDuration::from_fixed_int(3));
+        a += b;
+        assert_eq!(a, NtpDuration::from_fixed_int(7));
+        a -= b;
+        assert_eq!(a, NtpDuration::from_fixed_int(5));
+    }
+
+    macro_rules! ntp_duration_scaling_test {
+        ($name:ident, $scalar_type:ty) => {
+            #[test]
+            fn $name() {
+                let mut a = NtpDuration::from_fixed_int(31);
+                let b: $scalar_type = 2;
+                assert_eq!(a * b, NtpDuration::from_fixed_int(62));
+                assert_eq!(b * a, NtpDuration::from_fixed_int(62));
+                assert_eq!(a / b, NtpDuration::from_fixed_int(15));
+                a /= b;
+                assert_eq!(a, NtpDuration::from_fixed_int(15));
+                a *= b;
+                assert_eq!(a, NtpDuration::from_fixed_int(30));
+            }
+        };
+    }
+
+    ntp_duration_scaling_test!(ntp_duration_scaling_i8, i8);
+    ntp_duration_scaling_test!(ntp_duration_scaling_i16, i16);
+    ntp_duration_scaling_test!(ntp_duration_scaling_i32, i32);
+    ntp_duration_scaling_test!(ntp_duration_scaling_i64, i64);
+    ntp_duration_scaling_test!(ntp_duration_scaling_isize, isize);
+    ntp_duration_scaling_test!(ntp_duration_scaling_u8, u8);
+    ntp_duration_scaling_test!(ntp_duration_scaling_u16, u16);
+    ntp_duration_scaling_test!(ntp_duration_scaling_u32, u32);
+    ntp_duration_scaling_test!(ntp_duration_scaling_u64, u64);
+    ntp_duration_scaling_test!(ntp_duration_scaling_usize, usize);
 }
