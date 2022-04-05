@@ -33,6 +33,7 @@ mod test {
 
     #[test]
     fn conversion_unix_to_ntp() {
+        // numbers based on https://gist.github.com/jmunozal/ffb4ca3d5d51bb868ee20a1427f576a9
         let s = 1649160613;
         let u = 573909;
         let actual = convert_duration(Duration::new(s, u * 1000));
@@ -46,6 +47,7 @@ mod test {
 
     #[test]
     fn conversion_ntp_to_unix() {
+        // numbers based on https://gist.github.com/jmunozal/ffb4ca3d5d51bb868ee20a1427f576a9
         let s = 1649160613;
         let u = 573909;
         let expected = Duration::new(s, u * 1000);

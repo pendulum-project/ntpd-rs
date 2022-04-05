@@ -7,7 +7,7 @@ pub struct NtpTimestamp {
 
 /// Unix uses an epoch located at 1/1/1970-00:00h (UTC) and NTP uses 1/1/1900-00:00h.
 /// This leads to an offset equivalent to 70 years in seconds
-/// (there are 17 leap years between the two dates so the offset is
+/// there are 17 leap years between the two dates so the offset is
 const EPOCH_OFFSET: u64 = (70 * 365 + 17) * 86400;
 
 impl NtpTimestamp {
