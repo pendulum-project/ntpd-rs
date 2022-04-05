@@ -5,6 +5,11 @@ pub struct NtpTimestamp {
     timestamp: u64,
 }
 
+/// Unix uses an epoch located at 1/1/1970-00:00h (UTC) and NTP uses 1/1/1900-00:00h.
+/// This leads to an offset equivalent to 70 years in seconds
+/// there are 17 leap years between the two dates so the offset is
+const EPOCH_OFFSET: u64 = (70 * 365 + 17) * 86400;
+
 impl NtpTimestamp {
     pub(crate) const fn from_bits(bits: [u8; 8]) -> NtpTimestamp {
         NtpTimestamp {
@@ -16,9 +21,47 @@ impl NtpTimestamp {
         self.timestamp.to_be_bytes()
     }
 
+    pub(crate) fn from_system_time(time: std::time::SystemTime) -> Self {
+        let dur = time.duration_since(std::time::UNIX_EPOCH).unwrap();
+        let secs = dur.as_secs() + EPOCH_OFFSET;
+        let nanos = dur.subsec_nanos();
+
+        Self::from_seconds_nanos_since_ntp_epoch(secs, nanos)
+    }
+
+    pub(crate) fn from_seconds_nanos_since_ntp_epoch(seconds: u64, nanos: u32) -> Self {
+        // NTP uses 1/2^32 sec as its unit of fractional time.
+        // our time is in nanoseconds, so 1/1e9 seconds
+        let fraction = ((nanos as u64) << 32) / 1_000_000_000;
+
+        // alternatively, abuse FP arithmetic to save an instruction
+        // let fraction = (nanos as f64 * 4.294967296) as u64;
+
+        let timestamp = (seconds << 32) + fraction;
+        NtpTimestamp::from_bits(timestamp.to_be_bytes())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn duration_since_unix_epoch(self) -> std::time::Duration {
+        let seconds = (self.seconds() as u64) - EPOCH_OFFSET;
+        let nanos = ((self.fraction() as u64) * 1_000_000_000 / (1u64 << 32)) as u32;
+
+        std::time::Duration::new(seconds, nanos)
+    }
+
     #[cfg(test)]
     pub(crate) const fn from_fixed_int(timestamp: u64) -> NtpTimestamp {
         NtpTimestamp { timestamp }
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn seconds(self) -> u32 {
+        (self.timestamp >> 32) as u32
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn fraction(self) -> u32 {
+        self.timestamp as u32
     }
 }
 
