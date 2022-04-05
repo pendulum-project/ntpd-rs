@@ -1,3 +1,5 @@
+use std::ops::Sub;
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct NtpTimestamp {
     timestamp: u64,
@@ -17,6 +19,16 @@ impl NtpTimestamp {
     #[cfg(test)]
     pub(crate) fn from_fixed_int(timestamp: u64) -> NtpTimestamp {
         NtpTimestamp { timestamp }
+    }
+}
+
+impl Sub for NtpTimestamp {
+    type Output = NtpDuration;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        NtpDuration {
+            duration: self.timestamp as i64 - rhs.timestamp as i64,
+        }
     }
 }
 
