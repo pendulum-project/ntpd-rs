@@ -63,7 +63,7 @@ impl ClockFilterContents {
         self.register.sort_by(|t1, t2| {
             t1.delay
                 .partial_cmp(&t2.delay)
-                .unwrap_or_else(|| panic!("got a NaN"))
+                .unwrap_or(std::cmp::Ordering::Less)
         });
     }
 
