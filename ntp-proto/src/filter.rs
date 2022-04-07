@@ -24,17 +24,15 @@ struct FilterTuple {
 }
 
 impl FilterTuple {
-    fn dummy() -> Self {
-        Self {
-            offset: NtpDuration::default(),
-            delay: NtpDuration::MAX_DISPERSION,
-            dispersion: NtpDuration::MAX_DISPERSION,
-            time: NtpTimestamp::default(),
-        }
-    }
+    const DUMMY: Self = Self {
+        offset: NtpDuration::ZERO,
+        delay: NtpDuration::MAX_DISPERSION,
+        dispersion: NtpDuration::MAX_DISPERSION,
+        time: NtpTimestamp::ZERO,
+    };
 
     fn is_dummy(self) -> bool {
-        self == Self::dummy()
+        self == Self::DUMMY
     }
 }
 
@@ -45,9 +43,9 @@ struct ClockFilterContents {
 
 impl ClockFilterContents {
     #[allow(dead_code)]
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
-            register: [FilterTuple::dummy(); 8],
+            register: [FilterTuple::DUMMY; 8],
         }
     }
 

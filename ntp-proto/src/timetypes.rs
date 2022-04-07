@@ -11,6 +11,8 @@ pub struct NtpTimestamp {
 const EPOCH_OFFSET: u64 = (70 * 365 + 17) * 86400;
 
 impl NtpTimestamp {
+    pub(crate) const ZERO: Self = Self { timestamp: 0 };
+
     pub(crate) const fn from_bits(bits: [u8; 8]) -> NtpTimestamp {
         NtpTimestamp {
             timestamp: u64::from_be_bytes(bits),
@@ -113,7 +115,18 @@ pub struct NtpDuration {
 }
 
 impl NtpDuration {
-    pub(crate) const fn from_bits_short(bits: [u8; 4]) -> NtpDuration {
+    pub(crate) const ZERO: Self = Self { duration: 0 };
+
+    /// NtpDuration::from_seconds(16.0)
+    pub(crate) const MAX_DISPERSION: Self = Self {
+        duration: 68719476736,
+    };
+
+    /// NtpDuration::from_seconds(0.005)
+    #[allow(dead_code)]
+    pub(crate) const MIN_DISPERSION: Self = Self { duration: 21474836 };
+
+    pub(crate) const fn from_bits_short(bits: [u8; 4]) -> Self {
         NtpDuration {
             duration: (u32::from_be_bytes(bits) as i64) << 16,
         }
@@ -124,15 +137,6 @@ impl NtpDuration {
         assert!(self.duration <= 0x0000FFFFFFFFFFFF);
         (((self.duration & 0x0000FFFFFFFF0000) >> 16) as u32).to_be_bytes()
     }
-
-    /// NtpDuration::from_seconds(16.0)
-    pub(crate) const MAX_DISPERSION: Self = Self {
-        duration: 68719476736,
-    };
-
-    /// NtpDuration::from_seconds(0.005)
-    #[allow(dead_code)]
-    pub(crate) const MIN_DISPERSION: Self = Self { duration: 21474836 };
 
     /// Convert to an f64; required for statistical calculations
     /// (e.g. in clock filtering)
