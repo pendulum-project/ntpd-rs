@@ -30,6 +30,10 @@ impl FilterTuple {
     fn is_dummy(self) -> bool {
         self == Self::dummy()
     }
+
+    fn new_register() -> [Self; 8] {
+        [Self::dummy(); 8]
+    }
 }
 
 fn shift_filter(
@@ -92,4 +96,66 @@ fn calculate_peer_jitter(s: &System, sorted_tuples: &[FilterTuple]) -> f64 {
 
 struct System {
     precision: f64,
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn dispersion_of_dummys() {
+        // The observer should note (a) if all stages contain the dummy tuple
+        // with dispersion MAXDISP, the computed dispersion is a little less than 16 s
+
+        let register = FilterTuple::new_register();
+        let value = calculate_peer_dispersion(&register).to_seconds();
+
+        assert!((16.0 - value) < 0.1)
+    }
+
+    #[test]
+    fn jitter_of_dummys() {
+        // jitter only considers valid tuples, not the dummys.
+        // So this should just do nothing and return 0
+
+        let system = System { precision: 0.0 };
+        let value = calculate_peer_jitter(&system, &[]);
+
+        assert_eq!(value, 0.0)
+    }
+
+    #[test]
+    fn jitter_of_single() {
+        let mut register = FilterTuple::new_register();
+        register[0].offset = NtpDuration::from_seconds(42.0);
+        let system = System { precision: 0.0 };
+        let value = calculate_peer_jitter(&system, &register[..1]);
+
+        assert_eq!(value, 0.0)
+    }
+
+    #[test]
+    fn jitter_of_pair() {
+        let mut register = FilterTuple::new_register();
+        register[0].offset = NtpDuration::from_seconds(20.0);
+        register[1].offset = NtpDuration::from_seconds(30.0);
+        let system = System { precision: 0.0 };
+        let value = calculate_peer_jitter(&system, &register[..2]);
+
+        // jitter is calculated relative to the first tuple
+        assert!((value - 10.0).abs() < 1e-6)
+    }
+
+    #[test]
+    fn jitter_of_triple() {
+        let mut register = FilterTuple::new_register();
+        register[0].offset = NtpDuration::from_seconds(20.0);
+        register[1].offset = NtpDuration::from_seconds(20.0);
+        register[2].offset = NtpDuration::from_seconds(30.0);
+        let system = System { precision: 0.0 };
+        let value = calculate_peer_jitter(&system, &register[..3]);
+
+        // jitter is calculated relative to the first tuple
+        assert!((value - 5.0).abs() < 1e-6)
+    }
 }
