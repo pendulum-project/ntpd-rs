@@ -43,8 +43,8 @@ impl NtpTimestamp {
 
     #[cfg(test)]
     pub(crate) fn duration_since_unix_epoch(self) -> std::time::Duration {
-        let seconds = (self.seconds() as u64) - EPOCH_OFFSET;
-        let nanos = ((self.fraction() as u64) * 1_000_000_000 / (1u64 << 32)) as u32;
+        let seconds = (self.timestamp >> 32) - EPOCH_OFFSET;
+        let nanos = ((self.timestamp & 0x00000000FFFFFFFF) * 1_000_000_000 / (1u64 << 32)) as u32;
 
         std::time::Duration::new(seconds, nanos)
     }
@@ -52,16 +52,6 @@ impl NtpTimestamp {
     #[cfg(test)]
     pub(crate) const fn from_fixed_int(timestamp: u64) -> NtpTimestamp {
         NtpTimestamp { timestamp }
-    }
-
-    #[cfg(test)]
-    pub(crate) const fn seconds(self) -> u32 {
-        (self.timestamp >> 32) as u32
-    }
-
-    #[cfg(test)]
-    pub(crate) const fn fraction(self) -> u32 {
-        self.timestamp as u32
     }
 }
 
