@@ -148,10 +148,12 @@ pub struct Peer {
     t: NtpTimestamp,
 
     jitter: f64,
-    dispersion: NtpDuration,
-
     offset: NtpDuration,
     delay: NtpDuration,
+    dispersion: NtpDuration,
+
+    root_delay: NtpDuration,
+    root_dispersion: NtpDuration,
 
     burst_counter: u32,
 }
@@ -221,6 +223,18 @@ pub fn clock_filter(
         todo!()
         // clock_select();
     }
+}
+
+/// The root synchronization distance is the maximum error due to
+/// all causes of the local clock relative to the primary server.
+/// It is defined as half the total delay plus total dispersion
+/// plus peer jitter.
+fn root_distance(p: &Peer, c: &LocalClock) -> NtpDuration {
+    NtpDuration::MIN_DISPERSION.max(p.root_delay + p.delay) / 2i64
+        + p.root_dispersion
+        + p.dispersion
+        + ((c.t - p.t) / ONE_OVER_PHI)
+        + NtpDuration::from_seconds(p.jitter)
 }
 
 #[cfg(test)]
