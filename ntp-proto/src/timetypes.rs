@@ -126,13 +126,13 @@ impl NtpDuration {
     }
 
     /// NtpDuration::from_seconds(16.0)
-    pub(crate) const MAXDISP: Self = Self {
+    pub(crate) const MAX_DISPERSION: Self = Self {
         duration: 68719476736,
     };
 
     /// NtpDuration::from_seconds(0.005)
     #[allow(dead_code)]
-    pub(crate) const MINDISP: Self = Self { duration: 21474836 };
+    pub(crate) const MIN_DISPERSION: Self = Self { duration: 21474836 };
 
     /// Convert to an f64; required for statistical calculations
     /// (e.g. in clock filtering)

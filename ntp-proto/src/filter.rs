@@ -27,8 +27,8 @@ impl FilterTuple {
     fn dummy() -> Self {
         Self {
             offset: NtpDuration::default(),
-            delay: NtpDuration::MAXDISP,
-            dispersion: NtpDuration::MAXDISP,
+            delay: NtpDuration::MAX_DISPERSION,
+            dispersion: NtpDuration::MAX_DISPERSION,
             time: NtpTimestamp::default(),
         }
     }
