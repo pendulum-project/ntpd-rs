@@ -136,11 +136,11 @@ impl NtpDuration {
         // as for duration that are too large, saturating is
         // the safe option.
         assert!(self.duration >= 0);
-        if self.duration > 0x0000FFFFFFFFFFFF {
-            0xFFFFFFFF_u32.to_be_bytes()
-        } else {
-            (((self.duration & 0x0000FFFFFFFF0000) >> 16) as u32).to_be_bytes()
+        match self.duration > 0x0000FFFFFFFFFFFF {
+            true => 0xFFFFFFFF_u32,
+            false => ((self.duration & 0x0000FFFFFFFF0000) >> 16) as u32,
         }
+        .to_be_bytes()
     }
 
     #[cfg(test)]
