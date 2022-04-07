@@ -8,6 +8,8 @@ on:
     branches: 
       - main
   pull_request:
+  schedule:
+    - cron: '0 4 * * *'
 
 jobs:
   build:
@@ -17,6 +19,8 @@ jobs:
       matrix:
         rust:
           - stable
+          - beta
+          - nightly
         os: [ubuntu-latest]
     steps:
       - name: Checkout sources
