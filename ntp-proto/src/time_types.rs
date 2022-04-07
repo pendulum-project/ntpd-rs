@@ -141,9 +141,16 @@ impl NtpDuration {
     }
 
     pub(crate) const fn to_bits_short(self) -> [u8; 4] {
+        // serializing negative durations should never happen
+        // and indicates a programming error elsewhere.
+        // as for duration that are too large, saturating is
+        // the safe option.
         assert!(self.duration >= 0);
-        assert!(self.duration <= 0x0000FFFFFFFFFFFF);
-        (((self.duration & 0x0000FFFFFFFF0000) >> 16) as u32).to_be_bytes()
+        if self.duration > 0x0000FFFFFFFFFFFF {
+            0xFFFFFFFF_u32.to_be_bytes()
+        } else {
+            (((self.duration & 0x0000FFFFFFFF0000) >> 16) as u32).to_be_bytes()
+        }
     }
 
     #[cfg(test)]
