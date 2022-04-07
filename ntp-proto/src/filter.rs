@@ -130,6 +130,7 @@ pub struct System {
     precision: f64,
     poll: NtpDuration,
     leap_indicator: NtpLeapIndicator,
+    reference_id: u8,
 }
 
 impl System {
@@ -139,6 +140,7 @@ impl System {
             precision: 0.0,
             poll: NtpDuration::default(),
             leap_indicator: NtpLeapIndicator::NoWarning,
+            reference_id: 0,
         }
     }
 }
@@ -156,6 +158,12 @@ pub struct Peer {
     root_dispersion: NtpDuration,
 
     burst_counter: u32,
+    leap_indicator: NtpLeapIndicator,
+    stratum: u8,
+    reach: i32,
+
+    reference_id: u8,
+    destination_address: u8,
 }
 
 pub struct LocalClock {
@@ -222,6 +230,45 @@ pub fn clock_filter(
     if peer.burst_counter == 0 {
         todo!()
         // clock_select();
+    }
+}
+
+enum FitError {
+    StratumNotSynchronized,
+    ServerStratumInvalid,
+    Distance,
+    Loop,
+    Unreachable,
+}
+
+/// Distance threshold
+const MAXDIST: f64 = 1.0;
+
+/// Maximum Stratum Number
+const MAXSTRAT: u8 = 16;
+
+fn fit(p: &Peer, s: &System, c: &LocalClock) -> Result<(), FitError> {
+    if !p.leap_indicator.is_synchronized() {
+        Err(FitError::StratumNotSynchronized)
+    } else if p.stratum >= MAXSTRAT {
+        Err(FitError::ServerStratumInvalid)
+    } else if root_distance(p, c)
+        > NtpDuration::from_seconds(MAXDIST + (s.poll / ONE_OVER_PHI).to_seconds())
+    {
+        // A distance error occurs if the root distance exceeds the
+        // distance threshold plus an increment equal to one poll
+        // interval.
+        Err(FitError::Distance)
+    } else if p.reference_id == p.destination_address || p.reference_id == s.reference_id {
+        // A loop error occurs if the remote peer is synchronized to the
+        // local peer or the remote peer is synchronized to the current
+        // system peer.  Note this is the behavior for IPv4; for IPv6
+        // the MD5 hash is used instead.
+        Err(FitError::Loop)
+    } else if p.reach == 0 {
+        Err(FitError::Unreachable)
+    } else {
+        Ok(())
     }
 }
 
