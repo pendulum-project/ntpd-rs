@@ -109,16 +109,8 @@ impl ClockFilterContents {
     ///                          +-----                 -----+
     ///
     /// Invariant: the register is sorted wrt delay
-    fn jitter(self, s: &System) -> f64 {
+    fn jitter(self, s: &System, smallest_delay: FilterTuple) -> f64 {
         let register = self.valid_tuples();
-
-        // for jitter, only the valid tuples are considered
-        let smallest_delay = match register.get(0) {
-            None => unreachable!(
-                "there must be at least one valid tuple, this is guaranteed by clock_filter"
-            ),
-            Some(t) => t,
-        };
 
         let root_mean_square = register
             .iter()
@@ -217,7 +209,7 @@ pub fn clock_filter(
     // affecting the current peer variables.
 
     peer.dispersion = temporary_list.dispersion();
-    peer.jitter = temporary_list.jitter(s);
+    peer.jitter = temporary_list.jitter(s, smallest_delay);
 
     // Prime directive: use a sample only once and never a sample
     // older than the latest one, but anything goes before first
@@ -265,25 +257,12 @@ mod test {
     }
 
     #[test]
-    #[should_panic(
-        expected = "there must be at least one valid tuple, this is guaranteed by clock_filter"
-    )]
-    fn jitter_of_dummys() {
-        // jitter only considers valid tuples, not the dummys.
-        let system = System::dummy();
-
-        let register = ClockFilterContents::new();
-        let value = register.jitter(&system);
-
-        assert_eq!(value, 0.0)
-    }
-
-    #[test]
     fn jitter_of_single() {
         let mut register = ClockFilterContents::new();
         register.register[0].offset = NtpDuration::from_seconds(42.0);
+        let first = register.register[0];
         let system = System::dummy();
-        let value = register.jitter(&system);
+        let value = register.jitter(&system, first);
 
         assert_eq!(value, 0.0)
     }
@@ -293,8 +272,9 @@ mod test {
         let mut register = ClockFilterContents::new();
         register.register[0].offset = NtpDuration::from_seconds(20.0);
         register.register[1].offset = NtpDuration::from_seconds(30.0);
+        let first = register.register[0];
         let system = System::dummy();
-        let value = register.jitter(&system);
+        let value = register.jitter(&system, first);
 
         // jitter is calculated relative to the first tuple
         assert!((value - 10.0).abs() < 1e-6)
@@ -306,8 +286,9 @@ mod test {
         register.register[0].offset = NtpDuration::from_seconds(20.0);
         register.register[1].offset = NtpDuration::from_seconds(20.0);
         register.register[2].offset = NtpDuration::from_seconds(30.0);
+        let first = register.register[0];
         let system = System::dummy();
-        let value = register.jitter(&system);
+        let value = register.jitter(&system, first);
 
         // jitter is calculated relative to the first tuple
         assert!((value - 5.0).abs() < 1e-6)
