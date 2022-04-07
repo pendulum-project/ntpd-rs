@@ -15,6 +15,9 @@ const ONE_OVER_PHI: i64 = 15_000_000;
 /// spike gate (clock filter)
 const SGATE: f64 = 3.0;
 
+/// Maximum number of peers
+const NMAX: usize = 50;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct FilterTuple {
     offset: NtpDuration,
@@ -131,6 +134,9 @@ pub struct System {
     poll: NtpDuration,
     leap_indicator: NtpLeapIndicator,
     reference_id: u8,
+
+    chime_list: Vec<ChimeTuple>,
+    survivor_list: Vec<ChimeTuple>,
 }
 
 impl System {
@@ -141,6 +147,9 @@ impl System {
             poll: NtpDuration::default(),
             leap_indicator: NtpLeapIndicator::NoWarning,
             reference_id: 0,
+
+            chime_list: Vec::new(),
+            survivor_list: Vec::new(),
         }
     }
 }
@@ -280,6 +289,81 @@ fn root_distance(p: &Peer, c: &LocalClock) -> NtpDuration {
         + p.dispersion
         + ((c.t - p.t) / ONE_OVER_PHI)
         + NtpDuration::from_seconds(p.jitter)
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(i8)]
+enum EndpointType {
+    Upper = 1,
+    Middle = 0,
+    Lower = -1,
+}
+
+struct ChimeTuple {
+    p: (),
+    endpoint_type: EndpointType,
+    /// Correctness interval edge
+    edge: NtpDuration,
+}
+
+/// Find the largest contiguous intersection of correctness
+/// intervals.  Allow is the number of allowed falsetickers;
+/// found is the number of midpoints.  Note that the edge values
+/// are limited to the range +-(2 ^ 30) < +-2e9 by the timestamp
+/// calculations.
+fn find_interval(chime_list: &[ChimeTuple]) -> (NtpDuration, NtpDuration) {
+    let n = chime_list.len();
+
+    let mut low = NtpDuration::ONE * 1_000_000_000;
+    let mut high = low * -164;
+
+    for allow in (0..).take_while(|allow| 2 * allow < n) {
+        // Scan the chime list from lowest to highest to find the lower endpoint.
+        let mut found = 0;
+        let mut chime = 0;
+
+        for tuple in chime_list {
+            chime -= tuple.endpoint_type as i32;
+            if chime >= (n - found) as i32 {
+                low = tuple.edge;
+                break;
+            }
+
+            if let EndpointType::Middle = tuple.endpoint_type {
+                found += 1;
+            }
+        }
+
+        // Scan the chime list from highest to lowest to find the upper endpoint.
+        chime = 0;
+        for tuple in chime_list.iter().rev() {
+            chime += tuple.endpoint_type as i32;
+            if chime >= (n - found) as i32 {
+                high = tuple.edge;
+                break;
+            }
+
+            if let EndpointType::Middle = tuple.endpoint_type {
+                found += 1;
+            }
+        }
+
+        //  If the number of midpoints is greater than the number
+        //  of allowed falsetickers, the intersection contains at
+        //  least one truechimer with no midpoint.  If so,
+        //  increment the number of allowed falsetickers and go
+        //  around again.  If not and the intersection is
+        //  non-empty, declare success.
+        if found > allow {
+            continue;
+        }
+
+        if high > low {
+            break;
+        }
+    }
+
+    (low, high)
 }
 
 #[cfg(test)]
