@@ -134,9 +134,7 @@ pub struct System {
     poll: NtpDuration,
     leap_indicator: NtpLeapIndicator,
     reference_id: u8,
-
-    chime_list: Vec<ChimeTuple>,
-    survivor_list: Vec<ChimeTuple>,
+    p: Peer,
 }
 
 impl System {
@@ -147,13 +145,12 @@ impl System {
             poll: NtpDuration::default(),
             leap_indicator: NtpLeapIndicator::NoWarning,
             reference_id: 0,
-
-            chime_list: Vec::new(),
-            survivor_list: Vec::new(),
+            p: Peer::default(),
         }
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Peer {
     clock_filter: ClockFilterContents,
     t: NtpTimestamp,
@@ -173,6 +170,27 @@ pub struct Peer {
 
     reference_id: u8,
     destination_address: u8,
+}
+
+impl Default for Peer {
+    fn default() -> Self {
+        Self {
+            clock_filter: ClockFilterContents::new(),
+            t: Default::default(),
+            jitter: Default::default(),
+            offset: Default::default(),
+            delay: Default::default(),
+            dispersion: Default::default(),
+            root_delay: Default::default(),
+            root_dispersion: Default::default(),
+            burst_counter: Default::default(),
+            leap_indicator: NtpLeapIndicator::NoWarning,
+            stratum: Default::default(),
+            reach: Default::default(),
+            reference_id: Default::default(),
+            destination_address: Default::default(),
+        }
+    }
 }
 
 pub struct LocalClock {
@@ -299,8 +317,8 @@ enum EndpointType {
     Lower = -1,
 }
 
-struct ChimeTuple {
-    p: (),
+struct ChimeTuple<'a> {
+    p: &'a Peer,
     endpoint_type: EndpointType,
     /// Correctness interval edge
     edge: NtpDuration,
@@ -314,7 +332,7 @@ struct ChimeTuple {
 fn find_interval(chime_list: &[ChimeTuple]) -> (NtpDuration, NtpDuration) {
     let n = chime_list.len();
 
-    let mut low = NtpDuration::ONE * 1_000_000_000;
+    let mut low = NtpDuration::ONE * 2_000_000_000;
     let mut high = low * -164;
 
     for allow in (0..).take_while(|allow| 2 * allow < n) {
@@ -364,6 +382,178 @@ fn find_interval(chime_list: &[ChimeTuple]) -> (NtpDuration, NtpDuration) {
     }
 
     (low, high)
+}
+
+/// Minimum cluster survivors
+const NMIN: usize = 3;
+
+struct SurvivorTuple<'a> {
+    p: &'a Peer,
+    metric: NtpDuration,
+}
+
+/// For each association p in turn, calculate the selection
+/// jitter p->sjitter as the square root of the sum of squares
+/// (p->offset - q->offset) over all q associations.  The idea is
+/// to repeatedly discard the survivor with maximum selection
+/// jitter until a termination condition is met.
+fn wither<'a>(n: usize, survivors: &'a [SurvivorTuple<'a>]) -> &'a [SurvivorTuple<'a>] {
+    let mut s_n = survivors.len();
+
+    loop {
+        let mut min: f64 = 2e9;
+        let mut max: f64 = 2e-9;
+
+        for tuple in survivors.iter().take(s_n) {
+            let p = tuple.p;
+            if p.jitter < min {
+                min = p.jitter;
+            }
+            let mut dtemp: f64 = 0.0;
+
+            for q in survivors.iter() {
+                let delta = (p.offset - q.p.offset).to_seconds();
+                dtemp += delta * delta;
+            }
+            dtemp = dtemp.sqrt();
+
+            if dtemp > max {
+                max = dtemp;
+                // qmax = q; TODO!
+            }
+        }
+
+        // If the maximum selection jitter is less than the
+        // minimum peer jitter, then tossing out more survivors
+        // will not lower the minimum peer jitter, so we might
+        // as well stop.  To make sure a few survivors are left
+        // for the clustering algorithm to chew on, we also stop
+        // if the number of survivors is less than or equal to
+        // NMIN (3).
+        if max < min || n <= NMIN {
+            break;
+        }
+
+        // Delete survivor qmax from the list and go around again.
+        s_n -= 1;
+    }
+
+    &survivors[..s_n]
+}
+
+/// First, construct the chime list of tuples (p, type, edge) as
+/// shown below, then sort the list by edge from lowest to
+/// highest.
+fn construct_chime_list<'a>(p: &'a Peer, s: &System, c: &LocalClock) -> Vec<ChimeTuple<'a>> {
+    let mut chime_list = Vec::new();
+
+    while fit(p, s, c).is_ok() {
+        let tuple1 = ChimeTuple {
+            p,
+            endpoint_type: EndpointType::Upper,
+            edge: p.offset + root_distance(p, c),
+        };
+        let tuple2 = ChimeTuple {
+            p,
+            endpoint_type: EndpointType::Middle,
+            edge: p.offset,
+        };
+        let tuple3 = ChimeTuple {
+            p,
+            endpoint_type: EndpointType::Lower,
+            edge: p.offset + root_distance(p, c),
+        };
+
+        chime_list.extend([tuple1, tuple2, tuple3])
+    }
+
+    chime_list
+}
+
+fn construct_survivors<'a>(
+    c: &LocalClock,
+    chime_list: &[ChimeTuple<'a>],
+) -> Vec<SurvivorTuple<'a>> {
+    let (low, high) = find_interval(chime_list);
+
+    let mut survivors = Vec::new();
+
+    for tuple in chime_list {
+        if tuple.edge < low || tuple.edge > high {
+            continue;
+        }
+
+        let p = tuple.p;
+        let metric = MAXDIST * p.stratum + root_distance(p, c);
+
+        survivors.push(SurvivorTuple { p, metric })
+    }
+
+    survivors
+}
+
+// TODO this should be 4 in production?!
+const NSANE: usize = 1;
+
+#[allow(dead_code)]
+pub fn clock_select(peer: &mut Peer, s: &mut System, c: &LocalClock) {
+    let osys = &s.p;
+
+    let chime_list = construct_chime_list(peer, s, c);
+    let n = chime_list.len();
+
+    let survivors = construct_survivors(c, &chime_list);
+
+    // There must be at least NSANE survivors to satisfy the
+    // correctness assertions.  Ordinarily, the Byzantine criteria
+    // require four survivors, but for the demonstration here, one
+    // is acceptable.
+    if survivors.len() < NSANE {
+        return;
+    }
+
+    let survivors = wither(n, &survivors);
+
+    if osys.stratum == survivors[0].p.stratum {
+        s.p = osys.clone();
+    } else {
+        s.p = survivors[0].p.clone();
+    }
+}
+
+struct ClockCombine {
+    offset: f64,
+    jitter: f64,
+}
+
+/// Combine the offsets of the clustering algorithm survivors
+/// using a weighted average with weight determined by the root
+/// distance.  Compute the selection jitter as the weighted RMS
+/// difference between the first survivor and the remaining
+/// survivors.  In some cases, the inherent clock jitter can be
+/// reduced by not using this algorithm, especially when frequent
+/// clockhopping is involved.  The reference implementation can
+/// be configured to avoid this algorithm by designating a
+/// preferred peer.
+fn clock_combine<'a>(c: &LocalClock, survivors: &'a [SurvivorTuple<'a>]) -> ClockCombine {
+    let mut y = 0.0;
+    let mut z = 0.0;
+    let mut w = 0.0;
+
+    let first_offset = survivors[0].p.offset;
+
+    for tuple in survivors {
+        let p = tuple.p;
+        let x = root_distance(p, c).to_seconds();
+        y += 1.0 / x;
+        z += p.offset.to_seconds() / x;
+        w += (p.offset - first_offset).to_seconds().powi(2) / x;
+    }
+
+    let offset = z / y;
+    let jitter = (w / y).sqrt();
+
+    ClockCombine { offset, jitter }
 }
 
 #[cfg(test)]
