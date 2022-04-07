@@ -1,0 +1,10 @@
+targets = [
+    { triple = "x86_64-unknown-linux-musl" },
+    { triple = "x86_64-unknown-linux-gnu" },
+]
+
+[licenses]
+allow-osi-fsf-free = "either"
+copyleft = "deny"
+private = { ignore = true }
+allow = ["MPL-2.0"]
