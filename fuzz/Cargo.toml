@@ -12,7 +12,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 
 [dependencies.ntp-proto]
-path = ".."
+path = "../ntp-proto"
 
 # Prevent this from interfering with workspaces
 [workspace]
