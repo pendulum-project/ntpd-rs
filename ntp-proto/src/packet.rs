@@ -77,7 +77,7 @@ impl NtpAssociationMode {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct NtpHeader {
     pub leap: NtpLeapIndicator,
-    pub version: u8,
+    version: u8,
     pub mode: NtpAssociationMode,
     pub stratum: u8,
     pub poll: i8,
@@ -115,6 +115,10 @@ impl NtpHeader {
         }
     }
 
+    pub fn version(&self) -> u8 {
+        self.version
+    }
+
     pub fn deserialize(data: &[u8; 48]) -> NtpHeader {
         NtpHeader {
             leap: NtpLeapIndicator::from_bits((data[0] & 0xC0) >> 6),
@@ -134,6 +138,8 @@ impl NtpHeader {
     }
 
     pub fn serialize(&self) -> [u8; 48] {
+        // Version should only ever be set internally in this module, so
+        // violations of this should never happen.
         assert!(self.version < 8);
 
         let root_delay = self.root_delay.to_bits_short();
