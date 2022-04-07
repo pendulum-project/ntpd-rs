@@ -131,6 +131,7 @@ impl NtpDuration {
     };
 
     /// NtpDuration::from_seconds(0.005)
+    #[allow(dead_code)]
     pub(crate) const MINDISP: Self = Self { duration: 21474836 };
 
     /// Convert to an f64; required for statistical calculations
@@ -140,6 +141,7 @@ impl NtpDuration {
         self.duration as f64 / u32::MAX as f64
     }
 
+    #[cfg(test)]
     pub(crate) fn from_seconds(seconds: f64) -> Self {
         let i = seconds.floor();
         let f = seconds - i;

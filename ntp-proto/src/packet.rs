@@ -27,6 +27,10 @@ impl NtpLeapIndicator {
             NtpLeapIndicator::Unknown => 3,
         }
     }
+
+    pub fn is_synchronized(&self) -> bool {
+        !matches!(self, Self::Unknown)
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
