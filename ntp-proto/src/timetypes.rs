@@ -12,6 +12,7 @@ const EPOCH_OFFSET: u64 = (70 * 365 + 17) * 86400;
 
 impl NtpTimestamp {
     pub(crate) const ZERO: Self = Self { timestamp: 0 };
+    pub(crate) const ONE: Self = Self { timestamp: 1 << 32 };
 
     pub(crate) const fn from_bits(bits: [u8; 8]) -> NtpTimestamp {
         NtpTimestamp {
@@ -116,6 +117,7 @@ pub struct NtpDuration {
 
 impl NtpDuration {
     pub(crate) const ZERO: Self = Self { duration: 0 };
+    pub(crate) const ONE: Self = Self { duration: 1 << 32 };
 
     /// NtpDuration::from_seconds(16.0)
     pub(crate) const MAX_DISPERSION: Self = Self {

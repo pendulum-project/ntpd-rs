@@ -242,7 +242,7 @@ enum FitError {
 }
 
 /// Distance threshold
-const MAXDIST: f64 = 1.0;
+const MAXDIST: NtpDuration = NtpDuration::ONE;
 
 /// Maximum Stratum Number
 const MAXSTRAT: u8 = 16;
@@ -252,9 +252,7 @@ fn fit(p: &Peer, s: &System, c: &LocalClock) -> Result<(), FitError> {
         Err(FitError::StratumNotSynchronized)
     } else if p.stratum >= MAXSTRAT {
         Err(FitError::ServerStratumInvalid)
-    } else if root_distance(p, c)
-        > NtpDuration::from_seconds(MAXDIST + (s.poll / ONE_OVER_PHI).to_seconds())
-    {
+    } else if root_distance(p, c) > MAXDIST + (s.poll / ONE_OVER_PHI) {
         // A distance error occurs if the root distance exceeds the
         // distance threshold plus an increment equal to one poll
         // interval.
