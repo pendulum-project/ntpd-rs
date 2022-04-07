@@ -125,6 +125,30 @@ impl NtpDuration {
         (((self.duration & 0x0000FFFFFFFF0000) >> 16) as u32).to_be_bytes()
     }
 
+    /// NtpDuration::from_seconds(16.0)
+    pub(crate) const MAXDISP: Self = Self {
+        duration: 68719476736,
+    };
+
+    /// NtpDuration::from_seconds(0.005)
+    pub(crate) const MINDISP: Self = Self { duration: 21474836 };
+
+    /// Convert to an f64; required for statistical calculations
+    /// (e.g. in clock filtering)
+    pub(crate) fn to_seconds(self) -> f64 {
+        // dividing by u32::MAX moves the decimal point to the right position
+        self.duration as f64 / u32::MAX as f64
+    }
+
+    pub(crate) fn from_seconds(seconds: f64) -> Self {
+        let i = seconds.floor();
+        let f = seconds - i;
+
+        let duration = (i as i64) << 32 | (f * u32::MAX as f64) as i64;
+
+        Self { duration }
+    }
+
     #[cfg(test)]
     pub(crate) const fn from_fixed_int(duration: i64) -> NtpDuration {
         NtpDuration { duration }
@@ -298,4 +322,18 @@ mod tests {
     ntp_duration_scaling_test!(ntp_duration_scaling_u32, u32);
     ntp_duration_scaling_test!(ntp_duration_scaling_u64, u64);
     ntp_duration_scaling_test!(ntp_duration_scaling_usize, usize);
+
+    macro_rules! assert_eq_epsilon {
+        ($a:expr, $b:expr, $epsilon:expr) => {
+            assert!(($a - $b).abs() < $epsilon);
+        };
+    }
+
+    #[test]
+    fn duration_seconds_roundtrip() {
+        assert_eq_epsilon!(NtpDuration::from_seconds(0.0).to_seconds(), 0.0, 1e-9);
+        assert_eq_epsilon!(NtpDuration::from_seconds(1.0).to_seconds(), 1.0, 1e-9);
+        assert_eq_epsilon!(NtpDuration::from_seconds(1.5).to_seconds(), 1.5, 1e-9);
+        assert_eq_epsilon!(NtpDuration::from_seconds(2.0).to_seconds(), 2.0, 1e-9);
+    }
 }
