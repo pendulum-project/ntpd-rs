@@ -49,9 +49,9 @@ impl ClockFilterContents {
         }
     }
 
-    fn shift_and_insert(&mut self, new_tuple: FilterTuple, dispersion_correction: NtpDuration) {
-        let mut current = new_tuple;
-
+    /// Insert the new tuple at index 0, move all other tuples one to the right.
+    /// The final (oldest) tuple is discarded
+    fn shift_and_insert(&mut self, mut current: FilterTuple, dispersion_correction: NtpDuration) {
         for tuple in self.register.iter_mut() {
             tuple.dispersion += dispersion_correction;
 
@@ -176,17 +176,6 @@ pub fn clock_filter(
         time: c.t,
     };
 
-    // The clock filter contents consist of eight tuples (offset,
-    // delay, dispersion, time).  Shift each tuple to the left,
-    // discarding the leftmost one.  As each tuple is shifted,
-    // increase the dispersion since the last filter update.  At the
-    // same time, copy each tuple to a temporary list.  After this,
-    // place the (offset, delay, disp, time) in the vacated
-    // rightmost tuple.
-    //
-    // NOTE: it seems that the rightmost tuple has index 0. That is unintuitive to me,
-    // may be an error in the spec? it's irrelevant because we sort
-    // or use commutative/associative operations
     let dispersion_correction = (c.t - peer.t) / ONE_OVER_PHI;
     peer.clock_filter
         .shift_and_insert(new_tuple, dispersion_correction);
