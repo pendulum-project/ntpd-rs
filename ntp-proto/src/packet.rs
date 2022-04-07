@@ -15,7 +15,9 @@ impl NtpLeapIndicator {
             1 => NtpLeapIndicator::Leap61,
             2 => NtpLeapIndicator::Leap59,
             3 => NtpLeapIndicator::Unknown,
-            _ => panic!("Internal error: Trying to interpret more than 2 bits as leap indicator"),
+            _ => unreachable!(),
+            // This function should only ever be called from the packet parser
+            // with just two bits, so the above really should be unreachable
         }
     }
 
@@ -52,7 +54,9 @@ impl NtpAssociationMode {
             5 => NtpAssociationMode::Broadcast,
             6 => NtpAssociationMode::Control,
             7 => NtpAssociationMode::Private,
-            _ => panic!("Internal error: Trying to interpret more than 3 bits as association mode"),
+            _ => unreachable!(),
+            // This function should only ever be called from the packet parser
+            // with just three bits, so the above really should be unreachable
         }
     }
 
