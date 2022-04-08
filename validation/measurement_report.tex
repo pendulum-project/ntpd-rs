@@ -9,7 +9,7 @@
 
 In this paper, we present a quantitative comparison of statime synchronization performance as compared to the LinuxPTP implementation of PTP. In particular, we focus on comparing the precision and offset of the time synchronization of both setups.
 
-The comparison was done over relatively short time intervals of about two hours. Over these periods we find that, due to incomplete support for hardware timestamping, the precision of statime is still TODO orders of magnitude larger than that of LinuxPTP.
+The comparison was done over relatively short time intervals of about two hours. Over these periods we find that, due to incomplete support for hardware timestamping, the precision of statime is still $2$ orders of magnitude larger than that of LinuxPTP.
 
 \section{Measurement setup}
 
@@ -64,21 +64,25 @@ For the statime run, analysis shows the fpga clock ticks $ 99999638 \pm 7.8 (\te
 
 \begin{figure}[h]
 \includegraphics[width=0.5\textwidth]{gm_ref_offset_overtime.pdf}\includegraphics[width=0.5\textwidth]{gm_ref_offset.pdf}
-\caption{System clock offset to GM, both overtime and frequency of observations. (Negative values indicate that the clock is ahead of the GM.)}
+\caption{System clock offset to GM, both overtime and frequency of observations, as synchronized by LinuxPTP. (Negative values indicate that the clock is ahead of the GM.)}
 \label{fig:ref_sys_offset}
 \end{figure}
 
-Analysing the offset data for the system clock synchronized by LinuxPTP, we find that this gives a constant offset $-3576,40\pm 0.95 (\text{stat.}) \pm 25(\text{sys.})$ nanoseconds, which could be eliminated by tuning the port assymetry. Furthermore, we see 99\% of all observations fall within $186 \pm 10 (\text{stat.})$ nanoseconds of this constant offset.
+Analysing the offset data for the system clock synchronized by LinuxPTP, we find that this gives a constant offset $-3576,40\pm 0.95 (\text{stat.}) \pm 25(\text{sys.})$ nanoseconds, which could be eliminated by tuning the port assymetry. Furthermore, we see 90\% of all observations fall within $126 \pm 10 (\text{stat.})$ nanoseconds of this constant offset.
 
 \section{Statime performance analysis}
 
+\begin{figure}[h]
+\includegraphics[width=0.5\textwidth]{gm_statime_offset_overtime.pdf}\includegraphics[width=0.5\textwidth]{gm_statime_offset.pdf}
+\caption{System clock offset to GM, both overtime and frequency of observations, as synchronized by Statime. (Negative values indicate that the clock is ahead of the GM.)}
+\label{fig:statime_sys_offset}
+\end{figure}
+
+Analysing the offset data for the system clock synchronized by Statime, we find that this gives a constant offset $-23570\pm 90(\text{stat.})\pm 25 (text{sys.})$ nanoseconds, which could be eliminated by tuning the port assymetry. Furthermore, we see 90\% of all observations fall within $11250 \pm 10(\text{stat.})$ nanoseconds of this constant offset.
+
 \section{Conclusions}
 
-Comparing the results of the statime and LinuxPTP, we observe that statime is $todo$ orders of magnitude less precise. We expect that this is primarily the result of the fact that statime does not yet have support for hardware timestamping.
+Comparing the results of the statime and LinuxPTP, we observe that statime is $2$ orders of magnitude less precise. We think that this is primarily the result of the fact that statime does not yet have support for hardware timestamping.
 
-%Should offsets be similar
-Surprisingly, whilst the precision of both implementations is significantly different, we observe a similar offset in the synchronized time between statime and LinuxPTP. Although we do not know for certain why this is, it suggests that either asymmetry in the master or in the Linux network stack is the dominant cause of the offset.
-
-%Should offsets scale roughly with precision
-In line with the observed increas in precision, we also see an associated increase in fixed offset. This is likely primarily due to assymetry within the linux kernel's networking stack, which becomes more significant when relying on software timestamping.
+In line with the observed decreased precision, we also see an associated increase in fixed offset. This is likely primarily due to assymetry within the linux kernel's networking stack, which becomes more significant when relying on software timestamping.
 \end{document}
