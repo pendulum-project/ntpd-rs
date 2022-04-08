@@ -3,7 +3,12 @@
 \usepackage{amsmath}
 \usepackage{graphicx}
 
+\title{Performance analysis of Statime as compared to LinuxPTP}
+\author{Dion Dokter \and Ruben Nijveld \and David Venhoek}
+
 \begin{document}
+
+\maketitle
 
 \section{Introduction}
 
@@ -78,7 +83,7 @@ Analysing the offset data for the system clock synchronized by LinuxPTP, we find
 \label{fig:statime_sys_offset}
 \end{figure}
 
-Analysing the offset data for the system clock synchronized by Statime, we find that this gives a constant offset $-23570\pm 90(\text{stat.})\pm 25 (text{sys.})$ nanoseconds, which could be eliminated by tuning the port assymetry. Furthermore, we see 90\% of all observations fall within $11250 \pm 10(\text{stat.})$ nanoseconds of this constant offset.
+Analysing the offset data for the system clock synchronized by Statime, we find that this gives a constant offset $-23570\pm 90(\text{stat.})\pm 25 (\text{sys.})$ nanoseconds, which could be eliminated by tuning the port assymetry. Furthermore, we see 90\% of all observations fall within $11250 \pm 10(\text{stat.})$ nanoseconds of this constant offset.
 
 \section{Conclusions}
 
