@@ -1,14 +1,10 @@
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
+/// NtpTimestamp represents an ntp timestamp without the era number.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Default)]
 pub struct NtpTimestamp {
     timestamp: u64,
 }
-
-/// Unix uses an epoch located at 1/1/1970-00:00h (UTC) and NTP uses 1/1/1900-00:00h.
-/// This leads to an offset equivalent to 70 years in seconds
-/// there are 17 leap years between the two dates so the offset is
-const EPOCH_OFFSET: u64 = (70 * 365 + 17) * 86400;
 
 impl NtpTimestamp {
     pub(crate) const ZERO: Self = Self { timestamp: 0 };
@@ -23,15 +19,13 @@ impl NtpTimestamp {
         self.timestamp.to_be_bytes()
     }
 
-    pub(crate) fn from_system_time(time: std::time::SystemTime) -> Self {
-        let dur = time.duration_since(std::time::UNIX_EPOCH).unwrap();
-        let secs = dur.as_secs() + EPOCH_OFFSET;
-        let nanos = dur.subsec_nanos();
-
-        Self::from_seconds_nanos_since_ntp_epoch(secs, nanos)
-    }
-
-    pub(crate) fn from_seconds_nanos_since_ntp_epoch(seconds: u64, nanos: u32) -> Self {
+    /// Create an NTP timestamp from the number of seconds and nanoseconds that have
+    /// passed since the last ntp era boundary.
+    pub const fn from_seconds_nanos_since_ntp_era(seconds: u32, nanos: u32) -> Self {
+        // Although having a valid interpretation, providing more
+        // than 1 second worth of nanoseconds as input probably
+        // indicates an error from the caller.
+        debug_assert!(nanos < 1_000_000_000);
         // NTP uses 1/2^32 sec as its unit of fractional time.
         // our time is in nanoseconds, so 1/1e9 seconds
         let fraction = ((nanos as u64) << 32) / 1_000_000_000;
@@ -39,16 +33,8 @@ impl NtpTimestamp {
         // alternatively, abuse FP arithmetic to save an instruction
         // let fraction = (nanos as f64 * 4.294967296) as u64;
 
-        let timestamp = (seconds << 32) + fraction;
+        let timestamp = ((seconds as u64) << 32) + fraction;
         NtpTimestamp::from_bits(timestamp.to_be_bytes())
-    }
-
-    #[cfg(test)]
-    pub(crate) fn duration_since_unix_epoch(self) -> std::time::Duration {
-        let seconds = (self.timestamp >> 32) - EPOCH_OFFSET;
-        let nanos = ((self.timestamp & 0x00000000FFFFFFFF) * 1_000_000_000 / (1u64 << 32)) as u32;
-
-        std::time::Duration::new(seconds, nanos)
     }
 
     #[cfg(test)]
@@ -120,6 +106,10 @@ impl SubAssign<NtpDuration> for NtpTimestamp {
     }
 }
 
+/// NtpDuration is used to represent signed intervals between NtpTimestamps.
+/// A negative duration interval is interpreted to mean that the first
+/// timestamp used to define the interval represents a point in time after
+/// the second timestamp.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Default)]
 pub struct NtpDuration {
     duration: i64,
@@ -177,6 +167,17 @@ impl NtpDuration {
         let duration = (i as i64) << 32 | (f * u32::MAX as f64) as i64;
 
         Self { duration }
+    }
+
+    /// Get the number of seconds (first return value) and nanoseconds
+    /// (second return value) representing the length of this duration.
+    /// The number of nanoseconds is guaranteed to be positiv and less
+    /// than 10^9
+    pub const fn as_seconds_nanos(self) -> (i32, u32) {
+        (
+            (self.duration >> 32) as i32,
+            (((self.duration & 0xFFFFFFFF) * 1_000_000_000) >> 32) as u32,
+        )
     }
 
     #[cfg(test)]
@@ -350,6 +351,18 @@ mod tests {
     }
 
     #[test]
+    fn test_timestamp_from_seconds_nanos() {
+        assert_eq!(
+            NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 500_000_000),
+            NtpTimestamp::from_fixed_int(0x80000000)
+        );
+        assert_eq!(
+            NtpTimestamp::from_seconds_nanos_since_ntp_era(1, 0),
+            NtpTimestamp::from_fixed_int(1 << 32)
+        );
+    }
+
+    #[test]
     fn test_timestamp_duration_math() {
         let mut a = NtpTimestamp::from_fixed_int(5);
         let b = NtpDuration::from_fixed_int(2);
@@ -359,6 +372,18 @@ mod tests {
         assert_eq!(a, NtpTimestamp::from_fixed_int(7));
         a -= b;
         assert_eq!(a, NtpTimestamp::from_fixed_int(5));
+    }
+
+    #[test]
+    fn test_duration_as_seconds_nanos() {
+        assert_eq!(
+            NtpDuration::from_fixed_int(0x80000000).as_seconds_nanos(),
+            (0, 500_000_000)
+        );
+        assert_eq!(
+            NtpDuration::from_fixed_int(1 << 33).as_seconds_nanos(),
+            (2, 0)
+        );
     }
 
     #[test]
