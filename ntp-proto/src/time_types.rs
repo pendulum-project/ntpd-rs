@@ -43,8 +43,8 @@ impl NtpTimestamp {
 
     #[cfg(test)]
     pub(crate) fn duration_since_unix_epoch(self) -> std::time::Duration {
-        let seconds = (self.seconds() as u64) - EPOCH_OFFSET;
-        let nanos = ((self.fraction() as u64) * 1_000_000_000 / (1u64 << 32)) as u32;
+        let seconds = (self.timestamp >> 32) - EPOCH_OFFSET;
+        let nanos = ((self.timestamp & 0x00000000FFFFFFFF) * 1_000_000_000 / (1u64 << 32)) as u32;
 
         std::time::Duration::new(seconds, nanos)
     }
@@ -53,31 +53,29 @@ impl NtpTimestamp {
     pub(crate) const fn from_fixed_int(timestamp: u64) -> NtpTimestamp {
         NtpTimestamp { timestamp }
     }
-
-    #[cfg(test)]
-    pub(crate) const fn seconds(self) -> u32 {
-        (self.timestamp >> 32) as u32
-    }
-
-    #[cfg(test)]
-    pub(crate) const fn fraction(self) -> u32 {
-        self.timestamp as u32
-    }
 }
 
 impl Add<NtpDuration> for NtpTimestamp {
     type Output = NtpTimestamp;
 
     fn add(self, rhs: NtpDuration) -> Self::Output {
+        // In order to properly deal with ntp era changes, timestamps
+        // need to roll over. Converting the duration to u64 here
+        // still gives desired effects because of how two's complement
+        // arithmetic works.
         NtpTimestamp {
-            timestamp: (self.timestamp as i64 + rhs.duration) as u64,
+            timestamp: self.timestamp.wrapping_add(rhs.duration as u64),
         }
     }
 }
 
 impl AddAssign<NtpDuration> for NtpTimestamp {
     fn add_assign(&mut self, rhs: NtpDuration) {
-        self.timestamp = (self.timestamp as i64 + rhs.duration) as u64;
+        // In order to properly deal with ntp era changes, timestamps
+        // need to roll over. Converting the duration to u64 here
+        // still gives desired effects because of how two's complement
+        // arithmetic works.
+        self.timestamp = self.timestamp.wrapping_add(rhs.duration as u64);
     }
 }
 
@@ -85,8 +83,13 @@ impl Sub for NtpTimestamp {
     type Output = NtpDuration;
 
     fn sub(self, rhs: Self) -> Self::Output {
+        // In order to properly deal with ntp era changes, timestamps
+        // need to roll over. Doing a wrapping substract to a signed
+        // integer type always gives us the result as if the eras of
+        // the timestamps were chosen to minimize the norm of the
+        // difference, which is the desired behaviour
         NtpDuration {
-            duration: self.timestamp as i64 - rhs.timestamp as i64,
+            duration: self.timestamp.wrapping_sub(rhs.timestamp) as i64,
         }
     }
 }
@@ -95,15 +98,23 @@ impl Sub<NtpDuration> for NtpTimestamp {
     type Output = NtpTimestamp;
 
     fn sub(self, rhs: NtpDuration) -> Self::Output {
+        // In order to properly deal with ntp era changes, timestamps
+        // need to roll over. Converting the duration to u64 here
+        // still gives desired effects because of how two's complement
+        // arithmetic works.
         NtpTimestamp {
-            timestamp: (self.timestamp as i64 - rhs.duration) as u64,
+            timestamp: self.timestamp.wrapping_sub(rhs.duration as u64),
         }
     }
 }
 
 impl SubAssign<NtpDuration> for NtpTimestamp {
     fn sub_assign(&mut self, rhs: NtpDuration) {
-        self.timestamp = (self.timestamp as i64 - rhs.duration) as u64;
+        // In order to properly deal with ntp era changes, timestamps
+        // need to roll over. Converting the duration to u64 here
+        // still gives desired effects because of how two's complement
+        // arithmetic works.
+        self.timestamp = self.timestamp.wrapping_sub(rhs.duration as u64);
     }
 }
 
@@ -120,9 +131,22 @@ impl NtpDuration {
     }
 
     pub(crate) const fn to_bits_short(self) -> [u8; 4] {
+        // serializing negative durations should never happen
+        // and indicates a programming error elsewhere.
+        // as for duration that are too large, saturating is
+        // the safe option.
         assert!(self.duration >= 0);
-        assert!(self.duration <= 0x0000FFFFFFFFFFFF);
-        (((self.duration & 0x0000FFFFFFFF0000) >> 16) as u32).to_be_bytes()
+
+        // Although saturating is safe to do, it probably still
+        // should never happen in practice, so ensure we will
+        // see it when running in debug mode.
+        debug_assert!(self.duration <= 0x0000FFFFFFFFFFFF);
+
+        match self.duration > 0x0000FFFFFFFFFFFF {
+            true => 0xFFFFFFFF_u32,
+            false => ((self.duration & 0x0000FFFFFFFF0000) >> 16) as u32,
+        }
+        .to_be_bytes()
     }
 
     #[cfg(test)]
@@ -135,15 +159,23 @@ impl Add for NtpDuration {
     type Output = NtpDuration;
 
     fn add(self, rhs: Self) -> Self::Output {
+        // For duration, saturation is safer as that ensures
+        // addition or substraction of two big durations never
+        // unintentionally cancel, ensuring that filtering
+        // can properly reject on the result.
         NtpDuration {
-            duration: self.duration + rhs.duration,
+            duration: self.duration.saturating_add(rhs.duration),
         }
     }
 }
 
 impl AddAssign for NtpDuration {
     fn add_assign(&mut self, rhs: Self) {
-        self.duration += rhs.duration;
+        // For duration, saturation is safer as that ensures
+        // addition or substraction of two big durations never
+        // unintentionally cancel, ensuring that filtering
+        // can properly reject on the result.
+        self.duration = self.duration.saturating_add(rhs.duration);
     }
 }
 
@@ -151,15 +183,23 @@ impl Sub for NtpDuration {
     type Output = NtpDuration;
 
     fn sub(self, rhs: Self) -> Self::Output {
+        // For duration, saturation is safer as that ensures
+        // addition or substraction of two big durations never
+        // unintentionally cancel, ensuring that filtering
+        // can properly reject on the result.
         NtpDuration {
-            duration: self.duration - rhs.duration,
+            duration: self.duration.saturating_sub(rhs.duration),
         }
     }
 }
 
 impl SubAssign for NtpDuration {
     fn sub_assign(&mut self, rhs: Self) {
-        self.duration -= rhs.duration;
+        // For duration, saturation is safer as that ensures
+        // addition or substraction of two big durations never
+        // unintentionally cancel, ensuring that filtering
+        // can properly reject on the result.
+        self.duration = self.duration.saturating_sub(rhs.duration);
     }
 }
 
@@ -169,8 +209,12 @@ macro_rules! ntp_duration_scalar_mul {
             type Output = NtpDuration;
 
             fn mul(self, rhs: NtpDuration) -> NtpDuration {
+                // For duration, saturation is safer as that ensures
+                // addition or substraction of two big durations never
+                // unintentionally cancel, ensuring that filtering
+                // can properly reject on the result.
                 NtpDuration {
-                    duration: (self as i64) * rhs.duration,
+                    duration: rhs.duration.saturating_mul(self as i64),
                 }
             }
         }
@@ -179,15 +223,23 @@ macro_rules! ntp_duration_scalar_mul {
             type Output = NtpDuration;
 
             fn mul(self, rhs: $scalar_type) -> NtpDuration {
+                // For duration, saturation is safer as that ensures
+                // addition or substraction of two big durations never
+                // unintentionally cancel, ensuring that filtering
+                // can properly reject on the result.
                 NtpDuration {
-                    duration: self.duration * (rhs as i64),
+                    duration: self.duration.saturating_mul(rhs as i64),
                 }
             }
         }
 
         impl MulAssign<$scalar_type> for NtpDuration {
             fn mul_assign(&mut self, rhs: $scalar_type) {
-                self.duration *= (rhs as i64);
+                // For duration, saturation is safer as that ensures
+                // addition or substraction of two big durations never
+                // unintentionally cancel, ensuring that filtering
+                // can properly reject on the result.
+                self.duration = self.duration.saturating_mul(rhs as i64);
             }
         }
     };
@@ -201,8 +253,7 @@ ntp_duration_scalar_mul!(isize);
 ntp_duration_scalar_mul!(u8);
 ntp_duration_scalar_mul!(u16);
 ntp_duration_scalar_mul!(u32);
-ntp_duration_scalar_mul!(u64);
-ntp_duration_scalar_mul!(usize);
+// u64 and usize deliberately excluded as they can result in overflows
 
 macro_rules! ntp_duration_scalar_div {
     ($scalar_type:ty) => {
@@ -210,6 +261,7 @@ macro_rules! ntp_duration_scalar_div {
             type Output = NtpDuration;
 
             fn div(self, rhs: $scalar_type) -> NtpDuration {
+                // No overflow risks for division
                 NtpDuration {
                     duration: self.duration / (rhs as i64),
                 }
@@ -218,6 +270,7 @@ macro_rules! ntp_duration_scalar_div {
 
         impl DivAssign<$scalar_type> for NtpDuration {
             fn div_assign(&mut self, rhs: $scalar_type) {
+                // No overflow risks for division
                 self.duration /= (rhs as i64);
             }
         }
@@ -232,8 +285,7 @@ ntp_duration_scalar_div!(isize);
 ntp_duration_scalar_div!(u8);
 ntp_duration_scalar_div!(u16);
 ntp_duration_scalar_div!(u32);
-ntp_duration_scalar_div!(u64);
-ntp_duration_scalar_div!(usize);
+// u64 and usize deliberately excluded as they can result in overflows
 
 #[cfg(test)]
 mod tests {
@@ -245,6 +297,26 @@ mod tests {
         let b = NtpTimestamp::from_fixed_int(3);
         assert_eq!(a - b, NtpDuration::from_fixed_int(2));
         assert_eq!(b - a, NtpDuration::from_fixed_int(-2));
+    }
+
+    #[test]
+    fn test_timestamp_era_change() {
+        let mut a = NtpTimestamp::from_fixed_int(1);
+        let b = NtpTimestamp::from_fixed_int(0xFFFFFFFFFFFFFFFF);
+        assert_eq!(a - b, NtpDuration::from_fixed_int(2));
+        assert_eq!(b - a, NtpDuration::from_fixed_int(-2));
+
+        let c = NtpDuration::from_fixed_int(2);
+        let d = NtpDuration::from_fixed_int(-2);
+        assert_eq!(b + c, a);
+        assert_eq!(b - d, a);
+        assert_eq!(a - c, b);
+        assert_eq!(a + d, b);
+
+        a -= c;
+        assert_eq!(a, b);
+        a += c;
+        assert_eq!(a, NtpTimestamp::from_fixed_int(1));
     }
 
     #[test]
@@ -296,6 +368,4 @@ mod tests {
     ntp_duration_scaling_test!(ntp_duration_scaling_u8, u8);
     ntp_duration_scaling_test!(ntp_duration_scaling_u16, u16);
     ntp_duration_scaling_test!(ntp_duration_scaling_u32, u32);
-    ntp_duration_scaling_test!(ntp_duration_scaling_u64, u64);
-    ntp_duration_scaling_test!(ntp_duration_scaling_usize, usize);
 }
