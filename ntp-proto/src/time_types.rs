@@ -136,6 +136,12 @@ impl NtpDuration {
         // as for duration that are too large, saturating is
         // the safe option.
         assert!(self.duration >= 0);
+
+        // Although saturating is safe to do, it probably still
+        // should never happen in practice, so ensure we will
+        // see it when running in debug mode.
+        debug_assert!(self.duration <= 0x0000FFFFFFFFFFFF);
+
         match self.duration > 0x0000FFFFFFFFFFFF {
             true => 0xFFFFFFFF_u32,
             false => ((self.duration & 0x0000FFFFFFFF0000) >> 16) as u32,
