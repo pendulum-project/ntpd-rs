@@ -36,7 +36,7 @@ impl FilterTuple {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct ClockFilterContents {
     register: [FilterTuple; 8],
 }
@@ -58,15 +58,35 @@ impl ClockFilterContents {
             std::mem::swap(&mut current, tuple);
         }
     }
+}
 
-    fn sort_by_delay(&mut self) {
-        self.register.sort_by(|t1, t2| {
+/// Temporary list
+#[derive(Debug, Clone)]
+struct TemporaryList {
+    /// Invariant: this array is always sorted by increasing delay!
+    register: [FilterTuple; 8],
+}
+
+impl TemporaryList {
+    fn from_clock_filter_contents(source: &ClockFilterContents) -> Self {
+        // copy the registers
+        let mut register = source.register;
+
+        // sort by delay, ignoring NaN
+        register.sort_by(|t1, t2| {
             t1.delay
                 .partial_cmp(&t2.delay)
                 .unwrap_or(std::cmp::Ordering::Less)
         });
+
+        Self { register }
     }
 
+    fn smallest_delay(&self) -> &FilterTuple {
+        &self.register[0]
+    }
+
+    /// Prefix of the temporary list containing only the valid tuples
     fn valid_tuples(&self) -> &[FilterTuple] {
         let num_invalid_tuples = self
             .register
@@ -88,7 +108,7 @@ impl ClockFilterContents {
     ///                     ---     2
     ///                     i=0
     /// Invariant: the register is sorted wrt delay
-    fn dispersion(self) -> NtpDuration {
+    fn dispersion(&self) -> NtpDuration {
         self.register
             .iter()
             .enumerate()
@@ -107,22 +127,35 @@ impl ClockFilterContents {
     ///                          +-----                 -----+
     ///
     /// Invariant: the register is sorted wrt delay
-    fn jitter(self, s: &System, smallest_delay: FilterTuple) -> f64 {
-        let register = self.valid_tuples();
+    fn jitter(&self, s: &System, smallest_delay: FilterTuple) -> f64 {
+        Self::jitter_help(self.valid_tuples(), smallest_delay, s.precision)
+    }
 
-        let root_mean_square = register
+    fn jitter_help(
+        valid_tuples: &[FilterTuple],
+        smallest_delay: FilterTuple,
+        system_precision: f64,
+    ) -> f64 {
+        let root_mean_square = valid_tuples
             .iter()
             .map(|t| (t.offset - smallest_delay.offset).to_seconds().powi(2))
             .sum::<f64>()
             .sqrt();
 
         // root mean square average (RMS average). - 1 to exclude the smallest_delay
-        let jitter = root_mean_square / (register.len() - 1) as f64;
+        let jitter = root_mean_square / (valid_tuples.len() - 1) as f64;
 
         // In order to ensure consistency and avoid divide exceptions in other
         // computations, the psi is bounded from below by the system precision
         // s.rho expressed in seconds.
-        jitter.max(s.precision)
+        jitter.max(system_precision)
+    }
+
+    #[cfg(test)]
+    const fn new() -> Self {
+        Self {
+            register: [FilterTuple::DUMMY; 8],
+        }
     }
 }
 
@@ -180,11 +213,8 @@ pub fn clock_filter(
     peer.clock_filter
         .shift_and_insert(new_tuple, dispersion_correction);
 
-    let mut temporary_list = peer.clock_filter;
-
-    temporary_list.sort_by_delay();
-
-    let smallest_delay = temporary_list.register[0];
+    let temporary_list = TemporaryList::from_clock_filter_contents(&peer.clock_filter);
+    let smallest_delay = *temporary_list.smallest_delay();
 
     let dtemp = peer.offset;
     peer.offset = smallest_delay.offset;
@@ -232,7 +262,7 @@ mod test {
         // The observer should note (a) if all stages contain the dummy tuple
         // with dispersion MAXDISP, the computed dispersion is a little less than 16 s
 
-        let register = ClockFilterContents::new();
+        let register = TemporaryList::new();
         let value = register.dispersion().to_seconds();
 
         assert!((16.0 - value) < 0.1)
@@ -240,7 +270,7 @@ mod test {
 
     #[test]
     fn dummys_are_not_valid() {
-        assert!(ClockFilterContents::new().valid_tuples().is_empty())
+        assert!(TemporaryList::new().valid_tuples().is_empty())
     }
 
     #[test]
@@ -249,14 +279,14 @@ mod test {
         register.register[0].offset = NtpDuration::from_seconds(42.0);
         let first = register.register[0];
         let system = System::dummy();
-        let value = register.jitter(&system, first);
+        let value = TemporaryList::from_clock_filter_contents(&register).jitter(&system, first);
 
         assert_eq!(value, 0.0)
     }
 
     #[test]
     fn jitter_of_pair() {
-        let mut register = ClockFilterContents::new();
+        let mut register = TemporaryList::new();
         register.register[0].offset = NtpDuration::from_seconds(20.0);
         register.register[1].offset = NtpDuration::from_seconds(30.0);
         let first = register.register[0];
@@ -269,7 +299,7 @@ mod test {
 
     #[test]
     fn jitter_of_triple() {
-        let mut register = ClockFilterContents::new();
+        let mut register = TemporaryList::new();
         register.register[0].offset = NtpDuration::from_seconds(20.0);
         register.register[1].offset = NtpDuration::from_seconds(20.0);
         register.register[2].offset = NtpDuration::from_seconds(30.0);
