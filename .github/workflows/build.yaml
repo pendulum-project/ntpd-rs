@@ -8,6 +8,8 @@ on:
     branches: 
       - main
   pull_request:
+  schedule:
+    - cron: '0 4 * * *'
 
 jobs:
   build:
@@ -17,6 +19,8 @@ jobs:
       matrix:
         rust:
           - stable
+          - beta
+          - nightly
         os: [ubuntu-latest]
     steps:
       - name: Checkout sources
@@ -79,6 +83,32 @@ jobs:
           command: clippy
           args: -- -D warnings
 
+  fuzz:
+    name: Smoke-test fuzzing targets
+    runs-on: ubuntu-18.04
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+        with:
+          persist-credentials: false
+
+      - name: Install nightly toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+          default: true
+
+      - name: Install cargo fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Smoke-test fuzz targets
+        run: |
+          cargo fuzz build
+          for target in $(cargo fuzz list) ; do
+            cargo fuzz run $target -- -max_total_time=10
+          done
+
   coverage:
     runs-on: ubuntu-latest
     steps:
@@ -94,3 +124,9 @@ jobs:
         with:
           files: lcov.info
           fail_ci_if_error: true
+
+  audit-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - uses: EmbarkStudios/cargo-deny-action@v1
