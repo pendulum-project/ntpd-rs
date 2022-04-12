@@ -7,7 +7,9 @@
 //
 //      https://datatracker.ietf.org/doc/html/rfc5905#appendix-A.5.2
 
-use crate::{packet::NtpLeapIndicator, NtpDuration, NtpTimestamp};
+use std::net::IpAddr;
+
+use crate::{packet::NtpLeapIndicator, NtpDuration, NtpHeader, NtpTimestamp};
 
 /// frequency tolerance (15 ppm)
 // const PHI: f64 = 15e-6;
@@ -37,11 +39,17 @@ impl FilterTuple {
 }
 
 #[derive(Debug, Clone)]
-pub struct ClockFilterContents {
+pub struct LastMeasurements {
     register: [FilterTuple; 8],
 }
 
-impl ClockFilterContents {
+impl Default for LastMeasurements {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl LastMeasurements {
     #[allow(dead_code)]
     const fn new() -> Self {
         Self {
@@ -71,7 +79,7 @@ struct TemporaryList {
 }
 
 impl TemporaryList {
-    fn from_clock_filter_contents(source: &ClockFilterContents) -> Self {
+    fn from_clock_filter_contents(source: &LastMeasurements) -> Self {
         // copy the registers
         let mut register = source.register;
 
@@ -162,62 +170,95 @@ impl TemporaryList {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct PeerStatistics {
     pub offset: NtpDuration,
     pub delay: NtpDuration,
 
     pub dispersion: NtpDuration,
     pub jitter: f64,
-
-    pub filter: ClockFilterContents,
-    pub filter_time: NtpTimestamp,
 }
 
+#[derive(Debug)]
+struct ReferenceId(u32);
+
 #[allow(dead_code)]
-pub fn clock_filter(
-    peer_time: NtpTimestamp,
-    system_precision: f64,
-    leap_indicator: NtpLeapIndicator,
-    mut clock_filter: ClockFilterContents,
-    new_tuple: FilterTuple,
-) -> Option<PeerStatistics> {
-    //    let new_tuple = FilterTuple {
-    //        offset: clock_offset,
-    //        delay: roundtrip_delay,
-    //        dispersion,
-    //        time: local_clock_time,
-    //    };
+#[derive(Debug)]
+struct PeerConfiguration {
+    source_address: IpAddr,
+    source_port: u16,
+    destination_address: IpAddr,
+    destination_port: u16,
+    reference_id: ReferenceId,
+}
 
-    let dispersion_correction = multiply_by_phi(new_tuple.time - peer_time);
-    clock_filter.shift_and_insert(new_tuple, dispersion_correction);
+pub struct Peer {
+    statistics: PeerStatistics,
+    last_measurements: LastMeasurements,
+    last_packet: NtpHeader,
+    time: NtpTimestamp,
+}
 
-    let temporary_list = TemporaryList::from_clock_filter_contents(&clock_filter);
-    let smallest_delay = *temporary_list.smallest_delay();
+pub enum Decision {
+    Ignore,
+    Process,
+}
 
-    // Prime directive: use a sample only once and never a sample
-    // older than the latest one, but anything goes before first
-    // synchronized.
-    if smallest_delay.time - peer_time <= NtpDuration::ZERO && leap_indicator.is_synchronized() {
-        return None;
+impl Peer {
+    #[allow(dead_code)]
+    pub fn clock_filter(
+        &mut self,
+        new_tuple: FilterTuple,
+        system_leap_indicator: NtpLeapIndicator,
+        system_precision: f64,
+    ) -> Decision {
+        let dispersion_correction = multiply_by_phi(new_tuple.time - self.time);
+        self.last_measurements
+            .shift_and_insert(new_tuple, dispersion_correction);
+
+        let temporary_list = TemporaryList::from_clock_filter_contents(&self.last_measurements);
+        let smallest_delay = *temporary_list.smallest_delay();
+
+        // Prime directive: use a sample only once and never a sample
+        // older than the latest one, but anything goes before first
+        // synchronized.
+        if smallest_delay.time - self.time <= NtpDuration::ZERO
+            && system_leap_indicator.is_synchronized()
+        {
+            return Decision::Ignore;
+        }
+
+        let offset = smallest_delay.offset;
+        let delay = smallest_delay.delay;
+
+        let dispersion = temporary_list.dispersion();
+        let jitter = temporary_list.jitter(smallest_delay, system_precision);
+
+        let statistics = PeerStatistics {
+            offset,
+            delay,
+            dispersion,
+            jitter,
+        };
+
+        self.statistics = statistics;
+        self.time = smallest_delay.time;
+
+        Decision::Process
     }
 
-    let offset = smallest_delay.offset;
-    let delay = smallest_delay.delay;
-
-    let dispersion = temporary_list.dispersion();
-    let jitter = temporary_list.jitter(smallest_delay, system_precision);
-
-    let statistics = PeerStatistics {
-        offset,
-        delay,
-        dispersion,
-        jitter,
-        filter: clock_filter,
-        filter_time: smallest_delay.time,
-    };
-
-    Some(statistics)
+    /// The root synchronization distance is the maximum error due to
+    /// all causes of the local clock relative to the primary server.
+    /// It is defined as half the total delay plus total dispersion
+    /// plus peer jitter.
+    #[allow(dead_code)]
+    fn root_distance(&self, local_clock_time: NtpTimestamp) -> NtpDuration {
+        NtpDuration::MIN_DISPERSION.max(self.last_packet.root_delay + self.statistics.delay) / 2i64
+            + self.last_packet.root_dispersion
+            + self.statistics.dispersion
+            + multiply_by_phi(local_clock_time - self.time)
+            + NtpDuration::from_seconds(self.statistics.jitter)
+    }
 }
 
 #[cfg(test)]
@@ -242,7 +283,7 @@ mod test {
 
     #[test]
     fn jitter_of_single() {
-        let mut register = ClockFilterContents::new();
+        let mut register = LastMeasurements::new();
         register.register[0].offset = NtpDuration::from_seconds(42.0);
         let first = register.register[0];
         let value = TemporaryList::from_clock_filter_contents(&register).jitter(first, 0.0);
@@ -277,10 +318,8 @@ mod test {
 
     #[test]
     fn clock_filter_defaults() {
-        let clock_filter_contents = ClockFilterContents::new();
         let leap_indicator = NtpLeapIndicator::NoWarning;
         let system_precision = 0.0;
-        let peer_time = NtpTimestamp::ZERO;
 
         let new_tuple = FilterTuple {
             offset: Default::default(),
@@ -289,25 +328,24 @@ mod test {
             time: Default::default(),
         };
 
-        let statistics = clock_filter(
-            peer_time,
-            system_precision,
-            leap_indicator,
-            clock_filter_contents,
-            new_tuple,
-        );
+        let mut peer = Peer {
+            statistics: Default::default(),
+            last_measurements: Default::default(),
+            last_packet: Default::default(),
+            time: Default::default(),
+        };
+
+        let update = peer.clock_filter(new_tuple, leap_indicator, system_precision);
 
         // because "time" is zero, the same as all the dummy tuples,
         // the "new" tuple is not newer and hence rejected
-        assert!(statistics.is_none());
+        assert!(matches!(update, Decision::Ignore));
     }
 
     #[test]
     fn clock_filter_new() {
-        let clock_filter_contents = ClockFilterContents::new();
         let leap_indicator = NtpLeapIndicator::NoWarning;
         let system_precision = 0.0;
-        let peer_time = NtpTimestamp::ZERO;
 
         let new_tuple = FilterTuple {
             offset: NtpDuration::from_seconds(12.0),
@@ -316,24 +354,25 @@ mod test {
             time: NtpTimestamp::from_bits((1i64 << 32).to_be_bytes()),
         };
 
-        let statistics = clock_filter(
-            peer_time,
-            system_precision,
-            leap_indicator,
-            clock_filter_contents,
-            new_tuple,
-        );
+        let mut peer = Peer {
+            statistics: Default::default(),
+            last_measurements: Default::default(),
+            last_packet: Default::default(),
+            time: Default::default(),
+        };
 
-        let statistics = statistics.unwrap();
+        let update = peer.clock_filter(new_tuple, leap_indicator, system_precision);
 
-        assert_eq!(statistics.offset, new_tuple.offset);
-        assert_eq!(statistics.delay, new_tuple.delay);
-        assert_eq!(statistics.filter_time, new_tuple.time);
+        assert!(matches!(update, Decision::Process));
+
+        assert_eq!(peer.statistics.offset, new_tuple.offset);
+        assert_eq!(peer.statistics.delay, new_tuple.delay);
+        assert_eq!(peer.time, new_tuple.time);
 
         // there is just one valid sample
-        assert_eq!(statistics.jitter, 0.0);
+        assert_eq!(peer.statistics.jitter, 0.0);
 
-        let temporary = TemporaryList::from_clock_filter_contents(&statistics.filter);
+        let temporary = TemporaryList::from_clock_filter_contents(&peer.last_measurements);
 
         assert_eq!(temporary.register[0], new_tuple);
         assert_eq!(temporary.valid_tuples(), &[new_tuple]);
