@@ -304,6 +304,61 @@ impl Peer {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+#[repr(i8)]
+enum EndpointType {
+    Upper = 1,
+    Middle = 0,
+    Lower = -1,
+}
+
+#[allow(dead_code)]
+struct CandidateTuple<'a> {
+    peer: &'a Peer,
+    endpoint_type: EndpointType,
+    /// Correctness interval edge
+    edge: NtpDuration,
+}
+
+/// First, construct the chime list of tuples (p, type, edge) as
+/// shown below, then sort the list by edge from lowest to
+/// highest.
+#[allow(dead_code)]
+fn construct_candidate_list<'a>(
+    valid_associations: impl Iterator<Item = &'a Peer>,
+    local_clock_time: NtpTimestamp,
+) -> Vec<CandidateTuple<'a>> {
+    let mut candidate_list = Vec::new();
+
+    for peer in valid_associations {
+        let offset = peer.statistics.offset;
+
+        let tuples = [
+            CandidateTuple {
+                peer,
+                endpoint_type: EndpointType::Upper,
+                edge: offset + peer.root_distance(local_clock_time),
+            },
+            CandidateTuple {
+                peer,
+                endpoint_type: EndpointType::Middle,
+                edge: offset,
+            },
+            CandidateTuple {
+                peer,
+                endpoint_type: EndpointType::Lower,
+                edge: offset - peer.root_distance(local_clock_time),
+            },
+        ];
+
+        candidate_list.extend(tuples)
+    }
+
+    candidate_list.sort_by(|a, b| a.edge.cmp(&b.edge));
+
+    candidate_list
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
