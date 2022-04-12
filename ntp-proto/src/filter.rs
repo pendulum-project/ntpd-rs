@@ -359,6 +359,68 @@ fn construct_candidate_list<'a>(
     candidate_list
 }
 
+/// Find the largest contiguous intersection of correctness
+/// intervals.  Allow is the number of allowed falsetickers;
+/// found is the number of midpoints.  Note that the edge values
+/// are limited to the range +-(2 ^ 30) < +-2e9 by the timestamp
+/// calculations.
+#[allow(dead_code)]
+fn find_interval(chime_list: &[CandidateTuple]) -> (NtpDuration, NtpDuration) {
+    let n = chime_list.len();
+
+    let mut low = NtpDuration::ONE * 2_000_000_000;
+    let mut high = low * -164;
+
+    for allow in (0..).take_while(|allow| 2 * allow < n) {
+        // falsetickers found in the current iteration
+        let mut found = 0;
+        let mut chime = 0;
+
+        // Scan the chime list from lowest to highest to find the lower endpoint.
+        for tuple in chime_list {
+            chime -= tuple.endpoint_type as i32;
+            if chime >= (n - found) as i32 {
+                low = tuple.edge;
+                break;
+            }
+
+            if let EndpointType::Middle = tuple.endpoint_type {
+                found += 1;
+            }
+        }
+
+        // Scan the chime list from highest to lowest to find the upper endpoint.
+        chime = 0;
+        for tuple in chime_list.iter().rev() {
+            chime += tuple.endpoint_type as i32;
+            if chime >= (n - found) as i32 {
+                high = tuple.edge;
+                break;
+            }
+
+            if let EndpointType::Middle = tuple.endpoint_type {
+                found += 1;
+            }
+        }
+
+        //  If the number of midpoints is greater than the number
+        //  of allowed falsetickers, the intersection contains at
+        //  least one truechimer with no midpoint.  If so,
+        //  increment the number of allowed falsetickers and go
+        //  around again.  If not and the intersection is
+        //  non-empty, declare success.
+        if found > allow {
+            continue;
+        }
+
+        if high > low {
+            break;
+        }
+    }
+
+    (low, high)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
