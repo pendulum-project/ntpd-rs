@@ -15,11 +15,8 @@ fn multiply_by_phi(duration: NtpDuration) -> NtpDuration {
     (duration * 15) / 1_000_000
 }
 
-/// spike gate (clock filter)
-const SGATE: f64 = 3.0;
-
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct FilterTuple {
+pub struct FilterTuple {
     offset: NtpDuration,
     delay: NtpDuration,
     dispersion: NtpDuration,
@@ -40,7 +37,7 @@ impl FilterTuple {
 }
 
 #[derive(Debug, Clone)]
-struct ClockFilterContents {
+pub struct ClockFilterContents {
     register: [FilterTuple; 8],
 }
 
@@ -130,8 +127,8 @@ impl TemporaryList {
     ///                          +-----                 -----+
     ///
     /// Invariant: the register is sorted wrt delay
-    fn jitter(&self, s: &System, smallest_delay: FilterTuple) -> f64 {
-        Self::jitter_help(self.valid_tuples(), smallest_delay, s.precision)
+    fn jitter(&self, smallest_delay: FilterTuple, system_precision: f64) -> f64 {
+        Self::jitter_help(self.valid_tuples(), smallest_delay, system_precision)
     }
 
     fn jitter_help(
@@ -196,64 +193,61 @@ pub struct LocalClock {
     t: NtpTimestamp,
 }
 
+pub struct PeerProcessStatistics {
+    pub offset: NtpDuration,
+    pub delay: NtpDuration,
+
+    pub dispersion: NtpDuration,
+    pub jitter: f64,
+
+    pub filter: ClockFilterContents,
+    pub filter_time: NtpTimestamp,
+}
+
 #[allow(dead_code)]
 pub fn clock_filter(
-    peer: &mut Peer,
-    s: &System,
-    c: &LocalClock,
-    clock_offset: NtpDuration,
-    roundtrip_delay: NtpDuration,
-    dispersion: NtpDuration,
-) {
-    let new_tuple = FilterTuple {
-        offset: clock_offset,
-        delay: roundtrip_delay,
-        dispersion,
-        time: c.t,
-    };
+    peer_time: NtpTimestamp,
+    system_precision: f64,
+    leap_indicator: NtpLeapIndicator,
+    mut clock_filter: ClockFilterContents,
+    new_tuple: FilterTuple,
+) -> Option<PeerProcessStatistics> {
+    //    let new_tuple = FilterTuple {
+    //        offset: clock_offset,
+    //        delay: roundtrip_delay,
+    //        dispersion,
+    //        time: local_clock_time,
+    //    };
 
-    let dispersion_correction = multiply_by_phi(c.t - peer.t);
-    peer.clock_filter
-        .shift_and_insert(new_tuple, dispersion_correction);
+    let dispersion_correction = multiply_by_phi(new_tuple.time - peer_time);
+    clock_filter.shift_and_insert(new_tuple, dispersion_correction);
 
-    let temporary_list = TemporaryList::from_clock_filter_contents(&peer.clock_filter);
+    let temporary_list = TemporaryList::from_clock_filter_contents(&clock_filter);
     let smallest_delay = *temporary_list.smallest_delay();
-
-    let dtemp = peer.offset;
-    peer.offset = smallest_delay.offset;
-    peer.delay = smallest_delay.delay;
-
-    // TODO (not in the skeleton as far as I can see)
-    // If the first tuple epoch t_0 is not
-    // later than the last valid sample epoch tp, the routine exits without
-    // affecting the current peer variables.
-
-    peer.dispersion = temporary_list.dispersion();
-    peer.jitter = temporary_list.jitter(s, smallest_delay);
 
     // Prime directive: use a sample only once and never a sample
     // older than the latest one, but anything goes before first
     // synchronized.
-    if smallest_delay.time - peer.t <= NtpDuration::default() && s.leap_indicator.is_synchronized()
-    {
-        return;
+    if smallest_delay.time - peer_time <= NtpDuration::ZERO && leap_indicator.is_synchronized() {
+        return None;
     }
 
-    // Popcorn spike suppressor.  Compare the difference between the
-    // last and current offsets to the current jitter.  If greater
-    // than SGATE (3) and if the interval since the last offset is
-    // less than twice the system poll interval, dump the spike.
-    // Otherwise, and if not in a burst, shake out the truechimers.
-    let too_soon = (smallest_delay.time - peer.t) < (s.poll * 2i64);
-    if (peer.offset - dtemp).to_seconds().abs() > SGATE * peer.jitter && too_soon {
-        return;
-    }
+    let offset = smallest_delay.offset;
+    let delay = smallest_delay.delay;
 
-    peer.t = smallest_delay.time;
-    if peer.burst_counter == 0 {
-        todo!()
-        // clock_select();
-    }
+    let dispersion = temporary_list.dispersion();
+    let jitter = temporary_list.jitter(smallest_delay, system_precision);
+
+    let statistics = PeerProcessStatistics {
+        offset,
+        delay,
+        dispersion,
+        jitter,
+        filter: clock_filter,
+        filter_time: smallest_delay.time,
+    };
+
+    Some(statistics)
 }
 
 #[cfg(test)]
