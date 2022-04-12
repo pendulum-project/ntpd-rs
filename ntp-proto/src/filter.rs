@@ -10,7 +10,10 @@
 use crate::{packet::NtpLeapIndicator, NtpDuration, NtpTimestamp};
 
 /// frequency tolerance (15 ppm)
-const ONE_OVER_PHI: i64 = 15_000_000;
+// const PHI: f64 = 15e-6;
+fn multiply_by_phi(duration: NtpDuration) -> NtpDuration {
+    (duration * 15) / 1_000_000
+}
 
 /// spike gate (clock filter)
 const SGATE: f64 = 3.0;
@@ -209,7 +212,7 @@ pub fn clock_filter(
         time: c.t,
     };
 
-    let dispersion_correction = (c.t - peer.t) / ONE_OVER_PHI;
+    let dispersion_correction = multiply_by_phi(c.t - peer.t);
     peer.clock_filter
         .shift_and_insert(new_tuple, dispersion_correction);
 
