@@ -159,40 +159,6 @@ impl TemporaryList {
     }
 }
 
-pub struct System {
-    precision: f64,
-    poll: NtpDuration,
-    leap_indicator: NtpLeapIndicator,
-}
-
-impl System {
-    #[cfg(test)]
-    fn dummy() -> Self {
-        Self {
-            precision: 0.0,
-            poll: NtpDuration::default(),
-            leap_indicator: NtpLeapIndicator::NoWarning,
-        }
-    }
-}
-
-pub struct Peer {
-    clock_filter: ClockFilterContents,
-    t: NtpTimestamp,
-
-    jitter: f64,
-    dispersion: NtpDuration,
-
-    offset: NtpDuration,
-    delay: NtpDuration,
-
-    burst_counter: u32,
-}
-
-pub struct LocalClock {
-    t: NtpTimestamp,
-}
-
 pub struct PeerProcessStatistics {
     pub offset: NtpDuration,
     pub delay: NtpDuration,
@@ -275,8 +241,7 @@ mod test {
         let mut register = ClockFilterContents::new();
         register.register[0].offset = NtpDuration::from_seconds(42.0);
         let first = register.register[0];
-        let system = System::dummy();
-        let value = TemporaryList::from_clock_filter_contents(&register).jitter(&system, first);
+        let value = TemporaryList::from_clock_filter_contents(&register).jitter(first, 0.0);
 
         assert_eq!(value, 0.0)
     }
@@ -287,8 +252,7 @@ mod test {
         register.register[0].offset = NtpDuration::from_seconds(20.0);
         register.register[1].offset = NtpDuration::from_seconds(30.0);
         let first = register.register[0];
-        let system = System::dummy();
-        let value = register.jitter(&system, first);
+        let value = register.jitter(first, 0.0);
 
         // jitter is calculated relative to the first tuple
         assert!((value - 10.0).abs() < 1e-6)
@@ -301,8 +265,7 @@ mod test {
         register.register[1].offset = NtpDuration::from_seconds(20.0);
         register.register[2].offset = NtpDuration::from_seconds(30.0);
         let first = register.register[0];
-        let system = System::dummy();
-        let value = register.jitter(&system, first);
+        let value = register.jitter(first, 0.0);
 
         // jitter is calculated relative to the first tuple
         assert!((value - 5.0).abs() < 1e-6)
