@@ -97,27 +97,24 @@ impl NtpClock for UnixNtpClock {
     type Error = Error;
     fn now(&self) -> Result<ntp_proto::NtpTimestamp, Error> {
         let mut ntp_kapi_timex = EMPTY_TIMEX;
-        if unsafe { libc::ntp_adjtime(&mut ntp_kapi_timex as *mut _) } != -1 {
-            // We don't care here about the time status, so the other information
-            // in the return value of ntp_adjtime can be ignored
 
-            // Negative eras are completely valid, so any wrapping is
-            // perfectly reasonable here.
+        // We don't care here about the time status, so the non-error
+        // information in the return value of ntp_adjtime can be ignored
+        if unsafe { libc::ntp_adjtime(&mut ntp_kapi_timex as *mut _) } == -1 {
+            return Err(convert_errno());
+        }
+
+        // Negative eras are completely valid, so any wrapping is
+        // perfectly reasonable here.
+        Ok(NtpTimestamp::from_seconds_nanos_since_ntp_era(
+            (ntp_kapi_timex.time.tv_sec as u32).wrapping_add(EPOCH_OFFSET),
             if ntp_kapi_timex.status & libc::STA_NANO != 0 {
                 // We have nanosecond precision. use it
-                Ok(NtpTimestamp::from_seconds_nanos_since_ntp_era(
-                    (ntp_kapi_timex.time.tv_sec as u32).wrapping_add(EPOCH_OFFSET),
-                    ntp_kapi_timex.time.tv_usec as u32,
-                ))
+                ntp_kapi_timex.time.tv_usec as u32
             } else {
-                Ok(NtpTimestamp::from_seconds_nanos_since_ntp_era(
-                    (ntp_kapi_timex.time.tv_sec as u32).wrapping_add(EPOCH_OFFSET),
-                    (ntp_kapi_timex.time.tv_usec as u32) * 1000,
-                ))
-            }
-        } else {
-            Err(convert_errno())
-        }
+                (ntp_kapi_timex.time.tv_usec as u32) * 1000
+            },
+        ))
     }
 
     fn adjust_clock(offset: ntp_proto::NtpDuration, freq_offset_ppm: f64) -> Result<(), Error> {
@@ -145,8 +142,8 @@ impl NtpClock for UnixNtpClock {
         }
 
         if unsafe { libc::ntp_adjtime(&mut ntp_kapi_timex as *mut _) } != -1 {
-            // We don't care here about the time status, so the other information
-            // in the return value of ntp_adjtime can be ignored
+            // We don't care here about the time status, so the non-error
+            // information in the return value of ntp_adjtime can be ignored
             Ok(())
         } else {
             Err(convert_errno())
