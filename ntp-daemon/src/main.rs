@@ -25,7 +25,7 @@ async fn setup_connection() -> std::io::Result<UdpSocket> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let socket = setup_connection().await?;
-    let clock = UnixNtpClock;
+    let clock = UnixNtpClock::new();
 
     let initial = NtpHeader::new();
     let mut buf = initial.serialize();

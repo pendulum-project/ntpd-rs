@@ -68,7 +68,14 @@ const EMPTY_TIMEX: libc::timex = libc::timex {
 /// current time.
 // Implementation note: this is intentionally a bare struct, the NTP Clock defined
 // in the NTP KAPI is unique and no state is needed to interact with it.
-pub struct UnixNtpClock;
+#[derive(Debug, Default)]
+pub struct UnixNtpClock(());
+
+impl UnixNtpClock {
+    pub fn new() -> Self {
+        Self(())
+    }
+}
 
 // Convert those error numbers that can occur for the ntp_gettime and ntp_adjtimex calls
 fn convert_errno() -> Error {
@@ -153,7 +160,7 @@ mod tests {
 
     #[test]
     fn test_time_now_does_not_crash() {
-        let clock = UnixNtpClock;
+        let clock = UnixNtpClock::new();
         assert_ne!(
             clock.now().unwrap(),
             NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 0)
