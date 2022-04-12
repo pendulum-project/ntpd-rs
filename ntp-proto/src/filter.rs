@@ -11,6 +11,9 @@ use std::net::IpAddr;
 
 use crate::{packet::NtpLeapIndicator, NtpDuration, NtpHeader, NtpTimestamp};
 
+const MAX_STRATUM: u8 = 16;
+const MAX_DISTANCE: NtpDuration = NtpDuration::ONE;
+
 /// frequency tolerance (15 ppm)
 // const PHI: f64 = 15e-6;
 fn multiply_by_phi(duration: NtpDuration) -> NtpDuration {
@@ -258,6 +261,46 @@ impl Peer {
             + self.statistics.dispersion
             + multiply_by_phi(local_clock_time - self.time)
             + NtpDuration::from_seconds(self.statistics.jitter)
+    }
+
+    #[allow(dead_code)]
+    /// Test if association p is acceptable for synchronization
+    ///
+    /// Known as `accept` and `fit` in the specification.
+    fn accept_synchronization(
+        &self,
+        local_clock_time: NtpTimestamp,
+        system_poll: NtpDuration,
+    ) -> bool {
+        // A stratum error occurs if
+        //     1: the server has never been synchronized,
+        //     2: the server stratum is invalid
+        if !self.last_packet.leap.is_synchronized() || self.last_packet.stratum >= MAX_STRATUM {
+            return false;
+        }
+
+        //  A distance error occurs if the root distance exceeds the
+        //  distance threshold plus an increment equal to one poll interval.
+        let distance = self.root_distance(local_clock_time);
+
+        if distance > MAX_DISTANCE + multiply_by_phi(system_poll) {
+            return false;
+        }
+
+        // A loop error occurs if the remote peer is synchronized to the
+        // local peer or the remote peer is synchronized to the current
+        // system peer.  Note this is the behavior for IPv4; for IPv6
+        // the MD5 hash is used instead.
+
+        // TODO: figure out how to do loop detection
+        // does the peer use us as the source of its time
+        //        if system_reference_id == self.last_packet.reference_id {
+        //            return false;
+        //        }
+
+        // TODO: An unreachable error occurs if the server is unreachable.
+
+        true
     }
 }
 
