@@ -159,7 +159,7 @@ impl TemporaryList {
     }
 }
 
-pub struct PeerProcessStatistics {
+pub struct PeerStatistics {
     pub offset: NtpDuration,
     pub delay: NtpDuration,
 
@@ -177,7 +177,7 @@ pub fn clock_filter(
     leap_indicator: NtpLeapIndicator,
     mut clock_filter: ClockFilterContents,
     new_tuple: FilterTuple,
-) -> Option<PeerProcessStatistics> {
+) -> Option<PeerStatistics> {
     //    let new_tuple = FilterTuple {
     //        offset: clock_offset,
     //        delay: roundtrip_delay,
@@ -204,7 +204,7 @@ pub fn clock_filter(
     let dispersion = temporary_list.dispersion();
     let jitter = temporary_list.jitter(smallest_delay, system_precision);
 
-    let statistics = PeerProcessStatistics {
+    let statistics = PeerStatistics {
         offset,
         delay,
         dispersion,
