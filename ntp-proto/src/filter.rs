@@ -53,7 +53,10 @@ impl ClockFilterContents {
     /// The final (oldest) tuple is discarded
     fn shift_and_insert(&mut self, mut current: FilterTuple, dispersion_correction: NtpDuration) {
         for tuple in self.register.iter_mut() {
-            tuple.dispersion += dispersion_correction;
+            // adding the dispersion correction would make the dummy no longer a dummy
+            if !tuple.is_dummy() {
+                tuple.dispersion += dispersion_correction;
+            }
 
             std::mem::swap(&mut current, tuple);
         }
@@ -159,6 +162,7 @@ impl TemporaryList {
     }
 }
 
+#[derive(Debug)]
 pub struct PeerStatistics {
     pub offset: NtpDuration,
     pub delay: NtpDuration,
@@ -269,5 +273,69 @@ mod test {
 
         // jitter is calculated relative to the first tuple
         assert!((value - 5.0).abs() < 1e-6)
+    }
+
+    #[test]
+    fn clock_filter_defaults() {
+        let clock_filter_contents = ClockFilterContents::new();
+        let leap_indicator = NtpLeapIndicator::NoWarning;
+        let system_precision = 0.0;
+        let peer_time = NtpTimestamp::ZERO;
+
+        let new_tuple = FilterTuple {
+            offset: Default::default(),
+            delay: Default::default(),
+            dispersion: Default::default(),
+            time: Default::default(),
+        };
+
+        let statistics = clock_filter(
+            peer_time,
+            system_precision,
+            leap_indicator,
+            clock_filter_contents,
+            new_tuple,
+        );
+
+        // because "time" is zero, the same as all the dummy tuples,
+        // the "new" tuple is not newer and hence rejected
+        assert!(statistics.is_none());
+    }
+
+    #[test]
+    fn clock_filter_new() {
+        let clock_filter_contents = ClockFilterContents::new();
+        let leap_indicator = NtpLeapIndicator::NoWarning;
+        let system_precision = 0.0;
+        let peer_time = NtpTimestamp::ZERO;
+
+        let new_tuple = FilterTuple {
+            offset: NtpDuration::from_seconds(12.0),
+            delay: NtpDuration::from_seconds(14.0),
+            dispersion: Default::default(),
+            time: NtpTimestamp::from_bits((1i64 << 32).to_be_bytes()),
+        };
+
+        let statistics = clock_filter(
+            peer_time,
+            system_precision,
+            leap_indicator,
+            clock_filter_contents,
+            new_tuple,
+        );
+
+        let statistics = statistics.unwrap();
+
+        assert_eq!(statistics.offset, new_tuple.offset);
+        assert_eq!(statistics.delay, new_tuple.delay);
+        assert_eq!(statistics.filter_time, new_tuple.time);
+
+        // there is just one valid sample
+        assert_eq!(statistics.jitter, 0.0);
+
+        let temporary = TemporaryList::from_clock_filter_contents(&statistics.filter);
+
+        assert_eq!(temporary.register[0], new_tuple);
+        assert_eq!(temporary.valid_tuples(), &[new_tuple]);
     }
 }
