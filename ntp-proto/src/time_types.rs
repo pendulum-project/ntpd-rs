@@ -11,6 +11,8 @@ pub struct NtpTimestamp {
 const EPOCH_OFFSET: u64 = (70 * 365 + 17) * 86400;
 
 impl NtpTimestamp {
+    pub(crate) const ZERO: Self = Self { timestamp: 0 };
+
     pub(crate) const fn from_bits(bits: [u8; 8]) -> NtpTimestamp {
         NtpTimestamp {
             timestamp: u64::from_be_bytes(bits),
@@ -124,7 +126,19 @@ pub struct NtpDuration {
 }
 
 impl NtpDuration {
-    pub(crate) const fn from_bits_short(bits: [u8; 4]) -> NtpDuration {
+    pub(crate) const ZERO: Self = Self { duration: 0 };
+    pub(crate) const ONE: Self = Self { duration: 1 << 32 };
+
+    /// NtpDuration::from_seconds(16.0)
+    pub(crate) const MAX_DISPERSION: Self = Self {
+        duration: 68719476736,
+    };
+
+    /// NtpDuration::from_seconds(0.005)
+    #[allow(dead_code)]
+    pub(crate) const MIN_DISPERSION: Self = Self { duration: 21474836 };
+
+    pub(crate) const fn from_bits_short(bits: [u8; 4]) -> Self {
         NtpDuration {
             duration: (u32::from_be_bytes(bits) as i64) << 16,
         }
@@ -147,6 +161,22 @@ impl NtpDuration {
             false => ((self.duration & 0x0000FFFFFFFF0000) >> 16) as u32,
         }
         .to_be_bytes()
+    }
+
+    /// Convert to an f64; required for statistical calculations
+    /// (e.g. in clock filtering)
+    pub(crate) fn to_seconds(self) -> f64 {
+        // dividing by u32::MAX moves the decimal point to the right position
+        self.duration as f64 / u32::MAX as f64
+    }
+
+    pub(crate) fn from_seconds(seconds: f64) -> Self {
+        let i = seconds.floor();
+        let f = seconds - i;
+
+        let duration = (i as i64) << 32 | (f * u32::MAX as f64) as i64;
+
+        Self { duration }
     }
 
     #[cfg(test)]
@@ -368,4 +398,18 @@ mod tests {
     ntp_duration_scaling_test!(ntp_duration_scaling_u8, u8);
     ntp_duration_scaling_test!(ntp_duration_scaling_u16, u16);
     ntp_duration_scaling_test!(ntp_duration_scaling_u32, u32);
+
+    macro_rules! assert_eq_epsilon {
+        ($a:expr, $b:expr, $epsilon:expr) => {
+            assert!(($a - $b).abs() < $epsilon);
+        };
+    }
+
+    #[test]
+    fn duration_seconds_roundtrip() {
+        assert_eq_epsilon!(NtpDuration::from_seconds(0.0).to_seconds(), 0.0, 1e-9);
+        assert_eq_epsilon!(NtpDuration::from_seconds(1.0).to_seconds(), 1.0, 1e-9);
+        assert_eq_epsilon!(NtpDuration::from_seconds(1.5).to_seconds(), 1.5, 1e-9);
+        assert_eq_epsilon!(NtpDuration::from_seconds(2.0).to_seconds(), 2.0, 1e-9);
+    }
 }
