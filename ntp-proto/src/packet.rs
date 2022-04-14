@@ -9,13 +9,17 @@ pub enum NtpLeapIndicator {
 }
 
 impl NtpLeapIndicator {
+    // This function should only ever be called with 2 bit values
+    // (in the least significant position)
     fn from_bits(bits: u8) -> NtpLeapIndicator {
         match bits {
             0 => NtpLeapIndicator::NoWarning,
             1 => NtpLeapIndicator::Leap61,
             2 => NtpLeapIndicator::Leap59,
             3 => NtpLeapIndicator::Unknown,
-            _ => panic!("Internal error: Trying to interpret more than 2 bits as leap indicator"),
+            // This function should only ever be called from the packet parser
+            // with just two bits, so this really should be unreachable
+            _ => unreachable!(),
         }
     }
 
@@ -46,6 +50,8 @@ pub enum NtpAssociationMode {
 }
 
 impl NtpAssociationMode {
+    // This function should only ever be called with 3 bit values
+    // (in the least significant position)
     fn from_bits(bits: u8) -> NtpAssociationMode {
         match bits {
             0 => NtpAssociationMode::Reserved,
@@ -56,7 +62,9 @@ impl NtpAssociationMode {
             5 => NtpAssociationMode::Broadcast,
             6 => NtpAssociationMode::Control,
             7 => NtpAssociationMode::Private,
-            _ => panic!("Internal error: Trying to interpret more than 3 bits as association mode"),
+            // This function should only ever be called from the packet parser
+            // with just three bits, so this really should be unreachable
+            _ => unreachable!(),
         }
     }
 
@@ -77,7 +85,7 @@ impl NtpAssociationMode {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct NtpHeader {
     pub leap: NtpLeapIndicator,
-    pub version: u8,
+    version: u8,
     pub mode: NtpAssociationMode,
     pub stratum: u8,
     pub poll: i8,
@@ -115,6 +123,10 @@ impl NtpHeader {
         }
     }
 
+    pub fn version(&self) -> u8 {
+        self.version
+    }
+
     pub fn deserialize(data: &[u8; 48]) -> NtpHeader {
         NtpHeader {
             leap: NtpLeapIndicator::from_bits((data[0] & 0xC0) >> 6),
@@ -134,6 +146,8 @@ impl NtpHeader {
     }
 
     pub fn serialize(&self) -> [u8; 48] {
+        // Version should only ever be set internally in this module, so
+        // violations of this should never happen.
         assert!(self.version < 8);
 
         let root_delay = self.root_delay.to_bits_short();
