@@ -367,10 +367,10 @@ fn construct_survivors<'a>(
                 continue;
             }
 
-            let p = tuple.peer;
-            let metric = MAX_DISTANCE * p.stratum + p.root_distance(local_clock_time);
+            let peer = tuple.peer;
+            let metric = MAX_DISTANCE * peer.stratum + peer.root_distance(local_clock_time);
 
-            survivors.push(SurvivorTuple { peer: p, metric })
+            survivors.push(SurvivorTuple { peer, metric })
         }
     }
 
