@@ -9,7 +9,7 @@
 
 use crate::{packet::NtpLeapIndicator, NtpDuration, NtpHeader, NtpTimestamp};
 
-const MAX_STRATUM: u8 = 16;
+pub const MAX_STRATUM: u8 = 16;
 const MAX_DISTANCE: NtpDuration = NtpDuration::ONE;
 
 // TODO this should be 4 in production?!
@@ -19,7 +19,7 @@ const MIN_CLUSTER_SURVIVORS: usize = 3;
 
 /// frequency tolerance (15 ppm)
 // const PHI: f64 = 15e-6;
-fn multiply_by_phi(duration: NtpDuration) -> NtpDuration {
+pub fn multiply_by_phi(duration: NtpDuration) -> NtpDuration {
     (duration * 15) / 1_000_000
 }
 
@@ -186,11 +186,11 @@ pub struct PeerStatistics {
 }
 
 pub struct Peer {
-    statistics: PeerStatistics,
-    last_measurements: LastMeasurements,
-    last_packet: NtpHeader,
-    time: NtpTimestamp,
-    stratum: u8,
+    pub statistics: PeerStatistics,
+    pub last_measurements: LastMeasurements,
+    pub last_packet: NtpHeader,
+    pub time: NtpTimestamp,
+    pub stratum: u8,
 }
 
 pub enum Decision {
@@ -348,9 +348,9 @@ fn construct_candidate_list<'a>(
 }
 
 #[allow(dead_code)]
-struct SurvivorTuple<'a> {
-    peer: &'a Peer,
-    metric: NtpDuration,
+pub struct SurvivorTuple<'a> {
+    pub peer: &'a Peer,
+    pub metric: NtpDuration,
 }
 
 /// Collect the candidates within the correctness interval
@@ -486,7 +486,7 @@ fn cluster_algorithm(candidates: &mut Vec<SurvivorTuple>) {
 }
 
 #[allow(dead_code)]
-fn clock_select(
+pub fn clock_select(
     peers: &[Peer],
     local_clock_time: NtpTimestamp,
     system_poll: NtpDuration,
@@ -509,9 +509,9 @@ fn clock_select(
 }
 
 #[allow(dead_code)]
-struct ClockCombine {
-    offset: NtpDuration,
-    jitter: NtpDuration,
+pub struct ClockCombine {
+    pub offset: NtpDuration,
+    pub jitter: NtpDuration,
 }
 
 /// Combine the offsets of the clustering algorithm survivors
@@ -524,7 +524,7 @@ struct ClockCombine {
 /// be configured to avoid this algorithm by designating a
 /// preferred peer.
 #[allow(dead_code)]
-fn clock_combine<'a>(
+pub fn clock_combine<'a>(
     survivors: &'a [SurvivorTuple<'a>],
     local_clock_time: NtpTimestamp,
 ) -> ClockCombine {
