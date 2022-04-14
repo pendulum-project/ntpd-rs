@@ -11,6 +11,9 @@ use std::net::IpAddr;
 
 use crate::{packet::NtpLeapIndicator, NtpDuration, NtpHeader, NtpTimestamp};
 
+const MAX_STRATUM: u8 = 16;
+const MAX_DISTANCE: NtpDuration = NtpDuration::ONE;
+
 /// frequency tolerance (15 ppm)
 // const PHI: f64 = 15e-6;
 fn multiply_by_phi(duration: NtpDuration) -> NtpDuration {
@@ -259,6 +262,163 @@ impl Peer {
             + multiply_by_phi(local_clock_time - self.time)
             + NtpDuration::from_seconds(self.statistics.jitter)
     }
+
+    #[allow(dead_code)]
+    /// Test if association p is acceptable for synchronization
+    ///
+    /// Known as `accept` and `fit` in the specification.
+    fn accept_synchronization(
+        &self,
+        local_clock_time: NtpTimestamp,
+        system_poll: NtpDuration,
+    ) -> bool {
+        // A stratum error occurs if
+        //     1: the server has never been synchronized,
+        //     2: the server stratum is invalid
+        if !self.last_packet.leap.is_synchronized() || self.last_packet.stratum >= MAX_STRATUM {
+            return false;
+        }
+
+        //  A distance error occurs if the root distance exceeds the
+        //  distance threshold plus an increment equal to one poll interval.
+        let distance = self.root_distance(local_clock_time);
+
+        if distance > MAX_DISTANCE + multiply_by_phi(system_poll) {
+            return false;
+        }
+
+        // A loop error occurs if the remote peer is synchronized to the
+        // local peer or the remote peer is synchronized to the current
+        // system peer.  Note this is the behavior for IPv4; for IPv6
+        // the MD5 hash is used instead.
+
+        // TODO: figure out how to do loop detection
+        // does the peer use us as the source of its time
+        //        if system_reference_id == self.last_packet.reference_id {
+        //            return false;
+        //        }
+
+        // TODO: An unreachable error occurs if the server is unreachable.
+
+        true
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(i8)]
+enum EndpointType {
+    Upper = 1,
+    Middle = 0,
+    Lower = -1,
+}
+
+#[allow(dead_code)]
+struct CandidateTuple<'a> {
+    peer: &'a Peer,
+    endpoint_type: EndpointType,
+    /// Correctness interval edge
+    edge: NtpDuration,
+}
+
+/// First, construct the chime list of tuples (p, type, edge) as
+/// shown below, then sort the list by edge from lowest to
+/// highest.
+#[allow(dead_code)]
+fn construct_candidate_list<'a>(
+    valid_associations: impl Iterator<Item = &'a Peer>,
+    local_clock_time: NtpTimestamp,
+) -> Vec<CandidateTuple<'a>> {
+    let mut candidate_list = Vec::new();
+
+    for peer in valid_associations {
+        let offset = peer.statistics.offset;
+
+        let tuples = [
+            CandidateTuple {
+                peer,
+                endpoint_type: EndpointType::Upper,
+                edge: offset + peer.root_distance(local_clock_time),
+            },
+            CandidateTuple {
+                peer,
+                endpoint_type: EndpointType::Middle,
+                edge: offset,
+            },
+            CandidateTuple {
+                peer,
+                endpoint_type: EndpointType::Lower,
+                edge: offset - peer.root_distance(local_clock_time),
+            },
+        ];
+
+        candidate_list.extend(tuples)
+    }
+
+    candidate_list.sort_by(|a, b| a.edge.cmp(&b.edge));
+
+    candidate_list
+}
+
+/// Find the largest contiguous intersection of correctness
+/// intervals.  Allow is the number of allowed falsetickers;
+/// found is the number of midpoints.  Note that the edge values
+/// are limited to the range +-(2 ^ 30) < +-2e9 by the timestamp
+/// calculations.
+#[allow(dead_code)]
+fn find_interval(chime_list: &[CandidateTuple]) -> (NtpDuration, NtpDuration) {
+    let n = chime_list.len();
+
+    let mut low = NtpDuration::ONE * 2_000_000_000;
+    let mut high = low * -164;
+
+    for allow in (0..).take_while(|allow| 2 * allow < n) {
+        // falsetickers found in the current iteration
+        let mut found = 0;
+        let mut chime = 0;
+
+        // Scan the chime list from lowest to highest to find the lower endpoint.
+        for tuple in chime_list {
+            chime -= tuple.endpoint_type as i32;
+            if chime >= (n - found) as i32 {
+                low = tuple.edge;
+                break;
+            }
+
+            if let EndpointType::Middle = tuple.endpoint_type {
+                found += 1;
+            }
+        }
+
+        // Scan the chime list from highest to lowest to find the upper endpoint.
+        chime = 0;
+        for tuple in chime_list.iter().rev() {
+            chime += tuple.endpoint_type as i32;
+            if chime >= (n - found) as i32 {
+                high = tuple.edge;
+                break;
+            }
+
+            if let EndpointType::Middle = tuple.endpoint_type {
+                found += 1;
+            }
+        }
+
+        //  If the number of midpoints is greater than the number
+        //  of allowed falsetickers, the intersection contains at
+        //  least one truechimer with no midpoint.  If so,
+        //  increment the number of allowed falsetickers and go
+        //  around again.  If not and the intersection is
+        //  non-empty, declare success.
+        if found > allow {
+            continue;
+        }
+
+        if high > low {
+            break;
+        }
+    }
+
+    (low, high)
 }
 
 #[cfg(test)]

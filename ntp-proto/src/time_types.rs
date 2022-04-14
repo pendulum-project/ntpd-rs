@@ -127,6 +127,7 @@ pub struct NtpDuration {
 
 impl NtpDuration {
     pub(crate) const ZERO: Self = Self { duration: 0 };
+    pub(crate) const ONE: Self = Self { duration: 1 << 32 };
 
     /// NtpDuration::from_seconds(16.0)
     pub(crate) const MAX_DISPERSION: Self = Self {
