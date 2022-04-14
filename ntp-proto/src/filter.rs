@@ -7,8 +7,6 @@
 //
 //      https://datatracker.ietf.org/doc/html/rfc5905#appendix-A.5.2
 
-use std::net::IpAddr;
-
 use crate::{packet::NtpLeapIndicator, NtpDuration, NtpHeader, NtpTimestamp};
 
 const MAX_STRATUM: u8 = 16;
