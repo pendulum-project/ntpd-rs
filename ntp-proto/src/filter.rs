@@ -377,10 +377,10 @@ fn filter_survivor<'a>(
     if candidate.edge < low || candidate.edge > high {
         None
     } else {
-        let p = candidate.peer;
-        let metric = MAX_DISTANCE * p.stratum + p.root_distance(local_clock_time);
+        let peer = candidate.peer;
+        let metric = MAX_DISTANCE * peer.stratum + peer.root_distance(local_clock_time);
 
-        Some(SurvivorTuple { p, metric })
+        Some(SurvivorTuple { peer, metric })
     }
 }
 
