@@ -368,36 +368,32 @@ fn construct_survivors<'a>(
     chime_list: &[CandidateTuple<'a>],
     local_clock_time: NtpTimestamp,
 ) -> Vec<SurvivorTuple<'a>> {
-    let (low, high) = find_interval(chime_list);
-
     let mut survivors = Vec::new();
 
-    for tuple in chime_list {
-        if tuple.edge < low || tuple.edge > high {
-            continue;
+    if let Some((low, high)) = find_interval(chime_list) {
+        for tuple in chime_list {
+            if tuple.edge < low || tuple.edge > high {
+                continue;
+            }
+
+            let p = tuple.peer;
+            let metric = MAX_DISTANCE * p.stratum + p.root_distance(local_clock_time);
+
+            survivors.push(SurvivorTuple { p, metric })
         }
-
-        let p = tuple.peer;
-        let metric = MAX_DISTANCE * p.stratum + p.root_distance(local_clock_time);
-
-        survivors.push(SurvivorTuple { p, metric })
     }
 
     survivors
 }
 
-/// Find the largest contiguous intersection of correctness
-/// intervals.  Allow is the number of allowed falsetickers;
-/// found is the number of midpoints.  Note that the edge values
-/// are limited to the range +-(2 ^ 30) < +-2e9 by the timestamp
-/// calculations.
 #[allow(dead_code)]
-fn find_interval(chime_list: &[CandidateTuple]) -> (NtpDuration, NtpDuration) {
+fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDuration)> {
     let n = chime_list.len();
 
     let mut low = None;
     let mut high = None;
 
+    // allow is the number of allowed falsetickers
     for allow in (0..).take_while(|allow| 2 * allow < n) {
         let mut found = 0; // variable "d", falsetickers found in the current iteration
         let mut chime = 0; // variable "c"
@@ -405,7 +401,9 @@ fn find_interval(chime_list: &[CandidateTuple]) -> (NtpDuration, NtpDuration) {
         // Scan the chime list from lowest to highest to find the lower endpoint.
         for tuple in chime_list {
             chime -= tuple.endpoint_type as i32;
-            if chime >= (n - found) as i32 {
+
+            // the code skeleton uses `n - found` here, which is wrong!
+            if chime >= (n - allow) as i32 {
                 low = Some(tuple.edge);
                 break;
             }
@@ -419,7 +417,9 @@ fn find_interval(chime_list: &[CandidateTuple]) -> (NtpDuration, NtpDuration) {
         chime = 0;
         for tuple in chime_list.iter().rev() {
             chime += tuple.endpoint_type as i32;
-            if chime >= (n - found) as i32 {
+
+            // the code skeleton uses `n - found` here, which is wrong!
+            if chime >= (n - allow) as i32 {
                 high = Some(tuple.edge);
                 break;
             }
@@ -438,17 +438,12 @@ fn find_interval(chime_list: &[CandidateTuple]) -> (NtpDuration, NtpDuration) {
         }
 
         //  If the intersection is non-empty, declare success.
-        match (high, low) {
-            (Some(h), Some(l)) if h > l => {
-                break;
-            }
-            _ => {
-                continue;
-            }
+        if let (Some(l), Some(h)) = (low, high) {
+            return Some((l, h));
         }
     }
 
-    (low.unwrap(), high.unwrap())
+    None
 }
 
 #[cfg(test)]
