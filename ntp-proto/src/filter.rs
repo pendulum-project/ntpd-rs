@@ -200,6 +200,7 @@ pub struct Peer {
     last_measurements: LastMeasurements,
     last_packet: NtpHeader,
     time: NtpTimestamp,
+    stratum: u8,
 }
 
 pub enum Decision {
@@ -320,9 +321,6 @@ struct CandidateTuple<'a> {
     edge: NtpDuration,
 }
 
-/// First, construct the chime list of tuples (p, type, edge) as
-/// shown below, then sort the list by edge from lowest to
-/// highest.
 #[allow(dead_code)]
 fn construct_candidate_list<'a>(
     valid_associations: impl Iterator<Item = &'a Peer>,
@@ -359,6 +357,35 @@ fn construct_candidate_list<'a>(
     candidate_list
 }
 
+struct SurvivorTuple<'a> {
+    p: &'a Peer,
+    metric: NtpDuration,
+}
+
+/// Collect the candidates within the correctness interval
+#[allow(dead_code)]
+fn construct_survivors<'a>(
+    chime_list: &[CandidateTuple<'a>],
+    local_clock_time: NtpTimestamp,
+) -> Vec<SurvivorTuple<'a>> {
+    let (low, high) = find_interval(chime_list);
+
+    let mut survivors = Vec::new();
+
+    for tuple in chime_list {
+        if tuple.edge < low || tuple.edge > high {
+            continue;
+        }
+
+        let p = tuple.peer;
+        let metric = MAX_DISTANCE * p.stratum + p.root_distance(local_clock_time);
+
+        survivors.push(SurvivorTuple { p, metric })
+    }
+
+    survivors
+}
+
 /// Find the largest contiguous intersection of correctness
 /// intervals.  Allow is the number of allowed falsetickers;
 /// found is the number of midpoints.  Note that the edge values
@@ -368,19 +395,18 @@ fn construct_candidate_list<'a>(
 fn find_interval(chime_list: &[CandidateTuple]) -> (NtpDuration, NtpDuration) {
     let n = chime_list.len();
 
-    let mut low = NtpDuration::ONE * 2_000_000_000;
-    let mut high = low * -164;
+    let mut low = None;
+    let mut high = None;
 
     for allow in (0..).take_while(|allow| 2 * allow < n) {
-        // falsetickers found in the current iteration
-        let mut found = 0;
-        let mut chime = 0;
+        let mut found = 0; // variable "d", falsetickers found in the current iteration
+        let mut chime = 0; // variable "c"
 
         // Scan the chime list from lowest to highest to find the lower endpoint.
         for tuple in chime_list {
             chime -= tuple.endpoint_type as i32;
             if chime >= (n - found) as i32 {
-                low = tuple.edge;
+                low = Some(tuple.edge);
                 break;
             }
 
@@ -394,7 +420,7 @@ fn find_interval(chime_list: &[CandidateTuple]) -> (NtpDuration, NtpDuration) {
         for tuple in chime_list.iter().rev() {
             chime += tuple.endpoint_type as i32;
             if chime >= (n - found) as i32 {
-                high = tuple.edge;
+                high = Some(tuple.edge);
                 break;
             }
 
@@ -405,20 +431,24 @@ fn find_interval(chime_list: &[CandidateTuple]) -> (NtpDuration, NtpDuration) {
 
         //  If the number of midpoints is greater than the number
         //  of allowed falsetickers, the intersection contains at
-        //  least one truechimer with no midpoint.  If so,
-        //  increment the number of allowed falsetickers and go
-        //  around again.  If not and the intersection is
-        //  non-empty, declare success.
+        //  least one truechimer with no midpoint.  If so, increment
+        //  the number of allowed falsetickers and go around again.
         if found > allow {
             continue;
         }
 
-        if high > low {
-            break;
+        //  If the intersection is non-empty, declare success.
+        match (high, low) {
+            (Some(h), Some(l)) if h > l => {
+                break;
+            }
+            _ => {
+                continue;
+            }
         }
     }
 
-    (low, high)
+    (low.unwrap(), high.unwrap())
 }
 
 #[cfg(test)]
@@ -493,6 +523,7 @@ mod test {
             last_measurements: Default::default(),
             last_packet: Default::default(),
             time: Default::default(),
+            stratum: Default::default(),
         };
 
         let update = peer.clock_filter(new_tuple, leap_indicator, system_precision);
@@ -519,6 +550,7 @@ mod test {
             last_measurements: Default::default(),
             last_packet: Default::default(),
             time: Default::default(),
+            stratum: Default::default(),
         };
 
         let update = peer.clock_filter(new_tuple, leap_indicator, system_precision);
