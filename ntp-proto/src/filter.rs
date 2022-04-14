@@ -182,19 +182,6 @@ pub struct PeerStatistics {
     pub jitter: f64,
 }
 
-#[derive(Debug)]
-struct ReferenceId(u32);
-
-#[allow(dead_code)]
-#[derive(Debug)]
-struct PeerConfiguration {
-    source_address: IpAddr,
-    source_port: u16,
-    destination_address: IpAddr,
-    destination_port: u16,
-    reference_id: ReferenceId,
-}
-
 pub struct Peer {
     statistics: PeerStatistics,
     last_measurements: LastMeasurements,
