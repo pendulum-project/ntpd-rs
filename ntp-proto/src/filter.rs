@@ -486,12 +486,11 @@ fn cluster_algorithm(candidates: &mut Vec<SurvivorTuple>) {
 }
 
 #[allow(dead_code)]
-fn clock_select<'a>(
-    old_system_peer: &'a Peer,
-    peers: &'a [Peer],
+fn clock_select(
+    peers: &[Peer],
     local_clock_time: NtpTimestamp,
     system_poll: NtpDuration,
-) -> Option<&'a Peer> {
+) -> Option<Vec<SurvivorTuple>> {
     let valid_associations = peers
         .iter()
         .filter(|p| p.accept_synchronization(local_clock_time, system_poll));
@@ -506,18 +505,7 @@ fn clock_select<'a>(
 
     cluster_algorithm(&mut survivors);
 
-    // Pick the best clock.  If the old system peer is on the list
-    // and at the same stratum as the first survivor on the list,
-    // then don't do a clock hop.  Otherwise, select the first
-    // survivor on the list as the new system peer.
-    let first_survivor = survivors[0].peer;
-
-    // TODO we don't do the "If the old system peer is on the list" check yet!
-    if old_system_peer.stratum == first_survivor.stratum {
-        Some(old_system_peer)
-    } else {
-        Some(first_survivor)
-    }
+    Some(survivors)
 }
 
 #[cfg(test)]
