@@ -26,6 +26,7 @@ struct System {
 }
 
 impl System {
+    #[allow(dead_code)]
     fn clock_update(
         &mut self,
         peers: &[Peer],
@@ -112,6 +113,7 @@ impl System {
     }
 }
 
+#[allow(dead_code)]
 #[repr(u8)]
 enum LocalClockCode {
     Ignore = 0,
@@ -120,6 +122,6 @@ enum LocalClockCode {
     Panic = 3,
 }
 
-fn local_clock(peer: &Peer, system_offset: NtpDuration) -> LocalClockCode {
+fn local_clock(_peer: &Peer, _system_offset: NtpDuration) -> LocalClockCode {
     todo!()
 }
