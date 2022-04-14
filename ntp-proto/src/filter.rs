@@ -387,6 +387,7 @@ fn construct_survivors<'a>(
     survivors
 }
 
+/// Find the largest contiguous intersection of correctness intervals.
 #[allow(dead_code)]
 fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDuration)> {
     let n = chime_list.len();
