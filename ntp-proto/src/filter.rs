@@ -14,6 +14,9 @@ use crate::{packet::NtpLeapIndicator, NtpDuration, NtpHeader, NtpTimestamp};
 const MAX_STRATUM: u8 = 16;
 const MAX_DISTANCE: NtpDuration = NtpDuration::ONE;
 
+// TODO this should be 4 in production?!
+const NSANE: usize = 1;
+
 /// frequency tolerance (15 ppm)
 // const PHI: f64 = 15e-6;
 fn multiply_by_phi(duration: NtpDuration) -> NtpDuration {
@@ -346,7 +349,7 @@ fn construct_candidate_list<'a>(
 
 #[allow(dead_code)]
 struct SurvivorTuple<'a> {
-    p: &'a Peer,
+    peer: &'a Peer,
     metric: NtpDuration,
 }
 
@@ -367,7 +370,7 @@ fn construct_survivors<'a>(
             let p = tuple.peer;
             let metric = MAX_DISTANCE * p.stratum + p.root_distance(local_clock_time);
 
-            survivors.push(SurvivorTuple { p, metric })
+            survivors.push(SurvivorTuple { peer: p, metric })
         }
     }
 
@@ -433,6 +436,90 @@ fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDurat
     }
 
     None
+}
+
+/// Discard the survivor with maximum selection jitter until a termination condition is met.
+fn cluster_algorithm(candidates: &mut Vec<SurvivorTuple>) {
+    // sort the candidates by increasing lambda_p (the merit factor)
+    candidates.sort_by(|a, b| a.metric.cmp(&b.metric));
+
+    // let NMIN be the minimum required number of survivors.
+    const NMIN: usize = 1;
+
+    let mut qmax_index = 0;
+
+    let mut min_peer_jitter = 2.0e9;
+    let mut max_selection_jitter = -2.0e9;
+
+    loop {
+        // for each candidate
+        for (index, candidate) in candidates.iter().enumerate() {
+            let p = candidate.peer;
+
+            min_peer_jitter = p.statistics.jitter.min(min_peer_jitter);
+
+            // compute the selection jitter
+            let selection_jitter = candidates
+                .iter()
+                .map(|q| p.statistics.offset - q.peer.statistics.offset)
+                .map(|v| v.to_seconds().powi(2))
+                .sum::<f64>()
+                .sqrt();
+
+            if selection_jitter > max_selection_jitter {
+                qmax_index = index;
+                max_selection_jitter = selection_jitter;
+            }
+        }
+
+        // If the maximum selection jitter is less than the
+        // minimum peer jitter, then tossing out more survivors
+        // will not lower the minimum peer jitter, so we might
+        // as well stop.  To make sure a few survivors are left
+        // for the clustering algorithm to chew on, we also stop
+        // if the number of survivors is less than or equal to
+        // NMIN (3).
+        if max_selection_jitter < min_peer_jitter || candidates.len() <= NMIN {
+            return;
+        }
+
+        // delete the survivor qmax (the one with the highest jitter) and go around again
+        candidates.remove(qmax_index);
+    }
+}
+
+#[allow(dead_code)]
+fn clock_select<'a>(
+    old_system_peer: &'a Peer,
+    peers: &'a [Peer],
+    local_clock_time: NtpTimestamp,
+    system_poll: NtpDuration,
+) -> Option<&'a Peer> {
+    let valid_associations = peers
+        .iter()
+        .filter(|p| p.accept_synchronization(local_clock_time, system_poll));
+
+    let candidates = construct_candidate_list(valid_associations, local_clock_time);
+
+    let mut survivors = construct_survivors(&candidates, local_clock_time);
+
+    if survivors.len() < NSANE {
+        return None;
+    }
+
+    cluster_algorithm(&mut survivors);
+
+    // Pick the best clock.  If the old system peer is on the list
+    // and at the same stratum as the first survivor on the list,
+    // then don't do a clock hop.  Otherwise, select the first
+    // survivor on the list as the new system peer.
+    let first_survivor = survivors[0].peer;
+
+    if old_system_peer.stratum == first_survivor.stratum {
+        Some(old_system_peer)
+    } else {
+        Some(first_survivor)
+    }
 }
 
 #[cfg(test)]
