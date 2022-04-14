@@ -179,6 +179,13 @@ impl NtpDuration {
         Self { duration }
     }
 
+    #[must_use]
+    pub(crate) const fn abs(self) -> Self {
+        Self {
+            duration: self.duration.abs(),
+        }
+    }
+
     #[cfg(test)]
     pub(crate) const fn from_fixed_int(duration: i64) -> NtpDuration {
         NtpDuration { duration }
@@ -411,5 +418,14 @@ mod tests {
         assert_eq_epsilon!(NtpDuration::from_seconds(1.0).to_seconds(), 1.0, 1e-9);
         assert_eq_epsilon!(NtpDuration::from_seconds(1.5).to_seconds(), 1.5, 1e-9);
         assert_eq_epsilon!(NtpDuration::from_seconds(2.0).to_seconds(), 2.0, 1e-9);
+    }
+
+    #[test]
+    fn duration_abs() {
+        let five = NtpDuration::ONE * 5i64;
+
+        assert_eq!(five, five.abs());
+        assert_ne!(five, five * -1i64);
+        assert_eq!(five, (five * -1i64).abs());
     }
 }
