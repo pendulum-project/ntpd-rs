@@ -356,7 +356,7 @@ struct SurvivorTuple<'a> {
 /// Collect the candidates within the correctness interval
 #[allow(dead_code)]
 fn construct_survivors<'a>(
-    chime_list: &'a [CandidateTuple<'a>],
+    chime_list: &[CandidateTuple<'a>],
     local_clock_time: NtpTimestamp,
 ) -> Vec<SurvivorTuple<'a>> {
     match find_interval(chime_list) {
@@ -369,7 +369,7 @@ fn construct_survivors<'a>(
 }
 
 fn filter_survivor<'a>(
-    candidate: &'a CandidateTuple<'a>,
+    candidate: &CandidateTuple<'a>,
     local_clock_time: NtpTimestamp,
     low: NtpDuration,
     high: NtpDuration,
