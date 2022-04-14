@@ -357,6 +357,7 @@ fn construct_candidate_list<'a>(
     candidate_list
 }
 
+#[allow(dead_code)]
 struct SurvivorTuple<'a> {
     p: &'a Peer,
     metric: NtpDuration,
