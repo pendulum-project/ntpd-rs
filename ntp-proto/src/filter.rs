@@ -356,25 +356,32 @@ struct SurvivorTuple<'a> {
 /// Collect the candidates within the correctness interval
 #[allow(dead_code)]
 fn construct_survivors<'a>(
-    chime_list: &[CandidateTuple<'a>],
+    chime_list: &'a [CandidateTuple<'a>],
     local_clock_time: NtpTimestamp,
 ) -> Vec<SurvivorTuple<'a>> {
-    let mut survivors = Vec::new();
-
-    if let Some((low, high)) = find_interval(chime_list) {
-        for tuple in chime_list {
-            if tuple.edge < low || tuple.edge > high {
-                continue;
-            }
-
-            let peer = tuple.peer;
-            let metric = MAX_DISTANCE * peer.stratum + peer.root_distance(local_clock_time);
-
-            survivors.push(SurvivorTuple { peer, metric })
-        }
+    match find_interval(chime_list) {
+        Some((low, high)) => chime_list
+            .iter()
+            .filter_map(|candidate| filter_survivor(candidate, local_clock_time, low, high))
+            .collect(),
+        None => vec![],
     }
+}
 
-    survivors
+fn filter_survivor<'a>(
+    candidate: &'a CandidateTuple<'a>,
+    local_clock_time: NtpTimestamp,
+    low: NtpDuration,
+    high: NtpDuration,
+) -> Option<SurvivorTuple<'a>> {
+    if candidate.edge < low || candidate.edge > high {
+        None
+    } else {
+        let p = candidate.peer;
+        let metric = MAX_DISTANCE * p.stratum + p.root_distance(local_clock_time);
+
+        Some(SurvivorTuple { p, metric })
+    }
 }
 
 /// Find the largest contiguous intersection of correctness intervals.
