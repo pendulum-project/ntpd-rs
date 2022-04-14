@@ -13,7 +13,9 @@ const MAX_STRATUM: u8 = 16;
 const MAX_DISTANCE: NtpDuration = NtpDuration::ONE;
 
 // TODO this should be 4 in production?!
-const NSANE: usize = 1;
+const MIN_INTERSECTION_SURVIVORS: usize = 1;
+
+const MIN_CLUSTER_SURVIVORS: usize = 3;
 
 /// frequency tolerance (15 ppm)
 // const PHI: f64 = 15e-6;
@@ -441,9 +443,6 @@ fn cluster_algorithm(candidates: &mut Vec<SurvivorTuple>) {
     // sort the candidates by increasing lambda_p (the merit factor)
     candidates.sort_by(|a, b| a.metric.cmp(&b.metric));
 
-    // let NMIN be the minimum required number of survivors.
-    const NMIN: usize = 1;
-
     let mut qmax_index = 0;
 
     let mut min_peer_jitter = 2.0e9;
@@ -477,7 +476,7 @@ fn cluster_algorithm(candidates: &mut Vec<SurvivorTuple>) {
         // for the clustering algorithm to chew on, we also stop
         // if the number of survivors is less than or equal to
         // NMIN (3).
-        if max_selection_jitter < min_peer_jitter || candidates.len() <= NMIN {
+        if max_selection_jitter < min_peer_jitter || candidates.len() <= MIN_CLUSTER_SURVIVORS {
             return;
         }
 
@@ -501,7 +500,7 @@ fn clock_select<'a>(
 
     let mut survivors = construct_survivors(&candidates, local_clock_time);
 
-    if survivors.len() < NSANE {
+    if survivors.len() < MIN_INTERSECTION_SURVIVORS {
         return None;
     }
 
