@@ -515,6 +515,7 @@ fn clock_select<'a>(
     // survivor on the list as the new system peer.
     let first_survivor = survivors[0].peer;
 
+    // TODO we don't do the "If the old system peer is on the list" check yet!
     if old_system_peer.stratum == first_survivor.stratum {
         Some(old_system_peer)
     } else {
