@@ -508,6 +508,46 @@ fn clock_select(
     Some(survivors)
 }
 
+#[allow(dead_code)]
+struct ClockCombine {
+    offset: NtpDuration,
+    jitter: NtpDuration,
+}
+
+/// Combine the offsets of the clustering algorithm survivors
+/// using a weighted average with weight determined by the root
+/// distance.  Compute the selection jitter as the weighted RMS
+/// difference between the first survivor and the remaining
+/// survivors.  In some cases, the inherent clock jitter can be
+/// reduced by not using this algorithm, especially when frequent
+/// clockhopping is involved.  The reference implementation can
+/// be configured to avoid this algorithm by designating a
+/// preferred peer.
+#[allow(dead_code)]
+fn clock_combine<'a>(
+    survivors: &'a [SurvivorTuple<'a>],
+    local_clock_time: NtpTimestamp,
+) -> ClockCombine {
+    let mut y = 0.0;
+    let mut z = 0.0;
+    let mut w = 0.0;
+
+    let first_offset = survivors[0].peer.statistics.offset;
+
+    for tuple in survivors {
+        let peer = tuple.peer;
+        let x = peer.root_distance(local_clock_time).to_seconds();
+        y += 1.0 / x;
+        z += peer.statistics.offset.to_seconds() / x;
+        w += (peer.statistics.offset - first_offset).to_seconds().powi(2) / x;
+    }
+
+    let offset = NtpDuration::from_seconds(z / y);
+    let jitter = NtpDuration::from_seconds((w / y).sqrt());
+
+    ClockCombine { offset, jitter }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
