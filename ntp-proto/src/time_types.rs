@@ -183,6 +183,14 @@ impl NtpDuration {
         Self::from_seconds(log2d(input))
     }
 
+    #[must_use]
+    pub(crate) const fn divided_by(self, divisor: i64) -> Self {
+        // No overflow risks for division
+        Self {
+            duration: self.duration / divisor,
+        }
+    }
+
     #[cfg(test)]
     pub(crate) const fn from_fixed_int(duration: i64) -> NtpDuration {
         NtpDuration { duration }
