@@ -179,9 +179,23 @@ impl NtpDuration {
         Self { duration }
     }
 
+    pub(crate) fn from_exponent(input: i8) -> Self {
+        Self::from_seconds(log2d(input))
+    }
+
     #[cfg(test)]
     pub(crate) const fn from_fixed_int(duration: i64) -> NtpDuration {
         NtpDuration { duration }
+    }
+}
+
+fn log2d(input: i8) -> f64 {
+    if input < 0 {
+        // 1. / (1L << -(a))
+        1.0 / (1i64 << -input) as f64
+    } else {
+        // 1L << (a)
+        (1i64 << input) as f64
     }
 }
 
