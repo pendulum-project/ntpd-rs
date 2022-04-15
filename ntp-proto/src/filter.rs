@@ -209,12 +209,24 @@ pub struct Peer {
     out_date: NtpTimestamp,
     next_date: NtpTimestamp,
 
-    /// Used to determine whether the server is reachable and the data are fresh
-    /// The register is shifted left by one bit when a packet is sent and the
-    /// rightmost bit is set to zero.  As valid packets arrive, the rightmost bit is set to one.
-    /// If the register contains any nonzero bits, the server is considered reachable;
-    /// otherwise, it is unreachable.
-    reach: u8,
+    reach: Reach,
+}
+
+/// Used to determine whether the server is reachable and the data are fresh
+/// The register is shifted left by one bit when a packet is sent and the
+/// rightmost bit is set to zero.  As valid packets arrive, the rightmost bit is set to one.
+/// If the register contains any nonzero bits, the server is considered reachable;
+/// otherwise, it is unreachable.
+struct Reach(u8);
+
+impl Reach {
+    fn is_reachable(&self) -> bool {
+        self.0 != 0
+    }
+
+    fn update(&mut self) {
+        self.0 |= 1;
+    }
 }
 
 pub enum Decision {
@@ -350,7 +362,7 @@ impl Peer {
         // host_poll
         let poll_interval = self.host_poll;
         self.poll_update(local_clock_time, poll_interval);
-        self.reach |= 1;
+        self.reach.update();
 
         // Calculate offset, delay and dispersion, then pass to the
         // clock filter.  Note carefully the implied processing.  The
