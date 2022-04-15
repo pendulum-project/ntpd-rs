@@ -9,7 +9,7 @@
 
 use std::net::IpAddr;
 
-use crate::{packet::NtpLeapIndicator, NtpDuration, NtpHeader, NtpTimestamp};
+use crate::{packet::NtpLeapIndicator, NtpDuration, NtpHeader, NtpTimestamp, ReferenceId};
 
 const MAX_STRATUM: u8 = 16;
 const MAX_DISTANCE: NtpDuration = NtpDuration::ONE;
@@ -182,9 +182,6 @@ pub struct PeerStatistics {
     pub jitter: f64,
 }
 
-#[derive(Debug)]
-struct ReferenceId(u32);
-
 #[allow(dead_code)]
 #[derive(Debug)]
 struct PeerConfiguration {
@@ -201,6 +198,9 @@ pub struct Peer {
     last_packet: NtpHeader,
     time: NtpTimestamp,
     stratum: u8,
+    #[allow(dead_code)]
+    peer_id: ReferenceId,
+    our_id: ReferenceId,
 }
 
 pub enum Decision {
@@ -288,16 +288,13 @@ impl Peer {
             return false;
         }
 
-        // A loop error occurs if the remote peer is synchronized to the
-        // local peer or the remote peer is synchronized to the current
-        // system peer.  Note this is the behavior for IPv4; for IPv6
-        // the MD5 hash is used instead.
-
-        // TODO: figure out how to do loop detection
-        // does the peer use us as the source of its time
-        //        if system_reference_id == self.last_packet.reference_id {
-        //            return false;
-        //        }
+        // Detect whether the remote uses us as their main time reference.
+        // if so, we shouldn't sync to them as that would create a loop.
+        // Note, this can only ever be an issue if the peer is not using
+        // hardware as its source, so ignore reference_id if stratum is 1.
+        if self.last_packet.stratum != 1 && self.last_packet.reference_id == self.our_id {
+            return false;
+        }
 
         // TODO: An unreachable error occurs if the server is unreachable.
 
@@ -459,6 +456,18 @@ fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDurat
 mod test {
     use super::*;
 
+    fn default_peer() -> Peer {
+        Peer {
+            statistics: Default::default(),
+            last_measurements: Default::default(),
+            last_packet: Default::default(),
+            time: Default::default(),
+            peer_id: ReferenceId::from_int(0),
+            our_id: ReferenceId::from_int(0),
+            stratum: 0,
+        }
+    }
+
     #[test]
     fn dispersion_of_dummys() {
         // The observer should note (a) if all stages contain the dummy tuple
@@ -522,13 +531,7 @@ mod test {
             time: Default::default(),
         };
 
-        let mut peer = Peer {
-            statistics: Default::default(),
-            last_measurements: Default::default(),
-            last_packet: Default::default(),
-            time: Default::default(),
-            stratum: Default::default(),
-        };
+        let mut peer = default_peer();
 
         let update = peer.clock_filter(new_tuple, leap_indicator, system_precision);
 
@@ -549,13 +552,7 @@ mod test {
             time: NtpTimestamp::from_bits((1i64 << 32).to_be_bytes()),
         };
 
-        let mut peer = Peer {
-            statistics: Default::default(),
-            last_measurements: Default::default(),
-            last_packet: Default::default(),
-            time: Default::default(),
-            stratum: Default::default(),
-        };
+        let mut peer = default_peer();
 
         let update = peer.clock_filter(new_tuple, leap_indicator, system_precision);
 
