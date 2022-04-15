@@ -1,6 +1,6 @@
 # NTPD-rs
 
-This project is intended to become a memory-safe implementation of NTP in rust. It is currently a work in progress, and does not offer any real functionality yet.
+This project is intended to become a memory-safe implementation of NTP in Rust. It is currently a work in progress, and does not offer any real functionality yet.
 
 ## Naming
 
