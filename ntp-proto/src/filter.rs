@@ -217,9 +217,11 @@ pub struct Peer {
 /// rightmost bit is set to zero.  As valid packets arrive, the rightmost bit is set to one.
 /// If the register contains any nonzero bits, the server is considered reachable;
 /// otherwise, it is unreachable.
+#[derive(Debug, Default)]
 struct Reach(u8);
 
 impl Reach {
+    #[allow(dead_code)]
     fn is_reachable(&self) -> bool {
         self.0 != 0
     }
@@ -327,6 +329,7 @@ impl Peer {
         true
     }
 
+    #[allow(dead_code)]
     fn update_with_packet(
         &mut self,
         local_clock_time: NtpTimestamp,
@@ -414,6 +417,7 @@ impl Peer {
         Some(tuple)
     }
 
+    #[allow(dead_code)]
     fn poll_update(&mut self, local_clock_time: NtpTimestamp, poll_interval: NtpDuration) {
         const MIN_POLL: i8 = 4; // 16 seconds
         const MAX_POLL: i8 = 17; // 36 hours
@@ -575,6 +579,22 @@ fn find_interval(chime_list: &[CandidateTuple]) -> (NtpDuration, NtpDuration) {
 mod test {
     use super::*;
 
+    fn default_peer() -> Peer {
+        Peer {
+            statistics: Default::default(),
+            last_measurements: Default::default(),
+            last_packet: Default::default(),
+            time: Default::default(),
+            host_poll: Default::default(),
+            burst: Default::default(),
+            out_date: Default::default(),
+            next_date: Default::default(),
+            reach: Default::default(),
+            our_id: ReferenceId::from_int(0),
+            peer_id: ReferenceId::from_int(0),
+        }
+    }
+
     #[test]
     fn dispersion_of_dummys() {
         // The observer should note (a) if all stages contain the dummy tuple
@@ -638,14 +658,7 @@ mod test {
             time: Default::default(),
         };
 
-        let mut peer = Peer {
-            statistics: Default::default(),
-            last_measurements: Default::default(),
-            last_packet: Default::default(),
-            time: Default::default(),
-            our_id: ReferenceId::from_int(0),
-            peer_id: ReferenceId::from_int(0),
-        };
+        let mut peer = default_peer();
 
         let update = peer.clock_filter(new_tuple, leap_indicator, system_precision);
 
@@ -666,14 +679,7 @@ mod test {
             time: NtpTimestamp::from_bits((1i64 << 32).to_be_bytes()),
         };
 
-        let mut peer = Peer {
-            statistics: Default::default(),
-            last_measurements: Default::default(),
-            last_packet: Default::default(),
-            time: Default::default(),
-            our_id: ReferenceId::from_int(0),
-            peer_id: ReferenceId::from_int(0),
-        };
+        let mut peer = default_peer();
 
         let update = peer.clock_filter(new_tuple, leap_indicator, system_precision);
 
