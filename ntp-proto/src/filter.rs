@@ -367,19 +367,6 @@ impl Peer {
         self.poll_update(local_clock_time, poll_interval);
         self.reach.update();
 
-        // Calculate offset, delay and dispersion, then pass to the
-        // clock filter.  Note carefully the implied processing.  The
-        // first-order difference is done directly in 64-bit arithmetic,
-        // then the result is converted to floating double.  All further
-        // processing is in floating-double arithmetic with rounding
-        // done by the hardware.  This is necessary in order to avoid
-        // overflow and preserve precision.
-        //
-        // The delay calculation is a special case.  In cases where the
-        // server and client clocks are running at different rates and
-        // with very fast networks, the delay can appear negative.  In
-        // order to avoid violating the Principle of Least Astonishment,
-        // the delay is clamped not less than the system precision.
         let r = &self.last_packet;
         let packet_precision = NtpDuration::from_exponent(r.precision);
 
@@ -400,6 +387,9 @@ impl Peer {
             let offset2 = destination_timestamp - r.transmit_timestamp;
             let offset = (offset1 + offset2) / 2i64;
 
+            // In cases where the server and client clocks are running at different rates
+            // and with very fast networks, the delay can appear negative.
+            // delay is clamped to ensure it is always positive
             let delta1 = destination_timestamp - r.origin_timestamp;
             let delta2 = r.receive_timestamp - r.transmit_timestamp;
             let delay = system_precision.max(delta1 - delta2);
