@@ -133,7 +133,7 @@ impl NtpHeader {
             precision: data[3] as i8,
             root_delay: NtpDuration::from_bits_short(data[4..8].try_into().unwrap()),
             root_dispersion: NtpDuration::from_bits_short(data[8..12].try_into().unwrap()),
-            reference_id: ReferenceId::from_bits(data[12..16].try_into().unwrap()),
+            reference_id: ReferenceId::from_bytes(data[12..16].try_into().unwrap()),
             reference_timestamp: NtpTimestamp::from_bits(data[16..24].try_into().unwrap()),
             origin_timestamp: NtpTimestamp::from_bits(data[24..32].try_into().unwrap()),
             receive_timestamp: NtpTimestamp::from_bits(data[32..40].try_into().unwrap()),
@@ -148,7 +148,7 @@ impl NtpHeader {
 
         let root_delay = self.root_delay.to_bits_short();
         let root_dispersion = self.root_dispersion.to_bits_short();
-        let reference_id = self.reference_id.to_bits();
+        let reference_id = self.reference_id.to_bytes();
         let reference_timestamp = self.reference_timestamp.to_bits();
         let origin_timestamp = self.origin_timestamp.to_bits();
         let receive_timestamp = self.receive_timestamp.to_bits();

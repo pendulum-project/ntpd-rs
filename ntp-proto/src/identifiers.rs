@@ -25,22 +25,22 @@ impl ReferenceId {
     }
 
     pub(crate) fn is_deny(&self) -> bool {
-        self.0 == ReferenceId::KISS_DENY
+        self.0 == Self::KISS_DENY
     }
 
     pub(crate) fn is_rate(&self) -> bool {
-        self.0 == ReferenceId::KISS_RATE
+        self.0 == Self::KISS_RATE
     }
 
     pub(crate) fn is_rstr(&self) -> bool {
-        self.0 == ReferenceId::KISS_RSTR
+        self.0 == Self::KISS_RSTR
     }
 
-    pub(crate) fn to_bits(self) -> [u8; 4] {
+    pub(crate) fn to_bytes(self) -> [u8; 4] {
         self.0.to_be_bytes()
     }
 
-    pub(crate) fn from_bits(bits: [u8; 4]) -> ReferenceId {
+    pub(crate) fn from_bytes(bits: [u8; 4]) -> ReferenceId {
         ReferenceId(u32::from_be_bytes(bits))
     }
 }
@@ -52,9 +52,9 @@ mod tests {
     #[test]
     fn referenceid_serialization_roundtrip() {
         let a = [12, 34, 56, 78];
-        let b = ReferenceId::from_bits(a);
-        let c = b.to_bits();
-        let d = ReferenceId::from_bits(c);
+        let b = ReferenceId::from_bytes(a);
+        let c = b.to_bytes();
+        let d = ReferenceId::from_bytes(c);
         assert_eq!(a, c);
         assert_eq!(b, d);
     }
@@ -62,15 +62,15 @@ mod tests {
     #[test]
     fn referenceid_kiss_codes() {
         let a = [b'R', b'A', b'T', b'E'];
-        let b = ReferenceId::from_bits(a);
+        let b = ReferenceId::from_bytes(a);
         assert!(b.is_rate());
 
         let a = [b'R', b'S', b'T', b'R'];
-        let b = ReferenceId::from_bits(a);
+        let b = ReferenceId::from_bytes(a);
         assert!(b.is_rstr());
 
         let a = [b'D', b'E', b'N', b'Y'];
-        let b = ReferenceId::from_bits(a);
+        let b = ReferenceId::from_bytes(a);
         assert!(b.is_deny());
     }
 
@@ -79,7 +79,7 @@ mod tests {
         let ip: IpAddr = "12.34.56.78".parse().unwrap();
         let rep = [12, 34, 56, 78];
         let a = ReferenceId::from_ip(ip);
-        let b = ReferenceId::from_bits(rep);
+        let b = ReferenceId::from_bytes(rep);
         assert_eq!(a, b);
 
         // TODO: Generate and add a testcase for ipv6 adresses once
