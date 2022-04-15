@@ -393,9 +393,9 @@ impl Peer {
                 time: local_clock_time,
             }
         } else {
-            let offset = ((r.receive_timestamp - r.origin_timestamp)
-                + (destination_timestamp - r.transmit_timestamp))
-                / 2i64;
+            let offset1 = r.receive_timestamp - r.origin_timestamp;
+            let offset2 = destination_timestamp - r.transmit_timestamp;
+            let offset = (offset1 + offset2) / 2i64;
 
             let delta1 = destination_timestamp - r.origin_timestamp;
             let delta2 = r.receive_timestamp - r.transmit_timestamp;
