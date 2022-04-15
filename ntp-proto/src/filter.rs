@@ -14,6 +14,8 @@ use crate::{packet::NtpLeapIndicator, NtpDuration, NtpHeader, NtpTimestamp, Refe
 const MAX_STRATUM: u8 = 16;
 const MAX_DISTANCE: NtpDuration = NtpDuration::ONE;
 
+const BROADCAST_DELAY: NtpDuration = NtpDuration::ONE.divided_by(250); // 0.004
+
 /// frequency tolerance (15 ppm)
 // const PHI: f64 = 15e-6;
 fn multiply_by_phi(duration: NtpDuration) -> NtpDuration {
@@ -200,6 +202,19 @@ pub struct Peer {
     #[allow(dead_code)]
     peer_id: ReferenceId,
     our_id: ReferenceId,
+
+    host_poll: NtpDuration,
+    burst: u8,
+
+    out_date: NtpTimestamp,
+    next_date: NtpTimestamp,
+
+    /// Used to determine whether the server is reachable and the data are fresh
+    /// The register is shifted left by one bit when a packet is sent and the
+    /// rightmost bit is set to zero.  As valid packets arrive, the rightmost bit is set to one.
+    /// If the register contains any nonzero bits, the server is considered reachable;
+    /// otherwise, it is unreachable.
+    reach: u8,
 }
 
 pub enum Decision {
@@ -299,6 +314,132 @@ impl Peer {
 
         true
     }
+
+    fn update_with_packet(
+        &mut self,
+        local_clock_time: NtpTimestamp,
+        system_precision: NtpDuration,
+        mut packet: NtpHeader,
+        destination_timestamp: NtpTimestamp,
+    ) -> Option<FilterTuple> {
+        // we map stratum 0 (unspecified) to MAXSTRAT to make stratum
+        // comparisons simpler and to provide a natural interface
+        // for radio clock drivers that operate for convenience at stratum 0.
+        if packet.stratum == 0 {
+            packet.stratum = MAX_STRATUM;
+        }
+
+        self.last_packet = packet;
+
+        // Verify the server is synchronized with valid stratum and
+        // reference time not later than the transmit time.
+        if !self.last_packet.leap.is_synchronized() || self.last_packet.stratum >= MAX_STRATUM {
+            // this peer is unsynchronized
+            return None;
+        }
+
+        // verify root distance
+        let packet_dispersion =
+            self.last_packet.root_delay / 2i64 + self.last_packet.root_dispersion;
+        let time_travel =
+            self.last_packet.reference_timestamp > self.last_packet.transmit_timestamp;
+        if packet_dispersion >= NtpDuration::MAX_DISPERSION || time_travel {
+            return None; /* invalid header values */
+        }
+
+        // host_poll
+        let poll_interval = self.host_poll;
+        self.poll_update(local_clock_time, poll_interval);
+        self.reach |= 1;
+
+        // Calculate offset, delay and dispersion, then pass to the
+        // clock filter.  Note carefully the implied processing.  The
+        // first-order difference is done directly in 64-bit arithmetic,
+        // then the result is converted to floating double.  All further
+        // processing is in floating-double arithmetic with rounding
+        // done by the hardware.  This is necessary in order to avoid
+        // overflow and preserve precision.
+        //
+        // The delay calculation is a special case.  In cases where the
+        // server and client clocks are running at different rates and
+        // with very fast networks, the delay can appear negative.  In
+        // order to avoid violating the Principle of Least Astonishment,
+        // the delay is clamped not less than the system precision.
+        let r = &self.last_packet;
+        let packet_precision = NtpDuration::from_exponent(r.precision);
+
+        let tuple = if let crate::packet::NtpAssociationMode::Broadcast = r.mode {
+            let offset = r.transmit_timestamp - destination_timestamp;
+            let delay = BROADCAST_DELAY;
+            let dispersion =
+                packet_precision + system_precision + multiply_by_phi(BROADCAST_DELAY * 2i64);
+
+            FilterTuple {
+                offset,
+                delay,
+                dispersion,
+                time: local_clock_time,
+            }
+        } else {
+            let offset = ((r.receive_timestamp - r.origin_timestamp)
+                + (destination_timestamp - r.transmit_timestamp))
+                / 2i64;
+
+            let delta1 = destination_timestamp - r.origin_timestamp;
+            let delta2 = r.receive_timestamp - r.transmit_timestamp;
+            let delay = system_precision.max(delta1 - delta2);
+
+            let dispersion = packet_precision + system_precision + multiply_by_phi(delta1);
+
+            FilterTuple {
+                offset,
+                delay,
+                dispersion,
+                time: local_clock_time,
+            }
+        };
+
+        Some(tuple)
+    }
+
+    fn poll_update(&mut self, local_clock_time: NtpTimestamp, poll_interval: NtpDuration) {
+        const MIN_POLL: i8 = 4; // 16 seconds
+        const MAX_POLL: i8 = 17; // 36 hours
+
+        self.host_poll = clamp_ntp_duration(
+            NtpDuration::from_exponent(MIN_POLL),
+            poll_interval,
+            NtpDuration::from_exponent(MAX_POLL),
+        );
+
+        if self.burst > 0 {
+            if self.next_date != local_clock_time {
+                return;
+            } else {
+                self.next_date += BROADCAST_DELAY;
+            }
+        } else {
+            // TODO: randomize the poll interval by a small factor
+            let offset = clamp_ntp_duration(
+                NtpDuration::from_exponent(MIN_POLL),
+                self.host_poll,
+                NtpDuration::from_exponent(self.last_packet.poll),
+            );
+            self.next_date = self.out_date + offset;
+        }
+
+        if self.next_date < local_clock_time {
+            self.next_date = local_clock_time + NtpDuration::ONE;
+        }
+    }
+}
+
+fn clamp_ntp_duration(
+    lower_bound: NtpDuration,
+    value: NtpDuration,
+    upper_bound: NtpDuration,
+) -> NtpDuration {
+    value.min(upper_bound).max(lower_bound)
 }
 
 #[derive(Debug, Clone, Copy)]
