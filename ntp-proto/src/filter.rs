@@ -404,6 +404,7 @@ fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDurat
         let mut chime = 0; // variable "c"
 
         // Scan the chime list from lowest to highest to find the lower endpoint.
+        // any middle that we find before the lower endpoint counts as a falseticker
         for tuple in chime_list {
             chime -= tuple.endpoint_type as i32;
 
@@ -419,6 +420,7 @@ fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDurat
         }
 
         // Scan the chime list from highest to lowest to find the upper endpoint.
+        // any middle that we find before the upper endpoint counts as a falseticker
         chime = 0;
         for tuple in chime_list.iter().rev() {
             chime += tuple.endpoint_type as i32;
@@ -434,7 +436,8 @@ fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDurat
             }
         }
 
-        // found more falsetickers than allowed; try again allowing more falsetickers
+        // counted more falsetickers than allowed in this iteration;
+        // we loop and try again allowing one more falseticker
         if found > allow {
             continue;
         }
