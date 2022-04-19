@@ -185,14 +185,6 @@ impl NtpDuration {
     }
 
     #[must_use]
-    pub(crate) const fn divided_by(self, divisor: i64) -> Self {
-        // No overflow risks for division
-        Self {
-            duration: self.duration / divisor,
-        }
-    }
-
-    #[must_use]
     pub(crate) const fn multiply_by(self, rhs: i64) -> Self {
         // For duration, saturation is safer as that ensures
         // addition or substraction of two big durations never

@@ -14,8 +14,6 @@ use crate::{packet::NtpLeapIndicator, NtpDuration, NtpHeader, NtpTimestamp, Refe
 const MAX_STRATUM: u8 = 16;
 const MAX_DISTANCE: NtpDuration = NtpDuration::ONE;
 
-const BROADCAST_DELAY: NtpDuration = NtpDuration::ONE.divided_by(250); // 0.004
-
 const BURST_INTERVAL: NtpDuration = NtpDuration::ONE.multiply_by(2);
 
 /// frequency tolerance (15 ppm)
@@ -60,17 +58,20 @@ impl FilterTuple {
         let packet_precision = NtpDuration::from_exponent(packet.precision);
 
         if let crate::packet::NtpAssociationMode::Broadcast = packet.mode {
-            let offset = packet.transmit_timestamp - destination_timestamp;
-            let delay = BROADCAST_DELAY;
-            let dispersion =
-                packet_precision + system_precision + multiply_by_phi(BROADCAST_DELAY * 2i64);
-
-            FilterTuple {
-                offset,
-                delay,
-                dispersion,
-                time: local_clock_time,
-            }
+            // const BROADCAST_DELAY: NtpDuration = NtpDuration::ONE.divided_by(250); // 0.004
+            //
+            // let offset = packet.transmit_timestamp - destination_timestamp;
+            // let delay = BROADCAST_DELAY;
+            // let dispersion =
+            //     packet_precision + system_precision + multiply_by_phi(BROADCAST_DELAY * 2i64);
+            //
+            // FilterTuple {
+            //     offset,
+            //     delay,
+            //     dispersion,
+            //     time: local_clock_time,
+            // }
+            todo!("implement updating the peer with a broadcast packet")
         } else {
             // offset is the average of the deltas (T2 - T1) and (T4 - T3)
             let offset1 = packet.receive_timestamp - packet.origin_timestamp;
