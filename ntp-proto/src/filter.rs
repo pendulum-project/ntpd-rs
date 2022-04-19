@@ -559,8 +559,7 @@ fn clock_combine<'a>(
     let mut z = 0.0; // weighed offset sum
     let mut w = 0.0; // weighed jitter sum
 
-    // deviation (from the skeleton): we use jitter, skeleton uses offset
-    let first_jitter = survivors[0].peer.statistics.jitter;
+    let first_offset = survivors[0].peer.statistics.offset;
 
     for tuple in survivors {
         let peer = tuple.peer;
@@ -568,8 +567,7 @@ fn clock_combine<'a>(
         y += 1.0 / x;
         z += peer.statistics.offset.to_seconds() / x;
 
-        // deviation (from the skeleton): we use jitter, skeleton uses offset
-        w += (peer.statistics.jitter - first_jitter).powi(2) / x;
+        w += (peer.statistics.offset - first_offset).to_seconds().powi(2) / x;
     }
 
     let system_offset = NtpDuration::from_seconds(z / y);
