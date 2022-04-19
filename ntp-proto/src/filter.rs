@@ -528,8 +528,8 @@ fn clock_select(
 
 #[allow(dead_code)]
 struct ClockCombine {
-    offset: NtpDuration,
-    jitter: NtpDuration,
+    system_offset: NtpDuration,
+    system_peer_jitter: NtpDuration,
 }
 
 /// Combine the offsets of the clustering algorithm survivors
@@ -566,7 +566,10 @@ fn clock_combine<'a>(
     let offset = NtpDuration::from_seconds(z / y);
     let jitter = NtpDuration::from_seconds((w / y).sqrt());
 
-    ClockCombine { offset, jitter }
+    ClockCombine {
+        system_offset: offset,
+        system_peer_jitter: jitter,
+    }
 }
 
 #[cfg(test)]
