@@ -16,6 +16,8 @@ const MAX_DISTANCE: NtpDuration = NtpDuration::ONE;
 
 const BROADCAST_DELAY: NtpDuration = NtpDuration::ONE.divided_by(250); // 0.004
 
+const BURST_INTERVAL: NtpDuration = NtpDuration::ONE.multiply_by(2);
+
 /// frequency tolerance (15 ppm)
 // const PHI: f64 = 15e-6;
 fn multiply_by_phi(duration: NtpDuration) -> NtpDuration {
@@ -429,6 +431,7 @@ impl Peer {
         Some(tuple)
     }
 
+    /// update the poll interval for this Peer
     #[allow(dead_code)]
     fn poll_update(&mut self, local_clock_time: NtpTimestamp, poll_interval: NtpDuration) {
         const MIN_POLL: i8 = 4; // 16 seconds
@@ -441,10 +444,13 @@ impl Peer {
         );
 
         if self.burst > 0 {
-            if self.next_date != local_clock_time {
+            // deviation: code skeleton uses `self.next_date != local_clock_time`
+            // that seems dangerous. I think we only want to schedule the next
+            // time to send a packet when the current deadline has passed
+            if self.next_date < local_clock_time {
                 return;
             } else {
-                self.next_date += BROADCAST_DELAY;
+                self.next_date += BURST_INTERVAL;
             }
         } else {
             // TODO: randomize the poll interval by a small factor

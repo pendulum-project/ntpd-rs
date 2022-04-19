@@ -192,6 +192,17 @@ impl NtpDuration {
         }
     }
 
+    #[must_use]
+    pub(crate) const fn multiply_by(self, rhs: i64) -> Self {
+        // For duration, saturation is safer as that ensures
+        // addition or substraction of two big durations never
+        // unintentionally cancel, ensuring that filtering
+        // can properly reject on the result.
+        NtpDuration {
+            duration: self.duration.saturating_mul(rhs as i64),
+        }
+    }
+
     #[cfg(test)]
     pub(crate) const fn from_fixed_int(duration: i64) -> NtpDuration {
         NtpDuration { duration }
