@@ -796,7 +796,7 @@ mod test {
         let local_clock_time = NtpTimestamp::ZERO;
         let system_precision = NtpDuration::ZERO;
 
-        let seconds = |t| NtpTimestamp::from_seconds_nanos_since_ntp_epoch(t, 0);
+        let seconds = |t| NtpTimestamp::from_seconds_nanos_since_ntp_era(t, 0);
 
         packet.origin_timestamp = seconds(0); // T1
         packet.receive_timestamp = seconds(10); // T2
