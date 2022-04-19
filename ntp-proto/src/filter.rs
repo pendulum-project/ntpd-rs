@@ -284,8 +284,16 @@ impl Reach {
         self.0 != 0
     }
 
-    fn update(&mut self) {
+    /// We have just received a packet, so the peer is definitely reachable
+    fn received_packet(&mut self) {
         self.0 |= 1;
+    }
+
+    /// A packet received some number of poll intervals ago is decreasingly relevant for
+    /// determining that a peer is still reachable. We discount the packets received so far.
+    #[allow(dead_code)]
+    fn poll(&mut self) {
+        self.0 <<= 1
     }
 }
 
@@ -423,7 +431,7 @@ impl Peer {
         // host_poll
         let poll_interval = self.host_poll;
         self.poll_update(local_clock_time, poll_interval);
-        self.reach.update();
+        self.reach.received_packet();
 
         let tuple = FilterTuple::from_packet(
             &packet,
