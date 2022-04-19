@@ -13,6 +13,7 @@ libfuzzer-sys = "0.4"
 
 [dependencies.ntp-proto]
 path = "../ntp-proto"
+features = ["fuzz"]
 
 # Prevent this from interfering with workspaces
 [workspace]
@@ -21,5 +22,11 @@ members = ["."]
 [[bin]]
 name = "packet_parsing_sound"
 path = "fuzz_targets/packet_parsing_sound.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "interval_finding"
+path = "fuzz_targets/interval_finding.rs"
 test = false
 doc = false

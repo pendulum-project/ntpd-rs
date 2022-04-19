@@ -310,7 +310,7 @@ impl Peer {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i8)]
 enum EndpointType {
     Upper = 1,
@@ -389,7 +389,15 @@ fn filter_survivor<'a>(
     low: NtpDuration,
     high: NtpDuration,
 ) -> Option<SurvivorTuple<'a>> {
-    if candidate.edge < low || candidate.edge > high {
+    // To be a truechimer, a peers middle (actual offset)
+    // needs to lie within the consistency interval.
+    // Note: The standard is unclear on this, but this
+    // is what gives sensible results in combination with
+    // how interval selection works.
+    if candidate.edge < low
+        || candidate.edge > high
+        || candidate.endpoint_type != EndpointType::Middle
+    {
         None
     } else {
         let peer = candidate.peer;
@@ -402,7 +410,7 @@ fn filter_survivor<'a>(
 /// Find the largest contiguous intersection of correctness intervals.
 #[allow(dead_code)]
 fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDuration)> {
-    let n = chime_list.len();
+    let n = chime_list.len() / 3;
 
     let mut low = None;
     let mut high = None;
@@ -583,20 +591,55 @@ fn clock_combine<'a>(
     }
 }
 
+#[cfg(any(test, feature = "fuzz"))]
+fn default_peer() -> Peer {
+    Peer {
+        statistics: Default::default(),
+        last_measurements: Default::default(),
+        last_packet: Default::default(),
+        time: Default::default(),
+        peer_id: ReferenceId::from_int(0),
+        our_id: ReferenceId::from_int(0),
+    }
+}
+
+#[cfg(feature = "fuzz")]
+pub fn fuzz_find_interval(spec: &[(i64, u64)]) {
+    let mut peers = vec![];
+    for _ in 0..spec.len() {
+        peers.push(default_peer())
+    }
+    let mut candidates = vec![];
+    for (i, (center, size)) in spec.iter().enumerate() {
+        let size = (*size)
+            .min((std::i64::MAX as u64).wrapping_sub(*center as u64))
+            .max((*center as u64).wrapping_sub(std::i64::MIN as u64));
+        candidates.push(CandidateTuple {
+            peer: &peers[i],
+            endpoint_type: EndpointType::Lower,
+            edge: NtpDuration::from_fixed_int((*center).wrapping_sub(size as i64)),
+        });
+        candidates.push(CandidateTuple {
+            peer: &peers[i],
+            endpoint_type: EndpointType::Middle,
+            edge: NtpDuration::from_fixed_int(*center),
+        });
+        candidates.push(CandidateTuple {
+            peer: &peers[i],
+            endpoint_type: EndpointType::Upper,
+            edge: NtpDuration::from_fixed_int((*center).wrapping_add(size as i64)),
+        });
+    }
+    candidates.sort_by(|a, b| a.edge.cmp(&b.edge));
+    let survivors = construct_survivors(&candidates, NtpTimestamp::from_fixed_int(0));
+
+    // check that if we find a cluster, it contains more than half of the peers we work with.
+    assert!(survivors.len() == 0 || 2 * survivors.len() > spec.len());
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
-
-    fn default_peer() -> Peer {
-        Peer {
-            statistics: Default::default(),
-            last_measurements: Default::default(),
-            last_packet: Default::default(),
-            time: Default::default(),
-            peer_id: ReferenceId::from_int(0),
-            our_id: ReferenceId::from_int(0),
-        }
-    }
 
     #[test]
     fn dispersion_of_dummys() {
@@ -699,5 +742,528 @@ mod test {
 
         assert_eq!(temporary.register[0], new_tuple);
         assert_eq!(temporary.valid_tuples(), &[new_tuple]);
+    }
+
+    #[test]
+    fn test_root_duration_sanity() {
+        // Ensure root distance at least increases as it is supposed to
+        // when changing the main measurement parameters
+        let mut packet = NtpHeader::new();
+        packet.root_delay = NtpDuration::from_fixed_int(100000000);
+        packet.root_dispersion = NtpDuration::from_fixed_int(100000000);
+        let reference = Peer {
+            statistics: PeerStatistics {
+                delay: NtpDuration::from_fixed_int(100000000),
+                dispersion: NtpDuration::from_fixed_int(100000000),
+                ..Default::default()
+            },
+            last_measurements: Default::default(),
+            last_packet: packet.clone(),
+            time: NtpTimestamp::from_fixed_int(100000000),
+            peer_id: ReferenceId::from_int(0),
+            our_id: ReferenceId::from_int(0),
+        };
+
+        assert!(
+            reference.root_distance(NtpTimestamp::from_fixed_int(100000000))
+                < reference.root_distance(NtpTimestamp::from_fixed_int(200000000))
+        );
+
+        let sample = Peer {
+            statistics: PeerStatistics {
+                delay: NtpDuration::from_fixed_int(200000000),
+                dispersion: NtpDuration::from_fixed_int(100000000),
+                ..Default::default()
+            },
+            last_measurements: Default::default(),
+            last_packet: packet.clone(),
+            time: NtpTimestamp::from_fixed_int(100000000),
+            peer_id: ReferenceId::from_int(0),
+            our_id: ReferenceId::from_int(0),
+        };
+        assert!(
+            reference.root_distance(NtpTimestamp::from_fixed_int(100000000))
+                < sample.root_distance(NtpTimestamp::from_fixed_int(100000000))
+        );
+
+        let sample = Peer {
+            statistics: PeerStatistics {
+                delay: NtpDuration::from_fixed_int(100000000),
+                dispersion: NtpDuration::from_fixed_int(200000000),
+                ..Default::default()
+            },
+            last_measurements: Default::default(),
+            last_packet: packet.clone(),
+            time: NtpTimestamp::from_fixed_int(100000000),
+            peer_id: ReferenceId::from_int(0),
+            our_id: ReferenceId::from_int(0),
+        };
+        assert!(
+            reference.root_distance(NtpTimestamp::from_fixed_int(100000000))
+                < sample.root_distance(NtpTimestamp::from_fixed_int(100000000))
+        );
+
+        let sample = Peer {
+            statistics: PeerStatistics {
+                delay: NtpDuration::from_fixed_int(100000000),
+                dispersion: NtpDuration::from_fixed_int(100000000),
+                ..Default::default()
+            },
+            last_measurements: Default::default(),
+            last_packet: packet.clone(),
+            time: NtpTimestamp::from_fixed_int(0),
+            peer_id: ReferenceId::from_int(0),
+            our_id: ReferenceId::from_int(0),
+        };
+        assert!(
+            reference.root_distance(NtpTimestamp::from_fixed_int(100000000))
+                < sample.root_distance(NtpTimestamp::from_fixed_int(100000000))
+        );
+
+        packet.root_delay = NtpDuration::from_fixed_int(200000000);
+        let sample = Peer {
+            statistics: PeerStatistics {
+                delay: NtpDuration::from_fixed_int(100000000),
+                dispersion: NtpDuration::from_fixed_int(100000000),
+                ..Default::default()
+            },
+            last_measurements: Default::default(),
+            last_packet: packet.clone(),
+            time: NtpTimestamp::from_fixed_int(100000000),
+            peer_id: ReferenceId::from_int(0),
+            our_id: ReferenceId::from_int(0),
+        };
+        packet.root_delay = NtpDuration::from_fixed_int(100000000);
+        assert!(
+            reference.root_distance(NtpTimestamp::from_fixed_int(100000000))
+                < sample.root_distance(NtpTimestamp::from_fixed_int(100000000))
+        );
+
+        packet.root_dispersion = NtpDuration::from_fixed_int(200000000);
+        let sample = Peer {
+            statistics: PeerStatistics {
+                delay: NtpDuration::from_fixed_int(100000000),
+                dispersion: NtpDuration::from_fixed_int(100000000),
+                ..Default::default()
+            },
+            last_measurements: Default::default(),
+            last_packet: packet.clone(),
+            time: NtpTimestamp::from_fixed_int(100000000),
+            peer_id: ReferenceId::from_int(0),
+            our_id: ReferenceId::from_int(0),
+        };
+        packet.root_dispersion = NtpDuration::from_fixed_int(100000000);
+        assert!(
+            reference.root_distance(NtpTimestamp::from_fixed_int(100000000))
+                < sample.root_distance(NtpTimestamp::from_fixed_int(100000000))
+        );
+
+        let sample = Peer {
+            statistics: PeerStatistics {
+                delay: NtpDuration::from_fixed_int(100000000),
+                dispersion: NtpDuration::from_fixed_int(100000000),
+                ..Default::default()
+            },
+            last_measurements: Default::default(),
+            last_packet: packet.clone(),
+            time: NtpTimestamp::from_fixed_int(100000000),
+            peer_id: ReferenceId::from_int(0),
+            our_id: ReferenceId::from_int(0),
+        };
+        assert_eq!(
+            reference.root_distance(NtpTimestamp::from_fixed_int(100000000)),
+            sample.root_distance(NtpTimestamp::from_fixed_int(100000000))
+        );
+    }
+
+    #[test]
+    fn find_interval_simple() {
+        let peer_1 = default_peer();
+        let peer_2 = default_peer();
+        let peer_3 = default_peer();
+
+        let intervals = [
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-4),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-3),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-2),
+            },
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(-1),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(0),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(1),
+            },
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(2),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(3),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(4),
+            },
+        ];
+
+        assert_eq!(
+            find_interval(&intervals),
+            Some((
+                NtpDuration::from_fixed_int(-2),
+                NtpDuration::from_fixed_int(2)
+            ))
+        );
+
+        let survivors = construct_survivors(&intervals, NtpTimestamp::from_fixed_int(0));
+        assert_eq!(survivors.len(), 3);
+    }
+
+    #[test]
+    fn find_interval_outlier() {
+        let peer_1 = default_peer();
+        let peer_2 = default_peer();
+        let peer_3 = default_peer();
+
+        let intervals = [
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-4),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-3),
+            },
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(-1),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(0),
+            },
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(2),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(3),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(15),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(16),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(17),
+            },
+        ];
+
+        assert_eq!(
+            find_interval(&intervals),
+            Some((
+                NtpDuration::from_fixed_int(-3),
+                NtpDuration::from_fixed_int(2)
+            ))
+        );
+
+        let survivors = construct_survivors(&intervals, NtpTimestamp::from_fixed_int(0));
+        assert_eq!(survivors.len(), 2);
+    }
+
+    #[test]
+    fn find_interval_low_precision_edgecase() {
+        // One larger interval whose middle does not lie in
+        // both smaller intervals, but whose middles do overlap.
+        let peer_1 = default_peer();
+        let peer_2 = default_peer();
+        let peer_3 = default_peer();
+
+        let intervals = [
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-10),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-3),
+            },
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(-2),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-1),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(0),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(2),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(3),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(5),
+            },
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(6),
+            },
+        ];
+
+        assert_eq!(
+            find_interval(&intervals),
+            Some((
+                NtpDuration::from_fixed_int(-3),
+                NtpDuration::from_fixed_int(5)
+            ))
+        );
+
+        let survivors = construct_survivors(&intervals, NtpTimestamp::from_fixed_int(0));
+        assert_eq!(survivors.len(), 3);
+    }
+
+    #[test]
+    fn find_interval_interleaving_edgecase() {
+        // Three partially overlapping intervals, where
+        // the outer center's are not in each others interval.
+        let peer_1 = default_peer();
+        let peer_2 = default_peer();
+        let peer_3 = default_peer();
+
+        let intervals = [
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-5),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-3),
+            },
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(-2),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-1),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(-0),
+            },
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(1),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(2),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(3),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(5),
+            },
+        ];
+
+        assert_eq!(
+            find_interval(&intervals),
+            Some((
+                NtpDuration::from_fixed_int(-3),
+                NtpDuration::from_fixed_int(3)
+            ))
+        );
+
+        let survivors = construct_survivors(&intervals, NtpTimestamp::from_fixed_int(0));
+        assert_eq!(survivors.len(), 3);
+    }
+
+    #[test]
+    fn find_interval_no_consensus() {
+        // Three disjoint intervals
+        let peer_1 = default_peer();
+        let peer_2 = default_peer();
+        let peer_3 = default_peer();
+
+        let intervals = [
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-4),
+            },
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(-3),
+            },
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(-2),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-1),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(-0),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(1),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(2),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(3),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(4),
+            },
+        ];
+
+        assert_eq!(find_interval(&intervals), None);
+
+        let survivors = construct_survivors(&intervals, NtpTimestamp::from_fixed_int(0));
+        assert_eq!(survivors.len(), 0);
+    }
+
+    #[test]
+    fn find_interval_tiling() {
+        // Three intervals whose midpoints are not in any of the others
+        // but which still overlap somewhat.
+        let peer_1 = default_peer();
+        let peer_2 = default_peer();
+        let peer_3 = default_peer();
+
+        let intervals = [
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-5),
+            },
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(-3),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-2),
+            },
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(-1),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(-0),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(1),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(2),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(3),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(5),
+            },
+        ];
+
+        assert_eq!(find_interval(&intervals), None);
+
+        let survivors = construct_survivors(&intervals, NtpTimestamp::from_fixed_int(0));
+        assert_eq!(survivors.len(), 0);
     }
 }

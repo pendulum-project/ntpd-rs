@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
-use ntp_proto::{NtpClock, NtpHeader, SystemClock};
+use ntp_os_clock::UnixNtpClock;
+use ntp_proto::{NtpClock, NtpHeader};
 use std::env;
 use std::error::Error;
 use tokio::net::UdpSocket;
@@ -24,12 +25,12 @@ async fn setup_connection() -> std::io::Result<UdpSocket> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let socket = setup_connection().await?;
-    let clock = SystemClock;
+    let clock = UnixNtpClock::new();
 
     let initial = NtpHeader::new();
     let mut buf = initial.serialize();
 
-    let t1 = clock.now();
+    let t1 = clock.now().unwrap();
 
     let sent = socket.send(&buf).await.unwrap();
     assert!(sent == 48);
@@ -37,7 +38,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let received = socket.recv(&mut buf).await.unwrap();
     assert!(received == 48);
 
-    let t4 = clock.now();
+    let t4 = clock.now().unwrap();
 
     let packet = ntp_proto::NtpHeader::deserialize(&buf);
 
