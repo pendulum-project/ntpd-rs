@@ -317,9 +317,6 @@ struct CandidateTuple<'a> {
     edge: NtpDuration,
 }
 
-/// First, construct the chime list of tuples (p, type, edge) as
-/// shown below, then sort the list by edge from lowest to
-/// highest.
 #[allow(dead_code)]
 fn construct_candidate_list<'a>(
     valid_associations: impl Iterator<Item = &'a Peer>,
@@ -356,28 +353,64 @@ fn construct_candidate_list<'a>(
     candidate_list
 }
 
-/// Find the largest contiguous intersection of correctness
-/// intervals.  Allow is the number of allowed falsetickers;
-/// found is the number of midpoints.  Note that the edge values
-/// are limited to the range +-(2 ^ 30) < +-2e9 by the timestamp
-/// calculations.
 #[allow(dead_code)]
-fn find_interval(chime_list: &[CandidateTuple]) -> (NtpDuration, NtpDuration) {
+struct SurvivorTuple<'a> {
+    p: &'a Peer,
+    metric: NtpDuration,
+}
+
+/// Collect the candidates within the correctness interval
+#[allow(dead_code)]
+fn construct_survivors<'a>(
+    chime_list: &'a [CandidateTuple<'a>],
+    local_clock_time: NtpTimestamp,
+) -> Vec<SurvivorTuple<'a>> {
+    match find_interval(chime_list) {
+        Some((low, high)) => chime_list
+            .iter()
+            .filter_map(|candidate| filter_survivor(candidate, local_clock_time, low, high))
+            .collect(),
+        None => vec![],
+    }
+}
+
+fn filter_survivor<'a>(
+    candidate: &'a CandidateTuple<'a>,
+    local_clock_time: NtpTimestamp,
+    low: NtpDuration,
+    high: NtpDuration,
+) -> Option<SurvivorTuple<'a>> {
+    if candidate.edge < low || candidate.edge > high {
+        None
+    } else {
+        let p = candidate.peer;
+        let metric = MAX_DISTANCE * p.last_packet.stratum + p.root_distance(local_clock_time);
+
+        Some(SurvivorTuple { p, metric })
+    }
+}
+
+/// Find the largest contiguous intersection of correctness intervals.
+#[allow(dead_code)]
+fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDuration)> {
     let n = chime_list.len();
 
-    let mut low = NtpDuration::ONE * 2_000_000_000;
-    let mut high = low * -164;
+    let mut low = None;
+    let mut high = None;
 
+    // allow is the number of allowed falsetickers
     for allow in (0..).take_while(|allow| 2 * allow < n) {
-        // falsetickers found in the current iteration
-        let mut found = 0;
-        let mut chime = 0;
+        let mut found = 0; // variable "d", falsetickers found in the current iteration
+        let mut chime = 0; // variable "c"
 
         // Scan the chime list from lowest to highest to find the lower endpoint.
+        // any middle that we find before the lower endpoint counts as a falseticker
         for tuple in chime_list {
             chime -= tuple.endpoint_type as i32;
-            if chime >= (n - found) as i32 {
-                low = tuple.edge;
+
+            // the code skeleton uses `n - found` here, which is wrong!
+            if chime >= (n - allow) as i32 {
+                low = Some(tuple.edge);
                 break;
             }
 
@@ -387,11 +420,14 @@ fn find_interval(chime_list: &[CandidateTuple]) -> (NtpDuration, NtpDuration) {
         }
 
         // Scan the chime list from highest to lowest to find the upper endpoint.
+        // any middle that we find before the upper endpoint counts as a falseticker
         chime = 0;
         for tuple in chime_list.iter().rev() {
             chime += tuple.endpoint_type as i32;
-            if chime >= (n - found) as i32 {
-                high = tuple.edge;
+
+            // the code skeleton uses `n - found` here, which is wrong!
+            if chime >= (n - allow) as i32 {
+                high = Some(tuple.edge);
                 break;
             }
 
@@ -400,27 +436,35 @@ fn find_interval(chime_list: &[CandidateTuple]) -> (NtpDuration, NtpDuration) {
             }
         }
 
-        //  If the number of midpoints is greater than the number
-        //  of allowed falsetickers, the intersection contains at
-        //  least one truechimer with no midpoint.  If so,
-        //  increment the number of allowed falsetickers and go
-        //  around again.  If not and the intersection is
-        //  non-empty, declare success.
+        // counted more falsetickers than allowed in this iteration;
+        // we loop and try again allowing one more falseticker
         if found > allow {
             continue;
         }
 
-        if high > low {
-            break;
+        //  If the intersection is non-empty, declare success.
+        if let (Some(l), Some(h)) = (low, high) {
+            return Some((l, h));
         }
     }
 
-    (low, high)
+    None
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+
+    fn default_peer() -> Peer {
+        Peer {
+            statistics: Default::default(),
+            last_measurements: Default::default(),
+            last_packet: Default::default(),
+            time: Default::default(),
+            peer_id: ReferenceId::from_int(0),
+            our_id: ReferenceId::from_int(0),
+        }
+    }
 
     #[test]
     fn dispersion_of_dummys() {
@@ -485,14 +529,7 @@ mod test {
             time: Default::default(),
         };
 
-        let mut peer = Peer {
-            statistics: Default::default(),
-            last_measurements: Default::default(),
-            last_packet: Default::default(),
-            time: Default::default(),
-            our_id: ReferenceId::from_int(0),
-            peer_id: ReferenceId::from_int(0),
-        };
+        let mut peer = default_peer();
 
         let update = peer.clock_filter(new_tuple, leap_indicator, system_precision);
 
@@ -513,14 +550,7 @@ mod test {
             time: NtpTimestamp::from_bits((1i64 << 32).to_be_bytes()),
         };
 
-        let mut peer = Peer {
-            statistics: Default::default(),
-            last_measurements: Default::default(),
-            last_packet: Default::default(),
-            time: Default::default(),
-            our_id: ReferenceId::from_int(0),
-            peer_id: ReferenceId::from_int(0),
-        };
+        let mut peer = default_peer();
 
         let update = peer.clock_filter(new_tuple, leap_indicator, system_precision);
 
