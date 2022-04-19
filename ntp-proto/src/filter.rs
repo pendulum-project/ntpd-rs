@@ -258,6 +258,10 @@ pub struct Peer {
     our_id: ReferenceId,
 
     host_poll: NtpDuration,
+
+    /// In burst mode, many packets are sent in rapid succession to quickly synchronize
+    /// This value is the burst count, the number of packages that still need to be sent
+    /// until the burst is over. If 0, we are not in burst mode.
     burst: u8,
 
     out_date: NtpTimestamp,
