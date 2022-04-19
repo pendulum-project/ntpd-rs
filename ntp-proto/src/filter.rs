@@ -459,20 +459,55 @@ fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDurat
     None
 }
 
+#[cfg(any(test, feature = "fuzz"))]
+fn default_peer() -> Peer {
+    Peer {
+        statistics: Default::default(),
+        last_measurements: Default::default(),
+        last_packet: Default::default(),
+        time: Default::default(),
+        peer_id: ReferenceId::from_int(0),
+        our_id: ReferenceId::from_int(0),
+    }
+}
+
+#[cfg(feature = "fuzz")]
+pub fn fuzz_find_interval(spec: &[(i64, u64)]) {
+    let mut peers = vec![];
+    for _ in 0..spec.len() {
+        peers.push(default_peer())
+    }
+    let mut candidates = vec![];
+    for (i, (center, size)) in spec.iter().enumerate() {
+        let size = (*size)
+            .min((std::i64::MAX as u64).wrapping_sub(*center as u64))
+            .max((*center as u64).wrapping_sub(std::i64::MIN as u64));
+        candidates.push(CandidateTuple {
+            peer: &peers[i],
+            endpoint_type: EndpointType::Lower,
+            edge: NtpDuration::from_fixed_int((*center).wrapping_sub(size as i64)),
+        });
+        candidates.push(CandidateTuple {
+            peer: &peers[i],
+            endpoint_type: EndpointType::Middle,
+            edge: NtpDuration::from_fixed_int(*center),
+        });
+        candidates.push(CandidateTuple {
+            peer: &peers[i],
+            endpoint_type: EndpointType::Upper,
+            edge: NtpDuration::from_fixed_int((*center).wrapping_add(size as i64)),
+        });
+    }
+    candidates.sort_by(|a, b| a.edge.cmp(&b.edge));
+    let survivors = construct_survivors(&candidates, NtpTimestamp::from_fixed_int(0));
+
+    // check that if we find a cluster, it contains more than half of the peers we work with.
+    assert!(survivors.len() == 0 || 2 * survivors.len() > spec.len());
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
-
-    fn default_peer() -> Peer {
-        Peer {
-            statistics: Default::default(),
-            last_measurements: Default::default(),
-            last_packet: Default::default(),
-            time: Default::default(),
-            peer_id: ReferenceId::from_int(0),
-            our_id: ReferenceId::from_int(0),
-        }
-    }
 
     #[test]
     fn dispersion_of_dummys() {
