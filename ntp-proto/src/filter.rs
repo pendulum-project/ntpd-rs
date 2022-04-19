@@ -22,7 +22,7 @@ fn multiply_by_phi(duration: NtpDuration) -> NtpDuration {
     (duration * 15) / 1_000_000
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct FilterTuple {
     offset: NtpDuration,
     delay: NtpDuration,
@@ -48,6 +48,13 @@ impl FilterTuple {
         destination_timestamp: NtpTimestamp,
         local_clock_time: NtpTimestamp,
     ) -> Self {
+        // for reference
+        //
+        // | org       | T1         | origin timestamp      |
+        // | rec       | T2         | receive timestamp     |
+        // | xmt       | T3         | transmit timestamp    |
+        // | dst       | T4         | destination timestamp |
+
         let packet_precision = NtpDuration::from_exponent(packet.precision);
 
         if let crate::packet::NtpAssociationMode::Broadcast = packet.mode {
@@ -63,15 +70,17 @@ impl FilterTuple {
                 time: local_clock_time,
             }
         } else {
+            // offset is the average of the deltas (T2 - T1) and (T4 - T3)
             let offset1 = packet.receive_timestamp - packet.origin_timestamp;
             let offset2 = destination_timestamp - packet.transmit_timestamp;
             let offset = (offset1 + offset2) / 2i64;
 
+            // delay is (T4 - T1) - (T3 - T2)
+            let delta1 = destination_timestamp - packet.origin_timestamp;
+            let delta2 = packet.transmit_timestamp - packet.receive_timestamp;
             // In cases where the server and client clocks are running at different rates
             // and with very fast networks, the delay can appear negative.
             // delay is clamped to ensure it is always positive
-            let delta1 = destination_timestamp - packet.origin_timestamp;
-            let delta2 = packet.receive_timestamp - packet.transmit_timestamp;
             let delay = system_precision.max(delta1 - delta2);
 
             let dispersion = packet_precision + system_precision + multiply_by_phi(delta1);
