@@ -13,8 +13,24 @@ const MAX_STRATUM: u8 = 16;
 const MAX_DISTANCE: NtpDuration = NtpDuration::ONE;
 
 // TODO this should be 4 in production?!
+/// Minimum number of survivors needed to be able to discipline the system clock.
+/// More survivors (so more servers from which to get the time) means a more accurate time.
+///
+/// The spec notes (CMIN was renamed to MIN_INTERSECTION_SURVIVORS in our implementation):
+///
+/// > CMIN defines the minimum number of servers consistent with the correctness requirements.
+/// > Suspicious operators would set CMIN to ensure multiple redundant servers are available for the
+/// > algorithms to mitigate properly. However, for historic reasons the default value for CMIN is one.
 const MIN_INTERSECTION_SURVIVORS: usize = 1;
 
+/// Number of survivors that the cluster_algorithm tries to keep.
+///
+/// The code skeleton notes that the goal is to give the cluster algorithm something to chew on.
+/// The spec itself does not say anything about how this variable is chosen, or why it exists
+/// (but it does define the use of this variable)
+///
+/// Because the input can have fewer than 3 survivors, the MIN_CLUSTER_SURVIVORS
+/// is not an actual lower bound on the number of survivors.
 const MIN_CLUSTER_SURVIVORS: usize = 3;
 
 /// frequency tolerance (15 ppm)
