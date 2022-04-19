@@ -435,10 +435,7 @@ fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDurat
             }
         }
 
-        //  If the number of midpoints is greater than the number
-        //  of allowed falsetickers, the intersection contains at
-        //  least one truechimer with no midpoint.  If so, increment
-        //  the number of allowed falsetickers and go around again.
+        // found more falsetickers than allowed; try again allowing more falsetickers
         if found > allow {
             continue;
         }
