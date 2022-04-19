@@ -465,19 +465,18 @@ fn cluster_algorithm(candidates: &mut Vec<SurvivorTuple>) {
     // sort the candidates by increasing lambda_p (the merit factor)
     candidates.sort_by(|a, b| a.metric.cmp(&b.metric));
 
-    let mut qmax_index = 0;
+    // To make sure a few survivors are left for the clustering algorithm to chew on, we stop
+    // if the number of survivors is less than or equal to NMIN (3).
+    while candidates.len() <= MIN_CLUSTER_SURVIVORS {
+        let mut qmax_index = 0;
+        let mut min_peer_jitter: f64 = 2.0e9;
+        let mut max_selection_jitter = -2.0e9;
 
-    let mut min_peer_jitter = 2.0e9;
-    let mut max_selection_jitter = -2.0e9;
-
-    loop {
-        // for each candidate
         for (index, candidate) in candidates.iter().enumerate() {
             let p = candidate.peer;
 
-            min_peer_jitter = p.statistics.jitter.min(min_peer_jitter);
+            min_peer_jitter = f64::min(min_peer_jitter, p.statistics.jitter);
 
-            // compute the selection jitter
             let selection_jitter_sum = candidates
                 .iter()
                 .map(|q| p.statistics.offset - q.peer.statistics.offset)
@@ -492,14 +491,10 @@ fn cluster_algorithm(candidates: &mut Vec<SurvivorTuple>) {
             }
         }
 
-        // If the maximum selection jitter is less than the
-        // minimum peer jitter, then tossing out more survivors
-        // will not lower the minimum peer jitter, so we might
-        // as well stop.  To make sure a few survivors are left
-        // for the clustering algorithm to chew on, we also stop
-        // if the number of survivors is less than or equal to
-        // NMIN (3).
-        if max_selection_jitter < min_peer_jitter || candidates.len() <= MIN_CLUSTER_SURVIVORS {
+        // If the maximum selection jitter is less than the minimum peer jitter,
+        // Then subsequent iterations will not will not lower the minimum peer jitter,
+        // so we might as well stop.
+        if max_selection_jitter < min_peer_jitter {
             return;
         }
 
