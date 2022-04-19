@@ -1,4 +1,4 @@
-use crate::{NtpDuration, NtpTimestamp};
+use crate::{NtpDuration, NtpTimestamp, ReferenceId};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum NtpLeapIndicator {
@@ -92,16 +92,12 @@ pub struct NtpHeader {
     pub precision: i8,
     pub root_delay: NtpDuration,
     pub root_dispersion: NtpDuration,
-    pub reference_id: u32,
+    pub reference_id: ReferenceId,
     pub reference_timestamp: NtpTimestamp,
     pub origin_timestamp: NtpTimestamp,
     pub receive_timestamp: NtpTimestamp,
     pub transmit_timestamp: NtpTimestamp,
 }
-
-const KISS_DENY: u32 = 0x44454E59;
-const KISS_RSTR: u32 = 0x52535452;
-const KISS_RATE: u32 = 0x52415444;
 
 impl NtpHeader {
     /// A new, empty NtpHeader
@@ -115,7 +111,7 @@ impl NtpHeader {
             precision: 0,
             root_delay: NtpDuration::default(),
             root_dispersion: NtpDuration::default(),
-            reference_id: 0,
+            reference_id: ReferenceId::from_int(0),
             reference_timestamp: NtpTimestamp::default(),
             origin_timestamp: NtpTimestamp::default(),
             receive_timestamp: NtpTimestamp::default(),
@@ -137,7 +133,7 @@ impl NtpHeader {
             precision: data[3] as i8,
             root_delay: NtpDuration::from_bits_short(data[4..8].try_into().unwrap()),
             root_dispersion: NtpDuration::from_bits_short(data[8..12].try_into().unwrap()),
-            reference_id: u32::from_be_bytes(data[12..16].try_into().unwrap()),
+            reference_id: ReferenceId::from_bytes(data[12..16].try_into().unwrap()),
             reference_timestamp: NtpTimestamp::from_bits(data[16..24].try_into().unwrap()),
             origin_timestamp: NtpTimestamp::from_bits(data[24..32].try_into().unwrap()),
             receive_timestamp: NtpTimestamp::from_bits(data[32..40].try_into().unwrap()),
@@ -152,7 +148,7 @@ impl NtpHeader {
 
         let root_delay = self.root_delay.to_bits_short();
         let root_dispersion = self.root_dispersion.to_bits_short();
-        let reference_id = self.reference_id.to_be_bytes();
+        let reference_id = self.reference_id.to_bytes();
         let reference_timestamp = self.reference_timestamp.to_bits();
         let origin_timestamp = self.origin_timestamp.to_bits();
         let receive_timestamp = self.receive_timestamp.to_bits();
@@ -215,15 +211,15 @@ impl NtpHeader {
     }
 
     pub fn is_kiss_deny(&self) -> bool {
-        self.is_kiss() && self.reference_id == KISS_DENY
-    }
-
-    pub fn is_kiss_rstr(&self) -> bool {
-        self.is_kiss() && self.reference_id == KISS_RSTR
+        self.is_kiss() && self.reference_id.is_deny()
     }
 
     pub fn is_kiss_rate(&self) -> bool {
-        self.is_kiss() && self.reference_id == KISS_RATE
+        self.is_kiss() && self.reference_id.is_rate()
+    }
+
+    pub fn is_kiss_rstr(&self) -> bool {
+        self.is_kiss() && self.reference_id.is_rstr()
     }
 }
 
@@ -271,7 +267,7 @@ mod tests {
             precision: -24,
             root_delay: NtpDuration::from_fixed_int(1023 << 16),
             root_dispersion: NtpDuration::from_fixed_int(893 << 16),
-            reference_id: 0x5ec69f0f,
+            reference_id: ReferenceId::from_int(0x5ec69f0f),
             reference_timestamp: NtpTimestamp::from_fixed_int(0xe5f662987b61b9af),
             origin_timestamp: NtpTimestamp::from_fixed_int(0xe5f663667b64995d),
             receive_timestamp: NtpTimestamp::from_fixed_int(0xe5f6636681405590),
@@ -294,7 +290,7 @@ mod tests {
             precision: -23,
             root_delay: NtpDuration::from_fixed_int(566 << 16),
             root_dispersion: NtpDuration::from_fixed_int(951 << 16),
-            reference_id: 0xc035676c,
+            reference_id: ReferenceId::from_int(0xc035676c),
             reference_timestamp: NtpTimestamp::from_fixed_int(0xe5f661fd6f165f03),
             origin_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a87619ef40),
             receive_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a8798c6581),

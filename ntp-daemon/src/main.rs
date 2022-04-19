@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use ntp_proto::{NtpClock, NtpHeader, SystemClock};
 use std::env;
 use std::error::Error;

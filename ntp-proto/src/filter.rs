@@ -7,7 +7,7 @@
 //
 //      https://datatracker.ietf.org/doc/html/rfc5905#appendix-A.5.2
 
-use crate::{packet::NtpLeapIndicator, NtpDuration, NtpHeader, NtpTimestamp};
+use crate::{packet::NtpLeapIndicator, NtpDuration, NtpHeader, NtpTimestamp, ReferenceId};
 
 const MAX_STRATUM: u8 = 16;
 const MAX_DISTANCE: NtpDuration = NtpDuration::ONE;
@@ -190,7 +190,9 @@ pub struct Peer {
     last_measurements: LastMeasurements,
     last_packet: NtpHeader,
     time: NtpTimestamp,
-    stratum: u8,
+    #[allow(dead_code)]
+    peer_id: ReferenceId,
+    our_id: ReferenceId,
 }
 
 pub enum Decision {
@@ -278,16 +280,13 @@ impl Peer {
             return false;
         }
 
-        // A loop error occurs if the remote peer is synchronized to the
-        // local peer or the remote peer is synchronized to the current
-        // system peer.  Note this is the behavior for IPv4; for IPv6
-        // the MD5 hash is used instead.
-
-        // TODO: figure out how to do loop detection
-        // does the peer use us as the source of its time
-        //        if system_reference_id == self.last_packet.reference_id {
-        //            return false;
-        //        }
+        // Detect whether the remote uses us as their main time reference.
+        // if so, we shouldn't sync to them as that would create a loop.
+        // Note, this can only ever be an issue if the peer is not using
+        // hardware as its source, so ignore reference_id if stratum is 1.
+        if self.last_packet.stratum != 1 && self.last_packet.reference_id == self.our_id {
+            return false;
+        }
 
         // TODO: An unreachable error occurs if the server is unreachable.
 
@@ -378,7 +377,7 @@ fn filter_survivor<'a>(
         None
     } else {
         let peer = candidate.peer;
-        let metric = MAX_DISTANCE * peer.stratum + peer.root_distance(local_clock_time);
+        let metric = MAX_DISTANCE * peer.last_packet.stratum + peer.root_distance(local_clock_time);
 
         Some(SurvivorTuple { peer, metric })
     }
@@ -398,6 +397,7 @@ fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDurat
         let mut chime = 0; // variable "c"
 
         // Scan the chime list from lowest to highest to find the lower endpoint.
+        // any middle that we find before the lower endpoint counts as a falseticker
         for tuple in chime_list {
             chime -= tuple.endpoint_type as i32;
 
@@ -413,6 +413,7 @@ fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDurat
         }
 
         // Scan the chime list from highest to lowest to find the upper endpoint.
+        // any middle that we find before the upper endpoint counts as a falseticker
         chime = 0;
         for tuple in chime_list.iter().rev() {
             chime += tuple.endpoint_type as i32;
@@ -428,10 +429,8 @@ fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDurat
             }
         }
 
-        //  If the number of midpoints is greater than the number
-        //  of allowed falsetickers, the intersection contains at
-        //  least one truechimer with no midpoint.  If so, increment
-        //  the number of allowed falsetickers and go around again.
+        // counted more falsetickers than allowed in this iteration;
+        // we loop and try again allowing one more falseticker
         if found > allow {
             continue;
         }
@@ -559,6 +558,17 @@ fn clock_combine<'a>(
 mod test {
     use super::*;
 
+    fn default_peer() -> Peer {
+        Peer {
+            statistics: Default::default(),
+            last_measurements: Default::default(),
+            last_packet: Default::default(),
+            time: Default::default(),
+            peer_id: ReferenceId::from_int(0),
+            our_id: ReferenceId::from_int(0),
+        }
+    }
+
     #[test]
     fn dispersion_of_dummys() {
         // The observer should note (a) if all stages contain the dummy tuple
@@ -622,13 +632,7 @@ mod test {
             time: Default::default(),
         };
 
-        let mut peer = Peer {
-            statistics: Default::default(),
-            last_measurements: Default::default(),
-            last_packet: Default::default(),
-            time: Default::default(),
-            stratum: Default::default(),
-        };
+        let mut peer = default_peer();
 
         let update = peer.clock_filter(new_tuple, leap_indicator, system_precision);
 
@@ -649,13 +653,7 @@ mod test {
             time: NtpTimestamp::from_bits((1i64 << 32).to_be_bytes()),
         };
 
-        let mut peer = Peer {
-            statistics: Default::default(),
-            last_measurements: Default::default(),
-            last_packet: Default::default(),
-            time: Default::default(),
-            stratum: Default::default(),
-        };
+        let mut peer = default_peer();
 
         let update = peer.clock_filter(new_tuple, leap_indicator, system_precision);
 
