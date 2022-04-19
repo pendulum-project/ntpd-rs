@@ -622,6 +622,8 @@ fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDurat
 
 #[cfg(test)]
 mod test {
+    use crate::packet::NtpAssociationMode;
+
     use super::*;
 
     fn default_peer() -> Peer {
@@ -783,5 +785,44 @@ mod test {
         );
 
         assert!(update.is_none());
+    }
+
+    #[test]
+    fn filter_tuple_from_packet_standard() {
+        let mut packet = NtpHeader::default();
+
+        packet.mode = NtpAssociationMode::Client;
+
+        let local_clock_time = NtpTimestamp::ZERO;
+        let system_precision = NtpDuration::ZERO;
+
+        let seconds = |t| NtpTimestamp::from_seconds_nanos_since_ntp_epoch(t, 0);
+
+        packet.origin_timestamp = seconds(0); // T1
+        packet.receive_timestamp = seconds(10); // T2
+        packet.transmit_timestamp = seconds(20); // T3
+        let destination_timestamp = seconds(30); // T4
+
+        let tuple = FilterTuple::from_packet(
+            &packet,
+            system_precision,
+            destination_timestamp,
+            local_clock_time,
+        );
+
+        let expected = FilterTuple {
+            // offset is the average of the deltas (T2 - T1) and (T4 - T3)
+            offset: NtpDuration::from_seconds(10.0),
+
+            // delay is (T4 - T1) - (T3 - T2)
+            delay: NtpDuration::from_seconds(20.0),
+
+            // packet.precision is zero, but it's an exponent and 2^0 is 1
+            dispersion: NtpDuration::ONE + multiply_by_phi(NtpDuration::from_seconds(30.0)),
+
+            time: NtpTimestamp::ZERO,
+        };
+
+        assert_eq!(tuple, expected);
     }
 }
