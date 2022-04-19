@@ -835,4 +835,35 @@ mod test {
 
         assert_eq!(tuple, expected);
     }
+
+    #[test]
+    fn filter_tuple_from_packet_negative_delay() {
+        // In cases where the server and client clocks are running at different rates
+        // and with very fast networks, the delay can appear negative.
+        // delay is clamped to ensure it is always positive
+
+        let mut packet = NtpHeader::default();
+
+        packet.mode = NtpAssociationMode::Client;
+
+        let local_clock_time = NtpTimestamp::ZERO;
+        let system_precision = NtpDuration::ONE;
+
+        let seconds = |t| NtpTimestamp::from_seconds_nanos_since_ntp_era(t, 0);
+
+        // NOTE: T3 > T4: packet is transmitted by the server after it is received by the client
+        packet.origin_timestamp = seconds(0); // T1
+        packet.receive_timestamp = seconds(10); // T2
+        packet.transmit_timestamp = seconds(40); // T3
+        let destination_timestamp = seconds(30); // T4
+
+        let tuple = FilterTuple::from_packet(
+            &packet,
+            system_precision,
+            destination_timestamp,
+            local_clock_time,
+        );
+
+        assert_eq!(tuple.delay, system_precision);
+    }
 }
