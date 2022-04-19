@@ -492,6 +492,8 @@ pub fn fuzz_find_interval(spec: &[(i64, u64)]) {
     }
     candidates.sort_by(|a, b| a.edge.cmp(&b.edge));
     let survivors = construct_survivors(&candidates, NtpTimestamp::from_fixed_int(0));
+
+    // check that if we find a cluster, it contains more than half of the peers we work with.
     assert!(survivors.len() == 0 || 2 * survivors.len() > spec.len());
 }
 
