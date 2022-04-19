@@ -526,7 +526,7 @@ fn clock_select(
         return None;
     }
 
-    let _selection_jitter = cluster_algorithm(&mut survivors);
+    let _system_selection_jitter = cluster_algorithm(&mut survivors);
 
     Some(survivors)
 }
