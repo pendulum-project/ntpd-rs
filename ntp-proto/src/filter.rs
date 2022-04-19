@@ -380,6 +380,11 @@ fn filter_survivor<'a>(
     low: NtpDuration,
     high: NtpDuration,
 ) -> Option<SurvivorTuple<'a>> {
+    // To be a truechimer, a peers middle (actual offset)
+    // needs to lie within the consistency interval.
+    // Note: The standard is unclear on this, but this
+    // is what gives sensible results in combination with
+    // how interval selection works.
     if candidate.edge < low
         || candidate.edge > high
         || candidate.endpoint_type != EndpointType::Middle
