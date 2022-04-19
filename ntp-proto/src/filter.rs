@@ -874,4 +874,34 @@ mod test {
 
         assert_eq!(tuple.delay, system_precision);
     }
+
+    #[test]
+    fn reachability() {
+        let mut reach = Reach::default();
+
+        // the default reach register value is 0, and hence not reachable
+        assert!(!reach.is_reachable());
+
+        // when we receive a packet, we set the right-most bit;
+        // we just received a packet from the peer, so it is reachable
+        reach.received_packet();
+        assert!(reach.is_reachable());
+
+        // on every poll, the register is shifted to the left, and there are
+        // 8 bits. So we can poll 7 times and the peer is still considered reachable
+        for _ in 0..7 {
+            reach.poll();
+        }
+
+        assert!(reach.is_reachable());
+
+        // but one more poll and all 1 bits have been shifted out;
+        // the peer is no longer reachable
+        reach.poll();
+        assert!(!reach.is_reachable());
+
+        // until we receive a packet from it again
+        reach.received_packet();
+        assert!(reach.is_reachable());
+    }
 }
