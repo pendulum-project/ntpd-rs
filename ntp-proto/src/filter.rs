@@ -565,21 +565,20 @@ fn clock_combine<'a>(
 ) -> ClockCombine {
     let mut y = 0.0; // normalization factor
     let mut z = 0.0; // weighed offset sum
-    let mut w = 0.0; // weighed jitter sum
-
-    let first_offset = survivors[0].peer.statistics.offset;
 
     for tuple in survivors {
         let peer = tuple.peer;
         let x = peer.root_distance(local_clock_time).to_seconds();
         y += 1.0 / x;
         z += peer.statistics.offset.to_seconds() / x;
-
-        w += (peer.statistics.offset - first_offset).to_seconds().powi(2) / x;
     }
 
     let system_offset = NtpDuration::from_seconds(z / y);
-    let system_peer_jitter = (w / y).sqrt();
+
+    // deviation: the code skeleton does some weird statistics here.
+    // we just pick the jitter of the peer that will become the system peer
+    // this may be an overestimate but that is not a problem
+    let system_peer_jitter = survivors[0].peer.statistics.jitter;
 
     let system_jitter = NtpDuration::from_seconds(
         (selection_jitter.to_seconds().powi(2) + system_peer_jitter.powi(2)).sqrt(),
