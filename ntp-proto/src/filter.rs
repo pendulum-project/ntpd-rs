@@ -541,6 +541,9 @@ struct ClockCombine {
 /// clockhopping is involved.  The reference implementation can
 /// be configured to avoid this algorithm by designating a
 /// preferred peer.
+///
+/// Assumption: the survivors are the output of the clustering algorithm,
+/// in particular they are in the order produced by the clustering algorithm.
 #[allow(dead_code)]
 fn clock_combine<'a>(
     survivors: &'a [SurvivorTuple<'a>],
