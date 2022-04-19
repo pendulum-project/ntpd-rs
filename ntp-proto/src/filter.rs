@@ -546,9 +546,9 @@ fn clock_combine<'a>(
     survivors: &'a [SurvivorTuple<'a>],
     local_clock_time: NtpTimestamp,
 ) -> ClockCombine {
-    let mut y = 0.0;
-    let mut z = 0.0;
-    let mut w = 0.0;
+    let mut y = 0.0; // normalization factor
+    let mut z = 0.0; // weighed offset sum
+    let mut w = 0.0; // weighed jitter sum
 
     let first_offset = survivors[0].peer.statistics.offset;
 
