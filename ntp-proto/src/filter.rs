@@ -41,6 +41,49 @@ impl FilterTuple {
     fn is_dummy(self) -> bool {
         self == Self::DUMMY
     }
+
+    fn from_packet(
+        packet: &NtpHeader,
+        system_precision: NtpDuration,
+        destination_timestamp: NtpTimestamp,
+        local_clock_time: NtpTimestamp,
+    ) -> Self {
+        let packet_precision = NtpDuration::from_exponent(packet.precision);
+
+        if let crate::packet::NtpAssociationMode::Broadcast = packet.mode {
+            let offset = packet.transmit_timestamp - destination_timestamp;
+            let delay = BROADCAST_DELAY;
+            let dispersion =
+                packet_precision + system_precision + multiply_by_phi(BROADCAST_DELAY * 2i64);
+
+            FilterTuple {
+                offset,
+                delay,
+                dispersion,
+                time: local_clock_time,
+            }
+        } else {
+            let offset1 = packet.receive_timestamp - packet.origin_timestamp;
+            let offset2 = destination_timestamp - packet.transmit_timestamp;
+            let offset = (offset1 + offset2) / 2i64;
+
+            // In cases where the server and client clocks are running at different rates
+            // and with very fast networks, the delay can appear negative.
+            // delay is clamped to ensure it is always positive
+            let delta1 = destination_timestamp - packet.origin_timestamp;
+            let delta2 = packet.receive_timestamp - packet.transmit_timestamp;
+            let delay = system_precision.max(delta1 - delta2);
+
+            let dispersion = packet_precision + system_precision + multiply_by_phi(delta1);
+
+            FilterTuple {
+                offset,
+                delay,
+                dispersion,
+                time: local_clock_time,
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -367,42 +410,12 @@ impl Peer {
         self.poll_update(local_clock_time, poll_interval);
         self.reach.update();
 
-        let r = &self.last_packet;
-        let packet_precision = NtpDuration::from_exponent(r.precision);
-
-        let tuple = if let crate::packet::NtpAssociationMode::Broadcast = r.mode {
-            let offset = r.transmit_timestamp - destination_timestamp;
-            let delay = BROADCAST_DELAY;
-            let dispersion =
-                packet_precision + system_precision + multiply_by_phi(BROADCAST_DELAY * 2i64);
-
-            FilterTuple {
-                offset,
-                delay,
-                dispersion,
-                time: local_clock_time,
-            }
-        } else {
-            let offset1 = r.receive_timestamp - r.origin_timestamp;
-            let offset2 = destination_timestamp - r.transmit_timestamp;
-            let offset = (offset1 + offset2) / 2i64;
-
-            // In cases where the server and client clocks are running at different rates
-            // and with very fast networks, the delay can appear negative.
-            // delay is clamped to ensure it is always positive
-            let delta1 = destination_timestamp - r.origin_timestamp;
-            let delta2 = r.receive_timestamp - r.transmit_timestamp;
-            let delay = system_precision.max(delta1 - delta2);
-
-            let dispersion = packet_precision + system_precision + multiply_by_phi(delta1);
-
-            FilterTuple {
-                offset,
-                delay,
-                dispersion,
-                time: local_clock_time,
-            }
-        };
+        let tuple = FilterTuple::from_packet(
+            &packet,
+            system_precision,
+            destination_timestamp,
+            local_clock_time,
+        );
 
         Some(tuple)
     }
