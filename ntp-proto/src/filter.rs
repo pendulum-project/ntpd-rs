@@ -301,7 +301,7 @@ impl Peer {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i8)]
 enum EndpointType {
     Upper = 1,
@@ -380,7 +380,10 @@ fn filter_survivor<'a>(
     low: NtpDuration,
     high: NtpDuration,
 ) -> Option<SurvivorTuple<'a>> {
-    if candidate.edge < low || candidate.edge > high {
+    if candidate.edge < low
+        || candidate.edge > high
+        || candidate.endpoint_type != EndpointType::Middle
+    {
         None
     } else {
         let p = candidate.peer;
