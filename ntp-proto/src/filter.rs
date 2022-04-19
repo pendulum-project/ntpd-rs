@@ -568,4 +568,136 @@ mod test {
         assert_eq!(temporary.register[0], new_tuple);
         assert_eq!(temporary.valid_tuples(), &[new_tuple]);
     }
+
+    #[test]
+    fn test_root_duration_sanity() {
+        // Ensure root distance at least increases as it is supposed to
+        // when changing the main measurement parameters
+        let mut packet = NtpHeader::new();
+        packet.root_delay = NtpDuration::from_fixed_int(100000000);
+        packet.root_dispersion = NtpDuration::from_fixed_int(100000000);
+        let reference = Peer {
+            statistics: PeerStatistics {
+                delay: NtpDuration::from_fixed_int(100000000),
+                dispersion: NtpDuration::from_fixed_int(100000000),
+                ..Default::default()
+            },
+            last_measurements: Default::default(),
+            last_packet: packet.clone(),
+            time: NtpTimestamp::from_fixed_int(100000000),
+            peer_id: ReferenceId::from_int(0),
+            our_id: ReferenceId::from_int(0),
+        };
+
+        assert!(
+            reference.root_distance(NtpTimestamp::from_fixed_int(100000000))
+                < reference.root_distance(NtpTimestamp::from_fixed_int(200000000))
+        );
+
+        let sample = Peer {
+            statistics: PeerStatistics {
+                delay: NtpDuration::from_fixed_int(200000000),
+                dispersion: NtpDuration::from_fixed_int(100000000),
+                ..Default::default()
+            },
+            last_measurements: Default::default(),
+            last_packet: packet.clone(),
+            time: NtpTimestamp::from_fixed_int(100000000),
+            peer_id: ReferenceId::from_int(0),
+            our_id: ReferenceId::from_int(0),
+        };
+        assert!(
+            reference.root_distance(NtpTimestamp::from_fixed_int(100000000))
+                < sample.root_distance(NtpTimestamp::from_fixed_int(100000000))
+        );
+
+        let sample = Peer {
+            statistics: PeerStatistics {
+                delay: NtpDuration::from_fixed_int(100000000),
+                dispersion: NtpDuration::from_fixed_int(200000000),
+                ..Default::default()
+            },
+            last_measurements: Default::default(),
+            last_packet: packet.clone(),
+            time: NtpTimestamp::from_fixed_int(100000000),
+            peer_id: ReferenceId::from_int(0),
+            our_id: ReferenceId::from_int(0),
+        };
+        assert!(
+            reference.root_distance(NtpTimestamp::from_fixed_int(100000000))
+                < sample.root_distance(NtpTimestamp::from_fixed_int(100000000))
+        );
+
+        let sample = Peer {
+            statistics: PeerStatistics {
+                delay: NtpDuration::from_fixed_int(100000000),
+                dispersion: NtpDuration::from_fixed_int(100000000),
+                ..Default::default()
+            },
+            last_measurements: Default::default(),
+            last_packet: packet.clone(),
+            time: NtpTimestamp::from_fixed_int(0),
+            peer_id: ReferenceId::from_int(0),
+            our_id: ReferenceId::from_int(0),
+        };
+        assert!(
+            reference.root_distance(NtpTimestamp::from_fixed_int(100000000))
+                < sample.root_distance(NtpTimestamp::from_fixed_int(100000000))
+        );
+
+        packet.root_delay = NtpDuration::from_fixed_int(200000000);
+        let sample = Peer {
+            statistics: PeerStatistics {
+                delay: NtpDuration::from_fixed_int(100000000),
+                dispersion: NtpDuration::from_fixed_int(100000000),
+                ..Default::default()
+            },
+            last_measurements: Default::default(),
+            last_packet: packet.clone(),
+            time: NtpTimestamp::from_fixed_int(100000000),
+            peer_id: ReferenceId::from_int(0),
+            our_id: ReferenceId::from_int(0),
+        };
+        packet.root_delay = NtpDuration::from_fixed_int(100000000);
+        assert!(
+            reference.root_distance(NtpTimestamp::from_fixed_int(100000000))
+                < sample.root_distance(NtpTimestamp::from_fixed_int(100000000))
+        );
+
+        packet.root_dispersion = NtpDuration::from_fixed_int(200000000);
+        let sample = Peer {
+            statistics: PeerStatistics {
+                delay: NtpDuration::from_fixed_int(100000000),
+                dispersion: NtpDuration::from_fixed_int(100000000),
+                ..Default::default()
+            },
+            last_measurements: Default::default(),
+            last_packet: packet.clone(),
+            time: NtpTimestamp::from_fixed_int(100000000),
+            peer_id: ReferenceId::from_int(0),
+            our_id: ReferenceId::from_int(0),
+        };
+        packet.root_dispersion = NtpDuration::from_fixed_int(100000000);
+        assert!(
+            reference.root_distance(NtpTimestamp::from_fixed_int(100000000))
+                < sample.root_distance(NtpTimestamp::from_fixed_int(100000000))
+        );
+
+        let sample = Peer {
+            statistics: PeerStatistics {
+                delay: NtpDuration::from_fixed_int(100000000),
+                dispersion: NtpDuration::from_fixed_int(100000000),
+                ..Default::default()
+            },
+            last_measurements: Default::default(),
+            last_packet: packet.clone(),
+            time: NtpTimestamp::from_fixed_int(100000000),
+            peer_id: ReferenceId::from_int(0),
+            our_id: ReferenceId::from_int(0),
+        };
+        assert_eq!(
+            reference.root_distance(NtpTimestamp::from_fixed_int(100000000)),
+            sample.root_distance(NtpTimestamp::from_fixed_int(100000000))
+        );
+    }
 }
