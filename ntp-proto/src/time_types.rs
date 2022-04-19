@@ -37,7 +37,7 @@ impl NtpTimestamp {
         NtpTimestamp::from_bits(timestamp.to_be_bytes())
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "fuzz"))]
     pub(crate) const fn from_fixed_int(timestamp: u64) -> NtpTimestamp {
         NtpTimestamp { timestamp }
     }
@@ -180,7 +180,7 @@ impl NtpDuration {
         )
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "fuzz"))]
     pub(crate) const fn from_fixed_int(duration: i64) -> NtpDuration {
         NtpDuration { duration }
     }
