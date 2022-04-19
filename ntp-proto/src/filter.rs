@@ -571,4 +571,272 @@ mod test {
         assert_eq!(temporary.register[0], new_tuple);
         assert_eq!(temporary.valid_tuples(), &[new_tuple]);
     }
+
+    #[test]
+    fn find_interval_simple() {
+        let peer_1 = default_peer();
+        let peer_2 = default_peer();
+        let peer_3 = default_peer();
+
+        let intervals = [
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-4),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-3),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-2),
+            },
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(-1),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(0),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(1),
+            },
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(2),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(3),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(4),
+            },
+        ];
+
+        assert_eq!(
+            find_interval(&intervals),
+            Some((
+                NtpDuration::from_fixed_int(-2),
+                NtpDuration::from_fixed_int(2)
+            ))
+        );
+
+        let survivors = construct_survivors(&intervals, NtpTimestamp::from_fixed_int(0));
+        assert_eq!(survivors.len(), 3);
+    }
+
+    #[test]
+    fn find_interval_outlier() {
+        let peer_1 = default_peer();
+        let peer_2 = default_peer();
+        let peer_3 = default_peer();
+
+        let intervals = [
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-4),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-3),
+            },
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(-1),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(0),
+            },
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(2),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(3),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(15),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(16),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(17),
+            },
+        ];
+
+        assert_eq!(
+            find_interval(&intervals),
+            Some((
+                NtpDuration::from_fixed_int(-3),
+                NtpDuration::from_fixed_int(2)
+            ))
+        );
+
+        let survivors = construct_survivors(&intervals, NtpTimestamp::from_fixed_int(0));
+        assert_eq!(survivors.len(), 2);
+    }
+
+    #[test]
+    fn find_interval_low_precision_edgecase() {
+        // One larger interval whose middle does not lie in
+        // both smaller intervals, but whose middles do overlap.
+        let peer_1 = default_peer();
+        let peer_2 = default_peer();
+        let peer_3 = default_peer();
+
+        let intervals = [
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-10),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-3),
+            },
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(-2),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-1),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(0),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(2),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(3),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(5),
+            },
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(6),
+            },
+        ];
+
+        assert_eq!(
+            find_interval(&intervals),
+            Some((
+                NtpDuration::from_fixed_int(-3),
+                NtpDuration::from_fixed_int(5)
+            ))
+        );
+
+        let survivors = construct_survivors(&intervals, NtpTimestamp::from_fixed_int(0));
+        assert_eq!(survivors.len(), 3);
+    }
+
+    #[test]
+    fn find_interval_interleaving_edgecase() {
+        // One larger interval whose middle does not lie in
+        // both smaller intervals, but whose middles do overlap.
+        let peer_1 = default_peer();
+        let peer_2 = default_peer();
+        let peer_3 = default_peer();
+
+        let intervals = [
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-5),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-3),
+            },
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(-2),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Lower,
+                edge: NtpDuration::from_fixed_int(-1),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(-0),
+            },
+            CandidateTuple {
+                peer: &peer_1,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(1),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Middle,
+                edge: NtpDuration::from_fixed_int(2),
+            },
+            CandidateTuple {
+                peer: &peer_2,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(3),
+            },
+            CandidateTuple {
+                peer: &peer_3,
+                endpoint_type: EndpointType::Upper,
+                edge: NtpDuration::from_fixed_int(5),
+            },
+        ];
+
+        assert_eq!(
+            find_interval(&intervals),
+            Some((
+                NtpDuration::from_fixed_int(-3),
+                NtpDuration::from_fixed_int(3)
+            ))
+        );
+
+        let survivors = construct_survivors(&intervals, NtpTimestamp::from_fixed_int(0));
+        assert_eq!(survivors.len(), 3);
+    }
 }
