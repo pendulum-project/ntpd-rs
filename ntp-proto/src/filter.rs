@@ -197,7 +197,6 @@ pub struct Peer {
     last_measurements: LastMeasurements,
     last_packet: NtpHeader,
     time: NtpTimestamp,
-    stratum: u8,
     #[allow(dead_code)]
     peer_id: ReferenceId,
     our_id: ReferenceId,
@@ -385,7 +384,7 @@ fn filter_survivor<'a>(
         None
     } else {
         let p = candidate.peer;
-        let metric = MAX_DISTANCE * p.stratum + p.root_distance(local_clock_time);
+        let metric = MAX_DISTANCE * p.last_packet.stratum + p.root_distance(local_clock_time);
 
         Some(SurvivorTuple { p, metric })
     }
@@ -461,7 +460,6 @@ mod test {
             time: Default::default(),
             peer_id: ReferenceId::from_int(0),
             our_id: ReferenceId::from_int(0),
-            stratum: 0,
         }
     }
 
