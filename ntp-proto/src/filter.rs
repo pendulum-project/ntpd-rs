@@ -478,12 +478,13 @@ fn cluster_algorithm(candidates: &mut Vec<SurvivorTuple>) {
             min_peer_jitter = p.statistics.jitter.min(min_peer_jitter);
 
             // compute the selection jitter
-            let selection_jitter = candidates
+            let selection_jitter_sum = candidates
                 .iter()
                 .map(|q| p.statistics.offset - q.peer.statistics.offset)
-                .map(|v| v.to_seconds().powi(2))
-                .sum::<f64>()
-                .sqrt();
+                .map(|delta| delta.to_seconds().powi(2))
+                .sum::<f64>();
+
+            let selection_jitter = (selection_jitter_sum / ((candidates.len() - 1) as f64)).sqrt();
 
             if selection_jitter > max_selection_jitter {
                 qmax_index = index;
