@@ -461,13 +461,13 @@ fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDurat
 }
 
 /// Discard the survivor with maximum selection jitter until a termination condition is met.
-fn cluster_algorithm(candidates: &mut Vec<SurvivorTuple>) {
+///
+/// returns the (maximum) selection jitter
+fn cluster_algorithm(candidates: &mut Vec<SurvivorTuple>) -> f64 {
     // sort the candidates by increasing lambda_p (the merit factor)
     candidates.sort_by(|a, b| a.metric.cmp(&b.metric));
 
-    // To make sure a few survivors are left for the clustering algorithm to chew on, we stop
-    // if the number of survivors is less than or equal to NMIN (3).
-    while candidates.len() <= MIN_CLUSTER_SURVIVORS {
+    loop {
         let mut qmax_index = 0;
         let mut min_peer_jitter: f64 = 2.0e9;
         let mut max_selection_jitter = -2.0e9;
@@ -494,8 +494,13 @@ fn cluster_algorithm(candidates: &mut Vec<SurvivorTuple>) {
         // If the maximum selection jitter is less than the minimum peer jitter,
         // Then subsequent iterations will not will not lower the minimum peer jitter,
         // so we might as well stop.
-        if max_selection_jitter < min_peer_jitter {
-            return;
+        //
+        // To make sure a few survivors are left for the clustering algorithm to chew on, we stop
+        // if the number of survivors is less than or equal to NMIN (3).
+        if max_selection_jitter < min_peer_jitter || candidates.len() <= MIN_CLUSTER_SURVIVORS {
+            // the final version of max_selection_jitter (psi_max in the spec) is
+            // stored under the name "system selection jitter" (PSI_s)
+            return max_selection_jitter;
         }
 
         // delete the survivor qmax (the one with the highest jitter) and go around again
@@ -521,7 +526,7 @@ fn clock_select(
         return None;
     }
 
-    cluster_algorithm(&mut survivors);
+    let _selection_jitter = cluster_algorithm(&mut survivors);
 
     Some(survivors)
 }
@@ -529,7 +534,7 @@ fn clock_select(
 #[allow(dead_code)]
 struct ClockCombine {
     system_offset: NtpDuration,
-    system_peer_jitter: NtpDuration,
+    system_jitter: NtpDuration,
 }
 
 /// Combine the offsets of the clustering algorithm survivors
@@ -547,6 +552,7 @@ struct ClockCombine {
 #[allow(dead_code)]
 fn clock_combine<'a>(
     survivors: &'a [SurvivorTuple<'a>],
+    selection_jitter: NtpDuration,
     local_clock_time: NtpTimestamp,
 ) -> ClockCombine {
     let mut y = 0.0; // normalization factor
@@ -563,12 +569,16 @@ fn clock_combine<'a>(
         w += (peer.statistics.offset - first_offset).to_seconds().powi(2) / x;
     }
 
-    let offset = NtpDuration::from_seconds(z / y);
-    let jitter = NtpDuration::from_seconds((w / y).sqrt());
+    let system_offset = NtpDuration::from_seconds(z / y);
+    let system_peer_jitter = (w / y).sqrt();
+
+    let system_jitter = NtpDuration::from_seconds(
+        (selection_jitter.to_seconds().powi(2) + system_peer_jitter.powi(2)).sqrt(),
+    );
 
     ClockCombine {
-        system_offset: offset,
-        system_peer_jitter: jitter,
+        system_offset,
+        system_jitter,
     }
 }
 
