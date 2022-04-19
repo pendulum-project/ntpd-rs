@@ -720,4 +720,46 @@ mod test {
         assert_eq!(temporary.register[0], new_tuple);
         assert_eq!(temporary.valid_tuples(), &[new_tuple]);
     }
+
+    #[test]
+    fn update_with_unsynchronized_packet() {
+        let mut peer = default_peer();
+        let mut packet = NtpHeader::default();
+
+        packet.leap = NtpLeapIndicator::Unknown;
+
+        let local_clock_time = NtpTimestamp::ZERO;
+        let system_precision = NtpDuration::ZERO;
+        let destination_timestamp = NtpTimestamp::ZERO;
+
+        let update = peer.update_with_packet(
+            local_clock_time,
+            system_precision,
+            packet,
+            destination_timestamp,
+        );
+
+        assert!(update.is_none());
+    }
+
+    #[test]
+    fn update_with_invalid_stratum() {
+        let mut peer = default_peer();
+        let mut packet = NtpHeader::default();
+
+        packet.stratum = 42;
+
+        let local_clock_time = NtpTimestamp::ZERO;
+        let system_precision = NtpDuration::ZERO;
+        let destination_timestamp = NtpTimestamp::ZERO;
+
+        let update = peer.update_with_packet(
+            local_clock_time,
+            system_precision,
+            packet,
+            destination_timestamp,
+        );
+
+        assert!(update.is_none());
+    }
 }
