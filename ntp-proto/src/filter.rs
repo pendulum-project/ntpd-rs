@@ -209,6 +209,38 @@ pub struct Peer {
     #[allow(dead_code)]
     peer_id: ReferenceId,
     our_id: ReferenceId,
+    #[allow(dead_code)]
+    reach: Reach,
+}
+
+/// Used to determine whether the server is reachable and the data are fresh
+///
+/// This value is represented as an 8-bit shift register. The register is shifted left
+/// by one bit when a packet is sent and the rightmost bit is set to zero.  
+/// As valid packets arrive, the rightmost bit is set to one.
+/// If the register contains any nonzero bits, the server is considered reachable;
+/// otherwise, it is unreachable.
+#[derive(Debug, Default)]
+struct Reach(u8);
+
+impl Reach {
+    #[allow(dead_code)]
+    fn is_reachable(&self) -> bool {
+        self.0 != 0
+    }
+
+    /// We have just received a packet, so the peer is definitely reachable
+    #[allow(dead_code)]
+    fn received_packet(&mut self) {
+        self.0 |= 1;
+    }
+
+    /// A packet received some number of poll intervals ago is decreasingly relevant for
+    /// determining that a peer is still reachable. We discount the packets received so far.
+    #[allow(dead_code)]
+    fn poll(&mut self) {
+        self.0 <<= 1
+    }
 }
 
 pub enum Decision {
@@ -1264,5 +1296,35 @@ mod test {
 
         let survivors = construct_survivors(&intervals, NtpTimestamp::from_fixed_int(0));
         assert_eq!(survivors.len(), 0);
+    }
+
+    #[test]
+    fn reachability() {
+        let mut reach = Reach::default();
+
+        // the default reach register value is 0, and hence not reachable
+        assert!(!reach.is_reachable());
+
+        // when we receive a packet, we set the right-most bit;
+        // we just received a packet from the peer, so it is reachable
+        reach.received_packet();
+        assert!(reach.is_reachable());
+
+        // on every poll, the register is shifted to the left, and there are
+        // 8 bits. So we can poll 7 times and the peer is still considered reachable
+        for _ in 0..7 {
+            reach.poll();
+        }
+
+        assert!(reach.is_reachable());
+
+        // but one more poll and all 1 bits have been shifted out;
+        // the peer is no longer reachable
+        reach.poll();
+        assert!(!reach.is_reachable());
+
+        // until we receive a packet from it again
+        reach.received_packet();
+        assert!(reach.is_reachable());
     }
 }
