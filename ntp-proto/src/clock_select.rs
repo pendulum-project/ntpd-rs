@@ -45,6 +45,7 @@ fn clock_select(
     Some(survivors)
 }
 
+/// Observation: Chrony (sources.c, SRC_SelectSource, line ~920) does not use the Middle tag
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i8)]
 enum EndpointType {
@@ -152,16 +153,20 @@ fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDurat
 
     // allow is the number of allowed falsetickers
     for allow in (0..).take_while(|allow| 2 * allow < n) {
-        let mut found = 0; // variable "d", falsetickers found in the current iteration
-        let mut chime = 0; // variable "c"
+        // variable "d", falsetickers found in the current iteration
+        let mut found = 0;
+
+        // variable "c", the number of intervals that we have entered but not yet exited
+        // incremented when hitting a Lower, decremented when hitting an Upper
+        let mut depth = 0;
 
         // Scan the chime list from lowest to highest to find the lower endpoint.
         // any middle that we find before the lower endpoint counts as a falseticker
         for tuple in chime_list {
-            chime -= tuple.endpoint_type as i32;
+            depth -= tuple.endpoint_type as i32;
 
             // the code skeleton uses `n - found` here, which is wrong!
-            if chime >= (n - allow) as i32 {
+            if depth >= (n - allow) as i32 {
                 low = Some(tuple.edge);
                 break;
             }
@@ -173,12 +178,12 @@ fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDurat
 
         // Scan the chime list from highest to lowest to find the upper endpoint.
         // any middle that we find before the upper endpoint counts as a falseticker
-        chime = 0;
+        depth = 0;
         for tuple in chime_list.iter().rev() {
-            chime += tuple.endpoint_type as i32;
+            depth += tuple.endpoint_type as i32;
 
             // the code skeleton uses `n - found` here, which is wrong!
-            if chime >= (n - allow) as i32 {
+            if depth >= (n - allow) as i32 {
                 high = Some(tuple.edge);
                 break;
             }
