@@ -7,7 +7,10 @@
 //
 //      https://datatracker.ietf.org/doc/html/rfc5905#appendix-A.5.2
 
-use crate::{packet::NtpLeapIndicator, NtpDuration, NtpHeader, NtpTimestamp, ReferenceId};
+use crate::{
+    packet::{NtpAssociationMode, NtpLeapIndicator},
+    NtpDuration, NtpHeader, NtpTimestamp, ReferenceId,
+};
 
 const MAX_STRATUM: u8 = 16;
 const MAX_DISTANCE: NtpDuration = NtpDuration::ONE;
@@ -57,6 +60,52 @@ impl FilterTuple {
 
     fn is_dummy(self) -> bool {
         self == Self::DUMMY
+    }
+
+    /// The default logic for updating a peer with a new packet.
+    ///
+    /// A Broadcast association requires different logic.
+    /// All other associations should use this function
+    #[allow(dead_code)]
+    fn from_packet_default(
+        packet: &NtpHeader,
+        system_precision: NtpDuration,
+        destination_timestamp: NtpTimestamp,
+        local_clock_time: NtpTimestamp,
+    ) -> Self {
+        // for reference
+        //
+        // | org       | T1         | origin timestamp      |
+        // | rec       | T2         | receive timestamp     |
+        // | xmt       | T3         | transmit timestamp    |
+        // | dst       | T4         | destination timestamp |
+
+        // for a broadcast association, different logic is used
+        debug_assert_ne!(packet.mode, NtpAssociationMode::Broadcast);
+
+        let packet_precision = NtpDuration::from_exponent(packet.precision);
+
+        // offset is the average of the deltas (T2 - T1) and (T4 - T3)
+        let offset1 = packet.receive_timestamp - packet.origin_timestamp;
+        let offset2 = destination_timestamp - packet.transmit_timestamp;
+        let offset = (offset1 + offset2) / 2i64;
+
+        // delay is (T4 - T1) - (T3 - T2)
+        let delta1 = destination_timestamp - packet.origin_timestamp;
+        let delta2 = packet.transmit_timestamp - packet.receive_timestamp;
+        // In cases where the server and client clocks are running at different rates
+        // and with very fast networks, the delay can appear negative.
+        // delay is clamped to ensure it is always positive
+        let delay = Ord::max(system_precision, delta1 - delta2);
+
+        let dispersion = packet_precision + system_precision + multiply_by_phi(delta1);
+
+        Self {
+            offset,
+            delay,
+            dispersion,
+            time: local_clock_time,
+        }
     }
 }
 
@@ -1323,5 +1372,77 @@ mod test {
         // until we receive a packet from it again
         reach.received_packet();
         assert!(reach.is_reachable());
+    }
+
+    #[test]
+    fn filter_tuple_from_packet_standard() {
+        let mut packet = NtpHeader::default();
+
+        packet.mode = NtpAssociationMode::Client;
+
+        let local_clock_time = NtpTimestamp::ZERO;
+        let system_precision = NtpDuration::ZERO;
+
+        let seconds = |t| NtpTimestamp::from_seconds_nanos_since_ntp_era(t, 0);
+
+        packet.origin_timestamp = seconds(0); // T1
+        packet.receive_timestamp = seconds(10); // T2
+        packet.transmit_timestamp = seconds(20); // T3
+        let destination_timestamp = seconds(30); // T4
+
+        let tuple = FilterTuple::from_packet_default(
+            &packet,
+            system_precision,
+            destination_timestamp,
+            local_clock_time,
+        );
+
+        let expected = FilterTuple {
+            // offset is the average of the deltas (T2 - T1) and (T4 - T3)
+            offset: NtpDuration::from_seconds(10.0),
+
+            // delay is (T4 - T1) - (T3 - T2)
+            delay: NtpDuration::from_seconds(20.0),
+
+            // packet.precision is zero, but it's an exponent and 2^0 is 1
+            dispersion: NtpDuration::ONE + multiply_by_phi(NtpDuration::from_seconds(30.0)),
+
+            time: NtpTimestamp::ZERO,
+        };
+
+        assert_eq!(tuple, expected);
+    }
+
+    #[test]
+    fn filter_tuple_from_packet_negative_delay() {
+        // In cases where the server and client clocks are running at different rates
+        // and with very fast networks, the delay can appear negative.
+        // delay is clamped to ensure it is always positive
+
+        let mut packet = NtpHeader::default();
+
+        packet.mode = NtpAssociationMode::Client;
+
+        let local_clock_time = NtpTimestamp::ZERO;
+        let system_precision = NtpDuration::ONE;
+
+        let seconds = |t| NtpTimestamp::from_seconds_nanos_since_ntp_era(t, 0);
+
+        // NOTE: T3 > T4: packet is transmitted by the server after it is received by the client
+        packet.origin_timestamp = seconds(0); // T1
+        packet.receive_timestamp = seconds(10); // T2
+        packet.transmit_timestamp = seconds(40); // T3
+        let destination_timestamp = seconds(30); // T4
+
+        let tuple = FilterTuple::from_packet_default(
+            &packet,
+            system_precision,
+            destination_timestamp,
+            local_clock_time,
+        );
+
+        // because T3 > T4, (T4 - T3) is negative.
+        // in this case, the delay is bounded from below by the system precision
+        assert_eq!(tuple.delay, system_precision);
     }
 }
