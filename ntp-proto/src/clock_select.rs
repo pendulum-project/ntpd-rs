@@ -100,6 +100,7 @@ fn construct_candidate_list<'a>(
 }
 
 #[allow(dead_code)]
+#[derive(Debug, Clone)]
 struct SurvivorTuple<'a> {
     peer: &'a Peer,
     metric: NtpDuration,
@@ -211,9 +212,14 @@ fn cluster_algorithm(candidates: &mut Vec<SurvivorTuple>) -> f64 {
     candidates.sort_by(|a, b| a.metric.cmp(&b.metric));
 
     loop {
-        let mut qmax_index = 0;
+        // the lowest jitter of any candidate peer
         let mut min_peer_jitter: f64 = 2.0e9;
+
+        // highest RMS average of the `offset` of a candidate vs all others
+        // the candidate with the max_selection_jitter is the worst candidate
+        // we have seen so far, it's offset is most unlike the others.
         let mut max_selection_jitter = -2.0e9;
+        let mut max_selection_jitter_index = 0;
 
         for (index, candidate) in candidates.iter().enumerate() {
             let p = candidate.peer;
@@ -226,28 +232,43 @@ fn cluster_algorithm(candidates: &mut Vec<SurvivorTuple>) -> f64 {
                 .map(|delta| delta.to_seconds().powi(2))
                 .sum::<f64>();
 
-            let selection_jitter = (selection_jitter_sum / ((candidates.len() - 1) as f64)).sqrt();
+            // prevent a division by 0 if there is just 1 candidate
+            let selection_jitter = if selection_jitter_sum == 0.0 {
+                0.0
+            } else {
+                (selection_jitter_sum / ((candidates.len() - 1) as f64)).sqrt()
+            };
 
             if selection_jitter > max_selection_jitter {
-                qmax_index = index;
+                max_selection_jitter_index = index;
                 max_selection_jitter = selection_jitter;
             }
         }
 
+        // the maximum jitter among our current set of candidates (selection jitter) is less than
+        // the smallest jitter of an individual peer.
+
         // If the maximum selection jitter is less than the minimum peer jitter,
         // Then subsequent iterations will not will not lower the minimum peer jitter,
         // so we might as well stop.
-        //
+        let removed_bad_candidates = max_selection_jitter < min_peer_jitter;
+
         // To make sure a few survivors are left for the clustering algorithm to chew on, we stop
         // if the number of survivors is less than or equal to NMIN (3).
-        if max_selection_jitter < min_peer_jitter || candidates.len() <= MIN_CLUSTER_SURVIVORS {
+        let too_few_survivors = candidates.len() <= MIN_CLUSTER_SURVIVORS;
+
+        if removed_bad_candidates || too_few_survivors {
             // the final version of max_selection_jitter (psi_max in the spec) is
             // stored under the name "system selection jitter" (PSI_s)
-            return max_selection_jitter;
+
+            // Jitter is defined as the root-mean-square (RMS) average of the most recent offset differences
+            // RMS always produces a positive number, but our `max_selection_jitter` is negative.
+            // In the case of 0 candidates, bound max_selection_jitter from below
+            return f64::max(0.0, max_selection_jitter);
         }
 
         // delete the survivor qmax (the one with the highest jitter) and go around again
-        candidates.remove(qmax_index);
+        candidates.remove(max_selection_jitter_index);
     }
 }
 
@@ -774,5 +795,91 @@ mod test {
         ];
 
         assert_eq!(expected, actual)
+    }
+
+    #[test]
+    fn cluster_algorithm_empty() {
+        // this should not happen in practice
+        assert_eq!(cluster_algorithm(&mut vec![]), 0.0)
+    }
+
+    #[test]
+    fn cluster_algorithm_single() {
+        let peer = Peer::test_peer();
+        let candidate = SurvivorTuple {
+            peer: &peer,
+            metric: NtpDuration::ONE,
+        };
+        assert_eq!(cluster_algorithm(&mut vec![candidate]), 0.0);
+    }
+
+    #[test]
+    fn cluster_algorithm_tuple() {
+        let mut peer1 = Peer::test_peer();
+        peer1.statistics.offset = NtpDuration::ONE * 3i64;
+        let candidate1 = SurvivorTuple {
+            peer: &peer1,
+            metric: NtpDuration::ONE,
+        };
+
+        let mut peer2 = Peer::test_peer();
+        peer2.statistics.offset = NtpDuration::ONE * 7i64;
+        let candidate2 = SurvivorTuple {
+            peer: &peer2,
+            metric: NtpDuration::ONE * 3i64,
+        };
+
+        let mut candidates = vec![candidate1, candidate2];
+        let answer = cluster_algorithm(&mut candidates);
+
+        // output is the RMS of the `statistics.offset` versus candidate1: 4 = 7 - 3
+        assert!((answer - 4.0).abs() < 1e-9);
+
+        // we exit before a candidate is removed
+        assert_eq!(candidates.len(), 2);
+    }
+
+    #[test]
+    fn cluster_algorithm_exit_too_few_candidates() {
+        let mut peer1 = Peer::test_peer();
+        peer1.statistics.offset = NtpDuration::ONE * 3i64;
+        let candidate1 = SurvivorTuple {
+            peer: &peer1,
+            metric: NtpDuration::ONE,
+        };
+
+        let mut candidates = vec![candidate1; 10];
+        let answer = cluster_algorithm(&mut candidates);
+        assert!((answer - 0.0).abs() < 1e-9);
+
+        // we keep at least MIN_CLUSTER_SURVIVORS (if we started with enough candidates)
+        assert_eq!(candidates.len(), MIN_CLUSTER_SURVIVORS);
+    }
+
+    #[test]
+    #[ignore]
+    fn cluster_algorithm_exit_max_jitter_too_low() {
+        let mut peer = Peer::test_peer();
+        peer.statistics.offset = NtpDuration::ONE * 3i64;
+
+        let peers = &mut vec![peer; 15];
+
+        for (i, peer) in peers.iter_mut().enumerate() {
+            peer.statistics.jitter = 3.0 + 1.0 - (1.0 / (i + 1) as f64);
+            peer.statistics.offset = NtpDuration::ONE * (i as i64);
+        }
+
+        let mut candidates = (0..15)
+            .map(|i| SurvivorTuple {
+                peer: &peers[i],
+                metric: NtpDuration::ONE,
+            })
+            .collect();
+
+        let answer = cluster_algorithm(&mut candidates);
+        assert!((answer - 2.7386127881634637).abs() < 1e-9);
+
+        assert_eq!(candidates.len(), 5);
+        panic!();
     }
 }
