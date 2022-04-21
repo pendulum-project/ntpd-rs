@@ -22,6 +22,7 @@ pub(crate) struct PeerStatistics {
     pub jitter: f64,
 }
 
+#[derive(Debug)]
 pub(crate) struct Peer {
     pub statistics: PeerStatistics,
     pub last_measurements: LastMeasurements,

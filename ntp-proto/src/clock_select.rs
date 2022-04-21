@@ -54,6 +54,7 @@ enum EndpointType {
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 struct CandidateTuple<'a> {
     peer: &'a Peer,
     endpoint_type: EndpointType,
@@ -63,19 +64,20 @@ struct CandidateTuple<'a> {
 
 #[allow(dead_code)]
 fn construct_candidate_list<'a>(
-    valid_associations: impl Iterator<Item = &'a Peer>,
+    valid_associations: impl IntoIterator<Item = &'a Peer>,
     local_clock_time: NtpTimestamp,
 ) -> Vec<CandidateTuple<'a>> {
     let mut candidate_list = Vec::new();
 
     for peer in valid_associations {
         let offset = peer.statistics.offset;
+        let root_distance = peer.root_distance(local_clock_time);
 
         let tuples = [
             CandidateTuple {
                 peer,
-                endpoint_type: EndpointType::Upper,
-                edge: offset + peer.root_distance(local_clock_time),
+                endpoint_type: EndpointType::Lower,
+                edge: offset - root_distance,
             },
             CandidateTuple {
                 peer,
@@ -84,8 +86,8 @@ fn construct_candidate_list<'a>(
             },
             CandidateTuple {
                 peer,
-                endpoint_type: EndpointType::Lower,
-                edge: offset - peer.root_distance(local_clock_time),
+                endpoint_type: EndpointType::Upper,
+                edge: offset + root_distance,
             },
         ];
 
@@ -727,5 +729,50 @@ mod test {
 
         let survivors = construct_survivors(&intervals, NtpTimestamp::from_fixed_int(0));
         assert_eq!(survivors.len(), 0);
+    }
+
+    #[test]
+    fn test_construct_candidate_list() {
+        let mut peer1 = Peer::test_peer();
+        let mut peer2 = Peer::test_peer();
+
+        peer1.statistics.delay = NtpDuration::from_seconds(1.0);
+
+        // delay chosen so the two intervals intersect
+        peer2.statistics.delay = NtpDuration::from_seconds(3.0);
+        peer2.statistics.offset = NtpDuration::from_seconds(1.5);
+
+        let local_clock_time = NtpTimestamp::ZERO;
+        let actual: Vec<_> = construct_candidate_list([&peer1, &peer2], local_clock_time)
+            .into_iter()
+            .map(|t| (t.endpoint_type, t.edge))
+            .collect();
+
+        let root_distance1 = peer1.root_distance(local_clock_time);
+        let root_distance2 = peer2.root_distance(local_clock_time);
+
+        assert_eq!(root_distance1, peer1.statistics.delay / 2i64);
+        assert_eq!(root_distance2, peer2.statistics.delay / 2i64);
+
+        assert!((root_distance1.to_seconds() - 0.5).abs() < 1e-9);
+        assert!((root_distance2.to_seconds() - 1.5).abs() < 1e-9);
+
+        // the interval is the offset plus/minus the root distance.
+        //
+        // - interval 1 is centered on 0, going 0.5 to either side.     -0.5 -- 0.0 -- 0.5
+        // - interval 2 is centered on 1.5, going 1.5 to either side            0.0 --     -- 1.5 --    -- 3.0
+        //
+        // in practice, interval2.low < interval2.middle because of imprecision in the calculation
+        use EndpointType::*;
+        let expected: Vec<(EndpointType, NtpDuration)> = vec![
+            (Lower, peer1.statistics.offset - root_distance1),
+            (Lower, peer2.statistics.offset - root_distance2),
+            (Middle, peer1.statistics.offset),
+            (Upper, peer1.statistics.offset + root_distance1),
+            (Middle, peer2.statistics.offset),
+            (Upper, peer2.statistics.offset + root_distance2),
+        ];
+
+        assert_eq!(expected, actual)
     }
 }
