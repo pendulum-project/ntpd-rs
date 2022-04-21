@@ -631,6 +631,7 @@ fn default_peer() -> Peer {
         time: Default::default(),
         peer_id: ReferenceId::from_int(0),
         our_id: ReferenceId::from_int(0),
+        reach: Reach::default(),
     }
 }
 
@@ -791,8 +792,7 @@ mod test {
             last_measurements: Default::default(),
             last_packet: packet.clone(),
             time: NtpTimestamp::from_fixed_int(100000000),
-            peer_id: ReferenceId::from_int(0),
-            our_id: ReferenceId::from_int(0),
+            ..default_peer()
         };
 
         assert!(
@@ -809,8 +809,7 @@ mod test {
             last_measurements: Default::default(),
             last_packet: packet.clone(),
             time: NtpTimestamp::from_fixed_int(100000000),
-            peer_id: ReferenceId::from_int(0),
-            our_id: ReferenceId::from_int(0),
+            ..default_peer()
         };
         assert!(
             reference.root_distance(NtpTimestamp::from_fixed_int(100000000))
@@ -826,8 +825,7 @@ mod test {
             last_measurements: Default::default(),
             last_packet: packet.clone(),
             time: NtpTimestamp::from_fixed_int(100000000),
-            peer_id: ReferenceId::from_int(0),
-            our_id: ReferenceId::from_int(0),
+            ..default_peer()
         };
         assert!(
             reference.root_distance(NtpTimestamp::from_fixed_int(100000000))
@@ -843,8 +841,7 @@ mod test {
             last_measurements: Default::default(),
             last_packet: packet.clone(),
             time: NtpTimestamp::from_fixed_int(0),
-            peer_id: ReferenceId::from_int(0),
-            our_id: ReferenceId::from_int(0),
+            ..default_peer()
         };
         assert!(
             reference.root_distance(NtpTimestamp::from_fixed_int(100000000))
@@ -861,8 +858,7 @@ mod test {
             last_measurements: Default::default(),
             last_packet: packet.clone(),
             time: NtpTimestamp::from_fixed_int(100000000),
-            peer_id: ReferenceId::from_int(0),
-            our_id: ReferenceId::from_int(0),
+            ..default_peer()
         };
         packet.root_delay = NtpDuration::from_fixed_int(100000000);
         assert!(
@@ -880,8 +876,7 @@ mod test {
             last_measurements: Default::default(),
             last_packet: packet.clone(),
             time: NtpTimestamp::from_fixed_int(100000000),
-            peer_id: ReferenceId::from_int(0),
-            our_id: ReferenceId::from_int(0),
+            ..default_peer()
         };
         packet.root_dispersion = NtpDuration::from_fixed_int(100000000);
         assert!(
@@ -898,8 +893,7 @@ mod test {
             last_measurements: Default::default(),
             last_packet: packet.clone(),
             time: NtpTimestamp::from_fixed_int(100000000),
-            peer_id: ReferenceId::from_int(0),
-            our_id: ReferenceId::from_int(0),
+            ..default_peer()
         };
         assert_eq!(
             reference.root_distance(NtpTimestamp::from_fixed_int(100000000)),
