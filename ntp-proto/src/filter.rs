@@ -336,7 +336,10 @@ impl Peer {
             return false;
         }
 
-        // TODO: An unreachable error occurs if the server is unreachable.
+        // An unreachable error occurs if the server is unreachable.
+        if !self.reach.is_reachable() {
+            return false;
+        }
 
         true
     }
