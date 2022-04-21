@@ -7,12 +7,31 @@
 //
 //      https://datatracker.ietf.org/doc/html/rfc5905#appendix-A.5.2
 
-use std::net::IpAddr;
-
 use crate::{packet::NtpLeapIndicator, NtpDuration, NtpHeader, NtpTimestamp, ReferenceId};
 
 const MAX_STRATUM: u8 = 16;
 const MAX_DISTANCE: NtpDuration = NtpDuration::ONE;
+
+// TODO this should be 4 in production?!
+/// Minimum number of survivors needed to be able to discipline the system clock.
+/// More survivors (so more servers from which to get the time) means a more accurate time.
+///
+/// The spec notes (CMIN was renamed to MIN_INTERSECTION_SURVIVORS in our implementation):
+///
+/// > CMIN defines the minimum number of servers consistent with the correctness requirements.
+/// > Suspicious operators would set CMIN to ensure multiple redundant servers are available for the
+/// > algorithms to mitigate properly. However, for historic reasons the default value for CMIN is one.
+const MIN_INTERSECTION_SURVIVORS: usize = 1;
+
+/// Number of survivors that the cluster_algorithm tries to keep.
+///
+/// The code skeleton notes that the goal is to give the cluster algorithm something to chew on.
+/// The spec itself does not say anything about how this variable is chosen, or why it exists
+/// (but it does define the use of this variable)
+///
+/// Because the input can have fewer than 3 survivors, the MIN_CLUSTER_SURVIVORS
+/// is not an actual lower bound on the number of survivors.
+const MIN_CLUSTER_SURVIVORS: usize = 3;
 
 /// frequency tolerance (15 ppm)
 // const PHI: f64 = 15e-6;
@@ -182,16 +201,6 @@ pub struct PeerStatistics {
     pub jitter: f64,
 }
 
-#[allow(dead_code)]
-#[derive(Debug)]
-struct PeerConfiguration {
-    source_address: IpAddr,
-    source_port: u16,
-    destination_address: IpAddr,
-    destination_port: u16,
-    reference_id: ReferenceId,
-}
-
 pub struct Peer {
     statistics: PeerStatistics,
     last_measurements: LastMeasurements,
@@ -355,14 +364,14 @@ fn construct_candidate_list<'a>(
 
 #[allow(dead_code)]
 struct SurvivorTuple<'a> {
-    p: &'a Peer,
+    peer: &'a Peer,
     metric: NtpDuration,
 }
 
 /// Collect the candidates within the correctness interval
 #[allow(dead_code)]
 fn construct_survivors<'a>(
-    chime_list: &'a [CandidateTuple<'a>],
+    chime_list: &[CandidateTuple<'a>],
     local_clock_time: NtpTimestamp,
 ) -> Vec<SurvivorTuple<'a>> {
     match find_interval(chime_list) {
@@ -375,7 +384,7 @@ fn construct_survivors<'a>(
 }
 
 fn filter_survivor<'a>(
-    candidate: &'a CandidateTuple<'a>,
+    candidate: &CandidateTuple<'a>,
     local_clock_time: NtpTimestamp,
     low: NtpDuration,
     high: NtpDuration,
@@ -391,10 +400,10 @@ fn filter_survivor<'a>(
     {
         None
     } else {
-        let p = candidate.peer;
-        let metric = MAX_DISTANCE * p.last_packet.stratum + p.root_distance(local_clock_time);
+        let peer = candidate.peer;
+        let metric = MAX_DISTANCE * peer.last_packet.stratum + peer.root_distance(local_clock_time);
 
-        Some(SurvivorTuple { p, metric })
+        Some(SurvivorTuple { peer, metric })
     }
 }
 
@@ -457,6 +466,128 @@ fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDurat
     }
 
     None
+}
+
+/// Discard the survivor with maximum selection jitter until a termination condition is met.
+///
+/// returns the (maximum) selection jitter
+fn cluster_algorithm(candidates: &mut Vec<SurvivorTuple>) -> f64 {
+    // sort the candidates by increasing lambda_p (the merit factor)
+    candidates.sort_by(|a, b| a.metric.cmp(&b.metric));
+
+    loop {
+        let mut qmax_index = 0;
+        let mut min_peer_jitter: f64 = 2.0e9;
+        let mut max_selection_jitter = -2.0e9;
+
+        for (index, candidate) in candidates.iter().enumerate() {
+            let p = candidate.peer;
+
+            min_peer_jitter = f64::min(min_peer_jitter, p.statistics.jitter);
+
+            let selection_jitter_sum = candidates
+                .iter()
+                .map(|q| p.statistics.offset - q.peer.statistics.offset)
+                .map(|delta| delta.to_seconds().powi(2))
+                .sum::<f64>();
+
+            let selection_jitter = (selection_jitter_sum / ((candidates.len() - 1) as f64)).sqrt();
+
+            if selection_jitter > max_selection_jitter {
+                qmax_index = index;
+                max_selection_jitter = selection_jitter;
+            }
+        }
+
+        // If the maximum selection jitter is less than the minimum peer jitter,
+        // Then subsequent iterations will not will not lower the minimum peer jitter,
+        // so we might as well stop.
+        //
+        // To make sure a few survivors are left for the clustering algorithm to chew on, we stop
+        // if the number of survivors is less than or equal to NMIN (3).
+        if max_selection_jitter < min_peer_jitter || candidates.len() <= MIN_CLUSTER_SURVIVORS {
+            // the final version of max_selection_jitter (psi_max in the spec) is
+            // stored under the name "system selection jitter" (PSI_s)
+            return max_selection_jitter;
+        }
+
+        // delete the survivor qmax (the one with the highest jitter) and go around again
+        candidates.remove(qmax_index);
+    }
+}
+
+#[allow(dead_code)]
+fn clock_select(
+    peers: &[Peer],
+    local_clock_time: NtpTimestamp,
+    system_poll: NtpDuration,
+) -> Option<Vec<SurvivorTuple>> {
+    let valid_associations = peers
+        .iter()
+        .filter(|p| p.accept_synchronization(local_clock_time, system_poll));
+
+    let candidates = construct_candidate_list(valid_associations, local_clock_time);
+
+    let mut survivors = construct_survivors(&candidates, local_clock_time);
+
+    if survivors.len() < MIN_INTERSECTION_SURVIVORS {
+        return None;
+    }
+
+    let _system_selection_jitter = cluster_algorithm(&mut survivors);
+
+    Some(survivors)
+}
+
+#[allow(dead_code)]
+struct ClockCombine {
+    system_offset: NtpDuration,
+    system_jitter: NtpDuration,
+}
+
+/// Combine the offsets of the clustering algorithm survivors
+/// using a weighted average with weight determined by the root
+/// distance.  Compute the selection jitter as the weighted RMS
+/// difference between the first survivor and the remaining
+/// survivors.  In some cases, the inherent clock jitter can be
+/// reduced by not using this algorithm, especially when frequent
+/// clockhopping is involved.  The reference implementation can
+/// be configured to avoid this algorithm by designating a
+/// preferred peer.
+///
+/// Assumption: the survivors are the output of the clustering algorithm,
+/// in particular they are in the order produced by the clustering algorithm.
+#[allow(dead_code)]
+fn clock_combine<'a>(
+    survivors: &'a [SurvivorTuple<'a>],
+    selection_jitter: NtpDuration,
+    local_clock_time: NtpTimestamp,
+) -> ClockCombine {
+    let mut y = 0.0; // normalization factor
+    let mut z = 0.0; // weighed offset sum
+
+    for tuple in survivors {
+        let peer = tuple.peer;
+        let x = peer.root_distance(local_clock_time).to_seconds();
+        y += 1.0 / x;
+        z += peer.statistics.offset.to_seconds() / x;
+    }
+
+    let system_offset = NtpDuration::from_seconds(z / y);
+
+    // deviation: the code skeleton does some weird statistics here.
+    // we just pick the jitter of the peer that will become the system peer
+    // this may be an overestimate but that is not a problem
+    let system_peer_jitter = survivors[0].peer.statistics.jitter;
+
+    let system_jitter = NtpDuration::from_seconds(
+        (selection_jitter.to_seconds().powi(2) + system_peer_jitter.powi(2)).sqrt(),
+    );
+
+    ClockCombine {
+        system_offset,
+        system_jitter,
+    }
 }
 
 #[cfg(any(test, feature = "fuzz"))]
