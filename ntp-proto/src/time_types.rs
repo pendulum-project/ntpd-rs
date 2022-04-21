@@ -182,12 +182,7 @@ impl NtpDuration {
 
     /// Interpret an exponent `k` as `2^k` seconds, expressed as an NtpDuration
     pub(crate) fn from_exponent(input: i8) -> Self {
-        let seconds = match input {
-            0.. => (1i64 << input) as f64,
-            _ => 1.0 / (1i64 << -input) as f64,
-        };
-
-        Self::from_seconds(seconds)
+        Self::from_seconds(2.0f64.powi(input as i32))
     }
 
     #[cfg(any(test, feature = "fuzz"))]
