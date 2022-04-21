@@ -1,9 +1,11 @@
 #![forbid(unsafe_code)]
 
 mod clock;
+mod clock_select;
 mod filter;
 mod identifiers;
 mod packet;
+mod peer;
 mod time_types;
 
 pub use clock::NtpClock;
