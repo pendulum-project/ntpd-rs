@@ -13,4 +13,6 @@ pub use clock::NtpClock;
 pub use clock_select::fuzz_find_interval;
 pub use identifiers::ReferenceId;
 pub use packet::NtpHeader;
+#[cfg(feature = "fuzz")]
+pub use time_types::fuzz_duration_from_seconds;
 pub use time_types::{NtpDuration, NtpTimestamp};

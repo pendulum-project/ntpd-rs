@@ -164,7 +164,15 @@ impl NtpDuration {
         let i = seconds.floor();
         let f = seconds - i;
 
-        let duration = (i as i64) << 32 | (f * u32::MAX as f64) as i64;
+        // Ensure proper saturating behaviour
+        let duration = match i as i64 {
+            i if i >= std::i32::MIN as i64 && i <= std::i32::MAX as i64 => {
+                (i << 32) | (f * u32::MAX as f64) as i64
+            }
+            i if i < std::i32::MIN as i64 => std::i64::MIN,
+            i if i > std::i32::MAX as i64 => std::i64::MAX,
+            _ => unreachable!(),
+        };
 
         Self { duration }
     }
@@ -330,6 +338,14 @@ ntp_duration_scalar_div!(u16);
 ntp_duration_scalar_div!(u32);
 // u64 and usize deliberately excluded as they can result in overflows
 
+#[cfg(feature = "fuzz")]
+pub fn fuzz_duration_from_seconds(v: f64) {
+    if v.is_finite() {
+        let duration = NtpDuration::from_seconds(v);
+        assert!(v.signum() as i64 * duration.duration.signum() >= 0);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -484,5 +500,17 @@ mod tests {
         for i in -128..-32 {
             NtpDuration::from_exponent(i); // should not crash
         }
+    }
+
+    #[test]
+    fn duration_from_float_seconds_saturates() {
+        assert_eq!(
+            NtpDuration::from_seconds(1e40),
+            NtpDuration::from_fixed_int(std::i64::MAX)
+        );
+        assert_eq!(
+            NtpDuration::from_seconds(-1e40),
+            NtpDuration::from_fixed_int(std::i64::MIN)
+        );
     }
 }
