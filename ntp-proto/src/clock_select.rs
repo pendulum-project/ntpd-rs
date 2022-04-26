@@ -28,9 +28,10 @@ fn clock_select(
     local_clock_time: NtpTimestamp,
     system_poll: NtpDuration,
 ) -> Option<Vec<SurvivorTuple>> {
-    let valid_associations = peers
-        .iter()
-        .filter(|p| p.accept_synchronization(local_clock_time, system_poll));
+    let valid_associations = peers.iter().filter(|p| {
+        p.accept_synchronization(local_clock_time, system_poll)
+            .is_ok()
+    });
 
     let candidates = construct_candidate_list(valid_associations, local_clock_time);
 
