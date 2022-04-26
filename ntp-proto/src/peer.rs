@@ -70,6 +70,15 @@ pub enum Decision {
     Process,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub(crate) enum AcceptSynchronizationError {
+    ServerUnreachable,
+    Loop,
+    Distance,
+    Stratum,
+}
+
 impl Peer {
     #[allow(dead_code)]
     pub(crate) fn clock_filter(
@@ -117,20 +126,21 @@ impl Peer {
         &self,
         local_clock_time: NtpTimestamp,
         system_poll: NtpDuration,
-    ) -> bool {
+    ) -> Result<(), AcceptSynchronizationError> {
+        use AcceptSynchronizationError::*;
+
         // A stratum error occurs if
         //     1: the server has never been synchronized,
         //     2: the server stratum is invalid
         if !self.last_packet.leap.is_synchronized() || self.last_packet.stratum >= MAX_STRATUM {
-            return false;
+            return Err(Stratum);
         }
 
         //  A distance error occurs if the root distance exceeds the
         //  distance threshold plus an increment equal to one poll interval.
         let distance = self.root_distance(local_clock_time);
-
         if distance > MAX_DISTANCE + multiply_by_phi(system_poll) {
-            return false;
+            return Err(Distance);
         }
 
         // Detect whether the remote uses us as their main time reference.
@@ -138,19 +148,19 @@ impl Peer {
         // Note, this can only ever be an issue if the peer is not using
         // hardware as its source, so ignore reference_id if stratum is 1.
         if self.last_packet.stratum != 1 && self.last_packet.reference_id == self.our_id {
-            return false;
+            return Err(Loop);
         }
 
         // An unreachable error occurs if the server is unreachable.
         if !self.reach.is_reachable() {
-            return false;
+            return Err(ServerUnreachable);
         }
 
-        true
+        Ok(())
     }
 
     #[cfg(any(test, feature = "fuzz"))]
-    pub(crate) fn test_peer() -> Peer {
+    pub(crate) fn test_peer() -> Self {
         Peer {
             statistics: Default::default(),
             last_measurements: Default::default(),
@@ -303,5 +313,56 @@ mod test {
         // until we receive a packet from it again
         reach.received_packet();
         assert!(reach.is_reachable());
+    }
+
+    #[test]
+    fn test_accept_synchronization() {
+        use AcceptSynchronizationError::*;
+
+        let local_clock_time = NtpTimestamp::ZERO;
+        let system_poll = NtpDuration::ZERO;
+
+        let mut peer = Peer::test_peer();
+
+        // by default, the packet id and the peer's id are the same, indicating a loop
+        assert_eq!(
+            peer.accept_synchronization(local_clock_time, system_poll),
+            Err(Loop)
+        );
+
+        peer.our_id = ReferenceId::from_int(42);
+
+        assert_eq!(
+            peer.accept_synchronization(local_clock_time, system_poll),
+            Err(ServerUnreachable)
+        );
+
+        peer.reach.received_packet();
+
+        assert_eq!(
+            peer.accept_synchronization(local_clock_time, system_poll),
+            Ok(())
+        );
+
+        peer.last_packet.leap = NtpLeapIndicator::Unknown;
+        assert_eq!(
+            peer.accept_synchronization(local_clock_time, system_poll),
+            Err(Stratum)
+        );
+
+        peer.last_packet.leap = NtpLeapIndicator::NoWarning;
+        peer.last_packet.stratum = 42;
+        assert_eq!(
+            peer.accept_synchronization(local_clock_time, system_poll),
+            Err(Stratum)
+        );
+
+        peer.last_packet.stratum = 0;
+
+        peer.last_packet.root_dispersion = MAX_DISTANCE * 2;
+        assert_eq!(
+            peer.accept_synchronization(local_clock_time, system_poll),
+            Err(Distance)
+        );
     }
 }
