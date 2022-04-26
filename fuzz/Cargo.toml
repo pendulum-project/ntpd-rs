@@ -8,8 +8,9 @@ edition = "2018"
 [package.metadata]
 cargo-fuzz = true
 
-[dependencies]
-libfuzzer-sys = "0.4"
+[dependencies.libfuzzer-sys]
+version = "0.4"
+features = ["arbitrary-derive"]
 
 [dependencies.ntp-proto]
 path = "../ntp-proto"
@@ -32,7 +33,14 @@ test = false
 doc = false
 
 [[bin]]
+name = "tuple_from_packet"
+path = "fuzz_targets/tuple_from_packet.rs"
+test = false
+doc = false
+
+[[bin]]
 name = "duration_from_float"
 path = "fuzz_targets/duration_from_float.rs"
 test = false
 doc = false
+
