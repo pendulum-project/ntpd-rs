@@ -183,14 +183,11 @@ impl NtpDuration {
     /// Interpret an exponent `k` as `2^k` seconds, expressed as an NtpDuration
     pub(crate) fn from_exponent(input: i8) -> Self {
         Self {
-            duration: if input > 30 {
-                std::i64::MAX
-            } else if input > 0 {
-                0x1_0000_0000_i64 << input
-            } else if input < -32 {
-                0
-            } else {
-                0x1_0000_0000_i64 >> (-input)
+            duration: match input {
+                exp if exp > 30 => std::i64::MAX,
+                exp if exp > 0 && exp <= 30 => 0x1_0000_0000_i64 << exp,
+                exp if exp <= 0 && exp >= -32 => 0x1_0000_0000_i64 >> -exp,
+                _ => 0,
             },
         }
     }
