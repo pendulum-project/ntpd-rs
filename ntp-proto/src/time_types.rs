@@ -182,7 +182,14 @@ impl NtpDuration {
 
     /// Interpret an exponent `k` as `2^k` seconds, expressed as an NtpDuration
     pub(crate) fn from_exponent(input: i8) -> Self {
-        Self::from_seconds(2.0f64.powi(input as i32))
+        Self {
+            duration: match input {
+                exp if exp > 30 => std::i64::MAX,
+                exp if exp > 0 && exp <= 30 => 0x1_0000_0000_i64 << exp,
+                exp if exp <= 0 && exp >= -32 => 0x1_0000_0000_i64 >> -exp,
+                _ => 0,
+            },
+        }
     }
 
     #[cfg(any(test, feature = "fuzz"))]
@@ -431,7 +438,12 @@ mod tests {
 
     macro_rules! assert_eq_epsilon {
         ($a:expr, $b:expr, $epsilon:expr) => {
-            assert!(($a - $b).abs() < $epsilon);
+            assert!(
+                ($a - $b).abs() < $epsilon,
+                "Left not nearly equal to right:\nLeft: {}\nRight: {}\n",
+                $a,
+                $b
+            );
         };
     }
 
@@ -445,29 +457,32 @@ mod tests {
 
     #[test]
     fn duration_from_exponent() {
-        assert_eq!(
-            NtpDuration::from_exponent(0),
-            NtpDuration::from_seconds(1.0)
+        assert_eq_epsilon!(NtpDuration::from_exponent(0).to_seconds(), 1.0, 1e-9);
+
+        assert_eq_epsilon!(NtpDuration::from_exponent(1).to_seconds(), 2.0, 1e-9);
+
+        assert_eq_epsilon!(
+            NtpDuration::from_exponent(17).to_seconds(),
+            2.0f64.powi(17),
+            1e-4 // Less precision due to larger exponent
         );
 
-        assert_eq!(
-            NtpDuration::from_exponent(1),
-            NtpDuration::from_seconds(2.0)
-        );
+        assert_eq_epsilon!(NtpDuration::from_exponent(-1).to_seconds(), 0.5, 1e-9);
 
-        assert_eq!(
-            NtpDuration::from_exponent(17),
-            NtpDuration::from_seconds(2.0f64.powi(17))
+        assert_eq_epsilon!(
+            NtpDuration::from_exponent(-5).to_seconds(),
+            1.0 / 2.0f64.powi(5),
+            1e-9
         );
+    }
 
-        assert_eq!(
-            NtpDuration::from_exponent(-1),
-            NtpDuration::from_seconds(0.5)
-        );
-
-        assert_eq!(
-            NtpDuration::from_exponent(-5),
-            NtpDuration::from_seconds(1.0 / 2.0f64.powi(5))
-        );
+    #[test]
+    fn duration_from_exponent_reasonable() {
+        for i in -32..=127 {
+            assert!(NtpDuration::from_exponent(i) > NtpDuration::from_fixed_int(0));
+        }
+        for i in -128..-32 {
+            NtpDuration::from_exponent(i); // should not crash
+        }
     }
 }
