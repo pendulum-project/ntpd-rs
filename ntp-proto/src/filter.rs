@@ -7,8 +7,9 @@
 //
 //      https://datatracker.ietf.org/doc/html/rfc5905#appendix-A.5.2
 
+use crate::packet::NtpAssociationMode;
 use crate::peer::{multiply_by_phi, PeerStatistics};
-use crate::{packet::NtpLeapIndicator, NtpDuration, NtpTimestamp};
+use crate::{packet::NtpLeapIndicator, NtpDuration, NtpHeader, NtpTimestamp};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FilterTuple {
@@ -28,6 +29,52 @@ impl FilterTuple {
 
     fn is_dummy(self) -> bool {
         self == Self::DUMMY
+    }
+
+    /// The default logic for updating a peer with a new packet.
+    ///
+    /// A Broadcast association requires different logic.
+    /// All other associations should use this function
+    #[allow(dead_code)]
+    fn from_packet_default(
+        packet: &NtpHeader,
+        system_precision: NtpDuration,
+        destination_timestamp: NtpTimestamp,
+        local_clock_time: NtpTimestamp,
+    ) -> Self {
+        // for reference
+        //
+        // | org       | T1         | origin timestamp      |
+        // | rec       | T2         | receive timestamp     |
+        // | xmt       | T3         | transmit timestamp    |
+        // | dst       | T4         | destination timestamp |
+
+        // for a broadcast association, different logic is used
+        debug_assert_ne!(packet.mode, NtpAssociationMode::Broadcast);
+
+        let packet_precision = NtpDuration::from_exponent(packet.precision);
+
+        // offset is the average of the deltas (T2 - T1) and (T4 - T3)
+        let offset1 = packet.receive_timestamp - packet.origin_timestamp;
+        let offset2 = destination_timestamp - packet.transmit_timestamp;
+        let offset = (offset1 + offset2) / 2i64;
+
+        // delay is (T4 - T1) - (T3 - T2)
+        let delta1 = destination_timestamp - packet.origin_timestamp;
+        let delta2 = packet.transmit_timestamp - packet.receive_timestamp;
+        // In cases where the server and client clocks are running at different rates
+        // and with very fast networks, the delay can appear negative.
+        // delay is clamped to ensure it is always positive
+        let delay = Ord::max(system_precision, delta1 - delta2);
+
+        let dispersion = packet_precision + system_precision + multiply_by_phi(delta1);
+
+        Self {
+            offset,
+            delay,
+            dispersion,
+            time: local_clock_time,
+        }
     }
 }
 

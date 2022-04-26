@@ -180,6 +180,11 @@ impl NtpDuration {
         )
     }
 
+    /// Interpret an exponent `k` as `2^k` seconds, expressed as an NtpDuration
+    pub(crate) fn from_exponent(input: i8) -> Self {
+        Self::from_seconds(2.0f64.powi(input as i32))
+    }
+
     #[cfg(any(test, feature = "fuzz"))]
     pub(crate) const fn from_fixed_int(duration: i64) -> NtpDuration {
         NtpDuration { duration }
@@ -436,5 +441,33 @@ mod tests {
         assert_eq_epsilon!(NtpDuration::from_seconds(1.0).to_seconds(), 1.0, 1e-9);
         assert_eq_epsilon!(NtpDuration::from_seconds(1.5).to_seconds(), 1.5, 1e-9);
         assert_eq_epsilon!(NtpDuration::from_seconds(2.0).to_seconds(), 2.0, 1e-9);
+    }
+
+    #[test]
+    fn duration_from_exponent() {
+        assert_eq!(
+            NtpDuration::from_exponent(0),
+            NtpDuration::from_seconds(1.0)
+        );
+
+        assert_eq!(
+            NtpDuration::from_exponent(1),
+            NtpDuration::from_seconds(2.0)
+        );
+
+        assert_eq!(
+            NtpDuration::from_exponent(17),
+            NtpDuration::from_seconds(2.0f64.powi(17))
+        );
+
+        assert_eq!(
+            NtpDuration::from_exponent(-1),
+            NtpDuration::from_seconds(0.5)
+        );
+
+        assert_eq!(
+            NtpDuration::from_exponent(-5),
+            NtpDuration::from_seconds(1.0 / 2.0f64.powi(5))
+        );
     }
 }
