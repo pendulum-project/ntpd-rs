@@ -37,3 +37,10 @@ name = "tuple_from_packet"
 path = "fuzz_targets/tuple_from_packet.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "duration_from_float"
+path = "fuzz_targets/duration_from_float.rs"
+test = false
+doc = false
+
