@@ -30,3 +30,9 @@ name = "interval_finding"
 path = "fuzz_targets/interval_finding.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "duration_from_float"
+path = "fuzz_targets/duration_from_float.rs"
+test = false
+doc = false
