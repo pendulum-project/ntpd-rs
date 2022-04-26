@@ -859,6 +859,10 @@ mod test {
     #[test]
     #[ignore]
     fn cluster_algorithm_exit_max_jitter_too_low() {
+        // This test shows that the max_selection_jitter can still decrease
+        // after the termination condition has been met. That means the spec text and
+        // code skeleton comment are at least misleading (and perhaps wrong).
+
         let mut peer = Peer::test_peer();
         peer.statistics.offset = NtpDuration::ONE * 3i64;
 
@@ -881,5 +885,66 @@ mod test {
 
         assert_eq!(candidates.len(), 5);
         panic!();
+    }
+
+    #[test]
+    fn cluster_algorithm_outlier_is_discarded_first() {
+        let mut peer = Peer::test_peer();
+        peer.statistics.offset = NtpDuration::ONE * 3i64;
+
+        let peers = &mut vec![peer; 4];
+
+        for (i, peer) in peers.iter_mut().enumerate() {
+            peer.statistics.jitter = 1.0 - (1.0 / (i + 1) as f64);
+            peer.statistics.offset = NtpDuration::ONE;
+        }
+
+        peers[2].statistics.offset = NtpDuration::ONE * 4;
+
+        let mut candidates = (0..peers.len())
+            .map(|i| SurvivorTuple {
+                peer: &peers[i],
+                metric: NtpDuration::ONE,
+            })
+            .collect();
+
+        let _answer = cluster_algorithm(&mut candidates);
+
+        // check that peer 2 was discarded
+        assert_eq!(candidates.len(), 3);
+        for candidate in candidates {
+            assert_eq!(candidate.peer.statistics.offset, NtpDuration::ONE);
+        }
+    }
+
+    #[test]
+    fn cluster_algorithm_outliers_are_discarded_first() {
+        let mut peer = Peer::test_peer();
+        peer.statistics.offset = NtpDuration::ONE * 3i64;
+
+        let peers = &mut vec![peer; 5];
+
+        for (i, peer) in peers.iter_mut().enumerate() {
+            peer.statistics.jitter = 1.0 - (1.0 / (i + 1) as f64);
+            peer.statistics.offset = NtpDuration::ONE;
+        }
+
+        peers[2].statistics.offset = NtpDuration::ONE * 4;
+        peers[3].statistics.offset = NtpDuration::ONE * 8;
+
+        let mut candidates = (0..peers.len())
+            .map(|i| SurvivorTuple {
+                peer: &peers[i],
+                metric: NtpDuration::ONE,
+            })
+            .collect();
+
+        let _answer = cluster_algorithm(&mut candidates);
+
+        // check that peer 2 and 3 were
+        assert_eq!(candidates.len(), 3);
+        for candidate in candidates {
+            assert_eq!(candidate.peer.statistics.offset, NtpDuration::ONE);
+        }
     }
 }
