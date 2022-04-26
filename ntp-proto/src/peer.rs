@@ -13,7 +13,7 @@ pub(crate) fn multiply_by_phi(duration: NtpDuration) -> NtpDuration {
     (duration * 15) / 1_000_000
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct PeerStatistics {
     pub offset: NtpDuration,
     pub delay: NtpDuration,
@@ -22,7 +22,7 @@ pub(crate) struct PeerStatistics {
     pub jitter: f64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Peer {
     pub statistics: PeerStatistics,
     pub last_measurements: LastMeasurements,
@@ -42,7 +42,7 @@ pub(crate) struct Peer {
 /// As valid packets arrive, the rightmost bit is set to one.
 /// If the register contains any nonzero bits, the server is considered reachable;
 /// otherwise, it is unreachable.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct Reach(u8);
 
 impl Reach {
