@@ -439,7 +439,7 @@ mod test {
             NtpTimestamp::from_fixed_int(4),
         );
         assert_eq!(result.offset, NtpDuration::from_fixed_int(1));
-        assert_eq!(result.delay, NtpDuration::from_fixed_int(0));
+        assert_eq!(result.delay, NtpDuration::from_fixed_int(1));
         assert!(result.dispersion >= NtpDuration::from_fixed_int(0));
     }
 }
