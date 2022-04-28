@@ -23,11 +23,17 @@ const MIN_INTERSECTION_SURVIVORS: usize = 1;
 const MIN_CLUSTER_SURVIVORS: usize = 3;
 
 #[allow(dead_code)]
+struct ClockSelect<'a> {
+    survivors: Vec<SurvivorTuple<'a>>,
+    system_selection_jitter: f64,
+}
+
+#[allow(dead_code)]
 fn clock_select(
     peers: &[PeerUpdated],
     local_clock_time: NtpTimestamp,
     system_poll: NtpDuration,
-) -> Option<Vec<SurvivorTuple>> {
+) -> Option<ClockSelect> {
     let valid_associations = peers.iter().filter(|p| {
         p.accept_synchronization(local_clock_time, system_poll)
             .is_ok()
@@ -41,9 +47,12 @@ fn clock_select(
         return None;
     }
 
-    let _system_selection_jitter = cluster_algorithm(&mut survivors);
+    let system_selection_jitter = cluster_algorithm(&mut survivors);
 
-    Some(survivors)
+    Some(ClockSelect {
+        survivors,
+        system_selection_jitter,
+    })
 }
 
 /// Observation: Chrony (sources.c, SRC_SelectSource, line ~920) does not use the Middle tag
