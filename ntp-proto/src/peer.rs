@@ -39,7 +39,6 @@ pub struct Peer {
     #[allow(dead_code)]
     pub(crate) peer_id: ReferenceId,
     pub(crate) our_id: ReferenceId,
-    #[allow(dead_code)]
     pub(crate) reach: Reach,
 }
 
@@ -54,33 +53,28 @@ pub struct Peer {
 pub(crate) struct Reach(u8);
 
 impl Reach {
-    #[allow(dead_code)]
     fn is_reachable(&self) -> bool {
         self.0 != 0
     }
 
     /// We have just received a packet, so the peer is definitely reachable
-    #[allow(dead_code)]
     fn received_packet(&mut self) {
         self.0 |= 1;
     }
 
     /// A packet received some number of poll intervals ago is decreasingly relevant for
     /// determining that a peer is still reachable. We discount the packets received so far.
-    #[allow(dead_code)]
     fn poll(&mut self) {
         self.0 <<= 1
     }
 }
 
-#[allow(dead_code)]
 pub enum MsgForSystem {
     NoUpdate,
     PeerUpdated(PeerUpdated),
 }
 
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
 pub struct PeerUpdated {
     pub(crate) time: NtpTimestamp,
     pub(crate) root_distance_without_time: NtpDuration,
@@ -204,7 +198,6 @@ impl Peer {
     }
 
     /// Data from a peer that is needed for the (global) clock filter and combine process
-    #[allow(dead_code)]
     pub(crate) fn clock_filter_data(
         &mut self,
         new_tuple: FilterTuple,
@@ -240,7 +233,6 @@ impl Peer {
     /// all causes of the local clock relative to the primary server.
     /// It is defined as half the total delay plus total dispersion
     /// plus peer jitter.
-    #[allow(dead_code)]
     pub(crate) fn root_distance(&self, local_clock_time: NtpTimestamp) -> NtpDuration {
         self.root_distance_without_time() + multiply_by_phi(local_clock_time - self.time)
     }
@@ -253,7 +245,6 @@ impl Peer {
             + NtpDuration::from_seconds(self.statistics.jitter)
     }
 
-    #[allow(dead_code)]
     /// Test if association p is acceptable for synchronization
     ///
     /// Known as `accept` and `fit` in the specification.
