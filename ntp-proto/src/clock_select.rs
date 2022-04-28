@@ -22,10 +22,26 @@ const MIN_INTERSECTION_SURVIVORS: usize = 1;
 /// is not an actual lower bound on the number of survivors.
 const MIN_CLUSTER_SURVIVORS: usize = 3;
 
+pub fn filter_and_combine(
+    peers: &[PeerUpdated],
+    local_clock_time: NtpTimestamp,
+    system_poll: NtpDuration,
+) -> Option<ClockCombine> {
+    let selection = clock_select(peers, local_clock_time, system_poll)?;
+
+    let combined = clock_combine(
+        &selection.survivors,
+        selection.system_selection_jitter,
+        local_clock_time,
+    );
+
+    Some(combined)
+}
+
 #[allow(dead_code)]
 struct ClockSelect<'a> {
     survivors: Vec<SurvivorTuple<'a>>,
-    system_selection_jitter: f64,
+    system_selection_jitter: NtpDuration,
 }
 
 #[allow(dead_code)]
@@ -47,7 +63,7 @@ fn clock_select(
         return None;
     }
 
-    let system_selection_jitter = cluster_algorithm(&mut survivors);
+    let system_selection_jitter = NtpDuration::from_seconds(cluster_algorithm(&mut survivors));
 
     Some(ClockSelect {
         survivors,
@@ -288,9 +304,9 @@ fn cluster_algorithm(candidates: &mut Vec<SurvivorTuple>) -> f64 {
 }
 
 #[allow(dead_code)]
-struct ClockCombine {
-    system_offset: NtpDuration,
-    system_jitter: NtpDuration,
+pub struct ClockCombine {
+    pub system_offset: NtpDuration,
+    pub system_jitter: NtpDuration,
 }
 
 /// Combine the offsets of the clustering algorithm survivors
@@ -308,7 +324,7 @@ struct ClockCombine {
 #[allow(dead_code)]
 fn clock_combine<'a>(
     survivors: &'a [SurvivorTuple<'a>],
-    selection_jitter: NtpDuration,
+    system_selection_jitter: NtpDuration, //
     local_clock_time: NtpTimestamp,
 ) -> ClockCombine {
     let mut y = 0.0; // normalization factor
@@ -329,7 +345,7 @@ fn clock_combine<'a>(
     let system_peer_jitter = survivors[0].peer.statistics.jitter;
 
     let system_jitter = NtpDuration::from_seconds(
-        (selection_jitter.to_seconds().powi(2) + system_peer_jitter.powi(2)).sqrt(),
+        (system_selection_jitter.to_seconds().powi(2) + system_peer_jitter.powi(2)).sqrt(),
     );
 
     ClockCombine {
