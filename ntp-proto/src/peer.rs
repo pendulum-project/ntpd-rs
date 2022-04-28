@@ -68,11 +68,14 @@ impl Reach {
 #[allow(dead_code)]
 pub(crate) enum MsgForSystem {
     NoUpdate,
-    PeerUpdated {
-        time: NtpTimestamp,
-        root_distance_without_time: NtpDuration,
-        stratum: u8,
-    },
+    PeerUpdated(PeerUpdated),
+}
+
+#[allow(dead_code)]
+pub(crate) struct PeerUpdated {
+    time: NtpTimestamp,
+    root_distance_without_time: NtpDuration,
+    stratum: u8,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -106,11 +109,13 @@ impl Peer {
                 self.statistics = statistics;
                 self.time = smallest_delay_time;
 
-                MsgForSystem::PeerUpdated {
+                let updated = PeerUpdated {
                     time: self.time,
                     root_distance_without_time: self.root_distance_without_time(),
                     stratum: self.last_packet.stratum,
-                }
+                };
+
+                MsgForSystem::PeerUpdated(updated)
             }
         }
     }
