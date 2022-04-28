@@ -69,26 +69,26 @@ fn init_socket(socket: &std::net::UdpSocket) -> io::Result<()> {
     Ok(())
 }
 
-fn prepare_header(mhdr: &mut libc::msghdr, buf: &mut IoSliceMut, control_buf: &mut [u8]) {
-    mhdr.msg_control = control_buf as *mut _ as *mut libc::c_void;
-    mhdr.msg_controllen = control_buf.len();
-    mhdr.msg_iov = buf as *mut _ as *mut _;
-    mhdr.msg_iovlen = 1;
-    mhdr.msg_flags = 0;
-}
-
 fn recv(
     socket: &std::net::UdpSocket,
     buf: &mut [u8],
     recv_ts: &mut Option<NtpTimestamp>,
 ) -> io::Result<usize> {
-    // Safety: message header struct can be used validly when all zeroed
-    let mut mhdr = unsafe { std::mem::zeroed() };
     let mut buf_slice = IoSliceMut::new(buf);
 
-    let control_size = unsafe { libc::CMSG_SPACE(std::mem::size_of::<libc::timespec>() as _) } as _;
+    // could be on the stack if const extern fn is stable
+    let control_size =
+        unsafe { libc::CMSG_SPACE(std::mem::size_of::<libc::timespec>() as _) } as usize;
     let mut control_buf = vec![0; control_size];
-    prepare_header(&mut mhdr, &mut buf_slice, &mut control_buf);
+    let mut mhdr = libc::msghdr {
+        msg_control: control_buf.as_mut_ptr().cast::<libc::c_void>(),
+        msg_controllen: control_buf.len(),
+        msg_iov: buf_slice.as_mut_ptr().cast::<libc::iovec>(),
+        msg_iovlen: 1,
+        msg_flags: 0,
+        msg_name: std::ptr::null_mut(),
+        msg_namelen: 0,
+    };
 
     // loops for when we receive an interrupt during the recv
     let n = loop {
@@ -118,9 +118,10 @@ fn recv(
                 ts.tv_sec as u32,  // truncates the higher bits of the i64
                 ts.tv_nsec as u32, // tv_nsec is always within [0, 1e10)
             ));
+            break;
         }
 
-        // grab the next control message, should be null though
+        // grab the next control message
         cmsg = unsafe { libc::CMSG_NXTHDR(&mhdr, msg).as_ref() };
     }
 
