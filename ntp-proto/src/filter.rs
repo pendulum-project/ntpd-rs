@@ -35,7 +35,6 @@ impl FilterTuple {
     ///
     /// A Broadcast association requires different logic.
     /// All other associations should use this function
-    #[allow(dead_code)]
     pub(crate) fn from_packet_default(
         packet: &NtpHeader,
         system_precision: NtpDuration,
@@ -90,7 +89,6 @@ impl Default for LastMeasurements {
 }
 
 impl LastMeasurements {
-    #[allow(dead_code)]
     const fn new() -> Self {
         Self {
             register: [FilterTuple::DUMMY; 8],

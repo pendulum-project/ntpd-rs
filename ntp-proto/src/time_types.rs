@@ -125,7 +125,6 @@ impl NtpDuration {
     };
 
     /// NtpDuration::from_seconds(0.005)
-    #[allow(dead_code)]
     pub(crate) const MIN_DISPERSION: Self = Self { duration: 21474836 };
 
     pub(crate) const fn from_bits_short(bits: [u8; 4]) -> Self {
