@@ -47,22 +47,18 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                 },
                 result = socket.recv(&mut buf) => {
                     // Note: packets are allowed to be bigger when including extensions.
-                    // we don't expect them, but the server may still send them. They
-                    // are guaranteed safe to ignore.
-                    if let Ok((size, Some(timestamp))) = result {
-                        if size >= 48 {
-                            let packet = NtpHeader::deserialize(&buf);
-                            eprintln!("Received at {:?} {:?}", timestamp, packet);
+                    // we don't expect them, but the server may still send them. The
+                    // extra bytes are guaranteed safe to ignore. `recv` truncats the messages
+                    if let Ok((_, Some(timestamp))) = result {
+                        let packet = NtpHeader::deserialize(&buf);
+                        eprintln!("Received at {:?} {:?}", timestamp, packet);
 
-                            let result = peer.handle_incoming(packet, timestamp);
+                        let result = peer.handle_incoming(packet, timestamp);
 
-                            if peer.accept_synchronization(timestamp, NtpDuration::ZERO).is_err() {
-                                let _ = tx.send(None);
-                            } else if let MsgForSystem::PeerUpdated(update) = result {
-                                let _ = tx.send(Some(update));
-                            }
-                        } else {
-                            // TODO: log something
+                        if peer.accept_synchronization(timestamp, NtpDuration::ZERO).is_err() {
+                            let _ = tx.send(None);
+                        } else if let MsgForSystem::PeerUpdated(update) = result {
+                            let _ = tx.send(Some(update));
                         }
                     } else {
                         // TODO: log something
