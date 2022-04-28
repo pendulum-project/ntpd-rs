@@ -70,8 +70,16 @@ impl Reach {
 }
 
 pub enum MsgForSystem {
-    NoUpdate,
+    /// The association mode is not one that this peer supports
+    InvalidMode,
+    /// The send time on the received packet is not the time we sent it at
+    InvalidPacketTime,
+    /// Peer is in an invalid state
+    Kiss,
+    /// The peer received a valid packet, and has updated its statistics
     PeerUpdated(PeerUpdated),
+    /// The peer received a valid packet, but decided not to update its statistics
+    NoUpdate,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -162,36 +170,36 @@ impl Peer {
     }
 
     pub fn handle_incoming(&mut self, message: NtpHeader, recv_time: NtpTimestamp) -> MsgForSystem {
-        let is_old_message = Some(message.origin_timestamp) != self.next_expected_origin;
-        if message.mode != NtpAssociationMode::Server || is_old_message {
-            return MsgForSystem::NoUpdate; // Garbage or old message
-        }
-
-        if message.is_kiss_rate() {
+        if message.mode != NtpAssociationMode::Server {
+            // we currently only support a client <-> server association
+            MsgForSystem::InvalidMode
+        } else if Some(message.origin_timestamp) != self.next_expected_origin {
+            // the message we got back says that it was sent at a different time than we sent it
+            MsgForSystem::InvalidPacketTime
+        } else if message.is_kiss_rate() {
             self.remote_min_poll_interval =
                 Ord::max(self.remote_min_poll_interval + 1, self.last_poll_interval);
-            return MsgForSystem::NoUpdate;
+            MsgForSystem::Kiss
+        } else if message.is_kiss() {
+            // Ignore unrecognized control messages
+            MsgForSystem::Kiss
+        } else {
+            // For reachability, mark that we have had a response
+            self.reach.received_packet();
+
+            // Received answer, so no need for backoff
+            self.next_poll_interval = self.last_poll_interval;
+
+            // TODO: properly fill in system parameters
+            let filter_input = FilterTuple::from_packet_default(
+                &message,
+                NtpDuration::from_seconds(0.0),
+                recv_time,
+                recv_time,
+            );
+
+            self.message_for_system(filter_input, NtpLeapIndicator::NoWarning, 0.0)
         }
-
-        if message.is_kiss() {
-            return MsgForSystem::NoUpdate; // Ignore unrecognized control messages
-        }
-
-        // For reachability, mark that we have had a response
-        self.reach.received_packet();
-
-        // Received answer, so no need for backoff
-        self.next_poll_interval = self.last_poll_interval;
-
-        // TODO: properly fill in system parameters
-        let filter_input = FilterTuple::from_packet_default(
-            &message,
-            NtpDuration::from_seconds(0.0),
-            recv_time,
-            recv_time,
-        );
-
-        self.message_for_system(filter_input, NtpLeapIndicator::NoWarning, 0.0)
     }
 
     /// Data from a peer that is needed for the (global) clock filter and combine process
