@@ -76,21 +76,19 @@ pub enum MsgForSystem {
     InvalidPacketTime,
     /// Peer is in an invalid state
     Kiss,
-    /// The peer received a valid packet, and has updated its statistics
-    PeerUpdated(PeerUpdated),
-    /// The peer received a valid packet, but decided not to update its statistics
-    NoUpdate,
+    /// The peer received a valid packet, and produced a new snapshot of its state
+    NewSnapshot(PeerSnapshot),
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct PeerUpdated {
+pub struct PeerSnapshot {
     pub(crate) time: NtpTimestamp,
     pub(crate) root_distance_without_time: NtpDuration,
     pub(crate) stratum: u8,
     pub(crate) statistics: PeerStatistics,
 }
 
-impl PeerUpdated {
+impl PeerSnapshot {
     pub(crate) fn accept_synchronization(
         &self,
         local_clock_time: NtpTimestamp,
@@ -217,19 +215,19 @@ impl Peer {
         );
 
         match updated {
-            None => MsgForSystem::NoUpdate,
+            None => MsgForSystem::InvalidPacketTime,
             Some((statistics, smallest_delay_time)) => {
                 self.statistics = statistics;
                 self.time = smallest_delay_time;
 
-                let updated = PeerUpdated {
+                let updated = PeerSnapshot {
                     time: self.time,
                     root_distance_without_time: self.root_distance_without_time(),
                     stratum: self.last_packet.stratum,
                     statistics: self.statistics,
                 };
 
-                MsgForSystem::PeerUpdated(updated)
+                MsgForSystem::NewSnapshot(updated)
             }
         }
     }
