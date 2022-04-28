@@ -71,11 +71,39 @@ pub(crate) enum MsgForSystem {
     PeerUpdated(PeerUpdated),
 }
 
+#[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
 pub(crate) struct PeerUpdated {
-    time: NtpTimestamp,
-    root_distance_without_time: NtpDuration,
-    stratum: u8,
+    pub(crate) time: NtpTimestamp,
+    pub(crate) root_distance_without_time: NtpDuration,
+    pub(crate) stratum: u8,
+    pub(crate) statistics: PeerStatistics,
+}
+
+impl PeerUpdated {
+    pub(crate) fn accept_synchronization(
+        &self,
+        local_clock_time: NtpTimestamp,
+        system_poll: NtpDuration,
+    ) -> Result<(), AcceptSynchronizationError> {
+        use AcceptSynchronizationError::*;
+
+        // the only check that is time-dependent is the distance check. All other checks are
+        // handled by the peer, an no PeerUpdated would be produced if any of those checks fails
+
+        //  A distance error occurs if the root distance exceeds the
+        //  distance threshold plus an increment equal to one poll interval.
+        let distance = self.root_distance(local_clock_time);
+        if distance > MAX_DISTANCE + multiply_by_phi(system_poll) {
+            return Err(Distance);
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn root_distance(&self, local_clock_time: NtpTimestamp) -> NtpDuration {
+        self.root_distance_without_time + multiply_by_phi(local_clock_time - self.time)
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -113,6 +141,7 @@ impl Peer {
                     time: self.time,
                     root_distance_without_time: self.root_distance_without_time(),
                     stratum: self.last_packet.stratum,
+                    statistics: self.statistics,
                 };
 
                 MsgForSystem::PeerUpdated(updated)
