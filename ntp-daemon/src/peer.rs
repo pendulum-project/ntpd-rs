@@ -52,7 +52,6 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                     if let Ok((size, Some(timestamp))) = result {
                         if size >= 48 {
                             let packet = NtpHeader::deserialize(&buf);
-                            eprintln!("Received at {:?} {:?}", timestamp, packet);
 
                             let result = peer.handle_incoming(packet, timestamp);
 
