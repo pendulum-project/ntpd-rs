@@ -65,9 +65,14 @@ impl Reach {
     }
 }
 
-pub enum Decision {
-    Ignore,
-    Process,
+#[allow(dead_code)]
+pub(crate) enum MsgForSystem {
+    NoUpdate,
+    PeerUpdated {
+        time: NtpTimestamp,
+        root_distance_without_time: NtpDuration,
+        stratum: u8,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -80,13 +85,14 @@ pub(crate) enum AcceptSynchronizationError {
 }
 
 impl Peer {
+    /// Data from a peer that is needed for the (global) clock filter and combine process
     #[allow(dead_code)]
-    pub(crate) fn clock_filter(
+    pub(crate) fn clock_filter_data(
         &mut self,
         new_tuple: FilterTuple,
         system_leap_indicator: NtpLeapIndicator,
         system_precision: f64,
-    ) -> Decision {
+    ) -> MsgForSystem {
         let updated = self.last_measurements.step(
             new_tuple,
             self.time,
@@ -95,12 +101,16 @@ impl Peer {
         );
 
         match updated {
-            None => Decision::Ignore,
+            None => MsgForSystem::NoUpdate,
             Some((statistics, smallest_delay_time)) => {
                 self.statistics = statistics;
                 self.time = smallest_delay_time;
 
-                Decision::Process
+                MsgForSystem::PeerUpdated {
+                    time: self.time,
+                    root_distance_without_time: self.root_distance_without_time(),
+                    stratum: self.last_packet.stratum,
+                }
             }
         }
     }
@@ -111,10 +121,14 @@ impl Peer {
     /// plus peer jitter.
     #[allow(dead_code)]
     pub(crate) fn root_distance(&self, local_clock_time: NtpTimestamp) -> NtpDuration {
+        self.root_distance_without_time() + multiply_by_phi(local_clock_time - self.time)
+    }
+
+    /// Root distance without the `multiply_by_phi(local_clock_time - self.time)` term
+    fn root_distance_without_time(&self) -> NtpDuration {
         NtpDuration::MIN_DISPERSION.max(self.last_packet.root_delay + self.statistics.delay) / 2i64
             + self.last_packet.root_dispersion
             + self.statistics.dispersion
-            + multiply_by_phi(local_clock_time - self.time)
             + NtpDuration::from_seconds(self.statistics.jitter)
     }
 
