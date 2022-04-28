@@ -35,9 +35,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let sent = socket.send(&buf).await.unwrap();
     assert!(sent == 48);
 
-    let mut dst_timestamp = None;
-
-    let received = socket.recv(&mut buf, &mut dst_timestamp).await.unwrap();
+    let (received, dst_timestamp) = socket.recv(&mut buf).await.unwrap();
     assert!(received == 48);
 
     dbg!(dst_timestamp);

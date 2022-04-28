@@ -39,14 +39,10 @@ impl UdpSocket {
         }
     }
 
-    pub async fn recv(
-        &self,
-        buf: &mut [u8],
-        recv_ts: &mut Option<NtpTimestamp>,
-    ) -> io::Result<usize> {
+    pub async fn recv(&self, buf: &mut [u8]) -> io::Result<(usize, Option<NtpTimestamp>)> {
         loop {
             let mut guard = self.io.readable().await?;
-            match guard.try_io(|inner| recv(inner.get_ref(), buf, recv_ts)) {
+            match guard.try_io(|inner| recv(inner.get_ref(), buf)) {
                 Ok(result) => return result,
                 Err(_would_block) => continue,
             }
@@ -69,11 +65,7 @@ fn init_socket(socket: &std::net::UdpSocket) -> io::Result<()> {
     Ok(())
 }
 
-fn recv(
-    socket: &std::net::UdpSocket,
-    buf: &mut [u8],
-    recv_ts: &mut Option<NtpTimestamp>,
-) -> io::Result<usize> {
+fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Option<NtpTimestamp>)> {
     let mut buf_slice = IoSliceMut::new(buf);
 
     // could be on the stack if const extern fn is stable
@@ -83,7 +75,7 @@ fn recv(
     let mut mhdr = libc::msghdr {
         msg_control: control_buf.as_mut_ptr().cast::<libc::c_void>(),
         msg_controllen: control_buf.len(),
-        msg_iov: buf_slice.as_mut_ptr().cast::<libc::iovec>(),
+        msg_iov: (&mut buf_slice as *mut IoSliceMut).cast::<libc::iovec>(),
         msg_iovlen: 1,
         msg_flags: 0,
         msg_name: std::ptr::null_mut(),
@@ -107,6 +99,8 @@ fn recv(
         break n;
     };
 
+    let mut recv_ts = None;
+
     // Loops through the control messages, but we should only get a single message
     let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(&mhdr).as_ref() };
     while let Some(msg) = cmsg {
@@ -114,7 +108,7 @@ fn recv(
             // Safety: SCM_TIMESTAMPNS always has a timespec in the data, so this operation should be safe
             let ts: libc::timespec =
                 unsafe { std::ptr::read_unaligned(libc::CMSG_DATA(msg) as *const _) };
-            *recv_ts = Some(NtpTimestamp::from_seconds_nanos_since_ntp_era(
+            recv_ts = Some(NtpTimestamp::from_seconds_nanos_since_ntp_era(
                 ts.tv_sec as u32,  // truncates the higher bits of the i64
                 ts.tv_nsec as u32, // tv_nsec is always within [0, 1e10)
             ));
@@ -125,5 +119,5 @@ fn recv(
         cmsg = unsafe { libc::CMSG_NXTHDR(&mhdr, msg).as_ref() };
     }
 
-    Ok(n as usize)
+    Ok((n as usize, recv_ts))
 }
