@@ -304,6 +304,7 @@ fn cluster_algorithm(candidates: &mut Vec<SurvivorTuple>) -> f64 {
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub struct ClockCombine {
     pub system_offset: NtpDuration,
     pub system_jitter: NtpDuration,
