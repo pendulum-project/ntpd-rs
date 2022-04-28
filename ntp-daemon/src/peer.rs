@@ -9,7 +9,7 @@ use tokio::{
 
 fn poll_interval_to_duration(poll_interval: i8) -> Duration {
     match poll_interval {
-        i if i >= 0 => Duration::from_secs(1),
+        i if i <= 0 => Duration::from_secs(1),
         i if i < 64 => Duration::from_secs(1 << i),
         _ => Duration::from_secs(std::u64::MAX),
     }
