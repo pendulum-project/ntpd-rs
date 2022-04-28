@@ -1,4 +1,4 @@
-use crate::peer::{Peer, MAX_DISTANCE};
+use crate::peer::{PeerUpdated, MAX_DISTANCE};
 use crate::{NtpDuration, NtpTimestamp};
 
 // TODO this should be 4 in production?!
@@ -23,11 +23,17 @@ const MIN_INTERSECTION_SURVIVORS: usize = 1;
 const MIN_CLUSTER_SURVIVORS: usize = 3;
 
 #[allow(dead_code)]
+struct ClockSelect<'a> {
+    survivors: Vec<SurvivorTuple<'a>>,
+    system_selection_jitter: f64,
+}
+
+#[allow(dead_code)]
 fn clock_select(
-    peers: &[Peer],
+    peers: &[PeerUpdated],
     local_clock_time: NtpTimestamp,
     system_poll: NtpDuration,
-) -> Option<Vec<SurvivorTuple>> {
+) -> Option<ClockSelect> {
     let valid_associations = peers.iter().filter(|p| {
         p.accept_synchronization(local_clock_time, system_poll)
             .is_ok()
@@ -41,9 +47,12 @@ fn clock_select(
         return None;
     }
 
-    let _system_selection_jitter = cluster_algorithm(&mut survivors);
+    let system_selection_jitter = cluster_algorithm(&mut survivors);
 
-    Some(survivors)
+    Some(ClockSelect {
+        survivors,
+        system_selection_jitter,
+    })
 }
 
 /// Observation: Chrony (sources.c, SRC_SelectSource, line ~920) does not use the Middle tag
@@ -58,7 +67,7 @@ enum EndpointType {
 #[allow(dead_code)]
 #[derive(Debug)]
 struct CandidateTuple<'a> {
-    peer: &'a Peer,
+    peer: &'a PeerUpdated,
     endpoint_type: EndpointType,
     /// Correctness interval edge
     edge: NtpDuration,
@@ -66,7 +75,7 @@ struct CandidateTuple<'a> {
 
 #[allow(dead_code)]
 fn construct_candidate_list<'a>(
-    valid_associations: impl IntoIterator<Item = &'a Peer>,
+    valid_associations: impl IntoIterator<Item = &'a PeerUpdated>,
     local_clock_time: NtpTimestamp,
 ) -> Vec<CandidateTuple<'a>> {
     let mut candidate_list = Vec::new();
@@ -104,7 +113,7 @@ fn construct_candidate_list<'a>(
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct SurvivorTuple<'a> {
-    peer: &'a Peer,
+    peer: &'a PeerUpdated,
     metric: NtpDuration,
 }
 
@@ -140,7 +149,7 @@ fn filter_survivor<'a>(
         None
     } else {
         let peer = candidate.peer;
-        let metric = MAX_DISTANCE * peer.last_packet.stratum + peer.root_distance(local_clock_time);
+        let metric = MAX_DISTANCE * peer.stratum + peer.root_distance(local_clock_time);
 
         Some(SurvivorTuple { peer, metric })
     }
@@ -333,7 +342,7 @@ fn clock_combine<'a>(
 pub fn fuzz_find_interval(spec: &[(i64, u64)]) {
     let mut peers = vec![];
     for _ in 0..spec.len() {
-        peers.push(Peer::test_peer())
+        peers.push(test_peer_updated())
     }
     let mut candidates = vec![];
     for (i, (center, size)) in spec.iter().enumerate() {
@@ -363,38 +372,73 @@ pub fn fuzz_find_interval(spec: &[(i64, u64)]) {
     assert!(survivors.is_empty() || 2 * survivors.len() > spec.len());
 }
 
+#[cfg(any(test, feature = "fuzz"))]
+fn test_peer_updated() -> PeerUpdated {
+    peer_updated(
+        crate::peer::PeerStatistics::default(),
+        NtpDuration::default(),
+        NtpDuration::default(),
+    )
+}
+
+#[cfg(any(test, feature = "fuzz"))]
+fn peer_updated(
+    statistics: crate::peer::PeerStatistics,
+    root_delay: NtpDuration,
+    root_dispersion: NtpDuration,
+) -> PeerUpdated {
+    let root_distance_without_time = NtpDuration::MIN_DISPERSION.max(root_delay + statistics.delay)
+        / 2i64
+        + root_dispersion
+        + statistics.dispersion;
+
+    PeerUpdated {
+        time: NtpTimestamp::from_fixed_int(0),
+        statistics,
+        stratum: 0,
+        root_distance_without_time,
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::peer::PeerStatistics;
 
     #[test]
     fn clock_combine_simple() {
-        let mut peer_1 = Peer::test_peer();
-        peer_1.last_packet.root_delay = NtpDuration::from_seconds(0.1);
-        peer_1.last_packet.root_dispersion = NtpDuration::from_seconds(0.05);
-        peer_1.statistics.delay = NtpDuration::from_seconds(0.1);
-        peer_1.statistics.offset = NtpDuration::from_fixed_int(0);
-        peer_1.statistics.dispersion = NtpDuration::from_seconds(0.05);
-        peer_1.statistics.jitter = 0.05;
-        peer_1.time = NtpTimestamp::from_fixed_int(0);
+        let peer_1 = peer_updated(
+            PeerStatistics {
+                delay: NtpDuration::from_seconds(0.1),
+                offset: NtpDuration::from_fixed_int(0),
+                dispersion: NtpDuration::from_seconds(0.05),
+                jitter: 0.05,
+            },
+            NtpDuration::from_seconds(0.1),
+            NtpDuration::from_seconds(0.05),
+        );
 
-        let mut peer_2 = Peer::test_peer();
-        peer_2.last_packet.root_delay = NtpDuration::from_seconds(0.1);
-        peer_2.last_packet.root_dispersion = NtpDuration::from_seconds(0.05);
-        peer_2.statistics.delay = NtpDuration::from_seconds(0.1);
-        peer_2.statistics.offset = NtpDuration::from_fixed_int(500000);
-        peer_2.statistics.dispersion = NtpDuration::from_seconds(0.05);
-        peer_2.statistics.jitter = 0.05;
-        peer_2.time = NtpTimestamp::from_fixed_int(0);
+        let peer_2 = peer_updated(
+            PeerStatistics {
+                delay: NtpDuration::from_seconds(0.1),
+                offset: NtpDuration::from_fixed_int(500000),
+                dispersion: NtpDuration::from_seconds(0.05),
+                jitter: 0.05,
+            },
+            NtpDuration::from_seconds(0.1),
+            NtpDuration::from_seconds(0.05),
+        );
 
-        let mut peer_3 = Peer::test_peer();
-        peer_3.last_packet.root_delay = NtpDuration::from_seconds(0.1);
-        peer_3.last_packet.root_dispersion = NtpDuration::from_seconds(0.05);
-        peer_3.statistics.delay = NtpDuration::from_seconds(0.1);
-        peer_3.statistics.offset = NtpDuration::from_fixed_int(-500000);
-        peer_3.statistics.dispersion = NtpDuration::from_seconds(0.05);
-        peer_3.statistics.jitter = 0.05;
-        peer_3.time = NtpTimestamp::from_fixed_int(0);
+        let peer_3 = peer_updated(
+            PeerStatistics {
+                delay: NtpDuration::from_seconds(0.1),
+                offset: NtpDuration::from_fixed_int(-500000),
+                dispersion: NtpDuration::from_seconds(0.05),
+                jitter: 0.05,
+            },
+            NtpDuration::from_seconds(0.1),
+            NtpDuration::from_seconds(0.05),
+        );
 
         let survivors = vec![
             SurvivorTuple {
@@ -422,32 +466,38 @@ mod test {
 
     #[test]
     fn clock_combine_deemphasize_on_root_distance() {
-        let mut peer_1 = Peer::test_peer();
-        peer_1.last_packet.root_delay = NtpDuration::from_seconds(0.1);
-        peer_1.last_packet.root_dispersion = NtpDuration::from_seconds(0.05);
-        peer_1.statistics.delay = NtpDuration::from_seconds(0.1);
-        peer_1.statistics.offset = NtpDuration::from_fixed_int(0);
-        peer_1.statistics.dispersion = NtpDuration::from_seconds(0.05);
-        peer_1.statistics.jitter = 0.05;
-        peer_1.time = NtpTimestamp::from_fixed_int(0);
+        let peer_1 = peer_updated(
+            PeerStatistics {
+                delay: NtpDuration::from_seconds(0.1),
+                offset: NtpDuration::from_fixed_int(0),
+                dispersion: NtpDuration::from_seconds(0.05),
+                jitter: 0.05,
+            },
+            NtpDuration::from_seconds(0.1),
+            NtpDuration::from_seconds(0.05),
+        );
 
-        let mut peer_2 = Peer::test_peer();
-        peer_2.last_packet.root_delay = NtpDuration::from_seconds(0.5);
-        peer_2.last_packet.root_dispersion = NtpDuration::from_seconds(0.05);
-        peer_2.statistics.delay = NtpDuration::from_seconds(0.1);
-        peer_2.statistics.offset = NtpDuration::from_fixed_int(500000);
-        peer_2.statistics.dispersion = NtpDuration::from_seconds(0.05);
-        peer_2.statistics.jitter = 0.05;
-        peer_2.time = NtpTimestamp::from_fixed_int(0);
+        let peer_2 = peer_updated(
+            PeerStatistics {
+                delay: NtpDuration::from_seconds(0.1),
+                offset: NtpDuration::from_fixed_int(500000),
+                dispersion: NtpDuration::from_seconds(0.05),
+                jitter: 0.05,
+            },
+            NtpDuration::from_seconds(0.5),
+            NtpDuration::from_seconds(0.05),
+        );
 
-        let mut peer_3 = Peer::test_peer();
-        peer_3.last_packet.root_delay = NtpDuration::from_seconds(0.1);
-        peer_3.last_packet.root_dispersion = NtpDuration::from_seconds(0.05);
-        peer_3.statistics.delay = NtpDuration::from_seconds(0.1);
-        peer_3.statistics.offset = NtpDuration::from_fixed_int(-500000);
-        peer_3.statistics.dispersion = NtpDuration::from_seconds(0.05);
-        peer_3.statistics.jitter = 0.05;
-        peer_3.time = NtpTimestamp::from_fixed_int(0);
+        let peer_3 = peer_updated(
+            PeerStatistics {
+                delay: NtpDuration::from_seconds(0.1),
+                offset: NtpDuration::from_fixed_int(-500000),
+                dispersion: NtpDuration::from_seconds(0.05),
+                jitter: 0.05,
+            },
+            NtpDuration::from_seconds(0.1),
+            NtpDuration::from_seconds(0.05),
+        );
 
         let survivors = vec![
             SurvivorTuple {
@@ -476,9 +526,9 @@ mod test {
 
     #[test]
     fn find_interval_simple() {
-        let peer_1 = Peer::test_peer();
-        let peer_2 = Peer::test_peer();
-        let peer_3 = Peer::test_peer();
+        let peer_1 = test_peer_updated();
+        let peer_2 = test_peer_updated();
+        let peer_3 = test_peer_updated();
 
         let intervals = [
             CandidateTuple {
@@ -542,9 +592,9 @@ mod test {
 
     #[test]
     fn find_interval_outlier() {
-        let peer_1 = Peer::test_peer();
-        let peer_2 = Peer::test_peer();
-        let peer_3 = Peer::test_peer();
+        let peer_1 = test_peer_updated();
+        let peer_2 = test_peer_updated();
+        let peer_3 = test_peer_updated();
 
         let intervals = [
             CandidateTuple {
@@ -610,9 +660,9 @@ mod test {
     fn find_interval_low_precision_edgecase() {
         // One larger interval whose middle does not lie in
         // both smaller intervals, but whose middles do overlap.
-        let peer_1 = Peer::test_peer();
-        let peer_2 = Peer::test_peer();
-        let peer_3 = Peer::test_peer();
+        let peer_1 = test_peer_updated();
+        let peer_2 = test_peer_updated();
+        let peer_3 = test_peer_updated();
 
         let intervals = [
             CandidateTuple {
@@ -678,9 +728,9 @@ mod test {
     fn find_interval_interleaving_edgecase() {
         // Three partially overlapping intervals, where
         // the outer center's are not in each others interval.
-        let peer_1 = Peer::test_peer();
-        let peer_2 = Peer::test_peer();
-        let peer_3 = Peer::test_peer();
+        let peer_1 = test_peer_updated();
+        let peer_2 = test_peer_updated();
+        let peer_3 = test_peer_updated();
 
         let intervals = [
             CandidateTuple {
@@ -745,9 +795,9 @@ mod test {
     #[test]
     fn find_interval_no_consensus() {
         // Three disjoint intervals
-        let peer_1 = Peer::test_peer();
-        let peer_2 = Peer::test_peer();
-        let peer_3 = Peer::test_peer();
+        let peer_1 = test_peer_updated();
+        let peer_2 = test_peer_updated();
+        let peer_3 = test_peer_updated();
 
         let intervals = [
             CandidateTuple {
@@ -807,9 +857,9 @@ mod test {
     fn find_interval_tiling() {
         // Three intervals whose midpoints are not in any of the others
         // but which still overlap somewhat.
-        let peer_1 = Peer::test_peer();
-        let peer_2 = Peer::test_peer();
-        let peer_3 = Peer::test_peer();
+        let peer_1 = test_peer_updated();
+        let peer_2 = test_peer_updated();
+        let peer_3 = test_peer_updated();
 
         let intervals = [
             CandidateTuple {
@@ -867,14 +917,27 @@ mod test {
 
     #[test]
     fn test_construct_candidate_list() {
-        let mut peer1 = Peer::test_peer();
-        let mut peer2 = Peer::test_peer();
+        let root_delay = NtpDuration::ZERO;
+        let root_dispersion = NtpDuration::ZERO;
 
-        peer1.statistics.delay = NtpDuration::from_seconds(1.0);
-
-        // delay chosen so the two intervals intersect
-        peer2.statistics.delay = NtpDuration::from_seconds(3.0);
-        peer2.statistics.offset = NtpDuration::from_seconds(1.5);
+        let peer1 = peer_updated(
+            PeerStatistics {
+                delay: NtpDuration::from_seconds(1.0),
+                ..PeerStatistics::default()
+            },
+            root_delay,
+            root_dispersion,
+        );
+        let peer2 = peer_updated(
+            PeerStatistics {
+                // delay chosen so the two intervals intersect
+                delay: NtpDuration::from_seconds(3.0),
+                offset: NtpDuration::from_seconds(1.5),
+                ..PeerStatistics::default()
+            },
+            root_delay,
+            root_dispersion,
+        );
 
         let local_clock_time = NtpTimestamp::ZERO;
         let actual: Vec<_> = construct_candidate_list([&peer1, &peer2], local_clock_time)
@@ -918,7 +981,7 @@ mod test {
 
     #[test]
     fn cluster_algorithm_single() {
-        let peer = Peer::test_peer();
+        let peer = test_peer_updated();
         let candidate = SurvivorTuple {
             peer: &peer,
             metric: NtpDuration::ONE,
@@ -928,14 +991,14 @@ mod test {
 
     #[test]
     fn cluster_algorithm_tuple() {
-        let mut peer1 = Peer::test_peer();
+        let mut peer1 = test_peer_updated();
         peer1.statistics.offset = NtpDuration::ONE * 3i64;
         let candidate1 = SurvivorTuple {
             peer: &peer1,
             metric: NtpDuration::ONE,
         };
 
-        let mut peer2 = Peer::test_peer();
+        let mut peer2 = test_peer_updated();
         peer2.statistics.offset = NtpDuration::ONE * 7i64;
         let candidate2 = SurvivorTuple {
             peer: &peer2,
@@ -954,7 +1017,7 @@ mod test {
 
     #[test]
     fn cluster_algorithm_exit_too_few_candidates() {
-        let mut peer1 = Peer::test_peer();
+        let mut peer1 = test_peer_updated();
         peer1.statistics.offset = NtpDuration::ONE * 3i64;
         let candidate1 = SurvivorTuple {
             peer: &peer1,
@@ -976,7 +1039,7 @@ mod test {
         // after the termination condition has been met. That means the spec text and
         // code skeleton comment are at least misleading (and perhaps wrong).
 
-        let mut peer = Peer::test_peer();
+        let mut peer = test_peer_updated();
         peer.statistics.offset = NtpDuration::ONE * 3i64;
 
         let peers = &mut vec![peer; 15];
@@ -1002,7 +1065,7 @@ mod test {
 
     #[test]
     fn cluster_algorithm_outlier_is_discarded_first() {
-        let mut peer = Peer::test_peer();
+        let mut peer = test_peer_updated();
         peer.statistics.offset = NtpDuration::ONE * 3i64;
 
         let peers = &mut vec![peer; 4];
@@ -1032,7 +1095,7 @@ mod test {
 
     #[test]
     fn cluster_algorithm_outliers_are_discarded_first() {
-        let mut peer = Peer::test_peer();
+        let mut peer = test_peer_updated();
         peer.statistics.offset = NtpDuration::ONE * 3i64;
 
         let peers = &mut vec![peer; 5];
