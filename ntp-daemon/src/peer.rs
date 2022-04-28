@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use ntp_proto::{MsgForSystem, NtpClock, NtpDuration, NtpHeader, Peer, PeerSnapshot, ReferenceId};
+use ntp_proto::{NtpClock, NtpDuration, NtpHeader, Peer, PeerSnapshot, ReferenceId};
 use tokio::{
     net::{ToSocketAddrs, UdpSocket},
     sync::watch,
@@ -57,7 +57,7 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
 
                         if peer.accept_synchronization(timestamp, NtpDuration::ZERO).is_err() {
                             let _ = tx.send(None);
-                        } else if let MsgForSystem::NewSnapshot(update) = result {
+                        } else if let Ok(update) = result {
                             let _ = tx.send(Some(update));
                         }
                     } else {

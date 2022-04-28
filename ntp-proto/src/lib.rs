@@ -16,7 +16,7 @@ pub use clock_select::{filter_and_combine, ClockCombine};
 pub use filter::fuzz_tuple_from_packet_default;
 pub use identifiers::ReferenceId;
 pub use packet::NtpHeader;
-pub use peer::{AcceptSynchronizationError, MsgForSystem, Peer, PeerSnapshot};
+pub use peer::{AcceptSynchronizationError, Peer, PeerError, PeerSnapshot};
 #[cfg(feature = "fuzz")]
 pub use time_types::fuzz_duration_from_seconds;
 pub use time_types::{NtpDuration, NtpTimestamp};

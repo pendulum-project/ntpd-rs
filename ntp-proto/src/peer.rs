@@ -69,15 +69,13 @@ impl Reach {
     }
 }
 
-pub enum MsgForSystem {
+pub enum PeerError {
     /// The association mode is not one that this peer supports
     InvalidMode,
     /// The send time on the received packet is not the time we sent it at
     InvalidPacketTime,
     /// Peer is in an invalid state
     Kiss,
-    /// The peer received a valid packet, and produced a new snapshot of its state
-    NewSnapshot(PeerSnapshot),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -167,20 +165,24 @@ impl Peer {
         packet
     }
 
-    pub fn handle_incoming(&mut self, message: NtpHeader, recv_time: NtpTimestamp) -> MsgForSystem {
+    pub fn handle_incoming(
+        &mut self,
+        message: NtpHeader,
+        recv_time: NtpTimestamp,
+    ) -> Result<PeerSnapshot, PeerError> {
         if message.mode != NtpAssociationMode::Server {
             // we currently only support a client <-> server association
-            MsgForSystem::InvalidMode
+            Err(PeerError::InvalidMode)
         } else if Some(message.origin_timestamp) != self.next_expected_origin {
             // the message we got back says that it was sent at a different time than we sent it
-            MsgForSystem::InvalidPacketTime
+            Err(PeerError::InvalidPacketTime)
         } else if message.is_kiss_rate() {
             self.remote_min_poll_interval =
                 Ord::max(self.remote_min_poll_interval + 1, self.last_poll_interval);
-            MsgForSystem::Kiss
+            Err(PeerError::Kiss)
         } else if message.is_kiss() {
             // Ignore unrecognized control messages
-            MsgForSystem::Kiss
+            Err(PeerError::Kiss)
         } else {
             // For reachability, mark that we have had a response
             self.reach.received_packet();
@@ -206,7 +208,7 @@ impl Peer {
         new_tuple: FilterTuple,
         system_leap_indicator: NtpLeapIndicator,
         system_precision: f64,
-    ) -> MsgForSystem {
+    ) -> Result<PeerSnapshot, PeerError> {
         let updated = self.last_measurements.step(
             new_tuple,
             self.time,
@@ -215,19 +217,19 @@ impl Peer {
         );
 
         match updated {
-            None => MsgForSystem::InvalidPacketTime,
+            None => Err(PeerError::InvalidPacketTime),
             Some((statistics, smallest_delay_time)) => {
                 self.statistics = statistics;
                 self.time = smallest_delay_time;
 
-                let updated = PeerSnapshot {
+                let snapshot = PeerSnapshot {
                     time: self.time,
                     root_distance_without_time: self.root_distance_without_time(),
                     stratum: self.last_packet.stratum,
                     statistics: self.statistics,
                 };
 
-                MsgForSystem::NewSnapshot(updated)
+                Ok(snapshot)
             }
         }
     }
