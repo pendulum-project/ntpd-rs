@@ -342,7 +342,7 @@ fn clock_combine<'a>(
 pub fn fuzz_find_interval(spec: &[(i64, u64)]) {
     let mut peers = vec![];
     for _ in 0..spec.len() {
-        peers.push(test_peer_updated)
+        peers.push(test_peer_updated())
     }
     let mut candidates = vec![];
     for (i, (center, size)) in spec.iter().enumerate() {
@@ -372,37 +372,38 @@ pub fn fuzz_find_interval(spec: &[(i64, u64)]) {
     assert!(survivors.is_empty() || 2 * survivors.len() > spec.len());
 }
 
+#[cfg(any(test, feature = "fuzz"))]
+fn test_peer_updated() -> PeerUpdated {
+    peer_updated(
+        crate::peer::PeerStatistics::default(),
+        NtpDuration::default(),
+        NtpDuration::default(),
+    )
+}
+
+#[cfg(any(test, feature = "fuzz"))]
+fn peer_updated(
+    statistics: crate::peer::PeerStatistics,
+    root_delay: NtpDuration,
+    root_dispersion: NtpDuration,
+) -> PeerUpdated {
+    let root_distance_without_time = NtpDuration::MIN_DISPERSION.max(root_delay + statistics.delay)
+        / 2i64
+        + root_dispersion
+        + statistics.dispersion;
+
+    PeerUpdated {
+        time: NtpTimestamp::from_fixed_int(0),
+        statistics,
+        stratum: 0,
+        root_distance_without_time,
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use crate::peer::PeerStatistics;
-
     use super::*;
-
-    fn test_peer_updated() -> PeerUpdated {
-        peer_updated(
-            PeerStatistics::default(),
-            NtpDuration::default(),
-            NtpDuration::default(),
-        )
-    }
-
-    fn peer_updated(
-        statistics: PeerStatistics,
-        root_delay: NtpDuration,
-        root_dispersion: NtpDuration,
-    ) -> PeerUpdated {
-        let root_distance_without_time =
-            NtpDuration::MIN_DISPERSION.max(root_delay + statistics.delay) / 2i64
-                + root_dispersion
-                + statistics.dispersion;
-
-        PeerUpdated {
-            time: NtpTimestamp::from_fixed_int(0),
-            statistics,
-            stratum: 0,
-            root_distance_without_time,
-        }
-    }
+    use crate::peer::PeerStatistics;
 
     #[test]
     fn clock_combine_simple() {
