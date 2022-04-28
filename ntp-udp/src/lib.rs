@@ -7,6 +7,11 @@ use std::{
 use ntp_proto::NtpTimestamp;
 use tokio::io::unix::AsyncFd;
 
+// Unix uses an epoch located at 1/1/1970-00:00h (UTC) and NTP uses 1/1/1900-00:00h.
+// This leads to an offset equivalent to 70 years in seconds
+// there are 17 leap years between the two dates so the offset is
+const EPOCH_OFFSET: u32 = (70 * 365 + 17) * 86400;
+
 pub struct UdpSocket {
     io: AsyncFd<std::net::UdpSocket>,
 }
@@ -109,8 +114,8 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
             let ts: libc::timespec =
                 unsafe { std::ptr::read_unaligned(libc::CMSG_DATA(msg) as *const _) };
             recv_ts = Some(NtpTimestamp::from_seconds_nanos_since_ntp_era(
-                ts.tv_sec as u32,  // truncates the higher bits of the i64
-                ts.tv_nsec as u32, // tv_nsec is always within [0, 1e10)
+                (ts.tv_sec as u32).wrapping_add(EPOCH_OFFSET), // truncates the higher bits of the i64
+                ts.tv_nsec as u32,                             // tv_nsec is always within [0, 1e10)
             ));
             break;
         }

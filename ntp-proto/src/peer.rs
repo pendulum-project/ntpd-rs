@@ -1,6 +1,6 @@
 use crate::{
     filter::{FilterTuple, LastMeasurements},
-    packet::NtpLeapIndicator,
+    packet::{NtpAssociationMode, NtpLeapIndicator},
     NtpDuration, NtpHeader, NtpTimestamp, ReferenceId,
 };
 
@@ -23,16 +23,24 @@ pub(crate) struct PeerStatistics {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct Peer {
-    pub statistics: PeerStatistics,
-    pub last_measurements: LastMeasurements,
-    pub last_packet: NtpHeader,
-    pub time: NtpTimestamp,
+pub struct Peer {
+    // Poll interval state
+    last_poll_interval: i8,
+    next_poll_interval: i8,
+    remote_min_poll_interval: i8,
+
+    // Last packet information
+    next_expected_origin: Option<NtpTimestamp>,
+
+    pub(crate) statistics: PeerStatistics,
+    pub(crate) last_measurements: LastMeasurements,
+    pub(crate) last_packet: NtpHeader,
+    pub(crate) time: NtpTimestamp,
     #[allow(dead_code)]
-    pub peer_id: ReferenceId,
-    pub our_id: ReferenceId,
+    pub(crate) peer_id: ReferenceId,
+    pub(crate) our_id: ReferenceId,
     #[allow(dead_code)]
-    pub reach: Reach,
+    pub(crate) reach: Reach,
 }
 
 /// Used to determine whether the server is reachable and the data are fresh
@@ -66,14 +74,14 @@ impl Reach {
 }
 
 #[allow(dead_code)]
-pub(crate) enum MsgForSystem {
+pub enum MsgForSystem {
     NoUpdate,
     PeerUpdated(PeerUpdated),
 }
 
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
-pub(crate) struct PeerUpdated {
+pub struct PeerUpdated {
     pub(crate) time: NtpTimestamp,
     pub(crate) root_distance_without_time: NtpDuration,
     pub(crate) stratum: u8,
@@ -108,7 +116,7 @@ impl PeerUpdated {
 
 #[derive(Debug, PartialEq, Eq)]
 #[repr(u8)]
-pub(crate) enum AcceptSynchronizationError {
+pub enum AcceptSynchronizationError {
     ServerUnreachable,
     Loop,
     Distance,
@@ -116,6 +124,85 @@ pub(crate) enum AcceptSynchronizationError {
 }
 
 impl Peer {
+    pub fn new(
+        our_id: ReferenceId,
+        peer_id: ReferenceId,
+        current_system_time: NtpTimestamp,
+    ) -> Self {
+        Self {
+            last_poll_interval: 2,
+            next_poll_interval: 2,
+            remote_min_poll_interval: 2,
+
+            next_expected_origin: None,
+
+            statistics: Default::default(),
+            last_measurements: Default::default(),
+            last_packet: Default::default(),
+            time: current_system_time,
+            our_id,
+            peer_id,
+            reach: Default::default(),
+        }
+    }
+
+    pub fn get_interval_next_poll(&mut self, system_poll_interval: i8) -> i8 {
+        self.last_poll_interval = system_poll_interval
+            .max(self.remote_min_poll_interval)
+            .max(self.next_poll_interval);
+        self.next_poll_interval = self.last_poll_interval.saturating_add(1);
+        self.last_poll_interval
+    }
+
+    pub fn generate_poll_message(&mut self, current_system_time: NtpTimestamp) -> NtpHeader {
+        self.reach.poll();
+
+        self.next_expected_origin = Some(current_system_time);
+
+        let mut packet = NtpHeader::new();
+        packet.poll = self.last_poll_interval;
+        packet.transmit_timestamp = current_system_time;
+        packet.mode = NtpAssociationMode::Client;
+
+        packet
+    }
+
+    pub fn handle_incoming(&mut self, message: NtpHeader, recv_time: NtpTimestamp) -> MsgForSystem {
+        if message.mode != NtpAssociationMode::Server
+            || Some(message.origin_timestamp) != self.next_expected_origin
+        {
+            eprintln!("Ignoring garbage");
+            return MsgForSystem::NoUpdate; // Garbage or old message
+        }
+
+        if message.is_kiss_rate() {
+            eprintln!("Kiss rate");
+            self.remote_min_poll_interval =
+                (self.remote_min_poll_interval + 1).max(self.last_poll_interval);
+            return MsgForSystem::NoUpdate;
+        }
+
+        if message.is_kiss() {
+            eprintln!("Kiss");
+            return MsgForSystem::NoUpdate; // Ignore unrecognized control messages
+        }
+
+        // For reachability, mark that we have had a response
+        self.reach.received_packet();
+        // Received answer, so no need for backoff
+        self.next_poll_interval = self.last_poll_interval;
+
+        // TODO: properly fill in system parameters
+        let filter_input = FilterTuple::from_packet_default(
+            &message,
+            NtpDuration::from_seconds(0.),
+            recv_time,
+            recv_time,
+        );
+
+        self.clock_filter_data(filter_input, NtpLeapIndicator::NoWarning, 0.)
+    }
+
     /// Data from a peer that is needed for the (global) clock filter and combine process
     #[allow(dead_code)]
     pub(crate) fn clock_filter_data(
@@ -170,7 +257,7 @@ impl Peer {
     /// Test if association p is acceptable for synchronization
     ///
     /// Known as `accept` and `fit` in the specification.
-    pub(crate) fn accept_synchronization(
+    pub fn accept_synchronization(
         &self,
         local_clock_time: NtpTimestamp,
         system_poll: NtpDuration,
@@ -210,6 +297,12 @@ impl Peer {
     #[cfg(any(test, feature = "fuzz"))]
     pub(crate) fn test_peer() -> Self {
         Peer {
+            last_poll_interval: 2,
+            next_poll_interval: 3,
+            remote_min_poll_interval: 2,
+
+            next_expected_origin: None,
+
             statistics: Default::default(),
             last_measurements: Default::default(),
             last_packet: Default::default(),
