@@ -51,8 +51,6 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                     // extra bytes are guaranteed safe to ignore. `recv` truncats the messages
                     if let Ok((_, Some(timestamp))) = result {
                         let packet = NtpHeader::deserialize(&buf);
-                        eprintln!("Received at {:?} {:?}", timestamp, packet);
-
                         let result = peer.handle_incoming(packet, timestamp);
 
                         if peer.accept_synchronization(timestamp, NtpDuration::ZERO).is_err() {
