@@ -38,13 +38,11 @@ pub fn filter_and_combine(
     Some(combined)
 }
 
-#[allow(dead_code)]
 struct ClockSelect<'a> {
     survivors: Vec<SurvivorTuple<'a>>,
     system_selection_jitter: NtpDuration,
 }
 
-#[allow(dead_code)]
 fn clock_select(
     peers: &[PeerUpdated],
     local_clock_time: NtpTimestamp,
@@ -80,7 +78,6 @@ enum EndpointType {
     Lower = -1,
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 struct CandidateTuple<'a> {
     peer: &'a PeerUpdated,
@@ -89,7 +86,6 @@ struct CandidateTuple<'a> {
     edge: NtpDuration,
 }
 
-#[allow(dead_code)]
 fn construct_candidate_list<'a>(
     valid_associations: impl IntoIterator<Item = &'a PeerUpdated>,
     local_clock_time: NtpTimestamp,
@@ -126,7 +122,6 @@ fn construct_candidate_list<'a>(
     candidate_list
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct SurvivorTuple<'a> {
     peer: &'a PeerUpdated,
@@ -303,7 +298,6 @@ fn cluster_algorithm(candidates: &mut Vec<SurvivorTuple>) -> f64 {
     }
 }
 
-#[allow(dead_code)]
 pub struct ClockCombine {
     pub system_offset: NtpDuration,
     pub system_jitter: NtpDuration,
@@ -321,7 +315,6 @@ pub struct ClockCombine {
 ///
 /// Assumption: the survivors are the output of the clustering algorithm,
 /// in particular they are in the order produced by the clustering algorithm.
-#[allow(dead_code)]
 fn clock_combine<'a>(
     survivors: &'a [SurvivorTuple<'a>],
     system_selection_jitter: NtpDuration, //
