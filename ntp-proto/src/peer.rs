@@ -32,14 +32,14 @@ pub struct Peer {
     // Last packet information
     next_expected_origin: Option<NtpTimestamp>,
 
-    pub(crate) statistics: PeerStatistics,
-    pub(crate) last_measurements: LastMeasurements,
-    pub(crate) last_packet: NtpHeader,
-    pub(crate) time: NtpTimestamp,
+    statistics: PeerStatistics,
+    last_measurements: LastMeasurements,
+    last_packet: NtpHeader,
+    time: NtpTimestamp,
     #[allow(dead_code)]
-    pub(crate) peer_id: ReferenceId,
-    pub(crate) our_id: ReferenceId,
-    pub(crate) reach: Reach,
+    peer_id: ReferenceId,
+    our_id: ReferenceId,
+    reach: Reach,
 }
 
 /// Used to determine whether the server is reachable and the data are fresh
@@ -50,7 +50,7 @@ pub struct Peer {
 /// If the register contains any nonzero bits, the server is considered reachable;
 /// otherwise, it is unreachable.
 #[derive(Debug, Default, Clone, Copy)]
-pub(crate) struct Reach(u8);
+struct Reach(u8);
 
 impl Reach {
     fn is_reachable(&self) -> bool {
@@ -162,43 +162,40 @@ impl Peer {
     }
 
     pub fn handle_incoming(&mut self, message: NtpHeader, recv_time: NtpTimestamp) -> MsgForSystem {
-        if message.mode != NtpAssociationMode::Server
-            || Some(message.origin_timestamp) != self.next_expected_origin
-        {
-            eprintln!("Ignoring garbage");
+        let is_old_message = Some(message.origin_timestamp) != self.next_expected_origin;
+        if message.mode != NtpAssociationMode::Server || is_old_message {
             return MsgForSystem::NoUpdate; // Garbage or old message
         }
 
         if message.is_kiss_rate() {
-            eprintln!("Kiss rate");
             self.remote_min_poll_interval =
-                (self.remote_min_poll_interval + 1).max(self.last_poll_interval);
+                Ord::max(self.remote_min_poll_interval + 1, self.last_poll_interval);
             return MsgForSystem::NoUpdate;
         }
 
         if message.is_kiss() {
-            eprintln!("Kiss");
             return MsgForSystem::NoUpdate; // Ignore unrecognized control messages
         }
 
         // For reachability, mark that we have had a response
         self.reach.received_packet();
+
         // Received answer, so no need for backoff
         self.next_poll_interval = self.last_poll_interval;
 
         // TODO: properly fill in system parameters
         let filter_input = FilterTuple::from_packet_default(
             &message,
-            NtpDuration::from_seconds(0.),
+            NtpDuration::from_seconds(0.0),
             recv_time,
             recv_time,
         );
 
-        self.clock_filter_data(filter_input, NtpLeapIndicator::NoWarning, 0.)
+        self.message_for_system(filter_input, NtpLeapIndicator::NoWarning, 0.0)
     }
 
     /// Data from a peer that is needed for the (global) clock filter and combine process
-    pub(crate) fn clock_filter_data(
+    fn message_for_system(
         &mut self,
         new_tuple: FilterTuple,
         system_leap_indicator: NtpLeapIndicator,
@@ -233,7 +230,7 @@ impl Peer {
     /// all causes of the local clock relative to the primary server.
     /// It is defined as half the total delay plus total dispersion
     /// plus peer jitter.
-    pub(crate) fn root_distance(&self, local_clock_time: NtpTimestamp) -> NtpDuration {
+    fn root_distance(&self, local_clock_time: NtpTimestamp) -> NtpDuration {
         self.root_distance_without_time() + multiply_by_phi(local_clock_time - self.time)
     }
 

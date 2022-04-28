@@ -149,7 +149,7 @@ impl LastMeasurements {
 
 /// Temporary list
 #[derive(Debug, Clone)]
-pub(crate) struct TemporaryList {
+struct TemporaryList {
     /// Invariant: this array is always sorted by increasing delay!
     register: [FilterTuple; 8],
 }
