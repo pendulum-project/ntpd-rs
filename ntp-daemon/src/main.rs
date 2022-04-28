@@ -24,7 +24,7 @@ async fn setup_connection() -> std::io::Result<UdpSocket> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let socket = setup_connection().await?;
+    let socket = ntp_udp::UdpSocket::from_tokio(setup_connection().await?)?;
     let clock = UnixNtpClock::new();
 
     let initial = NtpHeader::new();
@@ -35,8 +35,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let sent = socket.send(&buf).await.unwrap();
     assert!(sent == 48);
 
-    let received = socket.recv(&mut buf).await.unwrap();
+    let (received, dst_timestamp) = socket.recv(&mut buf).await.unwrap();
     assert!(received == 48);
+
+    dbg!(dst_timestamp);
 
     let t4 = clock.now().unwrap();
 

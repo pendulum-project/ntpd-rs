@@ -3,6 +3,7 @@ members = [
     "ntp-daemon",
     "ntp-proto",
     "ntp-os-clock",
+    "ntp-udp",
 ]
 exclude = [ ]
 

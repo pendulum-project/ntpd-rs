@@ -152,6 +152,7 @@ version = "0.1.0"
 dependencies = [
  "ntp-os-clock",
  "ntp-proto",
+ "ntp-udp",
  "tokio",
 ]
 
@@ -169,6 +170,15 @@ name = "ntp-proto"
 version = "0.1.0"
 dependencies = [
  "md-5",
+]
+
+[[package]]
+name = "ntp-udp"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "ntp-proto",
+ "tokio",
 ]
 
 [[package]]
