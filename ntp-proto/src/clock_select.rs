@@ -368,6 +368,113 @@ mod test {
     use super::*;
 
     #[test]
+    fn clock_combine_simple() {
+        let mut peer_1 = Peer::test_peer();
+        peer_1.last_packet.root_delay = NtpDuration::from_seconds(0.1);
+        peer_1.last_packet.root_dispersion = NtpDuration::from_seconds(0.05);
+        peer_1.statistics.delay = NtpDuration::from_seconds(0.1);
+        peer_1.statistics.offset = NtpDuration::from_fixed_int(0);
+        peer_1.statistics.dispersion = NtpDuration::from_seconds(0.05);
+        peer_1.statistics.jitter = 0.05;
+        peer_1.time = NtpTimestamp::from_fixed_int(0);
+
+        let mut peer_2 = Peer::test_peer();
+        peer_2.last_packet.root_delay = NtpDuration::from_seconds(0.1);
+        peer_2.last_packet.root_dispersion = NtpDuration::from_seconds(0.05);
+        peer_2.statistics.delay = NtpDuration::from_seconds(0.1);
+        peer_2.statistics.offset = NtpDuration::from_fixed_int(500000);
+        peer_2.statistics.dispersion = NtpDuration::from_seconds(0.05);
+        peer_2.statistics.jitter = 0.05;
+        peer_2.time = NtpTimestamp::from_fixed_int(0);
+
+        let mut peer_3 = Peer::test_peer();
+        peer_3.last_packet.root_delay = NtpDuration::from_seconds(0.1);
+        peer_3.last_packet.root_dispersion = NtpDuration::from_seconds(0.05);
+        peer_3.statistics.delay = NtpDuration::from_seconds(0.1);
+        peer_3.statistics.offset = NtpDuration::from_fixed_int(-500000);
+        peer_3.statistics.dispersion = NtpDuration::from_seconds(0.05);
+        peer_3.statistics.jitter = 0.05;
+        peer_3.time = NtpTimestamp::from_fixed_int(0);
+
+        let survivors = vec![
+            SurvivorTuple {
+                peer: &peer_1,
+                metric: NtpDuration::from_fixed_int(0),
+            },
+            SurvivorTuple {
+                peer: &peer_2,
+                metric: NtpDuration::from_fixed_int(1),
+            },
+            SurvivorTuple {
+                peer: &peer_3,
+                metric: NtpDuration::from_fixed_int(2),
+            },
+        ];
+
+        let result = clock_combine(
+            &survivors,
+            NtpDuration::from_seconds(0.05),
+            NtpTimestamp::from_fixed_int(0),
+        );
+        assert_eq!(result.system_offset, NtpDuration::from_fixed_int(0));
+        assert!(result.system_jitter.to_seconds() >= 0.05);
+    }
+
+    #[test]
+    fn clock_combine_deemphasize_on_root_distance() {
+        let mut peer_1 = Peer::test_peer();
+        peer_1.last_packet.root_delay = NtpDuration::from_seconds(0.1);
+        peer_1.last_packet.root_dispersion = NtpDuration::from_seconds(0.05);
+        peer_1.statistics.delay = NtpDuration::from_seconds(0.1);
+        peer_1.statistics.offset = NtpDuration::from_fixed_int(0);
+        peer_1.statistics.dispersion = NtpDuration::from_seconds(0.05);
+        peer_1.statistics.jitter = 0.05;
+        peer_1.time = NtpTimestamp::from_fixed_int(0);
+
+        let mut peer_2 = Peer::test_peer();
+        peer_2.last_packet.root_delay = NtpDuration::from_seconds(0.5);
+        peer_2.last_packet.root_dispersion = NtpDuration::from_seconds(0.05);
+        peer_2.statistics.delay = NtpDuration::from_seconds(0.1);
+        peer_2.statistics.offset = NtpDuration::from_fixed_int(500000);
+        peer_2.statistics.dispersion = NtpDuration::from_seconds(0.05);
+        peer_2.statistics.jitter = 0.05;
+        peer_2.time = NtpTimestamp::from_fixed_int(0);
+
+        let mut peer_3 = Peer::test_peer();
+        peer_3.last_packet.root_delay = NtpDuration::from_seconds(0.1);
+        peer_3.last_packet.root_dispersion = NtpDuration::from_seconds(0.05);
+        peer_3.statistics.delay = NtpDuration::from_seconds(0.1);
+        peer_3.statistics.offset = NtpDuration::from_fixed_int(-500000);
+        peer_3.statistics.dispersion = NtpDuration::from_seconds(0.05);
+        peer_3.statistics.jitter = 0.05;
+        peer_3.time = NtpTimestamp::from_fixed_int(0);
+
+        let survivors = vec![
+            SurvivorTuple {
+                peer: &peer_1,
+                metric: NtpDuration::from_fixed_int(0),
+            },
+            SurvivorTuple {
+                peer: &peer_2,
+                metric: NtpDuration::from_fixed_int(1),
+            },
+            SurvivorTuple {
+                peer: &peer_3,
+                metric: NtpDuration::from_fixed_int(2),
+            },
+        ];
+
+        let result = clock_combine(
+            &survivors,
+            NtpDuration::from_seconds(0.05),
+            NtpTimestamp::from_fixed_int(0),
+        );
+        assert!(result.system_offset < NtpDuration::from_fixed_int(0));
+        assert!(result.system_offset > NtpDuration::from_fixed_int(-500000));
+        assert!(result.system_jitter.to_seconds() >= 0.05);
+    }
+
+    #[test]
     fn find_interval_simple() {
         let peer_1 = Peer::test_peer();
         let peer_2 = Peer::test_peer();
