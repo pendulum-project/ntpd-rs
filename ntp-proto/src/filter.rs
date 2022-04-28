@@ -36,7 +36,7 @@ impl FilterTuple {
     /// A Broadcast association requires different logic.
     /// All other associations should use this function
     #[allow(dead_code)]
-    fn from_packet_default(
+    pub(crate) fn from_packet_default(
         packet: &NtpHeader,
         system_precision: NtpDuration,
         destination_timestamp: NtpTimestamp,
