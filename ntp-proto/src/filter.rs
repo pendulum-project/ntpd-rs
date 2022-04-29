@@ -35,7 +35,6 @@ impl FilterTuple {
     ///
     /// A Broadcast association requires different logic.
     /// All other associations should use this function
-    #[allow(dead_code)]
     pub(crate) fn from_packet_default(
         packet: &NtpHeader,
         system_precision: NtpDuration,
@@ -90,7 +89,6 @@ impl Default for LastMeasurements {
 }
 
 impl LastMeasurements {
-    #[allow(dead_code)]
     const fn new() -> Self {
         Self {
             register: [FilterTuple::DUMMY; 8],
@@ -126,9 +124,7 @@ impl LastMeasurements {
         // Prime directive: use a sample only once and never a sample
         // older than the latest one, but anything goes before first
         // synchronized.
-        if smallest_delay.time - peer_time <= NtpDuration::ZERO
-            && system_leap_indicator.is_synchronized()
-        {
+        if smallest_delay.time <= peer_time && system_leap_indicator.is_synchronized() {
             return None;
         }
 
@@ -151,7 +147,7 @@ impl LastMeasurements {
 
 /// Temporary list
 #[derive(Debug, Clone)]
-pub(crate) struct TemporaryList {
+struct TemporaryList {
     /// Invariant: this array is always sorted by increasing delay!
     register: [FilterTuple; 8],
 }

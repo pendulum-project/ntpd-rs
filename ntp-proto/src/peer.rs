@@ -32,15 +32,14 @@ pub struct Peer {
     // Last packet information
     next_expected_origin: Option<NtpTimestamp>,
 
-    pub(crate) statistics: PeerStatistics,
-    pub(crate) last_measurements: LastMeasurements,
-    pub(crate) last_packet: NtpHeader,
-    pub(crate) time: NtpTimestamp,
+    statistics: PeerStatistics,
+    last_measurements: LastMeasurements,
+    last_packet: NtpHeader,
+    time: NtpTimestamp,
     #[allow(dead_code)]
-    pub(crate) peer_id: ReferenceId,
-    pub(crate) our_id: ReferenceId,
-    #[allow(dead_code)]
-    pub(crate) reach: Reach,
+    peer_id: ReferenceId,
+    our_id: ReferenceId,
+    reach: Reach,
 }
 
 /// Used to determine whether the server is reachable and the data are fresh
@@ -51,44 +50,45 @@ pub struct Peer {
 /// If the register contains any nonzero bits, the server is considered reachable;
 /// otherwise, it is unreachable.
 #[derive(Debug, Default, Clone, Copy)]
-pub(crate) struct Reach(u8);
+struct Reach(u8);
 
 impl Reach {
-    #[allow(dead_code)]
     fn is_reachable(&self) -> bool {
         self.0 != 0
     }
 
     /// We have just received a packet, so the peer is definitely reachable
-    #[allow(dead_code)]
     fn received_packet(&mut self) {
         self.0 |= 1;
     }
 
     /// A packet received some number of poll intervals ago is decreasingly relevant for
     /// determining that a peer is still reachable. We discount the packets received so far.
-    #[allow(dead_code)]
     fn poll(&mut self) {
         self.0 <<= 1
     }
 }
 
-#[allow(dead_code)]
-pub enum MsgForSystem {
-    NoUpdate,
-    PeerUpdated(PeerUpdated),
+pub enum IgnoreReason {
+    /// The association mode is not one that this peer supports
+    InvalidMode,
+    /// The send time on the received packet is not the time we sent it at
+    InvalidPacketTime,
+    /// Received a Kiss 'o death https://datatracker.ietf.org/doc/html/rfc5905#section-7.4
+    Kiss,
+    /// The best packet is older than the peer's current time
+    TooOld,
 }
 
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
-pub struct PeerUpdated {
+pub struct PeerSnapshot {
     pub(crate) time: NtpTimestamp,
     pub(crate) root_distance_without_time: NtpDuration,
     pub(crate) stratum: u8,
     pub(crate) statistics: PeerStatistics,
 }
 
-impl PeerUpdated {
+impl PeerSnapshot {
     pub(crate) fn accept_synchronization(
         &self,
         local_clock_time: NtpTimestamp,
@@ -167,50 +167,50 @@ impl Peer {
         packet
     }
 
-    pub fn handle_incoming(&mut self, message: NtpHeader, recv_time: NtpTimestamp) -> MsgForSystem {
-        if message.mode != NtpAssociationMode::Server
-            || Some(message.origin_timestamp) != self.next_expected_origin
-        {
-            eprintln!("Ignoring garbage");
-            return MsgForSystem::NoUpdate; // Garbage or old message
-        }
-
-        if message.is_kiss_rate() {
-            eprintln!("Kiss rate");
+    pub fn handle_incoming(
+        &mut self,
+        message: NtpHeader,
+        recv_time: NtpTimestamp,
+    ) -> Result<PeerSnapshot, IgnoreReason> {
+        if message.mode != NtpAssociationMode::Server {
+            // we currently only support a client <-> server association
+            Err(IgnoreReason::InvalidMode)
+        } else if Some(message.origin_timestamp) != self.next_expected_origin {
+            // the message we got back says that it was sent at a different time than we sent it
+            Err(IgnoreReason::InvalidPacketTime)
+        } else if message.is_kiss_rate() {
             self.remote_min_poll_interval =
-                (self.remote_min_poll_interval + 1).max(self.last_poll_interval);
-            return MsgForSystem::NoUpdate;
+                Ord::max(self.remote_min_poll_interval + 1, self.last_poll_interval);
+            Err(IgnoreReason::Kiss)
+        } else if message.is_kiss() {
+            // Ignore unrecognized control messages
+            Err(IgnoreReason::Kiss)
+        } else {
+            // For reachability, mark that we have had a response
+            self.reach.received_packet();
+
+            // Received answer, so no need for backoff
+            self.next_poll_interval = self.last_poll_interval;
+
+            // TODO: properly fill in system parameters
+            let filter_input = FilterTuple::from_packet_default(
+                &message,
+                NtpDuration::from_seconds(0.0),
+                recv_time,
+                recv_time,
+            );
+
+            self.message_for_system(filter_input, NtpLeapIndicator::NoWarning, 0.0)
         }
-
-        if message.is_kiss() {
-            eprintln!("Kiss");
-            return MsgForSystem::NoUpdate; // Ignore unrecognized control messages
-        }
-
-        // For reachability, mark that we have had a response
-        self.reach.received_packet();
-        // Received answer, so no need for backoff
-        self.next_poll_interval = self.last_poll_interval;
-
-        // TODO: properly fill in system parameters
-        let filter_input = FilterTuple::from_packet_default(
-            &message,
-            NtpDuration::from_seconds(0.),
-            recv_time,
-            recv_time,
-        );
-
-        self.clock_filter_data(filter_input, NtpLeapIndicator::NoWarning, 0.)
     }
 
     /// Data from a peer that is needed for the (global) clock filter and combine process
-    #[allow(dead_code)]
-    pub(crate) fn clock_filter_data(
+    fn message_for_system(
         &mut self,
         new_tuple: FilterTuple,
         system_leap_indicator: NtpLeapIndicator,
         system_precision: f64,
-    ) -> MsgForSystem {
+    ) -> Result<PeerSnapshot, IgnoreReason> {
         let updated = self.last_measurements.step(
             new_tuple,
             self.time,
@@ -219,19 +219,19 @@ impl Peer {
         );
 
         match updated {
-            None => MsgForSystem::NoUpdate,
+            None => Err(IgnoreReason::TooOld),
             Some((statistics, smallest_delay_time)) => {
                 self.statistics = statistics;
                 self.time = smallest_delay_time;
 
-                let updated = PeerUpdated {
+                let snapshot = PeerSnapshot {
                     time: self.time,
                     root_distance_without_time: self.root_distance_without_time(),
                     stratum: self.last_packet.stratum,
                     statistics: self.statistics,
                 };
 
-                MsgForSystem::PeerUpdated(updated)
+                Ok(snapshot)
             }
         }
     }
@@ -240,8 +240,7 @@ impl Peer {
     /// all causes of the local clock relative to the primary server.
     /// It is defined as half the total delay plus total dispersion
     /// plus peer jitter.
-    #[allow(dead_code)]
-    pub(crate) fn root_distance(&self, local_clock_time: NtpTimestamp) -> NtpDuration {
+    fn root_distance(&self, local_clock_time: NtpTimestamp) -> NtpDuration {
         self.root_distance_without_time() + multiply_by_phi(local_clock_time - self.time)
     }
 
@@ -253,7 +252,6 @@ impl Peer {
             + NtpDuration::from_seconds(self.statistics.jitter)
     }
 
-    #[allow(dead_code)]
     /// Test if association p is acceptable for synchronization
     ///
     /// Known as `accept` and `fit` in the specification.

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use ntp_proto::{MsgForSystem, NtpClock, NtpDuration, NtpHeader, Peer, PeerUpdated, ReferenceId};
+use ntp_proto::{NtpClock, NtpDuration, NtpHeader, Peer, PeerSnapshot, ReferenceId};
 use tokio::{
     net::{ToSocketAddrs, UdpSocket},
     sync::watch,
@@ -18,12 +18,12 @@ fn poll_interval_to_duration(poll_interval: i8) -> Duration {
 pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
     addr: A,
     clock: C,
-) -> Result<watch::Receiver<Option<PeerUpdated>>, std::io::Error> {
+) -> Result<watch::Receiver<Option<PeerSnapshot>>, std::io::Error> {
     // setup socket
     let socket = UdpSocket::bind("0.0.0.0:0").await?;
     socket.connect(addr).await?;
 
-    let (tx, rx) = watch::channel::<Option<PeerUpdated>>(None);
+    let (tx, rx) = watch::channel::<Option<PeerSnapshot>>(None);
 
     let our_id = ReferenceId::from_ip(socket.local_addr()?.ip());
     let peer_id = ReferenceId::from_ip(socket.peer_addr()?.ip());
@@ -46,22 +46,22 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                     socket.send(&packet.serialize()).await.unwrap();
                 },
                 result = socket.recv(&mut buf) => {
-                    // Note: packets are allowed to be bigger when including extensions.
-                    // we don't expect them, but the server may still send them. They
-                    // are guaranteed safe to ignore.
                     if let Ok((size, Some(timestamp))) = result {
-                        if size >= 48 {
+                        // Note: packets are allowed to be bigger when including extensions.
+                        // we don't expect them, but the server may still send them. The
+                        // extra bytes are guaranteed safe to ignore. `recv` truncates the messages.
+                        // Messages of fewer than 48 bytes are skipped entirely
+                        if size < 48 {
+                            // TODO log something
+                        } else {
                             let packet = NtpHeader::deserialize(&buf);
-
                             let result = peer.handle_incoming(packet, timestamp);
 
                             if peer.accept_synchronization(timestamp, NtpDuration::ZERO).is_err() {
                                 let _ = tx.send(None);
-                            } else if let MsgForSystem::PeerUpdated(update) = result {
+                            } else if let Ok(update) = result {
                                 let _ = tx.send(Some(update));
                             }
-                        } else {
-                            // TODO: log something
                         }
                     } else {
                         // TODO: log something
