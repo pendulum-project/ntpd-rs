@@ -113,7 +113,7 @@ impl LastMeasurements {
         new_tuple: FilterTuple,
         peer_time: NtpTimestamp,
         system_leap_indicator: NtpLeapIndicator,
-        system_precision: f64,
+        system_precision: NtpDuration,
     ) -> Option<(PeerStatistics, NtpTimestamp)> {
         let dispersion_correction = multiply_by_phi(new_tuple.time - peer_time);
         self.shift_and_insert(new_tuple, dispersion_correction);
@@ -212,14 +212,14 @@ impl TemporaryList {
     ///                          +-----                 -----+
     ///
     /// Invariant: the register is sorted wrt delay
-    fn jitter(&self, smallest_delay: FilterTuple, system_precision: f64) -> f64 {
+    fn jitter(&self, smallest_delay: FilterTuple, system_precision: NtpDuration) -> f64 {
         Self::jitter_help(self.valid_tuples(), smallest_delay, system_precision)
     }
 
     fn jitter_help(
         valid_tuples: &[FilterTuple],
         smallest_delay: FilterTuple,
-        system_precision: f64,
+        system_precision: NtpDuration,
     ) -> f64 {
         let root_mean_square = valid_tuples
             .iter()
@@ -233,7 +233,7 @@ impl TemporaryList {
         // In order to ensure consistency and avoid divide exceptions in other
         // computations, the psi is bounded from below by the system precision
         // s.rho expressed in seconds.
-        jitter.max(system_precision)
+        f64::max(jitter, system_precision.to_seconds())
     }
 
     #[cfg(test)]

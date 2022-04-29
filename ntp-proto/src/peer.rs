@@ -72,6 +72,7 @@ impl Reach {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SystemSnapshot {
     pub poll_interval: i8,
+    pub precision: NtpDuration,
 }
 
 pub enum IgnoreReason {
@@ -176,6 +177,7 @@ impl Peer {
         &mut self,
         message: NtpHeader,
         recv_time: NtpTimestamp,
+        system_precision: NtpDuration,
     ) -> Result<PeerSnapshot, IgnoreReason> {
         if message.mode != NtpAssociationMode::Server {
             // we currently only support a client <-> server association
@@ -198,14 +200,10 @@ impl Peer {
             self.next_poll_interval = self.last_poll_interval;
 
             // TODO: properly fill in system parameters
-            let filter_input = FilterTuple::from_packet_default(
-                &message,
-                NtpDuration::from_seconds(0.0),
-                recv_time,
-                recv_time,
-            );
+            let filter_input =
+                FilterTuple::from_packet_default(&message, system_precision, recv_time, recv_time);
 
-            self.message_for_system(filter_input, NtpLeapIndicator::NoWarning, 0.0)
+            self.message_for_system(filter_input, NtpLeapIndicator::NoWarning, system_precision)
         }
     }
 
@@ -214,7 +212,7 @@ impl Peer {
         &mut self,
         new_tuple: FilterTuple,
         system_leap_indicator: NtpLeapIndicator,
-        system_precision: f64,
+        system_precision: NtpDuration,
     ) -> Result<PeerSnapshot, IgnoreReason> {
         let updated = self.last_measurements.step(
             new_tuple,
