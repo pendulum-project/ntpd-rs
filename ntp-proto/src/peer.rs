@@ -69,6 +69,11 @@ impl Reach {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SystemSnapshot {
+    pub poll_interval: i8,
+}
+
 pub enum IgnoreReason {
     /// The association mode is not one that this peer supports
     InvalidMode,

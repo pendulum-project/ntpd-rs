@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use ntp_proto::{NtpClock, NtpDuration, NtpHeader, Peer, PeerSnapshot, ReferenceId};
+use ntp_proto::{
+    NtpClock, NtpDuration, NtpHeader, Peer, PeerSnapshot, ReferenceId, SystemSnapshot,
+};
 use tokio::{
     net::{ToSocketAddrs, UdpSocket},
     sync::watch,
@@ -18,6 +20,7 @@ fn poll_interval_to_duration(poll_interval: i8) -> Duration {
 pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
     addr: A,
     clock: C,
+    mut system_snapshots: watch::Receiver<SystemSnapshot>,
 ) -> Result<watch::Receiver<Option<PeerSnapshot>>, std::io::Error> {
     // setup socket
     let socket = UdpSocket::bind("0.0.0.0:0").await?;
@@ -31,15 +34,26 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
 
     tokio::spawn(async move {
         let mut peer = Peer::new(our_id, peer_id, clock.now().unwrap());
-        let poll_wait =
-            tokio::time::sleep(poll_interval_to_duration(peer.get_interval_next_poll(0)));
+
+        let poll_interval = {
+            let system_snapshot = system_snapshots.borrow_and_update();
+            peer.get_interval_next_poll(system_snapshot.poll_interval)
+        };
+        let poll_wait = tokio::time::sleep(poll_interval_to_duration(poll_interval));
         tokio::pin!(poll_wait);
 
         loop {
             let mut buf = [0_u8; 48];
+
             tokio::select! {
                 () = &mut poll_wait => {
-                    poll_wait.as_mut().reset(Instant::now() + poll_interval_to_duration(peer.get_interval_next_poll(0)));
+                    let poll_interval = {
+                        let system_snapshot = system_snapshots.borrow_and_update();
+                        peer.get_interval_next_poll(system_snapshot.poll_interval)
+                    };
+                    poll_wait
+                        .as_mut()
+                        .reset(Instant::now() + poll_interval_to_duration(poll_interval));
 
                     // TODO: Figure out proper error behaviour here
                     let packet = peer.generate_poll_message(clock.now().unwrap());
@@ -57,7 +71,12 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                             let packet = NtpHeader::deserialize(&buf);
                             let result = peer.handle_incoming(packet, timestamp);
 
-                            if peer.accept_synchronization(timestamp, NtpDuration::ZERO).is_err() {
+                            let system_poll = {
+                                let system_snapshot = system_snapshots.borrow_and_update();
+                                NtpDuration::from_exponent(system_snapshot.poll_interval)
+                            };
+
+                            if peer.accept_synchronization(timestamp, system_poll).is_err() {
                                 let _ = tx.send(None);
                             } else if let Ok(update) = result {
                                 let _ = tx.send(Some(update));

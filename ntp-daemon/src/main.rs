@@ -3,24 +3,28 @@ mod peer;
 
 use futures::{stream::FuturesUnordered, StreamExt};
 use ntp_os_clock::UnixNtpClock;
-use ntp_proto::{filter_and_combine, NtpClock, NtpDuration};
+use ntp_proto::{filter_and_combine, NtpClock, NtpDuration, SystemSnapshot};
 use peer::start_peer;
 use std::error::Error;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let clock = UnixNtpClock::new();
+
+    use tokio::sync::watch;
+    let (system_tx, system_rx) = watch::channel::<SystemSnapshot>(SystemSnapshot::default());
+
     let mut peers = vec![
-        start_peer("0.pool.ntp.org:123", UnixNtpClock::new())
+        start_peer("0.pool.ntp.org:123", UnixNtpClock::new(), system_rx.clone())
             .await
             .unwrap(),
-        start_peer("1.pool.ntp.org:123", UnixNtpClock::new())
+        start_peer("1.pool.ntp.org:123", UnixNtpClock::new(), system_rx.clone())
             .await
             .unwrap(),
-        start_peer("2.pool.ntp.org:123", UnixNtpClock::new())
+        start_peer("2.pool.ntp.org:123", UnixNtpClock::new(), system_rx.clone())
             .await
             .unwrap(),
-        start_peer("3.pool.ntp.org:123", UnixNtpClock::new())
+        start_peer("3.pool.ntp.org:123", UnixNtpClock::new(), system_rx)
             .await
             .unwrap(),
     ];
