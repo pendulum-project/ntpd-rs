@@ -46,17 +46,22 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                     socket.send(&packet.serialize()).await.unwrap();
                 },
                 result = socket.recv(&mut buf) => {
-                    // Note: packets are allowed to be bigger when including extensions.
-                    // we don't expect them, but the server may still send them. The
-                    // extra bytes are guaranteed safe to ignore. `recv` truncats the messages
-                    if let Ok((_, Some(timestamp))) = result {
-                        let packet = NtpHeader::deserialize(&buf);
-                        let result = peer.handle_incoming(packet, timestamp);
+                    if let Ok((size, Some(timestamp))) = result {
+                        // Note: packets are allowed to be bigger when including extensions.
+                        // we don't expect them, but the server may still send them. The
+                        // extra bytes are guaranteed safe to ignore. `recv` truncates the messages.
+                        // Messages of fewer than 48 bytes are skipped entirely
+                        if size < 48 {
+                            // TODO log something
+                        } else {
+                            let packet = NtpHeader::deserialize(&buf);
+                            let result = peer.handle_incoming(packet, timestamp);
 
-                        if peer.accept_synchronization(timestamp, NtpDuration::ZERO).is_err() {
-                            let _ = tx.send(None);
-                        } else if let Ok(update) = result {
-                            let _ = tx.send(Some(update));
+                            if peer.accept_synchronization(timestamp, NtpDuration::ZERO).is_err() {
+                                let _ = tx.send(None);
+                            } else if let Ok(update) = result {
+                                let _ = tx.send(Some(update));
+                            }
                         }
                     } else {
                         // TODO: log something
