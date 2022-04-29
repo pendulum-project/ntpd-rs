@@ -62,5 +62,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
             None => println!("filter and combine did not produce a result"),
         }
+
+        // TODO produce an updated snapshot
+        let system_snapshot = SystemSnapshot::default();
+        system_tx.send(system_snapshot)?;
     }
 }

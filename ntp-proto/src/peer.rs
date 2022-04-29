@@ -71,16 +71,19 @@ impl Reach {
 
 #[derive(Debug, Clone, Copy)]
 pub struct SystemSnapshot {
+    /// May be updated by local_clock
     pub poll_interval: i8,
+    /// A constant at runtime
     pub precision: NtpDuration,
+    /// May be updated by clock_update
     pub leap_indicator: NtpLeapIndicator,
 }
 
 impl Default for SystemSnapshot {
     fn default() -> Self {
         Self {
-            poll_interval: Default::default(),
-            precision: Default::default(),
+            poll_interval: 4,
+            precision: NtpDuration::from_exponent(-18),
             leap_indicator: NtpLeapIndicator::Unknown,
         }
     }
