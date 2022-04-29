@@ -69,13 +69,15 @@ impl Reach {
     }
 }
 
-pub enum PeerError {
+pub enum IgnoreReason {
     /// The association mode is not one that this peer supports
     InvalidMode,
     /// The send time on the received packet is not the time we sent it at
     InvalidPacketTime,
-    /// Peer is in an invalid state
+    /// Received a Kiss 'o death https://datatracker.ietf.org/doc/html/rfc5905#section-7.4
     Kiss,
+    /// The packet is older than the current best sample of the peer  
+    TooOld,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -169,20 +171,20 @@ impl Peer {
         &mut self,
         message: NtpHeader,
         recv_time: NtpTimestamp,
-    ) -> Result<PeerSnapshot, PeerError> {
+    ) -> Result<PeerSnapshot, IgnoreReason> {
         if message.mode != NtpAssociationMode::Server {
             // we currently only support a client <-> server association
-            Err(PeerError::InvalidMode)
+            Err(IgnoreReason::InvalidMode)
         } else if Some(message.origin_timestamp) != self.next_expected_origin {
             // the message we got back says that it was sent at a different time than we sent it
-            Err(PeerError::InvalidPacketTime)
+            Err(IgnoreReason::InvalidPacketTime)
         } else if message.is_kiss_rate() {
             self.remote_min_poll_interval =
                 Ord::max(self.remote_min_poll_interval + 1, self.last_poll_interval);
-            Err(PeerError::Kiss)
+            Err(IgnoreReason::Kiss)
         } else if message.is_kiss() {
             // Ignore unrecognized control messages
-            Err(PeerError::Kiss)
+            Err(IgnoreReason::Kiss)
         } else {
             // For reachability, mark that we have had a response
             self.reach.received_packet();
@@ -208,7 +210,7 @@ impl Peer {
         new_tuple: FilterTuple,
         system_leap_indicator: NtpLeapIndicator,
         system_precision: f64,
-    ) -> Result<PeerSnapshot, PeerError> {
+    ) -> Result<PeerSnapshot, IgnoreReason> {
         let updated = self.last_measurements.step(
             new_tuple,
             self.time,
@@ -217,7 +219,7 @@ impl Peer {
         );
 
         match updated {
-            None => Err(PeerError::InvalidPacketTime),
+            None => Err(IgnoreReason::TooOld),
             Some((statistics, smallest_delay_time)) => {
                 self.statistics = statistics;
                 self.time = smallest_delay_time;
