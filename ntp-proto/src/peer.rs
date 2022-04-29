@@ -69,6 +69,26 @@ impl Reach {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct SystemSnapshot {
+    /// May be updated by local_clock
+    pub poll_interval: i8,
+    /// A constant at runtime
+    pub precision: NtpDuration,
+    /// May be updated by clock_update
+    pub leap_indicator: NtpLeapIndicator,
+}
+
+impl Default for SystemSnapshot {
+    fn default() -> Self {
+        Self {
+            poll_interval: 4,
+            precision: NtpDuration::from_exponent(-18),
+            leap_indicator: NtpLeapIndicator::Unknown,
+        }
+    }
+}
+
 pub enum IgnoreReason {
     /// The association mode is not one that this peer supports
     InvalidMode,
@@ -124,11 +144,10 @@ pub enum AcceptSynchronizationError {
 }
 
 impl Peer {
-    pub fn new(
-        our_id: ReferenceId,
-        peer_id: ReferenceId,
-        current_system_time: NtpTimestamp,
-    ) -> Self {
+    pub fn new(our_id: ReferenceId, peer_id: ReferenceId, local_clock_time: NtpTimestamp) -> Self {
+        // we initialize with the current time so that we're in the correct epoch.
+        let time = local_clock_time;
+
         Self {
             last_poll_interval: 2,
             next_poll_interval: 2,
@@ -139,7 +158,7 @@ impl Peer {
             statistics: Default::default(),
             last_measurements: Default::default(),
             last_packet: Default::default(),
-            time: current_system_time,
+            time,
             our_id,
             peer_id,
             reach: Default::default(),
@@ -154,14 +173,14 @@ impl Peer {
         self.last_poll_interval
     }
 
-    pub fn generate_poll_message(&mut self, current_system_time: NtpTimestamp) -> NtpHeader {
+    pub fn generate_poll_message(&mut self, local_clock_time: NtpTimestamp) -> NtpHeader {
         self.reach.poll();
 
-        self.next_expected_origin = Some(current_system_time);
+        self.next_expected_origin = Some(local_clock_time);
 
         let mut packet = NtpHeader::new();
         packet.poll = self.last_poll_interval;
-        packet.transmit_timestamp = current_system_time;
+        packet.transmit_timestamp = local_clock_time;
         packet.mode = NtpAssociationMode::Client;
 
         packet
@@ -171,6 +190,7 @@ impl Peer {
         &mut self,
         message: NtpHeader,
         recv_time: NtpTimestamp,
+        system: SystemSnapshot,
     ) -> Result<PeerSnapshot, IgnoreReason> {
         if message.mode != NtpAssociationMode::Server {
             // we currently only support a client <-> server association
@@ -192,15 +212,10 @@ impl Peer {
             // Received answer, so no need for backoff
             self.next_poll_interval = self.last_poll_interval;
 
-            // TODO: properly fill in system parameters
-            let filter_input = FilterTuple::from_packet_default(
-                &message,
-                NtpDuration::from_seconds(0.0),
-                recv_time,
-                recv_time,
-            );
+            let filter_input =
+                FilterTuple::from_packet_default(&message, system.precision, recv_time, recv_time);
 
-            self.message_for_system(filter_input, NtpLeapIndicator::NoWarning, 0.0)
+            self.message_for_system(filter_input, system.leap_indicator, system.precision)
         }
     }
 
@@ -209,7 +224,7 @@ impl Peer {
         &mut self,
         new_tuple: FilterTuple,
         system_leap_indicator: NtpLeapIndicator,
-        system_precision: f64,
+        system_precision: NtpDuration,
     ) -> Result<PeerSnapshot, IgnoreReason> {
         let updated = self.last_measurements.step(
             new_tuple,
