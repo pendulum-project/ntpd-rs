@@ -68,16 +68,12 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                         if size < 48 {
                             // TODO log something
                         } else {
-                            let system_snapshot = *system_snapshots.borrow_and_update();
-
                             let packet = NtpHeader::deserialize(&buf);
-                            let result = peer.handle_incoming(packet, timestamp, system_snapshot.precision);
 
-                            let system_poll = {
-                                let system_snapshot = system_snapshots.borrow_and_update();
-                                NtpDuration::from_exponent(system_snapshot.poll_interval)
-                            };
+                            let system_snapshot = *system_snapshots.borrow_and_update();
+                            let result = peer.handle_incoming(packet, timestamp, system_snapshot);
 
+                            let system_poll = NtpDuration::from_exponent(system_snapshot.poll_interval);
                             if peer.accept_synchronization(timestamp, system_poll).is_err() {
                                 let _ = tx.send(None);
                             } else if let Ok(update) = result {
