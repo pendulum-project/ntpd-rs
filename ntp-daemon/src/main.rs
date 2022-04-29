@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut snapshots = Vec::with_capacity(peers.len());
 
     loop {
-        let i = {
+        let changed_index = {
             let mut changed: FuturesUnordered<_> = peers
                 .iter_mut()
                 .enumerate()
@@ -45,8 +45,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
             changed.next().await.unwrap()
         };
 
-        if let peer::MsgForSystem::NoMeasurement = *peers[i].borrow() {
-            continue;
+        let msg = *peers[changed_index].borrow();
+        match msg {
+            peer::MsgForSystem::MustImmobilize => {
+                peers.remove(changed_index);
+                continue;
+            }
+            peer::MsgForSystem::NoMeasurement => {
+                continue;
+            }
+            peer::MsgForSystem::Snapshot(_) => {
+                // fall through
+            }
         }
 
         // remove all snapshots from a previous iteration
