@@ -76,7 +76,7 @@ pub enum IgnoreReason {
     InvalidPacketTime,
     /// Received a Kiss 'o death https://datatracker.ietf.org/doc/html/rfc5905#section-7.4
     Kiss,
-    /// The packet is older than the current best sample of the peer  
+    /// The best packet is older than the peer's current time
     TooOld,
 }
 
