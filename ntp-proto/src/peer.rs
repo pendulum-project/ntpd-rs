@@ -144,11 +144,10 @@ pub enum AcceptSynchronizationError {
 }
 
 impl Peer {
-    pub fn new(
-        our_id: ReferenceId,
-        peer_id: ReferenceId,
-        current_system_time: NtpTimestamp,
-    ) -> Self {
+    pub fn new(our_id: ReferenceId, peer_id: ReferenceId, local_clock_time: NtpTimestamp) -> Self {
+        // we initialize with the current time so that we're in the correct epoch.
+        let time = local_clock_time;
+
         Self {
             last_poll_interval: 2,
             next_poll_interval: 2,
@@ -159,7 +158,7 @@ impl Peer {
             statistics: Default::default(),
             last_measurements: Default::default(),
             last_packet: Default::default(),
-            time: current_system_time,
+            time,
             our_id,
             peer_id,
             reach: Default::default(),
@@ -174,14 +173,14 @@ impl Peer {
         self.last_poll_interval
     }
 
-    pub fn generate_poll_message(&mut self, current_system_time: NtpTimestamp) -> NtpHeader {
+    pub fn generate_poll_message(&mut self, local_clock_time: NtpTimestamp) -> NtpHeader {
         self.reach.poll();
 
-        self.next_expected_origin = Some(current_system_time);
+        self.next_expected_origin = Some(local_clock_time);
 
         let mut packet = NtpHeader::new();
         packet.poll = self.last_poll_interval;
-        packet.transmit_timestamp = current_system_time;
+        packet.transmit_timestamp = local_clock_time;
         packet.mode = NtpAssociationMode::Client;
 
         packet
