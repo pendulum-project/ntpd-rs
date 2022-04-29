@@ -296,7 +296,8 @@ mod test {
         let mut register = LastMeasurements::new();
         register.register[0].offset = NtpDuration::from_seconds(42.0);
         let first = register.register[0];
-        let value = TemporaryList::from_clock_filter_contents(&register).jitter(first, 0.0);
+        let value =
+            TemporaryList::from_clock_filter_contents(&register).jitter(first, NtpDuration::ZERO);
 
         assert_eq!(value, 0.0)
     }
@@ -307,7 +308,7 @@ mod test {
         register.register[0].offset = NtpDuration::from_seconds(20.0);
         register.register[1].offset = NtpDuration::from_seconds(30.0);
         let first = register.register[0];
-        let value = register.jitter(first, 0.0);
+        let value = register.jitter(first, NtpDuration::ZERO);
 
         // jitter is calculated relative to the first tuple
         assert!((value - 10.0).abs() < 1e-6)
@@ -320,7 +321,7 @@ mod test {
         register.register[1].offset = NtpDuration::from_seconds(20.0);
         register.register[2].offset = NtpDuration::from_seconds(30.0);
         let first = register.register[0];
-        let value = register.jitter(first, 0.0);
+        let value = register.jitter(first, NtpDuration::ZERO);
 
         // jitter is calculated relative to the first tuple
         assert!((value - 5.0).abs() < 1e-6)
@@ -338,13 +339,11 @@ mod test {
         let mut measurements = LastMeasurements::default();
 
         let peer_time = NtpTimestamp::default();
-        let system_leap_indicator = NtpLeapIndicator::NoWarning;
-        let system_precision = 0.0;
         let update = measurements.step(
             new_tuple,
             peer_time,
-            system_leap_indicator,
-            system_precision,
+            NtpLeapIndicator::NoWarning,
+            NtpDuration::ZERO,
         );
 
         // because "time" is zero, the same as all the dummy tuples,
@@ -364,13 +363,11 @@ mod test {
         let mut measurements = LastMeasurements::default();
 
         let peer_time = NtpTimestamp::default();
-        let system_leap_indicator = NtpLeapIndicator::NoWarning;
-        let system_precision = 0.0;
         let update = measurements.step(
             new_tuple,
             peer_time,
-            system_leap_indicator,
-            system_precision,
+            NtpLeapIndicator::NoWarning,
+            NtpDuration::ZERO,
         );
 
         assert!(update.is_some());
