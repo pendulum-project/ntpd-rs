@@ -96,8 +96,8 @@ pub enum IgnoreReason {
     InvalidPacketTime,
     /// Received a Kiss-o'-Death https://datatracker.ietf.org/doc/html/rfc5905#section-7.4
     KissIgnore,
-    /// Received a DENY or RSTR Kiss-o'-Death, and must immobilize the association
-    KissImmobilize,
+    /// Received a DENY or RSTR Kiss-o'-Death, and must demobilize the association
+    KissDemobilize,
     /// The best packet is older than the peer's current time
     TooOld,
 }
@@ -205,7 +205,7 @@ impl Peer {
                 Ord::max(self.remote_min_poll_interval + 1, self.last_poll_interval);
             Err(IgnoreReason::KissIgnore)
         } else if message.is_kiss_rstr() || message.is_kiss_deny() {
-            Err(IgnoreReason::KissImmobilize)
+            Err(IgnoreReason::KissDemobilize)
         } else if message.is_kiss() {
             // Ignore unrecognized control messages
             Err(IgnoreReason::KissIgnore)

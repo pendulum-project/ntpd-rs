@@ -19,8 +19,8 @@ fn poll_interval_to_duration(poll_interval: i8) -> Duration {
 
 #[derive(Debug, Clone, Copy)]
 pub enum MsgForSystem {
-    /// Received a Kiss-o'-Death and must immobilize
-    MustImmobilize,
+    /// Received a Kiss-o'-Death and must demobilize
+    MustDemobilize,
     /// There is no measurement available, either because no
     /// packet has been received yet, or because synchronization was rejected
     NoMeasurement,
@@ -92,8 +92,8 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                                     Ok(update) => {
                                         let _ = tx.send(MsgForSystem::Snapshot(update));
                                     }
-                                    Err(IgnoreReason::KissImmobilize) => {
-                                        let _ = tx.send(MsgForSystem::MustImmobilize);
+                                    Err(IgnoreReason::KissDemobilize) => {
+                                        let _ = tx.send(MsgForSystem::MustDemobilize);
                                     }
                                     Err(_) => { /* ignore */ }
 

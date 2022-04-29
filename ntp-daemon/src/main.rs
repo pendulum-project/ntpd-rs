@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         let msg = *peers[changed_index].borrow();
         match msg {
-            peer::MsgForSystem::MustImmobilize => {
+            peer::MsgForSystem::MustDemobilize => {
                 peers.remove(changed_index);
                 continue;
             }
@@ -65,7 +65,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         for i in (0..peers.len()).rev() {
             let msg = *peers[i].borrow_and_update();
             match msg {
-                peer::MsgForSystem::MustImmobilize => {
+                peer::MsgForSystem::MustDemobilize => {
                     peers.remove(i);
                 }
                 peer::MsgForSystem::NoMeasurement => {
