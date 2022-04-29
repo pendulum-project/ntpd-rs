@@ -154,7 +154,7 @@ impl NtpDuration {
 
     /// Convert to an f64; required for statistical calculations
     /// (e.g. in clock filtering)
-    pub(crate) fn to_seconds(self) -> f64 {
+    pub fn to_seconds(self) -> f64 {
         // dividing by u32::MAX moves the decimal point to the right position
         self.duration as f64 / u32::MAX as f64
     }

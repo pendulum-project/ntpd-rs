@@ -48,6 +48,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .collect();
         let result =
             filter_and_combine(&states, clock.now().unwrap(), NtpDuration::from_exponent(2));
-        println!("{:?}", result);
+
+        match result {
+            Some(clock_select) => {
+                let offset_ms = clock_select.system_offset.to_seconds() * 1000.0;
+                let jitter_ms = clock_select.system_jitter.to_seconds() * 1000.0;
+                println!("offset: {:.3}ms (jitter: {}ms)", offset_ms, jitter_ms);
+                println!();
+            }
+            None => println!("filter and combine did not produce a result"),
+        }
     }
 }
