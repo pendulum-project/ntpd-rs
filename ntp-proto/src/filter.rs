@@ -9,6 +9,7 @@
 
 use crate::packet::NtpAssociationMode;
 use crate::peer::{multiply_by_phi, PeerStatistics};
+use crate::time_types::NtpInstant;
 use crate::{packet::NtpLeapIndicator, NtpDuration, NtpHeader, NtpTimestamp};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -16,7 +17,7 @@ pub struct FilterTuple {
     offset: NtpDuration,
     delay: NtpDuration,
     dispersion: NtpDuration,
-    time: NtpTimestamp,
+    time: NtpInstant,
 }
 
 impl FilterTuple {
@@ -24,7 +25,7 @@ impl FilterTuple {
         offset: NtpDuration::ZERO,
         delay: NtpDuration::MAX_DISPERSION,
         dispersion: NtpDuration::MAX_DISPERSION,
-        time: NtpTimestamp::ZERO,
+        time: NtpInstant::ZERO,
     };
 
     fn is_dummy(self) -> bool {
@@ -38,8 +39,8 @@ impl FilterTuple {
     pub(crate) fn from_packet_default(
         packet: &NtpHeader,
         system_precision: NtpDuration,
+        local_clock_time: NtpInstant,
         destination_timestamp: NtpTimestamp,
-        local_clock_time: NtpTimestamp,
     ) -> Self {
         // for reference
         //
@@ -111,10 +112,10 @@ impl LastMeasurements {
     pub(crate) fn step(
         &mut self,
         new_tuple: FilterTuple,
-        peer_time: NtpTimestamp,
+        peer_time: NtpInstant,
         system_leap_indicator: NtpLeapIndicator,
         system_precision: NtpDuration,
-    ) -> Option<(PeerStatistics, NtpTimestamp)> {
+    ) -> Option<(PeerStatistics, NtpInstant)> {
         let dispersion_correction = multiply_by_phi(new_tuple.time - peer_time);
         self.shift_and_insert(new_tuple, dispersion_correction);
 
@@ -124,7 +125,9 @@ impl LastMeasurements {
         // Prime directive: use a sample only once and never a sample
         // older than the latest one, but anything goes before first
         // synchronized.
-        if smallest_delay.time <= peer_time && system_leap_indicator.is_synchronized() {
+        if (smallest_delay.time - peer_time) <= NtpDuration::ZERO
+            && system_leap_indicator.is_synchronized()
+        {
             return None;
         }
 
@@ -338,7 +341,7 @@ mod test {
 
         let mut measurements = LastMeasurements::default();
 
-        let peer_time = NtpTimestamp::default();
+        let peer_time = NtpInstant::ZERO;
         let update = measurements.step(
             new_tuple,
             peer_time,
@@ -357,12 +360,12 @@ mod test {
             offset: NtpDuration::from_seconds(12.0),
             delay: NtpDuration::from_seconds(14.0),
             dispersion: Default::default(),
-            time: NtpTimestamp::from_bits((1i64 << 32).to_be_bytes()),
+            time: NtpInstant::from_bits((1i64 << 32).to_be_bytes()),
         };
 
         let mut measurements = LastMeasurements::default();
 
-        let peer_time = NtpTimestamp::default();
+        let peer_time = NtpInstant::ZERO;
         let update = measurements.step(
             new_tuple,
             peer_time,
@@ -398,8 +401,8 @@ mod test {
         let result = FilterTuple::from_packet_default(
             &packet,
             NtpDuration::from_exponent(-32),
+            NtpInstant::from_fixed_int(4),
             NtpTimestamp::from_fixed_int(3),
-            NtpTimestamp::from_fixed_int(4),
         );
         assert_eq!(result.offset, NtpDuration::from_fixed_int(0));
         assert_eq!(result.delay, NtpDuration::from_fixed_int(2));
@@ -413,8 +416,8 @@ mod test {
         let result = FilterTuple::from_packet_default(
             &packet,
             NtpDuration::from_exponent(-32),
+            NtpInstant::from_fixed_int(4),
             NtpTimestamp::from_fixed_int(3),
-            NtpTimestamp::from_fixed_int(4),
         );
         assert_eq!(result.offset, NtpDuration::from_fixed_int(1));
         assert_eq!(result.delay, NtpDuration::from_fixed_int(2));
@@ -428,8 +431,8 @@ mod test {
         let result = FilterTuple::from_packet_default(
             &packet,
             NtpDuration::from_exponent(-32),
+            NtpInstant::from_fixed_int(4),
             NtpTimestamp::from_fixed_int(3),
-            NtpTimestamp::from_fixed_int(4),
         );
         assert_eq!(result.offset, NtpDuration::from_fixed_int(1));
         assert_eq!(result.delay, NtpDuration::from_fixed_int(1));

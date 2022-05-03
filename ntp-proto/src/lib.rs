@@ -19,4 +19,4 @@ pub use packet::NtpHeader;
 pub use peer::{AcceptSynchronizationError, IgnoreReason, Peer, PeerSnapshot, SystemSnapshot};
 #[cfg(feature = "fuzz")]
 pub use time_types::fuzz_duration_from_seconds;
-pub use time_types::{NtpDuration, NtpTimestamp};
+pub use time_types::{NtpDuration, NtpInstant, NtpTimestamp};

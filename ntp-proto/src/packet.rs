@@ -94,8 +94,11 @@ pub struct NtpHeader {
     pub root_dispersion: NtpDuration,
     pub reference_id: ReferenceId,
     pub reference_timestamp: NtpTimestamp,
+    /// Time at the client when the request departed for the server
     pub origin_timestamp: NtpTimestamp,
+    /// Time at the server when the request arrived from the client
     pub receive_timestamp: NtpTimestamp,
+    /// Time at the server when the response left for the client
     pub transmit_timestamp: NtpTimestamp,
 }
 

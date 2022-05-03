@@ -1,6 +1,7 @@
 use crate::{
     filter::{FilterTuple, LastMeasurements},
     packet::{NtpAssociationMode, NtpLeapIndicator},
+    time_types::NtpInstant,
     NtpDuration, NtpHeader, NtpTimestamp, ReferenceId,
 };
 
@@ -35,7 +36,7 @@ pub struct Peer {
     statistics: PeerStatistics,
     last_measurements: LastMeasurements,
     last_packet: NtpHeader,
-    time: NtpTimestamp,
+    time: NtpInstant,
     #[allow(dead_code)]
     peer_id: ReferenceId,
     our_id: ReferenceId,
@@ -102,7 +103,7 @@ pub enum IgnoreReason {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PeerSnapshot {
-    pub(crate) time: NtpTimestamp,
+    pub(crate) time: NtpInstant,
     pub(crate) root_distance_without_time: NtpDuration,
     pub(crate) stratum: u8,
     pub(crate) statistics: PeerStatistics,
@@ -111,7 +112,7 @@ pub struct PeerSnapshot {
 impl PeerSnapshot {
     pub(crate) fn accept_synchronization(
         &self,
-        local_clock_time: NtpTimestamp,
+        local_clock_time: NtpInstant,
         system_poll: NtpDuration,
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
@@ -129,7 +130,7 @@ impl PeerSnapshot {
         Ok(())
     }
 
-    pub(crate) fn root_distance(&self, local_clock_time: NtpTimestamp) -> NtpDuration {
+    pub(crate) fn root_distance(&self, local_clock_time: NtpInstant) -> NtpDuration {
         self.root_distance_without_time + multiply_by_phi(local_clock_time - self.time)
     }
 }
@@ -144,7 +145,7 @@ pub enum AcceptSynchronizationError {
 }
 
 impl Peer {
-    pub fn new(our_id: ReferenceId, peer_id: ReferenceId, local_clock_time: NtpTimestamp) -> Self {
+    pub fn new(our_id: ReferenceId, peer_id: ReferenceId, local_clock_time: NtpInstant) -> Self {
         // we initialize with the current time so that we're in the correct epoch.
         let time = local_clock_time;
 
@@ -173,30 +174,44 @@ impl Peer {
         self.last_poll_interval
     }
 
-    pub fn generate_poll_message(&mut self, local_clock_time: NtpTimestamp) -> NtpHeader {
+    pub fn generate_poll_message(&mut self, local_clock_time: NtpInstant) -> NtpHeader {
         self.reach.poll();
-
-        self.next_expected_origin = Some(local_clock_time);
 
         let mut packet = NtpHeader::new();
         packet.poll = self.last_poll_interval;
-        packet.transmit_timestamp = local_clock_time;
         packet.mode = NtpAssociationMode::Client;
+
+        // we write into the origin_timestamp and transmit_timestamp to validate the packet we get
+        // back. The origin_timestamp must not be changed, the transmit_timestamp must be changed
+        let local_clock_time = NtpTimestamp::from_bits(local_clock_time.to_bits());
+        self.next_expected_origin = Some(local_clock_time);
+
+        // in handle_incoming, we check that this field is unchanged
+        packet.origin_timestamp = local_clock_time;
+
+        // in handle_incoming, we check that this field was updated
+        packet.transmit_timestamp = local_clock_time;
 
         packet
     }
 
     pub fn handle_incoming(
         &mut self,
-        message: NtpHeader,
-        recv_time: NtpTimestamp,
         system: SystemSnapshot,
+        message: NtpHeader,
+        local_clock_time: NtpInstant,
+        recv_time: NtpTimestamp,
     ) -> Result<PeerSnapshot, IgnoreReason> {
+        // the transmit_timestamp field was not changed from the bogus value we put into it
+        let transmit_unchanged = Some(message.transmit_timestamp) == self.next_expected_origin;
+
+        // the origin_timestamp changed; the server is not allowed to modify this field
+        let origin_changed = Some(message.origin_timestamp) != self.next_expected_origin;
+
         if message.mode != NtpAssociationMode::Server {
             // we currently only support a client <-> server association
             Err(IgnoreReason::InvalidMode)
-        } else if Some(message.origin_timestamp) != self.next_expected_origin {
-            // the message we got back says that it was sent at a different time than we sent it
+        } else if transmit_unchanged || origin_changed {
             Err(IgnoreReason::InvalidPacketTime)
         } else if message.is_kiss_rate() {
             self.remote_min_poll_interval =
@@ -212,8 +227,12 @@ impl Peer {
             // Received answer, so no need for backoff
             self.next_poll_interval = self.last_poll_interval;
 
-            let filter_input =
-                FilterTuple::from_packet_default(&message, system.precision, recv_time, recv_time);
+            let filter_input = FilterTuple::from_packet_default(
+                &message,
+                system.precision,
+                local_clock_time,
+                recv_time,
+            );
 
             self.message_for_system(filter_input, system.leap_indicator, system.precision)
         }
@@ -255,7 +274,7 @@ impl Peer {
     /// all causes of the local clock relative to the primary server.
     /// It is defined as half the total delay plus total dispersion
     /// plus peer jitter.
-    fn root_distance(&self, local_clock_time: NtpTimestamp) -> NtpDuration {
+    fn root_distance(&self, local_clock_time: NtpInstant) -> NtpDuration {
         self.root_distance_without_time() + multiply_by_phi(local_clock_time - self.time)
     }
 
@@ -272,7 +291,7 @@ impl Peer {
     /// Known as `accept` and `fit` in the specification.
     pub fn accept_synchronization(
         &self,
-        local_clock_time: NtpTimestamp,
+        local_clock_time: NtpInstant,
         system_poll: NtpDuration,
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
@@ -339,8 +358,8 @@ mod test {
         let duration_1s = NtpDuration::from_fixed_int(1_0000_0000);
         let duration_2s = NtpDuration::from_fixed_int(2_0000_0000);
 
-        let timestamp_1s = NtpTimestamp::from_fixed_int(1_0000_0000);
-        let timestamp_2s = NtpTimestamp::from_fixed_int(2_0000_0000);
+        let timestamp_1s = NtpInstant::from_fixed_int(1_0000_0000);
+        let timestamp_2s = NtpInstant::from_fixed_int(2_0000_0000);
 
         let mut packet = NtpHeader::new();
         packet.root_delay = duration_1s;
@@ -389,7 +408,7 @@ mod test {
                 ..Default::default()
             },
             last_packet: packet,
-            time: NtpTimestamp::from_fixed_int(0),
+            time: NtpInstant::ZERO,
             ..Peer::test_peer()
         };
         assert!(reference.root_distance(timestamp_1s) < sample.root_distance(timestamp_1s));
@@ -473,7 +492,7 @@ mod test {
     fn test_accept_synchronization() {
         use AcceptSynchronizationError::*;
 
-        let local_clock_time = NtpTimestamp::ZERO;
+        let local_clock_time = NtpInstant::ZERO;
         let system_poll = NtpDuration::ZERO;
 
         let mut peer = Peer::test_peer();
