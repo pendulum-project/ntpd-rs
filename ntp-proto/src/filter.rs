@@ -125,9 +125,7 @@ impl LastMeasurements {
         // Prime directive: use a sample only once and never a sample
         // older than the latest one, but anything goes before first
         // synchronized.
-        if (smallest_delay.time - peer_time) <= NtpDuration::ZERO
-            && system_leap_indicator.is_synchronized()
-        {
+        if smallest_delay.time <= peer_time && system_leap_indicator.is_synchronized() {
             return None;
         }
 
