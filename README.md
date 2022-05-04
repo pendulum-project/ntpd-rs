@@ -40,3 +40,9 @@ Then, to start ptpd, as root run
 ptpd -V -n -M -i <INTERFACE>
 ```
 where `<INTERFACE>` is the netwerk interface you want ptpd to use. Here `-n` disables clock adjustment by ptpd, and `-M` ensures that it runs in master mode only.
+
+# Support our work
+
+The first phase of our project is kindly support by the [NLnet Foundation](https://nlnet.nl/project/PTP-Rust/).
+
+We seek involvement and/or sponsoring of interested parties, see the announcement [here](https://twitter.com/tweedegolfbv/status/1504439532971827208).
