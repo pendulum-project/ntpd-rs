@@ -86,7 +86,14 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                             );
 
                             let system_poll = NtpDuration::from_exponent(system_snapshot.poll_interval);
-                            if peer.accept_synchronization(ntp_instant, config.frequency_tolerance, system_poll).is_err() {
+                            let accept = peer.accept_synchronization(
+                                ntp_instant,
+                                config.frequency_tolerance,
+                                config.distance_threshold,
+                                system_poll,
+                            );
+
+                            if accept.is_err() {
                                 let _ = tx.send(None);
                             } else if let Ok(update) = result {
                                 let _ = tx.send(Some(update));

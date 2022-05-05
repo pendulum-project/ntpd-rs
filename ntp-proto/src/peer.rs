@@ -6,7 +6,6 @@ use crate::{
 };
 
 const MAX_STRATUM: u8 = 16;
-const DISTANCE_THRESHOLD: NtpDuration = NtpDuration::ONE;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct PeerStatistics {
@@ -108,6 +107,7 @@ impl PeerSnapshot {
         &self,
         local_clock_time: NtpInstant,
         frequency_tolerance: FrequencyTolerance,
+        distance_threshold: NtpDuration,
         system_poll: NtpDuration,
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
@@ -118,7 +118,7 @@ impl PeerSnapshot {
         //  A distance error occurs if the root distance exceeds the
         //  distance threshold plus an increment equal to one poll interval.
         let distance = self.root_distance(local_clock_time, frequency_tolerance);
-        if distance > DISTANCE_THRESHOLD + (system_poll * frequency_tolerance) {
+        if distance > distance_threshold + (system_poll * frequency_tolerance) {
             return Err(Distance);
         }
 
@@ -305,6 +305,7 @@ impl Peer {
         &self,
         local_clock_time: NtpInstant,
         frequency_tolerance: FrequencyTolerance,
+        distance_threshold: NtpDuration,
         system_poll: NtpDuration,
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
@@ -319,7 +320,7 @@ impl Peer {
         //  A distance error occurs if the root distance exceeds the
         //  distance threshold plus an increment equal to one poll interval.
         let distance = self.root_distance(local_clock_time, frequency_tolerance);
-        if distance > DISTANCE_THRESHOLD + (system_poll * frequency_tolerance) {
+        if distance > distance_threshold + (system_poll * frequency_tolerance) {
             return Err(Distance);
         }
 
@@ -511,48 +512,49 @@ mod test {
 
         let local_clock_time = NtpInstant::ZERO;
         let ft = FrequencyTolerance::ppm(15);
+        let dt = NtpDuration::ONE;
         let system_poll = NtpDuration::ZERO;
 
         let mut peer = Peer::test_peer();
 
         // by default, the packet id and the peer's id are the same, indicating a loop
         assert_eq!(
-            peer.accept_synchronization(local_clock_time, ft, system_poll),
+            peer.accept_synchronization(local_clock_time, ft, dt, system_poll),
             Err(Loop)
         );
 
         peer.our_id = ReferenceId::from_int(42);
 
         assert_eq!(
-            peer.accept_synchronization(local_clock_time, ft, system_poll),
+            peer.accept_synchronization(local_clock_time, ft, dt, system_poll),
             Err(ServerUnreachable)
         );
 
         peer.reach.received_packet();
 
         assert_eq!(
-            peer.accept_synchronization(local_clock_time, ft, system_poll),
+            peer.accept_synchronization(local_clock_time, ft, dt, system_poll),
             Ok(())
         );
 
         peer.last_packet.leap = NtpLeapIndicator::Unknown;
         assert_eq!(
-            peer.accept_synchronization(local_clock_time, ft, system_poll),
+            peer.accept_synchronization(local_clock_time, ft, dt, system_poll),
             Err(Stratum)
         );
 
         peer.last_packet.leap = NtpLeapIndicator::NoWarning;
         peer.last_packet.stratum = 42;
         assert_eq!(
-            peer.accept_synchronization(local_clock_time, ft, system_poll),
+            peer.accept_synchronization(local_clock_time, ft, dt, system_poll),
             Err(Stratum)
         );
 
         peer.last_packet.stratum = 0;
 
-        peer.last_packet.root_dispersion = DISTANCE_THRESHOLD * 2;
+        peer.last_packet.root_dispersion = dt * 2;
         assert_eq!(
-            peer.accept_synchronization(local_clock_time, ft, system_poll),
+            peer.accept_synchronization(local_clock_time, ft, dt, system_poll),
             Err(Distance)
         );
     }
