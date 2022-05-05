@@ -6,7 +6,7 @@ use crate::{
 };
 
 const MAX_STRATUM: u8 = 16;
-pub(crate) const DISTANCE_THRESHOLD: NtpDuration = NtpDuration::ONE;
+const DISTANCE_THRESHOLD: NtpDuration = NtpDuration::ONE;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct PeerStatistics {
