@@ -18,7 +18,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let config = SystemConfig::default();
     let clock = UnixNtpClock::new();
 
+    // channel for sending updated system state to the peers
     let (system_tx, system_rx) = watch::channel::<SystemSnapshot>(SystemSnapshot::default());
+
+    // channel to send the reset signal to all peers
     let (reset_tx, reset_rx) = watch::channel::<()>(());
 
     let new_peer = |address| {
