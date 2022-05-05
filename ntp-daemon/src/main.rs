@@ -29,8 +29,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .unwrap(),
     ];
 
+    let mut snapshots = Vec::with_capacity(peers.len());
+
     loop {
-        let i = {
+        let changed_index = {
             let mut changed: FuturesUnordered<_> = peers
                 .iter_mut()
                 .enumerate()
@@ -42,17 +44,41 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             changed.next().await.unwrap()
         };
-        if peers[i].borrow().is_none() {
-            continue;
+
+        let msg = *peers[changed_index].borrow();
+        match msg {
+            peer::MsgForSystem::MustDemobilize => {
+                peers.remove(changed_index);
+                continue;
+            }
+            peer::MsgForSystem::NoMeasurement => {
+                continue;
+            }
+            peer::MsgForSystem::Snapshot(_) => {
+                // fall through
+            }
+        }
+
+        // remove all snapshots from a previous iteration
+        snapshots.clear();
+
+        for i in (0..peers.len()).rev() {
+            let msg = *peers[i].borrow_and_update();
+            match msg {
+                peer::MsgForSystem::MustDemobilize => {
+                    peers.remove(i);
+                }
+                peer::MsgForSystem::NoMeasurement => {
+                    // skip
+                }
+                peer::MsgForSystem::Snapshot(snapshot) => {
+                    snapshots.push(snapshot);
+                }
+            }
         }
 
         let ntp_instant = NtpInstant::from_ntp_timestamp(clock.now().unwrap());
-        let states: Vec<_> = peers
-            .iter_mut()
-            .filter_map(|c| *c.borrow_and_update())
-            .collect();
-
-        let result = filter_and_combine(&states, ntp_instant, NtpDuration::from_exponent(2));
+        let result = filter_and_combine(&snapshots, ntp_instant, NtpDuration::from_exponent(2));
 
         match result {
             Some(clock_select) => {

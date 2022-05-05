@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use ntp_proto::{
-    NtpClock, NtpDuration, NtpHeader, NtpInstant, Peer, PeerSnapshot, ReferenceId, SystemSnapshot,
+    IgnoreReason, NtpClock, NtpDuration, NtpHeader, NtpInstant, Peer, PeerSnapshot, ReferenceId,
+    SystemSnapshot,
 };
 use tokio::{
     net::{ToSocketAddrs, UdpSocket},
@@ -17,16 +18,27 @@ fn poll_interval_to_duration(poll_interval: i8) -> Duration {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum MsgForSystem {
+    /// Received a Kiss-o'-Death and must demobilize
+    MustDemobilize,
+    /// There is no measurement available, either because no
+    /// packet has been received yet, or because synchronization was rejected
+    NoMeasurement,
+    /// Received an acceptable packet and made a new peer snapshot
+    Snapshot(PeerSnapshot),
+}
+
 pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
     addr: A,
     clock: C,
     mut system_snapshots: watch::Receiver<SystemSnapshot>,
-) -> Result<watch::Receiver<Option<PeerSnapshot>>, std::io::Error> {
+) -> Result<watch::Receiver<MsgForSystem>, std::io::Error> {
     // setup socket
     let socket = UdpSocket::bind("0.0.0.0:0").await?;
     socket.connect(addr).await?;
 
-    let (tx, rx) = watch::channel::<Option<PeerSnapshot>>(None);
+    let (tx, rx) = watch::channel::<MsgForSystem>(MsgForSystem::NoMeasurement);
 
     let our_id = ReferenceId::from_ip(socket.local_addr()?.ip());
     let peer_id = ReferenceId::from_ip(socket.peer_addr()?.ip());
@@ -79,9 +91,18 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
 
                             let system_poll = NtpDuration::from_exponent(system_snapshot.poll_interval);
                             if peer.accept_synchronization(ntp_instant, system_poll).is_err() {
-                                let _ = tx.send(None);
-                            } else if let Ok(update) = result {
-                                let _ = tx.send(Some(update));
+                                let _ = tx.send(MsgForSystem::NoMeasurement);
+                            } else  {
+                                match result {
+                                    Ok(update) => {
+                                        let _ = tx.send(MsgForSystem::Snapshot(update));
+                                    }
+                                    Err(IgnoreReason::KissDemobilize) => {
+                                        let _ = tx.send(MsgForSystem::MustDemobilize);
+                                    }
+                                    Err(_) => { /* ignore */ }
+
+                                }
                             }
                         }
                     } else {
