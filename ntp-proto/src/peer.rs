@@ -1,7 +1,7 @@
 use crate::{
     filter::{FilterTuple, LastMeasurements},
     packet::{NtpAssociationMode, NtpLeapIndicator},
-    time_types::NtpInstant,
+    time_types::{FrequencyTolerance, NtpInstant},
     NtpDuration, NtpHeader, NtpTimestamp, ReferenceId,
 };
 
@@ -9,10 +9,7 @@ const MAX_STRATUM: u8 = 16;
 pub(crate) const DISTANCE_THRESHOLD: NtpDuration = NtpDuration::ONE;
 
 /// frequency tolerance (15 ppm)
-// const PHI: f64 = 15e-6;
-pub(crate) fn multiply_by_phi(duration: NtpDuration) -> NtpDuration {
-    (duration * 15) / 1_000_000
-}
+pub(crate) const FREQUENCY_TOLERANCE: FrequencyTolerance = FrequencyTolerance::ppm(15);
 
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct PeerStatistics {
@@ -123,7 +120,7 @@ impl PeerSnapshot {
         //  A distance error occurs if the root distance exceeds the
         //  distance threshold plus an increment equal to one poll interval.
         let distance = self.root_distance(local_clock_time);
-        if distance > DISTANCE_THRESHOLD + multiply_by_phi(system_poll) {
+        if distance > DISTANCE_THRESHOLD + (system_poll * FREQUENCY_TOLERANCE) {
             return Err(Distance);
         }
 
@@ -131,7 +128,7 @@ impl PeerSnapshot {
     }
 
     pub(crate) fn root_distance(&self, local_clock_time: NtpInstant) -> NtpDuration {
-        self.root_distance_without_time + multiply_by_phi(local_clock_time - self.time)
+        self.root_distance_without_time + ((local_clock_time - self.time) * FREQUENCY_TOLERANCE)
     }
 }
 
@@ -275,10 +272,10 @@ impl Peer {
     /// It is defined as half the total delay plus total dispersion
     /// plus peer jitter.
     fn root_distance(&self, local_clock_time: NtpInstant) -> NtpDuration {
-        self.root_distance_without_time() + multiply_by_phi(local_clock_time - self.time)
+        self.root_distance_without_time() + ((local_clock_time - self.time) * FREQUENCY_TOLERANCE)
     }
 
-    /// Root distance without the `multiply_by_phi(local_clock_time - self.time)` term
+    /// Root distance without the `(local_clock_time - self.time) * PHI` term
     fn root_distance_without_time(&self) -> NtpDuration {
         NtpDuration::MIN_DISPERSION.max(self.last_packet.root_delay + self.statistics.delay) / 2i64
             + self.last_packet.root_dispersion
@@ -306,7 +303,7 @@ impl Peer {
         //  A distance error occurs if the root distance exceeds the
         //  distance threshold plus an increment equal to one poll interval.
         let distance = self.root_distance(local_clock_time);
-        if distance > DISTANCE_THRESHOLD + multiply_by_phi(system_poll) {
+        if distance > DISTANCE_THRESHOLD + (system_poll * FREQUENCY_TOLERANCE) {
             return Err(Distance);
         }
 

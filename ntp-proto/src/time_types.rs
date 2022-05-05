@@ -382,6 +382,7 @@ ntp_duration_scalar_div!(u32);
 // u64 and usize deliberately excluded as they can result in overflows
 
 /// Frequency tolerance PHI (unit: seconds per second)
+#[derive(Clone, Copy)]
 pub struct FrequencyTolerance {
     ppm: u32,
 }
