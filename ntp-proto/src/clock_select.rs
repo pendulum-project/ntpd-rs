@@ -4,7 +4,6 @@ use crate::NtpDuration;
 
 #[derive(Clone, Copy)]
 pub struct SystemConfig {
-    // TODO this should be 4 in production?!
     /// Minimum number of survivors needed to be able to discipline the system clock.
     /// More survivors (so more servers from which to get the time) means a more accurate time.
     ///
@@ -25,14 +24,19 @@ pub struct SystemConfig {
     /// is not an actual lower bound on the number of survivors.
     pub min_cluster_survivors: usize,
 
+    /// How much the time is allowed to drift (worst-case) per second.
+    /// The drift caused by our frequency not exactly matching the real time
     pub frequency_tolerance: FrequencyTolerance,
 
+    /// A distance error occurs if the root distance exceeds the
+    /// distance threshold plus an increment equal to one poll interval.
     pub distance_threshold: NtpDuration,
 }
 
 impl Default for SystemConfig {
     fn default() -> Self {
         Self {
+            // TODO this should be 4 in production?!
             min_intersection_survivors: 1,
             min_cluster_survivors: 3,
             frequency_tolerance: FrequencyTolerance::ppm(15),
