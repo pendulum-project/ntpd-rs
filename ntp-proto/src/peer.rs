@@ -276,8 +276,12 @@ impl Peer {
     /// all causes of the local clock relative to the primary server.
     /// It is defined as half the total delay plus total dispersion
     /// plus peer jitter.
-    fn root_distance(&self, local_clock_time: NtpInstant) -> NtpDuration {
-        self.root_distance_without_time() + ((local_clock_time - self.time) * FREQUENCY_TOLERANCE)
+    fn root_distance(
+        &self,
+        local_clock_time: NtpInstant,
+        frequency_tolerance: FrequencyTolerance,
+    ) -> NtpDuration {
+        self.root_distance_without_time() + ((local_clock_time - self.time) * frequency_tolerance)
     }
 
     /// Root distance without the `(local_clock_time - self.time) * PHI` term
@@ -294,6 +298,7 @@ impl Peer {
     pub fn accept_synchronization(
         &self,
         local_clock_time: NtpInstant,
+        frequency_tolerance: FrequencyTolerance,
         system_poll: NtpDuration,
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
@@ -307,8 +312,8 @@ impl Peer {
 
         //  A distance error occurs if the root distance exceeds the
         //  distance threshold plus an increment equal to one poll interval.
-        let distance = self.root_distance(local_clock_time);
-        if distance > DISTANCE_THRESHOLD + (system_poll * FREQUENCY_TOLERANCE) {
+        let distance = self.root_distance(local_clock_time, frequency_tolerance);
+        if distance > DISTANCE_THRESHOLD + (system_poll * frequency_tolerance) {
             return Err(Distance);
         }
 
@@ -363,6 +368,8 @@ mod test {
         let timestamp_1s = NtpInstant::from_fixed_int(1_0000_0000);
         let timestamp_2s = NtpInstant::from_fixed_int(2_0000_0000);
 
+        let ft = FrequencyTolerance::ppm(15);
+
         let mut packet = NtpHeader::new();
         packet.root_delay = duration_1s;
         packet.root_dispersion = duration_1s;
@@ -377,7 +384,9 @@ mod test {
             ..Peer::test_peer()
         };
 
-        assert!(reference.root_distance(timestamp_1s) < reference.root_distance(timestamp_2s));
+        assert!(
+            reference.root_distance(timestamp_1s, ft) < reference.root_distance(timestamp_2s, ft)
+        );
 
         let sample = Peer {
             statistics: PeerStatistics {
@@ -389,7 +398,7 @@ mod test {
             time: timestamp_1s,
             ..Peer::test_peer()
         };
-        assert!(reference.root_distance(timestamp_1s) < sample.root_distance(timestamp_1s));
+        assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
 
         let sample = Peer {
             statistics: PeerStatistics {
@@ -401,7 +410,7 @@ mod test {
             time: timestamp_1s,
             ..Peer::test_peer()
         };
-        assert!(reference.root_distance(timestamp_1s) < sample.root_distance(timestamp_1s));
+        assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
 
         let sample = Peer {
             statistics: PeerStatistics {
@@ -413,7 +422,7 @@ mod test {
             time: NtpInstant::ZERO,
             ..Peer::test_peer()
         };
-        assert!(reference.root_distance(timestamp_1s) < sample.root_distance(timestamp_1s));
+        assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
 
         packet.root_delay = duration_2s;
         let sample = Peer {
@@ -427,7 +436,7 @@ mod test {
             ..Peer::test_peer()
         };
         packet.root_delay = duration_1s;
-        assert!(reference.root_distance(timestamp_1s) < sample.root_distance(timestamp_1s));
+        assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
 
         packet.root_dispersion = duration_2s;
         let sample = Peer {
@@ -441,7 +450,7 @@ mod test {
             ..Peer::test_peer()
         };
         packet.root_dispersion = duration_1s;
-        assert!(reference.root_distance(timestamp_1s) < sample.root_distance(timestamp_1s));
+        assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
 
         let sample = Peer {
             statistics: PeerStatistics {
@@ -455,8 +464,8 @@ mod test {
         };
 
         assert_eq!(
-            reference.root_distance(timestamp_1s),
-            sample.root_distance(timestamp_1s)
+            reference.root_distance(timestamp_1s, ft),
+            sample.root_distance(timestamp_1s, ft)
         );
     }
 
@@ -495,40 +504,41 @@ mod test {
         use AcceptSynchronizationError::*;
 
         let local_clock_time = NtpInstant::ZERO;
+        let ft = FrequencyTolerance::ppm(15);
         let system_poll = NtpDuration::ZERO;
 
         let mut peer = Peer::test_peer();
 
         // by default, the packet id and the peer's id are the same, indicating a loop
         assert_eq!(
-            peer.accept_synchronization(local_clock_time, system_poll),
+            peer.accept_synchronization(local_clock_time, ft, system_poll),
             Err(Loop)
         );
 
         peer.our_id = ReferenceId::from_int(42);
 
         assert_eq!(
-            peer.accept_synchronization(local_clock_time, system_poll),
+            peer.accept_synchronization(local_clock_time, ft, system_poll),
             Err(ServerUnreachable)
         );
 
         peer.reach.received_packet();
 
         assert_eq!(
-            peer.accept_synchronization(local_clock_time, system_poll),
+            peer.accept_synchronization(local_clock_time, ft, system_poll),
             Ok(())
         );
 
         peer.last_packet.leap = NtpLeapIndicator::Unknown;
         assert_eq!(
-            peer.accept_synchronization(local_clock_time, system_poll),
+            peer.accept_synchronization(local_clock_time, ft, system_poll),
             Err(Stratum)
         );
 
         peer.last_packet.leap = NtpLeapIndicator::NoWarning;
         peer.last_packet.stratum = 42;
         assert_eq!(
-            peer.accept_synchronization(local_clock_time, system_poll),
+            peer.accept_synchronization(local_clock_time, ft, system_poll),
             Err(Stratum)
         );
 
@@ -536,7 +546,7 @@ mod test {
 
         peer.last_packet.root_dispersion = DISTANCE_THRESHOLD * 2;
         assert_eq!(
-            peer.accept_synchronization(local_clock_time, system_poll),
+            peer.accept_synchronization(local_clock_time, ft, system_poll),
             Err(Distance)
         );
     }

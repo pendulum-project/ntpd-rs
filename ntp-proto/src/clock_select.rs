@@ -2,6 +2,7 @@ use crate::peer::{PeerSnapshot, DISTANCE_THRESHOLD};
 use crate::time_types::{FrequencyTolerance, NtpInstant};
 use crate::NtpDuration;
 
+#[derive(Clone, Copy)]
 pub struct SystemConfig {
     // TODO this should be 4 in production?!
     /// Minimum number of survivors needed to be able to discipline the system clock.
@@ -12,7 +13,7 @@ pub struct SystemConfig {
     /// > CMIN defines the minimum number of servers consistent with the correctness requirements.
     /// > Suspicious operators would set CMIN to ensure multiple redundant servers are available for the
     /// > algorithms to mitigate properly. However, for historic reasons the default value for CMIN is one.
-    min_intersection_survivors: usize,
+    pub min_intersection_survivors: usize,
 
     /// Number of survivors that the cluster_algorithm tries to keep.
     ///
@@ -22,9 +23,9 @@ pub struct SystemConfig {
     ///
     /// Because the input can have fewer than 3 survivors, the MIN_CLUSTER_SURVIVORS
     /// is not an actual lower bound on the number of survivors.
-    min_cluster_survivors: usize,
+    pub min_cluster_survivors: usize,
 
-    frequency_tolerance: FrequencyTolerance,
+    pub frequency_tolerance: FrequencyTolerance,
 }
 
 impl Default for SystemConfig {

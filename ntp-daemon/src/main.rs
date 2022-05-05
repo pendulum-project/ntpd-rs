@@ -11,24 +11,19 @@ use std::error::Error;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    let config = SystemConfig::default();
     let clock = UnixNtpClock::new();
 
     use tokio::sync::watch;
     let (system_tx, system_rx) = watch::channel::<SystemSnapshot>(SystemSnapshot::default());
 
+    let new_peer = |address| start_peer(address, UnixNtpClock::new(), config, system_rx.clone());
+
     let mut peers = vec![
-        start_peer("0.pool.ntp.org:123", UnixNtpClock::new(), system_rx.clone())
-            .await
-            .unwrap(),
-        start_peer("1.pool.ntp.org:123", UnixNtpClock::new(), system_rx.clone())
-            .await
-            .unwrap(),
-        start_peer("2.pool.ntp.org:123", UnixNtpClock::new(), system_rx.clone())
-            .await
-            .unwrap(),
-        start_peer("3.pool.ntp.org:123", UnixNtpClock::new(), system_rx)
-            .await
-            .unwrap(),
+        new_peer("0.pool.ntp.org:123").await.unwrap(),
+        new_peer("1.pool.ntp.org:123").await.unwrap(),
+        new_peer("2.pool.ntp.org:123").await.unwrap(),
+        new_peer("3.pool.ntp.org:123").await.unwrap(),
     ];
 
     loop {
@@ -54,7 +49,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .filter_map(|c| *c.borrow_and_update())
             .collect();
 
-        let config = SystemConfig::default();
         let result =
             filter_and_combine(&config, &states, ntp_instant, NtpDuration::from_exponent(2));
 

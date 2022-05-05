@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use ntp_proto::{
-    NtpClock, NtpDuration, NtpHeader, NtpInstant, Peer, PeerSnapshot, ReferenceId, SystemSnapshot,
+    NtpClock, NtpDuration, NtpHeader, NtpInstant, Peer, PeerSnapshot, ReferenceId, SystemConfig,
+    SystemSnapshot,
 };
 use tokio::{
     net::{ToSocketAddrs, UdpSocket},
@@ -20,6 +21,7 @@ fn poll_interval_to_duration(poll_interval: i8) -> Duration {
 pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
     addr: A,
     clock: C,
+    config: SystemConfig,
     mut system_snapshots: watch::Receiver<SystemSnapshot>,
 ) -> Result<watch::Receiver<Option<PeerSnapshot>>, std::io::Error> {
     // setup socket
@@ -78,7 +80,7 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                             let result = peer.handle_incoming(system_snapshot, packet, ntp_instant, timestamp);
 
                             let system_poll = NtpDuration::from_exponent(system_snapshot.poll_interval);
-                            if peer.accept_synchronization(ntp_instant, system_poll).is_err() {
+                            if peer.accept_synchronization(ntp_instant, config.frequency_tolerance, system_poll).is_err() {
                                 let _ = tx.send(None);
                             } else if let Ok(update) = result {
                                 let _ = tx.send(Some(update));
