@@ -40,6 +40,7 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
     clock: C,
     config: SystemConfig,
     mut system_snapshots: watch::Receiver<SystemSnapshot>,
+    mut reset: watch::Receiver<()>,
 ) -> Result<PeerChannels, std::io::Error> {
     // setup socket
     let socket = UdpSocket::bind("0.0.0.0:0").await?;
@@ -47,6 +48,7 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
 
     let (tx, rx) = watch::channel::<MsgForSystem>(MsgForSystem::NoMeasurement);
     let notify = Arc::new(Notify::new());
+    let reset_for_system = notify.clone();
 
     let our_id = ReferenceId::from_ip(socket.local_addr()?.ip());
     let peer_id = ReferenceId::from_ip(socket.peer_addr()?.ip());
@@ -81,6 +83,12 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                     let packet = peer.generate_poll_message(ntp_instant);
                     socket.send(&packet.serialize()).await.unwrap();
                 },
+                result = reset.changed() => {
+                    if let Ok(()) = result {
+                        peer.reset_measurements();
+                        reset_for_system.notify_waiters();
+                    }
+                }
                 result = socket.recv(&mut buf) => {
                     if let Ok((size, Some(timestamp))) = result {
                         // Note: packets are allowed to be bigger when including extensions.

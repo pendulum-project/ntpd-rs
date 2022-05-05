@@ -19,8 +19,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let clock = UnixNtpClock::new();
 
     let (system_tx, system_rx) = watch::channel::<SystemSnapshot>(SystemSnapshot::default());
+    let (reset_tx, reset_rx) = watch::channel::<()>(());
 
-    let new_peer = |address| start_peer(address, UnixNtpClock::new(), config, system_rx.clone());
+    let new_peer = |address| {
+        start_peer(
+            address,
+            UnixNtpClock::new(),
+            config,
+            system_rx.clone(),
+            reset_rx.clone(),
+        )
+    };
 
     let mut peers = vec![
         new_peer("0.pool.ntp.org:123").await.unwrap(),
