@@ -8,9 +8,6 @@ use crate::{
 const MAX_STRATUM: u8 = 16;
 pub(crate) const DISTANCE_THRESHOLD: NtpDuration = NtpDuration::ONE;
 
-/// frequency tolerance (15 ppm)
-pub(crate) const FREQUENCY_TOLERANCE: FrequencyTolerance = FrequencyTolerance::ppm(15);
-
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct PeerStatistics {
     pub offset: NtpDuration,
@@ -202,6 +199,7 @@ impl Peer {
         system: SystemSnapshot,
         message: NtpHeader,
         local_clock_time: NtpInstant,
+        frequency_tolerance: FrequencyTolerance,
         recv_time: NtpTimestamp,
     ) -> Result<PeerSnapshot, IgnoreReason> {
         // the transmit_timestamp field was not changed from the bogus value we put into it
@@ -233,10 +231,16 @@ impl Peer {
                 &message,
                 system.precision,
                 local_clock_time,
+                frequency_tolerance,
                 recv_time,
             );
 
-            self.message_for_system(filter_input, system.leap_indicator, system.precision)
+            self.message_for_system(
+                filter_input,
+                system.leap_indicator,
+                system.precision,
+                frequency_tolerance,
+            )
         }
     }
 
@@ -246,12 +250,14 @@ impl Peer {
         new_tuple: FilterTuple,
         system_leap_indicator: NtpLeapIndicator,
         system_precision: NtpDuration,
+        frequency_tolerance: FrequencyTolerance,
     ) -> Result<PeerSnapshot, IgnoreReason> {
         let updated = self.last_measurements.step(
             new_tuple,
             self.time,
             system_leap_indicator,
             system_precision,
+            frequency_tolerance,
         );
 
         match updated {

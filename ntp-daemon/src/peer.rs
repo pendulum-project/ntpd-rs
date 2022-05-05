@@ -77,7 +77,13 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                             let ntp_instant = NtpInstant::from_ntp_timestamp(timestamp);
 
                             let system_snapshot = *system_snapshots.borrow_and_update();
-                            let result = peer.handle_incoming(system_snapshot, packet, ntp_instant, timestamp);
+                            let result = peer.handle_incoming(
+                                system_snapshot,
+                                packet,
+                                ntp_instant,
+                                config.frequency_tolerance,
+                                timestamp,
+                            );
 
                             let system_poll = NtpDuration::from_exponent(system_snapshot.poll_interval);
                             if peer.accept_synchronization(ntp_instant, config.frequency_tolerance, system_poll).is_err() {
