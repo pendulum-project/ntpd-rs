@@ -6,7 +6,7 @@ use crate::{
 };
 
 const MAX_STRATUM: u8 = 16;
-pub(crate) const MAX_DISTANCE: NtpDuration = NtpDuration::ONE;
+pub(crate) const DISTANCE_THRESHOLD: NtpDuration = NtpDuration::ONE;
 
 /// frequency tolerance (15 ppm)
 // const PHI: f64 = 15e-6;
@@ -123,7 +123,7 @@ impl PeerSnapshot {
         //  A distance error occurs if the root distance exceeds the
         //  distance threshold plus an increment equal to one poll interval.
         let distance = self.root_distance(local_clock_time);
-        if distance > MAX_DISTANCE + multiply_by_phi(system_poll) {
+        if distance > DISTANCE_THRESHOLD + multiply_by_phi(system_poll) {
             return Err(Distance);
         }
 
@@ -306,7 +306,7 @@ impl Peer {
         //  A distance error occurs if the root distance exceeds the
         //  distance threshold plus an increment equal to one poll interval.
         let distance = self.root_distance(local_clock_time);
-        if distance > MAX_DISTANCE + multiply_by_phi(system_poll) {
+        if distance > DISTANCE_THRESHOLD + multiply_by_phi(system_poll) {
             return Err(Distance);
         }
 
@@ -532,7 +532,7 @@ mod test {
 
         peer.last_packet.stratum = 0;
 
-        peer.last_packet.root_dispersion = MAX_DISTANCE * 2;
+        peer.last_packet.root_dispersion = DISTANCE_THRESHOLD * 2;
         assert_eq!(
             peer.accept_synchronization(local_clock_time, system_poll),
             Err(Distance)

@@ -1,4 +1,4 @@
-use crate::peer::{PeerSnapshot, MAX_DISTANCE};
+use crate::peer::{PeerSnapshot, DISTANCE_THRESHOLD};
 use crate::time_types::NtpInstant;
 use crate::NtpDuration;
 
@@ -175,7 +175,7 @@ fn filter_survivor<'a>(
         None
     } else {
         let peer = candidate.peer;
-        let metric = MAX_DISTANCE * peer.stratum + peer.root_distance(local_clock_time);
+        let metric = DISTANCE_THRESHOLD * peer.stratum + peer.root_distance(local_clock_time);
 
         Some(SurvivorTuple { peer, metric })
     }
