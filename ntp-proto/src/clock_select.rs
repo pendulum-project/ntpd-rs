@@ -71,8 +71,13 @@ fn clock_select<'a>(
     system_poll: NtpDuration,
 ) -> Option<ClockSelect<'a>> {
     let valid_associations = peers.iter().filter(|p| {
-        p.accept_synchronization(local_clock_time, config.frequency_tolerance, system_poll)
-            .is_ok()
+        p.accept_synchronization(
+            local_clock_time,
+            config.frequency_tolerance,
+            config.distance_threshold,
+            system_poll,
+        )
+        .is_ok()
     });
 
     let candidates = construct_candidate_list(config, valid_associations, local_clock_time);
