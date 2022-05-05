@@ -8,7 +8,7 @@
 //      https://datatracker.ietf.org/doc/html/rfc5905#appendix-A.5.2
 
 use crate::packet::NtpAssociationMode;
-use crate::peer::{multiply_by_phi, PeerStatistics};
+use crate::peer::{PeerStatistics, FREQUENCY_TOLERANCE};
 use crate::time_types::NtpInstant;
 use crate::{packet::NtpLeapIndicator, NtpDuration, NtpHeader, NtpTimestamp};
 
@@ -67,7 +67,7 @@ impl FilterTuple {
         // delay is clamped to ensure it is always positive
         let delay = Ord::max(system_precision, delta1 - delta2);
 
-        let dispersion = packet_precision + system_precision + multiply_by_phi(delta1);
+        let dispersion = packet_precision + system_precision + (delta1 * FREQUENCY_TOLERANCE);
 
         Self {
             offset,
@@ -116,7 +116,7 @@ impl LastMeasurements {
         system_leap_indicator: NtpLeapIndicator,
         system_precision: NtpDuration,
     ) -> Option<(PeerStatistics, NtpInstant)> {
-        let dispersion_correction = multiply_by_phi(new_tuple.time - peer_time);
+        let dispersion_correction = (new_tuple.time - peer_time) * FREQUENCY_TOLERANCE;
         self.shift_and_insert(new_tuple, dispersion_correction);
 
         let temporary_list = TemporaryList::from_clock_filter_contents(self);
