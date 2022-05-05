@@ -1,5 +1,5 @@
 use crate::peer::{PeerSnapshot, DISTANCE_THRESHOLD};
-use crate::time_types::NtpInstant;
+use crate::time_types::{FrequencyTolerance, NtpInstant};
 use crate::NtpDuration;
 
 pub struct SystemConfig {
@@ -23,6 +23,8 @@ pub struct SystemConfig {
     /// Because the input can have fewer than 3 survivors, the MIN_CLUSTER_SURVIVORS
     /// is not an actual lower bound on the number of survivors.
     min_cluster_survivors: usize,
+
+    frequency_tolerance: FrequencyTolerance,
 }
 
 impl Default for SystemConfig {
@@ -30,6 +32,7 @@ impl Default for SystemConfig {
         Self {
             min_intersection_survivors: 1,
             min_cluster_survivors: 3,
+            frequency_tolerance: FrequencyTolerance::ppm(15),
         }
     }
 }
@@ -46,6 +49,7 @@ pub fn filter_and_combine(
         &selection.survivors,
         selection.system_selection_jitter,
         local_clock_time,
+        config.frequency_tolerance,
     );
 
     Some(combined)
@@ -63,13 +67,13 @@ fn clock_select<'a>(
     system_poll: NtpDuration,
 ) -> Option<ClockSelect<'a>> {
     let valid_associations = peers.iter().filter(|p| {
-        p.accept_synchronization(local_clock_time, system_poll)
+        p.accept_synchronization(local_clock_time, config.frequency_tolerance, system_poll)
             .is_ok()
     });
 
-    let candidates = construct_candidate_list(valid_associations, local_clock_time);
+    let candidates = construct_candidate_list(config, valid_associations, local_clock_time);
 
-    let mut survivors = construct_survivors(&candidates, local_clock_time);
+    let mut survivors = construct_survivors(config, &candidates, local_clock_time);
 
     if survivors.len() < config.min_intersection_survivors {
         return None;
@@ -102,6 +106,7 @@ struct CandidateTuple<'a> {
 }
 
 fn construct_candidate_list<'a>(
+    config: &SystemConfig,
     valid_associations: impl IntoIterator<Item = &'a PeerSnapshot>,
     local_clock_time: NtpInstant,
 ) -> Vec<CandidateTuple<'a>> {
@@ -109,7 +114,7 @@ fn construct_candidate_list<'a>(
 
     for peer in valid_associations {
         let offset = peer.statistics.offset;
-        let root_distance = peer.root_distance(local_clock_time);
+        let root_distance = peer.root_distance(local_clock_time, config.frequency_tolerance);
 
         let tuples = [
             CandidateTuple {
@@ -145,19 +150,21 @@ struct SurvivorTuple<'a> {
 
 /// Collect the candidates within the correctness interval
 fn construct_survivors<'a>(
+    config: &SystemConfig,
     chime_list: &[CandidateTuple<'a>],
     local_clock_time: NtpInstant,
 ) -> Vec<SurvivorTuple<'a>> {
     match find_interval(chime_list) {
         Some((low, high)) => chime_list
             .iter()
-            .filter_map(|candidate| filter_survivor(candidate, local_clock_time, low, high))
+            .filter_map(|candidate| filter_survivor(config, candidate, local_clock_time, low, high))
             .collect(),
         None => vec![],
     }
 }
 
 fn filter_survivor<'a>(
+    config: &SystemConfig,
     candidate: &CandidateTuple<'a>,
     local_clock_time: NtpInstant,
     low: NtpDuration,
@@ -175,7 +182,8 @@ fn filter_survivor<'a>(
         None
     } else {
         let peer = candidate.peer;
-        let metric = DISTANCE_THRESHOLD * peer.stratum + peer.root_distance(local_clock_time);
+        let root_distance = peer.root_distance(local_clock_time, config.frequency_tolerance);
+        let metric = DISTANCE_THRESHOLD * peer.stratum + root_distance;
 
         Some(SurvivorTuple { peer, metric })
     }
@@ -335,13 +343,16 @@ fn clock_combine<'a>(
     survivors: &'a [SurvivorTuple<'a>],
     system_selection_jitter: NtpDuration,
     local_clock_time: NtpInstant,
+    frequency_tolerance: FrequencyTolerance,
 ) -> ClockCombine {
     let mut y = 0.0; // normalization factor
     let mut z = 0.0; // weighed offset sum
 
     for tuple in survivors {
         let peer = tuple.peer;
-        let x = peer.root_distance(local_clock_time).to_seconds();
+        let x = peer
+            .root_distance(local_clock_time, frequency_tolerance)
+            .to_seconds();
         y += 1.0 / x;
         z += peer.statistics.offset.to_seconds() / x;
     }
@@ -391,7 +402,8 @@ pub fn fuzz_find_interval(spec: &[(i64, u64)]) {
         });
     }
     candidates.sort_by(|a, b| a.edge.cmp(&b.edge));
-    let survivors = construct_survivors(&candidates, crate::NtpInstant::ZERO);
+    let config = SystemConfig::default();
+    let survivors = construct_survivors(&config, &candidates, crate::NtpInstant::ZERO);
 
     // check that if we find a cluster, it contains more than half of the peers we work with.
     assert!(survivors.is_empty() || 2 * survivors.len() > spec.len());
@@ -484,6 +496,7 @@ mod test {
             &survivors,
             NtpDuration::from_seconds(0.05),
             NtpInstant::ZERO,
+            FrequencyTolerance::ppm(15),
         );
         assert_eq!(result.system_offset, NtpDuration::from_fixed_int(0));
         assert!(result.system_jitter.to_seconds() >= 0.05);
@@ -543,6 +556,7 @@ mod test {
             &survivors,
             NtpDuration::from_seconds(0.05),
             NtpInstant::ZERO,
+            FrequencyTolerance::ppm(15),
         );
         assert!(result.system_offset < NtpDuration::from_fixed_int(0));
         assert!(result.system_offset > NtpDuration::from_fixed_int(-500000));
@@ -611,7 +625,8 @@ mod test {
             ))
         );
 
-        let survivors = construct_survivors(&intervals, NtpInstant::ZERO);
+        let config = SystemConfig::default();
+        let survivors = construct_survivors(&config, &intervals, NtpInstant::ZERO);
         assert_eq!(survivors.len(), 3);
     }
 
@@ -677,7 +692,8 @@ mod test {
             ))
         );
 
-        let survivors = construct_survivors(&intervals, NtpInstant::ZERO);
+        let config = SystemConfig::default();
+        let survivors = construct_survivors(&config, &intervals, NtpInstant::ZERO);
         assert_eq!(survivors.len(), 2);
     }
 
@@ -745,7 +761,8 @@ mod test {
             ))
         );
 
-        let survivors = construct_survivors(&intervals, NtpInstant::ZERO);
+        let config = SystemConfig::default();
+        let survivors = construct_survivors(&config, &intervals, NtpInstant::ZERO);
         assert_eq!(survivors.len(), 3);
     }
 
@@ -813,7 +830,8 @@ mod test {
             ))
         );
 
-        let survivors = construct_survivors(&intervals, NtpInstant::ZERO);
+        let config = SystemConfig::default();
+        let survivors = construct_survivors(&config, &intervals, NtpInstant::ZERO);
         assert_eq!(survivors.len(), 3);
     }
 
@@ -874,7 +892,8 @@ mod test {
 
         assert_eq!(find_interval(&intervals), None);
 
-        let survivors = construct_survivors(&intervals, NtpInstant::ZERO);
+        let config = SystemConfig::default();
+        let survivors = construct_survivors(&config, &intervals, NtpInstant::ZERO);
         assert_eq!(survivors.len(), 0);
     }
 
@@ -936,7 +955,8 @@ mod test {
 
         assert_eq!(find_interval(&intervals), None);
 
-        let survivors = construct_survivors(&intervals, NtpInstant::ZERO);
+        let config = SystemConfig::default();
+        let survivors = construct_survivors(&config, &intervals, NtpInstant::ZERO);
         assert_eq!(survivors.len(), 0);
     }
 
@@ -964,14 +984,15 @@ mod test {
             root_dispersion,
         );
 
+        let config = SystemConfig::default();
         let local_clock_time = NtpInstant::ZERO;
-        let actual: Vec<_> = construct_candidate_list([&peer1, &peer2], local_clock_time)
+        let actual: Vec<_> = construct_candidate_list(&config, [&peer1, &peer2], local_clock_time)
             .into_iter()
             .map(|t| (t.endpoint_type, t.edge))
             .collect();
 
-        let root_distance1 = peer1.root_distance(local_clock_time);
-        let root_distance2 = peer2.root_distance(local_clock_time);
+        let root_distance1 = peer1.root_distance(local_clock_time, config.frequency_tolerance);
+        let root_distance2 = peer2.root_distance(local_clock_time, config.frequency_tolerance);
 
         assert_eq!(root_distance1, peer1.statistics.delay / 2i64);
         assert_eq!(root_distance2, peer2.statistics.delay / 2i64);
