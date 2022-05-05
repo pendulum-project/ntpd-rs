@@ -2,33 +2,45 @@ use crate::peer::{PeerSnapshot, MAX_DISTANCE};
 use crate::time_types::NtpInstant;
 use crate::NtpDuration;
 
-// TODO this should be 4 in production?!
-/// Minimum number of survivors needed to be able to discipline the system clock.
-/// More survivors (so more servers from which to get the time) means a more accurate time.
-///
-/// The spec notes (CMIN was renamed to MIN_INTERSECTION_SURVIVORS in our implementation):
-///
-/// > CMIN defines the minimum number of servers consistent with the correctness requirements.
-/// > Suspicious operators would set CMIN to ensure multiple redundant servers are available for the
-/// > algorithms to mitigate properly. However, for historic reasons the default value for CMIN is one.
-const MIN_INTERSECTION_SURVIVORS: usize = 1;
+pub struct SystemConfig {
+    // TODO this should be 4 in production?!
+    /// Minimum number of survivors needed to be able to discipline the system clock.
+    /// More survivors (so more servers from which to get the time) means a more accurate time.
+    ///
+    /// The spec notes (CMIN was renamed to MIN_INTERSECTION_SURVIVORS in our implementation):
+    ///
+    /// > CMIN defines the minimum number of servers consistent with the correctness requirements.
+    /// > Suspicious operators would set CMIN to ensure multiple redundant servers are available for the
+    /// > algorithms to mitigate properly. However, for historic reasons the default value for CMIN is one.
+    min_intersection_survivors: usize,
 
-/// Number of survivors that the cluster_algorithm tries to keep.
-///
-/// The code skeleton notes that the goal is to give the cluster algorithm something to chew on.
-/// The spec itself does not say anything about how this variable is chosen, or why it exists
-/// (but it does define the use of this variable)
-///
-/// Because the input can have fewer than 3 survivors, the MIN_CLUSTER_SURVIVORS
-/// is not an actual lower bound on the number of survivors.
-const MIN_CLUSTER_SURVIVORS: usize = 3;
+    /// Number of survivors that the cluster_algorithm tries to keep.
+    ///
+    /// The code skeleton notes that the goal is to give the cluster algorithm something to chew on.
+    /// The spec itself does not say anything about how this variable is chosen, or why it exists
+    /// (but it does define the use of this variable)
+    ///
+    /// Because the input can have fewer than 3 survivors, the MIN_CLUSTER_SURVIVORS
+    /// is not an actual lower bound on the number of survivors.
+    min_cluster_survivors: usize,
+}
+
+impl Default for SystemConfig {
+    fn default() -> Self {
+        Self {
+            min_intersection_survivors: 1,
+            min_cluster_survivors: 3,
+        }
+    }
+}
 
 pub fn filter_and_combine(
+    config: &SystemConfig,
     peers: &[PeerSnapshot],
     local_clock_time: NtpInstant,
     system_poll: NtpDuration,
 ) -> Option<ClockCombine> {
-    let selection = clock_select(peers, local_clock_time, system_poll)?;
+    let selection = clock_select(config, peers, local_clock_time, system_poll)?;
 
     let combined = clock_combine(
         &selection.survivors,
@@ -44,11 +56,12 @@ struct ClockSelect<'a> {
     system_selection_jitter: NtpDuration,
 }
 
-fn clock_select(
-    peers: &[PeerSnapshot],
+fn clock_select<'a>(
+    config: &SystemConfig,
+    peers: &'a [PeerSnapshot],
     local_clock_time: NtpInstant,
     system_poll: NtpDuration,
-) -> Option<ClockSelect> {
+) -> Option<ClockSelect<'a>> {
     let valid_associations = peers.iter().filter(|p| {
         p.accept_synchronization(local_clock_time, system_poll)
             .is_ok()
@@ -58,11 +71,12 @@ fn clock_select(
 
     let mut survivors = construct_survivors(&candidates, local_clock_time);
 
-    if survivors.len() < MIN_INTERSECTION_SURVIVORS {
+    if survivors.len() < config.min_intersection_survivors {
         return None;
     }
 
-    let system_selection_jitter = NtpDuration::from_seconds(cluster_algorithm(&mut survivors));
+    let system_selection_jitter =
+        NtpDuration::from_seconds(cluster_algorithm(config, &mut survivors));
 
     Some(ClockSelect {
         survivors,
@@ -234,7 +248,7 @@ fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDurat
 /// Discard the survivor with maximum selection jitter until a termination condition is met.
 ///
 /// returns the (maximum) selection jitter
-fn cluster_algorithm(candidates: &mut Vec<SurvivorTuple>) -> f64 {
+fn cluster_algorithm(config: &SystemConfig, candidates: &mut Vec<SurvivorTuple>) -> f64 {
     // sort the candidates by increasing lambda_p (the merit factor)
     candidates.sort_by(|a, b| a.metric.cmp(&b.metric));
 
@@ -282,7 +296,7 @@ fn cluster_algorithm(candidates: &mut Vec<SurvivorTuple>) -> f64 {
 
         // To make sure a few survivors are left for the clustering algorithm to chew on, we stop
         // if the number of survivors is less than or equal to NMIN (3).
-        let too_few_survivors = candidates.len() <= MIN_CLUSTER_SURVIVORS;
+        let too_few_survivors = candidates.len() <= config.min_cluster_survivors;
 
         if removed_bad_candidates || too_few_survivors {
             // the final version of max_selection_jitter (psi_max in the spec) is
@@ -987,17 +1001,19 @@ mod test {
     #[test]
     fn cluster_algorithm_empty() {
         // this should not happen in practice
-        assert_eq!(cluster_algorithm(&mut vec![]), 0.0)
+        let config = SystemConfig::default();
+        assert_eq!(cluster_algorithm(&config, &mut vec![]), 0.0)
     }
 
     #[test]
     fn cluster_algorithm_single() {
+        let config = SystemConfig::default();
         let peer = test_peer_snapshot();
         let candidate = SurvivorTuple {
             peer: &peer,
             metric: NtpDuration::ONE,
         };
-        assert_eq!(cluster_algorithm(&mut vec![candidate]), 0.0);
+        assert_eq!(cluster_algorithm(&config, &mut vec![candidate]), 0.0);
     }
 
     #[test]
@@ -1016,8 +1032,9 @@ mod test {
             metric: NtpDuration::ONE * 3i64,
         };
 
+        let config = SystemConfig::default();
         let mut candidates = vec![candidate1, candidate2];
-        let answer = cluster_algorithm(&mut candidates);
+        let answer = cluster_algorithm(&config, &mut candidates);
 
         // output is the RMS of the `statistics.offset` versus candidate1: 4 = 7 - 3
         assert!((answer - 4.0).abs() < 1e-9);
@@ -1036,11 +1053,12 @@ mod test {
         };
 
         let mut candidates = vec![candidate1; 10];
-        let answer = cluster_algorithm(&mut candidates);
+        let config = SystemConfig::default();
+        let answer = cluster_algorithm(&config, &mut candidates);
         assert!((answer - 0.0).abs() < 1e-9);
 
-        // we keep at least MIN_CLUSTER_SURVIVORS (if we started with enough candidates)
-        assert_eq!(candidates.len(), MIN_CLUSTER_SURVIVORS);
+        // we keep at least min_cluster_survivors (if we started with enough candidates)
+        assert_eq!(candidates.len(), config.min_cluster_survivors);
     }
 
     #[test]
@@ -1067,7 +1085,8 @@ mod test {
             })
             .collect();
 
-        let answer = cluster_algorithm(&mut candidates);
+        let config = SystemConfig::default();
+        let answer = cluster_algorithm(&config, &mut candidates);
         assert!((answer - 2.7386127881634637).abs() < 1e-9);
 
         assert_eq!(candidates.len(), 5);
@@ -1095,7 +1114,8 @@ mod test {
             })
             .collect();
 
-        let _answer = cluster_algorithm(&mut candidates);
+        let config = SystemConfig::default();
+        let _answer = cluster_algorithm(&config, &mut candidates);
 
         // check that peer 2 was discarded
         assert_eq!(candidates.len(), 3);
@@ -1126,7 +1146,8 @@ mod test {
             })
             .collect();
 
-        let _answer = cluster_algorithm(&mut candidates);
+        let config = SystemConfig::default();
+        let _answer = cluster_algorithm(&config, &mut candidates);
 
         // check that peer 2 and 3 were
         assert_eq!(candidates.len(), 3);
