@@ -31,6 +31,10 @@ pub struct Peer {
     remote_min_poll_interval: i8,
 
     // Last packet information
+    /// We expect the next packet we receive to have this origin timestamp
+    ///
+    /// This is used as validation that the packet we get is the correct response to the one we sent
+    /// (guards against e.g. replay and packet reordering)
     next_expected_origin: Option<NtpTimestamp>,
 
     statistics: PeerStatistics,
@@ -202,6 +206,9 @@ impl Peer {
         local_clock_time: NtpInstant,
         recv_time: NtpTimestamp,
     ) -> Result<PeerSnapshot, IgnoreReason> {
+        // we're expecting a packet
+        debug_assert!(self.next_expected_origin.is_some());
+
         // the transmit_timestamp field was not changed from the bogus value we put into it
         let transmit_unchanged = Some(message.transmit_timestamp) == self.next_expected_origin;
 
@@ -226,6 +233,9 @@ impl Peer {
 
             // Received answer, so no need for backoff
             self.next_poll_interval = self.last_poll_interval;
+
+            // we received this packet, and don't want to accept future ones with this next_expected_origin
+            self.next_expected_origin = None;
 
             let filter_input = FilterTuple::from_packet_default(
                 &message,
