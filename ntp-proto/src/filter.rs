@@ -8,8 +8,8 @@
 //      https://datatracker.ietf.org/doc/html/rfc5905#appendix-A.5.2
 
 use crate::packet::NtpAssociationMode;
-use crate::peer::{PeerStatistics, FREQUENCY_TOLERANCE};
-use crate::time_types::NtpInstant;
+use crate::peer::PeerStatistics;
+use crate::time_types::{FrequencyTolerance, NtpInstant};
 use crate::{packet::NtpLeapIndicator, NtpDuration, NtpHeader, NtpTimestamp};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -40,6 +40,7 @@ impl FilterTuple {
         packet: &NtpHeader,
         system_precision: NtpDuration,
         local_clock_time: NtpInstant,
+        frequency_tolerance: FrequencyTolerance,
         destination_timestamp: NtpTimestamp,
     ) -> Self {
         // for reference
@@ -67,7 +68,7 @@ impl FilterTuple {
         // delay is clamped to ensure it is always positive
         let delay = Ord::max(system_precision, delta1 - delta2);
 
-        let dispersion = packet_precision + system_precision + (delta1 * FREQUENCY_TOLERANCE);
+        let dispersion = packet_precision + system_precision + (delta1 * frequency_tolerance);
 
         Self {
             offset,
@@ -115,8 +116,9 @@ impl LastMeasurements {
         peer_time: NtpInstant,
         system_leap_indicator: NtpLeapIndicator,
         system_precision: NtpDuration,
+        frequency_tolerance: FrequencyTolerance,
     ) -> Option<(PeerStatistics, NtpInstant)> {
-        let dispersion_correction = (new_tuple.time - peer_time) * FREQUENCY_TOLERANCE;
+        let dispersion_correction = (new_tuple.time - peer_time) * frequency_tolerance;
         self.shift_and_insert(new_tuple, dispersion_correction);
 
         let temporary_list = TemporaryList::from_clock_filter_contents(self);
@@ -265,6 +267,7 @@ pub fn fuzz_tuple_from_packet_default(
         &packet,
         NtpDuration::from_exponent(client_precision),
         NtpInstant::ZERO,
+        FrequencyTolerance::ppm(15),
         NtpTimestamp::from_fixed_int(client.wrapping_add(client_interval as u64)),
     );
 
@@ -345,6 +348,7 @@ mod test {
             peer_time,
             NtpLeapIndicator::NoWarning,
             NtpDuration::ZERO,
+            FrequencyTolerance::ppm(15),
         );
 
         // because "time" is zero, the same as all the dummy tuples,
@@ -369,6 +373,7 @@ mod test {
             peer_time,
             NtpLeapIndicator::NoWarning,
             NtpDuration::ZERO,
+            FrequencyTolerance::ppm(15),
         );
 
         assert!(update.is_some());
@@ -400,6 +405,7 @@ mod test {
             &packet,
             NtpDuration::from_exponent(-32),
             NtpInstant::from_fixed_int(4),
+            FrequencyTolerance::ppm(15),
             NtpTimestamp::from_fixed_int(3),
         );
         assert_eq!(result.offset, NtpDuration::from_fixed_int(0));
@@ -415,6 +421,7 @@ mod test {
             &packet,
             NtpDuration::from_exponent(-32),
             NtpInstant::from_fixed_int(4),
+            FrequencyTolerance::ppm(15),
             NtpTimestamp::from_fixed_int(3),
         );
         assert_eq!(result.offset, NtpDuration::from_fixed_int(1));
@@ -430,6 +437,7 @@ mod test {
             &packet,
             NtpDuration::from_exponent(-32),
             NtpInstant::from_fixed_int(4),
+            FrequencyTolerance::ppm(15),
             NtpTimestamp::from_fixed_int(3),
         );
         assert_eq!(result.offset, NtpDuration::from_fixed_int(1));
