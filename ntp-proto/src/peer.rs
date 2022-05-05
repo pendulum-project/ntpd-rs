@@ -21,13 +21,14 @@ pub struct Peer {
     // Poll interval state
     last_poll_interval: PollInterval,
     next_poll_interval: PollInterval,
+    /// The poll interval desired by the remove server.
+    // Must be increased when the server sends the RATE kiss code.
     remote_min_poll_interval: PollInterval,
 
     // Last packet information
     /// We expect the next packet we receive to have this origin timestamp
-    ///
-    /// This is used as validation that the packet we get is the correct response to the one we sent
-    /// (guards against e.g. replay and packet reordering)
+    // This is used as validation that the packet we get is the correct response to the one we sent
+    // (guards against e.g. replay and packet reordering)
     next_expected_origin: Option<NtpTimestamp>,
 
     statistics: PeerStatistics,
@@ -185,6 +186,9 @@ impl Peer {
             .max(self.remote_min_poll_interval)
             .max(self.next_poll_interval);
 
+        // by default, we set the next poll interval to be an order of magnitude higher than the
+        // current one (in base 2). If we get a successful response, we set the interval back to
+        // the `last_poll_interval` (which means effectively the poll inteval is constant)
         self.next_poll_interval = self.last_poll_interval.inc();
 
         self.last_poll_interval
@@ -246,7 +250,9 @@ impl Peer {
             // For reachability, mark that we have had a response
             self.reach.received_packet();
 
-            // Received answer, so no need for backoff
+            // By default, next_poll_interval is an order of magnitude higher than
+            // last_poll_interval, so we automatically back off if we get no response.
+            // Here we did get a response, so we can keep the poll interval constant
             self.next_poll_interval = self.last_poll_interval;
 
             // we received this packet, and don't want to accept future ones with this next_expected_origin
