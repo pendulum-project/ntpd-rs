@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use ntp_proto::{
@@ -6,7 +7,7 @@ use ntp_proto::{
 };
 use tokio::{
     net::{ToSocketAddrs, UdpSocket},
-    sync::watch,
+    sync::{watch, Notify},
     time::Instant,
 };
 
@@ -29,17 +30,23 @@ pub enum MsgForSystem {
     Snapshot(PeerSnapshot),
 }
 
+pub struct PeerChannels {
+    pub peer_snapshot: watch::Receiver<MsgForSystem>,
+    pub peer_reset: Arc<Notify>,
+}
+
 pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
     addr: A,
     clock: C,
     config: SystemConfig,
     mut system_snapshots: watch::Receiver<SystemSnapshot>,
-) -> Result<watch::Receiver<MsgForSystem>, std::io::Error> {
+) -> Result<PeerChannels, std::io::Error> {
     // setup socket
     let socket = UdpSocket::bind("0.0.0.0:0").await?;
     socket.connect(addr).await?;
 
     let (tx, rx) = watch::channel::<MsgForSystem>(MsgForSystem::NoMeasurement);
+    let notify = Arc::new(Notify::new());
 
     let our_id = ReferenceId::from_ip(socket.local_addr()?.ip());
     let peer_id = ReferenceId::from_ip(socket.peer_addr()?.ip());
@@ -127,5 +134,10 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
         }
     });
 
-    Ok(rx)
+    let channels = PeerChannels {
+        peer_snapshot: rx,
+        peer_reset: notify,
+    };
+
+    Ok(channels)
 }
