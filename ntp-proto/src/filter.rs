@@ -264,8 +264,8 @@ pub fn fuzz_tuple_from_packet_default(
     let result = FilterTuple::from_packet_default(
         &packet,
         NtpDuration::from_exponent(client_precision),
+        NtpInstant::ZERO,
         NtpTimestamp::from_fixed_int(client.wrapping_add(client_interval as u64)),
-        NtpTimestamp::ZERO,
     );
 
     assert!(result.delay >= NtpDuration::from_fixed_int(0));
