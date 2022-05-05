@@ -110,6 +110,7 @@ impl PeerSnapshot {
     pub(crate) fn accept_synchronization(
         &self,
         local_clock_time: NtpInstant,
+        frequency_tolerance: FrequencyTolerance,
         system_poll: NtpDuration,
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
@@ -119,16 +120,20 @@ impl PeerSnapshot {
 
         //  A distance error occurs if the root distance exceeds the
         //  distance threshold plus an increment equal to one poll interval.
-        let distance = self.root_distance(local_clock_time);
-        if distance > DISTANCE_THRESHOLD + (system_poll * FREQUENCY_TOLERANCE) {
+        let distance = self.root_distance(local_clock_time, frequency_tolerance);
+        if distance > DISTANCE_THRESHOLD + (system_poll * frequency_tolerance) {
             return Err(Distance);
         }
 
         Ok(())
     }
 
-    pub(crate) fn root_distance(&self, local_clock_time: NtpInstant) -> NtpDuration {
-        self.root_distance_without_time + ((local_clock_time - self.time) * FREQUENCY_TOLERANCE)
+    pub(crate) fn root_distance(
+        &self,
+        local_clock_time: NtpInstant,
+        frequency_tolerance: FrequencyTolerance,
+    ) -> NtpDuration {
+        self.root_distance_without_time + ((local_clock_time - self.time) * frequency_tolerance)
     }
 }
 
