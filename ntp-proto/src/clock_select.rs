@@ -1,5 +1,6 @@
 use crate::peer::{PeerSnapshot, MAX_DISTANCE};
-use crate::{NtpDuration, NtpTimestamp};
+use crate::time_types::NtpInstant;
+use crate::NtpDuration;
 
 // TODO this should be 4 in production?!
 /// Minimum number of survivors needed to be able to discipline the system clock.
@@ -24,7 +25,7 @@ const MIN_CLUSTER_SURVIVORS: usize = 3;
 
 pub fn filter_and_combine(
     peers: &[PeerSnapshot],
-    local_clock_time: NtpTimestamp,
+    local_clock_time: NtpInstant,
     system_poll: NtpDuration,
 ) -> Option<ClockCombine> {
     let selection = clock_select(peers, local_clock_time, system_poll)?;
@@ -45,7 +46,7 @@ struct ClockSelect<'a> {
 
 fn clock_select(
     peers: &[PeerSnapshot],
-    local_clock_time: NtpTimestamp,
+    local_clock_time: NtpInstant,
     system_poll: NtpDuration,
 ) -> Option<ClockSelect> {
     let valid_associations = peers.iter().filter(|p| {
@@ -88,7 +89,7 @@ struct CandidateTuple<'a> {
 
 fn construct_candidate_list<'a>(
     valid_associations: impl IntoIterator<Item = &'a PeerSnapshot>,
-    local_clock_time: NtpTimestamp,
+    local_clock_time: NtpInstant,
 ) -> Vec<CandidateTuple<'a>> {
     let mut candidate_list = Vec::new();
 
@@ -131,7 +132,7 @@ struct SurvivorTuple<'a> {
 /// Collect the candidates within the correctness interval
 fn construct_survivors<'a>(
     chime_list: &[CandidateTuple<'a>],
-    local_clock_time: NtpTimestamp,
+    local_clock_time: NtpInstant,
 ) -> Vec<SurvivorTuple<'a>> {
     match find_interval(chime_list) {
         Some((low, high)) => chime_list
@@ -144,7 +145,7 @@ fn construct_survivors<'a>(
 
 fn filter_survivor<'a>(
     candidate: &CandidateTuple<'a>,
-    local_clock_time: NtpTimestamp,
+    local_clock_time: NtpInstant,
     low: NtpDuration,
     high: NtpDuration,
 ) -> Option<SurvivorTuple<'a>> {
@@ -318,8 +319,8 @@ pub struct ClockCombine {
 /// in particular they are in the order produced by the clustering algorithm.
 fn clock_combine<'a>(
     survivors: &'a [SurvivorTuple<'a>],
-    system_selection_jitter: NtpDuration, //
-    local_clock_time: NtpTimestamp,
+    system_selection_jitter: NtpDuration,
+    local_clock_time: NtpInstant,
 ) -> ClockCombine {
     let mut y = 0.0; // normalization factor
     let mut z = 0.0; // weighed offset sum
@@ -376,7 +377,7 @@ pub fn fuzz_find_interval(spec: &[(i64, u64)]) {
         });
     }
     candidates.sort_by(|a, b| a.edge.cmp(&b.edge));
-    let survivors = construct_survivors(&candidates, NtpTimestamp::from_fixed_int(0));
+    let survivors = construct_survivors(&candidates, crate::NtpInstant::ZERO);
 
     // check that if we find a cluster, it contains more than half of the peers we work with.
     assert!(survivors.is_empty() || 2 * survivors.len() > spec.len());
@@ -403,7 +404,7 @@ fn peer_snapshot(
         + statistics.dispersion;
 
     PeerSnapshot {
-        time: NtpTimestamp::from_fixed_int(0),
+        time: NtpInstant::ZERO,
         statistics,
         stratum: 0,
         root_distance_without_time,
@@ -468,7 +469,7 @@ mod test {
         let result = clock_combine(
             &survivors,
             NtpDuration::from_seconds(0.05),
-            NtpTimestamp::from_fixed_int(0),
+            NtpInstant::ZERO,
         );
         assert_eq!(result.system_offset, NtpDuration::from_fixed_int(0));
         assert!(result.system_jitter.to_seconds() >= 0.05);
@@ -527,7 +528,7 @@ mod test {
         let result = clock_combine(
             &survivors,
             NtpDuration::from_seconds(0.05),
-            NtpTimestamp::from_fixed_int(0),
+            NtpInstant::ZERO,
         );
         assert!(result.system_offset < NtpDuration::from_fixed_int(0));
         assert!(result.system_offset > NtpDuration::from_fixed_int(-500000));
@@ -596,7 +597,7 @@ mod test {
             ))
         );
 
-        let survivors = construct_survivors(&intervals, NtpTimestamp::from_fixed_int(0));
+        let survivors = construct_survivors(&intervals, NtpInstant::ZERO);
         assert_eq!(survivors.len(), 3);
     }
 
@@ -662,7 +663,7 @@ mod test {
             ))
         );
 
-        let survivors = construct_survivors(&intervals, NtpTimestamp::from_fixed_int(0));
+        let survivors = construct_survivors(&intervals, NtpInstant::ZERO);
         assert_eq!(survivors.len(), 2);
     }
 
@@ -730,7 +731,7 @@ mod test {
             ))
         );
 
-        let survivors = construct_survivors(&intervals, NtpTimestamp::from_fixed_int(0));
+        let survivors = construct_survivors(&intervals, NtpInstant::ZERO);
         assert_eq!(survivors.len(), 3);
     }
 
@@ -798,7 +799,7 @@ mod test {
             ))
         );
 
-        let survivors = construct_survivors(&intervals, NtpTimestamp::from_fixed_int(0));
+        let survivors = construct_survivors(&intervals, NtpInstant::ZERO);
         assert_eq!(survivors.len(), 3);
     }
 
@@ -859,7 +860,7 @@ mod test {
 
         assert_eq!(find_interval(&intervals), None);
 
-        let survivors = construct_survivors(&intervals, NtpTimestamp::from_fixed_int(0));
+        let survivors = construct_survivors(&intervals, NtpInstant::ZERO);
         assert_eq!(survivors.len(), 0);
     }
 
@@ -921,7 +922,7 @@ mod test {
 
         assert_eq!(find_interval(&intervals), None);
 
-        let survivors = construct_survivors(&intervals, NtpTimestamp::from_fixed_int(0));
+        let survivors = construct_survivors(&intervals, NtpInstant::ZERO);
         assert_eq!(survivors.len(), 0);
     }
 
@@ -949,7 +950,7 @@ mod test {
             root_dispersion,
         );
 
-        let local_clock_time = NtpTimestamp::ZERO;
+        let local_clock_time = NtpInstant::ZERO;
         let actual: Vec<_> = construct_candidate_list([&peer1, &peer2], local_clock_time)
             .into_iter()
             .map(|t| (t.endpoint_type, t.edge))
