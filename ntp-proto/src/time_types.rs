@@ -1,5 +1,49 @@
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
+/// NtpInstant is a monotonically increasing value modelling the uptime of the NTP service
+///
+/// It is used to validate packets that we send out, and to order internal operations.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Default)]
+pub struct NtpInstant {
+    timestamp: NtpTimestamp,
+}
+
+impl NtpInstant {
+    pub const ZERO: Self = Self {
+        timestamp: NtpTimestamp::ZERO,
+    };
+
+    pub const fn from_ntp_timestamp(timestamp: NtpTimestamp) -> Self {
+        Self { timestamp }
+    }
+
+    #[cfg(any(test, feature = "fuzz"))]
+    pub(crate) const fn from_bits(bits: [u8; 8]) -> Self {
+        Self {
+            timestamp: NtpTimestamp::from_bits(bits),
+        }
+    }
+
+    pub(crate) const fn to_bits(self) -> [u8; 8] {
+        self.timestamp.to_bits()
+    }
+
+    #[cfg(any(test, feature = "fuzz"))]
+    pub(crate) const fn from_fixed_int(timestamp: u64) -> NtpInstant {
+        Self {
+            timestamp: NtpTimestamp::from_fixed_int(timestamp),
+        }
+    }
+}
+
+impl Sub for NtpInstant {
+    type Output = NtpDuration;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        self.timestamp - rhs.timestamp
+    }
+}
+
 /// NtpTimestamp represents an ntp timestamp without the era number.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Default)]
 pub struct NtpTimestamp {
