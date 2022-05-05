@@ -1,4 +1,4 @@
-use crate::peer::{PeerSnapshot, DISTANCE_THRESHOLD};
+use crate::peer::PeerSnapshot;
 use crate::time_types::{FrequencyTolerance, NtpInstant};
 use crate::NtpDuration;
 
@@ -26,6 +26,8 @@ pub struct SystemConfig {
     pub min_cluster_survivors: usize,
 
     pub frequency_tolerance: FrequencyTolerance,
+
+    pub distance_threshold: NtpDuration,
 }
 
 impl Default for SystemConfig {
@@ -34,6 +36,7 @@ impl Default for SystemConfig {
             min_intersection_survivors: 1,
             min_cluster_survivors: 3,
             frequency_tolerance: FrequencyTolerance::ppm(15),
+            distance_threshold: NtpDuration::ONE,
         }
     }
 }
@@ -184,7 +187,7 @@ fn filter_survivor<'a>(
     } else {
         let peer = candidate.peer;
         let root_distance = peer.root_distance(local_clock_time, config.frequency_tolerance);
-        let metric = DISTANCE_THRESHOLD * peer.stratum + root_distance;
+        let metric = config.distance_threshold * peer.stratum + root_distance;
 
         Some(SurvivorTuple { peer, metric })
     }
