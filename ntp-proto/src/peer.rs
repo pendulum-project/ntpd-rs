@@ -172,6 +172,14 @@ impl Peer {
         }
     }
 
+    pub fn reset_measurements(&mut self) {
+        // reset just the measurement data.
+        // the poll and connection data is unchanged
+        self.statistics = Default::default();
+        self.last_measurements = Default::default();
+        self.last_packet = Default::default();
+    }
+
     pub fn get_interval_next_poll(&mut self, system_poll_interval: i8) -> i8 {
         self.last_poll_interval = system_poll_interval
             .max(self.remote_min_poll_interval)
