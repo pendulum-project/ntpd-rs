@@ -382,6 +382,12 @@ ntp_duration_scalar_div!(u16);
 ntp_duration_scalar_div!(u32);
 // u64 and usize deliberately excluded as they can result in overflows
 
+/// Stores when we will next exchange packages with a remote server.
+///
+/// The value is in seconds stored in log2 format:
+///
+/// - a value of 4 means 2^4 = 16 seconds
+/// - a value of 17 is 2^17 = ~36h
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PollInterval(i8);
 
