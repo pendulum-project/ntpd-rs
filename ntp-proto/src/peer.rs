@@ -105,7 +105,6 @@ pub enum IgnoreReason {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PeerSnapshot {
-    pub(crate) reference_id: ReferenceId,
     pub(crate) time: NtpInstant,
     pub(crate) root_distance_without_time: NtpDuration,
     pub(crate) stratum: u8,
@@ -266,7 +265,6 @@ impl Peer {
                 self.time = smallest_delay_time;
 
                 let snapshot = PeerSnapshot {
-                    reference_id: self.our_id,
                     time: self.time,
                     root_distance_without_time: self.root_distance_without_time(),
                     stratum: self.last_packet.stratum,
