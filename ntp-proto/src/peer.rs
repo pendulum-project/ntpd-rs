@@ -179,12 +179,9 @@ impl Peer {
         self.statistics = Default::default();
         self.last_measurements = Default::default();
         self.last_packet = Default::default();
-<<<<<<< HEAD
 
         // make sure in-flight messages are ignored
         self.next_expected_origin = None;
-=======
->>>>>>> 00fe81df6ba2362741d76bde2acb05f45909dab6
     }
 
     pub fn get_interval_next_poll(&mut self, system_poll_interval: i8) -> i8 {
