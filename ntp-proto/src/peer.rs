@@ -2,7 +2,7 @@ use crate::{
     filter::{FilterTuple, LastMeasurements},
     packet::{NtpAssociationMode, NtpLeapIndicator},
     time_types::NtpInstant,
-    NtpDuration, NtpHeader, NtpTimestamp, ReferenceId,
+    NtpDuration, NtpHeader, NtpTimestamp, PollInterval, ReferenceId,
 };
 
 const MAX_STRATUM: u8 = 16;
@@ -26,9 +26,9 @@ pub(crate) struct PeerStatistics {
 #[derive(Debug, Clone)]
 pub struct Peer {
     // Poll interval state
-    last_poll_interval: i8,
-    next_poll_interval: i8,
-    remote_min_poll_interval: i8,
+    last_poll_interval: PollInterval,
+    next_poll_interval: PollInterval,
+    remote_min_poll_interval: PollInterval,
 
     // Last packet information
     next_expected_origin: Option<NtpTimestamp>,
@@ -73,7 +73,7 @@ impl Reach {
 #[derive(Debug, Clone, Copy)]
 pub struct SystemSnapshot {
     /// May be updated by local_clock
-    pub poll_interval: i8,
+    pub poll_interval: PollInterval,
     /// A constant at runtime
     pub precision: NtpDuration,
     /// May be updated by clock_update
@@ -83,7 +83,7 @@ pub struct SystemSnapshot {
 impl Default for SystemSnapshot {
     fn default() -> Self {
         Self {
-            poll_interval: 4,
+            poll_interval: PollInterval::default(),
             precision: NtpDuration::from_exponent(-18),
             leap_indicator: NtpLeapIndicator::Unknown,
         }
@@ -152,9 +152,9 @@ impl Peer {
         let time = local_clock_time;
 
         Self {
-            last_poll_interval: 2,
-            next_poll_interval: 2,
-            remote_min_poll_interval: 2,
+            last_poll_interval: PollInterval::MIN,
+            next_poll_interval: PollInterval::MIN,
+            remote_min_poll_interval: PollInterval::MIN,
 
             next_expected_origin: None,
 
@@ -168,11 +168,13 @@ impl Peer {
         }
     }
 
-    pub fn get_interval_next_poll(&mut self, system_poll_interval: i8) -> i8 {
+    pub fn get_interval_next_poll(&mut self, system_poll_interval: PollInterval) -> PollInterval {
         self.last_poll_interval = system_poll_interval
             .max(self.remote_min_poll_interval)
             .max(self.next_poll_interval);
-        self.next_poll_interval = self.last_poll_interval.saturating_add(1);
+
+        self.next_poll_interval = self.last_poll_interval.plus_one();
+
         self.last_poll_interval
     }
 
@@ -180,7 +182,7 @@ impl Peer {
         self.reach.poll();
 
         let mut packet = NtpHeader::new();
-        packet.poll = self.last_poll_interval;
+        packet.poll = self.last_poll_interval.as_log();
         packet.mode = NtpAssociationMode::Client;
 
         // we write into the origin_timestamp and transmit_timestamp to validate the packet we get
@@ -216,8 +218,10 @@ impl Peer {
         } else if transmit_unchanged || origin_changed {
             Err(IgnoreReason::InvalidPacketTime)
         } else if message.is_kiss_rate() {
-            self.remote_min_poll_interval =
-                Ord::max(self.remote_min_poll_interval + 1, self.last_poll_interval);
+            self.remote_min_poll_interval = Ord::max(
+                self.remote_min_poll_interval.plus_one(),
+                self.last_poll_interval,
+            );
             Err(IgnoreReason::KissIgnore)
         } else if message.is_kiss_rstr() || message.is_kiss_deny() {
             Err(IgnoreReason::KissDemobilize)
@@ -333,9 +337,9 @@ impl Peer {
     #[cfg(any(test, feature = "fuzz"))]
     pub(crate) fn test_peer() -> Self {
         Peer {
-            last_poll_interval: 2,
-            next_poll_interval: 3,
-            remote_min_poll_interval: 2,
+            last_poll_interval: PollInterval::default(),
+            next_poll_interval: PollInterval::default(),
+            remote_min_poll_interval: PollInterval::default(),
 
             next_expected_origin: None,
 

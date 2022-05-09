@@ -1,4 +1,5 @@
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
+use std::time::Duration;
 
 /// NtpInstant is a monotonically increasing value modelling the uptime of the NTP service
 ///
@@ -381,6 +382,47 @@ ntp_duration_scalar_div!(u16);
 ntp_duration_scalar_div!(u32);
 // u64 and usize deliberately excluded as they can result in overflows
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PollInterval(i8);
+
+impl PollInterval {
+    pub const MIN: Self = Self(4);
+    pub const MAX: Self = Self(17);
+
+    pub fn inc(&mut self) {
+        *self = Self(self.0 + 1).min(Self::MAX);
+    }
+
+    #[must_use]
+    pub fn plus_one(self) -> Self {
+        Self(self.0 + 1).min(Self::MAX)
+    }
+
+    pub fn dec(&mut self) {
+        *self = Self(self.0 - 1).max(Self::MIN);
+    }
+
+    pub const fn as_log(self) -> i8 {
+        self.0
+    }
+
+    pub const fn as_duration(self) -> NtpDuration {
+        NtpDuration {
+            duration: 1 << (self.0 + 32),
+        }
+    }
+
+    pub const fn as_system_duration(self) -> Duration {
+        Duration::from_secs(1 << self.0)
+    }
+}
+
+impl Default for PollInterval {
+    fn default() -> Self {
+        Self(4)
+    }
+}
+
 #[cfg(feature = "fuzz")]
 pub fn fuzz_duration_from_seconds(v: f64) {
     if v.is_finite() {
@@ -555,5 +597,51 @@ mod tests {
             NtpDuration::from_seconds(-1e40),
             NtpDuration::from_fixed_int(std::i64::MIN)
         );
+    }
+
+    #[test]
+    fn poll_interval_clamps() {
+        let mut interval = PollInterval::default();
+        for _ in 0..100 {
+            interval.inc();
+            assert!(interval <= PollInterval::MAX);
+        }
+        for _ in 0..100 {
+            interval.dec();
+            assert!(interval >= PollInterval::MIN);
+        }
+        for _ in 0..100 {
+            interval.inc();
+            assert!(interval <= PollInterval::MAX);
+        }
+    }
+
+    #[test]
+    fn poll_interval_to_duration() {
+        assert_eq!(
+            PollInterval(4).as_duration(),
+            NtpDuration::from_fixed_int(16 << 32)
+        );
+        assert_eq!(
+            PollInterval(5).as_duration(),
+            NtpDuration::from_fixed_int(32 << 32)
+        );
+
+        let mut interval = PollInterval::default();
+        for _ in 0..100 {
+            assert_eq!(
+                interval.as_duration().as_seconds_nanos().0,
+                interval.as_system_duration().as_secs() as i32
+            );
+            interval.inc();
+        }
+
+        for _ in 0..100 {
+            assert_eq!(
+                interval.as_duration().as_seconds_nanos().0,
+                interval.as_system_duration().as_secs() as i32
+            );
+            interval.dec();
+        }
     }
 }
