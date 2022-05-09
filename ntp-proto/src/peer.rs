@@ -103,13 +103,49 @@ pub enum IgnoreReason {
     TooOld,
 }
 
+/// Peer variables to update the system variables if this peer becomes the system peer
+#[derive(Debug, Clone, Copy)]
+pub struct SystemPeerVariables {
+    pub reference_id: ReferenceId,
+    pub reference_timestamp: NtpTimestamp,
+    pub poll_interval: PollInterval,
+    pub leap_indicator: NtpLeapIndicator,
+    pub root_delay: NtpDuration,
+    pub root_dispersion: NtpDuration,
+}
+
+impl SystemPeerVariables {
+    fn from_peer(peer: &Peer) -> Self {
+        Self {
+            reference_id: peer.last_packet.reference_id,
+            reference_timestamp: peer.last_packet.reference_timestamp,
+            poll_interval: peer.last_poll_interval,
+            leap_indicator: peer.last_packet.leap,
+            root_delay: peer.last_packet.root_delay,
+            root_dispersion: peer.last_packet.root_dispersion,
+        }
+    }
+
+    #[cfg(any(test, feature = "fuzz"))]
+    pub fn test() -> Self {
+        Self {
+            reference_id: ReferenceId::from_int(0),
+            reference_timestamp: Default::default(),
+            poll_interval: Default::default(),
+            leap_indicator: NtpLeapIndicator::NoWarning,
+            root_delay: Default::default(),
+            root_dispersion: Default::default(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct PeerSnapshot {
-    pub(crate) reference_id: ReferenceId,
     pub(crate) time: NtpInstant,
     pub(crate) root_distance_without_time: NtpDuration,
     pub(crate) stratum: u8,
     pub(crate) statistics: PeerStatistics,
+    pub(crate) system_peer_variables: SystemPeerVariables,
 }
 
 impl PeerSnapshot {
@@ -266,11 +302,11 @@ impl Peer {
                 self.time = smallest_delay_time;
 
                 let snapshot = PeerSnapshot {
-                    reference_id: self.our_id,
                     time: self.time,
                     root_distance_without_time: self.root_distance_without_time(),
                     stratum: self.last_packet.stratum,
                     statistics: self.statistics,
+                    system_peer_variables: SystemPeerVariables::from_peer(self),
                 };
 
                 Ok(snapshot)

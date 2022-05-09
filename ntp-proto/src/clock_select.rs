@@ -1,6 +1,6 @@
-use crate::peer::{PeerSnapshot, MAX_DISTANCE};
+use crate::peer::{PeerSnapshot, SystemPeerVariables, MAX_DISTANCE};
 use crate::time_types::NtpInstant;
-use crate::{NtpDuration, PollInterval, ReferenceId};
+use crate::{NtpDuration, PollInterval};
 
 // TODO this should be 4 in production?!
 /// Minimum number of survivors needed to be able to discipline the system clock.
@@ -27,17 +27,17 @@ const MIN_CLUSTER_SURVIVORS: usize = 3;
 pub struct FilterAndCombine {
     pub system_offset: NtpDuration,
     pub system_jitter: NtpDuration,
-    pub new_system_peer: ReferenceId,
+    pub new_system_peer: SystemPeerVariables,
 }
 
 pub fn filter_and_combine(
     peers: &[PeerSnapshot],
     local_clock_time: NtpInstant,
-    system_poll: NtpDuration,
+    system_poll: PollInterval,
 ) -> Option<FilterAndCombine> {
     let selection = clock_select(peers, local_clock_time, system_poll)?;
 
-    let new_system_peer = selection.survivors[0].peer.reference_id;
+    let new_system_peer = selection.survivors[0].peer.system_peer_variables;
 
     let combined = clock_combine(
         &selection.survivors,
@@ -423,6 +423,7 @@ fn peer_snapshot(
         statistics,
         stratum: 0,
         root_distance_without_time,
+        system_peer_variables: SystemPeerVariables::test(),
     }
 }
 
