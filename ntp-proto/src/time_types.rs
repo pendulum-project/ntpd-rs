@@ -395,17 +395,14 @@ impl PollInterval {
     pub const MIN: Self = Self(4);
     pub const MAX: Self = Self(17);
 
-    pub fn inc(&mut self) {
-        *self = Self(self.0 + 1).min(Self::MAX);
-    }
-
     #[must_use]
-    pub fn plus_one(self) -> Self {
+    pub fn inc(self) -> Self {
         Self(self.0 + 1).min(Self::MAX)
     }
 
-    pub fn dec(&mut self) {
-        *self = Self(self.0 - 1).max(Self::MIN);
+    #[must_use]
+    pub fn dec(self) -> Self {
+        Self(self.0 - 1).max(Self::MIN)
     }
 
     pub const fn as_log(self) -> i8 {
@@ -609,15 +606,15 @@ mod tests {
     fn poll_interval_clamps() {
         let mut interval = PollInterval::default();
         for _ in 0..100 {
-            interval.inc();
+            interval = interval.inc();
             assert!(interval <= PollInterval::MAX);
         }
         for _ in 0..100 {
-            interval.dec();
+            interval = interval.dec();
             assert!(interval >= PollInterval::MIN);
         }
         for _ in 0..100 {
-            interval.inc();
+            interval = interval.inc();
             assert!(interval <= PollInterval::MAX);
         }
     }
@@ -639,7 +636,7 @@ mod tests {
                 interval.as_duration().as_seconds_nanos().0,
                 interval.as_system_duration().as_secs() as i32
             );
-            interval.inc();
+            interval = interval.inc();
         }
 
         for _ in 0..100 {
@@ -647,7 +644,7 @@ mod tests {
                 interval.as_duration().as_seconds_nanos().0,
                 interval.as_system_duration().as_secs() as i32
             );
-            interval.dec();
+            interval = interval.dec();
         }
     }
 }

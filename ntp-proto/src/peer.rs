@@ -173,7 +173,7 @@ impl Peer {
             .max(self.remote_min_poll_interval)
             .max(self.next_poll_interval);
 
-        self.next_poll_interval = self.last_poll_interval.plus_one();
+        self.next_poll_interval = self.last_poll_interval.inc();
 
         self.last_poll_interval
     }
@@ -218,10 +218,8 @@ impl Peer {
         } else if transmit_unchanged || origin_changed {
             Err(IgnoreReason::InvalidPacketTime)
         } else if message.is_kiss_rate() {
-            self.remote_min_poll_interval = Ord::max(
-                self.remote_min_poll_interval.plus_one(),
-                self.last_poll_interval,
-            );
+            self.remote_min_poll_interval =
+                Ord::max(self.remote_min_poll_interval.inc(), self.last_poll_interval);
             Err(IgnoreReason::KissIgnore)
         } else if message.is_kiss_rstr() || message.is_kiss_deny() {
             Err(IgnoreReason::KissDemobilize)
