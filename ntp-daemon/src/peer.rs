@@ -85,7 +85,13 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                 },
                 result = reset.changed() => {
                     if let Ok(()) = result {
+                        // reset the measurement state (as if this association was just created).
+                        // crucially, this sets `self.next_expected_origin = None`, meaning that
+                        // in-flight requests are ignored
                         peer.reset_measurements();
+
+                        // notify the system that the reset has been successful, and that this
+                        // association can produce valid measurements again
                         reset_for_system.notify_waiters();
                     }
                 }

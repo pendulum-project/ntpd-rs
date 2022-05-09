@@ -43,7 +43,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut snapshots = Vec::with_capacity(peers.len());
 
+    // when we perform a clock jump, all current measurement data is off. We force all associations
+    // to clear their measurement data and get new data. This vector contains associations that
+    // have not yet responded with a new valid measurement.
+    let mut waiting_for_reset: Vec<PeerChannels> = Vec::with_capacity(peers.len());
+
     loop {
+        // one of the peers has a new measurement
         let mut changed: FuturesUnordered<_> = peers
             .iter_mut()
             .enumerate()
@@ -53,13 +59,54 @@ async fn main() -> Result<(), Box<dyn Error>> {
             })
             .collect();
 
+        // a peer that has been reset is saying it has resetted successfully
+        let mut active_after_reset: FuturesUnordered<_> = waiting_for_reset
+            .iter_mut()
+            .enumerate()
+            .map(|(i, c)| async move {
+                c.peer_reset.notified().await;
+                i
+            })
+            .collect();
+
         tokio::select! {
             Some(changed_index) = changed.next() => {
                 drop(changed);
-                update_loop(changed_index, &mut peers, &mut snapshots, &clock, &system_tx).await?;
+                drop(active_after_reset);
+
+                let update = update_loop(changed_index, &mut peers, &mut snapshots, &clock).await?;
+
+                match update {
+                    UpdateAction::Ignored  => { /* nothing */ }
+                    UpdateAction::Slew(system_snapshot) => {
+                        system_tx.send(system_snapshot)?;
+                    }
+                    UpdateAction::Step => {
+                        waiting_for_reset.append(&mut peers);
+                        reset_tx.send(())?;
+                    }
+
+                }
+            },
+            Some(changed_index) = active_after_reset.next() => {
+                drop(changed);
+                drop(active_after_reset);
+
+                let peer = waiting_for_reset.remove(changed_index);
+                peers.push(peer);
             },
         }
     }
+}
+
+enum UpdateAction {
+    /// a measurement was received, but it did not lead to a clock update
+    Ignored,
+    /// the clock has been updated and new system variables have been calculated
+    Slew(SystemSnapshot),
+    /// the clock update was a step, which means all peers need to be reset
+    #[allow(dead_code)]
+    Step,
 }
 
 async fn update_loop<C>(
@@ -67,8 +114,7 @@ async fn update_loop<C>(
     peers: &mut Vec<PeerChannels>,
     snapshots: &mut Vec<PeerSnapshot>,
     clock: &C,
-    system_tx: &watch::Sender<SystemSnapshot>,
-) -> Result<(), Box<dyn Error>>
+) -> Result<UpdateAction, Box<dyn Error>>
 where
     C: NtpClock,
 {
@@ -76,10 +122,10 @@ where
     match msg {
         peer::MsgForSystem::MustDemobilize => {
             peers.remove(changed_index);
-            return Ok(());
+            return Ok(UpdateAction::Ignored);
         }
         peer::MsgForSystem::NoMeasurement => {
-            return Ok(());
+            return Ok(UpdateAction::Ignored);
         }
         peer::MsgForSystem::Snapshot(_) => {
             // fall through
@@ -125,7 +171,6 @@ where
 
     // TODO produce an updated snapshot
     let system_snapshot = SystemSnapshot::default();
-    system_tx.send(system_snapshot)?;
 
-    Ok(())
+    Ok(UpdateAction::Slew(system_snapshot))
 }
