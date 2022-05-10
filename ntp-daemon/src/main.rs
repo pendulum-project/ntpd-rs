@@ -87,12 +87,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let jitter_ms = clock_select.system_jitter.to_seconds() * 1000.0;
                 println!("offset: {:.3}ms (jitter: {}ms)", offset_ms, jitter_ms);
                 println!();
+
+                // TODO update system state with result.new_system_peer
+
+                // TODO produce an updated snapshot
+                let system_snapshot = SystemSnapshot::default();
+                system_tx.send(system_snapshot)?;
             }
             None => println!("filter and combine did not produce a result"),
         }
-
-        // TODO produce an updated snapshot
-        let system_snapshot = SystemSnapshot::default();
-        system_tx.send(system_snapshot)?;
     }
 }
