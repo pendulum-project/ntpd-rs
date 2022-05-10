@@ -1,6 +1,6 @@
 use crate::peer::{PeerSnapshot, MAX_DISTANCE};
 use crate::time_types::NtpInstant;
-use crate::NtpDuration;
+use crate::{NtpDuration, PollInterval};
 
 // TODO this should be 4 in production?!
 /// Minimum number of survivors needed to be able to discipline the system clock.
@@ -26,7 +26,7 @@ const MIN_CLUSTER_SURVIVORS: usize = 3;
 pub fn filter_and_combine(
     peers: &[PeerSnapshot],
     local_clock_time: NtpInstant,
-    system_poll: NtpDuration,
+    system_poll: PollInterval,
 ) -> Option<ClockCombine> {
     let selection = clock_select(peers, local_clock_time, system_poll)?;
 
@@ -47,7 +47,7 @@ struct ClockSelect<'a> {
 fn clock_select(
     peers: &[PeerSnapshot],
     local_clock_time: NtpInstant,
-    system_poll: NtpDuration,
+    system_poll: PollInterval,
 ) -> Option<ClockSelect> {
     let valid_associations = peers.iter().filter(|p| {
         p.accept_synchronization(local_clock_time, system_poll)

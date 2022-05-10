@@ -115,7 +115,7 @@ impl PeerSnapshot {
     pub(crate) fn accept_synchronization(
         &self,
         local_clock_time: NtpInstant,
-        system_poll: NtpDuration,
+        system_poll: PollInterval,
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
 
@@ -125,7 +125,7 @@ impl PeerSnapshot {
         //  A distance error occurs if the root distance exceeds the
         //  distance threshold plus an increment equal to one poll interval.
         let distance = self.root_distance(local_clock_time);
-        if distance > MAX_DISTANCE + multiply_by_phi(system_poll) {
+        if distance > MAX_DISTANCE + multiply_by_phi(system_poll.as_duration()) {
             return Err(Distance);
         }
 
