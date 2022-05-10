@@ -1,4 +1,4 @@
-use crate::peer::{PeerSnapshot, SystemPeerVariables, MAX_DISTANCE};
+use crate::peer::{PeerSnapshot, PeerStatistics, SystemPeerVariables, MAX_DISTANCE};
 use crate::time_types::NtpInstant;
 use crate::{NtpDuration, PollInterval};
 
@@ -28,6 +28,7 @@ pub struct FilterAndCombine {
     pub system_offset: NtpDuration,
     pub system_jitter: NtpDuration,
     pub system_peer_variables: SystemPeerVariables,
+    pub system_peer_statistics: PeerStatistics,
 }
 
 impl FilterAndCombine {
@@ -46,7 +47,10 @@ impl FilterAndCombine {
         // so, it keeps that peer as the system peer rather selecting the now-best peer (something
         // it calls clock hopping). We'll have to see if that is something we should do too;
         // the spec text does not talk about keeping the existing system peer if it's in the candidate list
-        let new_system_peer = selection.survivors[0].peer.system_peer_variables;
+        let new_system_peer = selection.survivors[0].peer;
+
+        let system_peer_variables = new_system_peer.system_peer_variables;
+        let system_peer_statistics = new_system_peer.statistics;
 
         let combined = clock_combine(
             &selection.survivors,
@@ -57,7 +61,8 @@ impl FilterAndCombine {
         let filter_and_combine = FilterAndCombine {
             system_offset: combined.system_offset,
             system_jitter: combined.system_jitter,
-            system_peer_variables: new_system_peer,
+            system_peer_variables,
+            system_peer_statistics,
         };
 
         Some(filter_and_combine)
