@@ -110,8 +110,10 @@ pub struct SystemPeerVariables {
     pub reference_timestamp: NtpTimestamp,
     pub poll_interval: PollInterval,
     pub leap_indicator: NtpLeapIndicator,
+    pub stratum: u8,
     pub root_delay: NtpDuration,
     pub root_dispersion: NtpDuration,
+    pub time: NtpInstant,
 }
 
 impl SystemPeerVariables {
@@ -121,8 +123,10 @@ impl SystemPeerVariables {
             reference_timestamp: peer.last_packet.reference_timestamp,
             poll_interval: peer.last_poll_interval,
             leap_indicator: peer.last_packet.leap,
+            stratum: peer.last_packet.stratum,
             root_delay: peer.last_packet.root_delay,
             root_dispersion: peer.last_packet.root_dispersion,
+            time: peer.time,
         }
     }
 
@@ -135,6 +139,8 @@ impl SystemPeerVariables {
             leap_indicator: NtpLeapIndicator::NoWarning,
             root_delay: Default::default(),
             root_dispersion: Default::default(),
+            time: Default::default(),
+            stratum: 1,
         }
     }
 }
