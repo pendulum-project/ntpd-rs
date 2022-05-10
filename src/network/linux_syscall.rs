@@ -79,6 +79,14 @@ pub fn driver_enable_hardware_timestamping(socket: i32, interface: &str) {
         panic!("Interface name too long");
     }
 
+    for (from, to) in ifname
+        .as_bytes_with_nul()
+        .iter()
+        .zip(unsafe { ifreq.ifr_ifrn.ifrn_name.iter_mut() })
+    {
+        *to = *from as _;
+    }
+
     unsafe { siocshwtstamp(socket, &mut ifreq as *mut _) }
         .expect("Failed to enable hardware timestamping in the driver");
 }
