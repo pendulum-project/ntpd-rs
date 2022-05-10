@@ -88,7 +88,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 println!("offset: {:.3}ms (jitter: {}ms)", offset_ms, jitter_ms);
                 println!();
 
-                // TODO update system state with result.new_system_peer
+                // TODO update system state with result.system_peer_variables
 
                 // TODO produce an updated snapshot
                 let system_snapshot = SystemSnapshot::default();

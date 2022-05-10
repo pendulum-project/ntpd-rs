@@ -27,7 +27,7 @@ const MIN_CLUSTER_SURVIVORS: usize = 3;
 pub struct FilterAndCombine {
     pub system_offset: NtpDuration,
     pub system_jitter: NtpDuration,
-    pub new_system_peer: SystemPeerVariables,
+    pub system_peer_variables: SystemPeerVariables,
 }
 
 pub fn filter_and_combine(
@@ -37,6 +37,14 @@ pub fn filter_and_combine(
 ) -> Option<FilterAndCombine> {
     let selection = clock_select(peers, local_clock_time, system_poll)?;
 
+    // the clustering algorithm (part of `clock_select`) sorts the peers, best peer first.
+    // the first (and best) peer is chosen as the system peer, and its variables are used
+    // to update the system variables.
+    //
+    // NOTE: the code skeleton checks whether the current system peer is in the survivor list. If
+    // so, it keeps that peer as the system peer rather selecting the now-best peer (something
+    // it calls clock hopping). We'll have to see if that is something we should do too;
+    // the spec text does not talk about keeping the existing system peer if it's in the candidate list
     let new_system_peer = selection.survivors[0].peer.system_peer_variables;
 
     let combined = clock_combine(
@@ -48,7 +56,7 @@ pub fn filter_and_combine(
     let filter_and_combine = FilterAndCombine {
         system_offset: combined.system_offset,
         system_jitter: combined.system_jitter,
-        new_system_peer,
+        system_peer_variables: new_system_peer,
     };
 
     Some(filter_and_combine)
