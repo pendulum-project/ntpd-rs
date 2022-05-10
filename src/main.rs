@@ -38,6 +38,10 @@ struct Args {
     /// Log value of interval expected between announce messages
     #[clap(long, default_value_t = 1)]
     log_announce_interval: i8,
+
+    /// Use hardware clock
+    #[clap(long, short)]
+    hardware_clock: Option<String>,
 }
 
 fn setup_logger(level: log::LevelFilter) -> Result<(), fern::InitError> {
@@ -62,8 +66,14 @@ fn main() {
 
     setup_logger(args.loglevel).expect("Could not setup logging");
     let (tx, rx) = mpsc::channel();
-    let network_runtime = LinuxRuntime::new(tx);
-    let (clock, mut clock_runtime) = LinuxClock::new(RawLinuxClock::get_realtime_clock());
+    let network_runtime = LinuxRuntime::new(tx, args.hardware_clock.is_some());
+    let (clock, mut clock_runtime) = if let Some(hardware_clock) = &args.hardware_clock {
+        LinuxClock::new(
+            RawLinuxClock::get_from_file(hardware_clock).expect("Could not open hardware clock"),
+        )
+    } else {
+        LinuxClock::new(RawLinuxClock::get_realtime_clock())
+    };
     let clock_id = ClockIdentity(get_clock_id().expect("Could not get clock identity"));
 
     let config = Config {

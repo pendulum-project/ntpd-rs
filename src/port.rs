@@ -1,13 +1,19 @@
-use crate::bmc::bmca::{Bmca, RecommendedState};
-use crate::bmc::dataset_comparison::DefaultDS;
-use crate::clock::TimeProperties;
-use crate::datastructures::common::{ClockQuality, Timestamp};
-use crate::datastructures::messages::{
-    AnnounceMessage, DelayRespMessage, FollowUpMessage, MessageBuilder, SyncMessage,
+use crate::{
+    bmc::{
+        bmca::{Bmca, RecommendedState},
+        dataset_comparison::DefaultDS,
+    },
+    clock::TimeProperties,
+    datastructures::{
+        common::{ClockQuality, PortIdentity, Timestamp},
+        messages::{
+            AnnounceMessage, DelayRespMessage, FollowUpMessage, Message, MessageBuilder,
+            SyncMessage,
+        },
+    },
+    network::{NetworkPacket, NetworkPort, NetworkRuntime},
+    time::{Duration, Instant},
 };
-use crate::datastructures::{common::PortIdentity, messages::Message};
-use crate::network::{NetworkPacket, NetworkPort, NetworkRuntime};
-use crate::time::{Duration, Instant};
 
 /// Object for keeping track of the current id
 #[derive(Debug, Clone, Default)]
@@ -430,14 +436,16 @@ impl<NR: NetworkRuntime> Port<NR> {
 #[cfg(test)]
 mod tests {
     use super::{IdSequencer, PortData, StateSlave};
-    use crate::bmc::bmca::Bmca;
-    use crate::datastructures::common::{ClockQuality, PortIdentity, TimeInterval, Timestamp};
-    use crate::datastructures::messages::MessageBuilder;
-    use crate::network::test::TestRuntime;
-    use crate::network::NetworkRuntime;
-    use crate::port::Measurement;
-    use crate::port::PortConfig;
-    use crate::time::{Duration, Instant};
+    use crate::{
+        bmc::bmca::Bmca,
+        datastructures::{
+            common::{ClockQuality, PortIdentity, TimeInterval, Timestamp},
+            messages::MessageBuilder,
+        },
+        network::{test::TestRuntime, NetworkRuntime},
+        port::{Measurement, PortConfig},
+        time::{Duration, Instant},
+    };
     use fixed::traits::ToFixed;
 
     #[test]

@@ -3,6 +3,7 @@
 use crate::time::Instant;
 
 pub mod linux;
+pub mod linux_syscall;
 #[cfg(test)]
 pub mod test;
 
