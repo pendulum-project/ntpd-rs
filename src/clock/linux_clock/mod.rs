@@ -49,7 +49,7 @@ impl Clock for LinuxClock {
     type W = LinuxWatch;
 
     fn now(&self) -> Instant {
-        self.clock.get_clock_state().unwrap().0.get_time()
+        self.clock.get_time().unwrap()
     }
 
     fn quality(&self) -> ClockQuality {
@@ -104,7 +104,7 @@ impl Watch for LinuxWatch {
     type WatchId = u32;
 
     fn now(&self) -> Instant {
-        self.clock.get_clock_state().unwrap().0.get_time()
+        self.clock.get_time().unwrap()
     }
 
     fn set_alarm(&mut self, from_now: Duration) {
@@ -130,9 +130,7 @@ impl AlarmReceiver {
     pub fn check(&mut self) -> Option<u32> {
         // Check if we have an alarm and if it would go off
         match self.earliest_alarm() {
-            Some((alarm_id, alarm_time))
-                if alarm_time < self.clock.get_clock_state().unwrap().0.get_time() =>
-            {
+            Some((alarm_id, alarm_time)) if alarm_time < self.clock.get_time().unwrap() => {
                 let alarm_id = alarm_id;
                 self.alarms.remove(&alarm_id);
                 Some(alarm_id)
@@ -158,7 +156,7 @@ impl AlarmReceiver {
     pub fn interval_to_next_alarm(&mut self) -> Option<Duration> {
         match self.earliest_alarm() {
             Some((_, alarm_time)) => {
-                let cur_time = self.clock.get_clock_state().unwrap().0.get_time();
+                let cur_time = self.clock.get_time().unwrap();
                 if cur_time > alarm_time {
                     Some(Duration::default())
                 } else {
