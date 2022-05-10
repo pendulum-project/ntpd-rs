@@ -23,12 +23,12 @@ const MIN_INTERSECTION_SURVIVORS: usize = 1;
 /// is not an actual lower bound on the number of survivors.
 const MIN_CLUSTER_SURVIVORS: usize = 3;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FilterAndCombine {
     pub system_offset: NtpDuration,
     pub system_jitter: NtpDuration,
     pub system_peer_variables: SystemPeerVariables,
-    pub system_peer_statistics: PeerStatistics,
+    pub(crate) system_peer_statistics: PeerStatistics,
 }
 
 impl FilterAndCombine {
@@ -106,7 +106,7 @@ impl FilterAndCombine {
         variables.root_dispersion + Ord::max(NtpDuration::MIN_DISPERSION, dispersion_increment)
     }
 
-    fn root_synchronization_distance(&self, local_clock_time: NtpInstant) -> NtpDuration {
+    pub fn root_synchronization_distance(&self, local_clock_time: NtpInstant) -> NtpDuration {
         self.system_root_dispersion(local_clock_time) + self.system_root_delay() / 2
     }
 }
@@ -1206,5 +1206,31 @@ mod test {
         for candidate in candidates {
             assert_eq!(candidate.peer.statistics.offset, NtpDuration::ONE);
         }
+    }
+
+    #[test]
+    fn system_variable_update() {
+        let base_state = FilterAndCombine {
+            system_offset: Default::default(),
+            system_jitter: Default::default(),
+            system_peer_variables: SystemPeerVariables::test(),
+            system_peer_statistics: Default::default(),
+        };
+
+        let local_clock_time = NtpInstant::ZERO;
+        let _baseline = base_state.root_synchronization_distance(local_clock_time);
+
+        let mut state = base_state.clone();
+        state.system_offset = NtpDuration::ONE;
+        let distance = state.root_synchronization_distance(local_clock_time);
+
+        // equal to 1 up to rounding
+        assert!(distance == NtpDuration::ONE);
+
+        let mut state = base_state;
+        state.system_jitter = NtpDuration::ONE;
+        let distance = state.root_synchronization_distance(local_clock_time);
+
+        assert!(distance < NtpDuration::ONE / 2i64);
     }
 }
