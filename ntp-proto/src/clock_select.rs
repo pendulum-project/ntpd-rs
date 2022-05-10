@@ -67,6 +67,48 @@ impl FilterAndCombine {
 
         Some(filter_and_combine)
     }
+
+    pub fn system_root_delay(&self) -> NtpDuration {
+        self.system_peer_variables.root_delay + self.system_peer_statistics.delay
+    }
+
+    pub fn system_root_dispersion(&self, local_clock_time: NtpInstant) -> NtpDuration {
+        let variables = &self.system_peer_variables;
+        let statistics = self.system_peer_statistics;
+        let jitter = NtpDuration::from_seconds(statistics.jitter);
+
+        // in this delta, we expect the drift due to inaccurate frequency to be at most this value
+        let drift_upper_bound = crate::peer::multiply_by_phi(local_clock_time - variables.time);
+
+        // NOTES:
+        //
+        // 1) the skeleton combines the peer's jitter with the current system jitter
+        //
+        // > SQRT(SQUARE(p->jitter) + SQUARE(s.jitter))
+        //
+        // or well, it calculates the "vector" between them. I'd expect a "divide by 2" but it's
+        // not there. Anyhow, we don't currently consider the system's jitter.
+        //
+        // 2) the spec uses the component `|THETA|`
+        //
+        // > The system offset (THETA) represents the maximum-likelihood offset estimate for the server population.
+        //
+        // The code skeleton instead uses `p.offset`. We use the fresh system offset here.
+        let dispersion_increment =
+            statistics.dispersion + jitter + drift_upper_bound + self.system_offset.abs();
+
+        // per the spec
+        //
+        // > The dispersion increment (p.epsilon + p.psi + PHI * (s.t - p.t) + |THETA|) is bounded from
+        // > below by MINDISP.  In subnets with very fast processors and networks and very small delay
+        // > and dispersion this forces a monotone-definite increase in s.rootdisp (EPSILON), which avoids
+        // > loops between peers operating at the same stratum.
+        variables.root_dispersion + Ord::max(NtpDuration::MIN_DISPERSION, dispersion_increment)
+    }
+
+    fn root_synchronization_distance(&self, local_clock_time: NtpInstant) -> NtpDuration {
+        self.system_root_dispersion(local_clock_time) + self.system_root_delay() / 2
+    }
 }
 
 struct ClockSelect<'a> {
