@@ -381,6 +381,26 @@ ntp_duration_scalar_div!(u16);
 ntp_duration_scalar_div!(u32);
 // u64 and usize deliberately excluded as they can result in overflows
 
+/// Frequency tolerance PHI (unit: seconds per second)
+#[derive(Clone, Copy)]
+pub struct FrequencyTolerance {
+    ppm: u32,
+}
+
+impl FrequencyTolerance {
+    pub const fn ppm(ppm: u32) -> Self {
+        Self { ppm }
+    }
+}
+
+impl Mul<FrequencyTolerance> for NtpDuration {
+    type Output = NtpDuration;
+
+    fn mul(self, rhs: FrequencyTolerance) -> Self::Output {
+        (self * rhs.ppm) / 1_000_000
+    }
+}
+
 #[cfg(feature = "fuzz")]
 pub fn fuzz_duration_from_seconds(v: f64) {
     if v.is_finite() {
@@ -554,6 +574,14 @@ mod tests {
         assert_eq!(
             NtpDuration::from_seconds(-1e40),
             NtpDuration::from_fixed_int(std::i64::MIN)
+        );
+    }
+
+    #[test]
+    fn frequency_tolerance() {
+        assert_eq!(
+            NtpDuration::from_seconds(1.0),
+            NtpDuration::from_seconds(1.0) * FrequencyTolerance::ppm(1_000_000),
         );
     }
 }

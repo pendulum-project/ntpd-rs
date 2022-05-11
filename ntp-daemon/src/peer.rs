@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use ntp_proto::{
     IgnoreReason, NtpClock, NtpDuration, NtpHeader, NtpInstant, Peer, PeerSnapshot, ReferenceId,
-    SystemSnapshot,
+    SystemConfig, SystemSnapshot,
 };
 use tokio::{
     net::{ToSocketAddrs, UdpSocket},
@@ -32,6 +32,7 @@ pub enum MsgForSystem {
 pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
     addr: A,
     clock: C,
+    config: SystemConfig,
     mut system_snapshots: watch::Receiver<SystemSnapshot>,
 ) -> Result<watch::Receiver<MsgForSystem>, std::io::Error> {
     // setup socket
@@ -87,10 +88,23 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                             let ntp_instant = NtpInstant::from_ntp_timestamp(timestamp);
 
                             let system_snapshot = *system_snapshots.borrow_and_update();
-                            let result = peer.handle_incoming(system_snapshot, packet, ntp_instant, timestamp);
+                            let result = peer.handle_incoming(
+                                system_snapshot,
+                                packet,
+                                ntp_instant,
+                                config.frequency_tolerance,
+                                timestamp,
+                            );
 
                             let system_poll = NtpDuration::from_exponent(system_snapshot.poll_interval);
-                            if peer.accept_synchronization(ntp_instant, system_poll).is_err() {
+                            let accept = peer.accept_synchronization(
+                                ntp_instant,
+                                config.frequency_tolerance,
+                                config.distance_threshold,
+                                system_poll,
+                            );
+
+                            if accept.is_err() {
                                 let _ = tx.send(MsgForSystem::NoMeasurement);
                             } else  {
                                 match result {
