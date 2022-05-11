@@ -1,12 +1,10 @@
+use log::warn;
 use ntp_proto::{
     IgnoreReason, NtpClock, NtpHeader, NtpInstant, Peer, PeerSnapshot, ReferenceId, SystemConfig,
     SystemSnapshot,
 };
-use tokio::{
-    net::{ToSocketAddrs, UdpSocket},
-    sync::watch,
-    time::Instant,
-};
+use ntp_udp::UdpSocket;
+use tokio::{net::ToSocketAddrs, sync::watch, time::Instant};
 
 #[derive(Debug, Clone, Copy)]
 pub enum MsgForSystem {
@@ -25,15 +23,11 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
     config: SystemConfig,
     mut system_snapshots: watch::Receiver<SystemSnapshot>,
 ) -> Result<watch::Receiver<MsgForSystem>, std::io::Error> {
-    // setup socket
-    let socket = UdpSocket::bind("0.0.0.0:0").await?;
-    socket.connect(addr).await?;
+    let socket = UdpSocket::new("0.0.0.0:0", addr).await?;
+    let our_id = ReferenceId::from_ip(socket.as_ref().local_addr()?.ip());
+    let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr()?.ip());
 
     let (tx, rx) = watch::channel::<MsgForSystem>(MsgForSystem::NoMeasurement);
-
-    let our_id = ReferenceId::from_ip(socket.local_addr()?.ip());
-    let peer_id = ReferenceId::from_ip(socket.peer_addr()?.ip());
-    let socket = ntp_udp::UdpSocket::from_tokio(socket)?;
 
     tokio::spawn(async move {
         let local_clock_time = NtpInstant::from_ntp_timestamp(clock.now().unwrap());
@@ -62,7 +56,9 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                     // TODO: Figure out proper error behaviour here
                     let ntp_instant = NtpInstant::from_ntp_timestamp(clock.now().unwrap());
                     let packet = peer.generate_poll_message(ntp_instant);
-                    socket.send(&packet.serialize()).await.unwrap();
+                    if let Err(e) = socket.send(&packet.serialize()).await {
+                        warn!("poll message could not be sent: {}", e);
+                    }
                 },
                 result = socket.recv(&mut buf) => {
                     if let Ok((size, Some(timestamp))) = result {
@@ -71,7 +67,7 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                         // extra bytes are guaranteed safe to ignore. `recv` truncates the messages.
                         // Messages of fewer than 48 bytes are skipped entirely
                         if size < 48 {
-                            // TODO log something
+                            warn!("received packet with size {}. but expected at least 48, ignoring", size);
                         } else {
                             let packet = NtpHeader::deserialize(&buf);
 

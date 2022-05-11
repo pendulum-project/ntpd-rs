@@ -46,9 +46,17 @@ impl Sub for NtpInstant {
 }
 
 /// NtpTimestamp represents an ntp timestamp without the era number.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Default)]
+#[derive(Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Default)]
 pub struct NtpTimestamp {
     timestamp: u64,
+}
+
+impl std::fmt::Debug for NtpTimestamp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("NtpTimestamp")
+            .field(&self.timestamp)
+            .finish()
+    }
 }
 
 impl NtpTimestamp {

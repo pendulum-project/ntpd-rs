@@ -12,3 +12,5 @@ futures = "0.3.21"
 ntp-proto = { path = "../ntp-proto" }
 ntp-os-clock = { path = "../ntp-os-clock" }
 ntp-udp = { path = "../ntp-udp" }
+env_logger = "0.9.0"
+log = "0.4.17"

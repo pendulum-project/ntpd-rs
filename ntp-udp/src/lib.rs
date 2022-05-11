@@ -4,8 +4,9 @@ use std::{
     os::unix::prelude::AsRawFd,
 };
 
+use log::{debug, trace, warn};
 use ntp_proto::NtpTimestamp;
-use tokio::io::unix::AsyncFd;
+use tokio::{io::unix::AsyncFd, net::ToSocketAddrs};
 
 // Unix uses an epoch located at 1/1/1970-00:00h (UTC) and NTP uses 1/1/1900-00:00h.
 // This leads to an offset equivalent to 70 years in seconds
@@ -17,16 +18,18 @@ pub struct UdpSocket {
 }
 
 impl UdpSocket {
-    pub fn from_std(socket: std::net::UdpSocket) -> io::Result<UdpSocket> {
-        socket.set_nonblocking(true)?;
-        init_socket(&socket)?;
-        Ok(UdpSocket {
-            io: AsyncFd::new(socket)?,
-        })
-    }
-
-    pub fn from_tokio(socket: tokio::net::UdpSocket) -> io::Result<UdpSocket> {
-        // tokio sockets are already non-blocking
+    pub async fn new<A: ToSocketAddrs, B: ToSocketAddrs>(
+        listen_addr: A,
+        target_addr: B,
+    ) -> io::Result<UdpSocket> {
+        let socket = tokio::net::UdpSocket::bind(listen_addr).await?;
+        debug!("socket bound to local address {:?}", socket.local_addr());
+        socket.connect(target_addr).await?;
+        debug!(
+            "socket bound to {:?} connected to peer address {:?}",
+            socket.local_addr(),
+            socket.peer_addr()
+        );
         let socket = socket.into_std()?;
         init_socket(&socket)?;
         Ok(UdpSocket {
@@ -38,8 +41,33 @@ impl UdpSocket {
         loop {
             let mut guard = self.io.writable().await?;
             match guard.try_io(|inner| inner.get_ref().send(buf)) {
-                Ok(result) => return result,
-                Err(_would_block) => continue,
+                Ok(result) => {
+                    if log::log_enabled!(log::Level::Debug) {
+                        if let Err(e) = &result {
+                            debug!("error sending data: {}", e);
+                        }
+                    }
+
+                    if log::log_enabled!(log::Level::Trace) {
+                        if let Ok(size) = &result {
+                            trace!(
+                                "sent {} bytes from {:?} to peer {:?}",
+                                size,
+                                self.as_ref().local_addr(),
+                                self.as_ref().peer_addr()
+                            );
+                        }
+                    }
+
+                    return result;
+                }
+                Err(_would_block) => {
+                    trace!(
+                        "socket {:?} was blocked after becoming writable, retrying",
+                        self.as_ref().local_addr()
+                    );
+                    continue;
+                }
             }
         }
     }
@@ -48,10 +76,40 @@ impl UdpSocket {
         loop {
             let mut guard = self.io.readable().await?;
             match guard.try_io(|inner| recv(inner.get_ref(), buf)) {
-                Ok(result) => return result,
-                Err(_would_block) => continue,
+                Ok(result) => {
+                    if log::log_enabled!(log::Level::Debug) {
+                        if let Err(e) = &result {
+                            debug!("error receiving data: {}", e);
+                        }
+                    }
+
+                    if log::log_enabled!(log::Level::Trace) {
+                        if let Ok((size, ts)) = &result {
+                            trace!(
+                                "received message of size {} with receive ts {:?} from {:?}",
+                                size,
+                                ts,
+                                self.as_ref().local_addr()
+                            );
+                        }
+                    }
+                    return result;
+                }
+                Err(_would_block) => {
+                    trace!(
+                        "socket {:?} was blocked after becoming readable, retrying",
+                        self.as_ref().local_addr()
+                    );
+                    continue;
+                }
             }
         }
+    }
+}
+
+impl AsRef<std::net::UdpSocket> for UdpSocket {
+    fn as_ref(&self) -> &std::net::UdpSocket {
+        self.io.get_ref()
     }
 }
 
@@ -96,6 +154,7 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
 
             if let ErrorKind::Interrupted = e.kind() {
                 // retry when the recv was interrupted
+                trace!("recv was interrupted, retrying");
                 continue;
             }
 
@@ -105,6 +164,23 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
     };
 
     let mut recv_ts = None;
+
+    if log::log_enabled!(log::Level::Trace) {
+        if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
+            warn!(
+                "truncated packet with more than {} bytes from {:?}",
+                buf.len(),
+                socket.local_addr()
+            );
+        }
+
+        if mhdr.msg_flags & libc::MSG_CTRUNC > 0 {
+            warn!(
+                "truncated control messages for received packet on socket {:?}",
+                socket.local_addr()
+            );
+        }
+    }
 
     // Loops through the control messages, but we should only get a single message
     let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(&mhdr).as_ref() };
