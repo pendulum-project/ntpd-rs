@@ -1,18 +1,11 @@
 use crate::{
     filter::{FilterTuple, LastMeasurements},
     packet::{NtpAssociationMode, NtpLeapIndicator},
-    time_types::NtpInstant,
+    time_types::{FrequencyTolerance, NtpInstant},
     NtpDuration, NtpHeader, NtpTimestamp, PollInterval, ReferenceId,
 };
 
 const MAX_STRATUM: u8 = 16;
-pub(crate) const MAX_DISTANCE: NtpDuration = NtpDuration::ONE;
-
-/// frequency tolerance (15 ppm)
-// const PHI: f64 = 15e-6;
-pub(crate) fn multiply_by_phi(duration: NtpDuration) -> NtpDuration {
-    (duration * 15) / 1_000_000
-}
 
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct PeerStatistics {
@@ -115,6 +108,8 @@ impl PeerSnapshot {
     pub(crate) fn accept_synchronization(
         &self,
         local_clock_time: NtpInstant,
+        frequency_tolerance: FrequencyTolerance,
+        distance_threshold: NtpDuration,
         system_poll: PollInterval,
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
@@ -124,16 +119,20 @@ impl PeerSnapshot {
 
         //  A distance error occurs if the root distance exceeds the
         //  distance threshold plus an increment equal to one poll interval.
-        let distance = self.root_distance(local_clock_time);
-        if distance > MAX_DISTANCE + multiply_by_phi(system_poll.as_duration()) {
+        let distance = self.root_distance(local_clock_time, frequency_tolerance);
+        if distance > distance_threshold + (system_poll.as_duration() * frequency_tolerance) {
             return Err(Distance);
         }
 
         Ok(())
     }
 
-    pub(crate) fn root_distance(&self, local_clock_time: NtpInstant) -> NtpDuration {
-        self.root_distance_without_time + multiply_by_phi(local_clock_time - self.time)
+    pub(crate) fn root_distance(
+        &self,
+        local_clock_time: NtpInstant,
+        frequency_tolerance: FrequencyTolerance,
+    ) -> NtpDuration {
+        self.root_distance_without_time + ((local_clock_time - self.time) * frequency_tolerance)
     }
 }
 
@@ -204,6 +203,7 @@ impl Peer {
         system: SystemSnapshot,
         message: NtpHeader,
         local_clock_time: NtpInstant,
+        frequency_tolerance: FrequencyTolerance,
         recv_time: NtpTimestamp,
     ) -> Result<PeerSnapshot, IgnoreReason> {
         // the transmit_timestamp field was not changed from the bogus value we put into it
@@ -237,10 +237,16 @@ impl Peer {
                 &message,
                 system.precision,
                 local_clock_time,
+                frequency_tolerance,
                 recv_time,
             );
 
-            self.message_for_system(filter_input, system.leap_indicator, system.precision)
+            self.message_for_system(
+                filter_input,
+                system.leap_indicator,
+                system.precision,
+                frequency_tolerance,
+            )
         }
     }
 
@@ -250,12 +256,14 @@ impl Peer {
         new_tuple: FilterTuple,
         system_leap_indicator: NtpLeapIndicator,
         system_precision: NtpDuration,
+        frequency_tolerance: FrequencyTolerance,
     ) -> Result<PeerSnapshot, IgnoreReason> {
         let updated = self.last_measurements.step(
             new_tuple,
             self.time,
             system_leap_indicator,
             system_precision,
+            frequency_tolerance,
         );
 
         match updated {
@@ -280,11 +288,15 @@ impl Peer {
     /// all causes of the local clock relative to the primary server.
     /// It is defined as half the total delay plus total dispersion
     /// plus peer jitter.
-    fn root_distance(&self, local_clock_time: NtpInstant) -> NtpDuration {
-        self.root_distance_without_time() + multiply_by_phi(local_clock_time - self.time)
+    fn root_distance(
+        &self,
+        local_clock_time: NtpInstant,
+        frequency_tolerance: FrequencyTolerance,
+    ) -> NtpDuration {
+        self.root_distance_without_time() + ((local_clock_time - self.time) * frequency_tolerance)
     }
 
-    /// Root distance without the `multiply_by_phi(local_clock_time - self.time)` term
+    /// Root distance without the `(local_clock_time - self.time) * PHI` term
     fn root_distance_without_time(&self) -> NtpDuration {
         NtpDuration::MIN_DISPERSION.max(self.last_packet.root_delay + self.statistics.delay) / 2i64
             + self.last_packet.root_dispersion
@@ -298,6 +310,8 @@ impl Peer {
     pub fn accept_synchronization(
         &self,
         local_clock_time: NtpInstant,
+        frequency_tolerance: FrequencyTolerance,
+        distance_threshold: NtpDuration,
         system_poll: NtpDuration,
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
@@ -311,8 +325,8 @@ impl Peer {
 
         //  A distance error occurs if the root distance exceeds the
         //  distance threshold plus an increment equal to one poll interval.
-        let distance = self.root_distance(local_clock_time);
-        if distance > MAX_DISTANCE + multiply_by_phi(system_poll) {
+        let distance = self.root_distance(local_clock_time, frequency_tolerance);
+        if distance > distance_threshold + (system_poll * frequency_tolerance) {
             return Err(Distance);
         }
 
@@ -367,6 +381,8 @@ mod test {
         let timestamp_1s = NtpInstant::from_fixed_int(1_0000_0000);
         let timestamp_2s = NtpInstant::from_fixed_int(2_0000_0000);
 
+        let ft = FrequencyTolerance::ppm(15);
+
         let mut packet = NtpHeader::new();
         packet.root_delay = duration_1s;
         packet.root_dispersion = duration_1s;
@@ -381,7 +397,9 @@ mod test {
             ..Peer::test_peer()
         };
 
-        assert!(reference.root_distance(timestamp_1s) < reference.root_distance(timestamp_2s));
+        assert!(
+            reference.root_distance(timestamp_1s, ft) < reference.root_distance(timestamp_2s, ft)
+        );
 
         let sample = Peer {
             statistics: PeerStatistics {
@@ -393,7 +411,7 @@ mod test {
             time: timestamp_1s,
             ..Peer::test_peer()
         };
-        assert!(reference.root_distance(timestamp_1s) < sample.root_distance(timestamp_1s));
+        assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
 
         let sample = Peer {
             statistics: PeerStatistics {
@@ -405,7 +423,7 @@ mod test {
             time: timestamp_1s,
             ..Peer::test_peer()
         };
-        assert!(reference.root_distance(timestamp_1s) < sample.root_distance(timestamp_1s));
+        assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
 
         let sample = Peer {
             statistics: PeerStatistics {
@@ -417,7 +435,7 @@ mod test {
             time: NtpInstant::ZERO,
             ..Peer::test_peer()
         };
-        assert!(reference.root_distance(timestamp_1s) < sample.root_distance(timestamp_1s));
+        assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
 
         packet.root_delay = duration_2s;
         let sample = Peer {
@@ -431,7 +449,7 @@ mod test {
             ..Peer::test_peer()
         };
         packet.root_delay = duration_1s;
-        assert!(reference.root_distance(timestamp_1s) < sample.root_distance(timestamp_1s));
+        assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
 
         packet.root_dispersion = duration_2s;
         let sample = Peer {
@@ -445,7 +463,7 @@ mod test {
             ..Peer::test_peer()
         };
         packet.root_dispersion = duration_1s;
-        assert!(reference.root_distance(timestamp_1s) < sample.root_distance(timestamp_1s));
+        assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
 
         let sample = Peer {
             statistics: PeerStatistics {
@@ -459,8 +477,8 @@ mod test {
         };
 
         assert_eq!(
-            reference.root_distance(timestamp_1s),
-            sample.root_distance(timestamp_1s)
+            reference.root_distance(timestamp_1s, ft),
+            sample.root_distance(timestamp_1s, ft)
         );
     }
 
@@ -499,48 +517,50 @@ mod test {
         use AcceptSynchronizationError::*;
 
         let local_clock_time = NtpInstant::ZERO;
+        let ft = FrequencyTolerance::ppm(15);
+        let dt = NtpDuration::ONE;
         let system_poll = NtpDuration::ZERO;
 
         let mut peer = Peer::test_peer();
 
         // by default, the packet id and the peer's id are the same, indicating a loop
         assert_eq!(
-            peer.accept_synchronization(local_clock_time, system_poll),
+            peer.accept_synchronization(local_clock_time, ft, dt, system_poll),
             Err(Loop)
         );
 
         peer.our_id = ReferenceId::from_int(42);
 
         assert_eq!(
-            peer.accept_synchronization(local_clock_time, system_poll),
+            peer.accept_synchronization(local_clock_time, ft, dt, system_poll),
             Err(ServerUnreachable)
         );
 
         peer.reach.received_packet();
 
         assert_eq!(
-            peer.accept_synchronization(local_clock_time, system_poll),
+            peer.accept_synchronization(local_clock_time, ft, dt, system_poll),
             Ok(())
         );
 
         peer.last_packet.leap = NtpLeapIndicator::Unknown;
         assert_eq!(
-            peer.accept_synchronization(local_clock_time, system_poll),
+            peer.accept_synchronization(local_clock_time, ft, dt, system_poll),
             Err(Stratum)
         );
 
         peer.last_packet.leap = NtpLeapIndicator::NoWarning;
         peer.last_packet.stratum = 42;
         assert_eq!(
-            peer.accept_synchronization(local_clock_time, system_poll),
+            peer.accept_synchronization(local_clock_time, ft, dt, system_poll),
             Err(Stratum)
         );
 
         peer.last_packet.stratum = 0;
 
-        peer.last_packet.root_dispersion = MAX_DISTANCE * 2;
+        peer.last_packet.root_dispersion = dt * 2;
         assert_eq!(
-            peer.accept_synchronization(local_clock_time, system_poll),
+            peer.accept_synchronization(local_clock_time, ft, dt, system_poll),
             Err(Distance)
         );
     }
