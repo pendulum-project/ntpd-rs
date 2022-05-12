@@ -397,6 +397,8 @@ mod test {
 
     #[test]
     fn test_tuple_from_packet_default() {
+        let instant = NtpInstant::now();
+
         let mut packet = NtpHeader::new();
         packet.origin_timestamp = NtpTimestamp::from_fixed_int(0);
         packet.receive_timestamp = NtpTimestamp::from_fixed_int(1);
@@ -406,7 +408,7 @@ mod test {
         let result = FilterTuple::from_packet_default(
             &packet,
             NtpDuration::from_exponent(-32),
-            NtpInstant::from_fixed_int(4),
+            instant,
             FrequencyTolerance::ppm(15),
             NtpTimestamp::from_fixed_int(3),
         );
@@ -422,7 +424,7 @@ mod test {
         let result = FilterTuple::from_packet_default(
             &packet,
             NtpDuration::from_exponent(-32),
-            NtpInstant::from_fixed_int(4),
+            instant,
             FrequencyTolerance::ppm(15),
             NtpTimestamp::from_fixed_int(3),
         );
@@ -438,7 +440,7 @@ mod test {
         let result = FilterTuple::from_packet_default(
             &packet,
             NtpDuration::from_exponent(-32),
-            NtpInstant::from_fixed_int(4),
+            instant,
             FrequencyTolerance::ppm(15),
             NtpTimestamp::from_fixed_int(3),
         );

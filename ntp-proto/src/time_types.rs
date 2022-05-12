@@ -27,15 +27,10 @@ impl NtpInstant {
         }
     }
 
+    // used to populate the T1 and T3 fields to ensure the server is doing something sensible
+    // see `generate_poll_message` for details
     pub(crate) const fn to_bits(self) -> [u8; 8] {
         self.timestamp.to_bits()
-    }
-
-    #[cfg(any(test, feature = "fuzz"))]
-    pub(crate) const fn from_fixed_int(timestamp: u64) -> NtpInstant {
-        Self {
-            timestamp: NtpTimestamp::from_fixed_int(timestamp),
-        }
     }
 }
 
