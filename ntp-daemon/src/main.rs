@@ -42,12 +42,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // when we perform a clock jump, all current measurement data is off. We force all associations
     // to clear their measurement data and get new data. This vector contains associations that
-    // have not yet responded with a new valid measurement.
+    // have not yet confirmed that their measurement data has been cleared.
     let mut waiting_for_reset: Vec<PeerChannels> = Vec::with_capacity(peers.len());
 
     loop {
         // one of the peers has a new measurement
-        let mut changed: FuturesUnordered<_> = peers
+        let mut has_new_measurement: FuturesUnordered<_> = peers
             .iter_mut()
             .enumerate()
             .map(|(i, c)| async move {
@@ -68,14 +68,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         tokio::select! {
             Some(changed_index) = active_after_reset.next() => {
-                drop(changed);
+                drop(has_new_measurement);
                 drop(active_after_reset);
 
                 let peer = waiting_for_reset.remove(changed_index);
                 peers.push(peer);
             },
-            Some(changed_index) = changed.next() => {
-                drop(changed);
+            Some(changed_index) = has_new_measurement.next() => {
+                drop(has_new_measurement);
                 drop(active_after_reset);
 
                 let msg = *peers[changed_index].peer_snapshot.borrow();
