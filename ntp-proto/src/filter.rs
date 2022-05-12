@@ -360,16 +360,18 @@ mod test {
 
     #[test]
     fn clock_filter_new() {
+        let instant = NtpInstant::now();
+
         let new_tuple = FilterTuple {
             offset: NtpDuration::from_seconds(12.0),
             delay: NtpDuration::from_seconds(14.0),
             dispersion: Default::default(),
-            time: NtpInstant::from_bits((1i64 << 32).to_be_bytes()),
+            time: instant, // TODO + Duration::SECOND,
         };
 
         let mut measurements = LastMeasurements::default();
 
-        let peer_time = NtpInstant::ZERO;
+        let peer_time = instant;
         let update = measurements.step(
             new_tuple,
             peer_time,
