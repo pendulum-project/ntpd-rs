@@ -24,6 +24,7 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
     clock: C,
     config: SystemConfig,
     mut system_snapshots: watch::Receiver<SystemSnapshot>,
+    mut reset: watch::Receiver<()>,
 ) -> Result<watch::Receiver<MsgForSystem>, std::io::Error> {
     // setup socket
     let socket = UdpSocket::bind("0.0.0.0:0").await?;
@@ -64,6 +65,18 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                     let packet = peer.generate_poll_message(ntp_instant);
                     socket.send(&packet.serialize()).await.unwrap();
                 },
+                result = reset.changed() => {
+                    if let Ok(()) = result {
+                        // reset the measurement state (as if this association was just created).
+                        // crucially, this sets `self.next_expected_origin = None`, meaning that
+                        // in-flight requests are ignored
+                        peer.reset_measurements();
+
+                        // TODO: notify the system that the reset has been successful, and that this
+                        // association can produce valid measurements again
+                        // reset_for_system.notify_waiters();
+                    }
+                }
                 result = socket.recv(&mut buf) => {
                     if let Ok((size, Some(timestamp))) = result {
                         // Note: packets are allowed to be bigger when including extensions.

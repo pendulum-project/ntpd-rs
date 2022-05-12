@@ -8,16 +8,28 @@ use ntp_proto::{
 };
 use peer::start_peer;
 use std::error::Error;
+use tokio::sync::watch;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let config = SystemConfig::default();
     let clock = UnixNtpClock::new();
 
-    use tokio::sync::watch;
+    // channel for sending updated system state to the peers
     let (system_tx, system_rx) = watch::channel::<SystemSnapshot>(SystemSnapshot::default());
 
-    let new_peer = |address| start_peer(address, UnixNtpClock::new(), config, system_rx.clone());
+    // channel to send the reset signal to all peers
+    let (_reset_tx, reset_rx) = watch::channel::<()>(());
+
+    let new_peer = |address| {
+        start_peer(
+            address,
+            UnixNtpClock::new(),
+            config,
+            system_rx.clone(),
+            reset_rx.clone(),
+        )
+    };
 
     let mut peers = vec![
         new_peer("0.pool.ntp.org:123").await.unwrap(),
