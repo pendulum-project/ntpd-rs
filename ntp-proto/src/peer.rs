@@ -377,6 +377,16 @@ impl Peer {
         Ok(())
     }
 
+    /// reset just the measurement data, the poll and connection data is unchanged
+    pub fn reset_measurements(&mut self) {
+        self.statistics = Default::default();
+        self.last_measurements = Default::default();
+        self.last_packet = Default::default();
+
+        // make sure in-flight messages are ignored
+        self.next_expected_origin = None;
+    }
+
     #[cfg(any(test, feature = "fuzz"))]
     pub(crate) fn test_peer() -> Self {
         Peer {
