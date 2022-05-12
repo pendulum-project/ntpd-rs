@@ -41,69 +41,72 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut snapshots = Vec::with_capacity(peers.len());
 
     loop {
-        let changed_index = {
-            let mut changed: FuturesUnordered<_> = peers
-                .iter_mut()
-                .enumerate()
-                .map(|(i, c)| async move {
-                    c.peer_snapshot.changed().await.unwrap();
-                    i
-                })
-                .collect();
+        // one of the peers has a new measurement
+        let mut changed: FuturesUnordered<_> = peers
+            .iter_mut()
+            .enumerate()
+            .map(|(i, c)| async move {
+                c.peer_snapshot.changed().await.unwrap();
+                i
+            })
+            .collect();
 
-            changed.next().await.unwrap()
-        };
+        tokio::select! {
+            Some(changed_index) = changed.next() => {
+                drop(changed);
 
-        let msg = *peers[changed_index].peer_snapshot.borrow();
-        match msg {
-            peer::MsgForSystem::MustDemobilize => {
-                peers.remove(changed_index);
-                continue;
-            }
-            peer::MsgForSystem::NoMeasurement => {
-                continue;
-            }
-            peer::MsgForSystem::Snapshot(_) => {
-                // fall through
-            }
-        }
-
-        // remove all snapshots from a previous iteration
-        snapshots.clear();
-
-        for i in (0..peers.len()).rev() {
-            let msg = *peers[i].peer_snapshot.borrow_and_update();
-            match msg {
-                peer::MsgForSystem::MustDemobilize => {
-                    peers.remove(i);
+                let msg = *peers[changed_index].peer_snapshot.borrow();
+                match msg {
+                    peer::MsgForSystem::MustDemobilize => {
+                        peers.remove(changed_index);
+                        continue;
+                    }
+                    peer::MsgForSystem::NoMeasurement => {
+                        continue;
+                    }
+                    peer::MsgForSystem::Snapshot(_) => {
+                        // fall through
+                    }
                 }
-                peer::MsgForSystem::NoMeasurement => {
-                    // skip
+
+                // remove all snapshots from a previous iteration
+                snapshots.clear();
+
+                for i in (0..peers.len()).rev() {
+                    let msg = *peers[i].peer_snapshot.borrow_and_update();
+                    match msg {
+                        peer::MsgForSystem::MustDemobilize => {
+                            peers.remove(i);
+                        }
+                        peer::MsgForSystem::NoMeasurement => {
+                            // skip
+                        }
+                        peer::MsgForSystem::Snapshot(snapshot) => {
+                            snapshots.push(snapshot);
+                        }
+                    }
                 }
-                peer::MsgForSystem::Snapshot(snapshot) => {
-                    snapshots.push(snapshot);
+
+                let ntp_instant = NtpInstant::from_ntp_timestamp(clock.now().unwrap());
+                let system_poll = PollInterval::MIN;
+                let result = FilterAndCombine::run(&config, &snapshots, ntp_instant, system_poll);
+
+                match result {
+                    Some(clock_select) => {
+                        let offset_ms = clock_select.system_offset.to_seconds() * 1000.0;
+                        let jitter_ms = clock_select.system_jitter.to_seconds() * 1000.0;
+                        println!("offset: {:.3}ms (jitter: {}ms)", offset_ms, jitter_ms);
+                        println!();
+
+                        // TODO update system state with result.peer_snapshot
+
+                        // TODO produce an updated snapshot
+                        let system_snapshot = SystemSnapshot::default();
+                        system_tx.send(system_snapshot)?;
+                    }
+                    None => println!("filter and combine did not produce a result"),
                 }
             }
-        }
-
-        let ntp_instant = NtpInstant::from_ntp_timestamp(clock.now().unwrap());
-        let system_poll = PollInterval::MIN;
-        let result = FilterAndCombine::run(&config, &snapshots, ntp_instant, system_poll);
-
-        match result {
-            Some(clock_select) => {
-                let offset_ms = clock_select.system_offset.to_seconds() * 1000.0;
-                let jitter_ms = clock_select.system_jitter.to_seconds() * 1000.0;
-                println!("offset: {:.3}ms (jitter: {}ms)", offset_ms, jitter_ms);
-                println!();
-
-                // TODO update system state with result.peer_snapshot
-
-                // TODO produce an updated snapshot
-                let system_snapshot = SystemSnapshot::default();
-                system_tx.send(system_snapshot)?;
-            }
-            None => println!("filter and combine did not produce a result"),
         }
     }
 }
