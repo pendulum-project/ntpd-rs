@@ -84,9 +84,9 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                         // in-flight requests are ignored
                         peer.reset_measurements();
 
-                        // TODO: notify the system that the reset has been successful, and that this
+                        // notify the system that the reset has been successful, and that this
                         // association can produce valid measurements again
-                        // reset_for_system.notify_waiters();
+                        notify_reset_send.notify_waiters();
                     }
                 }
                 result = socket.recv(&mut buf) => {
