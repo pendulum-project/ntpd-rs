@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .iter_mut()
                 .enumerate()
                 .map(|(i, c)| async move {
-                    c.changed().await.unwrap();
+                    c.peer_snapshot.changed().await.unwrap();
                     i
                 })
                 .collect();
@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             changed.next().await.unwrap()
         };
 
-        let msg = *peers[changed_index].borrow();
+        let msg = *peers[changed_index].peer_snapshot.borrow();
         match msg {
             peer::MsgForSystem::MustDemobilize => {
                 peers.remove(changed_index);
@@ -72,7 +72,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         snapshots.clear();
 
         for i in (0..peers.len()).rev() {
-            let msg = *peers[i].borrow_and_update();
+            let msg = *peers[i].peer_snapshot.borrow_and_update();
             match msg {
                 peer::MsgForSystem::MustDemobilize => {
                     peers.remove(i);
