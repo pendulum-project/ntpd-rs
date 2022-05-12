@@ -423,6 +423,7 @@ mod test {
             NtpDuration::from_exponent(-32),
             instant,
             FrequencyTolerance::ppm(15),
+            packet.origin_timestamp,
             NtpTimestamp::from_fixed_int(3),
         );
         assert_eq!(result.offset, NtpDuration::from_fixed_int(0));
@@ -439,6 +440,7 @@ mod test {
             NtpDuration::from_exponent(-32),
             instant,
             FrequencyTolerance::ppm(15),
+            packet.origin_timestamp,
             NtpTimestamp::from_fixed_int(3),
         );
         assert_eq!(result.offset, NtpDuration::from_fixed_int(1));
@@ -455,6 +457,7 @@ mod test {
             NtpDuration::from_exponent(-32),
             instant,
             FrequencyTolerance::ppm(15),
+            packet.origin_timestamp,
             NtpTimestamp::from_fixed_int(3),
         );
         assert_eq!(result.offset, NtpDuration::from_fixed_int(1));
