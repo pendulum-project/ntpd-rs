@@ -390,15 +390,16 @@ ntp_duration_scalar_div!(u32);
 // u64 and usize deliberately excluded as they can result in overflows
 
 /// Stores when we will next exchange packages with a remote server.
-///
-/// The value is in seconds stored in log2 format:
-///
-/// - a value of 4 means 2^4 = 16 seconds
-/// - a value of 17 is 2^17 = ~36h
+//
+// The value is in seconds stored in log2 format:
+//
+// - a value of 4 means 2^4 = 16 seconds
+// - a value of 17 is 2^17 = ~36h
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PollInterval(i8);
 
 impl PollInterval {
+    // here we follow the spec (the code skeleton and ntpd repository use different values)
     pub const MIN: Self = Self(4);
     pub const MAX: Self = Self(17);
 
@@ -430,6 +431,26 @@ impl PollInterval {
 impl Default for PollInterval {
     fn default() -> Self {
         Self(4)
+    }
+}
+
+/// Frequency tolerance PHI (unit: seconds per second)
+#[derive(Clone, Copy)]
+pub struct FrequencyTolerance {
+    ppm: u32,
+}
+
+impl FrequencyTolerance {
+    pub const fn ppm(ppm: u32) -> Self {
+        Self { ppm }
+    }
+}
+
+impl Mul<FrequencyTolerance> for NtpDuration {
+    type Output = NtpDuration;
+
+    fn mul(self, rhs: FrequencyTolerance) -> Self::Output {
+        (self * rhs.ppm) / 1_000_000
     }
 }
 
@@ -653,5 +674,13 @@ mod tests {
             );
             interval = interval.dec();
         }
+    }
+
+    #[test]
+    fn frequency_tolerance() {
+        assert_eq!(
+            NtpDuration::from_seconds(1.0),
+            NtpDuration::from_seconds(1.0) * FrequencyTolerance::ppm(1_000_000),
+        );
     }
 }
