@@ -1,5 +1,5 @@
 use ntp_proto::{
-    IgnoreReason, NtpHeader, NtpInstant, Peer, PeerSnapshot, ReferenceId, SystemConfig,
+    IgnoreReason, NtpClock, NtpHeader, NtpInstant, Peer, PeerSnapshot, ReferenceId, SystemConfig,
     SystemSnapshot,
 };
 use tokio::{
@@ -19,8 +19,9 @@ pub enum MsgForSystem {
     Snapshot(PeerSnapshot),
 }
 
-pub async fn start_peer<A: ToSocketAddrs>(
+pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
     addr: A,
+    clock: C,
     config: SystemConfig,
     mut system_snapshots: watch::Receiver<SystemSnapshot>,
 ) -> Result<watch::Receiver<MsgForSystem>, std::io::Error> {
@@ -45,6 +46,12 @@ pub async fn start_peer<A: ToSocketAddrs>(
         let poll_wait = tokio::time::sleep(poll_interval.as_system_duration());
         tokio::pin!(poll_wait);
 
+        // we don't store the real origin timestamp in the packet, because that would leak our
+        // system time to the network (and could make attacks easier). So instead there is some
+        // garbage data in the origin_timestamp field, and we need to track and pass along the
+        // actual origin timestamp ourselves.
+        let mut last_send_timestamp = clock.now().unwrap();
+
         loop {
             let mut buf = [0_u8; 48];
 
@@ -61,10 +68,12 @@ pub async fn start_peer<A: ToSocketAddrs>(
                     // TODO: Figure out proper error behaviour here
                     let ntp_instant = NtpInstant::now();
                     let packet = peer.generate_poll_message(ntp_instant);
+
+                    last_send_timestamp = clock.now().unwrap();
                     socket.send(&packet.serialize()).await.unwrap();
                 },
                 result = socket.recv(&mut buf) => {
-                    if let Ok((size, Some(timestamp))) = result {
+                    if let Ok((size, Some(recv_timestamp))) = result {
                         // Note: packets are allowed to be bigger when including extensions.
                         // we don't expect them, but the server may still send them. The
                         // extra bytes are guaranteed safe to ignore. `recv` truncates the messages.
@@ -82,7 +91,8 @@ pub async fn start_peer<A: ToSocketAddrs>(
                                 packet,
                                 ntp_instant,
                                 config.frequency_tolerance,
-                                timestamp,
+                                last_send_timestamp,
+                                recv_timestamp,
                             );
 
                             let system_poll = system_snapshot.poll_interval.as_duration();

@@ -204,6 +204,7 @@ impl Peer {
         message: NtpHeader,
         local_clock_time: NtpInstant,
         frequency_tolerance: FrequencyTolerance,
+        send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
     ) -> Result<PeerSnapshot, IgnoreReason> {
         // the transmit_timestamp field was not changed from the bogus value we put into it
@@ -238,6 +239,7 @@ impl Peer {
                 system.precision,
                 local_clock_time,
                 frequency_tolerance,
+                send_time,
                 recv_time,
             );
 

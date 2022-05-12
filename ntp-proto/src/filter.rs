@@ -45,6 +45,7 @@ impl FilterTuple {
         system_precision: NtpDuration,
         local_clock_time: NtpInstant,
         frequency_tolerance: FrequencyTolerance,
+        origin_timestamp: NtpTimestamp,
         destination_timestamp: NtpTimestamp,
     ) -> Self {
         // for reference
@@ -59,13 +60,22 @@ impl FilterTuple {
 
         let packet_precision = NtpDuration::from_exponent(packet.precision);
 
+        // NOTE: origin_timestamp and destination_timestamp are passed in explicitly, and are not
+        // part of the packet.
+        //
+        // The destination_timestamp is not part of the packet in the specification itself.
+        //
+        // The origin_timestamp is not actually sent to the server, to avoid leaking our (rough)
+        // system time. That means we explicitly record and pass along the time at which a packet
+        // was sent.
+
         // offset is the average of the deltas (T2 - T1) and (T3 - T4)
-        let offset1 = packet.receive_timestamp - packet.origin_timestamp;
+        let offset1 = packet.receive_timestamp - origin_timestamp;
         let offset2 = packet.transmit_timestamp - destination_timestamp;
         let offset = (offset1 + offset2) / 2i64;
 
         // delay is (T4 - T1) - (T3 - T2)
-        let delta1 = destination_timestamp - packet.origin_timestamp;
+        let delta1 = destination_timestamp - origin_timestamp;
         let delta2 = packet.transmit_timestamp - packet.receive_timestamp;
         // In cases where the server and client clocks are running at different rates
         // and with very fast networks, the delay can appear negative.
