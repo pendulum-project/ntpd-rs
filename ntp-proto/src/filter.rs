@@ -365,7 +365,8 @@ mod test {
             offset: NtpDuration::from_seconds(12.0),
             delay: NtpDuration::from_seconds(14.0),
             dispersion: Default::default(),
-            time: instant, // TODO + Duration::SECOND,
+            // make sure this tuple is more recent than the peer's current time
+            time: instant + std::time::Duration::new(1, 0),
         };
 
         let mut measurements = LastMeasurements::new(instant);

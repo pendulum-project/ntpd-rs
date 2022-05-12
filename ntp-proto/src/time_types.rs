@@ -1,25 +1,26 @@
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// NtpInstant is a monotonically increasing value modelling the uptime of the NTP service
 ///
 /// It is used to validate packets that we send out, and to order internal operations.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct NtpInstant {
-    timestamp: NtpTimestamp,
+    instant: Instant,
 }
 
 impl NtpInstant {
     pub fn now() -> Self {
         Self {
-            timestamp: NtpTimestamp { timestamp: 0 },
+            instant: Instant::now(),
         }
     }
 
     // used to populate the T1 and T3 fields to ensure the server is doing something sensible
     // see `generate_poll_message` for details
     pub(crate) const fn to_bits(self) -> [u8; 8] {
-        self.timestamp.to_bits()
+        // self.instant.to_bits()
+        panic!()
     }
 }
 
@@ -27,7 +28,23 @@ impl Sub for NtpInstant {
     type Output = NtpDuration;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        self.timestamp - rhs.timestamp
+        let duration = if self.instant > rhs.instant {
+            self.instant - rhs.instant
+        } else {
+            rhs.instant - self.instant
+        };
+
+        NtpDuration::from_system_duration(duration)
+    }
+}
+
+impl Add<Duration> for NtpInstant {
+    type Output = NtpInstant;
+
+    fn add(mut self, rhs: Duration) -> Self::Output {
+        self.instant += rhs;
+
+        self
     }
 }
 
@@ -158,6 +175,12 @@ impl NtpDuration {
     /// NtpDuration::from_seconds(0.005)
     pub(crate) const MIN_DISPERSION: Self = Self { duration: 21474836 };
 
+    pub(crate) const fn from_bits(bits: [u8; 8]) -> Self {
+        Self {
+            duration: i64::from_be_bytes(bits),
+        }
+    }
+
     pub(crate) const fn from_bits_short(bits: [u8; 4]) -> Self {
         NtpDuration {
             duration: (u32::from_be_bytes(bits) as i64) << 16,
@@ -228,6 +251,24 @@ impl NtpDuration {
                 _ => 0,
             },
         }
+    }
+
+    pub fn from_system_duration(duration: Duration) -> Self {
+        let seconds = duration.as_secs();
+        let nanos = duration.subsec_nanos();
+        // Although having a valid interpretation, providing more
+        // than 1 second worth of nanoseconds as input probably
+        // indicates an error from the caller.
+        debug_assert!(nanos < 1_000_000_000);
+        // NTP uses 1/2^32 sec as its unit of fractional time.
+        // our time is in nanoseconds, so 1/1e9 seconds
+        let fraction = ((nanos as u64) << 32) / 1_000_000_000;
+
+        // alternatively, abuse FP arithmetic to save an instruction
+        // let fraction = (nanos as f64 * 4.294967296) as u64;
+
+        let timestamp = ((seconds as u64) << 32) + fraction;
+        NtpDuration::from_bits(timestamp.to_be_bytes())
     }
 
     #[cfg(any(test, feature = "fuzz"))]
