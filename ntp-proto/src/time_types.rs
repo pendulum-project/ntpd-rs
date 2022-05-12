@@ -18,9 +18,13 @@ impl NtpInstant {
 
     // used to populate the T1 and T3 fields to ensure the server is doing something sensible
     // see `generate_poll_message` for details
-    pub(crate) const fn to_bits(self) -> [u8; 8] {
-        // self.instant.to_bits()
-        panic!()
+    pub(crate) fn to_bits(self) -> [u8; 8] {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut s = DefaultHasher::new();
+        self.instant.hash(&mut s);
+        s.finish().to_be_bytes()
     }
 }
 
