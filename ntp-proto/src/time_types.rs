@@ -55,8 +55,6 @@ pub struct NtpTimestamp {
 }
 
 impl NtpTimestamp {
-    pub(crate) const ZERO: Self = Self { timestamp: 0 };
-
     pub(crate) const fn from_bits(bits: [u8; 8]) -> NtpTimestamp {
         NtpTimestamp {
             timestamp: u64::from_be_bytes(bits),
