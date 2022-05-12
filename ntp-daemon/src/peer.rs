@@ -1,22 +1,12 @@
-use std::time::Duration;
-
 use ntp_proto::{
-    IgnoreReason, NtpClock, NtpDuration, NtpHeader, NtpInstant, Peer, PeerSnapshot, ReferenceId,
-    SystemConfig, SystemSnapshot,
+    IgnoreReason, NtpClock, NtpHeader, NtpInstant, Peer, PeerSnapshot, ReferenceId, SystemConfig,
+    SystemSnapshot,
 };
 use tokio::{
     net::{ToSocketAddrs, UdpSocket},
     sync::watch,
     time::Instant,
 };
-
-fn poll_interval_to_duration(poll_interval: i8) -> Duration {
-    match poll_interval {
-        i if i <= 0 => Duration::from_secs(1),
-        i if i < 64 => Duration::from_secs(1 << i),
-        _ => Duration::from_secs(std::u64::MAX),
-    }
-}
 
 #[derive(Debug, Clone, Copy)]
 pub enum MsgForSystem {
@@ -53,7 +43,7 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
             let system_snapshot = system_snapshots.borrow_and_update();
             peer.get_interval_next_poll(system_snapshot.poll_interval)
         };
-        let poll_wait = tokio::time::sleep(poll_interval_to_duration(poll_interval));
+        let poll_wait = tokio::time::sleep(poll_interval.as_system_duration());
         tokio::pin!(poll_wait);
 
         loop {
@@ -67,7 +57,7 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                     };
                     poll_wait
                         .as_mut()
-                        .reset(Instant::now() + poll_interval_to_duration(poll_interval));
+                        .reset(Instant::now() + poll_interval.as_system_duration());
 
                     // TODO: Figure out proper error behaviour here
                     let ntp_instant = NtpInstant::from_ntp_timestamp(clock.now().unwrap());
@@ -96,7 +86,7 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                                 timestamp,
                             );
 
-                            let system_poll = NtpDuration::from_exponent(system_snapshot.poll_interval);
+                            let system_poll = system_snapshot.poll_interval.as_duration();
                             let accept = peer.accept_synchronization(
                                 ntp_instant,
                                 config.frequency_tolerance,

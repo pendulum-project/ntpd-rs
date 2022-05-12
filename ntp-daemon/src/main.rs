@@ -4,7 +4,7 @@ mod peer;
 use futures::{stream::FuturesUnordered, StreamExt};
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
-    filter_and_combine, NtpClock, NtpDuration, NtpInstant, SystemConfig, SystemSnapshot,
+    filter_and_combine, NtpClock, NtpInstant, PollInterval, SystemConfig, SystemSnapshot,
 };
 use peer::start_peer;
 use std::error::Error;
@@ -75,12 +75,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
 
         let ntp_instant = NtpInstant::from_ntp_timestamp(clock.now().unwrap());
-        let result = filter_and_combine(
-            &config,
-            &snapshots,
-            ntp_instant,
-            NtpDuration::from_exponent(2),
-        );
+        let system_poll = PollInterval::MIN;
+        let result = filter_and_combine(&config, &snapshots, ntp_instant, system_poll);
 
         match result {
             Some(clock_select) => {

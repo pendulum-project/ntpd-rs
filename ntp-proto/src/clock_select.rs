@@ -1,6 +1,6 @@
 use crate::peer::PeerSnapshot;
 use crate::time_types::{FrequencyTolerance, NtpInstant};
-use crate::NtpDuration;
+use crate::{NtpDuration, PollInterval};
 
 #[derive(Clone, Copy)]
 pub struct SystemConfig {
@@ -49,7 +49,7 @@ pub fn filter_and_combine(
     config: &SystemConfig,
     peers: &[PeerSnapshot],
     local_clock_time: NtpInstant,
-    system_poll: NtpDuration,
+    system_poll: PollInterval,
 ) -> Option<ClockCombine> {
     let selection = clock_select(config, peers, local_clock_time, system_poll)?;
 
@@ -72,7 +72,7 @@ fn clock_select<'a>(
     config: &SystemConfig,
     peers: &'a [PeerSnapshot],
     local_clock_time: NtpInstant,
-    system_poll: NtpDuration,
+    system_poll: PollInterval,
 ) -> Option<ClockSelect<'a>> {
     let valid_associations = peers.iter().filter(|p| {
         p.accept_synchronization(
