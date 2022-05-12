@@ -50,7 +50,7 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
         // system time to the network (and could make attacks easier). So instead there is some
         // garbage data in the origin_timestamp field, and we need to track and pass along the
         // actual origin timestamp ourselves.
-        let mut last_send_timestamp = clock.now().unwrap();
+        let mut last_send_timestamp = None;
 
         loop {
             let mut buf = [0_u8; 48];
@@ -65,11 +65,12 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                         .as_mut()
                         .reset(Instant::now() + poll_interval.as_system_duration());
 
-                    // TODO: Figure out proper error behaviour here
                     let ntp_instant = NtpInstant::now();
                     let packet = peer.generate_poll_message(ntp_instant);
 
-                    last_send_timestamp = clock.now().unwrap();
+                    // TODO error handling here; what if we cannot determine the origin timestamp?
+                    last_send_timestamp = clock.now().ok();
+
                     socket.send(&packet.serialize()).await.unwrap();
                 },
                 result = socket.recv(&mut buf) => {
@@ -85,13 +86,21 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
 
                             let ntp_instant = NtpInstant::now();
 
+                            let send_timestamp = match last_send_timestamp {
+                                Some(ts) => ts,
+                                None => {
+                                    // we received a message without having sent one; discard
+                                    continue
+                                }
+                            };
+
                             let system_snapshot = *system_snapshots.borrow_and_update();
                             let result = peer.handle_incoming(
                                 system_snapshot,
                                 packet,
                                 ntp_instant,
                                 config.frequency_tolerance,
-                                last_send_timestamp,
+                                send_timestamp,
                                 recv_timestamp,
                             );
 
