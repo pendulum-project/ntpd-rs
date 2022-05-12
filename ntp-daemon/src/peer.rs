@@ -1,5 +1,5 @@
 use ntp_proto::{
-    IgnoreReason, NtpClock, NtpHeader, NtpInstant, Peer, PeerSnapshot, ReferenceId, SystemConfig,
+    IgnoreReason, NtpHeader, NtpInstant, Peer, PeerSnapshot, ReferenceId, SystemConfig,
     SystemSnapshot,
 };
 use tokio::{
@@ -19,9 +19,8 @@ pub enum MsgForSystem {
     Snapshot(PeerSnapshot),
 }
 
-pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
+pub async fn start_peer<A: ToSocketAddrs>(
     addr: A,
-    clock: C,
     config: SystemConfig,
     mut system_snapshots: watch::Receiver<SystemSnapshot>,
 ) -> Result<watch::Receiver<MsgForSystem>, std::io::Error> {
@@ -36,7 +35,7 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
     let socket = ntp_udp::UdpSocket::from_tokio(socket)?;
 
     tokio::spawn(async move {
-        let local_clock_time = NtpInstant::from_ntp_timestamp(clock.now().unwrap());
+        let local_clock_time = NtpInstant::now();
         let mut peer = Peer::new(our_id, peer_id, local_clock_time);
 
         let poll_interval = {
@@ -60,7 +59,7 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                         .reset(Instant::now() + poll_interval.as_system_duration());
 
                     // TODO: Figure out proper error behaviour here
-                    let ntp_instant = NtpInstant::from_ntp_timestamp(clock.now().unwrap());
+                    let ntp_instant = NtpInstant::now();
                     let packet = peer.generate_poll_message(ntp_instant);
                     socket.send(&packet.serialize()).await.unwrap();
                 },
@@ -75,7 +74,7 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                         } else {
                             let packet = NtpHeader::deserialize(&buf);
 
-                            let ntp_instant = NtpInstant::from_ntp_timestamp(timestamp);
+                            let ntp_instant = NtpInstant::now();
 
                             let system_snapshot = *system_snapshots.borrow_and_update();
                             let result = peer.handle_incoming(

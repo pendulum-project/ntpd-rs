@@ -4,7 +4,7 @@ use std::time::Duration;
 /// NtpInstant is a monotonically increasing value modelling the uptime of the NTP service
 ///
 /// It is used to validate packets that we send out, and to order internal operations.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Default)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct NtpInstant {
     timestamp: NtpTimestamp,
 }
@@ -14,8 +14,10 @@ impl NtpInstant {
         timestamp: NtpTimestamp::ZERO,
     };
 
-    pub const fn from_ntp_timestamp(timestamp: NtpTimestamp) -> Self {
-        Self { timestamp }
+    pub fn now() -> Self {
+        Self {
+            timestamp: NtpTimestamp { timestamp: 0 },
+        }
     }
 
     #[cfg(any(test, feature = "fuzz"))]
