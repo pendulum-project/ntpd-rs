@@ -54,13 +54,11 @@ impl FilterAndCombine {
             local_clock_time,
         );
 
-        let filter_and_combine = FilterAndCombine {
+        Some(FilterAndCombine {
             system_offset: combined.system_offset,
             system_jitter: combined.system_jitter,
             system_peer_snapshot,
-        };
-
-        Some(filter_and_combine)
+        })
     }
 
     pub fn system_root_delay(&self) -> NtpDuration {
