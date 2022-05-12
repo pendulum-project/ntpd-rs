@@ -389,9 +389,11 @@ fn clock_combine<'a>(
 
 #[cfg(feature = "fuzz")]
 pub fn fuzz_find_interval(spec: &[(i64, u64)]) {
+    let instant = NtpInstant::now();
+
     let mut peers = vec![];
     for _ in 0..spec.len() {
-        peers.push(test_peer_snapshot())
+        peers.push(test_peer_snapshot(instant))
     }
     let mut candidates = vec![];
     for (i, (center, size)) in spec.iter().enumerate() {
@@ -416,7 +418,7 @@ pub fn fuzz_find_interval(spec: &[(i64, u64)]) {
     }
     candidates.sort_by(|a, b| a.edge.cmp(&b.edge));
     let config = SystemConfig::default();
-    let survivors = construct_survivors(&config, &candidates, crate::NtpInstant::ZERO);
+    let survivors = construct_survivors(&config, &candidates, instant);
 
     // check that if we find a cluster, it contains more than half of the peers we work with.
     assert!(survivors.is_empty() || 2 * survivors.len() > spec.len());

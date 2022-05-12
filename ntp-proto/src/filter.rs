@@ -275,8 +275,9 @@ pub fn fuzz_tuple_from_packet_default(
     let result = FilterTuple::from_packet_default(
         &packet,
         NtpDuration::from_exponent(client_precision),
-        NtpInstant::ZERO,
+        NtpInstant::now(),
         FrequencyTolerance::ppm(15),
+        packet.origin_timestamp,
         NtpTimestamp::from_fixed_int(client.wrapping_add(client_interval as u64)),
     );
 
