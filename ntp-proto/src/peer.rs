@@ -103,55 +103,21 @@ pub enum IgnoreReason {
     TooOld,
 }
 
-/// Peer variables to update the system variables if this peer becomes the system peer
-#[derive(Debug, Clone, Copy)]
-pub struct SystemPeerVariables {
-    pub reference_id: ReferenceId,
-    pub reference_timestamp: NtpTimestamp,
-    pub poll_interval: PollInterval,
-    pub leap_indicator: NtpLeapIndicator,
-    pub stratum: u8,
-    pub root_delay: NtpDuration,
-    pub root_dispersion: NtpDuration,
-    pub time: NtpInstant,
-}
-
-impl SystemPeerVariables {
-    fn from_peer(peer: &Peer) -> Self {
-        Self {
-            reference_id: peer.last_packet.reference_id,
-            reference_timestamp: peer.last_packet.reference_timestamp,
-            poll_interval: peer.last_poll_interval,
-            leap_indicator: peer.last_packet.leap,
-            stratum: peer.last_packet.stratum,
-            root_delay: peer.last_packet.root_delay,
-            root_dispersion: peer.last_packet.root_dispersion,
-            time: peer.time,
-        }
-    }
-
-    #[cfg(any(test, feature = "fuzz"))]
-    pub fn test() -> Self {
-        Self {
-            reference_id: ReferenceId::from_int(0),
-            reference_timestamp: Default::default(),
-            poll_interval: Default::default(),
-            leap_indicator: NtpLeapIndicator::NoWarning,
-            root_delay: Default::default(),
-            root_dispersion: Default::default(),
-            time: Default::default(),
-            stratum: 1,
-        }
-    }
-}
-
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct PeerSnapshot {
-    pub(crate) time: NtpInstant,
     pub(crate) root_distance_without_time: NtpDuration,
-    pub(crate) stratum: u8,
     pub(crate) statistics: PeerStatistics,
-    pub(crate) system_peer_variables: SystemPeerVariables,
+
+    pub(crate) time: NtpInstant,
+    pub(crate) stratum: u8,
+
+    pub(crate) reference_id: ReferenceId,
+    pub(crate) reference_timestamp: NtpTimestamp,
+    pub(crate) poll_interval: PollInterval,
+    pub(crate) leap_indicator: NtpLeapIndicator,
+    pub(crate) root_delay: NtpDuration,
+    pub(crate) root_dispersion: NtpDuration,
 }
 
 impl PeerSnapshot {
@@ -308,11 +274,16 @@ impl Peer {
                 self.time = smallest_delay_time;
 
                 let snapshot = PeerSnapshot {
-                    time: self.time,
                     root_distance_without_time: self.root_distance_without_time(),
-                    stratum: self.last_packet.stratum,
                     statistics: self.statistics,
-                    system_peer_variables: SystemPeerVariables::from_peer(self),
+                    time: self.time,
+                    stratum: self.last_packet.stratum,
+                    reference_id: self.last_packet.reference_id,
+                    reference_timestamp: self.last_packet.reference_timestamp,
+                    poll_interval: self.last_poll_interval,
+                    leap_indicator: self.last_packet.leap,
+                    root_delay: self.last_packet.root_delay,
+                    root_dispersion: self.last_packet.root_dispersion,
                 };
 
                 Ok(snapshot)

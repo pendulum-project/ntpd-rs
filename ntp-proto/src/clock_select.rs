@@ -1,4 +1,4 @@
-use crate::peer::{PeerSnapshot, PeerStatistics, SystemPeerVariables, MAX_DISTANCE};
+use crate::peer::{PeerSnapshot, MAX_DISTANCE};
 use crate::time_types::NtpInstant;
 use crate::{NtpDuration, PollInterval};
 
@@ -27,8 +27,7 @@ const MIN_CLUSTER_SURVIVORS: usize = 3;
 pub struct FilterAndCombine {
     pub system_offset: NtpDuration,
     pub system_jitter: NtpDuration,
-    pub system_peer_variables: SystemPeerVariables,
-    pub(crate) system_peer_statistics: PeerStatistics,
+    pub(crate) system_peer_snapshot: PeerSnapshot,
 }
 
 impl FilterAndCombine {
@@ -47,10 +46,7 @@ impl FilterAndCombine {
         // so, it keeps that peer as the system peer rather selecting the now-best peer (something
         // it calls clock hopping). We'll have to see if that is something we should do too;
         // the spec text does not talk about keeping the existing system peer if it's in the candidate list
-        let new_system_peer = selection.survivors[0].peer;
-
-        let system_peer_variables = new_system_peer.system_peer_variables;
-        let system_peer_statistics = new_system_peer.statistics;
+        let system_peer_snapshot = *selection.survivors[0].peer;
 
         let combined = clock_combine(
             &selection.survivors,
@@ -61,24 +57,23 @@ impl FilterAndCombine {
         let filter_and_combine = FilterAndCombine {
             system_offset: combined.system_offset,
             system_jitter: combined.system_jitter,
-            system_peer_variables,
-            system_peer_statistics,
+            system_peer_snapshot,
         };
 
         Some(filter_and_combine)
     }
 
     pub fn system_root_delay(&self) -> NtpDuration {
-        self.system_peer_variables.root_delay + self.system_peer_statistics.delay
+        self.system_peer_snapshot.root_delay + self.system_peer_snapshot.statistics.delay
     }
 
     pub fn system_root_dispersion(&self, local_clock_time: NtpInstant) -> NtpDuration {
-        let variables = &self.system_peer_variables;
-        let statistics = self.system_peer_statistics;
+        let peer = self.system_peer_snapshot;
+        let statistics = self.system_peer_snapshot.statistics;
         let jitter = NtpDuration::from_seconds(statistics.jitter);
 
         // in this delta, we expect the drift due to inaccurate frequency to be at most this value
-        let drift_upper_bound = crate::peer::multiply_by_phi(local_clock_time - variables.time);
+        let drift_upper_bound = crate::peer::multiply_by_phi(local_clock_time - peer.time);
 
         // NOTES:
         //
@@ -103,7 +98,7 @@ impl FilterAndCombine {
         // > below by MINDISP.  In subnets with very fast processors and networks and very small delay
         // > and dispersion this forces a monotone-definite increase in s.rootdisp (EPSILON), which avoids
         // > loops between peers operating at the same stratum.
-        variables.root_dispersion + Ord::max(NtpDuration::MIN_DISPERSION, dispersion_increment)
+        peer.root_dispersion + Ord::max(NtpDuration::MIN_DISPERSION, dispersion_increment)
     }
 
     pub fn root_synchronization_distance(&self, local_clock_time: NtpInstant) -> NtpDuration {
@@ -470,6 +465,8 @@ fn peer_snapshot(
     root_delay: NtpDuration,
     root_dispersion: NtpDuration,
 ) -> PeerSnapshot {
+    use crate::{packet::NtpLeapIndicator, ReferenceId};
+
     let root_distance_without_time = NtpDuration::MIN_DISPERSION.max(root_delay + statistics.delay)
         / 2i64
         + root_dispersion
@@ -480,7 +477,13 @@ fn peer_snapshot(
         statistics,
         stratum: 0,
         root_distance_without_time,
-        system_peer_variables: SystemPeerVariables::test(),
+
+        reference_id: ReferenceId::from_int(0),
+        reference_timestamp: Default::default(),
+        poll_interval: Default::default(),
+        leap_indicator: NtpLeapIndicator::NoWarning,
+        root_delay: Default::default(),
+        root_dispersion: Default::default(),
     }
 }
 
@@ -1213,8 +1216,11 @@ mod test {
         let base_state = FilterAndCombine {
             system_offset: Default::default(),
             system_jitter: Default::default(),
-            system_peer_variables: SystemPeerVariables::test(),
-            system_peer_statistics: Default::default(),
+            system_peer_snapshot: peer_snapshot(
+                PeerStatistics::default(),
+                NtpDuration::ZERO,
+                NtpDuration::ZERO,
+            ),
         };
 
         let local_clock_time = NtpInstant::ZERO;
