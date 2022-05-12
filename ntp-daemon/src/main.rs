@@ -6,7 +6,7 @@ use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
     FilterAndCombine, NtpClock, NtpInstant, PollInterval, SystemConfig, SystemSnapshot,
 };
-use peer::start_peer;
+use peer::{start_peer, PeerChannels};
 use std::error::Error;
 use tokio::sync::watch;
 
@@ -40,6 +40,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut snapshots = Vec::with_capacity(peers.len());
 
+    // when we perform a clock jump, all current measurement data is off. We force all associations
+    // to clear their measurement data and get new data. This vector contains associations that
+    // have not yet responded with a new valid measurement.
+    let mut waiting_for_reset: Vec<PeerChannels> = Vec::with_capacity(peers.len());
+
     loop {
         // one of the peers has a new measurement
         let mut changed: FuturesUnordered<_> = peers
@@ -51,9 +56,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
             })
             .collect();
 
+        // a peer that has been reset is saying it has resetted successfully
+        let mut active_after_reset: FuturesUnordered<_> = waiting_for_reset
+            .iter_mut()
+            .enumerate()
+            .map(|(i, c)| async move {
+                c.peer_reset.notified().await;
+                i
+            })
+            .collect();
+
         tokio::select! {
+            Some(changed_index) = active_after_reset.next() => {
+                drop(changed);
+                drop(active_after_reset);
+
+                let peer = waiting_for_reset.remove(changed_index);
+                peers.push(peer);
+            },
             Some(changed_index) = changed.next() => {
                 drop(changed);
+                drop(active_after_reset);
 
                 let msg = *peers[changed_index].peer_snapshot.borrow();
                 match msg {
