@@ -21,15 +21,19 @@ pub struct FilterTuple {
 }
 
 impl FilterTuple {
-    const DUMMY: Self = Self {
-        offset: NtpDuration::ZERO,
-        delay: NtpDuration::MAX_DISPERSION,
-        dispersion: NtpDuration::MAX_DISPERSION,
-        time: NtpInstant::ZERO,
-    };
+    const fn dummy(time: NtpInstant) -> Self {
+        Self {
+            offset: NtpDuration::ZERO,
+            delay: NtpDuration::MAX_DISPERSION,
+            dispersion: NtpDuration::MAX_DISPERSION,
+            time,
+        }
+    }
 
     fn is_dummy(self) -> bool {
-        self == Self::DUMMY
+        self.offset == NtpDuration::ZERO
+            && self.delay == NtpDuration::MAX_DISPERSION
+            && self.dispersion == NtpDuration::MAX_DISPERSION
     }
 
     /// The default logic for updating a peer with a new packet.
@@ -84,16 +88,10 @@ pub(crate) struct LastMeasurements {
     register: [FilterTuple; 8],
 }
 
-impl Default for LastMeasurements {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl LastMeasurements {
-    const fn new() -> Self {
+    pub const fn new(instant: NtpInstant) -> Self {
         Self {
-            register: [FilterTuple::DUMMY; 8],
+            register: [FilterTuple::dummy(instant); 8],
         }
     }
 
@@ -240,9 +238,9 @@ impl TemporaryList {
     }
 
     #[cfg(test)]
-    const fn new() -> Self {
+    const fn new(instant: NtpInstant) -> Self {
         Self {
-            register: [FilterTuple::DUMMY; 8],
+            register: [FilterTuple::dummy(instant); 8],
         }
     }
 }
@@ -284,7 +282,7 @@ mod test {
         // The observer should note (a) if all stages contain the dummy tuple
         // with dispersion MAXDISP, the computed dispersion is a little less than 16 s
 
-        let register = TemporaryList::new();
+        let register = TemporaryList::new(NtpInstant::now());
         let value = register.dispersion().to_seconds();
 
         assert!((16.0 - value) < 0.1)
@@ -292,12 +290,13 @@ mod test {
 
     #[test]
     fn dummys_are_not_valid() {
-        assert!(TemporaryList::new().valid_tuples().is_empty())
+        let instant = NtpInstant::now();
+        assert!(TemporaryList::new(instant).valid_tuples().is_empty())
     }
 
     #[test]
     fn jitter_of_single() {
-        let mut register = LastMeasurements::new();
+        let mut register = LastMeasurements::new(NtpInstant::now());
         register.register[0].offset = NtpDuration::from_seconds(42.0);
         let first = register.register[0];
         let value =
@@ -308,7 +307,7 @@ mod test {
 
     #[test]
     fn jitter_of_pair() {
-        let mut register = TemporaryList::new();
+        let mut register = TemporaryList::new(NtpInstant::now());
         register.register[0].offset = NtpDuration::from_seconds(20.0);
         register.register[1].offset = NtpDuration::from_seconds(30.0);
         let first = register.register[0];
@@ -320,7 +319,7 @@ mod test {
 
     #[test]
     fn jitter_of_triple() {
-        let mut register = TemporaryList::new();
+        let mut register = TemporaryList::new(NtpInstant::now());
         register.register[0].offset = NtpDuration::from_seconds(20.0);
         register.register[1].offset = NtpDuration::from_seconds(20.0);
         register.register[2].offset = NtpDuration::from_seconds(30.0);
@@ -342,7 +341,7 @@ mod test {
             time: instant,
         };
 
-        let mut measurements = LastMeasurements::default();
+        let mut measurements = LastMeasurements::new(instant);
 
         let peer_time = instant;
         let update = measurements.step(
@@ -369,7 +368,7 @@ mod test {
             time: instant, // TODO + Duration::SECOND,
         };
 
-        let mut measurements = LastMeasurements::default();
+        let mut measurements = LastMeasurements::new(instant);
 
         let peer_time = instant;
         let update = measurements.step(

@@ -10,10 +10,6 @@ pub struct NtpInstant {
 }
 
 impl NtpInstant {
-    pub const ZERO: Self = Self {
-        timestamp: NtpTimestamp::ZERO,
-    };
-
     pub fn now() -> Self {
         Self {
             timestamp: NtpTimestamp { timestamp: 0 },

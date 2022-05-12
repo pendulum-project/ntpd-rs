@@ -158,7 +158,7 @@ impl Peer {
             next_expected_origin: None,
 
             statistics: Default::default(),
-            last_measurements: Default::default(),
+            last_measurements: LastMeasurements::new(time),
             last_packet: Default::default(),
             time,
             our_id,
@@ -347,7 +347,7 @@ impl Peer {
     }
 
     #[cfg(any(test, feature = "fuzz"))]
-    pub(crate) fn test_peer() -> Self {
+    pub(crate) fn test_peer(instant: NtpInstant) -> Self {
         Peer {
             last_poll_interval: PollInterval::default(),
             next_poll_interval: PollInterval::default(),
@@ -356,9 +356,9 @@ impl Peer {
             next_expected_origin: None,
 
             statistics: Default::default(),
-            last_measurements: Default::default(),
+            last_measurements: LastMeasurements::new(instant),
             last_packet: Default::default(),
-            time: NtpInstant::now(),
+            time: instant,
             peer_id: ReferenceId::from_int(0),
             our_id: ReferenceId::from_int(0),
             reach: Reach::default(),
@@ -393,8 +393,7 @@ mod test {
                 ..Default::default()
             },
             last_packet: packet,
-            time: timestamp_0,
-            ..Peer::test_peer()
+            ..Peer::test_peer(timestamp_0)
         };
 
         assert!(
@@ -408,8 +407,7 @@ mod test {
                 ..Default::default()
             },
             last_packet: packet,
-            time: timestamp_0,
-            ..Peer::test_peer()
+            ..Peer::test_peer(timestamp_0)
         };
         assert!(reference.root_distance(timestamp_0, ft) < sample.root_distance(timestamp_0, ft));
 
@@ -420,8 +418,7 @@ mod test {
                 ..Default::default()
             },
             last_packet: packet,
-            time: timestamp_0,
-            ..Peer::test_peer()
+            ..Peer::test_peer(timestamp_0)
         };
         assert!(reference.root_distance(timestamp_0, ft) < sample.root_distance(timestamp_0, ft));
 
@@ -432,8 +429,7 @@ mod test {
                 ..Default::default()
             },
             last_packet: packet,
-            time: NtpInstant::ZERO,
-            ..Peer::test_peer()
+            ..Peer::test_peer(timestamp_0)
         };
         assert!(reference.root_distance(timestamp_0, ft) < sample.root_distance(timestamp_0, ft));
 
@@ -445,8 +441,7 @@ mod test {
                 ..Default::default()
             },
             last_packet: packet,
-            time: timestamp_0,
-            ..Peer::test_peer()
+            ..Peer::test_peer(timestamp_0)
         };
         packet.root_delay = duration_1s;
         assert!(reference.root_distance(timestamp_0, ft) < sample.root_distance(timestamp_0, ft));
@@ -459,8 +454,7 @@ mod test {
                 ..Default::default()
             },
             last_packet: packet,
-            time: timestamp_0,
-            ..Peer::test_peer()
+            ..Peer::test_peer(timestamp_0)
         };
         packet.root_dispersion = duration_1s;
         assert!(reference.root_distance(timestamp_0, ft) < sample.root_distance(timestamp_0, ft));
@@ -472,8 +466,7 @@ mod test {
                 ..Default::default()
             },
             last_packet: packet,
-            time: timestamp_0,
-            ..Peer::test_peer()
+            ..Peer::test_peer(timestamp_0)
         };
 
         assert_eq!(
@@ -516,12 +509,12 @@ mod test {
     fn test_accept_synchronization() {
         use AcceptSynchronizationError::*;
 
-        let local_clock_time = NtpInstant::ZERO;
+        let local_clock_time = NtpInstant::now();
         let ft = FrequencyTolerance::ppm(15);
         let dt = NtpDuration::ONE;
         let system_poll = NtpDuration::ZERO;
 
-        let mut peer = Peer::test_peer();
+        let mut peer = Peer::test_peer(local_clock_time);
 
         // by default, the packet id and the peer's id are the same, indicating a loop
         assert_eq!(
