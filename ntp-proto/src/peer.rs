@@ -358,7 +358,7 @@ impl Peer {
             statistics: Default::default(),
             last_measurements: Default::default(),
             last_packet: Default::default(),
-            time: Default::default(),
+            time: NtpInstant::now(),
             peer_id: ReferenceId::from_int(0),
             our_id: ReferenceId::from_int(0),
             reach: Reach::default(),
@@ -378,8 +378,8 @@ mod test {
         let duration_1s = NtpDuration::from_fixed_int(1_0000_0000);
         let duration_2s = NtpDuration::from_fixed_int(2_0000_0000);
 
-        let timestamp_1s = NtpInstant::from_fixed_int(1_0000_0000);
-        let timestamp_2s = NtpInstant::from_fixed_int(2_0000_0000);
+        let timestamp_0 = NtpInstant::now();
+        let timestamp_1 = timestamp_0; // TODO + std::time::Duration::SECOND;
 
         let ft = FrequencyTolerance::ppm(15);
 
@@ -393,12 +393,12 @@ mod test {
                 ..Default::default()
             },
             last_packet: packet,
-            time: timestamp_1s,
+            time: timestamp_0,
             ..Peer::test_peer()
         };
 
         assert!(
-            reference.root_distance(timestamp_1s, ft) < reference.root_distance(timestamp_2s, ft)
+            reference.root_distance(timestamp_0, ft) < reference.root_distance(timestamp_1, ft)
         );
 
         let sample = Peer {
@@ -408,10 +408,10 @@ mod test {
                 ..Default::default()
             },
             last_packet: packet,
-            time: timestamp_1s,
+            time: timestamp_0,
             ..Peer::test_peer()
         };
-        assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
+        assert!(reference.root_distance(timestamp_0, ft) < sample.root_distance(timestamp_0, ft));
 
         let sample = Peer {
             statistics: PeerStatistics {
@@ -420,10 +420,10 @@ mod test {
                 ..Default::default()
             },
             last_packet: packet,
-            time: timestamp_1s,
+            time: timestamp_0,
             ..Peer::test_peer()
         };
-        assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
+        assert!(reference.root_distance(timestamp_0, ft) < sample.root_distance(timestamp_0, ft));
 
         let sample = Peer {
             statistics: PeerStatistics {
@@ -435,7 +435,7 @@ mod test {
             time: NtpInstant::ZERO,
             ..Peer::test_peer()
         };
-        assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
+        assert!(reference.root_distance(timestamp_0, ft) < sample.root_distance(timestamp_0, ft));
 
         packet.root_delay = duration_2s;
         let sample = Peer {
@@ -445,11 +445,11 @@ mod test {
                 ..Default::default()
             },
             last_packet: packet,
-            time: timestamp_1s,
+            time: timestamp_0,
             ..Peer::test_peer()
         };
         packet.root_delay = duration_1s;
-        assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
+        assert!(reference.root_distance(timestamp_0, ft) < sample.root_distance(timestamp_0, ft));
 
         packet.root_dispersion = duration_2s;
         let sample = Peer {
@@ -459,11 +459,11 @@ mod test {
                 ..Default::default()
             },
             last_packet: packet,
-            time: timestamp_1s,
+            time: timestamp_0,
             ..Peer::test_peer()
         };
         packet.root_dispersion = duration_1s;
-        assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
+        assert!(reference.root_distance(timestamp_0, ft) < sample.root_distance(timestamp_0, ft));
 
         let sample = Peer {
             statistics: PeerStatistics {
@@ -472,13 +472,13 @@ mod test {
                 ..Default::default()
             },
             last_packet: packet,
-            time: timestamp_1s,
+            time: timestamp_0,
             ..Peer::test_peer()
         };
 
         assert_eq!(
-            reference.root_distance(timestamp_1s, ft),
-            sample.root_distance(timestamp_1s, ft)
+            reference.root_distance(timestamp_0, ft),
+            sample.root_distance(timestamp_0, ft)
         );
     }
 

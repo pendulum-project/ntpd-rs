@@ -333,16 +333,18 @@ mod test {
 
     #[test]
     fn clock_filter_defaults() {
+        let instant = NtpInstant::now();
+
         let new_tuple = FilterTuple {
             offset: Default::default(),
             delay: Default::default(),
             dispersion: Default::default(),
-            time: Default::default(),
+            time: instant,
         };
 
         let mut measurements = LastMeasurements::default();
 
-        let peer_time = NtpInstant::ZERO;
+        let peer_time = instant;
         let update = measurements.step(
             new_tuple,
             peer_time,
