@@ -132,7 +132,8 @@ impl PeerSnapshot {
         local_clock_time: NtpInstant,
         frequency_tolerance: FrequencyTolerance,
     ) -> NtpDuration {
-        self.root_distance_without_time + ((local_clock_time - self.time) * frequency_tolerance)
+        self.root_distance_without_time
+            + (NtpInstant::abs_diff(local_clock_time, self.time) * frequency_tolerance)
     }
 }
 
@@ -295,7 +296,8 @@ impl Peer {
         local_clock_time: NtpInstant,
         frequency_tolerance: FrequencyTolerance,
     ) -> NtpDuration {
-        self.root_distance_without_time() + ((local_clock_time - self.time) * frequency_tolerance)
+        self.root_distance_without_time()
+            + NtpInstant::abs_diff(local_clock_time, self.time) * frequency_tolerance
     }
 
     /// Root distance without the `(local_clock_time - self.time) * PHI` term

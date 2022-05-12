@@ -126,7 +126,8 @@ impl LastMeasurements {
         system_precision: NtpDuration,
         frequency_tolerance: FrequencyTolerance,
     ) -> Option<(PeerStatistics, NtpInstant)> {
-        let dispersion_correction = (new_tuple.time - peer_time) * frequency_tolerance;
+        let dispersion_correction =
+            NtpInstant::abs_diff(new_tuple.time, peer_time) * frequency_tolerance;
         self.shift_and_insert(new_tuple, dispersion_correction);
 
         let temporary_list = TemporaryList::from_clock_filter_contents(self);

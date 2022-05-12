@@ -26,12 +26,8 @@ impl NtpInstant {
         self.instant.hash(&mut s);
         s.finish().to_be_bytes()
     }
-}
 
-impl Sub for NtpInstant {
-    type Output = NtpDuration;
-
-    fn sub(self, rhs: Self) -> Self::Output {
+    pub fn abs_diff(self, rhs: Self) -> NtpDuration {
         let duration = if self.instant > rhs.instant {
             self.instant - rhs.instant
         } else {
