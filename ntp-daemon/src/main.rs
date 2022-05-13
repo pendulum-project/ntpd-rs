@@ -3,8 +3,10 @@ mod peer;
 
 use futures::{stream::FuturesUnordered, StreamExt};
 use ntp_os_clock::UnixNtpClock;
-
-use ntp_proto::{FilterAndCombine, NtpInstant, PollInterval, SystemConfig, SystemSnapshot};
+use ntp_proto::{
+    ClockController, ClockUpdateResult, FilterAndCombine, NtpInstant, PollInterval, SystemConfig,
+    SystemSnapshot,
+};
 use peer::{start_peer, PeerChannels};
 use tracing::info;
 
@@ -21,7 +23,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (system_tx, system_rx) = watch::channel::<SystemSnapshot>(SystemSnapshot::default());
 
     // channel to send the reset signal to all peers
-    let (_reset_tx, reset_rx) = watch::channel::<()>(());
+    let (reset_tx, reset_rx) = watch::channel::<()>(());
+
+    let mut controller = ClockController::new(UnixNtpClock::new());
 
     let new_peer = |address| {
         start_peer(
@@ -122,11 +126,37 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         let jitter_ms = clock_select.system_jitter.to_seconds() * 1000.0;
                         info!(offset_ms, jitter_ms, "system offset and jitter");
 
-                        // TODO update system state with result.peer_snapshot
+                        let adjust_type = controller.update(
+                            clock_select.system_offset,
+                            clock_select.system_jitter,
+                            clock_select.system_peer_snapshot.root_delay,
+                            clock_select.system_peer_snapshot.root_dispersion,
+                            clock_select.system_peer_snapshot.leap_indicator,
+                            clock_select.system_peer_snapshot.time,
+                        );
 
-                        // TODO produce an updated snapshot
-                        let system_snapshot = SystemSnapshot::default();
-                        system_tx.send(system_snapshot)?;
+                        // Handle situations needing extra processing
+                        match adjust_type {
+                            ClockUpdateResult::Panic => {
+                                panic!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate.")
+                            }
+                            ClockUpdateResult::Step => {
+                                waiting_for_reset.append(&mut peers);
+                                reset_tx.send(()).expect("Reset mechanism in inconsistent state");
+                            }
+                            _ => {}
+                        }
+
+                        // Handle updating system snapshot
+                        match adjust_type {
+                            ClockUpdateResult::Ignore => {},
+                            _ => {
+                                let mut system_snapshot = *system_rx.borrow();
+                                system_snapshot.poll_interval = controller.preferred_poll_interval();
+                                system_snapshot.leap_indicator = clock_select.system_peer_snapshot.leap_indicator;
+                                system_tx.send(system_snapshot).expect("System snapshot mechanism failed");
+                            }
+                        }
                     }
                     None => info!("filter and combine did not produce a result"),
                 }

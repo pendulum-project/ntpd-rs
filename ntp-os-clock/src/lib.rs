@@ -5,7 +5,7 @@
 // is constructed in such a way that use of the public functions is
 // safe regardless of given arguments.
 
-use ntp_proto::{NtpClock, NtpTimestamp};
+use ntp_proto::{NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, PollInterval};
 use thiserror::Error as ThisError;
 
 #[derive(Debug, Copy, Clone, ThisError)]
@@ -93,6 +93,11 @@ fn convert_errno() -> Error {
     }
 }
 
+fn duration_in_nanos(duration: NtpDuration) -> libc::c_long {
+    let (secs, nanos) = duration.as_seconds_nanos();
+    (secs as libc::c_long) * 1_000_000_000 + (nanos as libc::c_long)
+}
+
 impl NtpClock for UnixNtpClock {
     type Error = Error;
     fn now(&self) -> Result<ntp_proto::NtpTimestamp, Error> {
@@ -117,29 +122,77 @@ impl NtpClock for UnixNtpClock {
         ))
     }
 
-    fn adjust_clock(offset: ntp_proto::NtpDuration, freq_offset_ppm: f64) -> Result<(), Error> {
-        if freq_offset_ppm.abs() > 500.0 {
-            return Err(Error::Invalid);
-        }
-
+    fn set_freq(&self, freq: f64) -> Result<(), Self::Error> {
         let mut ntp_kapi_timex = EMPTY_TIMEX;
-        ntp_kapi_timex.modes = libc::ADJ_FREQUENCY | libc::ADJ_NANO;
-        ntp_kapi_timex.freq = (freq_offset_ppm * ((1 << 16) as f64)) as libc::c_long;
-
-        let (offset_seconds, offset_nanos) = offset.as_seconds_nanos();
-
-        // gradual adjustment if less than half a second off, otherwise jump
-        if (offset_seconds == -1 && offset_nanos >= 500_000_000)
-            || (offset_seconds == 0 && offset_nanos <= 500_000_000)
-        {
-            ntp_kapi_timex.modes |= libc::ADJ_OFFSET;
-            ntp_kapi_timex.offset =
-                (offset_nanos as i32 + offset_seconds * 1_000_000_000) as libc::c_long;
+        ntp_kapi_timex.modes = libc::MOD_FREQUENCY;
+        // NTP Kapi expects frequency adjustment in units of 2^-16 ppm
+        // but our input is in units of seconds drift per second, so convert.
+        ntp_kapi_timex.freq = (freq * 65536e6) as libc::c_long;
+        if unsafe { libc::ntp_adjtime(&mut ntp_kapi_timex as *mut _) } != -1 {
+            // We don't care here about the time status, so the non-error
+            // information in the return value of ntp_adjtime can be ignored
+            Ok(())
         } else {
-            ntp_kapi_timex.modes |= libc::ADJ_SETOFFSET;
-            ntp_kapi_timex.time.tv_sec = offset_seconds as libc::time_t;
-            ntp_kapi_timex.time.tv_usec = offset_nanos as libc::suseconds_t;
+            Err(convert_errno())
         }
+    }
+
+    fn step_clock(&self, offset: ntp_proto::NtpDuration) -> Result<(), Self::Error> {
+        let mut tp = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+
+        let (offset_secs, offset_nanos) = offset.as_seconds_nanos();
+
+        // Begin time critical section
+        // any time spend between here and the clock_settime call will reduce the
+        // accuracy of the made step
+        if unsafe { libc::clock_gettime(libc::CLOCK_REALTIME, &mut tp as *mut _) } == -1 {
+            return Err(convert_errno());
+        }
+
+        tp.tv_sec += offset_secs as libc::time_t;
+        tp.tv_nsec += offset_nanos as libc::c_long;
+        if tp.tv_nsec >= 1_000_000_000 {
+            // Deal with carry from addition of nanosecond parts
+            tp.tv_nsec -= 1_000_000_000;
+            tp.tv_sec += 1;
+        }
+
+        if unsafe { libc::clock_settime(libc::CLOCK_REALTIME, &tp as *const _) } == -1 {
+            return Err(convert_errno());
+        }
+        // End time critical section
+
+        Ok(())
+    }
+
+    fn update_clock(
+        &self,
+        offset: ntp_proto::NtpDuration,
+        est_error: ntp_proto::NtpDuration,
+        max_error: ntp_proto::NtpDuration,
+        poll_interval: PollInterval,
+        leap_status: NtpLeapIndicator,
+    ) -> Result<(), Self::Error> {
+        let mut ntp_kapi_timex = EMPTY_TIMEX;
+        ntp_kapi_timex.modes = libc::MOD_OFFSET
+            | libc::MOD_MAXERROR
+            | libc::MOD_ESTERROR
+            | libc::MOD_STATUS
+            | libc::MOD_TIMECONST
+            | libc::MOD_NANO;
+        ntp_kapi_timex.offset = duration_in_nanos(offset);
+        ntp_kapi_timex.esterror = duration_in_nanos(est_error) / 1000;
+        ntp_kapi_timex.maxerror = duration_in_nanos(max_error) / 1000;
+        ntp_kapi_timex.constant = poll_interval.as_log() as libc::c_long;
+        ntp_kapi_timex.status = libc::STA_PLL
+            | match leap_status {
+                NtpLeapIndicator::Leap59 => libc::STA_DEL,
+                NtpLeapIndicator::Leap61 => libc::STA_INS,
+                _ => 0,
+            };
 
         if unsafe { libc::ntp_adjtime(&mut ntp_kapi_timex as *mut _) } != -1 {
             // We don't care here about the time status, so the non-error

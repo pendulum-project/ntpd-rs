@@ -49,7 +49,7 @@ impl Default for SystemConfig {
 pub struct FilterAndCombine {
     pub system_offset: NtpDuration,
     pub system_jitter: NtpDuration,
-    pub(crate) system_peer_snapshot: PeerSnapshot,
+    pub system_peer_snapshot: PeerSnapshot,
 }
 
 impl FilterAndCombine {
