@@ -68,8 +68,15 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                     let ntp_instant = NtpInstant::now();
                     let packet = peer.generate_poll_message(ntp_instant);
 
-                    // TODO error handling here; what if we cannot determine the origin timestamp?
-                    last_send_timestamp = clock.now().ok();
+                    match clock.now() {
+                        Err(e) => {
+                            // we cannot determine the origin_timestamp
+                            panic!("`clock.now()` reported an error: {:?}", e)
+                        }
+                        Ok(ts) => {
+                            last_send_timestamp = Some(ts);
+                        }
+                    }
 
                     socket.send(&packet.serialize()).await.unwrap();
                 },
