@@ -16,7 +16,7 @@ impl NtpInstant {
         }
     }
 
-    // used to populate the T1 and T3 fields to ensure the server is doing something sensible
+    // used to set the origin_timestamp and transmit_timestamp of an outgoing packet.
     // see `generate_poll_message` for details
     pub(crate) fn to_bits(self) -> [u8; 8] {
         use std::collections::hash_map::DefaultHasher;
