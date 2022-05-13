@@ -221,6 +221,13 @@ impl NtpDuration {
         Self { duration }
     }
 
+    /// Interval of same length, but positive direction
+    pub const fn abs(self) -> Self {
+        Self {
+            duration: self.duration.abs(),
+        }
+    }
+
     /// Get the number of seconds (first return value) and nanoseconds
     /// (second return value) representing the length of this duration.
     /// The number of nanoseconds is guaranteed to be positiv and less

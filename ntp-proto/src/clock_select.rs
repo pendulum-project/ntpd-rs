@@ -45,22 +45,96 @@ impl Default for SystemConfig {
     }
 }
 
-pub fn filter_and_combine(
-    config: &SystemConfig,
-    peers: &[PeerSnapshot],
-    local_clock_time: NtpInstant,
-    system_poll: PollInterval,
-) -> Option<ClockCombine> {
-    let selection = clock_select(config, peers, local_clock_time, system_poll)?;
+#[derive(Debug, Clone)]
+pub struct FilterAndCombine {
+    pub system_offset: NtpDuration,
+    pub system_jitter: NtpDuration,
+    pub(crate) system_peer_snapshot: PeerSnapshot,
+}
 
-    let combined = clock_combine(
-        &selection.survivors,
-        selection.system_selection_jitter,
-        local_clock_time,
-        config.frequency_tolerance,
-    );
+impl FilterAndCombine {
+    pub fn run(
+        config: &SystemConfig,
+        peers: &[PeerSnapshot],
+        local_clock_time: NtpInstant,
+        system_poll: PollInterval,
+    ) -> Option<Self> {
+        let selection = clock_select(config, peers, local_clock_time, system_poll)?;
 
-    Some(combined)
+        // the clustering algorithm (part of `clock_select`) sorts the peers, best peer first.
+        // the first (and best) peer is chosen as the system peer, and its variables are used
+        // to update the system variables.
+        //
+        // NOTE: the code skeleton checks whether the current system peer is in the survivor list. If
+        // so, it keeps that peer as the system peer rather selecting the now-best peer (something
+        // it calls clock hopping). We'll have to see if that is something we should do too;
+        // the spec text does not talk about keeping the existing system peer if it's in the candidate list
+        let system_peer_snapshot = *selection.survivors[0].peer;
+
+        let combined = clock_combine(
+            &selection.survivors,
+            selection.system_selection_jitter,
+            local_clock_time,
+            config.frequency_tolerance,
+        );
+
+        Some(FilterAndCombine {
+            system_offset: combined.system_offset,
+            system_jitter: combined.system_jitter,
+            system_peer_snapshot,
+        })
+    }
+
+    pub fn system_root_delay(&self) -> NtpDuration {
+        self.system_peer_snapshot.root_delay + self.system_peer_snapshot.statistics.delay
+    }
+
+    pub fn system_root_dispersion(
+        &self,
+        local_clock_time: NtpInstant,
+        frequency_tolerance: FrequencyTolerance,
+    ) -> NtpDuration {
+        let peer = self.system_peer_snapshot;
+        let statistics = self.system_peer_snapshot.statistics;
+        let jitter = NtpDuration::from_seconds(statistics.jitter);
+
+        // in this delta, we expect the drift due to inaccurate frequency to be at most this value
+        let drift_upper_bound = (local_clock_time - peer.time) * frequency_tolerance;
+
+        // NOTES:
+        //
+        // 1) the skeleton combines the peer's jitter with the current system jitter
+        //
+        // > SQRT(SQUARE(p->jitter) + SQUARE(s.jitter))
+        //
+        // or well, it calculates the "vector" between them. I'd expect a "divide by 2" but it's
+        // not there. Anyhow, we don't currently consider the system's jitter.
+        //
+        // 2) the spec uses the component `|THETA|`
+        //
+        // > The system offset (THETA) represents the maximum-likelihood offset estimate for the server population.
+        //
+        // The code skeleton instead uses `p.offset`. We use the fresh system offset here.
+        let dispersion_increment =
+            statistics.dispersion + jitter + drift_upper_bound + self.system_offset.abs();
+
+        // per the spec
+        //
+        // > The dispersion increment (p.epsilon + p.psi + PHI * (s.t - p.t) + |THETA|) is bounded from
+        // > below by MINDISP.  In subnets with very fast processors and networks and very small delay
+        // > and dispersion this forces a monotone-definite increase in s.rootdisp (EPSILON), which avoids
+        // > loops between peers operating at the same stratum.
+        peer.root_dispersion + Ord::max(NtpDuration::MIN_DISPERSION, dispersion_increment)
+    }
+
+    pub fn root_synchronization_distance(
+        &self,
+        local_clock_time: NtpInstant,
+        frequency_tolerance: FrequencyTolerance,
+    ) -> NtpDuration {
+        self.system_root_dispersion(local_clock_time, frequency_tolerance)
+            + self.system_root_delay() / 2
+    }
 }
 
 struct ClockSelect<'a> {
@@ -437,6 +511,8 @@ fn peer_snapshot(
     root_delay: NtpDuration,
     root_dispersion: NtpDuration,
 ) -> PeerSnapshot {
+    use crate::{packet::NtpLeapIndicator, ReferenceId};
+
     let root_distance_without_time = NtpDuration::MIN_DISPERSION.max(root_delay + statistics.delay)
         / 2i64
         + root_dispersion
@@ -447,6 +523,13 @@ fn peer_snapshot(
         statistics,
         stratum: 0,
         root_distance_without_time,
+
+        reference_id: ReferenceId::from_int(0),
+        reference_timestamp: Default::default(),
+        poll_interval: Default::default(),
+        leap_indicator: NtpLeapIndicator::NoWarning,
+        root_delay: Default::default(),
+        root_dispersion: Default::default(),
     }
 }
 
@@ -1188,5 +1271,37 @@ mod test {
         for candidate in candidates {
             assert_eq!(candidate.peer.statistics.offset, NtpDuration::ONE);
         }
+    }
+
+    #[test]
+    fn system_variable_update() {
+        let base_state = FilterAndCombine {
+            system_offset: Default::default(),
+            system_jitter: Default::default(),
+            system_peer_snapshot: peer_snapshot(
+                PeerStatistics::default(),
+                NtpDuration::ZERO,
+                NtpDuration::ZERO,
+            ),
+        };
+
+        let frequency_tolerance = FrequencyTolerance::ppm(15);
+
+        let local_clock_time = NtpInstant::ZERO;
+        let _baseline =
+            base_state.root_synchronization_distance(local_clock_time, frequency_tolerance);
+
+        let mut state = base_state.clone();
+        state.system_offset = NtpDuration::ONE;
+        let distance = state.root_synchronization_distance(local_clock_time, frequency_tolerance);
+
+        // equal to 1 up to rounding
+        assert!(distance == NtpDuration::ONE);
+
+        let mut state = base_state;
+        state.system_jitter = NtpDuration::ONE;
+        let distance = state.root_synchronization_distance(local_clock_time, frequency_tolerance);
+
+        assert!(distance < NtpDuration::ONE / 2i64);
     }
 }

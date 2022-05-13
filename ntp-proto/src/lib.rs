@@ -11,7 +11,7 @@ mod time_types;
 pub use clock::NtpClock;
 #[cfg(feature = "fuzz")]
 pub use clock_select::fuzz_find_interval;
-pub use clock_select::{filter_and_combine, ClockCombine, SystemConfig};
+pub use clock_select::{FilterAndCombine, SystemConfig};
 #[cfg(feature = "fuzz")]
 pub use filter::fuzz_tuple_from_packet_default;
 pub use identifiers::ReferenceId;
