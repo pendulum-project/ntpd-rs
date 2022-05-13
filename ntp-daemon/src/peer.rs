@@ -1,11 +1,15 @@
 use std::sync::Arc;
+use tracing::warn;
 
 use ntp_proto::{
     IgnoreReason, NtpClock, NtpHeader, NtpInstant, Peer, PeerSnapshot, ReferenceId, SystemConfig,
     SystemSnapshot,
 };
+use ntp_udp::UdpSocket;
+use tracing::instrument;
+
 use tokio::{
-    net::{ToSocketAddrs, UdpSocket},
+    net::ToSocketAddrs,
     sync::{watch, Notify},
     time::Instant,
 };
@@ -26,27 +30,22 @@ pub struct PeerChannels {
     pub peer_reset: Arc<Notify>,
 }
 
-pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
+#[instrument(skip(clock, config, system_snapshots, reset))]
+pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpClock + Send>(
     addr: A,
     clock: C,
     config: SystemConfig,
     mut system_snapshots: watch::Receiver<SystemSnapshot>,
     mut reset: watch::Receiver<()>,
 ) -> Result<PeerChannels, std::io::Error> {
-    // setup socket
-    let socket = UdpSocket::bind("0.0.0.0:0").await?;
-    socket.connect(addr).await?;
-
-    // channel to send new peer snapshots
+    let socket = UdpSocket::new("0.0.0.0:0", addr).await?;
+    let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
+    let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
     let (tx, rx) = watch::channel::<MsgForSystem>(MsgForSystem::NoMeasurement);
 
     // channel to notify that a reset has been completed by this peer
     let notify_reset_send = Arc::new(Notify::new());
     let notify_reset_receive = notify_reset_send.clone();
-
-    let our_id = ReferenceId::from_ip(socket.local_addr()?.ip());
-    let peer_id = ReferenceId::from_ip(socket.peer_addr()?.ip());
-    let socket = ntp_udp::UdpSocket::from_tokio(socket)?;
 
     tokio::spawn(async move {
         let local_clock_time = NtpInstant::now();
@@ -91,7 +90,9 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                         }
                     }
 
-                    socket.send(&packet.serialize()).await.unwrap();
+                    if let Err(e) = socket.send(&packet.serialize()).await {
+                        warn!(error=debug(e), "poll message could not be sent");
+                    }
                 },
                 result = reset.changed() => {
                     if let Ok(()) = result {
@@ -112,7 +113,7 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                         // extra bytes are guaranteed safe to ignore. `recv` truncates the messages.
                         // Messages of fewer than 48 bytes are skipped entirely
                         if size < 48 {
-                            // TODO log something
+                            warn!(expected=48, actual=size, "received packet is too small");
                         } else {
                             let packet = NtpHeader::deserialize(&buf);
 

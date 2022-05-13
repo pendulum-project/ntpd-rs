@@ -3,13 +3,18 @@ mod peer;
 
 use futures::{stream::FuturesUnordered, StreamExt};
 use ntp_os_clock::UnixNtpClock;
+
 use ntp_proto::{FilterAndCombine, NtpInstant, PollInterval, SystemConfig, SystemSnapshot};
 use peer::{start_peer, PeerChannels};
+use tracing::info;
+
 use std::error::Error;
 use tokio::sync::watch;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    tracing_subscriber::fmt::init();
+
     let config = SystemConfig::default();
 
     // channel for sending updated system state to the peers
@@ -115,8 +120,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     Some(clock_select) => {
                         let offset_ms = clock_select.system_offset.to_seconds() * 1000.0;
                         let jitter_ms = clock_select.system_jitter.to_seconds() * 1000.0;
-                        println!("offset: {:.3}ms (jitter: {}ms)", offset_ms, jitter_ms);
-                        println!();
+                        info!(offset_ms, jitter_ms, "system offset and jitter");
 
                         // TODO update system state with result.peer_snapshot
 
@@ -124,7 +128,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         let system_snapshot = SystemSnapshot::default();
                         system_tx.send(system_snapshot)?;
                     }
-                    None => println!("filter and combine did not produce a result"),
+                    None => info!("filter and combine did not produce a result"),
                 }
             }
         }
