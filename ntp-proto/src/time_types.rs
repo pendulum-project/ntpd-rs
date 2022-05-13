@@ -38,6 +38,7 @@ impl NtpInstant {
     }
 }
 
+#[cfg(any(test, feature = "fuzz"))]
 impl Add<Duration> for NtpInstant {
     type Output = NtpInstant;
 
