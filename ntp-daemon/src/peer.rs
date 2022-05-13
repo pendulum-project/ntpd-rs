@@ -1,10 +1,11 @@
-use log::warn;
+use tracing::warn;
 use ntp_proto::{
     IgnoreReason, NtpClock, NtpHeader, NtpInstant, Peer, PeerSnapshot, ReferenceId, SystemConfig,
     SystemSnapshot,
 };
 use ntp_udp::UdpSocket;
 use tokio::{net::ToSocketAddrs, sync::watch, time::Instant};
+use tracing::instrument;
 
 #[derive(Debug, Clone, Copy)]
 pub enum MsgForSystem {
@@ -17,16 +18,16 @@ pub enum MsgForSystem {
     Snapshot(PeerSnapshot),
 }
 
-pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
+#[instrument(skip(clock, config, system_snapshots))]
+pub async fn start_peer<A, C>(
     addr: A,
     clock: C,
     config: SystemConfig,
     mut system_snapshots: watch::Receiver<SystemSnapshot>,
-) -> Result<watch::Receiver<MsgForSystem>, std::io::Error> {
+) -> Result<watch::Receiver<MsgForSystem>, std::io::Error> where A: 'static + ToSocketAddrs + std::fmt::Debug, C: 'static + NtpClock + Send {
     let socket = UdpSocket::new("0.0.0.0:0", addr).await?;
-    let our_id = ReferenceId::from_ip(socket.as_ref().local_addr()?.ip());
-    let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr()?.ip());
-
+    let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
+    let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
     let (tx, rx) = watch::channel::<MsgForSystem>(MsgForSystem::NoMeasurement);
 
     tokio::spawn(async move {
@@ -57,7 +58,7 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                     let ntp_instant = NtpInstant::from_ntp_timestamp(clock.now().unwrap());
                     let packet = peer.generate_poll_message(ntp_instant);
                     if let Err(e) = socket.send(&packet.serialize()).await {
-                        warn!("poll message could not be sent: {}", e);
+                        warn!(error=debug(e), "poll message could not be sent");
                     }
                 },
                 result = socket.recv(&mut buf) => {
@@ -67,7 +68,7 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                         // extra bytes are guaranteed safe to ignore. `recv` truncates the messages.
                         // Messages of fewer than 48 bytes are skipped entirely
                         if size < 48 {
-                            warn!("received packet with size {}. but expected at least 48, ignoring", size);
+                            warn!(expected=48, actual=size, "received packet is too small");
                         } else {
                             let packet = NtpHeader::deserialize(&buf);
 

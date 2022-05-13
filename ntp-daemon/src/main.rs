@@ -7,11 +7,12 @@ use ntp_proto::{
     filter_and_combine, NtpClock, NtpInstant, PollInterval, SystemConfig, SystemSnapshot,
 };
 use peer::start_peer;
+use tracing::info;
 use std::error::Error;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    env_logger::init();
+    tracing_subscriber::fmt::init();
 
     let config = SystemConfig::default();
     let clock = UnixNtpClock::new();
@@ -84,10 +85,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             Some(clock_select) => {
                 let offset_ms = clock_select.system_offset.to_seconds() * 1000.0;
                 let jitter_ms = clock_select.system_jitter.to_seconds() * 1000.0;
-                println!("offset: {:.3}ms (jitter: {}ms)", offset_ms, jitter_ms);
-                println!();
+                info!(offset_ms, jitter_ms, "system offset and jitter");
             }
-            None => println!("filter and combine did not produce a result"),
+            None => info!("filter and combine did not produce a result"),
         }
 
         // TODO produce an updated snapshot

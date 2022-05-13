@@ -4,7 +4,7 @@ use std::{
     os::unix::prelude::AsRawFd,
 };
 
-use log::{debug, trace, warn};
+use tracing::{debug, trace, warn, instrument};
 use ntp_proto::NtpTimestamp;
 use tokio::{io::unix::AsyncFd, net::ToSocketAddrs};
 
@@ -18,17 +18,18 @@ pub struct UdpSocket {
 }
 
 impl UdpSocket {
-    pub async fn new<A: ToSocketAddrs, B: ToSocketAddrs>(
+    #[instrument(level = "debug", skip(peer_addr))]
+    pub async fn new<A, B>(
         listen_addr: A,
-        target_addr: B,
-    ) -> io::Result<UdpSocket> {
+        peer_addr: B,
+    ) -> io::Result<UdpSocket> where A: ToSocketAddrs + std::fmt::Debug, B: ToSocketAddrs + std::fmt::Debug {
         let socket = tokio::net::UdpSocket::bind(listen_addr).await?;
-        debug!("socket bound to local address {:?}", socket.local_addr());
-        socket.connect(target_addr).await?;
+        debug!(local_addr=debug(socket.local_addr().unwrap()), "socket bound");
+        socket.connect(peer_addr).await?;
         debug!(
-            "socket bound to {:?} connected to peer address {:?}",
-            socket.local_addr(),
-            socket.peer_addr()
+            local_addr=debug(socket.local_addr().unwrap()),
+            peer_addr=debug(socket.peer_addr().unwrap()),
+            "socket connected"
         );
         let socket = socket.into_std()?;
         init_socket(&socket)?;
@@ -37,72 +38,52 @@ impl UdpSocket {
         })
     }
 
+    #[instrument(level = "trace", skip(self, buf), fields(
+        local_addr = debug(self.as_ref().local_addr().unwrap()),
+        peer_addr = debug(self.as_ref().peer_addr()),
+        buf_size = buf.len(),
+    ))]
     pub async fn send(&self, buf: &[u8]) -> io::Result<usize> {
+        trace!(size=buf.len(), "sending bytes");
         loop {
             let mut guard = self.io.writable().await?;
             match guard.try_io(|inner| inner.get_ref().send(buf)) {
                 Ok(result) => {
-                    if log::log_enabled!(log::Level::Debug) {
-                        if let Err(e) = &result {
-                            debug!("error sending data: {}", e);
-                        }
+                    match &result {
+                        Ok(size) => trace!(sent=size, "sent bytes"),
+                        Err(e) => debug!(error=debug(e), "error sending data"),
                     }
-
-                    if log::log_enabled!(log::Level::Trace) {
-                        if let Ok(size) = &result {
-                            trace!(
-                                "sent {} bytes from {:?} to peer {:?}",
-                                size,
-                                self.as_ref().local_addr(),
-                                self.as_ref().peer_addr()
-                            );
-                        }
-                    }
-
                     return result;
                 }
                 Err(_would_block) => {
-                    trace!(
-                        "socket {:?} was blocked after becoming writable, retrying",
-                        self.as_ref().local_addr()
-                    );
+                    trace!("blocked after becoming writable, retrying");
                     continue;
                 }
             }
         }
     }
 
+    #[instrument(level = "trace", skip(self, buf), fields(
+        local_addr = debug(self.as_ref().local_addr().unwrap()),
+        peer_addr = debug(self.as_ref().peer_addr()),
+        buf_size = buf.len(),
+    ))]
     pub async fn recv(&self, buf: &mut [u8]) -> io::Result<(usize, Option<NtpTimestamp>)> {
         loop {
+            trace!("waiting for socket to become readable");
             let mut guard = self.io.readable().await?;
-            match guard.try_io(|inner| recv(inner.get_ref(), buf)) {
-                Ok(result) => {
-                    if log::log_enabled!(log::Level::Debug) {
-                        if let Err(e) = &result {
-                            debug!("error receiving data: {}", e);
-                        }
-                    }
-
-                    if log::log_enabled!(log::Level::Trace) {
-                        if let Ok((size, ts)) = &result {
-                            trace!(
-                                "received message of size {} with receive ts {:?} from {:?}",
-                                size,
-                                ts,
-                                self.as_ref().local_addr()
-                            );
-                        }
-                    }
-                    return result;
-                }
+            let result = match guard.try_io(|inner| recv(inner.get_ref(), buf)) {
                 Err(_would_block) => {
-                    trace!(
-                        "socket {:?} was blocked after becoming readable, retrying",
-                        self.as_ref().local_addr()
-                    );
+                    trace!("blocked after becoming readable, retrying");
                     continue;
-                }
+                },
+                Ok(result) => result,
+            };
+            match &result {
+                Ok((size, ts)) => trace!(size, ts=debug(ts), "received message"),
+                Err(e) => debug!(error=debug(e), "error receiving data"),
             }
+            return result;
         }
     }
 }
@@ -165,21 +146,12 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
 
     let mut recv_ts = None;
 
-    if log::log_enabled!(log::Level::Trace) {
-        if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
-            warn!(
-                "truncated packet with more than {} bytes from {:?}",
-                buf.len(),
-                socket.local_addr()
-            );
-        }
+    if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
+        warn!("truncated packet because it was more than {} bytes", buf.len());
+    }
 
-        if mhdr.msg_flags & libc::MSG_CTRUNC > 0 {
-            warn!(
-                "truncated control messages for received packet on socket {:?}",
-                socket.local_addr()
-            );
-        }
+    if mhdr.msg_flags & libc::MSG_CTRUNC > 0 {
+        warn!("truncated control messages");
     }
 
     // Loops through the control messages, but we should only get a single message
