@@ -228,13 +228,16 @@ impl Peer {
     ) -> Result<PeerSnapshot, IgnoreReason> {
         if message.mode != NtpAssociationMode::Server {
             // we currently only support a client <-> server association
+            println!("Invalid mode ignored packet");
             Err(IgnoreReason::InvalidMode)
         } else if message.is_kiss_rate() {
+            println!("RATE ignored packet");
             // KISS packets may not have correct timestamps at all, handle them anyway
             self.remote_min_poll_interval =
                 Ord::max(self.remote_min_poll_interval.inc(), self.last_poll_interval);
             Err(IgnoreReason::KissIgnore)
         } else if message.is_kiss_rstr() || message.is_kiss_deny() {
+            println!("Block ignored packet");
             // KISS packets may not have correct timestamps at all, handle them anyway
             Err(IgnoreReason::KissDemobilize)
         } else if message.is_kiss() {
@@ -411,6 +414,7 @@ impl Peer {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::time::Duration;
 
     #[test]
     fn test_root_duration_sanity() {
@@ -602,5 +606,98 @@ mod test {
             peer.accept_synchronization(local_clock_time, ft, dt, system_poll),
             Err(Distance)
         );
+    }
+
+    #[test]
+    fn test_handle_incoming() {
+        let base = NtpInstant::now();
+        let mut peer = Peer::test_peer(base);
+
+        let outgoing = peer.generate_poll_message();
+        let mut packet = NtpHeader::new();
+        let system = SystemSnapshot::default();
+        packet.stratum = 1;
+        packet.mode = NtpAssociationMode::Server;
+        packet.origin_timestamp = outgoing.transmit_timestamp;
+        packet.receive_timestamp = NtpTimestamp::from_fixed_int(100);
+        packet.transmit_timestamp = NtpTimestamp::from_fixed_int(200);
+
+        assert!(peer
+            .handle_incoming(
+                system,
+                packet,
+                base + Duration::from_secs(1),
+                FrequencyTolerance::ppm(15),
+                NtpTimestamp::from_fixed_int(0),
+                NtpTimestamp::from_fixed_int(400)
+            )
+            .is_ok());
+        assert!(peer
+            .handle_incoming(
+                system,
+                packet,
+                base + Duration::from_secs(1),
+                FrequencyTolerance::ppm(15),
+                NtpTimestamp::from_fixed_int(0),
+                NtpTimestamp::from_fixed_int(500)
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn test_handle_kod() {
+        let base = NtpInstant::now();
+        let mut peer = Peer::test_peer(base);
+
+        let mut packet = NtpHeader::new();
+        let system = SystemSnapshot::default();
+        packet.reference_id = ReferenceId::KISS_RSTR;
+        packet.mode = NtpAssociationMode::Server;
+        assert!(matches!(
+            peer.handle_incoming(
+                system,
+                packet,
+                base + Duration::from_secs(1),
+                FrequencyTolerance::ppm(15),
+                NtpTimestamp::from_fixed_int(0),
+                NtpTimestamp::from_fixed_int(100)
+            ),
+            Err(IgnoreReason::KissDemobilize)
+        ));
+
+        let mut packet = NtpHeader::new();
+        let system = SystemSnapshot::default();
+        packet.reference_id = ReferenceId::KISS_DENY;
+        packet.mode = NtpAssociationMode::Server;
+        assert!(matches!(
+            peer.handle_incoming(
+                system,
+                packet,
+                base + Duration::from_secs(1),
+                FrequencyTolerance::ppm(15),
+                NtpTimestamp::from_fixed_int(0),
+                NtpTimestamp::from_fixed_int(100)
+            ),
+            Err(IgnoreReason::KissDemobilize)
+        ));
+
+        let old_poll_interval = peer.last_poll_interval;
+        let old_remote_interval = peer.remote_min_poll_interval;
+        let mut packet = NtpHeader::new();
+        let system = SystemSnapshot::default();
+        packet.reference_id = ReferenceId::KISS_RATE;
+        packet.mode = NtpAssociationMode::Server;
+        assert!(peer
+            .handle_incoming(
+                system,
+                packet,
+                base + Duration::from_secs(1),
+                FrequencyTolerance::ppm(15),
+                NtpTimestamp::from_fixed_int(0),
+                NtpTimestamp::from_fixed_int(100)
+            )
+            .is_err());
+        assert!(peer.remote_min_poll_interval > old_poll_interval);
+        assert!(peer.remote_min_poll_interval >= old_remote_interval);
     }
 }
