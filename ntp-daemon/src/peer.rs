@@ -77,8 +77,7 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
                         .as_mut()
                         .reset(Instant::now() + poll_interval.as_system_duration());
 
-                    let ntp_instant = NtpInstant::now();
-                    let packet = peer.generate_poll_message(ntp_instant);
+                    let packet = peer.generate_poll_message();
 
                     match clock.now() {
                         Err(e) => {

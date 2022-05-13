@@ -4,6 +4,7 @@ use crate::{
     time_types::{FrequencyTolerance, NtpInstant},
     NtpDuration, NtpHeader, NtpTimestamp, PollInterval, ReferenceId,
 };
+use rand::{thread_rng, Rng};
 
 const MAX_STRATUM: u8 = 16;
 
@@ -198,23 +199,20 @@ impl Peer {
         self.last_poll_interval
     }
 
-    pub fn generate_poll_message(&mut self, local_clock_time: NtpInstant) -> NtpHeader {
+    pub fn generate_poll_message(&mut self) -> NtpHeader {
         self.reach.poll();
 
         let mut packet = NtpHeader::new();
         packet.poll = self.last_poll_interval.as_log();
         packet.mode = NtpAssociationMode::Client;
 
-        // we write into the origin_timestamp and transmit_timestamp to validate the packet we get
-        // back. The origin_timestamp must not be changed, the transmit_timestamp must be changed
-        let local_clock_time = NtpTimestamp::from_bits(local_clock_time.to_bits());
-        self.next_expected_origin = Some(local_clock_time);
-
-        // in handle_incoming, we check that this field is unchanged
-        packet.origin_timestamp = local_clock_time;
-
-        // in handle_incoming, we check that this field was updated
-        packet.transmit_timestamp = local_clock_time;
+        // In order to increase the entropy of the transmit timestamp
+        // it is just a randomly generated timestamp.
+        // We then expect to get it back identically from the remote
+        // in the origin field.
+        let transmit_timestamp = thread_rng().gen();
+        self.next_expected_origin = Some(transmit_timestamp);
+        packet.transmit_timestamp = transmit_timestamp;
 
         packet
     }
@@ -228,29 +226,25 @@ impl Peer {
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
     ) -> Result<PeerSnapshot, IgnoreReason> {
-        // we're expecting a packet
-        debug_assert!(self.next_expected_origin.is_some());
-
-        // the transmit_timestamp field was not changed from the bogus value we put into it
-        let transmit_unchanged = Some(message.transmit_timestamp) == self.next_expected_origin;
-
-        // the origin_timestamp changed; the server is not allowed to modify this field
-        let origin_changed = Some(message.origin_timestamp) != self.next_expected_origin;
-
         if message.mode != NtpAssociationMode::Server {
             // we currently only support a client <-> server association
             Err(IgnoreReason::InvalidMode)
-        } else if transmit_unchanged || origin_changed {
-            Err(IgnoreReason::InvalidPacketTime)
         } else if message.is_kiss_rate() {
+            // KISS packets may not have correct timestamps at all, handle them anyway
             self.remote_min_poll_interval =
                 Ord::max(self.remote_min_poll_interval.inc(), self.last_poll_interval);
             Err(IgnoreReason::KissIgnore)
         } else if message.is_kiss_rstr() || message.is_kiss_deny() {
+            // KISS packets may not have correct timestamps at all, handle them anyway
             Err(IgnoreReason::KissDemobilize)
         } else if message.is_kiss() {
             // Ignore unrecognized control messages
             Err(IgnoreReason::KissIgnore)
+        } else if Some(message.origin_timestamp) != self.next_expected_origin {
+            // Packets should be a response to a previous request from us,
+            // if not just ignore. Note that this might also happen when
+            // we reset between sending the request and receiving the response.s
+            Err(IgnoreReason::InvalidPacketTime)
         } else {
             // For reachability, mark that we have had a response
             self.reach.received_packet();
