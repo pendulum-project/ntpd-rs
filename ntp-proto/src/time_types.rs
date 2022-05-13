@@ -28,7 +28,13 @@ impl NtpInstant {
     }
 
     pub fn abs_diff(self, rhs: Self) -> NtpDuration {
-        let duration = if self.instant > rhs.instant {
+        // our code should always give the bigger argument first.
+        debug_assert!(self >= rhs);
+
+        // NOTE: `std::time::Duration` cannot be negative, so a simple `lhs - rhs` could give an
+        // empty duration. In our logic, we're always interested in the absolute delta between two
+        // points in time.
+        let duration = if self.instant >= rhs.instant {
             self.instant - rhs.instant
         } else {
             rhs.instant - self.instant
