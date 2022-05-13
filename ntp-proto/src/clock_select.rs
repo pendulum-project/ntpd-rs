@@ -99,7 +99,8 @@ impl FilterAndCombine {
         let jitter = NtpDuration::from_seconds(statistics.jitter);
 
         // in this delta, we expect the drift due to inaccurate frequency to be at most this value
-        let drift_upper_bound = (local_clock_time - peer.time) * frequency_tolerance;
+        let drift_upper_bound =
+            NtpInstant::abs_diff(local_clock_time, peer.time) * frequency_tolerance;
 
         // NOTES:
         //
@@ -463,9 +464,11 @@ fn clock_combine<'a>(
 
 #[cfg(feature = "fuzz")]
 pub fn fuzz_find_interval(spec: &[(i64, u64)]) {
+    let instant = NtpInstant::now();
+
     let mut peers = vec![];
     for _ in 0..spec.len() {
-        peers.push(test_peer_snapshot())
+        peers.push(test_peer_snapshot(instant))
     }
     let mut candidates = vec![];
     for (i, (center, size)) in spec.iter().enumerate() {
@@ -490,16 +493,17 @@ pub fn fuzz_find_interval(spec: &[(i64, u64)]) {
     }
     candidates.sort_by(|a, b| a.edge.cmp(&b.edge));
     let config = SystemConfig::default();
-    let survivors = construct_survivors(&config, &candidates, crate::NtpInstant::ZERO);
+    let survivors = construct_survivors(&config, &candidates, instant);
 
     // check that if we find a cluster, it contains more than half of the peers we work with.
     assert!(survivors.is_empty() || 2 * survivors.len() > spec.len());
 }
 
 #[cfg(any(test, feature = "fuzz"))]
-fn test_peer_snapshot() -> PeerSnapshot {
+fn test_peer_snapshot(instant: NtpInstant) -> PeerSnapshot {
     peer_snapshot(
         crate::peer::PeerStatistics::default(),
+        instant,
         NtpDuration::default(),
         NtpDuration::default(),
     )
@@ -508,6 +512,7 @@ fn test_peer_snapshot() -> PeerSnapshot {
 #[cfg(any(test, feature = "fuzz"))]
 fn peer_snapshot(
     statistics: crate::peer::PeerStatistics,
+    instant: NtpInstant,
     root_delay: NtpDuration,
     root_dispersion: NtpDuration,
 ) -> PeerSnapshot {
@@ -519,7 +524,7 @@ fn peer_snapshot(
         + statistics.dispersion;
 
     PeerSnapshot {
-        time: NtpInstant::ZERO,
+        time: instant,
         statistics,
         stratum: 0,
         root_distance_without_time,
@@ -540,6 +545,8 @@ mod test {
 
     #[test]
     fn clock_combine_simple() {
+        let instant = NtpInstant::now();
+
         let peer_1 = peer_snapshot(
             PeerStatistics {
                 delay: NtpDuration::from_seconds(0.1),
@@ -547,6 +554,7 @@ mod test {
                 dispersion: NtpDuration::from_seconds(0.05),
                 jitter: 0.05,
             },
+            instant,
             NtpDuration::from_seconds(0.1),
             NtpDuration::from_seconds(0.05),
         );
@@ -558,6 +566,7 @@ mod test {
                 dispersion: NtpDuration::from_seconds(0.05),
                 jitter: 0.05,
             },
+            instant,
             NtpDuration::from_seconds(0.1),
             NtpDuration::from_seconds(0.05),
         );
@@ -569,6 +578,7 @@ mod test {
                 dispersion: NtpDuration::from_seconds(0.05),
                 jitter: 0.05,
             },
+            instant,
             NtpDuration::from_seconds(0.1),
             NtpDuration::from_seconds(0.05),
         );
@@ -591,7 +601,7 @@ mod test {
         let result = clock_combine(
             &survivors,
             NtpDuration::from_seconds(0.05),
-            NtpInstant::ZERO,
+            instant,
             FrequencyTolerance::ppm(15),
         );
         assert_eq!(result.system_offset, NtpDuration::from_fixed_int(0));
@@ -600,6 +610,8 @@ mod test {
 
     #[test]
     fn clock_combine_deemphasize_on_root_distance() {
+        let instant = NtpInstant::now();
+
         let peer_1 = peer_snapshot(
             PeerStatistics {
                 delay: NtpDuration::from_seconds(0.1),
@@ -607,6 +619,7 @@ mod test {
                 dispersion: NtpDuration::from_seconds(0.05),
                 jitter: 0.05,
             },
+            instant,
             NtpDuration::from_seconds(0.1),
             NtpDuration::from_seconds(0.05),
         );
@@ -618,6 +631,7 @@ mod test {
                 dispersion: NtpDuration::from_seconds(0.05),
                 jitter: 0.05,
             },
+            instant,
             NtpDuration::from_seconds(0.5),
             NtpDuration::from_seconds(0.05),
         );
@@ -629,6 +643,7 @@ mod test {
                 dispersion: NtpDuration::from_seconds(0.05),
                 jitter: 0.05,
             },
+            instant,
             NtpDuration::from_seconds(0.1),
             NtpDuration::from_seconds(0.05),
         );
@@ -651,7 +666,7 @@ mod test {
         let result = clock_combine(
             &survivors,
             NtpDuration::from_seconds(0.05),
-            NtpInstant::ZERO,
+            instant,
             FrequencyTolerance::ppm(15),
         );
         assert!(result.system_offset < NtpDuration::from_fixed_int(0));
@@ -661,9 +676,11 @@ mod test {
 
     #[test]
     fn find_interval_simple() {
-        let peer_1 = test_peer_snapshot();
-        let peer_2 = test_peer_snapshot();
-        let peer_3 = test_peer_snapshot();
+        let instant = NtpInstant::now();
+
+        let peer_1 = test_peer_snapshot(instant);
+        let peer_2 = test_peer_snapshot(instant);
+        let peer_3 = test_peer_snapshot(instant);
 
         let intervals = [
             CandidateTuple {
@@ -722,15 +739,17 @@ mod test {
         );
 
         let config = SystemConfig::default();
-        let survivors = construct_survivors(&config, &intervals, NtpInstant::ZERO);
+        let survivors = construct_survivors(&config, &intervals, instant);
         assert_eq!(survivors.len(), 3);
     }
 
     #[test]
     fn find_interval_outlier() {
-        let peer_1 = test_peer_snapshot();
-        let peer_2 = test_peer_snapshot();
-        let peer_3 = test_peer_snapshot();
+        let instant = NtpInstant::now();
+
+        let peer_1 = test_peer_snapshot(instant);
+        let peer_2 = test_peer_snapshot(instant);
+        let peer_3 = test_peer_snapshot(instant);
 
         let intervals = [
             CandidateTuple {
@@ -789,17 +808,19 @@ mod test {
         );
 
         let config = SystemConfig::default();
-        let survivors = construct_survivors(&config, &intervals, NtpInstant::ZERO);
+        let survivors = construct_survivors(&config, &intervals, instant);
         assert_eq!(survivors.len(), 2);
     }
 
     #[test]
     fn find_interval_low_precision_edgecase() {
+        let instant = NtpInstant::now();
+
         // One larger interval whose middle does not lie in
         // both smaller intervals, but whose middles do overlap.
-        let peer_1 = test_peer_snapshot();
-        let peer_2 = test_peer_snapshot();
-        let peer_3 = test_peer_snapshot();
+        let peer_1 = test_peer_snapshot(instant);
+        let peer_2 = test_peer_snapshot(instant);
+        let peer_3 = test_peer_snapshot(instant);
 
         let intervals = [
             CandidateTuple {
@@ -858,7 +879,7 @@ mod test {
         );
 
         let config = SystemConfig::default();
-        let survivors = construct_survivors(&config, &intervals, NtpInstant::ZERO);
+        let survivors = construct_survivors(&config, &intervals, instant);
         assert_eq!(survivors.len(), 3);
     }
 
@@ -866,9 +887,10 @@ mod test {
     fn find_interval_interleaving_edgecase() {
         // Three partially overlapping intervals, where
         // the outer center's are not in each others interval.
-        let peer_1 = test_peer_snapshot();
-        let peer_2 = test_peer_snapshot();
-        let peer_3 = test_peer_snapshot();
+        let instant = NtpInstant::now();
+        let peer_1 = test_peer_snapshot(instant);
+        let peer_2 = test_peer_snapshot(instant);
+        let peer_3 = test_peer_snapshot(instant);
 
         let intervals = [
             CandidateTuple {
@@ -927,16 +949,17 @@ mod test {
         );
 
         let config = SystemConfig::default();
-        let survivors = construct_survivors(&config, &intervals, NtpInstant::ZERO);
+        let survivors = construct_survivors(&config, &intervals, instant);
         assert_eq!(survivors.len(), 3);
     }
 
     #[test]
     fn find_interval_no_consensus() {
         // Three disjoint intervals
-        let peer_1 = test_peer_snapshot();
-        let peer_2 = test_peer_snapshot();
-        let peer_3 = test_peer_snapshot();
+        let instant = NtpInstant::now();
+        let peer_1 = test_peer_snapshot(instant);
+        let peer_2 = test_peer_snapshot(instant);
+        let peer_3 = test_peer_snapshot(instant);
 
         let intervals = [
             CandidateTuple {
@@ -989,7 +1012,7 @@ mod test {
         assert_eq!(find_interval(&intervals), None);
 
         let config = SystemConfig::default();
-        let survivors = construct_survivors(&config, &intervals, NtpInstant::ZERO);
+        let survivors = construct_survivors(&config, &intervals, instant);
         assert_eq!(survivors.len(), 0);
     }
 
@@ -997,9 +1020,10 @@ mod test {
     fn find_interval_tiling() {
         // Three intervals whose midpoints are not in any of the others
         // but which still overlap somewhat.
-        let peer_1 = test_peer_snapshot();
-        let peer_2 = test_peer_snapshot();
-        let peer_3 = test_peer_snapshot();
+        let instant = NtpInstant::now();
+        let peer_1 = test_peer_snapshot(instant);
+        let peer_2 = test_peer_snapshot(instant);
+        let peer_3 = test_peer_snapshot(instant);
 
         let intervals = [
             CandidateTuple {
@@ -1052,12 +1076,13 @@ mod test {
         assert_eq!(find_interval(&intervals), None);
 
         let config = SystemConfig::default();
-        let survivors = construct_survivors(&config, &intervals, NtpInstant::ZERO);
+        let survivors = construct_survivors(&config, &intervals, instant);
         assert_eq!(survivors.len(), 0);
     }
 
     #[test]
     fn test_construct_candidate_list() {
+        let instant = NtpInstant::now();
         let root_delay = NtpDuration::ZERO;
         let root_dispersion = NtpDuration::ZERO;
 
@@ -1066,6 +1091,7 @@ mod test {
                 delay: NtpDuration::from_seconds(1.0),
                 ..PeerStatistics::default()
             },
+            instant,
             root_delay,
             root_dispersion,
         );
@@ -1076,12 +1102,13 @@ mod test {
                 offset: NtpDuration::from_seconds(1.5),
                 ..PeerStatistics::default()
             },
+            instant,
             root_delay,
             root_dispersion,
         );
 
         let config = SystemConfig::default();
-        let local_clock_time = NtpInstant::ZERO;
+        let local_clock_time = instant;
         let actual: Vec<_> = construct_candidate_list(&config, [&peer1, &peer2], local_clock_time)
             .into_iter()
             .map(|t| (t.endpoint_type, t.edge))
@@ -1125,7 +1152,7 @@ mod test {
     #[test]
     fn cluster_algorithm_single() {
         let config = SystemConfig::default();
-        let peer = test_peer_snapshot();
+        let peer = test_peer_snapshot(NtpInstant::now());
         let candidate = SurvivorTuple {
             peer: &peer,
             metric: NtpDuration::ONE,
@@ -1135,14 +1162,14 @@ mod test {
 
     #[test]
     fn cluster_algorithm_tuple() {
-        let mut peer1 = test_peer_snapshot();
+        let mut peer1 = test_peer_snapshot(NtpInstant::now());
         peer1.statistics.offset = NtpDuration::ONE * 3i64;
         let candidate1 = SurvivorTuple {
             peer: &peer1,
             metric: NtpDuration::ONE,
         };
 
-        let mut peer2 = test_peer_snapshot();
+        let mut peer2 = test_peer_snapshot(NtpInstant::now());
         peer2.statistics.offset = NtpDuration::ONE * 7i64;
         let candidate2 = SurvivorTuple {
             peer: &peer2,
@@ -1162,7 +1189,7 @@ mod test {
 
     #[test]
     fn cluster_algorithm_exit_too_few_candidates() {
-        let mut peer1 = test_peer_snapshot();
+        let mut peer1 = test_peer_snapshot(NtpInstant::now());
         peer1.statistics.offset = NtpDuration::ONE * 3i64;
         let candidate1 = SurvivorTuple {
             peer: &peer1,
@@ -1185,7 +1212,7 @@ mod test {
         // after the termination condition has been met. That means the spec text and
         // code skeleton comment are at least misleading (and perhaps wrong).
 
-        let mut peer = test_peer_snapshot();
+        let mut peer = test_peer_snapshot(NtpInstant::now());
         peer.statistics.offset = NtpDuration::ONE * 3i64;
 
         let peers = &mut vec![peer; 15];
@@ -1212,7 +1239,7 @@ mod test {
 
     #[test]
     fn cluster_algorithm_outlier_is_discarded_first() {
-        let mut peer = test_peer_snapshot();
+        let mut peer = test_peer_snapshot(NtpInstant::now());
         peer.statistics.offset = NtpDuration::ONE * 3i64;
 
         let peers = &mut vec![peer; 4];
@@ -1243,7 +1270,7 @@ mod test {
 
     #[test]
     fn cluster_algorithm_outliers_are_discarded_first() {
-        let mut peer = test_peer_snapshot();
+        let mut peer = test_peer_snapshot(NtpInstant::now());
         peer.statistics.offset = NtpDuration::ONE * 3i64;
 
         let peers = &mut vec![peer; 5];
@@ -1275,11 +1302,14 @@ mod test {
 
     #[test]
     fn system_variable_update() {
+        let instant = NtpInstant::now();
+
         let base_state = FilterAndCombine {
             system_offset: Default::default(),
             system_jitter: Default::default(),
             system_peer_snapshot: peer_snapshot(
                 PeerStatistics::default(),
+                instant,
                 NtpDuration::ZERO,
                 NtpDuration::ZERO,
             ),
@@ -1287,7 +1317,7 @@ mod test {
 
         let frequency_tolerance = FrequencyTolerance::ppm(15);
 
-        let local_clock_time = NtpInstant::ZERO;
+        let local_clock_time = instant;
         let _baseline =
             base_state.root_synchronization_distance(local_clock_time, frequency_tolerance);
 

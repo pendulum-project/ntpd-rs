@@ -149,7 +149,8 @@ impl PeerSnapshot {
         local_clock_time: NtpInstant,
         frequency_tolerance: FrequencyTolerance,
     ) -> NtpDuration {
-        self.root_distance_without_time + ((local_clock_time - self.time) * frequency_tolerance)
+        self.root_distance_without_time
+            + (NtpInstant::abs_diff(local_clock_time, self.time) * frequency_tolerance)
     }
 }
 
@@ -175,7 +176,7 @@ impl Peer {
             next_expected_origin: None,
 
             statistics: Default::default(),
-            last_measurements: Default::default(),
+            last_measurements: LastMeasurements::new(time),
             last_packet: Default::default(),
             time,
             our_id,
@@ -224,6 +225,7 @@ impl Peer {
         message: NtpHeader,
         local_clock_time: NtpInstant,
         frequency_tolerance: FrequencyTolerance,
+        send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
     ) -> Result<PeerSnapshot, IgnoreReason> {
         // we're expecting a packet
@@ -266,6 +268,7 @@ impl Peer {
                 system.precision,
                 local_clock_time,
                 frequency_tolerance,
+                send_time,
                 recv_time,
             );
 
@@ -327,7 +330,8 @@ impl Peer {
         local_clock_time: NtpInstant,
         frequency_tolerance: FrequencyTolerance,
     ) -> NtpDuration {
-        self.root_distance_without_time() + ((local_clock_time - self.time) * frequency_tolerance)
+        self.root_distance_without_time()
+            + NtpInstant::abs_diff(local_clock_time, self.time) * frequency_tolerance
     }
 
     /// Root distance without the `(local_clock_time - self.time) * PHI` term
@@ -383,7 +387,7 @@ impl Peer {
     /// reset just the measurement data, the poll and connection data is unchanged
     pub fn reset_measurements(&mut self) {
         self.statistics = Default::default();
-        self.last_measurements = Default::default();
+        self.last_measurements = LastMeasurements::new(self.time);
         self.last_packet = Default::default();
 
         // make sure in-flight messages are ignored
@@ -391,7 +395,7 @@ impl Peer {
     }
 
     #[cfg(any(test, feature = "fuzz"))]
-    pub(crate) fn test_peer() -> Self {
+    pub(crate) fn test_peer(instant: NtpInstant) -> Self {
         Peer {
             last_poll_interval: PollInterval::default(),
             next_poll_interval: PollInterval::default(),
@@ -400,9 +404,9 @@ impl Peer {
             next_expected_origin: None,
 
             statistics: Default::default(),
-            last_measurements: Default::default(),
+            last_measurements: LastMeasurements::new(instant),
             last_packet: Default::default(),
-            time: Default::default(),
+            time: instant,
             peer_id: ReferenceId::from_int(0),
             our_id: ReferenceId::from_int(0),
             reach: Reach::default(),
@@ -422,8 +426,12 @@ mod test {
         let duration_1s = NtpDuration::from_fixed_int(1_0000_0000);
         let duration_2s = NtpDuration::from_fixed_int(2_0000_0000);
 
-        let timestamp_1s = NtpInstant::from_fixed_int(1_0000_0000);
-        let timestamp_2s = NtpInstant::from_fixed_int(2_0000_0000);
+        // let timestamp_1s = NtpInstant::from_fixed_int(1_0000_0000);
+        // let timestamp_2s = NtpInstant::from_fixed_int(2_0000_0000);
+
+        let timestamp_0s = NtpInstant::now();
+        let timestamp_1s = timestamp_0s + std::time::Duration::new(1, 0);
+        let timestamp_2s = timestamp_0s + std::time::Duration::new(2, 0);
 
         let ft = FrequencyTolerance::ppm(15);
 
@@ -437,8 +445,7 @@ mod test {
                 ..Default::default()
             },
             last_packet: packet,
-            time: timestamp_1s,
-            ..Peer::test_peer()
+            ..Peer::test_peer(timestamp_1s)
         };
 
         assert!(
@@ -452,8 +459,7 @@ mod test {
                 ..Default::default()
             },
             last_packet: packet,
-            time: timestamp_1s,
-            ..Peer::test_peer()
+            ..Peer::test_peer(timestamp_1s)
         };
         assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
 
@@ -464,8 +470,7 @@ mod test {
                 ..Default::default()
             },
             last_packet: packet,
-            time: timestamp_1s,
-            ..Peer::test_peer()
+            ..Peer::test_peer(timestamp_1s)
         };
         assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
 
@@ -476,8 +481,7 @@ mod test {
                 ..Default::default()
             },
             last_packet: packet,
-            time: NtpInstant::ZERO,
-            ..Peer::test_peer()
+            ..Peer::test_peer(timestamp_0s)
         };
         assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
 
@@ -489,8 +493,7 @@ mod test {
                 ..Default::default()
             },
             last_packet: packet,
-            time: timestamp_1s,
-            ..Peer::test_peer()
+            ..Peer::test_peer(timestamp_1s)
         };
         packet.root_delay = duration_1s;
         assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
@@ -503,8 +506,7 @@ mod test {
                 ..Default::default()
             },
             last_packet: packet,
-            time: timestamp_1s,
-            ..Peer::test_peer()
+            ..Peer::test_peer(timestamp_1s)
         };
         packet.root_dispersion = duration_1s;
         assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
@@ -516,8 +518,7 @@ mod test {
                 ..Default::default()
             },
             last_packet: packet,
-            time: timestamp_1s,
-            ..Peer::test_peer()
+            ..Peer::test_peer(timestamp_1s)
         };
 
         assert_eq!(
@@ -560,12 +561,12 @@ mod test {
     fn test_accept_synchronization() {
         use AcceptSynchronizationError::*;
 
-        let local_clock_time = NtpInstant::ZERO;
+        let local_clock_time = NtpInstant::now();
         let ft = FrequencyTolerance::ppm(15);
         let dt = NtpDuration::ONE;
         let system_poll = NtpDuration::ZERO;
 
-        let mut peer = Peer::test_peer();
+        let mut peer = Peer::test_peer(local_clock_time);
 
         // by default, the packet id and the peer's id are the same, indicating a loop
         assert_eq!(

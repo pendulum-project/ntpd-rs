@@ -3,9 +3,7 @@ mod peer;
 
 use futures::{stream::FuturesUnordered, StreamExt};
 use ntp_os_clock::UnixNtpClock;
-use ntp_proto::{
-    FilterAndCombine, NtpClock, NtpInstant, PollInterval, SystemConfig, SystemSnapshot,
-};
+use ntp_proto::{FilterAndCombine, NtpInstant, PollInterval, SystemConfig, SystemSnapshot};
 use peer::{start_peer, PeerChannels};
 use std::error::Error;
 use tokio::sync::watch;
@@ -13,7 +11,6 @@ use tokio::sync::watch;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let config = SystemConfig::default();
-    let clock = UnixNtpClock::new();
 
     // channel for sending updated system state to the peers
     let (system_tx, system_rx) = watch::channel::<SystemSnapshot>(SystemSnapshot::default());
@@ -110,7 +107,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
 
-                let ntp_instant = NtpInstant::from_ntp_timestamp(clock.now().unwrap());
+                let ntp_instant = NtpInstant::now();
                 let system_poll = PollInterval::MIN;
                 let result = FilterAndCombine::run(&config, &snapshots, ntp_instant, system_poll);
 

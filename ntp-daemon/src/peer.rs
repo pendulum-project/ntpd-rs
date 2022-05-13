@@ -49,7 +49,7 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
     let socket = ntp_udp::UdpSocket::from_tokio(socket)?;
 
     tokio::spawn(async move {
-        let local_clock_time = NtpInstant::from_ntp_timestamp(clock.now().unwrap());
+        let local_clock_time = NtpInstant::now();
         let mut peer = Peer::new(our_id, peer_id, local_clock_time);
 
         let poll_interval = {
@@ -58,6 +58,12 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
         };
         let poll_wait = tokio::time::sleep(poll_interval.as_system_duration());
         tokio::pin!(poll_wait);
+
+        // we don't store the real origin timestamp in the packet, because that would leak our
+        // system time to the network (and could make attacks easier). So instead there is some
+        // garbage data in the origin_timestamp field, and we need to track and pass along the
+        // actual origin timestamp ourselves.
+        let mut last_send_timestamp = None;
 
         loop {
             let mut buf = [0_u8; 48];
@@ -72,9 +78,19 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                         .as_mut()
                         .reset(Instant::now() + poll_interval.as_system_duration());
 
-                    // TODO: Figure out proper error behaviour here
-                    let ntp_instant = NtpInstant::from_ntp_timestamp(clock.now().unwrap());
+                    let ntp_instant = NtpInstant::now();
                     let packet = peer.generate_poll_message(ntp_instant);
+
+                    match clock.now() {
+                        Err(e) => {
+                            // we cannot determine the origin_timestamp
+                            panic!("`clock.now()` reported an error: {:?}", e)
+                        }
+                        Ok(ts) => {
+                            last_send_timestamp = Some(ts);
+                        }
+                    }
+
                     socket.send(&packet.serialize()).await.unwrap();
                 },
                 result = reset.changed() => {
@@ -90,7 +106,7 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                     }
                 }
                 result = socket.recv(&mut buf) => {
-                    if let Ok((size, Some(timestamp))) = result {
+                    if let Ok((size, Some(recv_timestamp))) = result {
                         // Note: packets are allowed to be bigger when including extensions.
                         // we don't expect them, but the server may still send them. The
                         // extra bytes are guaranteed safe to ignore. `recv` truncates the messages.
@@ -100,7 +116,15 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                         } else {
                             let packet = NtpHeader::deserialize(&buf);
 
-                            let ntp_instant = NtpInstant::from_ntp_timestamp(timestamp);
+                            let ntp_instant = NtpInstant::now();
+
+                            let send_timestamp = match last_send_timestamp {
+                                Some(ts) => ts,
+                                None => {
+                                    // we received a message without having sent one; discard
+                                    continue
+                                }
+                            };
 
                             let system_snapshot = *system_snapshots.borrow_and_update();
                             let result = peer.handle_incoming(
@@ -108,7 +132,8 @@ pub async fn start_peer<A: ToSocketAddrs, C: 'static + NtpClock + Send>(
                                 packet,
                                 ntp_instant,
                                 config.frequency_tolerance,
-                                timestamp,
+                                send_timestamp,
+                                recv_timestamp,
                             );
 
                             let system_poll = system_snapshot.poll_interval.as_duration();
