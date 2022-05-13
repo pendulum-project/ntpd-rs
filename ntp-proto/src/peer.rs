@@ -96,7 +96,6 @@ pub enum IgnoreReason {
     TooOld,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct PeerSnapshot {
     pub(crate) root_distance_without_time: NtpDuration,
@@ -105,9 +104,13 @@ pub struct PeerSnapshot {
     pub(crate) time: NtpInstant,
     pub(crate) stratum: u8,
 
+    #[allow(dead_code)]
     pub(crate) reference_id: ReferenceId,
+    #[allow(dead_code)]
     pub(crate) reference_timestamp: NtpTimestamp,
+    #[allow(dead_code)]
     pub(crate) poll_interval: PollInterval,
+    #[allow(dead_code)]
     pub(crate) leap_indicator: NtpLeapIndicator,
     pub(crate) root_delay: NtpDuration,
     pub(crate) root_dispersion: NtpDuration,
