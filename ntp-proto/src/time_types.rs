@@ -193,11 +193,6 @@ impl NtpDuration {
         duration: 1000 << 32,
     };
 
-    /// NtpDuration::from_seconds(1500)
-    pub(crate) const ALLAN: Self = Self {
-        duration: 1500 << 32,
-    };
-
     /// NtpDuration::from_seconds(16.0)
     pub(crate) const MAX_DISPERSION: Self = Self {
         duration: 68719476736,

@@ -25,12 +25,18 @@ pub trait NtpClock {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum ClockState {
     StartupBlank,
+    // Needed when implementing frequency backups
+    #[allow(dead_code)]
     StartupFreq,
     MeasureFreq,
     Spike,
     Sync,
 }
 
+/// Controller responsible for actually
+/// deciding which adjustments to make based
+/// on results from the filtering and
+/// combining algorithms.
 #[derive(Debug, Copy, Clone)]
 pub struct ClockController<C: NtpClock> {
     clock: C,
@@ -49,6 +55,18 @@ pub enum ClockUpdateResult {
 }
 
 impl<C: NtpClock> ClockController<C> {
+    pub fn new(clock: C) -> Self {
+        clock.set_freq(0.).expect("Unable to set clock frequency");
+        Self {
+            clock,
+            state: ClockState::StartupBlank,
+            last_update_time: NtpInstant::now(),
+            preferred_poll_interval: PollInterval::MIN,
+            poll_interval_counter: 0,
+            offset: NtpDuration::ZERO,
+        }
+    }
+
     // Preferred ratio between measured offset
     // and measurement jitter
     const POLL_FACTOR: i8 = 4;
@@ -64,11 +82,24 @@ impl<C: NtpClock> ClockController<C> {
         leap_status: NtpLeapIndicator,
         last_peer_update: NtpInstant,
     ) -> ClockUpdateResult {
+        // Check that we have a somewhat reasonable result
         if self.offset_too_large(offset) {
             return ClockUpdateResult::Panic;
         }
 
+        // Main decision making
+        //
+        // Combined, this code is responsible for:
+        //  - Filtering large but temporary spikes in the measured
+        //    offset to our timeservers
+        //  - Stepping the clock if a large difference persists long
+        //    enough
+        //  - Ensuring a proper initial frequency measurement on startup
+        //  - Making small (gradual) adjustments to the clock when we
+        //    only have a small error
         if offset.abs() > NtpDuration::STEP_THRESHOLD {
+            // Large spikes are filtered initialy (to handle weird but temporary network issues)
+            // and then handled by stepping if they persist.
             match self.state {
                 ClockState::Sync => {
                     self.state = ClockState::Spike;
@@ -78,6 +109,7 @@ impl<C: NtpClock> ClockController<C> {
                     if NtpInstant::abs_diff(last_peer_update, self.last_update_time)
                         < NtpDuration::SPIKE_INTERVAL
                     {
+                        // Initial frequency measurement needs some time
                         return ClockUpdateResult::Ignore;
                     }
 
@@ -88,12 +120,19 @@ impl<C: NtpClock> ClockController<C> {
                     if NtpInstant::abs_diff(last_peer_update, self.last_update_time)
                         < NtpDuration::SPIKE_INTERVAL
                     {
+                        // Filter out short spikes
                         return ClockUpdateResult::Ignore;
                     }
 
+                    // Seems that the large difference reflects reality, since
+                    // it persisted for a significant amount of time. So step
+                    // the clock
                     return self.do_step(offset, last_peer_update);
                 }
                 _ => {
+                    // In fully non-synchronized states, doing the jump
+                    // immediately is fine, as we expect the clock to
+                    // be off significantly
                     return self.do_step(offset, last_peer_update);
                 }
             }
@@ -101,13 +140,18 @@ impl<C: NtpClock> ClockController<C> {
             match self.state {
                 ClockState::StartupBlank => {
                     // Even though we have a small offset, making a step here
-                    // is the easiest way to get into a proper state
+                    // is the easiest way to get into a proper state.
+                    //
+                    // Using slew might result in us also accidentaly
+                    // moving away from the freq=0 initialization done earlier,
+                    // ruining the frequency measurement coming after.
                     return self.do_step(offset, last_peer_update);
                 }
                 ClockState::MeasureFreq => {
                     if NtpInstant::abs_diff(last_peer_update, self.last_update_time)
                         < NtpDuration::SPIKE_INTERVAL
                     {
+                        // Initial frequency measurement needs some time
                         return ClockUpdateResult::Ignore;
                     }
 
@@ -117,6 +161,8 @@ impl<C: NtpClock> ClockController<C> {
                     self.state = ClockState::Sync;
                 }
                 _ => {
+                    // Just make the small adjustment needed, we are good
+
                     // Since we currently only support the kernel api interface,
                     // we do not need to calculate frequency changes here, the
                     // kernel will do that for us.
@@ -140,13 +186,17 @@ impl<C: NtpClock> ClockController<C> {
             )
             .expect("Unable to update clock");
 
-        // Keep tabs on current poll interval preference
+        // Adjust whether we would prefer to have a longer or shorter
+        // poll interval depending on the amount of jitter
         if self.offset < jitter * Self::POLL_FACTOR {
             self.poll_interval_counter += self.preferred_poll_interval.as_log() as i32;
         } else {
             self.poll_interval_counter -= self.preferred_poll_interval.as_log() as i32;
         }
 
+        // If our preference becomes strong enough, adjust poll interval
+        // and reset. The hysteresis here ensures we aren't constantly flip-flopping
+        // between different preferred interval lengths.
         if self.poll_interval_counter > Self::POLL_ADJUST {
             self.poll_interval_counter = 0;
             self.preferred_poll_interval = self.preferred_poll_interval.inc();

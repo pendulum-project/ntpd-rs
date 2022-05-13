@@ -106,13 +106,12 @@ pub struct PeerSnapshot {
     pub(crate) root_distance_without_time: NtpDuration,
     pub(crate) statistics: PeerStatistics,
 
-    pub(crate) time: NtpInstant,
+    pub time: NtpInstant,
     pub(crate) stratum: u8,
 
-    #[allow(dead_code)]
-    pub(crate) leap_indicator: NtpLeapIndicator,
-    pub(crate) root_delay: NtpDuration,
-    pub(crate) root_dispersion: NtpDuration,
+    pub leap_indicator: NtpLeapIndicator,
+    pub root_delay: NtpDuration,
+    pub root_dispersion: NtpDuration,
 }
 
 impl PeerSnapshot {
