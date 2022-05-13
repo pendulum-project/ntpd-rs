@@ -1,11 +1,18 @@
+use std::sync::Arc;
 use tracing::warn;
+
 use ntp_proto::{
     IgnoreReason, NtpClock, NtpHeader, NtpInstant, Peer, PeerSnapshot, ReferenceId, SystemConfig,
     SystemSnapshot,
 };
 use ntp_udp::UdpSocket;
-use tokio::{net::ToSocketAddrs, sync::watch, time::Instant};
 use tracing::instrument;
+
+use tokio::{
+    net::ToSocketAddrs,
+    sync::{watch, Notify},
+    time::Instant,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub enum MsgForSystem {
@@ -18,20 +25,30 @@ pub enum MsgForSystem {
     Snapshot(PeerSnapshot),
 }
 
-#[instrument(skip(clock, config, system_snapshots))]
-pub async fn start_peer<A, C>(
+pub struct PeerChannels {
+    pub peer_snapshot: watch::Receiver<MsgForSystem>,
+    pub peer_reset: Arc<Notify>,
+}
+
+#[instrument(skip(clock, config, system_snapshots, reset))]
+pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpClock + Send>(
     addr: A,
     clock: C,
     config: SystemConfig,
     mut system_snapshots: watch::Receiver<SystemSnapshot>,
-) -> Result<watch::Receiver<MsgForSystem>, std::io::Error> where A: 'static + ToSocketAddrs + std::fmt::Debug, C: 'static + NtpClock + Send {
+    mut reset: watch::Receiver<()>,
+) -> Result<PeerChannels, std::io::Error> {
     let socket = UdpSocket::new("0.0.0.0:0", addr).await?;
     let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
     let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
     let (tx, rx) = watch::channel::<MsgForSystem>(MsgForSystem::NoMeasurement);
 
+    // channel to notify that a reset has been completed by this peer
+    let notify_reset_send = Arc::new(Notify::new());
+    let notify_reset_receive = notify_reset_send.clone();
+
     tokio::spawn(async move {
-        let local_clock_time = NtpInstant::from_ntp_timestamp(clock.now().unwrap());
+        let local_clock_time = NtpInstant::now();
         let mut peer = Peer::new(our_id, peer_id, local_clock_time);
 
         let poll_interval = {
@@ -40,6 +57,12 @@ pub async fn start_peer<A, C>(
         };
         let poll_wait = tokio::time::sleep(poll_interval.as_system_duration());
         tokio::pin!(poll_wait);
+
+        // we don't store the real origin timestamp in the packet, because that would leak our
+        // system time to the network (and could make attacks easier). So instead there is some
+        // garbage data in the origin_timestamp field, and we need to track and pass along the
+        // actual origin timestamp ourselves.
+        let mut last_send_timestamp = None;
 
         loop {
             let mut buf = [0_u8; 48];
@@ -54,15 +77,37 @@ pub async fn start_peer<A, C>(
                         .as_mut()
                         .reset(Instant::now() + poll_interval.as_system_duration());
 
-                    // TODO: Figure out proper error behaviour here
-                    let ntp_instant = NtpInstant::from_ntp_timestamp(clock.now().unwrap());
+                    let ntp_instant = NtpInstant::now();
                     let packet = peer.generate_poll_message(ntp_instant);
+
+                    match clock.now() {
+                        Err(e) => {
+                            // we cannot determine the origin_timestamp
+                            panic!("`clock.now()` reported an error: {:?}", e)
+                        }
+                        Ok(ts) => {
+                            last_send_timestamp = Some(ts);
+                        }
+                    }
+
                     if let Err(e) = socket.send(&packet.serialize()).await {
                         warn!(error=debug(e), "poll message could not be sent");
                     }
                 },
+                result = reset.changed() => {
+                    if let Ok(()) = result {
+                        // reset the measurement state (as if this association was just created).
+                        // crucially, this sets `self.next_expected_origin = None`, meaning that
+                        // in-flight requests are ignored
+                        peer.reset_measurements();
+
+                        // notify the system that the reset has been successful, and that this
+                        // association can produce valid measurements again
+                        notify_reset_send.notify_waiters();
+                    }
+                }
                 result = socket.recv(&mut buf) => {
-                    if let Ok((size, Some(timestamp))) = result {
+                    if let Ok((size, Some(recv_timestamp))) = result {
                         // Note: packets are allowed to be bigger when including extensions.
                         // we don't expect them, but the server may still send them. The
                         // extra bytes are guaranteed safe to ignore. `recv` truncates the messages.
@@ -72,7 +117,15 @@ pub async fn start_peer<A, C>(
                         } else {
                             let packet = NtpHeader::deserialize(&buf);
 
-                            let ntp_instant = NtpInstant::from_ntp_timestamp(timestamp);
+                            let ntp_instant = NtpInstant::now();
+
+                            let send_timestamp = match last_send_timestamp {
+                                Some(ts) => ts,
+                                None => {
+                                    // we received a message without having sent one; discard
+                                    continue
+                                }
+                            };
 
                             let system_snapshot = *system_snapshots.borrow_and_update();
                             let result = peer.handle_incoming(
@@ -80,7 +133,8 @@ pub async fn start_peer<A, C>(
                                 packet,
                                 ntp_instant,
                                 config.frequency_tolerance,
-                                timestamp,
+                                send_timestamp,
+                                recv_timestamp,
                             );
 
                             let system_poll = system_snapshot.poll_interval.as_duration();
@@ -114,5 +168,10 @@ pub async fn start_peer<A, C>(
         }
     });
 
-    Ok(rx)
+    let channels = PeerChannels {
+        peer_snapshot: rx,
+        peer_reset: notify_reset_receive,
+    };
+
+    Ok(channels)
 }

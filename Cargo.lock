@@ -255,7 +255,6 @@ name = "ntp-daemon"
 version = "0.1.0"
 dependencies = [
  "futures",
- "log",
  "ntp-os-clock",
  "ntp-proto",
  "ntp-udp",

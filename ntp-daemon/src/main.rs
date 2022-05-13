@@ -3,24 +3,35 @@ mod peer;
 
 use futures::{stream::FuturesUnordered, StreamExt};
 use ntp_os_clock::UnixNtpClock;
-use ntp_proto::{
-    filter_and_combine, NtpClock, NtpInstant, PollInterval, SystemConfig, SystemSnapshot,
-};
-use peer::start_peer;
+
+use ntp_proto::{FilterAndCombine, NtpInstant, PollInterval, SystemConfig, SystemSnapshot};
+use peer::{start_peer, PeerChannels};
 use tracing::info;
+
 use std::error::Error;
+use tokio::sync::watch;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt::init();
 
     let config = SystemConfig::default();
-    let clock = UnixNtpClock::new();
 
-    use tokio::sync::watch;
+    // channel for sending updated system state to the peers
     let (system_tx, system_rx) = watch::channel::<SystemSnapshot>(SystemSnapshot::default());
 
-    let new_peer = |address| start_peer(address, UnixNtpClock::new(), config, system_rx.clone());
+    // channel to send the reset signal to all peers
+    let (_reset_tx, reset_rx) = watch::channel::<()>(());
+
+    let new_peer = |address| {
+        start_peer(
+            address,
+            UnixNtpClock::new(),
+            config,
+            system_rx.clone(),
+            reset_rx.clone(),
+        )
+    };
 
     let mut peers = vec![
         new_peer("0.pool.ntp.org:123").await.unwrap(),
@@ -31,67 +42,95 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut snapshots = Vec::with_capacity(peers.len());
 
+    // when we perform a clock jump, all current measurement data is off. We force all associations
+    // to clear their measurement data and get new data. This vector contains associations that
+    // have not yet confirmed that their measurement data has been cleared.
+    let mut waiting_for_reset: Vec<PeerChannels> = Vec::with_capacity(peers.len());
+
     loop {
-        let changed_index = {
-            let mut changed: FuturesUnordered<_> = peers
-                .iter_mut()
-                .enumerate()
-                .map(|(i, c)| async move {
-                    c.changed().await.unwrap();
-                    i
-                })
-                .collect();
+        // one of the peers has a new measurement
+        let mut has_new_measurement: FuturesUnordered<_> = peers
+            .iter_mut()
+            .enumerate()
+            .map(|(i, c)| async move {
+                c.peer_snapshot.changed().await.unwrap();
+                i
+            })
+            .collect();
 
-            changed.next().await.unwrap()
-        };
+        // a peer that has been reset is saying it has resetted successfully
+        let mut active_after_reset: FuturesUnordered<_> = waiting_for_reset
+            .iter_mut()
+            .enumerate()
+            .map(|(i, c)| async move {
+                c.peer_reset.notified().await;
+                i
+            })
+            .collect();
 
-        let msg = *peers[changed_index].borrow();
-        match msg {
-            peer::MsgForSystem::MustDemobilize => {
-                peers.remove(changed_index);
-                continue;
-            }
-            peer::MsgForSystem::NoMeasurement => {
-                continue;
-            }
-            peer::MsgForSystem::Snapshot(_) => {
-                // fall through
+        tokio::select! {
+            Some(changed_index) = active_after_reset.next() => {
+                drop(has_new_measurement);
+                drop(active_after_reset);
+
+                let peer = waiting_for_reset.remove(changed_index);
+                peers.push(peer);
+            },
+            Some(changed_index) = has_new_measurement.next() => {
+                drop(has_new_measurement);
+                drop(active_after_reset);
+
+                let msg = *peers[changed_index].peer_snapshot.borrow();
+                match msg {
+                    peer::MsgForSystem::MustDemobilize => {
+                        peers.remove(changed_index);
+                        continue;
+                    }
+                    peer::MsgForSystem::NoMeasurement => {
+                        continue;
+                    }
+                    peer::MsgForSystem::Snapshot(_) => {
+                        // fall through
+                    }
+                }
+
+                // remove all snapshots from a previous iteration
+                snapshots.clear();
+
+                for i in (0..peers.len()).rev() {
+                    let msg = *peers[i].peer_snapshot.borrow_and_update();
+                    match msg {
+                        peer::MsgForSystem::MustDemobilize => {
+                            peers.remove(i);
+                        }
+                        peer::MsgForSystem::NoMeasurement => {
+                            // skip
+                        }
+                        peer::MsgForSystem::Snapshot(snapshot) => {
+                            snapshots.push(snapshot);
+                        }
+                    }
+                }
+
+                let ntp_instant = NtpInstant::now();
+                let system_poll = PollInterval::MIN;
+                let result = FilterAndCombine::run(&config, &snapshots, ntp_instant, system_poll);
+
+                match result {
+                    Some(clock_select) => {
+                        let offset_ms = clock_select.system_offset.to_seconds() * 1000.0;
+                        let jitter_ms = clock_select.system_jitter.to_seconds() * 1000.0;
+                        info!(offset_ms, jitter_ms, "system offset and jitter");
+
+                        // TODO update system state with result.peer_snapshot
+
+                        // TODO produce an updated snapshot
+                        let system_snapshot = SystemSnapshot::default();
+                        system_tx.send(system_snapshot)?;
+                    }
+                    None => info!("filter and combine did not produce a result"),
+                }
             }
         }
-
-        // remove all snapshots from a previous iteration
-        snapshots.clear();
-
-        for i in (0..peers.len()).rev() {
-            let msg = *peers[i].borrow_and_update();
-            match msg {
-                peer::MsgForSystem::MustDemobilize => {
-                    peers.remove(i);
-                }
-                peer::MsgForSystem::NoMeasurement => {
-                    // skip
-                }
-                peer::MsgForSystem::Snapshot(snapshot) => {
-                    snapshots.push(snapshot);
-                }
-            }
-        }
-
-        let ntp_instant = NtpInstant::from_ntp_timestamp(clock.now().unwrap());
-        let system_poll = PollInterval::MIN;
-        let result = filter_and_combine(&config, &snapshots, ntp_instant, system_poll);
-
-        match result {
-            Some(clock_select) => {
-                let offset_ms = clock_select.system_offset.to_seconds() * 1000.0;
-                let jitter_ms = clock_select.system_jitter.to_seconds() * 1000.0;
-                info!(offset_ms, jitter_ms, "system offset and jitter");
-            }
-            None => info!("filter and combine did not produce a result"),
-        }
-
-        // TODO produce an updated snapshot
-        let system_snapshot = SystemSnapshot::default();
-        system_tx.send(system_snapshot)?;
     }
 }

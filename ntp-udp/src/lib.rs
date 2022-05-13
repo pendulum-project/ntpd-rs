@@ -4,9 +4,9 @@ use std::{
     os::unix::prelude::AsRawFd,
 };
 
-use tracing::{debug, trace, warn, instrument};
 use ntp_proto::NtpTimestamp;
 use tokio::{io::unix::AsyncFd, net::ToSocketAddrs};
+use tracing::{debug, instrument, trace, warn};
 
 // Unix uses an epoch located at 1/1/1970-00:00h (UTC) and NTP uses 1/1/1900-00:00h.
 // This leads to an offset equivalent to 70 years in seconds
@@ -19,16 +19,20 @@ pub struct UdpSocket {
 
 impl UdpSocket {
     #[instrument(level = "debug", skip(peer_addr))]
-    pub async fn new<A, B>(
-        listen_addr: A,
-        peer_addr: B,
-    ) -> io::Result<UdpSocket> where A: ToSocketAddrs + std::fmt::Debug, B: ToSocketAddrs + std::fmt::Debug {
+    pub async fn new<A, B>(listen_addr: A, peer_addr: B) -> io::Result<UdpSocket>
+    where
+        A: ToSocketAddrs + std::fmt::Debug,
+        B: ToSocketAddrs + std::fmt::Debug,
+    {
         let socket = tokio::net::UdpSocket::bind(listen_addr).await?;
-        debug!(local_addr=debug(socket.local_addr().unwrap()), "socket bound");
+        debug!(
+            local_addr = debug(socket.local_addr().unwrap()),
+            "socket bound"
+        );
         socket.connect(peer_addr).await?;
         debug!(
-            local_addr=debug(socket.local_addr().unwrap()),
-            peer_addr=debug(socket.peer_addr().unwrap()),
+            local_addr = debug(socket.local_addr().unwrap()),
+            peer_addr = debug(socket.peer_addr().unwrap()),
             "socket connected"
         );
         let socket = socket.into_std()?;
@@ -44,14 +48,14 @@ impl UdpSocket {
         buf_size = buf.len(),
     ))]
     pub async fn send(&self, buf: &[u8]) -> io::Result<usize> {
-        trace!(size=buf.len(), "sending bytes");
+        trace!(size = buf.len(), "sending bytes");
         loop {
             let mut guard = self.io.writable().await?;
             match guard.try_io(|inner| inner.get_ref().send(buf)) {
                 Ok(result) => {
                     match &result {
-                        Ok(size) => trace!(sent=size, "sent bytes"),
-                        Err(e) => debug!(error=debug(e), "error sending data"),
+                        Ok(size) => trace!(sent = size, "sent bytes"),
+                        Err(e) => debug!(error = debug(e), "error sending data"),
                     }
                     return result;
                 }
@@ -76,12 +80,12 @@ impl UdpSocket {
                 Err(_would_block) => {
                     trace!("blocked after becoming readable, retrying");
                     continue;
-                },
+                }
                 Ok(result) => result,
             };
             match &result {
-                Ok((size, ts)) => trace!(size, ts=debug(ts), "received message"),
-                Err(e) => debug!(error=debug(e), "error receiving data"),
+                Ok((size, ts)) => trace!(size, ts = debug(ts), "received message"),
+                Err(e) => debug!(error = debug(e), "error receiving data"),
             }
             return result;
         }
@@ -147,7 +151,10 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
     let mut recv_ts = None;
 
     if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
-        warn!("truncated packet because it was more than {} bytes", buf.len());
+        warn!(
+            max_len = buf.len(),
+            "truncated packet because it was larger than expected",
+        );
     }
 
     if mhdr.msg_flags & libc::MSG_CTRUNC > 0 {
