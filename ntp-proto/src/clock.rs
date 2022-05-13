@@ -208,6 +208,10 @@ impl<C: NtpClock> ClockController<C> {
         ClockUpdateResult::Slew
     }
 
+    pub fn preferred_poll_interval(&self) -> PollInterval {
+        self.preferred_poll_interval
+    }
+
     fn offset_too_large(&self, offset: NtpDuration) -> bool {
         match self.state {
             // The system might be wildly off on startup

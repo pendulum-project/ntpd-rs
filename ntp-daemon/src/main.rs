@@ -23,7 +23,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (system_tx, system_rx) = watch::channel::<SystemSnapshot>(SystemSnapshot::default());
 
     // channel to send the reset signal to all peers
-    let (_reset_tx, reset_rx) = watch::channel::<()>(());
+    let (reset_tx, reset_rx) = watch::channel::<()>(());
 
     let mut controller = ClockController::new(UnixNtpClock::new());
 
@@ -135,21 +135,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             clock_select.system_peer_snapshot.time,
                         );
 
+                        // Handle situations needing extra processing
                         match adjust_type {
                             ClockUpdateResult::Panic => {
                                 panic!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate.")
                             }
                             ClockUpdateResult::Step => {
-                                // TODO: Reset peers
+                                waiting_for_reset.append(&mut peers);
+                                reset_tx.send(()).expect("Reset mechanism in inconsistent state");
                             }
                             _ => {}
                         }
 
-                        // TODO update system state with result.peer_snapshot
-
-                        // TODO produce an updated snapshot
-                        let system_snapshot = SystemSnapshot::default();
-                        system_tx.send(system_snapshot)?;
+                        // Handle updating system snapshot
+                        match adjust_type {
+                            ClockUpdateResult::Ignore => {},
+                            _ => {
+                                let mut system_snapshot = *system_rx.borrow();
+                                system_snapshot.poll_interval = controller.preferred_poll_interval();
+                                system_snapshot.leap_indicator = clock_select.system_peer_snapshot.leap_indicator;
+                                system_tx.send(system_snapshot).expect("System snapshot mechanism failed");
+                            }
+                        }
                     }
                     None => info!("filter and combine did not produce a result"),
                 }
