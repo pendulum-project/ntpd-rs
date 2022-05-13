@@ -125,6 +125,8 @@ impl NtpClock for UnixNtpClock {
     fn set_freq(&self, freq: f64) -> Result<(), Self::Error> {
         let mut ntp_kapi_timex = EMPTY_TIMEX;
         ntp_kapi_timex.modes = libc::MOD_FREQUENCY;
+        // NTP Kapi expects frequency adjustment in units of 2^-16 ppm
+        // but our input is in units of seconds drift per second, so convert.
         ntp_kapi_timex.freq = (freq * 65536e6) as libc::c_long;
         if unsafe { libc::ntp_adjtime(&mut ntp_kapi_timex as *mut _) } != -1 {
             // We don't care here about the time status, so the non-error
@@ -152,7 +154,8 @@ impl NtpClock for UnixNtpClock {
 
         tp.tv_sec += offset_secs as libc::time_t;
         tp.tv_nsec += offset_nanos as libc::c_long;
-        while tp.tv_nsec >= 1_000_000_000 {
+        if tp.tv_nsec >= 1_000_000_000 {
+            // Deal with carry from addition of nanosecond parts
             tp.tv_nsec -= 1_000_000_000;
             tp.tv_sec += 1;
         }

@@ -60,6 +60,8 @@ impl<C: NtpClock> ClockController<C> {
         Self {
             clock,
             state: ClockState::StartupBlank,
+            // Setting up the clock counts as an update for
+            // the purposes of the math done here
             last_update_time: NtpInstant::now(),
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
@@ -129,7 +131,7 @@ impl<C: NtpClock> ClockController<C> {
                     // the clock
                     return self.do_step(offset, last_peer_update);
                 }
-                _ => {
+                ClockState::StartupBlank | ClockState::StartupFreq => {
                     // In fully non-synchronized states, doing the jump
                     // immediately is fine, as we expect the clock to
                     // be off significantly
@@ -160,7 +162,7 @@ impl<C: NtpClock> ClockController<C> {
                     self.last_update_time = last_peer_update;
                     self.state = ClockState::Sync;
                 }
-                _ => {
+                ClockState::StartupFreq | ClockState::Sync | ClockState::Spike => {
                     // Just make the small adjustment needed, we are good
 
                     // Since we currently only support the kernel api interface,
