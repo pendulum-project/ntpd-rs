@@ -110,12 +110,6 @@ pub struct PeerSnapshot {
     pub(crate) stratum: u8,
 
     #[allow(dead_code)]
-    pub(crate) reference_id: ReferenceId,
-    #[allow(dead_code)]
-    pub(crate) reference_timestamp: NtpTimestamp,
-    #[allow(dead_code)]
-    pub(crate) poll_interval: PollInterval,
-    #[allow(dead_code)]
     pub(crate) leap_indicator: NtpLeapIndicator,
     pub(crate) root_delay: NtpDuration,
     pub(crate) root_dispersion: NtpDuration,
@@ -308,9 +302,6 @@ impl Peer {
                     statistics: self.statistics,
                     time: self.time,
                     stratum: self.last_packet.stratum,
-                    reference_id: self.last_packet.reference_id,
-                    reference_timestamp: self.last_packet.reference_timestamp,
-                    poll_interval: self.last_poll_interval,
                     leap_indicator: self.last_packet.leap,
                     root_delay: self.last_packet.root_delay,
                     root_dispersion: self.last_packet.root_dispersion,

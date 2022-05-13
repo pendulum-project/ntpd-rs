@@ -529,9 +529,6 @@ fn peer_snapshot(
         stratum: 0,
         root_distance_without_time,
 
-        reference_id: ReferenceId::from_int(0),
-        reference_timestamp: Default::default(),
-        poll_interval: Default::default(),
         leap_indicator: NtpLeapIndicator::NoWarning,
         root_delay: Default::default(),
         root_dispersion: Default::default(),
