@@ -3,7 +3,7 @@ mod peer;
 
 use futures::{stream::FuturesUnordered, StreamExt};
 use ntp_os_clock::UnixNtpClock;
-use ntp_proto::{filter_and_combine, NtpInstant, PollInterval, SystemConfig, SystemSnapshot};
+use ntp_proto::{FilterAndCombine, NtpInstant, PollInterval, SystemConfig, SystemSnapshot};
 use peer::start_peer;
 use std::error::Error;
 
@@ -73,7 +73,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         let ntp_instant = NtpInstant::now();
         let system_poll = PollInterval::MIN;
-        let result = filter_and_combine(&config, &snapshots, ntp_instant, system_poll);
+        let result = FilterAndCombine::run(&config, &snapshots, ntp_instant, system_poll);
 
         match result {
             Some(clock_select) => {
@@ -81,12 +81,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let jitter_ms = clock_select.system_jitter.to_seconds() * 1000.0;
                 println!("offset: {:.3}ms (jitter: {}ms)", offset_ms, jitter_ms);
                 println!();
+
+                // TODO update system state with result.peer_snapshot
+
+                // TODO produce an updated snapshot
+                let system_snapshot = SystemSnapshot::default();
+                system_tx.send(system_snapshot)?;
             }
             None => println!("filter and combine did not produce a result"),
         }
-
-        // TODO produce an updated snapshot
-        let system_snapshot = SystemSnapshot::default();
-        system_tx.send(system_snapshot)?;
     }
 }
