@@ -7,9 +7,9 @@ pub struct ReferenceId(u32);
 
 impl ReferenceId {
     // Note: Names chosen to match the identifiers given in rfc5905
-    const KISS_DENY: u32 = 0x44454E59;
-    const KISS_RATE: u32 = 0x52415445;
-    const KISS_RSTR: u32 = 0x52535452;
+    pub(crate) const KISS_DENY: ReferenceId = ReferenceId(0x44454E59);
+    pub(crate) const KISS_RATE: ReferenceId = ReferenceId(0x52415445);
+    pub(crate) const KISS_RSTR: ReferenceId = ReferenceId(0x52535452);
 
     pub fn from_ip(addr: IpAddr) -> ReferenceId {
         match addr {
@@ -25,15 +25,15 @@ impl ReferenceId {
     }
 
     pub(crate) fn is_deny(&self) -> bool {
-        self.0 == Self::KISS_DENY
+        *self == Self::KISS_DENY
     }
 
     pub(crate) fn is_rate(&self) -> bool {
-        self.0 == Self::KISS_RATE
+        *self == Self::KISS_RATE
     }
 
     pub(crate) fn is_rstr(&self) -> bool {
-        self.0 == Self::KISS_RSTR
+        *self == Self::KISS_RSTR
     }
 
     pub(crate) fn to_bytes(self) -> [u8; 4] {

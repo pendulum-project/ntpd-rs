@@ -1,3 +1,7 @@
+use rand::{
+    distributions::{Distribution, Standard},
+    Rng,
+};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 use std::time::{Duration, Instant};
 
@@ -14,17 +18,6 @@ impl NtpInstant {
         Self {
             instant: Instant::now(),
         }
-    }
-
-    // used to set the origin_timestamp and transmit_timestamp of an outgoing packet.
-    // see `generate_poll_message` for details
-    pub(crate) fn to_bits(self) -> [u8; 8] {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
-        let mut s = DefaultHasher::new();
-        self.instant.hash(&mut s);
-        s.finish().to_be_bytes()
     }
 
     pub fn abs_diff(self, rhs: Self) -> NtpDuration {
@@ -101,6 +94,17 @@ impl NtpTimestamp {
     #[cfg(any(test, feature = "fuzz"))]
     pub(crate) const fn from_fixed_int(timestamp: u64) -> NtpTimestamp {
         NtpTimestamp { timestamp }
+    }
+}
+
+// In order to provide increased entropy on origin timestamps,
+// we should generate these randomly. This helps avoid
+// attacks from attackers guessing our current time.
+impl Distribution<NtpTimestamp> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> NtpTimestamp {
+        NtpTimestamp {
+            timestamp: rng.gen(),
+        }
     }
 }
 
