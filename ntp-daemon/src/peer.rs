@@ -45,11 +45,7 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
         let local_clock_time = NtpInstant::now();
         let mut peer = Peer::new(our_id, peer_id, local_clock_time);
 
-        let poll_interval = {
-            let system_snapshot = system_snapshots.borrow_and_update();
-            peer.get_interval_next_poll(system_snapshot.poll_interval)
-        };
-        let poll_wait = tokio::time::sleep(poll_interval.as_system_duration());
+        let poll_wait = tokio::time::sleep(std::time::Duration::default());
         tokio::pin!(poll_wait);
 
         // we don't store the real origin timestamp in the packet, because that would leak our
@@ -58,20 +54,24 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
         // actual origin timestamp ourselves.
         let mut last_send_timestamp = None;
 
+        // Instant last poll message was sent (used for timing the wait)
+        let mut last_poll_sent = Instant::now();
+
         loop {
             let mut buf = [0_u8; 48];
 
             tokio::select! {
                 () = &mut poll_wait => {
-                    let poll_interval = {
-                        let system_snapshot = system_snapshots.borrow_and_update();
-                        peer.get_interval_next_poll(system_snapshot.poll_interval)
-                    };
+                    let system_snapshot = *system_snapshots.borrow_and_update();
+
+
+                    let packet = peer.generate_poll_message(system_snapshot);
+
+                    // Sent a poll, so update waiting to match deadline of next
+                    last_poll_sent = Instant::now();
                     poll_wait
                         .as_mut()
-                        .reset(Instant::now() + poll_interval.as_system_duration());
-
-                    let packet = peer.generate_poll_message();
+                        .reset(last_poll_sent + peer.current_poll_interval(system_snapshot).as_system_duration());
 
                     match clock.now() {
                         Err(e) => {
@@ -130,6 +130,12 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
                                 send_timestamp,
                                 recv_timestamp,
                             );
+
+                            // Handle incoming may have changed poll interval based on
+                            // message, respect that change
+                            poll_wait
+                                .as_mut()
+                                .reset(last_poll_sent + peer.current_poll_interval(system_snapshot).as_system_duration());
 
                             let system_poll = system_snapshot.poll_interval.as_duration();
                             let accept = peer.accept_synchronization(
