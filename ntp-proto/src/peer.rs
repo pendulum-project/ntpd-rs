@@ -618,6 +618,69 @@ mod test {
     }
 
     #[test]
+    fn test_poll_interval() {
+        let base = NtpInstant::now();
+        let mut peer = Peer::test_peer(base);
+        let mut system = SystemSnapshot::default();
+
+        assert!(peer.current_poll_interval(system) >= peer.remote_min_poll_interval);
+        assert!(peer.current_poll_interval(system) >= system.poll_interval);
+
+        system.poll_interval = PollInterval::MAX;
+
+        assert!(peer.current_poll_interval(system) >= peer.remote_min_poll_interval);
+        assert!(peer.current_poll_interval(system) >= system.poll_interval);
+
+        system.poll_interval = PollInterval::MIN;
+        peer.remote_min_poll_interval = PollInterval::MAX;
+
+        assert!(peer.current_poll_interval(system) >= peer.remote_min_poll_interval);
+        assert!(peer.current_poll_interval(system) >= system.poll_interval);
+
+        peer.remote_min_poll_interval = PollInterval::MIN;
+
+        let prev = peer.current_poll_interval(system);
+        let packet = peer.generate_poll_message(system);
+        assert!(peer.current_poll_interval(system) > prev);
+        let mut response = NtpHeader::new();
+        response.mode = NtpAssociationMode::Server;
+        response.stratum = 1;
+        response.origin_timestamp = packet.transmit_timestamp;
+        assert!(peer
+            .handle_incoming(
+                system,
+                response,
+                base,
+                FrequencyTolerance::ppm(15),
+                NtpTimestamp::default(),
+                NtpTimestamp::default()
+            )
+            .is_ok());
+        assert_eq!(peer.current_poll_interval(system), prev);
+
+        let prev = peer.current_poll_interval(system);
+        let packet = peer.generate_poll_message(system);
+        assert!(peer.current_poll_interval(system) > prev);
+        let mut response = NtpHeader::new();
+        response.mode = NtpAssociationMode::Server;
+        response.stratum = 0;
+        response.origin_timestamp = packet.transmit_timestamp;
+        response.reference_id = ReferenceId::KISS_RATE;
+        assert!(peer
+            .handle_incoming(
+                system,
+                response,
+                base,
+                FrequencyTolerance::ppm(15),
+                NtpTimestamp::default(),
+                NtpTimestamp::default()
+            )
+            .is_err());
+        assert!(peer.current_poll_interval(system) > prev);
+        assert!(peer.remote_min_poll_interval > prev);
+    }
+
+    #[test]
     fn test_handle_incoming() {
         let base = NtpInstant::now();
         let mut peer = Peer::test_peer(base);
