@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use tracing::warn;
 
 use ntp_proto::{
@@ -8,11 +7,7 @@ use ntp_proto::{
 use ntp_udp::UdpSocket;
 use tracing::instrument;
 
-use tokio::{
-    net::ToSocketAddrs,
-    sync::{watch, Notify},
-    time::Instant,
-};
+use tokio::{net::ToSocketAddrs, sync::watch, time::Instant};
 
 #[derive(Debug, Clone, Copy)]
 pub enum MsgForSystem {
@@ -27,7 +22,7 @@ pub enum MsgForSystem {
 
 pub struct PeerChannels {
     pub peer_snapshot: watch::Receiver<MsgForSystem>,
-    pub peer_reset: Arc<Notify>,
+    pub peer_reset: watch::Receiver<u64>,
 }
 
 #[instrument(skip(clock, config, system_snapshots, reset))]
@@ -36,7 +31,7 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
     clock: C,
     config: SystemConfig,
     mut system_snapshots: watch::Receiver<SystemSnapshot>,
-    mut reset: watch::Receiver<()>,
+    mut reset: watch::Receiver<u64>,
 ) -> Result<PeerChannels, std::io::Error> {
     let socket = UdpSocket::new("0.0.0.0:0", addr).await?;
     let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
@@ -44,8 +39,7 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
     let (tx, rx) = watch::channel::<MsgForSystem>(MsgForSystem::NoMeasurement);
 
     // channel to notify that a reset has been completed by this peer
-    let notify_reset_send = Arc::new(Notify::new());
-    let notify_reset_receive = notify_reset_send.clone();
+    let (notify_reset_send, notify_reset_receive) = watch::channel::<u64>(0);
 
     tokio::spawn(async move {
         let local_clock_time = NtpInstant::now();
@@ -99,10 +93,11 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
                         // crucially, this sets `self.next_expected_origin = None`, meaning that
                         // in-flight requests are ignored
                         peer.reset_measurements();
+                        tx.send_replace(MsgForSystem::NoMeasurement);
 
                         // notify the system that the reset has been successful, and that this
                         // association can produce valid measurements again
-                        notify_reset_send.notify_waiters();
+                        notify_reset_send.send_replace(*reset.borrow_and_update());
                     }
                 }
                 result = socket.recv(&mut buf) => {
@@ -145,14 +140,14 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
                             );
 
                             if accept.is_err() {
-                                let _ = tx.send(MsgForSystem::NoMeasurement);
+                                tx.send_replace(MsgForSystem::NoMeasurement);
                             } else  {
                                 match result {
                                     Ok(update) => {
-                                        let _ = tx.send(MsgForSystem::Snapshot(update));
+                                        tx.send_replace(MsgForSystem::Snapshot(update));
                                     }
                                     Err(IgnoreReason::KissDemobilize) => {
-                                        let _ = tx.send(MsgForSystem::MustDemobilize);
+                                        tx.send_replace(MsgForSystem::MustDemobilize);
                                     }
                                     Err(_) => { /* ignore */ }
 
