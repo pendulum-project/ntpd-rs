@@ -1,8 +1,9 @@
 use crate::peer::PeerSnapshot;
 use crate::time_types::{FrequencyTolerance, NtpInstant};
 use crate::{NtpDuration, PollInterval};
+use tracing::{debug, instrument, trace, warn};
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SystemConfig {
     /// Minimum number of survivors needed to be able to discipline the system clock.
     /// More survivors (so more servers from which to get the time) means a more accurate time.
@@ -53,6 +54,7 @@ pub struct FilterAndCombine {
 }
 
 impl FilterAndCombine {
+    #[instrument(skip(peers), fields(peers = debug(peers.iter().map(|peer| peer.peer_id).collect::<Vec<_>>())))]
     pub fn run(
         config: &SystemConfig,
         peers: &[PeerSnapshot],
@@ -143,6 +145,7 @@ struct ClockSelect<'a> {
     system_selection_jitter: NtpDuration,
 }
 
+#[instrument(skip(config, local_clock_time, system_poll))]
 fn clock_select<'a>(
     config: &SystemConfig,
     peers: &'a [PeerSnapshot],
@@ -163,7 +166,9 @@ fn clock_select<'a>(
 
     let mut survivors = construct_survivors(config, &candidates, local_clock_time);
 
+    trace!(survivors = debug(&survivors));
     if survivors.len() < config.min_intersection_survivors {
+        warn!("No clique of peers that agree on the current time.");
         return None;
     }
 
@@ -278,6 +283,7 @@ fn filter_survivor<'a>(
 }
 
 /// Find the largest contiguous intersection of correctness intervals.
+#[instrument]
 fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDuration)> {
     let n = chime_list.len() / 3;
 
@@ -334,6 +340,11 @@ fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDurat
 
         //  If the intersection is non-empty, declare success.
         if let (Some(l), Some(h)) = (low, high) {
+            debug!(
+                low = debug(l),
+                high = debug(h),
+                "Found correctness interval"
+            );
             return Some((l, h));
         }
     }
@@ -344,6 +355,7 @@ fn find_interval(chime_list: &[CandidateTuple]) -> Option<(NtpDuration, NtpDurat
 /// Discard the survivor with maximum selection jitter until a termination condition is met.
 ///
 /// returns the (maximum) selection jitter
+#[instrument]
 fn cluster_algorithm(config: &SystemConfig, candidates: &mut Vec<SurvivorTuple>) -> f64 {
     // sort the candidates by increasing lambda_p (the merit factor)
     candidates.sort_by(|a, b| a.metric.cmp(&b.metric));
@@ -382,6 +394,8 @@ fn cluster_algorithm(config: &SystemConfig, candidates: &mut Vec<SurvivorTuple>)
             }
         }
 
+        trace!(selection_jitter = debug(max_selection_jitter));
+
         // the maximum jitter among our current set of candidates (selection jitter) is less than
         // the smallest jitter of an individual peer.
 
@@ -401,10 +415,19 @@ fn cluster_algorithm(config: &SystemConfig, candidates: &mut Vec<SurvivorTuple>)
             // Jitter is defined as the root-mean-square (RMS) average of the most recent offset differences
             // RMS always produces a positive number, but our `max_selection_jitter` is negative.
             // In the case of 0 candidates, bound max_selection_jitter from below
+            debug!(
+                selection_jitter = debug(max_selection_jitter),
+                survivors = debug(candidates.len()),
+                "Clustering completed"
+            );
             return f64::max(0.0, max_selection_jitter);
         }
 
         // delete the survivor qmax (the one with the highest jitter) and go around again
+        trace!(
+            peer = debug(candidates[max_selection_jitter_index].peer.peer_id),
+            "Removing high-jitter peer"
+        );
         candidates.remove(max_selection_jitter_index);
     }
 }
@@ -528,6 +551,8 @@ fn peer_snapshot(
         statistics,
         stratum: 0,
         root_distance_without_time,
+
+        peer_id: ReferenceId::from_int(0),
 
         leap_indicator: NtpLeapIndicator::NoWarning,
         root_delay: Default::default(),

@@ -12,3 +12,4 @@ fuzz = []
 [dependencies]
 md-5 = "0.10.1"
 rand = "0.8.5"
+tracing = "0.1.34"

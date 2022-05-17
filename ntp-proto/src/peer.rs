@@ -5,6 +5,7 @@ use crate::{
     NtpDuration, NtpHeader, NtpTimestamp, PollInterval, ReferenceId,
 };
 use rand::{thread_rng, Rng};
+use tracing::{debug, info, instrument, trace, warn};
 
 const MAX_STRATUM: u8 = 16;
 
@@ -36,7 +37,6 @@ pub struct Peer {
     last_measurements: LastMeasurements,
     last_packet: NtpHeader,
     time: NtpInstant,
-    #[allow(dead_code)]
     peer_id: ReferenceId,
     our_id: ReferenceId,
     reach: Reach,
@@ -109,6 +109,7 @@ pub struct PeerSnapshot {
 
     pub time: NtpInstant,
     pub(crate) stratum: u8,
+    pub(crate) peer_id: ReferenceId,
 
     pub leap_indicator: NtpLeapIndicator,
     pub root_delay: NtpDuration,
@@ -158,6 +159,7 @@ pub enum AcceptSynchronizationError {
 }
 
 impl Peer {
+    #[instrument]
     pub fn new(our_id: ReferenceId, peer_id: ReferenceId, local_clock_time: NtpInstant) -> Self {
         // we initialize with the current time so that we're in the correct epoch.
         let time = local_clock_time;
@@ -179,6 +181,7 @@ impl Peer {
         }
     }
 
+    #[instrument(skip(self), fields(peer = debug(self.peer_id)))]
     pub fn get_interval_next_poll(&mut self, system_poll_interval: PollInterval) -> PollInterval {
         self.last_poll_interval = system_poll_interval
             .max(self.remote_min_poll_interval)
@@ -189,9 +192,14 @@ impl Peer {
         // the `last_poll_interval` (which means effectively the poll inteval is constant)
         self.next_poll_interval = self.last_poll_interval.inc();
 
+        debug!(
+            poll_interval = debug(self.last_poll_interval),
+            "Next poll interval determined"
+        );
         self.last_poll_interval
     }
 
+    #[instrument(skip(self), fields(peer = debug(self.peer_id)))]
     pub fn generate_poll_message(&mut self) -> NtpHeader {
         self.reach.poll();
 
@@ -210,6 +218,7 @@ impl Peer {
         packet
     }
 
+    #[instrument(skip(self, system, frequency_tolerance), fields(peer = debug(self.peer_id)))]
     pub fn handle_incoming(
         &mut self,
         system: SystemSnapshot,
@@ -221,27 +230,30 @@ impl Peer {
     ) -> Result<PeerSnapshot, IgnoreReason> {
         if message.mode != NtpAssociationMode::Server {
             // we currently only support a client <-> server association
-            println!("Invalid mode ignored packet");
+            warn!("Received packet with invalid mode");
             Err(IgnoreReason::InvalidMode)
         } else if message.is_kiss_rate() {
-            println!("RATE ignored packet");
+            warn!("Peer requested rate limit");
             // KISS packets may not have correct timestamps at all, handle them anyway
             self.remote_min_poll_interval =
                 Ord::max(self.remote_min_poll_interval.inc(), self.last_poll_interval);
             Err(IgnoreReason::KissIgnore)
         } else if message.is_kiss_rstr() || message.is_kiss_deny() {
-            println!("Block ignored packet");
+            warn!("Peer denied service");
             // KISS packets may not have correct timestamps at all, handle them anyway
             Err(IgnoreReason::KissDemobilize)
         } else if message.is_kiss() {
+            warn!("Unrecognized KISS Message from peer");
             // Ignore unrecognized control messages
             Err(IgnoreReason::KissIgnore)
         } else if Some(message.origin_timestamp) != self.next_expected_origin {
             // Packets should be a response to a previous request from us,
             // if not just ignore. Note that this might also happen when
-            // we reset between sending the request and receiving the response.s
+            // we reset between sending the request and receiving the response.
+            debug!("Received old/unexpected packet from peer");
             Err(IgnoreReason::InvalidPacketTime)
         } else {
+            trace!("Packet accepted for processing");
             // For reachability, mark that we have had a response
             self.reach.received_packet();
 
@@ -298,6 +310,7 @@ impl Peer {
                     statistics: self.statistics,
                     time: self.time,
                     stratum: self.last_packet.stratum,
+                    peer_id: self.peer_id,
                     leap_indicator: self.last_packet.leap,
                     root_delay: self.last_packet.root_delay,
                     root_dispersion: self.last_packet.root_dispersion,
@@ -332,6 +345,7 @@ impl Peer {
     /// Test if association p is acceptable for synchronization
     ///
     /// Known as `accept` and `fit` in the specification.
+    #[instrument(skip(self), fields(peer = debug(self.peer_id)))]
     pub fn accept_synchronization(
         &self,
         local_clock_time: NtpInstant,
@@ -345,6 +359,10 @@ impl Peer {
         //     1: the server has never been synchronized,
         //     2: the server stratum is invalid
         if !self.last_packet.leap.is_synchronized() || self.last_packet.stratum >= MAX_STRATUM {
+            warn!(
+                stratum = debug(self.last_packet.stratum),
+                "Peer rejected due to invalid stratum"
+            );
             return Err(Stratum);
         }
 
@@ -352,6 +370,11 @@ impl Peer {
         //  distance threshold plus an increment equal to one poll interval.
         let distance = self.root_distance(local_clock_time, frequency_tolerance);
         if distance > distance_threshold + (system_poll * frequency_tolerance) {
+            debug!(
+                distance = debug(distance),
+                limit = debug(distance_threshold + (system_poll * frequency_tolerance)),
+                "Peer rejected due to excessive distance"
+            );
             return Err(Distance);
         }
 
@@ -360,11 +383,13 @@ impl Peer {
         // Note, this can only ever be an issue if the peer is not using
         // hardware as its source, so ignore reference_id if stratum is 1.
         if self.last_packet.stratum != 1 && self.last_packet.reference_id == self.our_id {
+            debug!("Peer rejected because of detected synchornization loop");
             return Err(Loop);
         }
 
         // An unreachable error occurs if the server is unreachable.
         if !self.reach.is_reachable() {
+            warn!("Peer unreachable");
             return Err(ServerUnreachable);
         }
 
@@ -372,6 +397,7 @@ impl Peer {
     }
 
     /// reset just the measurement data, the poll and connection data is unchanged
+    #[instrument(level="trace", skip(self), fields(peer = debug(self.peer_id)))]
     pub fn reset_measurements(&mut self) {
         self.statistics = Default::default();
         self.last_measurements = LastMeasurements::new(self.time);
@@ -379,6 +405,8 @@ impl Peer {
 
         // make sure in-flight messages are ignored
         self.next_expected_origin = None;
+
+        info!("Peer reset");
     }
 
     #[cfg(any(test, feature = "fuzz"))]

@@ -175,9 +175,15 @@ impl SubAssign<NtpDuration> for NtpTimestamp {
 /// A negative duration interval is interpreted to mean that the first
 /// timestamp used to define the interval represents a point in time after
 /// the second timestamp.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Default)]
+#[derive(Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Default)]
 pub struct NtpDuration {
     duration: i64,
+}
+
+impl std::fmt::Debug for NtpDuration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "NtpDuration({} ms)", self.to_seconds() * 1e3)
+    }
 }
 
 impl NtpDuration {
@@ -452,8 +458,14 @@ ntp_duration_scalar_div!(u32);
 //
 // - a value of 4 means 2^4 = 16 seconds
 // - a value of 17 is 2^17 = ~36h
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PollInterval(i8);
+
+impl std::fmt::Debug for PollInterval {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "PollInterval({} s)", 2.0_f64.powf(self.0 as _))
+    }
+}
 
 impl PollInterval {
     // here we follow the spec (the code skeleton and ntpd repository use different values)
@@ -492,7 +504,7 @@ impl Default for PollInterval {
 }
 
 /// Frequency tolerance PHI (unit: seconds per second)
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct FrequencyTolerance {
     ppm: u32,
 }
