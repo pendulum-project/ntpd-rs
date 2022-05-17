@@ -23,7 +23,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (system_tx, system_rx) = watch::channel::<SystemSnapshot>(SystemSnapshot::default());
 
     // channel to send the reset signal to all peers
-    let (reset_tx, reset_rx) = watch::channel::<()>(());
+    let (reset_tx, reset_rx) = watch::channel::<u64>(0);
+    let mut last_reset_index: u64 = 0;
 
     let mut controller = ClockController::new(UnixNtpClock::new());
 
@@ -67,18 +68,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .iter_mut()
             .enumerate()
             .map(|(i, c)| async move {
-                c.peer_reset.notified().await;
-                i
+                c.peer_reset.changed().await.unwrap();
+                (i, *c.peer_reset.borrow_and_update())
             })
             .collect();
 
         tokio::select! {
-            Some(changed_index) = active_after_reset.next() => {
+            Some((changed_index, reset_index)) = active_after_reset.next() => {
                 drop(has_new_measurement);
                 drop(active_after_reset);
 
-                let peer = waiting_for_reset.remove(changed_index);
-                peers.push(peer);
+                if reset_index == last_reset_index {
+                    let peer = waiting_for_reset.remove(changed_index);
+                    peers.push(peer);
+                }
             },
             Some(changed_index) = has_new_measurement.next() => {
                 drop(has_new_measurement);
@@ -142,7 +145,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             }
                             ClockUpdateResult::Step => {
                                 waiting_for_reset.append(&mut peers);
-                                reset_tx.send(()).expect("Reset mechanism in inconsistent state");
+                                last_reset_index += 1;
+                                reset_tx.send_replace(last_reset_index);
                             }
                             _ => {}
                         }
