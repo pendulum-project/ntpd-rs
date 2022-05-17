@@ -11,6 +11,7 @@ use crate::packet::NtpAssociationMode;
 use crate::peer::PeerStatistics;
 use crate::time_types::{FrequencyTolerance, NtpInstant};
 use crate::{packet::NtpLeapIndicator, NtpDuration, NtpHeader, NtpTimestamp};
+use tracing::{debug, instrument, warn};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FilterTuple {
@@ -118,6 +119,7 @@ impl LastMeasurements {
         }
     }
 
+    #[instrument(level = "trace")]
     pub(crate) fn step(
         &mut self,
         new_tuple: FilterTuple,
@@ -137,6 +139,7 @@ impl LastMeasurements {
         // older than the latest one, but anything goes before first
         // synchronized.
         if smallest_delay.time <= peer_time && system_leap_indicator.is_synchronized() {
+            debug!("Last packet is not (yet) best packet");
             return None;
         }
 
@@ -153,6 +156,11 @@ impl LastMeasurements {
             jitter,
         };
 
+        debug!(
+            statistics = debug(statistics),
+            time = debug(smallest_delay.time),
+            "Peer statistics updated"
+        );
         Some((statistics, smallest_delay.time))
     }
 }

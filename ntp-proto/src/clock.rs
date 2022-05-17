@@ -1,6 +1,7 @@
 use crate::{
     packet::NtpLeapIndicator, time_types::PollInterval, NtpDuration, NtpInstant, NtpTimestamp,
 };
+use tracing::{debug, error, info, instrument, trace};
 
 /// Interface for a clock settable by the ntp implementation.
 /// This needs to be a trait as a single system can have multiple clocks
@@ -75,6 +76,7 @@ impl<C: NtpClock> ClockController<C> {
     // Threshold for changing desired poll interval
     const POLL_ADJUST: i32 = 30;
 
+    #[instrument(skip(self))]
     pub fn update(
         &mut self,
         offset: NtpDuration,
@@ -86,6 +88,7 @@ impl<C: NtpClock> ClockController<C> {
     ) -> ClockUpdateResult {
         // Check that we have a somewhat reasonable result
         if self.offset_too_large(offset) {
+            error!("Detected overly large offset");
             return ClockUpdateResult::Panic;
         }
 
@@ -104,6 +107,7 @@ impl<C: NtpClock> ClockController<C> {
             // and then handled by stepping if they persist.
             match self.state {
                 ClockState::Sync => {
+                    info!("Spike detected");
                     self.state = ClockState::Spike;
                     return ClockUpdateResult::Ignore;
                 }
@@ -112,6 +116,7 @@ impl<C: NtpClock> ClockController<C> {
                         < NtpDuration::SPIKE_INTERVAL
                     {
                         // Initial frequency measurement needs some time
+                        debug!("Frequency measurement not finished yet");
                         return ClockUpdateResult::Ignore;
                     }
 
@@ -123,6 +128,7 @@ impl<C: NtpClock> ClockController<C> {
                         < NtpDuration::SPIKE_INTERVAL
                     {
                         // Filter out short spikes
+                        debug!("Spike continues");
                         return ClockUpdateResult::Ignore;
                     }
 
@@ -154,6 +160,7 @@ impl<C: NtpClock> ClockController<C> {
                         < NtpDuration::SPIKE_INTERVAL
                     {
                         // Initial frequency measurement needs some time
+                        debug!("Frequency measurement not finished yet");
                         return ClockUpdateResult::Ignore;
                     }
 
@@ -196,17 +203,31 @@ impl<C: NtpClock> ClockController<C> {
             self.poll_interval_counter -= self.preferred_poll_interval.as_log() as i32;
         }
 
+        trace!(
+            counter = debug(self.poll_interval_counter),
+            "Poll preference"
+        );
+
         // If our preference becomes strong enough, adjust poll interval
         // and reset. The hysteresis here ensures we aren't constantly flip-flopping
         // between different preferred interval lengths.
         if self.poll_interval_counter > Self::POLL_ADJUST {
             self.poll_interval_counter = 0;
             self.preferred_poll_interval = self.preferred_poll_interval.inc();
+            debug!(
+                poll_interval = debug(self.preferred_poll_interval),
+                "Increased system poll interval"
+            );
         } else {
             self.poll_interval_counter = 0;
             self.preferred_poll_interval = self.preferred_poll_interval.dec();
+            debug!(
+                poll_interval = debug(self.preferred_poll_interval),
+                "Decreased system poll interval"
+            );
         }
 
+        info!(offset = debug(offset), "Slewed clock");
         ClockUpdateResult::Slew
     }
 
@@ -225,6 +246,7 @@ impl<C: NtpClock> ClockController<C> {
     }
 
     fn do_step(&mut self, offset: NtpDuration, last_peer_update: NtpInstant) -> ClockUpdateResult {
+        info!(offset = debug(offset), "Stepping clock");
         self.poll_interval_counter = 0;
         self.preferred_poll_interval = PollInterval::MIN;
         // It is reasonable to panic here, as there is very little we can
@@ -240,6 +262,13 @@ impl<C: NtpClock> ClockController<C> {
     }
 
     fn set_freq(&mut self, offset: NtpDuration, last_peer_update: NtpInstant) {
+        info!(
+            freq = display(
+                offset.to_seconds()
+                    / NtpInstant::abs_diff(last_peer_update, self.last_update_time).to_seconds()
+            ),
+            "Setting initial frequency"
+        );
         self.clock
             .set_freq(
                 offset.to_seconds()
