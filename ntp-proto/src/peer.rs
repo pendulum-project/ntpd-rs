@@ -20,15 +20,16 @@ pub(crate) struct PeerStatistics {
 
 #[derive(Debug, Clone)]
 pub struct Peer {
-    // Poll interval state
+    // Poll interval dictated by unreachability backoff
+    backoff_interval: PollInterval,
+    // Poll interval used when sending last poll mesage.
     last_poll_interval: PollInterval,
-    next_poll_interval: PollInterval,
-    /// The poll interval desired by the remove server.
+    // The poll interval desired by the remove server.
     // Must be increased when the server sends the RATE kiss code.
     remote_min_poll_interval: PollInterval,
 
     // Last packet information
-    /// We expect the next packet we receive to have this origin timestamp
+    // We expect the next packet we receive to have this origin timestamp
     // This is used as validation that the packet we get is the correct response to the one we sent
     // (guards against e.g. replay and packet reordering)
     next_expected_origin: Option<NtpTimestamp>,
@@ -166,7 +167,7 @@ impl Peer {
 
         Self {
             last_poll_interval: PollInterval::MIN,
-            next_poll_interval: PollInterval::MIN,
+            backoff_interval: PollInterval::MIN,
             remote_min_poll_interval: PollInterval::MIN,
 
             next_expected_origin: None,
@@ -181,31 +182,23 @@ impl Peer {
         }
     }
 
-    #[instrument(skip(self), fields(peer = debug(self.peer_id)))]
-    pub fn get_interval_next_poll(&mut self, system_poll_interval: PollInterval) -> PollInterval {
-        self.last_poll_interval = system_poll_interval
+    pub fn current_poll_interval(&self, system: SystemSnapshot) -> PollInterval {
+        system
+            .poll_interval
+            .max(self.backoff_interval)
             .max(self.remote_min_poll_interval)
-            .max(self.next_poll_interval);
-
-        // by default, we set the next poll interval to be an order of magnitude higher than the
-        // current one (in base 2). If we get a successful response, we set the interval back to
-        // the `last_poll_interval` (which means effectively the poll inteval is constant)
-        self.next_poll_interval = self.last_poll_interval.inc();
-
-        debug!(
-            poll_interval = debug(self.last_poll_interval),
-            "Next poll interval determined"
-        );
-        self.last_poll_interval
     }
 
-    #[instrument(skip(self), fields(peer = debug(self.peer_id)))]
-    pub fn generate_poll_message(&mut self) -> NtpHeader {
+    pub fn generate_poll_message(&mut self, system: SystemSnapshot) -> NtpHeader {
         self.reach.poll();
 
         let mut packet = NtpHeader::new();
-        packet.poll = self.last_poll_interval.as_log();
+        let poll_interval = self.current_poll_interval(system);
+        packet.poll = poll_interval.as_log();
         packet.mode = NtpAssociationMode::Client;
+
+        // Ensure we don't spam the remote with polls if it is not reachable
+        self.backoff_interval = poll_interval.inc();
 
         // In order to increase the entropy of the transmit timestamp
         // it is just a randomly generated timestamp.
@@ -257,10 +250,8 @@ impl Peer {
             // For reachability, mark that we have had a response
             self.reach.received_packet();
 
-            // By default, next_poll_interval is an order of magnitude higher than
-            // last_poll_interval, so we automatically back off if we get no response.
-            // Here we did get a response, so we can keep the poll interval constant
-            self.next_poll_interval = self.last_poll_interval;
+            // Got a response, so no need for unreachability backoff
+            self.backoff_interval = PollInterval::MIN;
 
             // we received this packet, and don't want to accept future ones with this next_expected_origin
             self.next_expected_origin = None;
@@ -413,7 +404,7 @@ impl Peer {
     pub(crate) fn test_peer(instant: NtpInstant) -> Self {
         Peer {
             last_poll_interval: PollInterval::default(),
-            next_poll_interval: PollInterval::default(),
+            backoff_interval: PollInterval::default(),
             remote_min_poll_interval: PollInterval::default(),
 
             next_expected_origin: None,
@@ -627,11 +618,75 @@ mod test {
     }
 
     #[test]
+    fn test_poll_interval() {
+        let base = NtpInstant::now();
+        let mut peer = Peer::test_peer(base);
+        let mut system = SystemSnapshot::default();
+
+        assert!(peer.current_poll_interval(system) >= peer.remote_min_poll_interval);
+        assert!(peer.current_poll_interval(system) >= system.poll_interval);
+
+        system.poll_interval = PollInterval::MAX;
+
+        assert!(peer.current_poll_interval(system) >= peer.remote_min_poll_interval);
+        assert!(peer.current_poll_interval(system) >= system.poll_interval);
+
+        system.poll_interval = PollInterval::MIN;
+        peer.remote_min_poll_interval = PollInterval::MAX;
+
+        assert!(peer.current_poll_interval(system) >= peer.remote_min_poll_interval);
+        assert!(peer.current_poll_interval(system) >= system.poll_interval);
+
+        peer.remote_min_poll_interval = PollInterval::MIN;
+
+        let prev = peer.current_poll_interval(system);
+        let packet = peer.generate_poll_message(system);
+        assert!(peer.current_poll_interval(system) > prev);
+        let mut response = NtpHeader::new();
+        response.mode = NtpAssociationMode::Server;
+        response.stratum = 1;
+        response.origin_timestamp = packet.transmit_timestamp;
+        assert!(peer
+            .handle_incoming(
+                system,
+                response,
+                base,
+                FrequencyTolerance::ppm(15),
+                NtpTimestamp::default(),
+                NtpTimestamp::default()
+            )
+            .is_ok());
+        assert_eq!(peer.current_poll_interval(system), prev);
+
+        let prev = peer.current_poll_interval(system);
+        let packet = peer.generate_poll_message(system);
+        assert!(peer.current_poll_interval(system) > prev);
+        let mut response = NtpHeader::new();
+        response.mode = NtpAssociationMode::Server;
+        response.stratum = 0;
+        response.origin_timestamp = packet.transmit_timestamp;
+        response.reference_id = ReferenceId::KISS_RATE;
+        assert!(peer
+            .handle_incoming(
+                system,
+                response,
+                base,
+                FrequencyTolerance::ppm(15),
+                NtpTimestamp::default(),
+                NtpTimestamp::default()
+            )
+            .is_err());
+        assert!(peer.current_poll_interval(system) > prev);
+        assert!(peer.remote_min_poll_interval > prev);
+    }
+
+    #[test]
     fn test_handle_incoming() {
         let base = NtpInstant::now();
         let mut peer = Peer::test_peer(base);
 
-        let outgoing = peer.generate_poll_message();
+        let system = SystemSnapshot::default();
+        let outgoing = peer.generate_poll_message(system);
         let mut packet = NtpHeader::new();
         let system = SystemSnapshot::default();
         packet.stratum = 1;
