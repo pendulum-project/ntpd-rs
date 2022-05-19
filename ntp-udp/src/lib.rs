@@ -105,7 +105,7 @@ fn init_socket(socket: &std::net::UdpSocket) -> io::Result<()> {
         libc::setsockopt(
             fd,
             libc::SOL_SOCKET,
-            libc::SO_TIMESTAMPNS_NEW,
+            libc::SO_TIMESTAMPNS,
             &enable_ts as *const _ as *const libc::c_void,
             std::mem::size_of::<libc::c_int>() as libc::socklen_t,
         )
@@ -164,7 +164,7 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
     // Loops through the control messages, but we should only get a single message
     let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(&mhdr).as_ref() };
     while let Some(msg) = cmsg {
-        if let (libc::SOL_SOCKET, libc::SO_TIMESTAMPNS_NEW) = (msg.cmsg_level, msg.cmsg_type) {
+        if let (libc::SOL_SOCKET, libc::SO_TIMESTAMPNS) = (msg.cmsg_level, msg.cmsg_type) {
             // Safety: SCM_TIMESTAMPNS always has a timespec in the data, so this operation should be safe
             let ts: libc::timespec =
                 unsafe { std::ptr::read_unaligned(libc::CMSG_DATA(msg) as *const _) };
