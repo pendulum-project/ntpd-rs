@@ -31,6 +31,7 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
     addr: A,
     clock: C,
     config: SystemConfig,
+    msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
     mut system_snapshots: watch::Receiver<SystemSnapshot>,
     mut reset: watch::Receiver<u64>,
 ) -> Result<PeerChannels, std::io::Error> {
@@ -155,9 +156,11 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
                                 match result {
                                     Ok(update) => {
                                         tx.send_replace(MsgForSystem::Snapshot(index, reset_epoch, update));
+                                        msg_for_system_sender.send(MsgForSystem::Snapshot(index, reset_epoch, update)).await.ok();
                                     }
                                     Err(IgnoreReason::KissDemobilize) => {
                                         tx.send_replace(MsgForSystem::MustDemobilize(index));
+                                        msg_for_system_sender.send(MsgForSystem::MustDemobilize(index)).await.ok();
                                     }
                                     Err(_) => { /* ignore */ }
 
