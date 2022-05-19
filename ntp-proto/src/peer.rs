@@ -90,6 +90,7 @@ impl Default for SystemSnapshot {
     }
 }
 
+#[derive(Debug)]
 pub enum IgnoreReason {
     /// The association mode is not one that this peer supports
     InvalidMode,

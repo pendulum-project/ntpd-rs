@@ -1,11 +1,11 @@
 use tracing::warn;
 
 use ntp_proto::{
-    IgnoreReason, NtpClock, NtpHeader, NtpInstant, Peer, PeerSnapshot, ReferenceId, SystemConfig,
-    SystemSnapshot,
+    AcceptSynchronizationError, IgnoreReason, NtpClock, NtpHeader, NtpInstant, NtpTimestamp, Peer,
+    PeerSnapshot, ReferenceId, SystemConfig, SystemSnapshot,
 };
 use ntp_udp::UdpSocket;
-use tracing::instrument;
+use tracing::{info, instrument};
 
 use tokio::{net::ToSocketAddrs, sync::watch, time::Instant};
 
@@ -17,10 +17,6 @@ pub enum MsgForSystem {
     Snapshot(usize, u64, PeerSnapshot),
 }
 
-pub struct PeerChannels {
-    pub peer_reset: watch::Receiver<u64>,
-}
-
 #[instrument(skip(clock, config, system_snapshots, reset))]
 pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpClock + Send>(
     index: usize,
@@ -30,13 +26,10 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
     msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
     mut system_snapshots: watch::Receiver<SystemSnapshot>,
     mut reset: watch::Receiver<u64>,
-) -> Result<PeerChannels, std::io::Error> {
+) -> Result<(), std::io::Error> {
     let socket = UdpSocket::new("0.0.0.0:0", addr).await?;
     let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
     let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
-
-    // channel to notify that a reset has been completed by this peer
-    let (notify_reset_send, notify_reset_receive) = watch::channel::<u64>(0);
 
     tokio::spawn(async move {
         let local_clock_time = NtpInstant::now();
@@ -93,83 +86,111 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
                         // in-flight requests are ignored
                         peer.reset_measurements();
 
-                        // notify the system that the reset has been successful, and that this
-                        // association can produce valid measurements again
+                        // our next measurement will have the new reset epoch
                         reset_epoch = *reset.borrow_and_update();
-                        notify_reset_send.send_replace(reset_epoch);
                     }
                 }
                 result = socket.recv(&mut buf) => {
-                    if let Ok((size, Some(recv_timestamp))) = result {
-                        // Note: packets are allowed to be bigger when including extensions.
-                        // we don't expect them, but the server may still send them. The
-                        // extra bytes are guaranteed safe to ignore. `recv` truncates the messages.
-                        // Messages of fewer than 48 bytes are skipped entirely
-                        if size < 48 {
-                            warn!(expected=48, actual=size, "received packet is too small");
-                        } else {
-                            let packet = NtpHeader::deserialize(&buf);
-
-                            let ntp_instant = NtpInstant::now();
-
-                            let send_timestamp = match last_send_timestamp {
-                                Some(ts) => ts,
-                                None => {
-                                    // we received a message without having sent one; discard
-                                    continue
-                                }
-                            };
-
-                            let system_snapshot = *system_snapshots.borrow_and_update();
-                            let result = peer.handle_incoming(
-                                system_snapshot,
-                                packet,
-                                ntp_instant,
-                                config.frequency_tolerance,
-                                send_timestamp,
-                                recv_timestamp,
-                            );
-
-                            // Handle incoming may have changed poll interval based on
-                            // message, respect that change
-                            poll_wait
-                                .as_mut()
-                                .reset(last_poll_sent + peer.current_poll_interval(system_snapshot).as_system_duration());
-
-                            let system_poll = system_snapshot.poll_interval.as_duration();
-                            let accept = peer.accept_synchronization(
-                                ntp_instant,
-                                config.frequency_tolerance,
-                                config.distance_threshold,
-                                system_poll,
-                            );
-
-                            if accept.is_err() {
-                                /* ignore, but maybe log something? */
-                            } else  {
-                                match result {
-                                    Ok(update) => {
-                                        msg_for_system_sender.send(MsgForSystem::Snapshot(index, reset_epoch, update)).await.ok();
-                                    }
-                                    Err(IgnoreReason::KissDemobilize) => {
-                                        msg_for_system_sender.send(MsgForSystem::MustDemobilize(index)).await.ok();
-                                    }
-                                    Err(_) => { /* ignore */ }
-
-                                }
-                            }
+                    let send_timestamp = match last_send_timestamp {
+                        Some(ts) => ts,
+                        None => {
+                            info!("we received a message without having sent one; discard");
+                            continue;
                         }
-                    } else {
-                        // TODO: log something
+                    };
+
+                    if let Some((packet, recv_timestamp)) = accept_packet(result, &buf) {
+                        let ntp_instant = NtpInstant::now();
+
+                        let system_snapshot = *system_snapshots.borrow_and_update();
+                        let result = peer.handle_incoming(
+                            system_snapshot,
+                            packet,
+                            ntp_instant,
+                            config.frequency_tolerance,
+                            send_timestamp,
+                            recv_timestamp,
+                        );
+
+                        // Handle incoming may have changed poll interval based on
+                        // message, respect that change
+                        let poll_interval = peer.current_poll_interval(system_snapshot).as_system_duration();
+                        poll_wait.as_mut().reset(last_poll_sent + poll_interval);
+
+                        let system_poll = system_snapshot.poll_interval.as_duration();
+                        let accept = peer.accept_synchronization(
+                            ntp_instant,
+                            config.frequency_tolerance,
+                            config.distance_threshold,
+                            system_poll,
+                        );
+
+                        if let Some(msg) = prepare_msg_for_system(index, reset_epoch, accept, result) {
+                            msg_for_system_sender.send(msg).await.ok();
+                        }
                     }
                 },
             }
         }
     });
 
-    let channels = PeerChannels {
-        peer_reset: notify_reset_receive,
-    };
+    Ok(())
+}
 
-    Ok(channels)
+fn prepare_msg_for_system(
+    index: usize,
+    reset_epoch: u64,
+    accept: Result<(), AcceptSynchronizationError>,
+    result: Result<PeerSnapshot, IgnoreReason>,
+) -> Option<MsgForSystem> {
+    match accept {
+        Err(accept_error) => {
+            info!(?accept_error, "packet is not accepted");
+
+            None
+        }
+        Ok(_) => match result {
+            Ok(update) => Some(MsgForSystem::Snapshot(index, reset_epoch, update)),
+            Err(IgnoreReason::KissDemobilize) => {
+                info!("peer must demobilize");
+                Some(MsgForSystem::MustDemobilize(index))
+            }
+            Err(ignore_reason) => {
+                info!(?ignore_reason, "packet ignored");
+
+                None
+            }
+        },
+    }
+}
+
+fn accept_packet(
+    result: Result<(usize, Option<NtpTimestamp>), std::io::Error>,
+    buf: &[u8; 48],
+) -> Option<(NtpHeader, NtpTimestamp)> {
+    match result {
+        Ok((size, Some(recv_timestamp))) => {
+            // Note: packets are allowed to be bigger when including extensions.
+            // we don't expect them, but the server may still send them. The
+            // extra bytes are guaranteed safe to ignore. `recv` truncates the messages.
+            // Messages of fewer than 48 bytes are skipped entirely
+            if size < 48 {
+                warn!(expected = 48, actual = size, "received packet is too small");
+
+                None
+            } else {
+                Some((NtpHeader::deserialize(buf), recv_timestamp))
+            }
+        }
+        Ok((size, None)) => {
+            warn!(?size, "received a packet without a timestamp");
+
+            None
+        }
+        Err(receive_error) => {
+            warn!(?receive_error, "could not receive packet");
+
+            None
+        }
+    }
 }
