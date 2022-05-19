@@ -13,15 +13,11 @@ use tokio::{net::ToSocketAddrs, sync::watch, time::Instant};
 pub enum MsgForSystem {
     /// Received a Kiss-o'-Death and must demobilize
     MustDemobilize(usize),
-    /// There is no measurement available, either because no
-    /// packet has been received yet, or because synchronization was rejected
-    NoMeasurement,
     /// Received an acceptable packet and made a new peer snapshot
     Snapshot(usize, u64, PeerSnapshot),
 }
 
 pub struct PeerChannels {
-    pub peer_snapshot: watch::Receiver<MsgForSystem>,
     pub peer_reset: watch::Receiver<u64>,
 }
 
@@ -38,7 +34,6 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
     let socket = UdpSocket::new("0.0.0.0:0", addr).await?;
     let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
     let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
-    let (tx, rx) = watch::channel::<MsgForSystem>(MsgForSystem::NoMeasurement);
 
     // channel to notify that a reset has been completed by this peer
     let (notify_reset_send, notify_reset_receive) = watch::channel::<u64>(0);
@@ -97,7 +92,6 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
                         // crucially, this sets `self.next_expected_origin = None`, meaning that
                         // in-flight requests are ignored
                         peer.reset_measurements();
-                        tx.send_replace(MsgForSystem::NoMeasurement);
 
                         // notify the system that the reset has been successful, and that this
                         // association can produce valid measurements again
@@ -151,15 +145,13 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
                             );
 
                             if accept.is_err() {
-                                tx.send_replace(MsgForSystem::NoMeasurement);
+                                /* ignore, but maybe log something? */
                             } else  {
                                 match result {
                                     Ok(update) => {
-                                        tx.send_replace(MsgForSystem::Snapshot(index, reset_epoch, update));
                                         msg_for_system_sender.send(MsgForSystem::Snapshot(index, reset_epoch, update)).await.ok();
                                     }
                                     Err(IgnoreReason::KissDemobilize) => {
-                                        tx.send_replace(MsgForSystem::MustDemobilize(index));
                                         msg_for_system_sender.send(MsgForSystem::MustDemobilize(index)).await.ok();
                                     }
                                     Err(_) => { /* ignore */ }
@@ -176,7 +168,6 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
     });
 
     let channels = PeerChannels {
-        peer_snapshot: rx,
         peer_reset: notify_reset_receive,
     };
 

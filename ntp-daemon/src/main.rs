@@ -72,16 +72,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut waiting_for_reset: Vec<PeerChannels> = Vec::with_capacity(peers.len());
 
     loop {
-        // one of the peers has a new measurement
-        let mut has_new_measurement: FuturesUnordered<_> = peers
-            .iter_mut()
-            .enumerate()
-            .map(|(i, c)| async move {
-                c.peer_snapshot.changed().await.unwrap();
-                i
-            })
-            .collect();
-
         // a peer that has been reset is saying it has resetted successfully
         let mut active_after_reset: FuturesUnordered<_> = waiting_for_reset
             .iter_mut()
@@ -94,7 +84,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         tokio::select! {
             Some((changed_index, reset_index)) = active_after_reset.next() => {
-                drop(has_new_measurement);
                 drop(active_after_reset);
 
                 if reset_index == last_reset_index {
@@ -103,22 +92,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
             },
             Some(msg_for_system) = msg_for_system_rx.recv() => {
-                receive_msg_for_system(&mut peers2, msg_for_system);
+                receive_msg_for_system(&mut peers2, msg_for_system, last_reset_index);
 
-                let mut snapshots2 = vec![];
+                // remove snapshots from previous iteration
+                snapshots.clear();
 
                 for peer_state in &peers2 {
                     if let PeerState::Valid(snapshot) = peer_state {
-                        snapshots2.push(*snapshot);
+                        snapshots.push(*snapshot);
                     }
 
                 }
 
-                dbg!(&snapshots2);
-
                 let ntp_instant = NtpInstant::now();
                 let system_poll = PollInterval::MIN;
-                let result = FilterAndCombine::run(&config, &snapshots2, ntp_instant, system_poll);
+                let result = FilterAndCombine::run(&config, &snapshots, ntp_instant, system_poll);
 
                 match result {
                     Some(clock_select) => {
@@ -167,57 +155,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     None => info!("filter and combine did not produce a result"),
                 }
             }
-            Some(changed_index) = has_new_measurement.next() => {
-                drop(has_new_measurement);
-                drop(active_after_reset);
-
-                let msg = *peers[changed_index].peer_snapshot.borrow();
-                match msg {
-                    peer::MsgForSystem::MustDemobilize(_) => {
-                        peers.remove(changed_index);
-                        continue;
-                    }
-                    peer::MsgForSystem::NoMeasurement => {
-                        continue;
-                    }
-                    peer::MsgForSystem::Snapshot(_, _, _) => {
-                        // fall through
-                    }
-                }
-
-                // remove all snapshots from a previous iteration
-                snapshots.clear();
-
-                for i in (0..peers.len()).rev() {
-                    let msg = *peers[i].peer_snapshot.borrow_and_update();
-                    match msg {
-                        peer::MsgForSystem::MustDemobilize(_) => {
-                            peers.remove(i);
-                        }
-                        peer::MsgForSystem::NoMeasurement => {
-                            // skip
-                        }
-                        peer::MsgForSystem::Snapshot(_, _, snapshot) => {
-                            snapshots.push(snapshot);
-                        }
-                    }
-                }
-
-                dbg!(&snapshots);
-
-            }
         }
     }
 }
 
-fn receive_msg_for_system(peers: &mut [PeerState], msg_for_system: MsgForSystem) {
+fn receive_msg_for_system(
+    peers: &mut [PeerState],
+    msg_for_system: MsgForSystem,
+    current_reset_epoch: u64,
+) {
     match msg_for_system {
         MsgForSystem::MustDemobilize(index) => {
             peers[index] = PeerState::Demobilized;
         }
-        MsgForSystem::NoMeasurement => { /* ignore */ }
-        MsgForSystem::Snapshot(index, reset_epoch, snapshot) => {
-            peers[index] = PeerState::Valid(snapshot);
+        MsgForSystem::Snapshot(index, msg_reset_epoch, snapshot) => {
+            if current_reset_epoch == msg_reset_epoch {
+                peers[index] = PeerState::Valid(snapshot);
+            }
         }
     }
 }

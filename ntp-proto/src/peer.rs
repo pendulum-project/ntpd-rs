@@ -397,7 +397,7 @@ impl Peer {
         // make sure in-flight messages are ignored
         self.next_expected_origin = None;
 
-        info!("Peer reset");
+        info!(our_id = ?self.our_id, peer_id = ?self.peer_id, "Peer reset");
     }
 
     #[cfg(any(test, feature = "fuzz"))]
