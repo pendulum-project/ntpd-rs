@@ -181,3 +181,38 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
 
     Ok((n as usize, recv_ts))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_timestamping_reasonable() {
+        tokio_test::block_on(async {
+            let a = UdpSocket::new("127.0.0.1:8000", "127.0.0.1:8001")
+                .await
+                .unwrap();
+            let b = UdpSocket::new("127.0.0.1:8001", "127.0.0.1:8000")
+                .await
+                .unwrap();
+
+            tokio::spawn(async move {
+                a.send(&[1; 48]).await.unwrap();
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                a.send(&[2; 48]).await.unwrap();
+            });
+
+            let mut buf = [0; 48];
+            let (s1, t1) = b.recv(&mut buf).await.unwrap();
+            let (s2, t2) = b.recv(&mut buf).await.unwrap();
+            assert_eq!(s1, 48);
+            assert_eq!(s2, 48);
+
+            let t1 = t1.unwrap();
+            let t2 = t2.unwrap();
+            let delta = t2 - t1;
+
+            assert!(delta.to_seconds() > 0.15 && delta.to_seconds() < 0.25);
+        });
+    }
+}
