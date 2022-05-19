@@ -139,7 +139,12 @@ impl LastMeasurements {
         // older than the latest one, but anything goes before first
         // synchronized.
         if smallest_delay.time <= peer_time && system_leap_indicator.is_synchronized() {
-            debug!("Last packet is not (yet) best packet");
+            debug!(
+                peer_time = debug(peer_time),
+                smallest_delay_time = debug(smallest_delay.time),
+                latest_time = debug(new_tuple.time),
+                "Last packet is not (yet) best packet"
+            );
             return None;
         }
 
