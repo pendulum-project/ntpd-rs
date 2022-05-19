@@ -12,12 +12,12 @@ use tokio::{net::ToSocketAddrs, sync::watch, time::Instant};
 #[derive(Debug, Clone, Copy)]
 pub enum MsgForSystem {
     /// Received a Kiss-o'-Death and must demobilize
-    MustDemobilize,
+    MustDemobilize(usize),
     /// There is no measurement available, either because no
     /// packet has been received yet, or because synchronization was rejected
     NoMeasurement,
     /// Received an acceptable packet and made a new peer snapshot
-    Snapshot(PeerSnapshot),
+    Snapshot(usize, PeerSnapshot),
 }
 
 pub struct PeerChannels {
@@ -27,6 +27,7 @@ pub struct PeerChannels {
 
 #[instrument(skip(clock, config, system_snapshots, reset))]
 pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpClock + Send>(
+    index: usize,
     addr: A,
     clock: C,
     config: SystemConfig,
@@ -150,10 +151,10 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
                             } else  {
                                 match result {
                                     Ok(update) => {
-                                        tx.send_replace(MsgForSystem::Snapshot(update));
+                                        tx.send_replace(MsgForSystem::Snapshot(index, update));
                                     }
                                     Err(IgnoreReason::KissDemobilize) => {
-                                        tx.send_replace(MsgForSystem::MustDemobilize);
+                                        tx.send_replace(MsgForSystem::MustDemobilize(index));
                                     }
                                     Err(_) => { /* ignore */ }
 

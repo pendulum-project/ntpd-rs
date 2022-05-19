@@ -28,22 +28,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut controller = ClockController::new(UnixNtpClock::new());
 
-    let new_peer = |address| {
-        start_peer(
+    let peer_addresses = [
+        "0.pool.ntp.org:123",
+        "1.pool.ntp.org:123",
+        "2.pool.ntp.org:123",
+        "3.pool.ntp.org:123",
+    ];
+
+    let mut peers = Vec::with_capacity(peer_addresses.len());
+
+    for (index, address) in peer_addresses.iter().enumerate() {
+        let peer = start_peer(
+            index,
             address,
             UnixNtpClock::new(),
             config,
             system_rx.clone(),
             reset_rx.clone(),
         )
-    };
+        .await
+        .unwrap();
 
-    let mut peers = vec![
-        new_peer("0.pool.ntp.org:123").await.unwrap(),
-        new_peer("1.pool.ntp.org:123").await.unwrap(),
-        new_peer("2.pool.ntp.org:123").await.unwrap(),
-        new_peer("3.pool.ntp.org:123").await.unwrap(),
-    ];
+        peers.push(peer);
+    }
 
     let mut snapshots = Vec::with_capacity(peers.len());
 
@@ -89,14 +96,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 let msg = *peers[changed_index].peer_snapshot.borrow();
                 match msg {
-                    peer::MsgForSystem::MustDemobilize => {
+                    peer::MsgForSystem::MustDemobilize(_) => {
                         peers.remove(changed_index);
                         continue;
                     }
                     peer::MsgForSystem::NoMeasurement => {
                         continue;
                     }
-                    peer::MsgForSystem::Snapshot(_) => {
+                    peer::MsgForSystem::Snapshot(_, _) => {
                         // fall through
                     }
                 }
@@ -107,13 +114,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 for i in (0..peers.len()).rev() {
                     let msg = *peers[i].peer_snapshot.borrow_and_update();
                     match msg {
-                        peer::MsgForSystem::MustDemobilize => {
+                        peer::MsgForSystem::MustDemobilize(_) => {
                             peers.remove(i);
                         }
                         peer::MsgForSystem::NoMeasurement => {
                             // skip
                         }
-                        peer::MsgForSystem::Snapshot(snapshot) => {
+                        peer::MsgForSystem::Snapshot(_, snapshot) => {
                             snapshots.push(snapshot);
                         }
                     }
