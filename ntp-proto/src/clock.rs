@@ -218,7 +218,8 @@ impl<C: NtpClock> ClockController<C> {
                 poll_interval = debug(self.preferred_poll_interval),
                 "Increased system poll interval"
             );
-        } else {
+        }
+        if self.poll_interval_counter < -Self::POLL_ADJUST {
             self.poll_interval_counter = 0;
             self.preferred_poll_interval = self.preferred_poll_interval.dec();
             debug!(
