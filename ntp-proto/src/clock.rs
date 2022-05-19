@@ -48,6 +48,7 @@ pub struct ClockController<C: NtpClock> {
     offset: NtpDuration,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ClockUpdateResult {
     Ignore,
     Step,
@@ -288,6 +289,10 @@ mod tests {
     struct TestClock {
         last_freq: RefCell<Option<f64>>,
         last_offset: RefCell<Option<NtpDuration>>,
+        last_est_error: RefCell<Option<NtpDuration>>,
+        last_max_error: RefCell<Option<NtpDuration>>,
+        last_poll_interval: RefCell<Option<PollInterval>>,
+        last_leap_status: RefCell<Option<NtpLeapIndicator>>,
     }
 
     impl NtpClock for TestClock {
@@ -310,28 +315,101 @@ mod tests {
         fn update_clock(
             &self,
             offset: NtpDuration,
-            _est_error: NtpDuration,
-            _max_error: NtpDuration,
-            _poll_interval: PollInterval,
-            _leap_status: NtpLeapIndicator,
+            est_error: NtpDuration,
+            max_error: NtpDuration,
+            poll_interval: PollInterval,
+            leap_status: NtpLeapIndicator,
         ) -> Result<(), Self::Error> {
             *self.last_offset.borrow_mut() = Some(offset);
+            *self.last_est_error.borrow_mut() = Some(est_error);
+            *self.last_max_error.borrow_mut() = Some(max_error);
+            *self.last_poll_interval.borrow_mut() = Some(poll_interval);
+            *self.last_leap_status.borrow_mut() = Some(leap_status);
             Ok(())
         }
     }
 
     #[test]
-    fn test_startup_logic_blank() {
+    fn test_value_passthrough() {
         let base = NtpInstant::now();
 
         let mut controller = ClockController {
             clock: TestClock::default(),
-            state: ClockState::StartupBlank,
+            state: ClockState::Sync,
             last_update_time: base,
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
         };
+
+        let ref_interval = controller.preferred_poll_interval;
+
+        assert_eq!(
+            controller.update(
+                NtpDuration::from_fixed_int(0),
+                NtpDuration::from_fixed_int(50),
+                NtpDuration::from_fixed_int(20),
+                NtpDuration::from_fixed_int(10),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1),
+            ),
+            ClockUpdateResult::Slew
+        );
+
+        assert_eq!(
+            Some(NtpDuration::from_fixed_int(50)),
+            *controller.clock.last_est_error.borrow()
+        );
+        assert_eq!(
+            Some(NtpDuration::from_fixed_int(20)),
+            *controller.clock.last_max_error.borrow()
+        );
+        assert_eq!(
+            Some(NtpLeapIndicator::NoWarning),
+            *controller.clock.last_leap_status.borrow()
+        );
+        assert_eq!(
+            Some(ref_interval),
+            *controller.clock.last_poll_interval.borrow()
+        );
+
+        controller.preferred_poll_interval = controller.preferred_poll_interval.inc();
+        let ref_interval = controller.preferred_poll_interval;
+
+        assert_eq!(
+            controller.update(
+                NtpDuration::from_fixed_int(0),
+                NtpDuration::from_fixed_int(100),
+                NtpDuration::from_fixed_int(40),
+                NtpDuration::from_fixed_int(60),
+                NtpLeapIndicator::Leap59,
+                base + Duration::from_secs(1),
+            ),
+            ClockUpdateResult::Slew
+        );
+
+        assert_eq!(
+            Some(NtpDuration::from_fixed_int(100)),
+            *controller.clock.last_est_error.borrow()
+        );
+        assert_eq!(
+            Some(NtpDuration::from_fixed_int(80)),
+            *controller.clock.last_max_error.borrow()
+        );
+        assert_eq!(
+            Some(NtpLeapIndicator::Leap59),
+            *controller.clock.last_leap_status.borrow()
+        );
+        assert_eq!(
+            Some(ref_interval),
+            *controller.clock.last_poll_interval.borrow()
+        );
+    }
+
+    #[test]
+    fn test_startup_logic() {
+        let mut controller = ClockController::new(TestClock::default());
+        let base = controller.last_update_time;
 
         controller.update(
             NtpDuration::from_fixed_int(0),
@@ -432,6 +510,157 @@ mod tests {
         assert_eq!(
             *controller.clock.last_offset.borrow(),
             Some(NtpDuration::from_fixed_int(0))
+        );
+    }
+
+    #[test]
+    fn test_spike_acceptance_over_time() {
+        let base = NtpInstant::now();
+
+        let mut controller = ClockController {
+            clock: TestClock::default(),
+            state: ClockState::Sync,
+            last_update_time: base,
+            preferred_poll_interval: PollInterval::MIN,
+            poll_interval_counter: 0,
+            offset: NtpDuration::from_fixed_int(0),
+        };
+
+        controller.update(
+            2 * NtpDuration::STEP_THRESHOLD,
+            NtpDuration::from_seconds(0.01),
+            NtpDuration::from_seconds(0.02),
+            NtpDuration::from_seconds(0.03),
+            NtpLeapIndicator::NoWarning,
+            base + Duration::from_secs(1),
+        );
+
+        assert_eq!(controller.state, ClockState::Spike);
+        assert_eq!(*controller.clock.last_offset.borrow(), None);
+
+        controller.update(
+            2 * NtpDuration::STEP_THRESHOLD,
+            NtpDuration::from_seconds(0.01),
+            NtpDuration::from_seconds(0.02),
+            NtpDuration::from_seconds(0.03),
+            NtpLeapIndicator::NoWarning,
+            base + Duration::from_secs(902),
+        );
+
+        assert_eq!(controller.state, ClockState::Sync);
+        assert_eq!(
+            *controller.clock.last_offset.borrow(),
+            Some(2 * NtpDuration::STEP_THRESHOLD)
+        );
+    }
+
+    #[test]
+    fn test_excess_detection() {
+        let base = NtpInstant::now();
+
+        let mut controller = ClockController {
+            clock: TestClock::default(),
+            state: ClockState::Sync,
+            last_update_time: base,
+            preferred_poll_interval: PollInterval::MIN,
+            poll_interval_counter: 0,
+            offset: NtpDuration::from_fixed_int(0),
+        };
+
+        assert_eq!(
+            controller.update(
+                2 * NtpDuration::PANIC_THRESHOLD,
+                NtpDuration::from_seconds(0.01),
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.03),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1),
+            ),
+            ClockUpdateResult::Panic
+        );
+
+        let mut controller = ClockController {
+            clock: TestClock::default(),
+            state: ClockState::Spike,
+            last_update_time: base,
+            preferred_poll_interval: PollInterval::MIN,
+            poll_interval_counter: 0,
+            offset: NtpDuration::from_fixed_int(0),
+        };
+
+        assert_eq!(
+            controller.update(
+                2 * NtpDuration::PANIC_THRESHOLD,
+                NtpDuration::from_seconds(0.01),
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.03),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1),
+            ),
+            ClockUpdateResult::Panic
+        );
+
+        let mut controller = ClockController {
+            clock: TestClock::default(),
+            state: ClockState::MeasureFreq,
+            last_update_time: base,
+            preferred_poll_interval: PollInterval::MIN,
+            poll_interval_counter: 0,
+            offset: NtpDuration::from_fixed_int(0),
+        };
+
+        assert_eq!(
+            controller.update(
+                2 * NtpDuration::PANIC_THRESHOLD,
+                NtpDuration::from_seconds(0.01),
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.03),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1),
+            ),
+            ClockUpdateResult::Panic
+        );
+
+        let mut controller = ClockController {
+            clock: TestClock::default(),
+            state: ClockState::StartupBlank,
+            last_update_time: base,
+            preferred_poll_interval: PollInterval::MIN,
+            poll_interval_counter: 0,
+            offset: NtpDuration::from_fixed_int(0),
+        };
+
+        assert_eq!(
+            controller.update(
+                2 * NtpDuration::PANIC_THRESHOLD,
+                NtpDuration::from_seconds(0.01),
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.03),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1),
+            ),
+            ClockUpdateResult::Step
+        );
+
+        let mut controller = ClockController {
+            clock: TestClock::default(),
+            state: ClockState::StartupFreq,
+            last_update_time: base,
+            preferred_poll_interval: PollInterval::MIN,
+            poll_interval_counter: 0,
+            offset: NtpDuration::from_fixed_int(0),
+        };
+
+        assert_eq!(
+            controller.update(
+                2 * NtpDuration::PANIC_THRESHOLD,
+                NtpDuration::from_seconds(0.01),
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.03),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1),
+            ),
+            ClockUpdateResult::Step
         );
     }
 }
