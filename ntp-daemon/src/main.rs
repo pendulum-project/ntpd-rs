@@ -6,7 +6,7 @@ use ntp_proto::{
     ClockController, ClockUpdateResult, FilterAndCombine, NtpInstant, PeerSnapshot, PollInterval,
     SystemConfig, SystemSnapshot,
 };
-use peer::{start_peer, MsgForSystem};
+use peer::{start_peer, MsgForSystem, ResetEpoch};
 use tracing::info;
 
 use std::{error::Error, sync::Arc};
@@ -29,8 +29,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let global_system_snapshot = Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default()));
 
     // channel to send the reset signal to all peers
-    let (reset_tx, reset_rx) = watch::channel::<u64>(0);
-    let mut last_reset_index: u64 = 0;
+    let mut reset_epoch: ResetEpoch = ResetEpoch::default();
+    let (reset_tx, reset_rx) = watch::channel::<ResetEpoch>(reset_epoch);
 
     let (msg_for_system_tx, mut msg_for_system_rx) = tokio::sync::mpsc::channel::<MsgForSystem>(32);
 
@@ -63,7 +63,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     loop {
         if let Some(msg_for_system) = msg_for_system_rx.recv().await {
-            receive_msg_for_system(&mut peers, msg_for_system, last_reset_index);
+            receive_msg_for_system(&mut peers, msg_for_system, reset_epoch);
 
             // remove snapshots from previous iteration
             snapshots.clear();
@@ -105,8 +105,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 }
                             }
 
-                            last_reset_index += 1;
-                            reset_tx.send_replace(last_reset_index);
+                            reset_epoch = reset_epoch.inc();
+                            reset_tx.send_replace(reset_epoch);
                         }
                         _ => {}
                     }
@@ -134,7 +134,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 fn receive_msg_for_system(
     peers: &mut [PeerState],
     msg_for_system: MsgForSystem,
-    current_reset_epoch: u64,
+    current_reset_epoch: ResetEpoch,
 ) {
     match msg_for_system {
         MsgForSystem::MustDemobilize(index) => {
