@@ -3,8 +3,8 @@ mod peer;
 
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
-    ClockController, ClockUpdateResult, FilterAndCombine, NtpInstant, PeerSnapshot, PollInterval,
-    SystemConfig, SystemSnapshot,
+    ClockController, ClockUpdateResult, FilterAndCombine, NtpInstant, PeerSnapshot, SystemConfig,
+    SystemSnapshot,
 };
 use peer::{start_peer, MsgForSystem, ResetEpoch};
 use tracing::info;
@@ -19,19 +19,42 @@ enum PeerState {
     Valid(PeerSnapshot),
 }
 
+impl PeerState {
+    const fn get_snapshot(&self) -> Option<PeerSnapshot> {
+        match self {
+            PeerState::Demobilized | PeerState::AwaitingReset => None,
+            PeerState::Valid(snapshot) => Some(*snapshot),
+        }
+    }
+
+    #[must_use]
+    fn reset_step(&self) -> Self {
+        match self {
+            PeerState::Demobilized => PeerState::Demobilized,
+            PeerState::AwaitingReset => PeerState::AwaitingReset,
+            PeerState::Valid(_) => PeerState::AwaitingReset,
+        }
+    }
+
+    fn reset(&mut self) {
+        *self = self.reset_step();
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt::init();
 
     let config = SystemConfig::default();
 
-    // channel for sending updated system state to the peers
+    // shares the system state with all peers
     let global_system_snapshot = Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default()));
 
-    // channel to send the reset signal to all peers
+    // send the reset signal to all peers
     let mut reset_epoch: ResetEpoch = ResetEpoch::default();
     let (reset_tx, reset_rx) = watch::channel::<ResetEpoch>(reset_epoch);
 
+    // receive peer snapshots from all peers
     let (msg_for_system_tx, mut msg_for_system_rx) = tokio::sync::mpsc::channel::<MsgForSystem>(32);
 
     let mut controller = ClockController::new(UnixNtpClock::new());
@@ -61,74 +84,73 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut snapshots = Vec::with_capacity(peer_addresses.len());
 
-    loop {
-        if let Some(msg_for_system) = msg_for_system_rx.recv().await {
-            receive_msg_for_system(&mut peers, msg_for_system, reset_epoch);
+    while let Some(msg_for_system) = msg_for_system_rx.recv().await {
+        receive_msg_for_system(&mut peers, msg_for_system, reset_epoch);
 
-            // remove snapshots from previous iteration
-            snapshots.clear();
+        // remove snapshots from previous iteration
+        snapshots.clear();
 
-            for peer_state in &peers {
-                if let PeerState::Valid(snapshot) = peer_state {
-                    snapshots.push(*snapshot);
-                }
+        // add all valid measurements to our list of snapshots
+        snapshots.extend(peers.iter().filter_map(PeerState::get_snapshot));
+
+        let ntp_instant = NtpInstant::now();
+        let system_poll = global_system_snapshot.read().await.poll_interval;
+        let result = FilterAndCombine::run(&config, &snapshots, ntp_instant, system_poll);
+
+        let clock_select = match result {
+            Some(clock_select) => clock_select,
+            None => {
+                info!("filter and combine did not produce a result");
+                continue;
             }
+        };
 
-            let ntp_instant = NtpInstant::now();
-            let system_poll = PollInterval::MIN;
-            let result = FilterAndCombine::run(&config, &snapshots, ntp_instant, system_poll);
+        let offset_ms = clock_select.system_offset.to_seconds() * 1000.0;
+        let jitter_ms = clock_select.system_jitter.to_seconds() * 1000.0;
+        info!(offset_ms, jitter_ms, "system offset and jitter");
 
-            match result {
-                Some(clock_select) => {
-                    let offset_ms = clock_select.system_offset.to_seconds() * 1000.0;
-                    let jitter_ms = clock_select.system_jitter.to_seconds() * 1000.0;
-                    info!(offset_ms, jitter_ms, "system offset and jitter");
+        let adjust_type = controller.update(
+            clock_select.system_offset,
+            clock_select.system_jitter,
+            clock_select.system_peer_snapshot.root_delay,
+            clock_select.system_peer_snapshot.root_dispersion,
+            clock_select.system_peer_snapshot.leap_indicator,
+            clock_select.system_peer_snapshot.time,
+        );
 
-                    let adjust_type = controller.update(
-                        clock_select.system_offset,
-                        clock_select.system_jitter,
-                        clock_select.system_peer_snapshot.root_delay,
-                        clock_select.system_peer_snapshot.root_dispersion,
-                        clock_select.system_peer_snapshot.leap_indicator,
-                        clock_select.system_peer_snapshot.time,
-                    );
-
-                    // Handle situations needing extra processing
-                    match adjust_type {
-                        ClockUpdateResult::Panic => {
-                            panic!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate.")
-                        }
-                        ClockUpdateResult::Step => {
-                            for peer_state in peers.iter_mut() {
-                                if let PeerState::Valid(_) = peer_state {
-                                    *peer_state = PeerState::AwaitingReset;
-                                }
-                            }
-
-                            reset_epoch = reset_epoch.inc();
-                            reset_tx.send_replace(reset_epoch);
-                        }
-                        _ => {}
-                    }
-
-                    // Handle updating system snapshot
-                    match adjust_type {
-                        ClockUpdateResult::Ignore => {}
-                        _ => {
-                            let mut system_snapshot = *global_system_snapshot.read().await;
-                            system_snapshot.poll_interval = controller.preferred_poll_interval();
-                            system_snapshot.leap_indicator =
-                                clock_select.system_peer_snapshot.leap_indicator;
-
-                            let mut global = global_system_snapshot.write().await;
-                            *global = system_snapshot;
-                        }
-                    }
+        // Handle situations needing extra processing
+        match adjust_type {
+            ClockUpdateResult::Panic => {
+                panic!(
+                    r"Unusually large clock step suggested,
+                            please manually verify system clock and reference clock 
+                                 state and restart if appropriate."
+                )
+            }
+            ClockUpdateResult::Step => {
+                for peer_state in peers.iter_mut() {
+                    peer_state.reset();
                 }
-                None => info!("filter and combine did not produce a result"),
+
+                reset_epoch = reset_epoch.inc();
+                reset_tx.send_replace(reset_epoch);
+            }
+            _ => {}
+        }
+
+        // Handle updating system snapshot
+        match adjust_type {
+            ClockUpdateResult::Ignore => {}
+            _ => {
+                let mut global = global_system_snapshot.write().await;
+                global.poll_interval = controller.preferred_poll_interval();
+                global.leap_indicator = clock_select.system_peer_snapshot.leap_indicator;
             }
         }
     }
+
+    // the channel closed and has no more messages in it
+    Ok(())
 }
 
 fn receive_msg_for_system(
