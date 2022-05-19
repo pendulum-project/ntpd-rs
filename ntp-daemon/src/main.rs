@@ -65,8 +65,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         if let Some(msg_for_system) = msg_for_system_rx.recv().await {
             receive_msg_for_system(&mut peers, msg_for_system, last_reset_index);
 
-            dbg!(&peers);
-
             // remove snapshots from previous iteration
             snapshots.clear();
 

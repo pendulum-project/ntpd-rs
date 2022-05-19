@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{pin::Pin, sync::Arc};
 
 use tracing::warn;
 
@@ -9,7 +9,11 @@ use ntp_proto::{
 use ntp_udp::UdpSocket;
 use tracing::{info, instrument};
 
-use tokio::{net::ToSocketAddrs, sync::watch, time::Instant};
+use tokio::{
+    net::ToSocketAddrs,
+    sync::watch,
+    time::{Instant, Sleep},
+};
 
 #[derive(Debug, Clone, Copy)]
 pub enum MsgForSystem {
@@ -17,6 +21,117 @@ pub enum MsgForSystem {
     MustDemobilize(usize),
     /// Received an acceptable packet and made a new peer snapshot
     Snapshot(usize, u64, PeerSnapshot),
+}
+
+struct PeerProcess<A, C> {
+    index: usize,
+    addr: A,
+    clock: C,
+    config: SystemConfig,
+    msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
+    system_snapshots: Arc<tokio::sync::RwLock<SystemSnapshot>>,
+    reset: watch::Receiver<u64>,
+    socket: UdpSocket,
+
+    peer: Peer,
+
+    /// Timestamp of the last packet that we sent
+    last_send_timestamp: Option<NtpTimestamp>,
+
+    /// Instant last poll message was sent (used for timing the wait)
+    last_poll_sent: Instant,
+
+    /// Number of resets that this peer has performed
+    reset_epoch: u64,
+}
+
+impl<A, C> PeerProcess<A, C>
+where
+    A: ToSocketAddrs + std::fmt::Debug,
+    C: 'static + NtpClock + Send,
+{
+    async fn handle_poll(&mut self, poll_wait: &mut Pin<&mut Sleep>) {
+        let system_snapshot = *self.system_snapshots.read().await;
+
+        let packet = self.peer.generate_poll_message(system_snapshot);
+
+        // Sent a poll, so update waiting to match deadline of next
+        self.last_poll_sent = Instant::now();
+        let poll_interval = self
+            .peer
+            .current_poll_interval(system_snapshot)
+            .as_system_duration();
+        poll_wait
+            .as_mut()
+            .reset(self.last_poll_sent + poll_interval);
+
+        match self.clock.now() {
+            Err(e) => {
+                // we cannot determine the origin_timestamp
+                panic!("`clock.now()` reported an error: {:?}", e)
+            }
+            Ok(ts) => {
+                self.last_send_timestamp = Some(ts);
+            }
+        }
+
+        if let Err(e) = self.socket.send(&packet.serialize()).await {
+            warn!(error = debug(e), "poll message could not be sent");
+        }
+    }
+
+    async fn handle_reset(&mut self, result: Result<(), ()>) {
+        if let Ok(()) = result {
+            // reset the measurement state (as if this association was just created).
+            // crucially, this sets `self.next_expected_origin = None`, meaning that
+            // in-flight requests are ignored
+            self.peer.reset_measurements();
+
+            // our next measurement will have the new reset epoch
+            self.reset_epoch = *self.reset.borrow_and_update();
+        }
+    }
+
+    async fn handle_packet(
+        &mut self,
+        poll_wait: &mut Pin<&mut Sleep>,
+        packet: NtpHeader,
+        send_timestamp: NtpTimestamp,
+        recv_timestamp: NtpTimestamp,
+    ) {
+        let ntp_instant = NtpInstant::now();
+
+        let system_snapshot = *self.system_snapshots.read().await;
+        let result = self.peer.handle_incoming(
+            system_snapshot,
+            packet,
+            ntp_instant,
+            self.config.frequency_tolerance,
+            send_timestamp,
+            recv_timestamp,
+        );
+
+        // Handle incoming may have changed poll interval based on message, respect that change
+        let poll_interval = self
+            .peer
+            .current_poll_interval(system_snapshot)
+            .as_system_duration();
+        poll_wait
+            .as_mut()
+            .reset(self.last_poll_sent + poll_interval);
+
+        let system_poll = system_snapshot.poll_interval.as_duration();
+        let accept = self.peer.accept_synchronization(
+            ntp_instant,
+            self.config.frequency_tolerance,
+            self.config.distance_threshold,
+            system_poll,
+        );
+
+        if let Some(msg) = prepare_msg_for_system(self.index, self.reset_epoch, accept, result) {
+            self.msg_for_system_sender.send(msg).await.ok();
+        }
+    }
 }
 
 #[instrument(skip(clock, config, system_snapshots, reset))]
@@ -114,8 +229,7 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
                             recv_timestamp,
                         );
 
-                        // Handle incoming may have changed poll interval based on
-                        // message, respect that change
+                        // Handle incoming may have changed poll interval based on message, respect that change
                         let poll_interval = peer.current_poll_interval(system_snapshot).as_system_duration();
                         poll_wait.as_mut().reset(last_poll_sent + poll_interval);
 
@@ -148,18 +262,19 @@ fn prepare_msg_for_system(
     match accept {
         Err(accept_error) => {
             info!(?accept_error, "packet is not accepted");
-
             None
         }
         Ok(_) => match result {
-            Ok(update) => Some(MsgForSystem::Snapshot(index, reset_epoch, update)),
+            Ok(update) => {
+                info!("packet accepted");
+                Some(MsgForSystem::Snapshot(index, reset_epoch, update))
+            }
             Err(IgnoreReason::KissDemobilize) => {
                 info!("peer must demobilize");
                 Some(MsgForSystem::MustDemobilize(index))
             }
             Err(ignore_reason) => {
                 info!(?ignore_reason, "packet ignored");
-
                 None
             }
         },
