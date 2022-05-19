@@ -9,7 +9,7 @@ use ntp_proto::{
 use peer::{start_peer, MsgForSystem};
 use tracing::info;
 
-use std::error::Error;
+use std::{error::Error, sync::Arc};
 use tokio::sync::watch;
 
 #[derive(Debug, Clone, Copy)]
@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let config = SystemConfig::default();
 
     // channel for sending updated system state to the peers
-    let (system_tx, system_rx) = watch::channel::<SystemSnapshot>(SystemSnapshot::default());
+    let global_system_snapshot = Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default()));
 
     // channel to send the reset signal to all peers
     let (reset_tx, reset_rx) = watch::channel::<u64>(0);
@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             UnixNtpClock::new(),
             config,
             msg_for_system_tx.clone(),
-            system_rx.clone(),
+            global_system_snapshot.clone(),
             reset_rx.clone(),
         )
         .await
@@ -117,13 +117,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     match adjust_type {
                         ClockUpdateResult::Ignore => {}
                         _ => {
-                            let mut system_snapshot = *system_rx.borrow();
+                            let mut system_snapshot = *global_system_snapshot.read().await;
                             system_snapshot.poll_interval = controller.preferred_poll_interval();
                             system_snapshot.leap_indicator =
                                 clock_select.system_peer_snapshot.leap_indicator;
-                            system_tx
-                                .send(system_snapshot)
-                                .expect("System snapshot mechanism failed");
+
+                            let mut global = global_system_snapshot.write().await;
+                            *global = system_snapshot;
                         }
                     }
                 }

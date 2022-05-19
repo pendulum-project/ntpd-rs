@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use tracing::warn;
 
 use ntp_proto::{
@@ -24,7 +26,7 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
     clock: C,
     config: SystemConfig,
     msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
-    mut system_snapshots: watch::Receiver<SystemSnapshot>,
+    system_snapshots: Arc<tokio::sync::RwLock<SystemSnapshot>>,
     mut reset: watch::Receiver<u64>,
 ) -> Result<(), std::io::Error> {
     let socket = UdpSocket::new("0.0.0.0:0", addr).await?;
@@ -54,7 +56,7 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
 
             tokio::select! {
                 () = &mut poll_wait => {
-                    let system_snapshot = *system_snapshots.borrow_and_update();
+                    let system_snapshot = *system_snapshots.read().await;
 
 
                     let packet = peer.generate_poll_message(system_snapshot);
@@ -102,7 +104,7 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
                     if let Some((packet, recv_timestamp)) = accept_packet(result, &buf) {
                         let ntp_instant = NtpInstant::now();
 
-                        let system_snapshot = *system_snapshots.borrow_and_update();
+                        let system_snapshot = *system_snapshots.read().await;
                         let result = peer.handle_incoming(
                             system_snapshot,
                             packet,
