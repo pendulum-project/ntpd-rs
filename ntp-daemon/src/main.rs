@@ -103,7 +103,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     peer::MsgForSystem::NoMeasurement => {
                         continue;
                     }
-                    peer::MsgForSystem::Snapshot(_, _) => {
+                    peer::MsgForSystem::Snapshot(_, _, _) => {
                         // fall through
                     }
                 }
@@ -120,7 +120,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         peer::MsgForSystem::NoMeasurement => {
                             // skip
                         }
-                        peer::MsgForSystem::Snapshot(_, snapshot) => {
+                        peer::MsgForSystem::Snapshot(_, _, snapshot) => {
                             snapshots.push(snapshot);
                         }
                     }

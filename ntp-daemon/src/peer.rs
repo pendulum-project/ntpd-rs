@@ -17,7 +17,7 @@ pub enum MsgForSystem {
     /// packet has been received yet, or because synchronization was rejected
     NoMeasurement,
     /// Received an acceptable packet and made a new peer snapshot
-    Snapshot(usize, PeerSnapshot),
+    Snapshot(usize, u64, PeerSnapshot),
 }
 
 pub struct PeerChannels {
@@ -57,6 +57,8 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
 
         // Instant last poll message was sent (used for timing the wait)
         let mut last_poll_sent = Instant::now();
+
+        let mut reset_epoch = 0;
 
         loop {
             let mut buf = [0_u8; 48];
@@ -98,7 +100,8 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
 
                         // notify the system that the reset has been successful, and that this
                         // association can produce valid measurements again
-                        notify_reset_send.send_replace(*reset.borrow_and_update());
+                        reset_epoch = *reset.borrow_and_update();
+                        notify_reset_send.send_replace(reset_epoch);
                     }
                 }
                 result = socket.recv(&mut buf) => {
@@ -151,7 +154,7 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
                             } else  {
                                 match result {
                                     Ok(update) => {
-                                        tx.send_replace(MsgForSystem::Snapshot(index, update));
+                                        tx.send_replace(MsgForSystem::Snapshot(index, reset_epoch, update));
                                     }
                                     Err(IgnoreReason::KissDemobilize) => {
                                         tx.send_replace(MsgForSystem::MustDemobilize(index));
