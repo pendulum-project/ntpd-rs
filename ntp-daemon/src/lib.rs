@@ -171,13 +171,12 @@ async fn run_system(
         }
 
         // Handle updating system snapshot
-        match adjust_type {
-            ClockUpdateResult::Ignore => {}
-            _ => {
-                let mut global = global_system_snapshot.write().await;
-                global.poll_interval = controller.preferred_poll_interval();
-                global.leap_indicator = clock_select.system_peer_snapshot.leap_indicator;
-            }
+        if let ClockUpdateResult::Ignore = adjust_type {
+            // ignore this update
+        } else {
+            let mut global = global_system_snapshot.write().await;
+            global.poll_interval = controller.preferred_poll_interval();
+            global.leap_indicator = clock_select.system_peer_snapshot.leap_indicator;
         }
     }
 
