@@ -14,3 +14,10 @@ Currently, the code is split up into three separate crates:
  - ntp-os-clock contains the unsafe code needed to interface with system clocks.
 
 It is a design goal to split of any unsafe code needed to interface with operating system interfaces in separate packages. The intent is to keep these packages as small as possible and ensure that any public functions exposed are themselves safe.
+
+## Test Binaries
+
+This crate contains extremely limited NTP servers for testing purposes 
+
+* `demobilize-server` always sends the DENY kiss code, the client must bemobilize this association
+* `rate-limit-server` forces an increase of the poll interval to 32 seconds
