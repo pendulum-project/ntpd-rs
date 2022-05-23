@@ -44,7 +44,7 @@ pub enum MsgForSystem {
     Snapshot(PeerIndex, ResetEpoch, PeerSnapshot),
 }
 
-struct PeerTask<C> {
+pub(crate) struct PeerTask<C> {
     index: PeerIndex,
     clock: C,
     config: SystemConfig,

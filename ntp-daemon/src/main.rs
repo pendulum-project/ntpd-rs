@@ -1,7 +1,5 @@
 #![forbid(unsafe_code)]
 
-use ntp_daemon::start_system;
-
 use ntp_proto::SystemConfig;
 use std::error::Error;
 
@@ -18,5 +16,5 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "3.pool.ntp.org:123",
     ];
 
-    start_system(&config, &peer_addresses).await
+    ntp_daemon::spawn(&config, &peer_addresses).await
 }
