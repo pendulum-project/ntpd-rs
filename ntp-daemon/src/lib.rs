@@ -18,23 +18,6 @@ enum PeerStatus {
     Valid(PeerSnapshot),
 }
 
-impl PeerStatus {
-    const fn get_snapshot(&self) -> Option<PeerSnapshot> {
-        match self {
-            PeerStatus::Demobilized | PeerStatus::AwaitingReset => None,
-            PeerStatus::Valid(snapshot) => Some(*snapshot),
-        }
-    }
-
-    fn reset(&mut self) {
-        *self = match self {
-            PeerStatus::Demobilized => PeerStatus::Demobilized,
-            PeerStatus::AwaitingReset => PeerStatus::AwaitingReset,
-            PeerStatus::Valid(_) => PeerStatus::AwaitingReset,
-        };
-    }
-}
-
 struct Peers {
     peers: Box<[PeerStatus]>,
 }
@@ -46,12 +29,17 @@ impl Peers {
         }
     }
 
-    fn valid_snapshots(&self) -> impl Iterator<Item = PeerSnapshot> + '_ {
-        self.peers.iter().filter_map(PeerStatus::get_snapshot)
-    }
-
     fn len(&self) -> usize {
         self.peers.len()
+    }
+
+    fn valid_snapshots(&self) -> impl Iterator<Item = PeerSnapshot> + '_ {
+        self.peers
+            .iter()
+            .filter_map(|peer_status| match peer_status {
+                PeerStatus::Demobilized | PeerStatus::AwaitingReset => None,
+                PeerStatus::Valid(snapshot) => Some(*snapshot),
+            })
     }
 
     fn receive_update(&mut self, msg: MsgForSystem, current_reset_epoch: ResetEpoch) {
@@ -69,7 +57,11 @@ impl Peers {
 
     fn reset_all(&mut self) {
         for peer_status in self.peers.iter_mut() {
-            peer_status.reset();
+            *peer_status = match peer_status {
+                PeerStatus::Demobilized => PeerStatus::Demobilized,
+                PeerStatus::AwaitingReset => PeerStatus::AwaitingReset,
+                PeerStatus::Valid(_) => PeerStatus::AwaitingReset,
+            };
         }
     }
 }
