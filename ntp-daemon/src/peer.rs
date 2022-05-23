@@ -142,27 +142,30 @@ where
             system_poll,
         );
 
-        match accept {
-            Err(accept_error) => {
-                info!(?accept_error, "packet is not accepted");
-            }
-            Ok(_) => match result {
-                Ok(update) => {
-                    info!("packet accepted");
-                    let msg = MsgForSystem::Snapshot(self.index, self.reset_epoch, update);
-                    self.channels.msg_for_system_sender.send(msg).await.ok();
-                }
-                Err(IgnoreReason::KissDemobilize) => {
-                    info!("peer must demobilize");
-                    let msg = MsgForSystem::MustDemobilize(self.index);
-                    self.channels.msg_for_system_sender.send(msg).await.ok();
+        match result {
+            Ok(update) => {
+                info!("packet accepted");
 
-                    return ControlFlow::Break(());
+                match accept {
+                    Err(accept_error) => {
+                        info!(?accept_error, "packet is not accepted");
+                    }
+                    Ok(_) => {
+                        let msg = MsgForSystem::Snapshot(self.index, self.reset_epoch, update);
+                        self.channels.msg_for_system_sender.send(msg).await.ok();
+                    }
                 }
-                Err(ignore_reason) => {
-                    info!(?ignore_reason, "packet ignored");
-                }
-            },
+            }
+            Err(IgnoreReason::KissDemobilize) => {
+                info!("peer must demobilize");
+                let msg = MsgForSystem::MustDemobilize(self.index);
+                self.channels.msg_for_system_sender.send(msg).await.ok();
+
+                return ControlFlow::Break(());
+            }
+            Err(ignore_reason) => {
+                info!(?ignore_reason, "packet ignored");
+            }
         }
 
         ControlFlow::Continue(())

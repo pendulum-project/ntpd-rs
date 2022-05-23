@@ -222,11 +222,7 @@ impl Peer {
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
     ) -> Result<PeerSnapshot, IgnoreReason> {
-        if message.mode != NtpAssociationMode::Server {
-            // we currently only support a client <-> server association
-            warn!("Received packet with invalid mode");
-            Err(IgnoreReason::InvalidMode)
-        } else if message.is_kiss_rate() {
+        if message.is_kiss_rate() {
             warn!("Peer requested rate limit");
             // KISS packets may not have correct timestamps at all, handle them anyway
             self.remote_min_poll_interval =
@@ -240,6 +236,10 @@ impl Peer {
             warn!("Unrecognized KISS Message from peer");
             // Ignore unrecognized control messages
             Err(IgnoreReason::KissIgnore)
+        } else if message.mode != NtpAssociationMode::Server {
+            // we currently only support a client <-> server association
+            warn!("Received packet with invalid mode");
+            Err(IgnoreReason::InvalidMode)
         } else if Some(message.origin_timestamp) != self.next_expected_origin {
             // Packets should be a response to a previous request from us,
             // if not just ignore. Note that this might also happen when

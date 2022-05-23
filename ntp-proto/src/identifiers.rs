@@ -7,9 +7,9 @@ pub struct ReferenceId(u32);
 
 impl ReferenceId {
     // Note: Names chosen to match the identifiers given in rfc5905
-    pub(crate) const KISS_DENY: ReferenceId = ReferenceId(0x44454E59);
-    pub(crate) const KISS_RATE: ReferenceId = ReferenceId(0x52415445);
-    pub(crate) const KISS_RSTR: ReferenceId = ReferenceId(0x52535452);
+    pub const KISS_DENY: ReferenceId = ReferenceId(0x44454E59);
+    pub const KISS_RATE: ReferenceId = ReferenceId(0x52415445);
+    pub const KISS_RSTR: ReferenceId = ReferenceId(0x52535452);
 
     pub fn from_ip(addr: IpAddr) -> ReferenceId {
         match addr {
