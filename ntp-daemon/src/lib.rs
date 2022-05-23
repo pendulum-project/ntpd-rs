@@ -5,7 +5,7 @@ use ntp_proto::{
     ClockController, ClockUpdateResult, FilterAndCombine, NtpInstant, PeerSnapshot, SystemConfig,
     SystemSnapshot,
 };
-use peer::{start_peer, MsgForSystem, PeerIndex, ResetEpoch};
+use peer::{MsgForSystem, PeerIndex, PeerTask, ResetEpoch};
 use tracing::info;
 
 use std::{error::Error, sync::Arc};
@@ -81,7 +81,7 @@ pub async fn start_system(
     let (msg_for_system_tx, msg_for_system_rx) = mpsc::channel::<MsgForSystem>(32);
 
     for (index, address) in peer_addresses.iter().enumerate() {
-        start_peer(
+        PeerTask::spawn(
             PeerIndex { index },
             address,
             UnixNtpClock::new(),

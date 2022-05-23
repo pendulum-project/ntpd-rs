@@ -44,7 +44,7 @@ pub enum MsgForSystem {
     Snapshot(PeerIndex, ResetEpoch, PeerSnapshot),
 }
 
-struct PeerProcess<C> {
+struct PeerTask<C> {
     index: PeerIndex,
     clock: C,
     config: SystemConfig,
@@ -69,7 +69,7 @@ struct PeerProcess<C> {
     reset_epoch: ResetEpoch,
 }
 
-impl<C> PeerProcess<C>
+impl<C> PeerTask<C>
 where
     C: 'static + NtpClock + Send,
 {
@@ -142,63 +142,28 @@ where
             self.msg_for_system_sender.send(msg).await.ok();
         }
     }
-}
 
-#[instrument(skip(clock, config, system_snapshots, reset))]
-pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpClock + Send>(
-    index: PeerIndex,
-    addr: A,
-    clock: C,
-    config: SystemConfig,
-    msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
-    system_snapshots: Arc<tokio::sync::RwLock<SystemSnapshot>>,
-    reset: watch::Receiver<ResetEpoch>,
-) -> Result<(), std::io::Error> {
-    let socket = UdpSocket::new("0.0.0.0:0", addr).await?;
-    let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
-    let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
-
-    tokio::spawn(async move {
-        let local_clock_time = NtpInstant::now();
-        let peer = Peer::new(our_id, peer_id, local_clock_time);
-
-        let poll_wait = tokio::time::sleep(std::time::Duration::default());
-        tokio::pin!(poll_wait);
-
-        let mut process = PeerProcess {
-            index,
-            clock,
-            config,
-            msg_for_system_sender,
-            system_snapshots,
-            reset,
-            socket,
-            peer,
-            last_send_timestamp: None,
-            last_poll_sent: Instant::now(),
-            reset_epoch: ResetEpoch::default(),
-        };
-
+    async fn run(&mut self, mut poll_wait: Pin<&mut Sleep>) -> ! {
         loop {
             let mut buf = [0_u8; 48];
 
             tokio::select! {
                 () = &mut poll_wait => {
-                    process.handle_poll(&mut poll_wait).await;
+                    self.handle_poll(&mut poll_wait).await;
                 },
-                result = process.reset.changed() => {
+                result = self.reset.changed() => {
                     if let Ok(()) = result {
                         // reset the measurement state (as if this association was just created).
                         // crucially, this sets `self.next_expected_origin = None`, meaning that
                         // in-flight requests are ignored
-                        process.peer.reset_measurements();
+                        self.peer.reset_measurements();
 
                         // our next measurement will have the new reset epoch
-                        process.reset_epoch = *process.reset.borrow_and_update();
+                        self.reset_epoch = *self.reset.borrow_and_update();
                     }
                 }
-                result = process.socket.recv(&mut buf) => {
-                    let send_timestamp = match process.last_send_timestamp {
+                result = self.socket.recv(&mut buf) => {
+                    let send_timestamp = match self.last_send_timestamp {
                         Some(ts) => ts,
                         None => {
                             info!("we received a message without having sent one; discard");
@@ -207,14 +172,53 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
                     };
 
                     if let Some((packet, recv_timestamp)) = accept_packet(result, &buf) {
-                        process.handle_packet(&mut poll_wait, packet, send_timestamp, recv_timestamp).await;
+                        self.handle_packet(&mut poll_wait, packet, send_timestamp, recv_timestamp).await;
                     }
                 },
             }
         }
-    });
+    }
 
-    Ok(())
+    #[instrument(skip(clock, config, system_snapshots, reset))]
+    pub async fn spawn<A: ToSocketAddrs + std::fmt::Debug>(
+        index: PeerIndex,
+        addr: A,
+        clock: C,
+        config: SystemConfig,
+        msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
+        system_snapshots: Arc<tokio::sync::RwLock<SystemSnapshot>>,
+        reset: watch::Receiver<ResetEpoch>,
+    ) -> Result<(), std::io::Error> {
+        let socket = UdpSocket::new("0.0.0.0:0", addr).await?;
+        let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
+        let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
+
+        tokio::spawn(async move {
+            let local_clock_time = NtpInstant::now();
+            let peer = Peer::new(our_id, peer_id, local_clock_time);
+
+            let poll_wait = tokio::time::sleep(std::time::Duration::default());
+            tokio::pin!(poll_wait);
+
+            let mut process = PeerTask {
+                index,
+                clock,
+                config,
+                msg_for_system_sender,
+                system_snapshots,
+                reset,
+                socket,
+                peer,
+                last_send_timestamp: None,
+                last_poll_sent: Instant::now(),
+                reset_epoch: ResetEpoch::default(),
+            };
+
+            process.run(poll_wait).await
+        });
+
+        Ok(())
+    }
 }
 
 fn prepare_msg_for_system(
