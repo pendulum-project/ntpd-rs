@@ -1,36 +1,36 @@
 mod peer;
 
-use peer::{start_peer, MsgForSystem, ResetEpoch};
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
     ClockController, ClockUpdateResult, FilterAndCombine, NtpInstant, PeerSnapshot, SystemConfig,
     SystemSnapshot,
 };
+use peer::{start_peer, MsgForSystem, ResetEpoch};
 use tracing::info;
 
 use std::{error::Error, sync::Arc};
 use tokio::sync::{mpsc, watch};
 
 #[derive(Debug, Clone, Copy)]
-enum PeerState {
+enum PeerStatus {
     Demobilized,
     AwaitingReset,
     Valid(PeerSnapshot),
 }
 
-impl PeerState {
+impl PeerStatus {
     const fn get_snapshot(&self) -> Option<PeerSnapshot> {
         match self {
-            PeerState::Demobilized | PeerState::AwaitingReset => None,
-            PeerState::Valid(snapshot) => Some(*snapshot),
+            PeerStatus::Demobilized | PeerStatus::AwaitingReset => None,
+            PeerStatus::Valid(snapshot) => Some(*snapshot),
         }
     }
 
     fn reset(&mut self) {
         *self = match self {
-            PeerState::Demobilized => PeerState::Demobilized,
-            PeerState::AwaitingReset => PeerState::AwaitingReset,
-            PeerState::Valid(_) => PeerState::AwaitingReset,
+            PeerStatus::Demobilized => PeerStatus::Demobilized,
+            PeerStatus::AwaitingReset => PeerStatus::AwaitingReset,
+            PeerStatus::Valid(_) => PeerStatus::AwaitingReset,
         };
     }
 }
@@ -63,7 +63,7 @@ pub async fn start_system(
         .unwrap();
     }
 
-    let mut peers = vec![PeerState::AwaitingReset; peer_addresses.len()];
+    let mut peers = vec![PeerStatus::AwaitingReset; peer_addresses.len()];
 
     run_system(
         config,
@@ -78,7 +78,7 @@ pub async fn start_system(
 
 async fn run_system(
     config: &SystemConfig,
-    peers: &mut [PeerState],
+    peers: &mut [PeerStatus],
     mut reset_epoch: ResetEpoch,
     global_system_snapshot: Arc<tokio::sync::RwLock<SystemSnapshot>>,
     mut msg_for_system_rx: mpsc::Receiver<MsgForSystem>,
@@ -94,7 +94,7 @@ async fn run_system(
         snapshots.clear();
 
         // add all valid measurements to our list of snapshots
-        snapshots.extend(peers.iter().filter_map(PeerState::get_snapshot));
+        snapshots.extend(peers.iter().filter_map(PeerStatus::get_snapshot));
 
         let ntp_instant = NtpInstant::now();
         let system_poll = global_system_snapshot.read().await.poll_interval;
@@ -157,17 +157,17 @@ async fn run_system(
 }
 
 fn receive_msg_for_system(
-    peers: &mut [PeerState],
+    peers: &mut [PeerStatus],
     msg_for_system: MsgForSystem,
     current_reset_epoch: ResetEpoch,
 ) {
     match msg_for_system {
         MsgForSystem::MustDemobilize(index) => {
-            peers[index] = PeerState::Demobilized;
+            peers[index] = PeerStatus::Demobilized;
         }
         MsgForSystem::Snapshot(index, msg_reset_epoch, snapshot) => {
             if current_reset_epoch == msg_reset_epoch {
-                peers[index] = PeerState::Valid(snapshot);
+                peers[index] = PeerStatus::Valid(snapshot);
             }
         }
     }
