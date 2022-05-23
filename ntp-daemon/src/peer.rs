@@ -1,10 +1,10 @@
-use std::{pin::Pin, sync::Arc};
+use std::{ops::ControlFlow, pin::Pin, sync::Arc};
 
 use tracing::warn;
 
 use ntp_proto::{
-    AcceptSynchronizationError, IgnoreReason, NtpClock, NtpHeader, NtpInstant, NtpTimestamp, Peer,
-    PeerSnapshot, ReferenceId, SystemConfig, SystemSnapshot,
+    IgnoreReason, NtpClock, NtpHeader, NtpInstant, NtpTimestamp, Peer, PeerSnapshot, ReferenceId,
+    SystemConfig, SystemSnapshot,
 };
 use ntp_udp::UdpSocket;
 use tracing::{info, instrument};
@@ -118,7 +118,7 @@ where
         packet: NtpHeader,
         send_timestamp: NtpTimestamp,
         recv_timestamp: NtpTimestamp,
-    ) {
+    ) -> ControlFlow<(), ()> {
         let ntp_instant = NtpInstant::now();
 
         let system_snapshot = *self.channels.system_snapshots.read().await;
@@ -142,12 +142,33 @@ where
             system_poll,
         );
 
-        if let Some(msg) = prepare_msg_for_system(self.index, self.reset_epoch, accept, result) {
-            self.channels.msg_for_system_sender.send(msg).await.ok();
+        match accept {
+            Err(accept_error) => {
+                info!(?accept_error, "packet is not accepted");
+            }
+            Ok(_) => match result {
+                Ok(update) => {
+                    info!("packet accepted");
+                    let msg = MsgForSystem::Snapshot(self.index, self.reset_epoch, update);
+                    self.channels.msg_for_system_sender.send(msg).await.ok();
+                }
+                Err(IgnoreReason::KissDemobilize) => {
+                    info!("peer must demobilize");
+                    let msg = MsgForSystem::MustDemobilize(self.index);
+                    self.channels.msg_for_system_sender.send(msg).await.ok();
+
+                    return ControlFlow::Break(());
+                }
+                Err(ignore_reason) => {
+                    info!(?ignore_reason, "packet ignored");
+                }
+            },
         }
+
+        ControlFlow::Continue(())
     }
 
-    async fn run(&mut self, mut poll_wait: Pin<&mut Sleep>) -> ! {
+    async fn run(&mut self, mut poll_wait: Pin<&mut Sleep>) {
         loop {
             let mut buf = [0_u8; 48];
 
@@ -176,7 +197,10 @@ where
                     };
 
                     if let Some((packet, recv_timestamp)) = accept_packet(result, &buf) {
-                        self.handle_packet(&mut poll_wait, packet, send_timestamp, recv_timestamp).await;
+                        match self.handle_packet(&mut poll_wait, packet, send_timestamp, recv_timestamp).await{
+                            ControlFlow::Continue(_) => continue,
+                            ControlFlow::Break(_) => break,
+                        }
                     }
                 },
             }
@@ -218,34 +242,6 @@ where
         });
 
         Ok(())
-    }
-}
-
-fn prepare_msg_for_system(
-    index: PeerIndex,
-    reset_epoch: ResetEpoch,
-    accept: Result<(), AcceptSynchronizationError>,
-    result: Result<PeerSnapshot, IgnoreReason>,
-) -> Option<MsgForSystem> {
-    match accept {
-        Err(accept_error) => {
-            info!(?accept_error, "packet is not accepted");
-            None
-        }
-        Ok(_) => match result {
-            Ok(update) => {
-                info!("packet accepted");
-                Some(MsgForSystem::Snapshot(index, reset_epoch, update))
-            }
-            Err(IgnoreReason::KissDemobilize) => {
-                info!("peer must demobilize");
-                Some(MsgForSystem::MustDemobilize(index))
-            }
-            Err(ignore_reason) => {
-                info!(?ignore_reason, "packet ignored");
-                None
-            }
-        },
     }
 }
 
