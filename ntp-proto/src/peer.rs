@@ -223,10 +223,10 @@ impl Peer {
         recv_time: NtpTimestamp,
     ) -> Result<PeerSnapshot, IgnoreReason> {
         if message.is_kiss_rate() {
-            warn!("Peer requested rate limit");
             // KISS packets may not have correct timestamps at all, handle them anyway
             self.remote_min_poll_interval =
                 Ord::max(self.remote_min_poll_interval.inc(), self.last_poll_interval);
+            warn!(?self.remote_min_poll_interval, "Peer requested rate limit");
             Err(IgnoreReason::KissIgnore)
         } else if message.is_kiss_rstr() || message.is_kiss_deny() {
             warn!("Peer denied service");

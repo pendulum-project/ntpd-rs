@@ -501,6 +501,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "ntp-daemon",
+ "ntp-os-clock",
  "ntp-proto",
  "ntp-udp",
  "tokio",
