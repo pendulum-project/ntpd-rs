@@ -1,4 +1,4 @@
-use crate::peer::{MsgForSystem, PeerIndex, PeerTask, ResetEpoch};
+use crate::peer::{MsgForSystem, PeerChannels, PeerIndex, PeerTask, ResetEpoch};
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
     ClockController, ClockUpdateResult, FilterAndCombine, NtpInstant, PeerSnapshot, SystemConfig,
@@ -82,14 +82,18 @@ impl System {
         let (msg_for_system_tx, msg_for_system_rx) = mpsc::channel::<MsgForSystem>(32);
 
         for (index, address) in peer_addresses.iter().enumerate() {
+            let channels = PeerChannels {
+                msg_for_system_sender: msg_for_system_tx.clone(),
+                system_snapshots: global_system_snapshot.clone(),
+                reset: reset_rx.clone(),
+            };
+
             PeerTask::spawn(
                 PeerIndex { index },
                 address,
                 UnixNtpClock::new(),
                 *config,
-                msg_for_system_tx.clone(),
-                global_system_snapshot.clone(),
-                reset_rx.clone(),
+                channels,
             )
             .await?;
         }

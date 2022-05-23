@@ -44,14 +44,18 @@ pub enum MsgForSystem {
     Snapshot(PeerIndex, ResetEpoch, PeerSnapshot),
 }
 
+pub(crate) struct PeerChannels {
+    pub(crate) msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
+    pub(crate) system_snapshots: Arc<tokio::sync::RwLock<SystemSnapshot>>,
+    pub(crate) reset: watch::Receiver<ResetEpoch>,
+}
+
 pub(crate) struct PeerTask<C> {
     index: PeerIndex,
     clock: C,
     config: SystemConfig,
-    msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
-    system_snapshots: Arc<tokio::sync::RwLock<SystemSnapshot>>,
-    reset: watch::Receiver<ResetEpoch>,
     socket: UdpSocket,
+    channels: PeerChannels,
 
     peer: Peer,
 
@@ -86,7 +90,7 @@ where
     }
 
     async fn handle_poll(&mut self, poll_wait: &mut Pin<&mut Sleep>) {
-        let system_snapshot = *self.system_snapshots.read().await;
+        let system_snapshot = *self.channels.system_snapshots.read().await;
         let packet = self.peer.generate_poll_message(system_snapshot);
 
         // Sent a poll, so update waiting to match deadline of next
@@ -117,7 +121,7 @@ where
     ) {
         let ntp_instant = NtpInstant::now();
 
-        let system_snapshot = *self.system_snapshots.read().await;
+        let system_snapshot = *self.channels.system_snapshots.read().await;
         let result = self.peer.handle_incoming(
             system_snapshot,
             packet,
@@ -139,7 +143,7 @@ where
         );
 
         if let Some(msg) = prepare_msg_for_system(self.index, self.reset_epoch, accept, result) {
-            self.msg_for_system_sender.send(msg).await.ok();
+            self.channels.msg_for_system_sender.send(msg).await.ok();
         }
     }
 
@@ -151,7 +155,7 @@ where
                 () = &mut poll_wait => {
                     self.handle_poll(&mut poll_wait).await;
                 },
-                result = self.reset.changed() => {
+                result = self.channels.reset.changed() => {
                     if let Ok(()) = result {
                         // reset the measurement state (as if this association was just created).
                         // crucially, this sets `self.next_expected_origin = None`, meaning that
@@ -159,7 +163,7 @@ where
                         self.peer.reset_measurements();
 
                         // our next measurement will have the new reset epoch
-                        self.reset_epoch = *self.reset.borrow_and_update();
+                        self.reset_epoch = *self.channels.reset.borrow_and_update();
                     }
                 }
                 result = self.socket.recv(&mut buf) => {
@@ -179,15 +183,13 @@ where
         }
     }
 
-    #[instrument(skip(clock, config, system_snapshots, reset))]
+    #[instrument(skip(clock, config, channels))]
     pub async fn spawn<A: ToSocketAddrs + std::fmt::Debug>(
         index: PeerIndex,
         addr: A,
         clock: C,
         config: SystemConfig,
-        msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
-        system_snapshots: Arc<tokio::sync::RwLock<SystemSnapshot>>,
-        reset: watch::Receiver<ResetEpoch>,
+        channels: PeerChannels,
     ) -> Result<(), std::io::Error> {
         let socket = UdpSocket::new("0.0.0.0:0", addr).await?;
         let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
@@ -204,9 +206,7 @@ where
                 index,
                 clock,
                 config,
-                msg_for_system_sender,
-                system_snapshots,
-                reset,
+                channels,
                 socket,
                 peer,
                 last_send_timestamp: None,
