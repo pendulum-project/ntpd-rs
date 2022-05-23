@@ -496,6 +496,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-binaries"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "ntp-daemon",
+ "ntp-proto",
+ "ntp-udp",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
