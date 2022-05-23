@@ -32,15 +32,20 @@ impl ResetEpoch {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub struct PeerIndex {
+    pub index: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum MsgForSystem {
     /// Received a Kiss-o'-Death and must demobilize
-    MustDemobilize(usize),
+    MustDemobilize(PeerIndex),
     /// Received an acceptable packet and made a new peer snapshot
-    Snapshot(usize, ResetEpoch, PeerSnapshot),
+    Snapshot(PeerIndex, ResetEpoch, PeerSnapshot),
 }
 
 struct PeerProcess<C> {
-    index: usize,
+    index: PeerIndex,
     clock: C,
     config: SystemConfig,
     msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
@@ -141,7 +146,7 @@ where
 
 #[instrument(skip(clock, config, system_snapshots, reset))]
 pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpClock + Send>(
-    index: usize,
+    index: PeerIndex,
     addr: A,
     clock: C,
     config: SystemConfig,
@@ -213,7 +218,7 @@ pub async fn start_peer<A: ToSocketAddrs + std::fmt::Debug, C: 'static + NtpCloc
 }
 
 fn prepare_msg_for_system(
-    index: usize,
+    index: PeerIndex,
     reset_epoch: ResetEpoch,
     accept: Result<(), AcceptSynchronizationError>,
     result: Result<PeerSnapshot, IgnoreReason>,

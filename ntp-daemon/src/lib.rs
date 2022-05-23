@@ -5,7 +5,7 @@ use ntp_proto::{
     ClockController, ClockUpdateResult, FilterAndCombine, NtpInstant, PeerSnapshot, SystemConfig,
     SystemSnapshot,
 };
-use peer::{start_peer, MsgForSystem, ResetEpoch};
+use peer::{start_peer, MsgForSystem, PeerIndex, ResetEpoch};
 use tracing::info;
 
 use std::{error::Error, sync::Arc};
@@ -45,11 +45,11 @@ impl Peers {
     fn receive_update(&mut self, msg: MsgForSystem, current_reset_epoch: ResetEpoch) {
         match msg {
             MsgForSystem::MustDemobilize(index) => {
-                self.peers[index] = PeerStatus::Demobilized;
+                self.peers[index.index] = PeerStatus::Demobilized;
             }
             MsgForSystem::Snapshot(index, msg_reset_epoch, snapshot) => {
                 if current_reset_epoch == msg_reset_epoch {
-                    self.peers[index] = PeerStatus::Valid(snapshot);
+                    self.peers[index.index] = PeerStatus::Valid(snapshot);
                 }
             }
         }
@@ -82,7 +82,7 @@ pub async fn start_system(
 
     for (index, address) in peer_addresses.iter().enumerate() {
         start_peer(
-            index,
+            PeerIndex { index },
             address,
             UnixNtpClock::new(),
             *config,
