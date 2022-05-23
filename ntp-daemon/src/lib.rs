@@ -35,6 +35,45 @@ impl PeerStatus {
     }
 }
 
+struct Peers {
+    peers: Box<[PeerStatus]>,
+}
+
+impl Peers {
+    fn new(length: usize) -> Self {
+        Self {
+            peers: vec![PeerStatus::AwaitingReset; length].into(),
+        }
+    }
+
+    fn valid_snapshots(&self) -> impl Iterator<Item = PeerSnapshot> + '_ {
+        self.peers.iter().filter_map(PeerStatus::get_snapshot)
+    }
+
+    fn len(&self) -> usize {
+        self.peers.len()
+    }
+
+    fn receive_update(&mut self, msg: MsgForSystem, current_reset_epoch: ResetEpoch) {
+        match msg {
+            MsgForSystem::MustDemobilize(index) => {
+                self.peers[index] = PeerStatus::Demobilized;
+            }
+            MsgForSystem::Snapshot(index, msg_reset_epoch, snapshot) => {
+                if current_reset_epoch == msg_reset_epoch {
+                    self.peers[index] = PeerStatus::Valid(snapshot);
+                }
+            }
+        }
+    }
+
+    fn reset_all(&mut self) {
+        for peer_status in self.peers.iter_mut() {
+            peer_status.reset();
+        }
+    }
+}
+
 pub async fn start_system(
     config: &SystemConfig,
     peer_addresses: &[&str],
@@ -63,7 +102,7 @@ pub async fn start_system(
         .unwrap();
     }
 
-    let mut peers = vec![PeerStatus::AwaitingReset; peer_addresses.len()];
+    let mut peers = Peers::new(peer_addresses.len());
 
     run_system(
         config,
@@ -78,7 +117,7 @@ pub async fn start_system(
 
 async fn run_system(
     config: &SystemConfig,
-    peers: &mut [PeerStatus],
+    peers: &mut Peers,
     mut reset_epoch: ResetEpoch,
     global_system_snapshot: Arc<tokio::sync::RwLock<SystemSnapshot>>,
     mut msg_for_system_rx: mpsc::Receiver<MsgForSystem>,
@@ -88,13 +127,13 @@ async fn run_system(
     let mut snapshots = Vec::with_capacity(peers.len());
 
     while let Some(msg_for_system) = msg_for_system_rx.recv().await {
-        receive_msg_for_system(peers, msg_for_system, reset_epoch);
+        peers.receive_update(msg_for_system, reset_epoch);
 
         // remove snapshots from previous iteration
         snapshots.clear();
 
         // add all valid measurements to our list of snapshots
-        snapshots.extend(peers.iter().filter_map(PeerStatus::get_snapshot));
+        snapshots.extend(peers.valid_snapshots());
 
         let ntp_instant = NtpInstant::now();
         let system_poll = global_system_snapshot.read().await.poll_interval;
@@ -131,9 +170,7 @@ async fn run_system(
                 )
             }
             ClockUpdateResult::Step => {
-                for peer_state in peers.iter_mut() {
-                    peer_state.reset();
-                }
+                peers.reset_all();
 
                 reset_epoch = reset_epoch.inc();
                 reset_tx.send_replace(reset_epoch);
@@ -154,21 +191,4 @@ async fn run_system(
 
     // the channel closed and has no more messages in it
     Ok(())
-}
-
-fn receive_msg_for_system(
-    peers: &mut [PeerStatus],
-    msg_for_system: MsgForSystem,
-    current_reset_epoch: ResetEpoch,
-) {
-    match msg_for_system {
-        MsgForSystem::MustDemobilize(index) => {
-            peers[index] = PeerStatus::Demobilized;
-        }
-        MsgForSystem::Snapshot(index, msg_reset_epoch, snapshot) => {
-            if current_reset_epoch == msg_reset_epoch {
-                peers[index] = PeerStatus::Valid(snapshot);
-            }
-        }
-    }
 }
