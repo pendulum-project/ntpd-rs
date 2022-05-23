@@ -27,17 +27,12 @@ impl PeerState {
         }
     }
 
-    #[must_use]
-    fn reset_step(&self) -> Self {
-        match self {
+    fn reset(&mut self) {
+        *self = match self {
             PeerState::Demobilized => PeerState::Demobilized,
             PeerState::AwaitingReset => PeerState::AwaitingReset,
             PeerState::Valid(_) => PeerState::AwaitingReset,
-        }
-    }
-
-    fn reset(&mut self) {
-        *self = self.reset_step();
+        };
     }
 }
 
