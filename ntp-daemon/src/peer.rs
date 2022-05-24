@@ -148,7 +148,7 @@ where
 
                 match accept {
                     Err(accept_error) => {
-                        info!(?accept_error, "packet is not accepted");
+                        info!(?accept_error, "peer is not fit for use in synchronization");
                     }
                     Ok(_) => {
                         let msg = MsgForSystem::Snapshot(self.index, self.reset_epoch, update);
