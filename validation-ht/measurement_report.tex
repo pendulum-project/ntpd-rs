@@ -51,19 +51,19 @@ We calibrate the FPGA clock using the data from the GM pulse-per-second signal. 
 
 \begin{figure}[h]
 \includegraphics[width=0.5\textwidth]{gm_secs_overtime_ref.pdf}\includegraphics[width=0.5\textwidth]{gm_secs_overtime_statime.pdf}
-\caption{FPGA clock cycles per second over time, time axis is arbitrary. On the left is data from the LinuxPTP run, on the right from the statime run. Glitch marks points where some seconds of data have been removed due to jiggling of connectors causing spurious edges.}
+\caption{FPGA clock cycles per second over time, time axis is arbitrary. On the left is data from the LinuxPTP run, on the right from the statime run.}
 \label{fig:gm_cycles_over_time}
 \end{figure}
 
 \begin{figure}[h]
-\includegraphics[width=0.5\textwidth]{gm_clocks_per_sec_ref.pdf}\includegraphics[width=0.5\textwidth]{gm_clocks_per_sec_statime.pdf}
+\includegraphics[width=0.5\textwidth]{gm_secs_stat_ref.pdf}\includegraphics[width=0.5\textwidth]{gm_secs_stat_statime.pdf}
 \caption{FPGA clock cycles per second as measured using the GM pulse-per-second output. On the left is data from the LinuxPTP run, on the right from the statime run.}
 \label{fig:gm_cycles_per_second}
 \end{figure}
 
-For the LinuxPTP run, the measurement data are plotted in Figure~\ref{fig:gm_cycles_per_second}. Analysing this shows the fpga clock ticks $99999574\pm 1.7 (\text{stat.}) \pm 1.0 (\text{sys.})$ per second. Hence, a single clock tick of the fpga clock takes $10.00004260 \pm 0.00000017 (\text{stat.}) \pm 0.00000010 (\text{sys.})$ nanoseconds during the LinuxPTP run.
+For the LinuxPTP run, the measurement data are plotted in Figure~\ref{fig:gm_cycles_per_second}. Analysing this shows the fpga clock ticks $99999573\pm 9.2 (\text{stat.}) \pm 1.0 (\text{sys.})$ times per second. Hence, a single clock tick of the fpga clock takes $10.00004270 \pm 0.00000092 (\text{stat.}) \pm 0.00000010 (\text{sys.})$ nanoseconds during the LinuxPTP run.
 
-For the statime run, analysis shows the fpga clock ticks $ 99999570 \pm 7.8 (\text{stat.}) \pm 1.0 (\text{sys.})$ per second. Hence, a single clock tick of the fpga clock takes $10.00004298 \pm 0.00000078 (\text{stat.}) \pm 0.00000010 (\text{sys.})$ nanoseconds during the statime run.
+For the statime run, analysis shows the fpga clock ticks $ 99999570 \pm 9.5 (\text{stat.}) \pm 1.0 (\text{sys.})$ times per second. Hence, a single clock tick of the fpga clock takes $10.00004300 \pm 0.00000095 (\text{stat.}) \pm 0.00000010 (\text{sys.})$ nanoseconds during the statime run.
 
 \section {LinuxPTP performance analysis}
 
@@ -73,7 +73,8 @@ For the statime run, analysis shows the fpga clock ticks $ 99999570 \pm 7.8 (\te
 \label{fig:ref_sys_offset}
 \end{figure}
 
-Analysing the offset data for the system clock synchronized by LinuxPTP, we find that this gives a constant offset $-3576,40\pm 0.95 (\text{stat.}) \pm 25(\text{sys.})$ nanoseconds, which could be eliminated by tuning the port assymetry. Furthermore, we see 90\% of all observations fall within $126 \pm 10 (\text{stat.})$ nanoseconds of this constant offset.
+%-347 -339 (3.72042 4.27958)
+Analysing the offset data for the system clock synchronized by LinuxPTP, we find that this gives a constant offset $-3432,81\pm 0.57 (\text{stat.}) \pm 25(\text{sys.})$ nanoseconds, which could be eliminated by tuning the port assymetry. Furthermore, we see 90\% of all observations fall within $42 \pm 10 (\text{stat.})$ nanoseconds of this constant offset.
 
 \section{Statime performance analysis}
 
@@ -83,10 +84,10 @@ Analysing the offset data for the system clock synchronized by LinuxPTP, we find
 \label{fig:statime_sys_offset}
 \end{figure}
 
-Analysing the offset data for the system clock synchronized by Statime, we find that this gives a constant offset $-23570\pm 90(\text{stat.})\pm 25 (\text{sys.})$ nanoseconds, which could be eliminated by tuning the port assymetry. Furthermore, we see 90\% of all observations fall within $11250 \pm 10(\text{stat.})$ nanoseconds of this constant offset.
+%-197.05292553 -350 -69 (128.05292553 152.94707447)
+Analysing the offset data for the system clock synchronized by Statime, we find that this gives a constant offset $-1970\pm 14(\text{stat.})\pm 25 (\text{sys.})$ nanoseconds, which could be eliminated by tuning the port assymetry. Furthermore, we see 90\% of all observations fall within $1529 \pm 10(\text{stat.})$ nanoseconds of this constant offset.
 
 \section{Conclusions}
 
-Comparing the results of the statime and LinuxPTP, we observe that statime has a similar precision to LinuxPTP, but is not as stable. This is likely something that can be improved as we get more familiar with the behaviour of statime.
-The saw pattern for statime is something we can't explain at the time of creating this report.
+Comparing the results of statime and LinuxPTP, we observe that statime is still performing significantly poorer than LinuxPTP. This seems to be due to the significant excursions statime is currently making. Whilst we currently don't fully understand the sawtooth-like pattern seen in statimes offset, this can likely be reduced or even eliminated with better filtering.
 \end{document}
