@@ -4,6 +4,7 @@ members = [
     "ntp-proto",
     "ntp-os-clock",
     "ntp-udp",
+    "test-binaries",
 ]
 exclude = [ ]
 
