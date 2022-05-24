@@ -63,7 +63,9 @@ async fn run(
     let mut snapshots = Vec::with_capacity(peers.len());
 
     while let Some(msg_for_system) = msg_for_system_rx.recv().await {
-        peers.receive_update(msg_for_system, reset_epoch);
+        if let NewMeasurement::No = peers.receive_update(msg_for_system, reset_epoch) {
+            continue;
+        }
 
         // remove snapshots from previous iteration
         snapshots.clear();
@@ -150,6 +152,11 @@ struct Peers {
     peers: Box<[PeerStatus]>,
 }
 
+enum NewMeasurement {
+    Yes,
+    No,
+}
+
 impl Peers {
     fn new(length: usize) -> Self {
         Self {
@@ -170,18 +177,27 @@ impl Peers {
             })
     }
 
-    fn receive_update(&mut self, msg: MsgForSystem, current_reset_epoch: ResetEpoch) {
+    fn receive_update(
+        &mut self,
+        msg: MsgForSystem,
+        current_reset_epoch: ResetEpoch,
+    ) -> NewMeasurement {
         match msg {
             MsgForSystem::MustDemobilize(index) => {
                 self.peers[index.index] = PeerStatus::Demobilized;
+                NewMeasurement::No
             }
             MsgForSystem::Snapshot(index, msg_reset_epoch, snapshot) => {
                 if current_reset_epoch == msg_reset_epoch {
                     self.peers[index.index] = PeerStatus::Valid(snapshot);
+                    NewMeasurement::Yes
+                } else {
+                    NewMeasurement::No
                 }
             }
             MsgForSystem::PeerNotFit(index) => {
                 self.peers[index.index] = PeerStatus::NoMeasurement;
+                NewMeasurement::No
             }
         }
     }
