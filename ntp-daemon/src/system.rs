@@ -136,11 +136,12 @@ enum PeerStatus {
     Demobilized,
     /// We are waiting for the first snapshot from this peer _in the current reset epoch_.
     /// This state is the initial state for all peers (when the system is spawned), and also
-    /// entered when the system performs a clock jump and forces all peers to reset.
+    /// entered when the system performs a clock jump and forces all peers to reset, or when a peer
+    /// indicates that it is no longer fit for synchronization (e.g. root distance became too big)
     ///
     /// A peer can leave this state by either becoming demobilized, or by sending a snapshot that
     /// is within the system's current reset epoch.
-    AwaitingFirstSnapshotInEpoch,
+    NoMeasurement,
     /// This peer has sent snapshots taken in the current reset epoch. We store the most recent one
     Valid(PeerSnapshot),
 }
@@ -152,7 +153,7 @@ struct Peers {
 impl Peers {
     fn new(length: usize) -> Self {
         Self {
-            peers: vec![PeerStatus::AwaitingFirstSnapshotInEpoch; length].into(),
+            peers: vec![PeerStatus::NoMeasurement; length].into(),
         }
     }
 
@@ -164,7 +165,7 @@ impl Peers {
         self.peers
             .iter()
             .filter_map(|peer_status| match peer_status {
-                PeerStatus::Demobilized | PeerStatus::AwaitingFirstSnapshotInEpoch => None,
+                PeerStatus::Demobilized | PeerStatus::NoMeasurement => None,
                 PeerStatus::Valid(snapshot) => Some(*snapshot),
             })
     }
@@ -179,6 +180,9 @@ impl Peers {
                     self.peers[index.index] = PeerStatus::Valid(snapshot);
                 }
             }
+            MsgForSystem::PeerNotFit(index) => {
+                self.peers[index.index] = PeerStatus::NoMeasurement;
+            }
         }
     }
 
@@ -188,7 +192,7 @@ impl Peers {
 
             *peer_status = match peer_status {
                 Demobilized => Demobilized,
-                Valid(_) | AwaitingFirstSnapshotInEpoch => AwaitingFirstSnapshotInEpoch,
+                Valid(_) | NoMeasurement => NoMeasurement,
             };
         }
     }

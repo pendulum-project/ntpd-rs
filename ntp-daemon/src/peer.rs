@@ -42,6 +42,9 @@ pub enum MsgForSystem {
     MustDemobilize(PeerIndex),
     /// Received an acceptable packet and made a new peer snapshot
     Snapshot(PeerIndex, ResetEpoch, PeerSnapshot),
+    /// Received a packet, but its content is not acceptable for synchronization
+    /// (e.g. invalid stratum, large root distance, forms a loop or peer is unreachable)
+    PeerNotFit(PeerIndex),
 }
 
 pub(crate) struct PeerChannels {
@@ -146,15 +149,15 @@ where
             Ok(update) => {
                 info!("packet accepted");
 
-                match accept {
+                let msg = match accept {
                     Err(accept_error) => {
                         info!(?accept_error, "peer is not fit for use in synchronization");
+                        MsgForSystem::PeerNotFit(self.index)
                     }
-                    Ok(_) => {
-                        let msg = MsgForSystem::Snapshot(self.index, self.reset_epoch, update);
-                        self.channels.msg_for_system_sender.send(msg).await.ok();
-                    }
-                }
+                    Ok(_) => MsgForSystem::Snapshot(self.index, self.reset_epoch, update),
+                };
+
+                self.channels.msg_for_system_sender.send(msg).await.ok();
             }
             Err(IgnoreReason::KissDemobilize) => {
                 info!("peer must demobilize");
