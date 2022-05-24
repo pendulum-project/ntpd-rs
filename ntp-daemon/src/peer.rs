@@ -3,8 +3,8 @@ use std::{ops::ControlFlow, pin::Pin, sync::Arc};
 use tracing::warn;
 
 use ntp_proto::{
-    IgnoreReason, NtpClock, NtpHeader, NtpInstant, NtpTimestamp, Peer, PeerSnapshot, ReferenceId,
-    SystemConfig, SystemSnapshot,
+    AcceptSynchronizationError, IgnoreReason, NtpClock, NtpHeader, NtpInstant, NtpTimestamp, Peer,
+    PeerSnapshot, PollInterval, ReferenceId, SystemConfig, SystemSnapshot,
 };
 use ntp_udp::UdpSocket;
 use tracing::{info, instrument};
@@ -92,13 +92,36 @@ where
             .reset(self.last_poll_sent + poll_interval);
     }
 
+    fn fitness(
+        &self,
+        ntp_instant: NtpInstant,
+        system_poll: PollInterval,
+    ) -> Result<(), AcceptSynchronizationError> {
+        self.peer.accept_synchronization(
+            ntp_instant,
+            self.config.frequency_tolerance,
+            self.config.distance_threshold,
+            system_poll.as_duration(),
+        )
+    }
+
     async fn handle_poll(&mut self, poll_wait: &mut Pin<&mut Sleep>) {
+        let ntp_instant = NtpInstant::now();
+
         let system_snapshot = *self.channels.system_snapshots.read().await;
         let packet = self.peer.generate_poll_message(system_snapshot);
 
         // Sent a poll, so update waiting to match deadline of next
         self.last_poll_sent = Instant::now();
         self.update_poll_wait(poll_wait, system_snapshot);
+
+        let accept = self.fitness(ntp_instant, system_snapshot.poll_interval);
+
+        if let Err(accept_error) = accept {
+            info!(?accept_error, "peer is not fit for use in synchronization");
+            let msg = MsgForSystem::PeerNotFit(self.index);
+            self.channels.msg_for_system_sender.send(msg).await.ok();
+        }
 
         match self.clock.now() {
             Err(e) => {
@@ -137,19 +160,11 @@ where
         // Handle incoming may have changed poll interval based on message, respect that change
         self.update_poll_wait(poll_wait, system_snapshot);
 
-        let system_poll = system_snapshot.poll_interval.as_duration();
-        let accept = self.peer.accept_synchronization(
-            ntp_instant,
-            self.config.frequency_tolerance,
-            self.config.distance_threshold,
-            system_poll,
-        );
-
         match result {
             Ok(update) => {
                 info!("packet accepted");
 
-                let msg = match accept {
+                let msg = match self.fitness(ntp_instant, system_snapshot.poll_interval) {
                     Err(accept_error) => {
                         info!(?accept_error, "peer is not fit for use in synchronization");
                         MsgForSystem::PeerNotFit(self.index)
