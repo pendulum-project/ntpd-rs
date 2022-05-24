@@ -130,8 +130,18 @@ async fn run(
 
 #[derive(Debug, Clone, Copy)]
 enum PeerStatus {
+    /// This peer is demobilized, meaning we will not send further packets to it.
+    /// Demobilized peers are kept because our logic is built around using indices,
+    /// and removing a peer would mess up the indexing.
     Demobilized,
-    AwaitingReset,
+    /// We are waiting for the first snapshot from this peer _in the current reset epoch_.
+    /// This state is the initial state for all peers (when the system is spawned), and also
+    /// entered when the system performs a clock jump and forces all peers to reset.
+    ///
+    /// A peer can leave this state by either becoming demobilized, or by sending a snapshot that
+    /// is within the system's current reset epoch.
+    AwaitingFirstSnapshotInEpoch,
+    /// This peer has sent snapshots taken in the current reset epoch. We store the most recent one
     Valid(PeerSnapshot),
 }
 
@@ -142,7 +152,7 @@ struct Peers {
 impl Peers {
     fn new(length: usize) -> Self {
         Self {
-            peers: vec![PeerStatus::AwaitingReset; length].into(),
+            peers: vec![PeerStatus::AwaitingFirstSnapshotInEpoch; length].into(),
         }
     }
 
@@ -154,7 +164,7 @@ impl Peers {
         self.peers
             .iter()
             .filter_map(|peer_status| match peer_status {
-                PeerStatus::Demobilized | PeerStatus::AwaitingReset => None,
+                PeerStatus::Demobilized | PeerStatus::AwaitingFirstSnapshotInEpoch => None,
                 PeerStatus::Valid(snapshot) => Some(*snapshot),
             })
     }
@@ -174,10 +184,11 @@ impl Peers {
 
     fn reset_all(&mut self) {
         for peer_status in self.peers.iter_mut() {
+            use PeerStatus::*;
+
             *peer_status = match peer_status {
-                PeerStatus::Demobilized => PeerStatus::Demobilized,
-                PeerStatus::AwaitingReset => PeerStatus::AwaitingReset,
-                PeerStatus::Valid(_) => PeerStatus::AwaitingReset,
+                Demobilized => Demobilized,
+                Valid(_) | AwaitingFirstSnapshotInEpoch => AwaitingFirstSnapshotInEpoch,
             };
         }
     }
