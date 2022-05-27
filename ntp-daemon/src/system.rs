@@ -1,4 +1,7 @@
-use crate::peer::{MsgForSystem, PeerChannels, PeerIndex, PeerTask, ResetEpoch};
+use crate::{
+    config::PeerConfig,
+    peer::{MsgForSystem, PeerChannels, PeerIndex, PeerTask, ResetEpoch},
+};
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
     ClockController, ClockUpdateResult, FilterAndCombine, NtpInstant, PeerSnapshot, SystemConfig,
@@ -10,7 +13,10 @@ use std::{error::Error, sync::Arc};
 use tokio::sync::{mpsc, watch};
 
 /// Spawn the NTP daemon
-pub async fn spawn(config: &SystemConfig, peer_addresses: &[&str]) -> Result<(), Box<dyn Error>> {
+pub async fn spawn(
+    config: &SystemConfig,
+    peer_configs: &[PeerConfig],
+) -> Result<(), Box<dyn Error>> {
     // shares the system state with all peers
     let global_system_snapshot = Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default()));
 
@@ -21,7 +27,7 @@ pub async fn spawn(config: &SystemConfig, peer_addresses: &[&str]) -> Result<(),
     // receive peer snapshots from all peers
     let (msg_for_system_tx, msg_for_system_rx) = mpsc::channel::<MsgForSystem>(32);
 
-    for (index, address) in peer_addresses.iter().enumerate() {
+    for (index, peer_config) in peer_configs.iter().enumerate() {
         let channels = PeerChannels {
             msg_for_system_sender: msg_for_system_tx.clone(),
             system_snapshots: global_system_snapshot.clone(),
@@ -30,7 +36,7 @@ pub async fn spawn(config: &SystemConfig, peer_addresses: &[&str]) -> Result<(),
 
         PeerTask::spawn(
             PeerIndex { index },
-            address,
+            &peer_config.addr,
             UnixNtpClock::new(),
             *config,
             channels,
@@ -38,7 +44,7 @@ pub async fn spawn(config: &SystemConfig, peer_addresses: &[&str]) -> Result<(),
         .await?;
     }
 
-    let mut peers = Peers::new(peer_addresses.len());
+    let mut peers = Peers::new(peer_configs.len());
 
     run(
         config,
@@ -103,7 +109,7 @@ async fn run(
             ClockUpdateResult::Panic => {
                 panic!(
                     r"Unusually large clock step suggested,
-                            please manually verify system clock and reference clock 
+                            please manually verify system clock and reference clock
                                  state and restart if appropriate."
                 )
             }
