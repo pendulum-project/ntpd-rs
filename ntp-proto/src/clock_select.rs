@@ -50,6 +50,8 @@ impl Default for SystemConfig {
 pub struct FilterAndCombine {
     pub system_offset: NtpDuration,
     pub system_jitter: NtpDuration,
+    pub system_root_delay: NtpDuration,
+    pub system_root_dispersion: NtpDuration,
     pub system_peer_snapshot: PeerSnapshot,
 }
 
@@ -80,9 +82,23 @@ impl FilterAndCombine {
             config.frequency_tolerance,
         );
 
+        // Update the system root delay and dispersion with the contributions from our synchronization process.
+        let root_delay = system_peer_snapshot.root_delay + system_peer_snapshot.statistics.delay;
+        let root_dispersion = system_peer_snapshot.root_dispersion
+            + std::cmp::max(
+                NtpDuration::MIN_DISPERSION,
+                system_peer_snapshot.statistics.dispersion
+                    + NtpDuration::from_seconds(system_peer_snapshot.statistics.jitter)
+                    + local_clock_time.abs_diff(system_peer_snapshot.time)
+                        * config.frequency_tolerance
+                    + combined.system_offset.abs(),
+            );
+
         Some(FilterAndCombine {
             system_offset: combined.system_offset,
             system_jitter: combined.system_jitter,
+            system_root_delay: root_delay,
+            system_root_dispersion: root_dispersion,
             system_peer_snapshot,
         })
     }
@@ -555,13 +571,15 @@ fn peer_snapshot(
         peer_id: ReferenceId::from_int(0),
 
         leap_indicator: NtpLeapIndicator::NoWarning,
-        root_delay: Default::default(),
-        root_dispersion: Default::default(),
+        root_delay: root_delay,
+        root_dispersion: root_dispersion,
     }
 }
 
 #[cfg(test)]
 mod test {
+    use std::time::Duration;
+
     use super::*;
     use crate::peer::PeerStatistics;
 
@@ -1329,6 +1347,8 @@ mod test {
         let base_state = FilterAndCombine {
             system_offset: Default::default(),
             system_jitter: Default::default(),
+            system_root_delay: Default::default(),
+            system_root_dispersion: Default::default(),
             system_peer_snapshot: peer_snapshot(
                 PeerStatistics::default(),
                 instant,
@@ -1355,5 +1375,103 @@ mod test {
         let distance = state.root_synchronization_distance(local_clock_time, frequency_tolerance);
 
         assert!(distance < NtpDuration::ONE / 2i64);
+    }
+
+    #[test]
+    fn root_delay_dispersion_calculation() {
+        let base = NtpInstant::now();
+
+        let config = SystemConfig::default();
+
+        let peer = peer_snapshot(
+            PeerStatistics {
+                offset: NtpDuration::from_seconds(0.),
+                delay: NtpDuration::from_seconds(0.),
+                dispersion: NtpDuration::from_seconds(0.),
+                jitter: 0.0,
+            },
+            base,
+            NtpDuration::from_seconds(0.002),
+            NtpDuration::from_seconds(0.001),
+        );
+        let baseline_result =
+            FilterAndCombine::run(&config, &[peer], base, PollInterval::MIN).unwrap();
+        assert!(baseline_result.system_root_delay >= NtpDuration::from_seconds(0.002));
+        assert!(baseline_result.system_root_dispersion > NtpDuration::from_seconds(0.001));
+
+        let result = FilterAndCombine::run(
+            &config,
+            &[peer],
+            base + Duration::from_secs(1000),
+            PollInterval::MIN,
+        )
+        .unwrap();
+        assert!(result.system_root_delay >= NtpDuration::from_seconds(0.002));
+        assert!(result.system_root_dispersion > NtpDuration::from_seconds(0.001));
+        assert!(result.system_root_dispersion > baseline_result.system_root_dispersion);
+
+        let peer = peer_snapshot(
+            PeerStatistics {
+                offset: NtpDuration::from_seconds(0.4),
+                delay: NtpDuration::from_seconds(0.),
+                dispersion: NtpDuration::from_seconds(0.),
+                jitter: 0.0,
+            },
+            base,
+            NtpDuration::from_seconds(0.002),
+            NtpDuration::from_seconds(0.001),
+        );
+        let result = FilterAndCombine::run(&config, &[peer], base, PollInterval::MIN).unwrap();
+        assert!(result.system_root_delay >= NtpDuration::from_seconds(0.002));
+        assert!(result.system_root_dispersion > NtpDuration::from_seconds(0.001));
+        assert!(result.system_root_dispersion > baseline_result.system_root_dispersion);
+
+        let peer = peer_snapshot(
+            PeerStatistics {
+                offset: NtpDuration::from_seconds(0.),
+                delay: NtpDuration::from_seconds(0.),
+                dispersion: NtpDuration::from_seconds(0.1),
+                jitter: 0.0,
+            },
+            base,
+            NtpDuration::from_seconds(0.002),
+            NtpDuration::from_seconds(0.001),
+        );
+        let result = FilterAndCombine::run(&config, &[peer], base, PollInterval::MIN).unwrap();
+        assert!(result.system_root_delay >= NtpDuration::from_seconds(0.002));
+        assert!(result.system_root_dispersion > NtpDuration::from_seconds(0.001));
+        assert!(result.system_root_dispersion > baseline_result.system_root_dispersion);
+
+        let peer = peer_snapshot(
+            PeerStatistics {
+                offset: NtpDuration::from_seconds(0.),
+                delay: NtpDuration::from_seconds(0.),
+                dispersion: NtpDuration::from_seconds(0.),
+                jitter: 0.1,
+            },
+            base,
+            NtpDuration::from_seconds(0.002),
+            NtpDuration::from_seconds(0.001),
+        );
+        let result = FilterAndCombine::run(&config, &[peer], base, PollInterval::MIN).unwrap();
+        assert!(result.system_root_delay >= NtpDuration::from_seconds(0.002));
+        assert!(result.system_root_dispersion > NtpDuration::from_seconds(0.001));
+        assert!(result.system_root_dispersion > baseline_result.system_root_dispersion);
+
+        let peer = peer_snapshot(
+            PeerStatistics {
+                offset: NtpDuration::from_seconds(0.),
+                delay: NtpDuration::from_seconds(0.2),
+                dispersion: NtpDuration::from_seconds(0.),
+                jitter: 0.0,
+            },
+            base,
+            NtpDuration::from_seconds(0.002),
+            NtpDuration::from_seconds(0.001),
+        );
+        let result = FilterAndCombine::run(&config, &[peer], base, PollInterval::MIN).unwrap();
+        assert!(result.system_root_delay >= NtpDuration::from_seconds(0.002));
+        assert!(result.system_root_dispersion > NtpDuration::from_seconds(0.001));
+        assert!(result.system_root_delay > baseline_result.system_root_delay);
     }
 }

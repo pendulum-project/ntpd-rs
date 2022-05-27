@@ -92,8 +92,8 @@ async fn run(
         let adjust_type = controller.update(
             clock_select.system_offset,
             clock_select.system_jitter,
-            clock_select.system_peer_snapshot.root_delay,
-            clock_select.system_peer_snapshot.root_dispersion,
+            clock_select.system_root_delay,
+            clock_select.system_root_dispersion,
             clock_select.system_peer_snapshot.leap_indicator,
             clock_select.system_peer_snapshot.time,
         );
