@@ -4,8 +4,8 @@ use crate::{
 };
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
-    ClockController, ClockUpdateResult, FilterAndCombine, FrequencyTolerance, NtpDuration,
-    NtpInstant, PeerSnapshot, PollInterval, SystemConfig, SystemSnapshot,
+    ClockController, ClockUpdateResult, FilterAndCombine, NtpInstant, PeerSnapshot, SystemConfig,
+    SystemSnapshot,
 };
 use tracing::info;
 
@@ -72,14 +72,7 @@ async fn run(
         let ntp_instant = NtpInstant::now();
         let system_poll = global_system_snapshot.read().await.poll_interval;
 
-        if let NewMeasurement::No = peers.receive_update(
-            msg_for_system,
-            reset_epoch,
-            ntp_instant,
-            config.frequency_tolerance,
-            config.distance_threshold,
-            system_poll,
-        ) {
+        if let NewMeasurement::No = peers.receive_update(msg_for_system, reset_epoch) {
             continue;
         }
 
@@ -159,8 +152,7 @@ enum PeerStatus {
     /// is within the system's current reset epoch.
     NoMeasurement,
     /// This peer has sent snapshots taken in the current reset epoch. We store the most recent one
-    Valid(PeerSnapshot),
-    NotFit(PeerSnapshot),
+    Measurement(PeerSnapshot),
 }
 
 struct Peers {
@@ -187,8 +179,8 @@ impl Peers {
         self.peers
             .iter()
             .filter_map(|peer_status| match peer_status {
-                PeerStatus::Demobilized | PeerStatus::NoMeasurement | PeerStatus::NotFit(_) => None,
-                PeerStatus::Valid(snapshot) => Some(*snapshot),
+                PeerStatus::Demobilized | PeerStatus::NoMeasurement => None,
+                PeerStatus::Measurement(snapshot) => Some(*snapshot),
             })
     }
 
@@ -196,11 +188,6 @@ impl Peers {
         &mut self,
         msg: MsgForSystem,
         current_reset_epoch: ResetEpoch,
-
-        local_clock_time: NtpInstant,
-        frequency_tolerance: FrequencyTolerance,
-        distance_threshold: NtpDuration,
-        system_poll: PollInterval,
     ) -> NewMeasurement {
         match msg {
             MsgForSystem::MustDemobilize(index) => {
@@ -209,23 +196,8 @@ impl Peers {
             }
             MsgForSystem::Snapshot(index, msg_reset_epoch, snapshot) => {
                 if current_reset_epoch == msg_reset_epoch {
-                    let accept = snapshot.accept_synchronization(
-                        local_clock_time,
-                        frequency_tolerance,
-                        distance_threshold,
-                        system_poll,
-                    );
-
-                    match accept {
-                        Ok(_) => {
-                            self.peers[index.index] = PeerStatus::Valid(snapshot);
-                            NewMeasurement::Yes
-                        }
-                        Err(_) => {
-                            self.peers[index.index] = PeerStatus::NotFit(snapshot);
-                            NewMeasurement::No
-                        }
-                    }
+                    self.peers[index.index] = PeerStatus::Measurement(snapshot);
+                    NewMeasurement::Yes
                 } else {
                     NewMeasurement::No
                 }
@@ -239,7 +211,7 @@ impl Peers {
 
             *peer_status = match peer_status {
                 Demobilized => Demobilized,
-                Valid(_) | NotFit(_) | NoMeasurement => NoMeasurement,
+                Measurement(_) | NoMeasurement => NoMeasurement,
             };
         }
     }

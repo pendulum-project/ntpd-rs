@@ -197,7 +197,7 @@ impl PeerSnapshot {
             + (NtpInstant::abs_diff(local_clock_time, self.time) * frequency_tolerance)
     }
 
-    fn from_peer(peer: &Peer) -> Self {
+    pub fn from_peer(peer: &Peer) -> Self {
         Self {
             root_distance_without_time: peer.root_distance_without_time(),
             statistics: peer.statistics,

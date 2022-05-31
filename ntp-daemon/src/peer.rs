@@ -98,6 +98,9 @@ where
         self.update_poll_wait(poll_wait, system_snapshot);
 
         // NOTE: fitness check is not performed here, but by System
+        let snapshot = PeerSnapshot::from_peer(&self.peer);
+        let msg = MsgForSystem::Snapshot(self.index, self.reset_epoch, snapshot);
+        self.channels.msg_for_system_sender.send(msg).await.ok();
 
         match self.clock.now() {
             Err(e) => {
