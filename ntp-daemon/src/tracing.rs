@@ -1,52 +1,65 @@
-use tracing::Subscriber;
-use tracing_subscriber::{reload, EnvFilter, Registry};
-
-type FormatLayer<S> =
-    tracing_subscriber::filter::Filtered<tracing_subscriber::fmt::Layer<S>, EnvFilter, S>;
-type TracingFilterHandle = reload::Handle<FormatLayer<Registry>, Registry>;
-
-fn init_fmt_layer<S>(
-    filter: EnvFilter,
-) -> (
-    reload::Layer<FormatLayer<S>, S>,
-    reload::Handle<FormatLayer<S>, S>,
-)
-where
-    S: Subscriber + for<'span> tracing_subscriber::registry::LookupSpan<'span>,
-{
-    use tracing_subscriber::prelude::*;
-
-    let fmt_layer = tracing_subscriber::fmt::layer().with_filter(filter);
-    tracing_subscriber::reload::Layer::new(fmt_layer)
-}
+use crate::config::Config;
+use tracing::info;
+use tracing_subscriber::EnvFilter;
 
 #[cfg(feature = "sentry")]
-pub fn init(filter: EnvFilter) -> (sentry::ClientInitGuard, TracingFilterHandle) {
-    use tracing_subscriber::prelude::*;
-
-    let guard = sentry::init(sentry::ClientOptions {
-        // Set this a to lower value in production
-        traces_sample_rate: 1.0,
-        ..sentry::ClientOptions::default()
-    });
-
-    let (fmt_layer, reload_handle) = init_fmt_layer(filter);
-
-    tracing_subscriber::registry()
-        .with(fmt_layer)
-        .with(sentry_tracing::layer())
-        .init();
-
-    (guard, reload_handle)
-}
-
+type GuardType = Option<sentry::ClientInitGuard>;
 #[cfg(not(feature = "sentry"))]
-pub fn init(filter: EnvFilter) -> ((), TracingFilterHandle) {
+type GuardType = ();
+
+/// Setup tracing. Since we know the settings of some subscribers only once
+/// the full configuration has been loaded, this returns an FnOnce to complete
+/// setup when the config is available.
+pub fn init(
+    filter: EnvFilter,
+) -> impl FnOnce(&mut Config, bool) -> Result<GuardType, tracing_subscriber::reload::Error> {
+    // Setup a tracing subscriber with the bare minimum for now, so that errors
+    // in loading the configuration can be properly logged.
     use tracing_subscriber::prelude::*;
+    let (fmt_layer, fmt_handle) = tracing_subscriber::reload::Layer::new(
+        tracing_subscriber::fmt::layer().with_filter(filter),
+    );
 
-    let (fmt_layer, reload_handle) = init_fmt_layer(filter);
+    let registry = tracing_subscriber::registry().with(fmt_layer);
 
-    tracing_subscriber::registry().with(fmt_layer).init();
+    #[cfg(feature = "sentry")]
+    let (sentry_handle, registry) = {
+        let (sentry_layer, sentry_handle) = tracing_subscriber::reload::Layer::new(None);
+        (sentry_handle, registry.with(sentry_layer))
+    };
 
-    ((), reload_handle)
+    registry.init();
+
+    // Final setup needs the full configuration
+    move |config, has_log_override| -> _ {
+        #[cfg(not(feature = "sentry"))]
+        let guard = ();
+
+        #[cfg(feature = "sentry")]
+        let guard = if let Some(dsn) = config.sentry.dsn.take() {
+            let guard = sentry::init((
+                dsn,
+                sentry::ClientOptions {
+                    traces_sample_rate: config.sentry.sample_rate,
+                    ..sentry::ClientOptions::default()
+                },
+            ));
+
+            sentry_handle.modify(|l| *l = Some(sentry_tracing::layer()))?;
+
+            Some(guard)
+        } else {
+            None
+        };
+
+        if let Some(log_filter) = config.log_filter.take() {
+            if has_log_override {
+                info!("Log filter override from command line arguments is active");
+            } else {
+                fmt_handle.modify(|l| *l.filter_mut() = log_filter)?;
+            }
+        }
+
+        Ok(guard)
+    }
 }
