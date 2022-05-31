@@ -384,19 +384,19 @@ mod test {
 
     #[test]
     fn clock_filter_new() {
-        let instant = NtpInstant::now();
+        let base = NtpInstant::now();
 
         let new_tuple = FilterTuple {
-            offset: NtpDuration::from_seconds(12.0),
-            delay: NtpDuration::from_seconds(14.0),
+            offset: NtpDuration::from_seconds(0.1),
+            delay: NtpDuration::from_seconds(0.05),
             dispersion: Default::default(),
             // make sure this tuple is more recent than the peer's current time
-            time: instant + std::time::Duration::new(1, 0),
+            time: base + std::time::Duration::new(1, 0),
         };
 
-        let mut measurements = LastMeasurements::new(instant);
+        let mut measurements = LastMeasurements::new(base);
 
-        let peer_time = instant;
+        let mut peer_time = base;
         let update = measurements.step(
             new_tuple,
             peer_time,
@@ -413,6 +413,8 @@ mod test {
         assert_eq!(statistics.delay, new_tuple.delay);
         assert_eq!(new_time, new_tuple.time);
 
+        peer_time = new_time;
+
         // there is just one valid sample
         assert_eq!(statistics.jitter, 0.0);
 
@@ -420,6 +422,46 @@ mod test {
 
         assert_eq!(temporary.register[0], new_tuple);
         assert_eq!(temporary.valid_tuples(), &[new_tuple]);
+
+        let new_tuple = FilterTuple {
+            offset: NtpDuration::from_seconds(0.09),
+            delay: NtpDuration::from_seconds(0.04),
+            dispersion: Default::default(),
+            // make sure this tuple is more recent than the peer's current time
+            time: base + std::time::Duration::new(2, 0),
+        };
+
+        let update = measurements.step(
+            new_tuple,
+            peer_time,
+            NtpLeapIndicator::NoWarning,
+            NtpDuration::ZERO,
+            FrequencyTolerance::ppm(15),
+        );
+
+        let (statistics, new_time) = update.unwrap();
+        assert_eq!(new_time, new_tuple.time);
+        assert!(statistics.jitter > 0.0);
+        assert!(measurements.register[1].dispersion > NtpDuration::ZERO);
+
+        peer_time = new_time;
+
+        let new_tuple = FilterTuple {
+            offset: NtpDuration::from_seconds(0.1),
+            delay: NtpDuration::from_seconds(0.06),
+            dispersion: Default::default(),
+            time: base + std::time::Duration::new(3, 0),
+        };
+
+        let update = measurements.step(
+            new_tuple,
+            peer_time,
+            NtpLeapIndicator::NoWarning,
+            NtpDuration::ZERO,
+            FrequencyTolerance::ppm(15),
+        );
+
+        assert!(update.is_none());
     }
 
     #[test]
