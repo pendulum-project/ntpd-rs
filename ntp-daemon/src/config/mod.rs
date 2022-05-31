@@ -49,7 +49,6 @@ pub struct CmdArgs {
 
 #[derive(Deserialize, Debug, Default)]
 pub struct Config {
-    #[serde(deserialize_with = "deserialize_peer_configs")]
     pub peers: Vec<PeerConfig>,
     pub system: SystemConfig,
     #[serde(deserialize_with = "deserialize_option_env_filter")]
