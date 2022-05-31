@@ -190,6 +190,8 @@ fn clock_select<'a>(
     system_poll: PollInterval,
 ) -> Option<ClockSelect<'a>> {
     let valid_associations = peers.iter().filter(|p| {
+        // only failure reason we should see here is the distance; system already checks for other
+        // causes and would not enter clock selection if the snapshot is not acceptable.
         p.accept_synchronization(
             local_clock_time,
             config.frequency_tolerance,
