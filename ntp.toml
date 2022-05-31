@@ -1,0 +1,16 @@
+log_filter = "trace"
+
+peers = ["0.pool.ntp.org", "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
+
+# [[peers]]
+# addr = "0.pool.ntp.org:123"
+#
+
+# [[peers]]
+# addr = "1.pool.ntp.org:123"
+
+[system]
+min_intersection_survivors = 1
+min_cluster_survivors = 3
+frequency_tolerance = 15
+distance_threshold = 1

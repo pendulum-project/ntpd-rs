@@ -2,6 +2,7 @@ use rand::{
     distributions::{Distribution, Standard},
     Rng,
 };
+use serde::Deserialize;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 use std::time::{Duration, Instant};
 
@@ -320,6 +321,16 @@ impl NtpDuration {
     }
 }
 
+impl<'de> Deserialize<'de> for NtpDuration {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let seconds: f64 = Deserialize::deserialize(deserializer)?;
+        Ok(NtpDuration::from_seconds(seconds))
+    }
+}
+
 impl Add for NtpDuration {
     type Output = NtpDuration;
 
@@ -507,6 +518,16 @@ impl Default for PollInterval {
 #[derive(Debug, Clone, Copy)]
 pub struct FrequencyTolerance {
     ppm: u32,
+}
+
+impl<'de> Deserialize<'de> for FrequencyTolerance {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let val: u32 = Deserialize::deserialize(deserializer)?;
+        Ok(FrequencyTolerance { ppm: val })
+    }
 }
 
 impl FrequencyTolerance {

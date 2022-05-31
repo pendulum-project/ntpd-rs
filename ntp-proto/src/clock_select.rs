@@ -1,9 +1,10 @@
 use crate::peer::PeerSnapshot;
 use crate::time_types::{FrequencyTolerance, NtpInstant};
 use crate::{NtpDuration, PollInterval};
+use serde::Deserialize;
 use tracing::{debug, instrument, trace, warn};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Deserialize, Debug, Clone, Copy)]
 pub struct SystemConfig {
     /// Minimum number of survivors needed to be able to discipline the system clock.
     /// More survivors (so more servers from which to get the time) means a more accurate time.
@@ -13,6 +14,7 @@ pub struct SystemConfig {
     /// > CMIN defines the minimum number of servers consistent with the correctness requirements.
     /// > Suspicious operators would set CMIN to ensure multiple redundant servers are available for the
     /// > algorithms to mitigate properly. However, for historic reasons the default value for CMIN is one.
+    #[serde(default = "default_min_intersection_survivors")]
     pub min_intersection_survivors: usize,
 
     /// Number of survivors that the cluster_algorithm tries to keep.
@@ -23,14 +25,17 @@ pub struct SystemConfig {
     ///
     /// Because the input can have fewer than 3 survivors, the MIN_CLUSTER_SURVIVORS
     /// is not an actual lower bound on the number of survivors.
+    #[serde(default = "default_min_cluster_survivors")]
     pub min_cluster_survivors: usize,
 
     /// How much the time is allowed to drift (worst-case) per second.
     /// The drift caused by our frequency not exactly matching the real time
+    #[serde(default = "default_frequency_tolerance")]
     pub frequency_tolerance: FrequencyTolerance,
 
     /// A distance error occurs if the root distance exceeds the
     /// distance threshold plus an increment equal to one poll interval.
+    #[serde(default = "default_distance_threshold")]
     pub distance_threshold: NtpDuration,
 }
 
@@ -38,12 +43,28 @@ impl Default for SystemConfig {
     fn default() -> Self {
         Self {
             // TODO this should be 4 in production?!
-            min_intersection_survivors: 1,
-            min_cluster_survivors: 3,
-            frequency_tolerance: FrequencyTolerance::ppm(15),
-            distance_threshold: NtpDuration::ONE,
+            min_intersection_survivors: default_min_intersection_survivors(),
+            min_cluster_survivors: default_min_cluster_survivors(),
+            frequency_tolerance: default_frequency_tolerance(),
+            distance_threshold: default_distance_threshold(),
         }
     }
+}
+
+fn default_min_intersection_survivors() -> usize {
+    1
+}
+
+fn default_min_cluster_survivors() -> usize {
+    3
+}
+
+fn default_frequency_tolerance() -> FrequencyTolerance {
+    FrequencyTolerance::ppm(15)
+}
+
+fn default_distance_threshold() -> NtpDuration {
+    NtpDuration::ONE
 }
 
 #[derive(Debug, Clone)]
