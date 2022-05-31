@@ -53,6 +53,21 @@ pub struct Config {
     pub system: SystemConfig,
     #[serde(deserialize_with = "deserialize_option_env_filter")]
     pub log_filter: Option<EnvFilter>,
+    #[cfg(feature = "sentry")]
+    pub sentry: SentryConfig,
+}
+
+#[cfg(feature = "sentry")]
+#[derive(Deserialize, Debug, Default)]
+pub struct SentryConfig {
+    pub dsn: Option<String>,
+    #[serde(default = "default_sample_rate")]
+    pub sample_rate: f32,
+}
+
+#[cfg(feature = "sentry")]
+fn default_sample_rate() -> f32 {
+    0.0
 }
 
 #[derive(Error, Debug)]
