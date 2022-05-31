@@ -16,17 +16,8 @@ impl Default for PeerHostMode {
     }
 }
 
-fn deserialize_peer_addr<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let data = Deserialize::deserialize(deserializer)?;
-    Ok(fix_addr(data))
-}
-
-#[derive(Deserialize, Debug)]
+#[derive(Debug)]
 pub struct PeerConfig {
-    #[serde(deserialize_with = "deserialize_peer_addr")]
     pub addr: String,
     pub mode: PeerHostMode,
 }
@@ -37,6 +28,58 @@ impl PeerConfig {
             addr: fix_addr(host.to_owned()),
             mode: PeerHostMode::Server,
         }
+    }
+}
+
+// We have a custom deserializer for peerconfig because we
+// want to deserialize it from either a string or a map
+impl<'de> Deserialize<'de> for PeerConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct PeerConfigVisitor;
+
+        impl<'de> Visitor<'de> for PeerConfigVisitor {
+            type Value = PeerConfig;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("string or map")
+            }
+
+            fn visit_str<E: de::Error>(self, value: &str) -> Result<PeerConfig, E> {
+                FromStr::from_str(value).map_err(de::Error::custom)
+            }
+
+            fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<PeerConfig, M::Error> {
+                let mut addr = None;
+                let mut mode = None;
+                while let Some(key) = map.next_key::<&str>()? {
+                    match key {
+                        "addr" => {
+                            if addr.is_some() {
+                                return Err(de::Error::duplicate_field("addr"));
+                            }
+                            addr = Some(fix_addr(map.next_value()?));
+                        }
+                        "mode" => {
+                            if mode.is_some() {
+                                return Err(de::Error::duplicate_field("mode"));
+                            }
+                            mode = Some(map.next_value()?);
+                        }
+                        _ => {
+                            return Err(de::Error::unknown_field(key, &["addr", "mode"]));
+                        }
+                    }
+                }
+                let addr = addr.ok_or_else(|| de::Error::missing_field("addr"))?;
+                let mode = mode.ok_or_else(|| de::Error::missing_field("mode"))?;
+                Ok(PeerConfig { addr, mode })
+            }
+        }
+
+        deserializer.deserialize_any(PeerConfigVisitor)
     }
 }
 
@@ -57,42 +100,4 @@ impl FromStr for PeerConfig {
         // TODO: We could do some sanity checks here to fail a bit earlier
         Ok(PeerConfig::new(s))
     }
-}
-
-/// Deserializes a peer configuration from either a string or a map
-pub(crate) fn deserialize_peer_config<'de, D>(deserializer: D) -> Result<PeerConfig, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    struct PeerConfigVisitor;
-
-    impl<'de> Visitor<'de> for PeerConfigVisitor {
-        type Value = PeerConfig;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("string or map")
-        }
-
-        fn visit_str<E: de::Error>(self, value: &str) -> Result<PeerConfig, E> {
-            FromStr::from_str(value).map_err(de::Error::custom)
-        }
-
-        fn visit_map<M: MapAccess<'de>>(self, map: M) -> Result<PeerConfig, M::Error> {
-            Deserialize::deserialize(de::value::MapAccessDeserializer::new(map))
-        }
-    }
-
-    deserializer.deserialize_any(PeerConfigVisitor)
-}
-
-/// Deserializes a vec of peerconfigs from a list of strings/maps
-pub(crate) fn deserialize_peer_configs<'de, D>(deserializer: D) -> Result<Vec<PeerConfig>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    struct Wrapper(#[serde(deserialize_with = "deserialize_peer_config")] PeerConfig);
-
-    let v = Vec::deserialize(deserializer)?;
-    Ok(v.into_iter().map(|Wrapper(config)| config).collect())
 }
