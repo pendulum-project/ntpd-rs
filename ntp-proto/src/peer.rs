@@ -51,7 +51,7 @@ pub struct Peer {
 /// If the register contains any nonzero bits, the server is considered reachable;
 /// otherwise, it is unreachable.
 #[derive(Debug, Default, Clone, Copy)]
-struct Reach(u8);
+pub(crate) struct Reach(u8);
 
 impl Reach {
     fn is_reachable(&self) -> bool {
@@ -59,7 +59,7 @@ impl Reach {
     }
 
     /// We have just received a packet, so the peer is definitely reachable
-    fn received_packet(&mut self) {
+    pub(crate) fn received_packet(&mut self) {
         self.0 |= 1;
     }
 
@@ -113,6 +113,10 @@ pub struct PeerSnapshot {
     pub(crate) stratum: u8,
     pub(crate) peer_id: ReferenceId,
 
+    pub(crate) reference_id: ReferenceId,
+    pub(crate) our_id: ReferenceId,
+    pub(crate) reach: Reach,
+
     pub leap_indicator: NtpLeapIndicator,
     pub root_delay: NtpDuration,
     pub root_dispersion: NtpDuration,
@@ -128,14 +132,57 @@ impl PeerSnapshot {
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
 
-        // the only check that is time-dependent is the distance check. All other checks are
-        // handled by the peer, an no PeerUpdated would be produced if any of those checks fails
+        let system_poll = system_poll.as_duration();
+
+        // A stratum error occurs if
+        //     1: the server has never been synchronized,
+        //     2: the server stratum is invalid
+        if !self.leap_indicator.is_synchronized() || self.stratum >= MAX_STRATUM {
+            warn!(
+                stratum = debug(self.stratum),
+                "Peer rejected due to invalid stratum"
+            );
+            return Err(Stratum);
+        }
 
         //  A distance error occurs if the root distance exceeds the
         //  distance threshold plus an increment equal to one poll interval.
         let distance = self.root_distance(local_clock_time, frequency_tolerance);
-        if distance > distance_threshold + (system_poll.as_duration() * frequency_tolerance) {
+        if distance > distance_threshold + (system_poll * frequency_tolerance) {
+            debug!(
+                ?distance,
+                limit = debug(distance_threshold + (system_poll * frequency_tolerance)),
+                "Peer rejected due to excessive distance"
+            );
+
             return Err(Distance);
+        }
+
+        //  A distance error occurs if the root distance exceeds the
+        //  distance threshold plus an increment equal to one poll interval.
+        let distance = self.root_distance(local_clock_time, frequency_tolerance);
+        if distance > distance_threshold + (system_poll * frequency_tolerance) {
+            debug!(
+                distance = debug(distance),
+                limit = debug(distance_threshold + (system_poll * frequency_tolerance)),
+                "Peer rejected due to excessive distance"
+            );
+            return Err(Distance);
+        }
+
+        // Detect whether the remote uses us as their main time reference.
+        // if so, we shouldn't sync to them as that would create a loop.
+        // Note, this can only ever be an issue if the peer is not using
+        // hardware as its source, so ignore reference_id if stratum is 1.
+        if self.stratum != 1 && self.reference_id == self.our_id {
+            debug!("Peer rejected because of detected synchornization loop");
+            return Err(Loop);
+        }
+
+        // An unreachable error occurs if the server is unreachable.
+        if !self.reach.is_reachable() {
+            warn!("Peer unreachable");
+            return Err(ServerUnreachable);
         }
 
         Ok(())
@@ -303,6 +350,9 @@ impl Peer {
                     time: self.time,
                     stratum: self.last_packet.stratum,
                     peer_id: self.peer_id,
+                    reference_id: self.last_packet.reference_id,
+                    our_id: self.our_id,
+                    reach: self.reach,
                     leap_indicator: self.last_packet.leap,
                     root_delay: self.last_packet.root_delay,
                     root_dispersion: self.last_packet.root_dispersion,
