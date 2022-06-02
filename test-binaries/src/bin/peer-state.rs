@@ -1,11 +1,8 @@
-use ntp_daemon::config::PeerConfig;
 use ntp_daemon::ObservablePeerState;
-use ntp_proto::SystemConfig;
-use std::{error::Error, sync::Arc};
+use std::error::Error;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-
     let stream = tokio::net::UnixStream::connect("/run/ntpd-rs/observe").await?;
 
     stream.readable().await?;
@@ -32,10 +29,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    let output :Vec<ObservablePeerState> = serde_json::from_slice(&msg).unwrap();
+    let output: Vec<ObservablePeerState> = serde_json::from_slice(&msg).unwrap();
 
     dbg!(output);
-
 
     Ok(())
 }
