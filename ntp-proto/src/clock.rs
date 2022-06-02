@@ -1,5 +1,6 @@
 use crate::{
     packet::NtpLeapIndicator, time_types::PollInterval, NtpDuration, NtpInstant, NtpTimestamp,
+    SystemConfig,
 };
 use tracing::{debug, error, info, instrument, trace};
 
@@ -77,9 +78,11 @@ impl<C: NtpClock> ClockController<C> {
     // Threshold for changing desired poll interval
     const POLL_ADJUST: i32 = 30;
 
+    #[allow(clippy::too_many_arguments)]
     #[instrument(skip(self))]
     pub fn update(
         &mut self,
+        config: &SystemConfig,
         offset: NtpDuration,
         jitter: NtpDuration,
         root_delay: NtpDuration,
@@ -88,7 +91,7 @@ impl<C: NtpClock> ClockController<C> {
         last_peer_update: NtpInstant,
     ) -> ClockUpdateResult {
         // Check that we have a somewhat reasonable result
-        if self.offset_too_large(offset) {
+        if self.offset_too_large(config, offset) {
             error!("Detected overly large offset");
             return ClockUpdateResult::Panic;
         }
@@ -114,7 +117,7 @@ impl<C: NtpClock> ClockController<C> {
                 }
                 ClockState::MeasureFreq => {
                     if NtpInstant::abs_diff(last_peer_update, self.last_update_time)
-                        < NtpDuration::SPIKE_INTERVAL
+                        < config.frequency_measurement_period
                     {
                         // Initial frequency measurement needs some time
                         debug!("Frequency measurement not finished yet");
@@ -126,7 +129,7 @@ impl<C: NtpClock> ClockController<C> {
                 }
                 ClockState::Spike => {
                     if NtpInstant::abs_diff(last_peer_update, self.last_update_time)
-                        < NtpDuration::SPIKE_INTERVAL
+                        < config.spike_threshold
                     {
                         // Filter out short spikes
                         debug!("Spike continues");
@@ -158,7 +161,7 @@ impl<C: NtpClock> ClockController<C> {
                 }
                 ClockState::MeasureFreq => {
                     if NtpInstant::abs_diff(last_peer_update, self.last_update_time)
-                        < NtpDuration::SPIKE_INTERVAL
+                        < config.frequency_measurement_period
                     {
                         // Initial frequency measurement needs some time
                         debug!("Frequency measurement not finished yet");
@@ -237,13 +240,18 @@ impl<C: NtpClock> ClockController<C> {
         self.preferred_poll_interval
     }
 
-    fn offset_too_large(&self, offset: NtpDuration) -> bool {
-        match self.state {
+    fn offset_too_large(&self, config: &SystemConfig, offset: NtpDuration) -> bool {
+        let threshold = match self.state {
             // The system might be wildly off on startup
-            //  so ignore large steps then
-            ClockState::StartupBlank => false,
-            ClockState::StartupFreq => false,
-            _ => offset.abs() > NtpDuration::PANIC_THRESHOLD,
+            //  so the accepted step size is different then
+            ClockState::StartupBlank | ClockState::StartupFreq => config.startup_panic_threshold,
+            _ => config.panic_threshold,
+        };
+        if let Some(threshold) = threshold {
+            offset > threshold
+        } else {
+            // No threshold desired, so never panic
+            false
         }
     }
 
@@ -334,6 +342,8 @@ mod tests {
     fn test_value_passthrough() {
         let base = NtpInstant::now();
 
+        let config = SystemConfig::default();
+
         let mut controller = ClockController {
             clock: TestClock::default(),
             state: ClockState::Sync,
@@ -347,6 +357,7 @@ mod tests {
 
         assert_eq!(
             controller.update(
+                &config,
                 NtpDuration::from_fixed_int(0),
                 NtpDuration::from_fixed_int(50),
                 NtpDuration::from_fixed_int(20),
@@ -379,6 +390,7 @@ mod tests {
 
         assert_eq!(
             controller.update(
+                &config,
                 NtpDuration::from_fixed_int(0),
                 NtpDuration::from_fixed_int(100),
                 NtpDuration::from_fixed_int(40),
@@ -410,9 +422,11 @@ mod tests {
     #[test]
     fn test_startup_logic() {
         let mut controller = ClockController::new(TestClock::default());
+        let config = SystemConfig::default();
         let base = controller.last_update_time;
 
         controller.update(
+            &config,
             NtpDuration::from_fixed_int(0),
             NtpDuration::from_seconds(0.01),
             NtpDuration::from_seconds(0.02),
@@ -428,6 +442,7 @@ mod tests {
         );
 
         controller.update(
+            &config,
             NtpDuration::from_fixed_int(1 << 32),
             NtpDuration::from_seconds(0.01),
             NtpDuration::from_seconds(0.02),
@@ -447,6 +462,7 @@ mod tests {
     #[test]
     fn test_startup_logic_freq() {
         let base = NtpInstant::now();
+        let config = SystemConfig::default();
 
         let mut controller = ClockController {
             clock: TestClock::default(),
@@ -458,6 +474,7 @@ mod tests {
         };
 
         controller.update(
+            &config,
             NtpDuration::from_fixed_int(0),
             NtpDuration::from_seconds(0.01),
             NtpDuration::from_seconds(0.02),
@@ -476,6 +493,7 @@ mod tests {
     #[test]
     fn test_spike_rejection() {
         let base = NtpInstant::now();
+        let config = SystemConfig::default();
 
         let mut controller = ClockController {
             clock: TestClock::default(),
@@ -487,6 +505,7 @@ mod tests {
         };
 
         controller.update(
+            &config,
             2 * NtpDuration::STEP_THRESHOLD,
             NtpDuration::from_seconds(0.01),
             NtpDuration::from_seconds(0.02),
@@ -499,6 +518,7 @@ mod tests {
         assert_eq!(*controller.clock.last_offset.borrow(), None);
 
         controller.update(
+            &config,
             NtpDuration::from_fixed_int(0),
             NtpDuration::from_seconds(0.01),
             NtpDuration::from_seconds(0.02),
@@ -517,6 +537,7 @@ mod tests {
     #[test]
     fn test_spike_acceptance_over_time() {
         let base = NtpInstant::now();
+        let config = SystemConfig::default();
 
         let mut controller = ClockController {
             clock: TestClock::default(),
@@ -528,6 +549,7 @@ mod tests {
         };
 
         controller.update(
+            &config,
             2 * NtpDuration::STEP_THRESHOLD,
             NtpDuration::from_seconds(0.01),
             NtpDuration::from_seconds(0.02),
@@ -540,6 +562,7 @@ mod tests {
         assert_eq!(*controller.clock.last_offset.borrow(), None);
 
         controller.update(
+            &config,
             2 * NtpDuration::STEP_THRESHOLD,
             NtpDuration::from_seconds(0.01),
             NtpDuration::from_seconds(0.02),
@@ -558,6 +581,7 @@ mod tests {
     #[test]
     fn test_excess_detection() {
         let base = NtpInstant::now();
+        let config = SystemConfig::default();
 
         let mut controller = ClockController {
             clock: TestClock::default(),
@@ -570,7 +594,8 @@ mod tests {
 
         assert_eq!(
             controller.update(
-                2 * NtpDuration::PANIC_THRESHOLD,
+                &config,
+                2 * config.panic_threshold.unwrap(),
                 NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
@@ -591,7 +616,8 @@ mod tests {
 
         assert_eq!(
             controller.update(
-                2 * NtpDuration::PANIC_THRESHOLD,
+                &config,
+                2 * config.panic_threshold.unwrap(),
                 NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
@@ -612,7 +638,8 @@ mod tests {
 
         assert_eq!(
             controller.update(
-                2 * NtpDuration::PANIC_THRESHOLD,
+                &config,
+                2 * config.panic_threshold.unwrap(),
                 NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
@@ -633,7 +660,8 @@ mod tests {
 
         assert_eq!(
             controller.update(
-                2 * NtpDuration::PANIC_THRESHOLD,
+                &config,
+                2 * config.panic_threshold.unwrap(),
                 NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
@@ -654,7 +682,8 @@ mod tests {
 
         assert_eq!(
             controller.update(
-                2 * NtpDuration::PANIC_THRESHOLD,
+                &config,
+                2 * config.panic_threshold.unwrap(),
                 NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),

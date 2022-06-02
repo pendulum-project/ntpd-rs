@@ -2,6 +2,7 @@
 
 mod clock;
 mod clock_select;
+mod config;
 mod filter;
 mod identifiers;
 mod packet;
@@ -11,7 +12,8 @@ mod time_types;
 pub use clock::{ClockController, ClockUpdateResult, NtpClock};
 #[cfg(feature = "fuzz")]
 pub use clock_select::fuzz_find_interval;
-pub use clock_select::{FilterAndCombine, SystemConfig};
+pub use clock_select::FilterAndCombine;
+pub use config::SystemConfig;
 #[cfg(feature = "fuzz")]
 pub use filter::fuzz_tuple_from_packet_default;
 pub use identifiers::ReferenceId;
