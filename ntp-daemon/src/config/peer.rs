@@ -1,11 +1,11 @@
-use std::{convert::Infallible, fmt, net::SocketAddr, str::FromStr};
+use std::{convert::Infallible, fmt, net::ToSocketAddrs, str::FromStr};
 
 use serde::{
     de::{self, MapAccess, Visitor},
     Deserialize, Deserializer,
 };
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, PartialEq, Eq)]
 pub enum PeerHostMode {
     Server,
 }
@@ -16,7 +16,7 @@ impl Default for PeerHostMode {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct PeerConfig {
     pub addr: String,
     pub mode: PeerHostMode,
@@ -74,7 +74,7 @@ impl<'de> Deserialize<'de> for PeerConfig {
                     }
                 }
                 let addr = addr.ok_or_else(|| de::Error::missing_field("addr"))?;
-                let mode = mode.ok_or_else(|| de::Error::missing_field("mode"))?;
+                let mode = mode.unwrap_or_default();
                 Ok(PeerConfig { addr, mode })
             }
         }
@@ -85,7 +85,7 @@ impl<'de> Deserialize<'de> for PeerConfig {
 
 /// Adds :123 to peer address if it is missing
 fn fix_addr(mut addr: String) -> String {
-    if addr.parse::<SocketAddr>().is_ok() {
+    if addr.to_socket_addrs().is_ok() {
         return addr;
     }
 
@@ -99,5 +99,50 @@ impl FromStr for PeerConfig {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // TODO: We could do some sanity checks here to fail a bit earlier
         Ok(PeerConfig::new(s))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deserialize_peer() {
+        #[derive(Deserialize, Debug)]
+        struct TestConfig {
+            peer: PeerConfig,
+        }
+
+        let test: TestConfig = toml::from_str("peer = \"example.com\"").unwrap();
+        assert_eq!(test.peer.addr, "example.com:123");
+        assert_eq!(test.peer.mode, PeerHostMode::Server);
+
+        let test: TestConfig = toml::from_str("peer = \"example.com:5678\"").unwrap();
+        assert_eq!(test.peer.addr, "example.com:5678");
+        assert_eq!(test.peer.mode, PeerHostMode::Server);
+
+        let test: TestConfig = toml::from_str("[peer]\naddr = \"example.com\"").unwrap();
+        assert_eq!(test.peer.addr, "example.com:123");
+        assert_eq!(test.peer.mode, PeerHostMode::Server);
+
+        let test: TestConfig = toml::from_str("[peer]\naddr = \"example.com:5678\"").unwrap();
+        assert_eq!(test.peer.addr, "example.com:5678");
+        assert_eq!(test.peer.mode, PeerHostMode::Server);
+
+        let test: TestConfig =
+            toml::from_str("[peer]\naddr = \"example.com\"\nmode = \"Server\"").unwrap();
+        assert_eq!(test.peer.addr, "example.com:123");
+        assert_eq!(test.peer.mode, PeerHostMode::Server);
+    }
+
+    #[test]
+    fn test_peer_from_string() {
+        let peer: PeerConfig = "example.com".parse().unwrap();
+        assert_eq!(peer.addr, "example.com:123");
+        assert_eq!(peer.mode, PeerHostMode::Server);
+
+        let peer: PeerConfig = "example.com:5678".parse().unwrap();
+        assert_eq!(peer.addr, "example.com:5678");
+        assert_eq!(peer.mode, PeerHostMode::Server);
     }
 }

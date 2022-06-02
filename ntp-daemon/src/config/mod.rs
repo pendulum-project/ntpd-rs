@@ -50,10 +50,12 @@ pub struct CmdArgs {
 #[derive(Deserialize, Debug, Default)]
 pub struct Config {
     pub peers: Vec<PeerConfig>,
+    #[serde(default)]
     pub system: SystemConfig,
-    #[serde(deserialize_with = "deserialize_option_env_filter")]
+    #[serde(deserialize_with = "deserialize_option_env_filter", default)]
     pub log_filter: Option<EnvFilter>,
     #[cfg(feature = "sentry")]
+    #[serde(default)]
     pub sentry: SentryConfig,
 }
 
@@ -120,5 +122,62 @@ impl Config {
         }
 
         Ok(config)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config() {
+        let config: Config = toml::from_str("[[peers]]\naddr = \"example.com\"").unwrap();
+        assert_eq!(
+            config.peers,
+            vec![PeerConfig {
+                addr: "example.com:123".into(),
+                mode: PeerHostMode::Server
+            }]
+        );
+
+        let config: Config =
+            toml::from_str("log_filter = \"\"\n[[peers]]\naddr = \"example.com\"").unwrap();
+        assert!(config.log_filter.is_none());
+        assert_eq!(
+            config.peers,
+            vec![PeerConfig {
+                addr: "example.com:123".into(),
+                mode: PeerHostMode::Server
+            }]
+        );
+
+        let config: Config =
+            toml::from_str("log_filter = \"info\"\n[[peers]]\naddr = \"example.com\"").unwrap();
+        assert!(config.log_filter.is_some());
+        assert_eq!(
+            config.peers,
+            vec![PeerConfig {
+                addr: "example.com:123".into(),
+                mode: PeerHostMode::Server
+            }]
+        );
+    }
+
+    #[cfg(feature = "sentry")]
+    #[test]
+    fn test_sentry_config() {
+        let config: Config = toml::from_str("[[peers]]\naddr = \"example.com\"").unwrap();
+        assert!(config.sentry.dsn.is_none());
+
+        let config: Config =
+            toml::from_str("[[peers]]\naddr = \"example.com\"\n[sentry]\ndsn = \"abc\"").unwrap();
+        assert_eq!(config.sentry.dsn, Some("abc".into()));
+
+        let config: Config = toml::from_str(
+            "[[peers]]\naddr = \"example.com\"\n[sentry]\ndsn = \"abc\"\nsample_rate = 0.5",
+        )
+        .unwrap();
+        assert_eq!(config.sentry.dsn, Some("abc".into()));
+        assert!((config.sentry.sample_rate - 0.5).abs() < 1e-9);
     }
 }
