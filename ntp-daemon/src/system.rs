@@ -4,8 +4,8 @@ use crate::{
 };
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
-    ClockController, ClockUpdateResult, FilterAndCombine, NtpInstant, PeerSnapshot, SystemConfig,
-    SystemSnapshot,
+    ClockController, ClockUpdateResult, FilterAndCombine, FrequencyTolerance, NtpDuration,
+    NtpInstant, PeerSnapshot, PollInterval, SystemConfig, SystemSnapshot,
 };
 use tracing::info;
 
@@ -72,7 +72,14 @@ async fn run(
         let ntp_instant = NtpInstant::now();
         let system_poll = global_system_snapshot.read().await.poll_interval;
 
-        if let NewMeasurement::No = peers.receive_update(msg_for_system, reset_epoch) {
+        if let NewMeasurement::No = peers.receive_update(
+            msg_for_system,
+            reset_epoch,
+            ntp_instant,
+            config.frequency_tolerance,
+            config.distance_threshold,
+            system_poll,
+        ) {
             continue;
         }
 
@@ -188,21 +195,43 @@ impl Peers {
         &mut self,
         msg: MsgForSystem,
         current_reset_epoch: ResetEpoch,
+
+        local_clock_time: NtpInstant,
+        frequency_tolerance: FrequencyTolerance,
+        distance_threshold: NtpDuration,
+        system_poll: PollInterval,
     ) -> NewMeasurement {
         match msg {
             MsgForSystem::MustDemobilize(index) => {
                 self.peers[index.index] = PeerStatus::Demobilized;
-                NewMeasurement::No
             }
-            MsgForSystem::Snapshot(index, msg_reset_epoch, snapshot) => {
+            MsgForSystem::NewMeasurement(index, msg_reset_epoch, snapshot) => {
                 if current_reset_epoch == msg_reset_epoch {
                     self.peers[index.index] = PeerStatus::Measurement(snapshot);
-                    NewMeasurement::Yes
-                } else {
-                    NewMeasurement::No
+
+                    let accept = snapshot.accept_synchronization(
+                        local_clock_time,
+                        frequency_tolerance,
+                        distance_threshold,
+                        system_poll,
+                    );
+
+                    if accept.is_ok() {
+                        return NewMeasurement::Yes;
+                    } else {
+                        // the snapshot is updated (useful for observability)
+                        // but we will not trigger a clock select based on this measurement
+                    }
+                }
+            }
+            MsgForSystem::UpdatedSnapshot(index, msg_reset_epoch, snapshot) => {
+                if current_reset_epoch == msg_reset_epoch {
+                    self.peers[index.index] = PeerStatus::Measurement(snapshot);
                 }
             }
         }
+
+        NewMeasurement::No
     }
 
     fn reset_all(&mut self) {

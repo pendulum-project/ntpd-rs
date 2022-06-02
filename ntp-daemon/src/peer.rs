@@ -41,7 +41,11 @@ pub enum MsgForSystem {
     /// Received a Kiss-o'-Death and must demobilize
     MustDemobilize(PeerIndex),
     /// Received an acceptable packet and made a new peer snapshot
-    Snapshot(PeerIndex, ResetEpoch, PeerSnapshot),
+    /// A new measurement should try to trigger a clock select
+    NewMeasurement(PeerIndex, ResetEpoch, PeerSnapshot),
+    /// A snapshot may have been updated, but this should not
+    /// trigger a clock select in System
+    UpdatedSnapshot(PeerIndex, ResetEpoch, PeerSnapshot),
 }
 
 pub(crate) struct PeerChannels {
@@ -99,7 +103,7 @@ where
 
         // NOTE: fitness check is not performed here, but by System
         let snapshot = PeerSnapshot::from_peer(&self.peer);
-        let msg = MsgForSystem::Snapshot(self.index, self.reset_epoch, snapshot);
+        let msg = MsgForSystem::UpdatedSnapshot(self.index, self.reset_epoch, snapshot);
         self.channels.msg_for_system_sender.send(msg).await.ok();
 
         match self.clock.now() {
@@ -112,8 +116,8 @@ where
             }
         }
 
-        if let Err(e) = self.socket.send(&packet.serialize()).await {
-            warn!(error = debug(e), "poll message could not be sent");
+        if let Err(error) = self.socket.send(&packet.serialize()).await {
+            warn!(?error, "poll message could not be sent");
         }
     }
 
@@ -145,7 +149,7 @@ where
 
                 // NOTE: fitness check is not performed here, but by System
 
-                let msg = MsgForSystem::Snapshot(self.index, self.reset_epoch, update);
+                let msg = MsgForSystem::NewMeasurement(self.index, self.reset_epoch, update);
                 self.channels.msg_for_system_sender.send(msg).await.ok();
             }
             Err(IgnoreReason::KissDemobilize) => {
