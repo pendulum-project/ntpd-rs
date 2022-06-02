@@ -7,7 +7,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     stream.readable().await?;
 
-    let mut msg = vec![0; 16 * 1024];
+    let mut msg = Vec::with_capacity(16 * 1024);
 
     loop {
         // Wait for the socket to be readable
@@ -15,7 +15,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         // Try to read data, this may still fail with `WouldBlock`
         // if the readiness event is a false positive.
-        match stream.try_read(&mut msg) {
+        // will allocate more space if needed.
+        match stream.try_read_buf(&mut msg) {
             Ok(n) => {
                 msg.truncate(n);
                 break;
