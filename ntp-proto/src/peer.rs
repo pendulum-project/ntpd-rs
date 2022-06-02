@@ -5,12 +5,13 @@ use crate::{
     NtpDuration, NtpHeader, NtpTimestamp, PollInterval, ReferenceId,
 };
 use rand::{thread_rng, Rng};
+use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument, trace, warn};
 
 const MAX_STRATUM: u8 = 16;
 
-#[derive(Debug, Default, Clone, Copy)]
-pub(crate) struct PeerStatistics {
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
+pub struct PeerStatistics {
     pub offset: NtpDuration,
     pub delay: NtpDuration,
 
@@ -50,8 +51,23 @@ pub struct Peer {
 /// As valid packets arrive, the rightmost bit is set to one.
 /// If the register contains any nonzero bits, the server is considered reachable;
 /// otherwise, it is unreachable.
-#[derive(Debug, Default, Clone, Copy)]
-pub(crate) struct Reach(u8);
+#[derive(Default, Clone, Copy, Serialize, Deserialize)]
+pub struct Reach(u8);
+
+impl std::fmt::Debug for Reach {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_reachable() {
+            write!(
+                f,
+                "Reach(0b{:b} ({} polls until unreachable))",
+                self.0,
+                7 - self.0.trailing_zeros()
+            )
+        } else {
+            write!(f, "Reach(unreachable)",)
+        }
+    }
+}
 
 impl Reach {
     fn is_reachable(&self) -> bool {
@@ -107,15 +123,16 @@ pub enum IgnoreReason {
 #[derive(Debug, Clone, Copy)]
 pub struct PeerSnapshot {
     pub(crate) root_distance_without_time: NtpDuration,
-    pub(crate) statistics: PeerStatistics,
+    pub statistics: PeerStatistics,
 
     pub time: NtpInstant,
     pub(crate) stratum: u8,
-    pub(crate) peer_id: ReferenceId,
+    pub peer_id: ReferenceId,
+    pub poll_interval: PollInterval,
 
-    pub(crate) reference_id: ReferenceId,
+    pub reference_id: ReferenceId,
     pub(crate) our_id: ReferenceId,
-    pub(crate) reach: Reach,
+    pub reach: Reach,
 
     pub leap_indicator: NtpLeapIndicator,
     pub root_delay: NtpDuration,
@@ -210,6 +227,7 @@ impl PeerSnapshot {
             leap_indicator: peer.last_packet.leap,
             root_delay: peer.last_packet.root_delay,
             root_dispersion: peer.last_packet.root_dispersion,
+            poll_interval: peer.last_poll_interval,
         }
     }
 }

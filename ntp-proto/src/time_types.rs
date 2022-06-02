@@ -2,7 +2,7 @@ use rand::{
     distributions::{Distribution, Standard},
     Rng,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 use std::time::{Duration, Instant};
 
@@ -35,6 +35,10 @@ impl NtpInstant {
         };
 
         NtpDuration::from_system_duration(duration)
+    }
+
+    pub fn elapsed(&self) -> std::time::Duration {
+        self.instant.elapsed()
     }
 }
 
@@ -318,6 +322,16 @@ impl NtpDuration {
     #[cfg(any(test, feature = "fuzz"))]
     pub(crate) const fn from_fixed_int(duration: i64) -> NtpDuration {
         NtpDuration { duration }
+    }
+}
+
+impl Serialize for NtpDuration {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let seconds = self.to_seconds();
+        seconds.serialize(serializer)
     }
 }
 

@@ -17,7 +17,10 @@ pub use filter::fuzz_tuple_from_packet_default;
 pub use identifiers::ReferenceId;
 
 pub use packet::{NtpAssociationMode, NtpHeader, NtpLeapIndicator};
-pub use peer::{AcceptSynchronizationError, IgnoreReason, Peer, PeerSnapshot, SystemSnapshot};
+pub use peer::{
+    AcceptSynchronizationError, IgnoreReason, Peer, PeerSnapshot, PeerStatistics, Reach,
+    SystemSnapshot,
+};
 #[cfg(feature = "fuzz")]
 pub use time_types::fuzz_duration_from_seconds;
 pub use time_types::{FrequencyTolerance, NtpDuration, NtpInstant, NtpTimestamp, PollInterval};

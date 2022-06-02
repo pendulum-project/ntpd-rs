@@ -1,6 +1,8 @@
+use serde::{Deserialize, Serialize};
+
 use crate::{NtpDuration, NtpTimestamp, ReferenceId};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NtpLeapIndicator {
     NoWarning,
     Leap61,

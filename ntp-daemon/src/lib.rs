@@ -6,3 +6,4 @@ mod system;
 pub mod tracing;
 
 pub use system::spawn;
+pub use system::ObservablePeerState;

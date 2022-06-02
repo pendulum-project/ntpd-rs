@@ -213,7 +213,7 @@ where
         clock: C,
         config: SystemConfig,
         channels: PeerChannels,
-    ) -> Result<(), std::io::Error> {
+    ) -> std::io::Result<()> {
         let socket = UdpSocket::new("0.0.0.0:0", addr).await?;
         let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
         let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
