@@ -583,6 +583,9 @@ fn peer_snapshot(
         + root_dispersion
         + statistics.dispersion;
 
+    let mut reach = crate::peer::Reach::default();
+    reach.received_packet();
+
     PeerSnapshot {
         time: instant,
         statistics,
@@ -592,8 +595,12 @@ fn peer_snapshot(
         peer_id: ReferenceId::from_int(0),
 
         leap_indicator: NtpLeapIndicator::NoWarning,
-        root_delay: root_delay,
-        root_dispersion: root_dispersion,
+        root_delay,
+        root_dispersion,
+
+        reference_id: ReferenceId::from_int(0),
+        our_id: ReferenceId::from_int(1),
+        reach,
     }
 }
 

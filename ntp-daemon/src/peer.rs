@@ -3,8 +3,8 @@ use std::{ops::ControlFlow, pin::Pin, sync::Arc};
 use tracing::warn;
 
 use ntp_proto::{
-    AcceptSynchronizationError, IgnoreReason, NtpClock, NtpHeader, NtpInstant, NtpTimestamp, Peer,
-    PeerSnapshot, PollInterval, ReferenceId, SystemConfig, SystemSnapshot,
+    IgnoreReason, NtpClock, NtpHeader, NtpInstant, NtpTimestamp, Peer, PeerSnapshot, ReferenceId,
+    SystemConfig, SystemSnapshot,
 };
 use ntp_udp::UdpSocket;
 use tracing::{info, instrument};
@@ -41,10 +41,11 @@ pub enum MsgForSystem {
     /// Received a Kiss-o'-Death and must demobilize
     MustDemobilize(PeerIndex),
     /// Received an acceptable packet and made a new peer snapshot
-    Snapshot(PeerIndex, ResetEpoch, PeerSnapshot),
-    /// Received a packet, but its content is not acceptable for synchronization
-    /// (e.g. invalid stratum, large root distance, forms a loop or peer is unreachable)
-    PeerNotFit(PeerIndex),
+    /// A new measurement should try to trigger a clock select
+    NewMeasurement(PeerIndex, ResetEpoch, PeerSnapshot),
+    /// A snapshot may have been updated, but this should not
+    /// trigger a clock select in System
+    UpdatedSnapshot(PeerIndex, ResetEpoch, PeerSnapshot),
 }
 
 pub(crate) struct PeerChannels {
@@ -92,22 +93,7 @@ where
             .reset(self.last_poll_sent + poll_interval);
     }
 
-    fn fitness(
-        &self,
-        ntp_instant: NtpInstant,
-        system_poll: PollInterval,
-    ) -> Result<(), AcceptSynchronizationError> {
-        self.peer.accept_synchronization(
-            ntp_instant,
-            self.config.frequency_tolerance,
-            self.config.distance_threshold,
-            system_poll.as_duration(),
-        )
-    }
-
     async fn handle_poll(&mut self, poll_wait: &mut Pin<&mut Sleep>) {
-        let ntp_instant = NtpInstant::now();
-
         let system_snapshot = *self.channels.system_snapshots.read().await;
         let packet = self.peer.generate_poll_message(system_snapshot);
 
@@ -115,13 +101,10 @@ where
         self.last_poll_sent = Instant::now();
         self.update_poll_wait(poll_wait, system_snapshot);
 
-        let accept = self.fitness(ntp_instant, system_snapshot.poll_interval);
-
-        if let Err(accept_error) = accept {
-            info!(?accept_error, "peer is not fit for use in synchronization");
-            let msg = MsgForSystem::PeerNotFit(self.index);
-            self.channels.msg_for_system_sender.send(msg).await.ok();
-        }
+        // NOTE: fitness check is not performed here, but by System
+        let snapshot = PeerSnapshot::from_peer(&self.peer);
+        let msg = MsgForSystem::UpdatedSnapshot(self.index, self.reset_epoch, snapshot);
+        self.channels.msg_for_system_sender.send(msg).await.ok();
 
         match self.clock.now() {
             Err(e) => {
@@ -133,8 +116,8 @@ where
             }
         }
 
-        if let Err(e) = self.socket.send(&packet.serialize()).await {
-            warn!(error = debug(e), "poll message could not be sent");
+        if let Err(error) = self.socket.send(&packet.serialize()).await {
+            warn!(?error, "poll message could not be sent");
         }
     }
 
@@ -164,14 +147,9 @@ where
             Ok(update) => {
                 info!("packet accepted");
 
-                let msg = match self.fitness(ntp_instant, system_snapshot.poll_interval) {
-                    Err(accept_error) => {
-                        info!(?accept_error, "peer is not fit for use in synchronization");
-                        MsgForSystem::PeerNotFit(self.index)
-                    }
-                    Ok(_) => MsgForSystem::Snapshot(self.index, self.reset_epoch, update),
-                };
+                // NOTE: fitness check is not performed here, but by System
 
+                let msg = MsgForSystem::NewMeasurement(self.index, self.reset_epoch, update);
                 self.channels.msg_for_system_sender.send(msg).await.ok();
             }
             Err(IgnoreReason::KissDemobilize) => {
