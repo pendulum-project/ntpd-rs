@@ -601,6 +601,7 @@ fn peer_snapshot(
         reference_id: ReferenceId::from_int(0),
         our_id: ReferenceId::from_int(1),
         reach,
+        poll_interval: PollInterval::MIN,
     }
 }
 
