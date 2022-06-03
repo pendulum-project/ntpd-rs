@@ -2,8 +2,10 @@
 
 use clap::Parser;
 use ntp_daemon::config::{CmdArgs, Config};
+use ntp_daemon::ObservablePeerState;
 use std::ops::Deref;
 use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
 use std::{error::Error, sync::Arc};
 use tokio::io::AsyncWriteExt;
 use tokio::net::{UnixListener, UnixStream};
@@ -30,7 +32,38 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let peers_reader = Arc::new(tokio::sync::RwLock::new(Vec::new()));
     let peers_writer = peers_reader.clone();
 
-    let socket_directory = &config.sockets;
+    let socket_directory = config.sockets;
+
+    let main_loop_handle = tokio::spawn(async move {
+        ntp_daemon::spawn(&config.system, &config.peers, peers_writer).await
+    });
+
+    // to prevent the handle being consumed in the first loop iteration
+    tokio::pin!(main_loop_handle);
+
+    let peer_state_handle =
+        tokio::spawn(peer_state_observer(socket_directory, peers_reader.clone()));
+
+    // to prevent the handle being consumed in the first loop iteration
+    tokio::pin!(peer_state_handle);
+
+    loop {
+        tokio::select! {
+            done = (&mut main_loop_handle) => {
+                return Ok(done??);
+            }
+            done = (&mut peer_state_handle) => {
+                return Ok(done??);
+            }
+        }
+    }
+}
+
+async fn peer_state_observer(
+    socket_directory: PathBuf,
+    peers_reader: Arc<tokio::sync::RwLock<Vec<ObservablePeerState>>>,
+) -> std::io::Result<()> {
+    let socket_directory = &socket_directory;
 
     // create the path if it does not exist
     std::fs::create_dir_all(socket_directory)?;
@@ -44,30 +77,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let permissions: std::fs::Permissions = PermissionsExt::from_mode(0o777);
     std::fs::set_permissions(&observe_socket_path, permissions)?;
 
-    let handle = tokio::spawn(async move {
-        ntp_daemon::spawn(&config.system, &config.peers, peers_writer).await
-    });
-
-    // to prevent the handle being consumed in the first loop iteration
-    tokio::pin!(handle);
-
     loop {
-        tokio::select! {
-            done = (&mut handle) => {
-                return Ok(done??);
-            }
-            accept = peers_listener.accept() => {
-                let (stream, _addr) = accept?;
+        let (stream, _addr) = peers_listener.accept().await?;
 
-                let buffer = {
-                    let state = peers_reader.read().await;
+        let buffer = {
+            let state = peers_reader.read().await;
 
-                    serde_json::to_vec(state.deref()).unwrap()
-                };
+            serde_json::to_vec(state.deref()).unwrap()
+        };
 
-                write_to_unix_socket(stream, &buffer).await?;
-            }
-        }
+        write_to_unix_socket(stream, &buffer).await?;
     }
 }
 
