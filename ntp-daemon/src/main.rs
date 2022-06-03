@@ -30,18 +30,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let peers_reader = Arc::new(tokio::sync::RwLock::new(Vec::new()));
     let peers_writer = peers_reader.clone();
 
-    std::fs::remove_dir_all("/run/ntpd-rs")?;
-    std::fs::create_dir("/run/ntpd-rs")?;
+    let socket_directory = &config.sockets;
 
-    let peers_listener = UnixListener::bind("/run/ntpd-rs/observe")?;
+    // create the path if it does not exist
+    std::fs::create_dir_all(socket_directory)?;
 
-    // this binary needs to run as root to be able to adjust the system clock
-    // directories inherit root permissions, but the client should not need elevated
-    // permissions to read from the socket. So we explicitly set the permissions
+    let observe_socket_path = socket_directory.join("observe");
+    let peers_listener = UnixListener::bind(&observe_socket_path)?;
+
+    // this binary needs to run as root to be able to adjust the system clock.
+    // by default, the socket inherits root permissions, but the client should not need
+    // elevated permissions to read from the socket. So we explicitly set the permissions
     let permissions: std::fs::Permissions = PermissionsExt::from_mode(0o777);
-
-    std::fs::set_permissions("/run/ntpd-rs", permissions.clone())?;
-    std::fs::set_permissions("/run/ntpd-rs/observe", permissions)?;
+    std::fs::set_permissions(&observe_socket_path, permissions)?;
 
     let handle = tokio::spawn(async move {
         ntp_daemon::spawn(&config.system, &config.peers, peers_writer).await

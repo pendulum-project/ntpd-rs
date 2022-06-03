@@ -14,6 +14,10 @@ use tokio::{fs::read_to_string, io};
 use tracing::info;
 use tracing_subscriber::filter::{self, EnvFilter};
 
+fn socket_directory() -> PathBuf {
+    PathBuf::from("/run/ntpd-rs")
+}
+
 fn parse_env_filter(input: &str) -> Result<EnvFilter, filter::ParseError> {
     EnvFilter::builder().with_regex(false).parse(input)
 }
@@ -57,6 +61,8 @@ pub struct Config {
     #[cfg(feature = "sentry")]
     #[serde(default)]
     pub sentry: SentryConfig,
+    #[serde(default = "socket_directory")]
+    pub sockets: PathBuf,
 }
 
 #[cfg(feature = "sentry")]
@@ -173,6 +179,25 @@ mod tests {
             }]
         );
         assert!(config.system.panic_threshold.is_none());
+
+        let config: Config = toml::from_str(
+            r#"
+            log_filter = "info"
+            sockets = "/foo/bar"
+            [[peers]]
+            addr = "example.com"
+            "#,
+        )
+        .unwrap();
+        assert!(config.log_filter.is_some());
+        assert_eq!(config.sockets, PathBuf::from("/foo/bar"));
+        assert_eq!(
+            config.peers,
+            vec![PeerConfig {
+                addr: "example.com:123".into(),
+                mode: PeerHostMode::Server
+            }]
+        );
     }
 
     #[cfg(feature = "sentry")]
