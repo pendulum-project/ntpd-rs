@@ -1,6 +1,18 @@
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use crate::{time_types::FrequencyTolerance, NtpDuration};
+
+fn deserialize_option_threshold<'de, D>(deserializer: D) -> Result<Option<NtpDuration>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let duration: NtpDuration = Deserialize::deserialize(deserializer)?;
+    Ok(if duration == NtpDuration::ZERO {
+        None
+    } else {
+        Some(duration)
+    })
+}
 
 #[derive(Deserialize, Debug, Clone, Copy)]
 pub struct SystemConfig {
@@ -54,13 +66,16 @@ pub struct SystemConfig {
     ///
     /// Note that this is not used during startup. To limit system clock changes
     /// during startup, use startup_panic_threshold
-    #[serde(default = "default_panic_threshold")]
+    #[serde(
+        deserialize_with = "deserialize_option_threshold",
+        default = "default_panic_threshold"
+    )]
     pub panic_threshold: Option<NtpDuration>,
 
     /// The maximum amount the system clock is allowed to change during startup.
     /// This can be used to limit the impact of bad servers if the system clock
     /// is known to be reasonable on startup
-    #[serde(default)]
+    #[serde(deserialize_with = "deserialize_option_threshold", default)]
     pub startup_panic_threshold: Option<NtpDuration>,
 }
 

@@ -161,6 +161,18 @@ mod tests {
                 mode: PeerHostMode::Server
             }]
         );
+
+        let config: Config =
+            toml::from_str("[[peers]]\naddr = \"example.com\"\n[system]\npanic_threshold = 0")
+                .unwrap();
+        assert_eq!(
+            config.peers,
+            vec![PeerConfig {
+                addr: "example.com:123".into(),
+                mode: PeerHostMode::Server
+            }]
+        );
+        assert!(config.system.panic_threshold.is_none());
     }
 
     #[cfg(feature = "sentry")]
