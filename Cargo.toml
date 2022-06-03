@@ -11,3 +11,11 @@ exclude = [ ]
 # Without the `-p` flag, cargo ignores `--no-default-features` when you have a
 # workspace, and without `resolver = "2"` here, you can't use `-p` like this.
 resolver = "2"
+
+# Because of the async runtime, we really want panics to cause an abort, otherwise
+# the binary can keep on running as a ghost
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

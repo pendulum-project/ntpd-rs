@@ -118,6 +118,7 @@ async fn run(
         info!(offset_ms, jitter_ms, "system offset and jitter");
 
         let adjust_type = controller.update(
+            config,
             clock_select.system_offset,
             clock_select.system_jitter,
             clock_select.system_root_delay,

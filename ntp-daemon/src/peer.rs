@@ -1,13 +1,11 @@
 use std::{ops::ControlFlow, pin::Pin, sync::Arc};
 
-use tracing::warn;
-
 use ntp_proto::{
     IgnoreReason, NtpClock, NtpHeader, NtpInstant, NtpTimestamp, Peer, PeerSnapshot, ReferenceId,
     SystemConfig, SystemSnapshot,
 };
 use ntp_udp::UdpSocket;
-use tracing::{info, instrument};
+use tracing::{debug, instrument, warn};
 
 use tokio::{
     net::ToSocketAddrs,
@@ -145,7 +143,7 @@ where
 
         match result {
             Ok(update) => {
-                info!("packet accepted");
+                debug!("packet accepted");
 
                 // NOTE: fitness check is not performed here, but by System
 
@@ -153,14 +151,14 @@ where
                 self.channels.msg_for_system_sender.send(msg).await.ok();
             }
             Err(IgnoreReason::KissDemobilize) => {
-                info!("peer must demobilize");
+                warn!("Demobilizing peer connection on request of remote.");
                 let msg = MsgForSystem::MustDemobilize(self.index);
                 self.channels.msg_for_system_sender.send(msg).await.ok();
 
                 return ControlFlow::Break(());
             }
             Err(ignore_reason) => {
-                info!(?ignore_reason, "packet ignored");
+                debug!(?ignore_reason, "packet ignored");
             }
         }
 
@@ -190,7 +188,7 @@ where
                     let send_timestamp = match self.last_send_timestamp {
                         Some(ts) => ts,
                         None => {
-                            info!("we received a message without having sent one; discard");
+                            warn!("we received a message without having sent one; discarding");
                             continue;
                         }
                     };
