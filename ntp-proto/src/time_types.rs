@@ -194,16 +194,6 @@ impl NtpDuration {
     /// NtpDuration::from_seconds(0.125)
     pub(crate) const STEP_THRESHOLD: Self = Self { duration: 1 << 29 };
 
-    /// NtpDuration::from_seconds(900)
-    pub(crate) const SPIKE_INTERVAL: Self = Self {
-        duration: 900 << 32,
-    };
-
-    /// NtpDuration::from_seconds(1000)
-    pub(crate) const PANIC_THRESHOLD: Self = Self {
-        duration: 1000 << 32,
-    };
-
     /// NtpDuration::from_seconds(16.0)
     pub(crate) const MAX_DISPERSION: Self = Self {
         duration: 68719476736,
