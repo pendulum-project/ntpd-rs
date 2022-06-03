@@ -38,24 +38,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         ntp_daemon::spawn(&config.system, &config.peers, peers_writer).await
     });
 
-    // to prevent the handle being consumed in the first loop iteration
-    tokio::pin!(main_loop_handle);
-
     let peer_state_handle =
         tokio::spawn(peer_state_observer(socket_directory, peers_reader.clone()));
 
-    // to prevent the handle being consumed in the first loop iteration
-    tokio::pin!(peer_state_handle);
-
-    loop {
-        tokio::select! {
-            done = (&mut main_loop_handle) => {
-                return Ok(done??);
-            }
-            done = (&mut peer_state_handle) => {
-                return Ok(done??);
-            }
-        }
+    tokio::select! {
+        done = (main_loop_handle) => Ok(done??),
+        done = (peer_state_handle) => Ok(done??),
     }
 }
 
