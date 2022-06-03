@@ -1,6 +1,22 @@
 # NTPD-rs
 
-This project is intended to become a memory-safe implementation of NTP in Rust. It is currently a work in progress, and does not offer any real functionality yet.
+NTPD-rs is an implementation of NTP completely written in Rust, with a focus on exposing a minimal attack surface. The project is currently in an early stage, and is not yet suitable for daily use. However, you can try it out if you are comfortable with running pre-release software.
+
+## Quick start
+
+Currently, NTPD-rs only support linux based operating systems. Our current testing only targets linux kernels after version 5.0.0, older kernels may work but are not guaranteed.
+
+NTPD-rs is written in rust, and requires cargo 1.61.0 at a minimum to be built. We strongly recommend using [rustup](https://rustup.rs) to install rust/cargo, as the version provided by system package managers tend to be out of date.
+
+To build NTPD-rs run
+```sh
+cargo build --release
+```
+This produces a binary `ntp-daemon` in the `target/release` folder, which is the main ntp daemon. The daemon requires elevated permissions in order to change the system clock. It can be tested against a server in the [ntp pool](https://ntppool.org) (please ensure no other ntp daemons are running)
+```sh
+sudo ./target/release/ntp-daemon -p pool.ntp.org
+```
+After a few minutes you should start to see messages indicating the offset of your machine from the server. A complete description of how the daemon can be configured can be found in the [configuration documentation](CONFIGURATION.md)
 
 ## Naming
 
@@ -8,12 +24,14 @@ We are currently looking for a better name for this project. Suggestions for thi
 
 ## Package substructure
 
-Currently, the code is split up into three separate crates:
- - ntp-proto is intended to contain the packet parsing and most of the algorithms around clock selection, filtering and steering.
- - ntp-daemon is intended to become the main daemon, and to deal with most of the networking and configuration
- - ntp-os-clock contains the unsafe code needed to interface with system clocks.
+Currently, the code is split up into five separate crates:
+ - `ntp-proto` contains the packet parsing and the algorithms needed for clock selection, filtering and steering.
+ - `ntp-daemon` contains the main ntp daemon, and deals with orchestrating the networking and configuration.
+ - `test-binaries` contains a number of simple NTP servers that can be used for testing (see below).
+ - `ntp-os-clock` contains the unsafe code needed to interface with system clocks.
+ - `ntp-udp` contains the unsafe code needed to deal with timestamping on the network layer.
 
-It is a design goal to split of any unsafe code needed to interface with operating system interfaces in separate packages. The intent is to keep these packages as small as possible and ensure that any public functions exposed are themselves safe.
+All unsafe code is contained within the `ntp-os-clock` and `ntp-udp` packages, which are kept as small as possible. All interfaces exposed by these crates should be safe.
 
 ## Test Binaries
 
