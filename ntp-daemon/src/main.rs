@@ -2,10 +2,9 @@
 
 use clap::Parser;
 use ntp_daemon::config::{CmdArgs, Config};
-use ntp_daemon::ObservablePeerState;
-use std::ops::Deref;
+use ntp_daemon::Peers;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::{error::Error, sync::Arc};
 use tokio::io::AsyncWriteExt;
 use tokio::net::{UnixListener, UnixStream};
@@ -29,7 +28,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // this away when not using sentry.
     let _guard = finish_tracing_init(&mut config, has_log_override)?;
 
-    let peers_reader = Arc::new(tokio::sync::RwLock::new(Vec::new()));
+    let peers_reader = Arc::new(tokio::sync::RwLock::new(Peers::default()));
     let peers_writer = peers_reader.clone();
 
     let socket_directory = config.sockets;
@@ -41,6 +40,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let peer_state_handle =
         tokio::spawn(peer_state_observer(socket_directory, peers_reader.clone()));
 
+    // exit if any of the tasks has completed
     tokio::select! {
         done = (main_loop_handle) => Ok(done??),
         done = (peer_state_handle) => Ok(done??),
@@ -49,7 +49,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 async fn peer_state_observer(
     socket_directory: PathBuf,
-    peers_reader: Arc<tokio::sync::RwLock<Vec<ObservablePeerState>>>,
+    peers_reader: Arc<tokio::sync::RwLock<Peers>>,
 ) -> std::io::Result<()> {
     let socket_directory = &socket_directory;
 
@@ -65,13 +65,18 @@ async fn peer_state_observer(
     let permissions: std::fs::Permissions = PermissionsExt::from_mode(0o777);
     std::fs::set_permissions(&observe_socket_path, permissions)?;
 
+    let mut observed = Vec::with_capacity(8);
+
     loop {
         let (stream, _addr) = peers_listener.accept().await?;
 
         let buffer = {
             let state = peers_reader.read().await;
 
-            serde_json::to_vec(state.deref()).unwrap()
+            observed.clear();
+            observed.extend(state.observe());
+
+            serde_json::to_vec(&observed).unwrap()
         };
 
         write_to_unix_socket(stream, &buffer).await?;

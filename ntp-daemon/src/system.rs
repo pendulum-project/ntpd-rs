@@ -18,7 +18,7 @@ use tokio::sync::{mpsc, watch};
 pub async fn spawn(
     config: &SystemConfig,
     peer_configs: &[PeerConfig],
-    peers_rwlock: Arc<tokio::sync::RwLock<Vec<ObservablePeerState>>>,
+    peers_rwlock: Arc<tokio::sync::RwLock<Peers>>,
 ) -> std::io::Result<()> {
     // shares the system state with all peers
     let global_system_snapshot = Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default()));
@@ -68,7 +68,7 @@ async fn run(
     global_system_snapshot: Arc<tokio::sync::RwLock<SystemSnapshot>>,
     mut msg_for_system_rx: mpsc::Receiver<MsgForSystem>,
     reset_tx: watch::Sender<ResetEpoch>,
-    peers_rwlock: Arc<tokio::sync::RwLock<Vec<ObservablePeerState>>>,
+    peers_rwlock: Arc<tokio::sync::RwLock<Peers>>,
 ) -> std::io::Result<()> {
     let mut controller = ClockController::new(UnixNtpClock::new());
     let mut snapshots = Vec::with_capacity(peers.len());
@@ -89,8 +89,8 @@ async fn run(
         {
             let mut writer = peers_rwlock.write().await;
 
-            writer.clear();
-            writer.extend(peers.observe());
+            // TODO when Peers can grow, re-use the existing allocation here
+            writer.peers = peers.peers.clone();
         }
 
         if let NewMeasurement::No = new {
@@ -189,7 +189,7 @@ pub enum ObservablePeerState {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Peers {
     peers: Box<[PeerStatus]>,
 }
@@ -210,7 +210,7 @@ impl Peers {
         self.peers.len()
     }
 
-    fn observe(&self) -> impl Iterator<Item = ObservablePeerState> + '_ {
+    pub fn observe(&self) -> impl Iterator<Item = ObservablePeerState> + '_ {
         self.peers.iter().map(|status| match status {
             PeerStatus::Demobilized => ObservablePeerState::Nothing,
             PeerStatus::NoMeasurement => ObservablePeerState::Nothing,
