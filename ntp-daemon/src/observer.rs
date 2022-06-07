@@ -1,4 +1,5 @@
 use crate::Peers;
+use ntp_proto::SystemSnapshot;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use tokio::net::UnixListener;
@@ -14,13 +15,19 @@ pub enum Observe {
 pub async fn spawn(
     config: &crate::config::ObserveConfig,
     peers_reader: Arc<tokio::sync::RwLock<Peers>>,
+    system_reader: Arc<tokio::sync::RwLock<SystemSnapshot>>,
 ) -> JoinHandle<std::io::Result<()>> {
-    tokio::spawn(peer_state_observer(config.clone(), peers_reader))
+    tokio::spawn(peer_state_observer(
+        config.clone(),
+        peers_reader,
+        system_reader,
+    ))
 }
 
 async fn peer_state_observer(
     config: crate::config::ObserveConfig,
     peers_reader: Arc<tokio::sync::RwLock<Peers>>,
+    system_reader: Arc<tokio::sync::RwLock<SystemSnapshot>>,
 ) -> std::io::Result<()> {
     let socket_directory = &config.path;
 
@@ -56,7 +63,10 @@ async fn peer_state_observer(
 
                 crate::sockets::write_json(&mut stream, &observed).await?;
             }
-            Observe::System => todo!(),
+            Observe::System => {
+                let state = *system_reader.read().await;
+                crate::sockets::write_json(&mut stream, &state).await?;
+            }
         }
     }
 }

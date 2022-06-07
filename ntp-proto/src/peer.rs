@@ -86,7 +86,7 @@ impl Reach {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SystemSnapshot {
     /// May be updated by local_clock
     pub poll_interval: PollInterval,

@@ -19,10 +19,8 @@ pub async fn spawn(
     config: &SystemConfig,
     peer_configs: &[PeerConfig],
     peers_rwlock: Arc<tokio::sync::RwLock<Peers>>,
+    system_rwlock: Arc<tokio::sync::RwLock<SystemSnapshot>>,
 ) -> std::io::Result<()> {
-    // shares the system state with all peers
-    let global_system_snapshot = Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default()));
-
     // send the reset signal to all peers
     let reset_epoch: ResetEpoch = ResetEpoch::default();
     let (reset_tx, reset_rx) = watch::channel::<ResetEpoch>(reset_epoch);
@@ -33,7 +31,7 @@ pub async fn spawn(
     for (index, peer_config) in peer_configs.iter().enumerate() {
         let channels = PeerChannels {
             msg_for_system_sender: msg_for_system_tx.clone(),
-            system_snapshots: global_system_snapshot.clone(),
+            system_snapshots: system_rwlock.clone(),
             reset: reset_rx.clone(),
         };
 
@@ -57,7 +55,7 @@ pub async fn spawn(
     run(
         config,
         reset_epoch,
-        global_system_snapshot,
+        system_rwlock,
         msg_for_system_rx,
         reset_tx,
         peers_rwlock,

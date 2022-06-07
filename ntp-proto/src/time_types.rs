@@ -473,7 +473,7 @@ ntp_duration_scalar_div!(u32);
 //
 // - a value of 4 means 2^4 = 16 seconds
 // - a value of 17 is 2^17 = ~36h
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct PollInterval(i8);
 
 impl std::fmt::Debug for PollInterval {
