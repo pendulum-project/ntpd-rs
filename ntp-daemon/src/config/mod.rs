@@ -14,7 +14,7 @@ use tokio::{fs::read_to_string, io};
 use tracing::info;
 use tracing_subscriber::filter::{self, EnvFilter};
 
-fn socket_directory() -> PathBuf {
+fn default_socket_directory() -> PathBuf {
     PathBuf::from("/run/ntpd-rs")
 }
 
@@ -61,7 +61,7 @@ pub struct Config {
     #[cfg(feature = "sentry")]
     #[serde(default)]
     pub sentry: SentryConfig,
-    #[serde(default = "socket_directory")]
+    #[serde(default = "default_socket_directory")]
     pub sockets: PathBuf,
 }
 
