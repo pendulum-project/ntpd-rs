@@ -6,6 +6,7 @@ use tokio::net::UnixListener;
 use tokio::task::JoinHandle;
 
 use serde::{Deserialize, Serialize};
+
 #[derive(Serialize, Deserialize)]
 pub enum Observe {
     Peers,
@@ -17,32 +18,24 @@ pub async fn spawn(
     peers_reader: Arc<tokio::sync::RwLock<Peers>>,
     system_reader: Arc<tokio::sync::RwLock<SystemSnapshot>>,
 ) -> JoinHandle<std::io::Result<()>> {
-    tokio::spawn(peer_state_observer(
-        config.clone(),
-        peers_reader,
-        system_reader,
-    ))
+    tokio::spawn(observer(config.clone(), peers_reader, system_reader))
 }
 
-async fn peer_state_observer(
+async fn observer(
     config: crate::config::ObserveConfig,
     peers_reader: Arc<tokio::sync::RwLock<Peers>>,
     system_reader: Arc<tokio::sync::RwLock<SystemSnapshot>>,
 ) -> std::io::Result<()> {
-    let socket_directory = &config.path;
-
-    // create the path if it does not exist
-    std::fs::create_dir_all(socket_directory)?;
-
-    let observe_socket_path = socket_directory.join("observe");
-    std::fs::remove_file(&observe_socket_path)?;
-    let peers_listener = UnixListener::bind(&observe_socket_path)?;
+    if config.path.exists() {
+        std::fs::remove_file(&config.path)?;
+    }
+    let peers_listener = UnixListener::bind(&config.path)?;
 
     // this binary needs to run as root to be able to adjust the system clock.
     // by default, the socket inherits root permissions, but the client should not need
     // elevated permissions to read from the socket. So we explicitly set the permissions
     let permissions: std::fs::Permissions = PermissionsExt::from_mode(config.mode);
-    std::fs::set_permissions(&observe_socket_path, permissions)?;
+    std::fs::set_permissions(&config.path, permissions)?;
 
     let mut observed = Vec::with_capacity(8);
     let mut msg = Vec::with_capacity(16 * 1024);
