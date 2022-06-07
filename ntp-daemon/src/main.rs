@@ -2,12 +2,11 @@
 
 use clap::Parser;
 use ntp_daemon::config::{CmdArgs, Config};
-use ntp_daemon::Peers;
+use ntp_daemon::{Observe, Peers};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::{error::Error, sync::Arc};
-use tokio::io::AsyncWriteExt;
-use tokio::net::{UnixListener, UnixStream};
+use tokio::net::UnixListener;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -55,6 +54,7 @@ async fn peer_state_observer(
     std::fs::create_dir_all(socket_directory)?;
 
     let observe_socket_path = socket_directory.join("observe");
+    std::fs::remove_file(&observe_socket_path)?;
     let peers_listener = UnixListener::bind(&observe_socket_path)?;
 
     // this binary needs to run as root to be able to adjust the system clock.
@@ -64,40 +64,25 @@ async fn peer_state_observer(
     std::fs::set_permissions(&observe_socket_path, permissions)?;
 
     let mut observed = Vec::with_capacity(8);
+    let mut msg = Vec::with_capacity(16 * 1024);
 
     loop {
-        let (stream, _addr) = peers_listener.accept().await?;
+        let (mut stream, _addr) = peers_listener.accept().await?;
 
-        let buffer = {
-            let state = peers_reader.read().await;
+        let operation: Observe = ntp_daemon::sockets::read_json(&mut stream, &mut msg).await?;
 
-            observed.clear();
-            observed.extend(state.observe());
+        match operation {
+            Observe::Peers => {
+                {
+                    let state = peers_reader.read().await;
 
-            serde_json::to_vec(&observed).unwrap()
-        };
+                    observed.clear();
+                    observed.extend(state.observe());
+                }
 
-        write_to_unix_socket(stream, &buffer).await?;
-    }
-}
-
-async fn write_to_unix_socket(mut stream: UnixStream, bytes: &[u8]) -> std::io::Result<()> {
-    loop {
-        // Wait for the socket to be writable
-        stream.writable().await?;
-
-        // Try to write data, this may still fail with `WouldBlock`
-        // if the readiness event is a false positive.
-        match stream.try_write(bytes) {
-            Ok(_) => {
-                return stream.shutdown().await;
+                ntp_daemon::sockets::write_json(&mut stream, &observed).await?;
             }
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                continue;
-            }
-            Err(e) => {
-                return Err(e);
-            }
+            Observe::System => todo!(),
         }
     }
 }
