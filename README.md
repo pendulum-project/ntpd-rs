@@ -4,15 +4,22 @@ NTPD-rs is an implementation of NTP completely written in Rust, with a focus on 
 
 ## Quick start
 
-Currently, NTPD-rs only support linux based operating systems. Our current testing only targets linux kernels after version 5.0.0, older kernels may work but are not guaranteed.
+Currently, NTPD-rs only supports linux-based operating systems. Our current testing only targets linux kernels after version 5.0.0, older kernels may work but this is not guaranteed.
 
-NTPD-rs is written in rust, and requires cargo 1.61.0 at a minimum to be built. We strongly recommend using [rustup](https://rustup.rs) to install rust/cargo, as the version provided by system package managers tend to be out of date.
+NTPD-rs is written in rust, and requires cargo 1.61.0 at a minimum to be built. We strongly recommend using [rustup](https://rustup.rs) to install a rust toolchain, because the version provided by system package managers tends to be out of date.
 
 To build NTPD-rs run
 ```sh
 cargo build --release
 ```
-This produces a binary `ntp-daemon` in the `target/release` folder, which is the main ntp daemon. The daemon requires elevated permissions in order to change the system clock. It can be tested against a server in the [ntp pool](https://ntppool.org) (please ensure no other ntp daemons are running)
+This produces a binary `ntp-daemon` in the `target/release` folder, which is the main ntp daemon.
+
+Before running the NTPD-rs daemon, make sure that no other ntp daemons are running. E.g. when chrony is running
+```sh
+systemctl stop chronyd
+```
+
+The NTPD-rs daemon requires elevated permissions to change the system clock. It can be tested against a server in the [ntp pool](https://ntppool.org)
 ```sh
 sudo ./target/release/ntp-daemon -p pool.ntp.org
 ```
@@ -35,7 +42,7 @@ All unsafe code is contained within the `ntp-os-clock` and `ntp-udp` packages, w
 
 ## Test Binaries
 
-This crate contains extremely limited NTP servers for testing purposes 
+This crate contains extremely limited NTP servers for testing purposes
 
 * `demobilize-server` always sends the DENY kiss code, the client must demobilize this association
 * `rate-limit-server` forces an increase of the poll interval to 32 seconds
