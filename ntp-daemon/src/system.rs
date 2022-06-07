@@ -47,11 +47,15 @@ pub async fn spawn(
         .await?;
     }
 
-    let mut peers = Peers::new(peer_configs.len());
+    let peers = Peers::new(peer_configs.len());
+
+    {
+        let mut writer = peers_rwlock.write().await;
+        *writer = peers;
+    }
 
     run(
         config,
-        &mut peers,
         reset_epoch,
         global_system_snapshot,
         msg_for_system_rx,
@@ -63,7 +67,6 @@ pub async fn spawn(
 
 async fn run(
     config: &SystemConfig,
-    peers: &mut Peers,
     mut reset_epoch: ResetEpoch,
     global_system_snapshot: Arc<tokio::sync::RwLock<SystemSnapshot>>,
     mut msg_for_system_rx: mpsc::Receiver<MsgForSystem>,
@@ -71,27 +74,24 @@ async fn run(
     peers_rwlock: Arc<tokio::sync::RwLock<Peers>>,
 ) -> std::io::Result<()> {
     let mut controller = ClockController::new(UnixNtpClock::new());
-    let mut snapshots = Vec::with_capacity(peers.len());
+    let mut snapshots = Vec::with_capacity(peers_rwlock.read().await.len());
 
     while let Some(msg_for_system) = msg_for_system_rx.recv().await {
         let ntp_instant = NtpInstant::now();
         let system_poll = global_system_snapshot.read().await.poll_interval;
 
-        let new = peers.receive_update(
-            msg_for_system,
-            reset_epoch,
-            ntp_instant,
-            config.frequency_tolerance,
-            config.distance_threshold,
-            system_poll,
-        );
-
-        {
+        let new = {
             let mut writer = peers_rwlock.write().await;
 
-            // TODO when Peers can grow, re-use the existing allocation here
-            writer.peers = peers.peers.clone();
-        }
+            writer.receive_update(
+                msg_for_system,
+                reset_epoch,
+                ntp_instant,
+                config.frequency_tolerance,
+                config.distance_threshold,
+                system_poll,
+            )
+        };
 
         if let NewMeasurement::No = new {
             continue;
@@ -101,7 +101,7 @@ async fn run(
         snapshots.clear();
 
         // add all valid measurements to our list of snapshots
-        snapshots.extend(peers.valid_snapshots());
+        snapshots.extend(peers_rwlock.read().await.valid_snapshots());
 
         let result = FilterAndCombine::run(config, &snapshots, ntp_instant, system_poll);
 
@@ -137,7 +137,7 @@ async fn run(
                 )
             }
             ClockUpdateResult::Step => {
-                peers.reset_all();
+                peers_rwlock.write().await.reset_all();
 
                 reset_epoch = reset_epoch.inc();
                 reset_tx.send_replace(reset_epoch);
