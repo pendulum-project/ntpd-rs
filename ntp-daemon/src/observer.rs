@@ -1,6 +1,5 @@
 use crate::Peers;
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::net::UnixListener;
 use tokio::task::JoinHandle;
@@ -13,17 +12,17 @@ pub enum Observe {
 }
 
 pub async fn spawn(
-    socket_directory: PathBuf,
+    config: &crate::config::ObserveConfig,
     peers_reader: Arc<tokio::sync::RwLock<Peers>>,
 ) -> JoinHandle<std::io::Result<()>> {
-    tokio::spawn(peer_state_observer(socket_directory, peers_reader))
+    tokio::spawn(peer_state_observer(config.clone(), peers_reader))
 }
 
 async fn peer_state_observer(
-    socket_directory: PathBuf,
+    config: crate::config::ObserveConfig,
     peers_reader: Arc<tokio::sync::RwLock<Peers>>,
 ) -> std::io::Result<()> {
-    let socket_directory = &socket_directory;
+    let socket_directory = &config.path;
 
     // create the path if it does not exist
     std::fs::create_dir_all(socket_directory)?;
@@ -35,7 +34,7 @@ async fn peer_state_observer(
     // this binary needs to run as root to be able to adjust the system clock.
     // by default, the socket inherits root permissions, but the client should not need
     // elevated permissions to read from the socket. So we explicitly set the permissions
-    let permissions: std::fs::Permissions = PermissionsExt::from_mode(0o777);
+    let permissions: std::fs::Permissions = PermissionsExt::from_mode(config.mode);
     std::fs::set_permissions(&observe_socket_path, permissions)?;
 
     let mut observed = Vec::with_capacity(8);

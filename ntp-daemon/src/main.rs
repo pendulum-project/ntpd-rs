@@ -25,14 +25,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let peers_reader = Arc::new(tokio::sync::RwLock::new(Peers::default()));
     let peers_writer = peers_reader.clone();
 
-    let socket_directory = config.sockets;
-
     let main_loop_handle = tokio::spawn(async move {
         ntp_daemon::spawn(&config.system, &config.peers, peers_writer).await
     });
 
     let peer_state_handle =
-        ntp_daemon::observer::spawn(socket_directory, peers_reader.clone()).await;
+        ntp_daemon::observer::spawn(&config.observe, peers_reader.clone()).await;
 
     // exit if any of the tasks has completed
     tokio::select! {

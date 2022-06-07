@@ -14,10 +14,6 @@ use tokio::{fs::read_to_string, io};
 use tracing::info;
 use tracing_subscriber::filter::{self, EnvFilter};
 
-fn default_socket_directory() -> PathBuf {
-    PathBuf::from("/run/ntpd-rs")
-}
-
 fn parse_env_filter(input: &str) -> Result<EnvFilter, filter::ParseError> {
     EnvFilter::builder().with_regex(false).parse(input)
 }
@@ -61,8 +57,33 @@ pub struct Config {
     #[cfg(feature = "sentry")]
     #[serde(default)]
     pub sentry: SentryConfig,
-    #[serde(default = "default_socket_directory")]
-    pub sockets: PathBuf,
+    #[serde(default)]
+    pub observe: ObserveConfig,
+}
+
+fn default_observe_path() -> PathBuf {
+    PathBuf::from("/run/ntpd-rs/observe")
+}
+
+const fn default_observe_permissions() -> u32 {
+    0o777
+}
+
+#[derive(Clone, Deserialize, Debug)]
+pub struct ObserveConfig {
+    #[serde(default = "default_observe_path")]
+    pub path: PathBuf,
+    #[serde(default = "default_observe_permissions")]
+    pub mode: u32,
+}
+
+impl Default for ObserveConfig {
+    fn default() -> Self {
+        Self {
+            path: default_observe_path(),
+            mode: default_observe_permissions(),
+        }
+    }
 }
 
 #[cfg(feature = "sentry")]
@@ -183,14 +204,17 @@ mod tests {
         let config: Config = toml::from_str(
             r#"
             log_filter = "info"
-            sockets = "/foo/bar"
             [[peers]]
             addr = "example.com"
+            [observe]
+            path = "/foo/bar/observe"
+            mode = 0o567 
             "#,
         )
         .unwrap();
         assert!(config.log_filter.is_some());
-        assert_eq!(config.sockets, PathBuf::from("/foo/bar"));
+        assert_eq!(config.observe.path, PathBuf::from("/foo/bar/observe"));
+        assert_eq!(config.observe.mode, 0o567);
         assert_eq!(
             config.peers,
             vec![PeerConfig {
