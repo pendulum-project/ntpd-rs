@@ -1,9 +1,16 @@
-use crate::{Observe, Peers};
+use crate::Peers;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::net::UnixListener;
 use tokio::task::JoinHandle;
+
+use serde::{Deserialize, Serialize};
+#[derive(Serialize, Deserialize)]
+pub enum Observe {
+    Peers,
+    System,
+}
 
 pub async fn spawn(
     socket_directory: PathBuf,
