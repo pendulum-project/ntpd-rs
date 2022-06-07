@@ -1,4 +1,4 @@
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
 pub async fn write_json<T>(stream: &mut UnixStream, value: &T) -> std::io::Result<()>
@@ -10,25 +10,11 @@ where
 }
 
 pub async fn write(stream: &mut UnixStream, bytes: &[u8]) -> std::io::Result<()> {
-    loop {
-        // Wait for the socket to be writable
-        stream.writable().await?;
+    stream.writable().await?;
 
-        // Try to write data, this may still fail with `WouldBlock`
-        // if the readiness event is a false positive.
-        match stream.try_write(bytes) {
-            Ok(_) => {
-                // shutdown indicates we won't be writing to this stream any more
-                return stream.shutdown().await;
-            }
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                continue;
-            }
-            Err(e) => {
-                return Err(e);
-            }
-        }
-    }
+    stream.write_all(bytes).await?;
+
+    stream.shutdown().await
 }
 
 pub async fn read_json<'a, T>(
@@ -46,23 +32,11 @@ where
 }
 
 pub async fn read(stream: &mut UnixStream, buffer: &mut Vec<u8>) -> std::io::Result<()> {
-    loop {
-        // Wait for the socket to be readable
-        stream.readable().await?;
+    stream.readable().await?;
 
-        // Try to read data, this may still fail with `WouldBlock`
-        // if the readiness event is a false positive.
-        match stream.try_read_buf(buffer) {
-            Ok(n) => {
-                buffer.truncate(n);
-                return Ok(());
-            }
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                continue;
-            }
-            Err(e) => {
-                return Err(e);
-            }
-        }
-    }
+    buffer.clear();
+    let n = stream.read_buf(buffer).await?;
+    buffer.truncate(n);
+
+    Ok(())
 }
