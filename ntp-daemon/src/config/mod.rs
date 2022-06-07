@@ -238,7 +238,7 @@ mod tests {
             path = "/foo/bar/observe"
             mode = 0o567
             [configure]
-            path = "/foo/bar/configure
+            path = "/foo/bar/configure"
             mode = 0o123
             "#,
         )
