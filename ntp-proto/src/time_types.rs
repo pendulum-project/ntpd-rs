@@ -76,7 +76,7 @@ impl NtpTimestamp {
 
     /// Create an NTP timestamp from the number of seconds and nanoseconds that have
     /// passed since the last ntp era boundary.
-    pub const fn from_seconds_nanos_since_ntp_era(seconds: u32, nanos: u32) -> Self {
+    pub fn from_seconds_nanos_since_ntp_era(seconds: u32, nanos: u32) -> Self {
         // Although having a valid interpretation, providing more
         // than 1 second worth of nanoseconds as input probably
         // indicates an error from the caller.
@@ -214,7 +214,7 @@ impl NtpDuration {
         }
     }
 
-    pub(crate) const fn to_bits_short(self) -> [u8; 4] {
+    pub(crate) fn to_bits_short(self) -> [u8; 4] {
         // serializing negative durations should never happen
         // and indicates a programming error elsewhere.
         // as for duration that are too large, saturating is
