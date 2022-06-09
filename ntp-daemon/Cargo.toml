@@ -12,7 +12,7 @@ futures = "0.3.21"
 ntp-proto = { path = "../ntp-proto" }
 ntp-os-clock = { path = "../ntp-os-clock" }
 ntp-udp = { path = "../ntp-udp" }
-tracing = "0.1.34"
+tracing = "0.1.35"
 tracing-subscriber = { version = "0.3.11", features = ["env-filter", "serde"] }
 clap = { version = "3.1.18", features = ["derive", "env"] }
 toml = "0.5.9"
