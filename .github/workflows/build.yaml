@@ -24,7 +24,7 @@ jobs:
         os: [ubuntu-latest]
         features:
           - ""
-          - "--features sentry"
+          - "--features with-sentry"
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
