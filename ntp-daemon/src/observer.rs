@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ObservableState {
-    system: SystemSnapshot,
-    peers: Vec<ObservablePeerState>,
+    pub system: SystemSnapshot,
+    pub peers: Vec<ObservablePeerState>,
 }
 
 pub async fn spawn(

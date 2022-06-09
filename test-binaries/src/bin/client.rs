@@ -1,6 +1,5 @@
 use clap::{Arg, Command};
-use ntp_daemon::ObservablePeerState;
-use ntp_proto::SystemSnapshot;
+use ntp_daemon::ObservableState;
 
 pub const CMD_PEERS: &str = "peers";
 pub const CMD_SYSTEM: &str = "system";
@@ -41,26 +40,22 @@ async fn main() -> std::io::Result<()> {
         Some((CMD_PEERS, _matches)) => {
             let mut stream = tokio::net::UnixStream::connect("/run/ntpd-rs/observe").await?;
 
-            ntp_daemon::sockets::write_json(&mut stream, &ntp_daemon::Observe::Peers).await?;
-
             let mut msg = Vec::with_capacity(16 * 1024);
-            let output: Vec<ObservablePeerState> =
+            let output: ObservableState =
                 ntp_daemon::sockets::read_json(&mut stream, &mut msg).await?;
 
-            dbg!(output);
+            dbg!(output.peers);
 
             0
         }
         Some((CMD_SYSTEM, _matches)) => {
             let mut stream = tokio::net::UnixStream::connect("/run/ntpd-rs/observe").await?;
 
-            ntp_daemon::sockets::write_json(&mut stream, &ntp_daemon::Observe::System).await?;
-
             let mut msg = Vec::with_capacity(16 * 1024);
-            let output: SystemSnapshot =
+            let output: ObservableState =
                 ntp_daemon::sockets::read_json(&mut stream, &mut msg).await?;
 
-            dbg!(output);
+            dbg!(output.system);
 
             0
         }

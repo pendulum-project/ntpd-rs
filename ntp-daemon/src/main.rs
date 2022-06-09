@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Sentry has a guard we need to keep alive, so store it.
     // The compiler will optimize this away when not using sentry.
-    let _guard = finish_tracing_init(&mut config, has_log_override)?;
+    let tracing_state = finish_tracing_init(&mut config, has_log_override)?;
 
     // shares the system state with all peers
     let system_reader = Arc::new(tokio::sync::RwLock::new(Default::default()));
@@ -36,9 +36,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let peer_state_handle =
         ntp_daemon::observer::spawn(&config.observe, peers_reader, system_reader).await;
 
+    let dynamic_config_handle =
+        ntp_daemon::config::dynamic::spawn(config.configure, tracing_state.reload_handle).await;
+
     // exit if any of the tasks has completed
     tokio::select! {
         done = main_loop_handle => Ok(done??),
         done = peer_state_handle => Ok(done??),
+        done = dynamic_config_handle => Ok(done??),
     }
 }
