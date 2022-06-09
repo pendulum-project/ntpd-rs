@@ -1,19 +1,20 @@
 # Configuring NTPD-rs
 
-If you want to try out NTPD-rs on a non-critical system, this guide provides the basic information needed to properly build and configure NTPD-rs. This software SHOULD NOT be used on any system where you cannot handle experiencing issues, either reliability or security related.
+If you want to try out NTPD-rs on a non-critical system, this guide provides the basic information needed to properly build and configure NTPD-rs. This software SHOULD NOT be used on any system where you cannot handle either reliability or security issues.
 
 ## Limitations
 
-The current implementation has several important limitations to be aware of:
+The current implementation has several important limitations:
+
  - The current implementation is client-only, and does not support acting as an NTP server.
- - No support for broadcast client/server or symmetric active/passive connections, only supports acting as the client towards a server node.
+ - There is no support for broadcast client/server or symmetric active/passive connections, only acting as the client towards a server node is implemented.
  - DNS lookup is currently only done at startup. Changes in the IP address of a remote server are not picked up until a restart of the daemon.
  - There is no support for NTP pools yet. Multiple servers should be configured manually in the configuration file.
  - Changes in network interfaces are not picked up dynamically and will require a restart of the daemon.
 
 ## Building
 
-Currently, NTPD-rs only supports Linux based operating systems. Our current testing only targets Linux kernels after version 5.0.0, older kernels may work but are not guaranteed.
+Currently, NTPD-rs only supports Linux-based operating systems. Our current testing only targets Linux kernels after version 5.0.0, older kernels may work but this is not guaranteed.
 
 NTPD-rs is written in rust, and has so far only been tested with cargo 1.61.0 and later. Earlier versions may work but are currently not included in our testing regime. We strongly recommend using [rustup](https://rustup.rs) to install rust/cargo, as the version provided by system package managers tend to be out of date.
 
@@ -98,7 +99,7 @@ distance_threshold = 1
 
 ## Operational concerns
 
-NTPD-rs controls the system clock. Because the effects of poor steering can lead to the system clock quickly losing all connection to reality, much more so than no steering, there are several situations where the NTP daemon will terminate itself rather than continue steering the clock. Because of this, rather than setting up automatic restart of the NTP daemon on failure, we strongly recommend requiring human intervention before restart.
+NTPD-rs controls the system clock. Because the effects of poor steering can lead to the system clock quickly losing all connection to reality, much more so than no steering, there are several situations where the NTP daemon will terminate itself rather than continue steering the clock. Because of this, rather than setting up automatic restart of the NTP daemon on failure, we strongly recommend requiring human intervention before a restart.
 
 Should you still desire to automatically restart the NTP daemon, there are several considerations to take into account. First, to limit the amount of clock shift allowed during startup it is recommended to set the startup_panic_threshold configuration parameter to match the panic_threshold parameter. Doing so ensures that rebooting cannot unintentionally cause larger steps than allowed during normal operations.
 
