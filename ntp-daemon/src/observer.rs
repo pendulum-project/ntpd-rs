@@ -26,6 +26,7 @@ async fn observer(
     peers_reader: Arc<tokio::sync::RwLock<Peers>>,
     system_reader: Arc<tokio::sync::RwLock<SystemSnapshot>>,
 ) -> std::io::Result<()> {
+    // must unlink path before the bind below (otherwise we get "address already in use")
     if config.path.exists() {
         std::fs::remove_file(&config.path)?;
     }
