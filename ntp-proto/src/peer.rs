@@ -59,7 +59,7 @@ impl std::fmt::Debug for Reach {
         if self.is_reachable() {
             write!(
                 f,
-                "Reach(0b{:b} ({} polls until unreachable))",
+                "Reach(0b{:07b} ({} polls until unreachable))",
                 self.0,
                 7 - self.0.trailing_zeros()
             )

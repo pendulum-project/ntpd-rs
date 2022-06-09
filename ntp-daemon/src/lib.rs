@@ -7,7 +7,5 @@ pub mod sockets;
 mod system;
 pub mod tracing;
 
-pub use system::spawn;
-pub use system::{ObservablePeerState, Peers};
-
-pub use observer::Observe;
+pub use observer::ObservableState;
+pub use system::{spawn, ObservablePeerState, Peers};
