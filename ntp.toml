@@ -14,7 +14,7 @@ peers = ["0.pool.ntp.org", "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
 
 # System parameters used in filtering and steering the clock:
 [system]
-min-intersection_survivors = 1
-min-cluster_survivors = 3
+min-intersection-survivors = 1
+min-cluster-survivors = 3
 frequency-tolerance = 15
 distance-threshold = 1
