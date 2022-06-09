@@ -6,7 +6,7 @@ If you want to try out NTPD-rs on a non-critical system, this guide provides the
 
 The current implementation has several important limitations to be aware of:
  - The current implementation is client-only, and does not support acting as an NTP server.
- - Only NTP client-server connections are supported. Other peering types defined in the NTP specification are not yet implemented.
+ - No support for broadcast client/server or symmetric active/passive connections, only supports acting as the client towards a server node.
  - DNS lookup is currently only done at startup. Changes in the IP address of a remote server are not picked up until a restart of the daemon.
  - There is no support for NTP pools yet. Multiple servers should be configured manually in the configuration file.
  - Changes in network interfaces are not picked up dynamically and will require a restart of the daemon.
