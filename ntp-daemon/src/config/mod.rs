@@ -57,6 +57,60 @@ pub struct Config {
     #[cfg(feature = "sentry")]
     #[serde(default)]
     pub sentry: SentryConfig,
+    #[serde(default)]
+    pub observe: ObserveConfig,
+    #[serde(default)]
+    pub configure: ConfigureConfig,
+}
+
+fn default_observe_path() -> PathBuf {
+    PathBuf::from("/run/ntpd-rs/observe")
+}
+
+const fn default_observe_permissions() -> u32 {
+    0o777
+}
+
+#[derive(Clone, Deserialize, Debug)]
+pub struct ObserveConfig {
+    #[serde(default = "default_observe_path")]
+    pub path: PathBuf,
+    #[serde(default = "default_observe_permissions")]
+    pub mode: u32,
+}
+
+fn default_configure_path() -> PathBuf {
+    PathBuf::from("/run/ntpd-rs/configure")
+}
+
+const fn default_configure_permissions() -> u32 {
+    0o777
+}
+
+impl Default for ObserveConfig {
+    fn default() -> Self {
+        Self {
+            path: default_observe_path(),
+            mode: default_observe_permissions(),
+        }
+    }
+}
+
+#[derive(Clone, Deserialize, Debug)]
+pub struct ConfigureConfig {
+    #[serde(default = "default_configure_path")]
+    pub path: std::path::PathBuf,
+    #[serde(default = "default_configure_permissions")]
+    pub mode: u32,
+}
+
+impl Default for ConfigureConfig {
+    fn default() -> Self {
+        Self {
+            path: default_configure_path(),
+            mode: default_configure_permissions(),
+        }
+    }
 }
 
 #[cfg(feature = "sentry")]
@@ -173,6 +227,36 @@ mod tests {
             }]
         );
         assert!(config.system.panic_threshold.is_none());
+
+        let config: Config = toml::from_str(
+            r#"
+            log_filter = "info"
+            [[peers]]
+            addr = "example.com"
+            [observe]
+            path = "/foo/bar/observe"
+            mode = 0o567
+            [configure]
+            path = "/foo/bar/configure"
+            mode = 0o123
+            "#,
+        )
+        .unwrap();
+        assert!(config.log_filter.is_some());
+
+        assert_eq!(config.observe.path, PathBuf::from("/foo/bar/observe"));
+        assert_eq!(config.observe.mode, 0o567);
+
+        assert_eq!(config.configure.path, PathBuf::from("/foo/bar/configure"));
+        assert_eq!(config.configure.mode, 0o123);
+
+        assert_eq!(
+            config.peers,
+            vec![PeerConfig {
+                addr: "example.com:123".into(),
+                mode: PeerHostMode::Server
+            }]
+        );
     }
 
     #[cfg(feature = "sentry")]

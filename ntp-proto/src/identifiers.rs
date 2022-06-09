@@ -1,8 +1,9 @@
 use std::net::IpAddr;
 
 use md5::{Digest, Md5};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReferenceId(u32);
 
 impl ReferenceId {

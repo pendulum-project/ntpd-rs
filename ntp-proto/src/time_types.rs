@@ -2,7 +2,7 @@ use rand::{
     distributions::{Distribution, Standard},
     Rng,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 use std::time::{Duration, Instant};
 
@@ -35,6 +35,10 @@ impl NtpInstant {
         };
 
         NtpDuration::from_system_duration(duration)
+    }
+
+    pub fn elapsed(&self) -> std::time::Duration {
+        self.instant.elapsed()
     }
 }
 
@@ -311,6 +315,16 @@ impl NtpDuration {
     }
 }
 
+impl Serialize for NtpDuration {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let seconds = self.to_seconds();
+        seconds.serialize(serializer)
+    }
+}
+
 impl<'de> Deserialize<'de> for NtpDuration {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -459,7 +473,7 @@ ntp_duration_scalar_div!(u32);
 //
 // - a value of 4 means 2^4 = 16 seconds
 // - a value of 17 is 2^17 = ~36h
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct PollInterval(i8);
 
 impl std::fmt::Debug for PollInterval {

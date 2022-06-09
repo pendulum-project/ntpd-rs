@@ -5,21 +5,22 @@ use crate::{
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
     ClockController, ClockUpdateResult, FilterAndCombine, FrequencyTolerance, NtpDuration,
-    NtpInstant, PeerSnapshot, PollInterval, SystemConfig, SystemSnapshot,
+    NtpInstant, PeerSnapshot, PeerStatistics, PollInterval, Reach, ReferenceId, SystemConfig,
+    SystemSnapshot,
 };
+use serde::{Deserialize, Serialize};
 use tracing::info;
 
-use std::{error::Error, sync::Arc};
+use std::sync::Arc;
 use tokio::sync::{mpsc, watch};
 
 /// Spawn the NTP daemon
 pub async fn spawn(
     config: &SystemConfig,
     peer_configs: &[PeerConfig],
-) -> Result<(), Box<dyn Error>> {
-    // shares the system state with all peers
-    let global_system_snapshot = Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default()));
-
+    peers_rwlock: Arc<tokio::sync::RwLock<Peers>>,
+    system_rwlock: Arc<tokio::sync::RwLock<SystemSnapshot>>,
+) -> std::io::Result<()> {
     // send the reset signal to all peers
     let reset_epoch: ResetEpoch = ResetEpoch::default();
     let (reset_tx, reset_rx) = watch::channel::<ResetEpoch>(reset_epoch);
@@ -30,7 +31,7 @@ pub async fn spawn(
     for (index, peer_config) in peer_configs.iter().enumerate() {
         let channels = PeerChannels {
             msg_for_system_sender: msg_for_system_tx.clone(),
-            system_snapshots: global_system_snapshot.clone(),
+            system_snapshots: system_rwlock.clone(),
             reset: reset_rx.clone(),
         };
 
@@ -44,42 +45,49 @@ pub async fn spawn(
         .await?;
     }
 
-    let mut peers = Peers::new(peer_configs.len());
+    let peers = Peers::new(peer_configs.len());
+
+    {
+        let mut writer = peers_rwlock.write().await;
+        *writer = peers;
+    }
 
     run(
         config,
-        &mut peers,
         reset_epoch,
-        global_system_snapshot,
+        system_rwlock,
         msg_for_system_rx,
         reset_tx,
+        peers_rwlock,
     )
     .await
 }
 
 async fn run(
     config: &SystemConfig,
-    peers: &mut Peers,
     mut reset_epoch: ResetEpoch,
     global_system_snapshot: Arc<tokio::sync::RwLock<SystemSnapshot>>,
     mut msg_for_system_rx: mpsc::Receiver<MsgForSystem>,
     reset_tx: watch::Sender<ResetEpoch>,
-) -> Result<(), Box<dyn Error>> {
+    peers_rwlock: Arc<tokio::sync::RwLock<Peers>>,
+) -> std::io::Result<()> {
     let mut controller = ClockController::new(UnixNtpClock::new());
-    let mut snapshots = Vec::with_capacity(peers.len());
+    let mut snapshots = Vec::with_capacity(peers_rwlock.read().await.len());
 
     while let Some(msg_for_system) = msg_for_system_rx.recv().await {
         let ntp_instant = NtpInstant::now();
         let system_poll = global_system_snapshot.read().await.poll_interval;
 
-        if let NewMeasurement::No = peers.receive_update(
+        let new = peers_rwlock.write().await.receive_update(
             msg_for_system,
             reset_epoch,
             ntp_instant,
             config.frequency_tolerance,
             config.distance_threshold,
             system_poll,
-        ) {
+        );
+
+        if let NewMeasurement::No = new {
             continue;
         }
 
@@ -87,7 +95,7 @@ async fn run(
         snapshots.clear();
 
         // add all valid measurements to our list of snapshots
-        snapshots.extend(peers.valid_snapshots());
+        snapshots.extend(peers_rwlock.read().await.valid_snapshots());
 
         let result = FilterAndCombine::run(config, &snapshots, ntp_instant, system_poll);
 
@@ -123,7 +131,7 @@ async fn run(
                 )
             }
             ClockUpdateResult::Step => {
-                peers.reset_all();
+                peers_rwlock.write().await.reset_all();
 
                 reset_epoch = reset_epoch.inc();
                 reset_tx.send_replace(reset_epoch);
@@ -163,7 +171,20 @@ enum PeerStatus {
     Measurement(PeerSnapshot),
 }
 
-struct Peers {
+#[derive(Debug, Serialize, Deserialize)]
+pub enum ObservablePeerState {
+    Nothing,
+    Observable {
+        statistics: PeerStatistics,
+        reachability: Reach,
+        uptime: std::time::Duration,
+        poll_interval: std::time::Duration,
+        peer_id: ReferenceId,
+    },
+}
+
+#[derive(Debug, Default)]
+pub struct Peers {
     peers: Box<[PeerStatus]>,
 }
 
@@ -181,6 +202,20 @@ impl Peers {
 
     fn len(&self) -> usize {
         self.peers.len()
+    }
+
+    pub fn observe(&self) -> impl Iterator<Item = ObservablePeerState> + '_ {
+        self.peers.iter().map(|status| match status {
+            PeerStatus::Demobilized => ObservablePeerState::Nothing,
+            PeerStatus::NoMeasurement => ObservablePeerState::Nothing,
+            PeerStatus::Measurement(snapshot) => ObservablePeerState::Observable {
+                statistics: snapshot.statistics,
+                reachability: snapshot.reach,
+                uptime: snapshot.time.elapsed(),
+                poll_interval: snapshot.poll_interval.as_system_duration(),
+                peer_id: snapshot.peer_id,
+            },
+        })
     }
 
     fn valid_snapshots(&self) -> impl Iterator<Item = PeerSnapshot> + '_ {

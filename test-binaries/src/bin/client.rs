@@ -8,7 +8,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let config = SystemConfig::default();
 
-    let peers = [PeerConfig::new("0.0.0.0:8080")];
+    let peer_configs = [PeerConfig::new("0.0.0.0:8080")];
 
-    ntp_daemon::spawn(&config, &peers).await
+    let peers = Default::default();
+    let system = Default::default();
+
+    ntp_daemon::spawn(&config, &peer_configs, peers, system).await?;
+
+    Ok(())
 }
