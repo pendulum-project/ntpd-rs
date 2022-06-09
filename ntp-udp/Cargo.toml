@@ -10,7 +10,7 @@ license = "Apache-2.0 OR MIT"
 tokio = { version = "1.18.2", features = ["net"] }
 libc = "0.2.126"
 ntp-proto = { path = "../ntp-proto" }
-tracing = "0.1.34"
+tracing = "0.1.35"
 
 [dev-dependencies]
 tokio-test = "0.4.2"
