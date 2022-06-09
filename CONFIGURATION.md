@@ -100,9 +100,11 @@ distance_threshold = 1
 
 NTPD-rs controls the system clock. Because the effects of poor steering can lead to the system clock quickly losing all connection to reality, much more so than no steering, there are several situations where the NTP daemon will terminate itself rather than continue steering the clock. Because of this, rather than setting up automatic restart of the NTP daemon on failure, we strongly recommend requiring human intervention before restart.
 
-Should you still desire to automatically restart the NTP daemon, there are several considerations to take into account. First, to limit the amount of clock shift allowed during startup it is recommended to set the startup_panic_threshold configuration parameter to match the panic_threshold parameter. Doing so ensures that rebooting cannot unintentionally cause larger steps than allowed during normal operations.
+Should you still desire to automatically restart the NTP daemon, there are several considerations to take into account. First, to limit the amount of clock shift allowed during startup it is recommended to set the `startup_panic_threshold` configuration parameter to match the `panic_threshold` parameter. Doing so ensures that rebooting cannot unintentionally cause larger steps than allowed during normal operations.
 
 Furthermore, if at all possible, rebooting should be limited to only those exit codes which are known to be caused by situations where a reboot is safe. In particular, the process should not be rebooted when exiting with status code 101, as this status code is returned when the NTP daemon detects abnormally large changes in the time indicated by the remote servers used.
+
+More guidance on proper configuration for regular operation is given in the [operational considerations documentation](OPERATIONAL_CONSIDERATIONS.md)
 
 ## Systemd configuration
 
