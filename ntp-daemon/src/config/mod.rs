@@ -85,7 +85,7 @@ fn default_configure_path() -> PathBuf {
 }
 
 const fn default_configure_permissions() -> u32 {
-    0o777
+    0o770
 }
 
 impl Default for ObserveConfig {
