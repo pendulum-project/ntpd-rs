@@ -106,7 +106,7 @@ Furthermore, if at all possible, rebooting should be limited to only those exit 
 
 ## Systemd configuration
 
-To run NTPD-rs as the system NTP service, the following systemd service definition can be used. Note that this service definition assumes that the ntp-daemon binary has been installed to `/usr/local/bin`, and that the configuration is stored in the default `/etc/ntp.toml` location. Furthermore, it assumes the existence of a low-privileged `ntpd-rs` group and user.
+To run NTPD-rs as the system NTP service, the following systemd service definition can be used. Note that this service definition assumes that the ntp-daemon binary has been installed to `/usr/local/bin`, and that the configuration is stored in the default `/etc/ntp.toml` location. Furthermore, it assumes the existence of a low-privileged `ntpd-rs` group and user. Refer to your distribution's documentation for information on how to create such accounts.
 
 Note that because of the aforementioned limitations around peer configuration, this service file requires the network-online target. As a result, using this may increase boot times significantly, especially on machines that do not have permanent network connectivity.
 
