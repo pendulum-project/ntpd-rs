@@ -78,18 +78,14 @@ async fn run(
         let ntp_instant = NtpInstant::now();
         let system_poll = global_system_snapshot.read().await.poll_interval;
 
-        let new = {
-            let mut writer = peers_rwlock.write().await;
-
-            writer.receive_update(
-                msg_for_system,
-                reset_epoch,
-                ntp_instant,
-                config.frequency_tolerance,
-                config.distance_threshold,
-                system_poll,
-            )
-        };
+        let new = peers_rwlock.write().await.receive_update(
+            msg_for_system,
+            reset_epoch,
+            ntp_instant,
+            config.frequency_tolerance,
+            config.distance_threshold,
+            system_poll,
+        );
 
         if let NewMeasurement::No = new {
             continue;
