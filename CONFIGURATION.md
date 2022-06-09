@@ -1,0 +1,130 @@
+# Configuring NTPD-rs
+
+If you want to try out NTPD-rs on a non-critical system, this guide provides the basic information needed to properly build and configure NTPD-rs. This software SHOULD NOT be used on any system where you cannot handle either reliability or security issues.
+
+## Limitations
+
+The current implementation has several important limitations:
+
+ - The current implementation is client-only, and does not support acting as an NTP server.
+ - There is no support for broadcast client/server or symmetric active/passive connections, only acting as the client towards a server node is implemented.
+ - DNS lookup is currently only done at startup. Changes in the IP address of a remote server are not picked up until a restart of the daemon.
+ - There is no support for NTP pools yet. Multiple servers should be configured manually in the configuration file.
+ - Changes in network interfaces are not picked up dynamically and will require a restart of the daemon.
+
+## Building
+
+Currently, NTPD-rs only supports Linux-based operating systems. Our current testing only targets Linux kernels after version 5.0.0, older kernels may work but this is not guaranteed.
+
+NTPD-rs is written in rust, and has so far only been tested with cargo 1.61.0 and later. Earlier versions may work but are currently not included in our testing regime. We strongly recommend using [rustup](https://rustup.rs) to install rust/cargo, as the version provided by system package managers tend to be out of date.
+
+To build NTPD-rs run:
+
+```sh
+cargo build --release
+```
+
+This produces a binary `ntp-daemon` in the `target/release` folder, which is the main NTP daemon. The daemon requires elevated permissions in order to change the system clock. It can be tested against a server in the [NTP pool](https://ntppool.org) (please ensure no other NTP daemons are running):
+
+```sh
+sudo ./target/release/ntp-daemon -p pool.ntp.org
+```
+
+After a few minutes you should start to see messages indicating the offset of your machine from the server.
+
+## Configuration
+
+The ntp-daemon binary can be configured through two channels: via command line options and via a configuration file. The command line options are primarily intended to tell ntp-daemon where to find its configuration file, and to override the most important settings when debugging problems. The configuration file is the preferred method of configuring ntp-daemon, and allows changing of settings not available through the command line.
+
+### Command line options
+
+The following command line options are available. When an option is not provided, the indicated default is used.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `-c <FILE>`, `--config <FILE>` | First existing of `./ntp.toml`, `/etc/ntp.toml` | Which configuration file to use. When provided, the fallback locations are not used. |
+| `-l <LEVEL>`, `--log-filter <LEVEL>` | From configuration file | Override for the configuration file `log_filter` parameter, see explanation there. |
+| `-p <ADDR>`, `--peer <ADDR>` | | Setup a connection to the given server, overrides the peers in the configuration file. Can be given multiple times to configure multiple servers as reference. |
+
+### Configuration file
+
+The ntp-daemon's primary configuration method is through a TOML configuration file. By default, this is looked for first in the current working directory (e.g. under `./ntp.toml`), and next in the system-wide configuration directories under `/etc/ntp.toml`. A non-standard location can be provided via the `-c` or `--config` command line flags.
+
+General options:
+| Option | Default | Description |
+| --- | --- | --- |
+| log_filter | info | Set the amount of information logged. Available levels: trace, debug, info, warn. |
+
+Peers are configured in the `peers` list. Per peer, the following options are available:
+| Option | Default | Description |
+| --- | --- | --- |
+| addr | | Address of the remote server |
+Note that peers can also be generated from simply a string containing the address, see also the example below.
+
+There are a number of options available to influence how time differences to the various servers are used to synchronize the system clock. All of these are part of the `system` section of the configuration:
+| Option | Default | Description |
+| --- | --- | --- |
+| min_intersection_survivors | 1 | Minimum number of servers that need to agree on the true time from our perspective for synchronization to start. |
+| min_cluster_survivors | 3 | Number of servers beyond which we do not try to exclude further servers for the purpose of improving measurement precision. Do not change unless familiar with the NTP algorithms. |
+| frequency_tolerance | 15 | Estimate of the short-time frequency precision of the local clock, in parts-per-million. The default is usually a good approximation. |
+| distance_threshold | 1 | Maximum delay to the clock representing ground truth via a peer for that peer to be considered acceptable, in seconds. |
+| frequency_measurement_period | 900 | Amount of time to spend on startup measuring the frequency offset of the system clock, in seconds. Lowering this means the clock is kept actively synchronized sooner, but reduces the precision of the initial frequency estimate, which could result in lower stability of the clock early on. |
+| spike_threshold | 900 | Amount of time before a clock difference larger than 125ms is considered real instead of a spike in the network. Lower values ensure large errors are corrected faster, but make the client more sensitive to network issues. Value provided is in seconds. |
+| panic_threshold | 1800 | Largest time difference the client is allowed to correct in one go. Differences beyond this cause the client to abort synchronization. Value provided is in seconds, set to 0 to disable checking of jumps. |
+| startup_panic_threshold | Disabled | Largest time difference the client is allowed to correct during startup. By default, this is unrestricted as we may be the initial source of time for systems without a hardware backed clock. Value provided is in seconds, set to 0 to disable checking of jumps. |
+
+An example of a configuration file is provided below:
+```toml
+# Other values include trace, debug, warn and error
+log_filter = "info"
+
+# Peers can be configured as a simple list (pool servers from ntppool.org)
+peers = ["0.pool.ntp.org", "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
+
+# Or by providing written out configuration
+# [[peers]]
+# addr = "0.pool.ntp.org:123"
+#
+
+# [[peers]]
+# addr = "1.pool.ntp.org:123"
+
+# System parameters used in filtering and steering the clock:
+[system]
+min_intersection_survivors = 1
+min_cluster_survivors = 3
+frequency_tolerance = 15
+distance_threshold = 1
+```
+
+## Operational concerns
+
+NTPD-rs controls the system clock. Because the effects of poor steering can lead to the system clock quickly losing all connection to reality, much more so than no steering, there are several situations where the NTP daemon will terminate itself rather than continue steering the clock. Because of this, rather than setting up automatic restart of the NTP daemon on failure, we strongly recommend requiring human intervention before a restart.
+
+Should you still desire to automatically restart the NTP daemon, there are several considerations to take into account. First, to limit the amount of clock shift allowed during startup it is recommended to set the startup_panic_threshold configuration parameter to match the panic_threshold parameter. Doing so ensures that rebooting cannot unintentionally cause larger steps than allowed during normal operations.
+
+Furthermore, if at all possible, rebooting should be limited to only those exit codes which are known to be caused by situations where a reboot is safe. In particular, the process should not be rebooted when exiting with status code 101, as this status code is returned when the NTP daemon detects abnormally large changes in the time indicated by the remote servers used.
+
+## Systemd configuration
+
+To run NTPD-rs as the system NTP service, the following systemd service definition can be used. Note that this service definition assumes that the ntp-daemon binary has been installed to `/usr/local/bin`, and that the configuration is stored in the default `/etc/ntp.toml` location.
+
+Note that because of the aforementioned limitations around peer configuration, this service file requires the network-online target. As a result, using this may increase boot times significantly, especially on machines that do not have permanent network connectivity.
+
+This service should not be used at the same time as other NTP services. It explicitly disables the systemd built-in timesyncd service, but be aware that your operating system may use another NTP service.
+
+```ini
+[Unit]
+Description=Rust Network Time Service
+Documentation=https://github.com/memorysafety/ntpd-rs
+After=network-online.target
+Wants=network-online.target
+Conflicts=systemd-timesyncd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/ntp-daemon
+
+[Install]
+WantedBy=multi-user.target
+```
