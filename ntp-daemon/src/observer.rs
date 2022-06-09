@@ -1,4 +1,4 @@
-use crate::Peers;
+use crate::{ObservablePeerState, Peers};
 use ntp_proto::SystemSnapshot;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
@@ -7,10 +7,10 @@ use tokio::task::JoinHandle;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
-pub enum Observe {
-    Peers,
-    System,
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ObservableState {
+    system: SystemSnapshot,
+    peers: Vec<ObservablePeerState>,
 }
 
 pub async fn spawn(
@@ -38,29 +38,14 @@ async fn observer(
     let permissions: std::fs::Permissions = PermissionsExt::from_mode(config.mode);
     std::fs::set_permissions(&config.path, permissions)?;
 
-    let mut observed = Vec::with_capacity(8);
-    let mut msg = Vec::with_capacity(16 * 1024);
-
     loop {
         let (mut stream, _addr) = peers_listener.accept().await?;
 
-        let operation: Observe = crate::sockets::read_json(&mut stream, &mut msg).await?;
+        let observe = ObservableState {
+            peers: peers_reader.read().await.observe().collect(),
+            system: *system_reader.read().await,
+        };
 
-        match operation {
-            Observe::Peers => {
-                {
-                    let state = peers_reader.read().await;
-
-                    observed.clear();
-                    observed.extend(state.observe());
-                }
-
-                crate::sockets::write_json(&mut stream, &observed).await?;
-            }
-            Observe::System => {
-                let state = *system_reader.read().await;
-                crate::sockets::write_json(&mut stream, &state).await?;
-            }
-        }
+        crate::sockets::write_json(&mut stream, &observe).await?;
     }
 }

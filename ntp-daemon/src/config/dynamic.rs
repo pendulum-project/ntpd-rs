@@ -24,6 +24,7 @@ async fn dynamic_configuration(
     config: ConfigureConfig,
     log_reload_handle: ReloadHandle,
 ) -> std::io::Result<()> {
+    dbg!(&config.path);
     // must unlink path before the bind below (otherwise we get "address already in use")
     if config.path.exists() {
         std::fs::remove_file(&config.path)?;

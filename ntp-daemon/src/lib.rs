@@ -10,4 +10,4 @@ pub mod tracing;
 pub use system::spawn;
 pub use system::{ObservablePeerState, Peers};
 
-pub use observer::Observe;
+pub use observer::ObservableState;
