@@ -1,43 +1,35 @@
-use clap::{Arg, Command};
+use clap::{Parser, Subcommand};
 use ntp_daemon::ObservableState;
 
-pub const CMD_PEERS: &str = "peers";
-pub const CMD_SYSTEM: &str = "system";
-pub const CMD_CONFIG: &str = "config";
+#[derive(Parser)]
+#[clap(version = "0.1.0", about = "Query and configure the NTPD-rs daemon")]
+#[clap(arg_required_else_help(true))]
+struct Cli {
+    #[clap(subcommand)]
+    command: Command,
+}
 
-pub const FLAG_LOG_FILTER: &str = "log-filter";
-
-fn build_app<'a>() -> Command<'a> {
-    Command::new("client")
-        // .version(concatcp!(VERSION, "\n"))
-        // .about("Runs the given .roc file, if there are no compilation errors.\nUse one of the SUBCOMMANDS below to do something else!")
-        .subcommand(
-            Command::new(CMD_PEERS)
-                .about("Information about the peers the daemon is currently connected with"),
-        )
-        .subcommand(
-            Command::new(CMD_SYSTEM).about("Information about the state of the daemon itself"),
-        )
-        .subcommand(
-            Command::new(CMD_CONFIG)
-                .about("Adjust configuration (e.g. loglevel) of the daemon")
-                .arg(
-                    Arg::new(FLAG_LOG_FILTER)
-                        .long(FLAG_LOG_FILTER)
-                        .help("Change the log filter")
-                        .default_value("error")
-                        .required(false),
-                ),
-        )
+#[derive(Subcommand)]
+enum Command {
+    #[clap(about = "Information about the peers the daemon is currently connected with")]
+    Peers,
+    #[clap(about = "Information about the state of the daemon itself")]
+    System,
+    #[clap(about = "Adjust configuration (e.g. loglevel) of the daemon")]
+    Config {
+        #[clap(default_value = "info")]
+        #[clap(required(false))]
+        /// Change the log filter
+        log_filter: String,
+    },
 }
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    let matches = build_app().get_matches();
+    let cli = Cli::parse();
 
-    let exit_code = match matches.subcommand() {
-        None => return build_app().print_help(),
-        Some((CMD_PEERS, _matches)) => {
+    let exit_code = match cli.command {
+        Command::Peers => {
             let mut stream = tokio::net::UnixStream::connect("/run/ntpd-rs/observe").await?;
 
             let mut msg = Vec::with_capacity(16 * 1024);
@@ -48,7 +40,7 @@ async fn main() -> std::io::Result<()> {
 
             0
         }
-        Some((CMD_SYSTEM, _matches)) => {
+        Command::System => {
             let mut stream = tokio::net::UnixStream::connect("/run/ntpd-rs/observe").await?;
 
             let mut msg = Vec::with_capacity(16 * 1024);
@@ -59,20 +51,15 @@ async fn main() -> std::io::Result<()> {
 
             0
         }
-        Some((CMD_CONFIG, matches)) => {
-            if let Some(filter) = matches.value_of(FLAG_LOG_FILTER) {
-                let mut stream = tokio::net::UnixStream::connect("/run/ntpd-rs/configure").await?;
+        Command::Config { log_filter } => {
+            let mut stream = tokio::net::UnixStream::connect("/run/ntpd-rs/configure").await?;
 
-                let msg = ntp_daemon::config::dynamic::Configure::LogLevel {
-                    filter: filter.to_owned(),
-                };
+            let msg = ntp_daemon::config::dynamic::Configure::LogLevel { filter: log_filter };
 
-                ntp_daemon::sockets::write_json(&mut stream, &msg).await?;
-            }
+            ntp_daemon::sockets::write_json(&mut stream, &msg).await?;
 
             0
         }
-        _ => unreachable!(),
     };
 
     std::process::exit(exit_code);
