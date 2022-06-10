@@ -15,6 +15,7 @@ where
 }
 
 #[derive(Deserialize, Debug, Clone, Copy)]
+#[serde(rename_all = "kebab-case")]
 pub struct SystemConfig {
     /// Minimum number of survivors needed to be able to discipline the system clock.
     /// More survivors (so more servers from which to get the time) means a more accurate time.

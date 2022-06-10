@@ -43,7 +43,7 @@ The following command line options are available. When an option is not provided
 | Option | Default | Description |
 | --- | --- | --- |
 | `-c <FILE>`, `--config <FILE>` | First existing of `./ntp.toml`, `/etc/ntp.toml` | Which configuration file to use. When provided, the fallback locations are not used. |
-| `-l <LEVEL>`, `--log-filter <LEVEL>` | From configuration file | Override for the configuration file `log_filter` parameter, see explanation there. |
+| `-l <LEVEL>`, `--log-filter <LEVEL>` | From configuration file | Override for the configuration file `log-filter` parameter, see explanation there. |
 | `-p <ADDR>`, `--peer <ADDR>` | | Setup a connection to the given server, overrides the peers in the configuration file. Can be given multiple times to configure multiple servers as reference. |
 
 ### Configuration file
@@ -53,30 +53,42 @@ The ntp-daemon's primary configuration method is through a TOML configuration fi
 General options:
 | Option | Default | Description |
 | --- | --- | --- |
-| log_filter | info | Set the amount of information logged. Available levels: trace, debug, info, warn. |
+| log-filter | info | Set the amount of information logged. Available levels: trace, debug, info, warn. |
 
-Peers are configured in the `peers` list. Per peer, the following options are available:
+Peers are configured in the `peers` section. Per peer, the following options are available:
 | Option | Default | Description |
 | --- | --- | --- |
 | addr | | Address of the remote server |
 Note that peers can also be generated from simply a string containing the address, see also the example below.
 
+The daemon exposes an observation socket that can be read to obtain information on the current state of the peer connections and clock steering algorithm. This socket can be configured via the `observe` sections:
+| Option | Default | Description |
+| --- | --- | --- |
+| path | `/run/ntpd-rs/observe` | Path on which the observation socket is exposed. |
+| mode | 0o777 | Permissions with which the socket should be created, given as (octal) integer. |
+
+The daemon also exposes a configuration socket that can be used to change some configuration options dynamically. This socket can be configured via the `configure` sections:
+| Option | Default | Description |
+| --- | --- | --- |
+| path | `/run/ntpd-rs/configure` | Path on which the observation socket is exposed. |
+| mode | 0o777 | Permissions with which the socket should be created, given as (octal) integer. |
+
 There are a number of options available to influence how time differences to the various servers are used to synchronize the system clock. All of these are part of the `system` section of the configuration:
 | Option | Default | Description |
 | --- | --- | --- |
-| min_intersection_survivors | 1 | Minimum number of servers that need to agree on the true time from our perspective for synchronization to start. |
-| min_cluster_survivors | 3 | Number of servers beyond which we do not try to exclude further servers for the purpose of improving measurement precision. Do not change unless familiar with the NTP algorithms. |
-| frequency_tolerance | 15 | Estimate of the short-time frequency precision of the local clock, in parts-per-million. The default is usually a good approximation. |
-| distance_threshold | 1 | Maximum delay to the clock representing ground truth via a peer for that peer to be considered acceptable, in seconds. |
-| frequency_measurement_period | 900 | Amount of time to spend on startup measuring the frequency offset of the system clock, in seconds. Lowering this means the clock is kept actively synchronized sooner, but reduces the precision of the initial frequency estimate, which could result in lower stability of the clock early on. |
-| spike_threshold | 900 | Amount of time before a clock difference larger than 125ms is considered real instead of a spike in the network. Lower values ensure large errors are corrected faster, but make the client more sensitive to network issues. Value provided is in seconds. |
-| panic_threshold | 1800 | Largest time difference the client is allowed to correct in one go. Differences beyond this cause the client to abort synchronization. Value provided is in seconds, set to 0 to disable checking of jumps. |
-| startup_panic_threshold | Disabled | Largest time difference the client is allowed to correct during startup. By default, this is unrestricted as we may be the initial source of time for systems without a hardware backed clock. Value provided is in seconds, set to 0 to disable checking of jumps. |
+| min-intersection-survivors | 1 | Minimum number of servers that need to agree on the true time from our perspective for synchronization to start. |
+| min-cluster-survivors | 3 | Number of servers beyond which we do not try to exclude further servers for the purpose of improving measurement precision. Do not change unless familiar with the NTP algorithms. |
+| frequency-tolerance | 15 | Estimate of the short-time frequency precision of the local clock, in parts-per-million. The default is usually a good approximation. |
+| distance-threshold | 1 | Maximum delay to the clock representing ground truth via a peer for that peer to be considered acceptable, in seconds. |
+| frequency-measurement-period | 900 | Amount of time to spend on startup measuring the frequency offset of the system clock, in seconds. Lowering this means the clock is kept actively synchronized sooner, but reduces the precision of the initial frequency estimate, which could result in lower stability of the clock early on. |
+| spike-threshold | 900 | Amount of time before a clock difference larger than 125ms is considered real instead of a spike in the network. Lower values ensure large errors are corrected faster, but make the client more sensitive to network issues. Value provided is in seconds. |
+| panic-threshold | 1800 | Largest time difference the client is allowed to correct in one go. Differences beyond this cause the client to abort synchronization. Value provided is in seconds, set to 0 to disable checking of jumps. |
+| startup-panic-threshold | Disabled | Largest time difference the client is allowed to correct during startup. By default, this is unrestricted as we may be the initial source of time for systems without a hardware backed clock. Value provided is in seconds, set to 0 to disable checking of jumps. |
 
 An example of a configuration file is provided below:
 ```toml
 # Other values include trace, debug, warn and error
-log_filter = "info"
+log-filter = "info"
 
 # Peers can be configured as a simple list (pool servers from ntppool.org)
 peers = ["0.pool.ntp.org", "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
@@ -91,17 +103,17 @@ peers = ["0.pool.ntp.org", "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
 
 # System parameters used in filtering and steering the clock:
 [system]
-min_intersection_survivors = 1
-min_cluster_survivors = 3
-frequency_tolerance = 15
-distance_threshold = 1
+min-intersection-survivors = 1
+min-cluster-survivors = 3
+frequency-tolerance = 15
+distance-threshold = 1
 ```
 
 ## Operational concerns
 
 NTPD-rs controls the system clock. Because the effects of poor steering can lead to the system clock quickly losing all connection to reality, much more so than no steering, there are several situations where the NTP daemon will terminate itself rather than continue steering the clock. Because of this, rather than setting up automatic restart of the NTP daemon on failure, we strongly recommend requiring human intervention before a restart.
 
-Should you still desire to automatically restart the NTP daemon, there are several considerations to take into account. First, to limit the amount of clock shift allowed during startup it is recommended to set the `startup_panic_threshold` configuration parameter to match the `panic_threshold` parameter. Doing so ensures that rebooting cannot unintentionally cause larger steps than allowed during normal operations.
+Should you still desire to automatically restart the NTP daemon, there are several considerations to take into account. First, to limit the amount of clock shift allowed during startup it is recommended to set the `startup-panic-threshold` configuration parameter to match the `panic-threshold` parameter. Doing so ensures that rebooting cannot unintentionally cause larger steps than allowed during normal operations.
 
 Furthermore, if at all possible, rebooting should be limited to only those exit codes which are known to be caused by situations where a reboot is safe. In particular, the process should not be rebooted when exiting with status code 101, as this status code is returned when the NTP daemon detects abnormally large changes in the time indicated by the remote servers used.
 

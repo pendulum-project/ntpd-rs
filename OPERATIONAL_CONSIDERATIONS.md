@@ -32,3 +32,11 @@ The abnormal conditions resulting in a shutdown include:
 We strongly recommend against automatically restarting the daemon when it exits, as doing so may cause additional incorrect steering of the system clock, resulting in a larger error against UTC than intended. Instead, a human operator should determine the root cause of the shutdown and decide on the proper corrective action to take.
 
 Should it really be desirable to restart the daemon under certain circumstances (such as when killed by the Linux out-of-memory killer), this automatic restart should be configured as restrictive as possible, so as not to trigger outside the intended circumstance. For reboot upon activation of the out-of-memory killer, this could for example be achieved by checking that the exit code is 137 (which is guaranteed never to be used by the daemon itself). Furthermore, it is strongly recommended to reduce the `startup-panic-threshold` to match `panic-threshold`, in order to ensure that automatic restarting of the daemon does not unintentionally induce large corrections to the system clock.
+
+## Observability and configuration sockets
+
+The NTPD-rs daemon exposes two sockets:
+ - The observe socket is read-only and exposes some of the peer and clock algorithm state.
+ - The configuration socket accepts commands and allows changing of some of the configuration settings.
+
+By default, these sockets are exposed in the `/run/ntpd-rs/` directory, with `0o777` permissions. You should consider restricting access to these sockets, depending on the other software running on the system, and the techniques used for managing it.

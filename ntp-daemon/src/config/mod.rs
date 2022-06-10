@@ -48,6 +48,7 @@ pub struct CmdArgs {
 }
 
 #[derive(Deserialize, Debug, Default)]
+#[serde(rename_all = "kebab-case")]
 pub struct Config {
     pub peers: Vec<PeerConfig>,
     #[serde(default)]
@@ -115,6 +116,7 @@ impl Default for ConfigureConfig {
 
 #[cfg(feature = "sentry")]
 #[derive(Deserialize, Debug, Default)]
+#[serde(rename_all = "kebab-case")]
 pub struct SentryConfig {
     pub dsn: Option<String>,
     #[serde(default = "default_sample_rate")]
@@ -195,7 +197,7 @@ mod tests {
         );
 
         let config: Config =
-            toml::from_str("log_filter = \"\"\n[[peers]]\naddr = \"example.com\"").unwrap();
+            toml::from_str("log-filter = \"\"\n[[peers]]\naddr = \"example.com\"").unwrap();
         assert!(config.log_filter.is_none());
         assert_eq!(
             config.peers,
@@ -206,7 +208,7 @@ mod tests {
         );
 
         let config: Config =
-            toml::from_str("log_filter = \"info\"\n[[peers]]\naddr = \"example.com\"").unwrap();
+            toml::from_str("log-filter = \"info\"\n[[peers]]\naddr = \"example.com\"").unwrap();
         assert!(config.log_filter.is_some());
         assert_eq!(
             config.peers,
@@ -217,7 +219,7 @@ mod tests {
         );
 
         let config: Config =
-            toml::from_str("[[peers]]\naddr = \"example.com\"\n[system]\npanic_threshold = 0")
+            toml::from_str("[[peers]]\naddr = \"example.com\"\n[system]\npanic-threshold = 0")
                 .unwrap();
         assert_eq!(
             config.peers,
@@ -230,7 +232,7 @@ mod tests {
 
         let config: Config = toml::from_str(
             r#"
-            log_filter = "info"
+            log-filter = "info"
             [[peers]]
             addr = "example.com"
             [observe]
@@ -270,7 +272,7 @@ mod tests {
         assert_eq!(config.sentry.dsn, Some("abc".into()));
 
         let config: Config = toml::from_str(
-            "[[peers]]\naddr = \"example.com\"\n[sentry]\ndsn = \"abc\"\nsample_rate = 0.5",
+            "[[peers]]\naddr = \"example.com\"\n[sentry]\ndsn = \"abc\"\nsample-rate = 0.5",
         )
         .unwrap();
         assert_eq!(config.sentry.dsn, Some("abc".into()));
