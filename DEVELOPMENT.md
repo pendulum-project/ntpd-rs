@@ -9,7 +9,7 @@ NTPD-rs is split into 5 crates. Through this split, we aim to achieve 3 main goa
  - Split custom servers needed purely for integration testing from the main codebase
  - Limit the scopes where we use unsafe code, ensuring that it is more straightforward to verify.
 
-In particular, the main `ntp-proto` and `ntp-daemon` crates are setup such that neither contains any unsafe code. This is instead limited to the `ntp-udp` and `ntp-clock` crates, which are purposefully kept small and intend to only offer a safe API.
+In particular, the main `ntp-proto` and `ntp-daemon` crates are setup such that neither contains any unsafe code. This is instead limited to the `ntp-udp` and `ntp-clock` crates, which are purposefully kept small and only offer a safe API.
 
 ### ntp-proto
 
@@ -19,7 +19,7 @@ The `ntp-proto` crate contains the main NTP protocol implementation. It implemen
  - Measurement logic of the peer, including the per-peer filtering.
  - Clock selection, combination and steering algorithms.
 
-It is important to note that the code in this crate does not do the actual communication, nor does it do any of the handling needed to ensure that peer and steering logic is regularly called. It merely implements the decision and processing logic.
+This crate only implements the decision and processing logic. It does not perform the actual communication, nor does it do any of the handling needed to ensure that peer and steering logic is regularly called.
 
 ### ntp-daemon
 
@@ -29,11 +29,11 @@ The `ntp-daemon` crate contains the code orchestrating the running of the daemon
  - One task responsible for exposing state over the observability socket
  - One task responsible for handling dynamic changes in configuration commanded over the configuration socket.
 
-For each of these tasks, the daemon crate contains the code orchestrating the input/output and handing over relevant communications between the task. In particular, all code needed to deal with the async and parallel execution environment lives here. The implementation of the actual parsing of network packets, and the steering and filtering algorithms is not part of this crate, instead being handled in the `ntp-proto` crate.
+For each of these tasks, the daemon crate contains the logic for input/output and handing of relevant communications between the tasks. In particular, all code needed to deal with the async and parallel execution environment lives here. The implementation of the actual parsing of network packets, and the steering and filtering algorithms is handled by the `ntp-proto` crate.
 
 ### ntp-udp
 
-The `ntp-udp` crate provides an async interface to the Linux kernel's kernel-level network timestamping functionality. It wraps the system calls needed to configure kernel-level timestamping and for retrieving the actual timestamps. Note that it needs unsafe code to do this, and properly verify that the exposed API remains safe when making changes.
+The `ntp-udp` crate provides an async interface to the Linux kernel's kernel-level network timestamping functionality. It wraps the system calls for configuring kernel-level timestamping and for retrieving the actual timestamps. Note that it needs unsafe code to do this, and properly verify that the exposed API remains safe when making changes.
 
 ### ntp-clock
 
@@ -41,7 +41,7 @@ The `ntp-clock` crate wraps the system calls needed for controlling the system c
 
 ### test-binaries
 
-The `test-binaries` crate contains several binaries useful for doing integration tests. This includes, among other things
+The `test-binaries` crate contains several binaries that are useful for doing integration tests. This includes, among other things
  - A local test server that always replies with a `DENY` kiss code
  - A local test server that enforces a stricter-than-typical rate limit from the client.
 
@@ -49,9 +49,9 @@ If you need an additional program to aid in (manual) integration testing, this i
 
 ## NTP daemon startup and operating sequence.
 
-This section is intended to give a high-level overview of the operation of the ntp daemon, and how its various tasks are setup, configured and communicate.
+This section provides a high-level overview of the operation of the ntp daemon, and how its various tasks are setup, configured and communicate.
 
-Upon startup, the daemon first parses any given command line arguments and uses this to setup an initial logging system. This early setup of logging is done to ensure that during reading and parsing of the configuration files the logging system is available to expose information on errors.
+Upon startup, the daemon first parses any given command line arguments and uses these arguments to setup an initial logging system. This early setup of logging is done to ensure that during reading and parsing of the configuration files the logging system is available to expose information on errors.
 
 Immediately after, further configuration is read from file and used to generate the definitive logging system. At this point, the main configuration steps are completed, and the combined command line and file base configuration is used to setup 4 tasks:
  - The main clock steering task.
@@ -63,12 +63,12 @@ Immediately after, further configuration is read from file and used to generate 
 
 The daemon runs a single peer task per configured peer. This task is responsible for managing the network connection with that specific peer, sending the poll message to start a clock difference measurement, handling the response, and doing an initial filtering step over the measurements.
 
-The main loop of the peer waits on 3 futures simultaneously:
+The main loop of the peer waits on 3 futures concurrently:
  - A timer, which triggers sending a new poll message.
  - The network socket, receiving a packet here triggers packet processing and measurement filtering.
  - A reset channel, which triggers a reset of the filter state and cancels any currently in flight measurements (needed when the system clock needs to make a larger jump).
 
-Should any of these events happen, after handling it it then sends an updated version of the sections of its state needed for clock steering to the main clock steering task.
+Should any of these events happen, after handling it the peer task then sends an updated version of the sections of its state needed for clock steering to the main clock steering task.
 
 ### Clock steering task
 
@@ -82,7 +82,7 @@ The reset when doing a jump is a critical function of the clock steering task. A
 
 ### Observability task
 
-The observability task is responsible for handling external requests for insight into the daemons state. It creates and manages a UNIX socket which can be queried for information on the state of the daemon.
+The observability task is responsible for handling external requests for insight into the daemon's state. It creates and manages a UNIX socket which can be queried for information on the state of the daemon.
 
 Once an external program opens a connection to the UNIX socket, the observation daemon makes a copy of the state of all the peers and of the clock steering algorithm (it has access to these through a `RwLock` shared with the clock steering task). It then uses this to generate a JSON bytestream with information, which it then writes to the connection. Immediately afterwards, the entire connection is closed.
 
