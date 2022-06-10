@@ -55,11 +55,23 @@ General options:
 | --- | --- | --- |
 | log-filter | info | Set the amount of information logged. Available levels: trace, debug, info, warn. |
 
-Peers are configured in the `peers` list. Per peer, the following options are available:
+Peers are configured in the `peers` section. Per peer, the following options are available:
 | Option | Default | Description |
 | --- | --- | --- |
 | addr | | Address of the remote server |
 Note that peers can also be generated from simply a string containing the address, see also the example below.
+
+The daemon exposes an observation socket that can be read to obtain information on the current state of the peer connections and clock steering algorithm. This socket can be configured via the `observe` sections:
+| Option | Default | Description |
+| --- | --- | --- |
+| path | `/run/ntpd-rs/observe` | Path on which the observation socket is exposed. |
+| mode | 0o777 | Permissions with which the socket should be created, given as (octal) integer. |
+
+The daemon also exposes a configuration socket that can be used to change some configuration options dynamically. This socket can be configured via the `configure` sections:
+| Option | Default | Description |
+| --- | --- | --- |
+| path | `/run/ntpd-rs/configure` | Path on which the observation socket is exposed. |
+| mode | 0o777 | Permissions with which the socket should be created, given as (octal) integer. |
 
 There are a number of options available to influence how time differences to the various servers are used to synchronize the system clock. All of these are part of the `system` section of the configuration:
 | Option | Default | Description |
