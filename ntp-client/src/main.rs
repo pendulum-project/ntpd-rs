@@ -28,7 +28,7 @@ enum Command {
     #[clap(about = "Adjust configuration (e.g. loglevel) of the daemon")]
     Config {
         /// Change the log filter
-        #[clap(long, short, global = true, parse(try_from_str = parse_env_filter), env = "NTP_LOG")]
+        #[clap(long, short, global = true, parse(try_from_str = parse_env_filter))]
         log_filter: Option<Box<EnvFilter>>,
     },
 }
