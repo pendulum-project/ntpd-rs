@@ -1,5 +1,5 @@
 [package]
-name = "test-binaries"
+name = "ntp-client"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0 OR MIT"
@@ -8,12 +8,9 @@ license = "Apache-2.0 OR MIT"
 
 [dependencies]
 tokio = { version = "1.19.2", features = ["full"] }
-futures = "0.3.21"
-ntp-proto = { path = "../ntp-proto" }
-ntp-udp = { path = "../ntp-udp" }
 ntp-daemon = { path = "../ntp-daemon" }
-ntp-os-clock = { path = "../ntp-os-clock" }
 tracing = "0.1.35"
 tracing-subscriber = "0.3.11"
-serde_json = "1.0.81"
 clap = { version = "3.1.18", features = ["derive", "env"] }
+serde = { version = "1.0.137", features = ["derive"] }
+serde_json = "1.0.81"

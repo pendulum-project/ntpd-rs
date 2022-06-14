@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "ntp-daemon",
+    "ntp-client",
     "ntp-proto",
     "ntp-os-clock",
     "ntp-udp",

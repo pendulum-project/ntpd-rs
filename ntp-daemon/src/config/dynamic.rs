@@ -1,30 +1,28 @@
-use crate::{ObservablePeerState, Peers};
-use ntp_proto::SystemSnapshot;
+use crate::tracing::ReloadHandle;
 use std::os::unix::fs::PermissionsExt;
-use std::sync::Arc;
 use tokio::net::UnixListener;
 use tokio::task::JoinHandle;
+use tracing_subscriber::EnvFilter;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ObservableState {
-    pub system: SystemSnapshot,
-    pub peers: Vec<ObservablePeerState>,
+use super::ConfigureConfig;
+
+#[derive(Serialize, Deserialize)]
+pub enum Configure {
+    LogLevel { filter: String },
 }
 
 pub async fn spawn(
-    config: &crate::config::ObserveConfig,
-    peers_reader: Arc<tokio::sync::RwLock<Peers>>,
-    system_reader: Arc<tokio::sync::RwLock<SystemSnapshot>>,
+    config: ConfigureConfig,
+    log_reload_handle: ReloadHandle,
 ) -> JoinHandle<std::io::Result<()>> {
-    tokio::spawn(observer(config.clone(), peers_reader, system_reader))
+    tokio::spawn(dynamic_configuration(config, log_reload_handle))
 }
 
-async fn observer(
-    config: crate::config::ObserveConfig,
-    peers_reader: Arc<tokio::sync::RwLock<Peers>>,
-    system_reader: Arc<tokio::sync::RwLock<SystemSnapshot>>,
+async fn dynamic_configuration(
+    config: ConfigureConfig,
+    log_reload_handle: ReloadHandle,
 ) -> std::io::Result<()> {
     // must unlink path before the bind below (otherwise we get "address already in use")
     if config.path.exists() {
@@ -38,14 +36,20 @@ async fn observer(
     let permissions: std::fs::Permissions = PermissionsExt::from_mode(config.mode);
     std::fs::set_permissions(&config.path, permissions)?;
 
+    let mut msg = Vec::with_capacity(16 * 1024);
+
     loop {
         let (mut stream, _addr) = peers_listener.accept().await?;
 
-        let observe = ObservableState {
-            peers: peers_reader.read().await.observe().collect(),
-            system: *system_reader.read().await,
-        };
+        let operation: Configure = crate::sockets::read_json(&mut stream, &mut msg).await?;
 
-        crate::sockets::write_json(&mut stream, &observe).await?;
+        match operation {
+            Configure::LogLevel { filter } => {
+                tracing::info!(?filter, "setting log filter");
+                log_reload_handle
+                    .modify(|l| *l.filter_mut() = EnvFilter::new(filter))
+                    .unwrap();
+            }
+        }
     }
 }

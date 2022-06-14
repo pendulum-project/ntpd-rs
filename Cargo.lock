@@ -675,6 +675,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ntp-client"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "ntp-daemon",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "ntp-daemon"
 version = "0.1.0"
 dependencies = [
@@ -1298,6 +1311,7 @@ dependencies = [
 name = "test-binaries"
 version = "0.1.0"
 dependencies = [
+ "clap",
  "futures",
  "ntp-daemon",
  "ntp-os-clock",
