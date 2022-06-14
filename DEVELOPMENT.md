@@ -4,7 +4,7 @@ This document gives a high-level overview of the structure of NTPD-rs.
 
 ## Crates
 
-NTPD-rs is split into 5 crates with three goals in mind:
+NTPD-rs is split into several crates with three goals in mind:
 
  - Split the logic of protocol handling from the details around asynchronous network handling
  - Split custom servers needed purely for integration testing from the main codebase
@@ -31,6 +31,10 @@ The `ntp-daemon` crate contains the code orchestrating the running of the daemon
  - One task responsible for handling dynamic changes in configuration commanded over the configuration socket.
 
 For each of these tasks, the daemon crate contains the logic for input/output and handing of relevant communications between the tasks. In particular, all code needed to deal with the async and parallel execution environment lives here. The implementation of the actual parsing of network packets, and the steering and filtering algorithms is handled by the `ntp-proto` crate.
+
+### ntp-client
+
+The `ntp-client` crate communicates with the daemon's observability and configuration tasks (see below) to provide information about the daemon's state and change configuration options at runtime. 
 
 ### ntp-udp
 
@@ -91,4 +95,8 @@ Note that it never reads from any opened connection on the socket. This is on pu
 
 ### Configuration task
 
-To be implemented in the (near) future.
+The configuration task changes configuration dynamically at runtime. The task listens to a socket
+for new configuration changes. The `ntp-client` executable is an example of how to interact with 
+this socket.
+
+Because this task reads from its socket, it is advised to restrict the permissions on this socket. 
