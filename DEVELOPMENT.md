@@ -1,15 +1,16 @@
 # NTPD-rs development guide
 
-This document is intended to give a high-level overview of the structure of NTPD-rs.
+This document gives a high-level overview of the structure of NTPD-rs.
 
 ## Crates
 
-NTPD-rs is split into 5 crates. Through this split, we aim to achieve 3 main goals
+NTPD-rs is split into 5 crates with three goals in mind:
+
  - Split the logic of protocol handling from the details around asynchronous network handling
  - Split custom servers needed purely for integration testing from the main codebase
  - Limit the scopes where we use unsafe code, ensuring that it is more straightforward to verify.
 
-In particular, the main `ntp-proto` and `ntp-daemon` crates are setup such that neither contains any unsafe code. This is instead limited to the `ntp-udp` and `ntp-clock` crates, which are purposefully kept small and only offer a safe API.
+The main `ntp-proto` and `ntp-daemon` crates are setup such that neither contains any unsafe code. Unsafe code is limited to the `ntp-udp` and `ntp-clock` crates, which are purposefully kept small and only offer a safe API.
 
 ### ntp-proto
 
@@ -33,11 +34,11 @@ For each of these tasks, the daemon crate contains the logic for input/output an
 
 ### ntp-udp
 
-The `ntp-udp` crate provides an async interface to the Linux kernel's kernel-level network timestamping functionality. It wraps the system calls for configuring kernel-level timestamping and for retrieving the actual timestamps. Note that it needs unsafe code to do this, and properly verify that the exposed API remains safe when making changes.
+The `ntp-udp` crate provides an async interface to the Linux kernel's kernel-level network timestamping functionality. It wraps the system calls for configuring kernel-level timestamping and for retrieving the actual timestamps. Touching the network layer uses `libc` and is inherently unsafe.
 
 ### ntp-clock
 
-The `ntp-clock` crate wraps the system calls needed for controlling the system clock. Note that it needs unsafe code to do this, and properly verify that the exposed API remains safe when making changes.
+The `ntp-clock` crate wraps the system calls needed for controlling the system clock. Touching the system clock uses `libc` and is inherently unsafe.
 
 ### test-binaries
 
