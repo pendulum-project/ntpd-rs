@@ -1,3 +1,5 @@
+![checks](https://github.com/memorysafety/ntpd-rs/actions/workflows/build.yaml/badge.svg)[![codecov](https://codecov.io/gh/memorysafety/ntpd-rs/branch/main/graph/badge.svg?token=WES1JIYUJH)](https://codecov.io/gh/memorysafety/ntpd-rs)
+
 # NTPD-rs
 
 NTPD-rs is an implementation of NTP completely written in Rust, with a focus on exposing a minimal attack surface. The project is currently in an early stage, and is not yet suitable for daily use. However, you can try it out if you are comfortable with running pre-release software.
