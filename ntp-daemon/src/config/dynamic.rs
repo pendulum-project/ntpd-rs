@@ -1,7 +1,9 @@
 use crate::tracing::ReloadHandle;
+use ntp_proto::{NtpDuration, SystemConfig};
 use std::os::unix::fs::PermissionsExt;
-use tokio::net::UnixListener;
+use std::sync::Arc;
 use tokio::task::JoinHandle;
+use tokio::{net::UnixListener, sync::RwLock};
 use tracing_subscriber::EnvFilter;
 
 use clap::Args;
@@ -20,7 +22,7 @@ fn parse_env_filter(input: &str) -> Result<String, tracing_subscriber::filter::P
 #[derive(Debug, Args, Serialize, Deserialize)]
 pub struct ConfigUpdate {
     /// Change the log filter
-    #[clap(parse(try_from_str = parse_env_filter))]
+    #[clap(long, parse(try_from_str = parse_env_filter))]
     pub log_filter: Option<String>,
 
     /// The maximum duration in seconds the system clock is allowed to change in a single jump
@@ -30,23 +32,31 @@ pub struct ConfigUpdate {
     ///
     /// Note that this is not used during startup. To limit system clock changes
     /// during startup, use startup_panic_threshold
+    #[clap(long)]
     pub panic_threshold: Option<f64>,
 
     /// The maximum duration in seconds the system clock is allowed to change during startup.
     /// This can be used to limit the impact of bad servers if the system clock
     /// is known to be reasonable on startup
+    #[clap(long)]
     pub startup_panic_threshold: Option<f64>,
 }
 
 pub async fn spawn(
     config: ConfigureConfig,
+    system_config: Arc<RwLock<SystemConfig>>,
     log_reload_handle: ReloadHandle,
 ) -> JoinHandle<std::io::Result<()>> {
-    tokio::spawn(dynamic_configuration(config, log_reload_handle))
+    tokio::spawn(dynamic_configuration(
+        config,
+        system_config,
+        log_reload_handle,
+    ))
 }
 
 async fn dynamic_configuration(
     config: ConfigureConfig,
+    system_config: Arc<RwLock<SystemConfig>>,
     log_reload_handle: ReloadHandle,
 ) -> std::io::Result<()> {
     // must unlink path before the bind below (otherwise we get "address already in use")
@@ -77,11 +87,14 @@ async fn dynamic_configuration(
         }
 
         if let Some(panic_threshold) = operation.panic_threshold {
-            todo!()
+            let mut config = system_config.write().await;
+            config.panic_threshold = Some(NtpDuration::from_seconds(panic_threshold));
         }
 
         if let Some(startup_panic_threshold) = operation.startup_panic_threshold {
-            todo!()
+            let mut config = system_config.write().await;
+            config.startup_panic_threshold =
+                Some(NtpDuration::from_seconds(startup_panic_threshold));
         }
     }
 }

@@ -244,7 +244,7 @@ impl NtpDuration {
         self.duration as f64 / u32::MAX as f64
     }
 
-    pub(crate) fn from_seconds(seconds: f64) -> Self {
+    pub fn from_seconds(seconds: f64) -> Self {
         let i = seconds.floor();
         let f = seconds - i;
 
