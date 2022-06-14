@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 use ntp_daemon::ObservableState;
+use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
 #[clap(version = "0.1.0", about = "Query and configure the NTPD-rs daemon")]
@@ -7,6 +8,10 @@ use ntp_daemon::ObservableState;
 struct Cli {
     #[clap(subcommand)]
     command: Command,
+}
+
+fn parse_env_filter(input: &str) -> Result<EnvFilter, tracing_subscriber::filter::ParseError> {
+    EnvFilter::builder().with_regex(false).parse(input)
 }
 
 #[derive(Subcommand)]
@@ -17,10 +22,9 @@ enum Command {
     System,
     #[clap(about = "Adjust configuration (e.g. loglevel) of the daemon")]
     Config {
-        #[clap(default_value = "info")]
-        #[clap(required(false))]
         /// Change the log filter
-        log_filter: String,
+        #[clap(long, short, global = true, parse(try_from_str = parse_env_filter), env = "NTP_LOG")]
+        log_filter: Option<EnvFilter>,
     },
 }
 
@@ -52,11 +56,18 @@ async fn main() -> std::io::Result<()> {
             0
         }
         Command::Config { log_filter } => {
-            let mut stream = tokio::net::UnixStream::connect("/run/ntpd-rs/configure").await?;
+            if let Some(log_filter) = log_filter {
+                let mut stream = tokio::net::UnixStream::connect("/run/ntpd-rs/configure").await?;
 
-            let msg = ntp_daemon::config::dynamic::Configure::LogLevel { filter: log_filter };
+                // convert to string because `EnvFilter` is not `Serialize`. But we did validate it
+                // already, so any parse errors are reported in the client and invalid filters
+                // don't make it into the daemon
+                let msg = ntp_daemon::config::dynamic::Configure::LogLevel {
+                    filter: log_filter.to_string(),
+                };
 
-            ntp_daemon::sockets::write_json(&mut stream, &msg).await?;
+                ntp_daemon::sockets::write_json(&mut stream, &msg).await?;
+            }
 
             0
         }

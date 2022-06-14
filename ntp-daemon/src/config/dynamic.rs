@@ -45,6 +45,7 @@ async fn dynamic_configuration(
 
         match operation {
             Configure::LogLevel { filter } => {
+                tracing::info!(?filter, "setting log filter");
                 log_reload_handle
                     .modify(|l| *l.filter_mut() = EnvFilter::new(filter))
                     .unwrap();
