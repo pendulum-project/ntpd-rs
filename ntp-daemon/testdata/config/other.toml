@@ -1,0 +1,4 @@
+peers=["example.com"]
+
+[system]
+min-intersection-survivors = 3

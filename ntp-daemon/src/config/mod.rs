@@ -184,6 +184,8 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
+    use std::env;
+
     use super::*;
 
     #[test]
@@ -278,5 +280,46 @@ mod tests {
         .unwrap();
         assert_eq!(config.sentry.dsn, Some("abc".into()));
         assert!((config.sentry.sample_rate - 0.5).abs() < 1e-9);
+    }
+
+    #[tokio::test]
+    async fn test_file_config() {
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        d.push("testdata/config");
+        env::set_current_dir(d).unwrap();
+
+        let config = Config::from_args(None as Option<&'static str>, vec![])
+            .await
+            .unwrap();
+        assert_eq!(config.system.min_intersection_survivors, 2);
+        assert_eq!(config.peers.len(), 1);
+
+        let config = Config::from_args(Some("other.toml"), vec![]).await.unwrap();
+        assert_eq!(config.system.min_intersection_survivors, 3);
+        assert_eq!(config.peers.len(), 1);
+
+        let config = Config::from_args(
+            None as Option<&'static str>,
+            vec![
+                PeerConfig::new("a.com".into()),
+                PeerConfig::new("b.com".into()),
+            ],
+        )
+        .await
+        .unwrap();
+        assert_eq!(config.system.min_intersection_survivors, 2);
+        assert_eq!(config.peers.len(), 2);
+
+        let config = Config::from_args(
+            Some("other.toml"),
+            vec![
+                PeerConfig::new("a.com".into()),
+                PeerConfig::new("b.com".into()),
+            ],
+        )
+        .await
+        .unwrap();
+        assert_eq!(config.system.min_intersection_survivors, 3);
+        assert_eq!(config.peers.len(), 2);
     }
 }
