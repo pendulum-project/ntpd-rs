@@ -45,7 +45,7 @@ async fn main() -> std::io::Result<()> {
             let output: ObservableState =
                 ntp_daemon::sockets::read_json(&mut stream, &mut msg).await?;
 
-            dbg!(output.peers);
+            println!("{}", serde_json::to_string_pretty(&output.peers)?);
 
             0
         }
@@ -56,7 +56,7 @@ async fn main() -> std::io::Result<()> {
             let output: ObservableState =
                 ntp_daemon::sockets::read_json(&mut stream, &mut msg).await?;
 
-            dbg!(output.system);
+            println!("{}", serde_json::to_string_pretty(&output.system)?);
 
             0
         }
