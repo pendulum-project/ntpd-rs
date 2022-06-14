@@ -1,8 +1,7 @@
 #![forbid(unsafe_code)]
 
 use clap::{Parser, Subcommand};
-use ntp_daemon::ObservableState;
-use tracing_subscriber::EnvFilter;
+use ntp_daemon::{ConfigUpdate, ObservableState};
 
 #[derive(Parser)]
 #[clap(version = "0.1.0", about = "Query and configure the NTPD-rs daemon")]
@@ -12,13 +11,6 @@ struct Cli {
     command: Command,
 }
 
-fn parse_env_filter(input: &str) -> Result<Box<EnvFilter>, tracing_subscriber::filter::ParseError> {
-    let filter = EnvFilter::builder().with_regex(false).parse(input)?;
-
-    // The `EnvFilter` is 1816 (!) bytes large, so we box it up to keep data structures small
-    Ok(Box::new(filter))
-}
-
 #[derive(Subcommand)]
 enum Command {
     #[clap(about = "Information about the peers the daemon is currently connected with")]
@@ -26,11 +18,7 @@ enum Command {
     #[clap(about = "Information about the state of the daemon itself")]
     System,
     #[clap(about = "Adjust configuration (e.g. loglevel) of the daemon")]
-    Config {
-        /// Change the log filter
-        #[clap(long, short, global = true, parse(try_from_str = parse_env_filter))]
-        log_filter: Option<Box<EnvFilter>>,
-    },
+    Config(ConfigUpdate),
 }
 
 #[tokio::main]
@@ -60,19 +48,10 @@ async fn main() -> std::io::Result<()> {
 
             0
         }
-        Command::Config { log_filter } => {
-            if let Some(log_filter) = log_filter {
-                let mut stream = tokio::net::UnixStream::connect("/run/ntpd-rs/configure").await?;
+        Command::Config(config_update) => {
+            let mut stream = tokio::net::UnixStream::connect("/run/ntpd-rs/configure").await?;
 
-                // convert to string because `EnvFilter` is not `Serialize`. But we did validate it
-                // already, so any parse errors are reported in the client and invalid filters
-                // don't make it into the daemon
-                let msg = ntp_daemon::config::dynamic::Configure::LogLevel {
-                    filter: log_filter.to_string(),
-                };
-
-                ntp_daemon::sockets::write_json(&mut stream, &msg).await?;
-            }
+            ntp_daemon::sockets::write_json(&mut stream, &config_update).await?;
 
             0
         }

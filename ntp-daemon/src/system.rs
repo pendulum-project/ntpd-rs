@@ -16,7 +16,7 @@ use tokio::sync::{mpsc, watch};
 
 /// Spawn the NTP daemon
 pub async fn spawn(
-    config: &SystemConfig,
+    config: Arc<tokio::sync::RwLock<SystemConfig>>,
     peer_configs: &[PeerConfig],
     peers_rwlock: Arc<tokio::sync::RwLock<Peers>>,
     system_rwlock: Arc<tokio::sync::RwLock<SystemSnapshot>>,
@@ -33,13 +33,13 @@ pub async fn spawn(
             msg_for_system_sender: msg_for_system_tx.clone(),
             system_snapshots: system_rwlock.clone(),
             reset: reset_rx.clone(),
+            system_config: config.clone(),
         };
 
         PeerTask::spawn(
             PeerIndex { index },
             &peer_config.addr,
             UnixNtpClock::new(),
-            *config,
             channels,
         )
         .await?;
@@ -64,7 +64,7 @@ pub async fn spawn(
 }
 
 async fn run(
-    config: &SystemConfig,
+    config: Arc<tokio::sync::RwLock<SystemConfig>>,
     mut reset_epoch: ResetEpoch,
     global_system_snapshot: Arc<tokio::sync::RwLock<SystemSnapshot>>,
     mut msg_for_system_rx: mpsc::Receiver<MsgForSystem>,
@@ -77,6 +77,9 @@ async fn run(
     while let Some(msg_for_system) = msg_for_system_rx.recv().await {
         let ntp_instant = NtpInstant::now();
         let system_poll = global_system_snapshot.read().await.poll_interval;
+
+        // ensure the config is not updated in the middle of clock selection
+        let config = *config.read().await;
 
         let new = peers_rwlock.write().await.receive_update(
             msg_for_system,
@@ -97,7 +100,7 @@ async fn run(
         // add all valid measurements to our list of snapshots
         snapshots.extend(peers_rwlock.read().await.valid_snapshots());
 
-        let result = FilterAndCombine::run(config, &snapshots, ntp_instant, system_poll);
+        let result = FilterAndCombine::run(&config, &snapshots, ntp_instant, system_poll);
 
         let clock_select = match result {
             Some(clock_select) => clock_select,
@@ -112,7 +115,7 @@ async fn run(
         info!(offset_ms, jitter_ms, "system offset and jitter");
 
         let adjust_type = controller.update(
-            config,
+            &config,
             clock_select.system_offset,
             clock_select.system_jitter,
             clock_select.system_root_delay,

@@ -26,11 +26,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let system_reader = Arc::new(tokio::sync::RwLock::new(Default::default()));
     let system_writer = system_reader.clone();
 
+    let system_config = Arc::new(tokio::sync::RwLock::new(config.system));
+
     let peers_reader = Arc::new(tokio::sync::RwLock::new(Peers::default()));
     let peers_writer = peers_reader.clone();
 
     let main_loop_handle = tokio::spawn(async move {
-        ntp_daemon::spawn(&config.system, &config.peers, peers_writer, system_writer).await
+        ntp_daemon::spawn(
+            system_config.clone(),
+            &config.peers,
+            peers_writer,
+            system_writer,
+        )
+        .await
     });
 
     let peer_state_handle =
