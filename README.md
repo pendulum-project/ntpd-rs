@@ -40,7 +40,7 @@ Currently, the code is split up into five separate crates:
  - `ntp-os-clock` contains the unsafe code needed to interface with system clocks.
  - `ntp-udp` contains the unsafe code needed to deal with timestamping on the network layer.
 
-All unsafe code is contained within the `ntp-os-clock` and `ntp-udp` packages, which are kept as small as possible. All interfaces exposed by these crates should be safe.
+All unsafe code is contained within the `ntp-os-clock` and `ntp-udp` packages, which are kept as small as possible. All interfaces exposed by these crates should be safe. For a more detailed description of how NTPD-rs is structured, see the [development documentation](DEVELOPMENT.md).
 
 ## Test Binaries
 
