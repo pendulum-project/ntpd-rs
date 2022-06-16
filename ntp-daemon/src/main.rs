@@ -18,6 +18,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut config = Config::from_args(args.config, args.peers).await?;
 
+    // Warn/error if the config is unreasonable.
+    config.check();
+
     // Sentry has a guard we need to keep alive, so store it.
     // The compiler will optimize this away when not using sentry.
     let tracing_state = finish_tracing_init(&mut config, has_log_override)?;

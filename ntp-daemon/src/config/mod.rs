@@ -12,7 +12,7 @@ use std::{
 };
 use thiserror::Error;
 use tokio::{fs::read_to_string, io};
-use tracing::info;
+use tracing::{info, warn};
 use tracing_subscriber::filter::{self, EnvFilter};
 
 fn parse_env_filter(input: &str) -> Result<EnvFilter, filter::ParseError> {
@@ -179,6 +179,14 @@ impl Config {
         }
 
         Ok(config)
+    }
+
+    /// Check that the config is reasonable. This function may panic if the
+    /// configuration is egregious, although it doesn't do so currently.
+    pub fn check(&self) {
+        if self.peers.is_empty() {
+            warn!("No peers configured. Daemon will not do anything.");
+        }
     }
 }
 
