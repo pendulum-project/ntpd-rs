@@ -34,12 +34,6 @@ pub struct ConfigUpdate {
     /// during startup, use startup_panic_threshold
     #[clap(long)]
     pub panic_threshold: Option<f64>,
-
-    /// The maximum duration in seconds the system clock is allowed to change during startup.
-    /// This can be used to limit the impact of bad servers if the system clock
-    /// is known to be reasonable on startup
-    #[clap(long)]
-    pub startup_panic_threshold: Option<f64>,
 }
 
 pub async fn spawn(
@@ -90,11 +84,6 @@ async fn dynamic_configuration(
 
         if let Some(panic_threshold) = operation.panic_threshold {
             config.panic_threshold = Some(NtpDuration::from_seconds(panic_threshold));
-        }
-
-        if let Some(startup_panic_threshold) = operation.startup_panic_threshold {
-            config.startup_panic_threshold =
-                Some(NtpDuration::from_seconds(startup_panic_threshold));
         }
     }
 }
