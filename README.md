@@ -8,7 +8,7 @@ NTPD-rs is an implementation of NTP completely written in Rust, with a focus on 
 
 Currently, NTPD-rs only supports Linux-based operating systems. Our current testing only targets Linux kernels after version 5.0.0, older kernels may work but this is not guaranteed.
 
-NTPD-rs is written in rust, and requires cargo 1.61.0 at a minimum to be built. We strongly recommend using [rustup](https://rustup.rs) to install a rust toolchain, because the version provided by system package managers tends to be out of date.
+NTPD-rs is written in rust, and requires cargo 1.60.0 at a minimum to be built. We strongly recommend using [rustup](https://rustup.rs) to install a rust toolchain, because the version provided by system package managers tends to be out of date.
 
 To build NTPD-rs run
 ```sh
@@ -48,3 +48,9 @@ This crate contains extremely limited NTP servers for testing purposes
 
 * `demobilize-server` always sends the DENY kiss code, the client must demobilize this association
 * `rate-limit-server` forces an increase of the poll interval to 32 seconds
+
+## Minimum supported rust version
+
+We try to keep NTPD-rs working on at least the latest stable, beta and nightly rust compiler. Beyond this, we keep track of the current minimum rust version needed to compile our code for purposes of documentation. However, right now we do not have a policy guaranteeing a minimum amount of time we will support a stable rust release beyond the 6 weeks during which it is the latest stable version.
+
+Please note that the rust foundation only supports the latest stable rust release. As this is the only release that will receive any security updates, we STRONGLY recommend using the latest stable rust version for compiling NTPD-rs for daily use.
