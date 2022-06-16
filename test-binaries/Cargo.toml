@@ -16,4 +16,4 @@ ntp-os-clock = { path = "../ntp-os-clock" }
 tracing = "0.1.35"
 tracing-subscriber = "0.3.11"
 serde_json = "1.0.81"
-clap = { version = "3.1.18", features = ["derive", "env"] }
+clap = { version = "3.2.5", features = ["derive", "env"] }
