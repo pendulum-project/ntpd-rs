@@ -86,13 +86,13 @@ async fn dynamic_configuration(
                 .unwrap();
         }
 
+        let mut config = system_config.write().await;
+
         if let Some(panic_threshold) = operation.panic_threshold {
-            let mut config = system_config.write().await;
             config.panic_threshold = Some(NtpDuration::from_seconds(panic_threshold));
         }
 
         if let Some(startup_panic_threshold) = operation.startup_panic_threshold {
-            let mut config = system_config.write().await;
             config.startup_panic_threshold =
                 Some(NtpDuration::from_seconds(startup_panic_threshold));
         }
