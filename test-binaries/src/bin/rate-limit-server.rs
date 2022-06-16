@@ -24,14 +24,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         let mut packet = ntp_proto::NtpHeader::default();
 
+        let parsed = NtpHeader::deserialize(&buf);
+
         // default poll interval is 16 seconds, so this will bump it once
         // and then stay steady at 32 seconds
         if delta < std::time::Duration::new(30, 0) {
             packet.reference_id = ReferenceId::KISS_RATE;
+            packet.origin_timestamp = parsed.transmit_timestamp;
             packet.stratum = 0;
         } else {
-            let parsed = NtpHeader::deserialize(&buf);
-
             packet.mode = NtpAssociationMode::Server;
             packet.stratum = 1;
             packet.origin_timestamp = parsed.transmit_timestamp;

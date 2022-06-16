@@ -303,7 +303,16 @@ impl Peer {
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
     ) -> Result<PeerSnapshot, IgnoreReason> {
-        if message.is_kiss_rate() {
+        if Some(message.origin_timestamp) != self.next_expected_origin {
+            // Packets should be a response to a previous request from us,
+            // if not just ignore. Note that this might also happen when
+            // we reset between sending the request and receiving the response.
+            // We do this as the first check since accepting even a KISS
+            // packet that is not a response will leave us vulnerable
+            // to denial of service attacks.
+            debug!("Received old/unexpected packet from peer");
+            Err(IgnoreReason::InvalidPacketTime)
+        } else if message.is_kiss_rate() {
             // KISS packets may not have correct timestamps at all, handle them anyway
             self.remote_min_poll_interval =
                 Ord::max(self.remote_min_poll_interval.inc(), self.last_poll_interval);
@@ -321,12 +330,6 @@ impl Peer {
             // we currently only support a client <-> server association
             warn!("Received packet with invalid mode");
             Err(IgnoreReason::InvalidMode)
-        } else if Some(message.origin_timestamp) != self.next_expected_origin {
-            // Packets should be a response to a previous request from us,
-            // if not just ignore. Note that this might also happen when
-            // we reset between sending the request and receiving the response.
-            debug!("Received old/unexpected packet from peer");
-            Err(IgnoreReason::InvalidPacketTime)
         } else {
             trace!("Packet accepted for processing");
             // For reachability, mark that we have had a response
@@ -733,6 +736,24 @@ mod test {
         let system = SystemSnapshot::default();
         packet.reference_id = ReferenceId::KISS_RSTR;
         packet.mode = NtpAssociationMode::Server;
+        assert!(!matches!(
+            peer.handle_incoming(
+                system,
+                packet,
+                base + Duration::from_secs(1),
+                FrequencyTolerance::ppm(15),
+                NtpTimestamp::from_fixed_int(0),
+                NtpTimestamp::from_fixed_int(100)
+            ),
+            Err(IgnoreReason::KissDemobilize)
+        ));
+
+        let mut packet = NtpHeader::new();
+        let system = SystemSnapshot::default();
+        let outgoing = peer.generate_poll_message(system);
+        packet.reference_id = ReferenceId::KISS_RSTR;
+        packet.origin_timestamp = outgoing.transmit_timestamp;
+        packet.mode = NtpAssociationMode::Server;
         assert!(matches!(
             peer.handle_incoming(
                 system,
@@ -748,6 +769,24 @@ mod test {
         let mut packet = NtpHeader::new();
         let system = SystemSnapshot::default();
         packet.reference_id = ReferenceId::KISS_DENY;
+        packet.mode = NtpAssociationMode::Server;
+        assert!(!matches!(
+            peer.handle_incoming(
+                system,
+                packet,
+                base + Duration::from_secs(1),
+                FrequencyTolerance::ppm(15),
+                NtpTimestamp::from_fixed_int(0),
+                NtpTimestamp::from_fixed_int(100)
+            ),
+            Err(IgnoreReason::KissDemobilize)
+        ));
+
+        let mut packet = NtpHeader::new();
+        let system = SystemSnapshot::default();
+        let outgoing = peer.generate_poll_message(system);
+        packet.reference_id = ReferenceId::KISS_DENY;
+        packet.origin_timestamp = outgoing.transmit_timestamp;
         packet.mode = NtpAssociationMode::Server;
         assert!(matches!(
             peer.handle_incoming(
@@ -766,6 +805,27 @@ mod test {
         let mut packet = NtpHeader::new();
         let system = SystemSnapshot::default();
         packet.reference_id = ReferenceId::KISS_RATE;
+        packet.mode = NtpAssociationMode::Server;
+        assert!(peer
+            .handle_incoming(
+                system,
+                packet,
+                base + Duration::from_secs(1),
+                FrequencyTolerance::ppm(15),
+                NtpTimestamp::from_fixed_int(0),
+                NtpTimestamp::from_fixed_int(100)
+            )
+            .is_err());
+        assert_eq!(peer.remote_min_poll_interval, old_poll_interval);
+        assert_eq!(peer.remote_min_poll_interval, old_remote_interval);
+
+        let old_poll_interval = peer.last_poll_interval;
+        let old_remote_interval = peer.remote_min_poll_interval;
+        let mut packet = NtpHeader::new();
+        let system = SystemSnapshot::default();
+        let outgoing = peer.generate_poll_message(system);
+        packet.reference_id = ReferenceId::KISS_RATE;
+        packet.origin_timestamp = outgoing.transmit_timestamp;
         packet.mode = NtpAssociationMode::Server;
         assert!(peer
             .handle_incoming(
