@@ -49,13 +49,13 @@ pub enum MsgForSystem {
 pub(crate) struct PeerChannels {
     pub(crate) msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
     pub(crate) system_snapshots: Arc<tokio::sync::RwLock<SystemSnapshot>>,
+    pub(crate) system_config: Arc<tokio::sync::RwLock<SystemConfig>>,
     pub(crate) reset: watch::Receiver<ResetEpoch>,
 }
 
 pub(crate) struct PeerTask<C> {
     index: PeerIndex,
     clock: C,
-    config: SystemConfig,
     socket: UdpSocket,
     channels: PeerChannels,
 
@@ -133,7 +133,7 @@ where
             system_snapshot,
             packet,
             ntp_instant,
-            self.config.frequency_tolerance,
+            self.channels.system_config.read().await.frequency_tolerance,
             send_timestamp,
             recv_timestamp,
         );
@@ -204,12 +204,11 @@ where
         }
     }
 
-    #[instrument(skip(clock, config, channels))]
+    #[instrument(skip(clock, channels))]
     pub async fn spawn<A: ToSocketAddrs + std::fmt::Debug>(
         index: PeerIndex,
         addr: A,
         clock: C,
-        config: SystemConfig,
         channels: PeerChannels,
     ) -> std::io::Result<()> {
         let socket = UdpSocket::new("0.0.0.0:0", addr).await?;
@@ -226,7 +225,6 @@ where
             let mut process = PeerTask {
                 index,
                 clock,
-                config,
                 channels,
                 socket,
                 peer,

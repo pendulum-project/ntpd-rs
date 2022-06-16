@@ -1,27 +1,56 @@
 use crate::tracing::ReloadHandle;
+use ntp_proto::{NtpDuration, SystemConfig};
 use std::os::unix::fs::PermissionsExt;
-use tokio::net::UnixListener;
+use std::sync::Arc;
 use tokio::task::JoinHandle;
+use tokio::{net::UnixListener, sync::RwLock};
 use tracing_subscriber::EnvFilter;
 
+use clap::Args;
 use serde::{Deserialize, Serialize};
 
 use super::ConfigureConfig;
 
-#[derive(Serialize, Deserialize)]
-pub enum Configure {
-    LogLevel { filter: String },
+fn parse_env_filter(input: &str) -> Result<String, tracing_subscriber::filter::ParseError> {
+    // run the parser to error on any invalid input
+    let _ = EnvFilter::builder().with_regex(false).parse(input)?;
+
+    // but we actually send `String` over, because it is (De)Serialize
+    Ok(input.to_string())
+}
+
+#[derive(Debug, Args, Serialize, Deserialize)]
+pub struct ConfigUpdate {
+    /// Change the log filter
+    #[clap(long, parse(try_from_str = parse_env_filter))]
+    pub log_filter: Option<String>,
+
+    /// The maximum duration in seconds the system clock is allowed to change in a single jump
+    /// before we conclude something is seriously wrong. This is used to limit
+    /// the changes to the clock to reasonable ammounts, and stop issues with
+    /// remote servers from causing us to drift too far.
+    ///
+    /// Note that this is not used during startup. To limit system clock changes
+    /// during startup, use startup_panic_threshold
+    #[clap(long)]
+    pub panic_threshold: Option<f64>,
 }
 
 pub async fn spawn(
     config: ConfigureConfig,
+    system_config: Arc<RwLock<SystemConfig>>,
     log_reload_handle: ReloadHandle,
 ) -> JoinHandle<std::io::Result<()>> {
-    tokio::spawn(dynamic_configuration(config, log_reload_handle))
+    tokio::spawn(dynamic_configuration(
+        config,
+        system_config,
+        log_reload_handle,
+    ))
 }
 
 async fn dynamic_configuration(
     config: ConfigureConfig,
+    system_config: Arc<RwLock<SystemConfig>>,
     log_reload_handle: ReloadHandle,
 ) -> std::io::Result<()> {
     // must unlink path before the bind below (otherwise we get "address already in use")
@@ -41,15 +70,20 @@ async fn dynamic_configuration(
     loop {
         let (mut stream, _addr) = peers_listener.accept().await?;
 
-        let operation: Configure = crate::sockets::read_json(&mut stream, &mut msg).await?;
+        let operation: ConfigUpdate = crate::sockets::read_json(&mut stream, &mut msg).await?;
 
-        match operation {
-            Configure::LogLevel { filter } => {
-                tracing::info!(?filter, "setting log filter");
-                log_reload_handle
-                    .modify(|l| *l.filter_mut() = EnvFilter::new(filter))
-                    .unwrap();
-            }
+        tracing::info!(?operation, "dynamic config update");
+
+        if let Some(filter) = operation.log_filter {
+            log_reload_handle
+                .modify(|l| *l.filter_mut() = EnvFilter::new(filter))
+                .unwrap();
+        }
+
+        let mut config = system_config.write().await;
+
+        if let Some(panic_threshold) = operation.panic_threshold {
+            config.panic_threshold = Some(NtpDuration::from_seconds(panic_threshold));
         }
     }
 }
