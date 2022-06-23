@@ -437,11 +437,9 @@ mod tests {
         let arguments = &["--", "--peer", "foo.bar:123"];
         let parsed = CmdArgs::try_parse_from(arguments).unwrap_err();
 
-        eprintln!("{:#?}", &parsed);
+        let error = r#"failed to lookup address information"#;
 
-        let error = r#"error: Invalid value "foo.bar:123" for '--peer <SERVER>': failed to lookup address information: Name or service not known"#;
-
-        assert!(parsed.to_string().starts_with(error));
+        assert!(parsed.to_string().contains(error));
     }
 
     #[test]
@@ -454,8 +452,8 @@ mod tests {
         );
 
         let e = config.unwrap_err();
-        let error = r#"failed to lookup address information: Name or service not known"#;
+        let error = r#"failed to lookup address information"#;
 
-        assert!(e.to_string().starts_with(error));
+        assert!(e.to_string().contains(error));
     }
 }
