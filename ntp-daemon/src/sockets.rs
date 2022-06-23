@@ -27,16 +27,21 @@ where
 #[cfg(test)]
 mod tests {
 
+    use std::path::PathBuf;
+
     use tokio::net::UnixListener;
 
     use super::*;
 
     #[tokio::test]
-    async fn test_time_now_does_not_crash() {
+    async fn write_then_read_is_identity() {
         // be careful with copying: tests run concurrently and should use a unique socket name!
-        std::fs::remove_file("/tmp/ntp-test-stream-1").unwrap();
-        let listener = UnixListener::bind("/tmp/ntp-test-stream-1").unwrap();
-        let mut writer = UnixStream::connect("/tmp/ntp-test-stream-1").await.unwrap();
+        let path = PathBuf::from("/tmp/ntp-test-stream-1");
+        if path.exists() {
+            std::fs::remove_file(&path).unwrap();
+        }
+        let listener = UnixListener::bind(&path).unwrap();
+        let mut writer = UnixStream::connect(&path).await.unwrap();
 
         let (mut reader, _) = listener.accept().await.unwrap();
 
