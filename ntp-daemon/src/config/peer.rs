@@ -102,6 +102,34 @@ impl FromStr for PeerConfig {
     }
 }
 
+impl TryFrom<&str> for PeerConfig {
+    type Error = std::io::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let mut addr = value.to_string();
+
+        match addr.to_socket_addrs() {
+            Ok(_) => Ok(PeerConfig {
+                addr,
+                mode: PeerHostMode::Server,
+            }),
+            Err(e) => {
+                // try to fix the address by adding the NTP port
+                addr.push_str(":123");
+
+                if addr.to_socket_addrs().is_ok() {
+                    Ok(PeerConfig {
+                        addr,
+                        mode: PeerHostMode::Server,
+                    })
+                } else {
+                    Err(e)
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
