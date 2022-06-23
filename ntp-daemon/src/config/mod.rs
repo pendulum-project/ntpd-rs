@@ -38,7 +38,13 @@ where
 
 #[derive(Parser, Debug)]
 pub struct CmdArgs {
-    #[clap(short, long = "peer", global = true, value_name = "SERVER")]
+    #[clap(
+        short,
+        long = "peer",
+        global = true,
+        value_name = "SERVER",
+        parse(try_from_str = TryFrom::try_from)
+    )]
     pub peers: Vec<PeerConfig>,
 
     #[clap(short, long, parse(from_os_str), global = true, value_name = "FILE")]
@@ -196,7 +202,7 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
-    use std::env;
+    use std::{env, ffi::OsString};
 
     use super::*;
 
@@ -333,5 +339,106 @@ mod tests {
         .unwrap();
         assert_eq!(config.system.min_intersection_survivors, 3);
         assert_eq!(config.peers.len(), 2);
+    }
+
+    #[test]
+    fn clap_no_arguments() {
+        use clap::Parser;
+
+        let arguments: [OsString; 0] = [];
+        let parsed_empty = CmdArgs::try_parse_from(arguments).unwrap();
+
+        assert!(parsed_empty.peers.is_empty());
+        assert!(parsed_empty.config.is_none());
+        assert!(parsed_empty.log_filter.is_none());
+    }
+
+    #[test]
+    fn clap_external_config() {
+        use clap::Parser;
+
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        d.push("testdata/config");
+        env::set_current_dir(d).unwrap();
+
+        let arguments = &["--", "--config", "other.toml"];
+        let parsed_empty = CmdArgs::try_parse_from(arguments).unwrap();
+
+        assert!(parsed_empty.peers.is_empty());
+        assert_eq!(parsed_empty.config, Some("other.toml".into()));
+        assert!(parsed_empty.log_filter.is_none());
+
+        let arguments = &["--", "-c", "other.toml"];
+        let parsed_empty = CmdArgs::try_parse_from(arguments).unwrap();
+
+        assert!(parsed_empty.peers.is_empty());
+        assert_eq!(parsed_empty.config, Some("other.toml".into()));
+        assert!(parsed_empty.log_filter.is_none());
+    }
+
+    #[test]
+    fn clap_log_filter() {
+        use clap::Parser;
+
+        let arguments = &["--", "--log-filter", "debug"];
+        let parsed_empty = CmdArgs::try_parse_from(arguments).unwrap();
+
+        assert!(parsed_empty.peers.is_empty());
+        assert!(parsed_empty.config.is_none());
+        assert_eq!(parsed_empty.log_filter.unwrap().to_string(), "debug");
+
+        let arguments = &["--", "-l", "debug"];
+        let parsed_empty = CmdArgs::try_parse_from(arguments).unwrap();
+
+        assert!(parsed_empty.peers.is_empty());
+        assert!(parsed_empty.config.is_none());
+        assert_eq!(parsed_empty.log_filter.unwrap().to_string(), "debug");
+    }
+
+    #[test]
+    fn clap_peers() {
+        use clap::Parser;
+
+        let arguments = &["--", "--peer", "foo.nl"];
+        let parsed_empty = CmdArgs::try_parse_from(arguments).unwrap();
+
+        assert_eq!(
+            parsed_empty.peers,
+            vec![PeerConfig {
+                addr: "foo.nl:123".to_string(),
+                mode: PeerHostMode::Server
+            }]
+        );
+        assert!(parsed_empty.config.is_none());
+        assert!(parsed_empty.log_filter.is_none());
+
+        let arguments = &["--", "--peer", "foo.rs", "-p", "spam.nl:123"];
+        let parsed_empty = CmdArgs::try_parse_from(arguments).unwrap();
+
+        assert_eq!(
+            parsed_empty.peers,
+            vec![
+                PeerConfig {
+                    addr: "foo.rs:123".to_string(),
+                    mode: PeerHostMode::Server
+                },
+                PeerConfig {
+                    addr: "spam.nl:123".to_string(),
+                    mode: PeerHostMode::Server
+                },
+            ]
+        );
+        assert!(parsed_empty.config.is_none());
+        assert!(parsed_empty.log_filter.is_none());
+    }
+
+    #[test]
+    fn clap_peers_invalid() {
+        let arguments = &["--", "--peer", "foo.bar:123"];
+        let parsed = CmdArgs::try_parse_from(arguments).unwrap_err();
+
+        let error = r#"error: Invalid value "foo.bar:123" for '--peer <SERVER>': failed to lookup address information: Name or service not known"#;
+
+        assert!(parsed.to_string().starts_with(error));
     }
 }
