@@ -26,9 +26,6 @@ where
 
 #[cfg(test)]
 mod tests {
-
-    use std::path::PathBuf;
-
     use tokio::net::UnixListener;
 
     use super::*;
@@ -36,7 +33,7 @@ mod tests {
     #[tokio::test]
     async fn write_then_read_is_identity() {
         // be careful with copying: tests run concurrently and should use a unique socket name!
-        let path = PathBuf::from("/tmp/ntp-test-stream-1");
+        let path = std::env::temp_dir().join("ntp-test-stream-1");
         if path.exists() {
             std::fs::remove_file(&path).unwrap();
         }
