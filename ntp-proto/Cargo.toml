@@ -8,6 +8,7 @@ license = "Apache-2.0 OR MIT"
 
 [features]
 fuzz = []
+ext-test = []
 
 [dependencies]
 md-5 = "0.10.1"

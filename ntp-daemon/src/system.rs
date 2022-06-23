@@ -4,9 +4,9 @@ use crate::{
 };
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
-    ClockController, ClockUpdateResult, FilterAndCombine, FrequencyTolerance, NtpDuration,
-    NtpInstant, PeerSnapshot, PeerStatistics, PollInterval, Reach, ReferenceId, SystemConfig,
-    SystemSnapshot,
+    ClockController, ClockUpdateResult, FilterAndCombine, FrequencyTolerance, NtpClock,
+    NtpDuration, NtpInstant, PeerSnapshot, PeerStatistics, PollInterval, Reach, ReferenceId,
+    SystemConfig, SystemSnapshot,
 };
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -59,19 +59,21 @@ pub async fn spawn(
         msg_for_system_rx,
         reset_tx,
         peers_rwlock,
+        UnixNtpClock::new(),
     )
     .await
 }
 
-async fn run(
+async fn run<C: NtpClock>(
     config: Arc<tokio::sync::RwLock<SystemConfig>>,
     mut reset_epoch: ResetEpoch,
     global_system_snapshot: Arc<tokio::sync::RwLock<SystemSnapshot>>,
     mut msg_for_system_rx: mpsc::Receiver<MsgForSystem>,
     reset_tx: watch::Sender<ResetEpoch>,
     peers_rwlock: Arc<tokio::sync::RwLock<Peers>>,
+    clock: C,
 ) -> std::io::Result<()> {
-    let mut controller = ClockController::new(UnixNtpClock::new());
+    let mut controller = ClockController::new(clock);
     let mut snapshots = Vec::with_capacity(peers_rwlock.read().await.len());
 
     while let Some(msg_for_system) = msg_for_system_rx.recv().await {
@@ -191,6 +193,7 @@ pub struct Peers {
     peers: Box<[PeerStatus]>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 enum NewMeasurement {
     Yes,
     No,
@@ -282,5 +285,259 @@ impl Peers {
                 Measurement(_) | NoMeasurement => NoMeasurement,
             };
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ntp_proto::{peer_snapshot, NtpLeapIndicator, NtpTimestamp};
+
+    use super::*;
+
+    #[derive(Debug, Clone, Default)]
+    struct TestClock {}
+
+    impl NtpClock for TestClock {
+        type Error = std::io::Error;
+
+        fn now(&self) -> std::result::Result<NtpTimestamp, Self::Error> {
+            Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+        }
+
+        fn set_freq(&self, _freq: f64) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn step_clock(&self, _offset: NtpDuration) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn update_clock(
+            &self,
+            _offset: NtpDuration,
+            _est_error: NtpDuration,
+            _max_error: NtpDuration,
+            _poll_interval: PollInterval,
+            _leap_status: NtpLeapIndicator,
+        ) -> Result<(), Self::Error> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_peers() {
+        let base = NtpInstant::now();
+        let prev_epoch = ResetEpoch::default();
+        let epoch = prev_epoch.inc();
+        let mut peers = Peers::new(4);
+        assert_eq!(peers.valid_snapshots().collect::<Vec<_>>().len(), 0);
+
+        let new = peers.receive_update(
+            MsgForSystem::NewMeasurement(
+                PeerIndex { index: 0 },
+                prev_epoch,
+                peer_snapshot(
+                    PeerStatistics {
+                        delay: NtpDuration::from_seconds(0.1),
+                        offset: NtpDuration::from_seconds(0.),
+                        dispersion: NtpDuration::from_seconds(0.05),
+                        jitter: 0.05,
+                    },
+                    base,
+                    NtpDuration::from_seconds(0.1),
+                    NtpDuration::from_seconds(0.05),
+                ),
+            ),
+            epoch,
+            base,
+            FrequencyTolerance::ppm(15),
+            NtpDuration::from_seconds(1.),
+            PollInterval::MIN,
+        );
+        assert_eq!(new, NewMeasurement::No);
+        assert_eq!(peers.valid_snapshots().collect::<Vec<_>>().len(), 0);
+
+        let new = peers.receive_update(
+            MsgForSystem::NewMeasurement(
+                PeerIndex { index: 0 },
+                epoch,
+                peer_snapshot(
+                    PeerStatistics {
+                        delay: NtpDuration::from_seconds(0.1),
+                        offset: NtpDuration::from_seconds(0.),
+                        dispersion: NtpDuration::from_seconds(0.05),
+                        jitter: 0.05,
+                    },
+                    base,
+                    NtpDuration::from_seconds(1.0),
+                    NtpDuration::from_seconds(2.0),
+                ),
+            ),
+            epoch,
+            base,
+            FrequencyTolerance::ppm(15),
+            NtpDuration::from_seconds(1.),
+            PollInterval::MIN,
+        );
+        assert_eq!(new, NewMeasurement::No);
+        assert_eq!(peers.valid_snapshots().collect::<Vec<_>>().len(), 1);
+
+        let new = peers.receive_update(
+            MsgForSystem::NewMeasurement(
+                PeerIndex { index: 0 },
+                epoch,
+                peer_snapshot(
+                    PeerStatistics {
+                        delay: NtpDuration::from_seconds(0.1),
+                        offset: NtpDuration::from_seconds(0.),
+                        dispersion: NtpDuration::from_seconds(0.05),
+                        jitter: 0.05,
+                    },
+                    base,
+                    NtpDuration::from_seconds(0.1),
+                    NtpDuration::from_seconds(0.05),
+                ),
+            ),
+            epoch,
+            base,
+            FrequencyTolerance::ppm(15),
+            NtpDuration::from_seconds(1.),
+            PollInterval::MIN,
+        );
+        assert_eq!(new, NewMeasurement::Yes);
+        assert_eq!(peers.valid_snapshots().collect::<Vec<_>>().len(), 1);
+
+        let new = peers.receive_update(
+            MsgForSystem::UpdatedSnapshot(
+                PeerIndex { index: 1 },
+                epoch,
+                peer_snapshot(
+                    PeerStatistics {
+                        delay: NtpDuration::from_seconds(0.1),
+                        offset: NtpDuration::from_seconds(0.),
+                        dispersion: NtpDuration::from_seconds(0.05),
+                        jitter: 0.05,
+                    },
+                    base,
+                    NtpDuration::from_seconds(0.1),
+                    NtpDuration::from_seconds(0.05),
+                ),
+            ),
+            epoch,
+            base,
+            FrequencyTolerance::ppm(15),
+            NtpDuration::from_seconds(1.),
+            PollInterval::MIN,
+        );
+        assert_eq!(new, NewMeasurement::No);
+        assert_eq!(peers.valid_snapshots().collect::<Vec<_>>().len(), 2);
+
+        let new = peers.receive_update(
+            MsgForSystem::MustDemobilize(PeerIndex { index: 1 }),
+            epoch,
+            base,
+            FrequencyTolerance::ppm(15),
+            NtpDuration::from_seconds(1.),
+            PollInterval::MIN,
+        );
+        assert_eq!(new, NewMeasurement::No);
+        assert_eq!(peers.valid_snapshots().collect::<Vec<_>>().len(), 1);
+
+        peers.reset_all();
+        assert_eq!(peers.valid_snapshots().collect::<Vec<_>>().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_system_reset() {
+        let config = Arc::new(tokio::sync::RwLock::new(SystemConfig::default()));
+        let reset_epoch = ResetEpoch::default();
+        let (reset_tx, mut reset_rx) = watch::channel::<ResetEpoch>(reset_epoch);
+        let (msg_for_system_tx, msg_for_system_rx) = mpsc::channel::<MsgForSystem>(32);
+        let global_system_snapshot = Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default()));
+        let peers_rwlock = Arc::new(tokio::sync::RwLock::new(Peers::new(4)));
+        let peers_copy = peers_rwlock.clone();
+
+        let handle = tokio::spawn(async move {
+            run(
+                config,
+                reset_epoch,
+                global_system_snapshot,
+                msg_for_system_rx,
+                reset_tx,
+                peers_rwlock,
+                TestClock {},
+            )
+            .await
+            .unwrap();
+        });
+
+        let prev_epoch = *reset_rx.borrow_and_update();
+
+        msg_for_system_tx
+            .send(MsgForSystem::NewMeasurement(
+                PeerIndex { index: 0 },
+                prev_epoch,
+                peer_snapshot(
+                    PeerStatistics {
+                        delay: NtpDuration::from_seconds(0.1),
+                        offset: NtpDuration::from_seconds(200.0),
+                        dispersion: NtpDuration::from_seconds(0.05),
+                        jitter: 0.05,
+                    },
+                    NtpInstant::now(),
+                    NtpDuration::from_seconds(0.1),
+                    NtpDuration::from_seconds(0.05),
+                ),
+            ))
+            .await
+            .unwrap();
+
+        reset_rx.changed().await.unwrap();
+
+        assert_ne!(*reset_rx.borrow(), prev_epoch);
+        assert_eq!(
+            peers_copy
+                .read()
+                .await
+                .valid_snapshots()
+                .collect::<Vec<_>>()
+                .len(),
+            0
+        );
+
+        msg_for_system_tx
+            .send(MsgForSystem::NewMeasurement(
+                PeerIndex { index: 0 },
+                prev_epoch,
+                peer_snapshot(
+                    PeerStatistics {
+                        delay: NtpDuration::from_seconds(0.1),
+                        offset: NtpDuration::from_seconds(200.0),
+                        dispersion: NtpDuration::from_seconds(0.05),
+                        jitter: 0.05,
+                    },
+                    NtpInstant::now(),
+                    NtpDuration::from_seconds(0.1),
+                    NtpDuration::from_seconds(0.05),
+                ),
+            ))
+            .await
+            .unwrap();
+
+        // Note: this is not a 100% reliable for ensuring system has handled previous message
+        // but should work often enough that we should see any problem.
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+        assert_eq!(
+            peers_copy
+                .read()
+                .await
+                .valid_snapshots()
+                .collect::<Vec<_>>()
+                .len(),
+            0
+        );
+
+        handle.abort();
     }
 }
