@@ -319,8 +319,8 @@ mod tests {
         let config = Config::from_args(
             None as Option<&'static str>,
             vec![
-                PeerConfig::new("a.com".into()),
-                PeerConfig::new("b.com".into()),
+                PeerConfig::try_from("example1.com").unwrap(),
+                PeerConfig::try_from("example2.com").unwrap(),
             ],
         )
         .await
@@ -331,8 +331,8 @@ mod tests {
         let config = Config::from_args(
             Some("other.toml"),
             vec![
-                PeerConfig::new("a.com".into()),
-                PeerConfig::new("b.com".into()),
+                PeerConfig::try_from("example1.com").unwrap(),
+                PeerConfig::try_from("example2.com").unwrap(),
             ],
         )
         .await
@@ -440,5 +440,20 @@ mod tests {
         let error = r#"error: Invalid value "foo.bar:123" for '--peer <SERVER>': failed to lookup address information: Name or service not known"#;
 
         assert!(parsed.to_string().starts_with(error));
+    }
+
+    #[test]
+    fn toml_peers_invalid() {
+        let config: Result<Config, _> = toml::from_str(
+            r#"
+            [[peers]]
+            addr = "foo.bar:123"
+            "#,
+        );
+
+        let e = config.unwrap_err();
+        let error = r#"failed to lookup address information: Name or service not known"#;
+
+        assert!(e.to_string().starts_with(error));
     }
 }

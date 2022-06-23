@@ -1,4 +1,4 @@
-use std::{convert::Infallible, fmt, net::ToSocketAddrs, str::FromStr};
+use std::{fmt, net::ToSocketAddrs};
 
 use serde::{
     de::{self, MapAccess, Visitor},
@@ -18,15 +18,41 @@ impl Default for PeerHostMode {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct PeerConfig {
+    // Invariant: `.to_socket_addrs` will succeed on this value. That means it must use a valid tld
+    // and contain a port
     pub addr: String,
     pub mode: PeerHostMode,
 }
 
-impl PeerConfig {
-    pub fn new(host: &str) -> PeerConfig {
-        PeerConfig {
-            addr: fix_addr(host.to_owned()),
-            mode: PeerHostMode::Server,
+impl TryFrom<&str> for PeerConfig {
+    type Error = std::io::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let mut addr = value.to_string();
+
+        match addr.to_socket_addrs() {
+            Ok(_) => {
+                // address already has a port
+                Ok(PeerConfig {
+                    addr,
+                    mode: PeerHostMode::Server,
+                })
+            }
+            Err(e) => {
+                // try to fix the address by adding the NTP port
+                addr.push_str(":123");
+
+                if addr.to_socket_addrs().is_ok() {
+                    Ok(PeerConfig {
+                        addr,
+                        mode: PeerHostMode::Server,
+                    })
+                } else {
+                    // e.g. the top-level domain does not exist
+                    // (or we just don't have an internet connection)
+                    Err(e)
+                }
+            }
         }
     }
 }
@@ -48,7 +74,7 @@ impl<'de> Deserialize<'de> for PeerConfig {
             }
 
             fn visit_str<E: de::Error>(self, value: &str) -> Result<PeerConfig, E> {
-                FromStr::from_str(value).map_err(de::Error::custom)
+                TryFrom::try_from(value).map_err(de::Error::custom)
             }
 
             fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<PeerConfig, M::Error> {
@@ -60,7 +86,13 @@ impl<'de> Deserialize<'de> for PeerConfig {
                             if addr.is_some() {
                                 return Err(de::Error::duplicate_field("addr"));
                             }
-                            addr = Some(fix_addr(map.next_value()?));
+                            let raw: String = map.next_value()?;
+
+                            // validate: this will add the `:123` port if not port is specified
+                            let config =
+                                PeerConfig::try_from(raw.as_str()).map_err(de::Error::custom)?;
+
+                            addr = Some(config.addr);
                         }
                         "mode" => {
                             if mode.is_some() {
@@ -73,6 +105,7 @@ impl<'de> Deserialize<'de> for PeerConfig {
                         }
                     }
                 }
+
                 let addr = addr.ok_or_else(|| de::Error::missing_field("addr"))?;
                 let mode = mode.unwrap_or_default();
                 Ok(PeerConfig { addr, mode })
@@ -80,53 +113,6 @@ impl<'de> Deserialize<'de> for PeerConfig {
         }
 
         deserializer.deserialize_any(PeerConfigVisitor)
-    }
-}
-
-/// Adds :123 to peer address if it is missing
-fn fix_addr(mut addr: String) -> String {
-    if addr.to_socket_addrs().is_ok() {
-        return addr;
-    }
-
-    addr.push_str(":123");
-    addr
-}
-
-impl FromStr for PeerConfig {
-    type Err = Infallible;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // TODO: We could do some sanity checks here to fail a bit earlier
-        Ok(PeerConfig::new(s))
-    }
-}
-
-impl TryFrom<&str> for PeerConfig {
-    type Error = std::io::Error;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let mut addr = value.to_string();
-
-        match addr.to_socket_addrs() {
-            Ok(_) => Ok(PeerConfig {
-                addr,
-                mode: PeerHostMode::Server,
-            }),
-            Err(e) => {
-                // try to fix the address by adding the NTP port
-                addr.push_str(":123");
-
-                if addr.to_socket_addrs().is_ok() {
-                    Ok(PeerConfig {
-                        addr,
-                        mode: PeerHostMode::Server,
-                    })
-                } else {
-                    Err(e)
-                }
-            }
-        }
     }
 }
 
@@ -165,11 +151,11 @@ mod tests {
 
     #[test]
     fn test_peer_from_string() {
-        let peer: PeerConfig = "example.com".parse().unwrap();
+        let peer = PeerConfig::try_from("example.com").unwrap();
         assert_eq!(peer.addr, "example.com:123");
         assert_eq!(peer.mode, PeerHostMode::Server);
 
-        let peer: PeerConfig = "example.com:5678".parse().unwrap();
+        let peer = PeerConfig::try_from("example.com:5678").unwrap();
         assert_eq!(peer.addr, "example.com:5678");
         assert_eq!(peer.mode, PeerHostMode::Server);
     }

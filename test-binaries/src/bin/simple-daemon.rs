@@ -9,7 +9,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let config = Arc::new(RwLock::new(SystemConfig::default()));
 
-    let peer_configs = [PeerConfig::new("0.0.0.0:8080")];
+    let peer_configs = [PeerConfig::try_from("0.0.0.0:8080").unwrap()];
 
     let peers = Default::default();
     let system = Default::default();
