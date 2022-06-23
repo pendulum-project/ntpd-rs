@@ -23,3 +23,35 @@ where
 
     Ok(serde_json::from_slice(buffer).unwrap())
 }
+
+#[cfg(test)]
+mod tests {
+
+    use tokio::net::UnixListener;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_time_now_does_not_crash() {
+        // be careful with copying: tests run concurrently and should use a unique socket name!
+        std::fs::remove_file("/tmp/ntp-test-stream-1").unwrap();
+        let listener = UnixListener::bind("/tmp/ntp-test-stream-1").unwrap();
+        let mut writer = UnixStream::connect("/tmp/ntp-test-stream-1").await.unwrap();
+
+        let (mut reader, _) = listener.accept().await.unwrap();
+
+        let object = vec![0usize, 10];
+
+        write_json(&mut writer, &object).await.unwrap();
+
+        let mut buf = Vec::new();
+        let output = read_json::<Vec<usize>>(&mut reader, &mut buf)
+            .await
+            .unwrap();
+
+        assert_eq!(object, output);
+
+        // the logic will automatically grow the buffer to the required size
+        assert!(!buf.is_empty());
+    }
+}
