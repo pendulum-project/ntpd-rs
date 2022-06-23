@@ -18,12 +18,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut config = Config::from_args(args.config, args.peers).await?;
 
-    // Warn/error if the config is unreasonable.
-    config.check();
-
     // Sentry has a guard we need to keep alive, so store it.
     // The compiler will optimize this away when not using sentry.
     let tracing_state = finish_tracing_init(&mut config, has_log_override)?;
+
+    // Warn/error if the config is unreasonable. We do this after finishing
+    // tracing setup to ensure logging is fully configured.
+    config.check();
 
     // shares the system state with all peers
     let system_reader = Arc::new(tokio::sync::RwLock::new(Default::default()));
