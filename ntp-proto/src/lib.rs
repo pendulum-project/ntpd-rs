@@ -13,6 +13,8 @@ pub use clock::{ClockController, ClockUpdateResult, NtpClock};
 #[cfg(feature = "fuzz")]
 pub use clock_select::fuzz_find_interval;
 pub use clock_select::FilterAndCombine;
+#[cfg(feature = "ext-test")]
+pub use clock_select::{peer_snapshot, test_peer_snapshot};
 pub use config::SystemConfig;
 #[cfg(feature = "fuzz")]
 pub use filter::fuzz_tuple_from_packet_default;
