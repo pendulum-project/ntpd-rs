@@ -122,16 +122,16 @@ pub enum IgnoreReason {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PeerSnapshot {
-    pub(crate) root_distance_without_time: NtpDuration,
+    pub root_distance_without_time: NtpDuration,
     pub statistics: PeerStatistics,
 
     pub time: NtpInstant,
-    pub(crate) stratum: u8,
+    pub stratum: u8,
     pub peer_id: ReferenceId,
     pub poll_interval: PollInterval,
 
     pub reference_id: ReferenceId,
-    pub(crate) our_id: ReferenceId,
+    pub our_id: ReferenceId,
     pub reach: Reach,
 
     pub leap_indicator: NtpLeapIndicator,

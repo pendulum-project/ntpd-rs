@@ -159,7 +159,7 @@ async fn run<C: NtpClock>(
 }
 
 #[derive(Debug, Clone, Copy)]
-enum PeerStatus {
+pub enum PeerStatus {
     /// This peer is demobilized, meaning we will not send further packets to it.
     /// Demobilized peers are kept because our logic is built around using indices,
     /// and removing a peer would mess up the indexing.
@@ -203,6 +203,13 @@ impl Peers {
     fn new(length: usize) -> Self {
         Self {
             peers: vec![PeerStatus::NoMeasurement; length].into(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_statuslist(data: &[PeerStatus]) -> Self {
+        Self {
+            peers: data.to_owned().into(),
         }
     }
 
