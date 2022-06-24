@@ -70,7 +70,7 @@ The daemon exposes an observation socket that can be read to obtain information 
 The daemon also exposes a configuration socket that can be used to change some configuration options dynamically. This socket can be configured via the `configure` sections:
 | Option | Default | Description |
 | --- | --- | --- |
-| path | `/run/ntpd-rs/configure` | Path on which the observation socket is exposed. |
+| path | `/run/ntpd-rs/configure` | Path on which the configuration socket is exposed. |
 | mode | 0o777 | Permissions with which the socket should be created, given as (octal) integer. |
 
 There are a number of options available to influence how time differences to the various servers are used to synchronize the system clock. All of these are part of the `system` section of the configuration:
