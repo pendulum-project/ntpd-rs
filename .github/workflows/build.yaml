@@ -46,6 +46,32 @@ jobs:
         env:
           RUST_BACKTRACE: 1
 
+  unused:
+    name: Unused dependencies
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        features:
+          - ""
+          - "--features sentry"
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+        with:
+          persist-credentials: false
+
+      - name: Install nightly toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+      
+      - name: Install udeps
+        run: cargo install cargo-udeps --locked
+
+      - name: cargo udeps
+        run: cargo udeps --all-targets ${{ matrix.features }}
+
   format:
     name: Format
     runs-on: ubuntu-latest
