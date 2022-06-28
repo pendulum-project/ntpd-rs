@@ -63,88 +63,57 @@ async fn main() -> std::io::Result<()> {
         },
     };
 
+    let socket_path = match cli.command {
+        Command::Peers | Command::System => &observation,
+        Command::Config(_) => &configuration,
+    };
+
+    let mut stream = match tokio::net::UnixStream::connect(socket_path).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            eprintln!("Could not open socket at {}: {}", socket_path.display(), e);
+            std::process::exit(1);
+        }
+    };
+
     let exit_code = match cli.command {
         Command::Peers => {
-            match tokio::net::UnixStream::connect(&observation).await {
-                Ok(mut stream) => {
-                    let mut msg = Vec::with_capacity(16 * 1024);
-                    match ntp_daemon::sockets::read_json::<ObservableState>(&mut stream, &mut msg)
-                        .await
-                    {
-                        Ok(output) => {
-                            // Unwrap here is fine as our serializer is infallible.
-                            println!("{}", serde_json::to_string_pretty(&output.peers).unwrap());
+            let mut msg = Vec::with_capacity(16 * 1024);
+            match ntp_daemon::sockets::read_json::<ObservableState>(&mut stream, &mut msg).await {
+                Ok(output) => {
+                    // Unwrap here is fine as our serializer is infallible.
+                    println!("{}", serde_json::to_string_pretty(&output.peers).unwrap());
 
-                            0
-                        }
-                        Err(e) => {
-                            println!("Failed to read state from observation socket: {}", e);
-
-                            1
-                        }
-                    }
+                    0
                 }
                 Err(e) => {
-                    println!(
-                        "Could not open observation socket at {}: {}",
-                        observation.display(),
-                        e
-                    );
+                    eprintln!("Failed to read state from observation socket: {}", e);
 
                     1
                 }
             }
         }
         Command::System => {
-            match tokio::net::UnixStream::connect(&observation).await {
-                Ok(mut stream) => {
-                    let mut msg = Vec::with_capacity(16 * 1024);
+            let mut msg = Vec::with_capacity(16 * 1024);
+            match ntp_daemon::sockets::read_json::<ObservableState>(&mut stream, &mut msg).await {
+                Ok(output) => {
+                    // Unwrap here is fine as our serializer is infallible.
+                    println!("{}", serde_json::to_string_pretty(&output.system).unwrap());
 
-                    match ntp_daemon::sockets::read_json::<ObservableState>(&mut stream, &mut msg)
-                        .await
-                    {
-                        Ok(output) => {
-                            // Unwrap here is fine as our serializer is infallible.
-                            println!("{}", serde_json::to_string_pretty(&output.system).unwrap());
-
-                            0
-                        }
-                        Err(e) => {
-                            println!("Failed to read state from observation socket: {}", e);
-
-                            1
-                        }
-                    }
+                    0
                 }
                 Err(e) => {
-                    println!(
-                        "Could not open observation socket at {}: {}",
-                        observation.display(),
-                        e
-                    );
+                    eprintln!("Failed to read state from observation socket: {}", e);
 
                     1
                 }
             }
         }
         Command::Config(config_update) => {
-            match tokio::net::UnixStream::connect(&configuration).await {
-                Ok(mut stream) => {
-                    match ntp_daemon::sockets::write_json(&mut stream, &config_update).await {
-                        Ok(_) => 0,
-                        Err(e) => {
-                            println!("Failed to update configuration: {}", e);
-
-                            1
-                        }
-                    }
-                }
+            match ntp_daemon::sockets::write_json(&mut stream, &config_update).await {
+                Ok(_) => 0,
                 Err(e) => {
-                    println!(
-                        "Could not open observation socket at {}: {}",
-                        configuration.display(),
-                        e
-                    );
+                    eprintln!("Failed to update configuration: {}", e);
 
                     1
                 }
