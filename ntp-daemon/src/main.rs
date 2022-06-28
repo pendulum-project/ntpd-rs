@@ -46,20 +46,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .await
     });
 
-    let peer_state_handle =
-        ntp_daemon::observer::spawn(&config.observe, peers_reader, system_reader).await;
+    ntp_daemon::observer::spawn(&config.observe, peers_reader, system_reader).await;
 
-    let dynamic_config_handle = ntp_daemon::config::dynamic::spawn(
+    ntp_daemon::config::dynamic::spawn(
         config.configure,
         system_config,
         tracing_state.reload_handle,
     )
     .await;
 
-    // exit if any of the tasks has completed
-    tokio::select! {
-        done = main_loop_handle => Ok(done??),
-        done = peer_state_handle => Ok(done??),
-        done = dynamic_config_handle => Ok(done??),
-    }
+    Ok(main_loop_handle.await??)
 }
