@@ -39,4 +39,4 @@ The NTPD-rs daemon can expose two sockets:
  - The observe socket is read-only and exposes some of the peer and clock algorithm state.
  - The configuration socket accepts commands and allows changing of some of the configuration settings.
 
-When enabling these sockets, these are by default exposed with quite generous permissions (`0o777` for observation and `0o770` for configuration). You should consider restricting access to these sockets, depending on the other software running on the system, and the techniques used for managing it.
+When enabled, these sockets are by default exposed with quite generous permissions (`0o777` for observation and `0o770` for configuration). You should consider restricting access to these sockets, depending on the other software running on the system, and the techniques used for managing it.
