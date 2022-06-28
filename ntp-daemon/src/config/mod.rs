@@ -1,4 +1,5 @@
 pub mod dynamic;
+pub mod format;
 mod peer;
 
 pub use peer::*;
@@ -14,6 +15,8 @@ use thiserror::Error;
 use tokio::{fs::read_to_string, io};
 use tracing::{info, warn};
 use tracing_subscriber::filter::{self, EnvFilter};
+
+use self::format::LogFormat;
 
 fn parse_env_filter(input: &str) -> Result<EnvFilter, filter::ParseError> {
     EnvFilter::builder().with_regex(false).parse(input)
@@ -43,15 +46,32 @@ pub struct CmdArgs {
         long = "peer",
         global = true,
         value_name = "SERVER",
-        parse(try_from_str = TryFrom::try_from)
+        parse(try_from_str = TryFrom::try_from),
+        help = "Override the peers in the configuration file"
     )]
     pub peers: Vec<PeerConfig>,
 
-    #[clap(short, long, parse(from_os_str), global = true, value_name = "FILE")]
+    #[clap(
+        short,
+        long,
+        parse(from_os_str),
+        global = true,
+        value_name = "FILE",
+        help = "Path of the configuration file"
+    )]
     pub config: Option<PathBuf>,
 
-    #[clap(long, short, global = true, parse(try_from_str = parse_env_filter), env = "NTP_LOG")]
+    #[clap(long, short, global = true, value_name = "FILTER", parse(try_from_str = parse_env_filter), env = "NTP_LOG", help = "Filter to apply to log messages")]
     pub log_filter: Option<EnvFilter>,
+
+    #[clap(
+        long,
+        global = true,
+        value_name = "FORMAT",
+        env = "NTP_LOG_FORMAT",
+        help = "Output format for logs (full, compact, pretty, json)"
+    )]
+    pub log_format: Option<LogFormat>,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -62,6 +82,8 @@ pub struct Config {
     pub system: SystemConfig,
     #[serde(deserialize_with = "deserialize_option_env_filter", default)]
     pub log_filter: Option<EnvFilter>,
+    #[serde(default)]
+    pub log_format: LogFormat,
     #[cfg(feature = "sentry")]
     #[serde(default)]
     pub sentry: SentryConfig,
