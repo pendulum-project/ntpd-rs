@@ -37,10 +37,21 @@ pub struct ConfigUpdate {
     pub panic_threshold: Option<f64>,
 }
 
-pub async fn spawn(
+// Deal with reloading not being possible during testing.
+pub trait LogReloader {
+    fn update_log(&self, f: EnvFilter);
+}
+
+impl LogReloader for ReloadHandle {
+    fn update_log(&self, f: EnvFilter) {
+        self.modify(|l| *l.filter_mut() = f).unwrap();
+    }
+}
+
+pub async fn spawn<H: LogReloader + Send + 'static>(
     config: ConfigureConfig,
     system_config: Arc<RwLock<SystemConfig>>,
-    log_reload_handle: ReloadHandle,
+    log_reload_handle: H,
 ) -> JoinHandle<std::io::Result<()>> {
     tokio::spawn(async move {
         let result = dynamic_configuration(config, system_config, log_reload_handle).await;
@@ -51,10 +62,10 @@ pub async fn spawn(
     })
 }
 
-async fn dynamic_configuration(
+async fn dynamic_configuration<H: LogReloader>(
     config: ConfigureConfig,
     system_config: Arc<RwLock<SystemConfig>>,
-    log_reload_handle: ReloadHandle,
+    log_reload_handle: H,
 ) -> std::io::Result<()> {
     let path = match config.path {
         Some(path) => path,
@@ -83,9 +94,7 @@ async fn dynamic_configuration(
         tracing::info!(?operation, "dynamic config update");
 
         if let Some(filter) = operation.log_filter {
-            log_reload_handle
-                .modify(|l| *l.filter_mut() = EnvFilter::new(filter))
-                .unwrap();
+            log_reload_handle.update_log(EnvFilter::new(filter));
         }
 
         let mut config = system_config.write().await;
@@ -93,5 +102,58 @@ async fn dynamic_configuration(
         if let Some(panic_threshold) = operation.panic_threshold {
             config.panic_threshold = Some(NtpDuration::from_seconds(panic_threshold));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use crate::sockets::write_json;
+
+    use super::*;
+
+    struct TestLogReloader {}
+    impl LogReloader for TestLogReloader {
+        fn update_log(&self, _f: EnvFilter) {}
+    }
+
+    #[tokio::test]
+    async fn test_dynamic_configuration_change() {
+        let system_config = Arc::new(RwLock::new(SystemConfig::default()));
+        let system_config_test = system_config.clone();
+
+        let path = std::env::temp_dir().join("ntp-test-stream-4");
+        let config = ConfigureConfig {
+            path: Some(path.clone()),
+            mode: 0o700,
+        };
+
+        let handle = spawn(config, system_config, TestLogReloader {}).await;
+
+        // Ensure client has started.
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let mut stream = tokio::net::UnixStream::connect(path).await.unwrap();
+
+        write_json(
+            &mut stream,
+            &ConfigUpdate {
+                log_filter: Some("info".into()),
+                panic_threshold: Some(600.),
+            },
+        )
+        .await
+        .unwrap();
+
+        // Ensure message is handled.
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        assert_eq!(
+            system_config_test.read().await.panic_threshold,
+            Some(NtpDuration::from_seconds(600.))
+        );
+
+        handle.abort();
     }
 }
