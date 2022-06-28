@@ -4,6 +4,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use tokio::net::UnixListener;
 use tokio::task::JoinHandle;
+use tracing::error;
 
 use serde::{Deserialize, Serialize};
 
@@ -18,7 +19,14 @@ pub async fn spawn(
     peers_reader: Arc<tokio::sync::RwLock<Peers>>,
     system_reader: Arc<tokio::sync::RwLock<SystemSnapshot>>,
 ) -> JoinHandle<std::io::Result<()>> {
-    tokio::spawn(observer(config.clone(), peers_reader, system_reader))
+    let config = config.clone();
+    tokio::spawn(async move {
+        let result = observer(config, peers_reader, system_reader).await;
+        if let Err(ref e) = result {
+            error!("Abnormal termination of state observer: {}", e);
+        }
+        result
+    })
 }
 
 async fn observer(
@@ -26,17 +34,22 @@ async fn observer(
     peers_reader: Arc<tokio::sync::RwLock<Peers>>,
     system_reader: Arc<tokio::sync::RwLock<SystemSnapshot>>,
 ) -> std::io::Result<()> {
+    let path = match config.path {
+        Some(path) => path,
+        None => return Ok(()),
+    };
+
     // must unlink path before the bind below (otherwise we get "address already in use")
-    if config.path.exists() {
-        std::fs::remove_file(&config.path)?;
+    if path.exists() {
+        std::fs::remove_file(&path)?;
     }
-    let peers_listener = UnixListener::bind(&config.path)?;
+    let peers_listener = UnixListener::bind(&path)?;
 
     // this binary needs to run as root to be able to adjust the system clock.
     // by default, the socket inherits root permissions, but the client should not need
     // elevated permissions to read from the socket. So we explicitly set the permissions
     let permissions: std::fs::Permissions = PermissionsExt::from_mode(config.mode);
-    std::fs::set_permissions(&config.path, permissions)?;
+    std::fs::set_permissions(&path, permissions)?;
 
     loop {
         let (mut stream, _addr) = peers_listener.accept().await?;
@@ -69,7 +82,7 @@ mod tests {
         // be careful with copying: tests run concurrently and should use a unique socket name!
         let path = std::env::temp_dir().join("ntp-test-stream-2");
         let config = crate::config::ObserveConfig {
-            path: path.clone(),
+            path: Some(path.clone()),
             mode: 0o700,
         };
 
@@ -130,7 +143,7 @@ mod tests {
         // be careful with copying: tests run concurrently and should use a unique socket name!
         let path = std::env::temp_dir().join("ntp-test-stream-3");
         let config = crate::config::ObserveConfig {
-            path: path.clone(),
+            path: Some(path.clone()),
             mode: 0o700,
         };
 

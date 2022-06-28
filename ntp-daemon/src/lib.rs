@@ -8,5 +8,6 @@ mod system;
 pub mod tracing;
 
 pub use config::dynamic::ConfigUpdate;
+pub use config::Config;
 pub use observer::ObservableState;
 pub use system::{spawn, ObservablePeerState, Peers};
