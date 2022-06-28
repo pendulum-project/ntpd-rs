@@ -61,17 +61,19 @@ Peers are configured in the `peers` section. Per peer, the following options are
 | addr | | Address of the remote server |
 Note that peers can also be generated from simply a string containing the address, see also the example below.
 
-The daemon exposes an observation socket that can be read to obtain information on the current state of the peer connections and clock steering algorithm. This socket can be configured via the `observe` sections:
+The daemon can expose an observation socket that can be read to obtain information on the current state of the peer connections and clock steering algorithm. This socket can be configured via the `observe` sections:
 | Option | Default | Description |
 | --- | --- | --- |
-| path | `/run/ntpd-rs/observe` | Path on which the observation socket is exposed. |
+| path | | Path on which the observation socket is exposed. If no path is given, the observation socket is disabled. |
 | mode | 0o777 | Permissions with which the socket should be created, given as (octal) integer. |
 
-The daemon also exposes a configuration socket that can be used to change some configuration options dynamically. This socket can be configured via the `configure` sections:
+The daemon can also expose a configuration socket that can be used to change some configuration options dynamically. This socket can be configured via the `configure` sections:
 | Option | Default | Description |
 | --- | --- | --- |
-| path | `/run/ntpd-rs/configure` | Path on which the configuration socket is exposed. |
-| mode | 0o777 | Permissions with which the socket should be created, given as (octal) integer. |
+| path | | Path on which the configuration socket is exposed. If no path is given, the configuration socket is disabled. |
+| mode | 0o770 | Permissions with which the socket should be created, given as (octal) integer. |
+
+The management and configuration sockets are used by the [management client](MANAGEMENT_CLIENT.md) to display the daemon's state and to allow for dynamic changing of some configuration parameters.
 
 There are a number of options available to influence how time differences to the various servers are used to synchronize the system clock. All of these are part of the `system` section of the configuration:
 | Option | Default | Description |
