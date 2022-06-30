@@ -14,4 +14,4 @@ tracing = "0.1.35"
 tracing-subscriber = "0.3.11"
 clap = { version = "3.2.6", features = ["derive", "env"] }
 serde = { version = "1.0.137", features = ["derive"] }
-serde_json = "1.0.81"
+serde_json = "1.0.82"
