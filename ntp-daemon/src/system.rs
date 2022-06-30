@@ -347,7 +347,7 @@ mod tests {
         let prev_epoch = ResetEpoch::default();
         let epoch = prev_epoch.inc();
         let mut peers = Peers::new(&test_peer_configs(4));
-        assert_eq!(peers.valid_snapshots().collect::<Vec<_>>().len(), 0);
+        assert_eq!(peers.valid_snapshots().count(), 0);
 
         let new = peers.receive_update(
             MsgForSystem::NewMeasurement(
@@ -372,7 +372,7 @@ mod tests {
             PollInterval::MIN,
         );
         assert_eq!(new, NewMeasurement::No);
-        assert_eq!(peers.valid_snapshots().collect::<Vec<_>>().len(), 0);
+        assert_eq!(peers.valid_snapshots().count(), 0);
 
         let new = peers.receive_update(
             MsgForSystem::NewMeasurement(
@@ -397,7 +397,7 @@ mod tests {
             PollInterval::MIN,
         );
         assert_eq!(new, NewMeasurement::No);
-        assert_eq!(peers.valid_snapshots().collect::<Vec<_>>().len(), 1);
+        assert_eq!(peers.valid_snapshots().count(), 1);
 
         let new = peers.receive_update(
             MsgForSystem::NewMeasurement(
@@ -422,7 +422,7 @@ mod tests {
             PollInterval::MIN,
         );
         assert_eq!(new, NewMeasurement::Yes);
-        assert_eq!(peers.valid_snapshots().collect::<Vec<_>>().len(), 1);
+        assert_eq!(peers.valid_snapshots().count(), 1);
 
         let new = peers.receive_update(
             MsgForSystem::UpdatedSnapshot(
@@ -447,7 +447,7 @@ mod tests {
             PollInterval::MIN,
         );
         assert_eq!(new, NewMeasurement::No);
-        assert_eq!(peers.valid_snapshots().collect::<Vec<_>>().len(), 2);
+        assert_eq!(peers.valid_snapshots().count(), 2);
 
         let new = peers.receive_update(
             MsgForSystem::MustDemobilize(PeerIndex { index: 1 }),
@@ -458,10 +458,10 @@ mod tests {
             PollInterval::MIN,
         );
         assert_eq!(new, NewMeasurement::No);
-        assert_eq!(peers.valid_snapshots().collect::<Vec<_>>().len(), 1);
+        assert_eq!(peers.valid_snapshots().count(), 1);
 
         peers.reset_all();
-        assert_eq!(peers.valid_snapshots().collect::<Vec<_>>().len(), 0);
+        assert_eq!(peers.valid_snapshots().count(), 0);
     }
 
     fn test_peer_configs(n: usize) -> Vec<PeerConfig> {
@@ -522,15 +522,7 @@ mod tests {
         reset_rx.changed().await.unwrap();
 
         assert_ne!(*reset_rx.borrow(), prev_epoch);
-        assert_eq!(
-            peers_copy
-                .read()
-                .await
-                .valid_snapshots()
-                .collect::<Vec<_>>()
-                .len(),
-            0
-        );
+        assert_eq!(peers_copy.read().await.valid_snapshots().count(), 0);
 
         msg_for_system_tx
             .send(MsgForSystem::NewMeasurement(
@@ -555,15 +547,7 @@ mod tests {
         // but should work often enough that we should see any problem.
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
-        assert_eq!(
-            peers_copy
-                .read()
-                .await
-                .valid_snapshots()
-                .collect::<Vec<_>>()
-                .len(),
-            0
-        );
+        assert_eq!(peers_copy.read().await.valid_snapshots().count(), 0);
 
         handle.abort();
     }
