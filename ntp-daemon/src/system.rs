@@ -45,7 +45,7 @@ pub async fn spawn(
         .await?;
     }
 
-    let peers = Peers::new(peer_configs.len());
+    let peers = Peers::new(peer_configs);
 
     {
         let mut writer = peers_rwlock.write().await;
@@ -185,12 +185,14 @@ pub enum ObservablePeerState {
         uptime: std::time::Duration,
         poll_interval: std::time::Duration,
         peer_id: ReferenceId,
+        address: String,
     },
 }
 
 #[derive(Debug, Default)]
 pub struct Peers {
     peers: Box<[PeerStatus]>,
+    peer_configs: Vec<PeerConfig>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -200,16 +202,18 @@ enum NewMeasurement {
 }
 
 impl Peers {
-    fn new(length: usize) -> Self {
+    fn new(peer_configs: &[PeerConfig]) -> Self {
         Self {
-            peers: vec![PeerStatus::NoMeasurement; length].into(),
+            peers: vec![PeerStatus::NoMeasurement; peer_configs.len()].into(),
+            peer_configs: peer_configs.to_vec(),
         }
     }
 
     #[cfg(test)]
-    pub(crate) fn from_statuslist(data: &[PeerStatus]) -> Self {
+    pub(crate) fn from_statuslist(data: &[PeerStatus], peer_configs: &[PeerConfig]) -> Self {
         Self {
             peers: data.to_owned().into(),
+            peer_configs: peer_configs.to_vec(),
         }
     }
 
@@ -218,17 +222,21 @@ impl Peers {
     }
 
     pub fn observe(&self) -> impl Iterator<Item = ObservablePeerState> + '_ {
-        self.peers.iter().map(|status| match status {
-            PeerStatus::Demobilized => ObservablePeerState::Nothing,
-            PeerStatus::NoMeasurement => ObservablePeerState::Nothing,
-            PeerStatus::Measurement(snapshot) => ObservablePeerState::Observable {
-                statistics: snapshot.statistics,
-                reachability: snapshot.reach,
-                uptime: snapshot.time.elapsed(),
-                poll_interval: snapshot.poll_interval.as_system_duration(),
-                peer_id: snapshot.peer_id,
-            },
-        })
+        self.peers
+            .iter()
+            .zip(self.peer_configs.iter())
+            .map(|(status, config)| match status {
+                PeerStatus::Demobilized => ObservablePeerState::Nothing,
+                PeerStatus::NoMeasurement => ObservablePeerState::Nothing,
+                PeerStatus::Measurement(snapshot) => ObservablePeerState::Observable {
+                    statistics: snapshot.statistics,
+                    reachability: snapshot.reach,
+                    uptime: snapshot.time.elapsed(),
+                    poll_interval: snapshot.poll_interval.as_system_duration(),
+                    peer_id: snapshot.peer_id,
+                    address: config.addr.clone(),
+                },
+            })
     }
 
     fn valid_snapshots(&self) -> impl Iterator<Item = PeerSnapshot> + '_ {
@@ -299,6 +307,8 @@ impl Peers {
 mod tests {
     use ntp_proto::{peer_snapshot, NtpLeapIndicator, NtpTimestamp};
 
+    use crate::config::PeerHostMode;
+
     use super::*;
 
     #[derive(Debug, Clone, Default)]
@@ -336,7 +346,7 @@ mod tests {
         let base = NtpInstant::now();
         let prev_epoch = ResetEpoch::default();
         let epoch = prev_epoch.inc();
-        let mut peers = Peers::new(4);
+        let mut peers = Peers::new(&test_peer_configs(4));
         assert_eq!(peers.valid_snapshots().collect::<Vec<_>>().len(), 0);
 
         let new = peers.receive_update(
@@ -454,6 +464,15 @@ mod tests {
         assert_eq!(peers.valid_snapshots().collect::<Vec<_>>().len(), 0);
     }
 
+    fn test_peer_configs(n: usize) -> Vec<PeerConfig> {
+        (0..n)
+            .map(|i| PeerConfig {
+                addr: format!("127.0.0.{i}:123"),
+                mode: PeerHostMode::Server,
+            })
+            .collect()
+    }
+
     #[tokio::test]
     async fn test_system_reset() {
         let config = Arc::new(tokio::sync::RwLock::new(SystemConfig::default()));
@@ -461,7 +480,8 @@ mod tests {
         let (reset_tx, mut reset_rx) = watch::channel::<ResetEpoch>(reset_epoch);
         let (msg_for_system_tx, msg_for_system_rx) = mpsc::channel::<MsgForSystem>(32);
         let global_system_snapshot = Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default()));
-        let peers_rwlock = Arc::new(tokio::sync::RwLock::new(Peers::new(4)));
+
+        let peers_rwlock = Arc::new(tokio::sync::RwLock::new(Peers::new(&test_peer_configs(4))));
         let peers_copy = peers_rwlock.clone();
 
         let handle = tokio::spawn(async move {
