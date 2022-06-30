@@ -5,7 +5,7 @@ use serde::{
     Deserialize, Deserializer,
 };
 
-#[derive(Deserialize, Debug, PartialEq, Eq)]
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PeerHostMode {
     Server,
 }
@@ -16,7 +16,7 @@ impl Default for PeerHostMode {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct PeerConfig {
     // Invariant: `.to_socket_addrs` will succeed on this value. That means it must use a valid tld
     // and contain a port

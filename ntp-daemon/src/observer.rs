@@ -73,7 +73,10 @@ mod tests {
     };
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
-    use crate::system::PeerStatus;
+    use crate::{
+        config::{PeerConfig, PeerHostMode},
+        system::PeerStatus,
+    };
 
     use super::*;
 
@@ -86,7 +89,7 @@ mod tests {
             mode: 0o700,
         };
 
-        let peers_reader = Arc::new(tokio::sync::RwLock::new(Peers::from_statuslist(&[
+        let status_list = [
             PeerStatus::Demobilized,
             PeerStatus::NoMeasurement,
             PeerStatus::Measurement(PeerSnapshot {
@@ -108,7 +111,27 @@ mod tests {
                 root_delay: NtpDuration::from_seconds(0.2),
                 root_dispersion: NtpDuration::from_seconds(0.02),
             }),
-        ])));
+        ];
+
+        let peer_configs = [
+            PeerConfig {
+                addr: "127.0.0.1:123".to_string(),
+                mode: PeerHostMode::Server,
+            },
+            PeerConfig {
+                addr: "127.0.0.2:123".to_string(),
+                mode: PeerHostMode::Server,
+            },
+            PeerConfig {
+                addr: "127.0.0.3:123".to_string(),
+                mode: PeerHostMode::Server,
+            },
+        ];
+
+        let peers_reader = Arc::new(tokio::sync::RwLock::new(Peers::from_statuslist(
+            &status_list,
+            &peer_configs,
+        )));
 
         let system_reader = Arc::new(tokio::sync::RwLock::new(SystemSnapshot {
             poll_interval: PollInterval::MIN,
@@ -147,7 +170,7 @@ mod tests {
             mode: 0o700,
         };
 
-        let peers_reader = Arc::new(tokio::sync::RwLock::new(Peers::from_statuslist(&[
+        let status_list = [
             PeerStatus::Demobilized,
             PeerStatus::NoMeasurement,
             PeerStatus::Measurement(PeerSnapshot {
@@ -169,7 +192,27 @@ mod tests {
                 root_delay: NtpDuration::from_seconds(0.2),
                 root_dispersion: NtpDuration::from_seconds(0.02),
             }),
-        ])));
+        ];
+
+        let peer_configs = [
+            PeerConfig {
+                addr: "127.0.0.1:123".to_string(),
+                mode: PeerHostMode::Server,
+            },
+            PeerConfig {
+                addr: "127.0.0.2:123".to_string(),
+                mode: PeerHostMode::Server,
+            },
+            PeerConfig {
+                addr: "127.0.0.3:123".to_string(),
+                mode: PeerHostMode::Server,
+            },
+        ];
+
+        let peers_reader = Arc::new(tokio::sync::RwLock::new(Peers::from_statuslist(
+            &status_list,
+            &peer_configs,
+        )));
 
         let peers_writer = peers_reader.clone();
 
