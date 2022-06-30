@@ -70,7 +70,7 @@ impl std::fmt::Debug for Reach {
 }
 
 impl Reach {
-    fn is_reachable(&self) -> bool {
+    pub fn is_reachable(&self) -> bool {
         self.0 != 0
     }
 
@@ -83,6 +83,11 @@ impl Reach {
     /// determining that a peer is still reachable. We discount the packets received so far.
     fn poll(&mut self) {
         self.0 <<= 1
+    }
+
+    /// Number of polls since the last message we received
+    pub fn unanswered_polls(&self) -> u32 {
+        self.0.leading_zeros()
     }
 }
 
