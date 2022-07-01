@@ -4,9 +4,8 @@ use crate::{
 };
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
-    ClockController, ClockUpdateResult, FilterAndCombine, FrequencyTolerance, NtpClock,
-    NtpDuration, NtpInstant, PeerSnapshot, PeerStatistics, PollInterval, Reach, ReferenceId,
-    SystemConfig, SystemSnapshot,
+    ClockController, ClockUpdateResult, FilterAndCombine, NtpClock, NtpInstant, PeerSnapshot,
+    PeerStatistics, PollInterval, Reach, ReferenceId, SystemConfig, SystemSnapshot,
 };
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -52,126 +51,118 @@ pub async fn spawn(
         *writer = peers;
     }
 
-    run(
+    let mut system = System {
         config,
-        reset_epoch,
-        system_rwlock,
+        global_system_snapshot: system_rwlock,
+        peers_rwlock,
+
         msg_for_system_rx,
         reset_tx,
-        peers_rwlock,
-        UnixNtpClock::new(),
-    )
-    .await
-}
 
-async fn run<C: NtpClock>(
-    config: Arc<tokio::sync::RwLock<SystemConfig>>,
-    mut reset_epoch: ResetEpoch,
-    global_system_snapshot: Arc<tokio::sync::RwLock<SystemSnapshot>>,
-    mut msg_for_system_rx: mpsc::Receiver<MsgForSystem>,
-    reset_tx: watch::Sender<ResetEpoch>,
-    peers_rwlock: Arc<tokio::sync::RwLock<Peers>>,
-    clock: C,
-) -> std::io::Result<()> {
-    let mut controller = ClockController::new(clock);
-    let mut snapshots = Vec::with_capacity(peers_rwlock.read().await.len());
-
-    while let Some(msg_for_system) = msg_for_system_rx.recv().await {
-        let ntp_instant = NtpInstant::now();
-        let system_poll = global_system_snapshot.read().await.poll_interval;
-
-        // ensure the config is not updated in the middle of clock selection
-        let config = *config.read().await;
-
-        peers_rwlock
-            .write()
-            .await
-            .update(msg_for_system, reset_epoch);
-
-        if !requires_clock_recalculation(
-            msg_for_system,
-            reset_epoch,
-            ntp_instant,
-            config.frequency_tolerance,
-            config.distance_threshold,
-            system_poll,
-        ) {
-            continue;
-        }
-
-        recalculate_clock(
-            &mut snapshots,
-            &peers_rwlock,
-            config,
-            ntp_instant,
-            system_poll,
-            &mut controller,
-            &mut reset_epoch,
-            &reset_tx,
-            &global_system_snapshot,
-        )
-        .await;
-    }
-
-    // the channel closed and has no more messages in it
-    Ok(())
-}
-
-async fn recalculate_clock<C: NtpClock>(
-    snapshots: &mut Vec<PeerSnapshot>,
-    peers_rwlock: &Arc<tokio::sync::RwLock<Peers>>,
-    config: SystemConfig,
-    ntp_instant: NtpInstant,
-    system_poll: PollInterval,
-    controller: &mut ClockController<C>,
-    reset_epoch: &mut ResetEpoch,
-    reset_tx: &watch::Sender<ResetEpoch>,
-    global_system_snapshot: &Arc<tokio::sync::RwLock<SystemSnapshot>>,
-) {
-    snapshots.clear();
-    snapshots.extend(peers_rwlock.read().await.valid_snapshots());
-    let result = FilterAndCombine::run(&config, &*snapshots, ntp_instant, system_poll);
-    let clock_select = match result {
-        Some(clock_select) => clock_select,
-        None => {
-            info!("filter and combine did not produce a result");
-            return;
-        }
+        reset_epoch,
+        controller: ClockController::new(UnixNtpClock::new()),
     };
-    let offset_ms = clock_select.system_offset.to_seconds() * 1000.0;
-    let jitter_ms = clock_select.system_jitter.to_seconds() * 1000.0;
-    info!(offset_ms, jitter_ms, "system offset and jitter");
-    let adjust_type = controller.update(
-        &config,
-        clock_select.system_offset,
-        clock_select.system_jitter,
-        clock_select.system_root_delay,
-        clock_select.system_root_dispersion,
-        clock_select.system_peer_snapshot.leap_indicator,
-        clock_select.system_peer_snapshot.time,
-    );
-    match adjust_type {
-        ClockUpdateResult::Panic => {
-            panic!(
-                r"Unusually large clock step suggested,
-                            please manually verify system clock and reference clock
-                                 state and restart if appropriate."
-            )
-        }
-        ClockUpdateResult::Step => {
-            peers_rwlock.write().await.reset_all();
 
-            *reset_epoch = reset_epoch.inc();
-            reset_tx.send_replace(*reset_epoch);
+    system.run().await
+}
+
+struct System<C: NtpClock> {
+    config: Arc<tokio::sync::RwLock<SystemConfig>>,
+    global_system_snapshot: Arc<tokio::sync::RwLock<SystemSnapshot>>,
+    peers_rwlock: Arc<tokio::sync::RwLock<Peers>>,
+
+    msg_for_system_rx: mpsc::Receiver<MsgForSystem>,
+    reset_tx: watch::Sender<ResetEpoch>,
+
+    reset_epoch: ResetEpoch,
+    controller: ClockController<C>,
+}
+
+impl<C: NtpClock> System<C> {
+    async fn run(&mut self) -> std::io::Result<()> {
+        let mut snapshots = Vec::with_capacity(self.peers_rwlock.read().await.len());
+
+        while let Some(msg_for_system) = self.msg_for_system_rx.recv().await {
+            let ntp_instant = NtpInstant::now();
+            let system_poll = self.global_system_snapshot.read().await.poll_interval;
+
+            // ensure the config is not updated in the middle of clock selection
+            let config = *self.config.read().await;
+
+            self.peers_rwlock
+                .write()
+                .await
+                .update(msg_for_system, self.reset_epoch);
+
+            if requires_clock_recalculation(
+                msg_for_system,
+                self.reset_epoch,
+                ntp_instant,
+                config,
+                system_poll,
+            ) {
+                self.recalculate_clock(&mut snapshots, config, ntp_instant, system_poll)
+                    .await;
+            }
         }
-        _ => {}
+
+        // the channel closed and has no more messages in it
+        Ok(())
     }
-    if let ClockUpdateResult::Ignore = adjust_type {
-        // ignore this update
-    } else {
-        let mut global = global_system_snapshot.write().await;
-        global.poll_interval = controller.preferred_poll_interval();
-        global.leap_indicator = clock_select.system_peer_snapshot.leap_indicator;
+
+    async fn recalculate_clock(
+        &mut self,
+        snapshots: &mut Vec<PeerSnapshot>,
+        config: SystemConfig,
+        ntp_instant: NtpInstant,
+        system_poll: PollInterval,
+    ) {
+        snapshots.clear();
+        snapshots.extend(self.peers_rwlock.read().await.valid_snapshots());
+        let result = FilterAndCombine::run(&config, &*snapshots, ntp_instant, system_poll);
+        let clock_select = match result {
+            Some(clock_select) => clock_select,
+            None => {
+                info!("filter and combine did not produce a result");
+                return;
+            }
+        };
+        let offset_ms = clock_select.system_offset.to_seconds() * 1000.0;
+        let jitter_ms = clock_select.system_jitter.to_seconds() * 1000.0;
+        info!(offset_ms, jitter_ms, "system offset and jitter");
+        let adjust_type = self.controller.update(
+            &config,
+            clock_select.system_offset,
+            clock_select.system_jitter,
+            clock_select.system_root_delay,
+            clock_select.system_root_dispersion,
+            clock_select.system_peer_snapshot.leap_indicator,
+            clock_select.system_peer_snapshot.time,
+        );
+        match adjust_type {
+            ClockUpdateResult::Panic => {
+                panic!(
+                    r"Unusually large clock step suggested,
+                                please manually verify system clock and reference clock
+                                     state and restart if appropriate."
+                )
+            }
+            ClockUpdateResult::Step => {
+                self.reset_peers().await;
+            }
+            _ => {}
+        }
+        if adjust_type != ClockUpdateResult::Ignore {
+            let mut global = self.global_system_snapshot.write().await;
+            global.poll_interval = self.controller.preferred_poll_interval();
+            global.leap_indicator = clock_select.system_peer_snapshot.leap_indicator;
+        }
+    }
+
+    async fn reset_peers(&mut self) {
+        self.peers_rwlock.write().await.reset_all();
+        self.reset_epoch = self.reset_epoch.inc();
+        self.reset_tx.send_replace(self.reset_epoch);
     }
 }
 
@@ -180,8 +171,7 @@ fn requires_clock_recalculation(
     current_reset_epoch: ResetEpoch,
 
     local_clock_time: NtpInstant,
-    frequency_tolerance: FrequencyTolerance,
-    distance_threshold: NtpDuration,
+    config: SystemConfig,
     system_poll: PollInterval,
 ) -> bool {
     if let MsgForSystem::NewMeasurement(_, msg_reset_epoch, snapshot) = msg {
@@ -189,8 +179,8 @@ fn requires_clock_recalculation(
             && snapshot
                 .accept_synchronization(
                     local_clock_time,
-                    frequency_tolerance,
-                    distance_threshold,
+                    config.frequency_tolerance,
+                    config.distance_threshold,
                     system_poll,
                 )
                 .is_ok()
@@ -315,7 +305,7 @@ impl Peers {
 
 #[cfg(test)]
 mod tests {
-    use ntp_proto::{peer_snapshot, NtpLeapIndicator, NtpTimestamp};
+    use ntp_proto::{peer_snapshot, NtpDuration, NtpLeapIndicator, NtpTimestamp};
 
     use crate::config::PeerHostMode;
 
@@ -357,6 +347,8 @@ mod tests {
         let prev_epoch = ResetEpoch::default();
         let epoch = prev_epoch.inc();
 
+        let config = SystemConfig::default();
+
         assert_eq!(
             requires_clock_recalculation(
                 MsgForSystem::NewMeasurement(
@@ -376,8 +368,7 @@ mod tests {
                 ),
                 epoch,
                 base,
-                FrequencyTolerance::ppm(15),
-                NtpDuration::from_seconds(1.),
+                config,
                 PollInterval::MIN,
             ),
             false
@@ -402,8 +393,7 @@ mod tests {
                 ),
                 epoch,
                 base,
-                FrequencyTolerance::ppm(15),
-                NtpDuration::from_seconds(1.),
+                config,
                 PollInterval::MIN,
             ),
             false
@@ -428,8 +418,7 @@ mod tests {
                 ),
                 epoch,
                 base,
-                FrequencyTolerance::ppm(15),
-                NtpDuration::from_seconds(1.),
+                config,
                 PollInterval::MIN,
             ),
             true
@@ -454,8 +443,7 @@ mod tests {
                 ),
                 epoch,
                 base,
-                FrequencyTolerance::ppm(15),
-                NtpDuration::from_seconds(1.),
+                config,
                 PollInterval::MIN,
             ),
             false
@@ -466,8 +454,7 @@ mod tests {
                 MsgForSystem::MustDemobilize(PeerIndex { index: 1 }),
                 epoch,
                 base,
-                FrequencyTolerance::ppm(15),
-                NtpDuration::from_seconds(1.),
+                config,
                 PollInterval::MIN,
             ),
             false
@@ -590,17 +577,19 @@ mod tests {
         let peers_copy = peers_rwlock.clone();
 
         let handle = tokio::spawn(async move {
-            run(
+            let mut system = System {
                 config,
-                reset_epoch,
                 global_system_snapshot,
+                peers_rwlock,
+
                 msg_for_system_rx,
                 reset_tx,
-                peers_rwlock,
-                TestClock {},
-            )
-            .await
-            .unwrap();
+
+                reset_epoch,
+                controller: ClockController::new(TestClock {}),
+            };
+
+            system.run().await
         });
 
         let prev_epoch = *reset_rx.borrow_and_update();
