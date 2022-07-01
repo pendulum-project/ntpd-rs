@@ -1,6 +1,6 @@
 use crate::{
     filter::{FilterTuple, LastMeasurements},
-    packet::{NtpAssociationMode, NtpLeapIndicator},
+    packet::{NtpAssociationMode, NtpLeapIndicator, NTP_VERSION},
     time_types::{FrequencyTolerance, NtpInstant},
     NtpDuration, NtpHeader, NtpTimestamp, PollInterval, ReferenceId,
 };
@@ -111,6 +111,10 @@ impl Default for SystemSnapshot {
 pub enum IgnoreReason {
     /// The association mode is not one that this peer supports
     InvalidMode,
+    /// The NTP version is not one that this implementation supports
+    InvalidVersion,
+    /// The stratum of the server is too high
+    InvalidStratum,
     /// The send time on the received packet is not the time we sent it at
     InvalidPacketTime,
     /// Received a Kiss-o'-Death https://datatracker.ietf.org/doc/html/rfc5905#section-7.4
@@ -315,7 +319,14 @@ impl Peer {
             }
         };
 
-        if message.origin_timestamp != next_expected_origin {
+        if message.version() != NTP_VERSION {
+            // Ignore packets from different NTP versions
+            warn!(
+                "Received packet with non-recognized ntp version {}",
+                message.version()
+            );
+            Err(IgnoreReason::InvalidVersion)
+        } else if message.origin_timestamp != next_expected_origin {
             // Packets should be a response to a previous request from us,
             // if not just ignore. Note that this might also happen when
             // we reset between sending the request and receiving the response.
@@ -338,6 +349,13 @@ impl Peer {
             warn!("Unrecognized KISS Message from peer");
             // Ignore unrecognized control messages
             Err(IgnoreReason::KissIgnore)
+        } else if message.stratum > MAX_STRATUM {
+            // A servers stratum should be between 1 and MAX_STRATUM (16) inclusive.
+            warn!(
+                "Received message from server with excessive stratum {}",
+                message.stratum
+            );
+            Err(IgnoreReason::InvalidStratum)
         } else if message.mode != NtpAssociationMode::Server {
             // we currently only support a client <-> server association
             warn!("Received packet with invalid mode");
@@ -727,6 +745,88 @@ mod test {
                 NtpTimestamp::from_fixed_int(400)
             )
             .is_ok());
+        assert!(peer
+            .handle_incoming(
+                system,
+                packet,
+                base + Duration::from_secs(1),
+                FrequencyTolerance::ppm(15),
+                NtpTimestamp::from_fixed_int(0),
+                NtpTimestamp::from_fixed_int(500)
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn test_stratum_checks() {
+        let base = NtpInstant::now();
+        let mut peer = Peer::test_peer(base);
+
+        let system = SystemSnapshot::default();
+        let outgoing = peer.generate_poll_message(system);
+        let mut packet = NtpHeader::new();
+        let system = SystemSnapshot::default();
+        packet.stratum = MAX_STRATUM + 1;
+        packet.mode = NtpAssociationMode::Server;
+        packet.origin_timestamp = outgoing.transmit_timestamp;
+        packet.receive_timestamp = NtpTimestamp::from_fixed_int(100);
+        packet.transmit_timestamp = NtpTimestamp::from_fixed_int(200);
+        assert!(peer
+            .handle_incoming(
+                system,
+                packet,
+                base + Duration::from_secs(1),
+                FrequencyTolerance::ppm(15),
+                NtpTimestamp::from_fixed_int(0),
+                NtpTimestamp::from_fixed_int(500)
+            )
+            .is_err());
+
+        packet.stratum = 0;
+        assert!(peer
+            .handle_incoming(
+                system,
+                packet,
+                base + Duration::from_secs(1),
+                FrequencyTolerance::ppm(15),
+                NtpTimestamp::from_fixed_int(0),
+                NtpTimestamp::from_fixed_int(500)
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn test_version_checks() {
+        let base = NtpInstant::now();
+        let mut peer = Peer::test_peer(base);
+
+        let system = SystemSnapshot::default();
+        let outgoing = peer.generate_poll_message(system);
+        let mut packet = NtpHeader::new();
+        let system = SystemSnapshot::default();
+        packet.stratum = MAX_STRATUM + 1;
+        packet.mode = NtpAssociationMode::Server;
+        packet.origin_timestamp = outgoing.transmit_timestamp;
+        packet.receive_timestamp = NtpTimestamp::from_fixed_int(100);
+        packet.transmit_timestamp = NtpTimestamp::from_fixed_int(200);
+        let mut packetbuf = packet.serialize();
+        packetbuf[0] = (packetbuf[0] & !0x38) | (5 << 3);
+        let packet = NtpHeader::deserialize(&packetbuf);
+
+        assert!(peer
+            .handle_incoming(
+                system,
+                packet,
+                base + Duration::from_secs(1),
+                FrequencyTolerance::ppm(15),
+                NtpTimestamp::from_fixed_int(0),
+                NtpTimestamp::from_fixed_int(500)
+            )
+            .is_err());
+
+        packetbuf[0] = (packetbuf[0] & !0x38) | (3 << 3);
+        let packet = NtpHeader::deserialize(&packetbuf);
+
         assert!(peer
             .handle_incoming(
                 system,

@@ -84,6 +84,8 @@ impl NtpAssociationMode {
     }
 }
 
+pub const NTP_VERSION: u8 = 4;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct NtpHeader {
     pub leap: NtpLeapIndicator,
@@ -109,7 +111,7 @@ impl NtpHeader {
     pub fn new() -> Self {
         Self {
             leap: NtpLeapIndicator::NoWarning,
-            version: 4,
+            version: NTP_VERSION,
             mode: NtpAssociationMode::Client,
             stratum: 0,
             poll: 0,
