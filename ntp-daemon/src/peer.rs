@@ -440,7 +440,7 @@ mod tests {
 
         let process = PeerTask {
             _wait: PhantomData,
-            index: PeerIndex { index: 0 },
+            index: PeerIndex::from_inner(0),
             clock: TestClock {},
             channels: PeerChannels {
                 msg_for_system_sender,
@@ -472,7 +472,7 @@ mod tests {
         let (_reset_send, reset) = watch::channel(epoch);
 
         let handle = PeerTask::spawn(
-            PeerIndex { index: 0 },
+            PeerIndex::from_inner(0),
             "127.0.0.1:8003",
             TestClock {},
             PeerChannels {

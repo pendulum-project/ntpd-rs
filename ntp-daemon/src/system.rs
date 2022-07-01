@@ -1,7 +1,7 @@
 use crate::{
     config::PeerConfig,
     peer::{MsgForSystem, PeerChannels, PeerTask, ResetEpoch},
-    peer_manager::{PeerIndex, Peers},
+    peer_manager::Peers,
 };
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
@@ -27,7 +27,11 @@ pub async fn spawn(
     // receive peer snapshots from all peers
     let (msg_for_system_tx, msg_for_system_rx) = mpsc::channel::<MsgForSystem>(32);
 
-    for (index, peer_config) in peer_configs.iter().enumerate() {
+    let mut peers = Peers::new();
+
+    for peer_config in peer_configs.iter() {
+        let index = peers.add_peer(peer_config.to_owned());
+
         let channels = PeerChannels {
             msg_for_system_sender: msg_for_system_tx.clone(),
             system_snapshots: system_rwlock.clone(),
@@ -35,16 +39,8 @@ pub async fn spawn(
             system_config: config.clone(),
         };
 
-        PeerTask::spawn(
-            PeerIndex { index },
-            &peer_config.addr,
-            UnixNtpClock::new(),
-            channels,
-        )
-        .await?;
+        PeerTask::spawn(index, &peer_config.addr, UnixNtpClock::new(), channels).await?;
     }
-
-    let peers = Peers::new(peer_configs);
 
     {
         let mut writer = peers_rwlock.write().await;
@@ -193,7 +189,7 @@ fn requires_clock_recalculation(
 mod tests {
     use ntp_proto::{peer_snapshot, NtpDuration, NtpLeapIndicator, NtpTimestamp, PeerStatistics};
 
-    use crate::config::PeerHostMode;
+    use crate::{config::PeerHostMode, peer_manager::PeerIndex};
 
     use super::*;
 
@@ -238,7 +234,7 @@ mod tests {
         assert_eq!(
             requires_clock_recalculation(
                 MsgForSystem::NewMeasurement(
-                    PeerIndex { index: 0 },
+                    PeerIndex::from_inner(0),
                     prev_epoch,
                     peer_snapshot(
                         PeerStatistics {
@@ -263,7 +259,7 @@ mod tests {
         assert_eq!(
             requires_clock_recalculation(
                 MsgForSystem::NewMeasurement(
-                    PeerIndex { index: 0 },
+                    PeerIndex::from_inner(0),
                     epoch,
                     peer_snapshot(
                         PeerStatistics {
@@ -288,7 +284,7 @@ mod tests {
         assert_eq!(
             requires_clock_recalculation(
                 MsgForSystem::NewMeasurement(
-                    PeerIndex { index: 0 },
+                    PeerIndex::from_inner(0),
                     epoch,
                     peer_snapshot(
                         PeerStatistics {
@@ -313,7 +309,7 @@ mod tests {
         assert_eq!(
             requires_clock_recalculation(
                 MsgForSystem::UpdatedSnapshot(
-                    PeerIndex { index: 1 },
+                    PeerIndex::from_inner(1),
                     epoch,
                     peer_snapshot(
                         PeerStatistics {
@@ -337,7 +333,7 @@ mod tests {
 
         assert_eq!(
             requires_clock_recalculation(
-                MsgForSystem::MustDemobilize(PeerIndex { index: 1 }),
+                MsgForSystem::MustDemobilize(PeerIndex::from_inner(1)),
                 epoch,
                 base,
                 config,
@@ -345,15 +341,6 @@ mod tests {
             ),
             false
         );
-    }
-
-    fn test_peer_configs(n: usize) -> Vec<PeerConfig> {
-        (0..n)
-            .map(|i| PeerConfig {
-                addr: format!("127.0.0.{i}:123"),
-                mode: PeerHostMode::Server,
-            })
-            .collect()
     }
 
     #[tokio::test]
@@ -364,7 +351,14 @@ mod tests {
         let (msg_for_system_tx, msg_for_system_rx) = mpsc::channel::<MsgForSystem>(32);
         let global_system_snapshot = Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default()));
 
-        let peers_rwlock = Arc::new(tokio::sync::RwLock::new(Peers::new(&test_peer_configs(4))));
+        let mut peers = Peers::new();
+        for i in 0..4 {
+            peers.add_peer(PeerConfig {
+                addr: format!("127.0.0.{i}:123"),
+                mode: PeerHostMode::Server,
+            });
+        }
+        let peers_rwlock = Arc::new(tokio::sync::RwLock::new(peers));
         let peers_copy = peers_rwlock.clone();
 
         let handle = tokio::spawn(async move {
@@ -387,7 +381,7 @@ mod tests {
 
         msg_for_system_tx
             .send(MsgForSystem::NewMeasurement(
-                PeerIndex { index: 0 },
+                PeerIndex::from_inner(0),
                 prev_epoch,
                 peer_snapshot(
                     PeerStatistics {
@@ -411,7 +405,7 @@ mod tests {
 
         msg_for_system_tx
             .send(MsgForSystem::NewMeasurement(
-                PeerIndex { index: 0 },
+                PeerIndex::from_inner(0),
                 prev_epoch,
                 peer_snapshot(
                     PeerStatistics {

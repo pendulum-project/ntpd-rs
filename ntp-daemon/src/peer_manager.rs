@@ -23,22 +23,34 @@ pub enum PeerStatus {
     Measurement(PeerSnapshot),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Hash)]
 pub struct PeerIndex {
-    pub index: usize,
+    index: usize,
+}
+
+impl PeerIndex {
+    #[cfg(test)]
+    pub fn from_inner(index: usize) -> Self {
+        PeerIndex { index }
+    }
 }
 
 #[derive(Debug, Default)]
 pub struct Peers {
-    peers: Box<[PeerStatus]>,
+    peers: Vec<PeerStatus>,
     peer_configs: Vec<PeerConfig>,
 }
 
 impl Peers {
-    pub fn new(peer_configs: &[PeerConfig]) -> Self {
-        Self {
-            peers: vec![PeerStatus::NoMeasurement; peer_configs.len()].into(),
-            peer_configs: peer_configs.to_vec(),
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn add_peer(&mut self, config: PeerConfig) -> PeerIndex {
+        self.peers.push(PeerStatus::NoMeasurement);
+        self.peer_configs.push(config);
+        PeerIndex {
+            index: self.peers.len() - 1,
         }
     }
 
@@ -124,7 +136,15 @@ mod tests {
         let base = NtpInstant::now();
         let prev_epoch = ResetEpoch::default();
         let epoch = prev_epoch.inc();
-        let mut peers = Peers::new(&test_peer_configs(4));
+        let mut peers = Peers {
+            peers: [PeerStatus::NoMeasurement; 4].into(),
+            peer_configs: (0..4)
+                .map(|i| PeerConfig {
+                    addr: format!("127.0.0.{i}:123"),
+                    mode: PeerHostMode::Server,
+                })
+                .collect(),
+        };
         assert_eq!(peers.valid_snapshots().count(), 0);
 
         peers.update(
@@ -212,14 +232,5 @@ mod tests {
 
         peers.reset_all();
         assert_eq!(peers.valid_snapshots().count(), 0);
-    }
-
-    fn test_peer_configs(n: usize) -> Vec<PeerConfig> {
-        (0..n)
-            .map(|i| PeerConfig {
-                addr: format!("127.0.0.{i}:123"),
-                mode: PeerHostMode::Server,
-            })
-            .collect()
     }
 }
