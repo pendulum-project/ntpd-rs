@@ -99,66 +99,80 @@ async fn run<C: NtpClock>(
             continue;
         }
 
-        // remove snapshots from previous iteration
-        snapshots.clear();
-
-        // add all valid measurements to our list of snapshots
-        snapshots.extend(peers_rwlock.read().await.valid_snapshots());
-
-        let result = FilterAndCombine::run(&config, &snapshots, ntp_instant, system_poll);
-
-        let clock_select = match result {
-            Some(clock_select) => clock_select,
-            None => {
-                info!("filter and combine did not produce a result");
-                continue;
-            }
-        };
-
-        let offset_ms = clock_select.system_offset.to_seconds() * 1000.0;
-        let jitter_ms = clock_select.system_jitter.to_seconds() * 1000.0;
-        info!(offset_ms, jitter_ms, "system offset and jitter");
-
-        let adjust_type = controller.update(
-            &config,
-            clock_select.system_offset,
-            clock_select.system_jitter,
-            clock_select.system_root_delay,
-            clock_select.system_root_dispersion,
-            clock_select.system_peer_snapshot.leap_indicator,
-            clock_select.system_peer_snapshot.time,
-        );
-
-        // Handle situations needing extra processing
-        match adjust_type {
-            ClockUpdateResult::Panic => {
-                panic!(
-                    r"Unusually large clock step suggested,
-                            please manually verify system clock and reference clock
-                                 state and restart if appropriate."
-                )
-            }
-            ClockUpdateResult::Step => {
-                peers_rwlock.write().await.reset_all();
-
-                reset_epoch = reset_epoch.inc();
-                reset_tx.send_replace(reset_epoch);
-            }
-            _ => {}
-        }
-
-        // Handle updating system snapshot
-        if let ClockUpdateResult::Ignore = adjust_type {
-            // ignore this update
-        } else {
-            let mut global = global_system_snapshot.write().await;
-            global.poll_interval = controller.preferred_poll_interval();
-            global.leap_indicator = clock_select.system_peer_snapshot.leap_indicator;
-        }
+        recalculate_clock(
+            &mut snapshots,
+            &peers_rwlock,
+            config,
+            ntp_instant,
+            system_poll,
+            &mut controller,
+            &mut reset_epoch,
+            &reset_tx,
+            &global_system_snapshot,
+        )
+        .await;
     }
 
     // the channel closed and has no more messages in it
     Ok(())
+}
+
+async fn recalculate_clock<C: NtpClock>(
+    snapshots: &mut Vec<PeerSnapshot>,
+    peers_rwlock: &Arc<tokio::sync::RwLock<Peers>>,
+    config: SystemConfig,
+    ntp_instant: NtpInstant,
+    system_poll: PollInterval,
+    controller: &mut ClockController<C>,
+    reset_epoch: &mut ResetEpoch,
+    reset_tx: &watch::Sender<ResetEpoch>,
+    global_system_snapshot: &Arc<tokio::sync::RwLock<SystemSnapshot>>,
+) {
+    snapshots.clear();
+    snapshots.extend(peers_rwlock.read().await.valid_snapshots());
+    let result = FilterAndCombine::run(&config, &*snapshots, ntp_instant, system_poll);
+    let clock_select = match result {
+        Some(clock_select) => clock_select,
+        None => {
+            info!("filter and combine did not produce a result");
+            return;
+        }
+    };
+    let offset_ms = clock_select.system_offset.to_seconds() * 1000.0;
+    let jitter_ms = clock_select.system_jitter.to_seconds() * 1000.0;
+    info!(offset_ms, jitter_ms, "system offset and jitter");
+    let adjust_type = controller.update(
+        &config,
+        clock_select.system_offset,
+        clock_select.system_jitter,
+        clock_select.system_root_delay,
+        clock_select.system_root_dispersion,
+        clock_select.system_peer_snapshot.leap_indicator,
+        clock_select.system_peer_snapshot.time,
+    );
+    match adjust_type {
+        ClockUpdateResult::Panic => {
+            panic!(
+                r"Unusually large clock step suggested,
+                            please manually verify system clock and reference clock
+                                 state and restart if appropriate."
+            )
+        }
+        ClockUpdateResult::Step => {
+            peers_rwlock.write().await.reset_all();
+
+            *reset_epoch = reset_epoch.inc();
+            reset_tx.send_replace(*reset_epoch);
+        }
+        _ => {}
+    }
+    if let ClockUpdateResult::Ignore = adjust_type {
+        // ignore this update
+    } else {
+        let mut global = global_system_snapshot.write().await;
+        global.poll_interval = controller.preferred_poll_interval();
+        global.leap_indicator = clock_select.system_peer_snapshot.leap_indicator;
+    }
 }
 
 fn requires_clock_recalculation(
