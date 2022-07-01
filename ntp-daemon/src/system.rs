@@ -83,16 +83,19 @@ async fn run<C: NtpClock>(
         // ensure the config is not updated in the middle of clock selection
         let config = *config.read().await;
 
-        let new = peers_rwlock.write().await.receive_update(
+        peers_rwlock
+            .write()
+            .await
+            .update(msg_for_system, reset_epoch);
+
+        if !requires_clock_recalculation(
             msg_for_system,
             reset_epoch,
             ntp_instant,
             config.frequency_tolerance,
             config.distance_threshold,
             system_poll,
-        );
-
-        if let NewMeasurement::No = new {
+        ) {
             continue;
         }
 
@@ -158,6 +161,30 @@ async fn run<C: NtpClock>(
     Ok(())
 }
 
+fn requires_clock_recalculation(
+    msg: MsgForSystem,
+    current_reset_epoch: ResetEpoch,
+
+    local_clock_time: NtpInstant,
+    frequency_tolerance: FrequencyTolerance,
+    distance_threshold: NtpDuration,
+    system_poll: PollInterval,
+) -> bool {
+    if let MsgForSystem::NewMeasurement(_, msg_reset_epoch, snapshot) = msg {
+        msg_reset_epoch == current_reset_epoch
+            && snapshot
+                .accept_synchronization(
+                    local_clock_time,
+                    frequency_tolerance,
+                    distance_threshold,
+                    system_poll,
+                )
+                .is_ok()
+    } else {
+        false
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum PeerStatus {
     /// This peer is demobilized, meaning we will not send further packets to it.
@@ -193,12 +220,6 @@ pub enum ObservablePeerState {
 pub struct Peers {
     peers: Box<[PeerStatus]>,
     peer_configs: Vec<PeerConfig>,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-enum NewMeasurement {
-    Yes,
-    No,
 }
 
 impl Peers {
@@ -248,16 +269,7 @@ impl Peers {
             })
     }
 
-    fn receive_update(
-        &mut self,
-        msg: MsgForSystem,
-        current_reset_epoch: ResetEpoch,
-
-        local_clock_time: NtpInstant,
-        frequency_tolerance: FrequencyTolerance,
-        distance_threshold: NtpDuration,
-        system_poll: PollInterval,
-    ) -> NewMeasurement {
+    fn update(&mut self, msg: MsgForSystem, current_reset_epoch: ResetEpoch) {
         match msg {
             MsgForSystem::MustDemobilize(index) => {
                 self.peers[index.index] = PeerStatus::Demobilized;
@@ -265,20 +277,6 @@ impl Peers {
             MsgForSystem::NewMeasurement(index, msg_reset_epoch, snapshot) => {
                 if current_reset_epoch == msg_reset_epoch {
                     self.peers[index.index] = PeerStatus::Measurement(snapshot);
-
-                    let accept = snapshot.accept_synchronization(
-                        local_clock_time,
-                        frequency_tolerance,
-                        distance_threshold,
-                        system_poll,
-                    );
-
-                    if accept.is_ok() {
-                        return NewMeasurement::Yes;
-                    } else {
-                        // the snapshot is updated (useful for observability)
-                        // but we will not trigger a clock select based on this measurement
-                    }
                 }
             }
             MsgForSystem::UpdatedSnapshot(index, msg_reset_epoch, snapshot) => {
@@ -287,8 +285,6 @@ impl Peers {
                 }
             }
         }
-
-        NewMeasurement::No
     }
 
     fn reset_all(&mut self) {
@@ -342,6 +338,129 @@ mod tests {
     }
 
     #[test]
+    fn test_requires_clock_recalculation() {
+        let base = NtpInstant::now();
+        let prev_epoch = ResetEpoch::default();
+        let epoch = prev_epoch.inc();
+
+        assert_eq!(
+            requires_clock_recalculation(
+                MsgForSystem::NewMeasurement(
+                    PeerIndex { index: 0 },
+                    prev_epoch,
+                    peer_snapshot(
+                        PeerStatistics {
+                            delay: NtpDuration::from_seconds(0.1),
+                            offset: NtpDuration::from_seconds(0.),
+                            dispersion: NtpDuration::from_seconds(0.05),
+                            jitter: 0.05,
+                        },
+                        base,
+                        NtpDuration::from_seconds(0.1),
+                        NtpDuration::from_seconds(0.05),
+                    ),
+                ),
+                epoch,
+                base,
+                FrequencyTolerance::ppm(15),
+                NtpDuration::from_seconds(1.),
+                PollInterval::MIN,
+            ),
+            false
+        );
+
+        assert_eq!(
+            requires_clock_recalculation(
+                MsgForSystem::NewMeasurement(
+                    PeerIndex { index: 0 },
+                    epoch,
+                    peer_snapshot(
+                        PeerStatistics {
+                            delay: NtpDuration::from_seconds(0.1),
+                            offset: NtpDuration::from_seconds(0.),
+                            dispersion: NtpDuration::from_seconds(0.05),
+                            jitter: 0.05,
+                        },
+                        base,
+                        NtpDuration::from_seconds(1.0),
+                        NtpDuration::from_seconds(2.0),
+                    ),
+                ),
+                epoch,
+                base,
+                FrequencyTolerance::ppm(15),
+                NtpDuration::from_seconds(1.),
+                PollInterval::MIN,
+            ),
+            false
+        );
+
+        assert_eq!(
+            requires_clock_recalculation(
+                MsgForSystem::NewMeasurement(
+                    PeerIndex { index: 0 },
+                    epoch,
+                    peer_snapshot(
+                        PeerStatistics {
+                            delay: NtpDuration::from_seconds(0.1),
+                            offset: NtpDuration::from_seconds(0.),
+                            dispersion: NtpDuration::from_seconds(0.05),
+                            jitter: 0.05,
+                        },
+                        base,
+                        NtpDuration::from_seconds(0.1),
+                        NtpDuration::from_seconds(0.05),
+                    ),
+                ),
+                epoch,
+                base,
+                FrequencyTolerance::ppm(15),
+                NtpDuration::from_seconds(1.),
+                PollInterval::MIN,
+            ),
+            true
+        );
+
+        assert_eq!(
+            requires_clock_recalculation(
+                MsgForSystem::UpdatedSnapshot(
+                    PeerIndex { index: 1 },
+                    epoch,
+                    peer_snapshot(
+                        PeerStatistics {
+                            delay: NtpDuration::from_seconds(0.1),
+                            offset: NtpDuration::from_seconds(0.),
+                            dispersion: NtpDuration::from_seconds(0.05),
+                            jitter: 0.05,
+                        },
+                        base,
+                        NtpDuration::from_seconds(0.1),
+                        NtpDuration::from_seconds(0.05),
+                    ),
+                ),
+                epoch,
+                base,
+                FrequencyTolerance::ppm(15),
+                NtpDuration::from_seconds(1.),
+                PollInterval::MIN,
+            ),
+            false
+        );
+
+        assert_eq!(
+            requires_clock_recalculation(
+                MsgForSystem::MustDemobilize(PeerIndex { index: 1 }),
+                epoch,
+                base,
+                FrequencyTolerance::ppm(15),
+                NtpDuration::from_seconds(1.),
+                PollInterval::MIN,
+            ),
+            false
+        );
+    }
+
+    #[test]
     fn test_peers() {
         let base = NtpInstant::now();
         let prev_epoch = ResetEpoch::default();
@@ -349,7 +468,7 @@ mod tests {
         let mut peers = Peers::new(&test_peer_configs(4));
         assert_eq!(peers.valid_snapshots().count(), 0);
 
-        let new = peers.receive_update(
+        peers.update(
             MsgForSystem::NewMeasurement(
                 PeerIndex { index: 0 },
                 prev_epoch,
@@ -366,15 +485,10 @@ mod tests {
                 ),
             ),
             epoch,
-            base,
-            FrequencyTolerance::ppm(15),
-            NtpDuration::from_seconds(1.),
-            PollInterval::MIN,
         );
-        assert_eq!(new, NewMeasurement::No);
         assert_eq!(peers.valid_snapshots().count(), 0);
 
-        let new = peers.receive_update(
+        peers.update(
             MsgForSystem::NewMeasurement(
                 PeerIndex { index: 0 },
                 epoch,
@@ -391,15 +505,10 @@ mod tests {
                 ),
             ),
             epoch,
-            base,
-            FrequencyTolerance::ppm(15),
-            NtpDuration::from_seconds(1.),
-            PollInterval::MIN,
         );
-        assert_eq!(new, NewMeasurement::No);
         assert_eq!(peers.valid_snapshots().count(), 1);
 
-        let new = peers.receive_update(
+        peers.update(
             MsgForSystem::NewMeasurement(
                 PeerIndex { index: 0 },
                 epoch,
@@ -416,15 +525,10 @@ mod tests {
                 ),
             ),
             epoch,
-            base,
-            FrequencyTolerance::ppm(15),
-            NtpDuration::from_seconds(1.),
-            PollInterval::MIN,
         );
-        assert_eq!(new, NewMeasurement::Yes);
         assert_eq!(peers.valid_snapshots().count(), 1);
 
-        let new = peers.receive_update(
+        peers.update(
             MsgForSystem::UpdatedSnapshot(
                 PeerIndex { index: 1 },
                 epoch,
@@ -441,23 +545,10 @@ mod tests {
                 ),
             ),
             epoch,
-            base,
-            FrequencyTolerance::ppm(15),
-            NtpDuration::from_seconds(1.),
-            PollInterval::MIN,
         );
-        assert_eq!(new, NewMeasurement::No);
         assert_eq!(peers.valid_snapshots().count(), 2);
 
-        let new = peers.receive_update(
-            MsgForSystem::MustDemobilize(PeerIndex { index: 1 }),
-            epoch,
-            base,
-            FrequencyTolerance::ppm(15),
-            NtpDuration::from_seconds(1.),
-            PollInterval::MIN,
-        );
-        assert_eq!(new, NewMeasurement::No);
+        peers.update(MsgForSystem::MustDemobilize(PeerIndex { index: 1 }), epoch);
         assert_eq!(peers.valid_snapshots().count(), 1);
 
         peers.reset_all();
