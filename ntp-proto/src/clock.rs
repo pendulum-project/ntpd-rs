@@ -248,7 +248,7 @@ impl<C: NtpClock> ClockController<C> {
             _ => config.panic_threshold,
         };
         if let Some(threshold) = threshold {
-            offset > threshold
+            offset.abs() > threshold
         } else {
             // No threshold desired, so never panic
             false
@@ -607,7 +607,73 @@ mod tests {
 
         let mut controller = ClockController {
             clock: TestClock::default(),
+            state: ClockState::Sync,
+            last_update_time: base,
+            preferred_poll_interval: PollInterval::MIN,
+            poll_interval_counter: 0,
+            offset: NtpDuration::from_fixed_int(0),
+        };
+
+        assert_eq!(
+            controller.update(
+                &config,
+                -2 * config.panic_threshold.unwrap(),
+                NtpDuration::from_seconds(0.01),
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.03),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1),
+            ),
+            ClockUpdateResult::Panic
+        );
+
+        let mut controller = ClockController {
+            clock: TestClock::default(),
             state: ClockState::Spike,
+            last_update_time: base,
+            preferred_poll_interval: PollInterval::MIN,
+            poll_interval_counter: 0,
+            offset: NtpDuration::from_fixed_int(0),
+        };
+
+        assert_eq!(
+            controller.update(
+                &config,
+                2 * config.panic_threshold.unwrap(),
+                NtpDuration::from_seconds(0.01),
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.03),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1),
+            ),
+            ClockUpdateResult::Panic
+        );
+
+        let mut controller = ClockController {
+            clock: TestClock::default(),
+            state: ClockState::Spike,
+            last_update_time: base,
+            preferred_poll_interval: PollInterval::MIN,
+            poll_interval_counter: 0,
+            offset: NtpDuration::from_fixed_int(0),
+        };
+
+        assert_eq!(
+            controller.update(
+                &config,
+                -2 * config.panic_threshold.unwrap(),
+                NtpDuration::from_seconds(0.01),
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.03),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1),
+            ),
+            ClockUpdateResult::Panic
+        );
+
+        let mut controller = ClockController {
+            clock: TestClock::default(),
+            state: ClockState::MeasureFreq,
             last_update_time: base,
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
@@ -639,7 +705,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
-                2 * config.panic_threshold.unwrap(),
+                -2 * config.panic_threshold.unwrap(),
                 NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
