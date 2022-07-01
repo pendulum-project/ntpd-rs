@@ -1,5 +1,5 @@
-use crate::{ObservablePeerState, Peers};
-use ntp_proto::SystemSnapshot;
+use crate::Peers;
+use ntp_proto::{PeerStatistics, Reach, ReferenceId, SystemSnapshot};
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use tokio::net::UnixListener;
@@ -12,6 +12,19 @@ use serde::{Deserialize, Serialize};
 pub struct ObservableState {
     pub system: SystemSnapshot,
     pub peers: Vec<ObservablePeerState>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum ObservablePeerState {
+    Nothing,
+    Observable {
+        statistics: PeerStatistics,
+        reachability: Reach,
+        uptime: std::time::Duration,
+        poll_interval: std::time::Duration,
+        peer_id: ReferenceId,
+        address: String,
+    },
 }
 
 pub async fn spawn(
@@ -75,7 +88,7 @@ mod tests {
 
     use crate::{
         config::{PeerConfig, PeerHostMode},
-        system::PeerStatus,
+        peer_manager::PeerStatus,
     };
 
     use super::*;

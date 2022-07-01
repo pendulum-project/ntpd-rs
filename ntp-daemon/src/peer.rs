@@ -13,6 +13,8 @@ use tokio::{
     time::{Instant, Sleep},
 };
 
+use crate::peer_manager::PeerIndex;
+
 /// Trait needed to allow injecting of futures other than tokio::time::Sleep for testing
 pub trait Wait: Future<Output = ()> {
     fn reset(self: Pin<&mut Self>, deadline: Instant);
@@ -38,11 +40,6 @@ impl ResetEpoch {
 
         self
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct PeerIndex {
-    pub index: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
