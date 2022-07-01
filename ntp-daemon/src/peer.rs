@@ -296,6 +296,8 @@ fn accept_packet(
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use ntp_proto::{NtpAssociationMode, NtpDuration, NtpLeapIndicator, PollInterval};
     use tokio::sync::{mpsc, watch, RwLock};
 
@@ -595,6 +597,50 @@ mod tests {
 
         let msg = msg_recv.recv().await.unwrap();
         assert!(matches!(msg, MsgForSystem::NewMeasurement(_, _, _)));
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn test_deny_stops_poll() {
+        // Note: Ports must be unique among tests to deal with parallelism
+        let (mut process, socket, mut msg_recv, _reset) = test_startup(8010).await;
+
+        let (poll_wait, poll_send) = TestWait::new();
+
+        let handle = tokio::spawn(async move {
+            tokio::pin!(poll_wait);
+            process.run(poll_wait).await;
+        });
+
+        poll_send.notify();
+
+        let msg = msg_recv.recv().await.unwrap();
+        assert!(matches!(msg, MsgForSystem::UpdatedSnapshot(_, _, _)));
+
+        let mut buf = [0; 48];
+        let (size, timestamp) = socket.recv(&mut buf).await.unwrap();
+        assert_eq!(size, 48);
+        assert!(timestamp.is_some());
+
+        let rec_packet = NtpHeader::deserialize(&buf);
+        let mut send_packet = NtpHeader::new();
+        send_packet.stratum = 0;
+        send_packet.mode = NtpAssociationMode::Server;
+        send_packet.origin_timestamp = rec_packet.transmit_timestamp;
+        send_packet.reference_id = ReferenceId::KISS_DENY;
+
+        socket.send(&send_packet.serialize()).await.unwrap();
+
+        let msg = msg_recv.recv().await.unwrap();
+        assert!(matches!(msg, MsgForSystem::MustDemobilize(_)));
+
+        poll_send.notify();
+
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_millis(10)) => {/*expected */},
+            _ = socket.recv(&mut buf) => { assert!(false); }
+        }
 
         handle.abort();
     }
