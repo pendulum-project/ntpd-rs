@@ -127,7 +127,7 @@ To run NTPD-rs as the system NTP service, the following systemd service definiti
 
 Note that because of the aforementioned limitations around peer configuration, this service file requires the network-online target. As a result, using this may increase boot times significantly, especially on machines that do not have permanent network connectivity.
 
-This service should not be used at the same time as other NTP services. It explicitly disables the systemd built-in timesyncd service, but be aware that your operating system may use another NTP service.
+This service should not be used at the same time as other NTP services. It explicitly disables the systemd built-in timesyncd service, but be aware that your operating system may use another NTP service. Note also that the daemon SHOULD NOT be restarted when crashing without human intervention. See our [operational guidance](OPERATIONAL_CONSIDERATIONS.md) for more information on this.
 
 ```ini
 [Unit]
@@ -139,6 +139,7 @@ Conflicts=systemd-timesyncd.service ntp.service
 
 [Service]
 Type=simple
+Restart=no
 ExecStart=/usr/local/bin/ntp-daemon
 Environment="RUST_LOG=info"
 User=ntpd-rs
