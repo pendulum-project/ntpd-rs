@@ -5,6 +5,7 @@ use ntp_proto::{
     SystemConfig, SystemSnapshot,
 };
 use ntp_udp::UdpSocket;
+use rand::{thread_rng, Rng};
 use tracing::{debug, instrument, warn};
 
 use tokio::{
@@ -95,6 +96,9 @@ where
             .peer
             .current_poll_interval(system_snapshot)
             .as_system_duration();
+
+        // randomize the poll interval a little to make it harder to predict poll requests
+        let poll_interval = poll_interval.mul_f64(thread_rng().gen_range(1.01..=1.05));
 
         poll_wait
             .as_mut()
