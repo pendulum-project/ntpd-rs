@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument, trace, warn};
 
 const MAX_STRATUM: u8 = 16;
+const POLL_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
 
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
 pub struct PeerStatistics {
@@ -33,7 +34,7 @@ pub struct Peer {
     // We expect the next packet we receive to have this origin timestamp
     // This is used as validation that the packet we get is the correct response to the one we sent
     // (guards against e.g. replay and packet reordering)
-    next_expected_origin: Option<NtpTimestamp>,
+    next_expected_origin: Option<(NtpTimestamp, NtpInstant)>,
 
     statistics: PeerStatistics,
     last_measurements: LastMeasurements,
@@ -287,7 +288,8 @@ impl Peer {
         // We then expect to get it back identically from the remote
         // in the origin field.
         let transmit_timestamp = thread_rng().gen();
-        self.next_expected_origin = Some(transmit_timestamp);
+        let validity = NtpInstant::now() + POLL_WINDOW;
+        self.next_expected_origin = Some((transmit_timestamp, validity));
         packet.transmit_timestamp = transmit_timestamp;
 
         packet
@@ -303,7 +305,17 @@ impl Peer {
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
     ) -> Result<PeerSnapshot, IgnoreReason> {
-        if Some(message.origin_timestamp) != self.next_expected_origin {
+        let next_expected_origin = match self.next_expected_origin {
+            Some((next_expected_origin, validity)) if validity >= NtpInstant::now() => {
+                next_expected_origin
+            }
+            _ => {
+                debug!("Received old/unexpected packet from peer");
+                return Err(IgnoreReason::InvalidPacketTime);
+            }
+        };
+
+        if message.origin_timestamp != next_expected_origin {
             // Packets should be a response to a previous request from us,
             // if not just ignore. Note that this might also happen when
             // we reset between sending the request and receiving the response.
