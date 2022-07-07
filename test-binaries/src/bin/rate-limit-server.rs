@@ -12,6 +12,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut last_message = Instant::now();
 
     let mut buf = [0; 48];
+    #[allow(clippy::field_reassign_with_default)] // allow the explicit stratum
     loop {
         let (len, addr) = sock.recv_from(&mut buf).await?;
         let ntp_receive = clock.now().unwrap();
@@ -24,7 +25,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         let mut packet = ntp_proto::NtpHeader::default();
 
-        let parsed = NtpHeader::deserialize(&buf);
+        let parsed = match NtpHeader::deserialize(&buf) {
+            Ok(packet) => packet,
+            Err(_) => continue,
+        };
 
         // default poll interval is 16 seconds, so this will bump it once
         // and then stay steady at 32 seconds
