@@ -133,7 +133,7 @@ mod tests {
         };
 
         let status_list = [
-            PeerStatus::Demobilized,
+            PeerStatus::NoMeasurement,
             PeerStatus::NoMeasurement,
             PeerStatus::Measurement(PeerSnapshot {
                 root_distance_without_time: NtpDuration::from_seconds(0.2),
@@ -195,12 +195,14 @@ mod tests {
         while reader.read_buf(&mut buf).await.unwrap() != 0 {}
         let result: ObservableState = serde_json::from_slice(&buf).unwrap();
 
-        assert!(matches!(result.peers[0], ObservablePeerState::Nothing));
-        assert!(matches!(result.peers[1], ObservablePeerState::Nothing));
-        assert!(matches!(
-            result.peers[2],
-            ObservablePeerState::Observable { .. }
-        ));
+        // Deal with randomized order
+        let mut count = 0;
+        for peer in &result.peers {
+            if matches!(peer, ObservablePeerState::Observable { .. }) {
+                count += 1;
+            }
+        }
+        assert_eq!(count, 1);
 
         handle.abort();
     }
@@ -215,7 +217,7 @@ mod tests {
         };
 
         let status_list = [
-            PeerStatus::Demobilized,
+            PeerStatus::NoMeasurement,
             PeerStatus::NoMeasurement,
             PeerStatus::Measurement(PeerSnapshot {
                 root_distance_without_time: NtpDuration::from_seconds(0.2),

@@ -1,3 +1,5 @@
+use std::{collections::HashMap, sync::Arc};
+
 use crate::{
     config::PeerConfig,
     observer::ObservablePeerState,
@@ -8,10 +10,6 @@ use tokio::task::JoinHandle;
 
 #[derive(Debug, Clone, Copy)]
 pub enum PeerStatus {
-    /// This peer is demobilized, meaning we will not send further packets to it.
-    /// Demobilized peers are kept because our logic is built around using indices,
-    /// and removing a peer would mess up the indexing.
-    Demobilized,
     /// We are waiting for the first snapshot from this peer _in the current reset epoch_.
     /// This state is the initial state for all peers (when the system is spawned), and also
     /// entered when the system performs a clock jump and forces all peers to reset, or when a peer
@@ -24,7 +22,7 @@ pub enum PeerStatus {
     Measurement(PeerSnapshot),
 }
 
-#[derive(Debug, Clone, Copy, Hash)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct PeerIndex {
     index: usize,
 }
@@ -36,10 +34,29 @@ impl PeerIndex {
     }
 }
 
+#[derive(Debug, Default)]
+struct PeerIndexIssuer {
+    next: usize,
+}
+
+impl PeerIndexIssuer {
+    fn get(&mut self) -> PeerIndex {
+        let index = self.next;
+        self.next += 1;
+        PeerIndex { index }
+    }
+}
+
+#[derive(Debug)]
+struct PeerData {
+    status: PeerStatus,
+    config: Arc<PeerConfig>,
+}
+
 #[derive(Debug)]
 pub struct Peers<C: NtpClock> {
-    peers: Vec<PeerStatus>,
-    peer_configs: Vec<PeerConfig>,
+    peers: HashMap<PeerIndex, PeerData>,
+    indexer: PeerIndexIssuer,
 
     channels: PeerChannels,
     clock: C,
@@ -49,32 +66,46 @@ impl<C: NtpClock> Peers<C> {
     pub fn new(channels: PeerChannels, clock: C) -> Self {
         Peers {
             peers: Default::default(),
-            peer_configs: Default::default(),
+            indexer: Default::default(),
             channels,
             clock,
         }
     }
 
     pub async fn add_peer(&mut self, config: PeerConfig) -> std::io::Result<JoinHandle<()>> {
-        self.peers.push(PeerStatus::NoMeasurement);
+        let index = self.indexer.get();
         let addr = config.addr.clone();
-        self.peer_configs.push(config);
-        PeerTask::spawn(
-            PeerIndex {
-                index: self.peers.len() - 1,
+        self.peers.insert(
+            index,
+            PeerData {
+                status: PeerStatus::NoMeasurement,
+                config: Arc::new(config),
             },
-            &addr,
-            self.clock.clone(),
-            self.channels.clone(),
-        )
-        .await
+        );
+        PeerTask::spawn(index, &addr, self.clock.clone(), self.channels.clone()).await
     }
 
     #[cfg(test)]
-    pub fn from_statuslist(data: &[PeerStatus], peer_configs: &[PeerConfig], clock: C) -> Self {
+    pub fn from_statuslist(data: &[PeerStatus], raw_configs: &[PeerConfig], clock: C) -> Self {
+        assert_eq!(data.len(), raw_configs.len());
+
+        let mut peers = HashMap::new();
+        let mut indexer = PeerIndexIssuer::default();
+
+        for (i, status) in data.iter().enumerate() {
+            let index = indexer.get();
+            peers.insert(
+                index,
+                PeerData {
+                    status: status.to_owned(),
+                    config: Arc::new(raw_configs[i].clone()),
+                },
+            );
+        }
+
         Self {
-            peers: data.to_owned().into(),
-            peer_configs: peer_configs.to_vec(),
+            peers,
+            indexer,
             channels: PeerChannels::test(),
             clock,
         }
@@ -85,58 +116,47 @@ impl<C: NtpClock> Peers<C> {
     }
 
     pub fn observe(&self) -> impl Iterator<Item = ObservablePeerState> + '_ {
-        self.peers
-            .iter()
-            .zip(self.peer_configs.iter())
-            .map(|(status, config)| match status {
-                PeerStatus::Demobilized => ObservablePeerState::Nothing,
-                PeerStatus::NoMeasurement => ObservablePeerState::Nothing,
-                PeerStatus::Measurement(snapshot) => ObservablePeerState::Observable {
-                    statistics: snapshot.statistics,
-                    reachability: snapshot.reach,
-                    uptime: snapshot.time.elapsed(),
-                    poll_interval: snapshot.poll_interval.as_system_duration(),
-                    peer_id: snapshot.peer_id,
-                    address: config.addr.clone(),
-                },
-            })
+        self.peers.iter().map(|(_, data)| match data.status {
+            PeerStatus::NoMeasurement => ObservablePeerState::Nothing,
+            PeerStatus::Measurement(snapshot) => ObservablePeerState::Observable {
+                statistics: snapshot.statistics,
+                reachability: snapshot.reach,
+                uptime: snapshot.time.elapsed(),
+                poll_interval: snapshot.poll_interval.as_system_duration(),
+                peer_id: snapshot.peer_id,
+                address: data.config.addr.to_owned(),
+            },
+        })
     }
 
     pub fn valid_snapshots(&self) -> impl Iterator<Item = PeerSnapshot> + '_ {
-        self.peers
-            .iter()
-            .filter_map(|peer_status| match peer_status {
-                PeerStatus::Demobilized | PeerStatus::NoMeasurement => None,
-                PeerStatus::Measurement(snapshot) => Some(*snapshot),
-            })
+        self.peers.iter().filter_map(|(_, data)| match data.status {
+            PeerStatus::NoMeasurement => None,
+            PeerStatus::Measurement(snapshot) => Some(snapshot),
+        })
     }
 
     pub fn update(&mut self, msg: MsgForSystem, current_reset_epoch: ResetEpoch) {
         match msg {
             MsgForSystem::MustDemobilize(index) => {
-                self.peers[index.index] = PeerStatus::Demobilized;
+                self.peers.remove(&index);
             }
             MsgForSystem::NewMeasurement(index, msg_reset_epoch, snapshot) => {
                 if current_reset_epoch == msg_reset_epoch {
-                    self.peers[index.index] = PeerStatus::Measurement(snapshot);
+                    self.peers.get_mut(&index).unwrap().status = PeerStatus::Measurement(snapshot);
                 }
             }
             MsgForSystem::UpdatedSnapshot(index, msg_reset_epoch, snapshot) => {
                 if current_reset_epoch == msg_reset_epoch {
-                    self.peers[index.index] = PeerStatus::Measurement(snapshot);
+                    self.peers.get_mut(&index).unwrap().status = PeerStatus::Measurement(snapshot);
                 }
             }
         }
     }
 
     pub fn reset_all(&mut self) {
-        for peer_status in self.peers.iter_mut() {
-            use PeerStatus::*;
-
-            *peer_status = match peer_status {
-                Demobilized => Demobilized,
-                Measurement(_) | NoMeasurement => NoMeasurement,
-            };
+        for (_, data) in self.peers.iter_mut() {
+            data.status = PeerStatus::NoMeasurement;
         }
     }
 }
@@ -187,17 +207,16 @@ mod tests {
         let base = NtpInstant::now();
         let prev_epoch = ResetEpoch::default();
         let epoch = prev_epoch.inc();
-        let mut peers = Peers {
-            peers: [PeerStatus::NoMeasurement; 4].into(),
-            peer_configs: (0..4)
+        let mut peers = Peers::from_statuslist(
+            &[PeerStatus::NoMeasurement; 4],
+            &(0..4)
                 .map(|i| PeerConfig {
                     addr: format!("127.0.0.{i}:123"),
                     mode: PeerHostMode::Server,
                 })
-                .collect(),
-            channels: PeerChannels::test(),
-            clock: TestClock {},
-        };
+                .collect::<Vec<_>>(),
+            TestClock {},
+        );
         assert_eq!(peers.valid_snapshots().count(), 0);
 
         peers.update(
