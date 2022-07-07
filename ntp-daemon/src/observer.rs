@@ -1,5 +1,5 @@
 use crate::Peers;
-use ntp_proto::{PeerStatistics, Reach, ReferenceId, SystemSnapshot};
+use ntp_proto::{NtpClock, PeerStatistics, Reach, ReferenceId, SystemSnapshot};
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use tokio::net::UnixListener;
@@ -27,9 +27,9 @@ pub enum ObservablePeerState {
     },
 }
 
-pub async fn spawn(
+pub async fn spawn<C: NtpClock + Sync + Send + 'static>(
     config: &crate::config::ObserveConfig,
-    peers_reader: Arc<tokio::sync::RwLock<Peers>>,
+    peers_reader: Arc<tokio::sync::RwLock<Peers<C>>>,
     system_reader: Arc<tokio::sync::RwLock<SystemSnapshot>>,
 ) -> JoinHandle<std::io::Result<()>> {
     let config = config.clone();
@@ -42,9 +42,9 @@ pub async fn spawn(
     })
 }
 
-async fn observer(
+async fn observer<C: NtpClock>(
     config: crate::config::ObserveConfig,
-    peers_reader: Arc<tokio::sync::RwLock<Peers>>,
+    peers_reader: Arc<tokio::sync::RwLock<Peers<C>>>,
     system_reader: Arc<tokio::sync::RwLock<SystemSnapshot>>,
 ) -> std::io::Result<()> {
     let path = match config.path {
@@ -81,8 +81,8 @@ mod tests {
     use std::time::Duration;
 
     use ntp_proto::{
-        NtpDuration, NtpInstant, NtpLeapIndicator, PeerSnapshot, PeerStatistics, PollInterval,
-        Reach, ReferenceId,
+        NtpDuration, NtpInstant, NtpLeapIndicator, NtpTimestamp, PeerSnapshot, PeerStatistics,
+        PollInterval, Reach, ReferenceId,
     };
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
@@ -92,6 +92,36 @@ mod tests {
     };
 
     use super::*;
+
+    #[derive(Debug, Clone, Default)]
+    struct TestClock {}
+
+    impl NtpClock for TestClock {
+        type Error = std::io::Error;
+
+        fn now(&self) -> std::result::Result<NtpTimestamp, Self::Error> {
+            Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+        }
+
+        fn set_freq(&self, _freq: f64) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn step_clock(&self, _offset: NtpDuration) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn update_clock(
+            &self,
+            _offset: NtpDuration,
+            _est_error: NtpDuration,
+            _max_error: NtpDuration,
+            _poll_interval: PollInterval,
+            _leap_status: NtpLeapIndicator,
+        ) -> Result<(), Self::Error> {
+            Ok(())
+        }
+    }
 
     #[tokio::test]
     async fn test_observation() {
@@ -144,6 +174,7 @@ mod tests {
         let peers_reader = Arc::new(tokio::sync::RwLock::new(Peers::from_statuslist(
             &status_list,
             &peer_configs,
+            TestClock {},
         )));
 
         let system_reader = Arc::new(tokio::sync::RwLock::new(SystemSnapshot {
@@ -225,6 +256,7 @@ mod tests {
         let peers_reader = Arc::new(tokio::sync::RwLock::new(Peers::from_statuslist(
             &status_list,
             &peer_configs,
+            TestClock {},
         )));
 
         let peers_writer = peers_reader.clone();

@@ -1,9 +1,10 @@
 use crate::{
     config::PeerConfig,
     observer::ObservablePeerState,
-    peer::{MsgForSystem, ResetEpoch},
+    peer::{MsgForSystem, PeerChannels, PeerTask, ResetEpoch},
 };
-use ntp_proto::PeerSnapshot;
+use ntp_proto::{NtpClock, PeerSnapshot};
+use tokio::task::JoinHandle;
 
 #[derive(Debug, Clone, Copy)]
 pub enum PeerStatus {
@@ -35,30 +36,47 @@ impl PeerIndex {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct Peers {
+#[derive(Debug)]
+pub struct Peers<C: NtpClock> {
     peers: Vec<PeerStatus>,
     peer_configs: Vec<PeerConfig>,
+
+    channels: PeerChannels,
+    clock: C,
 }
 
-impl Peers {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn add_peer(&mut self, config: PeerConfig) -> PeerIndex {
-        self.peers.push(PeerStatus::NoMeasurement);
-        self.peer_configs.push(config);
-        PeerIndex {
-            index: self.peers.len() - 1,
+impl<C: NtpClock> Peers<C> {
+    pub fn new(channels: PeerChannels, clock: C) -> Self {
+        Peers {
+            peers: Default::default(),
+            peer_configs: Default::default(),
+            channels,
+            clock,
         }
     }
 
+    pub async fn add_peer(&mut self, config: PeerConfig) -> std::io::Result<JoinHandle<()>> {
+        self.peers.push(PeerStatus::NoMeasurement);
+        let addr = config.addr.clone();
+        self.peer_configs.push(config);
+        PeerTask::spawn(
+            PeerIndex {
+                index: self.peers.len() - 1,
+            },
+            &addr,
+            self.clock.clone(),
+            self.channels.clone(),
+        )
+        .await
+    }
+
     #[cfg(test)]
-    pub fn from_statuslist(data: &[PeerStatus], peer_configs: &[PeerConfig]) -> Self {
+    pub fn from_statuslist(data: &[PeerStatus], peer_configs: &[PeerConfig], clock: C) -> Self {
         Self {
             peers: data.to_owned().into(),
             peer_configs: peer_configs.to_vec(),
+            channels: PeerChannels::test(),
+            clock,
         }
     }
 
@@ -125,11 +143,44 @@ impl Peers {
 
 #[cfg(test)]
 mod tests {
-    use ntp_proto::{peer_snapshot, NtpDuration, NtpInstant, PeerStatistics};
+    use ntp_proto::{
+        peer_snapshot, NtpDuration, NtpInstant, NtpLeapIndicator, NtpTimestamp, PeerStatistics,
+        PollInterval,
+    };
 
     use crate::config::PeerHostMode;
 
     use super::*;
+
+    #[derive(Debug, Clone, Default)]
+    struct TestClock {}
+
+    impl NtpClock for TestClock {
+        type Error = std::io::Error;
+
+        fn now(&self) -> std::result::Result<NtpTimestamp, Self::Error> {
+            Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+        }
+
+        fn set_freq(&self, _freq: f64) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn step_clock(&self, _offset: NtpDuration) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn update_clock(
+            &self,
+            _offset: NtpDuration,
+            _est_error: NtpDuration,
+            _max_error: NtpDuration,
+            _poll_interval: PollInterval,
+            _leap_status: NtpLeapIndicator,
+        ) -> Result<(), Self::Error> {
+            Ok(())
+        }
+    }
 
     #[test]
     fn test_peers() {
@@ -144,6 +195,8 @@ mod tests {
                     mode: PeerHostMode::Server,
                 })
                 .collect(),
+            channels: PeerChannels::test(),
+            clock: TestClock {},
         };
         assert_eq!(peers.valid_snapshots().count(), 0);
 

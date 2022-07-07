@@ -54,11 +54,26 @@ pub enum MsgForSystem {
     UpdatedSnapshot(PeerIndex, ResetEpoch, PeerSnapshot),
 }
 
-pub(crate) struct PeerChannels {
-    pub(crate) msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
-    pub(crate) system_snapshots: Arc<tokio::sync::RwLock<SystemSnapshot>>,
-    pub(crate) system_config: Arc<tokio::sync::RwLock<SystemConfig>>,
-    pub(crate) reset: watch::Receiver<ResetEpoch>,
+#[derive(Debug, Clone)]
+pub struct PeerChannels {
+    pub msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
+    pub system_snapshots: Arc<tokio::sync::RwLock<SystemSnapshot>>,
+    pub system_config: Arc<tokio::sync::RwLock<SystemConfig>>,
+    pub reset: watch::Receiver<ResetEpoch>,
+}
+
+impl PeerChannels {
+    #[cfg(test)]
+    pub fn test() -> Self {
+        let (tx, _) = tokio::sync::mpsc::channel(1);
+        let (_, rx) = tokio::sync::watch::channel(ResetEpoch::default());
+        PeerChannels {
+            msg_for_system_sender: tx,
+            system_snapshots: Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default())),
+            system_config: Arc::new(tokio::sync::RwLock::new(SystemConfig::default())),
+            reset: rx,
+        }
+    }
 }
 
 pub(crate) struct PeerTask<C: 'static + NtpClock + Send, T: Wait> {
