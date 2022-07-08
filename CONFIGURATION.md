@@ -78,7 +78,7 @@ The management and configuration sockets are used by the [management client](MAN
 There are a number of options available to influence how time differences to the various servers are used to synchronize the system clock. All of these are part of the `system` section of the configuration:
 | Option | Default | Description |
 | --- | --- | --- |
-| min-intersection-survivors | 1 | Minimum number of servers that need to agree on the true time from our perspective for synchronization to start. |
+| min-intersection-survivors | 3 | Minimum number of servers that need to agree on the true time from our perspective for synchronization to start. |
 | min-cluster-survivors | 3 | Number of servers beyond which we do not try to exclude further servers for the purpose of improving measurement precision. Do not change unless familiar with the NTP algorithms. |
 | frequency-tolerance | 15 | Estimate of the short-time frequency precision of the local clock, in parts-per-million. The default is usually a good approximation. |
 | distance-threshold | 1 | Maximum delay to the clock representing ground truth via a peer for that peer to be considered acceptable, in seconds. |

@@ -359,6 +359,7 @@ mod tests {
     #[tokio::test]
     async fn test_system_reset() {
         let config = Arc::new(tokio::sync::RwLock::new(SystemConfig::default()));
+        config.write().await.min_intersection_survivors = 1;
         let reset_epoch = ResetEpoch::default();
         let (reset_tx, mut reset_rx) = watch::channel::<ResetEpoch>(reset_epoch);
         let (msg_for_system_tx, msg_for_system_rx) = mpsc::channel::<MsgForSystem>(32);
