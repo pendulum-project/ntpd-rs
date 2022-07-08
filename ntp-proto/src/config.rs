@@ -83,7 +83,6 @@ pub struct SystemConfig {
 impl Default for SystemConfig {
     fn default() -> Self {
         Self {
-            // TODO this should be 4 in production?!
             min_intersection_survivors: default_min_intersection_survivors(),
             min_cluster_survivors: default_min_cluster_survivors(),
             frequency_tolerance: default_frequency_tolerance(),
@@ -98,7 +97,7 @@ impl Default for SystemConfig {
 }
 
 fn default_min_intersection_survivors() -> usize {
-    1
+    3
 }
 
 fn default_min_cluster_survivors() -> usize {
