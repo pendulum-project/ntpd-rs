@@ -1,4 +1,9 @@
-use serde::{Deserialize, Deserializer};
+use std::fmt;
+
+use serde::{
+    de::{self, MapAccess, Visitor},
+    Deserialize, Deserializer,
+};
 
 use crate::{time_types::FrequencyTolerance, NtpDuration};
 
@@ -12,6 +17,107 @@ where
     } else {
         Some(duration)
     })
+}
+
+#[derive(Debug, Default, Copy, Clone)]
+pub struct StepThreshold {
+    pub forward: Option<NtpDuration>,
+    pub backward: Option<NtpDuration>,
+}
+
+// We have a custom deserializer for StepThreshold because we
+// want to deserialize it from either a number or map
+impl<'de> Deserialize<'de> for StepThreshold {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct StepThresholdVisitor;
+
+        impl<'de> Visitor<'de> for StepThresholdVisitor {
+            type Value = StepThreshold;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("float or map")
+            }
+
+            fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let duration = NtpDuration::from_seconds(v);
+                if duration == NtpDuration::ZERO {
+                    Ok(StepThreshold {
+                        forward: None,
+                        backward: None,
+                    })
+                } else {
+                    Ok(StepThreshold {
+                        forward: Some(duration),
+                        backward: Some(duration),
+                    })
+                }
+            }
+
+            fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_f64(v as f64)
+            }
+
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_f64(v as f64)
+            }
+
+            fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<StepThreshold, M::Error> {
+                let mut forward = None;
+                let mut backward = None;
+
+                while let Some(key) = map.next_key::<&str>()? {
+                    match key {
+                        "forward" => {
+                            if forward.is_some() {
+                                return Err(de::Error::duplicate_field("forward"));
+                            }
+                            let raw: NtpDuration = map.next_value()?;
+
+                            if NtpDuration::ZERO == raw {
+                                forward = Some(None)
+                            } else {
+                                forward = Some(Some(raw))
+                            }
+                        }
+                        "backward" => {
+                            if backward.is_some() {
+                                return Err(de::Error::duplicate_field("backward"));
+                            }
+                            let raw: NtpDuration = map.next_value()?;
+
+                            if NtpDuration::ZERO == raw {
+                                backward = Some(None)
+                            } else {
+                                backward = Some(Some(raw))
+                            }
+                        }
+                        _ => {
+                            return Err(de::Error::unknown_field(key, &["addr", "mode"]));
+                        }
+                    }
+                }
+
+                Ok(StepThreshold {
+                    forward: forward.flatten(),
+                    backward: backward.flatten(),
+                })
+            }
+        }
+
+        deserializer.deserialize_any(StepThresholdVisitor)
+    }
 }
 
 #[derive(Deserialize, Debug, Clone, Copy)]
@@ -67,17 +173,14 @@ pub struct SystemConfig {
     ///
     /// Note that this is not used during startup. To limit system clock changes
     /// during startup, use startup_panic_threshold
-    #[serde(
-        deserialize_with = "deserialize_option_threshold",
-        default = "default_panic_threshold"
-    )]
-    pub panic_threshold: Option<NtpDuration>,
+    #[serde(default = "default_panic_threshold")]
+    pub panic_threshold: StepThreshold,
 
     /// The maximum amount the system clock is allowed to change during startup.
     /// This can be used to limit the impact of bad servers if the system clock
     /// is known to be reasonable on startup
-    #[serde(deserialize_with = "deserialize_option_threshold", default)]
-    pub startup_panic_threshold: Option<NtpDuration>,
+    #[serde(default = "startup_panic_threshold")]
+    pub startup_panic_threshold: StepThreshold,
 
     /// The maximum amount distributed amongst all steps except at startup the
     /// daemon is allowed to step the system clock.
@@ -96,7 +199,7 @@ impl Default for SystemConfig {
             frequency_measurement_period: default_frequency_measurement_period(),
             spike_threshold: default_spike_threshold(),
             panic_threshold: default_panic_threshold(),
-            startup_panic_threshold: None,
+            startup_panic_threshold: StepThreshold::default(),
             accumulated_threshold: None,
         }
     }
@@ -126,6 +229,17 @@ fn default_spike_threshold() -> NtpDuration {
     NtpDuration::from_seconds(900.)
 }
 
-fn default_panic_threshold() -> Option<NtpDuration> {
-    Some(NtpDuration::from_seconds(1000.))
+fn default_panic_threshold() -> StepThreshold {
+    let raw = NtpDuration::from_seconds(1000.);
+    StepThreshold {
+        forward: Some(raw),
+        backward: Some(raw),
+    }
+}
+
+fn startup_panic_threshold() -> StepThreshold {
+    StepThreshold {
+        forward: None,
+        backward: Some(NtpDuration::from_seconds(1800.)),
+    }
 }

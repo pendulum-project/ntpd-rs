@@ -1,5 +1,5 @@
 use crate::tracing::ReloadHandle;
-use ntp_proto::{NtpDuration, SystemConfig};
+use ntp_proto::{NtpDuration, StepThreshold, SystemConfig};
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
@@ -100,7 +100,10 @@ async fn dynamic_configuration<H: LogReloader>(
         let mut config = system_config.write().await;
 
         if let Some(panic_threshold) = operation.panic_threshold {
-            config.panic_threshold = Some(NtpDuration::from_seconds(panic_threshold));
+            config.panic_threshold = StepThreshold {
+                forward: Some(NtpDuration::from_seconds(panic_threshold)),
+                backward: Some(NtpDuration::from_seconds(panic_threshold)),
+            };
         }
     }
 }
@@ -150,7 +153,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(10)).await;
 
         assert_eq!(
-            system_config_test.read().await.panic_threshold,
+            system_config_test.read().await.panic_threshold.forward,
             Some(NtpDuration::from_seconds(600.))
         );
 
