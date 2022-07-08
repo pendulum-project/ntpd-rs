@@ -78,6 +78,11 @@ pub struct SystemConfig {
     /// is known to be reasonable on startup
     #[serde(deserialize_with = "deserialize_option_threshold", default)]
     pub startup_panic_threshold: Option<NtpDuration>,
+
+    /// The maximum amount distributed amongst all steps except at startup the
+    /// daemon is allowed to step the system clock.
+    #[serde(deserialize_with = "deserialize_option_threshold", default)]
+    pub accumulated_threshold: Option<NtpDuration>,
 }
 
 impl Default for SystemConfig {
@@ -92,6 +97,7 @@ impl Default for SystemConfig {
             spike_threshold: default_spike_threshold(),
             panic_threshold: default_panic_threshold(),
             startup_panic_threshold: None,
+            accumulated_threshold: None,
         }
     }
 }
