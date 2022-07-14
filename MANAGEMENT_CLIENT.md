@@ -15,6 +15,8 @@ For the configuration socket, default permissions restrict access to the group u
 The current client exposes 3 different commands:
  - `ntp-client peers` displays information on the currently active peer connections
  - `ntp-client system` displays information on the current synchronization state of the system.
+ - `ntp-client prometheus` combines output of `ntp-client peers` and `ntp-client system` in the
+   prometheus export format
  - `ntp-client config` allows changing of some configuration parameters
 
 ## Available configuration parameters
@@ -84,4 +86,41 @@ Output is given as formatted json
   "precision": 3.814697266513178e-6,
   "leap_indicator": "NoWarning"
 }
+```
+
+**prometheus**
+```
+# TYPE ntp_peer_offset gauge
+# TYPE ntp_peer_delay gauge
+# TYPE ntp_peer_dispersion gauge
+# TYPE ntp_peer_jitter gauge
+# TYPE ntp_peer_reachability_status gauge
+# TYPE ntp_peer_reachability_unanswered_polls gauge
+# TYPE ntp_peer_uptime gauge
+# TYPE ntp_peer_poll_interval gauge
+
+ntp_peer_offset {address = "0.pool.ntp.org:123"} -0.00021074060355563196
+ntp_peer_delay {address = "0.pool.ntp.org:123"} 0.007240572014646738
+ntp_peer_dispersion {address = "0.pool.ntp.org:123"} 3.9375658409990293
+ntp_peer_jitter {address = "0.pool.ntp.org:123"} 0.000574177596851759
+ntp_peer_uptime {address = "0.pool.ntp.org:123"} 3.719465959
+ntp_peer_poll_interval {address = "0.pool.ntp.org:123"} 16
+ntp_peer_reachability_status {address = "0.pool.ntp.org:123"} 1
+ntp_peer_reachability_unanswered_polls {address = "0.pool.ntp.org:123", result = "success"} 6
+
+ntp_peer_offset {address = "1.pool.ntp.org:123"} 0.0016808533113638064
+ntp_peer_delay {address = "1.pool.ntp.org:123"} 0.007762117545996355
+ntp_peer_dispersion {address = "1.pool.ntp.org:123"} 3.937565868007384
+ntp_peer_jitter {address = "1.pool.ntp.org:123"} 0.0005751959980873382
+ntp_peer_uptime {address = "1.pool.ntp.org:123"} 3.723291563
+ntp_peer_poll_interval {address = "1.pool.ntp.org:123"} 16
+ntp_peer_reachability_status {address = "1.pool.ntp.org:123"} 1
+ntp_peer_reachability_unanswered_polls {address = "1.pool.ntp.org:123", result = "success"} 6
+
+# TYPE ntp_system_poll_interval gauge
+ntp_system_poll_interval 16.00000000372529
+# TYPE ntp_system_precision gauge
+ntp_system_precision 0.000003814697266513178
+# TYPE ntp_system_leap_indicator gauge
+ntp_system_leap_indicator {type = "Unknown"} 3
 ```
