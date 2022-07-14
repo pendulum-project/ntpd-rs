@@ -195,8 +195,6 @@ mod tests {
 
     use crate::config::PeerHostMode;
 
-    use crate::config::PeerHostMode;
-
     use super::*;
 
     #[derive(Debug, Clone, Default)]
