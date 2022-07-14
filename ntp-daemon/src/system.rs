@@ -156,6 +156,8 @@ impl<C: NtpClock> System<C> {
             let mut global = self.global_system_snapshot.write().await;
             global.poll_interval = self.controller.preferred_poll_interval();
             global.leap_indicator = clock_select.system_peer_snapshot.leap_indicator;
+            global.accumulated_steps = self.controller.accumulated_steps();
+            global.accumulated_steps_threshold = config.accumulated_threshold;
         }
     }
 

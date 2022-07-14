@@ -64,6 +64,26 @@ impl DisplayPrometheus for SystemSnapshot {
             self.precision.to_seconds(),
         )?;
 
+        writeln!(f, "# TYPE ntp_system_accumulated_steps gauge")?;
+        self.format(
+            f,
+            "ntp_system",
+            "accumulated_steps",
+            labels,
+            self.accumulated_steps.to_seconds(),
+        )?;
+
+        if let Some(threshold) = self.accumulated_steps_threshold {
+            writeln!(f, "# TYPE ntp_system_accumulated_steps_threshold gauge")?;
+            self.format(
+                f,
+                "ntp_system",
+                "accumulated_steps_threshold",
+                labels,
+                threshold.to_seconds(),
+            )?;
+        }
+
         writeln!(f, "# TYPE ntp_system_leap_indicator gauge")?;
         let mut labels = labels.to_owned();
         let leap_indicator = format!("{:?}", self.leap_indicator);
