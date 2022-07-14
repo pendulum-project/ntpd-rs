@@ -47,6 +47,7 @@ pub struct ClockController<C: NtpClock> {
     preferred_poll_interval: PollInterval,
     poll_interval_counter: i32,
     offset: NtpDuration,
+    accumulated_steps: NtpDuration,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -69,6 +70,7 @@ impl<C: NtpClock> ClockController<C> {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::ZERO,
+            accumulated_steps: NtpDuration::ZERO,
         }
     }
 
@@ -93,6 +95,11 @@ impl<C: NtpClock> ClockController<C> {
         // Check that we have a somewhat reasonable result
         if self.offset_too_large(config, offset) {
             error!("Detected overly large offset");
+            return ClockUpdateResult::Panic;
+        }
+
+        if self.combined_steps_too_large(config, offset) {
+            error!("Current offset too large combined with previously made steps");
             return ClockUpdateResult::Panic;
         }
 
@@ -247,10 +254,32 @@ impl<C: NtpClock> ClockController<C> {
             ClockState::StartupBlank | ClockState::StartupFreq => config.startup_panic_threshold,
             _ => config.panic_threshold,
         };
-        if let Some(threshold) = threshold {
-            offset > threshold
+
+        let forward_ok = if let Some(forward) = threshold.forward {
+            offset < forward
         } else {
-            // No threshold desired, so never panic
+            true
+        };
+
+        let backward_ok = if let Some(backward) = threshold.backward {
+            offset > -backward
+        } else {
+            true
+        };
+
+        !(forward_ok && backward_ok)
+    }
+
+    fn combined_steps_too_large(&self, config: &SystemConfig, offset: NtpDuration) -> bool {
+        if matches!(
+            self.state,
+            ClockState::StartupBlank | ClockState::StartupFreq
+        ) {
+            return false;
+        }
+        if let Some(threshold) = config.accumulated_threshold {
+            offset.abs() + self.accumulated_steps > threshold
+        } else {
             false
         }
     }
@@ -268,6 +297,12 @@ impl<C: NtpClock> ClockController<C> {
             ClockState::StartupBlank => ClockState::MeasureFreq,
             _ => ClockState::Sync,
         };
+        if !matches!(
+            self.state,
+            ClockState::StartupBlank | ClockState::StartupFreq
+        ) {
+            self.accumulated_steps += offset.abs();
+        }
         ClockUpdateResult::Step
     }
 
@@ -351,6 +386,7 @@ mod tests {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
+            accumulated_steps: NtpDuration::ZERO,
         };
 
         let ref_interval = controller.preferred_poll_interval;
@@ -471,6 +507,7 @@ mod tests {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
+            accumulated_steps: NtpDuration::ZERO,
         };
 
         controller.update(
@@ -502,6 +539,7 @@ mod tests {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
+            accumulated_steps: NtpDuration::ZERO,
         };
 
         controller.update(
@@ -546,6 +584,7 @@ mod tests {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
+            accumulated_steps: NtpDuration::ZERO,
         };
 
         controller.update(
@@ -579,6 +618,60 @@ mod tests {
     }
 
     #[test]
+    fn test_accumulated_excess_detection() {
+        let base = NtpInstant::now();
+        let mut config = SystemConfig::default();
+        config.accumulated_threshold = Some(NtpDuration::from_seconds(100.));
+
+        let mut controller = ClockController {
+            clock: TestClock::default(),
+            state: ClockState::Sync,
+            last_update_time: base,
+            preferred_poll_interval: PollInterval::MIN,
+            poll_interval_counter: 0,
+            offset: NtpDuration::ZERO,
+            accumulated_steps: NtpDuration::ZERO,
+        };
+
+        assert_eq!(
+            controller.update(
+                &config,
+                NtpDuration::from_seconds(80.),
+                NtpDuration::from_seconds(0.01),
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.03),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1)
+            ),
+            ClockUpdateResult::Ignore
+        );
+        assert_eq!(
+            controller.update(
+                &config,
+                NtpDuration::from_seconds(80.),
+                NtpDuration::from_seconds(0.01),
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.03),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1000),
+            ),
+            ClockUpdateResult::Step
+        );
+        assert_eq!(
+            controller.update(
+                &config,
+                NtpDuration::from_seconds(80.),
+                NtpDuration::from_seconds(0.01),
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.03),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1001)
+            ),
+            ClockUpdateResult::Panic
+        );
+    }
+
+    #[test]
     fn test_excess_detection() {
         let base = NtpInstant::now();
         let config = SystemConfig::default();
@@ -590,12 +683,36 @@ mod tests {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
+            accumulated_steps: NtpDuration::ZERO,
         };
 
         assert_eq!(
             controller.update(
                 &config,
-                2 * config.panic_threshold.unwrap(),
+                2 * config.panic_threshold.forward.unwrap(),
+                NtpDuration::from_seconds(0.01),
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.03),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1),
+            ),
+            ClockUpdateResult::Panic
+        );
+
+        let mut controller = ClockController {
+            clock: TestClock::default(),
+            state: ClockState::Sync,
+            last_update_time: base,
+            preferred_poll_interval: PollInterval::MIN,
+            poll_interval_counter: 0,
+            offset: NtpDuration::from_fixed_int(0),
+            accumulated_steps: NtpDuration::ZERO,
+        };
+
+        assert_eq!(
+            controller.update(
+                &config,
+                -2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
@@ -612,12 +729,36 @@ mod tests {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
+            accumulated_steps: NtpDuration::ZERO,
         };
 
         assert_eq!(
             controller.update(
                 &config,
-                2 * config.panic_threshold.unwrap(),
+                2 * config.panic_threshold.forward.unwrap(),
+                NtpDuration::from_seconds(0.01),
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.03),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1),
+            ),
+            ClockUpdateResult::Panic
+        );
+
+        let mut controller = ClockController {
+            clock: TestClock::default(),
+            state: ClockState::Spike,
+            last_update_time: base,
+            preferred_poll_interval: PollInterval::MIN,
+            poll_interval_counter: 0,
+            offset: NtpDuration::from_fixed_int(0),
+            accumulated_steps: NtpDuration::ZERO,
+        };
+
+        assert_eq!(
+            controller.update(
+                &config,
+                -2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
@@ -634,12 +775,36 @@ mod tests {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
+            accumulated_steps: NtpDuration::ZERO,
         };
 
         assert_eq!(
             controller.update(
                 &config,
-                2 * config.panic_threshold.unwrap(),
+                2 * config.panic_threshold.forward.unwrap(),
+                NtpDuration::from_seconds(0.01),
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.03),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1),
+            ),
+            ClockUpdateResult::Panic
+        );
+
+        let mut controller = ClockController {
+            clock: TestClock::default(),
+            state: ClockState::MeasureFreq,
+            last_update_time: base,
+            preferred_poll_interval: PollInterval::MIN,
+            poll_interval_counter: 0,
+            offset: NtpDuration::from_fixed_int(0),
+            accumulated_steps: NtpDuration::ZERO,
+        };
+
+        assert_eq!(
+            controller.update(
+                &config,
+                -2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
@@ -656,12 +821,13 @@ mod tests {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
+            accumulated_steps: NtpDuration::ZERO,
         };
 
         assert_eq!(
             controller.update(
                 &config,
-                2 * config.panic_threshold.unwrap(),
+                2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
@@ -678,12 +844,13 @@ mod tests {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
+            accumulated_steps: NtpDuration::ZERO,
         };
 
         assert_eq!(
             controller.update(
                 &config,
-                2 * config.panic_threshold.unwrap(),
+                2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),

@@ -3,11 +3,13 @@
 pub mod config;
 pub mod observer;
 mod peer;
+mod peer_manager;
 pub mod sockets;
 mod system;
 pub mod tracing;
 
 pub use config::dynamic::ConfigUpdate;
 pub use config::Config;
-pub use observer::ObservableState;
-pub use system::{spawn, ObservablePeerState, Peers};
+pub use observer::{ObservablePeerState, ObservableState};
+pub use peer_manager::Peers;
+pub use system::spawn;

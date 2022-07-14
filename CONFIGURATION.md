@@ -78,14 +78,17 @@ The management and configuration sockets are used by the [management client](MAN
 There are a number of options available to influence how time differences to the various servers are used to synchronize the system clock. All of these are part of the `system` section of the configuration:
 | Option | Default | Description |
 | --- | --- | --- |
-| min-intersection-survivors | 1 | Minimum number of servers that need to agree on the true time from our perspective for synchronization to start. |
+| min-intersection-survivors | 3 | Minimum number of servers that need to agree on the true time from our perspective for synchronization to start. |
 | min-cluster-survivors | 3 | Number of servers beyond which we do not try to exclude further servers for the purpose of improving measurement precision. Do not change unless familiar with the NTP algorithms. |
 | frequency-tolerance | 15 | Estimate of the short-time frequency precision of the local clock, in parts-per-million. The default is usually a good approximation. |
 | distance-threshold | 1 | Maximum delay to the clock representing ground truth via a peer for that peer to be considered acceptable, in seconds. |
 | frequency-measurement-period | 900 | Amount of time to spend on startup measuring the frequency offset of the system clock, in seconds. Lowering this means the clock is kept actively synchronized sooner, but reduces the precision of the initial frequency estimate, which could result in lower stability of the clock early on. |
 | spike-threshold | 900 | Amount of time before a clock difference larger than 125ms is considered real instead of a spike in the network. Lower values ensure large errors are corrected faster, but make the client more sensitive to network issues. Value provided is in seconds. |
-| panic-threshold | 1800 | Largest time difference the client is allowed to correct in one go. Differences beyond this cause the client to abort synchronization. Value provided is in seconds, set to 0 to disable checking of jumps. |
-| startup-panic-threshold | Disabled | Largest time difference the client is allowed to correct during startup. By default, this is unrestricted as we may be the initial source of time for systems without a hardware backed clock. Value provided is in seconds, set to 0 to disable checking of jumps. |
+| panic-threshold | 1800 (symmetric) | Largest time difference the client is allowed to correct in one go. Differences beyond this cause the client to abort synchronization. Value provided is in seconds, set to 0 to disable checking of jumps. |
+| startup-panic-threshold | No limit forward, 1800 backward | Largest time difference the client is allowed to correct during startup. By default, this is unrestricted as we may be the initial source of time for systems without a hardware backed clock. Value provided is in seconds, set to 0 to disable checking of jumps. |
+| accumulated-threshold | Disabled | Total amount of time difference the client is allowed to correct using steps whilst running. By default, this is unrestricted. Value provided is in seconds, set to 0 to disable checking of accumulated steps. |
+
+For panic thresholds, asymetric thresholds can be configured, allowing a different sized step going forwards compared to going backwards. This is done by configuring a struct with two values, `forward` and `backward` for the panic threshold.
 
 An example of a configuration file is provided below:
 ```toml
@@ -109,6 +112,8 @@ min-intersection-survivors = 1
 min-cluster-survivors = 3
 frequency-tolerance = 15
 distance-threshold = 1
+panic-threshold = 10
+startup-panic-threshold = { forward = 0, backward = 1800 }
 ```
 
 ## Operational concerns
@@ -127,7 +132,7 @@ To run NTPD-rs as the system NTP service, the following systemd service definiti
 
 Note that because of the aforementioned limitations around peer configuration, this service file requires the network-online target. As a result, using this may increase boot times significantly, especially on machines that do not have permanent network connectivity.
 
-This service should not be used at the same time as other NTP services. It explicitly disables the systemd built-in timesyncd service, but be aware that your operating system may use another NTP service.
+This service should not be used at the same time as other NTP services. It explicitly disables the systemd built-in timesyncd service, but be aware that your operating system may use another NTP service. Note also that the daemon SHOULD NOT be restarted when crashing without human intervention. See our [operational guidance](OPERATIONAL_CONSIDERATIONS.md) for more information on this.
 
 ```ini
 [Unit]
@@ -139,6 +144,7 @@ Conflicts=systemd-timesyncd.service ntp.service
 
 [Service]
 Type=simple
+Restart=no
 ExecStart=/usr/local/bin/ntp-daemon
 Environment="RUST_LOG=info"
 User=ntpd-rs

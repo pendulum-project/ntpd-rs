@@ -6,7 +6,7 @@ When configuring NTPD-rs as the system NTP client, there are a number of securit
 
 In its operation, NTP requires that a majority of the used servers agree (up to the precision of the measurements) on the current time. However, in this mechanism, any servers that are currently unavailable because of connection issues and the like are completely ignored. As a consequences, the required quorum of agreeing servers may be lower than expected.
 
-To combat this, NTPD-rs provides the `min-intersection-survivors` setting to set a minimum number of servers that need to agree on the best time. Incrementing this beyond the default value of `1` decreases the likelihood of a bad server adversely affecting the system time. However, larger values also require a larger number of servers to be available before actively starting to synchronize the clock, potentially reducing availability.
+To combat this, NTPD-rs provides the `min-intersection-survivors` setting to set a minimum number of servers that need to agree on the best time. Incrementing this beyond the default value of `3` decreases the likelihood of a bad server adversely affecting the system time. However, larger values also require a larger number of servers to be available before actively starting to synchronize the clock, potentially reducing availability.
 
 The NTPv4 standard recommends using a value of at least `3` for `min-intersection-survivors`. When using this recommendation, it is important to configure enough remote servers to ensure the probability of dipping below `3` available servers is low enough.
 

@@ -211,6 +211,10 @@ impl Config {
         if self.peers.is_empty() {
             warn!("No peers configured. Daemon will not do anything.");
         }
+
+        if self.peers.len() < self.system.min_intersection_survivors {
+            warn!("Fewer peers configured than are required to agree on the current time. Daemon will not do anything.");
+        }
     }
 }
 
@@ -263,7 +267,8 @@ mod tests {
                 mode: PeerHostMode::Server
             }]
         );
-        assert!(config.system.panic_threshold.is_none());
+        assert!(config.system.panic_threshold.forward.is_none());
+        assert!(config.system.panic_threshold.backward.is_none());
 
         let config: Config = toml::from_str(
             r#"

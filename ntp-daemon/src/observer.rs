@@ -1,5 +1,5 @@
-use crate::{ObservablePeerState, Peers};
-use ntp_proto::SystemSnapshot;
+use crate::Peers;
+use ntp_proto::{PeerStatistics, Reach, ReferenceId, SystemSnapshot};
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use tokio::net::UnixListener;
@@ -12,6 +12,19 @@ use serde::{Deserialize, Serialize};
 pub struct ObservableState {
     pub system: SystemSnapshot,
     pub peers: Vec<ObservablePeerState>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum ObservablePeerState {
+    Nothing,
+    Observable {
+        statistics: PeerStatistics,
+        reachability: Reach,
+        uptime: std::time::Duration,
+        poll_interval: std::time::Duration,
+        peer_id: ReferenceId,
+        address: String,
+    },
 }
 
 pub async fn spawn(
@@ -43,7 +56,25 @@ async fn observer(
     if path.exists() {
         std::fs::remove_file(&path)?;
     }
-    let peers_listener = UnixListener::bind(&path)?;
+    let peers_listener = match UnixListener::bind(&path) {
+        Ok(listener) => listener,
+        Err(e) => {
+            use std::io::{Error, ErrorKind};
+
+            // we don create parent directories
+            if let Some(parent) = path.parent() {
+                if !parent.exists() {
+                    let msg = format!(
+                        r"Could not create observe socket at {:?} because its parent directory does not exist",
+                        &path
+                    );
+                    return Err(Error::new(ErrorKind::Other, msg));
+                }
+            }
+            let msg = format!("Could not create observe socket at {:?}: {:?}", &path, e);
+            return Err(Error::new(ErrorKind::Other, msg));
+        }
+    };
 
     // this binary needs to run as root to be able to adjust the system clock.
     // by default, the socket inherits root permissions, but the client should not need
@@ -75,7 +106,7 @@ mod tests {
 
     use crate::{
         config::{PeerConfig, PeerHostMode},
-        system::PeerStatus,
+        peer_manager::PeerStatus,
     };
 
     use super::*;

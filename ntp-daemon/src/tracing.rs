@@ -52,6 +52,8 @@ pub fn init(
     registry.init();
 
     // Final setup needs the full configuration
+    // We use a let binding to deal with optional inclusion of a sentry guard.
+    #[allow(clippy::let_unit_value)]
     move |config, has_log_override, has_format_override| -> _ {
         #[cfg(not(feature = "sentry"))]
         let guard = ();
