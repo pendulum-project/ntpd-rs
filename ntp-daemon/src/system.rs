@@ -371,7 +371,6 @@ mod tests {
         let (msg_for_system_tx, msg_for_system_rx) = mpsc::channel::<MsgForSystem>(32);
         let global_system_snapshot = Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default()));
 
-        // TODO: Fix this
         let peers = Peers::from_statuslist(
             &[
                 PeerStatus::NoMeasurement,
