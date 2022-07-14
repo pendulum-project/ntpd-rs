@@ -2,8 +2,7 @@
 
 use clap::Parser;
 use ntp_daemon::config::{CmdArgs, Config};
-use ntp_daemon::Peers;
-use std::{error::Error, sync::Arc};
+use std::error::Error;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -28,31 +27,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // tracing setup to ensure logging is fully configured.
     config.check();
 
-    // shares the system state with all peers
-    let system_reader = Arc::new(tokio::sync::RwLock::new(Default::default()));
-    let system_writer = system_reader.clone();
+    let (main_loop_handle, channels) = ntp_daemon::spawn(config.system, &config.peers).await?;
 
-    let system_config = Arc::new(tokio::sync::RwLock::new(config.system));
-    let main_system_config = system_config.clone();
-
-    let peers_reader = Arc::new(tokio::sync::RwLock::new(Peers::default()));
-    let peers_writer = peers_reader.clone();
-
-    let main_loop_handle = tokio::spawn(async move {
-        ntp_daemon::spawn(
-            main_system_config,
-            &config.peers,
-            peers_writer,
-            system_writer,
-        )
-        .await
-    });
-
-    ntp_daemon::observer::spawn(&config.observe, peers_reader, system_reader).await;
+    ntp_daemon::observer::spawn(&config.observe, channels.peers, channels.system).await;
 
     ntp_daemon::config::dynamic::spawn(
         config.configure,
-        system_config,
+        channels.config,
         tracing_state.reload_handle,
     )
     .await;
