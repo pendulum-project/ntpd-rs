@@ -279,7 +279,13 @@ fn accept_packet(
 
                 None
             } else {
-                Some((NtpHeader::deserialize(buf), recv_timestamp))
+                match NtpHeader::deserialize(buf) {
+                    Ok(packet) => Some((packet, recv_timestamp)),
+                    Err(e) => {
+                        warn!("received invalid packet: {}", e);
+                        None
+                    }
+                }
             }
         }
         Ok((size, None)) => {
@@ -585,7 +591,7 @@ mod tests {
         assert_eq!(size, 48);
         let timestamp = timestamp.unwrap();
 
-        let rec_packet = NtpHeader::deserialize(&buf);
+        let rec_packet = NtpHeader::deserialize(&buf).unwrap();
         let mut send_packet = NtpHeader::new();
         send_packet.leap = NtpLeapIndicator::NoWarning;
         send_packet.stratum = 1;
@@ -624,7 +630,7 @@ mod tests {
         assert_eq!(size, 48);
         assert!(timestamp.is_some());
 
-        let rec_packet = NtpHeader::deserialize(&buf);
+        let rec_packet = NtpHeader::deserialize(&buf).unwrap();
         let mut send_packet = NtpHeader::new();
         send_packet.stratum = 0;
         send_packet.mode = NtpAssociationMode::Server;

@@ -9,11 +9,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let sock = UdpSocket::bind("0.0.0.0:8080").await?;
 
     let mut buf = [0; 1024];
+    #[allow(clippy::field_reassign_with_default)] // allow the explicit stratum
     loop {
         let (len, addr) = sock.recv_from(&mut buf).await?;
         println!("{:?} bytes received from {:?}", len, addr);
 
-        let parsed = NtpHeader::deserialize(buf[0..48].try_into().unwrap());
+        let parsed = match NtpHeader::deserialize(buf[0..48].try_into().unwrap()) {
+            Ok(packet) => packet,
+            Err(_) => continue,
+        };
 
         let mut packet = ntp_proto::NtpHeader::default();
         packet.stratum = 0;
