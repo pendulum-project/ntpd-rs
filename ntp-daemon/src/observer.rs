@@ -1,8 +1,8 @@
+use crate::sockets::create_unix_socket;
 use crate::Peers;
 use ntp_proto::{PeerStatistics, Reach, ReferenceId, SystemSnapshot};
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
-use tokio::net::UnixListener;
 use tokio::task::JoinHandle;
 use tracing::error;
 
@@ -52,29 +52,7 @@ async fn observer(
         None => return Ok(()),
     };
 
-    // must unlink path before the bind below (otherwise we get "address already in use")
-    if path.exists() {
-        std::fs::remove_file(&path)?;
-    }
-    let peers_listener = match UnixListener::bind(&path) {
-        Ok(listener) => listener,
-        Err(e) => {
-            use std::io::{Error, ErrorKind};
-
-            // we don create parent directories
-            if let Some(parent) = path.parent() {
-                if !parent.exists() {
-                    let msg = format!(
-                        r"Could not create observe socket at {:?} because its parent directory does not exist",
-                        &path
-                    );
-                    return Err(Error::new(ErrorKind::Other, msg));
-                }
-            }
-            let msg = format!("Could not create observe socket at {:?}: {:?}", &path, e);
-            return Err(Error::new(ErrorKind::Other, msg));
-        }
-    };
+    let peers_listener = create_unix_socket(&path)?;
 
     // this binary needs to run as root to be able to adjust the system clock.
     // by default, the socket inherits root permissions, but the client should not need

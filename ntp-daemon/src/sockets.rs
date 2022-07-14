@@ -1,4 +1,7 @@
+use std::path::Path;
+
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::UnixListener;
 use tokio::net::UnixStream;
 
 pub async fn write_json<T>(stream: &mut UnixStream, value: &T) -> std::io::Result<()>
@@ -22,6 +25,39 @@ where
     buffer.truncate(n);
 
     Ok(serde_json::from_slice(buffer).unwrap())
+}
+
+pub fn create_unix_socket(path: &Path) -> std::io::Result<UnixListener> {
+    use std::io::{Error, ErrorKind};
+
+    // must unlink path before the bind below (otherwise we get "address already in use")
+    if path.exists() {
+        std::fs::remove_file(&path)?;
+    }
+
+    // OS errors are terrible; let's try to do better
+    let error = match UnixListener::bind(&path) {
+        Ok(listener) => return Ok(listener),
+        Err(e) => e,
+    };
+
+    // we don create parent directories
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            let msg = format!(
+                r"Could not create observe socket at {:?} because its parent directory does not exist",
+                &path
+            );
+            return Err(Error::new(ErrorKind::Other, msg));
+        }
+    }
+
+    // otherwise, just forward the OS error
+    let msg = format!(
+        "Could not create observe socket at {:?}: {:?}",
+        &path, error
+    );
+    Err(Error::new(ErrorKind::Other, msg))
 }
 
 #[cfg(test)]
