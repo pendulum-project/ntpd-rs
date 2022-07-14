@@ -128,8 +128,13 @@ where
             }
         }
 
-        if let Err(error) = self.socket.send(&packet.serialize()).await {
-            warn!(?error, "poll message could not be sent");
+        match self.socket.send(&mut packet.serialize()).await {
+            Err(error) => {
+                warn!(?error, "poll message could not be sent");
+            }
+            Ok((length, timestamp)) => {
+                dbg!(length, timestamp);
+            }
         }
     }
 
@@ -182,6 +187,7 @@ where
     async fn run(&mut self, mut poll_wait: Pin<&mut T>) {
         loop {
             let mut buf = [0_u8; 48];
+            let mut buf_ts = [0_u8; 48];
 
             tokio::select! {
                 () = &mut poll_wait => {
@@ -199,6 +205,22 @@ where
                     }
                 }
                 result = self.socket.recv(&mut buf) => {
+                    let send_timestamp = match self.last_send_timestamp {
+                        Some(ts) => ts,
+                        None => {
+                            warn!("we received a message without having sent one; discarding");
+                            continue;
+                        }
+                    };
+
+                    if let Some((packet, recv_timestamp)) = accept_packet(result, &buf) {
+                        match self.handle_packet(&mut poll_wait, packet, send_timestamp, recv_timestamp).await{
+                            ControlFlow::Continue(_) => continue,
+                            ControlFlow::Break(_) => break,
+                        }
+                    }
+                },
+                result = self.socket.recv_send_timestamp(&mut buf_ts) => {
                     let send_timestamp = match self.last_send_timestamp {
                         Some(ts) => ts,
                         None => {
@@ -275,6 +297,7 @@ fn accept_packet(
             // extra bytes are guaranteed safe to ignore. `recv` truncates the messages.
             // Messages of fewer than 48 bytes are skipped entirely
             if size < 48 {
+                dbg!(buf);
                 warn!(expected = 48, actual = size, "received packet is too small");
 
                 None
