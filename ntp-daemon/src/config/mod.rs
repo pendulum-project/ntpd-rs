@@ -267,7 +267,8 @@ mod tests {
                 mode: PeerHostMode::Server
             }]
         );
-        assert!(config.system.panic_threshold.is_none());
+        assert!(config.system.panic_threshold.forward.is_none());
+        assert!(config.system.panic_threshold.backward.is_none());
 
         let config: Config = toml::from_str(
             r#"

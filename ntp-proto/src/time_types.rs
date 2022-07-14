@@ -3,7 +3,7 @@ use rand::{
     Rng,
 };
 use serde::{Deserialize, Serialize};
-use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::time::{Duration, Instant};
 
 /// NtpInstant is a monotonically increasing value modelling the uptime of the NTP service
@@ -379,6 +379,16 @@ impl SubAssign for NtpDuration {
         // unintentionally cancel, ensuring that filtering
         // can properly reject on the result.
         self.duration = self.duration.saturating_sub(rhs.duration);
+    }
+}
+
+impl Neg for NtpDuration {
+    type Output = NtpDuration;
+
+    fn neg(self) -> Self::Output {
+        NtpDuration {
+            duration: -self.duration,
+        }
     }
 }
 

@@ -254,12 +254,20 @@ impl<C: NtpClock> ClockController<C> {
             ClockState::StartupBlank | ClockState::StartupFreq => config.startup_panic_threshold,
             _ => config.panic_threshold,
         };
-        if let Some(threshold) = threshold {
-            offset.abs() > threshold
+
+        let forward_ok = if let Some(forward) = threshold.forward {
+            offset < forward
         } else {
-            // No threshold desired, so never panic
-            false
-        }
+            true
+        };
+
+        let backward_ok = if let Some(backward) = threshold.backward {
+            offset > -backward
+        } else {
+            true
+        };
+
+        !(forward_ok && backward_ok)
     }
 
     fn combined_steps_too_large(&self, config: &SystemConfig, offset: NtpDuration) -> bool {
@@ -681,7 +689,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
-                2 * config.panic_threshold.unwrap(),
+                2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
@@ -704,7 +712,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
-                -2 * config.panic_threshold.unwrap(),
+                -2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
@@ -727,7 +735,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
-                2 * config.panic_threshold.unwrap(),
+                2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
@@ -750,7 +758,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
-                -2 * config.panic_threshold.unwrap(),
+                -2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
@@ -773,7 +781,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
-                2 * config.panic_threshold.unwrap(),
+                2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
@@ -796,7 +804,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
-                -2 * config.panic_threshold.unwrap(),
+                -2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
@@ -819,7 +827,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
-                2 * config.panic_threshold.unwrap(),
+                2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
@@ -842,7 +850,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
-                2 * config.panic_threshold.unwrap(),
+                2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),

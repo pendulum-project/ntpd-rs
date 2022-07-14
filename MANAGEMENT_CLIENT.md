@@ -19,7 +19,7 @@ The current client exposes 3 different commands:
 
 ## Available configuration parameters
 
-Currently, only the `log-level` and `panic-threshold` configuration parameters can be set dynamically, through the `--log-level` and `--panic-threshold` command line parameters respectively. For information on the allowed values for these, see [the configuration documentation](CONFIGURATION.md).
+Currently, only the `log-level` and `panic-threshold` configuration parameters can be set dynamically, through the `--log-level` and `--panic-threshold` command line parameters respectively. For information on the allowed values for these, see [the configuration documentation](CONFIGURATION.md). Note that for the panic threshold, only symmetric thresholds can be configured through the management client.
 
 ## Specifying socket locations
 
