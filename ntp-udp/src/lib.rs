@@ -221,7 +221,7 @@ fn fetch_send_timestamp(socket: &std::net::UdpSocket) -> io::Result<Option<NtpTi
     let timestamp_control_size =
         unsafe { libc::CMSG_SPACE((3 * std::mem::size_of::<libc::timespec>()) as _) } as usize;
 
-    let control_size = std::mem::size_of::<ntp_proto::NtpHeader>() + timestamp_control_size;
+    let control_size = ntp_proto::NtpHeader::WIRE_SIZE + timestamp_control_size;
 
     let mut control_buf = vec![0; control_size];
     let mut mhdr = libc::msghdr {
