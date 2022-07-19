@@ -18,7 +18,7 @@ const EPOCH_OFFSET: u32 = (70 * 365 + 17) * 86400;
 
 pub struct UdpSocket {
     io_main: AsyncFd<std::net::UdpSocket>,
-    io_timestamp: AsyncFd<std::net::UdpSocket>,
+    // io_timestamp: AsyncFd<std::net::UdpSocket>,
 }
 
 pub fn cvt(t: libc::c_int) -> crate::io::Result<libc::c_int> {
@@ -181,14 +181,9 @@ impl UdpSocket {
         A: ToSocketAddrs + tokio::net::ToSocketAddrs + std::fmt::Debug,
         B: ToSocketAddrs + tokio::net::ToSocketAddrs + std::fmt::Debug,
     {
-
         let unbound_socket_1 = UnboundSocket::new(&listen_addr)?;
         unbound_socket_1.set_reuse_port()?;
         unbound_socket_1.set_timestamping()?;
-
-        // let unbound_socket_2 = UnboundSocket::new(&listen_addr)?;
-        let unbound_socket_2 = UnboundSocket::new(&unbound_socket_1.socket_addr()?)?;
-        unbound_socket_2.set_reuse_port()?;
 
         let socket = unbound_socket_1.bind_tokio()?;
 
@@ -196,11 +191,6 @@ impl UdpSocket {
             local_addr = debug(socket.local_addr().unwrap()),
             "main socket bound"
         );
-
-        // let socket_timestamp = unbound_socket_2.bind_tokio().unwrap();
-        let socket_timestamp = unsafe { std::net::UdpSocket::from_raw_fd(unbound_socket_2.fd) };
-        socket_timestamp.set_nonblocking(true).unwrap();
-        // let socket_timestamp = tokio::net::UdpSocket::from_std(socket_timestamp).unwrap();
 
         socket.connect(peer_addr).await?;
         warn!(
@@ -210,21 +200,8 @@ impl UdpSocket {
         );
         let socket = socket.into_std()?;
 
-        warn!(
-            local_addr = debug(socket_timestamp.local_addr().unwrap()),
-            "timestamp socket bound"
-        );
-        // socket_timestamp.connect(&socket.local_addr()?).await?;
-        //        warn!(
-        //            local_addr = debug(socket_timestamp.local_addr().unwrap()),
-        //            peer_addr = debug(socket_timestamp.peer_addr().unwrap()),
-        //            "timestamp socket connected"
-        //        );
-        // let socket_timestamp = socket_timestamp.into_std()?;
-
         Ok(UdpSocket {
             io_main: AsyncFd::new(socket)?,
-            io_timestamp: AsyncFd::new(socket_timestamp).unwrap(),
         })
     }
 
@@ -252,9 +229,85 @@ impl UdpSocket {
                 Err(e) => debug!(error = debug(e), "error receiving data"),
             }
 
+            let buf = &mut [0u8; 200];
+            let mut buf_slice = IoSliceMut::new(buf);
+
+            // could be on the stack if const extern fn is stable
+            let control_size =
+                unsafe { libc::CMSG_SPACE((20 * std::mem::size_of::<libc::timespec>()) as _) }
+                    as usize;
+
+            let mut socket_address_storage = MaybeUninit::<libc::sockaddr_storage>::zeroed();
+
+            let mut control_buf = vec![0; control_size];
+            let mut mhdr = libc::msghdr {
+                msg_control: control_buf.as_mut_ptr().cast::<libc::c_void>(),
+                msg_controllen: control_buf.len(),
+                msg_iov: (&mut buf_slice as *mut IoSliceMut).cast::<libc::iovec>(),
+                msg_iovlen: 1,
+                msg_flags: 0,
+                msg_name: (socket_address_storage.as_mut_ptr()).cast(),
+                msg_namelen: std::mem::size_of_val(&socket_address_storage) as u32,
+            };
+            // loops for when we receive an interrupt during the recv
+            let n = loop {
+                let n = unsafe {
+                    libc::recvmsg(self.io_main.as_raw_fd(), &mut mhdr, libc::MSG_ERRQUEUE)
+                };
+
+                if n == -1 {
+                    let e = io::Error::last_os_error();
+
+                    if let ErrorKind::Interrupted = e.kind() {
+                        // retry when the recv was interrupted
+                        trace!("recv was interrupted, retrying");
+                        continue;
+                    }
+
+                    return Err(e);
+                }
+
+                break n;
+            };
+
+            dbg!(n);
+
+            if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
+                warn!(
+                    max_len = buf.len(),
+                    "truncated packet because it was larger than expected",
+                );
+            }
+
+            if mhdr.msg_flags & libc::MSG_CTRUNC > 0 {
+                warn!("truncated control messages");
+            }
+
+            // Loops through the control messages, but we should only get a single message
+            let mut send_ts = None;
+            let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(&mhdr).as_ref() };
+            while let Some(msg) = cmsg {
+                if let (libc::SOL_SOCKET, libc::SO_TIMESTAMPING) = (msg.cmsg_level, msg.cmsg_type) {
+                    // Safety: SCM_TIMESTAMP always has a timespec in the data, so this operation should be safe
+                    let ts: libc::timespec =
+                        unsafe { std::ptr::read_unaligned(libc::CMSG_DATA(msg) as *const _) };
+
+                    send_ts = Some(NtpTimestamp::from_seconds_nanos_since_ntp_era(
+                        (ts.tv_sec as u32).wrapping_add(EPOCH_OFFSET), // truncates the higher bits of the i64
+                        ts.tv_nsec as u32, // tv_nsec is always within [0, 1e10)
+                    ));
+                    dbg!(&send_ts);
+                } else {
+                    // dbg!(msg.cmsg_level, msg.cmsg_type);
+                }
+
+                // grab the next control message
+                cmsg = unsafe { libc::CMSG_NXTHDR(&mhdr, msg).as_ref() };
+            }
+
             let x = result?;
 
-            return Ok((x, None));
+            return Ok((x, send_ts));
 
             // return result;
         }
@@ -296,7 +349,7 @@ impl UdpSocket {
     ) -> io::Result<(usize, Option<NtpTimestamp>)> {
         loop {
             trace!("waiting for socket to become readable");
-            let mut guard = self.io_timestamp.readable().await?;
+            let mut guard = self.io_main.readable().await?;
             let result = match guard.try_io(|inner| recv(inner.get_ref(), buf)) {
                 Err(_would_block) => {
                     trace!("blocked after becoming readable, retrying");
@@ -354,6 +407,84 @@ fn init_socket(socket: &std::net::UdpSocket) -> io::Result<()> {
     }
 }
 
+fn fetch_send_timestamp(
+    socket: &std::net::UdpSocket,
+    buf: &mut [u8],
+) -> io::Result<Option<NtpTimestamp>> {
+    let mut buf_slice = IoSliceMut::new(buf);
+
+    // could be on the stack if const extern fn is stable
+    let control_size =
+        unsafe { libc::CMSG_SPACE((3 * std::mem::size_of::<libc::timespec>()) as _) } as usize;
+
+    let mut socket_address_storage = MaybeUninit::<libc::sockaddr_storage>::zeroed();
+
+    let mut control_buf = vec![0; control_size];
+    let mut mhdr = libc::msghdr {
+        msg_control: control_buf.as_mut_ptr().cast::<libc::c_void>(),
+        msg_controllen: control_buf.len(),
+        msg_iov: (&mut buf_slice as *mut IoSliceMut).cast::<libc::iovec>(),
+        msg_iovlen: 1,
+        msg_flags: 0,
+        msg_name: (socket_address_storage.as_mut_ptr()).cast(),
+        msg_namelen: std::mem::size_of_val(&socket_address_storage) as u32,
+    };
+
+    // loops for when we receive an interrupt during the recv
+    let n = loop {
+        let n = unsafe { libc::recvmsg(socket.as_raw_fd(), &mut mhdr, libc::MSG_ERRQUEUE) };
+
+        if n == -1 {
+            let e = io::Error::last_os_error();
+
+            if let ErrorKind::Interrupted = e.kind() {
+                // retry when the recv was interrupted
+                trace!("recv was interrupted, retrying");
+                continue;
+            }
+
+            return Err(e);
+        }
+
+        break n;
+    };
+
+    if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
+        warn!(
+            max_len = buf.len(),
+            "truncated packet because it was larger than expected",
+        );
+    }
+
+    if mhdr.msg_flags & libc::MSG_CTRUNC > 0 {
+        warn!("truncated control messages");
+    }
+
+    // Loops through the control messages, but we should only get a single message
+    let mut send_ts = None;
+    let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(&mhdr).as_ref() };
+    while let Some(msg) = cmsg {
+        if let (libc::SOL_SOCKET, libc::SO_TIMESTAMPING) = (msg.cmsg_level, msg.cmsg_type) {
+            // Safety: SCM_TIMESTAMP always has a timespec in the data, so this operation should be safe
+            let ts: libc::timespec =
+                unsafe { std::ptr::read_unaligned(libc::CMSG_DATA(msg) as *const _) };
+
+            send_ts = Some(NtpTimestamp::from_seconds_nanos_since_ntp_era(
+                (ts.tv_sec as u32).wrapping_add(EPOCH_OFFSET), // truncates the higher bits of the i64
+                ts.tv_nsec as u32,                             // tv_nsec is always within [0, 1e10)
+            ));
+            dbg!(&send_ts);
+        } else {
+            dbg!(msg.cmsg_level, msg.cmsg_type);
+        }
+
+        // grab the next control message
+        cmsg = unsafe { libc::CMSG_NXTHDR(&mhdr, msg).as_ref() };
+    }
+
+    Ok(send_ts)
+}
+
 fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Option<NtpTimestamp>)> {
     let mut buf_slice = IoSliceMut::new(buf);
 
@@ -374,7 +505,7 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
         msg_namelen: std::mem::size_of_val(&socket_address_storage) as u32,
     };
 
-    libc::MSG_ERRQUEUE;
+    // libc::MSG_ERRQUEUE;
 
     // loops for when we receive an interrupt during the recv
     let n = loop {

@@ -133,7 +133,7 @@ where
                 warn!(?error, "poll message could not be sent");
             }
             Ok((length, timestamp)) => {
-                dbg!(length, timestamp);
+                // dbg!(length, timestamp);
             }
         }
     }
@@ -205,22 +205,6 @@ where
                     }
                 }
                 result = self.socket.recv(&mut buf) => {
-                    let send_timestamp = match self.last_send_timestamp {
-                        Some(ts) => ts,
-                        None => {
-                            warn!("we received a message without having sent one; discarding");
-                            continue;
-                        }
-                    };
-
-                    if let Some((packet, recv_timestamp)) = accept_packet(result, &buf) {
-                        match self.handle_packet(&mut poll_wait, packet, send_timestamp, recv_timestamp).await{
-                            ControlFlow::Continue(_) => continue,
-                            ControlFlow::Break(_) => break,
-                        }
-                    }
-                },
-                result = self.socket.recv_send_timestamp(&mut buf_ts) => {
                     let send_timestamp = match self.last_send_timestamp {
                         Some(ts) => ts,
                         None => {
