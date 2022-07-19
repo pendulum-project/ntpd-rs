@@ -1,7 +1,7 @@
 use std::{
     io,
     io::{ErrorKind, IoSliceMut},
-    os::unix::prelude::{AsRawFd, FromRawFd, RawFd},
+    os::unix::prelude::AsRawFd,
 };
 
 use ntp_proto::NtpTimestamp;
@@ -24,11 +24,7 @@ impl UdpSocket {
         A: tokio::net::ToSocketAddrs + std::net::ToSocketAddrs + std::fmt::Debug,
         B: tokio::net::ToSocketAddrs + std::net::ToSocketAddrs + std::fmt::Debug,
     {
-        let unbound_socket = UnboundSocket::new(&listen_addr)?;
-        unbound_socket.set_reuse_port()?;
-        unbound_socket.set_timestamping()?;
-
-        let socket = unbound_socket.bind_tokio()?;
+        let socket = tokio::net::UdpSocket::bind(&listen_addr).await?; // unbound_socket.bind_tokio()?;
         debug!(
             local_addr = debug(socket.local_addr().unwrap()),
             "socket bound"
@@ -40,6 +36,9 @@ impl UdpSocket {
             "socket connected"
         );
         let socket = socket.into_std()?;
+
+        set_timestamping_options(&socket)?;
+
         Ok(UdpSocket {
             io: AsyncFd::new(socket)?,
         })
@@ -102,6 +101,50 @@ impl UdpSocket {
 impl AsRef<std::net::UdpSocket> for UdpSocket {
     fn as_ref(&self) -> &std::net::UdpSocket {
         self.io.get_ref()
+    }
+}
+
+/// # Safety
+///
+/// The given pointer must point to a libc::timespec
+unsafe fn read_ntp_timestamp(ptr: *const u8) -> NtpTimestamp {
+    let ts: libc::timespec = std::ptr::read_unaligned(ptr as *const _);
+
+    // truncates the higher bits of the i64
+    let seconds = (ts.tv_sec as u32).wrapping_add(EPOCH_OFFSET);
+
+    // tv_nsec is always within [0, 1e10)
+    let nanos = ts.tv_nsec as u32;
+
+    NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, nanos)
+}
+
+fn set_timestamping_options(udp_socket: &std::net::UdpSocket) -> io::Result<()> {
+    let fd = udp_socket.as_raw_fd();
+
+    let software_send: libc::c_int = libc::SOF_TIMESTAMPING_TX_SOFTWARE as _;
+    let software_receive: libc::c_int = libc::SOF_TIMESTAMPING_RX_SOFTWARE as _;
+    let software_report: libc::c_int = libc::SOF_TIMESTAMPING_SOFTWARE as _;
+
+    let bits = software_receive | software_send | software_report;
+
+    unsafe {
+        cvt(libc::setsockopt(
+            fd,
+            libc::SOL_SOCKET,
+            libc::SO_TIMESTAMPING,
+            &bits as *const _ as *const libc::c_void,
+            std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+        ))?
+    };
+
+    Ok(())
+}
+
+fn cvt(t: libc::c_int) -> crate::io::Result<libc::c_int> {
+    match t {
+        -1 => Err(std::io::Error::last_os_error()),
+        _ => Ok(t),
     }
 }
 
@@ -168,178 +211,6 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
     Ok((bytes_read as usize, recv_ts))
 }
 
-/// # Safety
-///
-/// The given pointer must point to a libc::timespec
-unsafe fn read_ntp_timestamp(ptr: *const u8) -> NtpTimestamp {
-    let ts: libc::timespec = std::ptr::read_unaligned(ptr as *const _);
-
-    // truncates the higher bits of the i64
-    let seconds = (ts.tv_sec as u32).wrapping_add(EPOCH_OFFSET);
-
-    // tv_nsec is always within [0, 1e10)
-    let nanos = ts.tv_nsec as u32;
-
-    NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, nanos)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_timestamping_reasonable() {
-        tokio_test::block_on(async {
-            let a = UdpSocket::new("127.0.0.1:8000", "127.0.0.1:8001")
-                .await
-                .unwrap();
-            let b = UdpSocket::new("127.0.0.1:8001", "127.0.0.1:8000")
-                .await
-                .unwrap();
-
-            tokio::spawn(async move {
-                a.send(&[1; 48]).await.unwrap();
-                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                a.send(&[2; 48]).await.unwrap();
-            });
-
-            let mut buf = [0; 48];
-            let (s1, t1) = b.recv(&mut buf).await.unwrap();
-            let (s2, t2) = b.recv(&mut buf).await.unwrap();
-            assert_eq!(s1, 48);
-            assert_eq!(s2, 48);
-
-            let t1 = t1.unwrap();
-            let t2 = t2.unwrap();
-            let delta = t2 - t1;
-
-            assert!(delta.to_seconds() > 0.15 && delta.to_seconds() < 0.25);
-        });
-    }
-}
-
-fn cvt(t: libc::c_int) -> crate::io::Result<libc::c_int> {
-    match t {
-        -1 => Err(std::io::Error::last_os_error()),
-        _ => Ok(t),
-    }
-}
-
-struct UnboundSocket {
-    fd: RawFd,
-    addr: std::net::SocketAddr,
-}
-
-impl UnboundSocket {
-    fn new<A: std::net::ToSocketAddrs>(addr: A) -> std::io::Result<Self> {
-        use std::net::SocketAddr;
-
-        let mut last_error = None;
-
-        for addr in addr.to_socket_addrs()? {
-            let fam = match addr {
-                SocketAddr::V4(..) => libc::AF_INET,
-                SocketAddr::V6(..) => libc::AF_INET6,
-            };
-
-            let ty = libc::SOCK_DGRAM;
-
-            // NOTE: only works on linux
-            // see https://github.com/rust-lang/rust/blob/master/library/std/src/sys/unix/net.rs#L70
-            unsafe {
-                // On platforms that support it we pass the SOCK_CLOEXEC
-                // flag to atomically create the socket and set it as
-                // CLOEXEC. On Linux this was added in 2.6.27.
-                match libc::socket(fam, ty | libc::SOCK_CLOEXEC, 0) {
-                    -1 => {
-                        last_error = Some(std::io::Error::last_os_error());
-                        // try the other addresses
-                        continue;
-                    }
-                    fd => return Ok(UnboundSocket { fd, addr }),
-                };
-            }
-        }
-
-        let default_error = std::io::Error::new(
-            ErrorKind::InvalidInput,
-            "could not resolve to any addresses",
-        );
-
-        Err(last_error.unwrap_or(default_error))
-    }
-
-    fn addr_into_inner(&self) -> (*const libc::sockaddr, libc::socklen_t) {
-        use std::net::SocketAddr;
-
-        match self.addr {
-            SocketAddr::V4(ref a) => (
-                a as *const _ as *const _,
-                std::mem::size_of_val(a) as libc::socklen_t,
-            ),
-            SocketAddr::V6(ref a) => (
-                a as *const _ as *const _,
-                std::mem::size_of_val(a) as libc::socklen_t,
-            ),
-        }
-    }
-
-    fn set_reuse_port(&self) -> std::io::Result<()> {
-        let optval: i32 = 1;
-
-        // allow another listener on this socket
-        unsafe {
-            cvt(libc::setsockopt(
-                self.fd,
-                libc::SOL_SOCKET,
-                libc::SO_REUSEPORT,
-                &optval as *const i32 as *const libc::c_void,
-                std::mem::size_of::<libc::c_int>() as libc::socklen_t,
-            ))?
-        };
-
-        Ok(())
-    }
-
-    fn set_timestamping(&self) -> io::Result<()> {
-        let fd = self.fd;
-
-        let software_send: libc::c_int = libc::SOF_TIMESTAMPING_TX_SOFTWARE as _;
-        let software_receive: libc::c_int = libc::SOF_TIMESTAMPING_RX_SOFTWARE as _;
-        let software_report: libc::c_int = libc::SOF_TIMESTAMPING_SOFTWARE as _;
-
-        let bits = software_receive | software_send | software_report;
-
-        unsafe {
-            cvt(libc::setsockopt(
-                fd,
-                libc::SOL_SOCKET,
-                libc::SO_TIMESTAMPING,
-                &bits as *const _ as *const libc::c_void,
-                std::mem::size_of::<libc::c_int>() as libc::socklen_t,
-            ))?
-        };
-
-        Ok(())
-    }
-
-    fn bind_nonblocking(self) -> std::io::Result<std::net::UdpSocket> {
-        unsafe {
-            let (addrp, len) = self.addr_into_inner();
-
-            cvt(libc::bind(self.fd, addrp, len as _))?;
-
-            let udp_socket = std::net::UdpSocket::from_raw_fd(self.fd);
-            udp_socket.set_nonblocking(true)?;
-            Ok(udp_socket)
-        }
-    }
-
-    fn bind_tokio(self) -> std::io::Result<tokio::net::UdpSocket> {
-        tokio::net::UdpSocket::from_std(self.bind_nonblocking()?)
-    }
-}
-
 fn fetch_send_timestamp(socket: &std::net::UdpSocket) -> io::Result<Option<NtpTimestamp>> {
     // TODO: I don't understand why 90 is the right number, but that is what `recvmsg` reports
     let mut buf = [0u8; 90];
@@ -402,4 +273,39 @@ fn fetch_send_timestamp(socket: &std::net::UdpSocket) -> io::Result<Option<NtpTi
     }
 
     Ok(send_ts)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_timestamping_reasonable() {
+        tokio_test::block_on(async {
+            let a = UdpSocket::new("127.0.0.1:8000", "127.0.0.1:8001")
+                .await
+                .unwrap();
+            let b = UdpSocket::new("127.0.0.1:8001", "127.0.0.1:8000")
+                .await
+                .unwrap();
+
+            tokio::spawn(async move {
+                a.send(&[1; 48]).await.unwrap();
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                a.send(&[2; 48]).await.unwrap();
+            });
+
+            let mut buf = [0; 48];
+            let (s1, t1) = b.recv(&mut buf).await.unwrap();
+            let (s2, t2) = b.recv(&mut buf).await.unwrap();
+            assert_eq!(s1, 48);
+            assert_eq!(s2, 48);
+
+            let t1 = t1.unwrap();
+            let t2 = t2.unwrap();
+            let delta = t2 - t1;
+
+            assert!(delta.to_seconds() > 0.15 && delta.to_seconds() < 0.25);
+        });
+    }
 }
