@@ -1,7 +1,7 @@
 use std::{
     io,
     io::{ErrorKind, IoSliceMut},
-    os::unix::prelude::AsRawFd,
+    os::unix::prelude::{AsRawFd, FromRawFd, RawFd},
 };
 
 use ntp_proto::NtpTimestamp;
@@ -214,5 +214,127 @@ mod tests {
 
             assert!(delta.to_seconds() > 0.15 && delta.to_seconds() < 0.25);
         });
+    }
+}
+
+pub fn cvt(t: libc::c_int) -> crate::io::Result<libc::c_int> {
+    match t {
+        -1 => Err(std::io::Error::last_os_error()),
+        _ => Ok(t),
+    }
+}
+
+struct UnboundSocket {
+    fd: RawFd,
+    addr: std::net::SocketAddr,
+}
+
+impl UnboundSocket {
+    fn new<A: std::net::ToSocketAddrs>(addr: A) -> std::io::Result<Self> {
+        use std::net::SocketAddr;
+
+        let mut last_error = None;
+
+        for addr in addr.to_socket_addrs()? {
+            let fam = match addr {
+                SocketAddr::V4(..) => libc::AF_INET,
+                SocketAddr::V6(..) => libc::AF_INET6,
+            };
+
+            let ty = libc::SOCK_DGRAM;
+
+            // NOTE: only works on linux
+            // see https://github.com/rust-lang/rust/blob/master/library/std/src/sys/unix/net.rs#L70
+            unsafe {
+                // On platforms that support it we pass the SOCK_CLOEXEC
+                // flag to atomically create the socket and set it as
+                // CLOEXEC. On Linux this was added in 2.6.27.
+                match libc::socket(fam, ty | libc::SOCK_CLOEXEC, 0) {
+                    -1 => {
+                        last_error = Some(std::io::Error::last_os_error());
+                        // try the other addresses
+                        continue;
+                    }
+                    fd => return Ok(UnboundSocket { fd, addr }),
+                };
+            }
+        }
+
+        let default_error = std::io::Error::new(
+            ErrorKind::InvalidInput,
+            "could not resolve to any addresses",
+        );
+
+        Err(last_error.unwrap_or(default_error))
+    }
+
+    fn addr_into_inner(&self) -> (*const libc::sockaddr, libc::socklen_t) {
+        use std::net::SocketAddr;
+
+        match self.addr {
+            SocketAddr::V4(ref a) => (
+                a as *const _ as *const _,
+                std::mem::size_of_val(a) as libc::socklen_t,
+            ),
+            SocketAddr::V6(ref a) => (
+                a as *const _ as *const _,
+                std::mem::size_of_val(a) as libc::socklen_t,
+            ),
+        }
+    }
+
+    fn set_reuse_port(&self) -> std::io::Result<()> {
+        let optval: i32 = 1;
+
+        // allow another listener on this socket
+        unsafe {
+            cvt(libc::setsockopt(
+                self.fd,
+                libc::SOL_SOCKET,
+                libc::SO_REUSEPORT,
+                &optval as *const i32 as *const libc::c_void,
+                std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+            ))?
+        };
+
+        Ok(())
+    }
+
+    fn set_timestamping(&self) -> io::Result<()> {
+        let fd = self.fd;
+
+        let software_send: libc::c_int = libc::SOF_TIMESTAMPING_TX_SOFTWARE as _;
+        let software_receive: libc::c_int = libc::SOF_TIMESTAMPING_RX_SOFTWARE as _;
+        let software_report: libc::c_int = libc::SOF_TIMESTAMPING_SOFTWARE as _;
+
+        let bits = software_receive | software_send | software_report;
+
+        unsafe {
+            cvt(libc::setsockopt(
+                fd,
+                libc::SOL_SOCKET,
+                libc::SO_TIMESTAMPING,
+                &bits as *const _ as *const libc::c_void,
+                std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+            ))?
+        };
+
+        Ok(())
+    }
+
+    fn bind_nonblocking(self) -> std::io::Result<std::net::UdpSocket> {
+        unsafe {
+            let (addrp, len) = self.addr_into_inner();
+
+            cvt(libc::bind(self.fd, addrp, len as _))?;
+
+            let udp_socket = std::net::UdpSocket::from_raw_fd(self.fd);
+            udp_socket.set_nonblocking(true)?;
+            Ok(udp_socket)
+        }
+    }
+
+    fn bind_tokio(self) -> std::io::Result<tokio::net::UdpSocket> {
+        tokio::net::UdpSocket::from_std(self.bind_nonblocking()?)
     }
 }
