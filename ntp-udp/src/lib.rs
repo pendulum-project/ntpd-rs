@@ -62,7 +62,8 @@ impl UdpSocket {
                     }
                     Ok(size) => {
                         trace!(sent = size, "sent bytes");
-                        return Ok((size, None));
+                        let send_timestamp = fetch_send_timestamp(self.io.get_ref())?;
+                        return Ok((size, send_timestamp));
                     }
                 },
                 Err(_would_block) => {
@@ -157,12 +158,8 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
     while let Some(msg) = cmsg {
         if let (libc::SOL_SOCKET, libc::SO_TIMESTAMPING) = (msg.cmsg_level, msg.cmsg_type) {
             // Safety: SCM_TIMESTAMPING always has a timespec in the data, so this operation should be safe
-            let ts: libc::timespec =
-                unsafe { std::ptr::read_unaligned(libc::CMSG_DATA(msg) as *const _) };
-            recv_ts = Some(NtpTimestamp::from_seconds_nanos_since_ntp_era(
-                (ts.tv_sec as u32).wrapping_add(EPOCH_OFFSET), // truncates the higher bits of the i64
-                ts.tv_nsec as u32,                             // tv_nsec is always within [0, 1e10)
-            ));
+            recv_ts = Some(unsafe { read_ntp_timestamp(libc::CMSG_DATA(msg)) });
+
             break;
         }
 
@@ -171,6 +168,17 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
     }
 
     Ok((n as usize, recv_ts))
+}
+
+/// # Safety
+///
+/// The given pointer must point to a libc::timespec
+unsafe fn read_ntp_timestamp(ptr: *const u8) -> NtpTimestamp {
+    let ts: libc::timespec = std::ptr::read_unaligned(ptr as *const _);
+    NtpTimestamp::from_seconds_nanos_since_ntp_era(
+        (ts.tv_sec as u32).wrapping_add(EPOCH_OFFSET), // truncates the higher bits of the i64
+        ts.tv_nsec as u32,                             // tv_nsec is always within [0, 1e10)
+    )
 }
 
 #[cfg(test)]
@@ -328,4 +336,68 @@ impl UnboundSocket {
     fn bind_tokio(self) -> std::io::Result<tokio::net::UdpSocket> {
         tokio::net::UdpSocket::from_std(self.bind_nonblocking()?)
     }
+}
+
+fn fetch_send_timestamp(socket: &std::net::UdpSocket) -> io::Result<Option<NtpTimestamp>> {
+    // TODO: I don't understand why 90 is the right number, but that is what `recvmsg` reports
+    let mut buf = [0u8; 90];
+    let mut buf_slice = IoSliceMut::new(&mut buf);
+
+    // could be on the stack if const extern fn is stable
+    let timestamp_control_size =
+        unsafe { libc::CMSG_SPACE((3 * std::mem::size_of::<libc::timespec>()) as _) } as usize;
+
+    let control_size = std::mem::size_of::<ntp_proto::NtpHeader>() + timestamp_control_size;
+
+    let mut control_buf = vec![0; control_size];
+    let mut mhdr = libc::msghdr {
+        msg_control: control_buf.as_mut_ptr().cast::<libc::c_void>(),
+        msg_controllen: control_buf.len(),
+        msg_iov: (&mut buf_slice as *mut IoSliceMut).cast::<libc::iovec>(),
+        msg_iovlen: 1,
+        msg_flags: 0,
+        msg_name: std::ptr::null_mut(),
+        msg_namelen: 0,
+    };
+
+    let mut try_recvmsg = || unsafe {
+        // NOTE: we're receiving on MSG_ERRQUEUE, that is different from the receive timestamps
+        cvt(libc::recvmsg(socket.as_raw_fd(), &mut mhdr, libc::MSG_ERRQUEUE) as _)
+    };
+
+    // loops for when we receive an interrupt during the recv
+    while let Err(e) = try_recvmsg() {
+        if let ErrorKind::Interrupted = e.kind() {
+            // retry when the recv was interrupted
+            trace!("recv was interrupted, retrying");
+            continue;
+        } else {
+            return Err(e);
+        }
+    }
+
+    if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
+        warn!("truncated packet because it was larger than expected",);
+    }
+
+    if mhdr.msg_flags & libc::MSG_CTRUNC > 0 {
+        warn!("truncated control messages");
+    }
+
+    // Loops through the control messages, but we should only get a single message
+    let mut send_ts = None;
+    let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(&mhdr).as_ref() };
+    while let Some(msg) = cmsg {
+        if let (libc::SOL_SOCKET, libc::SO_TIMESTAMPING) = (msg.cmsg_level, msg.cmsg_type) {
+            // Safety: SCM_TIMESTAMP always has a timespec in the data, so this operation should be safe
+            send_ts = Some(unsafe { read_ntp_timestamp(libc::CMSG_DATA(msg)) });
+
+            break;
+        }
+
+        // grab the next control message
+        cmsg = unsafe { libc::CMSG_NXTHDR(&mhdr, msg).as_ref() };
+    }
+
+    Ok(send_ts)
 }
