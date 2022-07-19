@@ -11,6 +11,7 @@ tokio = { version = "1.20.0", features = ["net"] }
 libc = "0.2.126"
 ntp-proto = { path = "../ntp-proto" }
 tracing = "0.1.35"
+socket2 = "0.4.4"
 
 [dev-dependencies]
 tokio-test = "0.4.2"

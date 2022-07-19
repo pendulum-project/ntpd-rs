@@ -692,6 +692,7 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "ntp-proto",
+ "socket2",
  "tokio",
  "tokio-test",
  "tracing",
