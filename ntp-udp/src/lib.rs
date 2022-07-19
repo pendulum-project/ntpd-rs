@@ -123,24 +123,21 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
     };
 
     // loops for when we receive an interrupt during the recv
-    let n = loop {
-        let n = unsafe { libc::recvmsg(socket.as_raw_fd(), &mut mhdr, 0) };
-
-        if n == -1 {
-            let e = io::Error::last_os_error();
-
-            if let ErrorKind::Interrupted = e.kind() {
-                // retry when the recv was interrupted
-                trace!("recv was interrupted, retrying");
-                continue;
+    let bytes_read = loop {
+        match cvt(unsafe { libc::recvmsg(socket.as_raw_fd(), &mut mhdr, 0) } as _) {
+            Err(e) => {
+                if let ErrorKind::Interrupted = e.kind() {
+                    // retry when the recv was interrupted
+                    trace!("recv was interrupted, retrying");
+                    continue;
+                } else {
+                    return Err(e);
+                }
             }
 
-            return Err(e);
+            Ok(bytes_read) => break bytes_read,
         }
-        break n;
     };
-
-    let mut recv_ts = None;
 
     if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
         warn!(
@@ -154,6 +151,7 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
     }
 
     // Loops through the control messages, but we should only get a single message
+    let mut recv_ts = None;
     let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(&mhdr).as_ref() };
     while let Some(msg) = cmsg {
         if let (libc::SOL_SOCKET, libc::SO_TIMESTAMPING) = (msg.cmsg_level, msg.cmsg_type) {
@@ -167,7 +165,7 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
         cmsg = unsafe { libc::CMSG_NXTHDR(&mhdr, msg).as_ref() };
     }
 
-    Ok((n as usize, recv_ts))
+    Ok((bytes_read as usize, recv_ts))
 }
 
 /// # Safety
@@ -175,10 +173,14 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
 /// The given pointer must point to a libc::timespec
 unsafe fn read_ntp_timestamp(ptr: *const u8) -> NtpTimestamp {
     let ts: libc::timespec = std::ptr::read_unaligned(ptr as *const _);
-    NtpTimestamp::from_seconds_nanos_since_ntp_era(
-        (ts.tv_sec as u32).wrapping_add(EPOCH_OFFSET), // truncates the higher bits of the i64
-        ts.tv_nsec as u32,                             // tv_nsec is always within [0, 1e10)
-    )
+
+    // truncates the higher bits of the i64
+    let seconds = (ts.tv_sec as u32).wrapping_add(EPOCH_OFFSET);
+
+    // tv_nsec is always within [0, 1e10)
+    let nanos = ts.tv_nsec as u32;
+
+    NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, nanos)
 }
 
 #[cfg(test)]
@@ -216,7 +218,7 @@ mod tests {
     }
 }
 
-pub fn cvt(t: libc::c_int) -> crate::io::Result<libc::c_int> {
+fn cvt(t: libc::c_int) -> crate::io::Result<libc::c_int> {
     match t {
         -1 => Err(std::io::Error::last_os_error()),
         _ => Ok(t),

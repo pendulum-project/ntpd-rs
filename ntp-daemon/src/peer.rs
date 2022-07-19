@@ -147,7 +147,6 @@ where
                 warn!(?error, "poll message could not be sent");
             }
             Ok((_written, opt_send_timestamp)) => {
-                dbg!(self.last_send_timestamp, opt_send_timestamp);
                 // update the last_send_timestamp with the one given by the kernel, if available
                 self.last_send_timestamp = opt_send_timestamp.or(self.last_send_timestamp);
             }
