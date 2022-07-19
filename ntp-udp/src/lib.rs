@@ -21,8 +21,8 @@ impl UdpSocket {
     #[instrument(level = "debug", skip(peer_addr))]
     pub async fn new<A, B>(listen_addr: A, peer_addr: B) -> io::Result<UdpSocket>
     where
-        A: tokio::net::ToSocketAddrs + std::net::ToSocketAddrs + std::fmt::Debug,
-        B: tokio::net::ToSocketAddrs + std::net::ToSocketAddrs + std::fmt::Debug,
+        A: tokio::net::ToSocketAddrs + std::fmt::Debug,
+        B: tokio::net::ToSocketAddrs + std::fmt::Debug,
     {
         let socket = tokio::net::UdpSocket::bind(&listen_addr).await?;
         debug!(
