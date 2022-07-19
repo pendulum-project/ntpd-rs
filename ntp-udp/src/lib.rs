@@ -24,7 +24,7 @@ impl UdpSocket {
         A: tokio::net::ToSocketAddrs + std::net::ToSocketAddrs + std::fmt::Debug,
         B: tokio::net::ToSocketAddrs + std::net::ToSocketAddrs + std::fmt::Debug,
     {
-        let socket = tokio::net::UdpSocket::bind(&listen_addr).await?; // unbound_socket.bind_tokio()?;
+        let socket = tokio::net::UdpSocket::bind(&listen_addr).await?;
         debug!(
             local_addr = debug(socket.local_addr().unwrap()),
             "socket bound"
@@ -122,11 +122,12 @@ unsafe fn read_ntp_timestamp(ptr: *const u8) -> NtpTimestamp {
 fn set_timestamping_options(udp_socket: &std::net::UdpSocket) -> io::Result<()> {
     let fd = udp_socket.as_raw_fd();
 
-    let software_send: libc::c_int = libc::SOF_TIMESTAMPING_TX_SOFTWARE as _;
-    let software_receive: libc::c_int = libc::SOF_TIMESTAMPING_RX_SOFTWARE as _;
-    let software_report: libc::c_int = libc::SOF_TIMESTAMPING_SOFTWARE as _;
-
-    let bits = software_receive | software_send | software_report;
+    // our options:
+    //  - we want software timestamps to be reported,
+    //  - we want both send and receive software timestamps
+    let bits = libc::SOF_TIMESTAMPING_SOFTWARE
+        | libc::SOF_TIMESTAMPING_RX_SOFTWARE
+        | libc::SOF_TIMESTAMPING_TX_SOFTWARE;
 
     unsafe {
         cvt(libc::setsockopt(
