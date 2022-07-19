@@ -50,18 +50,21 @@ impl UdpSocket {
         peer_addr = debug(self.as_ref().peer_addr()),
         buf_size = buf.len(),
     ))]
-    pub async fn send(&self, buf: &[u8]) -> io::Result<usize> {
+    pub async fn send(&self, buf: &[u8]) -> io::Result<(usize, Option<NtpTimestamp>)> {
         trace!(size = buf.len(), "sending bytes");
         loop {
             let mut guard = self.io.writable().await?;
             match guard.try_io(|inner| inner.get_ref().send(buf)) {
-                Ok(result) => {
-                    match &result {
-                        Ok(size) => trace!(sent = size, "sent bytes"),
-                        Err(e) => debug!(error = debug(e), "error sending data"),
+                Ok(result) => match result {
+                    Err(e) => {
+                        debug!(error = debug(&e), "error sending data");
+                        return Err(e);
                     }
-                    return result;
-                }
+                    Ok(size) => {
+                        trace!(sent = size, "sent bytes");
+                        return Ok((size, None));
+                    }
+                },
                 Err(_would_block) => {
                     trace!("blocked after becoming writable, retrying");
                     continue;
