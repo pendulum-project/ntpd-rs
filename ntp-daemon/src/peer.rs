@@ -9,7 +9,6 @@ use rand::{thread_rng, Rng};
 use tracing::{debug, instrument, warn};
 
 use tokio::{
-    net::ToSocketAddrs,
     sync::watch,
     time::{Instant, Sleep},
 };
@@ -239,12 +238,15 @@ where
     C: 'static + NtpClock + Send,
 {
     #[instrument(skip(clock, channels))]
-    pub async fn spawn<A: ToSocketAddrs + std::fmt::Debug>(
+    pub async fn spawn<A>(
         index: PeerIndex,
         addr: A,
         clock: C,
         mut channels: PeerChannels,
-    ) -> std::io::Result<tokio::task::JoinHandle<()>> {
+    ) -> std::io::Result<tokio::task::JoinHandle<()>>
+    where
+        A: tokio::net::ToSocketAddrs + std::net::ToSocketAddrs + std::fmt::Debug,
+    {
         let socket = UdpSocket::new("0.0.0.0:0", addr).await?;
         let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
         let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());

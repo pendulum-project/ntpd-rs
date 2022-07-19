@@ -5,7 +5,7 @@ use std::{
 };
 
 use ntp_proto::NtpTimestamp;
-use tokio::{io::unix::AsyncFd, net::ToSocketAddrs};
+use tokio::io::unix::AsyncFd;
 use tracing::{debug, instrument, trace, warn};
 
 // Unix uses an epoch located at 1/1/1970-00:00h (UTC) and NTP uses 1/1/1900-00:00h.
@@ -21,10 +21,14 @@ impl UdpSocket {
     #[instrument(level = "debug", skip(peer_addr))]
     pub async fn new<A, B>(listen_addr: A, peer_addr: B) -> io::Result<UdpSocket>
     where
-        A: ToSocketAddrs + std::fmt::Debug,
-        B: ToSocketAddrs + std::fmt::Debug,
+        A: tokio::net::ToSocketAddrs + std::net::ToSocketAddrs + std::fmt::Debug,
+        B: tokio::net::ToSocketAddrs + std::net::ToSocketAddrs + std::fmt::Debug,
     {
-        let socket = tokio::net::UdpSocket::bind(listen_addr).await?;
+        let unbound_socket = UnboundSocket::new(&listen_addr)?;
+        unbound_socket.set_reuse_port()?;
+        unbound_socket.set_timestamping()?;
+
+        let socket = unbound_socket.bind_tokio()?;
         debug!(
             local_addr = debug(socket.local_addr().unwrap()),
             "socket bound"
@@ -36,7 +40,6 @@ impl UdpSocket {
             "socket connected"
         );
         let socket = socket.into_std()?;
-        init_socket(&socket)?;
         Ok(UdpSocket {
             io: AsyncFd::new(socket)?,
         })
@@ -98,27 +101,12 @@ impl AsRef<std::net::UdpSocket> for UdpSocket {
     }
 }
 
-fn init_socket(socket: &std::net::UdpSocket) -> io::Result<()> {
-    let fd = socket.as_raw_fd();
-    let enable_ts: libc::c_int = 1;
-    unsafe {
-        libc::setsockopt(
-            fd,
-            libc::SOL_SOCKET,
-            libc::SO_TIMESTAMPNS,
-            &enable_ts as *const _ as *const libc::c_void,
-            std::mem::size_of::<libc::c_int>() as libc::socklen_t,
-        )
-    };
-    Ok(())
-}
-
 fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Option<NtpTimestamp>)> {
     let mut buf_slice = IoSliceMut::new(buf);
 
     // could be on the stack if const extern fn is stable
     let control_size =
-        unsafe { libc::CMSG_SPACE(std::mem::size_of::<libc::timespec>() as _) } as usize;
+        unsafe { libc::CMSG_SPACE((3 * std::mem::size_of::<libc::timespec>()) as _) } as usize;
     let mut control_buf = vec![0; control_size];
     let mut mhdr = libc::msghdr {
         msg_control: control_buf.as_mut_ptr().cast::<libc::c_void>(),
@@ -164,8 +152,8 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
     // Loops through the control messages, but we should only get a single message
     let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(&mhdr).as_ref() };
     while let Some(msg) = cmsg {
-        if let (libc::SOL_SOCKET, libc::SO_TIMESTAMPNS) = (msg.cmsg_level, msg.cmsg_type) {
-            // Safety: SCM_TIMESTAMPNS always has a timespec in the data, so this operation should be safe
+        if let (libc::SOL_SOCKET, libc::SO_TIMESTAMPING) = (msg.cmsg_level, msg.cmsg_type) {
+            // Safety: SCM_TIMESTAMPING always has a timespec in the data, so this operation should be safe
             let ts: libc::timespec =
                 unsafe { std::ptr::read_unaligned(libc::CMSG_DATA(msg) as *const _) };
             recv_ts = Some(NtpTimestamp::from_seconds_nanos_since_ntp_era(
