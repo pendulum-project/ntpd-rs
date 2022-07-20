@@ -284,11 +284,32 @@ fn fetch_send_timestamp_help(socket: &std::net::UdpSocket) -> io::Result<Option<
     let mut send_ts = None;
     let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(&mhdr).as_ref() };
     while let Some(msg) = cmsg {
-        if let (libc::SOL_SOCKET, libc::SO_TIMESTAMPING) = (msg.cmsg_level, msg.cmsg_type) {
-            // Safety: SCM_TIMESTAMP always has a timespec in the data, so this operation should be safe
-            send_ts = Some(unsafe { read_ntp_timestamp(libc::CMSG_DATA(msg)) });
+        match (msg.cmsg_level, msg.cmsg_type) {
+            (libc::SOL_SOCKET, libc::SO_TIMESTAMPING) => {
+                // Safety: SCM_TIMESTAMP always has a timespec in the data, so this operation should be safe
+                send_ts = Some(unsafe { read_ntp_timestamp(libc::CMSG_DATA(msg)) });
 
-            break;
+                break;
+            }
+            (libc::SOL_IP, libc::IP_RECVERR) | (libc::SOL_IPV6, libc::IPV6_RECVERR) => {
+                // this is part of how timestamps are reported.
+                let error = unsafe {
+                    let ptr: *const u8 = libc::CMSG_DATA(msg);
+                    std::ptr::read_unaligned::<libc::sock_extended_err>(ptr as *const _)
+                };
+
+                // the timestamping does not set a message; if there is a message, that means
+                // something else is wrong, and we want to know about it.
+                if error.ee_errno as libc::c_int != libc::ENOMSG {
+                    warn!("error message on the MSG_ERRQUEUE");
+                }
+            }
+            _ => {
+                warn!(
+                    msg.cmsg_level,
+                    msg.cmsg_type, "unexpected message on the MSG_ERRQUEUE",
+                );
+            }
         }
 
         // grab the next control message
