@@ -50,6 +50,12 @@ impl UdpSocket {
         buf_size = buf.len(),
     ))]
     pub async fn send(&self, buf: &[u8]) -> io::Result<(usize, Option<NtpTimestamp>)> {
+        let send_size = self.send_help(buf).await?;
+        let send_timestamp = self.fetch_send_timestamp().await?;
+        Ok((send_size, send_timestamp))
+    }
+
+    async fn send_help(&self, buf: &[u8]) -> io::Result<usize> {
         trace!(size = buf.len(), "sending bytes");
         loop {
             let mut guard = self.io.writable().await?;
@@ -61,12 +67,28 @@ impl UdpSocket {
                     }
                     Ok(size) => {
                         trace!(sent = size, "sent bytes");
-                        let send_timestamp = fetch_send_timestamp(self.io.get_ref())?;
-                        return Ok((size, send_timestamp));
+                        return Ok(size);
                     }
                 },
                 Err(_would_block) => {
                     trace!("blocked after becoming writable, retrying");
+                    continue;
+                }
+            }
+        }
+    }
+
+    async fn fetch_send_timestamp(&self) -> io::Result<Option<NtpTimestamp>> {
+        trace!("waiting for socket to become readable");
+        loop {
+            let mut guard = self.io.readable().await?;
+            match guard.try_io(|inner| fetch_send_timestamp_help(inner.get_ref())) {
+                Ok(send_timestamp) => {
+                    dbg!(&send_timestamp);
+                    return send_timestamp;
+                }
+                Err(_would_block) => {
+                    trace!("blocked after becoming readable, retrying");
                     continue;
                 }
             }
@@ -212,7 +234,7 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
     Ok((bytes_read as usize, recv_ts))
 }
 
-fn fetch_send_timestamp(socket: &std::net::UdpSocket) -> io::Result<Option<NtpTimestamp>> {
+fn fetch_send_timestamp_help(socket: &std::net::UdpSocket) -> io::Result<Option<NtpTimestamp>> {
     // TODO: I don't understand why 90 is the right number, but that is what `recvmsg` reports
     let mut buf = [0u8; 90];
     let mut buf_slice = IoSliceMut::new(&mut buf);
