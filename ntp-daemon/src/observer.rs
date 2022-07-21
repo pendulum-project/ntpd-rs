@@ -1,8 +1,8 @@
+use crate::sockets::create_unix_socket;
 use crate::Peers;
 use ntp_proto::{NtpClock, PeerStatistics, Reach, ReferenceId, SystemSnapshot};
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
-use tokio::net::UnixListener;
 use tokio::task::JoinHandle;
 use tracing::error;
 
@@ -52,11 +52,7 @@ async fn observer<C: NtpClock>(
         None => return Ok(()),
     };
 
-    // must unlink path before the bind below (otherwise we get "address already in use")
-    if path.exists() {
-        std::fs::remove_file(&path)?;
-    }
-    let peers_listener = UnixListener::bind(&path)?;
+    let peers_listener = create_unix_socket(&path)?;
 
     // this binary needs to run as root to be able to adjust the system clock.
     // by default, the socket inherits root permissions, but the client should not need

@@ -1,9 +1,10 @@
+use crate::sockets::create_unix_socket;
 use crate::tracing::ReloadHandle;
 use ntp_proto::{NtpDuration, StepThreshold, SystemConfig};
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
-use tokio::{net::UnixListener, sync::RwLock};
 use tracing::error;
 use tracing_subscriber::EnvFilter;
 
@@ -72,11 +73,7 @@ async fn dynamic_configuration<H: LogReloader>(
         None => return Ok(()),
     };
 
-    // must unlink path before the bind below (otherwise we get "address already in use")
-    if path.exists() {
-        std::fs::remove_file(&path)?;
-    }
-    let peers_listener = UnixListener::bind(&path)?;
+    let peers_listener = create_unix_socket(&path)?;
 
     // this binary needs to run as root to be able to adjust the system clock.
     // by default, the socket inherits root permissions, but the client should not need
