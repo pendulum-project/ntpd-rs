@@ -84,11 +84,16 @@ Output is given as formatted json
 {
   "poll_interval": 4,
   "precision": 3.814697266513178e-6,
-  "leap_indicator": "NoWarning"
+  "leap_indicator": "NoWarning",
+  "accumulated_steps": 0.005327121588710491,
+  "accumulated_steps_threshold": null
 }
 ```
 
 **prometheus**
+
+NOTE: the `ntp_system_accumulated_steps_threshold` is only printed if it is set.
+
 ```
 # TYPE ntp_peer_offset gauge
 # TYPE ntp_peer_delay gauge
@@ -118,9 +123,11 @@ ntp_peer_reachability_status {address = "1.pool.ntp.org:123"} 1
 ntp_peer_reachability_unanswered_polls {address = "1.pool.ntp.org:123", result = "success"} 6
 
 # TYPE ntp_system_poll_interval gauge
-ntp_system_poll_interval 16.00000000372529
+ntp_system_poll_interval 256.00000005960464
 # TYPE ntp_system_precision gauge
 ntp_system_precision 0.000003814697266513178
+# TYPE ntp_system_accumulated_steps gauge
+ntp_system_accumulated_steps 0.005327121588710491
 # TYPE ntp_system_leap_indicator gauge
-ntp_system_leap_indicator {type = "Unknown"} 3
+ntp_system_leap_indicator {type = "NoWarning"} 0
 ```

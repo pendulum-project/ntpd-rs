@@ -247,6 +247,10 @@ impl<C: NtpClock> ClockController<C> {
         self.preferred_poll_interval
     }
 
+    pub fn accumulated_steps(&self) -> NtpDuration {
+        self.accumulated_steps
+    }
+
     fn offset_too_large(&self, config: &SystemConfig, offset: NtpDuration) -> bool {
         let threshold = match self.state {
             // The system might be wildly off on startup

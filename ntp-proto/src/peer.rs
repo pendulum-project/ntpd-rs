@@ -100,6 +100,10 @@ pub struct SystemSnapshot {
     pub precision: NtpDuration,
     /// May be updated by clock_update
     pub leap_indicator: NtpLeapIndicator,
+    /// Total amount that the clock has stepped
+    pub accumulated_steps: NtpDuration,
+    /// Crossing this amount of stepping will cause a Panic
+    pub accumulated_steps_threshold: Option<NtpDuration>,
 }
 
 impl Default for SystemSnapshot {
@@ -108,6 +112,8 @@ impl Default for SystemSnapshot {
             poll_interval: PollInterval::default(),
             precision: NtpDuration::from_exponent(-18),
             leap_indicator: NtpLeapIndicator::Unknown,
+            accumulated_steps: NtpDuration::ZERO,
+            accumulated_steps_threshold: None,
         }
     }
 }

@@ -177,6 +177,8 @@ mod tests {
             poll_interval: PollInterval::MIN,
             precision: NtpDuration::from_seconds(1e-3),
             leap_indicator: NtpLeapIndicator::Leap59,
+            accumulated_steps: NtpDuration::ZERO,
+            accumulated_steps_threshold: None,
         }));
 
         let handle = tokio::spawn(async move {
@@ -263,6 +265,8 @@ mod tests {
             poll_interval: PollInterval::MIN,
             precision: NtpDuration::from_seconds(1e-3),
             leap_indicator: NtpLeapIndicator::Leap59,
+            accumulated_steps: NtpDuration::ZERO,
+            accumulated_steps_threshold: None,
         }));
 
         let system_writer = system_reader.clone();
