@@ -178,6 +178,36 @@ fn cvt(t: libc::c_int) -> crate::io::Result<libc::c_int> {
     }
 }
 
+fn receive_message(
+    socket: &std::net::UdpSocket,
+    message_header: &mut libc::msghdr,
+    flags: libc::c_int,
+) -> io::Result<libc::c_int> {
+    loop {
+        match cvt(unsafe { libc::recvmsg(socket.as_raw_fd(), message_header, flags) } as _) {
+            Err(e) if ErrorKind::Interrupted == e.kind() => {
+                // retry when the recv was interrupted
+                continue;
+            }
+
+            other => return other,
+        }
+    }
+}
+
+fn control_messages(message_header: &libc::msghdr) -> impl Iterator<Item = &libc::cmsghdr> {
+    let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(message_header).as_ref() };
+
+    std::iter::from_fn(move || match cmsg {
+        None => None,
+        Some(current) => {
+            cmsg = unsafe { libc::CMSG_NXTHDR(message_header, current).as_ref() };
+
+            Some(current)
+        }
+    })
+}
+
 fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Option<NtpTimestamp>)> {
     let mut buf_slice = IoSliceMut::new(buf);
 
@@ -195,22 +225,7 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
         msg_namelen: 0,
     };
 
-    // loops for when we receive an interrupt during the recv
-    let bytes_read = loop {
-        match cvt(unsafe { libc::recvmsg(socket.as_raw_fd(), &mut mhdr, 0) } as _) {
-            Err(e) => {
-                if let ErrorKind::Interrupted = e.kind() {
-                    // retry when the recv was interrupted
-                    trace!("recv was interrupted, retrying");
-                    continue;
-                } else {
-                    return Err(e);
-                }
-            }
-
-            Ok(bytes_read) => break bytes_read,
-        }
-    };
+    let bytes_read = receive_message(socket, &mut mhdr, 0)?;
 
     if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
         warn!(
@@ -259,21 +274,7 @@ fn fetch_send_timestamp_help(socket: &std::net::UdpSocket) -> io::Result<Option<
         msg_namelen: 0,
     };
 
-    let mut try_recvmsg = || unsafe {
-        // NOTE: we're receiving on MSG_ERRQUEUE, that is different from the receive timestamps
-        cvt(libc::recvmsg(socket.as_raw_fd(), &mut mhdr, libc::MSG_ERRQUEUE) as _)
-    };
-
-    // loops for when we receive an interrupt during the recv
-    while let Err(e) = try_recvmsg() {
-        if let ErrorKind::Interrupted = e.kind() {
-            // retry when the recv was interrupted
-            trace!("recv was interrupted, retrying");
-            continue;
-        } else {
-            return Err(e);
-        }
-    }
+    receive_message(socket, &mut mhdr, libc::MSG_ERRQUEUE)?;
 
     if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
         warn!("truncated packet because it was larger than expected",);
@@ -283,9 +284,7 @@ fn fetch_send_timestamp_help(socket: &std::net::UdpSocket) -> io::Result<Option<
         warn!("truncated control messages");
     }
 
-    // Loops through the control messages, but we should only get a single message
     let mut send_ts = None;
-
     for msg in control_messages(&mhdr) {
         match (msg.cmsg_level, msg.cmsg_type) {
             (libc::SOL_SOCKET, libc::SO_TIMESTAMPING) => {
@@ -317,19 +316,6 @@ fn fetch_send_timestamp_help(socket: &std::net::UdpSocket) -> io::Result<Option<
     }
 
     Ok(send_ts)
-}
-
-fn control_messages(message_header: &libc::msghdr) -> impl Iterator<Item = &libc::cmsghdr> {
-    let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(message_header).as_ref() };
-
-    std::iter::from_fn(move || match cmsg {
-        None => None,
-        Some(current) => {
-            cmsg = unsafe { libc::CMSG_NXTHDR(message_header, current).as_ref() };
-
-            Some(current)
-        }
-    })
 }
 
 #[cfg(test)]
