@@ -51,8 +51,15 @@ impl UdpSocket {
     ))]
     pub async fn send(&self, buf: &[u8]) -> io::Result<(usize, Option<NtpTimestamp>)> {
         let send_size = self.send_help(buf).await?;
-        let send_timestamp = self.fetch_send_timestamp().await?;
-        Ok((send_size, send_timestamp))
+
+        // the send timestamp may never come (when the driver does not support send timestamping)
+        // set a very short timeout to prevent hanging forever. We automatically fall back to a
+        // less accurate timestamp when this function returns None
+        let timeout = std::time::Duration::from_millis(10);
+        match tokio::time::timeout(timeout, self.fetch_send_timestamp()).await {
+            Err(_) => Ok((send_size, None)),
+            Ok(send_timestamp) => Ok((send_size, send_timestamp?)),
+        }
     }
 
     async fn send_help(&self, buf: &[u8]) -> io::Result<usize> {
