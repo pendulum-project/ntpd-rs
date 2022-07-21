@@ -225,17 +225,13 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
 
     // Loops through the control messages, but we should only get a single message
     let mut recv_ts = None;
-    let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(&mhdr).as_ref() };
-    while let Some(msg) = cmsg {
+    for msg in control_messages(&mhdr) {
         if let (libc::SOL_SOCKET, libc::SO_TIMESTAMPING) = (msg.cmsg_level, msg.cmsg_type) {
             // Safety: SCM_TIMESTAMPING always has a timespec in the data, so this operation should be safe
             recv_ts = Some(unsafe { read_ntp_timestamp(libc::CMSG_DATA(msg)) });
 
             break;
         }
-
-        // grab the next control message
-        cmsg = unsafe { libc::CMSG_NXTHDR(&mhdr, msg).as_ref() };
     }
 
     Ok((bytes_read as usize, recv_ts))
@@ -289,8 +285,8 @@ fn fetch_send_timestamp_help(socket: &std::net::UdpSocket) -> io::Result<Option<
 
     // Loops through the control messages, but we should only get a single message
     let mut send_ts = None;
-    let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(&mhdr).as_ref() };
-    while let Some(msg) = cmsg {
+
+    for msg in control_messages(&mhdr) {
         match (msg.cmsg_level, msg.cmsg_type) {
             (libc::SOL_SOCKET, libc::SO_TIMESTAMPING) => {
                 // Safety: SCM_TIMESTAMP always has a timespec in the data, so this operation should be safe
@@ -318,12 +314,22 @@ fn fetch_send_timestamp_help(socket: &std::net::UdpSocket) -> io::Result<Option<
                 );
             }
         }
-
-        // grab the next control message
-        cmsg = unsafe { libc::CMSG_NXTHDR(&mhdr, msg).as_ref() };
     }
 
     Ok(send_ts)
+}
+
+fn control_messages(message_header: &libc::msghdr) -> impl Iterator<Item = &libc::cmsghdr> {
+    let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(message_header).as_ref() };
+
+    std::iter::from_fn(move || match cmsg {
+        None => None,
+        Some(current) => {
+            cmsg = unsafe { libc::CMSG_NXTHDR(message_header, current).as_ref() };
+
+            Some(current)
+        }
+    })
 }
 
 #[cfg(test)]
