@@ -579,7 +579,7 @@ mod tests {
         reset.send(epoch_b).unwrap();
 
         // Not foolproof, but hopefully this ensures the reset is processed first
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
         poll_send.notify();
         let peer_epoch = match msg_recv.recv().await.unwrap() {
