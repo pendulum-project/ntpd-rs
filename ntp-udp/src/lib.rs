@@ -148,15 +148,21 @@ unsafe fn read_ntp_timestamp(ptr: *const u8) -> NtpTimestamp {
     NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, nanos)
 }
 
+/// Makes the kernel return the timestamp as a cmsg alongside an empty packet,
+/// as opposed to alongside the original packet
+const SOF_TIMESTAMPING_OPT_TSONLY: u32 = 1 << 11;
+
 fn set_timestamping_options(udp_socket: &std::net::UdpSocket) -> io::Result<()> {
     let fd = udp_socket.as_raw_fd();
 
     // our options:
     //  - we want software timestamps to be reported,
     //  - we want both send and receive software timestamps
+    //  - return just the timestamp, don't send the full message along
     let bits = libc::SOF_TIMESTAMPING_SOFTWARE
         | libc::SOF_TIMESTAMPING_RX_SOFTWARE
-        | libc::SOF_TIMESTAMPING_TX_SOFTWARE;
+        | libc::SOF_TIMESTAMPING_TX_SOFTWARE
+        | SOF_TIMESTAMPING_OPT_TSONLY;
 
     unsafe {
         cvt(libc::setsockopt(
@@ -253,10 +259,6 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
 }
 
 fn fetch_send_timestamp_help(socket: &std::net::UdpSocket) -> io::Result<Option<NtpTimestamp>> {
-    // TODO: I don't understand why 90 is the right number, but that is what `recvmsg` reports
-    let mut buf = [0u8; 90];
-    let mut buf_slice = IoSliceMut::new(&mut buf);
-
     // could be on the stack if const extern fn is stable
     let timestamp_control_size =
         unsafe { libc::CMSG_SPACE((3 * std::mem::size_of::<libc::timespec>()) as _) } as usize;
@@ -267,8 +269,8 @@ fn fetch_send_timestamp_help(socket: &std::net::UdpSocket) -> io::Result<Option<
     let mut mhdr = libc::msghdr {
         msg_control: control_buf.as_mut_ptr().cast::<libc::c_void>(),
         msg_controllen: control_buf.len(),
-        msg_iov: (&mut buf_slice as *mut IoSliceMut).cast::<libc::iovec>(),
-        msg_iovlen: 1,
+        msg_iov: std::ptr::null_mut(),
+        msg_iovlen: 0,
         msg_flags: 0,
         msg_name: std::ptr::null_mut(),
         msg_namelen: 0,
