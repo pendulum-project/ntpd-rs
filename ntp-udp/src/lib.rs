@@ -165,7 +165,7 @@ fn set_timestamping_options(udp_socket: &std::net::UdpSocket) -> io::Result<()> 
         | SOF_TIMESTAMPING_OPT_TSONLY;
 
     unsafe {
-        cvt(libc::setsockopt(
+        cerr(libc::setsockopt(
             fd,
             libc::SOL_SOCKET,
             libc::SO_TIMESTAMPING,
@@ -177,7 +177,8 @@ fn set_timestamping_options(udp_socket: &std::net::UdpSocket) -> io::Result<()> 
     Ok(())
 }
 
-fn cvt(t: libc::c_int) -> crate::io::Result<libc::c_int> {
+/// Turn a C failure (-1 is returned) into a rust Result
+fn cerr(t: libc::c_int) -> std::io::Result<libc::c_int> {
     match t {
         -1 => Err(std::io::Error::last_os_error()),
         _ => Ok(t),
@@ -190,7 +191,7 @@ fn receive_message(
     flags: libc::c_int,
 ) -> io::Result<libc::c_int> {
     loop {
-        match cvt(unsafe { libc::recvmsg(socket.as_raw_fd(), message_header, flags) } as _) {
+        match cerr(unsafe { libc::recvmsg(socket.as_raw_fd(), message_header, flags) } as _) {
             Err(e) if ErrorKind::Interrupted == e.kind() => {
                 // retry when the recv was interrupted
                 continue;
