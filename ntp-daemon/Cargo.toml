@@ -22,6 +22,7 @@ sentry = { version = "0.27.0", optional = true }
 sentry-tracing = { version = "0.27.0", optional = true }
 rand = "0.8.5"
 libc = "0.2.126"
+exitcode = "1.1.2"
 
 [dev-dependencies]
 ntp-proto = { path = "../ntp-proto", features=["ext-test"]}

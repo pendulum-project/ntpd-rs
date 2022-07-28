@@ -3,6 +3,7 @@
 use clap::Parser;
 use ntp_daemon::config::{CmdArgs, Config};
 use std::error::Error;
+use tracing::debug;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -17,16 +18,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let finish_tracing_init =
         ntp_daemon::tracing::init(log_filter, args.log_format.unwrap_or_default());
 
-    let mut config = Config::from_args(args.config, args.peers).await?;
+    let mut config = match Config::from_args(args.config, args.peers).await {
+        Ok(c) => c,
+        Err(e) => {
+            // print to stderr because tracing is not yet setup
+            eprintln!("There was an error loading the config: {}", e);
+            std::process::exit(exitcode::CONFIG);
+        }
+    };
 
     // Sentry has a guard we need to keep alive, so store it.
     // The compiler will optimize this away when not using sentry.
-    let tracing_state = finish_tracing_init(&mut config, has_log_override, has_format_override)?;
+    let tracing_state =
+        match finish_tracing_init(&mut config, has_log_override, has_format_override) {
+            Ok(s) => s,
+            Err(e) => {
+                // print to stderr because tracing was not correctly initialized
+                eprintln!("Failed to complete logging setup: {}", e);
+                std::process::exit(exitcode::CONFIG);
+            }
+        };
 
     // Warn/error if the config is unreasonable. We do this after finishing
     // tracing setup to ensure logging is fully configured.
     config.check();
 
+    debug!("Configuration loaded, spawning daemon jobs");
     let (main_loop_handle, channels) = ntp_daemon::spawn(config.system, &config.peers).await?;
 
     ntp_daemon::observer::spawn(&config.observe, channels.peers, channels.system).await;
