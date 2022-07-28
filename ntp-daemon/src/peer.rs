@@ -6,7 +6,7 @@ use ntp_proto::{
 };
 use ntp_udp::UdpSocket;
 use rand::{thread_rng, Rng};
-use tracing::{debug, instrument, warn};
+use tracing::{debug, error, instrument, warn};
 
 use tokio::{
     net::ToSocketAddrs,
@@ -150,7 +150,10 @@ where
         match self.clock.now() {
             Err(e) => {
                 // we cannot determine the origin_timestamp
-                panic!("`clock.now()` reported an error: {:?}", e)
+                error!(error = ?e, "There was an error retrieving the current time");
+
+                // report as no permissions, since this seems the most likely
+                std::process::exit(exitcode::NOPERM);
             }
             Ok(ts) => {
                 self.last_send_timestamp = Some(ts);
@@ -293,7 +296,10 @@ where
                     }
                 }
             };
+            // Unwrap should be safe because we know the socket was bound to a local addres just before
             let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
+
+            // Unwrap should be safe because we know the socket was connected to a remote peer just before
             let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
 
             let local_clock_time = NtpInstant::now();

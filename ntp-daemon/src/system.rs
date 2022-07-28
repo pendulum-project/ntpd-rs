@@ -8,7 +8,7 @@ use ntp_proto::{
     ClockController, ClockUpdateResult, FilterAndCombine, NtpClock, NtpInstant, PeerSnapshot,
     PollInterval, SystemConfig, SystemSnapshot,
 };
-use tracing::info;
+use tracing::{error, info};
 
 use std::sync::Arc;
 use tokio::{
@@ -154,11 +154,8 @@ impl<C: NtpClock> System<C> {
         );
         match adjust_type {
             ClockUpdateResult::Panic => {
-                panic!(
-                    r"Unusually large clock step suggested,
-                                please manually verify system clock and reference clock
-                                     state and restart if appropriate."
-                )
+                error!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate.");
+                std::process::exit(exitcode::SOFTWARE);
             }
             ClockUpdateResult::Step => {
                 self.reset_peers().await;

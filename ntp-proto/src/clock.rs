@@ -60,7 +60,10 @@ pub enum ClockUpdateResult {
 
 impl<C: NtpClock> ClockController<C> {
     pub fn new(clock: C) -> Self {
-        clock.set_freq(0.).expect("Unable to set clock frequency");
+        if let Err(e) = clock.set_freq(0.) {
+            error!(error = %e, "Could not set clock frequency, exiting");
+            std::process::exit(exitcode::NOPERM);
+        }
         Self {
             clock,
             state: ClockState::StartupBlank,
@@ -196,15 +199,17 @@ impl<C: NtpClock> ClockController<C> {
 
         // It is reasonable to panic here, as there is very little we can
         // be expected to do if the clock is not amenable to change
-        self.clock
-            .update_clock(
-                self.offset,
-                jitter,
-                root_delay / 2 + root_dispersion,
-                self.preferred_poll_interval,
-                leap_status,
-            )
-            .expect("Unable to update clock");
+        let result = self.clock.update_clock(
+            self.offset,
+            jitter,
+            root_delay / 2 + root_dispersion,
+            self.preferred_poll_interval,
+            leap_status,
+        );
+        if let Err(e) = result {
+            error!(error = %e, "Failed to update the clock, exiting");
+            std::process::exit(exitcode::NOPERM);
+        }
 
         // Adjust whether we would prefer to have a longer or shorter
         // poll interval depending on the amount of jitter
@@ -294,7 +299,10 @@ impl<C: NtpClock> ClockController<C> {
         self.preferred_poll_interval = PollInterval::MIN;
         // It is reasonable to panic here, as there is very little we can
         // be expected to do if the clock is not amenable to change
-        self.clock.step_clock(offset).expect("Unable to step clock");
+        if let Err(e) = self.clock.step_clock(offset) {
+            error!(error = %e, "Could not step the clock, exiting");
+            std::process::exit(exitcode::NOPERM);
+        }
         self.offset = NtpDuration::ZERO;
         self.last_update_time = last_peer_update;
         self.state = match self.state {
@@ -318,12 +326,14 @@ impl<C: NtpClock> ClockController<C> {
             ),
             "Setting initial frequency"
         );
-        self.clock
-            .set_freq(
-                offset.to_seconds()
-                    / NtpInstant::abs_diff(last_peer_update, self.last_update_time).to_seconds(),
-            )
-            .expect("Unable to adjust clock frequency");
+        let result = self.clock.set_freq(
+            offset.to_seconds()
+                / NtpInstant::abs_diff(last_peer_update, self.last_update_time).to_seconds(),
+        );
+        if let Err(e) = result {
+            error!(error = %e, "Unable to adjust clock frequency, exiting");
+            std::process::exit(exitcode::NOPERM);
+        }
     }
 }
 
