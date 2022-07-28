@@ -1,0 +1,18 @@
+[Unit]
+Description=Rust Network Time Service
+Documentation=https://github.com/memorysafety/ntpd-rs
+After=network-online.target
+Wants=network-online.target
+Conflicts=systemd-timesyncd.service ntp.service chrony.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/ntp-daemon
+Environment="RUST_LOG=info"
+RuntimeDirectory=ntpd-rs
+User=ntpd-rs
+Group=ntpd-rs
+AmbientCapabilities=CAP_SYS_TIME
+
+[Install]
+WantedBy=multi-user.target
