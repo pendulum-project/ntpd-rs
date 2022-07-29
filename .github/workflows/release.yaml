@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - v*.*.*
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        name:
+          - linux-x86-64-gnu
+          - linux-armv7-gnu
+          - linux-arm64-gnu
+        include:
+          - name: linux-x86-64-gnu
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            cross: false
+            features:
+              - sentry
+
+          - name: linux-armv7-gnu
+            os: ubuntu-latest
+            target: armv7-unknown-linux-gnueabihf
+            cross: true
+            features:
+              - sentry
+
+          - name: linux-arm64-gnu
+            os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            cross: true
+            features:
+              - sentry
+
+    name: Binaries for ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - uses: actions-rs/cargo@v1
+        name: Build
+        with:
+          use-cross: ${{ matrix.cross }}
+          command: build
+          args: --release --locked --features "${{ join(matrix.features, ',') }}" --target ${{ matrix.target }}
+      - name: Package
+        shell: bash
+        run: |
+          bins=(target/${{ matrix.target }}/release/{ntp-client,ntp-daemon})
+          version=$(echo "${{ github.ref }}" | cut -d/ -f3)
+          dst="ntpd-rs-${{ matrix.target }}-${version}"
+          mkdir "$dst"
+          mv "${bins[@]}" "$dst/"
+          mv README.md CONFIGURATION.md MANAGEMENT_CLIENT.md OPERATIONAL_CONSIDERATIONS.md "$dst/"
+          mv LICENSE LICENSE-APACHE LICENSE-MIT "$dst/"
+          mv ntp.toml "$dst/"
+          mv ntpd-rs.service.example "$dst/"
+      - name: Archive (tar)
+        shell: bash
+        run: |
+          version=$(echo "${{ github.ref }}" | cut -d/ -f3)
+          dst="ntpd-rs-${{ matrix.target }}-${version}"
+          tar cavf "$dst.tgz" "$dst"
+          sha256sum -b "$dst.tgz" > "$dst.tgz.sha256"
+      - uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ntpd-rs-*.tgz
+            ntpd-rs-*.tgz.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
