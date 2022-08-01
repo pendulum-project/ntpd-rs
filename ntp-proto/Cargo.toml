@@ -13,6 +13,6 @@ ext-test = []
 [dependencies]
 md-5 = "0.10.1"
 rand = "0.8.5"
-tracing = "0.1.35"
+tracing = "0.1.36"
 serde = { version = "1.0.140", features = ["derive"] }
 exitcode = "1.1.2"
