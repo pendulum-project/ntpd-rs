@@ -13,7 +13,7 @@ ntp-os-clock = { path = "../ntp-os-clock" }
 ntp-udp = { path = "../ntp-udp" }
 tracing = "0.1.35"
 tracing-subscriber = { version = "0.3.15", features = ["env-filter", "serde", "json"] }
-clap = { version = "3.2.15", features = ["derive", "env"] }
+clap = { version = "3.2.16", features = ["derive", "env"] }
 toml = "0.5.9"
 thiserror = "1.0.31"
 serde = { version = "1.0.140", features = ["derive"] }
