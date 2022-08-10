@@ -8,5 +8,5 @@ license = "Apache-2.0 OR MIT"
 
 [dependencies]
 ntp-proto = { path = "../ntp-proto" }
-libc = "0.2.127"
+libc = "0.2.129"
 thiserror = "1.0.32"
