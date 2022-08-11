@@ -284,25 +284,12 @@ where
     C: 'static + NtpClock + Send,
 {
     #[instrument(skip(clock, channels))]
-<<<<<<< HEAD
-    pub async fn spawn<A>(
-=======
-    pub fn spawn<A: ToSocketAddrs + std::fmt::Debug + Send + Sync + 'static>(
->>>>>>> origin/main
+    pub fn spawn<A: tokio::net::ToSocketAddrs + std::fmt::Debug + Send + Sync + 'static>(
         index: PeerIndex,
         addr: A,
         clock: C,
         network_wait_period: std::time::Duration,
         mut channels: PeerChannels,
-<<<<<<< HEAD
-    ) -> std::io::Result<tokio::task::JoinHandle<()>>
-    where
-        A: tokio::net::ToSocketAddrs + std::fmt::Debug,
-    {
-        let socket = UdpSocket::new("0.0.0.0:0", addr).await?;
-        let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
-        let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
-=======
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             let socket = loop {
@@ -319,7 +306,6 @@ where
 
             // Unwrap should be safe because we know the socket was connected to a remote peer just before
             let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
->>>>>>> origin/main
 
             let local_clock_time = NtpInstant::now();
             let peer = Peer::new(our_id, peer_id, local_clock_time);
