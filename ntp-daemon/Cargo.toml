@@ -7,20 +7,22 @@ license = "Apache-2.0 OR MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "1.20.0", features = ["full"] }
+tokio = { version = "1.20.1", features = ["full"] }
 ntp-proto = { path = "../ntp-proto" }
 ntp-os-clock = { path = "../ntp-os-clock" }
 ntp-udp = { path = "../ntp-udp" }
-tracing = "0.1.35"
-tracing-subscriber = { version = "0.3.14", features = ["env-filter", "serde", "json"] }
-clap = { version = "3.2.11", features = ["derive", "env"] }
+tracing = "0.1.36"
+tracing-subscriber = { version = "0.3.15", features = ["env-filter", "serde", "json"] }
+clap = { version = "3.2.16", features = ["derive", "env"] }
 toml = "0.5.9"
-thiserror = "1.0.31"
-serde = { version = "1.0.139", features = ["derive"] }
-serde_json = "1.0.82"
-sentry = { version = "0.27.0", optional = true }
+thiserror = "1.0.32"
+serde = { version = "1.0.143", features = ["derive"] }
+serde_json = "1.0.83"
+sentry = { version = "0.27.0", optional = true, default-features = false, features = ["backtrace", "contexts", "panic", "reqwest", "rustls"] }
 sentry-tracing = { version = "0.27.0", optional = true }
 rand = "0.8.5"
+libc = "0.2.129"
+exitcode = "1.1.2"
 
 [dev-dependencies]
 ntp-proto = { path = "../ntp-proto", features=["ext-test"]}

@@ -7,11 +7,11 @@ license = "Apache-2.0 OR MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "1.20.0", features = ["full"] }
+tokio = { version = "1.20.1", features = ["full"] }
 ntp-proto = { path = "../ntp-proto" }
 ntp-daemon = { path = "../ntp-daemon" }
-tracing = "0.1.35"
-tracing-subscriber = "0.3.14"
-clap = { version = "3.2.11", features = ["derive", "env"] }
-serde = { version = "1.0.139", features = ["derive"] }
-serde_json = "1.0.82"
+tracing = "0.1.36"
+tracing-subscriber = "0.3.15"
+clap = { version = "3.2.16", features = ["derive", "env"] }
+serde = { version = "1.0.143", features = ["derive"] }
+serde_json = "1.0.83"

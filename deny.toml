@@ -8,3 +8,8 @@ allow-osi-fsf-free = "either"
 copyleft = "deny"
 private = { ignore = true }
 allow = ["MPL-2.0"]
+
+[[licenses.clarify]]
+name = "ring"
+expression = "ISC AND MIT AND OpenSSL"
+license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]

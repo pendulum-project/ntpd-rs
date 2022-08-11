@@ -71,7 +71,7 @@ impl std::fmt::Debug for Reach {
 }
 
 impl Reach {
-    fn is_reachable(&self) -> bool {
+    pub fn is_reachable(&self) -> bool {
         self.0 != 0
     }
 
@@ -85,6 +85,11 @@ impl Reach {
     fn poll(&mut self) {
         self.0 <<= 1
     }
+
+    /// Number of polls since the last message we received
+    pub fn unanswered_polls(&self) -> u32 {
+        self.0.leading_zeros()
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -95,6 +100,10 @@ pub struct SystemSnapshot {
     pub precision: NtpDuration,
     /// May be updated by clock_update
     pub leap_indicator: NtpLeapIndicator,
+    /// Total amount that the clock has stepped
+    pub accumulated_steps: NtpDuration,
+    /// Crossing this amount of stepping will cause a Panic
+    pub accumulated_steps_threshold: Option<NtpDuration>,
 }
 
 impl Default for SystemSnapshot {
@@ -103,6 +112,8 @@ impl Default for SystemSnapshot {
             poll_interval: PollInterval::default(),
             precision: NtpDuration::from_exponent(-18),
             leap_indicator: NtpLeapIndicator::Unknown,
+            accumulated_steps: NtpDuration::ZERO,
+            accumulated_steps_threshold: None,
         }
     }
 }

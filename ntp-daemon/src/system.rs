@@ -8,7 +8,7 @@ use ntp_proto::{
     ClockController, ClockUpdateResult, FilterAndCombine, NtpClock, NtpInstant, PeerSnapshot,
     PollInterval, SystemConfig, SystemSnapshot,
 };
-use tracing::info;
+use tracing::{error, info};
 
 use std::sync::Arc;
 use tokio::{
@@ -50,7 +50,7 @@ pub async fn spawn(
         UnixNtpClock::new(),
     );
     for peer_config in peer_configs.iter() {
-        peers.add_peer(peer_config.to_owned()).await?;
+        peers.add_peer(peer_config.to_owned()).await;
     }
     let peers = Arc::new(tokio::sync::RwLock::new(peers));
 
@@ -154,11 +154,8 @@ impl<C: NtpClock> System<C> {
         );
         match adjust_type {
             ClockUpdateResult::Panic => {
-                panic!(
-                    r"Unusually large clock step suggested,
-                                please manually verify system clock and reference clock
-                                     state and restart if appropriate."
-                )
+                error!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate.");
+                std::process::exit(exitcode::SOFTWARE);
             }
             ClockUpdateResult::Step => {
                 self.reset_peers().await;
@@ -169,6 +166,8 @@ impl<C: NtpClock> System<C> {
             let mut global = self.global_system_snapshot.write().await;
             global.poll_interval = self.controller.preferred_poll_interval();
             global.leap_indicator = clock_select.system_peer_snapshot.leap_indicator;
+            global.accumulated_steps = self.controller.accumulated_steps();
+            global.accumulated_steps_threshold = config.accumulated_threshold;
         }
     }
 

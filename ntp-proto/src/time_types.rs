@@ -23,7 +23,10 @@ impl NtpInstant {
 
     pub fn abs_diff(self, rhs: Self) -> NtpDuration {
         // our code should always give the bigger argument first.
-        debug_assert!(self >= rhs);
+        debug_assert!(
+            self >= rhs,
+            "self >= rhs, this could indicate another program adjusted the clock"
+        );
 
         // NOTE: `std::time::Duration` cannot be negative, so a simple `lhs - rhs` could give an
         // empty duration. In our logic, we're always interested in the absolute delta between two
