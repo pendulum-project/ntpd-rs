@@ -214,8 +214,7 @@ fn control_messages(message_header: &libc::msghdr) -> impl Iterator<Item = &libc
     })
 }
 
-fn control_message_space<T>() -> usize {
-    // waiting for a release of libc to make this const
+const fn control_message_space<T>() -> usize {
     (unsafe { libc::CMSG_SPACE((std::mem::size_of::<T>()) as _) }) as usize
 }
 
@@ -223,8 +222,7 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
     let mut buf_slice = IoSliceMut::new(buf);
 
     // could be on the stack if const extern fn is stable
-    let control_size = control_message_space::<[libc::timespec; 3]>();
-    let mut control_buf = vec![0; control_size];
+    let mut control_buf = [0; control_message_space::<[libc::timespec; 3]>()];
     let mut mhdr = libc::msghdr {
         msg_control: control_buf.as_mut_ptr().cast::<libc::c_void>(),
         msg_controllen: control_buf.len(),
@@ -270,10 +268,10 @@ fn fetch_send_timestamp_help(socket: &std::net::UdpSocket) -> io::Result<Option<
     // section 2.1.1 of https://www.kernel.org/doc/Documentation/networking/timestamping.txt says that
     // a `sock_extended_err` is returned, but in practice we also see a socket address. The linux
     // kernel also has this https://github.com/torvalds/linux/blob/master/tools/testing/selftests/net/so_txtime.c#L153=
-    let control_size = control_message_space::<[libc::timespec; 3]>()
+    const CONTROL_SIZE: usize = control_message_space::<[libc::timespec; 3]>()
         + control_message_space::<(libc::sock_extended_err, libc::sockaddr_storage)>();
 
-    let mut control_buf = vec![0; control_size];
+    let mut control_buf = [0; CONTROL_SIZE];
     let mut mhdr = libc::msghdr {
         msg_control: control_buf.as_mut_ptr().cast::<libc::c_void>(),
         msg_controllen: control_buf.len(),
