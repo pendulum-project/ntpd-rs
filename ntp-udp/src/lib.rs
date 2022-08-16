@@ -91,7 +91,6 @@ impl UdpSocket {
             let mut guard = self.io.readable().await?;
             match guard.try_io(|inner| fetch_send_timestamp_help(inner.get_ref())) {
                 Ok(send_timestamp) => {
-                    dbg!(&send_timestamp);
                     return send_timestamp;
                 }
                 Err(_would_block) => {
