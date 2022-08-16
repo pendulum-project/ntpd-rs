@@ -287,7 +287,7 @@ impl NtpDuration {
             duration: match input {
                 exp if exp > 30 => std::i64::MAX,
                 exp if exp > 0 && exp <= 30 => 0x1_0000_0000_i64 << exp,
-                exp if exp <= 0 && exp >= -32 => 0x1_0000_0000_i64 >> -exp,
+                exp if (-32..=0).contains(&exp) => 0x1_0000_0000_i64 >> -exp,
                 _ => 0,
             },
         }
