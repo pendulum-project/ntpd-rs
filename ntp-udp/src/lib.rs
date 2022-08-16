@@ -55,7 +55,7 @@ impl UdpSocket {
         // the send timestamp may never come (when the driver does not support send timestamping)
         // set a very short timeout to prevent hanging forever. We automatically fall back to a
         // less accurate timestamp when this function returns None
-        let timeout = std::time::Duration::from_millis(100);
+        let timeout = std::time::Duration::from_millis(10);
         match tokio::time::timeout(timeout, self.fetch_send_timestamp()).await {
             Err(_) => Ok((send_size, None)),
             Ok(send_timestamp) => Ok((send_size, send_timestamp?)),
@@ -91,6 +91,7 @@ impl UdpSocket {
             let mut guard = self.io.readable().await?;
             match guard.try_io(|inner| fetch_send_timestamp_help(inner.get_ref())) {
                 Ok(send_timestamp) => {
+                    dbg!(&send_timestamp);
                     return send_timestamp;
                 }
                 Err(_would_block) => {
