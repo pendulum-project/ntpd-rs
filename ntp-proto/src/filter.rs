@@ -13,7 +13,7 @@ use crate::time_types::{FrequencyTolerance, NtpInstant};
 use crate::{packet::NtpLeapIndicator, NtpDuration, NtpHeader, NtpTimestamp};
 use tracing::{debug, instrument, warn};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FilterTuple {
     offset: NtpDuration,
     delay: NtpDuration,
