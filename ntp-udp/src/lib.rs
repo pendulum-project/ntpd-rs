@@ -113,13 +113,15 @@ fn init_socket(socket: &std::net::UdpSocket) -> io::Result<()> {
     Ok(())
 }
 
+const fn control_message_space<T>() -> usize {
+    (unsafe { libc::CMSG_SPACE((std::mem::size_of::<T>()) as _) }) as usize
+}
+
 fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Option<NtpTimestamp>)> {
     let mut buf_slice = IoSliceMut::new(buf);
 
     // could be on the stack if const extern fn is stable
-    let control_size =
-        unsafe { libc::CMSG_SPACE(std::mem::size_of::<libc::timespec>() as _) } as usize;
-    let mut control_buf = vec![0; control_size];
+    let mut control_buf = [0; control_message_space::<[libc::timespec; 3]>()];
     let mut mhdr = libc::msghdr {
         msg_control: control_buf.as_mut_ptr().cast::<libc::c_void>(),
         msg_controllen: control_buf.len(),
