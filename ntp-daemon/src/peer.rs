@@ -723,7 +723,7 @@ mod tests {
 
         tokio::select! {
             _ = tokio::time::sleep(Duration::from_millis(10)) => {/*expected */},
-            _ = socket.recv(&mut buf) => { assert!(false); }
+            _ = socket.recv(&mut buf) => { panic!("unexpected"); }
         }
 
         handle.abort();

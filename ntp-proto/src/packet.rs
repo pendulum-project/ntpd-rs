@@ -256,7 +256,7 @@ mod tests {
 
     #[test]
     fn roundtrip_bitrep_leap() {
-        for i in 0..4 as u8 {
+        for i in 0..4u8 {
             let a = NtpLeapIndicator::from_bits(i);
             let b = a.to_bits();
             let c = NtpLeapIndicator::from_bits(b);
@@ -267,7 +267,7 @@ mod tests {
 
     #[test]
     fn roundtrip_bitrep_mode() {
-        for i in 0..8 as u8 {
+        for i in 0..8u8 {
             let a = NtpAssociationMode::from_bits(i);
             let b = a.to_bits();
             let c = NtpAssociationMode::from_bits(b);
@@ -358,13 +358,11 @@ mod tests {
         for i in 0..=0xFF {
             let mut packet = base;
             packet[0] = i;
-            match NtpHeader::deserialize(&packet) {
-                Ok(a) => {
-                    let b = a.serialize();
-                    assert_eq!(packet, b);
-                }
-                _ => {}
-            };
+
+            if let Ok(a) = NtpHeader::deserialize(&packet) {
+                let b = a.serialize();
+                assert_eq!(packet, b);
+            }
         }
     }
 }
