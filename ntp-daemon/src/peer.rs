@@ -1,4 +1,4 @@
-use std::{future::Future, marker::PhantomData, pin::Pin, sync::Arc};
+use std::{future::Future, marker::PhantomData, net::SocketAddr, pin::Pin, sync::Arc};
 
 use ntp_proto::{
     IgnoreReason, NtpClock, NtpHeader, NtpInstant, NtpTimestamp, Peer, PeerSnapshot, ReferenceId,
@@ -288,7 +288,7 @@ where
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             let socket = loop {
-                match UdpSocket::new("0.0.0.0:0", &addr).await {
+                match UdpSocket::new("0.0.0.0:0", Some(&addr)).await {
                     Ok(socket) => break socket,
                     Err(error) => {
                         warn!(?error, "Could not open socket");
@@ -337,11 +337,11 @@ enum AcceptResult {
 }
 
 fn accept_packet(
-    result: Result<(usize, Option<NtpTimestamp>), std::io::Error>,
+    result: Result<(usize, SocketAddr, Option<NtpTimestamp>), std::io::Error>,
     buf: &[u8; 48],
 ) -> AcceptResult {
     match result {
-        Ok((size, Some(recv_timestamp))) => {
+        Ok((size, _, Some(recv_timestamp))) => {
             // Note: packets are allowed to be bigger when including extensions.
             // we don't expect them, but the server may still send them. The
             // extra bytes are guaranteed safe to ignore. `recv` truncates the messages.
@@ -360,7 +360,7 @@ fn accept_packet(
                 }
             }
         }
-        Ok((size, None)) => {
+        Ok((size, _, None)) => {
             warn!(?size, "received a packet without a timestamp");
 
             AcceptResult::Ignore
@@ -507,13 +507,13 @@ mod tests {
         // port_base
         let socket = UdpSocket::new(
             format!("127.0.0.1:{}", port_base),
-            format!("127.0.0.1:{}", port_base + 1),
+            Some(format!("127.0.0.1:{}", port_base + 1)),
         )
         .await
         .unwrap();
         let test_socket = UdpSocket::new(
             format!("127.0.0.1:{}", port_base + 1),
-            format!("127.0.0.1:{}", port_base),
+            Some(format!("127.0.0.1:{}", port_base)),
         )
         .await
         .unwrap();
@@ -551,7 +551,7 @@ mod tests {
     #[tokio::test]
     async fn test_spawn_reset_epoch() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let _recv_socket = UdpSocket::new("127.0.0.1:8003", "127.0.0.1:8002")
+        let _recv_socket = UdpSocket::new("127.0.0.1:8003", Some("127.0.0.1:8002"))
             .await
             .unwrap();
 
@@ -664,7 +664,7 @@ mod tests {
         assert!(matches!(msg, MsgForSystem::UpdatedSnapshot(_, _, _)));
 
         let mut buf = [0; 48];
-        let (size, timestamp) = socket.recv(&mut buf).await.unwrap();
+        let (size, _, timestamp) = socket.recv(&mut buf).await.unwrap();
         assert_eq!(size, 48);
         let timestamp = timestamp.unwrap();
 
@@ -703,7 +703,7 @@ mod tests {
         assert!(matches!(msg, MsgForSystem::UpdatedSnapshot(_, _, _)));
 
         let mut buf = [0; 48];
-        let (size, timestamp) = socket.recv(&mut buf).await.unwrap();
+        let (size, _, timestamp) = socket.recv(&mut buf).await.unwrap();
         assert_eq!(size, 48);
         assert!(timestamp.is_some());
 
