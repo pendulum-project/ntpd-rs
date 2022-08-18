@@ -60,6 +60,7 @@ impl UdpSocket {
         // set a very short timeout to prevent hanging forever. We automatically fall back to a
         // less accurate timestamp when this function returns None
         let timeout = std::time::Duration::from_millis(10);
+
         match tokio::time::timeout(timeout, self.fetch_send_timestamp(expected_counter)).await {
             Err(_) => {
                 warn!("Packet without timestamp");
@@ -93,13 +94,12 @@ impl UdpSocket {
     }
 
     async fn fetch_send_timestamp(&self, expected_counter: u32) -> io::Result<NtpTimestamp> {
-        trace!("waiting for socket to become readable");
+        trace!("waiting for timestamp socket to become readable");
         loop {
-            let mut guard = self.io.readable().await?;
+            let mut guard = self.io.writable().await?;
             match guard.try_io(|inner| fetch_send_timestamp_help(inner.get_ref(), expected_counter))
             {
                 Ok(Ok(Some(send_timestamp))) => {
-                    dbg!(&send_timestamp);
                     return Ok(send_timestamp);
                 }
                 Ok(Ok(None)) => {
@@ -110,7 +110,7 @@ impl UdpSocket {
                     return Err(e);
                 }
                 Err(_would_block) => {
-                    trace!("blocked after becoming readable, retrying");
+                    trace!("timestamp blocked after becoming readable, retrying");
                     continue;
                 }
             }
