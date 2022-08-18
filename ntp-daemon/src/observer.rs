@@ -175,7 +175,11 @@ mod tests {
 
         let system_reader = Arc::new(tokio::sync::RwLock::new(SystemSnapshot {
             poll_interval: PollInterval::MIN,
+            stratum: 1,
             precision: NtpDuration::from_seconds(1e-3),
+            root_delay: NtpDuration::ZERO,
+            root_dispersion: NtpDuration::ZERO,
+            reference_id: ReferenceId::NONE,
             leap_indicator: NtpLeapIndicator::Leap59,
             accumulated_steps: NtpDuration::ZERO,
             accumulated_steps_threshold: None,
@@ -263,7 +267,11 @@ mod tests {
 
         let system_reader = Arc::new(tokio::sync::RwLock::new(SystemSnapshot {
             poll_interval: PollInterval::MIN,
+            stratum: 1,
             precision: NtpDuration::from_seconds(1e-3),
+            reference_id: ReferenceId::NONE,
+            root_delay: NtpDuration::ZERO,
+            root_dispersion: NtpDuration::ZERO,
             leap_indicator: NtpLeapIndicator::Leap59,
             accumulated_steps: NtpDuration::ZERO,
             accumulated_steps_threshold: None,
