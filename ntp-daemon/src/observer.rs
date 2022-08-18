@@ -285,7 +285,6 @@ mod tests {
         let mut buf = [0_u8; 12];
         let mut bufref: &mut [u8] = &mut buf;
         reader.read_buf(&mut bufref).await.unwrap();
-        drop(bufref);
 
         // Ensure neither lock is held long term
         system_writer.write().await;

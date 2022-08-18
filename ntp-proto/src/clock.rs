@@ -634,8 +634,10 @@ mod tests {
     #[test]
     fn test_accumulated_excess_detection() {
         let base = NtpInstant::now();
-        let mut config = SystemConfig::default();
-        config.accumulated_threshold = Some(NtpDuration::from_seconds(100.));
+        let config = SystemConfig {
+            accumulated_threshold: Some(NtpDuration::from_seconds(100.0)),
+            ..Default::default()
+        };
 
         let mut controller = ClockController {
             clock: TestClock::default(),
