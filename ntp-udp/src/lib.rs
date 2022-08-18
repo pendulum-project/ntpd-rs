@@ -394,4 +394,28 @@ mod tests {
             assert!(delta.to_seconds() > 0.15 && delta.to_seconds() < 0.25);
         });
     }
+
+    #[test]
+    fn test_send_timestamp() {
+        tokio_test::block_on(async {
+            let mut a = UdpSocket::new("127.0.0.1:8012", "127.0.0.1:8013")
+                .await
+                .unwrap();
+            let b = UdpSocket::new("127.0.0.1:8013", "127.0.0.1:8012")
+                .await
+                .unwrap();
+
+            let (ssend, tsend) = a.send(&[1; 48]).await.unwrap();
+            let mut buf = [0; 48];
+            let (srecv, trecv) = b.recv(&mut buf).await.unwrap();
+
+            assert_eq!(ssend, 48);
+            assert_eq!(srecv, 48);
+
+            let tsend = tsend.unwrap();
+            let trecv = trecv.unwrap();
+            let delta = trecv - tsend;
+            assert!(delta.to_seconds().abs() < 0.2);
+        });
+    }
 }
