@@ -1,9 +1,10 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    config::PeerConfig,
+    config::{PeerConfig, ServerConfig},
     observer::ObservablePeerState,
     peer::{MsgForSystem, PeerChannels, PeerTask, ResetEpoch},
+    server::ServerTask,
 };
 use ntp_proto::{NtpClock, PeerSnapshot};
 use tokio::task::JoinHandle;
@@ -58,6 +59,7 @@ struct PeerData {
 #[derive(Debug)]
 pub struct Peers<C: NtpClock> {
     peers: HashMap<PeerIndex, PeerData>,
+    servers: Vec<Arc<ServerConfig>>,
     indexer: PeerIndexIssuer,
 
     channels: PeerChannels,
@@ -68,6 +70,7 @@ impl<C: NtpClock> Peers<C> {
     pub fn new(channels: PeerChannels, clock: C) -> Self {
         Peers {
             peers: Default::default(),
+            servers: Default::default(),
             indexer: Default::default(),
             channels,
             clock,
@@ -97,6 +100,16 @@ impl<C: NtpClock> Peers<C> {
         self.add_peer_internal(Arc::new(config))
     }
 
+    fn add_server_internal(&mut self, config: Arc<ServerConfig>) -> JoinHandle<()> {
+        let addr = config.addr.clone();
+        self.servers.push(config);
+        ServerTask::spawn(addr, NETWORK_WAIT_PERIOD)
+    }
+
+    pub async fn add_server(&mut self, config: ServerConfig) -> JoinHandle<()> {
+        self.add_server_internal(Arc::new(config))
+    }
+
     #[cfg(test)]
     pub fn from_statuslist(data: &[PeerStatus], raw_configs: &[PeerConfig], clock: C) -> Self {
         assert_eq!(data.len(), raw_configs.len());
@@ -117,6 +130,7 @@ impl<C: NtpClock> Peers<C> {
 
         Self {
             peers,
+            servers: vec![],
             indexer,
             channels: PeerChannels::test(),
             clock,

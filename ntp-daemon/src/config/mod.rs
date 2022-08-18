@@ -91,7 +91,7 @@ pub struct CmdArgs {
 pub struct Config {
     #[serde(alias = "peer")]
     pub peers: Vec<PeerConfig>,
-    #[serde(alias = "server")]
+    #[serde(alias = "server", default)]
     pub servers: Vec<ServerConfig>,
     #[serde(default)]
     pub system: SystemConfig,

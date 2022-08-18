@@ -98,7 +98,7 @@ impl UdpSocket {
 
     #[instrument(level = "trace", skip(self, buf), fields(
         local_addr = debug(self.as_ref().local_addr().unwrap()),
-        peer_addr = debug(self.as_ref().peer_addr()),
+        peer_addr = debug(self.as_ref().peer_addr().ok()),
         buf_size = buf.len(),
     ))]
     pub async fn recv(

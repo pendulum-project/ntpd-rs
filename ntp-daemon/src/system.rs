@@ -53,6 +53,11 @@ pub async fn spawn(
     for peer_config in peer_configs.iter() {
         peers.add_peer(peer_config.to_owned()).await;
     }
+
+    for server_config in server_configs.iter() {
+        peers.add_server(server_config.to_owned()).await;
+    }
+
     let peers = Arc::new(tokio::sync::RwLock::new(peers));
 
     let channels = DaemonChannels {
