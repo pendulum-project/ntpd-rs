@@ -1,3 +1,5 @@
+mod ifaddrs;
+
 use std::{
     io,
     io::{ErrorKind, IoSliceMut},
@@ -16,6 +18,7 @@ const EPOCH_OFFSET: u32 = (70 * 365 + 17) * 86400;
 pub struct UdpSocket {
     io: AsyncFd<std::net::UdpSocket>,
     send_counter: u32,
+    support: TimestampingSupport,
 }
 
 impl UdpSocket {
@@ -38,11 +41,13 @@ impl UdpSocket {
         );
         let socket = socket.into_std()?;
 
-        set_timestamping_options(&socket)?;
+        let support = TimestampingSupport::get_support(&socket)?;
+        set_timestamping_options(&socket, support)?;
 
         Ok(UdpSocket {
             io: AsyncFd::new(socket)?,
             send_counter: 0,
+            support,
         })
     }
 
@@ -56,17 +61,21 @@ impl UdpSocket {
         let expected_counter = self.send_counter;
         self.send_counter = self.send_counter.wrapping_add(1);
 
-        // the send timestamp may never come (when the driver does not support send timestamping)
-        // set a very short timeout to prevent hanging forever. We automatically fall back to a
-        // less accurate timestamp when this function returns None
-        let timeout = std::time::Duration::from_millis(10);
+        if self.support.tx_software {
+            // the send timestamp may never come set a very short timeout to prevent hanging forever.
+            // We automatically fall back to a less accurate timestamp when this function returns None
+            let timeout = std::time::Duration::from_millis(10);
 
-        match tokio::time::timeout(timeout, self.fetch_send_timestamp(expected_counter)).await {
-            Err(_) => {
-                warn!("Packet without timestamp");
-                Ok((send_size, None))
+            match tokio::time::timeout(timeout, self.fetch_send_timestamp(expected_counter)).await {
+                Err(_) => {
+                    warn!("Packet without timestamp");
+                    Ok((send_size, None))
+                }
+                Ok(send_timestamp) => Ok((send_size, Some(send_timestamp?))),
             }
-            Ok(send_timestamp) => Ok((send_size, Some(send_timestamp?))),
+        } else {
+            trace!("send timestamping not supported");
+            Ok((send_size, None))
         }
     }
 
@@ -154,18 +163,32 @@ const SOF_TIMESTAMPING_OPT_TSONLY: u32 = 1 << 11;
 /// Makes the kernel return a packet id in the error cmsg.
 const SOF_TIMESTAMPING_OPT_ID: u32 = 1 << 7;
 
-fn set_timestamping_options(udp_socket: &std::net::UdpSocket) -> io::Result<()> {
+fn set_timestamping_options(
+    udp_socket: &std::net::UdpSocket,
+    support: TimestampingSupport,
+) -> io::Result<()> {
     let fd = udp_socket.as_raw_fd();
 
-    // our options:
-    //  - we want software timestamps to be reported,
-    //  - we want both send and receive software timestamps
-    //  - return just the timestamp, don't send the full message along
-    let options = libc::SOF_TIMESTAMPING_SOFTWARE
-        | libc::SOF_TIMESTAMPING_RX_SOFTWARE
-        | libc::SOF_TIMESTAMPING_TX_SOFTWARE
-        | SOF_TIMESTAMPING_OPT_TSONLY
-        | SOF_TIMESTAMPING_OPT_ID;
+    let mut options = 0;
+
+    if support.rx_software || support.tx_software {
+        // enable software timestamping
+        options |= libc::SOF_TIMESTAMPING_SOFTWARE
+    }
+
+    if support.rx_software {
+        // we want receive timestamps
+        options |= libc::SOF_TIMESTAMPING_RX_SOFTWARE
+    }
+
+    if support.tx_software {
+        // - we want send timestamps
+        // - return just the timestamp, don't send the full message along
+        // - tag the timestamp with an ID
+        options |= libc::SOF_TIMESTAMPING_TX_SOFTWARE
+            | SOF_TIMESTAMPING_OPT_TSONLY
+            | SOF_TIMESTAMPING_OPT_ID;
+    }
 
     unsafe {
         cerr(libc::setsockopt(
@@ -359,6 +382,89 @@ fn fetch_send_timestamp_help(
     }
 
     Ok(send_ts)
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct TimestampingSupport {
+    rx_software: bool,
+    tx_software: bool,
+}
+
+#[repr(C)]
+#[allow(non_camel_case_types)]
+#[derive(Default)]
+struct ethtool_ts_info {
+    cmd: u32,
+    so_timestamping: u32,
+    phc_index: u32,
+    tx_types: u32,
+    tx_reserved: [u32; 3],
+    rx_filters: u32,
+    rx_reserved: [u32; 3],
+}
+
+#[repr(C)]
+#[allow(non_camel_case_types)]
+struct ifreq {
+    ifrn_name: [u8; 16],
+    ifru_data: *mut libc::c_void,
+    __empty_space: [u8; 40 - 8],
+}
+
+impl TimestampingSupport {
+    fn get_support(udp_socket: &std::net::UdpSocket) -> std::io::Result<Self> {
+        // Get time stamping and PHC info
+        const ETHTOOL_GET_TS_INFO: u32 = 0x00000041;
+
+        let mut tsi: ethtool_ts_info = ethtool_ts_info {
+            cmd: ETHTOOL_GET_TS_INFO,
+            ..Default::default()
+        };
+
+        let fd = udp_socket.as_raw_fd();
+
+        if let Some(ifrn_name) = Self::interface_name()? {
+            let ifr: ifreq = ifreq {
+                ifrn_name,
+                ifru_data: (&mut tsi as *mut _) as *mut libc::c_void,
+                __empty_space: [0; 40 - 8],
+            };
+
+            const SIOCETHTOOL: u64 = 0x8946;
+            cerr(unsafe { libc::ioctl(fd, SIOCETHTOOL, &ifr) }).unwrap();
+
+            let support = Self {
+                rx_software: tsi.so_timestamping & libc::SOF_TIMESTAMPING_RX_SOFTWARE != 0,
+                tx_software: tsi.so_timestamping & libc::SOF_TIMESTAMPING_TX_SOFTWARE != 0,
+            };
+
+            // per the documentation of `SOF_TIMESTAMPING_RX_SOFTWARE`:
+            //
+            // > Request rx timestamps when data enters the kernel. These timestamps are generated
+            // > just after a device driver hands a packet to the kernel receive stack.
+            //
+            // the linux kernal should always support receive software timestamping
+            assert!(support.rx_software);
+
+            Ok(support)
+        } else {
+            Ok(Self::default())
+        }
+    }
+
+    fn interface_name() -> std::io::Result<Option<[u8; 16]>> {
+        if let Some(interface) = crate::ifaddrs::getifaddrs()?.next() {
+            let mut ifrn_name = [0; 16];
+
+            let name = interface.interface_name;
+            let length = Ord::min(name.len(), ifrn_name.len());
+            ifrn_name[0..length].copy_from_slice(&name.as_bytes()[0..length]);
+
+            Ok(Some(ifrn_name))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 #[cfg(test)]
