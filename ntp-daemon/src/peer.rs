@@ -653,7 +653,7 @@ mod tests {
     #[tokio::test]
     async fn test_timeroundtrip() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, socket, mut msg_recv, _reset) = test_startup(8008).await;
+        let (mut process, mut socket, mut msg_recv, _reset) = test_startup(8008).await;
 
         let (poll_wait, poll_send) = TestWait::new();
         let clock = TestClock {};
@@ -693,7 +693,7 @@ mod tests {
     #[tokio::test]
     async fn test_deny_stops_poll() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, socket, mut msg_recv, _reset) = test_startup(8010).await;
+        let (mut process, mut socket, mut msg_recv, _reset) = test_startup(8010).await;
 
         let (poll_wait, poll_send) = TestWait::new();
 

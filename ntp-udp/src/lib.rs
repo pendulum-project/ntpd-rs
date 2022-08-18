@@ -59,12 +59,12 @@ impl UdpSocket {
         // the send timestamp may never come (when the driver does not support send timestamping)
         // set a very short timeout to prevent hanging forever. We automatically fall back to a
         // less accurate timestamp when this function returns None
-        let timeout = std::time::Duration::from_millis(100);
+        let timeout = std::time::Duration::from_millis(10);
         match tokio::time::timeout(timeout, self.fetch_send_timestamp(expected_counter)).await {
             Err(_) => {
                 warn!("Packet without timestamp");
                 Ok((send_size, None))
-            },
+            }
             Ok(send_timestamp) => Ok((send_size, Some(send_timestamp?))),
         }
     }
@@ -96,7 +96,8 @@ impl UdpSocket {
         trace!("waiting for socket to become readable");
         loop {
             let mut guard = self.io.readable().await?;
-            match guard.try_io(|inner| fetch_send_timestamp_help(inner.get_ref(), expected_counter)) {
+            match guard.try_io(|inner| fetch_send_timestamp_help(inner.get_ref(), expected_counter))
+            {
                 Ok(Ok(Some(send_timestamp))) => {
                     dbg!(&send_timestamp);
                     return Ok(send_timestamp);
@@ -281,7 +282,10 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
     Ok((bytes_read, None))
 }
 
-fn fetch_send_timestamp_help(socket: &std::net::UdpSocket, expected_counter: u32) -> io::Result<Option<NtpTimestamp>> {
+fn fetch_send_timestamp_help(
+    socket: &std::net::UdpSocket,
+    expected_counter: u32,
+) -> io::Result<Option<NtpTimestamp>> {
     // we get back two control messages: one with the timestamp (just like a receive timestamp),
     // and one error message with no error reason. The payload for this second message is kind of
     // undocumented.
@@ -330,12 +334,18 @@ fn fetch_send_timestamp_help(socket: &std::net::UdpSocket, expected_counter: u32
                 // the timestamping does not set a message; if there is a message, that means
                 // something else is wrong, and we want to know about it.
                 if error.ee_errno as libc::c_int != libc::ENOMSG {
-                    warn!(expected_counter, error.ee_data, "error message on the MSG_ERRQUEUE");
+                    warn!(
+                        expected_counter,
+                        error.ee_data, "error message on the MSG_ERRQUEUE"
+                    );
                 }
 
                 // Check that this message belongs to the send we are interested in
                 if error.ee_data != expected_counter {
-                    warn!(error.ee_data, expected_counter, "Timestamp for unrelated packet");
+                    warn!(
+                        error.ee_data,
+                        expected_counter, "Timestamp for unrelated packet"
+                    );
                     return Ok(None);
                 }
             }
@@ -361,7 +371,7 @@ mod tests {
             let mut a = UdpSocket::new("127.0.0.1:8000", "127.0.0.1:8001")
                 .await
                 .unwrap();
-            let mut b = UdpSocket::new("127.0.0.1:8001", "127.0.0.1:8000")
+            let b = UdpSocket::new("127.0.0.1:8001", "127.0.0.1:8000")
                 .await
                 .unwrap();
 
