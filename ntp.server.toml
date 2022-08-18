@@ -1,0 +1,31 @@
+# Other values include trace, debug, warn and error
+log-filter = "info"
+
+# Allowed values: full, compact, pretty, json
+log-format = "full"
+
+# Peers can be configured as a simple list (pool servers from ntppool.org)
+peers = ["0.pool.ntp.org", "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
+
+# Or by providing written out configuration
+# [[peers]]
+# addr = "0.pool.ntp.org:123"
+#
+
+# [[peers]]
+# addr = "1.pool.ntp.org:123"
+
+[[server]]
+addr = "0.0.0.0:123"
+
+# System parameters used in filtering and steering the clock:
+[system]
+min-intersection-survivors = 1
+min-cluster-survivors = 3
+frequency-tolerance = 15
+distance-threshold = 1
+panic-threshold = 10
+startup-panic-threshold = { forward = 0, backward = 1800 }
+
+[observe]
+path = "/run/ntpd-rs/observe"

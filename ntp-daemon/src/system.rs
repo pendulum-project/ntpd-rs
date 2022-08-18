@@ -1,5 +1,5 @@
 use crate::{
-    config::PeerConfig,
+    config::{PeerConfig, ServerConfig},
     peer::{MsgForSystem, PeerChannels, ResetEpoch},
     peer_manager::Peers,
 };
@@ -26,6 +26,7 @@ pub struct DaemonChannels<C: NtpClock> {
 pub async fn spawn(
     config: SystemConfig,
     peer_configs: &[PeerConfig],
+    server_configs: &[ServerConfig],
 ) -> std::io::Result<(
     JoinHandle<std::io::Result<()>>,
     DaemonChannels<UnixNtpClock>,

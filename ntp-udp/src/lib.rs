@@ -252,8 +252,7 @@ fn recv(
             SocketAddr::from((sin.sin6_addr.s6_addr, sin.sin6_port))
         }
         _ => {
-            // TODO
-            panic!("Unexpected socket addr");
+            unreachable!("We never constructed a non-ip socket");
         }
     };
 

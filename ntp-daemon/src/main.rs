@@ -18,7 +18,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let finish_tracing_init =
         ntp_daemon::tracing::init(log_filter, args.log_format.unwrap_or_default());
 
-    let mut config = match Config::from_args(args.config, args.peers).await {
+    let mut config = match Config::from_args(args.config, args.peers, args.servers).await {
         Ok(c) => c,
         Err(e) => {
             // print to stderr because tracing is not yet setup
@@ -44,7 +44,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     config.check();
 
     debug!("Configuration loaded, spawning daemon jobs");
-    let (main_loop_handle, channels) = ntp_daemon::spawn(config.system, &config.peers).await?;
+    let (main_loop_handle, channels) =
+        ntp_daemon::spawn(config.system, &config.peers, &config.servers).await?;
 
     ntp_daemon::observer::spawn(&config.observe, channels.peers, channels.system).await;
 
