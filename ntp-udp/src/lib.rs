@@ -15,6 +15,7 @@ const EPOCH_OFFSET: u32 = (70 * 365 + 17) * 86400;
 
 pub struct UdpSocket {
     io: AsyncFd<std::net::UdpSocket>,
+    send_counter: u32,
 }
 
 impl UdpSocket {
@@ -41,6 +42,7 @@ impl UdpSocket {
 
         Ok(UdpSocket {
             io: AsyncFd::new(socket)?,
+            send_counter: 0,
         })
     }
 
@@ -49,16 +51,22 @@ impl UdpSocket {
         peer_addr = debug(self.as_ref().peer_addr()),
         buf_size = buf.len(),
     ))]
-    pub async fn send(&self, buf: &[u8]) -> io::Result<(usize, Option<NtpTimestamp>)> {
+    pub async fn send(&mut self, buf: &[u8]) -> io::Result<(usize, Option<NtpTimestamp>)> {
         let send_size = self.send_help(buf).await?;
+        let expected_counter = self.send_counter;
+        self.send_counter = self.send_counter.wrapping_add(1);
 
         // the send timestamp may never come (when the driver does not support send timestamping)
         // set a very short timeout to prevent hanging forever. We automatically fall back to a
         // less accurate timestamp when this function returns None
         let timeout = std::time::Duration::from_millis(10);
-        match tokio::time::timeout(timeout, self.fetch_send_timestamp()).await {
-            Err(_) => Ok((send_size, None)),
-            Ok(send_timestamp) => Ok((send_size, send_timestamp?)),
+
+        match tokio::time::timeout(timeout, self.fetch_send_timestamp(expected_counter)).await {
+            Err(_) => {
+                warn!("Packet without timestamp");
+                Ok((send_size, None))
+            }
+            Ok(send_timestamp) => Ok((send_size, Some(send_timestamp?))),
         }
     }
 
@@ -85,16 +93,24 @@ impl UdpSocket {
         }
     }
 
-    async fn fetch_send_timestamp(&self) -> io::Result<Option<NtpTimestamp>> {
-        trace!("waiting for socket to become readable");
+    async fn fetch_send_timestamp(&self, expected_counter: u32) -> io::Result<NtpTimestamp> {
+        trace!("waiting for timestamp socket to become readable");
         loop {
-            let mut guard = self.io.readable().await?;
-            match guard.try_io(|inner| fetch_send_timestamp_help(inner.get_ref())) {
-                Ok(send_timestamp) => {
-                    return send_timestamp;
+            let mut guard = self.io.writable().await?;
+            match guard.try_io(|inner| fetch_send_timestamp_help(inner.get_ref(), expected_counter))
+            {
+                Ok(Ok(Some(send_timestamp))) => {
+                    return Ok(send_timestamp);
+                }
+                Ok(Ok(None)) => {
+                    continue;
+                }
+                Ok(Err(e)) => {
+                    warn!(error = debug(&e), "Error fetching timestamp");
+                    return Err(e);
                 }
                 Err(_would_block) => {
-                    trace!("blocked after becoming readable, retrying");
+                    trace!("timestamp blocked after becoming readable, retrying");
                     continue;
                 }
             }
@@ -135,6 +151,8 @@ impl AsRef<std::net::UdpSocket> for UdpSocket {
 /// Makes the kernel return the timestamp as a cmsg alongside an empty packet,
 /// as opposed to alongside the original packet
 const SOF_TIMESTAMPING_OPT_TSONLY: u32 = 1 << 11;
+/// Makes the kernel return a packet id in the error cmsg.
+const SOF_TIMESTAMPING_OPT_ID: u32 = 1 << 7;
 
 fn set_timestamping_options(udp_socket: &std::net::UdpSocket) -> io::Result<()> {
     let fd = udp_socket.as_raw_fd();
@@ -146,7 +164,8 @@ fn set_timestamping_options(udp_socket: &std::net::UdpSocket) -> io::Result<()> 
     let options = libc::SOF_TIMESTAMPING_SOFTWARE
         | libc::SOF_TIMESTAMPING_RX_SOFTWARE
         | libc::SOF_TIMESTAMPING_TX_SOFTWARE
-        | SOF_TIMESTAMPING_OPT_TSONLY;
+        | SOF_TIMESTAMPING_OPT_TSONLY
+        | SOF_TIMESTAMPING_OPT_ID;
 
     unsafe {
         cerr(libc::setsockopt(
@@ -263,7 +282,10 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
     Ok((bytes_read, None))
 }
 
-fn fetch_send_timestamp_help(socket: &std::net::UdpSocket) -> io::Result<Option<NtpTimestamp>> {
+fn fetch_send_timestamp_help(
+    socket: &std::net::UdpSocket,
+    expected_counter: u32,
+) -> io::Result<Option<NtpTimestamp>> {
     // we get back two control messages: one with the timestamp (just like a receive timestamp),
     // and one error message with no error reason. The payload for this second message is kind of
     // undocumented.
@@ -301,8 +323,6 @@ fn fetch_send_timestamp_help(socket: &std::net::UdpSocket) -> io::Result<Option<
             (libc::SOL_SOCKET, libc::SO_TIMESTAMPING) => {
                 // Safety: SCM_TIMESTAMP always has a timespec in the data, so this operation should be safe
                 send_ts = Some(unsafe { read_ntp_timestamp(libc::CMSG_DATA(msg)) });
-
-                break;
             }
             (libc::SOL_IP, libc::IP_RECVERR) | (libc::SOL_IPV6, libc::IPV6_RECVERR) => {
                 // this is part of how timestamps are reported.
@@ -314,7 +334,19 @@ fn fetch_send_timestamp_help(socket: &std::net::UdpSocket) -> io::Result<Option<
                 // the timestamping does not set a message; if there is a message, that means
                 // something else is wrong, and we want to know about it.
                 if error.ee_errno as libc::c_int != libc::ENOMSG {
-                    warn!("error message on the MSG_ERRQUEUE");
+                    warn!(
+                        expected_counter,
+                        error.ee_data, "error message on the MSG_ERRQUEUE"
+                    );
+                }
+
+                // Check that this message belongs to the send we are interested in
+                if error.ee_data != expected_counter {
+                    warn!(
+                        error.ee_data,
+                        expected_counter, "Timestamp for unrelated packet"
+                    );
+                    return Ok(None);
                 }
             }
             _ => {
@@ -336,7 +368,7 @@ mod tests {
     #[test]
     fn test_timestamping_reasonable() {
         tokio_test::block_on(async {
-            let a = UdpSocket::new("127.0.0.1:8000", "127.0.0.1:8001")
+            let mut a = UdpSocket::new("127.0.0.1:8000", "127.0.0.1:8001")
                 .await
                 .unwrap();
             let b = UdpSocket::new("127.0.0.1:8001", "127.0.0.1:8000")
@@ -360,6 +392,30 @@ mod tests {
             let delta = t2 - t1;
 
             assert!(delta.to_seconds() > 0.15 && delta.to_seconds() < 0.25);
+        });
+    }
+
+    #[test]
+    fn test_send_timestamp() {
+        tokio_test::block_on(async {
+            let mut a = UdpSocket::new("127.0.0.1:8012", "127.0.0.1:8013")
+                .await
+                .unwrap();
+            let b = UdpSocket::new("127.0.0.1:8013", "127.0.0.1:8012")
+                .await
+                .unwrap();
+
+            let (ssend, tsend) = a.send(&[1; 48]).await.unwrap();
+            let mut buf = [0; 48];
+            let (srecv, trecv) = b.recv(&mut buf).await.unwrap();
+
+            assert_eq!(ssend, 48);
+            assert_eq!(srecv, 48);
+
+            let tsend = tsend.unwrap();
+            let trecv = trecv.unwrap();
+            let delta = trecv - tsend;
+            assert!(delta.to_seconds().abs() < 0.2);
         });
     }
 }
