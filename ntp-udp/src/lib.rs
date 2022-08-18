@@ -132,21 +132,6 @@ impl AsRef<std::net::UdpSocket> for UdpSocket {
     }
 }
 
-/// # Safety
-///
-/// The given pointer must point to a libc::timespec
-unsafe fn read_ntp_timestamp(ptr: *const u8) -> NtpTimestamp {
-    let ts: libc::timespec = std::ptr::read_unaligned(ptr as *const _);
-
-    // truncates the higher bits of the i64
-    let seconds = (ts.tv_sec as u32).wrapping_add(EPOCH_OFFSET);
-
-    // tv_nsec is always within [0, 1e10)
-    let nanos = ts.tv_nsec as u32;
-
-    NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, nanos)
-}
-
 /// Makes the kernel return the timestamp as a cmsg alongside an empty packet,
 /// as opposed to alongside the original packet
 const SOF_TIMESTAMPING_OPT_TSONLY: u32 = 1 << 11;
@@ -158,7 +143,7 @@ fn set_timestamping_options(udp_socket: &std::net::UdpSocket) -> io::Result<()> 
     //  - we want software timestamps to be reported,
     //  - we want both send and receive software timestamps
     //  - return just the timestamp, don't send the full message along
-    let bits = libc::SOF_TIMESTAMPING_SOFTWARE
+    let options = libc::SOF_TIMESTAMPING_SOFTWARE
         | libc::SOF_TIMESTAMPING_RX_SOFTWARE
         | libc::SOF_TIMESTAMPING_TX_SOFTWARE
         | SOF_TIMESTAMPING_OPT_TSONLY;
@@ -168,7 +153,7 @@ fn set_timestamping_options(udp_socket: &std::net::UdpSocket) -> io::Result<()> 
             fd,
             libc::SOL_SOCKET,
             libc::SO_TIMESTAMPING,
-            &bits as *const _ as *const libc::c_void,
+            &options as *const _ as *const libc::c_void,
             std::mem::size_of::<libc::c_int>() as libc::socklen_t,
         ))?
     };
@@ -184,6 +169,22 @@ fn cerr(t: libc::c_int) -> std::io::Result<libc::c_int> {
     }
 }
 
+/// # Safety
+///
+/// The given pointer must point to a libc::timespec
+unsafe fn read_ntp_timestamp(ptr: *const u8) -> NtpTimestamp {
+    let ts: libc::timespec = std::ptr::read_unaligned(ptr as *const _);
+
+    // truncates the higher bits of the i64
+    let seconds = (ts.tv_sec as u32).wrapping_add(EPOCH_OFFSET);
+
+    // tv_nsec is always within [0, 1e10)
+    let nanos = ts.tv_nsec as u32;
+
+    NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, nanos)
+}
+
+/// Receive a message on a socket (retry if interrupted)
 fn receive_message(
     socket: &std::net::UdpSocket,
     message_header: &mut libc::msghdr,
@@ -214,6 +215,7 @@ fn control_messages(message_header: &libc::msghdr) -> impl Iterator<Item = &libc
     })
 }
 
+/// The space used to store a control message that contains a value of type T
 const fn control_message_space<T>() -> usize {
     (unsafe { libc::CMSG_SPACE((std::mem::size_of::<T>()) as _) }) as usize
 }
@@ -233,7 +235,9 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
         msg_namelen: 0,
     };
 
-    let bytes_read = receive_message(socket, &mut mhdr, 0)?;
+    // loops for when we receive an interrupt during the recv
+    let flags = 0;
+    let bytes_read = receive_message(socket, &mut mhdr, flags)? as usize;
 
     if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
         warn!(
@@ -246,18 +250,17 @@ fn recv(socket: &std::net::UdpSocket, buf: &mut [u8]) -> io::Result<(usize, Opti
         warn!("truncated control messages");
     }
 
-    // Loops through the control messages, but we should only get a single message
-    let mut recv_ts = None;
+    // Loops through the control messages, but we should only get a single message in practice
     for msg in control_messages(&mhdr) {
         if let (libc::SOL_SOCKET, libc::SO_TIMESTAMPING) = (msg.cmsg_level, msg.cmsg_type) {
-            // Safety: SCM_TIMESTAMPING always has a timespec in the data, so this operation should be safe
-            recv_ts = Some(unsafe { read_ntp_timestamp(libc::CMSG_DATA(msg)) });
+            // Safety: SO_TIMESTAMPING always has a timespec in the data
+            let timestamp = unsafe { read_ntp_timestamp(libc::CMSG_DATA(msg)) };
 
-            break;
+            return Ok((bytes_read, Some(timestamp)));
         }
     }
 
-    Ok((bytes_read as usize, recv_ts))
+    Ok((bytes_read, None))
 }
 
 fn fetch_send_timestamp_help(socket: &std::net::UdpSocket) -> io::Result<Option<NtpTimestamp>> {
