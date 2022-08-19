@@ -1,16 +1,25 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 
-use ntp_proto::{NtpHeader, NtpTimestamp, ReferenceId};
+use ntp_proto::{
+    NtpAssociationMode, NtpClock, NtpHeader, NtpTimestamp, ReferenceId, SystemSnapshot,
+};
 use ntp_udp::UdpSocket;
-use tokio::task::JoinHandle;
+use tokio::{sync::RwLock, task::JoinHandle};
 use tracing::{instrument, warn};
 
-pub struct ServerTask {
+pub struct ServerTask<C: 'static + NtpClock + Send> {
     socket: UdpSocket,
+    system: Arc<RwLock<SystemSnapshot>>,
+    clock: C,
 }
 
-impl ServerTask {
-    pub fn spawn(addr: SocketAddr, network_wait_period: std::time::Duration) -> JoinHandle<()> {
+impl<C: 'static + NtpClock + Send> ServerTask<C> {
+    pub fn spawn(
+        addr: SocketAddr,
+        system: Arc<RwLock<SystemSnapshot>>,
+        clock: C,
+        network_wait_period: std::time::Duration,
+    ) -> JoinHandle<()> {
         tokio::spawn(async move {
             let socket = loop {
                 match UdpSocket::new::<_, SocketAddr>(addr, None).await {
@@ -25,10 +34,35 @@ impl ServerTask {
             // Unwrap should be safe because we know the socket was bound to a local addres just before
             let _our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
 
-            let mut process = ServerTask { socket };
+            let mut process = ServerTask {
+                socket,
+                system,
+                clock,
+            };
 
             process.serve().await
         })
+    }
+
+    async fn generate_response(
+        &mut self,
+        input: NtpHeader,
+        recv_timestamp: NtpTimestamp,
+    ) -> NtpHeader {
+        let system = self.system.read().await;
+        let mut response = NtpHeader::new();
+        response.mode = NtpAssociationMode::Server;
+        response.stratum = system.stratum;
+        response.origin_timestamp = input.transmit_timestamp;
+        response.receive_timestamp = recv_timestamp;
+        response.reference_id = system.reference_id;
+        response.poll = input.poll;
+        response.precision = system.precision.log2();
+        response.root_delay = system.root_delay;
+        response.root_dispersion = system.root_dispersion;
+        response.transmit_timestamp = self.clock.now().expect("Failed to read time");
+
+        response
     }
 
     #[instrument(level = "debug", skip(self), fields(
@@ -39,9 +73,11 @@ impl ServerTask {
             let mut buf = [0_u8; 48];
             let recv_res = self.socket.recv(&mut buf).await;
             match accept_packet(recv_res, &buf) {
-                AcceptResult::Accept(packet, peer_addr, _recv_timestamp) => {
-                    // TODO: not be an echo server
-                    if let Err(send_err) = self.socket.send_to(&packet.serialize(), peer_addr).await
+                AcceptResult::Accept(packet, peer_addr, recv_timestamp) => {
+                    let response = self.generate_response(packet, recv_timestamp).await;
+
+                    if let Err(send_err) =
+                        self.socket.send_to(&response.serialize(), peer_addr).await
                     {
                         warn!(error=?send_err, "Could not send response packet");
                     }
@@ -78,7 +114,12 @@ fn accept_packet(
                 AcceptResult::Ignore
             } else {
                 match NtpHeader::deserialize(buf) {
-                    Ok(packet) => AcceptResult::Accept(packet, peer_addr, recv_timestamp),
+                    Ok(packet) => match packet.mode {
+                        NtpAssociationMode::Client => {
+                            AcceptResult::Accept(packet, peer_addr, recv_timestamp)
+                        }
+                        _ => AcceptResult::Ignore,
+                    },
                     Err(e) => {
                         warn!("received invalid packet: {}", e);
                         AcceptResult::Ignore

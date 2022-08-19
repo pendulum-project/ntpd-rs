@@ -293,6 +293,15 @@ impl NtpDuration {
         }
     }
 
+    /// calculate the log2 (floored) of the duration in seconds (i8::MIN if 0)
+    pub fn log2(self) -> i8 {
+        if self == NtpDuration::ZERO {
+            return i8::MIN;
+        }
+
+        31 - (self.duration.leading_zeros() as i8)
+    }
+
     pub fn from_system_duration(duration: Duration) -> Self {
         let seconds = duration.as_secs();
         let nanos = duration.subsec_nanos();
