@@ -453,7 +453,6 @@ impl TimestampingSupport {
         }
     }
 
-    /// Find the interface name (something like "eno1") that belongs to our socket
     fn interface_name(local_addr: SocketAddr) -> std::io::Result<Option<[u8; 16]>> {
         let matches_inferface = |interface: &ifaddrs::InterfaceAddress| match interface.address {
             None => false,
