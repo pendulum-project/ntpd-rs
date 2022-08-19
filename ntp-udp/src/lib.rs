@@ -530,4 +530,12 @@ mod tests {
             assert!(delta.to_seconds().abs() < 0.2);
         });
     }
+
+    #[test]
+    fn find_interface() {
+        let socket = std::net::UdpSocket::bind("127.0.0.1:8014").unwrap();
+        let name = TimestampingSupport::interface_name(socket.local_addr().unwrap()).unwrap();
+
+        assert!(name.is_some());
+    }
 }
