@@ -16,14 +16,54 @@ use std::option::Option;
 pub struct InterfaceAddress {
     /// Name of the network interface
     pub interface_name: String,
+    /// Network address of this interface
+    pub address: Option<std::net::SocketAddr>,
 }
 
 impl InterfaceAddress {
     /// Create an `InterfaceAddress` from the libc struct.
     fn from_libc_ifaddrs(info: &libc::ifaddrs) -> InterfaceAddress {
         let ifname = unsafe { ffi::CStr::from_ptr(info.ifa_name) };
+        let address = match unsafe { (*info.ifa_addr).sa_family } as libc::c_int {
+            libc::AF_INET => {
+                let sockaddr: *mut libc::sockaddr = info.ifa_addr;
+                let sockaddr_in: *mut libc::sockaddr_in = sockaddr as *mut libc::sockaddr_in;
+                let inaddr = unsafe { *sockaddr_in };
+
+                let sin_addr = inaddr.sin_addr.s_addr;
+                let [a, b, c, d] = sin_addr.to_le_bytes();
+                let ipv4 = std::net::Ipv4Addr::new(a, b, c, d);
+                let socketaddr = std::net::SocketAddrV4::new(ipv4, inaddr.sin_port);
+
+                Some(std::net::SocketAddr::V4(socketaddr))
+            }
+            libc::AF_INET6 => {
+                let sockaddr: *mut libc::sockaddr = info.ifa_addr;
+                let sockaddr_in6: *mut libc::sockaddr_in6 = sockaddr as *mut libc::sockaddr_in6;
+                let inaddr = unsafe { *sockaddr_in6 };
+
+                // Value could be misaligned (we need an alignment of 2 now)
+                let sin_addr = inaddr.sin6_addr.s6_addr;
+                let segments: [u16; 8] =
+                    unsafe { std::ptr::read_unaligned(&sin_addr as *const _ as *const _) };
+
+                let [a, b, c, d, e, f, g, h] = segments;
+                let ipv6 = std::net::Ipv6Addr::new(a, b, c, d, e, f, g, h);
+                let socketaddr = std::net::SocketAddrV6::new(
+                    ipv6,
+                    inaddr.sin6_port,
+                    inaddr.sin6_flowinfo,
+                    inaddr.sin6_scope_id,
+                );
+
+                Some(std::net::SocketAddr::V6(socketaddr))
+            }
+            _ => None,
+        };
+
         let addr = InterfaceAddress {
             interface_name: ifname.to_string_lossy().to_string(),
+            address,
         };
 
         addr
