@@ -94,11 +94,19 @@ impl Reach {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SystemSnapshot {
-    /// May be updated by local_clock
+    /// Desired poll interval
     pub poll_interval: PollInterval,
-    /// A constant at runtime
+    /// Precision of the local clock
     pub precision: NtpDuration,
-    /// May be updated by clock_update
+    /// Log of the precision of the local clock
+    pub stratum: u8,
+    /// Current root delay
+    pub root_delay: NtpDuration,
+    /// Current root dispersion
+    pub root_dispersion: NtpDuration,
+    /// Reference ID of current primary time source
+    pub reference_id: ReferenceId,
+    /// Current leap indicator state
     pub leap_indicator: NtpLeapIndicator,
     /// Total amount that the clock has stepped
     pub accumulated_steps: NtpDuration,
@@ -111,6 +119,10 @@ impl Default for SystemSnapshot {
         Self {
             poll_interval: PollInterval::default(),
             precision: NtpDuration::from_exponent(-18),
+            stratum: 16,
+            root_delay: NtpDuration::ZERO,
+            root_dispersion: NtpDuration::ZERO,
+            reference_id: ReferenceId::NONE,
             leap_indicator: NtpLeapIndicator::Unknown,
             accumulated_steps: NtpDuration::ZERO,
             accumulated_steps_threshold: None,
