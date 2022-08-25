@@ -92,13 +92,11 @@ impl Iterator for InterfaceAddressIterator {
 /// Get interface addresses using libc's `getifaddrs`
 pub fn getifaddrs() -> std::io::Result<InterfaceAddressIterator> {
     let mut addrs = mem::MaybeUninit::<*mut libc::ifaddrs>::uninit();
-    let errorcode = unsafe { libc::getifaddrs(addrs.as_mut_ptr()) };
 
-    match errorcode {
-        -1 => Err(std::io::Error::last_os_error()),
-        _ => Ok(InterfaceAddressIterator {
-            base: unsafe { addrs.assume_init() },
-            next: unsafe { addrs.assume_init() },
-        }),
-    }
+    crate::cerr(unsafe { libc::getifaddrs(addrs.as_mut_ptr()) })?;
+
+    Ok(InterfaceAddressIterator {
+        base: unsafe { addrs.assume_init() },
+        next: unsafe { addrs.assume_init() },
+    })
 }
