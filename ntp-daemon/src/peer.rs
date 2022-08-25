@@ -1,4 +1,10 @@
-use std::{future::Future, marker::PhantomData, pin::Pin, sync::Arc};
+use std::{
+    future::Future,
+    marker::PhantomData,
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr},
+    pin::Pin,
+    sync::Arc,
+};
 
 use ntp_proto::{
     IgnoreReason, NtpClock, NtpHeader, NtpInstant, NtpTimestamp, Peer, PeerSnapshot, ReferenceId,
@@ -284,22 +290,26 @@ where
     C: 'static + NtpClock + Send,
 {
     #[instrument(skip(clock, channels))]
-    pub fn spawn<A: tokio::net::ToSocketAddrs + std::fmt::Debug + Send + Sync + 'static>(
+    pub fn spawn(
         index: PeerIndex,
-        addr: A,
+        addr: SocketAddr,
         clock: C,
         network_wait_period: std::time::Duration,
         mut channels: PeerChannels,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(
             (async move {
-                let socket = loop {
-                    match UdpSocket::new("0.0.0.0:0", &addr).await {
-                        Ok(socket) => break socket,
-                        Err(error) => {
-                            warn!(?error, "Could not open socket");
-                            tokio::time::sleep(network_wait_period).await;
-                        }
+                let socket = match UdpSocket::client(unspecified_for(addr), addr).await {
+                    Ok(socket) => socket,
+                    Err(error) => {
+                        warn!(?error, "Could not open socket");
+                        tokio::time::sleep(network_wait_period).await;
+                        channels
+                            .msg_for_system_sender
+                            .send(MsgForSystem::NetworkIssue(index))
+                            .await
+                            .ok();
+                        return;
                     }
                 };
                 // Unwrap should be safe because we know the socket was bound to a local addres just before
@@ -344,12 +354,19 @@ enum AcceptResult {
     NetworkGone,
 }
 
+fn unspecified_for(addr: SocketAddr) -> SocketAddr {
+    match addr {
+        SocketAddr::V4(_) => SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
+        SocketAddr::V6(_) => SocketAddr::from((Ipv6Addr::UNSPECIFIED, 0)),
+    }
+}
+
 fn accept_packet(
-    result: Result<(usize, Option<NtpTimestamp>), std::io::Error>,
+    result: Result<(usize, SocketAddr, Option<NtpTimestamp>), std::io::Error>,
     buf: &[u8; 48],
 ) -> AcceptResult {
     match result {
-        Ok((size, Some(recv_timestamp))) => {
+        Ok((size, _, Some(recv_timestamp))) => {
             // Note: packets are allowed to be bigger when including extensions.
             // we don't expect them, but the server may still send them. The
             // extra bytes are guaranteed safe to ignore. `recv` truncates the messages.
@@ -368,7 +385,7 @@ fn accept_packet(
                 }
             }
         }
-        Ok((size, None)) => {
+        Ok((size, _, None)) => {
             warn!(?size, "received a packet without a timestamp");
 
             AcceptResult::Ignore
@@ -513,15 +530,15 @@ mod tests {
     ) {
         // Note: Ports must be unique among tests to deal with parallelism, hence
         // port_base
-        let socket = UdpSocket::new(
-            format!("127.0.0.1:{}", port_base),
-            format!("127.0.0.1:{}", port_base + 1),
+        let socket = UdpSocket::client(
+            SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
+            SocketAddr::from((Ipv4Addr::LOCALHOST, port_base + 1)),
         )
         .await
         .unwrap();
-        let test_socket = UdpSocket::new(
-            format!("127.0.0.1:{}", port_base + 1),
-            format!("127.0.0.1:{}", port_base),
+        let test_socket = UdpSocket::client(
+            SocketAddr::from((Ipv4Addr::LOCALHOST, port_base + 1)),
+            SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
         )
         .await
         .unwrap();
@@ -559,9 +576,12 @@ mod tests {
     #[tokio::test]
     async fn test_spawn_reset_epoch() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let _recv_socket = UdpSocket::new("127.0.0.1:8003", "127.0.0.1:8002")
-            .await
-            .unwrap();
+        let _recv_socket = UdpSocket::client(
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 8003)),
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 8002)),
+        )
+        .await
+        .unwrap();
 
         let epoch = ResetEpoch::default().inc();
         let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
@@ -571,7 +591,7 @@ mod tests {
 
         let handle = PeerTask::spawn(
             PeerIndex::from_inner(0),
-            "127.0.0.1:8003",
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 8003)),
             TestClock {},
             std::time::Duration::from_secs(60),
             PeerChannels {
@@ -672,7 +692,7 @@ mod tests {
         assert!(matches!(msg, MsgForSystem::UpdatedSnapshot(_, _, _)));
 
         let mut buf = [0; 48];
-        let (size, timestamp) = socket.recv(&mut buf).await.unwrap();
+        let (size, _, timestamp) = socket.recv(&mut buf).await.unwrap();
         assert_eq!(size, 48);
         let timestamp = timestamp.unwrap();
 
@@ -711,7 +731,7 @@ mod tests {
         assert!(matches!(msg, MsgForSystem::UpdatedSnapshot(_, _, _)));
 
         let mut buf = [0; 48];
-        let (size, timestamp) = socket.recv(&mut buf).await.unwrap();
+        let (size, _, timestamp) = socket.recv(&mut buf).await.unwrap();
         assert_eq!(size, 48);
         assert!(timestamp.is_some());
 

@@ -1,5 +1,5 @@
 use crate::{
-    config::PeerConfig,
+    config::{PeerConfig, ServerConfig},
     peer::{MsgForSystem, PeerChannels, ResetEpoch},
     peer_manager::Peers,
 };
@@ -26,6 +26,7 @@ pub struct DaemonChannels<C: NtpClock> {
 pub async fn spawn(
     config: SystemConfig,
     peer_configs: &[PeerConfig],
+    server_configs: &[ServerConfig],
 ) -> std::io::Result<(
     JoinHandle<std::io::Result<()>>,
     DaemonChannels<UnixNtpClock>,
@@ -52,6 +53,11 @@ pub async fn spawn(
     for peer_config in peer_configs.iter() {
         peers.add_peer(peer_config.to_owned()).await;
     }
+
+    for server_config in server_configs.iter() {
+        peers.add_server(server_config.to_owned()).await;
+    }
+
     let peers = Arc::new(tokio::sync::RwLock::new(peers));
 
     let channels = DaemonChannels {
@@ -105,7 +111,8 @@ impl<C: NtpClock> System<C> {
             self.peers_rwlock
                 .write()
                 .await
-                .update(msg_for_system, self.reset_epoch);
+                .update(msg_for_system, self.reset_epoch)
+                .await;
 
             if requires_clock_recalculation(
                 msg_for_system,
