@@ -128,8 +128,15 @@ impl UdpSocket {
     }
 
     async fn fetch_send_timestamp(&self, expected_counter: u32) -> io::Result<NtpTimestamp> {
-        trace!("waiting for timestamp socket to become readable");
+        trace!("waiting for timestamp socket to become readable to fetch a send timestamp");
         loop {
+            // here we wait for the socket to become writable again, even though what we want to do
+            // is read from the error queue.
+            //
+            // We found that waiting for `readable()` is unreliable, and does not seem to actually
+            // fire when the timestamping message is available. To our understanding, the socked
+            // becomes `writable()` when it has sent all its packets. So in practice this is also
+            // the moment when the timestamp message is available in the error queue.
             let mut guard = self.io.writable().await?;
             match guard.try_io(|inner| fetch_send_timestamp_help(inner.get_ref(), expected_counter))
             {
