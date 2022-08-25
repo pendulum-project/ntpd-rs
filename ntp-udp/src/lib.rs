@@ -537,7 +537,7 @@ mod tests {
     #[test]
     fn test_timestamping_reasonable() {
         tokio_test::block_on(async {
-            let a = UdpSocket::client(
+            let mut a = UdpSocket::client(
                 SocketAddr::from((Ipv4Addr::LOCALHOST, 8000)),
                 SocketAddr::from((Ipv4Addr::LOCALHOST, 8001)),
             )
@@ -573,16 +573,22 @@ mod tests {
     #[test]
     fn test_send_timestamp() {
         tokio_test::block_on(async {
-            let mut a = UdpSocket::new("127.0.0.1:8012", "127.0.0.1:8013")
-                .await
-                .unwrap();
-            let b = UdpSocket::new("127.0.0.1:8013", "127.0.0.1:8012")
-                .await
-                .unwrap();
+            let mut a = UdpSocket::client(
+                SocketAddr::from((Ipv4Addr::LOCALHOST, 8012)),
+                SocketAddr::from((Ipv4Addr::LOCALHOST, 8013)),
+            )
+            .await
+            .unwrap();
+            let b = UdpSocket::client(
+                SocketAddr::from((Ipv4Addr::LOCALHOST, 8013)),
+                SocketAddr::from((Ipv4Addr::LOCALHOST, 8012)),
+            )
+            .await
+            .unwrap();
 
             let (ssend, tsend) = a.send(&[1; 48]).await.unwrap();
             let mut buf = [0; 48];
-            let (srecv, trecv) = b.recv(&mut buf).await.unwrap();
+            let (srecv, _, trecv) = b.recv(&mut buf).await.unwrap();
 
             assert_eq!(ssend, 48);
             assert_eq!(srecv, 48);
