@@ -60,7 +60,13 @@ impl UdpSocket {
 
         let socket = socket.into_std()?;
 
-        let support = TimestampingSupport::get_support(&socket)?;
+        // our supported kernel versions always have receive timestamping. Send timestamping for a
+        // server connection is not relevant, so we don't even bother with checking if it is supported
+        let support = TimestampingSupport {
+            rx_software: true,
+            tx_software: false,
+        };
+
         set_timestamping_options(&socket, support)?;
 
         Ok(UdpSocket {
