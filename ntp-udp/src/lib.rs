@@ -3,7 +3,6 @@ mod ifaddrs;
 use std::{
     io,
     io::{ErrorKind, IoSliceMut},
-    net::SocketAddr,
     os::unix::prelude::AsRawFd,
 };
 
@@ -424,7 +423,7 @@ impl TimestampingSupport {
 
         let fd = udp_socket.as_raw_fd();
 
-        if let Some(ifrn_name) = Self::interface_name(udp_socket.local_addr()?)? {
+        if let Some(ifrn_name) = ifaddrs::interface_name(udp_socket.local_addr()?)? {
             let ifr: ifreq = ifreq {
                 ifrn_name,
                 ifru_data: (&mut tsi as *mut _) as *mut libc::c_void,
@@ -450,25 +449,6 @@ impl TimestampingSupport {
             Ok(support)
         } else {
             Ok(Self::default())
-        }
-    }
-
-    fn interface_name(local_addr: SocketAddr) -> std::io::Result<Option<[u8; 16]>> {
-        let matches_inferface = |interface: &ifaddrs::InterfaceAddress| match interface.address {
-            None => false,
-            Some(address) => address.ip() == local_addr.ip(),
-        };
-
-        if let Some(interface) = crate::ifaddrs::getifaddrs()?.find(matches_inferface) {
-            let mut ifrn_name = [0; 16];
-
-            let name = interface.interface_name;
-            let length = Ord::min(name.len(), ifrn_name.len());
-            ifrn_name[0..length].copy_from_slice(&name.as_bytes()[0..length]);
-
-            Ok(Some(ifrn_name))
-        } else {
-            Ok(None)
         }
     }
 }
@@ -529,21 +509,5 @@ mod tests {
             let delta = trecv - tsend;
             assert!(delta.to_seconds().abs() < 0.2);
         });
-    }
-
-    #[test]
-    fn find_interface() {
-        let socket = std::net::UdpSocket::bind("127.0.0.1:8014").unwrap();
-        let name = TimestampingSupport::interface_name(socket.local_addr().unwrap()).unwrap();
-
-        assert!(name.is_some());
-    }
-
-    #[test]
-    fn find_interface_ipv6() {
-        let socket = std::net::UdpSocket::bind("::1:8014").unwrap();
-        let name = TimestampingSupport::interface_name(socket.local_addr().unwrap()).unwrap();
-
-        assert!(name.is_some());
     }
 }

@@ -12,13 +12,32 @@ use std::mem;
 use std::net::SocketAddr;
 use std::option::Option;
 
+pub fn interface_name(local_addr: SocketAddr) -> std::io::Result<Option<[u8; 16]>> {
+    let matches_inferface = |interface: &InterfaceAddress| match interface.address {
+        None => false,
+        Some(address) => address.ip() == local_addr.ip(),
+    };
+
+    if let Some(interface) = crate::ifaddrs::getifaddrs()?.find(matches_inferface) {
+        let mut ifrn_name = [0; 16];
+
+        let name = interface.interface_name;
+        let length = Ord::min(name.len(), ifrn_name.len());
+        ifrn_name[0..length].copy_from_slice(&name.as_bytes()[0..length]);
+
+        Ok(Some(ifrn_name))
+    } else {
+        Ok(None)
+    }
+}
+
 /// Describes a single address for an interface as returned by `getifaddrs`.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct InterfaceAddress {
+struct InterfaceAddress {
     /// Name of the network interface
-    pub interface_name: String,
+    interface_name: String,
     /// Network address of this interface
-    pub address: Option<SocketAddr>,
+    address: Option<SocketAddr>,
 }
 
 impl InterfaceAddress {
@@ -46,19 +65,8 @@ impl InterfaceAddress {
                 let segment_bytes: [u8; 16] =
                     unsafe { std::ptr::read_unaligned(&sin_addr as *const _ as *const _) };
 
-                let segments: [u16; 8] = [
-                    u16::from_be_bytes(segment_bytes[0..][..2].try_into().unwrap()),
-                    u16::from_be_bytes(segment_bytes[2..][..2].try_into().unwrap()),
-                    u16::from_be_bytes(segment_bytes[6..][..2].try_into().unwrap()),
-                    u16::from_be_bytes(segment_bytes[4..][..2].try_into().unwrap()),
-                    u16::from_be_bytes(segment_bytes[8..][..2].try_into().unwrap()),
-                    u16::from_be_bytes(segment_bytes[10..][..2].try_into().unwrap()),
-                    u16::from_be_bytes(segment_bytes[12..][..2].try_into().unwrap()),
-                    u16::from_be_bytes(segment_bytes[14..][..2].try_into().unwrap()),
-                ];
-
                 let socketaddr = std::net::SocketAddrV6::new(
-                    std::net::Ipv6Addr::from(segments),
+                    std::net::Ipv6Addr::from(segment_bytes),
                     inaddr.sin6_port,
                     inaddr.sin6_flowinfo,
                     inaddr.sin6_scope_id,
@@ -84,7 +92,7 @@ impl InterfaceAddress {
 /// actual list of interfaces can be iterated once and will be freed as
 /// soon as the Iterator goes out of scope.
 #[derive(Debug, Eq, Hash, PartialEq)]
-pub struct InterfaceAddressIterator {
+struct InterfaceAddressIterator {
     base: *mut libc::ifaddrs,
     next: *mut libc::ifaddrs,
 }
@@ -109,7 +117,7 @@ impl Iterator for InterfaceAddressIterator {
 }
 
 /// Get interface addresses using libc's `getifaddrs`
-pub fn getifaddrs() -> std::io::Result<InterfaceAddressIterator> {
+fn getifaddrs() -> std::io::Result<InterfaceAddressIterator> {
     let mut addrs = mem::MaybeUninit::<*mut libc::ifaddrs>::uninit();
 
     crate::cerr(unsafe { libc::getifaddrs(addrs.as_mut_ptr()) })?;
@@ -118,4 +126,25 @@ pub fn getifaddrs() -> std::io::Result<InterfaceAddressIterator> {
         base: unsafe { addrs.assume_init() },
         next: unsafe { addrs.assume_init() },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn find_interface() {
+        let socket = std::net::UdpSocket::bind("127.0.0.1:8014").unwrap();
+        let name = interface_name(socket.local_addr().unwrap()).unwrap();
+
+        assert!(name.is_some());
+    }
+
+    #[test]
+    fn find_interface_ipv6() {
+        let socket = std::net::UdpSocket::bind("::1:8015").unwrap();
+        let name = interface_name(socket.local_addr().unwrap()).unwrap();
+
+        assert!(name.is_some());
+    }
 }
