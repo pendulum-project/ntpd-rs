@@ -317,7 +317,7 @@ fn fetch_send_timestamp_help(
     // a `sock_extended_err` is returned, but in practice we also see a socket address. The linux
     // kernel also has this https://github.com/torvalds/linux/blob/master/tools/testing/selftests/net/so_txtime.c#L153=
     const CONTROL_SIZE: usize = control_message_space::<[libc::timespec; 3]>()
-        + control_message_space::<(libc::sock_extended_err, libc::sockaddr_storage)>();
+        + control_message_space::<(libc::sock_extended_err, libc::sockaddr)>();
 
     let mut control_buf = [0; CONTROL_SIZE];
     let mut mhdr = libc::msghdr {
