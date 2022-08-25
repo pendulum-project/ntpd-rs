@@ -40,10 +40,13 @@ impl UdpSocket {
         );
 
         let socket = socket.into_std()?;
-        set_timestamping_options(&socket)?;
+
+        let support = TimestampingSupport::get_support(&socket)?;
+        set_timestamping_options(&socket, support)?;
         Ok(UdpSocket {
             io: AsyncFd::new(socket)?,
             send_counter: 0,
+            support,
         })
     }
 
