@@ -406,8 +406,10 @@ fn fetch_send_timestamp_help(
     // section 2.1.1 of https://www.kernel.org/doc/Documentation/networking/timestamping.txt says that
     // a `sock_extended_err` is returned, but in practice we also see a socket address. The linux
     // kernel also has this https://github.com/torvalds/linux/blob/master/tools/testing/selftests/net/so_txtime.c#L153=
+    //
+    // sockaddr_storage is bigger than we need, but sockaddr is too small for ipv6
     const CONTROL_SIZE: usize = control_message_space::<[libc::timespec; 3]>()
-        + control_message_space::<(libc::sock_extended_err, libc::sockaddr)>();
+        + control_message_space::<(libc::sock_extended_err, libc::sockaddr_storage)>();
 
     let mut control_buf = [0; CONTROL_SIZE];
     let mut mhdr = libc::msghdr {
