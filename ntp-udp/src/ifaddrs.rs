@@ -9,6 +9,7 @@
 use std::ffi;
 use std::iter::Iterator;
 use std::mem;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::option::Option;
 
 /// Describes a single address for an interface as returned by `getifaddrs`.
@@ -17,7 +18,7 @@ pub struct InterfaceAddress {
     /// Name of the network interface
     pub interface_name: String,
     /// Network address of this interface
-    pub address: Option<std::net::SocketAddr>,
+    pub address: Option<SocketAddr>,
 }
 
 impl InterfaceAddress {
@@ -26,38 +27,7 @@ impl InterfaceAddress {
         let ifname = unsafe { ffi::CStr::from_ptr(info.ifa_name) };
 
         let sockaddr: *mut libc::sockaddr = info.ifa_addr;
-        let address = match unsafe { (*info.ifa_addr).sa_family } as libc::c_int {
-            libc::AF_INET => {
-                let inaddr: libc::sockaddr_in = unsafe { *(sockaddr as *mut libc::sockaddr_in) };
-
-                let [a, b, c, d] = inaddr.sin_addr.s_addr.to_le_bytes();
-                let socketaddr = std::net::SocketAddrV4::new(
-                    std::net::Ipv4Addr::new(a, b, c, d),
-                    inaddr.sin_port,
-                );
-
-                Some(std::net::SocketAddr::V4(socketaddr))
-            }
-            libc::AF_INET6 => {
-                let inaddr: libc::sockaddr_in6 = unsafe { *(sockaddr as *mut libc::sockaddr_in6) };
-
-                // the array could be misaligned (we need an alignment of 2 now)
-                let sin_addr = inaddr.sin6_addr.s6_addr;
-                let segments: [u16; 8] =
-                    unsafe { std::ptr::read_unaligned(&sin_addr as *const _ as *const _) };
-
-                let [a, b, c, d, e, f, g, h] = segments;
-                let socketaddr = std::net::SocketAddrV6::new(
-                    std::net::Ipv6Addr::new(a, b, c, d, e, f, g, h),
-                    inaddr.sin6_port,
-                    inaddr.sin6_flowinfo,
-                    inaddr.sin6_scope_id,
-                );
-
-                Some(std::net::SocketAddr::V6(socketaddr))
-            }
-            _ => None,
-        };
+        let address = Self::to_socket_addr(unsafe { *sockaddr });
 
         let addr = InterfaceAddress {
             interface_name: ifname.to_string_lossy().to_string(),
@@ -65,6 +35,27 @@ impl InterfaceAddress {
         };
 
         addr
+    }
+
+    fn to_socket_addr(addr: libc::sockaddr) -> Option<SocketAddr> {
+        match addr.sa_family as i32 {
+            libc::AF_INET => {
+                // kernel assures us this conversion is safe
+                let sin = &addr as *const _ as *const libc::c_void as *const libc::sockaddr_in;
+                let sin = unsafe { &*sin };
+
+                // no direct (u32, u16) conversion is available, so we convert the address first
+                let addr = Ipv4Addr::from(sin.sin_addr.s_addr);
+                Some(SocketAddr::from((addr, sin.sin_port)))
+            }
+            libc::AF_INET6 => {
+                // kernel assures us this conversion is safe
+                let sin = &addr as *const _ as *const libc::c_void as *const libc::sockaddr_in6;
+                let sin = unsafe { &*sin };
+                Some(SocketAddr::from((sin.sin6_addr.s6_addr, sin.sin6_port)))
+            }
+            _ => None,
+        }
     }
 }
 
