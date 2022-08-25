@@ -5,7 +5,7 @@ use ntp_proto::{
 };
 use ntp_udp::UdpSocket;
 use tokio::{sync::RwLock, task::JoinHandle};
-use tracing::{instrument, warn, trace};
+use tracing::{instrument, trace, warn};
 
 pub struct ServerTask<C: 'static + NtpClock + Send> {
     socket: UdpSocket,
@@ -121,7 +121,11 @@ fn accept_packet(
                             AcceptResult::Accept(packet, peer_addr, recv_timestamp)
                         }
                         _ => {
-                            trace!("NTP packet with unkown mode {:?} ignored from {}", packet.mode, peer_addr);
+                            trace!(
+                                "NTP packet with unkown mode {:?} ignored from {}",
+                                packet.mode,
+                                peer_addr
+                            );
                             AcceptResult::Ignore
                         }
                     },
