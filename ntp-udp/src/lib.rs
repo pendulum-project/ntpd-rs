@@ -538,4 +538,12 @@ mod tests {
 
         assert!(name.is_some());
     }
+
+    #[test]
+    fn find_interface_ipv6() {
+        let socket = std::net::UdpSocket::bind("::1:8014").unwrap();
+        let name = TimestampingSupport::interface_name(socket.local_addr().unwrap()).unwrap();
+
+        assert!(name.is_some());
+    }
 }

@@ -9,7 +9,7 @@
 use std::ffi;
 use std::iter::Iterator;
 use std::mem;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::option::Option;
 
 /// Describes a single address for an interface as returned by `getifaddrs`.
@@ -27,7 +27,47 @@ impl InterfaceAddress {
         let ifname = unsafe { ffi::CStr::from_ptr(info.ifa_name) };
 
         let sockaddr: *mut libc::sockaddr = info.ifa_addr;
-        let address = Self::to_socket_addr(unsafe { *sockaddr });
+        // let address = Self::to_socket_addr(unsafe { *sockaddr });
+        let address = match unsafe { (*sockaddr).sa_family } as libc::c_int {
+            libc::AF_INET => {
+                let inaddr: libc::sockaddr_in = unsafe { *(sockaddr as *mut libc::sockaddr_in) };
+
+                let socketaddr = std::net::SocketAddrV4::new(
+                    std::net::Ipv4Addr::from(inaddr.sin_addr.s_addr.to_le_bytes()),
+                    inaddr.sin_port,
+                );
+
+                Some(std::net::SocketAddr::V4(socketaddr))
+            }
+            libc::AF_INET6 => {
+                let inaddr: libc::sockaddr_in6 = unsafe { *(sockaddr as *mut libc::sockaddr_in6) };
+
+                let sin_addr = inaddr.sin6_addr.s6_addr;
+                let segment_bytes: [u8; 16] =
+                    unsafe { std::ptr::read_unaligned(&sin_addr as *const _ as *const _) };
+
+                let segments: [u16; 8] = [
+                    u16::from_be_bytes(segment_bytes[0..][..2].try_into().unwrap()),
+                    u16::from_be_bytes(segment_bytes[2..][..2].try_into().unwrap()),
+                    u16::from_be_bytes(segment_bytes[6..][..2].try_into().unwrap()),
+                    u16::from_be_bytes(segment_bytes[4..][..2].try_into().unwrap()),
+                    u16::from_be_bytes(segment_bytes[8..][..2].try_into().unwrap()),
+                    u16::from_be_bytes(segment_bytes[10..][..2].try_into().unwrap()),
+                    u16::from_be_bytes(segment_bytes[12..][..2].try_into().unwrap()),
+                    u16::from_be_bytes(segment_bytes[14..][..2].try_into().unwrap()),
+                ];
+
+                let socketaddr = std::net::SocketAddrV6::new(
+                    std::net::Ipv6Addr::from(segments),
+                    inaddr.sin6_port,
+                    inaddr.sin6_flowinfo,
+                    inaddr.sin6_scope_id,
+                );
+
+                Some(std::net::SocketAddr::V6(socketaddr))
+            }
+            _ => None,
+        };
 
         let addr = InterfaceAddress {
             interface_name: ifname.to_string_lossy().to_string(),
@@ -35,27 +75,6 @@ impl InterfaceAddress {
         };
 
         addr
-    }
-
-    fn to_socket_addr(addr: libc::sockaddr) -> Option<SocketAddr> {
-        match addr.sa_family as i32 {
-            libc::AF_INET => {
-                // kernel assures us this conversion is safe
-                let sin = &addr as *const _ as *const libc::c_void as *const libc::sockaddr_in;
-                let sin = unsafe { &*sin };
-
-                // no direct (u32, u16) conversion is available, so we convert the address first
-                let addr = Ipv4Addr::from(sin.sin_addr.s_addr);
-                Some(SocketAddr::from((addr, sin.sin_port)))
-            }
-            libc::AF_INET6 => {
-                // kernel assures us this conversion is safe
-                let sin = &addr as *const _ as *const libc::c_void as *const libc::sockaddr_in6;
-                let sin = unsafe { &*sin };
-                Some(SocketAddr::from((sin.sin6_addr.s6_addr, sin.sin6_port)))
-            }
-            _ => None,
-        }
     }
 }
 
