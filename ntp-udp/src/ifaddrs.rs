@@ -46,7 +46,6 @@ impl InterfaceAddress {
         let ifname = unsafe { ffi::CStr::from_ptr(info.ifa_name) };
 
         let sockaddr: *mut libc::sockaddr = info.ifa_addr;
-        // let address = Self::to_socket_addr(unsafe { *sockaddr });
         let address = match unsafe { (*sockaddr).sa_family } as libc::c_int {
             libc::AF_INET => {
                 let inaddr: libc::sockaddr_in = unsafe { *(sockaddr as *mut libc::sockaddr_in) };
