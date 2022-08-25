@@ -5,7 +5,7 @@ use ntp_proto::{
 };
 use ntp_udp::UdpSocket;
 use tokio::{sync::RwLock, task::JoinHandle};
-use tracing::{instrument, trace, warn};
+use tracing::{error, instrument, trace, warn};
 
 pub struct ServerTask<C: 'static + NtpClock + Send> {
     socket: UdpSocket,
@@ -22,7 +22,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
             let socket = loop {
-                match UdpSocket::new::<_, SocketAddr>(addr, None).await {
+                match UdpSocket::server(addr).await {
                     Ok(socket) => break socket,
                     Err(error) => {
                         warn!(?error, "Could not open server socket");
@@ -85,6 +85,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 }
                 AcceptResult::NetworkGone => {
                     // TODO: handle network failures
+                    error!("Server connection gone");
                     break;
                 }
                 AcceptResult::Ignore => {}

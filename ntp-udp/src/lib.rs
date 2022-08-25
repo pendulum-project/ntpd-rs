@@ -7,7 +7,7 @@ use std::{
 };
 
 use ntp_proto::NtpTimestamp;
-use tokio::{io::unix::AsyncFd, net::ToSocketAddrs};
+use tokio::io::unix::AsyncFd;
 use tracing::{debug, instrument, trace, warn};
 
 // Unix uses an epoch located at 1/1/1970-00:00h (UTC) and NTP uses 1/1/1900-00:00h.
@@ -21,24 +21,34 @@ pub struct UdpSocket {
 
 impl UdpSocket {
     #[instrument(level = "debug", skip(peer_addr))]
-    pub async fn new<A, B>(listen_addr: A, peer_addr: Option<B>) -> io::Result<UdpSocket>
-    where
-        A: ToSocketAddrs + std::fmt::Debug,
-        B: ToSocketAddrs + std::fmt::Debug,
-    {
+    pub async fn client(listen_addr: SocketAddr, peer_addr: SocketAddr) -> io::Result<UdpSocket> {
         let socket = tokio::net::UdpSocket::bind(listen_addr).await?;
         debug!(
             local_addr = debug(socket.local_addr().unwrap()),
-            "socket bound"
+            "client socket bound"
         );
-        if let Some(peer_addr) = peer_addr {
-            socket.connect(peer_addr).await?;
-            debug!(
-                local_addr = debug(socket.local_addr().unwrap()),
-                peer_addr = debug(socket.peer_addr().unwrap()),
-                "socket connected"
-            );
-        }
+
+        socket.connect(peer_addr).await?;
+        debug!(
+            local_addr = debug(socket.local_addr().unwrap()),
+            peer_addr = debug(socket.peer_addr().unwrap()),
+            "client socket connected"
+        );
+
+        let socket = socket.into_std()?;
+        set_timestamping_options(&socket)?;
+        Ok(UdpSocket {
+            io: AsyncFd::new(socket)?,
+        })
+    }
+
+    #[instrument(level = "debug")]
+    pub async fn server(listen_addr: SocketAddr) -> io::Result<UdpSocket> {
+        let socket = tokio::net::UdpSocket::bind(listen_addr).await?;
+        debug!(
+            local_addr = debug(socket.local_addr().unwrap()),
+            "server socket bound"
+        );
 
         let socket = socket.into_std()?;
         set_timestamping_options(&socket)?;
@@ -291,12 +301,18 @@ mod tests {
     #[test]
     fn test_timestamping_reasonable() {
         tokio_test::block_on(async {
-            let a = UdpSocket::new("127.0.0.1:8000", Some("127.0.0.1:8001"))
-                .await
-                .unwrap();
-            let b = UdpSocket::new("127.0.0.1:8001", Some("127.0.0.1:8000"))
-                .await
-                .unwrap();
+            let a = UdpSocket::client(
+                SocketAddr::from((Ipv4Addr::LOCALHOST, 8000)),
+                SocketAddr::from((Ipv4Addr::LOCALHOST, 8001)),
+            )
+            .await
+            .unwrap();
+            let b = UdpSocket::client(
+                SocketAddr::from((Ipv4Addr::LOCALHOST, 8001)),
+                SocketAddr::from((Ipv4Addr::LOCALHOST, 8000)),
+            )
+            .await
+            .unwrap();
 
             tokio::spawn(async move {
                 a.send(&[1; 48]).await.unwrap();

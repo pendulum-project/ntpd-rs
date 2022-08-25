@@ -111,7 +111,8 @@ impl<C: NtpClock> System<C> {
             self.peers_rwlock
                 .write()
                 .await
-                .update(msg_for_system, self.reset_epoch);
+                .update(msg_for_system, self.reset_epoch)
+                .await;
 
             if requires_clock_recalculation(
                 msg_for_system,
