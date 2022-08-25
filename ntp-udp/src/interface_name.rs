@@ -43,13 +43,33 @@ struct InterfaceAddress {
 
 impl InterfaceAddress {
     /// Create an `InterfaceAddress` from the libc struct.
-    fn from_libc_ifaddrs(info: &libc::ifaddrs) -> InterfaceAddress {
-        let ifname = unsafe { ffi::CStr::from_ptr(info.ifa_name) };
+    ///
+    /// # Safety
+    ///
+    /// assumes a valid `libc::ifaddrs`
+    unsafe fn from_libc_ifaddrs(info: &libc::ifaddrs) -> InterfaceAddress {
+        let ifname = ffi::CStr::from_ptr(info.ifa_name);
 
         let sockaddr: *mut libc::sockaddr = info.ifa_addr;
-        let address = match unsafe { (*sockaddr).sa_family } as libc::c_int {
+        let address = Self::to_socket_addr(sockaddr);
+
+        let addr = InterfaceAddress {
+            interface_name: ifname.to_string_lossy().to_string(),
+            address,
+        };
+
+        addr
+    }
+
+    /// Convert a libc::sockaddr to a rust std::net::SocketAddr
+    ///
+    /// # Safety
+    ///
+    /// assumes a valid sockaddr
+    unsafe fn to_socket_addr(sockaddr: *const libc::sockaddr) -> Option<SocketAddr> {
+        match (*sockaddr).sa_family as libc::c_int {
             libc::AF_INET => {
-                let inaddr: libc::sockaddr_in = unsafe { *(sockaddr as *mut libc::sockaddr_in) };
+                let inaddr: libc::sockaddr_in = *(sockaddr as *const libc::sockaddr_in);
 
                 let socketaddr = std::net::SocketAddrV4::new(
                     std::net::Ipv4Addr::from(inaddr.sin_addr.s_addr.to_le_bytes()),
@@ -59,11 +79,11 @@ impl InterfaceAddress {
                 Some(std::net::SocketAddr::V4(socketaddr))
             }
             libc::AF_INET6 => {
-                let inaddr: libc::sockaddr_in6 = unsafe { *(sockaddr as *mut libc::sockaddr_in6) };
+                let inaddr: libc::sockaddr_in6 = *(sockaddr as *const libc::sockaddr_in6);
 
                 let sin_addr = inaddr.sin6_addr.s6_addr;
                 let segment_bytes: [u8; 16] =
-                    unsafe { std::ptr::read_unaligned(&sin_addr as *const _ as *const _) };
+                    std::ptr::read_unaligned(&sin_addr as *const _ as *const _);
 
                 let socketaddr = std::net::SocketAddrV6::new(
                     std::net::Ipv6Addr::from(segment_bytes),
@@ -75,14 +95,7 @@ impl InterfaceAddress {
                 Some(std::net::SocketAddr::V6(socketaddr))
             }
             _ => None,
-        };
-
-        let addr = InterfaceAddress {
-            interface_name: ifname.to_string_lossy().to_string(),
-            address,
-        };
-
-        addr
+        }
     }
 }
 
@@ -109,7 +122,8 @@ impl Iterator for InterfaceAddressIterator {
         match unsafe { self.next.as_ref() } {
             Some(ifaddr) => {
                 self.next = ifaddr.ifa_next;
-                Some(InterfaceAddress::from_libc_ifaddrs(ifaddr))
+                // SAFETY: assumes the ifaddr is valid
+                Some(unsafe { InterfaceAddress::from_libc_ifaddrs(ifaddr) })
             }
             None => None,
         }
