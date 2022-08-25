@@ -1346,8 +1346,10 @@ mod test {
     fn root_delay_dispersion_calculation() {
         let base = NtpInstant::now();
 
-        let mut config = SystemConfig::default();
-        config.min_intersection_survivors = 1;
+        let config = SystemConfig {
+            min_intersection_survivors: 1,
+            ..Default::default()
+        };
 
         let peer = peer_snapshot(
             PeerStatistics {

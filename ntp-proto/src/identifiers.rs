@@ -11,6 +11,7 @@ impl ReferenceId {
     pub const KISS_DENY: ReferenceId = ReferenceId(u32::from_be_bytes(*b"DENY"));
     pub const KISS_RATE: ReferenceId = ReferenceId(u32::from_be_bytes(*b"RATE"));
     pub const KISS_RSTR: ReferenceId = ReferenceId(u32::from_be_bytes(*b"RSTR"));
+    pub const NONE: ReferenceId = ReferenceId(u32::from_be_bytes(*b"XNON"));
 
     pub fn from_ip(addr: IpAddr) -> ReferenceId {
         match addr {

@@ -6,7 +6,7 @@ use ntp_proto::{
 };
 use ntp_udp::UdpSocket;
 use rand::{thread_rng, Rng};
-use tracing::{debug, error, instrument, warn};
+use tracing::{debug, error, instrument, warn, Instrument, Span};
 
 use tokio::{
     sync::watch,
@@ -291,46 +291,49 @@ where
         network_wait_period: std::time::Duration,
         mut channels: PeerChannels,
     ) -> tokio::task::JoinHandle<()> {
-        tokio::spawn(async move {
-            let socket = loop {
-                match UdpSocket::new("0.0.0.0:0", &addr).await {
-                    Ok(socket) => break socket,
-                    Err(error) => {
-                        warn!(?error, "Could not open socket");
-                        tokio::time::sleep(network_wait_period).await;
+        tokio::spawn(
+            (async move {
+                let socket = loop {
+                    match UdpSocket::new("0.0.0.0:0", &addr).await {
+                        Ok(socket) => break socket,
+                        Err(error) => {
+                            warn!(?error, "Could not open socket");
+                            tokio::time::sleep(network_wait_period).await;
+                        }
                     }
-                }
-            };
-            // Unwrap should be safe because we know the socket was bound to a local addres just before
-            let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
+                };
+                // Unwrap should be safe because we know the socket was bound to a local addres just before
+                let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
 
-            // Unwrap should be safe because we know the socket was connected to a remote peer just before
-            let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
+                // Unwrap should be safe because we know the socket was connected to a remote peer just before
+                let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
 
-            let local_clock_time = NtpInstant::now();
-            let peer = Peer::new(our_id, peer_id, local_clock_time);
+                let local_clock_time = NtpInstant::now();
+                let peer = Peer::new(our_id, peer_id, local_clock_time);
 
-            let poll_wait = tokio::time::sleep(std::time::Duration::default());
-            tokio::pin!(poll_wait);
+                let poll_wait = tokio::time::sleep(std::time::Duration::default());
+                tokio::pin!(poll_wait);
 
-            // Even though we currently always have reset_epoch start at
-            // the default value, we shouldn't rely on that.
-            let reset_epoch = *channels.reset.borrow_and_update();
+                // Even though we currently always have reset_epoch start at
+                // the default value, we shouldn't rely on that.
+                let reset_epoch = *channels.reset.borrow_and_update();
 
-            let mut process = PeerTask {
-                _wait: PhantomData,
-                index,
-                clock,
-                channels,
-                socket,
-                peer,
-                last_send_timestamp: None,
-                last_poll_sent: Instant::now(),
-                reset_epoch,
-            };
+                let mut process = PeerTask {
+                    _wait: PhantomData,
+                    index,
+                    clock,
+                    channels,
+                    socket,
+                    peer,
+                    last_send_timestamp: None,
+                    last_poll_sent: Instant::now(),
+                    reset_epoch,
+                };
 
-            process.run(poll_wait).await
-        })
+                process.run(poll_wait).await
+            })
+            .instrument(Span::current()),
+        )
     }
 }
 
@@ -728,7 +731,7 @@ mod tests {
 
         tokio::select! {
             _ = tokio::time::sleep(Duration::from_millis(10)) => {/*expected */},
-            _ = socket.recv(&mut buf) => { assert!(false); }
+            _ = socket.recv(&mut buf) => { unreachable!("should not receive anything") }
         }
 
         handle.abort();

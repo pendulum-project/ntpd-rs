@@ -1,4 +1,4 @@
-mod ifaddrs;
+mod interface_name;
 
 use std::{
     io,
@@ -423,7 +423,7 @@ impl TimestampingSupport {
 
         let fd = udp_socket.as_raw_fd();
 
-        if let Some(ifrn_name) = ifaddrs::interface_name(udp_socket.local_addr()?)? {
+        if let Some(ifrn_name) = interface_name::interface_name(udp_socket.local_addr()?)? {
             let ifr: ifreq = ifreq {
                 ifrn_name,
                 ifru_data: (&mut tsi as *mut _) as *mut libc::c_void,
