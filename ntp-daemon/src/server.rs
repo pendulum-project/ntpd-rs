@@ -50,19 +50,20 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         recv_timestamp: NtpTimestamp,
     ) -> NtpHeader {
         let system = self.system.read().await;
-        let mut response = NtpHeader::new();
-        response.mode = NtpAssociationMode::Server;
-        response.stratum = system.stratum;
-        response.origin_timestamp = input.transmit_timestamp;
-        response.receive_timestamp = recv_timestamp;
-        response.reference_id = system.reference_id;
-        response.poll = input.poll;
-        response.precision = system.precision.log2();
-        response.root_delay = system.root_delay;
-        response.root_dispersion = system.root_dispersion;
-        response.transmit_timestamp = self.clock.now().expect("Failed to read time");
-
-        response
+        NtpHeader {
+            mode: NtpAssociationMode::Server,
+            stratum: system.stratum,
+            origin_timestamp: input.transmit_timestamp,
+            receive_timestamp: recv_timestamp,
+            reference_id: system.reference_id,
+            poll: input.poll,
+            precision: system.precision.log2(),
+            root_delay: system.root_delay,
+            root_dispersion: system.root_dispersion,
+            // Timestamp must be last to make it as accurate as possible.
+            transmit_timestamp: self.clock.now().expect("Failed to read time"),
+            ..NtpHeader::new()
+        }
     }
 
     #[instrument(level = "debug", skip(self), fields(
@@ -136,10 +137,15 @@ fn accept_packet(
             warn!(?receive_error, "could not receive packet");
 
             match receive_error.raw_os_error() {
-                Some(libc::EHOSTDOWN)
-                | Some(libc::EHOSTUNREACH)
-                | Some(libc::ENETDOWN)
-                | Some(libc::ENETUNREACH) => AcceptResult::NetworkGone,
+                // For a server, we only trigger NetworkGone restarts
+                // on ENETDOWN. ENETUNREACH, EHOSTDOWN and EHOSTUNREACH
+                // do not signal restart-worthy conditions for the a
+                // server (they essentially indicate problems with the
+                // remote network/host, which is not relevant for a server).
+                // Furthermore, they can conceivably be triggered by a
+                // malicious third party, and triggering restart on them
+                // would then result in a denial-of-service.
+                Some(libc::ENETDOWN) => AcceptResult::NetworkGone,
                 _ => AcceptResult::Ignore,
             }
         }
