@@ -1,8 +1,10 @@
 pub mod dynamic;
 pub mod format;
 mod peer;
+mod server;
 
 pub use peer::*;
+pub use server::*;
 
 use clap::Parser;
 use ntp_proto::SystemConfig;
@@ -72,12 +74,25 @@ pub struct CmdArgs {
         help = "Output format for logs (full, compact, pretty, json)"
     )]
     pub log_format: Option<LogFormat>,
+
+    #[clap(
+        short,
+        long = "server",
+        global = true,
+        value_name = "ADDR",
+        parse(try_from_str = TryFrom::try_from),
+        help = "Override the servers to run from the configuration file"
+    )]
+    pub servers: Vec<ServerConfig>,
 }
 
 #[derive(Deserialize, Debug, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct Config {
+    #[serde(alias = "peer")]
     pub peers: Vec<PeerConfig>,
+    #[serde(alias = "server", default)]
+    pub servers: Vec<ServerConfig>,
     #[serde(default)]
     pub system: SystemConfig,
     #[serde(deserialize_with = "deserialize_option_env_filter", default)]
@@ -188,6 +203,7 @@ impl Config {
     pub async fn from_args(
         file: Option<impl AsRef<Path>>,
         peers: Vec<PeerConfig>,
+        servers: Vec<ServerConfig>,
     ) -> Result<Config, ConfigError> {
         let mut config = Config::from_first_file(file).await?;
 
@@ -196,6 +212,13 @@ impl Config {
                 info!("overriding peers from configuration");
             }
             config.peers = peers;
+        }
+
+        if !servers.is_empty() {
+            if !config.servers.is_empty() {
+                info!("overriding servers from configuration");
+            }
+            config.servers = servers;
         }
 
         Ok(config)
@@ -328,13 +351,15 @@ mod tests {
         d.push("testdata/config");
         env::set_current_dir(d).unwrap();
 
-        let config = Config::from_args(None as Option<&'static str>, vec![])
+        let config = Config::from_args(None as Option<&'static str>, vec![], vec![])
             .await
             .unwrap();
         assert_eq!(config.system.min_intersection_survivors, 2);
         assert_eq!(config.peers.len(), 1);
 
-        let config = Config::from_args(Some("other.toml"), vec![]).await.unwrap();
+        let config = Config::from_args(Some("other.toml"), vec![], vec![])
+            .await
+            .unwrap();
         assert_eq!(config.system.min_intersection_survivors, 3);
         assert_eq!(config.peers.len(), 1);
 
@@ -344,6 +369,7 @@ mod tests {
                 PeerConfig::try_from("example1.com").unwrap(),
                 PeerConfig::try_from("example2.com").unwrap(),
             ],
+            vec![],
         )
         .await
         .unwrap();
@@ -356,6 +382,7 @@ mod tests {
                 PeerConfig::try_from("example1.com").unwrap(),
                 PeerConfig::try_from("example2.com").unwrap(),
             ],
+            vec![],
         )
         .await
         .unwrap();

@@ -4,6 +4,7 @@ pub mod config;
 pub mod observer;
 mod peer;
 mod peer_manager;
+mod server;
 pub mod sockets;
 mod system;
 pub mod tracing;

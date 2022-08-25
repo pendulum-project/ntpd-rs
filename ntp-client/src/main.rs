@@ -46,7 +46,7 @@ enum Command {
 async fn main() -> std::io::Result<()> {
     let cli = Cli::parse();
 
-    let config = Config::from_args(cli.config, vec![]).await;
+    let config = Config::from_args(cli.config, vec![], vec![]).await;
 
     if let Err(ref e) = config {
         println!("Warning: Unable to load configuration file: {}", e);
