@@ -12,7 +12,7 @@ use ntp_proto::{
 };
 use ntp_udp::UdpSocket;
 use rand::{thread_rng, Rng};
-use tracing::{debug, error, instrument, warn};
+use tracing::{debug, error, instrument, warn, Instrument, Span};
 
 use tokio::{
     sync::watch,
@@ -291,50 +291,53 @@ where
         network_wait_period: std::time::Duration,
         mut channels: PeerChannels,
     ) -> tokio::task::JoinHandle<()> {
-        tokio::spawn(async move {
-            let socket = match UdpSocket::client(unspecified_for(addr), addr).await {
-                Ok(socket) => socket,
-                Err(error) => {
-                    warn!(?error, "Could not open socket");
-                    tokio::time::sleep(network_wait_period).await;
-                    channels
-                        .msg_for_system_sender
-                        .send(MsgForSystem::NetworkIssue(index))
-                        .await
-                        .ok();
-                    return;
-                }
-            };
-            // Unwrap should be safe because we know the socket was bound to a local addres just before
-            let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
+        tokio::spawn(
+            (async move {
+                let socket = match UdpSocket::client(unspecified_for(addr), addr).await {
+                    Ok(socket) => socket,
+                    Err(error) => {
+                        warn!(?error, "Could not open socket");
+                        tokio::time::sleep(network_wait_period).await;
+                        channels
+                            .msg_for_system_sender
+                            .send(MsgForSystem::NetworkIssue(index))
+                            .await
+                            .ok();
+                        return;
+                    }
+                };
+                // Unwrap should be safe because we know the socket was bound to a local addres just before
+                let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
 
-            // Unwrap should be safe because we know the socket was connected to a remote peer just before
-            let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
+                // Unwrap should be safe because we know the socket was connected to a remote peer just before
+                let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
 
-            let local_clock_time = NtpInstant::now();
-            let peer = Peer::new(our_id, peer_id, local_clock_time);
+                let local_clock_time = NtpInstant::now();
+                let peer = Peer::new(our_id, peer_id, local_clock_time);
 
-            let poll_wait = tokio::time::sleep(std::time::Duration::default());
-            tokio::pin!(poll_wait);
+                let poll_wait = tokio::time::sleep(std::time::Duration::default());
+                tokio::pin!(poll_wait);
 
-            // Even though we currently always have reset_epoch start at
-            // the default value, we shouldn't rely on that.
-            let reset_epoch = *channels.reset.borrow_and_update();
+                // Even though we currently always have reset_epoch start at
+                // the default value, we shouldn't rely on that.
+                let reset_epoch = *channels.reset.borrow_and_update();
 
-            let mut process = PeerTask {
-                _wait: PhantomData,
-                index,
-                clock,
-                channels,
-                socket,
-                peer,
-                last_send_timestamp: None,
-                last_poll_sent: Instant::now(),
-                reset_epoch,
-            };
+                let mut process = PeerTask {
+                    _wait: PhantomData,
+                    index,
+                    clock,
+                    channels,
+                    socket,
+                    peer,
+                    last_send_timestamp: None,
+                    last_poll_sent: Instant::now(),
+                    reset_epoch,
+                };
 
-            process.run(poll_wait).await
-        })
+                process.run(poll_wait).await
+            })
+            .instrument(Span::current()),
+        )
     }
 }
 
