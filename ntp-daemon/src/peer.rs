@@ -165,15 +165,21 @@ where
             }
         }
 
-        if let Err(error) = self.socket.send(&packet.serialize()).await {
-            warn!(?error, "poll message could not be sent");
+        match self.socket.send(&packet.serialize()).await {
+            Err(error) => {
+                warn!(?error, "poll message could not be sent");
 
-            match error.raw_os_error() {
-                Some(libc::EHOSTDOWN)
-                | Some(libc::EHOSTUNREACH)
-                | Some(libc::ENETDOWN)
-                | Some(libc::ENETUNREACH) => return PollResult::NetworkGone,
-                _ => {}
+                match error.raw_os_error() {
+                    Some(libc::EHOSTDOWN)
+                    | Some(libc::EHOSTUNREACH)
+                    | Some(libc::ENETDOWN)
+                    | Some(libc::ENETUNREACH) => return PollResult::NetworkGone,
+                    _ => {}
+                }
+            }
+            Ok((_written, opt_send_timestamp)) => {
+                // update the last_send_timestamp with the one given by the kernel, if available
+                self.last_send_timestamp = opt_send_timestamp.or(self.last_send_timestamp);
             }
         }
 
@@ -655,7 +661,7 @@ mod tests {
         reset.send(epoch_b).unwrap();
 
         // Not foolproof, but hopefully this ensures the reset is processed first
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
         poll_send.notify();
         let peer_epoch = match msg_recv.recv().await.unwrap() {
@@ -670,7 +676,7 @@ mod tests {
     #[tokio::test]
     async fn test_timeroundtrip() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, socket, mut msg_recv, _reset) = test_startup(8008).await;
+        let (mut process, mut socket, mut msg_recv, _reset) = test_startup(8008).await;
 
         let (poll_wait, poll_send) = TestWait::new();
         let clock = TestClock {};
@@ -710,7 +716,7 @@ mod tests {
     #[tokio::test]
     async fn test_deny_stops_poll() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, socket, mut msg_recv, _reset) = test_startup(8010).await;
+        let (mut process, mut socket, mut msg_recv, _reset) = test_startup(8010).await;
 
         let (poll_wait, poll_send) = TestWait::new();
 
