@@ -30,3 +30,4 @@ tokio-test = "0.4.2"
 
 [features]
 sentry = ["dep:sentry", "dep:sentry-tracing"]
+fuzz = []

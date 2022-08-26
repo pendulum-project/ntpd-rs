@@ -16,6 +16,10 @@ features = ["arbitrary-derive"]
 path = "../ntp-proto"
 features = ["fuzz"]
 
+[dependencies.ntp-daemon]
+path = "../ntp-daemon"
+features = ["fuzz"]
+
 # Prevent this from interfering with workspaces
 [workspace]
 members = ["."]
@@ -44,3 +48,8 @@ path = "fuzz_targets/duration_from_float.rs"
 test = false
 doc = false
 
+[[bin]]
+name = "ipfilter"
+path = "fuzz_targets/ipfilter.rs"
+test = false
+doc = false
