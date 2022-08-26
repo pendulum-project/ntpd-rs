@@ -17,15 +17,39 @@ use tracing::{debug, instrument, trace, warn};
 // there are 17 leap years between the two dates so the offset is
 const EPOCH_OFFSET: u32 = (70 * 365 + 17) * 86400;
 
+enum Timestamping {
+    Configure(TimestampingConfig),
+    AllSupported,
+}
+
 pub struct UdpSocket {
     io: AsyncFd<std::net::UdpSocket>,
     send_counter: u32,
-    support: TimestampingSupport,
+    timestamping: TimestampingConfig,
 }
 
 impl UdpSocket {
     #[instrument(level = "debug", skip(peer_addr))]
     pub async fn client(listen_addr: SocketAddr, peer_addr: SocketAddr) -> io::Result<UdpSocket> {
+        // disable tx timestamping for now (outside of tests)
+        let timestamping = TimestampingConfig {
+            rx_software: true,
+            tx_software: false,
+        };
+
+        Self::client_with_timestamping(
+            listen_addr,
+            peer_addr,
+            Timestamping::Configure(timestamping),
+        )
+        .await
+    }
+
+    async fn client_with_timestamping(
+        listen_addr: SocketAddr,
+        peer_addr: SocketAddr,
+        timestamping: Timestamping,
+    ) -> io::Result<UdpSocket> {
         let socket = tokio::net::UdpSocket::bind(listen_addr).await?;
         debug!(
             local_addr = debug(socket.local_addr().unwrap()),
@@ -41,12 +65,17 @@ impl UdpSocket {
 
         let socket = socket.into_std()?;
 
-        let support = TimestampingSupport::get_support(&socket)?;
-        set_timestamping_options(&socket, support)?;
+        let timestamping = match timestamping {
+            Timestamping::Configure(config) => config,
+            Timestamping::AllSupported => TimestampingConfig::all_supported(&socket)?,
+        };
+
+        set_timestamping_options(&socket, timestamping)?;
+
         Ok(UdpSocket {
             io: AsyncFd::new(socket)?,
             send_counter: 0,
-            support,
+            timestamping,
         })
     }
 
@@ -62,17 +91,17 @@ impl UdpSocket {
 
         // our supported kernel versions always have receive timestamping. Send timestamping for a
         // server connection is not relevant, so we don't even bother with checking if it is supported
-        let support = TimestampingSupport {
+        let timestamping = TimestampingConfig {
             rx_software: true,
             tx_software: false,
         };
 
-        set_timestamping_options(&socket, support)?;
+        set_timestamping_options(&socket, timestamping)?;
 
         Ok(UdpSocket {
             io: AsyncFd::new(socket)?,
             send_counter: 0,
-            support,
+            timestamping,
         })
     }
 
@@ -86,7 +115,7 @@ impl UdpSocket {
         let expected_counter = self.send_counter;
         self.send_counter = self.send_counter.wrapping_add(1);
 
-        if self.support.tx_software {
+        if self.timestamping.tx_software {
             // the send timestamp may never come set a very short timeout to prevent hanging forever.
             // We automatically fall back to a less accurate timestamp when this function returns None
             let timeout = std::time::Duration::from_millis(10);
@@ -226,23 +255,23 @@ const SOF_TIMESTAMPING_OPT_ID: u32 = 1 << 7;
 
 fn set_timestamping_options(
     udp_socket: &std::net::UdpSocket,
-    support: TimestampingSupport,
+    timestamping: TimestampingConfig,
 ) -> io::Result<()> {
     let fd = udp_socket.as_raw_fd();
 
     let mut options = 0;
 
-    if support.rx_software || support.tx_software {
+    if timestamping.rx_software || timestamping.tx_software {
         // enable software timestamping
         options |= libc::SOF_TIMESTAMPING_SOFTWARE
     }
 
-    if support.rx_software {
+    if timestamping.rx_software {
         // we want receive timestamps
         options |= libc::SOF_TIMESTAMPING_RX_SOFTWARE
     }
 
-    if support.tx_software {
+    if timestamping.tx_software {
         // - we want send timestamps
         // - return just the timestamp, don't send the full message along
         // - tag the timestamp with an ID
@@ -477,7 +506,7 @@ fn fetch_send_timestamp_help(
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-struct TimestampingSupport {
+struct TimestampingConfig {
     rx_software: bool,
     tx_software: bool,
 }
@@ -503,8 +532,11 @@ struct ifreq {
     __empty_space: [u8; 40 - 8],
 }
 
-impl TimestampingSupport {
-    fn get_support(udp_socket: &std::net::UdpSocket) -> std::io::Result<Self> {
+impl TimestampingConfig {
+    /// Enable all timestamping options that are supported by this crate and the hardware/software
+    /// of the device we're running on
+    #[allow(dead_code)]
+    fn all_supported(udp_socket: &std::net::UdpSocket) -> std::io::Result<Self> {
         // Get time stamping and PHC info
         const ETHTOOL_GET_TS_INFO: u32 = 0x00000041;
 
@@ -552,9 +584,10 @@ mod tests {
     #[test]
     fn test_timestamping_reasonable() {
         tokio_test::block_on(async {
-            let mut a = UdpSocket::client(
+            let mut a = UdpSocket::client_with_timestamping(
                 SocketAddr::from((Ipv4Addr::LOCALHOST, 8000)),
                 SocketAddr::from((Ipv4Addr::LOCALHOST, 8001)),
+                Timestamping::AllSupported,
             )
             .await
             .unwrap();
@@ -588,9 +621,10 @@ mod tests {
     #[test]
     fn test_send_timestamp() {
         tokio_test::block_on(async {
-            let mut a = UdpSocket::client(
+            let mut a = UdpSocket::client_with_timestamping(
                 SocketAddr::from((Ipv4Addr::LOCALHOST, 8012)),
                 SocketAddr::from((Ipv4Addr::LOCALHOST, 8013)),
+                Timestamping::AllSupported,
             )
             .await
             .unwrap();
