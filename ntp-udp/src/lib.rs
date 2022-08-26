@@ -19,6 +19,7 @@ const EPOCH_OFFSET: u32 = (70 * 365 + 17) * 86400;
 
 enum Timestamping {
     Configure(TimestampingConfig),
+    #[allow(dead_code)]
     AllSupported,
 }
 
