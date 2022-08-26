@@ -29,3 +29,4 @@ ntp-proto = { path = "../ntp-proto", features=["ext-test"]}
 
 [features]
 sentry = ["dep:sentry", "dep:sentry-tracing"]
+fuzz = []

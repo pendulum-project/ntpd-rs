@@ -5,7 +5,8 @@ log-filter = "info"
 log-format = "full"
 
 # Peers can be configured as a simple list (pool servers from ntppool.org)
-peers = ["0.pool.ntp.org", "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
+#peers = ["0.pool.ntp.org", "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
+peers = ["127.0.0.1"]
 
 # Or by providing written out configuration
 # [[peers]]
