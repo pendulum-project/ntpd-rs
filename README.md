@@ -2,7 +2,7 @@
 
 # NTPD-rs
 
-NTPD-rs is an implementation of NTP completely written in Rust, with a focus on exposing a minimal attack surface. The project is currently in an early stage, and is not yet suitable for daily use. However, you can try it out if you are comfortable with running pre-release software.
+NTPD-rs is an implementation of NTP completely written in Rust, with a focus on exposing a minimal attack surface. The project is currently at an early stage. The client functionality is stable (see release v0.1.0), although features are still limited. The server is under active development. If a feature you need is missing please let us know.
 
 ## Quick start
 
