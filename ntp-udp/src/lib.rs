@@ -5,7 +5,7 @@ use std::{
     io::{ErrorKind, IoSliceMut},
     mem::{size_of, MaybeUninit},
     net::{Ipv4Addr, SocketAddr},
-    os::unix::prelude::AsRawFd,
+    os::unix::prelude::{AsRawFd, RawFd},
 };
 
 use ntp_proto::NtpTimestamp;
@@ -25,6 +25,7 @@ enum Timestamping {
 
 pub struct UdpSocket {
     io: AsyncFd<std::net::UdpSocket>,
+    exceptional_condition: AsyncFd<RawFd>,
     send_counter: u32,
     timestamping: TimestampingConfig,
 }
@@ -74,6 +75,7 @@ impl UdpSocket {
         set_timestamping_options(&socket, timestamping)?;
 
         Ok(UdpSocket {
+            exceptional_condition: exceptional_condition_fd(&socket)?,
             io: AsyncFd::new(socket)?,
             send_counter: 0,
             timestamping,
@@ -100,6 +102,7 @@ impl UdpSocket {
         set_timestamping_options(&socket, timestamping)?;
 
         Ok(UdpSocket {
+            exceptional_condition: exceptional_condition_fd(&socket)?,
             io: AsyncFd::new(socket)?,
             send_counter: 0,
             timestamping,
@@ -160,16 +163,15 @@ impl UdpSocket {
     async fn fetch_send_timestamp(&self, expected_counter: u32) -> io::Result<NtpTimestamp> {
         trace!("waiting for timestamp socket to become readable to fetch a send timestamp");
         loop {
-            // here we wait for the socket to become writable again, even though what we want to do
-            // is read from the error queue.
+            // Send timestamps are sent to the udp socket's error queue. Sadly, tokio does not
+            // currently support awaiting whether there is something in the error queue
+            // see https://github.com/tokio-rs/tokio/issues/4885.
             //
-            // We found that waiting for `readable()` is unreliable, and does not seem to actually
-            // fire when the timestamping message is available. To our understanding, the socked
-            // becomes `writable()` when it has sent all its packets. So in practice this is also
-            // the moment when the timestamp message is available in the error queue.
-            let mut guard = self.io.writable().await?;
-            match guard.try_io(|inner| fetch_send_timestamp_help(inner.get_ref(), expected_counter))
-            {
+            // Therefore, we manually configure an extra file descriptor to listen for POLLPRI on
+            // the main udp socket. This `exceptional_condition` file descriptor becomes readable
+            // when there is something in the error queue.
+            let mut guard = self.exceptional_condition.readable().await?;
+            match guard.try_io(|_| fetch_send_timestamp_help(self.io.get_ref(), expected_counter)) {
                 Ok(Ok(Some(send_timestamp))) => {
                     return Ok(send_timestamp);
                 }
@@ -576,6 +578,28 @@ impl TimestampingConfig {
             Ok(Self::default())
         }
     }
+}
+
+fn exceptional_condition_fd(
+    socket_of_interest: &std::net::UdpSocket,
+) -> std::io::Result<AsyncFd<RawFd>> {
+    let fd = cerr(unsafe { libc::epoll_create1(0) })?;
+
+    let mut event = libc::epoll_event {
+        events: libc::EPOLLPRI as u32,
+        u64: 0u64,
+    };
+
+    cerr(unsafe {
+        libc::epoll_ctl(
+            fd,
+            libc::EPOLL_CTL_ADD,
+            socket_of_interest.as_raw_fd(),
+            &mut event,
+        )
+    })?;
+
+    AsyncFd::new(fd)
 }
 
 #[cfg(test)]
