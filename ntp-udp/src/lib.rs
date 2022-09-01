@@ -1,10 +1,10 @@
 mod interface_name;
 mod socket;
 
-use std::io::ErrorKind;
-use std::{io, os::unix::prelude::AsRawFd};
-
 pub use socket::UdpSocket;
+use std::os::unix::prelude::{AsRawFd, RawFd};
+
+use tokio::io::unix::AsyncFd;
 
 /// Makes the kernel return the timestamp as a cmsg alongside an empty packet,
 /// as opposed to alongside the original packet
@@ -15,7 +15,7 @@ const SOF_TIMESTAMPING_OPT_ID: u32 = 1 << 7;
 fn set_timestamping_options(
     udp_socket: &std::net::UdpSocket,
     timestamping: TimestampingConfig,
-) -> io::Result<()> {
+) -> std::io::Result<()> {
     let fd = udp_socket.as_raw_fd();
 
     let mut options = 0;
@@ -65,10 +65,10 @@ fn receive_message(
     socket: &std::net::UdpSocket,
     message_header: &mut libc::msghdr,
     flags: libc::c_int,
-) -> io::Result<libc::c_int> {
+) -> std::io::Result<libc::c_int> {
     loop {
         match cerr(unsafe { libc::recvmsg(socket.as_raw_fd(), message_header, flags) } as _) {
-            Err(e) if ErrorKind::Interrupted == e.kind() => {
+            Err(e) if std::io::ErrorKind::Interrupted == e.kind() => {
                 // retry when the recv was interrupted
                 continue;
             }
@@ -198,4 +198,26 @@ impl TimestampingConfig {
             Ok(Self::default())
         }
     }
+}
+
+pub(crate) fn exceptional_condition_fd(
+    socket_of_interest: &std::net::UdpSocket,
+) -> std::io::Result<AsyncFd<RawFd>> {
+    let fd = cerr(unsafe { libc::epoll_create1(0) })?;
+
+    let mut event = libc::epoll_event {
+        events: libc::EPOLLPRI as u32,
+        u64: 0u64,
+    };
+
+    cerr(unsafe {
+        libc::epoll_ctl(
+            fd,
+            libc::EPOLL_CTL_ADD,
+            socket_of_interest.as_raw_fd(),
+            &mut event,
+        )
+    })?;
+
+    AsyncFd::new(fd)
 }
