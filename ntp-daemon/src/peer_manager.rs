@@ -80,7 +80,7 @@ impl<C: NtpClock> Peers<C> {
 
     async fn add_peer_pool_internal(
         &mut self,
-        max_pool_size: usize,
+        max_peers_per_pool: usize,
         config: Arc<PeerConfig>,
     ) -> Vec<JoinHandle<()>> {
         let addresses = loop {
@@ -106,7 +106,7 @@ impl<C: NtpClock> Peers<C> {
         };
 
         addresses
-            .take(max_pool_size)
+            .take(max_peers_per_pool)
             .map(|addr| {
                 debug!(resolved=?addr, unresolved=&config.addr, "resolved peer");
 
@@ -137,10 +137,10 @@ impl<C: NtpClock> Peers<C> {
 
     pub async fn add_peer_pool(
         &mut self,
-        max_pool_size: usize,
+        max_peers_per_pool: usize,
         config: PeerConfig,
     ) -> Vec<JoinHandle<()>> {
-        self.add_peer_pool_internal(max_pool_size, Arc::new(config))
+        self.add_peer_pool_internal(max_peers_per_pool, Arc::new(config))
             .await
     }
 

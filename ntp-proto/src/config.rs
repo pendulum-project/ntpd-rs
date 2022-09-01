@@ -186,6 +186,10 @@ pub struct SystemConfig {
     /// daemon is allowed to step the system clock.
     #[serde(deserialize_with = "deserialize_option_threshold", default)]
     pub accumulated_threshold: Option<NtpDuration>,
+
+    /// The maximum number of peer connections per pool
+    #[serde(default = "default_max_peers_per_pool")]
+    pub max_peers_per_pool: usize,
 }
 
 impl Default for SystemConfig {
@@ -201,6 +205,7 @@ impl Default for SystemConfig {
             panic_threshold: default_panic_threshold(),
             startup_panic_threshold: StepThreshold::default(),
             accumulated_threshold: None,
+            max_peers_per_pool: default_max_peers_per_pool(),
         }
     }
 }
@@ -235,6 +240,10 @@ fn default_panic_threshold() -> StepThreshold {
         forward: Some(raw),
         backward: Some(raw),
     }
+}
+
+fn default_max_peers_per_pool() -> usize {
+    1
 }
 
 fn startup_panic_threshold() -> StepThreshold {

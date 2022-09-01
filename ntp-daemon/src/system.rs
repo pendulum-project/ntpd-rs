@@ -51,8 +51,12 @@ pub async fn spawn(
         UnixNtpClock::new(),
     );
 
+    let max_peers_per_pool = config.read().await.max_peers_per_pool;
+
     for peer_config in peer_configs.iter() {
-        peers.add_peer_pool(1, peer_config.to_owned()).await;
+        peers
+            .add_peer_pool(max_peers_per_pool, peer_config.to_owned())
+            .await;
     }
 
     for server_config in server_configs.iter() {
