@@ -12,11 +12,6 @@ use ntp_proto::NtpTimestamp;
 use tokio::io::unix::AsyncFd;
 use tracing::{debug, instrument, trace, warn};
 
-// Unix uses an epoch located at 1/1/1970-00:00h (UTC) and NTP uses 1/1/1900-00:00h.
-// This leads to an offset equivalent to 70 years in seconds
-// there are 17 leap years between the two dates so the offset is
-const EPOCH_OFFSET: u32 = (70 * 365 + 17) * 86400;
-
 enum Timestamping {
     Configure(TimestampingConfig),
     #[allow(dead_code)]
@@ -302,17 +297,17 @@ pub(crate) fn cerr(t: libc::c_int) -> std::io::Result<libc::c_int> {
     }
 }
 
-/// # Safety
-///
-/// The given pointer must point to a libc::timespec
-unsafe fn read_ntp_timestamp(ptr: *const u8) -> NtpTimestamp {
-    let ts: libc::timespec = std::ptr::read_unaligned(ptr as *const _);
+fn read_ntp_timestamp(timespec: libc::timespec) -> NtpTimestamp {
+    // Unix uses an epoch located at 1/1/1970-00:00h (UTC) and NTP uses 1/1/1900-00:00h.
+    // This leads to an offset equivalent to 70 years in seconds
+    // there are 17 leap years between the two dates so the offset is
+    const EPOCH_OFFSET: u32 = (70 * 365 + 17) * 86400;
 
     // truncates the higher bits of the i64
-    let seconds = (ts.tv_sec as u32).wrapping_add(EPOCH_OFFSET);
+    let seconds = (timespec.tv_sec as u32).wrapping_add(EPOCH_OFFSET);
 
     // tv_nsec is always within [0, 1e10)
-    let nanos = ts.tv_nsec as u32;
+    let nanos = timespec.tv_nsec as u32;
 
     NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, nanos)
 }
@@ -416,7 +411,8 @@ fn recv(
     for msg in control_messages(&mhdr) {
         if let (libc::SOL_SOCKET, libc::SO_TIMESTAMPING) = (msg.cmsg_level, msg.cmsg_type) {
             // Safety: SO_TIMESTAMPING always has a timespec in the data
-            let timestamp = unsafe { read_ntp_timestamp(libc::CMSG_DATA(msg)) };
+            let cmsg_data = unsafe { libc::CMSG_DATA(msg) } as *const libc::timespec;
+            let timestamp = read_ntp_timestamp(unsafe { std::ptr::read_unaligned(cmsg_data) });
 
             return Ok((bytes_read, sock_addr, Some(timestamp)));
         }
@@ -467,7 +463,9 @@ fn fetch_send_timestamp_help(
         match (msg.cmsg_level, msg.cmsg_type) {
             (libc::SOL_SOCKET, libc::SO_TIMESTAMPING) => {
                 // Safety: SCM_TIMESTAMP always has a timespec in the data, so this operation should be safe
-                send_ts = Some(unsafe { read_ntp_timestamp(libc::CMSG_DATA(msg)) });
+                let cmsg_data = unsafe { libc::CMSG_DATA(msg) } as *const libc::timespec;
+                let timestamp = read_ntp_timestamp(unsafe { std::ptr::read_unaligned(cmsg_data) });
+                send_ts = Some(timestamp);
             }
             (libc::SOL_IP, libc::IP_RECVERR) | (libc::SOL_IPV6, libc::IPV6_RECVERR) => {
                 // this is part of how timestamps are reported.
