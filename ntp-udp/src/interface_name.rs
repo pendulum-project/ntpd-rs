@@ -195,7 +195,7 @@ mod tests {
 
         let sockaddr = libc::sockaddr {
             sa_family: 2,
-            sa_data: [42, 0, -84, 23, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]
+            sa_data: [42, 0, -84, 23, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
         };
 
         let socket_addr = unsafe { sockaddr_to_socket_addr(&sockaddr) }.unwrap();
