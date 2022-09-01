@@ -1,18 +1,8 @@
 mod interface_name;
 mod socket;
 
-use std::{
-    io,
-    io::{ErrorKind, IoSliceMut},
-    mem::{size_of, MaybeUninit},
-    net::SocketAddr,
-    os::unix::prelude::AsRawFd,
-};
-
-use ntp_proto::NtpTimestamp;
-use tracing::warn;
-
-use crate::interface_name::sockaddr_to_socket_addr;
+use std::io::ErrorKind;
+use std::{io, os::unix::prelude::AsRawFd};
 
 pub use socket::UdpSocket;
 
@@ -68,21 +58,6 @@ pub(crate) fn cerr(t: libc::c_int) -> std::io::Result<libc::c_int> {
         -1 => Err(std::io::Error::last_os_error()),
         _ => Ok(t),
     }
-}
-
-fn read_ntp_timestamp(timespec: libc::timespec) -> NtpTimestamp {
-    // Unix uses an epoch located at 1/1/1970-00:00h (UTC) and NTP uses 1/1/1900-00:00h.
-    // This leads to an offset equivalent to 70 years in seconds
-    // there are 17 leap years between the two dates so the offset is
-    const EPOCH_OFFSET: u32 = (70 * 365 + 17) * 86400;
-
-    // truncates the higher bits of the i64
-    let seconds = (timespec.tv_sec as u32).wrapping_add(EPOCH_OFFSET);
-
-    // tv_nsec is always within [0, 1e10)
-    let nanos = timespec.tv_nsec as u32;
-
-    NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, nanos)
 }
 
 /// Receive a message on a socket (retry if interrupted)
@@ -149,141 +124,10 @@ const fn control_message_space<T>() -> usize {
     (unsafe { libc::CMSG_SPACE((std::mem::size_of::<T>()) as _) }) as usize
 }
 
-fn recv(
-    socket: &std::net::UdpSocket,
-    buf: &mut [u8],
-) -> io::Result<(usize, SocketAddr, Option<NtpTimestamp>)> {
-    let mut buf_slice = IoSliceMut::new(buf);
-
-    let mut control_buf = [0; control_message_space::<[libc::timespec; 3]>()];
-    let mut addr = MaybeUninit::<libc::sockaddr_storage>::uninit();
-    let mut mhdr = libc::msghdr {
-        msg_control: control_buf.as_mut_ptr().cast::<libc::c_void>(),
-        msg_controllen: control_buf.len(),
-        msg_iov: (&mut buf_slice as *mut IoSliceMut).cast::<libc::iovec>(),
-        msg_iovlen: 1,
-        msg_flags: 0,
-        msg_name: addr.as_mut_ptr().cast::<libc::c_void>(),
-        msg_namelen: size_of::<libc::sockaddr_storage>() as u32,
-    };
-
-    // loops for when we receive an interrupt during the recv
-    let flags = 0;
-    let bytes_read = receive_message(socket, &mut mhdr, flags)? as usize;
-
-    let sock_addr = unsafe { sockaddr_to_socket_addr(addr.as_ptr() as *const libc::sockaddr) }
-        .unwrap_or_else(|| unreachable!("We never constructed a non-ip socket"));
-
-    if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
-        warn!(
-            max_len = buf.len(),
-            "truncated packet because it was larger than expected",
-        );
-    }
-
-    if mhdr.msg_flags & libc::MSG_CTRUNC > 0 {
-        warn!("truncated control messages");
-    }
-
-    // Loops through the control messages, but we should only get a single message in practice
-    for msg in control_messages(&mhdr) {
-        match msg {
-            ControlMessage::Timestamping(timespec) => {
-                let timestamp = read_ntp_timestamp(timespec);
-
-                return Ok((bytes_read, sock_addr, Some(timestamp)));
-            }
-
-            ControlMessage::ReceiveError(_error) => {
-                warn!("unexpected error message on the MSG_ERRQUEUE");
-            }
-
-            ControlMessage::Other(msg) => {
-                warn!(
-                    msg.cmsg_level,
-                    msg.cmsg_type, "unexpected message on the MSG_ERRQUEUE",
-                );
-            }
-        }
-    }
-
-    Ok((bytes_read, sock_addr, None))
-}
-
-fn fetch_send_timestamp_help(
-    socket: &std::net::UdpSocket,
-    expected_counter: u32,
-) -> io::Result<Option<NtpTimestamp>> {
-    // we get back two control messages: one with the timestamp (just like a receive timestamp),
-    // and one error message with no error reason. The payload for this second message is kind of
-    // undocumented.
-    //
-    // section 2.1.1 of https://www.kernel.org/doc/Documentation/networking/timestamping.txt says that
-    // a `sock_extended_err` is returned, but in practice we also see a socket address. The linux
-    // kernel also has this https://github.com/torvalds/linux/blob/master/tools/testing/selftests/net/so_txtime.c#L153=
-    //
-    // sockaddr_storage is bigger than we need, but sockaddr is too small for ipv6
-    const CONTROL_SIZE: usize = control_message_space::<[libc::timespec; 3]>()
-        + control_message_space::<(libc::sock_extended_err, libc::sockaddr_storage)>();
-
-    let mut control_buf = [0; CONTROL_SIZE];
-    let mut mhdr = libc::msghdr {
-        msg_control: control_buf.as_mut_ptr().cast::<libc::c_void>(),
-        msg_controllen: control_buf.len(),
-        msg_iov: std::ptr::null_mut(),
-        msg_iovlen: 0,
-        msg_flags: 0,
-        msg_name: std::ptr::null_mut(),
-        msg_namelen: 0,
-    };
-
-    receive_message(socket, &mut mhdr, libc::MSG_ERRQUEUE)?;
-
-    if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
-        warn!("truncated packet because it was larger than expected",);
-    }
-
-    if mhdr.msg_flags & libc::MSG_CTRUNC > 0 {
-        warn!("truncated control messages");
-    }
-
-    let mut send_ts = None;
-    for msg in control_messages(&mhdr) {
-        match msg {
-            ControlMessage::Timestamping(timespec) => {
-                send_ts = Some(read_ntp_timestamp(timespec));
-            }
-
-            ControlMessage::ReceiveError(error) => {
-                // the timestamping does not set a message; if there is a message, that means
-                // something else is wrong, and we want to know about it.
-                if error.ee_errno as libc::c_int != libc::ENOMSG {
-                    warn!(
-                        expected_counter,
-                        error.ee_data, "error message on the MSG_ERRQUEUE"
-                    );
-                }
-
-                // Check that this message belongs to the send we are interested in
-                if error.ee_data != expected_counter {
-                    warn!(
-                        error.ee_data,
-                        expected_counter, "Timestamp for unrelated packet"
-                    );
-                    return Ok(None);
-                }
-            }
-
-            ControlMessage::Other(msg) => {
-                warn!(
-                    msg.cmsg_level,
-                    msg.cmsg_type, "unexpected message on the MSG_ERRQUEUE",
-                );
-            }
-        }
-    }
-
-    Ok(send_ts)
+pub(crate) fn zeroed_sockaddr_storage() -> libc::sockaddr_storage {
+    // a zeroed-out sockaddr storage is semantically valid, because a ss_family with value 0 is
+    // libc::AF_UNSPEC. Hence the rest of the data does not come with any constraints
+    unsafe { std::mem::MaybeUninit::zeroed().assume_init() }
 }
 
 #[derive(Debug, Clone, Copy, Default)]

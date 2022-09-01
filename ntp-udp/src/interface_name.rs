@@ -62,12 +62,24 @@ impl InterfaceAddress {
     }
 }
 
+pub fn sockaddr_storage_to_socket_addr(
+    sockaddr_storage: &libc::sockaddr_storage,
+) -> Option<SocketAddr> {
+    // Safety:
+    //
+    // sockaddr_storage always has enough space to store either a sockaddr_in or sockaddr_in6
+    unsafe { sockaddr_to_socket_addr(sockaddr_storage as *const _ as *const libc::sockaddr) }
+}
+
 /// Convert a libc::sockaddr to a rust std::net::SocketAddr
 ///
 /// # Safety
 ///
-/// assumes a valid sockaddr. `sockaddr` has the same size as `sockaddr_in` on the stack, but in practice
-/// can contain a sockaddr_in6 if the sa_family indicates inet6.
+/// According to the posix standard, `sockaddr` does not have a defined size: the size depends on
+/// the value of the `ss_family` field. We assume this to be correct.
+///
+/// In practice, types in rust/c need a statically-known stack size, so they pick some value. In
+/// practice it can be (and is) larger than the `sizeof<libc::sockaddr>` value.
 pub unsafe fn sockaddr_to_socket_addr(sockaddr: *const libc::sockaddr) -> Option<SocketAddr> {
     match (*sockaddr).sa_family as libc::c_int {
         libc::AF_INET => {
