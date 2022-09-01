@@ -153,7 +153,8 @@ struct ethtool_ts_info {
 #[allow(non_camel_case_types)]
 struct ifreq {
     ifrn_name: [u8; 16],
-    __empty_space: [u8; 40],
+    ifru_data: *mut libc::c_void,
+    __empty_space: [u8; 40 - 8],
 }
 
 impl TimestampingConfig {
@@ -164,7 +165,7 @@ impl TimestampingConfig {
         // Get time stamping and PHC info
         const ETHTOOL_GET_TS_INFO: u32 = 0x00000041;
 
-        let tsi: ethtool_ts_info = ethtool_ts_info {
+        let mut tsi: ethtool_ts_info = ethtool_ts_info {
             cmd: ETHTOOL_GET_TS_INFO,
             ..Default::default()
         };
@@ -174,7 +175,8 @@ impl TimestampingConfig {
         if let Some(ifrn_name) = interface_name::interface_name(udp_socket.local_addr()?)? {
             let ifr: ifreq = ifreq {
                 ifrn_name,
-                __empty_space: [0; 40],
+                ifru_data: (&mut tsi as *mut _) as *mut libc::c_void,
+                __empty_space: [0; 40 - 8],
             };
 
             const SIOCETHTOOL: u64 = 0x8946;
