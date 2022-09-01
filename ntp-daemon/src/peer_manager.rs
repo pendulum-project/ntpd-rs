@@ -78,19 +78,25 @@ impl<C: NtpClock> Peers<C> {
         }
     }
 
-    async fn add_peer_internal(&mut self, config: Arc<PeerConfig>) -> JoinHandle<()> {
-        let index = self.indexer.get();
-        let addr = loop {
-            let host = lookup_host(&config.addr).await.map(|mut i| i.next());
+    async fn add_peer_pool_internal(
+        &mut self,
+        max_pool_size: usize,
+        config: Arc<PeerConfig>,
+    ) -> Vec<JoinHandle<()>> {
+        let addresses = loop {
+            let host = lookup_host(&config.addr).await;
 
             match host {
-                Ok(Some(addr)) => {
-                    debug!(resolved=?addr, unresolved=&config.addr, "resolved peer");
-                    break addr;
-                }
-                Ok(None) => {
-                    warn!("Could not resolve peer address, retrying");
-                    tokio::time::sleep(NETWORK_WAIT_PERIOD).await
+                Ok(addresses) => {
+                    let mut it = addresses.peekable();
+
+                    match it.peek() {
+                        None => {
+                            warn!("Could not resolve peer address, retrying");
+                            tokio::time::sleep(NETWORK_WAIT_PERIOD).await
+                        }
+                        Some(_) => break it,
+                    }
                 }
                 Err(e) => {
                     warn!(error = ?e, "error while resolving peer address, retrying");
@@ -98,20 +104,44 @@ impl<C: NtpClock> Peers<C> {
                 }
             }
         };
-        self.peers.insert(
-            index,
-            PeerData {
-                status: PeerStatus::NoMeasurement,
-                config,
-            },
-        );
-        PeerTask::spawn(
-            index,
-            addr,
-            self.clock.clone(),
-            NETWORK_WAIT_PERIOD,
-            self.channels.clone(),
-        )
+
+        addresses
+            .take(max_pool_size)
+            .map(|addr| {
+                debug!(resolved=?addr, unresolved=&config.addr, "resolved peer");
+
+                let index = self.indexer.get();
+
+                self.peers.insert(
+                    index,
+                    PeerData {
+                        status: PeerStatus::NoMeasurement,
+                        config: config.clone(),
+                    },
+                );
+
+                PeerTask::spawn(
+                    index,
+                    addr,
+                    self.clock.clone(),
+                    NETWORK_WAIT_PERIOD,
+                    self.channels.clone(),
+                )
+            })
+            .collect()
+    }
+
+    async fn add_peer_internal(&mut self, config: Arc<PeerConfig>) -> JoinHandle<()> {
+        self.add_peer_pool_internal(1, config).await.pop().unwrap()
+    }
+
+    pub async fn add_peer_pool(
+        &mut self,
+        max_pool_size: usize,
+        config: PeerConfig,
+    ) -> Vec<JoinHandle<()>> {
+        self.add_peer_pool_internal(max_pool_size, Arc::new(config))
+            .await
     }
 
     pub async fn add_peer(&mut self, config: PeerConfig) -> JoinHandle<()> {
