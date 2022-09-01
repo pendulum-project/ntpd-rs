@@ -4,13 +4,15 @@ use std::{
     io,
     io::{ErrorKind, IoSliceMut},
     mem::{size_of, MaybeUninit},
-    net::{Ipv4Addr, SocketAddr},
+    net::SocketAddr,
     os::unix::prelude::AsRawFd,
 };
 
 use ntp_proto::NtpTimestamp;
 use tokio::io::unix::AsyncFd;
 use tracing::{debug, instrument, trace, warn};
+
+use crate::interface_name::sockaddr_to_socket_addr;
 
 enum Timestamping {
     Configure(TimestampingConfig),
@@ -398,31 +400,8 @@ fn recv(
     let flags = 0;
     let bytes_read = receive_message(socket, &mut mhdr, flags)? as usize;
 
-    let addr = unsafe { addr.assume_init() };
-    let sock_addr = match addr.ss_family as i32 {
-        libc::AF_INET => {
-            // kernel assures us this conversion is safe
-            let sin = &addr as *const _ as *const libc::c_void as *const libc::sockaddr_in;
-            let sin = unsafe { &*sin };
-            let [a, b, c, d] = sin.sin_addr.s_addr.to_ne_bytes();
-
-            // no direct (u32, u16) conversion is available, so we convert the address first
-            let addr = Ipv4Addr::new(a, b, c, d);
-            SocketAddr::from((addr, u16::from_be_bytes(sin.sin_port.to_ne_bytes())))
-        }
-        libc::AF_INET6 => {
-            // kernel assures us this conversion is safe
-            let sin = &addr as *const _ as *const libc::c_void as *const libc::sockaddr_in6;
-            let sin = unsafe { &*sin };
-            SocketAddr::from((
-                sin.sin6_addr.s6_addr,
-                u16::from_be_bytes(sin.sin6_port.to_ne_bytes()),
-            ))
-        }
-        _ => {
-            unreachable!("We never constructed a non-ip socket");
-        }
-    };
+    let sock_addr = unsafe { sockaddr_to_socket_addr(addr.as_ptr() as *const libc::sockaddr) }
+        .unwrap_or_else(|| unreachable!("We never constructed a non-ip socket"));
 
     if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
         warn!(
