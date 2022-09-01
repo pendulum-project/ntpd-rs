@@ -330,7 +330,35 @@ fn receive_message(
     }
 }
 
-fn control_messages(message_header: &libc::msghdr) -> impl Iterator<Item = &libc::cmsghdr> {
+enum ControlMessage {
+    Timestamping(libc::timespec),
+    ReceiveError(libc::sock_extended_err),
+    Other(libc::cmsghdr),
+}
+
+fn control_messages(message_header: &libc::msghdr) -> impl Iterator<Item = ControlMessage> + '_ {
+    raw_control_messages(message_header).map(|msg| match (msg.cmsg_level, msg.cmsg_type) {
+        (libc::SOL_SOCKET, libc::SO_TIMESTAMPING) => {
+            // Safety: SO_TIMESTAMPING always has a timespec in the data
+            let cmsg_data = unsafe { libc::CMSG_DATA(msg) } as *const libc::timespec;
+            let timespec = unsafe { std::ptr::read_unaligned(cmsg_data) };
+            ControlMessage::Timestamping(timespec)
+        }
+
+        (libc::SOL_IP, libc::IP_RECVERR) | (libc::SOL_IPV6, libc::IPV6_RECVERR) => {
+            // this is part of how timestamps are reported.
+            let error = unsafe {
+                let ptr = libc::CMSG_DATA(msg) as *const libc::sock_extended_err;
+                std::ptr::read_unaligned(ptr)
+            };
+
+            ControlMessage::ReceiveError(error)
+        }
+        _ => ControlMessage::Other(*msg),
+    })
+}
+
+fn raw_control_messages(message_header: &libc::msghdr) -> impl Iterator<Item = &libc::cmsghdr> {
     let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(message_header).as_ref() };
 
     std::iter::from_fn(move || match cmsg {
@@ -409,12 +437,23 @@ fn recv(
 
     // Loops through the control messages, but we should only get a single message in practice
     for msg in control_messages(&mhdr) {
-        if let (libc::SOL_SOCKET, libc::SO_TIMESTAMPING) = (msg.cmsg_level, msg.cmsg_type) {
-            // Safety: SO_TIMESTAMPING always has a timespec in the data
-            let cmsg_data = unsafe { libc::CMSG_DATA(msg) } as *const libc::timespec;
-            let timestamp = read_ntp_timestamp(unsafe { std::ptr::read_unaligned(cmsg_data) });
+        match msg {
+            ControlMessage::Timestamping(timespec) => {
+                let timestamp = read_ntp_timestamp(timespec);
 
-            return Ok((bytes_read, sock_addr, Some(timestamp)));
+                return Ok((bytes_read, sock_addr, Some(timestamp)));
+            }
+
+            ControlMessage::ReceiveError(_error) => {
+                warn!("unexpected error message on the MSG_ERRQUEUE");
+            }
+
+            ControlMessage::Other(msg) => {
+                warn!(
+                    msg.cmsg_level,
+                    msg.cmsg_type, "unexpected message on the MSG_ERRQUEUE",
+                );
+            }
         }
     }
 
@@ -460,20 +499,12 @@ fn fetch_send_timestamp_help(
 
     let mut send_ts = None;
     for msg in control_messages(&mhdr) {
-        match (msg.cmsg_level, msg.cmsg_type) {
-            (libc::SOL_SOCKET, libc::SO_TIMESTAMPING) => {
-                // Safety: SCM_TIMESTAMP always has a timespec in the data, so this operation should be safe
-                let cmsg_data = unsafe { libc::CMSG_DATA(msg) } as *const libc::timespec;
-                let timestamp = read_ntp_timestamp(unsafe { std::ptr::read_unaligned(cmsg_data) });
-                send_ts = Some(timestamp);
+        match msg {
+            ControlMessage::Timestamping(timespec) => {
+                send_ts = Some(read_ntp_timestamp(timespec));
             }
-            (libc::SOL_IP, libc::IP_RECVERR) | (libc::SOL_IPV6, libc::IPV6_RECVERR) => {
-                // this is part of how timestamps are reported.
-                let error = unsafe {
-                    let ptr: *const u8 = libc::CMSG_DATA(msg);
-                    std::ptr::read_unaligned::<libc::sock_extended_err>(ptr as *const _)
-                };
 
+            ControlMessage::ReceiveError(error) => {
                 // the timestamping does not set a message; if there is a message, that means
                 // something else is wrong, and we want to know about it.
                 if error.ee_errno as libc::c_int != libc::ENOMSG {
@@ -492,7 +523,8 @@ fn fetch_send_timestamp_help(
                     return Ok(None);
                 }
             }
-            _ => {
+
+            ControlMessage::Other(msg) => {
                 warn!(
                     msg.cmsg_level,
                     msg.cmsg_type, "unexpected message on the MSG_ERRQUEUE",
