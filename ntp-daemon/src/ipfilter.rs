@@ -26,8 +26,8 @@ struct BitTree {
     nodes: Vec<Treenode>,
 }
 
-fn top_quad(v: u128) -> u8 {
-    ((v & (0xF << 124)) >> 124) as u8
+fn top_nibble(v: u128) -> u8 {
+    ((v >> 124) & 0xF) as u8
 }
 
 impl BitTree {
@@ -40,7 +40,7 @@ impl BitTree {
         loop {
             // extract the current symbol as bit and see if we know the answer immediately.
             // (example: symbol 1 maps to 0x2, symbol 5 maps to 0x10)
-            let cur = 1 << top_quad(val);
+            let cur = 1 << top_nibble(val);
             if node.inset & cur != 0 {
                 return true;
             }
@@ -71,18 +71,10 @@ impl BitTree {
                 .unwrap_or(0);
         }
         // Ensure values are sorted by value and then by length
-        data.sort_by(
-            |(v1, l1), (v2, l2)| {
-                if *v1 != *v2 {
-                    v1.cmp(v2)
-                } else {
-                    l1.cmp(l2)
-                }
-            },
-        );
+        data.sort();
 
         let mut result = BitTree {
-            nodes: [Treenode::default()].into(),
+            nodes: vec![Treenode::default()],
         };
         result.fill_node(data, 0);
         result
@@ -93,20 +85,19 @@ impl BitTree {
     /// for any i
     fn fill_node(&mut self, mut data: &mut [(u128, u8)], node_idx: usize) {
         // Figure out how the data splits over the 16 segments
-        // in this node.
-        let mut first_idx = [0; 16];
+        // in this node. Note that we can do this in a linear
+        // scan since everything is already sorted.
+        let mut first_idx = [data.len(); 16];
+        first_idx[0] = 0;
         let mut last = 0;
         for (idx, (val, _)) in data.iter().enumerate() {
-            let cur = top_quad(*val);
+            let cur = top_nibble(*val);
             if cur != last {
                 for i in last + 1..=cur {
                     first_idx[i as usize] = idx
                 }
                 last = cur;
             }
-        }
-        for i in last + 1..16 {
-            first_idx[i as usize] = data.len();
         }
 
         // Actually split into the relevant subsegments
@@ -125,14 +116,31 @@ impl BitTree {
                 // Probably empty, unless covered earlier, but we fix that later
                 None => node.outset |= 1 << i,
                 // Definetly covered, mark all that is needed
+                // Note that due to sorting order, len here
+                // is guaranteed to be largest amongst all
+                // parts of the segment
                 Some((_, len)) if *len <= 4 => {
                     // mark ALL parts of node covered by the segment as in the set.
                     for j in 0..(1 << (4 - *len)) {
                         node.inset |= 1 << (i + j as usize)
                     }
                 }
-                // Probably not known, we deal with those later.
-                _ => {}
+                // May be covered by a the union of all its parts, we need to check
+                // for that. Otherwise it is undecided
+                _ => {
+                    let offset = (i as u128) << 124;
+                    let mut last = 0;
+                    for part in seg.iter() {
+                        if part.0 - offset <= last {
+                            last =
+                                std::cmp::max(last, part.0 - offset + (1_u128 << (128 - part.1)));
+                        }
+                    }
+                    if last >= (1 << 124) {
+                        // All parts together cover the segment, so mark as in
+                        node.inset |= 1 << i;
+                    }
+                }
             }
         }
         // compensate for incorrectly marked outsets due to overcoverage
