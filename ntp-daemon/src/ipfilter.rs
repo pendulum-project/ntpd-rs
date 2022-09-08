@@ -4,7 +4,7 @@ use crate::config::subnet::IpSubnet;
 
 /// One part of a BitTree
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
-struct Treenode {
+struct TreeNode {
     // Where in the array the child nodes of this
     // node are located. A child node is only
     // generated if the symbol cannot be used to
@@ -23,7 +23,7 @@ struct Treenode {
 /// all integers with the prefix extended with that
 /// symbol are either in or outside of the set.
 struct BitTree {
-    nodes: Vec<Treenode>,
+    nodes: Vec<TreeNode>,
 }
 
 fn top_nibble(v: u128) -> u8 {
@@ -74,7 +74,7 @@ impl BitTree {
         data.sort();
 
         let mut result = BitTree {
-            nodes: vec![Treenode::default()],
+            nodes: vec![TreeNode::default()],
         };
         result.fill_node(data, 0);
         result
@@ -150,7 +150,7 @@ impl BitTree {
         // allocate nodes
         self.nodes.resize(
             self.nodes.len() + (!known_bitmap).count_ones() as usize,
-            Treenode::default(),
+            TreeNode::default(),
         );
         // Create children for segments undecided at this level.
         for (i, seg) in segs.iter_mut().enumerate() {
@@ -169,8 +169,8 @@ impl BitTree {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IpFilter {
-    ipv4filter: BitTree,
-    ipv6filter: BitTree,
+    ipv4_filter: BitTree,
+    ipv6_filter: BitTree,
 }
 
 impl IpFilter {
@@ -193,8 +193,8 @@ impl IpFilter {
         }
 
         IpFilter {
-            ipv4filter: BitTree::create(ipv4list.as_mut_slice()),
-            ipv6filter: BitTree::create(ipv6list.as_mut_slice()),
+            ipv4_filter: BitTree::create(ipv4list.as_mut_slice()),
+            ipv6_filter: BitTree::create(ipv6list.as_mut_slice()),
         }
     }
 
@@ -202,8 +202,8 @@ impl IpFilter {
         let mut temp_v4 = [(0, 0)];
         let mut temp_v6 = [(0, 0)];
         IpFilter {
-            ipv4filter: BitTree::create(&mut temp_v4),
-            ipv6filter: BitTree::create(&mut temp_v6),
+            ipv4_filter: BitTree::create(&mut temp_v4),
+            ipv6_filter: BitTree::create(&mut temp_v6),
         }
     }
 
@@ -211,8 +211,8 @@ impl IpFilter {
         let mut temp_v4 = [];
         let mut temp_v6 = [];
         IpFilter {
-            ipv4filter: BitTree::create(&mut temp_v4),
-            ipv6filter: BitTree::create(&mut temp_v6),
+            ipv4_filter: BitTree::create(&mut temp_v4),
+            ipv6_filter: BitTree::create(&mut temp_v6),
         }
     }
 
@@ -226,12 +226,12 @@ impl IpFilter {
     }
 
     fn is_in4(&self, addr: &Ipv4Addr) -> bool {
-        self.ipv4filter
+        self.ipv4_filter
             .lookup((u32::from_be_bytes(addr.octets()) as u128) << 96)
     }
 
     fn is_in6(&self, addr: &Ipv6Addr) -> bool {
-        self.ipv6filter.lookup(u128::from_be_bytes(addr.octets()))
+        self.ipv6_filter.lookup(u128::from_be_bytes(addr.octets()))
     }
 }
 
