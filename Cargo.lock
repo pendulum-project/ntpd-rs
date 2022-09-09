@@ -636,7 +636,6 @@ dependencies = [
  "libc",
  "ntp-proto",
  "tokio",
- "tokio-test",
  "tracing",
 ]
 
