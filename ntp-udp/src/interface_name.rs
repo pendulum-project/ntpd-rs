@@ -81,12 +81,16 @@ pub fn sockaddr_storage_to_socket_addr(
 /// In practice, types in rust/c need a statically-known stack size, so they pick some value. In
 /// practice it can be (and is) larger than the `sizeof<libc::sockaddr>` value.
 pub unsafe fn sockaddr_to_socket_addr(sockaddr: *const libc::sockaddr) -> Option<SocketAddr> {
+    // Most (but not all) of the fields in a socket addr are in network byte ordering.
+    // As such, when doing conversions here, we should start from the NATIVE
+    // byte representation, as this will actualy be the big-endian representation
+    // of the underlying value regardless of platform.
     match (*sockaddr).sa_family as libc::c_int {
         libc::AF_INET => {
             let inaddr: libc::sockaddr_in = *(sockaddr as *const libc::sockaddr_in);
 
             let socketaddr = std::net::SocketAddrV4::new(
-                std::net::Ipv4Addr::from(inaddr.sin_addr.s_addr.to_le_bytes()),
+                std::net::Ipv4Addr::from(inaddr.sin_addr.s_addr.to_ne_bytes()),
                 u16::from_be_bytes(inaddr.sin_port.to_ne_bytes()),
             );
 
