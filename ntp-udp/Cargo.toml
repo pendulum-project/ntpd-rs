@@ -13,5 +13,4 @@ ntp-proto = { path = "../ntp-proto" }
 tracing = "0.1.36"
 
 [dev-dependencies]
-tokio-test = "0.4.2"
 tokio = { version = "*", features = ["full"] }
