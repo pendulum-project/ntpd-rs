@@ -408,71 +408,122 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_timestamping_reasonable() {
-        tokio_test::block_on(async {
-            let mut a = UdpSocket::client_with_timestamping(
-                SocketAddr::from((Ipv4Addr::LOCALHOST, 8000)),
-                SocketAddr::from((Ipv4Addr::LOCALHOST, 8001)),
-                Timestamping::AllSupported,
-            )
-            .await
-            .unwrap();
-            let b = UdpSocket::client(
-                SocketAddr::from((Ipv4Addr::LOCALHOST, 8001)),
-                SocketAddr::from((Ipv4Addr::LOCALHOST, 8000)),
-            )
-            .await
-            .unwrap();
+    #[tokio::test]
+    async fn test_client_basic() {
+        let mut a = UdpSocket::client(
+            "127.0.0.1:10000".parse().unwrap(),
+            "127.0.0.1:10001".parse().unwrap(),
+        )
+        .await
+        .unwrap();
+        let mut b = UdpSocket::client(
+            "127.0.0.1:10001".parse().unwrap(),
+            "127.0.0.1:10000".parse().unwrap(),
+        )
+        .await
+        .unwrap();
 
-            tokio::spawn(async move {
-                a.send(&[1; 48]).await.unwrap();
-                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                a.send(&[2; 48]).await.unwrap();
-            });
+        a.send(&[1; 48]).await.unwrap();
+        let mut buf = [0; 48];
+        let (size, addr, _) = b.recv(&mut buf).await.unwrap();
+        assert_eq!(size, 48);
+        assert_eq!(addr, "127.0.0.1:10000".parse().unwrap());
+        assert_eq!(buf, [1; 48]);
 
-            let mut buf = [0; 48];
-            let (s1, _, t1) = b.recv(&mut buf).await.unwrap();
-            let (s2, _, t2) = b.recv(&mut buf).await.unwrap();
-            assert_eq!(s1, 48);
-            assert_eq!(s2, 48);
-
-            let t1 = t1.unwrap();
-            let t2 = t2.unwrap();
-            let delta = t2 - t1;
-
-            assert!(delta.to_seconds() > 0.15 && delta.to_seconds() < 0.25);
-        });
+        b.send(&[2; 48]).await.unwrap();
+        let (size, addr, _) = a.recv(&mut buf).await.unwrap();
+        assert_eq!(size, 48);
+        assert_eq!(addr, "127.0.0.1:10001".parse().unwrap());
+        assert_eq!(buf, [2; 48]);
     }
 
-    #[test]
-    fn test_send_timestamp() {
-        tokio_test::block_on(async {
-            let mut a = UdpSocket::client_with_timestamping(
-                SocketAddr::from((Ipv4Addr::LOCALHOST, 8012)),
-                SocketAddr::from((Ipv4Addr::LOCALHOST, 8013)),
-                Timestamping::AllSupported,
-            )
+    #[tokio::test]
+    async fn test_server_basic() {
+        let a = UdpSocket::server("127.0.0.1:10002".parse().unwrap())
             .await
             .unwrap();
-            let b = UdpSocket::client(
-                SocketAddr::from((Ipv4Addr::LOCALHOST, 8013)),
-                SocketAddr::from((Ipv4Addr::LOCALHOST, 8012)),
-            )
-            .await
-            .unwrap();
+        let mut b = UdpSocket::client(
+            "127.0.0.1:10003".parse().unwrap(),
+            "127.0.0.1:10002".parse().unwrap(),
+        )
+        .await
+        .unwrap();
 
-            let (ssend, tsend) = a.send(&[1; 48]).await.unwrap();
-            let mut buf = [0; 48];
-            let (srecv, _, trecv) = b.recv(&mut buf).await.unwrap();
+        b.send(&[1; 48]).await.unwrap();
+        let mut buf = [0; 48];
+        let (size, addr, _) = a.recv(&mut buf).await.unwrap();
+        assert_eq!(size, 48);
+        assert_eq!(addr, "127.0.0.1:10003".parse().unwrap());
+        assert_eq!(buf, [1; 48]);
 
-            assert_eq!(ssend, 48);
-            assert_eq!(srecv, 48);
+        a.send_to(&[2; 48], addr).await.unwrap();
+        let (size, addr, _) = b.recv(&mut buf).await.unwrap();
+        assert_eq!(size, 48);
+        assert_eq!(addr, "127.0.0.1:10002".parse().unwrap());
+        assert_eq!(buf, [2; 48]);
+    }
 
-            let tsend = tsend.unwrap();
-            let trecv = trecv.unwrap();
-            let delta = trecv - tsend;
-            assert!(delta.to_seconds().abs() < 0.2);
+    #[tokio::test]
+    async fn test_timestamping_reasonable() {
+        let mut a = UdpSocket::client_with_timestamping(
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 8000)),
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 8001)),
+            Timestamping::AllSupported,
+        )
+        .await
+        .unwrap();
+        let b = UdpSocket::client(
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 8001)),
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 8000)),
+        )
+        .await
+        .unwrap();
+
+        tokio::spawn(async move {
+            a.send(&[1; 48]).await.unwrap();
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            a.send(&[2; 48]).await.unwrap();
         });
+
+        let mut buf = [0; 48];
+        let (s1, _, t1) = b.recv(&mut buf).await.unwrap();
+        let (s2, _, t2) = b.recv(&mut buf).await.unwrap();
+        assert_eq!(s1, 48);
+        assert_eq!(s2, 48);
+
+        let t1 = t1.unwrap();
+        let t2 = t2.unwrap();
+        let delta = t2 - t1;
+
+        assert!(delta.to_seconds() > 0.15 && delta.to_seconds() < 0.25);
+    }
+
+    #[tokio::test]
+    async fn test_send_timestamp() {
+        let mut a = UdpSocket::client_with_timestamping(
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 8012)),
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 8013)),
+            Timestamping::AllSupported,
+        )
+        .await
+        .unwrap();
+        let b = UdpSocket::client(
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 8013)),
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 8012)),
+        )
+        .await
+        .unwrap();
+
+        let (ssend, tsend) = a.send(&[1; 48]).await.unwrap();
+        let mut buf = [0; 48];
+        let (srecv, _, trecv) = b.recv(&mut buf).await.unwrap();
+
+        assert_eq!(ssend, 48);
+        assert_eq!(srecv, 48);
+
+        let tsend = tsend.unwrap();
+        let trecv = trecv.unwrap();
+        let delta = trecv - tsend;
+        assert!(delta.to_seconds().abs() < 0.2);
     }
 }
