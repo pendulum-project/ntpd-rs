@@ -102,7 +102,7 @@ pub unsafe fn sockaddr_to_socket_addr(sockaddr: *const libc::sockaddr) -> Option
             let socketaddr = std::net::SocketAddrV6::new(
                 std::net::Ipv6Addr::from(segment_bytes),
                 u16::from_be_bytes(inaddr.sin6_port.to_ne_bytes()),
-                inaddr.sin6_flowinfo,
+                inaddr.sin6_flowinfo, // NOTE: Despite network byte order, no conversion is needed (see https://github.com/rust-lang/rust/issues/101605)
                 inaddr.sin6_scope_id,
             );
 
