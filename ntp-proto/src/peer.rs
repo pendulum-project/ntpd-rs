@@ -467,7 +467,7 @@ impl Peer {
         info!(our_id = ?self.our_id, peer_id = ?self.peer_id, "Peer reset");
     }
 
-    #[cfg(any(test, feature = "fuzz"))]
+    #[cfg(test)]
     pub(crate) fn test_peer(instant: NtpInstant) -> Self {
         Peer {
             last_poll_interval: PollInterval::default(),

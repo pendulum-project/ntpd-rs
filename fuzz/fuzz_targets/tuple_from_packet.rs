@@ -1,5 +1,8 @@
 #![no_main]
-use libfuzzer_sys::{fuzz_target, arbitrary::{Arbitrary, self}};
+use libfuzzer_sys::{
+    arbitrary::{self, Arbitrary},
+    fuzz_target,
+};
 use ntp_proto::fuzz_tuple_from_packet_default;
 
 #[derive(Debug, Clone, Arbitrary)]
@@ -13,5 +16,12 @@ struct InputData {
 }
 
 fuzz_target!(|input: InputData| {
-    fuzz_tuple_from_packet_default(input.client, input.client_interval, input.server, input.server_interval, input.client_precision, input.server_precision);
+    fuzz_tuple_from_packet_default(
+        input.client,
+        input.client_interval,
+        input.server,
+        input.server_interval,
+        input.client_precision,
+        input.server_precision,
+    );
 });
