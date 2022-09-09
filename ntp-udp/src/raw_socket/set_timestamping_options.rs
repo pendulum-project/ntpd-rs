@@ -29,13 +29,20 @@ pub(crate) fn set_timestamping_options(
             | libc::SOF_TIMESTAMPING_OPT_ID;
     }
 
+    // for documentation on SO_TIMESTAMPING see
+    // https://www.kernel.org/doc/Documentation/networking/timestamping.txt
+    // Safety:
+    // we have a reference to the socket, so fd is a valid file descriptor for the duration of the call
+    // SOL_SOCKET + SO_TIMESTAMPING expect a *u32 as value (see section 1.3.4. of above), which &options
+    // is. Furthermore, we own options hence the pointer is valid for the duration of the call.
+    // option_len is set to the size of u32, which is the size for which the value pointer is valid.
     unsafe {
         cerr(libc::setsockopt(
             fd,
             libc::SOL_SOCKET,
             libc::SO_TIMESTAMPING,
             &options as *const _ as *const libc::c_void,
-            std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+            std::mem::size_of::<u32>() as libc::socklen_t,
         ))?
     };
 
