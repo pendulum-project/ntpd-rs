@@ -261,116 +261,101 @@ mod tests {
 
         let config = SystemConfig::default();
 
-        assert_eq!(
-            requires_clock_recalculation(
-                MsgForSystem::NewMeasurement(
-                    PeerIndex::from_inner(0),
-                    prev_epoch,
-                    peer_snapshot(
-                        PeerStatistics {
-                            delay: NtpDuration::from_seconds(0.1),
-                            offset: NtpDuration::from_seconds(0.),
-                            dispersion: NtpDuration::from_seconds(0.05),
-                            jitter: 0.05,
-                        },
-                        base,
-                        NtpDuration::from_seconds(0.1),
-                        NtpDuration::from_seconds(0.05),
-                    ),
+        assert!(!requires_clock_recalculation(
+            MsgForSystem::NewMeasurement(
+                PeerIndex::from_inner(0),
+                prev_epoch,
+                peer_snapshot(
+                    PeerStatistics {
+                        delay: NtpDuration::from_seconds(0.1),
+                        offset: NtpDuration::from_seconds(0.),
+                        dispersion: NtpDuration::from_seconds(0.05),
+                        jitter: 0.05,
+                    },
+                    base,
+                    NtpDuration::from_seconds(0.1),
+                    NtpDuration::from_seconds(0.05),
                 ),
-                epoch,
-                base,
-                config,
-                PollInterval::MIN,
             ),
-            false
-        );
+            epoch,
+            base,
+            config,
+            PollInterval::MIN,
+        ));
 
-        assert_eq!(
-            requires_clock_recalculation(
-                MsgForSystem::NewMeasurement(
-                    PeerIndex::from_inner(0),
-                    epoch,
-                    peer_snapshot(
-                        PeerStatistics {
-                            delay: NtpDuration::from_seconds(0.1),
-                            offset: NtpDuration::from_seconds(0.),
-                            dispersion: NtpDuration::from_seconds(0.05),
-                            jitter: 0.05,
-                        },
-                        base,
-                        NtpDuration::from_seconds(1.0),
-                        NtpDuration::from_seconds(2.0),
-                    ),
+        assert!(!requires_clock_recalculation(
+            MsgForSystem::NewMeasurement(
+                PeerIndex::from_inner(0),
+                epoch,
+                peer_snapshot(
+                    PeerStatistics {
+                        delay: NtpDuration::from_seconds(0.1),
+                        offset: NtpDuration::from_seconds(0.),
+                        dispersion: NtpDuration::from_seconds(0.05),
+                        jitter: 0.05,
+                    },
+                    base,
+                    NtpDuration::from_seconds(1.0),
+                    NtpDuration::from_seconds(2.0),
                 ),
-                epoch,
-                base,
-                config,
-                PollInterval::MIN,
             ),
-            false
-        );
+            epoch,
+            base,
+            config,
+            PollInterval::MIN,
+        ));
 
-        assert_eq!(
-            requires_clock_recalculation(
-                MsgForSystem::NewMeasurement(
-                    PeerIndex::from_inner(0),
-                    epoch,
-                    peer_snapshot(
-                        PeerStatistics {
-                            delay: NtpDuration::from_seconds(0.1),
-                            offset: NtpDuration::from_seconds(0.),
-                            dispersion: NtpDuration::from_seconds(0.05),
-                            jitter: 0.05,
-                        },
-                        base,
-                        NtpDuration::from_seconds(0.1),
-                        NtpDuration::from_seconds(0.05),
-                    ),
+        assert!(requires_clock_recalculation(
+            MsgForSystem::NewMeasurement(
+                PeerIndex::from_inner(0),
+                epoch,
+                peer_snapshot(
+                    PeerStatistics {
+                        delay: NtpDuration::from_seconds(0.1),
+                        offset: NtpDuration::from_seconds(0.),
+                        dispersion: NtpDuration::from_seconds(0.05),
+                        jitter: 0.05,
+                    },
+                    base,
+                    NtpDuration::from_seconds(0.1),
+                    NtpDuration::from_seconds(0.05),
                 ),
-                epoch,
-                base,
-                config,
-                PollInterval::MIN,
             ),
-            true
-        );
+            epoch,
+            base,
+            config,
+            PollInterval::MIN,
+        ));
 
-        assert_eq!(
-            requires_clock_recalculation(
-                MsgForSystem::UpdatedSnapshot(
-                    PeerIndex::from_inner(1),
-                    epoch,
-                    peer_snapshot(
-                        PeerStatistics {
-                            delay: NtpDuration::from_seconds(0.1),
-                            offset: NtpDuration::from_seconds(0.),
-                            dispersion: NtpDuration::from_seconds(0.05),
-                            jitter: 0.05,
-                        },
-                        base,
-                        NtpDuration::from_seconds(0.1),
-                        NtpDuration::from_seconds(0.05),
-                    ),
+        assert!(!requires_clock_recalculation(
+            MsgForSystem::UpdatedSnapshot(
+                PeerIndex::from_inner(1),
+                epoch,
+                peer_snapshot(
+                    PeerStatistics {
+                        delay: NtpDuration::from_seconds(0.1),
+                        offset: NtpDuration::from_seconds(0.),
+                        dispersion: NtpDuration::from_seconds(0.05),
+                        jitter: 0.05,
+                    },
+                    base,
+                    NtpDuration::from_seconds(0.1),
+                    NtpDuration::from_seconds(0.05),
                 ),
-                epoch,
-                base,
-                config,
-                PollInterval::MIN,
             ),
-            false
-        );
+            epoch,
+            base,
+            config,
+            PollInterval::MIN,
+        ));
 
-        assert_eq!(
-            requires_clock_recalculation(
-                MsgForSystem::MustDemobilize(PeerIndex::from_inner(1)),
-                epoch,
-                base,
-                config,
-                PollInterval::MIN,
-            ),
-            false
-        );
+        assert!(!requires_clock_recalculation(
+            MsgForSystem::MustDemobilize(PeerIndex::from_inner(1)),
+            epoch,
+            base,
+            config,
+            PollInterval::MIN,
+        ));
     }
 
     #[tokio::test]
