@@ -151,7 +151,7 @@ impl Iterator for InterfaceAddressIterator {
 fn getifaddrs() -> std::io::Result<InterfaceAddressIterator> {
     let mut addrs = mem::MaybeUninit::<*mut libc::ifaddrs>::uninit();
 
-    crate::cerr(unsafe { libc::getifaddrs(addrs.as_mut_ptr()) })?;
+    crate::raw_socket::cerr(unsafe { libc::getifaddrs(addrs.as_mut_ptr()) })?;
 
     Ok(InterfaceAddressIterator {
         base: unsafe { addrs.assume_init() },
