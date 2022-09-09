@@ -87,7 +87,7 @@ pub unsafe fn sockaddr_to_socket_addr(sockaddr: *const libc::sockaddr) -> Option
 
             let socketaddr = std::net::SocketAddrV4::new(
                 std::net::Ipv4Addr::from(inaddr.sin_addr.s_addr.to_le_bytes()),
-                inaddr.sin_port,
+                u16::from_be_bytes(inaddr.sin_port.to_ne_bytes()),
             );
 
             Some(std::net::SocketAddr::V4(socketaddr))
@@ -101,7 +101,7 @@ pub unsafe fn sockaddr_to_socket_addr(sockaddr: *const libc::sockaddr) -> Option
 
             let socketaddr = std::net::SocketAddrV6::new(
                 std::net::Ipv6Addr::from(segment_bytes),
-                inaddr.sin6_port,
+                u16::from_be_bytes(inaddr.sin6_port.to_ne_bytes()),
                 inaddr.sin6_flowinfo,
                 inaddr.sin6_scope_id,
             );
@@ -195,7 +195,7 @@ mod tests {
 
         let sockaddr = libc::sockaddr {
             sa_family: 2,
-            sa_data: [42, 0, -84, 23, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+            sa_data: [0, 42, -84, 23, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
         };
 
         let socket_addr = unsafe { sockaddr_to_socket_addr(&sockaddr) }.unwrap();
@@ -215,7 +215,7 @@ mod tests {
 
         let sockaddr = libc::sockaddr_in6 {
             sin6_family: 10,
-            sin6_port: 32,
+            sin6_port: u16::from_ne_bytes([0, 32]),
             sin6_flowinfo: 0,
             sin6_addr: libc::in6_addr { s6_addr: raw },
             sin6_scope_id: 0,
