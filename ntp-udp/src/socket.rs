@@ -12,9 +12,11 @@ use tokio::io::unix::AsyncFd;
 use tracing::{debug, instrument, trace, warn};
 
 use crate::{
-    control_message_space, control_messages, exceptional_condition_fd,
-    interface_name::sockaddr_storage_to_socket_addr, receive_message, set_timestamping_options,
-    zeroed_sockaddr_storage, ControlMessage, TimestampingConfig,
+    interface_name::sockaddr_storage_to_socket_addr,
+    raw_socket::{
+        control_message_space, control_messages, exceptional_condition_fd, receive_message,
+        set_timestamping_options, zeroed_sockaddr_storage, ControlMessage, TimestampingConfig,
+    },
 };
 
 enum Timestamping {
