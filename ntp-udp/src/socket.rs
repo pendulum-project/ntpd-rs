@@ -409,7 +409,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_client_basic() {
+    async fn test_client_basic_ipv4() {
         let mut a = UdpSocket::client(
             "127.0.0.1:10000".parse().unwrap(),
             "127.0.0.1:10001".parse().unwrap(),
@@ -438,7 +438,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_server_basic() {
+    async fn test_client_basic_ipv6() {
+        let mut a = UdpSocket::client(
+            "[::1]:10000".parse().unwrap(),
+            "[::1]:10001".parse().unwrap(),
+        )
+        .await
+        .unwrap();
+        let mut b = UdpSocket::client(
+            "[::1]:10001".parse().unwrap(),
+            "[::1]:10000".parse().unwrap(),
+        )
+        .await
+        .unwrap();
+
+        a.send(&[1; 48]).await.unwrap();
+        let mut buf = [0; 48];
+        let (size, addr, _) = b.recv(&mut buf).await.unwrap();
+        assert_eq!(size, 48);
+        assert_eq!(addr, "[::1]:10000".parse().unwrap());
+        assert_eq!(buf, [1; 48]);
+
+        b.send(&[2; 48]).await.unwrap();
+        let (size, addr, _) = a.recv(&mut buf).await.unwrap();
+        assert_eq!(size, 48);
+        assert_eq!(addr, "[::1]:10001".parse().unwrap());
+        assert_eq!(buf, [2; 48]);
+    }
+
+    #[tokio::test]
+    async fn test_server_basic_ipv4() {
         let a = UdpSocket::server("127.0.0.1:10002".parse().unwrap())
             .await
             .unwrap();
@@ -460,6 +489,32 @@ mod tests {
         let (size, addr, _) = b.recv(&mut buf).await.unwrap();
         assert_eq!(size, 48);
         assert_eq!(addr, "127.0.0.1:10002".parse().unwrap());
+        assert_eq!(buf, [2; 48]);
+    }
+
+    #[tokio::test]
+    async fn test_server_basic_ipv6() {
+        let a = UdpSocket::server("[::1]:10002".parse().unwrap())
+            .await
+            .unwrap();
+        let mut b = UdpSocket::client(
+            "[::1]:10003".parse().unwrap(),
+            "[::1]:10002".parse().unwrap(),
+        )
+        .await
+        .unwrap();
+
+        b.send(&[1; 48]).await.unwrap();
+        let mut buf = [0; 48];
+        let (size, addr, _) = a.recv(&mut buf).await.unwrap();
+        assert_eq!(size, 48);
+        assert_eq!(addr, "[::1]:10003".parse().unwrap());
+        assert_eq!(buf, [1; 48]);
+
+        a.send_to(&[2; 48], addr).await.unwrap();
+        let (size, addr, _) = b.recv(&mut buf).await.unwrap();
+        assert_eq!(size, 48);
+        assert_eq!(addr, "[::1]:10002".parse().unwrap());
         assert_eq!(buf, [2; 48]);
     }
 
