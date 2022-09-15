@@ -48,10 +48,10 @@ impl InterfaceAddress {
     ///
     /// assumes a valid `libc::ifaddrs`
     unsafe fn from_libc_ifaddrs(info: &libc::ifaddrs) -> InterfaceAddress {
-        let ifname = ffi::CStr::from_ptr(info.ifa_name);
+        let ifname = unsafe { ffi::CStr::from_ptr(info.ifa_name) };
 
         let sockaddr: *mut libc::sockaddr = info.ifa_addr;
-        let address = sockaddr_to_socket_addr(sockaddr);
+        let address = unsafe { sockaddr_to_socket_addr(sockaddr) };
 
         let addr = InterfaceAddress {
             interface_name: ifname.to_string_lossy().to_string(),
@@ -85,9 +85,9 @@ pub unsafe fn sockaddr_to_socket_addr(sockaddr: *const libc::sockaddr) -> Option
     // As such, when doing conversions here, we should start from the NATIVE
     // byte representation, as this will actualy be the big-endian representation
     // of the underlying value regardless of platform.
-    match (*sockaddr).sa_family as libc::c_int {
+    match unsafe { (*sockaddr).sa_family as libc::c_int } {
         libc::AF_INET => {
-            let inaddr: libc::sockaddr_in = *(sockaddr as *const libc::sockaddr_in);
+            let inaddr: libc::sockaddr_in = unsafe { *(sockaddr as *const libc::sockaddr_in) };
 
             let socketaddr = std::net::SocketAddrV4::new(
                 std::net::Ipv4Addr::from(inaddr.sin_addr.s_addr.to_ne_bytes()),
@@ -97,11 +97,11 @@ pub unsafe fn sockaddr_to_socket_addr(sockaddr: *const libc::sockaddr) -> Option
             Some(std::net::SocketAddr::V4(socketaddr))
         }
         libc::AF_INET6 => {
-            let inaddr: libc::sockaddr_in6 = *(sockaddr as *const libc::sockaddr_in6);
+            let inaddr: libc::sockaddr_in6 = unsafe { *(sockaddr as *const libc::sockaddr_in6) };
 
             let sin_addr = inaddr.sin6_addr.s6_addr;
             let segment_bytes: [u8; 16] =
-                std::ptr::read_unaligned(&sin_addr as *const _ as *const _);
+                unsafe { std::ptr::read_unaligned(&sin_addr as *const _ as *const _) };
 
             let socketaddr = std::net::SocketAddrV6::new(
                 std::net::Ipv6Addr::from(segment_bytes),
