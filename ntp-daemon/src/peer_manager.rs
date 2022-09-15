@@ -256,119 +256,117 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_peers() {
-        tokio_test::block_on(async {
-            let base = NtpInstant::now();
-            let prev_epoch = ResetEpoch::default();
-            let epoch = prev_epoch.inc();
-            let mut peers = Peers::from_statuslist(
-                &[PeerStatus::NoMeasurement; 4],
-                &(0..4)
-                    .map(|i| PeerConfig {
-                        addr: format!("127.0.0.{i}:123"),
-                        mode: PeerHostMode::Server,
-                    })
-                    .collect::<Vec<_>>(),
-                TestClock {},
-            );
-            assert_eq!(peers.valid_snapshots().count(), 0);
+    #[tokio::test]
+    async fn test_peers() {
+        let base = NtpInstant::now();
+        let prev_epoch = ResetEpoch::default();
+        let epoch = prev_epoch.inc();
+        let mut peers = Peers::from_statuslist(
+            &[PeerStatus::NoMeasurement; 4],
+            &(0..4)
+                .map(|i| PeerConfig {
+                    addr: format!("127.0.0.{i}:123"),
+                    mode: PeerHostMode::Server,
+                })
+                .collect::<Vec<_>>(),
+            TestClock {},
+        );
+        assert_eq!(peers.valid_snapshots().count(), 0);
 
-            peers
-                .update(
-                    MsgForSystem::NewMeasurement(
-                        PeerIndex { index: 0 },
-                        prev_epoch,
-                        peer_snapshot(
-                            PeerStatistics {
-                                delay: NtpDuration::from_seconds(0.1),
-                                offset: NtpDuration::from_seconds(0.),
-                                dispersion: NtpDuration::from_seconds(0.05),
-                                jitter: 0.05,
-                            },
-                            base,
-                            NtpDuration::from_seconds(0.1),
-                            NtpDuration::from_seconds(0.05),
-                        ),
+        peers
+            .update(
+                MsgForSystem::NewMeasurement(
+                    PeerIndex { index: 0 },
+                    prev_epoch,
+                    peer_snapshot(
+                        PeerStatistics {
+                            delay: NtpDuration::from_seconds(0.1),
+                            offset: NtpDuration::from_seconds(0.),
+                            dispersion: NtpDuration::from_seconds(0.05),
+                            jitter: 0.05,
+                        },
+                        base,
+                        NtpDuration::from_seconds(0.1),
+                        NtpDuration::from_seconds(0.05),
                     ),
-                    epoch,
-                )
-                .await;
-            assert_eq!(peers.valid_snapshots().count(), 0);
+                ),
+                epoch,
+            )
+            .await;
+        assert_eq!(peers.valid_snapshots().count(), 0);
 
-            peers
-                .update(
-                    MsgForSystem::NewMeasurement(
-                        PeerIndex { index: 0 },
-                        epoch,
-                        peer_snapshot(
-                            PeerStatistics {
-                                delay: NtpDuration::from_seconds(0.1),
-                                offset: NtpDuration::from_seconds(0.),
-                                dispersion: NtpDuration::from_seconds(0.05),
-                                jitter: 0.05,
-                            },
-                            base,
-                            NtpDuration::from_seconds(1.0),
-                            NtpDuration::from_seconds(2.0),
-                        ),
+        peers
+            .update(
+                MsgForSystem::NewMeasurement(
+                    PeerIndex { index: 0 },
+                    epoch,
+                    peer_snapshot(
+                        PeerStatistics {
+                            delay: NtpDuration::from_seconds(0.1),
+                            offset: NtpDuration::from_seconds(0.),
+                            dispersion: NtpDuration::from_seconds(0.05),
+                            jitter: 0.05,
+                        },
+                        base,
+                        NtpDuration::from_seconds(1.0),
+                        NtpDuration::from_seconds(2.0),
                     ),
-                    epoch,
-                )
-                .await;
-            assert_eq!(peers.valid_snapshots().count(), 1);
+                ),
+                epoch,
+            )
+            .await;
+        assert_eq!(peers.valid_snapshots().count(), 1);
 
-            peers
-                .update(
-                    MsgForSystem::NewMeasurement(
-                        PeerIndex { index: 0 },
-                        epoch,
-                        peer_snapshot(
-                            PeerStatistics {
-                                delay: NtpDuration::from_seconds(0.1),
-                                offset: NtpDuration::from_seconds(0.),
-                                dispersion: NtpDuration::from_seconds(0.05),
-                                jitter: 0.05,
-                            },
-                            base,
-                            NtpDuration::from_seconds(0.1),
-                            NtpDuration::from_seconds(0.05),
-                        ),
+        peers
+            .update(
+                MsgForSystem::NewMeasurement(
+                    PeerIndex { index: 0 },
+                    epoch,
+                    peer_snapshot(
+                        PeerStatistics {
+                            delay: NtpDuration::from_seconds(0.1),
+                            offset: NtpDuration::from_seconds(0.),
+                            dispersion: NtpDuration::from_seconds(0.05),
+                            jitter: 0.05,
+                        },
+                        base,
+                        NtpDuration::from_seconds(0.1),
+                        NtpDuration::from_seconds(0.05),
                     ),
-                    epoch,
-                )
-                .await;
-            assert_eq!(peers.valid_snapshots().count(), 1);
+                ),
+                epoch,
+            )
+            .await;
+        assert_eq!(peers.valid_snapshots().count(), 1);
 
-            peers
-                .update(
-                    MsgForSystem::UpdatedSnapshot(
-                        PeerIndex { index: 1 },
-                        epoch,
-                        peer_snapshot(
-                            PeerStatistics {
-                                delay: NtpDuration::from_seconds(0.1),
-                                offset: NtpDuration::from_seconds(0.),
-                                dispersion: NtpDuration::from_seconds(0.05),
-                                jitter: 0.05,
-                            },
-                            base,
-                            NtpDuration::from_seconds(0.1),
-                            NtpDuration::from_seconds(0.05),
-                        ),
+        peers
+            .update(
+                MsgForSystem::UpdatedSnapshot(
+                    PeerIndex { index: 1 },
+                    epoch,
+                    peer_snapshot(
+                        PeerStatistics {
+                            delay: NtpDuration::from_seconds(0.1),
+                            offset: NtpDuration::from_seconds(0.),
+                            dispersion: NtpDuration::from_seconds(0.05),
+                            jitter: 0.05,
+                        },
+                        base,
+                        NtpDuration::from_seconds(0.1),
+                        NtpDuration::from_seconds(0.05),
                     ),
-                    epoch,
-                )
-                .await;
-            assert_eq!(peers.valid_snapshots().count(), 2);
+                ),
+                epoch,
+            )
+            .await;
+        assert_eq!(peers.valid_snapshots().count(), 2);
 
-            peers
-                .update(MsgForSystem::MustDemobilize(PeerIndex { index: 1 }), epoch)
-                .await;
-            assert_eq!(peers.valid_snapshots().count(), 1);
+        peers
+            .update(MsgForSystem::MustDemobilize(PeerIndex { index: 1 }), epoch)
+            .await;
+        assert_eq!(peers.valid_snapshots().count(), 1);
 
-            peers.reset_all();
-            assert_eq!(peers.valid_snapshots().count(), 0);
-        })
+        peers.reset_all();
+        assert_eq!(peers.valid_snapshots().count(), 0);
     }
 }

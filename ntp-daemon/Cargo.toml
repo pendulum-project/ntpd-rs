@@ -26,7 +26,6 @@ exitcode = "1.1.2"
 
 [dev-dependencies]
 ntp-proto = { path = "../ntp-proto", features=["ext-test"]}
-tokio-test = "0.4.2"
 
 [features]
 sentry = ["dep:sentry", "dep:sentry-tracing"]
