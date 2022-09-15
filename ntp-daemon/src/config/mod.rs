@@ -252,10 +252,10 @@ mod tests {
         let config: Config = toml::from_str("[[peers]]\naddr = \"example.com\"").unwrap();
         assert_eq!(
             config.peers,
-            vec![PeerConfig {
+            vec![PeerConfig::Standard(StandardPeerConfig {
                 addr: "example.com:123".into(),
                 mode: PeerHostMode::Server
-            }]
+            })]
         );
 
         let config: Config =
@@ -263,10 +263,10 @@ mod tests {
         assert!(config.log_filter.is_none());
         assert_eq!(
             config.peers,
-            vec![PeerConfig {
+            vec![PeerConfig::Standard(StandardPeerConfig {
                 addr: "example.com:123".into(),
                 mode: PeerHostMode::Server
-            }]
+            })]
         );
 
         let config: Config =
@@ -274,10 +274,10 @@ mod tests {
         assert!(config.log_filter.is_some());
         assert_eq!(
             config.peers,
-            vec![PeerConfig {
+            vec![PeerConfig::Standard(StandardPeerConfig {
                 addr: "example.com:123".into(),
                 mode: PeerHostMode::Server
-            }]
+            })]
         );
 
         let config: Config =
@@ -285,10 +285,10 @@ mod tests {
                 .unwrap();
         assert_eq!(
             config.peers,
-            vec![PeerConfig {
+            vec![PeerConfig::Standard(StandardPeerConfig {
                 addr: "example.com:123".into(),
                 mode: PeerHostMode::Server
-            }]
+            })]
         );
         assert!(config.system.panic_threshold.forward.is_none());
         assert!(config.system.panic_threshold.backward.is_none());
@@ -320,10 +320,10 @@ mod tests {
 
         assert_eq!(
             config.peers,
-            vec![PeerConfig {
+            vec![PeerConfig::Standard(StandardPeerConfig {
                 addr: "example.com:123".into(),
                 mode: PeerHostMode::Server
-            }]
+            })]
         );
     }
 
@@ -453,10 +453,10 @@ mod tests {
 
         assert_eq!(
             parsed_empty.peers,
-            vec![PeerConfig {
+            vec![PeerConfig::Standard(StandardPeerConfig {
                 addr: "foo.nl:123".to_string(),
                 mode: PeerHostMode::Server
-            }]
+            })]
         );
         assert!(parsed_empty.config.is_none());
         assert!(parsed_empty.log_filter.is_none());
@@ -467,14 +467,14 @@ mod tests {
         assert_eq!(
             parsed_empty.peers,
             vec![
-                PeerConfig {
+                PeerConfig::Standard(StandardPeerConfig {
                     addr: "foo.rs:123".to_string(),
                     mode: PeerHostMode::Server
-                },
-                PeerConfig {
+                }),
+                PeerConfig::Standard(StandardPeerConfig {
                     addr: "spam.nl:123".to_string(),
                     mode: PeerHostMode::Server
-                },
+                }),
             ]
         );
         assert!(parsed_empty.config.is_none());

@@ -81,11 +81,11 @@ impl<C: NtpClock> Peers<C> {
     async fn add_peer_internal(&mut self, config: Arc<PeerConfig>) -> JoinHandle<()> {
         let index = self.indexer.get();
         let addr = loop {
-            let host = lookup_host(&config.addr).await.map(|mut i| i.next());
+            let host = lookup_host(&config.addr()).await.map(|mut i| i.next());
 
             match host {
                 Ok(Some(addr)) => {
-                    debug!(resolved=?addr, unresolved=&config.addr, "resolved peer");
+                    debug!(resolved=?addr, unresolved=&config.addr(), "resolved peer");
                     break addr;
                 }
                 Ok(None) => {
@@ -173,7 +173,7 @@ impl<C: NtpClock> Peers<C> {
                 uptime: snapshot.time.elapsed(),
                 poll_interval: snapshot.poll_interval.as_system_duration(),
                 peer_id: snapshot.peer_id,
-                address: data.config.addr.to_owned(),
+                address: data.config.addr().to_owned(),
             },
         })
     }
@@ -222,7 +222,7 @@ mod tests {
         PollInterval,
     };
 
-    use crate::config::PeerHostMode;
+    use crate::config::{PeerHostMode, StandardPeerConfig};
 
     use super::*;
 
@@ -264,9 +264,11 @@ mod tests {
         let mut peers = Peers::from_statuslist(
             &[PeerStatus::NoMeasurement; 4],
             &(0..4)
-                .map(|i| PeerConfig {
-                    addr: format!("127.0.0.{i}:123"),
-                    mode: PeerHostMode::Server,
+                .map(|i| {
+                    PeerConfig::Standard(StandardPeerConfig {
+                        addr: format!("127.0.0.{i}:123"),
+                        mode: PeerHostMode::Server,
+                    })
                 })
                 .collect::<Vec<_>>(),
             TestClock {},
