@@ -30,6 +30,14 @@ const fn top_nibble(v: u128) -> u8 {
     ((v >> 124) & 0xF) as u8
 }
 
+/// retain only the top `128 - len` bits
+const fn apply_mask(val: u128, len: u8) -> u128 {
+    match u128::MAX.checked_shl((128 - len) as u32) {
+        Some(mask) => val & mask,
+        None => 0,
+    }
+}
+
 impl BitTree {
     #[allow(dead_code)]
     /// Lookup whether a given value is in the set encoded in this BitTree
@@ -66,9 +74,7 @@ impl BitTree {
     fn create(data: &mut [(u128, u8)]) -> Self {
         // Ensure values only have 1s in significant positions
         for (val, len) in data.iter_mut() {
-            *val &= 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF_u128
-                .checked_shl((128 - *len) as u32)
-                .unwrap_or(0);
+            *val = apply_mask(*val, *len);
         }
         // Ensure values are sorted by value and then by length
         data.sort();
