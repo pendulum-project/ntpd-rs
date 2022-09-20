@@ -26,7 +26,7 @@ struct BitTree {
     nodes: Vec<TreeNode>,
 }
 
-fn top_nibble(v: u128) -> u8 {
+const fn top_nibble(v: u128) -> u8 {
     ((v >> 124) & 0xF) as u8
 }
 
@@ -83,7 +83,7 @@ impl BitTree {
     /// Create the substructure for a node, recursively.
     /// Max recursion depth is maximum value of data[i].1/4
     /// for any i
-    fn fill_node(&mut self, mut data: &mut [(u128, u8)], node_idx: usize) {
+    fn fill_node(&mut self, mut data: &mut [(u128, u8)], node_index: usize) {
         // distribute the data into 16 4-bit buckets
         let mut counts = [0; 16];
         for (val, _) in data.iter() {
@@ -98,19 +98,19 @@ impl BitTree {
 
         // Fill in node
         let mut child_offset = self.nodes.len();
-        let node = &mut self.nodes[node_idx];
+        let node = &mut self.nodes[node_index];
         node.child_offset = child_offset as u32;
         for (i, segment) in subsegments.iter().enumerate() {
-            match segment.first() {
+            match segment.first().copied() {
                 // Probably empty, unless covered earlier, but we fix that later
                 None => node.outset |= 1 << i,
                 // Definetly covered, mark all that is needed
                 // Note that due to sorting order, len here
                 // is guaranteed to be largest amongst all
                 // parts of the segment
-                Some((_, len)) if *len <= 4 => {
+                Some((_, len)) if len <= 4 => {
                     // mark ALL parts of node covered by the segment as in the set.
-                    for j in 0..(1 << (4 - *len)) {
+                    for j in 0..(1 << (4 - len)) {
                         node.inset |= 1 << (i + j as usize)
                     }
                 }
@@ -121,8 +121,7 @@ impl BitTree {
                     let mut last = 0;
                     for part in segment.iter() {
                         if part.0 - offset <= last {
-                            last =
-                                std::cmp::max(last, part.0 - offset + (1_u128 << (128 - part.1)));
+                            last = u128::max(last, part.0 - offset + (1_u128 << (128 - part.1)));
                         }
                     }
                     if last >= (1 << 124) {
