@@ -96,14 +96,14 @@ impl BitTree {
             counts[top_nibble(*val) as usize] += 1;
         }
 
-        // Actually split into the relevant subsegments
+        // Actually split into the relevant subsegments, relies on the input being sorted.
         let mut subsegments: [&mut [(u128, u8)]; 16] = Default::default();
         for (i, start) in counts.iter().enumerate() {
             (subsegments[i], data) = data.split_at_mut(*start);
         }
 
         // Fill in node
-        let mut child_offset = self.nodes.len();
+        let child_offset = self.nodes.len();
         let node = &mut self.nodes[node_index];
         node.child_offset = child_offset as u32;
         for (i, segment) in subsegments.iter().enumerate() {
@@ -137,25 +137,33 @@ impl BitTree {
                 }
             }
         }
-        // compensate for incorrectly marked outsets due to overcoverage
+
+        // the outset should not contain anything that is included in the inset
+        // (this can happen due to overcoverage)
         node.outset &= !node.inset;
 
+        // bitmap of subsegments for which we have a decision
         let known_bitmap = node.inset | node.outset;
-        // allocate nodes
-        self.nodes.resize(
-            self.nodes.len() + (!known_bitmap).count_ones() as usize,
-            TreeNode::default(),
-        );
+
+        // allocate additional empty nodes
+        let unknown_count = known_bitmap.count_zeros() as usize;
+        self.nodes
+            .extend(std::iter::repeat(TreeNode::default()).take(unknown_count));
+
         // Create children for segments undecided at this level.
-        for (i, seg) in subsegments.iter_mut().enumerate() {
+        let mut child_offset = child_offset;
+        for (i, segment) in subsegments.iter_mut().enumerate() {
             if known_bitmap & (1 << i) != 0 {
                 continue; // no child needed
             }
-            for (val, len) in seg.iter_mut() {
+
+            // we've taken care of the top nibble,
+            // so shift everything over and do a recursive call
+            for (val, len) in segment.iter_mut() {
                 *val <<= 4;
                 *len -= 4;
             }
-            self.fill_node(seg, child_offset);
+            self.fill_node(segment, child_offset);
             child_offset += 1;
         }
     }
