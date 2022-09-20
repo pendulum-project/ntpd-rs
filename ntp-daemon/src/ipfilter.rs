@@ -84,35 +84,24 @@ impl BitTree {
     /// Max recursion depth is maximum value of data[i].1/4
     /// for any i
     fn fill_node(&mut self, mut data: &mut [(u128, u8)], node_idx: usize) {
-        // Figure out how the data splits over the 16 segments
-        // in this node. Note that we can do this in a linear
-        // scan since everything is already sorted.
-        let mut first_idx = [data.len(); 16];
-        first_idx[0] = 0;
-        let mut last = 0;
-        for (idx, (val, _)) in data.iter().enumerate() {
-            let cur = top_nibble(*val);
-            if cur != last {
-                for i in last + 1..=cur {
-                    first_idx[i as usize] = idx
-                }
-                last = cur;
-            }
+        // distribute the data into 16 4-bit buckets
+        let mut counts = [0; 16];
+        for (val, _) in data.iter() {
+            counts[top_nibble(*val) as usize] += 1;
         }
 
         // Actually split into the relevant subsegments
-        let mut segs = <[&mut [(u128, u8)]; 16]>::default();
-        for i in 0..15 {
-            (segs[i], data) = data.split_at_mut(first_idx[i + 1] - first_idx[i]);
+        let mut subsegments: [&mut [(u128, u8)]; 16] = Default::default();
+        for (i, start) in counts.iter().enumerate() {
+            (subsegments[i], data) = data.split_at_mut(*start);
         }
-        segs[15] = data;
 
         // Fill in node
         let mut child_offset = self.nodes.len();
         let node = &mut self.nodes[node_idx];
         node.child_offset = child_offset as u32;
-        for (i, seg) in segs.iter().enumerate() {
-            match seg.first() {
+        for (i, segment) in subsegments.iter().enumerate() {
+            match segment.first() {
                 // Probably empty, unless covered earlier, but we fix that later
                 None => node.outset |= 1 << i,
                 // Definetly covered, mark all that is needed
@@ -127,10 +116,10 @@ impl BitTree {
                 }
                 // May be covered by a the union of all its parts, we need to check
                 // for that. Otherwise it is undecided
-                _ => {
+                Some(_) => {
                     let offset = (i as u128) << 124;
                     let mut last = 0;
-                    for part in seg.iter() {
+                    for part in segment.iter() {
                         if part.0 - offset <= last {
                             last =
                                 std::cmp::max(last, part.0 - offset + (1_u128 << (128 - part.1)));
@@ -153,7 +142,7 @@ impl BitTree {
             TreeNode::default(),
         );
         // Create children for segments undecided at this level.
-        for (i, seg) in segs.iter_mut().enumerate() {
+        for (i, seg) in subsegments.iter_mut().enumerate() {
             if known_bitmap & (1 << i) != 0 {
                 continue; // no child needed
             }
