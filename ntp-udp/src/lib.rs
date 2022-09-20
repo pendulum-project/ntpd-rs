@@ -6,12 +6,6 @@ use std::os::unix::prelude::{AsRawFd, RawFd};
 
 use tokio::io::unix::AsyncFd;
 
-/// Makes the kernel return the timestamp as a cmsg alongside an empty packet,
-/// as opposed to alongside the original packet
-const SOF_TIMESTAMPING_OPT_TSONLY: u32 = 1 << 11;
-/// Makes the kernel return a packet id in the error cmsg.
-const SOF_TIMESTAMPING_OPT_ID: u32 = 1 << 7;
-
 fn set_timestamping_options(
     udp_socket: &std::net::UdpSocket,
     timestamping: TimestampingConfig,
@@ -35,8 +29,8 @@ fn set_timestamping_options(
         // - return just the timestamp, don't send the full message along
         // - tag the timestamp with an ID
         options |= libc::SOF_TIMESTAMPING_TX_SOFTWARE
-            | SOF_TIMESTAMPING_OPT_TSONLY
-            | SOF_TIMESTAMPING_OPT_ID;
+            | libc::SOF_TIMESTAMPING_OPT_TSONLY
+            | libc::SOF_TIMESTAMPING_OPT_ID;
     }
 
     unsafe {
