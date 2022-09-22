@@ -70,7 +70,28 @@ jobs:
         run: cargo install cargo-udeps --locked
 
       - name: cargo udeps
-        run: cargo udeps --all-targets ${{ matrix.features }}
+        run: cargo udeps --workspace --all-targets ${{ matrix.features }}
+  
+  unused-fuzzers:
+    name: Unused dependencies (fuzzers)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+        with:
+          persist-credentials: false
+
+      - name: Install nightly toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+
+      - name: Install udeps
+        run: cargo install cargo-udeps --locked
+
+      - name: cargo udeps
+        run: cargo udeps --manifest-path ./fuzz/Cargo.toml --all-targets
 
   format:
     name: Format
@@ -91,8 +112,12 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fmt
-          args: --all -- --check
-
+          args: --all --check
+      - name: Check formatting (fuzzers)
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --manifest-path ./fuzz/Cargo.toml --all --check
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
@@ -108,10 +133,16 @@ jobs:
           override: true
           default: true
           components: clippy
-      - uses: actions-rs/cargo@v1
+      - name: Run clippy
+        uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: -- -D warnings
+          args: --workspace --all-targets -- -D warnings
+      - name: Run clippy (fuzzers)
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --manifest-path ./fuzz/Cargo.toml --all-targets -- -D warnings
 
   fuzz:
     name: Smoke-test fuzzing targets
@@ -165,3 +196,8 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - uses: EmbarkStudios/cargo-deny-action@v1
+      with:
+        arguments: --workspace --all-features
+    - uses: EmbarkStudios/cargo-deny-action@v1
+      with:
+        arguments: --manifest-path ./fuzz/Cargo.toml --all-features

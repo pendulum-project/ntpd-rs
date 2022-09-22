@@ -289,8 +289,8 @@ mod tests {
         reader.read_buf(&mut bufref).await.unwrap();
 
         // Ensure neither lock is held long term
-        system_writer.write().await;
-        peers_writer.write().await;
+        let _ = system_writer.write().await;
+        let _ = peers_writer.write().await;
 
         handle.abort();
     }
