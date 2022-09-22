@@ -145,51 +145,45 @@ impl<C: NtpClock> Peers<C> {
         }
     }
 
-    fn spawn_peer_tasks(
-        &mut self,
-        new_active: Vec<SocketAddr>,
-        config: PeerConfig,
-    ) -> Vec<JoinHandle<()>> {
-        new_active
-            .into_iter()
-            .map(|addr| {
-                let index = self.indexer.get();
+    fn spawn_peer_task(&mut self, addr: SocketAddr, config: PeerConfig) -> JoinHandle<()> {
+        let index = self.indexer.get();
 
-                self.peers.insert(
-                    index,
-                    PeerData {
-                        status: PeerStatus::NoMeasurement,
-                        config: config.clone(),
-                        socket_address: addr,
-                    },
-                );
+        self.peers.insert(
+            index,
+            PeerData {
+                status: PeerStatus::NoMeasurement,
+                config,
+                socket_address: addr,
+            },
+        );
 
-                PeerTask::spawn(
-                    index,
-                    addr,
-                    self.clock.clone(),
-                    NETWORK_WAIT_PERIOD,
-                    self.channels.clone(),
-                )
-            })
-            .collect()
+        PeerTask::spawn(
+            index,
+            addr,
+            self.clock.clone(),
+            NETWORK_WAIT_PERIOD,
+            self.channels.clone(),
+        )
     }
 
     async fn add_peer_internal(&mut self, config: PeerConfig) -> Vec<JoinHandle<()>> {
-        match &config {
+        let new_active = match &config {
             PeerConfig::Standard(StandardPeerConfig { addr, .. }) => {
                 // unwrap is safe because of the peek() in `socket_addresses`
                 let address = socket_addresses(addr).await.next().unwrap();
 
-                self.spawn_peer_tasks(vec![address], config)
+                vec![address]
             }
             PeerConfig::Pool(PoolPeerConfig { addr, max_peers }) => {
                 let pool_status = self.pools.entry(addr.to_string()).or_default();
-                let new_active = pool_status.find_additional(addr, *max_peers).await;
-
-                self.spawn_peer_tasks(new_active, config)
+                pool_status.find_additional(addr, *max_peers).await
             }
-        }
+        };
+
+        new_active
+            .into_iter()
+            .map(|addr| self.spawn_peer_task(addr, config.clone()))
+            .collect()
     }
 
     /// Remove a peer from the data structure. This does not actually stop the peer task; it is
