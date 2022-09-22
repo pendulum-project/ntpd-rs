@@ -1,4 +1,8 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    net::SocketAddr,
+    sync::Arc,
+};
 
 use crate::{
     config::{PeerConfig, PoolPeerConfig, ServerConfig, StandardPeerConfig},
@@ -55,11 +59,70 @@ impl PeerIndexIssuer {
 struct PeerData {
     status: PeerStatus,
     config: PeerConfig,
+    socket_address: std::net::SocketAddr,
+}
+
+#[derive(Debug, Default)]
+struct PoolStatus {
+    /// Currently active peers taken from this pool
+    active: Vec<std::net::SocketAddr>,
+
+    /// Valid socket addresses in the pool, that are not currently active peers
+    backups: Vec<std::net::SocketAddr>,
+}
+
+impl PoolStatus {
+    async fn find_additional(&mut self, address: &str, max_peers: usize) -> Vec<SocketAddr> {
+        if self.backups.len() < (max_peers - self.active.len()) {
+            // there are not enough cached peers; try and get more with DNS resolve
+            let mut addresses: HashSet<SocketAddr> = socket_addresses(address).await.collect();
+
+            for a in self.active.iter() {
+                addresses.remove(a);
+            }
+
+            self.backups = addresses.into_iter().collect();
+        }
+
+        let additional = max_peers.saturating_sub(self.active.len());
+
+        let mut new_active = self.backups.split_off(additional);
+        std::mem::swap(&mut new_active, &mut self.backups);
+
+        self.active.extend(new_active.iter().copied());
+
+        new_active
+    }
+}
+
+async fn socket_addresses(address: &str) -> impl Iterator<Item = std::net::SocketAddr> + '_ {
+    loop {
+        let host = lookup_host(address).await;
+
+        match host {
+            Ok(addresses) => {
+                let mut it = addresses.peekable();
+
+                match it.peek() {
+                    None => {
+                        warn!("Could not resolve peer address, retrying");
+                        tokio::time::sleep(NETWORK_WAIT_PERIOD).await
+                    }
+                    Some(_) => break it,
+                }
+            }
+            Err(e) => {
+                warn!(error = ?e, "error while resolving peer address, retrying");
+                tokio::time::sleep(NETWORK_WAIT_PERIOD).await
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct Peers<C: NtpClock> {
     peers: HashMap<PeerIndex, PeerData>,
+    pools: HashMap<String, PoolStatus>,
     servers: Vec<Arc<ServerConfig>>,
     indexer: PeerIndexIssuer,
 
@@ -73,58 +136,79 @@ impl<C: NtpClock> Peers<C> {
             peers: Default::default(),
             servers: Default::default(),
             indexer: Default::default(),
+            pools: HashMap::new(),
             channels,
             clock,
         }
     }
 
-    async fn add_peer_internal(&mut self, config: PeerConfig) -> JoinHandle<()> {
-        let index = self.indexer.get();
-        let addr = loop {
-            let host = match &config {
-                PeerConfig::Standard(StandardPeerConfig { addr, .. }) => {
-                    debug!(unresolved = &addr, "lookup host");
-                    lookup_host(addr).await.map(|mut i| i.next())
-                }
+    fn spawn_peer_tasks(
+        &mut self,
+        new_active: Vec<SocketAddr>,
+        config: PeerConfig,
+    ) -> Vec<JoinHandle<()>> {
+        new_active
+            .into_iter()
+            .map(|addr| {
+                let index = self.indexer.get();
 
-                PeerConfig::Pool(PoolPeerConfig { addr, .. }) => {
-                    debug!(unresolved = &addr, "lookup host");
-                    lookup_host(addr).await.map(|mut i| i.next())
-                }
-            };
+                self.peers.insert(
+                    index,
+                    PeerData {
+                        status: PeerStatus::NoMeasurement,
+                        config: config.clone(),
+                        socket_address: addr,
+                    },
+                );
 
-            match host {
-                Ok(Some(addr)) => {
-                    debug!(resolved=?addr, "resolved peer");
-                    break addr;
-                }
-                Ok(None) => {
-                    warn!("Could not resolve peer address, retrying");
-                    tokio::time::sleep(NETWORK_WAIT_PERIOD).await
-                }
-                Err(e) => {
-                    warn!(error = ?e, "error while resolving peer address, retrying");
-                    tokio::time::sleep(NETWORK_WAIT_PERIOD).await
-                }
-            }
-        };
-        self.peers.insert(
-            index,
-            PeerData {
-                status: PeerStatus::NoMeasurement,
-                config,
-            },
-        );
-        PeerTask::spawn(
-            index,
-            addr,
-            self.clock.clone(),
-            NETWORK_WAIT_PERIOD,
-            self.channels.clone(),
-        )
+                PeerTask::spawn(
+                    index,
+                    addr,
+                    self.clock.clone(),
+                    NETWORK_WAIT_PERIOD,
+                    self.channels.clone(),
+                )
+            })
+            .collect()
     }
 
-    pub async fn add_peer(&mut self, config: PeerConfig) -> JoinHandle<()> {
+    async fn add_peer_internal(&mut self, config: PeerConfig) -> Vec<JoinHandle<()>> {
+        match &config {
+            PeerConfig::Standard(StandardPeerConfig { addr, .. }) => {
+                // unwrap is safe because of the peek() in `addresses`
+                let address = socket_addresses(addr).await.next().unwrap();
+
+                self.spawn_peer_tasks(vec![address], config)
+            }
+            PeerConfig::Pool(PoolPeerConfig { addr, max_peers }) => {
+                let pool_status = self.pools.entry(addr.to_string()).or_default();
+                let new_active = pool_status.find_additional(addr, *max_peers).await;
+
+                self.spawn_peer_tasks(new_active, config)
+            }
+        }
+    }
+
+    /// Remove a peer from the data structure. This does not actually stop the peer task; it is
+    /// assumed that the peer task is already stopped (e.g. because it crashed)
+    fn remove_peer(&mut self, index: &PeerIndex) -> Option<PeerData> {
+        self.peers.remove(index).map(|peer_data| {
+            if let PeerConfig::Pool(PoolPeerConfig { addr, .. }) = &peer_data.config {
+                if let Some(pool_status) = self.pools.get_mut(addr) {
+                    pool_status.active = pool_status
+                        .active
+                        .iter()
+                        .filter(|a| **a != peer_data.socket_address)
+                        .copied()
+                        .collect();
+                }
+            }
+
+            peer_data
+        })
+    }
+
+    pub async fn add_peer(&mut self, config: PeerConfig) -> Vec<JoinHandle<()>> {
         self.add_peer_internal(config).await
     }
 
@@ -215,7 +299,7 @@ impl<C: NtpClock> Peers<C> {
             }
             MsgForSystem::NetworkIssue(index) => {
                 // Restart the peer reusing its configuration.
-                let config = self.peers.remove(&index).unwrap().config;
+                let config = self.remove_peer(&index).unwrap().config;
                 self.add_peer_internal(config).await;
             }
         }
