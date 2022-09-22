@@ -8,18 +8,13 @@ use serde::{
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PeerHostMode {
     Server,
+    Pool,
 }
 
 impl Default for PeerHostMode {
     fn default() -> Self {
         PeerHostMode::Server
     }
-}
-
-#[derive(Deserialize, Debug)]
-pub enum PeerType {
-    Standard,
-    Pool,
 }
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
@@ -181,15 +176,15 @@ impl<'de> Deserialize<'de> for PeerConfig {
                 let addr = addr.ok_or_else(|| de::Error::missing_field("addr"))?;
                 let mode = mode.unwrap_or_default();
 
-                match type_.unwrap_or(PeerType::Standard) {
-                    PeerType::Standard => {
+                match type_.unwrap_or(PeerHostMode::Server) {
+                    PeerHostMode::Server => {
                         if max_peers.is_some() {
                             Err(de::Error::unknown_field("max_peers", &["addr", "mode"]))
                         } else {
                             Ok(PeerConfig::Standard(StandardPeerConfig { addr, mode }))
                         }
                     }
-                    PeerType::Pool => {
+                    PeerHostMode::Pool => {
                         let max_peers = max_peers.unwrap_or(1);
 
                         Ok(PeerConfig::Pool(PoolPeerConfig {
