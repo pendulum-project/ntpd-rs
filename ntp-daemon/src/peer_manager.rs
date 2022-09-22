@@ -54,7 +54,7 @@ impl PeerIndexIssuer {
 #[derive(Debug)]
 struct PeerData {
     status: PeerStatus,
-    config: Arc<PeerConfig>,
+    config: PeerConfig,
 }
 
 #[derive(Debug)]
@@ -78,10 +78,10 @@ impl<C: NtpClock> Peers<C> {
         }
     }
 
-    async fn add_peer_internal(&mut self, config: Arc<PeerConfig>) -> JoinHandle<()> {
+    async fn add_peer_internal(&mut self, config: PeerConfig) -> JoinHandle<()> {
         let index = self.indexer.get();
         let addr = loop {
-            let host = match &*config {
+            let host = match &config {
                 PeerConfig::Standard(StandardPeerConfig { addr, .. }) => {
                     debug!(unresolved = &addr, "lookup host");
                     lookup_host(addr).await.map(|mut i| i.next())
@@ -125,7 +125,7 @@ impl<C: NtpClock> Peers<C> {
     }
 
     pub async fn add_peer(&mut self, config: PeerConfig) -> JoinHandle<()> {
-        self.add_peer_internal(Arc::new(config)).await
+        self.add_peer_internal(config).await
     }
 
     fn add_server_internal(&mut self, config: Arc<ServerConfig>) -> JoinHandle<()> {
@@ -156,7 +156,7 @@ impl<C: NtpClock> Peers<C> {
                 index,
                 PeerData {
                     status: status.to_owned(),
-                    config: Arc::new(raw_configs[i].clone()),
+                    config: raw_configs[i].clone(),
                 },
             );
         }
@@ -183,7 +183,7 @@ impl<C: NtpClock> Peers<C> {
                 uptime: snapshot.time.elapsed(),
                 poll_interval: snapshot.poll_interval.as_system_duration(),
                 peer_id: snapshot.peer_id,
-                address: match &*data.config {
+                address: match &data.config {
                     PeerConfig::Standard(StandardPeerConfig { addr, .. }) => addr.to_string(),
                     PeerConfig::Pool(PoolPeerConfig { addr, .. }) => addr.to_string(),
                 },
