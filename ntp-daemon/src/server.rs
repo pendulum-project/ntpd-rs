@@ -10,6 +10,7 @@ use tracing::{error, instrument, trace, warn};
 pub struct ServerTask<C: 'static + NtpClock + Send> {
     socket: UdpSocket,
     system: Arc<RwLock<SystemSnapshot>>,
+    client_cache: TimestampedCache<SocketAddr>,
     clock: C,
 }
 
@@ -38,32 +39,11 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 socket,
                 system,
                 clock,
+                client_cache: TimestampedCache::new(32),
             };
 
             process.serve().await
         })
-    }
-
-    async fn generate_response(
-        &mut self,
-        input: NtpHeader,
-        recv_timestamp: NtpTimestamp,
-    ) -> NtpHeader {
-        let system = self.system.read().await;
-        NtpHeader {
-            mode: NtpAssociationMode::Server,
-            stratum: system.stratum,
-            origin_timestamp: input.transmit_timestamp,
-            receive_timestamp: recv_timestamp,
-            reference_id: system.reference_id,
-            poll: input.poll,
-            precision: system.precision.log2(),
-            root_delay: system.root_delay,
-            root_dispersion: system.root_dispersion,
-            // Timestamp must be last to make it as accurate as possible.
-            transmit_timestamp: self.clock.now().expect("Failed to read time"),
-            ..NtpHeader::new()
-        }
     }
 
     #[instrument(level = "debug", skip(self), fields(
@@ -75,7 +55,21 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             let recv_res = self.socket.recv(&mut buf).await;
             match accept_packet(recv_res, &buf) {
                 AcceptResult::Accept(packet, peer_addr, recv_timestamp) => {
-                    let response = self.generate_response(packet, recv_timestamp).await;
+                    let system = *self.system.read().await;
+
+                    let timestamp = std::time::Instant::now();
+                    let cutoff = std::time::Duration::from_secs(32);
+
+                    let response = if self.client_cache.is_allowed(peer_addr, timestamp, cutoff) {
+                        NtpHeader::timestamp_response(
+                            &system,
+                            packet,
+                            recv_timestamp,
+                            &mut self.clock,
+                        )
+                    } else {
+                        NtpHeader::rate_limit_response()
+                    };
 
                     if let Err(send_err) =
                         self.socket.send_to(&response.serialize(), peer_addr).await
@@ -156,6 +150,67 @@ fn accept_packet(
                 // would then result in a denial-of-service.
                 Some(libc::ENETDOWN) => AcceptResult::NetworkGone,
                 _ => AcceptResult::Ignore,
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+struct TimestampedCache<T> {
+    elements: Vec<Option<(T, std::time::Instant)>>,
+}
+
+impl<T: std::hash::Hash + Eq> TimestampedCache<T> {
+    fn new(length: usize) -> Self {
+        Self {
+            // looks a bit odd, but prevents a `Clone` constraint
+            elements: std::iter::repeat_with(|| None).take(length).collect(),
+        }
+    }
+
+    fn index(&self, item: &T) -> usize {
+        use std::hash::Hasher;
+
+        let mut hasher = std::collections::hash_map::DefaultHasher::default();
+
+        item.hash(&mut hasher);
+
+        hasher.finish() as usize % self.elements.len()
+    }
+
+    fn insert(&mut self, item: T, timestamp: std::time::Instant) {
+        let index = self.index(&item);
+        self.elements[index] = Some((item, timestamp));
+    }
+
+    fn get(&self, item: &T) -> Option<std::time::Instant> {
+        match &self.elements[self.index(item)] {
+            None => None,
+            Some((existing, timestamp)) => {
+                if existing == item {
+                    Some(*timestamp)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    fn is_allowed(
+        &mut self,
+        item: T,
+        timestamp: std::time::Instant,
+        cutoff: std::time::Duration,
+    ) -> bool {
+        match self.get(&item) {
+            None => {
+                self.insert(item, timestamp);
+                true
+            }
+            Some(existing_timestamp) => {
+                self.insert(item, timestamp);
+
+                timestamp.duration_since(existing_timestamp) >= cutoff
             }
         }
     }
