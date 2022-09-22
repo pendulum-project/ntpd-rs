@@ -11,6 +11,7 @@ fuzz = []
 ext-test = []
 
 [dependencies]
+# Note: md5 is needed to calculate ReferenceIDs for IPv6 addresses per RFC5905
 md-5 = "0.10.5"
 rand = "0.8.5"
 tracing = "0.1.36"
