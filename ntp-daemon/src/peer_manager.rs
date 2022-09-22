@@ -188,12 +188,9 @@ impl<C: NtpClock> Peers<C> {
         self.peers.remove(index).map(|peer_data| {
             if let PeerConfig::Pool(PoolPeerConfig { addr, .. }) = &peer_data.config {
                 if let Some(pool_status) = self.pools.get_mut(addr) {
-                    pool_status.active = pool_status
+                    pool_status
                         .active
-                        .iter()
-                        .filter(|a| **a != peer_data.socket_address)
-                        .copied()
-                        .collect();
+                        .retain(|a| *a != peer_data.socket_address);
                 }
             }
 
