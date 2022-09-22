@@ -11,7 +11,7 @@ fuzz = []
 ext-test = []
 
 [dependencies]
-md-5 = "0.10.4"
+md-5 = "0.10.5"
 rand = "0.8.5"
 tracing = "0.1.36"
 serde = { version = "1.0.144", features = ["derive"] }
