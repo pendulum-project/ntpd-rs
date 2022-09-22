@@ -7,7 +7,9 @@ use serde::{
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PeerHostMode {
+    #[serde(alias = "server")]
     Server,
+    #[serde(alias = "pool")]
     Pool,
 }
 
