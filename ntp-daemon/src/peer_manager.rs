@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    config::{PeerConfig, ServerConfig},
+    config::{PeerConfig, PoolPeerConfig, ServerConfig, StandardPeerConfig},
     observer::ObservablePeerState,
     peer::{MsgForSystem, PeerChannels, PeerTask, ResetEpoch},
     server::ServerTask,
@@ -81,11 +81,21 @@ impl<C: NtpClock> Peers<C> {
     async fn add_peer_internal(&mut self, config: Arc<PeerConfig>) -> JoinHandle<()> {
         let index = self.indexer.get();
         let addr = loop {
-            let host = lookup_host(&config.addr).await.map(|mut i| i.next());
+            let host = match &*config {
+                PeerConfig::Standard(StandardPeerConfig { addr, .. }) => {
+                    debug!(unresolved = &addr, "lookup host");
+                    lookup_host(addr).await.map(|mut i| i.next())
+                }
+
+                PeerConfig::Pool(PoolPeerConfig { addr, .. }) => {
+                    debug!(unresolved = &addr, "lookup host");
+                    lookup_host(addr).await.map(|mut i| i.next())
+                }
+            };
 
             match host {
                 Ok(Some(addr)) => {
-                    debug!(resolved=?addr, unresolved=&config.addr, "resolved peer");
+                    debug!(resolved=?addr, "resolved peer");
                     break addr;
                 }
                 Ok(None) => {
@@ -173,7 +183,10 @@ impl<C: NtpClock> Peers<C> {
                 uptime: snapshot.time.elapsed(),
                 poll_interval: snapshot.poll_interval.as_system_duration(),
                 peer_id: snapshot.peer_id,
-                address: data.config.addr.to_owned(),
+                address: match &*data.config {
+                    PeerConfig::Standard(StandardPeerConfig { addr, .. }) => addr.to_string(),
+                    PeerConfig::Pool(PoolPeerConfig { addr, .. }) => addr.to_string(),
+                },
             },
         })
     }
@@ -222,7 +235,7 @@ mod tests {
         PollInterval,
     };
 
-    use crate::config::PeerHostMode;
+    use crate::config::StandardPeerConfig;
 
     use super::*;
 
@@ -264,9 +277,10 @@ mod tests {
         let mut peers = Peers::from_statuslist(
             &[PeerStatus::NoMeasurement; 4],
             &(0..4)
-                .map(|i| PeerConfig {
-                    addr: format!("127.0.0.{i}:123"),
-                    mode: PeerHostMode::Server,
+                .map(|i| {
+                    PeerConfig::Standard(StandardPeerConfig {
+                        addr: format!("127.0.0.{i}:123"),
+                    })
                 })
                 .collect::<Vec<_>>(),
             TestClock {},

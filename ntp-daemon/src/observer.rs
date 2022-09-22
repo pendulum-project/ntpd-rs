@@ -83,7 +83,7 @@ mod tests {
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
     use crate::{
-        config::{PeerConfig, PeerHostMode},
+        config::{PeerConfig, StandardPeerConfig},
         peer_manager::PeerStatus,
     };
 
@@ -153,18 +153,15 @@ mod tests {
         ];
 
         let peer_configs = [
-            PeerConfig {
+            PeerConfig::Standard(StandardPeerConfig {
                 addr: "127.0.0.1:123".to_string(),
-                mode: PeerHostMode::Server,
-            },
-            PeerConfig {
+            }),
+            PeerConfig::Standard(StandardPeerConfig {
                 addr: "127.0.0.2:123".to_string(),
-                mode: PeerHostMode::Server,
-            },
-            PeerConfig {
+            }),
+            PeerConfig::Standard(StandardPeerConfig {
                 addr: "127.0.0.3:123".to_string(),
-                mode: PeerHostMode::Server,
-            },
+            }),
         ];
 
         let peers_reader = Arc::new(tokio::sync::RwLock::new(Peers::from_statuslist(
@@ -243,18 +240,15 @@ mod tests {
         ];
 
         let peer_configs = [
-            PeerConfig {
+            PeerConfig::Standard(StandardPeerConfig {
                 addr: "127.0.0.1:123".to_string(),
-                mode: PeerHostMode::Server,
-            },
-            PeerConfig {
+            }),
+            PeerConfig::Standard(StandardPeerConfig {
                 addr: "127.0.0.2:123".to_string(),
-                mode: PeerHostMode::Server,
-            },
-            PeerConfig {
+            }),
+            PeerConfig::Standard(StandardPeerConfig {
                 addr: "127.0.0.3:123".to_string(),
-                mode: PeerHostMode::Server,
-            },
+            }),
         ];
 
         let peers_reader = Arc::new(tokio::sync::RwLock::new(Peers::from_statuslist(

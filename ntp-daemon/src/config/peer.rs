@@ -7,7 +7,10 @@ use serde::{
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PeerHostMode {
+    #[serde(alias = "server")]
     Server,
+    #[serde(alias = "pool")]
+    Pool,
 }
 
 impl Default for PeerHostMode {
@@ -16,12 +19,26 @@ impl Default for PeerHostMode {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct PeerConfig {
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+pub struct StandardPeerConfig {
     // We ensure that this is an address with a host and port part
     // however the host may or may not be valid.
     pub addr: String,
-    pub mode: PeerHostMode,
+}
+
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+pub struct PoolPeerConfig {
+    // We ensure that this is an address with a host and port part
+    // however the host may or may not be valid.
+    pub addr: String,
+    pub max_peers: usize,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum PeerConfig {
+    Standard(StandardPeerConfig),
+    Pool(PoolPeerConfig),
+    // Consul(ConsulPeerConfig),
 }
 
 fn normalize_addr(mut addr: String) -> std::io::Result<String> {
@@ -55,14 +72,21 @@ fn normalize_addr(mut addr: String) -> std::io::Result<String> {
     }
 }
 
+impl TryFrom<&str> for StandardPeerConfig {
+    type Error = std::io::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(Self {
+            addr: normalize_addr(value.into())?,
+        })
+    }
+}
+
 impl TryFrom<&str> for PeerConfig {
     type Error = std::io::Error;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Ok(PeerConfig {
-            addr: normalize_addr(value.into())?,
-            mode: PeerHostMode::Server,
-        })
+        StandardPeerConfig::try_from(value).map(Self::Standard)
     }
 }
 
@@ -89,6 +113,7 @@ impl<'de> Deserialize<'de> for PeerConfig {
             fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<PeerConfig, M::Error> {
                 let mut addr = None;
                 let mut mode = None;
+                let mut max_peers = None;
                 while let Some(key) = map.next_key::<&str>()? {
                     match key {
                         "addr" => {
@@ -109,15 +134,38 @@ impl<'de> Deserialize<'de> for PeerConfig {
                             }
                             mode = Some(map.next_value()?);
                         }
+                        "max_peers" => {
+                            if max_peers.is_some() {
+                                return Err(de::Error::duplicate_field("max_peers"));
+                            }
+                            max_peers = Some(map.next_value()?);
+                        }
                         _ => {
-                            return Err(de::Error::unknown_field(key, &["addr", "mode"]));
+                            return Err(de::Error::unknown_field(
+                                key,
+                                &["addr", "mode", "max_peers"],
+                            ));
                         }
                     }
                 }
 
                 let addr = addr.ok_or_else(|| de::Error::missing_field("addr"))?;
                 let mode = mode.unwrap_or_default();
-                Ok(PeerConfig { addr, mode })
+
+                match mode {
+                    PeerHostMode::Server => {
+                        if max_peers.is_some() {
+                            Err(de::Error::unknown_field("max_peers", &["addr", "mode"]))
+                        } else {
+                            Ok(PeerConfig::Standard(StandardPeerConfig { addr }))
+                        }
+                    }
+                    PeerHostMode::Pool => {
+                        let max_peers = max_peers.unwrap_or(1);
+
+                        Ok(PeerConfig::Pool(PoolPeerConfig { addr, max_peers }))
+                    }
+                }
             }
         }
 
@@ -129,6 +177,13 @@ impl<'de> Deserialize<'de> for PeerConfig {
 mod tests {
     use super::*;
 
+    fn peer_addr(config: &PeerConfig) -> &str {
+        match config {
+            PeerConfig::Standard(c) => &c.addr,
+            PeerConfig::Pool(c) => &c.addr,
+        }
+    }
+
     #[test]
     fn test_deserialize_peer() {
         #[derive(Deserialize, Debug)]
@@ -137,36 +192,71 @@ mod tests {
         }
 
         let test: TestConfig = toml::from_str("peer = \"example.com\"").unwrap();
-        assert_eq!(test.peer.addr, "example.com:123");
-        assert_eq!(test.peer.mode, PeerHostMode::Server);
+        assert_eq!(peer_addr(&test.peer), "example.com:123");
+        assert!(matches!(test.peer, PeerConfig::Standard(_)));
 
         let test: TestConfig = toml::from_str("peer = \"example.com:5678\"").unwrap();
-        assert_eq!(test.peer.addr, "example.com:5678");
-        assert_eq!(test.peer.mode, PeerHostMode::Server);
+        assert_eq!(peer_addr(&test.peer), "example.com:5678");
+        assert!(matches!(test.peer, PeerConfig::Standard(_)));
 
         let test: TestConfig = toml::from_str("[peer]\naddr = \"example.com\"").unwrap();
-        assert_eq!(test.peer.addr, "example.com:123");
-        assert_eq!(test.peer.mode, PeerHostMode::Server);
+        assert_eq!(peer_addr(&test.peer), "example.com:123");
+        assert!(matches!(test.peer, PeerConfig::Standard(_)));
 
         let test: TestConfig = toml::from_str("[peer]\naddr = \"example.com:5678\"").unwrap();
-        assert_eq!(test.peer.addr, "example.com:5678");
-        assert_eq!(test.peer.mode, PeerHostMode::Server);
+        assert_eq!(peer_addr(&test.peer), "example.com:5678");
+        assert!(matches!(test.peer, PeerConfig::Standard(_)));
 
-        let test: TestConfig =
-            toml::from_str("[peer]\naddr = \"example.com\"\nmode = \"Server\"").unwrap();
-        assert_eq!(test.peer.addr, "example.com:123");
-        assert_eq!(test.peer.mode, PeerHostMode::Server);
+        let test: TestConfig = toml::from_str(
+            r#"
+            [peer]
+            addr = "example.com"
+            mode = "Server"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(peer_addr(&test.peer), "example.com:123");
+        assert!(matches!(test.peer, PeerConfig::Standard(_)));
+
+        let test: TestConfig = toml::from_str(
+            r#"
+            [peer]
+            addr = "example.com"
+            mode = "Pool"
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(test.peer, PeerConfig::Pool(_)));
+        if let PeerConfig::Pool(config) = test.peer {
+            assert_eq!(config.addr, "example.com:123");
+            assert_eq!(config.max_peers, 1);
+        }
+
+        let test: TestConfig = toml::from_str(
+            r#"
+            [peer]
+            addr = "example.com"
+            mode = "Pool"
+            max_peers = 42
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(test.peer, PeerConfig::Pool(_)));
+        if let PeerConfig::Pool(config) = test.peer {
+            assert_eq!(config.addr, "example.com:123");
+            assert_eq!(config.max_peers, 42);
+        }
     }
 
     #[test]
     fn test_peer_from_string() {
         let peer = PeerConfig::try_from("example.com").unwrap();
-        assert_eq!(peer.addr, "example.com:123");
-        assert_eq!(peer.mode, PeerHostMode::Server);
+        assert_eq!(peer_addr(&peer), "example.com:123");
+        assert!(matches!(peer, PeerConfig::Standard(_)));
 
         let peer = PeerConfig::try_from("example.com:5678").unwrap();
-        assert_eq!(peer.addr, "example.com:5678");
-        assert_eq!(peer.mode, PeerHostMode::Server);
+        assert_eq!(peer_addr(&peer), "example.com:5678");
+        assert!(matches!(peer, PeerConfig::Standard(_)));
     }
 
     #[test]

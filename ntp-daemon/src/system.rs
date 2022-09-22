@@ -217,7 +217,7 @@ mod tests {
     use ntp_proto::{peer_snapshot, NtpDuration, NtpLeapIndicator, NtpTimestamp, PeerStatistics};
 
     use crate::{
-        config::PeerHostMode,
+        config::StandardPeerConfig,
         peer_manager::{PeerIndex, PeerStatus},
     };
 
@@ -390,22 +390,18 @@ mod tests {
                 PeerStatus::NoMeasurement,
             ],
             &[
-                PeerConfig {
+                PeerConfig::Standard(StandardPeerConfig {
                     addr: "127.0.0.1:123".into(),
-                    mode: PeerHostMode::Server,
-                },
-                PeerConfig {
+                }),
+                PeerConfig::Standard(StandardPeerConfig {
                     addr: "127.0.0.2:123".into(),
-                    mode: PeerHostMode::Server,
-                },
-                PeerConfig {
+                }),
+                PeerConfig::Standard(StandardPeerConfig {
                     addr: "127.0.0.3:123".into(),
-                    mode: PeerHostMode::Server,
-                },
-                PeerConfig {
+                }),
+                PeerConfig::Standard(StandardPeerConfig {
                     addr: "127.0.0.4:123".into(),
-                    mode: PeerHostMode::Server,
-                },
+                }),
             ],
             TestClock {},
         );
