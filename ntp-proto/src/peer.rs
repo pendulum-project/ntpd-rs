@@ -396,6 +396,8 @@ impl Peer {
                 recv_time,
             );
 
+            self.last_packet = message;
+
             self.message_for_system(
                 filter_input,
                 system.leap_indicator,
@@ -761,6 +763,7 @@ mod test {
                 NtpTimestamp::from_fixed_int(400)
             )
             .is_ok());
+        assert_eq!(peer.last_packet, packet);
         assert!(peer
             .handle_incoming(
                 system,
