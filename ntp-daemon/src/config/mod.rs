@@ -254,7 +254,6 @@ mod tests {
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
                 addr: "example.com:123".into(),
-                mode: PeerHostMode::Server
             })]
         );
 
@@ -265,7 +264,6 @@ mod tests {
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
                 addr: "example.com:123".into(),
-                mode: PeerHostMode::Server
             })]
         );
 
@@ -276,7 +274,6 @@ mod tests {
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
                 addr: "example.com:123".into(),
-                mode: PeerHostMode::Server
             })]
         );
 
@@ -287,7 +284,6 @@ mod tests {
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
                 addr: "example.com:123".into(),
-                mode: PeerHostMode::Server
             })]
         );
         assert!(config.system.panic_threshold.forward.is_none());
@@ -322,7 +318,6 @@ mod tests {
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
                 addr: "example.com:123".into(),
-                mode: PeerHostMode::Server
             })]
         );
     }
@@ -455,7 +450,6 @@ mod tests {
             parsed_empty.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
                 addr: "foo.nl:123".to_string(),
-                mode: PeerHostMode::Server
             })]
         );
         assert!(parsed_empty.config.is_none());
@@ -469,11 +463,9 @@ mod tests {
             vec![
                 PeerConfig::Standard(StandardPeerConfig {
                     addr: "foo.rs:123".to_string(),
-                    mode: PeerHostMode::Server
                 }),
                 PeerConfig::Standard(StandardPeerConfig {
                     addr: "spam.nl:123".to_string(),
-                    mode: PeerHostMode::Server
                 }),
             ]
         );

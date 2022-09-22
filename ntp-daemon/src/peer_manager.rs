@@ -235,7 +235,7 @@ mod tests {
         PollInterval,
     };
 
-    use crate::config::{PeerHostMode, StandardPeerConfig};
+    use crate::config::StandardPeerConfig;
 
     use super::*;
 
@@ -280,7 +280,6 @@ mod tests {
                 .map(|i| {
                     PeerConfig::Standard(StandardPeerConfig {
                         addr: format!("127.0.0.{i}:123"),
-                        mode: PeerHostMode::Server,
                     })
                 })
                 .collect::<Vec<_>>(),
