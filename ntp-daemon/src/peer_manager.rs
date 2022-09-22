@@ -63,7 +63,7 @@ struct PeerData {
 }
 
 #[derive(Debug, Default)]
-struct PoolStatus {
+struct PoolState {
     /// Currently active peers taken from this pool
     active: Vec<std::net::SocketAddr>,
 
@@ -71,7 +71,11 @@ struct PoolStatus {
     backups: Vec<std::net::SocketAddr>,
 }
 
-impl PoolStatus {
+impl PoolState {
+    /// Find additional peers from the pool
+    ///
+    /// - will do a DNS resolve if there are insufficient `backups`
+    /// - will never add more than `max_peers` active peers from the pool
     async fn find_additional(&mut self, address: &str, max_peers: usize) -> Vec<SocketAddr> {
         if self.backups.len() < (max_peers - self.active.len()) {
             // there are not enough cached peers; try and get more with DNS resolve
@@ -121,7 +125,7 @@ async fn socket_addresses(address: &str) -> impl Iterator<Item = std::net::Socke
 #[derive(Debug)]
 pub struct Peers<C: NtpClock> {
     peers: HashMap<PeerIndex, PeerData>,
-    pools: HashMap<String, PoolStatus>,
+    pools: HashMap<String, PoolState>,
     servers: Vec<Arc<ServerConfig>>,
     indexer: PeerIndexIssuer,
 
