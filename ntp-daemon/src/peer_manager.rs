@@ -75,17 +75,15 @@ impl PoolStatus {
     async fn find_additional(&mut self, address: &str, max_peers: usize) -> Vec<SocketAddr> {
         if self.backups.len() < (max_peers - self.active.len()) {
             // there are not enough cached peers; try and get more with DNS resolve
-            let mut addresses: HashSet<SocketAddr> = socket_addresses(address).await.collect();
-
-            for a in self.active.iter() {
-                addresses.remove(a);
-            }
-
-            self.backups = addresses.into_iter().collect();
+            self.backups = socket_addresses(address)
+                .await
+                .filter(|addr| !self.active.contains(addr))
+                .collect();
         }
 
         let additional = max_peers.saturating_sub(self.active.len());
 
+        // bit nasty, but we actually want to split the first part off, not the last part
         let mut new_active = self.backups.split_off(additional);
         std::mem::swap(&mut new_active, &mut self.backups);
 
@@ -95,11 +93,12 @@ impl PoolStatus {
     }
 }
 
+/// Get available socket addresses for a host
+///
+/// Will retry until the iterator contains at least one socket address
 async fn socket_addresses(address: &str) -> impl Iterator<Item = std::net::SocketAddr> + '_ {
     loop {
-        let host = lookup_host(address).await;
-
-        match host {
+        match lookup_host(address).await {
             Ok(addresses) => {
                 let mut it = addresses.peekable();
 
@@ -175,7 +174,7 @@ impl<C: NtpClock> Peers<C> {
     async fn add_peer_internal(&mut self, config: PeerConfig) -> Vec<JoinHandle<()>> {
         match &config {
             PeerConfig::Standard(StandardPeerConfig { addr, .. }) => {
-                // unwrap is safe because of the peek() in `addresses`
+                // unwrap is safe because of the peek() in `socket_addresses`
                 let address = socket_addresses(addr).await.next().unwrap();
 
                 self.spawn_peer_tasks(vec![address], config)
