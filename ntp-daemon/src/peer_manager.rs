@@ -1,8 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    net::SocketAddr,
-    sync::Arc,
-};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
 use crate::{
     config::{PeerConfig, PoolPeerConfig, ServerConfig, StandardPeerConfig},
@@ -12,7 +8,7 @@ use crate::{
 };
 use ntp_proto::{NtpClock, PeerSnapshot};
 use tokio::{net::lookup_host, task::JoinHandle};
-use tracing::{debug, warn};
+use tracing::warn;
 
 const NETWORK_WAIT_PERIOD: std::time::Duration = std::time::Duration::from_secs(1);
 
@@ -238,12 +234,14 @@ impl<C: NtpClock> Peers<C> {
                 PeerData {
                     status: status.to_owned(),
                     config: raw_configs[i].clone(),
+                    socket_address: "127.0.0.1:8000".parse().unwrap(),
                 },
             );
         }
 
         Self {
             peers,
+            pools: HashMap::default(),
             servers: vec![],
             indexer,
             channels: PeerChannels::test(),
