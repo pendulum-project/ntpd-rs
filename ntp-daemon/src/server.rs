@@ -184,15 +184,12 @@ impl<T: std::hash::Hash + Eq> TimestampedCache<T> {
     }
 
     fn get(&self, item: &T) -> Option<std::time::Instant> {
-        match &self.elements[self.index(item)] {
-            None => None,
-            Some((existing, timestamp)) => {
-                if existing == item {
-                    Some(*timestamp)
-                } else {
-                    None
-                }
-            }
+        let (existing, timestamp) = self.elements[self.index(item)].as_ref()?;
+
+        if existing == item {
+            Some(*timestamp)
+        } else {
+            None
         }
     }
 
