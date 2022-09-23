@@ -210,8 +210,33 @@ impl<T: std::hash::Hash + Eq> TimestampedCache<T> {
             Some(existing_timestamp) => {
                 self.insert(item, timestamp);
 
-                timestamp.duration_since(existing_timestamp) >= cutoff
+                timestamp.duration_since(existing_timestamp) <= cutoff
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod timestamped_cache {
+    use super::*;
+
+    #[test]
+    fn timestamped_cache() {
+        let length = 8u8;
+        let mut cache: TimestampedCache<u8> = TimestampedCache::new(length as usize);
+
+        let second = std::time::Duration::from_secs(1);
+        let instant = std::time::Instant::now();
+
+        cache.insert(0, instant);
+
+        assert!(cache.is_allowed(0, instant, second));
+
+        let later = instant + 2 * second;
+        assert!(!cache.is_allowed(0, later, second));
+
+        // simulate a hash collision
+        let even_later = later + 2 * second;
+        assert!(cache.is_allowed(length, even_later, second));
     }
 }
