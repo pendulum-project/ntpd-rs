@@ -494,12 +494,14 @@ mod tests {
     async fn max_peers_bigger_than_pool_size() {
         let prev_epoch = ResetEpoch::default();
         let epoch = prev_epoch.inc();
+
+        let pool_addr = "127.0.0.1:123";
         let peer_configs = vec![
             PeerConfig::Standard(StandardPeerConfig {
                 addr: "127.0.0.0:123".to_string(),
             }),
             PeerConfig::Pool(PoolPeerConfig {
-                addr: "127.0.0.1:123".to_string(),
+                addr: pool_addr.to_string(),
                 max_peers: 2,
             }),
         ];
@@ -516,5 +518,20 @@ mod tests {
 
         // automatically selects another peer from the pool
         assert_eq!(peers.peers.len(), 2);
+
+        // now some tests for the the pool state
+        let pool = peers.pools.get(pool_addr).unwrap();
+        assert_eq!(pool.active.len(), 1);
+        assert_eq!(pool.backups.len(), 0);
+
+        // peer 1 moved to index 2 now
+        let config = peers.remove_peer(&PeerIndex { index: 2 }).unwrap().config;
+        assert_eq!(config, peer_configs[1]);
+
+        let pool = peers.pools.get(pool_addr).unwrap();
+        assert_eq!(pool.active.len(), 0);
+        assert_eq!(pool.backups.len(), 0);
+
+        assert_eq!(peers.peers.len(), 1);
     }
 }
