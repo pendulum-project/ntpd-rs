@@ -81,7 +81,9 @@ impl PoolState {
                 .collect();
         }
 
-        let additional = max_peers.saturating_sub(self.active.len());
+        let additional = max_peers
+            .saturating_sub(self.active.len())
+            .min(self.backups.len());
 
         // bit nasty, but we actually want to split the first part off, not the last part
         let mut new_active = self.backups.split_off(additional);
@@ -458,5 +460,61 @@ mod tests {
 
         peers.reset_all();
         assert_eq!(peers.valid_snapshots().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn single_peer_pool() {
+        let prev_epoch = ResetEpoch::default();
+        let epoch = prev_epoch.inc();
+        let peer_configs = vec![
+            PeerConfig::Standard(StandardPeerConfig {
+                addr: "127.0.0.0:123".to_string(),
+            }),
+            PeerConfig::Pool(PoolPeerConfig {
+                addr: "127.0.0.1:123".to_string(),
+                max_peers: 1,
+            }),
+        ];
+        let mut peers =
+            Peers::from_statuslist(&[PeerStatus::NoMeasurement; 2], &peer_configs, TestClock {});
+
+        // we have 2 peers
+        assert_eq!(peers.peers.len(), 2);
+
+        // our pool peer has a network issue
+        peers
+            .update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }), epoch)
+            .await;
+
+        // automatically selects another peer from the pool
+        assert_eq!(peers.peers.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn max_peers_bigger_than_pool_size() {
+        let prev_epoch = ResetEpoch::default();
+        let epoch = prev_epoch.inc();
+        let peer_configs = vec![
+            PeerConfig::Standard(StandardPeerConfig {
+                addr: "127.0.0.0:123".to_string(),
+            }),
+            PeerConfig::Pool(PoolPeerConfig {
+                addr: "127.0.0.1:123".to_string(),
+                max_peers: 2,
+            }),
+        ];
+        let mut peers =
+            Peers::from_statuslist(&[PeerStatus::NoMeasurement; 2], &peer_configs, TestClock {});
+
+        // we have only 2 peers, because the pool has size 1
+        assert_eq!(peers.peers.len(), 2);
+
+        // our pool peer has a network issue
+        peers
+            .update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }), epoch)
+            .await;
+
+        // automatically selects another peer from the pool
+        assert_eq!(peers.peers.len(), 2);
     }
 }
