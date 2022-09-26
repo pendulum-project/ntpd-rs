@@ -1,4 +1,8 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use ntp_proto::{
     NtpAssociationMode, NtpClock, NtpHeader, NtpTimestamp, ReferenceId, SystemSnapshot,
@@ -19,7 +23,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         addr: SocketAddr,
         system: Arc<RwLock<SystemSnapshot>>,
         clock: C,
-        network_wait_period: std::time::Duration,
+        network_wait_period: Duration,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
             let socket = loop {
@@ -57,8 +61,8 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 AcceptResult::Accept(packet, peer_addr, recv_timestamp) => {
                     let system = *self.system.read().await;
 
-                    let timestamp = std::time::Instant::now();
-                    let cutoff = std::time::Duration::from_secs(32);
+                    let timestamp = Instant::now();
+                    let cutoff = Duration::from_secs(32);
 
                     let response = if self.client_cache.is_allowed(peer_addr, timestamp, cutoff) {
                         NtpHeader::timestamp_response(
@@ -155,9 +159,16 @@ fn accept_packet(
     }
 }
 
+/// A size-bounded cache where each entry is timestamped.
+///
+/// The planned use is in rate limiting: we keep track of when a peer last checked in. If it checks
+/// in too often, we issue a rate limiting KISS code.
+///
+/// The implementation is fixed-size (and in practice small) hash map. Collisions are not a big
+/// problem (the cache size can be configured if we observe too many collisions)
 #[derive(Debug)]
 struct TimestampedCache<T> {
-    elements: Vec<Option<(T, std::time::Instant)>>,
+    elements: Vec<Option<(T, Instant)>>,
 }
 
 impl<T: std::hash::Hash + Eq> TimestampedCache<T> {
@@ -178,43 +189,31 @@ impl<T: std::hash::Hash + Eq> TimestampedCache<T> {
         hasher.finish() as usize % self.elements.len()
     }
 
-    fn insert(&mut self, item: T, timestamp: std::time::Instant) {
+    fn is_allowed(&mut self, item: T, timestamp: Instant, cutoff: Duration) -> bool {
         let index = self.index(&item);
+
+        // check if the current occupant of this slot is actually the same item
+        let timestamp_if_same = self.elements[index]
+            .as_ref()
+            .and_then(|(v, t)| (&item == v).then_some(t))
+            .copied();
+
         self.elements[index] = Some((item, timestamp));
-    }
 
-    fn get(&self, item: &T) -> Option<std::time::Instant> {
-        let (existing, timestamp) = self.elements[self.index(item)].as_ref()?;
-
-        if existing == item {
-            Some(*timestamp)
+        if let Some(old_timestamp) = timestamp_if_same {
+            // old and new are the same; check the time
+            timestamp.duration_since(old_timestamp) <= cutoff
         } else {
-            None
-        }
-    }
-
-    fn is_allowed(
-        &mut self,
-        item: T,
-        timestamp: std::time::Instant,
-        cutoff: std::time::Duration,
-    ) -> bool {
-        match self.get(&item) {
-            None => {
-                self.insert(item, timestamp);
-                true
-            }
-            Some(existing_timestamp) => {
-                self.insert(item, timestamp);
-
-                timestamp.duration_since(existing_timestamp) <= cutoff
-            }
+            // old and new are different; this is always OK
+            true
         }
     }
 }
 
 #[cfg(test)]
 mod timestamped_cache {
+    use std::time::{Duration, Instant};
+
     use super::*;
 
     #[test]
@@ -222,10 +221,10 @@ mod timestamped_cache {
         let length = 8u8;
         let mut cache: TimestampedCache<u8> = TimestampedCache::new(length as usize);
 
-        let second = std::time::Duration::from_secs(1);
-        let instant = std::time::Instant::now();
+        let second = Duration::from_secs(1);
+        let instant = Instant::now();
 
-        cache.insert(0, instant);
+        cache.is_allowed(0, instant, second);
 
         assert!(cache.is_allowed(0, instant, second));
 
