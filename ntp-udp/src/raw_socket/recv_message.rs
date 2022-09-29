@@ -1,4 +1,6 @@
-use std::{io::IoSliceMut, os::unix::prelude::AsRawFd};
+use std::{io::IoSliceMut, net::SocketAddr, os::unix::prelude::AsRawFd};
+
+use crate::interface_name::sockaddr_storage_to_socket_addr;
 
 use super::cerr;
 
@@ -12,18 +14,10 @@ pub(crate) fn receive_message(
     socket: &std::net::UdpSocket,
     packet_buf: &mut [u8],
     control_buf: &mut [u8],
-    addr: Option<&mut libc::sockaddr_storage>,
     queue: MessageQueue,
-) -> std::io::Result<(libc::c_int, libc::msghdr)> {
+) -> std::io::Result<(libc::c_int, libc::msghdr, Option<SocketAddr>)> {
     let mut buf_slice = IoSliceMut::new(packet_buf);
-
-    let (msg_name, msg_namelen) = match addr {
-        Some(r) => (
-            (r as *mut libc::sockaddr_storage).cast::<libc::c_void>(),
-            std::mem::size_of::<libc::sockaddr_storage>() as u32,
-        ),
-        None => (std::ptr::null_mut(), 0),
-    };
+    let mut addr = zeroed_sockaddr_storage();
 
     let mut mhdr = libc::msghdr {
         msg_control: control_buf.as_mut_ptr().cast::<libc::c_void>(),
@@ -31,8 +25,8 @@ pub(crate) fn receive_message(
         msg_iov: (&mut buf_slice as *mut IoSliceMut).cast::<libc::iovec>(),
         msg_iovlen: 1,
         msg_flags: 0,
-        msg_name,
-        msg_namelen,
+        msg_name: (&mut addr as *mut libc::sockaddr_storage).cast::<libc::c_void>(),
+        msg_namelen: std::mem::size_of::<libc::sockaddr_storage>() as u32,
     };
 
     let receive_flags = match queue {
@@ -54,8 +48,10 @@ pub(crate) fn receive_message(
     // Clear out the fields for which we are giving up the reference
     mhdr.msg_iov = std::ptr::null_mut();
     mhdr.msg_iovlen = 0;
+    mhdr.msg_name = std::ptr::null_mut();
+    mhdr.msg_namelen = 0;
 
-    Ok((sent_bytes, mhdr))
+    Ok((sent_bytes, mhdr, sockaddr_storage_to_socket_addr(&addr)))
 }
 
 pub(crate) enum ControlMessage {
