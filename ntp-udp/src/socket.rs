@@ -6,13 +6,9 @@ use ntp_proto::NtpTimestamp;
 use tokio::io::unix::AsyncFd;
 use tracing::{debug, instrument, trace, warn};
 
-use crate::{
-    interface_name::sockaddr_storage_to_socket_addr,
-    raw_socket::{
-        control_message_space, control_messages, exceptional_condition_fd, receive_message,
-        set_timestamping_options, zeroed_sockaddr_storage, ControlMessage, MessageQueue,
-        TimestampingConfig,
-    },
+use crate::raw_socket::{
+    control_message_space, control_messages, exceptional_condition_fd, receive_message,
+    set_timestamping_options, ControlMessage, MessageQueue, TimestampingConfig,
 };
 
 enum Timestamping {
@@ -253,19 +249,12 @@ fn recv(
     buf: &mut [u8],
 ) -> io::Result<(usize, SocketAddr, Option<NtpTimestamp>)> {
     let mut control_buf = [0; control_message_space::<[libc::timespec; 3]>()];
-    let mut addr = zeroed_sockaddr_storage();
 
     // loops for when we receive an interrupt during the recv
-    let (bytes_read, mhdr) = receive_message(
-        socket,
-        buf,
-        &mut control_buf,
-        Some(&mut addr),
-        MessageQueue::Normal,
-    )?;
-
-    let sock_addr = sockaddr_storage_to_socket_addr(&addr)
-        .unwrap_or_else(|| unreachable!("We never constructed a non-ip socket"));
+    let (bytes_read, mhdr, sock_addr) =
+        receive_message(socket, buf, &mut control_buf, MessageQueue::Normal)?;
+    let sock_addr =
+        sock_addr.unwrap_or_else(|| unreachable!("We never constructed a non-ip socket"));
 
     if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
         warn!(
@@ -321,7 +310,7 @@ fn fetch_send_timestamp_help(
 
     let mut control_buf = [0; CONTROL_SIZE];
 
-    let (_, mhdr) = receive_message(socket, &mut [], &mut control_buf, None, MessageQueue::Error)?;
+    let (_, mhdr, _) = receive_message(socket, &mut [], &mut control_buf, MessageQueue::Error)?;
 
     if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
         warn!("truncated packet because it was larger than expected",);

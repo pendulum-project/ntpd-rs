@@ -5,8 +5,7 @@ mod timestamping_config;
 
 pub(crate) use exceptional_condition_fd::exceptional_condition_fd;
 pub(crate) use recv_message::{
-    control_message_space, control_messages, receive_message, zeroed_sockaddr_storage,
-    ControlMessage, MessageQueue,
+    control_message_space, control_messages, receive_message, ControlMessage, MessageQueue,
 };
 pub(crate) use set_timestamping_options::set_timestamping_options;
 pub(crate) use timestamping_config::TimestampingConfig;
