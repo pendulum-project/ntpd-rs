@@ -1,4 +1,4 @@
-use std::{io::IoSliceMut, net::SocketAddr, os::unix::prelude::AsRawFd};
+use std::{io::IoSliceMut, marker::PhantomData, net::SocketAddr, os::unix::prelude::AsRawFd};
 
 use tracing::warn;
 
@@ -11,15 +11,14 @@ pub(crate) enum MessageQueue {
     Error,
 }
 
-/// Receive a message on a socket (retry if interrupted)
-pub(crate) fn receive_message(
+pub(crate) fn receive_message<'a>(
     socket: &std::net::UdpSocket,
     packet_buf: &mut [u8],
-    control_buf: &mut [u8],
+    control_buf: &'a mut [u8],
     queue: MessageQueue,
 ) -> std::io::Result<(
     libc::c_int,
-    impl Iterator<Item = ControlMessage>,
+    impl Iterator<Item = ControlMessage> + 'a,
     Option<SocketAddr>,
 )> {
     let mut buf_slice = IoSliceMut::new(packet_buf);
@@ -40,6 +39,13 @@ pub(crate) fn receive_message(
         MessageQueue::Error => libc::MSG_ERRQUEUE,
     };
 
+    // Safety:
+    // We have a mutable reference to the control buffer for the duration of the
+    // call, and controllen is also set to it's length.
+    // IoSliceMut is ABI compatible with iovec, and we only have 1 which matches iovlen
+    // msg_name is initialized to point to an owned sockaddr_storage and
+    // msg_namelen is the size of sockaddr_storage
+    // If one of the buffers is too small, recvmsg cuts off data at appropriate boundary
     let sent_bytes = loop {
         match cerr(unsafe { libc::recvmsg(socket.as_raw_fd(), &mut mhdr, receive_flags) } as _) {
             Err(e) if std::io::ErrorKind::Interrupted == e.kind() => {
@@ -68,11 +74,57 @@ pub(crate) fn receive_message(
     mhdr.msg_name = std::ptr::null_mut();
     mhdr.msg_namelen = 0;
 
+    // Safety:
+    // recvmsg ensures that the control buffer contains
+    // a set of valid control messages and that controllen is
+    // the length these take up in the buffer.
     Ok((
         sent_bytes,
-        control_messages(mhdr),
+        unsafe { ControlMessageIterator::new(mhdr) },
         sockaddr_storage_to_socket_addr(&addr),
     ))
+}
+
+// Invariants:
+// self.mhdr points to a valid libc::msghdr with a valid control
+// message region.
+// self.current_msg points to one of the control messages
+// in the region described by self.mhdr or is NULL
+//
+// These invariants are guaranteed from the safety conditions on
+// calling ControlMessageIterator::new, the fact that next preserves
+// these invariants and that the fields of ControlMessageIterator
+// are not modified outside these two functions.
+struct ControlMessageIterator<'a> {
+    mhdr: libc::msghdr,
+    next_msg: *const libc::cmsghdr,
+    phantom: PhantomData<&'a [u8]>,
+}
+
+impl<'a> ControlMessageIterator<'a> {
+    // Safety assumptions:
+    // mhdr has a control and controllen field
+    // that together describe a memory region
+    // with lifetime 'a containing valid control
+    // messages
+    unsafe fn new(mhdr: libc::msghdr) -> Self {
+        // Safety:
+        // mhdr's control and controllen fields are valid and point
+        // to valid control messages.
+        let current_msg = unsafe { libc::CMSG_FIRSTHDR(&mhdr) };
+
+        // Invariant preservation:
+        // The safety assumptions guaranteed by the caller ensure
+        // that mhdr points to a valid region with valid control
+        // messages. CMSG_FIRSTHDR is then guaranteed to either
+        // return the pointer to the first valid control message
+        // in that region, or NULL if the region is empty.
+        Self {
+            mhdr,
+            next_msg: current_msg,
+            phantom: PhantomData,
+        }
+    }
 }
 
 pub(crate) enum ControlMessage {
@@ -81,53 +133,65 @@ pub(crate) enum ControlMessage {
     Other(libc::cmsghdr),
 }
 
-pub(crate) fn control_messages(
-    message_header: libc::msghdr,
-) -> impl Iterator<Item = ControlMessage> {
-    raw_control_messages(message_header).map(|msg| match (msg.cmsg_level, msg.cmsg_type) {
-        (libc::SOL_SOCKET, libc::SO_TIMESTAMPING) => {
-            // Safety: SO_TIMESTAMPING always has a timespec in the data
-            let cmsg_data = unsafe { libc::CMSG_DATA(msg) } as *const libc::timespec;
-            let timespec = unsafe { std::ptr::read_unaligned(cmsg_data) };
-            ControlMessage::Timestamping(timespec)
-        }
+impl<'a> Iterator for ControlMessageIterator<'a> {
+    type Item = ControlMessage;
 
-        (libc::SOL_IP, libc::IP_RECVERR) | (libc::SOL_IPV6, libc::IPV6_RECVERR) => {
-            // this is part of how timestamps are reported.
-            let error = unsafe {
-                let ptr = libc::CMSG_DATA(msg) as *const libc::sock_extended_err;
-                std::ptr::read_unaligned(ptr)
-            };
+    fn next(&mut self) -> Option<Self::Item> {
+        // Safety:
+        // By the invariants, self.current_msg either points to a valid control message
+        // or is NULL
+        let current_msg = unsafe { self.next_msg.as_ref() }?;
 
-            ControlMessage::ReceiveError(error)
-        }
-        _ => ControlMessage::Other(*msg),
-    })
-}
+        // Safety:
+        // Invariants ensure that self.mhdr points to a valid libc::msghdr with a valid control
+        // message region, and that self.next_msg either points to a valid control message
+        // or is NULL.
+        // Since the previous statement ensures self.next_msg is not null, both passed
+        // pointers are valid for use with CMSG_NXTHDR
+        // Invariant preservation:
+        // CMSG_NXTHDR returns either a pointer to the next valid control message in the control
+        // message region described by self.mhdr, or NULL
+        self.next_msg = unsafe { libc::CMSG_NXTHDR(&self.mhdr, self.next_msg) };
 
-// Note, lifetime here can't yet be expressed, so 'static for now
-fn raw_control_messages(
-    message_header: libc::msghdr,
-) -> impl Iterator<Item = &'static libc::cmsghdr> {
-    let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(&message_header).as_ref() };
+        Some(match (current_msg.cmsg_level, current_msg.cmsg_type) {
+            (libc::SOL_SOCKET, libc::SO_TIMESTAMPING) => {
+                // Safety:
+                // current_msg was constructed from a pointer that pointed to a valid
+                // control message.
+                // SO_TIMESTAMPING always has a timespec in the data
+                let cmsg_data = unsafe { libc::CMSG_DATA(current_msg) } as *const libc::timespec;
+                let timespec = unsafe { std::ptr::read_unaligned(cmsg_data) };
+                ControlMessage::Timestamping(timespec)
+            }
 
-    std::iter::from_fn(move || match cmsg {
-        None => None,
-        Some(current) => {
-            cmsg = unsafe { libc::CMSG_NXTHDR(&message_header, current).as_ref() };
+            (libc::SOL_IP, libc::IP_RECVERR) | (libc::SOL_IPV6, libc::IPV6_RECVERR) => {
+                // this is part of how timestamps are reported.
+                // Safety:
+                // current_msg was constructed from a pointer that pointed to a valid
+                // control message.
+                // IP*_RECVERR always has a sock_extended_err in the data
+                let error = unsafe {
+                    let ptr = libc::CMSG_DATA(current_msg) as *const libc::sock_extended_err;
+                    std::ptr::read_unaligned(ptr)
+                };
 
-            Some(current)
-        }
-    })
+                ControlMessage::ReceiveError(error)
+            }
+            _ => ControlMessage::Other(*current_msg),
+        })
+    }
 }
 
 /// The space used to store a control message that contains a value of type T
 pub(crate) const fn control_message_space<T>() -> usize {
+    // Safety: CMSG_SPACE is safe to call
     (unsafe { libc::CMSG_SPACE((std::mem::size_of::<T>()) as _) }) as usize
 }
 
-pub(crate) fn zeroed_sockaddr_storage() -> libc::sockaddr_storage {
+fn zeroed_sockaddr_storage() -> libc::sockaddr_storage {
     // a zeroed-out sockaddr storage is semantically valid, because a ss_family with value 0 is
     // libc::AF_UNSPEC. Hence the rest of the data does not come with any constraints
+    // Safety:
+    // the MaybeUninit is zeroed before assumed to be initialized
     unsafe { std::mem::MaybeUninit::zeroed().assume_init() }
 }
