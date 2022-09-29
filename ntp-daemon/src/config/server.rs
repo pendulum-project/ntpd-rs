@@ -2,6 +2,7 @@ use std::{
     fmt,
     net::{AddrParseError, SocketAddr},
     str::FromStr,
+    time::Duration,
 };
 
 use serde::{
@@ -9,9 +10,11 @@ use serde::{
     Deserialize, Deserializer,
 };
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct ServerConfig {
     pub addr: SocketAddr,
+    pub rate_limiting_cache_size: usize,
+    pub rate_limiting_cutoff: Duration,
 }
 
 impl TryFrom<&str> for ServerConfig {
@@ -20,6 +23,8 @@ impl TryFrom<&str> for ServerConfig {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Ok(ServerConfig {
             addr: SocketAddr::from_str(value)?,
+            rate_limiting_cache_size: Default::default(),
+            rate_limiting_cutoff: Default::default(),
         })
     }
 }
@@ -46,6 +51,8 @@ impl<'de> Deserialize<'de> for ServerConfig {
 
             fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<ServerConfig, M::Error> {
                 let mut addr = None;
+                let mut rate_limiting_cache_size = None;
+                let mut rate_limiting_cutoff = None;
                 while let Some(key) = map.next_key::<&str>()? {
                     match key {
                         "addr" => {
@@ -54,19 +61,43 @@ impl<'de> Deserialize<'de> for ServerConfig {
                             }
                             let raw: &str = map.next_value()?;
 
-                            let parsed_addr =
-                                SocketAddr::from_str(raw).map_err(de::Error::custom)?;
+                            addr = Some(SocketAddr::from_str(raw).map_err(de::Error::custom)?);
+                        }
+                        "rate_limiting_cache_size" => {
+                            if addr.is_some() {
+                                return Err(de::Error::duplicate_field("rate_limiting_cache_size"));
+                            }
 
-                            addr = Some(parsed_addr);
+                            rate_limiting_cache_size = Some(map.next_value()?);
+                        }
+                        "rate_limiting_cutoff_ms" => {
+                            if addr.is_some() {
+                                return Err(de::Error::duplicate_field("rate_limiting_cutoff_ms"));
+                            }
+
+                            rate_limiting_cutoff = Some(Duration::from_millis(map.next_value()?));
                         }
                         _ => {
-                            return Err(de::Error::unknown_field(key, &["addr"]));
+                            return Err(de::Error::unknown_field(
+                                key,
+                                &[
+                                    "addr",
+                                    "rate_limiting_cache_size",
+                                    "rate_limiting_cutoff_ms",
+                                ],
+                            ));
                         }
                     }
                 }
 
                 let addr = addr.ok_or_else(|| de::Error::missing_field("addr"))?;
-                Ok(ServerConfig { addr })
+                let rate_limiting_cache_size = rate_limiting_cache_size.unwrap_or_default();
+                let rate_limiting_cutoff = rate_limiting_cutoff.unwrap_or_default();
+                Ok(ServerConfig {
+                    addr,
+                    rate_limiting_cache_size,
+                    rate_limiting_cutoff,
+                })
             }
         }
 

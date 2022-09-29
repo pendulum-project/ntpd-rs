@@ -11,6 +11,8 @@ use ntp_udp::UdpSocket;
 use tokio::{sync::RwLock, task::JoinHandle};
 use tracing::{error, instrument, trace, warn};
 
+use crate::config::ServerConfig;
+
 pub struct ServerTask<C: 'static + NtpClock + Send> {
     socket: UdpSocket,
     system: Arc<RwLock<SystemSnapshot>>,
@@ -20,14 +22,14 @@ pub struct ServerTask<C: 'static + NtpClock + Send> {
 
 impl<C: 'static + NtpClock + Send> ServerTask<C> {
     pub fn spawn(
-        addr: SocketAddr,
+        config: ServerConfig,
         system: Arc<RwLock<SystemSnapshot>>,
         clock: C,
         network_wait_period: Duration,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
             let socket = loop {
-                match UdpSocket::server(addr).await {
+                match UdpSocket::server(config.addr).await {
                     Ok(socket) => break socket,
                     Err(error) => {
                         warn!(?error, "Could not open server socket");
@@ -43,17 +45,17 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 socket,
                 system,
                 clock,
-                client_cache: TimestampedCache::new(32),
+                client_cache: TimestampedCache::new(config.rate_limiting_cache_size),
             };
 
-            process.serve().await
+            process.serve(config.rate_limiting_cutoff).await
         })
     }
 
     #[instrument(level = "debug", skip(self), fields(
         addr = debug(self.socket.as_ref().local_addr().unwrap()),
     ))]
-    async fn serve(&mut self) {
+    async fn serve(&mut self, rate_limiting_cutoff: Duration) {
         loop {
             let mut buf = [0_u8; 48];
             let recv_res = self.socket.recv(&mut buf).await;
@@ -62,7 +64,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     let system = *self.system.read().await;
 
                     let timestamp = Instant::now();
-                    let cutoff = Duration::from_secs(32);
+                    let cutoff = rate_limiting_cutoff;
 
                     let response = if self.client_cache.is_allowed(peer_addr, timestamp, cutoff) {
                         NtpHeader::timestamp_response(
