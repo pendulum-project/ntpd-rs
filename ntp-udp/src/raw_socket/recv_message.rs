@@ -2,14 +2,25 @@ use std::os::unix::prelude::AsRawFd;
 
 use super::cerr;
 
+pub(crate) enum MessageQueue {
+    Normal,
+    Error,
+}
+
 /// Receive a message on a socket (retry if interrupted)
 pub(crate) fn receive_message(
     socket: &std::net::UdpSocket,
     message_header: &mut libc::msghdr,
-    flags: libc::c_int,
+    queue: MessageQueue,
 ) -> std::io::Result<libc::c_int> {
+    let receive_flags = match queue {
+        MessageQueue::Normal => 0,
+        MessageQueue::Error => libc::MSG_ERRQUEUE,
+    };
+
     loop {
-        match cerr(unsafe { libc::recvmsg(socket.as_raw_fd(), message_header, flags) } as _) {
+        match cerr(unsafe { libc::recvmsg(socket.as_raw_fd(), message_header, receive_flags) } as _)
+        {
             Err(e) if std::io::ErrorKind::Interrupted == e.kind() => {
                 // retry when the recv was interrupted
                 continue;
