@@ -15,7 +15,8 @@ use crate::{
     interface_name::sockaddr_storage_to_socket_addr,
     raw_socket::{
         control_message_space, control_messages, exceptional_condition_fd, receive_message,
-        set_timestamping_options, zeroed_sockaddr_storage, ControlMessage, TimestampingConfig,
+        set_timestamping_options, zeroed_sockaddr_storage, ControlMessage, MessageQueue,
+        TimestampingConfig,
     },
 };
 
@@ -271,8 +272,7 @@ fn recv(
     };
 
     // loops for when we receive an interrupt during the recv
-    let flags = 0;
-    let bytes_read = receive_message(socket, &mut mhdr, flags)? as usize;
+    let bytes_read = receive_message(socket, &mut mhdr, MessageQueue::Normal)? as usize;
 
     let sock_addr = sockaddr_storage_to_socket_addr(&addr)
         .unwrap_or_else(|| unreachable!("We never constructed a non-ip socket"));
@@ -340,7 +340,7 @@ fn fetch_send_timestamp_help(
         msg_namelen: 0,
     };
 
-    receive_message(socket, &mut mhdr, libc::MSG_ERRQUEUE)?;
+    receive_message(socket, &mut mhdr, MessageQueue::Error)?;
 
     if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
         warn!("truncated packet because it was larger than expected",);
