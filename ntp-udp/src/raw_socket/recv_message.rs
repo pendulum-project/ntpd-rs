@@ -17,7 +17,11 @@ pub(crate) fn receive_message(
     packet_buf: &mut [u8],
     control_buf: &mut [u8],
     queue: MessageQueue,
-) -> std::io::Result<(libc::c_int, libc::msghdr, Option<SocketAddr>)> {
+) -> std::io::Result<(
+    libc::c_int,
+    impl Iterator<Item = ControlMessage>,
+    Option<SocketAddr>,
+)> {
     let mut buf_slice = IoSliceMut::new(packet_buf);
     let mut addr = zeroed_sockaddr_storage();
 
@@ -64,7 +68,11 @@ pub(crate) fn receive_message(
     mhdr.msg_name = std::ptr::null_mut();
     mhdr.msg_namelen = 0;
 
-    Ok((sent_bytes, mhdr, sockaddr_storage_to_socket_addr(&addr)))
+    Ok((
+        sent_bytes,
+        control_messages(mhdr),
+        sockaddr_storage_to_socket_addr(&addr),
+    ))
 }
 
 pub(crate) enum ControlMessage {
@@ -74,8 +82,8 @@ pub(crate) enum ControlMessage {
 }
 
 pub(crate) fn control_messages(
-    message_header: &libc::msghdr,
-) -> impl Iterator<Item = ControlMessage> + '_ {
+    message_header: libc::msghdr,
+) -> impl Iterator<Item = ControlMessage> {
     raw_control_messages(message_header).map(|msg| match (msg.cmsg_level, msg.cmsg_type) {
         (libc::SOL_SOCKET, libc::SO_TIMESTAMPING) => {
             // Safety: SO_TIMESTAMPING always has a timespec in the data
@@ -97,13 +105,16 @@ pub(crate) fn control_messages(
     })
 }
 
-fn raw_control_messages(message_header: &libc::msghdr) -> impl Iterator<Item = &libc::cmsghdr> {
-    let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(message_header).as_ref() };
+// Note, lifetime here can't yet be expressed, so 'static for now
+fn raw_control_messages(
+    message_header: libc::msghdr,
+) -> impl Iterator<Item = &'static libc::cmsghdr> {
+    let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(&message_header).as_ref() };
 
     std::iter::from_fn(move || match cmsg {
         None => None,
         Some(current) => {
-            cmsg = unsafe { libc::CMSG_NXTHDR(message_header, current).as_ref() };
+            cmsg = unsafe { libc::CMSG_NXTHDR(&message_header, current).as_ref() };
 
             Some(current)
         }
