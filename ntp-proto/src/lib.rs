@@ -18,6 +18,7 @@ pub use clock_select::{peer_snapshot, test_peer_snapshot};
 pub use config::{StepThreshold, SystemConfig};
 #[cfg(feature = "fuzz")]
 pub use filter::fuzz_tuple_from_packet_default;
+pub use filter::FilterTuple;
 pub use identifiers::ReferenceId;
 
 pub use packet::{NtpAssociationMode, NtpHeader, NtpLeapIndicator};

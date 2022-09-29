@@ -165,6 +165,8 @@ pub struct PeerSnapshot {
     pub leap_indicator: NtpLeapIndicator,
     pub root_delay: NtpDuration,
     pub root_dispersion: NtpDuration,
+
+    pub measurement_buffer: [FilterTuple; 8],
 }
 
 impl PeerSnapshot {
@@ -256,6 +258,7 @@ impl PeerSnapshot {
             root_delay: peer.last_packet.root_delay,
             root_dispersion: peer.last_packet.root_dispersion,
             poll_interval: peer.last_poll_interval,
+            measurement_buffer: peer.last_measurements.export(),
         }
     }
 }

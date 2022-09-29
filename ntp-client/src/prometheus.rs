@@ -115,6 +115,7 @@ impl DisplayPrometheus for ObservablePeerState {
                 poll_interval,
                 peer_id: _,
                 address,
+                ..
             } => {
                 let labels = &[("address", address.as_str())] as &[_];
                 statistics.write_prometheus(f, labels)?;

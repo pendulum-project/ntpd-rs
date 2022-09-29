@@ -512,7 +512,7 @@ pub fn peer_snapshot(
     root_delay: NtpDuration,
     root_dispersion: NtpDuration,
 ) -> PeerSnapshot {
-    use crate::{packet::NtpLeapIndicator, ReferenceId};
+    use crate::{filter::FilterTuple, packet::NtpLeapIndicator, ReferenceId};
 
     let root_distance_without_time = NtpDuration::MIN_DISPERSION.max(root_delay + statistics.delay)
         / 2i64
@@ -538,6 +538,8 @@ pub fn peer_snapshot(
         our_id: ReferenceId::from_int(1),
         reach,
         poll_interval: PollInterval::MIN,
+
+        measurement_buffer: [FilterTuple::dummy(NtpInstant::now()); 8],
     }
 }
 

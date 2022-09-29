@@ -15,14 +15,14 @@ use tracing::{debug, instrument, warn};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FilterTuple {
-    offset: NtpDuration,
-    delay: NtpDuration,
-    dispersion: NtpDuration,
-    time: NtpInstant,
+    pub offset: NtpDuration,
+    pub delay: NtpDuration,
+    pub dispersion: NtpDuration,
+    pub time: NtpInstant,
 }
 
 impl FilterTuple {
-    const fn dummy(time: NtpInstant) -> Self {
+    pub const fn dummy(time: NtpInstant) -> Self {
         Self {
             offset: NtpDuration::ZERO,
             delay: NtpDuration::MAX_DISPERSION,
@@ -117,6 +117,10 @@ impl LastMeasurements {
 
             std::mem::swap(&mut current, tuple);
         }
+    }
+
+    pub(crate) fn export(&self) -> [FilterTuple; 8] {
+        self.register
     }
 
     #[instrument(level = "trace")]

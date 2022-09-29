@@ -1,6 +1,6 @@
 use crate::sockets::create_unix_socket;
 use crate::Peers;
-use ntp_proto::{NtpClock, PeerStatistics, Reach, ReferenceId, SystemSnapshot};
+use ntp_proto::{NtpClock, NtpDuration, PeerStatistics, Reach, ReferenceId, SystemSnapshot};
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
@@ -15,6 +15,14 @@ pub struct ObservableState {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct ObservableFilterTuple {
+    pub offset: NtpDuration,
+    pub delay: NtpDuration,
+    pub dispersion: NtpDuration,
+    pub age: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub enum ObservablePeerState {
     Nothing,
     Observable {
@@ -24,6 +32,7 @@ pub enum ObservablePeerState {
         poll_interval: std::time::Duration,
         peer_id: ReferenceId,
         address: String,
+        measurement_buffer: Vec<ObservableFilterTuple>,
     },
 }
 
@@ -77,8 +86,8 @@ mod tests {
     use std::time::Duration;
 
     use ntp_proto::{
-        NtpDuration, NtpInstant, NtpLeapIndicator, NtpTimestamp, PeerSnapshot, PeerStatistics,
-        PollInterval, Reach, ReferenceId,
+        FilterTuple, NtpDuration, NtpInstant, NtpLeapIndicator, NtpTimestamp, PeerSnapshot,
+        PeerStatistics, PollInterval, Reach, ReferenceId,
     };
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
@@ -149,6 +158,7 @@ mod tests {
                 leap_indicator: NtpLeapIndicator::NoWarning,
                 root_delay: NtpDuration::from_seconds(0.2),
                 root_dispersion: NtpDuration::from_seconds(0.02),
+                measurement_buffer: [FilterTuple::dummy(NtpInstant::now()); 8],
             }),
         ];
 
@@ -236,6 +246,7 @@ mod tests {
                 leap_indicator: NtpLeapIndicator::NoWarning,
                 root_delay: NtpDuration::from_seconds(0.2),
                 root_dispersion: NtpDuration::from_seconds(0.02),
+                measurement_buffer: [FilterTuple::dummy(NtpInstant::now()); 8],
             }),
         ];
 

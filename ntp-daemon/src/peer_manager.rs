@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     config::{PeerConfig, PoolPeerConfig, ServerConfig, StandardPeerConfig},
-    observer::ObservablePeerState,
+    observer::{ObservableFilterTuple, ObservablePeerState},
     peer::{MsgForSystem, PeerChannels, PeerTask, ResetEpoch},
     server::ServerTask,
 };
@@ -12,6 +12,7 @@ use tracing::{debug, warn};
 
 const NETWORK_WAIT_PERIOD: std::time::Duration = std::time::Duration::from_secs(1);
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Copy)]
 pub enum PeerStatus {
     /// We are waiting for the first snapshot from this peer _in the current reset epoch_.
@@ -187,6 +188,16 @@ impl<C: NtpClock> Peers<C> {
                     PeerConfig::Standard(StandardPeerConfig { addr, .. }) => addr.to_string(),
                     PeerConfig::Pool(PoolPeerConfig { addr, .. }) => addr.to_string(),
                 },
+                measurement_buffer: snapshot
+                    .measurement_buffer
+                    .iter()
+                    .map(|tuple| ObservableFilterTuple {
+                        offset: tuple.offset,
+                        delay: tuple.delay,
+                        dispersion: tuple.dispersion,
+                        age: tuple.time.elapsed().as_secs(),
+                    })
+                    .collect(),
             },
         })
     }
