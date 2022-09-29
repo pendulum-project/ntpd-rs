@@ -64,14 +64,14 @@ impl<'de> Deserialize<'de> for ServerConfig {
                             addr = Some(SocketAddr::from_str(raw).map_err(de::Error::custom)?);
                         }
                         "rate_limiting_cache_size" => {
-                            if addr.is_some() {
+                            if rate_limiting_cache_size.is_some() {
                                 return Err(de::Error::duplicate_field("rate_limiting_cache_size"));
                             }
 
                             rate_limiting_cache_size = Some(map.next_value()?);
                         }
                         "rate_limiting_cutoff_ms" => {
-                            if addr.is_some() {
+                            if rate_limiting_cutoff.is_some() {
                                 return Err(de::Error::duplicate_field("rate_limiting_cutoff_ms"));
                             }
 
@@ -102,5 +102,43 @@ impl<'de> Deserialize<'de> for ServerConfig {
         }
 
         deserializer.deserialize_any(ServerConfigVisitor)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deserialize_peer() {
+        #[derive(Deserialize, Debug)]
+        struct TestConfig {
+            server: ServerConfig,
+        }
+
+        let test: TestConfig = toml::from_str(
+            r#"
+            [server]
+            addr = "0.0.0.0:123"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(test.server.addr, "0.0.0.0:123".parse().unwrap());
+
+        let test: TestConfig = toml::from_str(
+            r#"
+            [server]
+            addr = "127.0.0.1:123"
+            rate_limiting_cutoff_ms = 1000
+            rate_limiting_cache_size = 32
+            "#,
+        )
+        .unwrap();
+        assert_eq!(test.server.addr, "127.0.0.1:123".parse().unwrap());
+        assert_eq!(test.server.rate_limiting_cache_size, 32);
+        assert_eq!(
+            test.server.rate_limiting_cutoff,
+            Duration::from_millis(1000)
+        );
     }
 }
