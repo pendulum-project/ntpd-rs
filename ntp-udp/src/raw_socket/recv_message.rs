@@ -10,15 +10,12 @@ pub(crate) enum MessageQueue {
 /// Receive a message on a socket (retry if interrupted)
 pub(crate) fn receive_message(
     socket: &std::net::UdpSocket,
-    packet_buf: Option<&mut IoSliceMut>,
+    packet_buf: &mut [u8],
     control_buf: &mut [u8],
     addr: Option<&mut libc::sockaddr_storage>,
     queue: MessageQueue,
 ) -> std::io::Result<(libc::c_int, libc::msghdr)> {
-    let (msg_iov, msg_iovlen) = match packet_buf {
-        Some(r) => ((r as *mut IoSliceMut).cast::<libc::iovec>(), 1),
-        None => (std::ptr::null_mut(), 0),
-    };
+    let mut buf_slice = IoSliceMut::new(packet_buf);
 
     let (msg_name, msg_namelen) = match addr {
         Some(r) => (
@@ -31,8 +28,8 @@ pub(crate) fn receive_message(
     let mut mhdr = libc::msghdr {
         msg_control: control_buf.as_mut_ptr().cast::<libc::c_void>(),
         msg_controllen: control_buf.len(),
-        msg_iov,
-        msg_iovlen,
+        msg_iov: (&mut buf_slice as *mut IoSliceMut).cast::<libc::iovec>(),
+        msg_iovlen: 1,
         msg_flags: 0,
         msg_name,
         msg_namelen,
@@ -53,6 +50,10 @@ pub(crate) fn receive_message(
             other => break other,
         }
     }?;
+
+    // Clear out the fields for which we are giving up the reference
+    mhdr.msg_iov = std::ptr::null_mut();
+    mhdr.msg_iovlen = 0;
 
     Ok((sent_bytes, mhdr))
 }
