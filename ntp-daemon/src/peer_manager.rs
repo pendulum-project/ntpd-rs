@@ -1,7 +1,7 @@
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
 use crate::{
-    config::{PeerConfig, PoolPeerConfig, ServerConfig, StandardPeerConfig},
+    config::{Hosts, PeerConfig, PoolPeerConfig, ServerConfig, StandardPeerConfig},
     observer::ObservablePeerState,
     peer::{MsgForSystem, PeerChannels, PeerTask, ResetEpoch},
     server::ServerTask,
@@ -129,7 +129,7 @@ where
 #[derive(Debug)]
 pub struct Peers<C: NtpClock> {
     peers: HashMap<PeerIndex, PeerData>,
-    pools: HashMap<String, PoolState>,
+    pools: HashMap<Hosts, PoolState>,
     servers: Vec<Arc<ServerConfig>>,
     indexer: PeerIndexIssuer,
 
@@ -178,9 +178,19 @@ impl<C: NtpClock> Peers<C> {
 
                 vec![address]
             }
-            PeerConfig::Pool(PoolPeerConfig { addr, max_peers }) => {
-                let pool_status = self.pools.entry(addr.to_string()).or_default();
-                pool_status.find_additional(addr, *max_peers).await
+            PeerConfig::Pool(PoolPeerConfig { hosts, max_peers }) => {
+                let pool_status = self.pools.entry(hosts.clone()).or_default();
+
+                match hosts {
+                    Hosts::HostAndPort(host_and_port) => {
+                        pool_status.find_additional(host_and_port, *max_peers).await
+                    }
+                    Hosts::SocketAddrs(socket_addresses) => {
+                        pool_status
+                            .find_additional(socket_addresses.as_slice(), *max_peers)
+                            .await
+                    }
+                }
             }
         };
 
@@ -194,7 +204,7 @@ impl<C: NtpClock> Peers<C> {
     /// assumed that the peer task is already stopped (e.g. because it crashed)
     fn remove_peer(&mut self, index: &PeerIndex) -> Option<PeerData> {
         self.peers.remove(index).map(|peer_data| {
-            if let PeerConfig::Pool(PoolPeerConfig { addr, .. }) = &peer_data.config {
+            if let PeerConfig::Pool(PoolPeerConfig { hosts: addr, .. }) = &peer_data.config {
                 if let Some(pool_status) = self.pools.get_mut(addr) {
                     pool_status
                         .active
@@ -269,7 +279,10 @@ impl<C: NtpClock> Peers<C> {
                 peer_id: snapshot.peer_id,
                 address: match &data.config {
                     PeerConfig::Standard(StandardPeerConfig { addr, .. }) => addr.to_string(),
-                    PeerConfig::Pool(PoolPeerConfig { addr, .. }) => addr.to_string(),
+                    PeerConfig::Pool(PoolPeerConfig { hosts, .. }) => match hosts {
+                        Hosts::HostAndPort(addr) => addr.to_string(),
+                        Hosts::SocketAddrs(_) => todo!(),
+                    },
                 },
             },
         })
@@ -477,7 +490,7 @@ mod tests {
                 addr: "127.0.0.0:123".to_string(),
             }),
             PeerConfig::Pool(PoolPeerConfig {
-                addr: "127.0.0.1:123".to_string(),
+                hosts: Hosts::HostAndPort("127.0.0.1:123".to_string()),
                 max_peers: 1,
             }),
         ];
@@ -501,13 +514,13 @@ mod tests {
         let prev_epoch = ResetEpoch::default();
         let epoch = prev_epoch.inc();
 
-        let pool_addr = "127.0.0.1:123";
+        let pool_addr = Hosts::HostAndPort("127.0.0.1:123".to_string());
         let peer_configs = vec![
             PeerConfig::Standard(StandardPeerConfig {
                 addr: "127.0.0.0:123".to_string(),
             }),
             PeerConfig::Pool(PoolPeerConfig {
-                addr: pool_addr.to_string(),
+                hosts: pool_addr.clone(),
                 max_peers: 2,
             }),
         ];
@@ -526,7 +539,7 @@ mod tests {
         assert_eq!(peers.peers.len(), 2);
 
         // now some tests for the the pool state
-        let pool = peers.pools.get(pool_addr).unwrap();
+        let pool = peers.pools.get(&pool_addr).unwrap();
         assert_eq!(pool.active.len(), 1);
         assert_eq!(pool.backups.len(), 0);
 
@@ -534,7 +547,7 @@ mod tests {
         let config = peers.remove_peer(&PeerIndex { index: 2 }).unwrap().config;
         assert_eq!(config, peer_configs[1]);
 
-        let pool = peers.pools.get(pool_addr).unwrap();
+        let pool = peers.pools.get(&pool_addr).unwrap();
         assert_eq!(pool.active.len(), 0);
         assert_eq!(pool.backups.len(), 0);
 

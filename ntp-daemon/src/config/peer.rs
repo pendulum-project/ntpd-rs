@@ -19,6 +19,14 @@ impl Default for PeerHostMode {
     }
 }
 
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone, Hash)]
+pub enum Hosts {
+    /// We ensure that this is an address with a host and port part
+    /// however the host may or may not be valid.
+    HostAndPort(String),
+    SocketAddrs(Vec<SocketAddr>),
+}
+
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct StandardPeerConfig {
     // We ensure that this is an address with a host and port part
@@ -28,9 +36,7 @@ pub struct StandardPeerConfig {
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct PoolPeerConfig {
-    // We ensure that this is an address with a host and port part
-    // however the host may or may not be valid.
-    pub addr: String,
+    pub hosts: Hosts,
     pub max_peers: usize,
 }
 
@@ -163,7 +169,10 @@ impl<'de> Deserialize<'de> for PeerConfig {
                     PeerHostMode::Pool => {
                         let max_peers = max_peers.unwrap_or(1);
 
-                        Ok(PeerConfig::Pool(PoolPeerConfig { addr, max_peers }))
+                        Ok(PeerConfig::Pool(PoolPeerConfig {
+                            hosts: Hosts::HostAndPort(addr),
+                            max_peers,
+                        }))
                     }
                 }
             }
@@ -180,7 +189,10 @@ mod tests {
     fn peer_addr(config: &PeerConfig) -> &str {
         match config {
             PeerConfig::Standard(c) => &c.addr,
-            PeerConfig::Pool(c) => &c.addr,
+            PeerConfig::Pool(c) => match &c.hosts {
+                Hosts::HostAndPort(x) => x,
+                Hosts::SocketAddrs(_) => panic!(),
+            },
         }
     }
 
@@ -228,7 +240,10 @@ mod tests {
         .unwrap();
         assert!(matches!(test.peer, PeerConfig::Pool(_)));
         if let PeerConfig::Pool(config) = test.peer {
-            assert_eq!(config.addr, "example.com:123");
+            assert_eq!(
+                config.hosts,
+                Hosts::HostAndPort("example.com:123".to_string())
+            );
             assert_eq!(config.max_peers, 1);
         }
 
@@ -243,7 +258,10 @@ mod tests {
         .unwrap();
         assert!(matches!(test.peer, PeerConfig::Pool(_)));
         if let PeerConfig::Pool(config) = test.peer {
-            assert_eq!(config.addr, "example.com:123");
+            assert_eq!(
+                config.hosts,
+                Hosts::HostAndPort("example.com:123".to_string())
+            );
             assert_eq!(config.max_peers, 42);
         }
     }
