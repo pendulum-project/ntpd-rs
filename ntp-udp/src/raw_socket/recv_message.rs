@@ -1,5 +1,7 @@
 use std::{io::IoSliceMut, net::SocketAddr, os::unix::prelude::AsRawFd};
 
+use tracing::warn;
+
 use crate::interface_name::sockaddr_storage_to_socket_addr;
 
 use super::cerr;
@@ -44,6 +46,17 @@ pub(crate) fn receive_message(
             other => break other,
         }
     }?;
+
+    if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
+        warn!(
+            max_len = packet_buf.len(),
+            "truncated packet because it was larger than expected",
+        );
+    }
+
+    if mhdr.msg_flags & libc::MSG_CTRUNC > 0 {
+        warn!("truncated control messages");
+    }
 
     // Clear out the fields for which we are giving up the reference
     mhdr.msg_iov = std::ptr::null_mut();

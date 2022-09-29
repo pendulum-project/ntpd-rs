@@ -256,17 +256,6 @@ fn recv(
     let sock_addr =
         sock_addr.unwrap_or_else(|| unreachable!("We never constructed a non-ip socket"));
 
-    if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
-        warn!(
-            max_len = buf.len(),
-            "truncated packet because it was larger than expected",
-        );
-    }
-
-    if mhdr.msg_flags & libc::MSG_CTRUNC > 0 {
-        warn!("truncated control messages");
-    }
-
     // Loops through the control messages, but we should only get a single message in practice
     for msg in control_messages(&mhdr) {
         match msg {
@@ -311,14 +300,6 @@ fn fetch_send_timestamp_help(
     let mut control_buf = [0; CONTROL_SIZE];
 
     let (_, mhdr, _) = receive_message(socket, &mut [], &mut control_buf, MessageQueue::Error)?;
-
-    if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
-        warn!("truncated packet because it was larger than expected",);
-    }
-
-    if mhdr.msg_flags & libc::MSG_CTRUNC > 0 {
-        warn!("truncated control messages");
-    }
 
     let mut send_ts = None;
     for msg in control_messages(&mhdr) {
