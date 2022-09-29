@@ -553,4 +553,59 @@ mod tests {
 
         assert_eq!(peers.peers.len(), 1);
     }
+
+    #[tokio::test]
+    async fn simulate_pool() {
+        let prev_epoch = ResetEpoch::default();
+        let epoch = prev_epoch.inc();
+
+        let pool_addr = Hosts::SocketAddrs(vec![
+            "127.0.0.1:123".parse().unwrap(),
+            "127.0.0.2:123".parse().unwrap(),
+            "127.0.0.3:123".parse().unwrap(),
+            "127.0.0.4:123".parse().unwrap(),
+        ]);
+
+        let peer_configs = [
+            PeerConfig::Standard(StandardPeerConfig {
+                addr: "127.0.0.0:123".to_string(),
+            }),
+            PeerConfig::Pool(PoolPeerConfig {
+                hosts: pool_addr.clone(),
+                max_peers: 3,
+            }),
+        ];
+
+        let mut peers = Peers::new(PeerChannels::test(), TestClock {});
+
+        for config in peer_configs.iter() {
+            peers.add_peer(config.clone()).await;
+        }
+
+        // we have only 2 peers, because the pool has size 1
+        assert_eq!(peers.peers.len(), 4);
+
+        // our pool peer has a network issue
+        peers
+            .update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }), epoch)
+            .await;
+
+        // automatically selects another peer from the pool
+        assert_eq!(peers.peers.len(), 4);
+
+        // now some tests for the the pool state
+        let pool = peers.pools.get(&pool_addr).unwrap();
+        assert_eq!(pool.active.len(), 3);
+        assert_eq!(pool.backups.len(), 0);
+
+        // peer 1 moved to index 2 now
+        let config = peers.remove_peer(&PeerIndex { index: 2 }).unwrap().config;
+        assert_eq!(config, peer_configs[1]);
+
+        let pool = peers.pools.get(&pool_addr).unwrap();
+        assert_eq!(pool.active.len(), 2);
+        assert_eq!(pool.backups.len(), 0);
+
+        assert_eq!(peers.peers.len(), 3);
+    }
 }
