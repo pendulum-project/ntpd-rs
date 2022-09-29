@@ -1,10 +1,6 @@
 #![forbid(unsafe_code)]
 
-use std::{
-    io::{self, IoSliceMut},
-    net::SocketAddr,
-    os::unix::prelude::RawFd,
-};
+use std::{io, net::SocketAddr, os::unix::prelude::RawFd};
 
 use ntp_proto::NtpTimestamp;
 use tokio::io::unix::AsyncFd;
@@ -256,15 +252,13 @@ fn recv(
     socket: &std::net::UdpSocket,
     buf: &mut [u8],
 ) -> io::Result<(usize, SocketAddr, Option<NtpTimestamp>)> {
-    let mut buf_slice = IoSliceMut::new(buf);
-
     let mut control_buf = [0; control_message_space::<[libc::timespec; 3]>()];
     let mut addr = zeroed_sockaddr_storage();
 
     // loops for when we receive an interrupt during the recv
     let (bytes_read, mhdr) = receive_message(
         socket,
-        Some(&mut buf_slice),
+        buf,
         &mut control_buf,
         Some(&mut addr),
         MessageQueue::Normal,
@@ -327,7 +321,7 @@ fn fetch_send_timestamp_help(
 
     let mut control_buf = [0; CONTROL_SIZE];
 
-    let (_, mhdr) = receive_message(socket, None, &mut control_buf, None, MessageQueue::Error)?;
+    let (_, mhdr) = receive_message(socket, &mut [], &mut control_buf, None, MessageQueue::Error)?;
 
     if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
         warn!("truncated packet because it was larger than expected",);
