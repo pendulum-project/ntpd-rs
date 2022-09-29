@@ -1,4 +1,4 @@
-use std::os::unix::prelude::AsRawFd;
+use std::{io::IoSliceMut, os::unix::prelude::AsRawFd};
 
 use super::cerr;
 
@@ -10,25 +10,51 @@ pub(crate) enum MessageQueue {
 /// Receive a message on a socket (retry if interrupted)
 pub(crate) fn receive_message(
     socket: &std::net::UdpSocket,
-    message_header: &mut libc::msghdr,
+    packet_buf: Option<&mut IoSliceMut>,
+    control_buf: &mut [u8],
+    addr: Option<&mut libc::sockaddr_storage>,
     queue: MessageQueue,
-) -> std::io::Result<libc::c_int> {
+) -> std::io::Result<(libc::c_int, libc::msghdr)> {
+    let (msg_iov, msg_iovlen) = match packet_buf {
+        Some(r) => ((r as *mut IoSliceMut).cast::<libc::iovec>(), 1),
+        None => (std::ptr::null_mut(), 0),
+    };
+
+    let (msg_name, msg_namelen) = match addr {
+        Some(r) => (
+            (r as *mut libc::sockaddr_storage).cast::<libc::c_void>(),
+            std::mem::size_of::<libc::sockaddr_storage>() as u32,
+        ),
+        None => (std::ptr::null_mut(), 0),
+    };
+
+    let mut mhdr = libc::msghdr {
+        msg_control: control_buf.as_mut_ptr().cast::<libc::c_void>(),
+        msg_controllen: control_buf.len(),
+        msg_iov,
+        msg_iovlen,
+        msg_flags: 0,
+        msg_name,
+        msg_namelen,
+    };
+
     let receive_flags = match queue {
         MessageQueue::Normal => 0,
         MessageQueue::Error => libc::MSG_ERRQUEUE,
     };
 
-    loop {
-        match cerr(unsafe { libc::recvmsg(socket.as_raw_fd(), message_header, receive_flags) } as _)
-        {
+    let sent_bytes = loop {
+        match cerr(unsafe { libc::recvmsg(socket.as_raw_fd(), &mut mhdr, receive_flags) } as _) {
             Err(e) if std::io::ErrorKind::Interrupted == e.kind() => {
                 // retry when the recv was interrupted
                 continue;
             }
 
-            other => return other,
+            other => break other,
         }
-    }
+    }?;
+
+    Ok((sent_bytes, mhdr))
 }
 
 pub(crate) enum ControlMessage {

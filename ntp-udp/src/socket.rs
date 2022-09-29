@@ -2,7 +2,6 @@
 
 use std::{
     io::{self, IoSliceMut},
-    mem::size_of,
     net::SocketAddr,
     os::unix::prelude::RawFd,
 };
@@ -261,18 +260,15 @@ fn recv(
 
     let mut control_buf = [0; control_message_space::<[libc::timespec; 3]>()];
     let mut addr = zeroed_sockaddr_storage();
-    let mut mhdr = libc::msghdr {
-        msg_control: control_buf.as_mut_ptr().cast::<libc::c_void>(),
-        msg_controllen: control_buf.len(),
-        msg_iov: (&mut buf_slice as *mut IoSliceMut).cast::<libc::iovec>(),
-        msg_iovlen: 1,
-        msg_flags: 0,
-        msg_name: (&mut addr as *mut libc::sockaddr_storage).cast::<libc::c_void>(),
-        msg_namelen: size_of::<libc::sockaddr_storage>() as u32,
-    };
 
     // loops for when we receive an interrupt during the recv
-    let bytes_read = receive_message(socket, &mut mhdr, MessageQueue::Normal)? as usize;
+    let (bytes_read, mhdr) = receive_message(
+        socket,
+        Some(&mut buf_slice),
+        &mut control_buf,
+        Some(&mut addr),
+        MessageQueue::Normal,
+    )?;
 
     let sock_addr = sockaddr_storage_to_socket_addr(&addr)
         .unwrap_or_else(|| unreachable!("We never constructed a non-ip socket"));
@@ -294,7 +290,7 @@ fn recv(
             ControlMessage::Timestamping(timespec) => {
                 let timestamp = read_ntp_timestamp(timespec);
 
-                return Ok((bytes_read, sock_addr, Some(timestamp)));
+                return Ok((bytes_read as usize, sock_addr, Some(timestamp)));
             }
 
             ControlMessage::ReceiveError(_error) => {
@@ -310,7 +306,7 @@ fn recv(
         }
     }
 
-    Ok((bytes_read, sock_addr, None))
+    Ok((bytes_read as usize, sock_addr, None))
 }
 
 fn fetch_send_timestamp_help(
@@ -330,17 +326,8 @@ fn fetch_send_timestamp_help(
         + control_message_space::<(libc::sock_extended_err, libc::sockaddr_storage)>();
 
     let mut control_buf = [0; CONTROL_SIZE];
-    let mut mhdr = libc::msghdr {
-        msg_control: control_buf.as_mut_ptr().cast::<libc::c_void>(),
-        msg_controllen: control_buf.len(),
-        msg_iov: std::ptr::null_mut(),
-        msg_iovlen: 0,
-        msg_flags: 0,
-        msg_name: std::ptr::null_mut(),
-        msg_namelen: 0,
-    };
 
-    receive_message(socket, &mut mhdr, MessageQueue::Error)?;
+    let (_, mhdr) = receive_message(socket, None, &mut control_buf, None, MessageQueue::Error)?;
 
     if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
         warn!("truncated packet because it was larger than expected",);
