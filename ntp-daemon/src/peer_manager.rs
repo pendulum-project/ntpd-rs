@@ -72,10 +72,13 @@ impl PoolState {
     ///
     /// - will do a DNS resolve if there are insufficient `backups`
     /// - will never add more than `max_peers` active peers from the pool
-    async fn find_additional(&mut self, address: &str, max_peers: usize) -> Vec<SocketAddr> {
+    async fn find_additional<T>(&mut self, host: T, max_peers: usize) -> Vec<SocketAddr>
+    where
+        T: tokio::net::ToSocketAddrs + Copy,
+    {
         if self.backups.len() < (max_peers - self.active.len()) {
             // there are not enough cached peers; try and get more with DNS resolve
-            self.backups = socket_addresses(address)
+            self.backups = socket_addresses(host)
                 .await
                 .filter(|addr| !self.active.contains(addr))
                 .collect();
@@ -98,9 +101,12 @@ impl PoolState {
 /// Get available socket addresses for a host
 ///
 /// Will retry until the iterator contains at least one socket address
-async fn socket_addresses(address: &str) -> impl Iterator<Item = std::net::SocketAddr> + '_ {
+async fn socket_addresses<'a, T>(host: T) -> impl Iterator<Item = std::net::SocketAddr> + 'a
+where
+    T: tokio::net::ToSocketAddrs + Copy + 'a,
+{
     loop {
-        match lookup_host(address).await {
+        match lookup_host(host).await {
             Ok(addresses) => {
                 let mut it = addresses.peekable();
 
