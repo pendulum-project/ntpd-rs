@@ -368,6 +368,10 @@ mod exceptional_condition_fd {
 
     use super::cerr;
 
+    // Tokio does not natively support polling for readiness of queues
+    // other than the normal read queue (see also https://github.com/tokio-rs/tokio/issues/4885)
+    // this works around that by creating a epoll fd that becomes
+    // ready to read when the underlying fd has an event on its error queue.
     pub(crate) fn exceptional_condition_fd(
         socket_of_interest: &std::net::UdpSocket,
     ) -> std::io::Result<AsyncFd<RawFd>> {
