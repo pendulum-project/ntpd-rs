@@ -269,6 +269,12 @@ pub enum AcceptSynchronizationError {
     Stratum,
 }
 
+#[derive(Debug)]
+pub enum Update {
+    BareUpdate(PeerSnapshot),
+    NewMeasurement(PeerSnapshot),
+}
+
 impl Peer {
     #[instrument]
     pub fn new(our_id: ReferenceId, peer_id: ReferenceId, local_clock_time: NtpInstant) -> Self {
@@ -331,7 +337,7 @@ impl Peer {
         frequency_tolerance: FrequencyTolerance,
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
-    ) -> Result<PeerSnapshot, IgnoreReason> {
+    ) -> Result<Update, IgnoreReason> {
         let next_expected_origin = match self.next_expected_origin {
             Some((next_expected_origin, validity)) if validity >= NtpInstant::now() => {
                 next_expected_origin
@@ -377,59 +383,62 @@ impl Peer {
             warn!("Received packet with invalid mode");
             Err(IgnoreReason::InvalidMode)
         } else {
-            trace!("Packet accepted for processing");
-            // For reachability, mark that we have had a response
-            self.reach.received_packet();
-
-            // Got a response, so no need for unreachability backoff
-            self.backoff_interval = PollInterval::MIN;
-
-            // we received this packet, and don't want to accept future ones with this next_expected_origin
-            self.next_expected_origin = None;
-
-            let filter_input = FilterTuple::from_packet_default(
-                &message,
-                system.precision,
+            Ok(self.process_message(
+                system,
+                message,
                 local_clock_time,
                 frequency_tolerance,
                 send_time,
                 recv_time,
-            );
-
-            self.last_packet = message;
-
-            self.message_for_system(
-                filter_input,
-                system.leap_indicator,
-                system.precision,
-                frequency_tolerance,
-            )
+            ))
         }
     }
 
-    /// Data from a peer that is needed for the (global) clock filter and combine process
-    fn message_for_system(
+    fn process_message(
         &mut self,
-        new_tuple: FilterTuple,
-        system_leap_indicator: NtpLeapIndicator,
-        system_precision: NtpDuration,
+        system: SystemSnapshot,
+        message: NtpHeader,
+        local_clock_time: NtpInstant,
         frequency_tolerance: FrequencyTolerance,
-    ) -> Result<PeerSnapshot, IgnoreReason> {
+        send_time: NtpTimestamp,
+        recv_time: NtpTimestamp,
+    ) -> Update {
+        trace!("Packet accepted for processing");
+        // For reachability, mark that we have had a response
+        self.reach.received_packet();
+
+        // Got a response, so no need for unreachability backoff
+        self.backoff_interval = PollInterval::MIN;
+
+        // we received this packet, and don't want to accept future ones with this next_expected_origin
+        self.next_expected_origin = None;
+
+        let filter_input = FilterTuple::from_packet_default(
+            &message,
+            system.precision,
+            local_clock_time,
+            frequency_tolerance,
+            send_time,
+            recv_time,
+        );
+
+        self.last_packet = message;
+
         let updated = self.last_measurements.step(
-            new_tuple,
+            filter_input,
             self.time,
-            system_leap_indicator,
-            system_precision,
+            system.leap_indicator,
+            system.precision,
             frequency_tolerance,
         );
 
         match updated {
-            None => Err(IgnoreReason::TooOld),
+            None => Update::BareUpdate(PeerSnapshot::from_peer(self)),
             Some((statistics, smallest_delay_time)) => {
                 self.statistics = statistics;
                 self.time = smallest_delay_time;
 
-                Ok(PeerSnapshot::from_peer(self))
+                Update::NewMeasurement(PeerSnapshot::from_peer(self))
             }
         }
     }
