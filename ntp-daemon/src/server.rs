@@ -14,7 +14,7 @@ use crate::config::{FilterAction, ServerConfig};
 
 pub struct ServerTask<C: 'static + NtpClock + Send> {
     config: Arc<ServerConfig>,
-    socket: UdpSocket,
+    network_wait_period: std::time::Duration,
     system: Arc<RwLock<SystemSnapshot>>,
     clock: C,
 }
@@ -35,22 +35,9 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         network_wait_period: std::time::Duration,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
-            let socket = loop {
-                match UdpSocket::server(config.addr).await {
-                    Ok(socket) => break socket,
-                    Err(error) => {
-                        warn!(?error, "Could not open server socket");
-                        tokio::time::sleep(network_wait_period).await;
-                    }
-                }
-            };
-
-            // Unwrap should be safe because we know the socket was bound to a local addres just before
-            let _our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
-
             let mut process = ServerTask {
                 config,
-                socket,
+                network_wait_period,
                 system,
                 clock,
             };
@@ -104,35 +91,47 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
     }
 
     #[instrument(level = "debug", skip(self), fields(
-        addr = debug(self.socket.as_ref().local_addr().unwrap()),
+        addr = debug(self.config.addr),
     ))]
     async fn serve(&mut self) {
+        let mut cur_socket = None;
         loop {
+            let socket = if let Some(ref socket) = cur_socket {
+                socket
+            } else {
+                cur_socket = Some(loop {
+                    match UdpSocket::server(self.config.addr).await {
+                        Ok(socket) => break socket,
+                        Err(error) => {
+                            warn!(?error, "Could not open server socket");
+                            tokio::time::sleep(self.network_wait_period).await;
+                        }
+                    }
+                });
+                cur_socket.as_ref().unwrap()
+            };
+
             let mut buf = [0_u8; 48];
-            let recv_res = self.socket.recv(&mut buf).await;
+            let recv_res = socket.recv(&mut buf).await;
             let accept_result = self.accept_packet(recv_res, &buf);
             match accept_result {
                 AcceptResult::Accept(packet, peer_addr, recv_timestamp) => {
                     let response = self.generate_response(packet, recv_timestamp).await;
 
-                    if let Err(send_err) =
-                        self.socket.send_to(&response.serialize(), peer_addr).await
-                    {
+                    if let Err(send_err) = socket.send_to(&response.serialize(), peer_addr).await {
                         warn!(error=?send_err, "Could not send response packet");
                     }
                 }
                 AcceptResult::Deny(packet, peer_addr) => {
                     let response = self.generate_deny(packet);
-                    if let Err(send_err) =
-                        self.socket.send_to(&response.serialize(), peer_addr).await
-                    {
+                    if let Err(send_err) = socket.send_to(&response.serialize(), peer_addr).await {
                         warn!(error=?send_err, "Could not send deny packet");
                     }
                 }
                 AcceptResult::NetworkGone => {
-                    // TODO: handle network failures
                     error!("Server connection gone");
-                    break;
+                    cur_socket = None;
+                    continue;
                 }
                 AcceptResult::Ignore => {}
             }
