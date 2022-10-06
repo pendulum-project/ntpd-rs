@@ -49,7 +49,7 @@ pub struct CmdArgs {
         long = "peer",
         global = true,
         value_name = "SERVER",
-        parse(try_from_str = TryFrom::try_from),
+        value_parser = PeerConfig::try_from_str,
         help = "Override the peers in the configuration file"
     )]
     pub peers: Vec<PeerConfig>,
@@ -57,14 +57,21 @@ pub struct CmdArgs {
     #[clap(
         short,
         long,
-        parse(from_os_str),
         global = true,
         value_name = "FILE",
         help = "Path of the configuration file"
     )]
     pub config: Option<PathBuf>,
 
-    #[clap(long, short, global = true, value_name = "FILTER", parse(try_from_str = parse_env_filter), env = "NTP_LOG", help = "Filter to apply to log messages")]
+    #[clap(
+        long,
+        short,
+        global = true,
+        value_name = "FILTER",
+        parse(try_from_str = parse_env_filter),
+        env = "NTP_LOG",
+        help = "Filter to apply to log messages"
+    )]
     pub log_filter: Option<EnvFilter>,
 
     #[clap(
@@ -81,7 +88,7 @@ pub struct CmdArgs {
         long = "server",
         global = true,
         value_name = "ADDR",
-        parse(try_from_str = TryFrom::try_from),
+        value_parser = ServerConfig::try_from_str,
         help = "Override the servers to run from the configuration file"
     )]
     pub servers: Vec<ServerConfig>,

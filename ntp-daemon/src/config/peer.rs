@@ -41,6 +41,12 @@ pub enum PeerConfig {
     // Consul(ConsulPeerConfig),
 }
 
+impl PeerConfig {
+    pub(crate) fn try_from_str(value: &str) -> Result<Self, std::io::Error> {
+        Self::try_from(value)
+    }
+}
+
 fn normalize_addr(mut addr: String) -> std::io::Result<String> {
     if addr.split(':').count() > 2 {
         // IPv6, try to parse it as such
@@ -82,10 +88,10 @@ impl TryFrom<&str> for StandardPeerConfig {
     }
 }
 
-impl TryFrom<&str> for PeerConfig {
+impl<'a> TryFrom<&'a str> for PeerConfig {
     type Error = std::io::Error;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
         StandardPeerConfig::try_from(value).map(Self::Standard)
     }
 }
