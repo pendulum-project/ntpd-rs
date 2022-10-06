@@ -69,7 +69,7 @@ where
 
 #[derive(Parser, Debug)]
 pub struct CmdArgs {
-    #[clap(
+    #[arg(
         short,
         long = "peer",
         global = true,
@@ -79,7 +79,7 @@ pub struct CmdArgs {
     )]
     pub peers: Vec<PeerConfig>,
 
-    #[clap(
+    #[arg(
         short,
         long,
         global = true,
@@ -88,7 +88,7 @@ pub struct CmdArgs {
     )]
     pub config: Option<PathBuf>,
 
-    #[clap(
+    #[arg(
         long,
         short,
         global = true,
@@ -99,7 +99,7 @@ pub struct CmdArgs {
     )]
     pub log_filter: Option<CheckedLogFilter>,
 
-    #[clap(
+    #[arg(
         long,
         global = true,
         value_name = "FORMAT",
@@ -108,7 +108,7 @@ pub struct CmdArgs {
     )]
     pub log_format: Option<LogFormat>,
 
-    #[clap(
+    #[arg(
         short,
         long = "server",
         global = true,
