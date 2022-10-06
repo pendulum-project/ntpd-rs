@@ -8,7 +8,7 @@ use ntp_proto::{
 };
 use ntp_udp::UdpSocket;
 use tokio::{sync::RwLock, task::JoinHandle};
-use tracing::{error, instrument, trace, warn};
+use tracing::{error, info, instrument, trace, warn};
 
 use crate::config::{FilterAction, ServerConfig};
 
@@ -167,7 +167,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 }
             }
             Ok((size, _, Some(_))) => {
-                warn!(expected = 48, actual = size, "received packet is too small");
+                info!(expected = 48, actual = size, "received packet is too small");
 
                 AcceptResult::Ignore
             }
@@ -217,7 +217,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 }
             },
             Err(e) => {
-                warn!("received invalid packet: {}", e);
+                info!("received invalid packet: {}", e);
                 AcceptResult::Ignore
             }
         }
