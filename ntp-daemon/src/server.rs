@@ -239,8 +239,18 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
 /// The planned use is in rate limiting: we keep track of when a peer last checked in. If it checks
 /// in too often, we issue a rate limiting KISS code.
 ///
-/// The implementation is fixed-size (and in practice small) hash map. Collisions are not a big
-/// problem (the cache size can be configured if we observe too many collisions)
+/// For this use case we want fast
+///
+/// - lookups: for each incomming IP we must check when it last checked in
+/// - inserts: for each incomming IP we store that its most recent checkin is now
+///
+/// Hence, this data structure is a vector, and we use a simple hash function to turn the incomming
+/// address into an index. Lookups and inserts are therefore O(1).
+///
+/// The likelyhood of hash collisions can be controlled by changing the size of the cache. Overall,
+/// hash collisions are not a big problem because problematic IPs will continue to show up, so if
+/// we don't deny them on the first attempt because the previous entry was evicted, we're very
+/// likely to succeed on the next request it makes.
 #[derive(Debug)]
 struct TimestampedCache<T> {
     elements: Vec<Option<(T, Instant)>>,
