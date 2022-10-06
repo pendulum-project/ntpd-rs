@@ -266,7 +266,7 @@ mod tests {
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: "example.com:123".into(),
+                addr: NormalizedAddress::new_unchecked("example.com:123"),
             })]
         );
 
@@ -276,7 +276,7 @@ mod tests {
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: "example.com:123".into(),
+                addr: NormalizedAddress::new_unchecked("example.com:123"),
             })]
         );
 
@@ -286,7 +286,7 @@ mod tests {
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: "example.com:123".into(),
+                addr: NormalizedAddress::new_unchecked("example.com:123"),
             })]
         );
 
@@ -296,7 +296,7 @@ mod tests {
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: "example.com:123".into(),
+                addr: NormalizedAddress::new_unchecked("example.com:123"),
             })]
         );
         assert!(config.system.panic_threshold.forward.is_none());
@@ -330,7 +330,7 @@ mod tests {
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: "example.com:123".into(),
+                addr: NormalizedAddress::new_unchecked("example.com:123"),
             })]
         );
     }
@@ -462,7 +462,7 @@ mod tests {
         assert_eq!(
             parsed_empty.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: "foo.nl:123".to_string(),
+                addr: NormalizedAddress::new_unchecked("foo.nl:123"),
             })]
         );
         assert!(parsed_empty.config.is_none());
@@ -475,10 +475,10 @@ mod tests {
             parsed_empty.peers,
             vec![
                 PeerConfig::Standard(StandardPeerConfig {
-                    addr: "foo.rs:123".to_string(),
+                    addr: NormalizedAddress::new_unchecked("foo.rs:123"),
                 }),
                 PeerConfig::Standard(StandardPeerConfig {
-                    addr: "spam.nl:123".to_string(),
+                    addr: NormalizedAddress::new_unchecked("spam.nl:123"),
                 }),
             ]
         );

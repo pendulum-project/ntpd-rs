@@ -83,7 +83,7 @@ mod tests {
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
     use crate::{
-        config::{PeerConfig, StandardPeerConfig},
+        config::{NormalizedAddress, PeerConfig, StandardPeerConfig},
         peer_manager::PeerStatus,
     };
 
@@ -154,13 +154,13 @@ mod tests {
 
         let peer_configs = [
             PeerConfig::Standard(StandardPeerConfig {
-                addr: "127.0.0.1:123".to_string(),
+                addr: NormalizedAddress::new_unchecked("127.0.0.1:123"),
             }),
             PeerConfig::Standard(StandardPeerConfig {
-                addr: "127.0.0.2:123".to_string(),
+                addr: NormalizedAddress::new_unchecked("127.0.0.2:123"),
             }),
             PeerConfig::Standard(StandardPeerConfig {
-                addr: "127.0.0.3:123".to_string(),
+                addr: NormalizedAddress::new_unchecked("127.0.0.3:123"),
             }),
         ];
 
@@ -241,13 +241,13 @@ mod tests {
 
         let peer_configs = [
             PeerConfig::Standard(StandardPeerConfig {
-                addr: "127.0.0.1:123".to_string(),
+                addr: NormalizedAddress::new_unchecked("127.0.0.1:123"),
             }),
             PeerConfig::Standard(StandardPeerConfig {
-                addr: "127.0.0.2:123".to_string(),
+                addr: NormalizedAddress::new_unchecked("127.0.0.2:123"),
             }),
             PeerConfig::Standard(StandardPeerConfig {
-                addr: "127.0.0.3:123".to_string(),
+                addr: NormalizedAddress::new_unchecked("127.0.0.3:123"),
             }),
         ];
 
