@@ -9,13 +9,13 @@ use ntp_proto::{
 };
 use ntp_udp::UdpSocket;
 use tokio::{sync::RwLock, task::JoinHandle};
-use tracing::{error, instrument, trace, warn};
+use tracing::{error, info, instrument, trace, warn};
 
 use crate::config::{FilterAction, ServerConfig};
 
 pub struct ServerTask<C: 'static + NtpClock + Send> {
     config: Arc<ServerConfig>,
-    socket: UdpSocket,
+    network_wait_period: std::time::Duration,
     system: Arc<RwLock<SystemSnapshot>>,
     client_cache: TimestampedCache<SocketAddr>,
     clock: C,
@@ -38,27 +38,15 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         network_wait_period: Duration,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
-            let socket = loop {
-                match UdpSocket::server(config.addr).await {
-                    Ok(socket) => break socket,
-                    Err(error) => {
-                        warn!(?error, "Could not open server socket");
-                        tokio::time::sleep(network_wait_period).await;
-                    }
-                }
-            };
-
-            // Unwrap should be safe because we know the socket was bound to a local addres just before
-            let _our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
-
             let rate_limiting_cutoff = config.rate_limiting_cutoff;
+            let rate_limiting_cache_size = config.rate_limiting_cache_size;
 
             let mut process = ServerTask {
-                socket,
+                config,
+                network_wait_period,
                 system,
                 clock,
-                client_cache: TimestampedCache::new(config.rate_limiting_cache_size),
-                config,
+                client_cache: TimestampedCache::new(rate_limiting_cache_size),
             };
 
             process.serve(rate_limiting_cutoff).await
@@ -88,13 +76,30 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
     }
 
     #[instrument(level = "debug", skip(self), fields(
-        addr = debug(self.socket.as_ref().local_addr().unwrap()),
+        addr = debug(self.config.addr),
     ))]
     async fn serve(&mut self, rate_limiting_cutoff: Duration) {
+        let mut cur_socket = None;
         loop {
+            let socket = if let Some(ref socket) = cur_socket {
+                socket
+            } else {
+                cur_socket = Some(loop {
+                    match UdpSocket::server(self.config.addr).await {
+                        Ok(socket) => break socket,
+                        Err(error) => {
+                            warn!(?error, "Could not open server socket");
+                            tokio::time::sleep(self.network_wait_period).await;
+                        }
+                    }
+                });
+                cur_socket.as_ref().unwrap()
+            };
+
             let mut buf = [0_u8; 48];
-            let recv_res = self.socket.recv(&mut buf).await;
+            let recv_res = socket.recv(&mut buf).await;
             let accept_result = self.accept_packet(rate_limiting_cutoff, recv_res, &buf);
+
             match accept_result {
                 AcceptResult::Accept(packet, peer_addr, recv_timestamp) => {
                     let system = *self.system.read().await;
@@ -106,31 +111,25 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                         &mut self.clock,
                     );
 
-                    if let Err(send_err) =
-                        self.socket.send_to(&response.serialize(), peer_addr).await
-                    {
+                    if let Err(send_err) = socket.send_to(&response.serialize(), peer_addr).await {
                         warn!(error=?send_err, "Could not send response packet");
                     }
                 }
                 AcceptResult::Deny(packet, peer_addr) => {
                     let response = self.generate_deny(packet);
-                    if let Err(send_err) =
-                        self.socket.send_to(&response.serialize(), peer_addr).await
-                    {
+                    if let Err(send_err) = socket.send_to(&response.serialize(), peer_addr).await {
                         warn!(error=?send_err, "Could not send deny packet");
                     }
                 }
                 AcceptResult::NetworkGone => {
-                    // TODO: handle network failures
                     error!("Server connection gone");
-                    break;
+                    cur_socket = None;
+                    continue;
                 }
                 AcceptResult::RateLimit(peer_addr) => {
                     let response = NtpHeader::rate_limit_response();
 
-                    if let Err(send_err) =
-                        self.socket.send_to(&response.serialize(), peer_addr).await
-                    {
+                    if let Err(send_err) = socket.send_to(&response.serialize(), peer_addr).await {
                         warn!(error=?send_err, "Could not send response packet");
                     }
                 }
@@ -177,7 +176,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 }
             }
             Ok((size, _, Some(_))) => {
-                warn!(expected = 48, actual = size, "received packet is too small");
+                info!(expected = 48, actual = size, "received packet is too small");
 
                 AcceptResult::Ignore
             }
@@ -227,7 +226,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 }
             },
             Err(e) => {
-                warn!("received invalid packet: {}", e);
+                info!("received invalid packet: {}", e);
                 AcceptResult::Ignore
             }
         }

@@ -9,36 +9,36 @@ use ntp_daemon::{Config, ConfigUpdate, ObservableState};
 use prometheus::DisplayPrometheus;
 
 #[derive(Parser)]
-#[clap(version = "0.1.0", about = "Query and configure the NTPD-rs daemon")]
-#[clap(arg_required_else_help(true))]
+#[command(version = "0.1.0", about = "Query and configure the NTPD-rs daemon")]
+#[command(arg_required_else_help(true))]
 struct Cli {
-    #[clap(subcommand)]
+    #[command(subcommand)]
     command: Command,
 
     /// Which configuration file to read the socket paths from
-    #[clap(short, long)]
+    #[arg(short, long)]
     config: Option<PathBuf>,
 
     /// Path of the observation socket
-    #[clap(short, long)]
+    #[arg(short, long)]
     observation_socket: Option<PathBuf>,
 
     /// Path of the configuration socket
-    #[clap(short = 's', long)]
+    #[arg(short = 's', long)]
     configuration_socket: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
 enum Command {
-    #[clap(about = "Information about the peers the daemon is currently connected with")]
+    #[command(about = "Information about the peers the daemon is currently connected with")]
     Peers,
-    #[clap(about = "Information about the state of the daemon itself")]
+    #[command(about = "Information about the state of the daemon itself")]
     System,
-    #[clap(
+    #[command(
         about = "Information about the state of the daemon and peers in the prometheus export format"
     )]
     Prometheus,
-    #[clap(about = "Adjust configuration (e.g. loglevel) of the daemon")]
+    #[command(about = "Adjust configuration (e.g. loglevel) of the daemon")]
     Config(ConfigUpdate),
 }
 

@@ -24,7 +24,7 @@ fn parse_env_filter(input: &str) -> Result<String, tracing_subscriber::filter::P
 #[derive(Debug, Args, Serialize, Deserialize)]
 pub struct ConfigUpdate {
     /// Change the log filter
-    #[clap(long, parse(try_from_str = parse_env_filter))]
+    #[arg(long, value_parser = parse_env_filter)]
     pub log_filter: Option<String>,
 
     /// The maximum duration in seconds the system clock is allowed to change in a single jump
@@ -34,7 +34,7 @@ pub struct ConfigUpdate {
     ///
     /// Note that this is not used during startup. To limit system clock changes
     /// during startup, use startup_panic_threshold
-    #[clap(long)]
+    #[arg(long)]
     pub panic_threshold: Option<f64>,
 }
 

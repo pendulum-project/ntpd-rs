@@ -13,23 +13,21 @@ use serde::{de, Deserialize, Deserializer};
 use std::{
     io::ErrorKind,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 use thiserror::Error;
 use tokio::{fs::read_to_string, io};
 use tracing::{info, warn};
-use tracing_subscriber::filter::{self, EnvFilter};
+use tracing_subscriber::filter::EnvFilter;
 
 use self::format::LogFormat;
-
-fn parse_env_filter(input: &str) -> Result<EnvFilter, filter::ParseError> {
-    EnvFilter::builder().with_regex(false).parse(input)
-}
 
 fn deserialize_option_env_filter<'de, D>(deserializer: D) -> Result<Option<EnvFilter>, D::Error>
 where
     D: Deserializer<'de>,
 {
     let data: Option<&str> = Deserialize::deserialize(deserializer)?;
+
     if let Some(dirs) = data {
         // allow us to recognise configs with an empty log filter directive
         if dirs.is_empty() {
@@ -42,32 +40,46 @@ where
     }
 }
 
+fn parse_env_filter(input: &str) -> Result<Arc<EnvFilter>, tracing_subscriber::filter::ParseError> {
+    EnvFilter::builder()
+        .with_regex(false)
+        .parse(input)
+        .map(Arc::new)
+}
+
 #[derive(Parser, Debug)]
 pub struct CmdArgs {
-    #[clap(
+    #[arg(
         short,
         long = "peer",
         global = true,
         value_name = "SERVER",
-        parse(try_from_str = TryFrom::try_from),
+        value_parser = PeerConfig::try_from_str,
         help = "Override the peers in the configuration file"
     )]
     pub peers: Vec<PeerConfig>,
 
-    #[clap(
+    #[arg(
         short,
         long,
-        parse(from_os_str),
         global = true,
         value_name = "FILE",
         help = "Path of the configuration file"
     )]
     pub config: Option<PathBuf>,
 
-    #[clap(long, short, global = true, value_name = "FILTER", parse(try_from_str = parse_env_filter), env = "NTP_LOG", help = "Filter to apply to log messages")]
-    pub log_filter: Option<EnvFilter>,
+    #[arg(
+        long,
+        short,
+        global = true,
+        value_name = "FILTER",
+        value_parser = parse_env_filter,
+        env = "NTP_LOG",
+        help = "Filter to apply to log messages"
+    )]
+    pub log_filter: Option<Arc<EnvFilter>>,
 
-    #[clap(
+    #[arg(
         long,
         global = true,
         value_name = "FORMAT",
@@ -76,12 +88,12 @@ pub struct CmdArgs {
     )]
     pub log_format: Option<LogFormat>,
 
-    #[clap(
+    #[arg(
         short,
         long = "server",
         global = true,
         value_name = "ADDR",
-        parse(try_from_str = TryFrom::try_from),
+        value_parser = ServerConfig::try_from_str,
         help = "Override the servers to run from the configuration file"
     )]
     pub servers: Vec<ServerConfig>,

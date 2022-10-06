@@ -2,7 +2,7 @@
 
 use clap::Parser;
 use ntp_daemon::config::{CmdArgs, Config};
-use std::error::Error;
+use std::{error::Error, sync::Arc};
 use tracing::debug;
 use tracing_subscriber::EnvFilter;
 
@@ -11,7 +11,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let args = CmdArgs::parse();
     let has_log_override = args.log_filter.is_some();
     let has_format_override = args.log_format.is_some();
-    let log_filter = args.log_filter.unwrap_or_else(|| EnvFilter::new("info"));
+    let log_filter = args
+        .log_filter
+        // asserts that the arc is not shared. There is no reason it would be,
+        // we just use Arc to work around EnvFilter not implementing Clone
+        .map(|this| Arc::try_unwrap(this).unwrap())
+        .unwrap_or_else(|| EnvFilter::new("info"));
 
     // Setup some basic tracing now so we are able
     // to log errors when loading the full configuration.

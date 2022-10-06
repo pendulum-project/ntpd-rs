@@ -8,7 +8,7 @@ use std::{
 
 use ntp_proto::{
     IgnoreReason, NtpClock, NtpHeader, NtpInstant, NtpTimestamp, Peer, PeerSnapshot, ReferenceId,
-    SystemConfig, SystemSnapshot,
+    SystemConfig, SystemSnapshot, Update,
 };
 use ntp_udp::UdpSocket;
 use rand::{thread_rng, Rng};
@@ -214,7 +214,14 @@ where
 
                 // NOTE: fitness check is not performed here, but by System
 
-                let msg = MsgForSystem::NewMeasurement(self.index, self.reset_epoch, update);
+                let msg = match update {
+                    Update::BareUpdate(update) => {
+                        MsgForSystem::UpdatedSnapshot(self.index, self.reset_epoch, update)
+                    }
+                    Update::NewMeasurement(update) => {
+                        MsgForSystem::NewMeasurement(self.index, self.reset_epoch, update)
+                    }
+                };
                 self.channels.msg_for_system_sender.send(msg).await.ok();
             }
             Err(IgnoreReason::KissDemobilize) => {
