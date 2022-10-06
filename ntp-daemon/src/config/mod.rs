@@ -21,8 +21,32 @@ use tracing_subscriber::filter::{self, EnvFilter};
 
 use self::format::LogFormat;
 
-fn parse_env_filter(input: &str) -> Result<EnvFilter, filter::ParseError> {
-    EnvFilter::builder().with_regex(false).parse(input)
+/// A custom type to work around EnvFilter not implementing Clone, while `clap` requires that
+/// values that it parses do implement Clone. This is slightly inefficient of course, but the
+/// parsing of configuration happens only rarely.
+#[derive(Debug, Clone)]
+pub struct CheckedLogFilter(String);
+
+impl CheckedLogFilter {
+    fn parse(input: &str) -> Result<Self, filter::ParseError> {
+        EnvFilter::builder().with_regex(false).parse(input)?;
+
+        Ok(Self(input.to_string()))
+    }
+
+    pub fn into_log_filter(self) -> EnvFilter {
+        // unwrap is valid by construction
+        EnvFilter::builder()
+            .with_regex(false)
+            .parse(&self.0)
+            .unwrap()
+    }
+}
+
+impl ToString for CheckedLogFilter {
+    fn to_string(&self) -> String {
+        self.0.clone()
+    }
 }
 
 fn deserialize_option_env_filter<'de, D>(deserializer: D) -> Result<Option<EnvFilter>, D::Error>
@@ -30,6 +54,7 @@ where
     D: Deserializer<'de>,
 {
     let data: Option<&str> = Deserialize::deserialize(deserializer)?;
+
     if let Some(dirs) = data {
         // allow us to recognise configs with an empty log filter directive
         if dirs.is_empty() {
@@ -68,11 +93,11 @@ pub struct CmdArgs {
         short,
         global = true,
         value_name = "FILTER",
-        parse(try_from_str = parse_env_filter),
+        value_parser = CheckedLogFilter::parse,
         env = "NTP_LOG",
         help = "Filter to apply to log messages"
     )]
-    pub log_filter: Option<EnvFilter>,
+    pub log_filter: Option<CheckedLogFilter>,
 
     #[clap(
         long,
