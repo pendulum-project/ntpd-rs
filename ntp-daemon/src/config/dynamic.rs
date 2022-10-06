@@ -24,7 +24,7 @@ fn parse_env_filter(input: &str) -> Result<String, tracing_subscriber::filter::P
 #[derive(Debug, Args, Serialize, Deserialize)]
 pub struct ConfigUpdate {
     /// Change the log filter
-    #[clap(long, parse(try_from_str = parse_env_filter))]
+    #[clap(long, value_parser = parse_env_filter)]
     pub log_filter: Option<String>,
 
     /// The maximum duration in seconds the system clock is allowed to change in a single jump
