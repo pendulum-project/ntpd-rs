@@ -20,17 +20,11 @@ impl<'a> Arbitrary<'a> for ASubnet {
         if ipv4 {
             let mask: u8 = u.int_in_range(0..=32)?;
             let addr = IpAddr::V4(Ipv4Addr::from(u.arbitrary::<[u8; 4]>()?));
-            Ok(ASubnet(IpSubnet {
-                mask: mask,
-                addr: addr,
-            }))
+            Ok(ASubnet(IpSubnet { mask, addr }))
         } else {
             let mask: u8 = u.int_in_range(0..=128)?;
             let addr = IpAddr::V6(Ipv6Addr::from(u.arbitrary::<[u8; 16]>()?));
-            Ok(ASubnet(IpSubnet {
-                mask: mask,
-                addr: addr,
-            }))
+            Ok(ASubnet(IpSubnet { mask, addr }))
         }
     }
 
@@ -49,12 +43,14 @@ impl<'a> Arbitrary<'a> for ASubnet {
 struct AIp(IpAddr);
 
 impl<'a> Arbitrary<'a> for AIp {
-    fn arbitrary(u: &mut libfuzzer_sys::arbitrary::Unstructured<'a>) -> libfuzzer_sys::arbitrary::Result<Self> {
+    fn arbitrary(
+        u: &mut libfuzzer_sys::arbitrary::Unstructured<'a>,
+    ) -> libfuzzer_sys::arbitrary::Result<Self> {
         let ipv4: bool = u.arbitrary()?;
         if ipv4 {
-            Ok(AIp(IpAddr::V4(Ipv4Addr::from(u.arbitrary::<[u8;4]>()?))))
+            Ok(AIp(IpAddr::V4(Ipv4Addr::from(u.arbitrary::<[u8; 4]>()?))))
         } else {
-            Ok(AIp(IpAddr::V6(Ipv6Addr::from(u.arbitrary::<[u8;16]>()?))))
+            Ok(AIp(IpAddr::V6(Ipv6Addr::from(u.arbitrary::<[u8; 16]>()?))))
         }
     }
 }
