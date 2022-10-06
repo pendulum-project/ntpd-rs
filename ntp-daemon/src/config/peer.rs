@@ -43,6 +43,8 @@ impl PeerConfig {
     }
 }
 
+/// A normalized address has a host and a port part. However, the host may be
+/// invalid, we didn't yet perform a DNS lookup.
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct NormalizedAddress(String);
 
