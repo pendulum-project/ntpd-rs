@@ -13,41 +13,14 @@ use serde::{de, Deserialize, Deserializer};
 use std::{
     io::ErrorKind,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 use thiserror::Error;
 use tokio::{fs::read_to_string, io};
 use tracing::{info, warn};
-use tracing_subscriber::filter::{self, EnvFilter};
+use tracing_subscriber::filter::EnvFilter;
 
 use self::format::LogFormat;
-
-/// A custom type to work around EnvFilter not implementing Clone, while `clap` requires that
-/// values that it parses do implement Clone. This is slightly inefficient of course, but the
-/// parsing of configuration happens only rarely.
-#[derive(Debug, Clone)]
-pub struct CheckedLogFilter(String);
-
-impl CheckedLogFilter {
-    fn parse(input: &str) -> Result<Self, filter::ParseError> {
-        EnvFilter::builder().with_regex(false).parse(input)?;
-
-        Ok(Self(input.to_string()))
-    }
-
-    pub fn into_log_filter(self) -> EnvFilter {
-        // unwrap is valid by construction
-        EnvFilter::builder()
-            .with_regex(false)
-            .parse(&self.0)
-            .unwrap()
-    }
-}
-
-impl ToString for CheckedLogFilter {
-    fn to_string(&self) -> String {
-        self.0.clone()
-    }
-}
 
 fn deserialize_option_env_filter<'de, D>(deserializer: D) -> Result<Option<EnvFilter>, D::Error>
 where
@@ -65,6 +38,13 @@ where
     } else {
         Ok(None)
     }
+}
+
+fn parse_env_filter(input: &str) -> Result<Arc<EnvFilter>, tracing_subscriber::filter::ParseError> {
+    EnvFilter::builder()
+        .with_regex(false)
+        .parse(input)
+        .map(Arc::new)
 }
 
 #[derive(Parser, Debug)]
@@ -93,11 +73,11 @@ pub struct CmdArgs {
         short,
         global = true,
         value_name = "FILTER",
-        value_parser = CheckedLogFilter::parse,
+        value_parser = parse_env_filter,
         env = "NTP_LOG",
         help = "Filter to apply to log messages"
     )]
-    pub log_filter: Option<CheckedLogFilter>,
+    pub log_filter: Option<Arc<EnvFilter>>,
 
     #[arg(
         long,
