@@ -25,6 +25,7 @@ pub struct ServerTask<C: 'static + NtpClock + Send> {
 enum AcceptResult {
     Accept(NtpHeader, SocketAddr, NtpTimestamp),
     Ignore,
+    RateLimit(SocketAddr),
     Deny(NtpHeader, SocketAddr),
     NetworkGone,
 }
@@ -93,24 +94,17 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         loop {
             let mut buf = [0_u8; 48];
             let recv_res = self.socket.recv(&mut buf).await;
-            let accept_result = self.accept_packet(recv_res, &buf);
+            let accept_result = self.accept_packet(rate_limiting_cutoff, recv_res, &buf);
             match accept_result {
                 AcceptResult::Accept(packet, peer_addr, recv_timestamp) => {
                     let system = *self.system.read().await;
 
-                    let timestamp = Instant::now();
-                    let cutoff = rate_limiting_cutoff;
-
-                    let response = if self.client_cache.is_allowed(peer_addr, timestamp, cutoff) {
-                        NtpHeader::timestamp_response(
-                            &system,
-                            packet,
-                            recv_timestamp,
-                            &mut self.clock,
-                        )
-                    } else {
-                        NtpHeader::rate_limit_response()
-                    };
+                    let response = NtpHeader::timestamp_response(
+                        &system,
+                        packet,
+                        recv_timestamp,
+                        &mut self.clock,
+                    );
 
                     if let Err(send_err) =
                         self.socket.send_to(&response.serialize(), peer_addr).await
@@ -131,13 +125,23 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     error!("Server connection gone");
                     break;
                 }
+                AcceptResult::RateLimit(peer_addr) => {
+                    let response = NtpHeader::rate_limit_response();
+
+                    if let Err(send_err) =
+                        self.socket.send_to(&response.serialize(), peer_addr).await
+                    {
+                        warn!(error=?send_err, "Could not send response packet");
+                    }
+                }
                 AcceptResult::Ignore => {}
             }
         }
     }
 
     fn accept_packet(
-        &self,
+        &mut self,
+        rate_limiting_cutoff: Duration,
         result: Result<(usize, SocketAddr, Option<NtpTimestamp>), std::io::Error>,
         buf: &[u8; 48],
     ) -> AcceptResult {
@@ -160,7 +164,16 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                         }
                     }
                     Some(FilterAction::Ignore) => AcceptResult::Ignore,
-                    None => self.accept_data(buf, peer_addr, recv_timestamp),
+                    None => {
+                        let timestamp = Instant::now();
+                        let cutoff = rate_limiting_cutoff;
+
+                        if self.client_cache.is_allowed(peer_addr, timestamp, cutoff) {
+                            self.accept_data(buf, peer_addr, recv_timestamp)
+                        } else {
+                            AcceptResult::RateLimit(peer_addr)
+                        }
+                    }
                 }
             }
             Ok((size, _, Some(_))) => {
