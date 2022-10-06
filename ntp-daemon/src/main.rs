@@ -11,7 +11,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let args = CmdArgs::parse();
     let has_log_override = args.log_filter.is_some();
     let has_format_override = args.log_format.is_some();
-    let log_filter = args.log_filter.unwrap_or_else(|| EnvFilter::new("info"));
+    let log_filter = args
+        .log_filter
+        .map(|f| f.into_log_filter())
+        .unwrap_or_else(|| EnvFilter::new("info"));
 
     // Setup some basic tracing now so we are able
     // to log errors when loading the full configuration.
