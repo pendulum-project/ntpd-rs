@@ -5,7 +5,7 @@ use ntp_proto::{
 };
 use ntp_udp::UdpSocket;
 use tokio::{sync::RwLock, task::JoinHandle};
-use tracing::{error, instrument, trace, warn};
+use tracing::{error, info, instrument, trace, warn};
 
 pub struct ServerTask<C: 'static + NtpClock + Send> {
     socket: UdpSocket,
@@ -111,7 +111,7 @@ fn accept_packet(
             // extra bytes are guaranteed safe to ignore. `recv` truncates the messages.
             // Messages of fewer than 48 bytes are skipped entirely
             if size < 48 {
-                warn!(expected = 48, actual = size, "received packet is too small");
+                info!(expected = 48, actual = size, "received packet is too small");
 
                 AcceptResult::Ignore
             } else {
@@ -131,7 +131,7 @@ fn accept_packet(
                         }
                     },
                     Err(e) => {
-                        warn!("received invalid packet: {}", e);
+                        info!("received invalid packet: {}", e);
                         AcceptResult::Ignore
                     }
                 }
