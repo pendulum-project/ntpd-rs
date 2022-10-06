@@ -7,7 +7,7 @@ use crate::{
     server::ServerTask,
 };
 use ntp_proto::{NtpClock, PeerSnapshot};
-use tokio::{net::lookup_host, task::JoinHandle};
+use tokio::task::JoinHandle;
 use tracing::{debug, warn};
 
 const NETWORK_WAIT_PERIOD: std::time::Duration = std::time::Duration::from_secs(1);
@@ -83,13 +83,13 @@ impl<C: NtpClock> Peers<C> {
         let addr = loop {
             let host = match &*config {
                 PeerConfig::Standard(StandardPeerConfig { addr, .. }) => {
-                    debug!(unresolved = &addr, "lookup host");
-                    lookup_host(addr).await.map(|mut i| i.next())
+                    debug!(unresolved = ?&addr, "lookup host");
+                    addr.lookup_host().await.map(|mut i| i.next())
                 }
 
                 PeerConfig::Pool(PoolPeerConfig { addr, .. }) => {
-                    debug!(unresolved = &addr, "lookup host");
-                    lookup_host(addr).await.map(|mut i| i.next())
+                    debug!(unresolved = ?&addr, "lookup host");
+                    addr.lookup_host().await.map(|mut i| i.next())
                 }
             };
 
@@ -183,8 +183,10 @@ impl<C: NtpClock> Peers<C> {
                 poll_interval: snapshot.poll_interval.as_system_duration(),
                 peer_id: snapshot.peer_id,
                 address: match &*data.config {
-                    PeerConfig::Standard(StandardPeerConfig { addr, .. }) => addr.to_string(),
-                    PeerConfig::Pool(PoolPeerConfig { addr, .. }) => addr.to_string(),
+                    PeerConfig::Standard(StandardPeerConfig { addr, .. }) => {
+                        addr.as_str().to_string()
+                    }
+                    PeerConfig::Pool(PoolPeerConfig { addr, .. }) => addr.as_str().to_string(),
                 },
             },
         })
@@ -234,7 +236,7 @@ mod tests {
         PollInterval,
     };
 
-    use crate::config::StandardPeerConfig;
+    use crate::config::{NormalizedAddress, StandardPeerConfig};
 
     use super::*;
 
@@ -278,7 +280,7 @@ mod tests {
             &(0..4)
                 .map(|i| {
                     PeerConfig::Standard(StandardPeerConfig {
-                        addr: format!("127.0.0.{i}:123"),
+                        addr: NormalizedAddress::new_unchecked(&format!("127.0.0.{i}:123")),
                     })
                 })
                 .collect::<Vec<_>>(),
