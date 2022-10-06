@@ -505,8 +505,11 @@ impl std::fmt::Debug for PollInterval {
 
 impl PollInterval {
     // here we follow the spec (the code skeleton and ntpd repository use different values)
+    // with the exception that we have lowered the MAX value, which is needed because
+    // we don't support bursting, and hence using a larger poll interval would not
+    // yield usable results from a peer (gets rejected because of too high dispersion)
     pub const MIN: Self = Self(4);
-    pub const MAX: Self = Self(17);
+    pub const MAX: Self = Self(13);
 
     #[must_use]
     pub fn inc(self) -> Self {

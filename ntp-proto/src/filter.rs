@@ -128,8 +128,9 @@ impl LastMeasurements {
         system_precision: NtpDuration,
         frequency_tolerance: FrequencyTolerance,
     ) -> Option<(PeerStatistics, NtpInstant)> {
+        // correction depends on time passed since last register update!, not peer_time
         let dispersion_correction =
-            NtpInstant::abs_diff(new_tuple.time, peer_time) * frequency_tolerance;
+            NtpInstant::abs_diff(new_tuple.time, self.register[0].time) * frequency_tolerance;
         self.shift_and_insert(new_tuple, dispersion_correction);
 
         let temporary_list = TemporaryList::from_clock_filter_contents(self);
@@ -519,5 +520,41 @@ mod test {
         assert_eq!(result.offset, NtpDuration::from_fixed_int(1));
         assert_eq!(result.delay, NtpDuration::from_fixed_int(1));
         assert!(result.dispersion >= NtpDuration::from_fixed_int(0));
+    }
+
+    #[test]
+    fn clock_filter_dispersion_update() {
+        let base = NtpInstant::now();
+        let mut filter = LastMeasurements::new(base);
+
+        let a = FilterTuple {
+            offset: Default::default(),
+            delay: Default::default(),
+            dispersion: Default::default(),
+            time: base + std::time::Duration::from_secs(1000),
+        };
+        let b = FilterTuple {
+            offset: Default::default(),
+            delay: Default::default(),
+            dispersion: Default::default(),
+            time: base + std::time::Duration::from_secs(2000),
+        };
+
+        filter.step(
+            a,
+            base,
+            NtpLeapIndicator::NoWarning,
+            NtpDuration::from_exponent(-32),
+            FrequencyTolerance::ppm(15),
+        );
+        filter.step(
+            b,
+            base,
+            NtpLeapIndicator::NoWarning,
+            NtpDuration::from_exponent(-32),
+            FrequencyTolerance::ppm(15),
+        );
+
+        assert!((filter.register[1].dispersion.to_seconds() - 15e-3) < 1e-6);
     }
 }

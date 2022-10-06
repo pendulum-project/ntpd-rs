@@ -129,10 +129,9 @@ impl<C: NtpClock> Peers<C> {
     }
 
     fn add_server_internal(&mut self, config: Arc<ServerConfig>) -> JoinHandle<()> {
-        let current_config = *config;
-        self.servers.push(config);
+        self.servers.push(config.clone());
         ServerTask::spawn(
-            current_config,
+            config,
             self.channels.system_snapshots.clone(),
             self.clock.clone(),
             NETWORK_WAIT_PERIOD,

@@ -2,6 +2,7 @@ pub mod dynamic;
 pub mod format;
 mod peer;
 mod server;
+pub mod subnet;
 
 pub use peer::*;
 pub use server::*;

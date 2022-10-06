@@ -10,9 +10,21 @@ use serde::{
     Deserialize, Deserializer,
 };
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+use crate::{config::subnet::IpSubnet, ipfilter::IpFilter};
+
+#[derive(Debug, PartialEq, Eq, Copy, Clone, Deserialize)]
+pub enum FilterAction {
+    Ignore,
+    Deny,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ServerConfig {
     pub addr: SocketAddr,
+    pub denylist: IpFilter,
+    pub denylist_action: FilterAction,
+    pub allowlist: IpFilter,
+    pub allowlist_action: FilterAction,
     pub rate_limiting_cache_size: usize,
     pub rate_limiting_cutoff: Duration,
 }
@@ -23,6 +35,10 @@ impl TryFrom<&str> for ServerConfig {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Ok(ServerConfig {
             addr: SocketAddr::from_str(value)?,
+            denylist: IpFilter::none(),
+            denylist_action: FilterAction::Ignore,
+            allowlist: IpFilter::all(),
+            allowlist_action: FilterAction::Ignore,
             rate_limiting_cache_size: Default::default(),
             rate_limiting_cutoff: Default::default(),
         })
@@ -53,15 +69,43 @@ impl<'de> Deserialize<'de> for ServerConfig {
                 let mut addr = None;
                 let mut rate_limiting_cache_size = None;
                 let mut rate_limiting_cutoff = None;
+                let mut allowlist = None;
+                let mut allowlist_action = None;
+                let mut denylist = None;
+                let mut denylist_action = None;
                 while let Some(key) = map.next_key::<&str>()? {
                     match key {
                         "addr" => {
                             if addr.is_some() {
                                 return Err(de::Error::duplicate_field("addr"));
                             }
-                            let raw: &str = map.next_value()?;
-
-                            addr = Some(SocketAddr::from_str(raw).map_err(de::Error::custom)?);
+                            addr = Some(map.next_value::<SocketAddr>()?);
+                        }
+                        "allowlist" => {
+                            if allowlist.is_some() {
+                                return Err(de::Error::duplicate_field("allowlist"));
+                            }
+                            let list: Vec<IpSubnet> = map.next_value()?;
+                            allowlist = Some(IpFilter::new(&list));
+                        }
+                        "allowlist-action" => {
+                            if allowlist_action.is_some() {
+                                return Err(de::Error::duplicate_field("allowlist-action"));
+                            }
+                            allowlist_action = Some(map.next_value::<FilterAction>()?);
+                        }
+                        "denylist" => {
+                            if denylist.is_some() {
+                                return Err(de::Error::duplicate_field("denylist"));
+                            }
+                            let list: Vec<IpSubnet> = map.next_value()?;
+                            denylist = Some(IpFilter::new(&list));
+                        }
+                        "denylist-action" => {
+                            if denylist_action.is_some() {
+                                return Err(de::Error::duplicate_field("denylist-action"));
+                            }
+                            denylist_action = Some(map.next_value::<FilterAction>()?);
                         }
                         "rate_limiting_cache_size" => {
                             if rate_limiting_cache_size.is_some() {
@@ -82,6 +126,10 @@ impl<'de> Deserialize<'de> for ServerConfig {
                                 key,
                                 &[
                                     "addr",
+                                    "allowlist",
+                                    "allowlist-action",
+                                    "denylist",
+                                    "denylist-action",
                                     "rate_limiting_cache_size",
                                     "rate_limiting_cutoff_ms",
                                 ],
@@ -91,10 +139,32 @@ impl<'de> Deserialize<'de> for ServerConfig {
                 }
 
                 let addr = addr.ok_or_else(|| de::Error::missing_field("addr"))?;
+                let (allowlist, allowlist_action) = match allowlist {
+                    Some(allowlist) => (
+                        allowlist,
+                        allowlist_action
+                            .ok_or_else(|| de::Error::missing_field("allowlist-action"))?,
+                    ),
+                    None => (IpFilter::all(), FilterAction::Ignore),
+                };
+                let (denylist, denylist_action) = match denylist {
+                    Some(denylist) => (
+                        denylist,
+                        denylist_action
+                            .ok_or_else(|| de::Error::missing_field("denylist-action"))?,
+                    ),
+                    None => (IpFilter::none(), FilterAction::Ignore),
+                };
+
                 let rate_limiting_cache_size = rate_limiting_cache_size.unwrap_or_default();
                 let rate_limiting_cutoff = rate_limiting_cutoff.unwrap_or_default();
+
                 Ok(ServerConfig {
                     addr,
+                    allowlist,
+                    allowlist_action,
+                    denylist,
+                    denylist_action,
                     rate_limiting_cache_size,
                     rate_limiting_cutoff,
                 })
