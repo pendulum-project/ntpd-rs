@@ -128,6 +128,8 @@ pub(crate) fn zeroed_sockaddr_storage() -> libc::sockaddr_storage {
 pub(crate) struct TimestampingConfig {
     rx_software: bool,
     tx_software: bool,
+    rx_hardware: bool,
+    tx_hardware: bool,
 }
 
 #[repr(C)]
@@ -179,6 +181,8 @@ impl TimestampingConfig {
             let support = Self {
                 rx_software: tsi.so_timestamping & libc::SOF_TIMESTAMPING_RX_SOFTWARE != 0,
                 tx_software: tsi.so_timestamping & libc::SOF_TIMESTAMPING_TX_SOFTWARE != 0,
+                rx_hardware: tsi.so_timestamping & libc::SOF_TIMESTAMPING_RX_HARDWARE != 0,
+                tx_hardware: tsi.so_timestamping & libc::SOF_TIMESTAMPING_TX_HARDWARE != 0,
             };
 
             // per the documentation of `SOF_TIMESTAMPING_RX_SOFTWARE`:
@@ -216,4 +220,15 @@ pub(crate) fn exceptional_condition_fd(
     })?;
 
     AsyncFd::new(fd)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    fn timestamping_support() {
+        let socket = std::net::UdpSocket::bind("127.0.0.1:8014").unwrap();
+        dbg!(TimestampingConfig::all_supported(&socket));
+        assert!(false);
+    }
 }

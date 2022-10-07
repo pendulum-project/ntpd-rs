@@ -37,6 +37,8 @@ impl UdpSocket {
         let timestamping = TimestampingConfig {
             rx_software: true,
             tx_software: false,
+            rx_hardware: false,
+            tx_hardware: false,
         };
 
         Self::client_with_timestamping(
@@ -97,6 +99,8 @@ impl UdpSocket {
         let timestamping = TimestampingConfig {
             rx_software: true,
             tx_software: false,
+            rx_hardware: false,
+            tx_hardware: false,
         };
 
         set_timestamping_options(&socket, timestamping)?;
