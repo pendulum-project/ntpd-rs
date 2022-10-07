@@ -71,7 +71,7 @@ jobs:
 
       - name: cargo udeps
         run: cargo udeps --workspace --all-targets ${{ matrix.features }}
-  
+
   unused-fuzzers:
     name: Unused dependencies (fuzzers)
     runs-on: ubuntu-latest
@@ -143,6 +143,33 @@ jobs:
         with:
           command: clippy
           args: --manifest-path ./fuzz/Cargo.toml --all-targets -- -D warnings
+
+  clippy-raspberry-pi:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+        with:
+          persist-credentials: false
+      - name: Install rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          default: true
+          components: clippy
+          target: armv7-unknown-linux-gnueabihf
+      - name: Run clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --target armv7-unknown-linux-gnueabihf --workspace --all-targets -- -D warnings
+      - name: Run clippy (fuzzers)
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --target armv7-unknown-linux-gnueabihf --manifest-path ./fuzz/Cargo.toml --all-targets -- -D warnings
 
   fuzz:
     name: Smoke-test fuzzing targets
