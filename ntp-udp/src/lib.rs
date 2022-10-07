@@ -33,23 +33,23 @@ fn set_timestamping_options(
             | libc::SOF_TIMESTAMPING_OPT_ID;
     }
 
-    if timestamping.rx_hardware || timestamping.tx_hardware {
-        // enable hardware timestamping
-        options |= libc::SOF_TIMESTAMPING_SYS_HARDWARE;
-        options |= libc::SOF_TIMESTAMPING_RAW_HARDWARE;
-    }
+    //    if timestamping.rx_hardware || timestamping.tx_hardware {
+    //        // enable hardware timestamping
+    //        options |= libc::SOF_TIMESTAMPING_SYS_HARDWARE;
+    //        options |= libc::SOF_TIMESTAMPING_RAW_HARDWARE;
+    //    }
 
-    if timestamping.rx_software {
-        // we want receive timestamps
-        options |= libc::SOF_TIMESTAMPING_RX_HARDWARE;
-    }
-
-    if timestamping.rx_software {
-        // we want receive timestamps
-        options |= libc::SOF_TIMESTAMPING_TX_HARDWARE
-            | libc::SOF_TIMESTAMPING_OPT_TSONLY
-            | libc::SOF_TIMESTAMPING_OPT_ID;
-    }
+    //    if timestamping.rx_hardware {
+    //        // we want receive timestamps
+    //        options |= libc::SOF_TIMESTAMPING_RX_HARDWARE;
+    //    }
+    //
+    //    if timestamping.rx_hardware {
+    //        // we want receive timestamps
+    //        options |= libc::SOF_TIMESTAMPING_TX_HARDWARE
+    //            | libc::SOF_TIMESTAMPING_OPT_TSONLY
+    //            | libc::SOF_TIMESTAMPING_OPT_ID;
+    //    }
 
     unsafe {
         cerr(libc::setsockopt(
