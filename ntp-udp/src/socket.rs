@@ -36,9 +36,9 @@ impl UdpSocket {
         // disable tx timestamping for now (outside of tests)
         let timestamping = TimestampingConfig {
             rx_software: true,
-            tx_software: false,
-            rx_hardware: false,
-            tx_hardware: false,
+            tx_software: true,
+            rx_hardware: true,
+            tx_hardware: true,
         };
 
         Self::client_with_timestamping(
