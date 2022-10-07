@@ -174,7 +174,7 @@ impl TimestampingConfig {
             };
 
             const SIOCETHTOOL: u64 = 0x8946;
-            cerr(unsafe { libc::ioctl(fd, SIOCETHTOOL, &ifr) }).unwrap();
+            cerr(unsafe { libc::ioctl(fd, SIOCETHTOOL as _, &ifr) }).unwrap();
 
             let support = Self {
                 rx_software: tsi.so_timestamping & libc::SOF_TIMESTAMPING_RX_SOFTWARE != 0,
