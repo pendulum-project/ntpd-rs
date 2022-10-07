@@ -10,7 +10,7 @@ license = "Apache-2.0 OR MIT"
 tokio = { version = "1.21.2", features = ["full"] }
 ntp-proto = { path = "../ntp-proto" }
 ntp-daemon = { path = "../ntp-daemon" }
-tracing = "0.1.36"
+tracing = "0.1.37"
 tracing-subscriber = "0.3.15"
 clap = { version = "4.0.10", features = ["derive", "env"] }
 serde = { version = "1.0.145", features = ["derive"] }
