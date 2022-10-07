@@ -165,11 +165,6 @@ jobs:
         with:
           command: clippy
           args: --target armv7-unknown-linux-gnueabihf --workspace --all-targets -- -D warnings
-      - name: Run clippy (fuzzers)
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --target armv7-unknown-linux-gnueabihf --manifest-path ./fuzz/Cargo.toml --all-targets -- -D warnings
 
   fuzz:
     name: Smoke-test fuzzing targets
