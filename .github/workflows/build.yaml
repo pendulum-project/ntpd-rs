@@ -145,7 +145,7 @@ jobs:
           args: --manifest-path ./fuzz/Cargo.toml --all-targets -- -D warnings
 
   clippy-raspberry-pi:
-    name: Clippy
+    name: ClippyRaspberryPi
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
