@@ -1,6 +1,6 @@
-# Configuring NTPD-rs
+# Configuring ntpd-rs
 
-If you want to try out NTPD-rs on a non-critical system, this guide provides the basic information needed to properly build and configure NTPD-rs. This software SHOULD NOT be used on any system where you cannot handle either reliability or security issues.
+If you want to try out ntpd-rs on a non-critical system, this guide provides the basic information needed to properly build and configure ntpd-rs. This software SHOULD NOT be used on any system where you cannot handle either reliability or security issues.
 
 ## Limitations
 
@@ -14,11 +14,11 @@ The current implementation has several important limitations:
 
 ## Building
 
-Currently, NTPD-rs only supports Linux-based operating systems. Our current testing only targets Linux kernels after version 5.0.0, older kernels may work but this is not guaranteed.
+Currently, ntpd-rs only supports Linux-based operating systems. Our current testing only targets Linux kernels after version 5.0.0, older kernels may work but this is not guaranteed.
 
-NTPD-rs is written in rust, and requires cargo 1.60.0 at a minimum to be built. Earlier versions may work but are currently not included in our testing regime. We strongly recommend using [rustup](https://rustup.rs) to install rust/cargo, as the version provided by system package managers tend to be out of date.
+ntpd-rs is written in rust, and requires cargo 1.60.0 at a minimum to be built. Earlier versions may work but are currently not included in our testing regime. We strongly recommend using [rustup](https://rustup.rs) to install rust/cargo, as the version provided by system package managers tend to be out of date.
 
-To build NTPD-rs run:
+To build ntpd-rs run:
 
 ```sh
 cargo build --release
@@ -118,7 +118,7 @@ startup-panic-threshold = { forward = 0, backward = 1800 }
 
 ## Operational concerns
 
-NTPD-rs controls the system clock. Because the effects of poor steering can lead to the system clock quickly losing all connection to reality, much more so than no steering, there are several situations where the NTP daemon will terminate itself rather than continue steering the clock. Because of this, rather than setting up automatic restart of the NTP daemon on failure, we strongly recommend requiring human intervention before a restart.
+ntpd-rs controls the system clock. Because the effects of poor steering can lead to the system clock quickly losing all connection to reality, much more so than no steering, there are several situations where the NTP daemon will terminate itself rather than continue steering the clock. Because of this, rather than setting up automatic restart of the NTP daemon on failure, we strongly recommend requiring human intervention before a restart.
 
 Should you still desire to automatically restart the NTP daemon, there are several considerations to take into account. First, to limit the amount of clock shift allowed during startup it is recommended to set the `startup-panic-threshold` configuration parameter to match the `panic-threshold` parameter. Doing so ensures that rebooting cannot unintentionally cause larger steps than allowed during normal operations.
 
@@ -128,7 +128,7 @@ More guidance on proper configuration for regular operation is given in the [ope
 
 ## Systemd configuration
 
-To run NTPD-rs as the system NTP service, the following systemd service definition can be used. Note that this service definition assumes that the ntp-daemon binary has been installed to `/usr/local/bin`, and that the configuration is stored in the default `/etc/ntp.toml` location. Furthermore, it assumes the existence of a low-privileged `ntpd-rs` group and user. Refer to your distribution's documentation for information on how to create such accounts.
+To run ntpd-rs as the system NTP service, the following systemd service definition can be used. Note that this service definition assumes that the ntp-daemon binary has been installed to `/usr/local/bin`, and that the configuration is stored in the default `/etc/ntp.toml` location. Furthermore, it assumes the existence of a low-privileged `ntpd-rs` group and user. Refer to your distribution's documentation for information on how to create such accounts.
 
 Note that because of the aforementioned limitations around peer configuration, this service file requires the network-online target. As a result, using this may increase boot times significantly, especially on machines that do not have permanent network connectivity.
 

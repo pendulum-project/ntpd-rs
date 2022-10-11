@@ -9,7 +9,7 @@ use ntp_daemon::{Config, ConfigUpdate, ObservableState};
 use prometheus::DisplayPrometheus;
 
 #[derive(Parser)]
-#[command(version = "0.1.0", about = "Query and configure the NTPD-rs daemon")]
+#[command(version = "0.1.0", about = "Query and configure the ntpd-rs daemon")]
 #[command(arg_required_else_help(true))]
 struct Cli {
     #[command(subcommand)]
