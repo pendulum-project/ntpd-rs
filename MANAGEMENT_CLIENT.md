@@ -1,6 +1,6 @@
 # Management Client
 
-NTPD-rs comes with a management client for the daemon. This client can show the current state of the daemon, as well as change the log level and panic thresholds of the daemon.
+ntpd-rs comes with a management client for the daemon. This client can show the current state of the daemon, as well as change the log level and panic thresholds of the daemon.
 
 ## Enabling the management client
 

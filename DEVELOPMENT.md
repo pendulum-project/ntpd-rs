@@ -1,10 +1,10 @@
-# NTPD-rs development guide
+# ntpd-rs development guide
 
-This document gives a high-level overview of the structure of NTPD-rs.
+This document gives a high-level overview of the structure of ntpd-rs.
 
 ## Crates
 
-NTPD-rs is split into several crates with three goals in mind:
+ntpd-rs is split into several crates with three goals in mind:
 
  - Split the logic of protocol handling from the details around asynchronous network handling
  - Split custom servers needed purely for integration testing from the main codebase
