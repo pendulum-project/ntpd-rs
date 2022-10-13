@@ -227,10 +227,13 @@ impl<C: NtpClock> ClockController<C> {
 
         // Adjust whether we would prefer to have a longer or shorter
         // poll interval depending on the amount of jitter
+        // Note, our behaviour matches the code skeleton of rfc5905
+        // fully, instead of the main text on page 50. This is needed
+        // to improve responsiveness to upset events.
         if self.offset < self.jitter * Self::POLL_FACTOR {
             self.poll_interval_counter += self.preferred_poll_interval.as_log() as i32;
         } else {
-            self.poll_interval_counter -= self.preferred_poll_interval.as_log() as i32;
+            self.poll_interval_counter -= 2 * (self.preferred_poll_interval.as_log() as i32);
         }
 
         trace!(
