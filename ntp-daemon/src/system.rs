@@ -1,5 +1,5 @@
 use crate::{
-    config::{PeerConfig, ServerConfig},
+    config::{PeerConfig, PoolPeerConfig, ServerConfig, StandardPeerConfig},
     peer::{MsgForSystem, PeerChannels, ResetEpoch},
     peer_manager::Peers,
 };
@@ -50,8 +50,17 @@ pub async fn spawn(
         },
         UnixNtpClock::new(),
     );
-    for peer_config in peer_configs.iter() {
-        peers.add_peer(peer_config.to_owned()).await;
+    for peer_config in peer_configs {
+        match peer_config {
+            PeerConfig::Standard(StandardPeerConfig { addr }) => {
+                peers.add_peer(addr.clone()).await;
+            }
+            PeerConfig::Pool(PoolPeerConfig {
+                addr, max_peers, ..
+            }) => {
+                peers.add_pool(addr.clone(), *max_peers).await;
+            }
+        }
     }
 
     for server_config in server_configs.iter() {
