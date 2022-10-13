@@ -25,8 +25,8 @@ pub struct ServerTask<C: 'static + NtpClock + Send> {
 enum AcceptResult {
     Accept(NtpHeader, SocketAddr, NtpTimestamp),
     Ignore,
-    RateLimit(SocketAddr),
     Deny(NtpHeader, SocketAddr),
+    RateLimit(NtpHeader, SocketAddr),
     NetworkGone,
 }
 
@@ -62,16 +62,6 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             Some(self.config.allowlist_action)
         } else {
             None
-        }
-    }
-
-    fn generate_deny(&self, input: NtpHeader) -> NtpHeader {
-        NtpHeader {
-            mode: NtpAssociationMode::Server,
-            stratum: 0,
-            reference_id: ReferenceId::KISS_DENY,
-            origin_timestamp: input.transmit_timestamp,
-            ..NtpHeader::new()
         }
     }
 
@@ -116,7 +106,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     }
                 }
                 AcceptResult::Deny(packet, peer_addr) => {
-                    let response = self.generate_deny(packet);
+                    let response = NtpHeader::deny_response(packet);
                     if let Err(send_err) = socket.send_to(&response.serialize(), peer_addr).await {
                         warn!(error=?send_err, "Could not send deny packet");
                     }
@@ -126,8 +116,8 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     cur_socket = None;
                     continue;
                 }
-                AcceptResult::RateLimit(peer_addr) => {
-                    let response = NtpHeader::rate_limit_response();
+                AcceptResult::RateLimit(packet, peer_addr) => {
+                    let response = NtpHeader::rate_limit_response(packet);
 
                     if let Err(send_err) = socket.send_to(&response.serialize(), peer_addr).await {
                         warn!(error=?send_err, "Could not send response packet");
@@ -166,11 +156,13 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     None => {
                         let timestamp = Instant::now();
                         let cutoff = rate_limiting_cutoff;
+                        let too_soon = !self.client_cache.is_allowed(peer_addr, timestamp, cutoff);
 
-                        if self.client_cache.is_allowed(peer_addr, timestamp, cutoff) {
-                            self.accept_data(buf, peer_addr, recv_timestamp)
-                        } else {
-                            AcceptResult::RateLimit(peer_addr)
+                        match self.accept_data(buf, peer_addr, recv_timestamp) {
+                            AcceptResult::Accept(packet, _, _) if too_soon => {
+                                AcceptResult::RateLimit(packet, peer_addr)
+                            }
+                            accept_result => accept_result,
                         }
                     }
                 }

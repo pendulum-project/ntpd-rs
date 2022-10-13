@@ -265,10 +265,22 @@ impl NtpHeader {
         }
     }
 
-    pub fn rate_limit_response() -> Self {
+    pub fn rate_limit_response(packet_from_client: Self) -> Self {
         Self {
+            mode: NtpAssociationMode::Server,
             stratum: 0, // indicates a kiss code
             reference_id: ReferenceId::KISS_RATE,
+            origin_timestamp: packet_from_client.transmit_timestamp,
+            ..Self::new()
+        }
+    }
+
+    pub fn deny_response(packet_from_client: Self) -> Self {
+        NtpHeader {
+            mode: NtpAssociationMode::Server,
+            stratum: 0, // indicates a kiss code
+            reference_id: ReferenceId::KISS_DENY,
+            origin_timestamp: packet_from_client.transmit_timestamp,
             ..Self::new()
         }
     }
