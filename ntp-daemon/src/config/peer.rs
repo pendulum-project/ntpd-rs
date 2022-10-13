@@ -46,52 +46,56 @@ impl PeerConfig {
 /// A normalized address has a host and a port part. However, the host may be
 /// invalid, we didn't yet perform a DNS lookup.
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
-pub struct NormalizedAddress(String);
+pub struct NormalizedAddress {
+    address: String,
+}
 
 impl NormalizedAddress {
     /// Specifically, this adds the `:123` port if no port is specified
-    fn from_string(mut addr: String) -> std::io::Result<Self> {
-        if addr.split(':').count() > 2 {
+    fn from_string(mut address: String) -> std::io::Result<Self> {
+        if address.split(':').count() > 2 {
             // IPv6, try to parse it as such
-            match addr.parse::<SocketAddr>() {
-                Ok(_) => Ok(Self(addr)),
+            match address.parse::<SocketAddr>() {
+                Ok(_) => Ok(Self { address }),
                 Err(e) => {
                     // Could be because of no port, add one and see
-                    addr = format!("[{addr}]:123");
-                    if addr.parse::<SocketAddr>().is_ok() {
-                        Ok(Self(addr))
+                    address = format!("[{address}]:123");
+                    if address.parse::<SocketAddr>().is_ok() {
+                        Ok(Self { address })
                     } else {
                         Err(std::io::Error::new(std::io::ErrorKind::Other, e))
                     }
                 }
             }
-        } else if let Some((_, port)) = addr.split_once(':') {
+        } else if let Some((_, port)) = address.split_once(':') {
             // Not ipv6, and we seem to have a port. We cant reasonably
             // check whether the host is valid, but at least check that
             // the port is.
             match port.parse::<u16>() {
-                Ok(_) => Ok(Self(addr)),
+                Ok(_) => Ok(Self { address }),
                 Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
             }
         } else {
             // Not ipv6 and no port. As we cant reasonably check host
             // so just append a port
-            addr.push_str(":123");
-            Ok(Self(addr))
+            address.push_str(":123");
+            Ok(Self { address })
         }
     }
 
     pub fn as_str(&self) -> &str {
-        &self.0
+        &self.address
     }
 
     #[cfg(test)]
     pub(crate) fn new_unchecked(value: &str) -> Self {
-        Self(value.to_string())
+        Self {
+            address: value.to_string(),
+        }
     }
 
     pub async fn lookup_host(&self) -> std::io::Result<impl Iterator<Item = SocketAddr> + '_> {
-        tokio::net::lookup_host(&self.0).await
+        tokio::net::lookup_host(&self.address).await
     }
 }
 
