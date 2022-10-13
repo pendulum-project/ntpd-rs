@@ -1,8 +1,11 @@
 use crate::{
     packet::NtpLeapIndicator, time_types::PollInterval, NtpDuration, NtpInstant, NtpTimestamp,
-    SystemConfig,
+    SystemConfig, SystemSnapshot,
 };
 use tracing::{debug, error, info, instrument, trace};
+
+/// Jitter averaging factor
+const JITTER_AVG: f64 = 4.;
 
 /// Interface for a clock settable by the ntp implementation.
 /// This needs to be a trait as a single system can have multiple clocks
@@ -47,6 +50,7 @@ pub struct ClockController<C: NtpClock> {
     preferred_poll_interval: PollInterval,
     poll_interval_counter: i32,
     offset: NtpDuration,
+    jitter: NtpDuration,
     accumulated_steps: NtpDuration,
 }
 
@@ -59,7 +63,7 @@ pub enum ClockUpdateResult {
 }
 
 impl<C: NtpClock> ClockController<C> {
-    pub fn new(clock: C) -> Self {
+    pub fn new(clock: C, system: &SystemSnapshot) -> Self {
         if let Err(e) = clock.set_freq(0.) {
             error!(error = %e, "Could not set clock frequency, exiting");
             std::process::exit(exitcode::NOPERM);
@@ -73,6 +77,7 @@ impl<C: NtpClock> ClockController<C> {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::ZERO,
+            jitter: system.precision,
             accumulated_steps: NtpDuration::ZERO,
         }
     }
@@ -88,8 +93,8 @@ impl<C: NtpClock> ClockController<C> {
     pub fn update(
         &mut self,
         config: &SystemConfig,
+        system: &SystemSnapshot,
         offset: NtpDuration,
-        jitter: NtpDuration,
         root_delay: NtpDuration,
         root_dispersion: NtpDuration,
         leap_status: NtpLeapIndicator,
@@ -135,7 +140,7 @@ impl<C: NtpClock> ClockController<C> {
                     }
 
                     self.set_freq(offset, last_peer_update);
-                    return self.do_step(offset, last_peer_update);
+                    return self.do_step(offset, last_peer_update, system.precision);
                 }
                 ClockState::Spike => {
                     if NtpInstant::abs_diff(last_peer_update, self.last_update_time)
@@ -149,13 +154,13 @@ impl<C: NtpClock> ClockController<C> {
                     // Seems that the large difference reflects reality, since
                     // it persisted for a significant amount of time. So step
                     // the clock
-                    return self.do_step(offset, last_peer_update);
+                    return self.do_step(offset, last_peer_update, system.precision);
                 }
                 ClockState::StartupBlank | ClockState::StartupFreq => {
                     // In fully non-synchronized states, doing the jump
                     // immediately is fine, as we expect the clock to
                     // be off significantly
-                    return self.do_step(offset, last_peer_update);
+                    return self.do_step(offset, last_peer_update, system.precision);
                 }
             }
         } else {
@@ -167,7 +172,7 @@ impl<C: NtpClock> ClockController<C> {
                     // Using slew might result in us also accidentaly
                     // moving away from the freq=0 initialization done earlier,
                     // ruining the frequency measurement coming after.
-                    return self.do_step(offset, last_peer_update);
+                    return self.do_step(offset, last_peer_update, system.precision);
                 }
                 ClockState::MeasureFreq => {
                     if NtpInstant::abs_diff(last_peer_update, self.last_update_time)
@@ -190,6 +195,15 @@ impl<C: NtpClock> ClockController<C> {
                     // we do not need to calculate frequency changes here, the
                     // kernel will do that for us.
 
+                    let etemp_root = self.jitter.to_seconds();
+                    let etemp = etemp_root * etemp_root;
+                    let dtemp_root = f64::max(
+                        system.precision.to_seconds(),
+                        (offset.to_seconds() - self.offset.to_seconds()).abs(),
+                    );
+                    let dtemp = dtemp_root * dtemp_root;
+                    self.jitter =
+                        NtpDuration::from_seconds((etemp + (dtemp - etemp) / JITTER_AVG).sqrt());
                     self.offset = offset;
                     self.last_update_time = last_peer_update;
                     self.state = ClockState::Sync;
@@ -201,7 +215,7 @@ impl<C: NtpClock> ClockController<C> {
         // be expected to do if the clock is not amenable to change
         let result = self.clock.update_clock(
             self.offset,
-            jitter,
+            self.jitter,
             root_delay / 2 + root_dispersion,
             self.preferred_poll_interval,
             leap_status,
@@ -213,7 +227,7 @@ impl<C: NtpClock> ClockController<C> {
 
         // Adjust whether we would prefer to have a longer or shorter
         // poll interval depending on the amount of jitter
-        if self.offset < jitter * Self::POLL_FACTOR {
+        if self.offset < self.jitter * Self::POLL_FACTOR {
             self.poll_interval_counter += self.preferred_poll_interval.as_log() as i32;
         } else {
             self.poll_interval_counter -= self.preferred_poll_interval.as_log() as i32;
@@ -256,6 +270,14 @@ impl<C: NtpClock> ClockController<C> {
         self.accumulated_steps
     }
 
+    pub fn offset(&self) -> NtpDuration {
+        self.offset
+    }
+
+    pub fn jitter(&self) -> NtpDuration {
+        self.jitter
+    }
+
     fn offset_too_large(&self, config: &SystemConfig, offset: NtpDuration) -> bool {
         let threshold = match self.state {
             // The system might be wildly off on startup
@@ -293,7 +315,12 @@ impl<C: NtpClock> ClockController<C> {
         }
     }
 
-    fn do_step(&mut self, offset: NtpDuration, last_peer_update: NtpInstant) -> ClockUpdateResult {
+    fn do_step(
+        &mut self,
+        offset: NtpDuration,
+        last_peer_update: NtpInstant,
+        precision: NtpDuration,
+    ) -> ClockUpdateResult {
         info!(offset = debug(offset), "Stepping clock");
         self.poll_interval_counter = 0;
         self.preferred_poll_interval = PollInterval::MIN;
@@ -304,6 +331,7 @@ impl<C: NtpClock> ClockController<C> {
             std::process::exit(exitcode::NOPERM);
         }
         self.offset = NtpDuration::ZERO;
+        self.jitter = precision;
         self.last_update_time = last_peer_update;
         self.state = match self.state {
             ClockState::StartupBlank => ClockState::MeasureFreq,
@@ -392,6 +420,7 @@ mod tests {
         let base = NtpInstant::now();
 
         let config = SystemConfig::default();
+        let system = SystemSnapshot::default();
 
         let mut controller = ClockController {
             clock: TestClock::default(),
@@ -400,6 +429,7 @@ mod tests {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
+            jitter: system.precision,
             accumulated_steps: NtpDuration::ZERO,
         };
 
@@ -408,8 +438,8 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &system,
                 NtpDuration::from_fixed_int(0),
-                NtpDuration::from_fixed_int(50),
                 NtpDuration::from_fixed_int(20),
                 NtpDuration::from_fixed_int(10),
                 NtpLeapIndicator::NoWarning,
@@ -418,10 +448,6 @@ mod tests {
             ClockUpdateResult::Slew
         );
 
-        assert_eq!(
-            Some(NtpDuration::from_fixed_int(50)),
-            *controller.clock.last_est_error.borrow()
-        );
         assert_eq!(
             Some(NtpDuration::from_fixed_int(20)),
             *controller.clock.last_max_error.borrow()
@@ -441,8 +467,8 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &system,
                 NtpDuration::from_fixed_int(0),
-                NtpDuration::from_fixed_int(100),
                 NtpDuration::from_fixed_int(40),
                 NtpDuration::from_fixed_int(60),
                 NtpLeapIndicator::Leap59,
@@ -451,10 +477,6 @@ mod tests {
             ClockUpdateResult::Slew
         );
 
-        assert_eq!(
-            Some(NtpDuration::from_fixed_int(100)),
-            *controller.clock.last_est_error.borrow()
-        );
         assert_eq!(
             Some(NtpDuration::from_fixed_int(80)),
             *controller.clock.last_max_error.borrow()
@@ -471,15 +493,16 @@ mod tests {
 
     #[test]
     fn test_startup_logic() {
-        let mut controller = ClockController::new(TestClock::default());
+        let system = SystemSnapshot::default();
+        let mut controller = ClockController::new(TestClock::default(), &system);
         let config = SystemConfig::default();
         let base = controller.last_update_time;
 
         controller.update(
             &config,
+            &system,
             NtpDuration::from_fixed_int(0),
             NtpDuration::from_seconds(0.01),
-            NtpDuration::from_seconds(0.02),
             NtpDuration::from_seconds(0.03),
             NtpLeapIndicator::NoWarning,
             base + Duration::from_secs(1),
@@ -493,8 +516,8 @@ mod tests {
 
         controller.update(
             &config,
+            &system,
             NtpDuration::from_fixed_int(1 << 32),
-            NtpDuration::from_seconds(0.01),
             NtpDuration::from_seconds(0.02),
             NtpDuration::from_seconds(0.03),
             NtpLeapIndicator::NoWarning,
@@ -513,6 +536,7 @@ mod tests {
     fn test_startup_logic_freq() {
         let base = NtpInstant::now();
         let config = SystemConfig::default();
+        let system = SystemSnapshot::default();
 
         let mut controller = ClockController {
             clock: TestClock::default(),
@@ -521,13 +545,14 @@ mod tests {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
+            jitter: system.precision,
             accumulated_steps: NtpDuration::ZERO,
         };
 
         controller.update(
             &config,
+            &system,
             NtpDuration::from_fixed_int(0),
-            NtpDuration::from_seconds(0.01),
             NtpDuration::from_seconds(0.02),
             NtpDuration::from_seconds(0.03),
             NtpLeapIndicator::NoWarning,
@@ -545,6 +570,7 @@ mod tests {
     fn test_spike_rejection() {
         let base = NtpInstant::now();
         let config = SystemConfig::default();
+        let system = SystemSnapshot::default();
 
         let mut controller = ClockController {
             clock: TestClock::default(),
@@ -553,13 +579,14 @@ mod tests {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
+            jitter: system.precision,
             accumulated_steps: NtpDuration::ZERO,
         };
 
         controller.update(
             &config,
+            &system,
             2 * NtpDuration::STEP_THRESHOLD,
-            NtpDuration::from_seconds(0.01),
             NtpDuration::from_seconds(0.02),
             NtpDuration::from_seconds(0.03),
             NtpLeapIndicator::NoWarning,
@@ -571,8 +598,8 @@ mod tests {
 
         controller.update(
             &config,
+            &system,
             NtpDuration::from_fixed_int(0),
-            NtpDuration::from_seconds(0.01),
             NtpDuration::from_seconds(0.02),
             NtpDuration::from_seconds(0.03),
             NtpLeapIndicator::NoWarning,
@@ -590,6 +617,7 @@ mod tests {
     fn test_spike_acceptance_over_time() {
         let base = NtpInstant::now();
         let config = SystemConfig::default();
+        let system = SystemSnapshot::default();
 
         let mut controller = ClockController {
             clock: TestClock::default(),
@@ -598,13 +626,14 @@ mod tests {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
+            jitter: system.precision,
             accumulated_steps: NtpDuration::ZERO,
         };
 
         controller.update(
             &config,
+            &system,
             2 * NtpDuration::STEP_THRESHOLD,
-            NtpDuration::from_seconds(0.01),
             NtpDuration::from_seconds(0.02),
             NtpDuration::from_seconds(0.03),
             NtpLeapIndicator::NoWarning,
@@ -616,8 +645,8 @@ mod tests {
 
         controller.update(
             &config,
+            &system,
             2 * NtpDuration::STEP_THRESHOLD,
-            NtpDuration::from_seconds(0.01),
             NtpDuration::from_seconds(0.02),
             NtpDuration::from_seconds(0.03),
             NtpLeapIndicator::NoWarning,
@@ -638,6 +667,7 @@ mod tests {
             accumulated_threshold: Some(NtpDuration::from_seconds(100.0)),
             ..Default::default()
         };
+        let system = SystemSnapshot::default();
 
         let mut controller = ClockController {
             clock: TestClock::default(),
@@ -646,14 +676,15 @@ mod tests {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::ZERO,
+            jitter: system.precision,
             accumulated_steps: NtpDuration::ZERO,
         };
 
         assert_eq!(
             controller.update(
                 &config,
+                &system,
                 NtpDuration::from_seconds(80.),
-                NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
                 NtpLeapIndicator::NoWarning,
@@ -664,8 +695,8 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &system,
                 NtpDuration::from_seconds(80.),
-                NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
                 NtpLeapIndicator::NoWarning,
@@ -676,8 +707,8 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &system,
                 NtpDuration::from_seconds(80.),
-                NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
                 NtpLeapIndicator::NoWarning,
@@ -688,9 +719,96 @@ mod tests {
     }
 
     #[test]
+    fn test_jitter_calc() {
+        let base = NtpInstant::now();
+        let config = SystemConfig::default();
+        let system = SystemSnapshot::default();
+
+        let mut controller = ClockController {
+            clock: TestClock::default(),
+            state: ClockState::Sync,
+            last_update_time: base,
+            preferred_poll_interval: PollInterval::MIN,
+            poll_interval_counter: 0,
+            offset: NtpDuration::from_fixed_int(0),
+            jitter: system.precision,
+            accumulated_steps: NtpDuration::ZERO,
+        };
+
+        assert_eq!(
+            controller.update(
+                &config,
+                &system,
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.03),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1),
+            ),
+            ClockUpdateResult::Slew
+        );
+
+        assert!(controller.jitter.to_seconds() >= 0.0095);
+
+        assert_eq!(
+            controller.update(
+                &config,
+                &system,
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.03),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1),
+            ),
+            ClockUpdateResult::Slew
+        );
+
+        assert_eq!(
+            controller.update(
+                &config,
+                &system,
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.03),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1),
+            ),
+            ClockUpdateResult::Slew
+        );
+
+        assert_eq!(
+            controller.update(
+                &config,
+                &system,
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.03),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1),
+            ),
+            ClockUpdateResult::Slew
+        );
+
+        assert_eq!(
+            controller.update(
+                &config,
+                &system,
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.02),
+                NtpDuration::from_seconds(0.03),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1),
+            ),
+            ClockUpdateResult::Slew
+        );
+        assert!(controller.jitter().to_seconds() < 0.006);
+    }
+
+    #[test]
     fn test_excess_detection() {
         let base = NtpInstant::now();
         let config = SystemConfig::default();
+        let system = SystemSnapshot::default();
 
         let mut controller = ClockController {
             clock: TestClock::default(),
@@ -699,14 +817,15 @@ mod tests {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
+            jitter: system.precision,
             accumulated_steps: NtpDuration::ZERO,
         };
 
         assert_eq!(
             controller.update(
                 &config,
+                &system,
                 2 * config.panic_threshold.forward.unwrap(),
-                NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
                 NtpLeapIndicator::NoWarning,
@@ -722,14 +841,15 @@ mod tests {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
+            jitter: system.precision,
             accumulated_steps: NtpDuration::ZERO,
         };
 
         assert_eq!(
             controller.update(
                 &config,
+                &system,
                 -2 * config.panic_threshold.forward.unwrap(),
-                NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
                 NtpLeapIndicator::NoWarning,
@@ -745,14 +865,15 @@ mod tests {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
+            jitter: system.precision,
             accumulated_steps: NtpDuration::ZERO,
         };
 
         assert_eq!(
             controller.update(
                 &config,
+                &system,
                 2 * config.panic_threshold.forward.unwrap(),
-                NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
                 NtpLeapIndicator::NoWarning,
@@ -768,14 +889,15 @@ mod tests {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
+            jitter: system.precision,
             accumulated_steps: NtpDuration::ZERO,
         };
 
         assert_eq!(
             controller.update(
                 &config,
+                &system,
                 -2 * config.panic_threshold.forward.unwrap(),
-                NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
                 NtpLeapIndicator::NoWarning,
@@ -791,14 +913,15 @@ mod tests {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
+            jitter: system.precision,
             accumulated_steps: NtpDuration::ZERO,
         };
 
         assert_eq!(
             controller.update(
                 &config,
+                &system,
                 2 * config.panic_threshold.forward.unwrap(),
-                NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
                 NtpLeapIndicator::NoWarning,
@@ -814,14 +937,15 @@ mod tests {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
+            jitter: system.precision,
             accumulated_steps: NtpDuration::ZERO,
         };
 
         assert_eq!(
             controller.update(
                 &config,
+                &system,
                 -2 * config.panic_threshold.forward.unwrap(),
-                NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
                 NtpLeapIndicator::NoWarning,
@@ -837,14 +961,15 @@ mod tests {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
+            jitter: system.precision,
             accumulated_steps: NtpDuration::ZERO,
         };
 
         assert_eq!(
             controller.update(
                 &config,
+                &system,
                 2 * config.panic_threshold.forward.unwrap(),
-                NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
                 NtpLeapIndicator::NoWarning,
@@ -860,14 +985,15 @@ mod tests {
             preferred_poll_interval: PollInterval::MIN,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
+            jitter: system.precision,
             accumulated_steps: NtpDuration::ZERO,
         };
 
         assert_eq!(
             controller.update(
                 &config,
+                &system,
                 2 * config.panic_threshold.forward.unwrap(),
-                NtpDuration::from_seconds(0.01),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
                 NtpLeapIndicator::NoWarning,
