@@ -4,9 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ntp_proto::{
-    NtpAssociationMode, NtpClock, NtpHeader, NtpTimestamp, ReferenceId, SystemSnapshot,
-};
+use ntp_proto::{NtpAssociationMode, NtpClock, NtpHeader, NtpTimestamp, SystemSnapshot};
 use ntp_udp::UdpSocket;
 use tokio::{sync::RwLock, task::JoinHandle};
 use tracing::{error, info, instrument, trace, warn};
@@ -290,7 +288,7 @@ impl<T: std::hash::Hash + Eq> TimestampedCache<T> {
 mod tests {
     use std::time::Duration;
 
-    use ntp_proto::{NtpDuration, NtpLeapIndicator, PollInterval};
+    use ntp_proto::{NtpDuration, NtpLeapIndicator, PollInterval, ReferenceId};
 
     use crate::ipfilter::IpFilter;
 
