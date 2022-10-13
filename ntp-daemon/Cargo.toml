@@ -17,7 +17,7 @@ clap = { version = "4.0.10", features = ["derive", "env"] }
 toml = "0.5.9"
 thiserror = "1.0.37"
 serde = { version = "1.0.145", features = ["derive"] }
-serde_json = "1.0.85"
+serde_json = "1.0.86"
 sentry = { version = "0.27.0", optional = true, default-features = false, features = ["backtrace", "contexts", "panic", "reqwest", "rustls"] }
 sentry-tracing = { version = "0.27.0", optional = true }
 rand = "0.8.5"
