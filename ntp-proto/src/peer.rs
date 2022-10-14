@@ -174,6 +174,7 @@ impl PeerSnapshot {
         frequency_tolerance: FrequencyTolerance,
         distance_threshold: NtpDuration,
         system_poll: PollInterval,
+        local_stratum: u8,
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
 
@@ -181,8 +182,8 @@ impl PeerSnapshot {
 
         // A stratum error occurs if
         //     1: the server has never been synchronized,
-        //     2: the server stratum is invalid
-        if !self.leap_indicator.is_synchronized() || self.stratum >= MAX_STRATUM {
+        //     2: the server stratum is higher than the local stratum
+        if !self.leap_indicator.is_synchronized() || self.stratum >= local_stratum {
             warn!(
                 stratum = debug(self.stratum),
                 "Peer rejected due to invalid stratum"
@@ -656,7 +657,7 @@ mod test {
         macro_rules! accept {
             () => {{
                 let snapshot = PeerSnapshot::from_peer(&peer);
-                snapshot.accept_synchronization(local_clock_time, ft, dt, system_poll)
+                snapshot.accept_synchronization(local_clock_time, ft, dt, system_poll, 16)
             }};
         }
 

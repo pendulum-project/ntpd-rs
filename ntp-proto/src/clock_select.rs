@@ -131,6 +131,7 @@ fn clock_select<'a>(
             config.frequency_tolerance,
             config.distance_threshold,
             system_poll,
+            config.local_stratum,
         )
         .is_ok()
     });

@@ -39,7 +39,10 @@ pub async fn spawn(
     let (msg_for_system_tx, msg_for_system_rx) = mpsc::channel::<MsgForSystem>(32);
 
     // System snapshot
-    let system_snapshot = SystemSnapshot::default();
+    let system_snapshot = SystemSnapshot {
+        stratum: config.local_stratum,
+        ..Default::default()
+    };
 
     // Clock controller
     let controller = ClockController::new(UnixNtpClock::new(), &system_snapshot);
@@ -214,6 +217,7 @@ fn requires_clock_recalculation(
                     config.frequency_tolerance,
                     config.distance_threshold,
                     system_poll,
+                    config.local_stratum,
                 )
                 .is_ok()
     } else {
