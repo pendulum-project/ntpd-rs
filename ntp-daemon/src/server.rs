@@ -264,6 +264,11 @@ impl<T: std::hash::Hash + Eq> TimestampedCache<T> {
     }
 
     fn is_allowed(&mut self, item: T, timestamp: Instant, cutoff: Duration) -> bool {
+        if self.elements.is_empty() {
+            // cache disabled, always OK
+            return true;
+        }
+
         let index = self.index(&item);
 
         // check if the current occupant of this slot is actually the same item
@@ -276,7 +281,7 @@ impl<T: std::hash::Hash + Eq> TimestampedCache<T> {
 
         if let Some(old_timestamp) = timestamp_if_same {
             // old and new are the same; check the time
-            timestamp.duration_since(old_timestamp) <= cutoff
+            timestamp.duration_since(old_timestamp) >= cutoff
         } else {
             // old and new are different; this is always OK
             true
@@ -559,6 +564,113 @@ mod tests {
 
         server.abort();
     }
+
+    #[tokio::test]
+    async fn test_server_rate_limit() {
+        let config = Arc::new(ServerConfig {
+            addr: "127.0.0.1:9012".parse().unwrap(),
+            denylist: IpFilter::none(),
+            denylist_action: FilterAction::Ignore,
+            allowlist: IpFilter::all(),
+            allowlist_action: FilterAction::Ignore,
+            rate_limiting_cutoff: Duration::from_millis(100),
+            rate_limiting_cache_size: 32,
+        });
+        let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
+        let clock = TestClock {};
+
+        let server = ServerTask::spawn(config, system_snapshots, clock, Duration::from_secs(1));
+
+        let mut socket = UdpSocket::client(
+            "127.0.0.1:9013".parse().unwrap(),
+            "127.0.0.1:9012".parse().unwrap(),
+        )
+        .await
+        .unwrap();
+
+        let packet = NtpHeader {
+            mode: NtpAssociationMode::Client,
+            ..NtpHeader::new()
+        };
+        socket.send(&packet.serialize()).await.unwrap();
+        let mut buf = [0; 48];
+        tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
+            .await
+            .unwrap()
+            .unwrap();
+        let packet = NtpHeader::deserialize(&buf).unwrap();
+        assert_ne!(packet.stratum, 0);
+
+        tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+
+        let packet = NtpHeader {
+            mode: NtpAssociationMode::Client,
+            ..NtpHeader::new()
+        };
+        socket.send(&packet.serialize()).await.unwrap();
+        let mut buf = [0; 48];
+        tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
+            .await
+            .unwrap()
+            .unwrap();
+        let packet = NtpHeader::deserialize(&buf).unwrap();
+        assert_ne!(packet.stratum, 0);
+
+        let packet = NtpHeader {
+            mode: NtpAssociationMode::Client,
+            ..NtpHeader::new()
+        };
+        socket.send(&packet.serialize()).await.unwrap();
+        let mut buf = [0; 48];
+        tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
+            .await
+            .unwrap()
+            .unwrap();
+        let packet = NtpHeader::deserialize(&buf).unwrap();
+        assert_eq!(packet.stratum, 0);
+        assert_eq!(packet.reference_id, ReferenceId::KISS_RATE);
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn test_server_rate_limit_defaults() {
+        let config = Arc::new(ServerConfig {
+            addr: "127.0.0.1:9014".parse().unwrap(),
+            denylist: IpFilter::none(),
+            denylist_action: FilterAction::Ignore,
+            allowlist: IpFilter::all(),
+            allowlist_action: FilterAction::Ignore,
+            rate_limiting_cutoff: Duration::default(),
+            rate_limiting_cache_size: Default::default(),
+        });
+        let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
+        let clock = TestClock {};
+
+        let server = ServerTask::spawn(config, system_snapshots, clock, Duration::from_secs(1));
+
+        let mut socket = UdpSocket::client(
+            "127.0.0.1:9015".parse().unwrap(),
+            "127.0.0.1:9014".parse().unwrap(),
+        )
+        .await
+        .unwrap();
+
+        let packet = NtpHeader {
+            mode: NtpAssociationMode::Client,
+            ..NtpHeader::new()
+        };
+        socket.send(&packet.serialize()).await.unwrap();
+        let mut buf = [0; 48];
+        tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
+            .await
+            .unwrap()
+            .unwrap();
+        let packet = NtpHeader::deserialize(&buf).unwrap();
+        assert_ne!(packet.stratum, 0);
+
+        server.abort();
+    }
 }
 
 #[cfg(test)]
@@ -575,15 +687,25 @@ mod timestamped_cache {
         let second = Duration::from_secs(1);
         let instant = Instant::now();
 
-        cache.is_allowed(0, instant, second);
-
         assert!(cache.is_allowed(0, instant, second));
 
+        assert!(!cache.is_allowed(0, instant, second));
+
         let later = instant + 2 * second;
-        assert!(!cache.is_allowed(0, later, second));
+        assert!(cache.is_allowed(0, later, second));
 
         // simulate a hash collision
         let even_later = later + 2 * second;
         assert!(cache.is_allowed(length, even_later, second));
+    }
+
+    #[test]
+    fn timestamped_cache_size_0() {
+        let mut cache = TimestampedCache::new(0);
+
+        let second = Duration::from_secs(1);
+        let instant = Instant::now();
+
+        assert!(cache.is_allowed(0, instant, second));
     }
 }
