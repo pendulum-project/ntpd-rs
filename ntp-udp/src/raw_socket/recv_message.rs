@@ -46,10 +46,10 @@ pub(crate) fn receive_message(
                 // retry when the recv was interrupted
                 continue;
             }
-
-            other => break other,
+            Err(e) => return Err(e),
+            Ok(sent) => break sent,
         }
-    }?;
+    };
 
     // Clear out the fields for which we are giving up the reference
     mhdr.msg_iov = std::ptr::null_mut();
