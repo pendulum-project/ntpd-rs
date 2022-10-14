@@ -34,7 +34,7 @@ pub struct PeerIndex {
 impl PeerIndex {
     #[cfg(test)]
     pub fn from_inner(index: usize) -> Self {
-        PeerIndex { index }
+        Self { index }
     }
 }
 
@@ -48,6 +48,31 @@ impl PeerIndexIssuer {
         let index = self.next;
         self.next += 1;
         PeerIndex { index }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct PoolIndex {
+    index: usize,
+}
+
+impl PoolIndex {
+    #[cfg(test)]
+    pub fn from_inner(index: usize) -> Self {
+        Self { index }
+    }
+}
+
+#[derive(Debug, Default)]
+struct PoolIndexIssuer {
+    next: usize,
+}
+
+impl PoolIndexIssuer {
+    fn get(&mut self) -> PoolIndex {
+        let index = self.next;
+        self.next += 1;
+        PoolIndex { index }
     }
 }
 
@@ -136,7 +161,8 @@ struct PeerState {
 pub struct Peers<C: NtpClock> {
     peers: HashMap<PeerIndex, PeerState>,
     servers: Vec<Arc<ServerConfig>>,
-    indexer: PeerIndexIssuer,
+    peer_indexer: PeerIndexIssuer,
+    pool_indexer: PoolIndexIssuer,
 
     channels: PeerChannels,
     clock: C,
@@ -147,7 +173,8 @@ impl<C: NtpClock> Peers<C> {
         Peers {
             peers: Default::default(),
             servers: Default::default(),
-            indexer: Default::default(),
+            peer_indexer: Default::default(),
+            pool_indexer: Default::default(),
             channels,
             clock,
         }
@@ -159,7 +186,7 @@ impl<C: NtpClock> Peers<C> {
         address: NormalizedAddress,
         mut cached: CachedPoolAddresses,
     ) -> Option<JoinHandle<()>> {
-        let index = self.indexer.get();
+        let index = self.peer_indexer.get();
 
         // socket addresses of the peers of this pool that are currently active
         let active_pool_peers = self.peers.values().filter_map(|p| match &p.peer_address {
@@ -209,7 +236,7 @@ impl<C: NtpClock> Peers<C> {
 
     /// Add a single standard peer
     async fn add_peer_internal(&mut self, address: NormalizedAddress) -> JoinHandle<()> {
-        let index = self.indexer.get();
+        let index = self.peer_indexer.get();
 
         // socket_addresses guarantees there is at least one element in the iterator
         let (addr, _rest) = socket_addresses(&address).await;
@@ -280,10 +307,10 @@ impl<C: NtpClock> Peers<C> {
         assert_eq!(data.len(), raw_configs.len());
 
         let mut peers = HashMap::new();
-        let mut indexer = PeerIndexIssuer::default();
+        let mut peer_indexer = PeerIndexIssuer::default();
 
         for (i, status) in data.iter().enumerate() {
-            let index = indexer.get();
+            let index = peer_indexer.get();
 
             match &raw_configs[i] {
                 PeerConfig::Standard(StandardPeerConfig { addr }) => {
@@ -306,7 +333,8 @@ impl<C: NtpClock> Peers<C> {
         Self {
             peers,
             servers: vec![],
-            indexer,
+            peer_indexer,
+            pool_indexer: Default::default(),
             channels: PeerChannels::test(),
             clock,
         }
