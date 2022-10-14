@@ -419,6 +419,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_peers() {
+        use crate::config::PeerConfig;
+
         let base = NtpInstant::now();
         let prev_epoch = ResetEpoch::default();
         let epoch = prev_epoch.inc();
