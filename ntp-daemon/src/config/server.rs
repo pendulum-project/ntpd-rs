@@ -2,6 +2,7 @@ use std::{
     fmt,
     net::{AddrParseError, SocketAddr},
     str::FromStr,
+    time::Duration,
 };
 
 use serde::{
@@ -24,6 +25,8 @@ pub struct ServerConfig {
     pub denylist_action: FilterAction,
     pub allowlist: IpFilter,
     pub allowlist_action: FilterAction,
+    pub rate_limiting_cache_size: usize,
+    pub rate_limiting_cutoff: Duration,
 }
 
 impl ServerConfig {
@@ -42,6 +45,8 @@ impl TryFrom<&str> for ServerConfig {
             denylist_action: FilterAction::Ignore,
             allowlist: IpFilter::all(),
             allowlist_action: FilterAction::Ignore,
+            rate_limiting_cache_size: Default::default(),
+            rate_limiting_cutoff: Default::default(),
         })
     }
 }
@@ -68,6 +73,8 @@ impl<'de> Deserialize<'de> for ServerConfig {
 
             fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<ServerConfig, M::Error> {
                 let mut addr = None;
+                let mut rate_limiting_cache_size = None;
+                let mut rate_limiting_cutoff = None;
                 let mut allowlist = None;
                 let mut allowlist_action = None;
                 let mut denylist = None;
@@ -106,8 +113,33 @@ impl<'de> Deserialize<'de> for ServerConfig {
                             }
                             denylist_action = Some(map.next_value::<FilterAction>()?);
                         }
+                        "rate_limiting_cache_size" => {
+                            if rate_limiting_cache_size.is_some() {
+                                return Err(de::Error::duplicate_field("rate_limiting_cache_size"));
+                            }
+
+                            rate_limiting_cache_size = Some(map.next_value()?);
+                        }
+                        "rate_limiting_cutoff_ms" => {
+                            if rate_limiting_cutoff.is_some() {
+                                return Err(de::Error::duplicate_field("rate_limiting_cutoff_ms"));
+                            }
+
+                            rate_limiting_cutoff = Some(Duration::from_millis(map.next_value()?));
+                        }
                         _ => {
-                            return Err(de::Error::unknown_field(key, &["addr"]));
+                            return Err(de::Error::unknown_field(
+                                key,
+                                &[
+                                    "addr",
+                                    "allowlist",
+                                    "allowlist-action",
+                                    "denylist",
+                                    "denylist-action",
+                                    "rate_limiting_cache_size",
+                                    "rate_limiting_cutoff_ms",
+                                ],
+                            ));
                         }
                     }
                 }
@@ -129,16 +161,60 @@ impl<'de> Deserialize<'de> for ServerConfig {
                     ),
                     None => (IpFilter::none(), FilterAction::Ignore),
                 };
+
+                let rate_limiting_cache_size = rate_limiting_cache_size.unwrap_or_default();
+                let rate_limiting_cutoff = rate_limiting_cutoff.unwrap_or_default();
+
                 Ok(ServerConfig {
                     addr,
                     allowlist,
                     allowlist_action,
                     denylist,
                     denylist_action,
+                    rate_limiting_cache_size,
+                    rate_limiting_cutoff,
                 })
             }
         }
 
         deserializer.deserialize_any(ServerConfigVisitor)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deserialize_peer() {
+        #[derive(Deserialize, Debug)]
+        struct TestConfig {
+            server: ServerConfig,
+        }
+
+        let test: TestConfig = toml::from_str(
+            r#"
+            [server]
+            addr = "0.0.0.0:123"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(test.server.addr, "0.0.0.0:123".parse().unwrap());
+
+        let test: TestConfig = toml::from_str(
+            r#"
+            [server]
+            addr = "127.0.0.1:123"
+            rate_limiting_cutoff_ms = 1000
+            rate_limiting_cache_size = 32
+            "#,
+        )
+        .unwrap();
+        assert_eq!(test.server.addr, "127.0.0.1:123".parse().unwrap());
+        assert_eq!(test.server.rate_limiting_cache_size, 32);
+        assert_eq!(
+            test.server.rate_limiting_cutoff,
+            Duration::from_millis(1000)
+        );
     }
 }

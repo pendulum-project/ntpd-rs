@@ -22,7 +22,7 @@ impl ReferenceId {
         }
     }
 
-    pub(crate) fn from_int(value: u32) -> ReferenceId {
+    pub(crate) const fn from_int(value: u32) -> ReferenceId {
         ReferenceId(value)
     }
 

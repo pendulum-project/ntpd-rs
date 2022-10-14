@@ -1,11 +1,10 @@
 use std::{
     net::{IpAddr, SocketAddr},
     sync::Arc,
+    time::{Duration, Instant},
 };
 
-use ntp_proto::{
-    NtpAssociationMode, NtpClock, NtpHeader, NtpTimestamp, ReferenceId, SystemSnapshot,
-};
+use ntp_proto::{NtpAssociationMode, NtpClock, NtpHeader, NtpTimestamp, SystemSnapshot};
 use ntp_udp::UdpSocket;
 use tokio::{sync::RwLock, task::JoinHandle};
 use tracing::{error, info, instrument, trace, warn};
@@ -16,6 +15,7 @@ pub struct ServerTask<C: 'static + NtpClock + Send> {
     config: Arc<ServerConfig>,
     network_wait_period: std::time::Duration,
     system: Arc<RwLock<SystemSnapshot>>,
+    client_cache: TimestampedCache<SocketAddr>,
     clock: C,
 }
 
@@ -24,6 +24,7 @@ enum AcceptResult {
     Accept(NtpHeader, SocketAddr, NtpTimestamp),
     Ignore,
     Deny(NtpHeader, SocketAddr),
+    RateLimit(NtpHeader, SocketAddr),
     NetworkGone,
 }
 
@@ -32,17 +33,21 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         config: Arc<ServerConfig>,
         system: Arc<RwLock<SystemSnapshot>>,
         clock: C,
-        network_wait_period: std::time::Duration,
+        network_wait_period: Duration,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
+            let rate_limiting_cutoff = config.rate_limiting_cutoff;
+            let rate_limiting_cache_size = config.rate_limiting_cache_size;
+
             let mut process = ServerTask {
                 config,
                 network_wait_period,
                 system,
                 clock,
+                client_cache: TimestampedCache::new(rate_limiting_cache_size),
             };
 
-            process.serve().await
+            process.serve(rate_limiting_cutoff).await
         })
     }
 
@@ -58,42 +63,10 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         }
     }
 
-    fn generate_deny(&self, input: NtpHeader) -> NtpHeader {
-        NtpHeader {
-            mode: NtpAssociationMode::Server,
-            stratum: 0,
-            reference_id: ReferenceId::KISS_DENY,
-            origin_timestamp: input.transmit_timestamp,
-            ..NtpHeader::new()
-        }
-    }
-
-    async fn generate_response(
-        &mut self,
-        input: NtpHeader,
-        recv_timestamp: NtpTimestamp,
-    ) -> NtpHeader {
-        let system = self.system.read().await;
-        NtpHeader {
-            mode: NtpAssociationMode::Server,
-            stratum: system.stratum,
-            origin_timestamp: input.transmit_timestamp,
-            receive_timestamp: recv_timestamp,
-            reference_id: system.reference_id,
-            poll: input.poll,
-            precision: system.precision.log2(),
-            root_delay: system.root_delay,
-            root_dispersion: system.root_dispersion,
-            // Timestamp must be last to make it as accurate as possible.
-            transmit_timestamp: self.clock.now().expect("Failed to read time"),
-            ..NtpHeader::new()
-        }
-    }
-
     #[instrument(level = "debug", skip(self), fields(
         addr = debug(self.config.addr),
     ))]
-    async fn serve(&mut self) {
+    async fn serve(&mut self, rate_limiting_cutoff: Duration) {
         let mut cur_socket = None;
         loop {
             let socket = if let Some(ref socket) = cur_socket {
@@ -113,17 +86,25 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
 
             let mut buf = [0_u8; 48];
             let recv_res = socket.recv(&mut buf).await;
-            let accept_result = self.accept_packet(recv_res, &buf);
+            let accept_result = self.accept_packet(rate_limiting_cutoff, recv_res, &buf);
+
             match accept_result {
                 AcceptResult::Accept(packet, peer_addr, recv_timestamp) => {
-                    let response = self.generate_response(packet, recv_timestamp).await;
+                    let system = *self.system.read().await;
+
+                    let response = NtpHeader::timestamp_response(
+                        &system,
+                        packet,
+                        recv_timestamp,
+                        &mut self.clock,
+                    );
 
                     if let Err(send_err) = socket.send_to(&response.serialize(), peer_addr).await {
                         warn!(error=?send_err, "Could not send response packet");
                     }
                 }
                 AcceptResult::Deny(packet, peer_addr) => {
-                    let response = self.generate_deny(packet);
+                    let response = NtpHeader::deny_response(packet);
                     if let Err(send_err) = socket.send_to(&response.serialize(), peer_addr).await {
                         warn!(error=?send_err, "Could not send deny packet");
                     }
@@ -133,13 +114,21 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     cur_socket = None;
                     continue;
                 }
+                AcceptResult::RateLimit(packet, peer_addr) => {
+                    let response = NtpHeader::rate_limit_response(packet);
+
+                    if let Err(send_err) = socket.send_to(&response.serialize(), peer_addr).await {
+                        warn!(error=?send_err, "Could not send response packet");
+                    }
+                }
                 AcceptResult::Ignore => {}
             }
         }
     }
 
     fn accept_packet(
-        &self,
+        &mut self,
+        rate_limiting_cutoff: Duration,
         result: Result<(usize, SocketAddr, Option<NtpTimestamp>), std::io::Error>,
         buf: &[u8; 48],
     ) -> AcceptResult {
@@ -162,7 +151,18 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                         }
                     }
                     Some(FilterAction::Ignore) => AcceptResult::Ignore,
-                    None => self.accept_data(buf, peer_addr, recv_timestamp),
+                    None => {
+                        let timestamp = Instant::now();
+                        let cutoff = rate_limiting_cutoff;
+                        let too_soon = !self.client_cache.is_allowed(peer_addr, timestamp, cutoff);
+
+                        match self.accept_data(buf, peer_addr, recv_timestamp) {
+                            AcceptResult::Accept(packet, _, _) if too_soon => {
+                                AcceptResult::RateLimit(packet, peer_addr)
+                            }
+                            accept_result => accept_result,
+                        }
+                    }
                 }
             }
             Ok((size, _, Some(_))) => {
@@ -223,11 +223,72 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
     }
 }
 
+/// A size-bounded cache where each entry is timestamped.
+///
+/// The planned use is in rate limiting: we keep track of when a peer last checked in. If it checks
+/// in too often, we issue a rate limiting KISS code.
+///
+/// For this use case we want fast
+///
+/// - lookups: for each incomming IP we must check when it last checked in
+/// - inserts: for each incomming IP we store that its most recent checkin is now
+///
+/// Hence, this data structure is a vector, and we use a simple hash function to turn the incomming
+/// address into an index. Lookups and inserts are therefore O(1).
+///
+/// The likelyhood of hash collisions can be controlled by changing the size of the cache. Overall,
+/// hash collisions are not a big problem because problematic IPs will continue to show up, so if
+/// we don't deny them on the first attempt because the previous entry was evicted, we're very
+/// likely to succeed on the next request it makes.
+#[derive(Debug)]
+struct TimestampedCache<T> {
+    elements: Vec<Option<(T, Instant)>>,
+}
+
+impl<T: std::hash::Hash + Eq> TimestampedCache<T> {
+    fn new(length: usize) -> Self {
+        Self {
+            // looks a bit odd, but prevents a `Clone` constraint
+            elements: std::iter::repeat_with(|| None).take(length).collect(),
+        }
+    }
+
+    fn index(&self, item: &T) -> usize {
+        use std::hash::Hasher;
+
+        let mut hasher = std::collections::hash_map::DefaultHasher::default();
+
+        item.hash(&mut hasher);
+
+        hasher.finish() as usize % self.elements.len()
+    }
+
+    fn is_allowed(&mut self, item: T, timestamp: Instant, cutoff: Duration) -> bool {
+        let index = self.index(&item);
+
+        // check if the current occupant of this slot is actually the same item
+        let timestamp_if_same = self.elements[index]
+            .as_ref()
+            .and_then(|(v, t)| (&item == v).then_some(t))
+            .copied();
+
+        self.elements[index] = Some((item, timestamp));
+
+        if let Some(old_timestamp) = timestamp_if_same {
+            // old and new are the same; check the time
+            timestamp.duration_since(old_timestamp) <= cutoff
+        } else {
+            // old and new are different; this is always OK
+            true
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
-    use ntp_proto::{NtpDuration, NtpLeapIndicator, PollInterval};
+    use ntp_proto::{NtpDuration, NtpLeapIndicator, PollInterval, ReferenceId};
 
     use crate::ipfilter::IpFilter;
 
@@ -279,6 +340,8 @@ mod tests {
             denylist_action: FilterAction::Ignore,
             allowlist: IpFilter::new(&["127.0.0.0/24".parse().unwrap()]),
             allowlist_action: FilterAction::Ignore,
+            rate_limiting_cutoff: Duration::from_secs(1),
+            rate_limiting_cache_size: 32,
         });
         let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
         let clock = TestClock {};
@@ -316,6 +379,8 @@ mod tests {
             denylist_action: FilterAction::Ignore,
             allowlist: IpFilter::new(&["128.0.0.0/24".parse().unwrap()]),
             allowlist_action: FilterAction::Deny,
+            rate_limiting_cutoff: Duration::from_secs(1),
+            rate_limiting_cache_size: 32,
         });
         let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
         let clock = TestClock {};
@@ -354,6 +419,8 @@ mod tests {
             denylist_action: FilterAction::Ignore,
             allowlist: IpFilter::new(&["128.0.0.0/24".parse().unwrap()]),
             allowlist_action: FilterAction::Ignore,
+            rate_limiting_cutoff: Duration::from_secs(1),
+            rate_limiting_cache_size: 32,
         });
         let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
         let clock = TestClock {};
@@ -387,6 +454,8 @@ mod tests {
             denylist_action: FilterAction::Ignore,
             allowlist: IpFilter::all(),
             allowlist_action: FilterAction::Ignore,
+            rate_limiting_cutoff: Duration::from_secs(1),
+            rate_limiting_cache_size: 32,
         });
         let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
         let clock = TestClock {};
@@ -424,6 +493,8 @@ mod tests {
             denylist_action: FilterAction::Deny,
             allowlist: IpFilter::all(),
             allowlist_action: FilterAction::Ignore,
+            rate_limiting_cutoff: Duration::from_secs(1),
+            rate_limiting_cache_size: 32,
         });
         let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
         let clock = TestClock {};
@@ -462,6 +533,8 @@ mod tests {
             denylist_action: FilterAction::Ignore,
             allowlist: IpFilter::all(),
             allowlist_action: FilterAction::Ignore,
+            rate_limiting_cutoff: Duration::from_secs(1),
+            rate_limiting_cache_size: 32,
         });
         let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
         let clock = TestClock {};
@@ -485,5 +558,32 @@ mod tests {
         assert!(res.is_err());
 
         server.abort();
+    }
+}
+
+#[cfg(test)]
+mod timestamped_cache {
+    use std::time::{Duration, Instant};
+
+    use super::*;
+
+    #[test]
+    fn timestamped_cache() {
+        let length = 8u8;
+        let mut cache: TimestampedCache<u8> = TimestampedCache::new(length as usize);
+
+        let second = Duration::from_secs(1);
+        let instant = Instant::now();
+
+        cache.is_allowed(0, instant, second);
+
+        assert!(cache.is_allowed(0, instant, second));
+
+        let later = instant + 2 * second;
+        assert!(!cache.is_allowed(0, later, second));
+
+        // simulate a hash collision
+        let even_later = later + 2 * second;
+        assert!(cache.is_allowed(length, even_later, second));
     }
 }
