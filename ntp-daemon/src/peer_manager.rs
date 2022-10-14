@@ -56,13 +56,6 @@ pub struct PoolIndex {
     index: usize,
 }
 
-impl PoolIndex {
-    #[cfg(test)]
-    pub fn from_inner(index: usize) -> Self {
-        Self { index }
-    }
-}
-
 #[derive(Debug, Default)]
 struct PoolIndexIssuer {
     next: usize,
@@ -82,6 +75,7 @@ enum PeerAddress {
         address: NormalizedAddress,
     },
     Pool {
+        index: PoolIndex,
         address: NormalizedAddress,
         socket_address: std::net::SocketAddr,
         /// socket addresses that we have resolved but not yet used
@@ -185,6 +179,7 @@ impl<C: NtpClock> Peers<C> {
         &mut self,
         address: NormalizedAddress,
         mut cached: CachedPoolAddresses,
+        pool_index: PoolIndex,
     ) -> Option<JoinHandle<()>> {
         let index = self.peer_indexer.get();
 
@@ -192,11 +187,11 @@ impl<C: NtpClock> Peers<C> {
         let active_pool_peers = self.peers.values().filter_map(|p| match &p.peer_address {
             PeerAddress::Peer { .. } => None,
             PeerAddress::Pool {
-                address: peer_address,
+                index: peer_pool_index,
                 socket_address,
                 ..
             } => {
-                if &address == peer_address {
+                if pool_index == *peer_pool_index {
                     Some(*socket_address)
                 } else {
                     None
@@ -218,6 +213,7 @@ impl<C: NtpClock> Peers<C> {
             PeerState {
                 status: PeerStatus::NoMeasurement,
                 peer_address: PeerAddress::Pool {
+                    index: pool_index,
                     address,
                     socket_address: addr,
                     cached,
@@ -264,12 +260,17 @@ impl<C: NtpClock> Peers<C> {
         address: NormalizedAddress,
         max_peers: usize,
     ) -> Vec<JoinHandle<()>> {
+        // Each pool gets a unique index, because the `NormalizedAddress` may not be unique
+        // Having two pools use the same address does not really do anything good, but we
+        // want to make sure it does technically work.
+        let index = self.pool_indexer.get();
+
         let mut handles = Vec::with_capacity(max_peers);
         let cached = CachedPoolAddresses::default();
 
         for _ in 0..max_peers {
             handles.extend(
-                self.add_pool_peer_internal(address.clone(), cached.clone())
+                self.add_pool_peer_internal(address.clone(), cached.clone(), index)
                     .await,
             );
         }
@@ -392,9 +393,12 @@ impl<C: NtpClock> Peers<C> {
                         self.add_peer_internal(address).await;
                     }
                     PeerAddress::Pool {
-                        address, cached, ..
+                        index,
+                        address,
+                        cached,
+                        ..
                     } => {
-                        self.add_pool_peer_internal(address, cached).await;
+                        self.add_pool_peer_internal(address, cached, index).await;
                     }
                 }
             }
