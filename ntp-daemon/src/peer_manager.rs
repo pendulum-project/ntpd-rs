@@ -74,44 +74,50 @@ impl CachedPoolAddresses {
     ///
     /// - will do a DNS resolve if there are insufficient `backups`
     /// - will never add more than `max_peers` active peers from the pool
-    async fn find_additional<I>(&mut self, address: &NormalizedAddress, active_pool_peers: I)
+    async fn find_additional<I>(
+        &mut self,
+        address: &NormalizedAddress,
+        active_pool_peers: I,
+    ) -> Option<std::net::SocketAddr>
     where
         I: IntoIterator<Item = std::net::SocketAddr>,
     {
         let mut cached = self.cached.lock().await;
 
-        if cached.is_empty() {
-            // there are not enough cached peers; try and get more with DNS resolve
-            let mut new: Vec<_> = socket_addresses(address).await.collect();
+        match cached.pop() {
+            Some(addr) => Some(addr),
+            None => {
+                // there are not enough cached peers; try and get more with DNS resolve
+                let (first, mut new) = socket_addresses(address).await;
+                new.push(first);
 
-            for peer in active_pool_peers {
-                new.retain(|socket_addr| *socket_addr != peer);
+                for peer in active_pool_peers {
+                    new.retain(|socket_addr| *socket_addr != peer);
+                }
+
+                *cached = new;
+
+                cached.pop()
             }
-
-            *cached = new;
         }
     }
 }
 
 /// Get available socket addresses for a host
-///
-/// Will retry until the iterator contains at least one socket address
-async fn socket_addresses<'a>(
-    address: &'a NormalizedAddress,
-) -> impl Iterator<Item = std::net::SocketAddr> + 'a {
+async fn socket_addresses(
+    address: &NormalizedAddress,
+) -> (std::net::SocketAddr, Vec<std::net::SocketAddr>) {
     loop {
         match address.lookup_host().await {
-            Ok(addresses) => {
-                let mut it = addresses.peekable();
-
-                match it.peek() {
-                    None => {
-                        warn!("Could not resolve peer address, retrying");
-                        tokio::time::sleep(NETWORK_WAIT_PERIOD).await
-                    }
-                    Some(_) => break it,
+            Ok(mut addresses) => match addresses.next() {
+                None => {
+                    warn!("Could not resolve peer address, retrying");
+                    tokio::time::sleep(NETWORK_WAIT_PERIOD).await
                 }
-            }
+                Some(first) => {
+                    return (first, addresses.collect());
+                }
+            },
             Err(e) => {
                 warn!(error = ?e, "error while resolving peer address, retrying");
                 tokio::time::sleep(NETWORK_WAIT_PERIOD).await
@@ -172,10 +178,10 @@ impl<C: NtpClock> Peers<C> {
         });
 
         // if no socket addresses are cached, do a new DNS resolve
-        cached.find_additional(&address, active_pool_peers).await;
-
-        // if we get here, it is guaranteed there is at least one cached socket address
-        let addr = cached.cached.lock().await.pop().unwrap();
+        let addr = match cached.find_additional(&address, active_pool_peers).await {
+            Some(addr) => addr,
+            None => todo!("the pool is now smaller than max_peers; what to do?"),
+        };
 
         self.peers.insert(
             index,
@@ -202,7 +208,7 @@ impl<C: NtpClock> Peers<C> {
         let index = self.indexer.get();
 
         // socket_addresses guarantees there is at least one element in the iterator
-        let addr = socket_addresses(&address).await.next().unwrap();
+        let (addr, _rest) = socket_addresses(&address).await;
         debug!(resolved=?addr, "resolved peer");
 
         self.peers.insert(
@@ -260,7 +266,13 @@ impl<C: NtpClock> Peers<C> {
     }
 
     #[cfg(test)]
-    pub fn from_statuslist(data: &[PeerStatus], raw_configs: &[PeerConfig], clock: C) -> Self {
+    pub fn from_statuslist(
+        data: &[PeerStatus],
+        raw_configs: &[crate::config::PeerConfig],
+        clock: C,
+    ) -> Self {
+        use crate::config::{PeerConfig, PoolPeerConfig, StandardPeerConfig};
+
         assert_eq!(data.len(), raw_configs.len());
 
         let mut peers = HashMap::new();
@@ -268,13 +280,23 @@ impl<C: NtpClock> Peers<C> {
 
         for (i, status) in data.iter().enumerate() {
             let index = indexer.get();
-            peers.insert(
-                index,
-                PeerState {
-                    status: status.to_owned(),
-                    config: Arc::new(raw_configs[i].clone()),
-                },
-            );
+
+            match &raw_configs[i] {
+                PeerConfig::Standard(StandardPeerConfig { addr }) => {
+                    peers.insert(
+                        index,
+                        PeerState {
+                            status: status.to_owned(),
+                            peer_address: PeerAddress::Peer {
+                                address: addr.clone(),
+                            },
+                        },
+                    );
+                }
+                PeerConfig::Pool(PoolPeerConfig { .. }) => {
+                    unimplemented!()
+                }
+            };
         }
 
         Self {
