@@ -186,6 +186,12 @@ pub struct SystemConfig {
     /// daemon is allowed to step the system clock.
     #[serde(deserialize_with = "deserialize_option_threshold", default)]
     pub accumulated_threshold: Option<NtpDuration>,
+
+    /// Stratum of the local clock, when not synchronized through ntp. This
+    /// can be used in servers to indicate that there are external mechanisms
+    /// synchronizing the clock
+    #[serde(default = "default_local_stratum")]
+    pub local_stratum: u8,
 }
 
 impl Default for SystemConfig {
@@ -201,6 +207,8 @@ impl Default for SystemConfig {
             panic_threshold: default_panic_threshold(),
             startup_panic_threshold: StepThreshold::default(),
             accumulated_threshold: None,
+
+            local_stratum: default_local_stratum(),
         }
     }
 }
@@ -242,4 +250,8 @@ fn startup_panic_threshold() -> StepThreshold {
         forward: None,
         backward: Some(NtpDuration::from_seconds(1800.)),
     }
+}
+
+fn default_local_stratum() -> u8 {
+    16
 }
