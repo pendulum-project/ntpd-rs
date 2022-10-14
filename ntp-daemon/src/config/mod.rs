@@ -194,20 +194,28 @@ impl Config {
     async fn from_first_file(file: Option<impl AsRef<Path>>) -> Result<Config, ConfigError> {
         // if an explicit file is given, always use that one
         if let Some(f) = file {
+            let path: &Path = f.as_ref();
+            info!(?path, "using config file");
             return Config::from_file(f).await;
         }
 
         // try ntp.toml in working directory or skip if file doesn't exist
         match Config::from_file("./ntp.toml").await {
             Err(ConfigError::Io(e)) if e.kind() == ErrorKind::NotFound => {}
-            other => return other,
+            other => {
+                info!("using local config file at default location `./ntp.toml`");
+                return other;
+            }
         }
 
         // for the global file we also ignore it when there are permission errors
         match Config::from_file("/etc/ntp.toml").await {
             Err(ConfigError::Io(e))
                 if e.kind() == ErrorKind::NotFound || e.kind() == ErrorKind::PermissionDenied => {}
-            other => return other,
+            other => {
+                info!("using global config file at default location `/etc/ntp.toml`");
+                return other;
+            }
         }
 
         Ok(Config::default())
