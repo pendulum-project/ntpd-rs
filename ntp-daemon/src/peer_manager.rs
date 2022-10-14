@@ -419,7 +419,7 @@ mod tests {
         PollInterval,
     };
 
-    use crate::config::{NormalizedAddress, PeerConfig, PoolPeerConfig, StandardPeerConfig};
+    use crate::config::{NormalizedAddress, StandardPeerConfig};
 
     use super::*;
 
@@ -620,5 +620,39 @@ mod tests {
 
         // automatically selects another peer from the pool
         assert_eq!(peers.peers.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn simulate_pool() {
+        let prev_epoch = ResetEpoch::default();
+        let epoch = prev_epoch.inc();
+
+        let mut peers = Peers::new(PeerChannels::test(), TestClock {});
+
+        let peer_address = NormalizedAddress::new_unchecked("127.0.0.0:123");
+        peers.add_peer(peer_address).await;
+
+        let pool_address = NormalizedAddress::with_hardcoded_dns(
+            "tweedegolf.nl:123",
+            vec![
+                "127.0.0.1:123".parse().unwrap(),
+                "127.0.0.2:123".parse().unwrap(),
+                "127.0.0.3:123".parse().unwrap(),
+                "127.0.0.4:123".parse().unwrap(),
+            ],
+        );
+        let max_peers = 3;
+        peers.add_pool(pool_address.clone(), max_peers).await;
+
+        // we have only 2 peers, because the pool has size 1
+        assert_eq!(peers.peers.len(), 4);
+
+        // simulate that a pool peer has a network issue
+        peers
+            .update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }), epoch)
+            .await;
+
+        // automatically selects another peer from the pool
+        assert_eq!(peers.peers.len(), 4);
     }
 }
