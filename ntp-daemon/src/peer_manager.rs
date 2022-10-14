@@ -158,7 +158,7 @@ impl<C: NtpClock> Peers<C> {
         &mut self,
         address: NormalizedAddress,
         mut cached: CachedPoolAddresses,
-    ) -> JoinHandle<()> {
+    ) -> Option<JoinHandle<()>> {
         let index = self.indexer.get();
 
         // socket addresses of the peers of this pool that are currently active
@@ -180,7 +180,10 @@ impl<C: NtpClock> Peers<C> {
         // if no socket addresses are cached, do a new DNS resolve
         let addr = match cached.find_additional(&address, active_pool_peers).await {
             Some(addr) => addr,
-            None => todo!("the pool is now smaller than max_peers; what to do?"),
+            None => {
+                warn!(?address, "all socket addresses from this pool are currently in use; is the pool configured correctly?");
+                return None;
+            }
         };
 
         self.peers.insert(
@@ -194,13 +197,14 @@ impl<C: NtpClock> Peers<C> {
                 },
             },
         );
-        PeerTask::spawn(
+
+        Some(PeerTask::spawn(
             index,
             addr,
             self.clock.clone(),
             NETWORK_WAIT_PERIOD,
             self.channels.clone(),
-        )
+        ))
     }
 
     /// Add a single standard peer
@@ -237,7 +241,7 @@ impl<C: NtpClock> Peers<C> {
         let cached = CachedPoolAddresses::default();
 
         for _ in 0..max_peers {
-            handles.push(
+            handles.extend(
                 self.add_pool_peer_internal(address.clone(), cached.clone())
                     .await,
             );
