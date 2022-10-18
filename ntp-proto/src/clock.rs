@@ -230,7 +230,7 @@ impl<C: NtpClock> ClockController<C> {
         // Note, our behaviour matches the code skeleton of rfc5905
         // fully, instead of the main text on page 50. This is needed
         // to improve responsiveness to upset events.
-        if self.offset < self.jitter * Self::POLL_FACTOR {
+        if self.offset.abs() < self.jitter * Self::POLL_FACTOR {
             self.poll_interval_counter += self.preferred_poll_interval.as_log() as i32;
         } else {
             self.poll_interval_counter -= 2 * (self.preferred_poll_interval.as_log() as i32);
@@ -805,6 +805,89 @@ mod tests {
             ClockUpdateResult::Slew
         );
         assert!(controller.jitter().to_seconds() < 0.006);
+    }
+
+    #[test]
+    fn test_poll_preference_update() {
+        let base = NtpInstant::now();
+        let config = SystemConfig::default();
+        let system = SystemSnapshot::default();
+
+        let mut controller = ClockController {
+            clock: TestClock::default(),
+            state: ClockState::Sync,
+            last_update_time: base,
+            preferred_poll_interval: PollInterval::MIN,
+            poll_interval_counter: 0,
+            offset: NtpDuration::from_seconds(2e-3),
+            jitter: system.precision,
+            accumulated_steps: NtpDuration::ZERO,
+        };
+
+        assert_eq!(
+            controller.update(
+                &config,
+                &system,
+                NtpDuration::from_seconds(2e-3),
+                NtpDuration::from_seconds(2e-4),
+                NtpDuration::from_seconds(3e-4),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1),
+            ),
+            ClockUpdateResult::Slew
+        );
+        assert!(controller.poll_interval_counter < 0);
+
+        controller.jitter = system.precision;
+        controller.offset = NtpDuration::from_seconds(-2e-3);
+        controller.poll_interval_counter = 0;
+        assert_eq!(
+            controller.update(
+                &config,
+                &system,
+                NtpDuration::from_seconds(-2e-3),
+                NtpDuration::from_seconds(2e-4),
+                NtpDuration::from_seconds(3e-4),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1),
+            ),
+            ClockUpdateResult::Slew
+        );
+        assert!(controller.poll_interval_counter < 0);
+
+        controller.jitter = NtpDuration::from_seconds(2e-3);
+        controller.offset = NtpDuration::from_seconds(2e-3);
+        controller.poll_interval_counter = 0;
+        assert_eq!(
+            controller.update(
+                &config,
+                &system,
+                NtpDuration::from_seconds(2e-3),
+                NtpDuration::from_seconds(2e-4),
+                NtpDuration::from_seconds(3e-4),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1),
+            ),
+            ClockUpdateResult::Slew
+        );
+        assert!(controller.poll_interval_counter > 0);
+
+        controller.jitter = NtpDuration::from_seconds(2e-3);
+        controller.offset = NtpDuration::from_seconds(-2e-3);
+        controller.poll_interval_counter = 0;
+        assert_eq!(
+            controller.update(
+                &config,
+                &system,
+                NtpDuration::from_seconds(-2e-3),
+                NtpDuration::from_seconds(2e-4),
+                NtpDuration::from_seconds(3e-4),
+                NtpLeapIndicator::NoWarning,
+                base + Duration::from_secs(1),
+            ),
+            ClockUpdateResult::Slew
+        );
+        assert!(controller.poll_interval_counter > 0);
     }
 
     #[test]
