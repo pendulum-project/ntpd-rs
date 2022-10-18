@@ -113,16 +113,16 @@ impl<'de> Deserialize<'de> for ServerConfig {
                             }
                             denylist_action = Some(map.next_value::<FilterAction>()?);
                         }
-                        "rate_limiting_cache_size" => {
+                        "rate-limiting-cache-size" => {
                             if rate_limiting_cache_size.is_some() {
-                                return Err(de::Error::duplicate_field("rate_limiting_cache_size"));
+                                return Err(de::Error::duplicate_field("rate-limiting-cache-size"));
                             }
 
                             rate_limiting_cache_size = Some(map.next_value()?);
                         }
-                        "rate_limiting_cutoff_ms" => {
+                        "rate-limiting-cutoff-ms" => {
                             if rate_limiting_cutoff.is_some() {
-                                return Err(de::Error::duplicate_field("rate_limiting_cutoff_ms"));
+                                return Err(de::Error::duplicate_field("rate-limiting-cutoff-ms"));
                             }
 
                             rate_limiting_cutoff = Some(Duration::from_millis(map.next_value()?));
@@ -136,8 +136,8 @@ impl<'de> Deserialize<'de> for ServerConfig {
                                     "allowlist-action",
                                     "denylist",
                                     "denylist-action",
-                                    "rate_limiting_cache_size",
-                                    "rate_limiting_cutoff_ms",
+                                    "rate-limiting-cache-size",
+                                    "rate-limiting-cutoff-ms",
                                 ],
                             ));
                         }
@@ -205,8 +205,8 @@ mod tests {
             r#"
             [server]
             addr = "127.0.0.1:123"
-            rate_limiting_cutoff_ms = 1000
-            rate_limiting_cache_size = 32
+            rate-limiting-cutoff-ms = 1000
+            rate-limiting-cache-size = 32
             "#,
         )
         .unwrap();
