@@ -92,12 +92,8 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 AcceptResult::Accept(packet, peer_addr, recv_timestamp) => {
                     let system = *self.system.read().await;
 
-                    let response = NtpHeader::timestamp_response(
-                        &system,
-                        packet,
-                        recv_timestamp,
-                        &mut self.clock,
-                    );
+                    let response =
+                        NtpHeader::timestamp_response(&system, packet, recv_timestamp, &self.clock);
 
                     if let Err(send_err) = socket.send_to(&response.serialize(), peer_addr).await {
                         warn!(error=?send_err, "Could not send response packet");
@@ -201,7 +197,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         recv_timestamp: NtpTimestamp,
     ) -> AcceptResult {
         match NtpHeader::deserialize(buf) {
-            Ok(packet) => match packet.mode {
+            Ok(packet) => match packet.mode() {
                 NtpAssociationMode::Client => {
                     trace!("NTP client request accepted from {}", peer_addr);
                     AcceptResult::Accept(packet, peer_addr, recv_timestamp)
@@ -209,7 +205,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 _ => {
                     trace!(
                         "NTP packet with unkown mode {:?} ignored from {}",
-                        packet.mode,
+                        packet.mode(),
                         peer_addr
                     );
                     AcceptResult::Ignore
@@ -359,10 +355,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let packet = NtpHeader {
-            mode: NtpAssociationMode::Client,
-            ..NtpHeader::new()
-        };
+        let (packet, id) = NtpHeader::poll_message(PollInterval::MIN);
 
         socket.send(&packet.serialize()).await.unwrap();
         let mut buf = [0; 48];
@@ -371,7 +364,8 @@ mod tests {
             .unwrap()
             .unwrap();
         let packet = NtpHeader::deserialize(&buf).unwrap();
-        assert_ne!(packet.stratum, 0);
+        assert_ne!(packet.stratum(), 0);
+        assert!(packet.valid_server_response(id));
 
         server.abort();
     }
@@ -398,10 +392,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let packet = NtpHeader {
-            mode: NtpAssociationMode::Client,
-            ..NtpHeader::new()
-        };
+        let (packet, id) = NtpHeader::poll_message(PollInterval::MIN);
 
         socket.send(&packet.serialize()).await.unwrap();
         let mut buf = [0; 48];
@@ -410,8 +401,9 @@ mod tests {
             .unwrap()
             .unwrap();
         let packet = NtpHeader::deserialize(&buf).unwrap();
-        assert_eq!(packet.stratum, 0);
-        assert_eq!(packet.reference_id, ReferenceId::KISS_DENY);
+        assert_eq!(packet.stratum(), 0);
+        assert_eq!(packet.reference_id(), ReferenceId::KISS_DENY);
+        assert!(packet.valid_server_response(id));
 
         server.abort();
     }
@@ -438,10 +430,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let packet = NtpHeader {
-            mode: NtpAssociationMode::Client,
-            ..NtpHeader::new()
-        };
+        let (packet, _) = NtpHeader::poll_message(PollInterval::MIN);
 
         socket.send(&packet.serialize()).await.unwrap();
         let mut buf = [0; 48];
@@ -473,10 +462,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let packet = NtpHeader {
-            mode: NtpAssociationMode::Client,
-            ..NtpHeader::new()
-        };
+        let (packet, id) = NtpHeader::poll_message(PollInterval::MIN);
 
         socket.send(&packet.serialize()).await.unwrap();
         let mut buf = [0; 48];
@@ -485,7 +471,8 @@ mod tests {
             .unwrap()
             .unwrap();
         let packet = NtpHeader::deserialize(&buf).unwrap();
-        assert_ne!(packet.stratum, 0);
+        assert_ne!(packet.stratum(), 0);
+        assert!(packet.valid_server_response(id));
 
         server.abort();
     }
@@ -512,10 +499,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let packet = NtpHeader {
-            mode: NtpAssociationMode::Client,
-            ..NtpHeader::new()
-        };
+        let (packet, id) = NtpHeader::poll_message(PollInterval::MIN);
 
         socket.send(&packet.serialize()).await.unwrap();
         let mut buf = [0; 48];
@@ -524,8 +508,9 @@ mod tests {
             .unwrap()
             .unwrap();
         let packet = NtpHeader::deserialize(&buf).unwrap();
-        assert_eq!(packet.stratum, 0);
-        assert_eq!(packet.reference_id, ReferenceId::KISS_DENY);
+        assert_eq!(packet.stratum(), 0);
+        assert_eq!(packet.reference_id(), ReferenceId::KISS_DENY);
+        assert!(packet.valid_server_response(id));
 
         server.abort();
     }
@@ -552,10 +537,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let packet = NtpHeader {
-            mode: NtpAssociationMode::Client,
-            ..NtpHeader::new()
-        };
+        let (packet, _) = NtpHeader::poll_message(PollInterval::MIN);
 
         socket.send(&packet.serialize()).await.unwrap();
         let mut buf = [0; 48];
@@ -588,10 +570,7 @@ mod tests {
         .await
         .unwrap();
 
-        let packet = NtpHeader {
-            mode: NtpAssociationMode::Client,
-            ..NtpHeader::new()
-        };
+        let (packet, id) = NtpHeader::poll_message(PollInterval::MIN);
         socket.send(&packet.serialize()).await.unwrap();
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
@@ -599,14 +578,12 @@ mod tests {
             .unwrap()
             .unwrap();
         let packet = NtpHeader::deserialize(&buf).unwrap();
-        assert_ne!(packet.stratum, 0);
+        assert_ne!(packet.stratum(), 0);
+        assert!(packet.valid_server_response(id));
 
         tokio::time::sleep(std::time::Duration::from_millis(120)).await;
 
-        let packet = NtpHeader {
-            mode: NtpAssociationMode::Client,
-            ..NtpHeader::new()
-        };
+        let (packet, id) = NtpHeader::poll_message(PollInterval::MIN);
         socket.send(&packet.serialize()).await.unwrap();
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
@@ -614,12 +591,10 @@ mod tests {
             .unwrap()
             .unwrap();
         let packet = NtpHeader::deserialize(&buf).unwrap();
-        assert_ne!(packet.stratum, 0);
+        assert_ne!(packet.stratum(), 0);
+        assert!(packet.valid_server_response(id));
 
-        let packet = NtpHeader {
-            mode: NtpAssociationMode::Client,
-            ..NtpHeader::new()
-        };
+        let (packet, id) = NtpHeader::poll_message(PollInterval::MIN);
         socket.send(&packet.serialize()).await.unwrap();
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
@@ -627,8 +602,9 @@ mod tests {
             .unwrap()
             .unwrap();
         let packet = NtpHeader::deserialize(&buf).unwrap();
-        assert_eq!(packet.stratum, 0);
-        assert_eq!(packet.reference_id, ReferenceId::KISS_RATE);
+        assert_eq!(packet.stratum(), 0);
+        assert_eq!(packet.reference_id(), ReferenceId::KISS_RATE);
+        assert!(packet.valid_server_response(id));
 
         server.abort();
     }
@@ -656,10 +632,7 @@ mod tests {
         .await
         .unwrap();
 
-        let packet = NtpHeader {
-            mode: NtpAssociationMode::Client,
-            ..NtpHeader::new()
-        };
+        let (packet, id) = NtpHeader::poll_message(PollInterval::MIN);
         socket.send(&packet.serialize()).await.unwrap();
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
@@ -667,7 +640,8 @@ mod tests {
             .unwrap()
             .unwrap();
         let packet = NtpHeader::deserialize(&buf).unwrap();
-        assert_ne!(packet.stratum, 0);
+        assert_ne!(packet.stratum(), 0);
+        assert!(packet.valid_server_response(id));
 
         server.abort();
     }

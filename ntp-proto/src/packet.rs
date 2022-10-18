@@ -108,21 +108,21 @@ pub const NTP_VERSION: u8 = 4;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct NtpHeader {
-    pub leap: NtpLeapIndicator,
-    pub mode: NtpAssociationMode,
-    pub stratum: u8,
-    pub poll: i8,
-    pub precision: i8,
-    pub root_delay: NtpDuration,
-    pub root_dispersion: NtpDuration,
-    pub reference_id: ReferenceId,
-    pub reference_timestamp: NtpTimestamp,
+    leap: NtpLeapIndicator,
+    mode: NtpAssociationMode,
+    stratum: u8,
+    poll: i8,
+    precision: i8,
+    root_delay: NtpDuration,
+    root_dispersion: NtpDuration,
+    reference_id: ReferenceId,
+    reference_timestamp: NtpTimestamp,
     /// Time at the client when the request departed for the server
-    pub origin_timestamp: NtpTimestamp,
+    origin_timestamp: NtpTimestamp,
     /// Time at the server when the request arrived from the client
-    pub receive_timestamp: NtpTimestamp,
+    receive_timestamp: NtpTimestamp,
     /// Time at the server when the response left for the client
-    pub transmit_timestamp: NtpTimestamp,
+    transmit_timestamp: NtpTimestamp,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -132,7 +132,7 @@ pub struct RequestIdentifier {
 
 impl NtpHeader {
     /// A new, empty NtpHeader
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             leap: NtpLeapIndicator::NoWarning,
             mode: NtpAssociationMode::Client,
@@ -147,6 +147,42 @@ impl NtpHeader {
             receive_timestamp: NtpTimestamp::default(),
             transmit_timestamp: NtpTimestamp::default(),
         }
+    }
+
+    pub fn leap(&self) -> NtpLeapIndicator {
+        self.leap
+    }
+
+    pub fn mode(&self) -> NtpAssociationMode {
+        self.mode
+    }
+
+    pub fn stratum(&self) -> u8 {
+        self.stratum
+    }
+
+    pub fn precision(&self) -> i8 {
+        self.precision
+    }
+
+    pub fn root_delay(&self) -> NtpDuration {
+        self.root_delay
+    }
+
+    pub fn root_dispersion(&self) -> NtpDuration {
+        self.root_dispersion
+    }
+
+    pub fn receive_timestamp(&self) -> NtpTimestamp {
+        self.receive_timestamp
+    }
+
+    pub fn transmit_timestamp(&self) -> NtpTimestamp {
+        self.transmit_timestamp
+    }
+
+    pub fn reference_id(&self) -> ReferenceId {
+        self.reference_id
     }
 
     pub fn deserialize(data: &[u8; 48]) -> Result<NtpHeader, PacketParsingError> {
@@ -278,7 +314,7 @@ impl NtpHeader {
         system: &SystemSnapshot,
         input: NtpHeader,
         recv_timestamp: NtpTimestamp,
-        clock: &mut C,
+        clock: &C,
     ) -> Self {
         Self {
             mode: NtpAssociationMode::Server,
@@ -314,6 +350,53 @@ impl NtpHeader {
             origin_timestamp: packet_from_client.transmit_timestamp,
             ..Self::new()
         }
+    }
+}
+
+#[cfg(any(test, feature = "fuzz"))]
+impl NtpHeader {
+    pub fn test() -> Self {
+        Self::new()
+    }
+
+    pub fn set_mode(&mut self, mode: NtpAssociationMode) {
+        self.mode = mode
+    }
+
+    pub fn set_origin_timestamp(&mut self, timestamp: NtpTimestamp) {
+        self.origin_timestamp = timestamp
+    }
+
+    pub fn set_transmit_timestamp(&mut self, timestamp: NtpTimestamp) {
+        self.transmit_timestamp = timestamp
+    }
+
+    pub fn set_receive_timestamp(&mut self, timestamp: NtpTimestamp) {
+        self.receive_timestamp = timestamp
+    }
+
+    pub fn set_precision(&mut self, precision: i8) {
+        self.precision = precision
+    }
+
+    pub fn set_leap(&mut self, leap: NtpLeapIndicator) {
+        self.leap = leap
+    }
+
+    pub fn set_stratum(&mut self, stratum: u8) {
+        self.stratum = stratum
+    }
+
+    pub fn set_reference_id(&mut self, reference_id: ReferenceId) {
+        self.reference_id = reference_id
+    }
+
+    pub fn set_root_delay(&mut self, root_delay: NtpDuration) {
+        self.root_delay = root_delay
+    }
+
+    pub fn set_root_dispersion(&mut self, root_dispersion: NtpDuration) {
+        self.root_dispersion = root_dispersion
     }
 }
 

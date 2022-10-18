@@ -1,6 +1,6 @@
 // trivial server that forces an increment of the poll interval, then becomes a very bad NTP server
 
-use ntp_proto::{NtpAssociationMode, NtpClock, NtpHeader, ReferenceId};
+use ntp_proto::{NtpClock, NtpHeader, SystemSnapshot};
 use std::{error::Error, time::Instant};
 use tokio::net::UdpSocket;
 
@@ -10,6 +10,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let clock = ntp_os_clock::UnixNtpClock::new();
     let mut last_message = Instant::now();
+
+    let system = SystemSnapshot::default();
 
     let mut buf = [0; 48];
     #[allow(clippy::field_reassign_with_default)] // allow the explicit stratum
@@ -23,8 +25,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         println!("{}s since last packet", delta.as_secs());
         last_message = now;
 
-        let mut packet = ntp_proto::NtpHeader::default();
-
         let parsed = match NtpHeader::deserialize(&buf) {
             Ok(packet) => packet,
             Err(_) => continue,
@@ -32,17 +32,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         // default poll interval is 16 seconds, so this will bump it once
         // and then stay steady at 32 seconds
-        if delta < std::time::Duration::new(30, 0) {
-            packet.reference_id = ReferenceId::KISS_RATE;
-            packet.origin_timestamp = parsed.transmit_timestamp;
-            packet.stratum = 0;
+        let packet = if delta < std::time::Duration::new(30, 0) {
+            NtpHeader::rate_limit_response(parsed)
         } else {
-            packet.mode = NtpAssociationMode::Server;
-            packet.stratum = 1;
-            packet.origin_timestamp = parsed.transmit_timestamp;
-            packet.receive_timestamp = ntp_receive;
-            packet.transmit_timestamp = clock.now().unwrap();
-        }
+            NtpHeader::timestamp_response(&system, parsed, ntp_receive, &clock)
+        };
 
         let len = sock.send_to(&packet.serialize(), addr).await?;
         println!("{:?} bytes sent", len);
