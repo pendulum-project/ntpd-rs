@@ -58,16 +58,16 @@ General options:
 Peers are configured in the `peers` section. Per peer, the following options are available:
 | Option | Default | Description |
 | --- | --- | --- |
-| addr | | Address of the remote server |
+| addr | | Address of the remote server. |
 Note that peers can also be generated from simply a string containing the address, see also the example below.
 
-The daemon can expose an observation socket that can be read to obtain information on the current state of the peer connections and clock steering algorithm. This socket can be configured via the `observe` sections:
+The daemon can expose an observation socket that can be read to obtain information on the current state of the peer connections and clock steering algorithm. This socket can be configured via the `observe` section:
 | Option | Default | Description |
 | --- | --- | --- |
 | path | | Path on which the observation socket is exposed. If no path is given, the observation socket is disabled. |
 | mode | 0o777 | Permissions with which the socket should be created, given as (octal) integer. |
 
-The daemon can also expose a configuration socket that can be used to change some configuration options dynamically. This socket can be configured via the `configure` sections:
+The daemon can also expose a configuration socket that can be used to change some configuration options dynamically. This socket can be configured via the `configure` section:
 | Option | Default | Description |
 | --- | --- | --- |
 | path | | Path on which the configuration socket is exposed. If no path is given, the configuration socket is disabled. |
