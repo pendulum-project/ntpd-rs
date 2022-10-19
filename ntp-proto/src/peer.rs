@@ -519,7 +519,7 @@ mod test {
                 dispersion: duration_1s,
                 ..Default::default()
             },
-            last_packet: packet,
+            last_packet: packet.clone(),
             ..Peer::test_peer(timestamp_1s)
         };
 
@@ -533,7 +533,7 @@ mod test {
                 dispersion: duration_1s,
                 ..Default::default()
             },
-            last_packet: packet,
+            last_packet: packet.clone(),
             ..Peer::test_peer(timestamp_1s)
         };
         assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
@@ -544,7 +544,7 @@ mod test {
                 dispersion: duration_2s,
                 ..Default::default()
             },
-            last_packet: packet,
+            last_packet: packet.clone(),
             ..Peer::test_peer(timestamp_1s)
         };
         assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
@@ -555,7 +555,7 @@ mod test {
                 dispersion: duration_1s,
                 ..Default::default()
             },
-            last_packet: packet,
+            last_packet: packet.clone(),
             ..Peer::test_peer(timestamp_0s)
         };
         assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
@@ -567,7 +567,7 @@ mod test {
                 dispersion: duration_1s,
                 ..Default::default()
             },
-            last_packet: packet,
+            last_packet: packet.clone(),
             ..Peer::test_peer(timestamp_1s)
         };
         packet.set_root_delay(duration_1s);
@@ -580,7 +580,7 @@ mod test {
                 dispersion: duration_1s,
                 ..Default::default()
             },
-            last_packet: packet,
+            last_packet: packet.clone(),
             ..Peer::test_peer(timestamp_1s)
         };
         packet.set_root_dispersion(duration_1s);
@@ -592,7 +592,7 @@ mod test {
                 dispersion: duration_1s,
                 ..Default::default()
             },
-            last_packet: packet,
+            last_packet: packet.clone(),
             ..Peer::test_peer(timestamp_1s)
         };
 
@@ -755,7 +755,7 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                packet,
+                packet.clone(),
                 base + Duration::from_secs(1),
                 FrequencyTolerance::ppm(15),
                 NtpTimestamp::from_fixed_int(0),
@@ -792,7 +792,7 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                packet,
+                packet.clone(),
                 base + Duration::from_secs(1),
                 FrequencyTolerance::ppm(15),
                 NtpTimestamp::from_fixed_int(0),
@@ -804,7 +804,7 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                packet,
+                packet.clone(),
                 base + Duration::from_secs(1),
                 FrequencyTolerance::ppm(15),
                 NtpTimestamp::from_fixed_int(0),

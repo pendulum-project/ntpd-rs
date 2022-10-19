@@ -106,7 +106,7 @@ impl NtpAssociationMode {
 
 pub const NTP_VERSION: u8 = 4;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NtpPacket {
     header: NtpHeader,
 }
@@ -554,9 +554,9 @@ mod tests {
 
         for leap_type in 0..3 {
             for mode in 0..8 {
-                let mut header = base_structured;
-                header.header.leap = NtpLeapIndicator::from_bits(leap_type);
-                header.header.mode = NtpAssociationMode::from_bits(mode);
+                let mut header = base_structured.clone();
+                header.set_leap(NtpLeapIndicator::from_bits(leap_type));
+                header.set_mode(NtpAssociationMode::from_bits(mode));
 
                 let data = header.serialize();
                 let copy = NtpPacket::deserialize(&data).unwrap();
