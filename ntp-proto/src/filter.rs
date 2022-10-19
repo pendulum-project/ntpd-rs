@@ -10,7 +10,7 @@
 use crate::packet::NtpAssociationMode;
 use crate::peer::PeerStatistics;
 use crate::time_types::{FrequencyTolerance, NtpInstant};
-use crate::{packet::NtpLeapIndicator, NtpDuration, NtpHeader, NtpTimestamp};
+use crate::{packet::NtpLeapIndicator, NtpDuration, NtpPacket, NtpTimestamp};
 use tracing::{debug, instrument, warn};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,7 +42,7 @@ impl FilterTuple {
     /// A Broadcast association requires different logic.
     /// All other associations should use this function
     pub(crate) fn from_packet_default(
-        packet: &NtpHeader,
+        packet: &NtpPacket,
         system_precision: NtpDuration,
         local_clock_time: NtpInstant,
         frequency_tolerance: FrequencyTolerance,
@@ -279,7 +279,7 @@ pub fn fuzz_tuple_from_packet_default(
     client_precision: i8,
     server_precision: i8,
 ) {
-    let mut packet = NtpHeader::test();
+    let mut packet = NtpPacket::test();
     packet.set_origin_timestamp(NtpTimestamp::from_fixed_int(client));
     packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(server));
     packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(
@@ -470,7 +470,7 @@ mod test {
     fn test_tuple_from_packet_default() {
         let instant = NtpInstant::now();
 
-        let mut packet = NtpHeader::test();
+        let mut packet = NtpPacket::test();
         packet.set_origin_timestamp(NtpTimestamp::from_fixed_int(0));
         packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(1));
         packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(2));

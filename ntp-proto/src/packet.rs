@@ -107,7 +107,12 @@ impl NtpAssociationMode {
 pub const NTP_VERSION: u8 = 4;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct NtpHeader {
+pub struct NtpPacket {
+    header: NtpHeader,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+struct NtpHeader {
     leap: NtpLeapIndicator,
     mode: NtpAssociationMode,
     stratum: u8,
@@ -149,49 +154,13 @@ impl NtpHeader {
         }
     }
 
-    pub fn leap(&self) -> NtpLeapIndicator {
-        self.leap
-    }
-
-    pub fn mode(&self) -> NtpAssociationMode {
-        self.mode
-    }
-
-    pub fn stratum(&self) -> u8 {
-        self.stratum
-    }
-
-    pub fn precision(&self) -> i8 {
-        self.precision
-    }
-
-    pub fn root_delay(&self) -> NtpDuration {
-        self.root_delay
-    }
-
-    pub fn root_dispersion(&self) -> NtpDuration {
-        self.root_dispersion
-    }
-
-    pub fn receive_timestamp(&self) -> NtpTimestamp {
-        self.receive_timestamp
-    }
-
-    pub fn transmit_timestamp(&self) -> NtpTimestamp {
-        self.transmit_timestamp
-    }
-
-    pub fn reference_id(&self) -> ReferenceId {
-        self.reference_id
-    }
-
-    pub fn deserialize(data: &[u8; 48]) -> Result<NtpHeader, PacketParsingError> {
+    fn deserialize(data: &[u8; 48]) -> Result<Self, PacketParsingError> {
         let version = (data[0] & 0x38) >> 3;
 
         if version != NTP_VERSION {
             Err(PacketParsingError::InvalidVersion(version))
         } else {
-            Ok(NtpHeader {
+            Ok(Self {
                 leap: NtpLeapIndicator::from_bits((data[0] & 0xC0) >> 6),
                 mode: NtpAssociationMode::from_bits(data[0] & 0x07),
                 stratum: data[1],
@@ -208,7 +177,7 @@ impl NtpHeader {
         }
     }
 
-    pub fn serialize(&self) -> [u8; 48] {
+    fn serialize(&self) -> [u8; 48] {
         let root_delay = self.root_delay.to_bits_short();
         let root_dispersion = self.root_dispersion.to_bits_short();
         let reference_id = self.reference_id.to_bytes();
@@ -269,24 +238,8 @@ impl NtpHeader {
         ]
     }
 
-    pub fn is_kiss(&self) -> bool {
-        self.stratum == 0
-    }
-
-    pub fn is_kiss_deny(&self) -> bool {
-        self.is_kiss() && self.reference_id.is_deny()
-    }
-
-    pub fn is_kiss_rate(&self) -> bool {
-        self.is_kiss() && self.reference_id.is_rate()
-    }
-
-    pub fn is_kiss_rstr(&self) -> bool {
-        self.is_kiss() && self.reference_id.is_rstr()
-    }
-
-    pub fn poll_message(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
-        let mut packet = NtpHeader::new();
+    fn poll_message(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
+        let mut packet = Self::new();
         let poll_interval = poll_interval;
         packet.poll = poll_interval.as_log();
         packet.mode = NtpAssociationMode::Client;
@@ -306,13 +259,9 @@ impl NtpHeader {
         )
     }
 
-    pub fn valid_server_response(&self, identifier: RequestIdentifier) -> bool {
-        self.origin_timestamp == identifier.expected_origin_timestamp
-    }
-
-    pub fn timestamp_response<C: NtpClock>(
+    fn timestamp_response<C: NtpClock>(
         system: &SystemSnapshot,
-        input: NtpHeader,
+        input: Self,
         recv_timestamp: NtpTimestamp,
         clock: &C,
     ) -> Self {
@@ -332,7 +281,7 @@ impl NtpHeader {
         }
     }
 
-    pub fn rate_limit_response(packet_from_client: Self) -> Self {
+    fn rate_limit_response(packet_from_client: Self) -> Self {
         Self {
             mode: NtpAssociationMode::Server,
             stratum: 0, // indicates a kiss code
@@ -342,8 +291,8 @@ impl NtpHeader {
         }
     }
 
-    pub fn deny_response(packet_from_client: Self) -> Self {
-        NtpHeader {
+    fn deny_response(packet_from_client: Self) -> Self {
+        Self {
             mode: NtpAssociationMode::Server,
             stratum: 0, // indicates a kiss code
             reference_id: ReferenceId::KISS_DENY,
@@ -353,56 +302,156 @@ impl NtpHeader {
     }
 }
 
-#[cfg(any(test, feature = "fuzz"))]
-impl NtpHeader {
-    pub fn test() -> Self {
-        Self::new()
+impl NtpPacket {
+    pub fn deserialize(data: &[u8; 48]) -> Result<Self, PacketParsingError> {
+        Ok(NtpPacket {
+            header: NtpHeader::deserialize(data)?,
+        })
     }
 
-    pub fn set_mode(&mut self, mode: NtpAssociationMode) {
-        self.mode = mode
+    pub fn serialize(&self) -> [u8; 48] {
+        self.header.serialize()
     }
 
-    pub fn set_origin_timestamp(&mut self, timestamp: NtpTimestamp) {
-        self.origin_timestamp = timestamp
+    pub fn poll_message(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
+        let (header, id) = NtpHeader::poll_message(poll_interval);
+        (NtpPacket { header }, id)
     }
 
-    pub fn set_transmit_timestamp(&mut self, timestamp: NtpTimestamp) {
-        self.transmit_timestamp = timestamp
+    pub fn timestamp_response<C: NtpClock>(
+        system: &SystemSnapshot,
+        input: Self,
+        recv_timestamp: NtpTimestamp,
+        clock: &C,
+    ) -> Self {
+        NtpPacket {
+            header: NtpHeader::timestamp_response(system, input.header, recv_timestamp, clock),
+        }
     }
 
-    pub fn set_receive_timestamp(&mut self, timestamp: NtpTimestamp) {
-        self.receive_timestamp = timestamp
+    pub fn rate_limit_response(packet_from_client: Self) -> Self {
+        NtpPacket {
+            header: NtpHeader::rate_limit_response(packet_from_client.header),
+        }
     }
 
-    pub fn set_precision(&mut self, precision: i8) {
-        self.precision = precision
-    }
-
-    pub fn set_leap(&mut self, leap: NtpLeapIndicator) {
-        self.leap = leap
-    }
-
-    pub fn set_stratum(&mut self, stratum: u8) {
-        self.stratum = stratum
-    }
-
-    pub fn set_reference_id(&mut self, reference_id: ReferenceId) {
-        self.reference_id = reference_id
-    }
-
-    pub fn set_root_delay(&mut self, root_delay: NtpDuration) {
-        self.root_delay = root_delay
-    }
-
-    pub fn set_root_dispersion(&mut self, root_dispersion: NtpDuration) {
-        self.root_dispersion = root_dispersion
+    pub fn deny_response(packet_from_client: Self) -> Self {
+        NtpPacket {
+            header: NtpHeader::deny_response(packet_from_client.header),
+        }
     }
 }
 
-impl Default for NtpHeader {
+impl NtpPacket {
+    pub fn leap(&self) -> NtpLeapIndicator {
+        self.header.leap
+    }
+
+    pub fn mode(&self) -> NtpAssociationMode {
+        self.header.mode
+    }
+
+    pub fn stratum(&self) -> u8 {
+        self.header.stratum
+    }
+
+    pub fn precision(&self) -> i8 {
+        self.header.precision
+    }
+
+    pub fn root_delay(&self) -> NtpDuration {
+        self.header.root_delay
+    }
+
+    pub fn root_dispersion(&self) -> NtpDuration {
+        self.header.root_dispersion
+    }
+
+    pub fn receive_timestamp(&self) -> NtpTimestamp {
+        self.header.receive_timestamp
+    }
+
+    pub fn transmit_timestamp(&self) -> NtpTimestamp {
+        self.header.transmit_timestamp
+    }
+
+    pub fn reference_id(&self) -> ReferenceId {
+        self.header.reference_id
+    }
+
+    pub fn is_kiss(&self) -> bool {
+        self.header.stratum == 0
+    }
+
+    pub fn is_kiss_deny(&self) -> bool {
+        self.is_kiss() && self.header.reference_id.is_deny()
+    }
+
+    pub fn is_kiss_rate(&self) -> bool {
+        self.is_kiss() && self.header.reference_id.is_rate()
+    }
+
+    pub fn is_kiss_rstr(&self) -> bool {
+        self.is_kiss() && self.header.reference_id.is_rstr()
+    }
+
+    pub fn valid_server_response(&self, identifier: RequestIdentifier) -> bool {
+        self.header.origin_timestamp == identifier.expected_origin_timestamp
+    }
+}
+
+#[cfg(any(test, feature = "fuzz"))]
+impl NtpPacket {
+    pub fn test() -> Self {
+        Self::default()
+    }
+
+    pub fn set_mode(&mut self, mode: NtpAssociationMode) {
+        self.header.mode = mode
+    }
+
+    pub fn set_origin_timestamp(&mut self, timestamp: NtpTimestamp) {
+        self.header.origin_timestamp = timestamp
+    }
+
+    pub fn set_transmit_timestamp(&mut self, timestamp: NtpTimestamp) {
+        self.header.transmit_timestamp = timestamp
+    }
+
+    pub fn set_receive_timestamp(&mut self, timestamp: NtpTimestamp) {
+        self.header.receive_timestamp = timestamp
+    }
+
+    pub fn set_precision(&mut self, precision: i8) {
+        self.header.precision = precision
+    }
+
+    pub fn set_leap(&mut self, leap: NtpLeapIndicator) {
+        self.header.leap = leap
+    }
+
+    pub fn set_stratum(&mut self, stratum: u8) {
+        self.header.stratum = stratum
+    }
+
+    pub fn set_reference_id(&mut self, reference_id: ReferenceId) {
+        self.header.reference_id = reference_id
+    }
+
+    pub fn set_root_delay(&mut self, root_delay: NtpDuration) {
+        self.header.root_delay = root_delay
+    }
+
+    pub fn set_root_dispersion(&mut self, root_dispersion: NtpDuration) {
+        self.header.root_dispersion = root_dispersion
+    }
+}
+
+impl Default for NtpPacket {
     fn default() -> Self {
-        Self::new()
+        Self {
+            header: NtpHeader::new(),
+        }
     }
 }
 
@@ -435,78 +484,82 @@ mod tests {
     #[test]
     fn test_captured_client() {
         let packet = b"\x23\x02\x06\xe8\x00\x00\x03\xff\x00\x00\x03\x7d\x5e\xc6\x9f\x0f\xe5\xf6\x62\x98\x7b\x61\xb9\xaf\xe5\xf6\x63\x66\x7b\x64\x99\x5d\xe5\xf6\x63\x66\x81\x40\x55\x90\xe5\xf6\x63\xa8\x76\x1d\xde\x48";
-        let reference = NtpHeader {
-            leap: NtpLeapIndicator::NoWarning,
-            mode: NtpAssociationMode::Client,
-            stratum: 2,
-            poll: 6,
-            precision: -24,
-            root_delay: NtpDuration::from_fixed_int(1023 << 16),
-            root_dispersion: NtpDuration::from_fixed_int(893 << 16),
-            reference_id: ReferenceId::from_int(0x5ec69f0f),
-            reference_timestamp: NtpTimestamp::from_fixed_int(0xe5f662987b61b9af),
-            origin_timestamp: NtpTimestamp::from_fixed_int(0xe5f663667b64995d),
-            receive_timestamp: NtpTimestamp::from_fixed_int(0xe5f6636681405590),
-            transmit_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a8761dde48),
+        let reference = NtpPacket {
+            header: NtpHeader {
+                leap: NtpLeapIndicator::NoWarning,
+                mode: NtpAssociationMode::Client,
+                stratum: 2,
+                poll: 6,
+                precision: -24,
+                root_delay: NtpDuration::from_fixed_int(1023 << 16),
+                root_dispersion: NtpDuration::from_fixed_int(893 << 16),
+                reference_id: ReferenceId::from_int(0x5ec69f0f),
+                reference_timestamp: NtpTimestamp::from_fixed_int(0xe5f662987b61b9af),
+                origin_timestamp: NtpTimestamp::from_fixed_int(0xe5f663667b64995d),
+                receive_timestamp: NtpTimestamp::from_fixed_int(0xe5f6636681405590),
+                transmit_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a8761dde48),
+            },
         };
 
-        assert_eq!(reference, NtpHeader::deserialize(packet).unwrap());
+        assert_eq!(reference, NtpPacket::deserialize(packet).unwrap());
         assert_eq!(packet[..], reference.serialize()[..]);
     }
 
     #[test]
     fn test_captured_server() {
         let packet = b"\x24\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        let reference = NtpHeader {
-            leap: NtpLeapIndicator::NoWarning,
-            mode: NtpAssociationMode::Server,
-            stratum: 2,
-            poll: 6,
-            precision: -23,
-            root_delay: NtpDuration::from_fixed_int(566 << 16),
-            root_dispersion: NtpDuration::from_fixed_int(951 << 16),
-            reference_id: ReferenceId::from_int(0xc035676c),
-            reference_timestamp: NtpTimestamp::from_fixed_int(0xe5f661fd6f165f03),
-            origin_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a87619ef40),
-            receive_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a8798c6581),
-            transmit_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a8798eae2b),
+        let reference = NtpPacket {
+            header: NtpHeader {
+                leap: NtpLeapIndicator::NoWarning,
+                mode: NtpAssociationMode::Server,
+                stratum: 2,
+                poll: 6,
+                precision: -23,
+                root_delay: NtpDuration::from_fixed_int(566 << 16),
+                root_dispersion: NtpDuration::from_fixed_int(951 << 16),
+                reference_id: ReferenceId::from_int(0xc035676c),
+                reference_timestamp: NtpTimestamp::from_fixed_int(0xe5f661fd6f165f03),
+                origin_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a87619ef40),
+                receive_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a8798c6581),
+                transmit_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a8798eae2b),
+            },
         };
 
-        assert_eq!(reference, NtpHeader::deserialize(packet).unwrap());
+        assert_eq!(reference, NtpPacket::deserialize(packet).unwrap());
         assert_eq!(packet[..], reference.serialize()[..])
     }
 
     #[test]
     fn test_version() {
         let packet = b"\x04\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpHeader::deserialize(packet).is_err());
+        assert!(NtpPacket::deserialize(packet).is_err());
         let packet = b"\x0B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpHeader::deserialize(packet).is_err());
+        assert!(NtpPacket::deserialize(packet).is_err());
         let packet = b"\x14\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpHeader::deserialize(packet).is_err());
+        assert!(NtpPacket::deserialize(packet).is_err());
         let packet = b"\x1B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpHeader::deserialize(packet).is_err());
+        assert!(NtpPacket::deserialize(packet).is_err());
         let packet = b"\x2B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpHeader::deserialize(packet).is_err());
+        assert!(NtpPacket::deserialize(packet).is_err());
         let packet = b"\x34\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpHeader::deserialize(packet).is_err());
+        assert!(NtpPacket::deserialize(packet).is_err());
         let packet = b"\x3B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpHeader::deserialize(packet).is_err());
+        assert!(NtpPacket::deserialize(packet).is_err());
     }
 
     #[test]
     fn test_packed_flags() {
         let base = b"\x24\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b".to_owned();
-        let base_structured = NtpHeader::deserialize(&base).unwrap();
+        let base_structured = NtpPacket::deserialize(&base).unwrap();
 
         for leap_type in 0..3 {
             for mode in 0..8 {
                 let mut header = base_structured;
-                header.leap = NtpLeapIndicator::from_bits(leap_type);
-                header.mode = NtpAssociationMode::from_bits(mode);
+                header.header.leap = NtpLeapIndicator::from_bits(leap_type);
+                header.header.mode = NtpAssociationMode::from_bits(mode);
 
                 let data = header.serialize();
-                let copy = NtpHeader::deserialize(&data).unwrap();
+                let copy = NtpPacket::deserialize(&data).unwrap();
                 assert_eq!(header, copy);
             }
         }
@@ -515,7 +568,7 @@ mod tests {
             let mut packet = base;
             packet[0] = i;
 
-            if let Ok(a) = NtpHeader::deserialize(&packet) {
+            if let Ok(a) = NtpPacket::deserialize(&packet) {
                 let b = a.serialize();
                 assert_eq!(packet, b);
             }

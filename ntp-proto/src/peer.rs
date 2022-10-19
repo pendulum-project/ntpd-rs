@@ -2,7 +2,7 @@ use crate::{
     filter::{FilterTuple, LastMeasurements},
     packet::{NtpAssociationMode, NtpLeapIndicator, RequestIdentifier},
     time_types::{FrequencyTolerance, NtpInstant},
-    NtpDuration, NtpHeader, NtpTimestamp, PollInterval, ReferenceId,
+    NtpDuration, NtpPacket, NtpTimestamp, PollInterval, ReferenceId,
 };
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument, trace, warn};
@@ -36,7 +36,7 @@ pub struct Peer {
 
     statistics: PeerStatistics,
     last_measurements: LastMeasurements,
-    last_packet: NtpHeader,
+    last_packet: NtpPacket,
     time: NtpInstant,
     peer_id: ReferenceId,
     our_id: ReferenceId,
@@ -304,11 +304,11 @@ impl Peer {
             .max(self.remote_min_poll_interval)
     }
 
-    pub fn generate_poll_message(&mut self, system: SystemSnapshot) -> NtpHeader {
+    pub fn generate_poll_message(&mut self, system: SystemSnapshot) -> NtpPacket {
         self.reach.poll();
 
         let poll_interval = self.current_poll_interval(system);
-        let (packet, identifier) = NtpHeader::poll_message(poll_interval);
+        let (packet, identifier) = NtpPacket::poll_message(poll_interval);
         self.current_request_identifier = Some((identifier, NtpInstant::now() + POLL_WINDOW));
 
         // Ensure we don't spam the remote with polls if it is not reachable
@@ -321,7 +321,7 @@ impl Peer {
     pub fn handle_incoming(
         &mut self,
         system: SystemSnapshot,
-        message: NtpHeader,
+        message: NtpPacket,
         local_clock_time: NtpInstant,
         frequency_tolerance: FrequencyTolerance,
         send_time: NtpTimestamp,
@@ -386,7 +386,7 @@ impl Peer {
     fn process_message(
         &mut self,
         system: SystemSnapshot,
-        message: NtpHeader,
+        message: NtpPacket,
         local_clock_time: NtpInstant,
         frequency_tolerance: FrequencyTolerance,
         send_time: NtpTimestamp,
@@ -510,7 +510,7 @@ mod test {
 
         let ft = FrequencyTolerance::ppm(15);
 
-        let mut packet = NtpHeader::test();
+        let mut packet = NtpPacket::test();
         packet.set_root_delay(duration_1s);
         packet.set_root_dispersion(duration_1s);
         let reference = Peer {
@@ -699,7 +699,7 @@ mod test {
         let prev = peer.current_poll_interval(system);
         let packet = peer.generate_poll_message(system);
         assert!(peer.current_poll_interval(system) > prev);
-        let mut response = NtpHeader::test();
+        let mut response = NtpPacket::test();
         response.set_mode(NtpAssociationMode::Server);
         response.set_stratum(1);
         response.set_origin_timestamp(packet.transmit_timestamp());
@@ -718,7 +718,7 @@ mod test {
         let prev = peer.current_poll_interval(system);
         let packet = peer.generate_poll_message(system);
         assert!(peer.current_poll_interval(system) > prev);
-        let mut response = NtpHeader::test();
+        let mut response = NtpPacket::test();
         response.set_mode(NtpAssociationMode::Server);
         response.set_stratum(0);
         response.set_origin_timestamp(packet.transmit_timestamp());
@@ -744,7 +744,7 @@ mod test {
 
         let system = SystemSnapshot::default();
         let outgoing = peer.generate_poll_message(system);
-        let mut packet = NtpHeader::test();
+        let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_stratum(1);
         packet.set_mode(NtpAssociationMode::Server);
@@ -782,7 +782,7 @@ mod test {
 
         let system = SystemSnapshot::default();
         let outgoing = peer.generate_poll_message(system);
-        let mut packet = NtpHeader::test();
+        let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_stratum(MAX_STRATUM + 1);
         packet.set_mode(NtpAssociationMode::Server);
@@ -818,7 +818,7 @@ mod test {
         let base = NtpInstant::now();
         let mut peer = Peer::test_peer(base);
 
-        let mut packet = NtpHeader::test();
+        let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_reference_id(ReferenceId::KISS_RSTR);
         packet.set_mode(NtpAssociationMode::Server);
@@ -834,7 +834,7 @@ mod test {
             Err(IgnoreReason::KissDemobilize)
         ));
 
-        let mut packet = NtpHeader::test();
+        let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         let outgoing = peer.generate_poll_message(system);
         packet.set_reference_id(ReferenceId::KISS_RSTR);
@@ -852,7 +852,7 @@ mod test {
             Err(IgnoreReason::KissDemobilize)
         ));
 
-        let mut packet = NtpHeader::test();
+        let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_reference_id(ReferenceId::KISS_DENY);
         packet.set_mode(NtpAssociationMode::Server);
@@ -868,7 +868,7 @@ mod test {
             Err(IgnoreReason::KissDemobilize)
         ));
 
-        let mut packet = NtpHeader::test();
+        let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         let outgoing = peer.generate_poll_message(system);
         packet.set_reference_id(ReferenceId::KISS_DENY);
@@ -888,7 +888,7 @@ mod test {
 
         let old_poll_interval = peer.last_poll_interval;
         let old_remote_interval = peer.remote_min_poll_interval;
-        let mut packet = NtpHeader::test();
+        let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_reference_id(ReferenceId::KISS_RATE);
         packet.set_mode(NtpAssociationMode::Server);
@@ -907,7 +907,7 @@ mod test {
 
         let old_poll_interval = peer.last_poll_interval;
         let old_remote_interval = peer.remote_min_poll_interval;
-        let mut packet = NtpHeader::test();
+        let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         let outgoing = peer.generate_poll_message(system);
         packet.set_reference_id(ReferenceId::KISS_RATE);

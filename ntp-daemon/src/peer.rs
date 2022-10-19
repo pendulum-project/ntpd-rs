@@ -7,7 +7,7 @@ use std::{
 };
 
 use ntp_proto::{
-    IgnoreReason, NtpClock, NtpHeader, NtpInstant, NtpTimestamp, Peer, PeerSnapshot, ReferenceId,
+    IgnoreReason, NtpClock, NtpInstant, NtpPacket, NtpTimestamp, Peer, PeerSnapshot, ReferenceId,
     SystemConfig, SystemSnapshot, Update,
 };
 use ntp_udp::UdpSocket;
@@ -189,7 +189,7 @@ where
     async fn handle_packet(
         &mut self,
         poll_wait: &mut Pin<&mut T>,
-        packet: NtpHeader,
+        packet: NtpPacket,
         send_timestamp: NtpTimestamp,
         recv_timestamp: NtpTimestamp,
     ) -> PacketResult {
@@ -356,7 +356,7 @@ where
 
 #[derive(Debug)]
 enum AcceptResult {
-    Accept(NtpHeader, NtpTimestamp),
+    Accept(NtpPacket, NtpTimestamp),
     Ignore,
     NetworkGone,
 }
@@ -383,7 +383,7 @@ fn accept_packet(
 
                 AcceptResult::Ignore
             } else {
-                match NtpHeader::deserialize(buf) {
+                match NtpPacket::deserialize(buf) {
                     Ok(packet) => AcceptResult::Accept(packet, recv_timestamp),
                     Err(e) => {
                         warn!("received invalid packet: {}", e);
@@ -708,8 +708,8 @@ mod tests {
         assert_eq!(size, 48);
         let timestamp = timestamp.unwrap();
 
-        let rec_packet = NtpHeader::deserialize(&buf).unwrap();
-        let send_packet = NtpHeader::timestamp_response(&system, rec_packet, timestamp, &clock);
+        let rec_packet = NtpPacket::deserialize(&buf).unwrap();
+        let send_packet = NtpPacket::timestamp_response(&system, rec_packet, timestamp, &clock);
 
         socket.send(&send_packet.serialize()).await.unwrap();
 
@@ -741,8 +741,8 @@ mod tests {
         assert_eq!(size, 48);
         assert!(timestamp.is_some());
 
-        let rec_packet = NtpHeader::deserialize(&buf).unwrap();
-        let send_packet = NtpHeader::deny_response(rec_packet);
+        let rec_packet = NtpPacket::deserialize(&buf).unwrap();
+        let send_packet = NtpPacket::deny_response(rec_packet);
 
         socket.send(&send_packet.serialize()).await.unwrap();
 

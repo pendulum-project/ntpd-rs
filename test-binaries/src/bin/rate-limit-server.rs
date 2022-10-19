@@ -1,6 +1,6 @@
 // trivial server that forces an increment of the poll interval, then becomes a very bad NTP server
 
-use ntp_proto::{NtpClock, NtpHeader, SystemSnapshot};
+use ntp_proto::{NtpClock, NtpPacket, SystemSnapshot};
 use std::{error::Error, time::Instant};
 use tokio::net::UdpSocket;
 
@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         println!("{}s since last packet", delta.as_secs());
         last_message = now;
 
-        let parsed = match NtpHeader::deserialize(&buf) {
+        let parsed = match NtpPacket::deserialize(&buf) {
             Ok(packet) => packet,
             Err(_) => continue,
         };
@@ -33,9 +33,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // default poll interval is 16 seconds, so this will bump it once
         // and then stay steady at 32 seconds
         let packet = if delta < std::time::Duration::new(30, 0) {
-            NtpHeader::rate_limit_response(parsed)
+            NtpPacket::rate_limit_response(parsed)
         } else {
-            NtpHeader::timestamp_response(&system, parsed, ntp_receive, &clock)
+            NtpPacket::timestamp_response(&system, parsed, ntp_receive, &clock)
         };
 
         let len = sock.send_to(&packet.serialize(), addr).await?;
