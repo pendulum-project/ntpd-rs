@@ -5,7 +5,10 @@ use serde::{
     Deserialize, Deserializer,
 };
 
-use crate::{time_types::FrequencyTolerance, NtpDuration};
+use crate::{
+    time_types::{FrequencyTolerance, PollIntervalLimits},
+    NtpDuration, PollInterval,
+};
 
 fn deserialize_option_threshold<'de, D>(deserializer: D) -> Result<Option<NtpDuration>, D::Error>
 where
@@ -192,6 +195,14 @@ pub struct SystemConfig {
     /// synchronizing the clock
     #[serde(default = "default_local_stratum")]
     pub local_stratum: u8,
+
+    /// Minima and maxima for the poll interval of clients
+    #[serde(default)]
+    pub poll_limits: PollIntervalLimits,
+
+    /// Initial poll interval of the system
+    #[serde(default = "default_initial_poll")]
+    pub initial_poll: PollInterval,
 }
 
 impl Default for SystemConfig {
@@ -209,6 +220,9 @@ impl Default for SystemConfig {
             accumulated_threshold: None,
 
             local_stratum: default_local_stratum(),
+
+            poll_limits: Default::default(),
+            initial_poll: default_initial_poll(),
         }
     }
 }
@@ -254,4 +268,8 @@ fn startup_panic_threshold() -> StepThreshold {
 
 fn default_local_stratum() -> u8 {
     16
+}
+
+fn default_initial_poll() -> PollInterval {
+    PollIntervalLimits::default().min
 }

@@ -63,7 +63,7 @@ pub enum ClockUpdateResult {
 }
 
 impl<C: NtpClock> ClockController<C> {
-    pub fn new(clock: C, system: &SystemSnapshot) -> Self {
+    pub fn new(clock: C, system: &SystemSnapshot, config: &SystemConfig) -> Self {
         if let Err(e) = clock.set_freq(0.) {
             error!(error = %e, "Could not set clock frequency, exiting");
             std::process::exit(exitcode::NOPERM);
@@ -74,7 +74,7 @@ impl<C: NtpClock> ClockController<C> {
             // Setting up the clock counts as an update for
             // the purposes of the math done here
             last_update_time: NtpInstant::now(),
-            preferred_poll_interval: PollInterval::MIN,
+            preferred_poll_interval: config.initial_poll,
             poll_interval_counter: 0,
             offset: NtpDuration::ZERO,
             jitter: system.precision,
@@ -140,7 +140,7 @@ impl<C: NtpClock> ClockController<C> {
                     }
 
                     self.set_freq(offset, last_peer_update);
-                    return self.do_step(offset, last_peer_update, system.precision);
+                    return self.do_step(offset, last_peer_update, system.precision, config);
                 }
                 ClockState::Spike => {
                     if NtpInstant::abs_diff(last_peer_update, self.last_update_time)
@@ -154,13 +154,13 @@ impl<C: NtpClock> ClockController<C> {
                     // Seems that the large difference reflects reality, since
                     // it persisted for a significant amount of time. So step
                     // the clock
-                    return self.do_step(offset, last_peer_update, system.precision);
+                    return self.do_step(offset, last_peer_update, system.precision, config);
                 }
                 ClockState::StartupBlank | ClockState::StartupFreq => {
                     // In fully non-synchronized states, doing the jump
                     // immediately is fine, as we expect the clock to
                     // be off significantly
-                    return self.do_step(offset, last_peer_update, system.precision);
+                    return self.do_step(offset, last_peer_update, system.precision, config);
                 }
             }
         } else {
@@ -172,7 +172,7 @@ impl<C: NtpClock> ClockController<C> {
                     // Using slew might result in us also accidentaly
                     // moving away from the freq=0 initialization done earlier,
                     // ruining the frequency measurement coming after.
-                    return self.do_step(offset, last_peer_update, system.precision);
+                    return self.do_step(offset, last_peer_update, system.precision, config);
                 }
                 ClockState::MeasureFreq => {
                     if NtpInstant::abs_diff(last_peer_update, self.last_update_time)
@@ -246,7 +246,7 @@ impl<C: NtpClock> ClockController<C> {
         // between different preferred interval lengths.
         if self.poll_interval_counter > Self::POLL_ADJUST {
             self.poll_interval_counter = 0;
-            self.preferred_poll_interval = self.preferred_poll_interval.inc();
+            self.preferred_poll_interval = self.preferred_poll_interval.inc(config.poll_limits);
             debug!(
                 poll_interval = debug(self.preferred_poll_interval),
                 "Increased system poll interval"
@@ -254,7 +254,7 @@ impl<C: NtpClock> ClockController<C> {
         }
         if self.poll_interval_counter < -Self::POLL_ADJUST {
             self.poll_interval_counter = 0;
-            self.preferred_poll_interval = self.preferred_poll_interval.dec();
+            self.preferred_poll_interval = self.preferred_poll_interval.dec(config.poll_limits);
             debug!(
                 poll_interval = debug(self.preferred_poll_interval),
                 "Decreased system poll interval"
@@ -323,10 +323,11 @@ impl<C: NtpClock> ClockController<C> {
         offset: NtpDuration,
         last_peer_update: NtpInstant,
         precision: NtpDuration,
+        config: &SystemConfig,
     ) -> ClockUpdateResult {
         info!(offset = debug(offset), "Stepping clock");
         self.poll_interval_counter = 0;
-        self.preferred_poll_interval = PollInterval::MIN;
+        self.preferred_poll_interval = config.initial_poll;
         // It is reasonable to panic here, as there is very little we can
         // be expected to do if the clock is not amenable to change
         if let Err(e) = self.clock.step_clock(offset) {
@@ -370,6 +371,8 @@ impl<C: NtpClock> ClockController<C> {
 
 #[cfg(test)]
 mod tests {
+    use crate::time_types::PollIntervalLimits;
+
     use super::*;
     use core::cell::RefCell;
     use std::time::Duration;
@@ -429,7 +432,7 @@ mod tests {
             clock: TestClock::default(),
             state: ClockState::Sync,
             last_update_time: base,
-            preferred_poll_interval: PollInterval::MIN,
+            preferred_poll_interval: PollIntervalLimits::default().min,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
             jitter: system.precision,
@@ -464,7 +467,9 @@ mod tests {
             *controller.clock.last_poll_interval.borrow()
         );
 
-        controller.preferred_poll_interval = controller.preferred_poll_interval.inc();
+        controller.preferred_poll_interval = controller
+            .preferred_poll_interval
+            .inc(PollIntervalLimits::default());
         let ref_interval = controller.preferred_poll_interval;
 
         assert_eq!(
@@ -497,8 +502,8 @@ mod tests {
     #[test]
     fn test_startup_logic() {
         let system = SystemSnapshot::default();
-        let mut controller = ClockController::new(TestClock::default(), &system);
         let config = SystemConfig::default();
+        let mut controller = ClockController::new(TestClock::default(), &system, &config);
         let base = controller.last_update_time;
 
         controller.update(
@@ -545,7 +550,7 @@ mod tests {
             clock: TestClock::default(),
             state: ClockState::StartupFreq,
             last_update_time: base,
-            preferred_poll_interval: PollInterval::MIN,
+            preferred_poll_interval: PollIntervalLimits::default().min,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
             jitter: system.precision,
@@ -579,7 +584,7 @@ mod tests {
             clock: TestClock::default(),
             state: ClockState::Sync,
             last_update_time: base,
-            preferred_poll_interval: PollInterval::MIN,
+            preferred_poll_interval: PollIntervalLimits::default().min,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
             jitter: system.precision,
@@ -626,7 +631,7 @@ mod tests {
             clock: TestClock::default(),
             state: ClockState::Sync,
             last_update_time: base,
-            preferred_poll_interval: PollInterval::MIN,
+            preferred_poll_interval: PollIntervalLimits::default().min,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
             jitter: system.precision,
@@ -676,7 +681,7 @@ mod tests {
             clock: TestClock::default(),
             state: ClockState::Sync,
             last_update_time: base,
-            preferred_poll_interval: PollInterval::MIN,
+            preferred_poll_interval: PollIntervalLimits::default().min,
             poll_interval_counter: 0,
             offset: NtpDuration::ZERO,
             jitter: system.precision,
@@ -731,7 +736,7 @@ mod tests {
             clock: TestClock::default(),
             state: ClockState::Sync,
             last_update_time: base,
-            preferred_poll_interval: PollInterval::MIN,
+            preferred_poll_interval: PollIntervalLimits::default().min,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
             jitter: system.precision,
@@ -817,7 +822,7 @@ mod tests {
             clock: TestClock::default(),
             state: ClockState::Sync,
             last_update_time: base,
-            preferred_poll_interval: PollInterval::MIN,
+            preferred_poll_interval: PollIntervalLimits::default().min,
             poll_interval_counter: 0,
             offset: NtpDuration::from_seconds(2e-3),
             jitter: system.precision,
@@ -900,7 +905,7 @@ mod tests {
             clock: TestClock::default(),
             state: ClockState::Sync,
             last_update_time: base,
-            preferred_poll_interval: PollInterval::MIN,
+            preferred_poll_interval: PollIntervalLimits::default().min,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
             jitter: system.precision,
@@ -924,7 +929,7 @@ mod tests {
             clock: TestClock::default(),
             state: ClockState::Sync,
             last_update_time: base,
-            preferred_poll_interval: PollInterval::MIN,
+            preferred_poll_interval: PollIntervalLimits::default().min,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
             jitter: system.precision,
@@ -948,7 +953,7 @@ mod tests {
             clock: TestClock::default(),
             state: ClockState::Spike,
             last_update_time: base,
-            preferred_poll_interval: PollInterval::MIN,
+            preferred_poll_interval: PollIntervalLimits::default().min,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
             jitter: system.precision,
@@ -972,7 +977,7 @@ mod tests {
             clock: TestClock::default(),
             state: ClockState::Spike,
             last_update_time: base,
-            preferred_poll_interval: PollInterval::MIN,
+            preferred_poll_interval: PollIntervalLimits::default().min,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
             jitter: system.precision,
@@ -996,7 +1001,7 @@ mod tests {
             clock: TestClock::default(),
             state: ClockState::MeasureFreq,
             last_update_time: base,
-            preferred_poll_interval: PollInterval::MIN,
+            preferred_poll_interval: PollIntervalLimits::default().min,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
             jitter: system.precision,
@@ -1020,7 +1025,7 @@ mod tests {
             clock: TestClock::default(),
             state: ClockState::MeasureFreq,
             last_update_time: base,
-            preferred_poll_interval: PollInterval::MIN,
+            preferred_poll_interval: PollIntervalLimits::default().min,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
             jitter: system.precision,
@@ -1044,7 +1049,7 @@ mod tests {
             clock: TestClock::default(),
             state: ClockState::StartupBlank,
             last_update_time: base,
-            preferred_poll_interval: PollInterval::MIN,
+            preferred_poll_interval: PollIntervalLimits::default().min,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
             jitter: system.precision,
@@ -1068,7 +1073,7 @@ mod tests {
             clock: TestClock::default(),
             state: ClockState::StartupFreq,
             last_update_time: base,
-            preferred_poll_interval: PollInterval::MIN,
+            preferred_poll_interval: PollIntervalLimits::default().min,
             poll_interval_counter: 0,
             offset: NtpDuration::from_fixed_int(0),
             jitter: system.precision,

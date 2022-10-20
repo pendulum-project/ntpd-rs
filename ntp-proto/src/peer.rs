@@ -2,7 +2,7 @@ use crate::{
     filter::{FilterTuple, LastMeasurements},
     packet::{NtpAssociationMode, NtpLeapIndicator, RequestIdentifier},
     time_types::{FrequencyTolerance, NtpInstant},
-    NtpDuration, NtpPacket, NtpTimestamp, PollInterval, ReferenceId,
+    NtpDuration, NtpPacket, NtpTimestamp, PollInterval, ReferenceId, SystemConfig,
 };
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument, trace, warn};
@@ -276,14 +276,19 @@ pub enum Update {
 
 impl Peer {
     #[instrument]
-    pub fn new(our_id: ReferenceId, peer_id: ReferenceId, local_clock_time: NtpInstant) -> Self {
+    pub fn new(
+        our_id: ReferenceId,
+        peer_id: ReferenceId,
+        local_clock_time: NtpInstant,
+        system_config: &SystemConfig,
+    ) -> Self {
         // we initialize with the current time so that we're in the correct epoch.
         let time = local_clock_time;
 
         Self {
-            last_poll_interval: PollInterval::MIN,
-            backoff_interval: PollInterval::MIN,
-            remote_min_poll_interval: PollInterval::MIN,
+            last_poll_interval: system_config.poll_limits.min,
+            backoff_interval: system_config.poll_limits.min,
+            remote_min_poll_interval: system_config.poll_limits.min,
 
             current_request_identifier: None,
 
@@ -304,7 +309,11 @@ impl Peer {
             .max(self.remote_min_poll_interval)
     }
 
-    pub fn generate_poll_message(&mut self, system: SystemSnapshot) -> NtpPacket {
+    pub fn generate_poll_message(
+        &mut self,
+        system: SystemSnapshot,
+        system_config: &SystemConfig,
+    ) -> NtpPacket {
         self.reach.poll();
 
         let poll_interval = self.current_poll_interval(system);
@@ -312,18 +321,19 @@ impl Peer {
         self.current_request_identifier = Some((identifier, NtpInstant::now() + POLL_WINDOW));
 
         // Ensure we don't spam the remote with polls if it is not reachable
-        self.backoff_interval = poll_interval.inc();
+        self.backoff_interval = poll_interval.inc(system_config.poll_limits);
 
         packet
     }
 
-    #[instrument(skip(self, system, frequency_tolerance), fields(peer = debug(self.peer_id)))]
+    #[allow(clippy::too_many_arguments)]
+    #[instrument(skip(self, system, system_config), fields(peer = debug(self.peer_id)))]
     pub fn handle_incoming(
         &mut self,
         system: SystemSnapshot,
+        system_config: &SystemConfig,
         message: NtpPacket,
         local_clock_time: NtpInstant,
-        frequency_tolerance: FrequencyTolerance,
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
     ) -> Result<Update, IgnoreReason> {
@@ -348,8 +358,10 @@ impl Peer {
             Err(IgnoreReason::InvalidPacketTime)
         } else if message.is_kiss_rate() {
             // KISS packets may not have correct timestamps at all, handle them anyway
-            self.remote_min_poll_interval =
-                Ord::max(self.remote_min_poll_interval.inc(), self.last_poll_interval);
+            self.remote_min_poll_interval = Ord::max(
+                self.remote_min_poll_interval.inc(system_config.poll_limits),
+                self.last_poll_interval,
+            );
             warn!(?self.remote_min_poll_interval, "Peer requested rate limit");
             Err(IgnoreReason::KissIgnore)
         } else if message.is_kiss_rstr() || message.is_kiss_deny() {
@@ -374,21 +386,22 @@ impl Peer {
         } else {
             Ok(self.process_message(
                 system,
+                system_config,
                 message,
                 local_clock_time,
-                frequency_tolerance,
                 send_time,
                 recv_time,
             ))
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn process_message(
         &mut self,
         system: SystemSnapshot,
+        system_config: &SystemConfig,
         message: NtpPacket,
         local_clock_time: NtpInstant,
-        frequency_tolerance: FrequencyTolerance,
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
     ) -> Update {
@@ -397,7 +410,7 @@ impl Peer {
         self.reach.received_packet();
 
         // Got a response, so no need for unreachability backoff
-        self.backoff_interval = PollInterval::MIN;
+        self.backoff_interval = system_config.poll_limits.min;
 
         // we received this packet, and don't want to accept future ones with this next_expected_origin
         self.current_request_identifier = None;
@@ -406,7 +419,7 @@ impl Peer {
             &message,
             system.precision,
             local_clock_time,
-            frequency_tolerance,
+            system_config.frequency_tolerance,
             send_time,
             recv_time,
         );
@@ -418,7 +431,7 @@ impl Peer {
             self.time,
             system.leap_indicator,
             system.precision,
-            frequency_tolerance,
+            system_config.frequency_tolerance,
         );
 
         match updated {
@@ -490,6 +503,8 @@ impl Peer {
 
 #[cfg(test)]
 mod test {
+    use crate::time_types::PollIntervalLimits;
+
     use super::*;
     use std::time::Duration;
 
@@ -639,7 +654,7 @@ mod test {
         let local_clock_time = NtpInstant::now();
         let ft = FrequencyTolerance::ppm(15);
         let dt = NtpDuration::ONE;
-        let system_poll = PollInterval::MIN;
+        let system_poll = PollIntervalLimits::default().min;
 
         let mut peer = Peer::test_peer(local_clock_time);
 
@@ -683,21 +698,21 @@ mod test {
         assert!(peer.current_poll_interval(system) >= peer.remote_min_poll_interval);
         assert!(peer.current_poll_interval(system) >= system.poll_interval);
 
-        system.poll_interval = PollInterval::MAX;
+        system.poll_interval = PollIntervalLimits::default().max;
 
         assert!(peer.current_poll_interval(system) >= peer.remote_min_poll_interval);
         assert!(peer.current_poll_interval(system) >= system.poll_interval);
 
-        system.poll_interval = PollInterval::MIN;
-        peer.remote_min_poll_interval = PollInterval::MAX;
+        system.poll_interval = PollIntervalLimits::default().min;
+        peer.remote_min_poll_interval = PollIntervalLimits::default().max;
 
         assert!(peer.current_poll_interval(system) >= peer.remote_min_poll_interval);
         assert!(peer.current_poll_interval(system) >= system.poll_interval);
 
-        peer.remote_min_poll_interval = PollInterval::MIN;
+        peer.remote_min_poll_interval = PollIntervalLimits::default().min;
 
         let prev = peer.current_poll_interval(system);
-        let packet = peer.generate_poll_message(system);
+        let packet = peer.generate_poll_message(system, &SystemConfig::default());
         assert!(peer.current_poll_interval(system) > prev);
         let mut response = NtpPacket::test();
         response.set_mode(NtpAssociationMode::Server);
@@ -706,9 +721,9 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
+                &SystemConfig::default(),
                 response,
                 base,
-                FrequencyTolerance::ppm(15),
                 NtpTimestamp::default(),
                 NtpTimestamp::default()
             )
@@ -716,7 +731,7 @@ mod test {
         assert_eq!(peer.current_poll_interval(system), prev);
 
         let prev = peer.current_poll_interval(system);
-        let packet = peer.generate_poll_message(system);
+        let packet = peer.generate_poll_message(system, &SystemConfig::default());
         assert!(peer.current_poll_interval(system) > prev);
         let mut response = NtpPacket::test();
         response.set_mode(NtpAssociationMode::Server);
@@ -726,9 +741,9 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
+                &SystemConfig::default(),
                 response,
                 base,
-                FrequencyTolerance::ppm(15),
                 NtpTimestamp::default(),
                 NtpTimestamp::default()
             )
@@ -743,7 +758,7 @@ mod test {
         let mut peer = Peer::test_peer(base);
 
         let system = SystemSnapshot::default();
-        let outgoing = peer.generate_poll_message(system);
+        let outgoing = peer.generate_poll_message(system, &SystemConfig::default());
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_stratum(1);
@@ -755,9 +770,9 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
+                &SystemConfig::default(),
                 packet.clone(),
                 base + Duration::from_secs(1),
-                FrequencyTolerance::ppm(15),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(400)
             )
@@ -766,9 +781,9 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
+                &SystemConfig::default(),
                 packet,
                 base + Duration::from_secs(1),
-                FrequencyTolerance::ppm(15),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(500)
             )
@@ -781,7 +796,7 @@ mod test {
         let mut peer = Peer::test_peer(base);
 
         let system = SystemSnapshot::default();
-        let outgoing = peer.generate_poll_message(system);
+        let outgoing = peer.generate_poll_message(system, &SystemConfig::default());
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_stratum(MAX_STRATUM + 1);
@@ -792,9 +807,9 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
+                &SystemConfig::default(),
                 packet.clone(),
                 base + Duration::from_secs(1),
-                FrequencyTolerance::ppm(15),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(500)
             )
@@ -804,9 +819,9 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
+                &SystemConfig::default(),
                 packet.clone(),
                 base + Duration::from_secs(1),
-                FrequencyTolerance::ppm(15),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(500)
             )
@@ -825,9 +840,9 @@ mod test {
         assert!(!matches!(
             peer.handle_incoming(
                 system,
+                &SystemConfig::default(),
                 packet,
                 base + Duration::from_secs(1),
-                FrequencyTolerance::ppm(15),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(100)
             ),
@@ -836,16 +851,16 @@ mod test {
 
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
-        let outgoing = peer.generate_poll_message(system);
+        let outgoing = peer.generate_poll_message(system, &SystemConfig::default());
         packet.set_reference_id(ReferenceId::KISS_RSTR);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
         assert!(matches!(
             peer.handle_incoming(
                 system,
+                &SystemConfig::default(),
                 packet,
                 base + Duration::from_secs(1),
-                FrequencyTolerance::ppm(15),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(100)
             ),
@@ -859,9 +874,9 @@ mod test {
         assert!(!matches!(
             peer.handle_incoming(
                 system,
+                &SystemConfig::default(),
                 packet,
                 base + Duration::from_secs(1),
-                FrequencyTolerance::ppm(15),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(100)
             ),
@@ -870,16 +885,16 @@ mod test {
 
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
-        let outgoing = peer.generate_poll_message(system);
+        let outgoing = peer.generate_poll_message(system, &SystemConfig::default());
         packet.set_reference_id(ReferenceId::KISS_DENY);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
         assert!(matches!(
             peer.handle_incoming(
                 system,
+                &SystemConfig::default(),
                 packet,
                 base + Duration::from_secs(1),
-                FrequencyTolerance::ppm(15),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(100)
             ),
@@ -895,9 +910,9 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
+                &SystemConfig::default(),
                 packet,
                 base + Duration::from_secs(1),
-                FrequencyTolerance::ppm(15),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(100)
             )
@@ -909,16 +924,16 @@ mod test {
         let old_remote_interval = peer.remote_min_poll_interval;
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
-        let outgoing = peer.generate_poll_message(system);
+        let outgoing = peer.generate_poll_message(system, &SystemConfig::default());
         packet.set_reference_id(ReferenceId::KISS_RATE);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
         assert!(peer
             .handle_incoming(
                 system,
+                &SystemConfig::default(),
                 packet,
                 base + Duration::from_secs(1),
-                FrequencyTolerance::ppm(15),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(100)
             )

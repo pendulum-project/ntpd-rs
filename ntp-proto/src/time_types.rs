@@ -497,6 +497,25 @@ ntp_duration_scalar_div!(u32);
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct PollInterval(i8);
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PollIntervalLimits {
+    pub min: PollInterval,
+    pub max: PollInterval,
+}
+
+// here we follow the spec (the code skeleton and ntpd repository use different values)
+// with the exception that we have lowered the MAX value, which is needed because
+// we don't support bursting, and hence using a larger poll interval gives issues
+// with the responsiveness of the client to environmental changes
+impl Default for PollIntervalLimits {
+    fn default() -> Self {
+        Self {
+            min: PollInterval(4),
+            max: PollInterval(10),
+        }
+    }
+}
+
 impl std::fmt::Debug for PollInterval {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "PollInterval({} s)", 2.0_f64.powf(self.0 as _))
@@ -504,21 +523,14 @@ impl std::fmt::Debug for PollInterval {
 }
 
 impl PollInterval {
-    // here we follow the spec (the code skeleton and ntpd repository use different values)
-    // with the exception that we have lowered the MAX value, which is needed because
-    // we don't support bursting, and hence using a larger poll interval would not
-    // yield usable results from a peer (gets rejected because of too high dispersion)
-    pub const MIN: Self = Self(4);
-    pub const MAX: Self = Self(13);
-
     #[must_use]
-    pub fn inc(self) -> Self {
-        Self(self.0 + 1).min(Self::MAX)
+    pub fn inc(self, limits: PollIntervalLimits) -> Self {
+        Self(self.0 + 1).min(limits.max)
     }
 
     #[must_use]
-    pub fn dec(self) -> Self {
-        Self(self.0 - 1).max(Self::MIN)
+    pub fn dec(self, limits: PollIntervalLimits) -> Self {
+        Self(self.0 - 1).max(limits.min)
     }
 
     pub const fn as_log(self) -> i8 {
@@ -751,17 +763,18 @@ mod tests {
     #[test]
     fn poll_interval_clamps() {
         let mut interval = PollInterval::default();
+        let limits = PollIntervalLimits::default();
         for _ in 0..100 {
-            interval = interval.inc();
-            assert!(interval <= PollInterval::MAX);
+            interval = interval.inc(limits);
+            assert!(interval <= limits.max);
         }
         for _ in 0..100 {
-            interval = interval.dec();
-            assert!(interval >= PollInterval::MIN);
+            interval = interval.dec(limits);
+            assert!(interval >= limits.min);
         }
         for _ in 0..100 {
-            interval = interval.inc();
-            assert!(interval <= PollInterval::MAX);
+            interval = interval.inc(limits);
+            assert!(interval <= limits.max);
         }
     }
 
@@ -782,7 +795,7 @@ mod tests {
                 interval.as_duration().as_seconds_nanos().0,
                 interval.as_system_duration().as_secs() as i32
             );
-            interval = interval.inc();
+            interval = interval.inc(PollIntervalLimits::default());
         }
 
         for _ in 0..100 {
@@ -790,7 +803,7 @@ mod tests {
                 interval.as_duration().as_seconds_nanos().0,
                 interval.as_system_duration().as_secs() as i32
             );
-            interval = interval.dec();
+            interval = interval.dec(PollIntervalLimits::default());
         }
     }
 
