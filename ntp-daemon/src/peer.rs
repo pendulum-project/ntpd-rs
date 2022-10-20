@@ -7,7 +7,7 @@ use std::{
 };
 
 use ntp_proto::{
-    IgnoreReason, NtpClock, NtpHeader, NtpInstant, NtpTimestamp, Peer, PeerSnapshot, ReferenceId,
+    IgnoreReason, NtpClock, NtpInstant, NtpPacket, NtpTimestamp, Peer, PeerSnapshot, ReferenceId,
     SystemConfig, SystemSnapshot, Update,
 };
 use ntp_udp::UdpSocket;
@@ -189,7 +189,7 @@ where
     async fn handle_packet(
         &mut self,
         poll_wait: &mut Pin<&mut T>,
-        packet: NtpHeader,
+        packet: NtpPacket,
         send_timestamp: NtpTimestamp,
         recv_timestamp: NtpTimestamp,
     ) -> PacketResult {
@@ -356,7 +356,7 @@ where
 
 #[derive(Debug)]
 enum AcceptResult {
-    Accept(NtpHeader, NtpTimestamp),
+    Accept(NtpPacket, NtpTimestamp),
     Ignore,
     NetworkGone,
 }
@@ -383,7 +383,7 @@ fn accept_packet(
 
                 AcceptResult::Ignore
             } else {
-                match NtpHeader::deserialize(buf) {
+                match NtpPacket::deserialize(buf) {
                     Ok(packet) => AcceptResult::Accept(packet, recv_timestamp),
                     Err(e) => {
                         warn!("received invalid packet: {}", e);
@@ -415,7 +415,7 @@ fn accept_packet(
 mod tests {
     use std::time::Duration;
 
-    use ntp_proto::{NtpAssociationMode, NtpDuration, NtpLeapIndicator, PollInterval};
+    use ntp_proto::{NtpDuration, NtpLeapIndicator, PollInterval};
     use tokio::sync::{mpsc, watch, RwLock};
 
     use super::*;
@@ -685,6 +685,11 @@ mod tests {
         // Note: Ports must be unique among tests to deal with parallelism
         let (mut process, mut socket, mut msg_recv, _reset) = test_startup(8008).await;
 
+        let system = SystemSnapshot {
+            leap_indicator: NtpLeapIndicator::NoWarning,
+            ..Default::default()
+        };
+
         let (poll_wait, poll_send) = TestWait::new();
         let clock = TestClock {};
 
@@ -703,14 +708,8 @@ mod tests {
         assert_eq!(size, 48);
         let timestamp = timestamp.unwrap();
 
-        let rec_packet = NtpHeader::deserialize(&buf).unwrap();
-        let mut send_packet = NtpHeader::new();
-        send_packet.leap = NtpLeapIndicator::NoWarning;
-        send_packet.stratum = 1;
-        send_packet.mode = NtpAssociationMode::Server;
-        send_packet.origin_timestamp = rec_packet.transmit_timestamp;
-        send_packet.receive_timestamp = timestamp;
-        send_packet.transmit_timestamp = clock.now().unwrap();
+        let rec_packet = NtpPacket::deserialize(&buf).unwrap();
+        let send_packet = NtpPacket::timestamp_response(&system, rec_packet, timestamp, &clock);
 
         socket.send(&send_packet.serialize()).await.unwrap();
 
@@ -742,12 +741,8 @@ mod tests {
         assert_eq!(size, 48);
         assert!(timestamp.is_some());
 
-        let rec_packet = NtpHeader::deserialize(&buf).unwrap();
-        let mut send_packet = NtpHeader::new();
-        send_packet.stratum = 0;
-        send_packet.mode = NtpAssociationMode::Server;
-        send_packet.origin_timestamp = rec_packet.transmit_timestamp;
-        send_packet.reference_id = ReferenceId::KISS_DENY;
+        let rec_packet = NtpPacket::deserialize(&buf).unwrap();
+        let send_packet = NtpPacket::deny_response(rec_packet);
 
         socket.send(&send_packet.serialize()).await.unwrap();
 

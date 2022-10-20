@@ -1,6 +1,6 @@
 // an NTP server that responds to any incomming request with the DENY kiss code
 
-use ntp_proto::{NtpHeader, ReferenceId};
+use ntp_proto::NtpPacket;
 use std::error::Error;
 use tokio::net::UdpSocket;
 
@@ -14,15 +14,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let (len, addr) = sock.recv_from(&mut buf).await?;
         println!("{:?} bytes received from {:?}", len, addr);
 
-        let parsed = match NtpHeader::deserialize(buf[0..48].try_into().unwrap()) {
+        let parsed = match NtpPacket::deserialize(buf[0..48].try_into().unwrap()) {
             Ok(packet) => packet,
             Err(_) => continue,
         };
 
-        let mut packet = ntp_proto::NtpHeader::default();
-        packet.stratum = 0;
-        packet.origin_timestamp = parsed.origin_timestamp;
-        packet.reference_id = ReferenceId::KISS_DENY;
+        let packet = NtpPacket::deny_response(parsed);
 
         let len = sock.send_to(&packet.serialize(), addr).await?;
         println!("{:?} bytes sent", len);
