@@ -1,7 +1,7 @@
 use crate::{
     config::{PeerConfig, PoolPeerConfig, ServerConfig, StandardPeerConfig},
     peer::{MsgForSystem, PeerChannels, ResetEpoch},
-    peer_manager::Peers,
+    peer_manager::{Peers, SpawnConfig, SpawnTask, Spawner},
 };
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
@@ -38,6 +38,16 @@ pub async fn spawn(
     // receive peer snapshots from all peers
     let (msg_for_system_tx, msg_for_system_rx) = mpsc::channel::<MsgForSystem>(32);
 
+    let (spawn_config_tx, spawn_config_rx) = mpsc::channel::<SpawnConfig>(32);
+    let (spawn_task_tx, spawn_task_rx) = mpsc::channel::<SpawnTask>(32);
+
+    // Peer spawner
+    tokio::spawn(async move {
+        Spawner::default()
+            .spawn(spawn_config_rx, spawn_task_tx)
+            .await;
+    });
+
     // Daemon channels
     let system = Arc::new(tokio::sync::RwLock::new(Default::default()));
     let config = Arc::new(tokio::sync::RwLock::new(config));
@@ -47,9 +57,11 @@ pub async fn spawn(
             system_snapshots: system.clone(),
             reset: reset_rx.clone(),
             system_config: config.clone(),
+            spawn_config: spawn_config_tx,
         },
         UnixNtpClock::new(),
     );
+
     for peer_config in peer_configs {
         match peer_config {
             PeerConfig::Standard(StandardPeerConfig { addr }) => {
@@ -58,7 +70,7 @@ pub async fn spawn(
             PeerConfig::Pool(PoolPeerConfig {
                 addr, max_peers, ..
             }) => {
-                peers.add_pool(addr.clone(), *max_peers).await;
+                peers.add_new_pool(addr.clone(), *max_peers).await;
             }
         }
     }
@@ -82,6 +94,7 @@ pub async fn spawn(
             peers_rwlock: peers,
 
             msg_for_system_rx,
+            spawn_task_rx,
             reset_tx,
 
             reset_epoch,
@@ -100,6 +113,7 @@ struct System<C: NtpClock> {
     peers_rwlock: Arc<tokio::sync::RwLock<Peers<C>>>,
 
     msg_for_system_rx: mpsc::Receiver<MsgForSystem>,
+    spawn_task_rx: mpsc::Receiver<SpawnTask>,
     reset_tx: watch::Sender<ResetEpoch>,
 
     reset_epoch: ResetEpoch,
@@ -110,28 +124,56 @@ impl<C: NtpClock> System<C> {
     async fn run(&mut self) -> std::io::Result<()> {
         let mut snapshots = Vec::with_capacity(self.peers_rwlock.read().await.size());
 
-        while let Some(msg_for_system) = self.msg_for_system_rx.recv().await {
-            let ntp_instant = NtpInstant::now();
-            let system_poll = self.global_system_snapshot.read().await.poll_interval;
+        loop {
+            tokio::select! {
+                opt_msg_for_system = self.msg_for_system_rx.recv() => {
+                    match opt_msg_for_system {
+                        None => {
+                            // the channel closed and has no more messages in it
+                            break
+                        }
+                        Some(msg_for_system) => {
+                            let ntp_instant = NtpInstant::now();
+                            let system_poll = self.global_system_snapshot.read().await.poll_interval;
 
-            // ensure the config is not updated in the middle of clock selection
-            let config = *self.config.read().await;
+                            // ensure the config is not updated in the middle of clock selection
+                            let config = *self.config.read().await;
 
-            self.peers_rwlock
-                .write()
-                .await
-                .update(msg_for_system, self.reset_epoch)
-                .await;
+                            self.peers_rwlock
+                                .write()
+                                .await
+                                .update(msg_for_system, self.reset_epoch)
+                                .await;
 
-            if requires_clock_recalculation(
-                msg_for_system,
-                self.reset_epoch,
-                ntp_instant,
-                config,
-                system_poll,
-            ) {
-                self.recalculate_clock(&mut snapshots, config, ntp_instant, system_poll)
-                    .await;
+                            if requires_clock_recalculation(
+                                msg_for_system,
+                                self.reset_epoch,
+                                ntp_instant,
+                                config,
+                                system_poll,
+                            ) {
+                                self.recalculate_clock(&mut snapshots, config, ntp_instant, system_poll)
+                                    .await;
+                            }
+
+                        }
+                    }
+                }
+                opt_spawn_task = self.spawn_task_rx.recv() => {
+                    match opt_spawn_task {
+                        None => {
+                            // the channel closed and has no more messages in it
+                            tracing::warn!("the spawn channel closed unexpectedly");
+                        }
+                        Some(spawn_task) => {
+                            self.peers_rwlock
+                                .write()
+                                .await
+                                .spawn_task(spawn_task.peer_address, spawn_task.address)
+                                .await.unwrap();
+                        }
+                    }
+                }
             }
         }
 
@@ -374,6 +416,7 @@ mod tests {
         let reset_epoch = ResetEpoch::default();
         let (reset_tx, mut reset_rx) = watch::channel::<ResetEpoch>(reset_epoch);
         let (msg_for_system_tx, msg_for_system_rx) = mpsc::channel::<MsgForSystem>(32);
+        let (spawn_task_tx, spawn_task_rx) = mpsc::channel::<SpawnTask>(32);
         let global_system_snapshot = Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default()));
 
         let peers = Peers::from_statuslist(
@@ -409,6 +452,7 @@ mod tests {
                 peers_rwlock,
 
                 msg_for_system_rx,
+                spawn_task_rx,
                 reset_tx,
 
                 reset_epoch,

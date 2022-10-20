@@ -19,7 +19,7 @@ use tokio::{
     time::{Instant, Sleep},
 };
 
-use crate::peer_manager::PeerIndex;
+use crate::peer_manager::{PeerIndex, SpawnConfig};
 
 /// Trait needed to allow injecting of futures other than tokio::time::Sleep for testing
 pub trait Wait: Future<Output = ()> {
@@ -68,18 +68,21 @@ pub struct PeerChannels {
     pub system_snapshots: Arc<tokio::sync::RwLock<SystemSnapshot>>,
     pub system_config: Arc<tokio::sync::RwLock<SystemConfig>>,
     pub reset: watch::Receiver<ResetEpoch>,
+    pub spawn_config: tokio::sync::mpsc::Sender<SpawnConfig>,
 }
 
 impl PeerChannels {
     #[cfg(test)]
     pub fn test() -> Self {
-        let (tx, _) = tokio::sync::mpsc::channel(1);
-        let (_, rx) = tokio::sync::watch::channel(ResetEpoch::default());
+        let (msg_for_system_sender, _) = tokio::sync::mpsc::channel(1);
+        let (spawn_config, _) = tokio::sync::mpsc::channel(1);
+        let (_, reset) = tokio::sync::watch::channel(ResetEpoch::default());
         PeerChannels {
-            msg_for_system_sender: tx,
+            msg_for_system_sender,
             system_snapshots: Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default())),
             system_config: Arc::new(tokio::sync::RwLock::new(SystemConfig::default())),
-            reset: rx,
+            reset,
+            spawn_config,
         }
     }
 }
@@ -245,6 +248,7 @@ where
 
             tokio::select! {
                 () = &mut poll_wait => {
+                    tracing::trace!("wait completed");
                     match self.handle_poll(&mut poll_wait).await {
                         PollResult::Ok => {},
                         PollResult::NetworkGone => {
@@ -253,7 +257,7 @@ where
                         }
                     }
                 },
-                result = self.channels.reset.changed() => {
+                result = (self.channels.reset.changed()), if self.channels.reset.has_changed().is_ok() => {
                     if let Ok(()) = result {
                         // reset the measurement state (as if this association was just created).
                         // crucially, this sets `self.next_expected_origin = None`, meaning that
@@ -265,6 +269,7 @@ where
                     }
                 }
                 result = self.socket.recv(&mut buf) => {
+                    tracing::trace!("accept packet");
                     match accept_packet(result, &buf) {
                         AcceptResult::Accept(packet, recv_timestamp) => {
                             let send_timestamp = match self.last_send_timestamp {
@@ -558,6 +563,7 @@ mod tests {
         let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
         let system_config = Arc::new(RwLock::new(SystemConfig::default()));
         let (msg_for_system_sender, msg_for_system_receiver) = mpsc::channel(1);
+        let (spawn_config, _) = mpsc::channel(1);
         let (reset_send, reset) = watch::channel(ResetEpoch::default());
 
         let process = PeerTask {
@@ -569,6 +575,7 @@ mod tests {
                 system_snapshots,
                 system_config,
                 reset,
+                spawn_config,
             },
             socket,
             peer,
@@ -594,6 +601,7 @@ mod tests {
         let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
         let system_config = Arc::new(RwLock::new(SystemConfig::default()));
         let (msg_for_system_sender, mut msg_for_system_receiver) = mpsc::channel(1);
+        let (spawn_config, _) = mpsc::channel(1);
         let (_reset_send, reset) = watch::channel(epoch);
 
         let handle = PeerTask::spawn(
@@ -606,6 +614,7 @@ mod tests {
                 system_snapshots,
                 system_config,
                 reset,
+                spawn_config,
             },
         );
 
