@@ -1,5 +1,6 @@
 use std::{
     future::Future,
+    io::Cursor,
     marker::PhantomData,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr},
     pin::Pin,
@@ -168,7 +169,17 @@ where
             }
         }
 
-        match self.socket.send(&packet.serialize()).await {
+        let mut buf = Cursor::new([0; 48]);
+        if let Err(error) = packet.serialize(&mut buf) {
+            error!(?error, "poll message could not be serialized");
+            return PollResult::Ok;
+        }
+
+        match self
+            .socket
+            .send(&buf.get_ref()[..buf.position() as usize])
+            .await
+        {
             Err(error) => {
                 warn!(?error, "poll message could not be sent");
 
@@ -720,8 +731,10 @@ mod tests {
 
         let rec_packet = NtpPacket::deserialize(&buf).unwrap();
         let send_packet = NtpPacket::timestamp_response(&system, rec_packet, timestamp, &clock);
+        let mut pdata = vec![];
+        send_packet.serialize(&mut pdata).unwrap();
 
-        socket.send(&send_packet.serialize()).await.unwrap();
+        socket.send(&pdata).await.unwrap();
 
         let msg = msg_recv.recv().await.unwrap();
         assert!(matches!(msg, MsgForSystem::NewMeasurement(_, _, _)));
@@ -753,8 +766,10 @@ mod tests {
 
         let rec_packet = NtpPacket::deserialize(&buf).unwrap();
         let send_packet = NtpPacket::deny_response(rec_packet);
+        let mut pdata = vec![];
+        send_packet.serialize(&mut pdata).unwrap();
 
-        socket.send(&send_packet.serialize()).await.unwrap();
+        socket.send(&pdata).await.unwrap();
 
         let msg = msg_recv.recv().await.unwrap();
         assert!(matches!(msg, MsgForSystem::MustDemobilize(_)));
