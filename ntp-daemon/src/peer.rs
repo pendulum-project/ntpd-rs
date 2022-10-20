@@ -257,7 +257,7 @@ where
                         }
                     }
                 },
-                result = self.channels.reset.changed() => {
+                result = (self.channels.reset.changed()), if self.channels.reset.has_changed().is_ok() => {
                     if let Ok(()) = result {
                         // reset the measurement state (as if this association was just created).
                         // crucially, this sets `self.next_expected_origin = None`, meaning that
