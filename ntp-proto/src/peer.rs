@@ -1,10 +1,9 @@
 use crate::{
     filter::{FilterTuple, LastMeasurements},
-    packet::{NtpAssociationMode, NtpLeapIndicator},
+    packet::{NtpAssociationMode, NtpLeapIndicator, RequestIdentifier},
     time_types::{FrequencyTolerance, NtpInstant},
     NtpDuration, NtpHeader, NtpTimestamp, PollInterval, ReferenceId,
 };
-use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument, trace, warn};
 
@@ -30,11 +29,10 @@ pub struct Peer {
     // Must be increased when the server sends the RATE kiss code.
     remote_min_poll_interval: PollInterval,
 
-    // Last packet information
-    // We expect the next packet we receive to have this origin timestamp
-    // This is used as validation that the packet we get is the correct response to the one we sent
-    // (guards against e.g. replay and packet reordering)
-    next_expected_origin: Option<(NtpTimestamp, NtpInstant)>,
+    // Identifier of the last request sent to the server. This is correlated
+    // with any received response from the server to guard against replay
+    // attacks and packet reordering.
+    current_request_identifier: Option<(RequestIdentifier, NtpInstant)>,
 
     statistics: PeerStatistics,
     last_measurements: LastMeasurements,
@@ -287,7 +285,7 @@ impl Peer {
             backoff_interval: PollInterval::MIN,
             remote_min_poll_interval: PollInterval::MIN,
 
-            next_expected_origin: None,
+            current_request_identifier: None,
 
             statistics: Default::default(),
             last_measurements: LastMeasurements::new(time),
@@ -309,22 +307,12 @@ impl Peer {
     pub fn generate_poll_message(&mut self, system: SystemSnapshot) -> NtpHeader {
         self.reach.poll();
 
-        let mut packet = NtpHeader::new();
         let poll_interval = self.current_poll_interval(system);
-        packet.poll = poll_interval.as_log();
-        packet.mode = NtpAssociationMode::Client;
+        let (packet, identifier) = NtpHeader::poll_message(poll_interval);
+        self.current_request_identifier = Some((identifier, NtpInstant::now() + POLL_WINDOW));
 
         // Ensure we don't spam the remote with polls if it is not reachable
         self.backoff_interval = poll_interval.inc();
-
-        // In order to increase the entropy of the transmit timestamp
-        // it is just a randomly generated timestamp.
-        // We then expect to get it back identically from the remote
-        // in the origin field.
-        let transmit_timestamp = thread_rng().gen();
-        let validity = NtpInstant::now() + POLL_WINDOW;
-        self.next_expected_origin = Some((transmit_timestamp, validity));
-        packet.transmit_timestamp = transmit_timestamp;
 
         packet
     }
@@ -339,7 +327,7 @@ impl Peer {
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
     ) -> Result<Update, IgnoreReason> {
-        let next_expected_origin = match self.next_expected_origin {
+        let request_identifier = match self.current_request_identifier {
             Some((next_expected_origin, validity)) if validity >= NtpInstant::now() => {
                 next_expected_origin
             }
@@ -349,7 +337,7 @@ impl Peer {
             }
         };
 
-        if message.origin_timestamp != next_expected_origin {
+        if !message.valid_server_response(request_identifier) {
             // Packets should be a response to a previous request from us,
             // if not just ignore. Note that this might also happen when
             // we reset between sending the request and receiving the response.
@@ -412,7 +400,7 @@ impl Peer {
         self.backoff_interval = PollInterval::MIN;
 
         // we received this packet, and don't want to accept future ones with this next_expected_origin
-        self.next_expected_origin = None;
+        self.current_request_identifier = None;
 
         let filter_input = FilterTuple::from_packet_default(
             &message,
@@ -474,7 +462,7 @@ impl Peer {
         self.last_packet = Default::default();
 
         // make sure in-flight messages are ignored
-        self.next_expected_origin = None;
+        self.current_request_identifier = None;
 
         info!(our_id = ?self.our_id, peer_id = ?self.peer_id, "Peer reset");
     }
@@ -486,7 +474,7 @@ impl Peer {
             backoff_interval: PollInterval::default(),
             remote_min_poll_interval: PollInterval::default(),
 
-            next_expected_origin: None,
+            current_request_identifier: None,
 
             statistics: Default::default(),
             last_measurements: LastMeasurements::new(instant),

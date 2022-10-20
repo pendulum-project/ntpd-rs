@@ -1,8 +1,9 @@
 use std::fmt::Display;
 
+use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 
-use crate::{NtpClock, NtpDuration, NtpTimestamp, ReferenceId, SystemSnapshot};
+use crate::{NtpClock, NtpDuration, NtpTimestamp, PollInterval, ReferenceId, SystemSnapshot};
 
 #[derive(Debug)]
 pub enum PacketParsingError {
@@ -124,6 +125,11 @@ pub struct NtpHeader {
     pub transmit_timestamp: NtpTimestamp,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct RequestIdentifier {
+    expected_origin_timestamp: NtpTimestamp,
+}
+
 impl NtpHeader {
     /// A new, empty NtpHeader
     pub fn new() -> Self {
@@ -241,6 +247,31 @@ impl NtpHeader {
 
     pub fn is_kiss_rstr(&self) -> bool {
         self.is_kiss() && self.reference_id.is_rstr()
+    }
+
+    pub fn poll_message(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
+        let mut packet = NtpHeader::new();
+        let poll_interval = poll_interval;
+        packet.poll = poll_interval.as_log();
+        packet.mode = NtpAssociationMode::Client;
+
+        // In order to increase the entropy of the transmit timestamp
+        // it is just a randomly generated timestamp.
+        // We then expect to get it back identically from the remote
+        // in the origin field.
+        let transmit_timestamp = thread_rng().gen();
+        packet.transmit_timestamp = transmit_timestamp;
+
+        (
+            packet,
+            RequestIdentifier {
+                expected_origin_timestamp: transmit_timestamp,
+            },
+        )
+    }
+
+    pub fn valid_server_response(&self, identifier: RequestIdentifier) -> bool {
+        self.origin_timestamp == identifier.expected_origin_timestamp
     }
 
     pub fn timestamp_response<C: NtpClock>(
