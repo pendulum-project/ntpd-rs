@@ -14,7 +14,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let system = SystemSnapshot::default();
 
     let mut buf = [0; 48];
-    #[allow(clippy::field_reassign_with_default)] // allow the explicit stratum
     loop {
         let (len, addr) = sock.recv_from(&mut buf).await?;
         let ntp_receive = clock.now().unwrap();
