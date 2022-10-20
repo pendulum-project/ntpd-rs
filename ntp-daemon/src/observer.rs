@@ -78,7 +78,7 @@ mod tests {
 
     use ntp_proto::{
         NtpDuration, NtpInstant, NtpLeapIndicator, NtpTimestamp, PeerSnapshot, PeerStatistics,
-        PollInterval, Reach, ReferenceId,
+        PollInterval, PollIntervalLimits, Reach, ReferenceId,
     };
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
@@ -142,7 +142,7 @@ mod tests {
                 time: NtpInstant::now(),
                 stratum: 2,
                 peer_id: ReferenceId::from_ip("127.0.0.1".parse().unwrap()),
-                poll_interval: PollInterval::MAX,
+                poll_interval: PollIntervalLimits::default().max,
                 reference_id: ReferenceId::from_ip("127.0.0.3".parse().unwrap()),
                 our_id: ReferenceId::from_ip("127.0.0.2".parse().unwrap()),
                 reach: Reach::default(),
@@ -171,7 +171,7 @@ mod tests {
         )));
 
         let system_reader = Arc::new(tokio::sync::RwLock::new(SystemSnapshot {
-            poll_interval: PollInterval::MIN,
+            poll_interval: PollIntervalLimits::default().min,
             stratum: 1,
             precision: NtpDuration::from_seconds(1e-3),
             root_delay: NtpDuration::ZERO,
@@ -229,7 +229,7 @@ mod tests {
                 time: NtpInstant::now(),
                 stratum: 2,
                 peer_id: ReferenceId::from_ip("127.0.0.1".parse().unwrap()),
-                poll_interval: PollInterval::MAX,
+                poll_interval: PollIntervalLimits::default().max,
                 reference_id: ReferenceId::from_ip("127.0.0.3".parse().unwrap()),
                 our_id: ReferenceId::from_ip("127.0.0.2".parse().unwrap()),
                 reach: Reach::default(),
@@ -260,7 +260,7 @@ mod tests {
         let peers_writer = peers_reader.clone();
 
         let system_reader = Arc::new(tokio::sync::RwLock::new(SystemSnapshot {
-            poll_interval: PollInterval::MIN,
+            poll_interval: PollIntervalLimits::default().min,
             stratum: 1,
             precision: NtpDuration::from_seconds(1e-3),
             reference_id: ReferenceId::NONE,

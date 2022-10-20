@@ -538,7 +538,7 @@ pub fn peer_snapshot(
         reference_id: ReferenceId::from_int(0),
         our_id: ReferenceId::from_int(1),
         reach,
-        poll_interval: PollInterval::MIN,
+        poll_interval: crate::time_types::PollIntervalLimits::default().min,
     }
 }
 
@@ -547,7 +547,7 @@ mod test {
     use std::time::Duration;
 
     use super::*;
-    use crate::peer::PeerStatistics;
+    use crate::{peer::PeerStatistics, time_types::PollIntervalLimits};
 
     #[test]
     fn clock_combine_simple() {
@@ -1364,7 +1364,8 @@ mod test {
             NtpDuration::from_seconds(0.001),
         );
         let baseline_result =
-            FilterAndCombine::run(&config, &[peer], base, PollInterval::MIN).unwrap();
+            FilterAndCombine::run(&config, &[peer], base, PollIntervalLimits::default().min)
+                .unwrap();
         assert!(baseline_result.system_root_delay >= NtpDuration::from_seconds(0.002));
         assert!(baseline_result.system_root_dispersion > NtpDuration::from_seconds(0.001));
 
@@ -1372,7 +1373,7 @@ mod test {
             &config,
             &[peer],
             base + Duration::from_secs(1000),
-            PollInterval::MIN,
+            PollIntervalLimits::default().min,
         )
         .unwrap();
         assert!(result.system_root_delay >= NtpDuration::from_seconds(0.002));
@@ -1390,7 +1391,9 @@ mod test {
             NtpDuration::from_seconds(0.002),
             NtpDuration::from_seconds(0.001),
         );
-        let result = FilterAndCombine::run(&config, &[peer], base, PollInterval::MIN).unwrap();
+        let result =
+            FilterAndCombine::run(&config, &[peer], base, PollIntervalLimits::default().min)
+                .unwrap();
         assert!(result.system_root_delay >= NtpDuration::from_seconds(0.002));
         assert!(result.system_root_dispersion > NtpDuration::from_seconds(0.001));
         assert!(result.system_root_dispersion > baseline_result.system_root_dispersion);
@@ -1406,7 +1409,9 @@ mod test {
             NtpDuration::from_seconds(0.002),
             NtpDuration::from_seconds(0.001),
         );
-        let result = FilterAndCombine::run(&config, &[peer], base, PollInterval::MIN).unwrap();
+        let result =
+            FilterAndCombine::run(&config, &[peer], base, PollIntervalLimits::default().min)
+                .unwrap();
         assert!(result.system_root_delay >= NtpDuration::from_seconds(0.002));
         assert!(result.system_root_dispersion > NtpDuration::from_seconds(0.001));
         assert!(result.system_root_dispersion > baseline_result.system_root_dispersion);
@@ -1422,7 +1427,9 @@ mod test {
             NtpDuration::from_seconds(0.002),
             NtpDuration::from_seconds(0.001),
         );
-        let result = FilterAndCombine::run(&config, &[peer], base, PollInterval::MIN).unwrap();
+        let result =
+            FilterAndCombine::run(&config, &[peer], base, PollIntervalLimits::default().min)
+                .unwrap();
         assert!(result.system_root_delay >= NtpDuration::from_seconds(0.002));
         assert!(result.system_root_dispersion > NtpDuration::from_seconds(0.001));
         assert!(result.system_root_dispersion > baseline_result.system_root_dispersion);
@@ -1438,7 +1445,9 @@ mod test {
             NtpDuration::from_seconds(0.002),
             NtpDuration::from_seconds(0.001),
         );
-        let result = FilterAndCombine::run(&config, &[peer], base, PollInterval::MIN).unwrap();
+        let result =
+            FilterAndCombine::run(&config, &[peer], base, PollIntervalLimits::default().min)
+                .unwrap();
         assert!(result.system_root_delay >= NtpDuration::from_seconds(0.002));
         assert!(result.system_root_dispersion > NtpDuration::from_seconds(0.001));
         assert!(result.system_root_delay > baseline_result.system_root_delay);

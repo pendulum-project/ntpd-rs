@@ -45,7 +45,7 @@ pub async fn spawn(
     };
 
     // Clock controller
-    let controller = ClockController::new(UnixNtpClock::new(), &system_snapshot);
+    let controller = ClockController::new(UnixNtpClock::new(), &system_snapshot, &config);
 
     // Daemon channels
     let system = Arc::new(tokio::sync::RwLock::new(system_snapshot));
@@ -227,7 +227,10 @@ fn requires_clock_recalculation(
 
 #[cfg(test)]
 mod tests {
-    use ntp_proto::{peer_snapshot, NtpDuration, NtpLeapIndicator, NtpTimestamp, PeerStatistics};
+    use ntp_proto::{
+        peer_snapshot, NtpDuration, NtpLeapIndicator, NtpTimestamp, PeerStatistics,
+        PollIntervalLimits,
+    };
 
     use crate::{
         config::{NormalizedAddress, StandardPeerConfig},
@@ -293,7 +296,7 @@ mod tests {
             epoch,
             base,
             config,
-            PollInterval::MIN,
+            PollIntervalLimits::default().min,
         ));
 
         assert!(!requires_clock_recalculation(
@@ -315,7 +318,7 @@ mod tests {
             epoch,
             base,
             config,
-            PollInterval::MIN,
+            PollIntervalLimits::default().min,
         ));
 
         assert!(requires_clock_recalculation(
@@ -337,7 +340,7 @@ mod tests {
             epoch,
             base,
             config,
-            PollInterval::MIN,
+            PollIntervalLimits::default().min,
         ));
 
         assert!(!requires_clock_recalculation(
@@ -359,7 +362,7 @@ mod tests {
             epoch,
             base,
             config,
-            PollInterval::MIN,
+            PollIntervalLimits::default().min,
         ));
 
         assert!(!requires_clock_recalculation(
@@ -367,7 +370,7 @@ mod tests {
             epoch,
             base,
             config,
-            PollInterval::MIN,
+            PollIntervalLimits::default().min,
         ));
     }
 
@@ -416,7 +419,11 @@ mod tests {
                 reset_tx,
 
                 reset_epoch,
-                controller: ClockController::new(TestClock {}, &SystemSnapshot::default()),
+                controller: ClockController::new(
+                    TestClock {},
+                    &SystemSnapshot::default(),
+                    &SystemConfig::default(),
+                ),
             };
 
             system.run().await

@@ -289,7 +289,7 @@ impl<T: std::hash::Hash + Eq> TimestampedCache<T> {
 mod tests {
     use std::time::Duration;
 
-    use ntp_proto::{NtpDuration, NtpLeapIndicator, PollInterval, ReferenceId};
+    use ntp_proto::{NtpDuration, NtpLeapIndicator, PollInterval, PollIntervalLimits, ReferenceId};
 
     use crate::ipfilter::IpFilter;
 
@@ -355,7 +355,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let (packet, id) = NtpPacket::poll_message(PollInterval::MIN);
+        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
 
         socket.send(&packet.serialize()).await.unwrap();
         let mut buf = [0; 48];
@@ -392,7 +392,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let (packet, id) = NtpPacket::poll_message(PollInterval::MIN);
+        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
 
         socket.send(&packet.serialize()).await.unwrap();
         let mut buf = [0; 48];
@@ -430,7 +430,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let (packet, _) = NtpPacket::poll_message(PollInterval::MIN);
+        let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
 
         socket.send(&packet.serialize()).await.unwrap();
         let mut buf = [0; 48];
@@ -462,7 +462,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let (packet, id) = NtpPacket::poll_message(PollInterval::MIN);
+        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
 
         socket.send(&packet.serialize()).await.unwrap();
         let mut buf = [0; 48];
@@ -499,7 +499,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let (packet, id) = NtpPacket::poll_message(PollInterval::MIN);
+        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
 
         socket.send(&packet.serialize()).await.unwrap();
         let mut buf = [0; 48];
@@ -537,7 +537,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let (packet, _) = NtpPacket::poll_message(PollInterval::MIN);
+        let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
 
         socket.send(&packet.serialize()).await.unwrap();
         let mut buf = [0; 48];
@@ -570,7 +570,7 @@ mod tests {
         .await
         .unwrap();
 
-        let (packet, id) = NtpPacket::poll_message(PollInterval::MIN);
+        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
         socket.send(&packet.serialize()).await.unwrap();
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
@@ -583,7 +583,7 @@ mod tests {
 
         tokio::time::sleep(std::time::Duration::from_millis(120)).await;
 
-        let (packet, id) = NtpPacket::poll_message(PollInterval::MIN);
+        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
         socket.send(&packet.serialize()).await.unwrap();
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
@@ -594,7 +594,7 @@ mod tests {
         assert_ne!(packet.stratum(), 0);
         assert!(packet.valid_server_response(id));
 
-        let (packet, id) = NtpPacket::poll_message(PollInterval::MIN);
+        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
         socket.send(&packet.serialize()).await.unwrap();
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
@@ -632,7 +632,7 @@ mod tests {
         .await
         .unwrap();
 
-        let (packet, id) = NtpPacket::poll_message(PollInterval::MIN);
+        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
         socket.send(&packet.serialize()).await.unwrap();
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))

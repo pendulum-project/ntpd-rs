@@ -27,4 +27,6 @@ pub use peer::{
 };
 #[cfg(feature = "fuzz")]
 pub use time_types::fuzz_duration_from_seconds;
-pub use time_types::{FrequencyTolerance, NtpDuration, NtpInstant, NtpTimestamp, PollInterval};
+pub use time_types::{
+    FrequencyTolerance, NtpDuration, NtpInstant, NtpTimestamp, PollInterval, PollIntervalLimits,
+};

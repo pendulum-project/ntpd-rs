@@ -141,7 +141,10 @@ where
 
     async fn handle_poll(&mut self, poll_wait: &mut Pin<&mut T>) -> PollResult {
         let system_snapshot = *self.channels.system_snapshots.read().await;
-        let packet = self.peer.generate_poll_message(system_snapshot);
+        let config_snapshot = *self.channels.system_config.read().await;
+        let packet = self
+            .peer
+            .generate_poll_message(system_snapshot, &config_snapshot);
 
         // Sent a poll, so update waiting to match deadline of next
         self.last_poll_sent = Instant::now();
@@ -196,11 +199,12 @@ where
         let ntp_instant = NtpInstant::now();
 
         let system_snapshot = *self.channels.system_snapshots.read().await;
+        let system_config = *self.channels.system_config.read().await;
         let result = self.peer.handle_incoming(
             system_snapshot,
+            &system_config,
             packet,
             ntp_instant,
-            self.channels.system_config.read().await.frequency_tolerance,
             send_timestamp,
             recv_timestamp,
         );
@@ -326,7 +330,8 @@ where
                 let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
 
                 let local_clock_time = NtpInstant::now();
-                let peer = Peer::new(our_id, peer_id, local_clock_time);
+                let config_snapshot = *channels.system_config.read().await;
+                let peer = Peer::new(our_id, peer_id, local_clock_time, &config_snapshot);
 
                 let poll_wait = tokio::time::sleep(std::time::Duration::default());
                 tokio::pin!(poll_wait);
@@ -552,13 +557,18 @@ mod tests {
         let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
         let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
 
-        let local_clock_time = NtpInstant::now();
-        let peer = Peer::new(our_id, peer_id, local_clock_time);
-
         let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
         let system_config = Arc::new(RwLock::new(SystemConfig::default()));
         let (msg_for_system_sender, msg_for_system_receiver) = mpsc::channel(1);
         let (reset_send, reset) = watch::channel(ResetEpoch::default());
+
+        let local_clock_time = NtpInstant::now();
+        let peer = Peer::new(
+            our_id,
+            peer_id,
+            local_clock_time,
+            &*system_config.read().await,
+        );
 
         let process = PeerTask {
             _wait: PhantomData,
