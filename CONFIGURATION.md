@@ -98,8 +98,8 @@ There are a number of options available to influence how time differences to the
 | distance-threshold | 1 | Maximum delay to the clock representing ground truth via a peer for that peer to be considered acceptable, in seconds. |
 | frequency-measurement-period | 900 | Amount of time to spend on startup measuring the frequency offset of the system clock, in seconds. Lowering this means the clock is kept actively synchronized sooner, but reduces the precision of the initial frequency estimate, which could result in lower stability of the clock early on. |
 | spike-threshold | 900 | Amount of time before a clock difference larger than 125ms is considered real instead of a spike in the network. Lower values ensure large errors are corrected faster, but make the client more sensitive to network issues. Value provided is in seconds. |
-| panic-threshold | 1800 (symmetric) | Largest time difference the client is allowed to correct in one go. Differences beyond this cause the client to abort synchronization. Value provided is in seconds, set to 0 to disable checking of jumps. |
-| startup-panic-threshold | No limit forward, 1800 backward | Largest time difference the client is allowed to correct during startup. By default, this is unrestricted as we may be the initial source of time for systems without a hardware backed clock. Value provided is in seconds, set to 0 to disable checking of jumps. |
+| panic-threshold | 1800 (symmetric) | Largest time difference the client is allowed to correct in one go. Differences beyond this cause the client to abort synchronization. Value provided is in seconds, set to "inf" to disable checking of jumps. Setting this to 0 will disable time jumps except at startup. |
+| startup-panic-threshold | No limit forward, 1800 backward | Largest time difference the client is allowed to correct during startup. By default, this is unrestricted as we may be the initial source of time for systems without a hardware backed clock. Value provided is in seconds, set to "inf" to disable checking of jumps. |
 | accumulated-threshold | Disabled | Total amount of time difference the client is allowed to correct using steps whilst running. By default, this is unrestricted. Value provided is in seconds, set to 0 to disable checking of accumulated steps. |
 
 For panic thresholds, asymetric thresholds can be configured, allowing a different sized step going forwards compared to going backwards. This is done by configuring a struct with two values, `forward` and `backward` for the panic threshold.
@@ -127,7 +127,7 @@ min-cluster-survivors = 3
 frequency-tolerance = 15
 distance-threshold = 1
 panic-threshold = 10
-startup-panic-threshold = { forward = 0, backward = 1800 }
+startup-panic-threshold = { forward = "inf", backward = 1800 }
 ```
 
 ## Operational concerns
