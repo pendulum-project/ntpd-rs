@@ -202,18 +202,6 @@ impl PeerSnapshot {
             return Err(Distance);
         }
 
-        //  A distance error occurs if the root distance exceeds the
-        //  distance threshold plus an increment equal to one poll interval.
-        let distance = self.root_distance(local_clock_time, frequency_tolerance);
-        if distance > distance_threshold + (system_poll * frequency_tolerance) {
-            debug!(
-                distance = debug(distance),
-                limit = debug(distance_threshold + (system_poll * frequency_tolerance)),
-                "Peer rejected due to excessive distance"
-            );
-            return Err(Distance);
-        }
-
         // Detect whether the remote uses us as their main time reference.
         // if so, we shouldn't sync to them as that would create a loop.
         // Note, this can only ever be an issue if the peer is not using
