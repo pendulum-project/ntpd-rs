@@ -53,7 +53,7 @@ jobs:
       - name: Package
         shell: bash
         run: |
-          bins=(target/${{ matrix.target }}/release/{ntp-client,ntp-daemon})
+          bins=(target/${{ matrix.target }}/release/{ntp-ctl,ntp-daemon})
           version=$(echo "${{ github.ref }}" | cut -d/ -f3)
           dst="ntpd-rs-${{ matrix.target }}-${version}"
           mkdir "$dst"

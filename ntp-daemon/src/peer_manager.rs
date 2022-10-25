@@ -4,7 +4,7 @@ use crate::{
     config::{PeerConfig, PoolPeerConfig, ServerConfig, StandardPeerConfig},
     observer::ObservablePeerState,
     peer::{MsgForSystem, PeerChannels, PeerTask, ResetEpoch},
-    server::ServerTask,
+    server::{ServerStats, ServerTask},
 };
 use ntp_proto::{NtpClock, PeerSnapshot};
 use tokio::task::JoinHandle;
@@ -57,10 +57,16 @@ struct PeerData {
     config: Arc<PeerConfig>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ServerData {
+    pub stats: ServerStats,
+    pub config: ServerConfig,
+}
+
 #[derive(Debug)]
 pub struct Peers<C: NtpClock> {
     peers: HashMap<PeerIndex, PeerData>,
-    servers: Vec<Arc<ServerConfig>>,
+    servers: Vec<ServerData>,
     indexer: PeerIndexIssuer,
 
     channels: PeerChannels,
@@ -128,18 +134,19 @@ impl<C: NtpClock> Peers<C> {
         self.add_peer_internal(Arc::new(config)).await
     }
 
-    fn add_server_internal(&mut self, config: Arc<ServerConfig>) -> JoinHandle<()> {
-        self.servers.push(config.clone());
+    pub async fn add_server(&mut self, config: ServerConfig) -> JoinHandle<()> {
+        let stats = ServerStats::default();
+        self.servers.push(ServerData {
+            stats: stats.clone(),
+            config: config.clone(),
+        });
         ServerTask::spawn(
             config,
+            stats,
             self.channels.system_snapshots.clone(),
             self.clock.clone(),
             NETWORK_WAIT_PERIOD,
         )
-    }
-
-    pub async fn add_server(&mut self, config: ServerConfig) -> JoinHandle<()> {
-        self.add_server_internal(Arc::new(config))
     }
 
     #[cfg(test)]
@@ -173,14 +180,14 @@ impl<C: NtpClock> Peers<C> {
         self.peers.len()
     }
 
-    pub fn observe(&self) -> impl Iterator<Item = ObservablePeerState> + '_ {
+    pub fn observe_peers(&self) -> impl Iterator<Item = ObservablePeerState> + '_ {
         self.peers.iter().map(|(_, data)| match data.status {
             PeerStatus::NoMeasurement => ObservablePeerState::Nothing,
             PeerStatus::Measurement(snapshot) => ObservablePeerState::Observable {
                 statistics: snapshot.statistics,
                 reachability: snapshot.reach,
                 uptime: snapshot.time.elapsed(),
-                poll_interval: snapshot.poll_interval.as_system_duration(),
+                poll_interval: snapshot.poll_interval,
                 peer_id: snapshot.peer_id,
                 address: match &*data.config {
                     PeerConfig::Standard(StandardPeerConfig { addr, .. }) => {
@@ -190,6 +197,10 @@ impl<C: NtpClock> Peers<C> {
                 },
             },
         })
+    }
+
+    pub fn servers(&self) -> impl Iterator<Item = ServerData> + '_ {
+        self.servers.iter().cloned()
     }
 
     pub fn valid_snapshots(&self) -> impl Iterator<Item = PeerSnapshot> + '_ {
