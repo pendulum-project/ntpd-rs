@@ -200,10 +200,10 @@ where
         PollResult::Ok
     }
 
-    async fn handle_packet(
+    async fn handle_packet<'a>(
         &mut self,
         poll_wait: &mut Pin<&mut T>,
-        packet: NtpPacket,
+        packet: NtpPacket<'a>,
         send_timestamp: NtpTimestamp,
         recv_timestamp: NtpTimestamp,
     ) -> PacketResult {
@@ -371,8 +371,8 @@ where
 }
 
 #[derive(Debug)]
-enum AcceptResult {
-    Accept(NtpPacket, NtpTimestamp),
+enum AcceptResult<'a> {
+    Accept(NtpPacket<'a>, NtpTimestamp),
     Ignore,
     NetworkGone,
 }

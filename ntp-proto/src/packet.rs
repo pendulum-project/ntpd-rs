@@ -1,8 +1,7 @@
-use std::fmt::Display;
+use std::{borrow::Cow, fmt::Display};
 
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
-use tracing::debug;
 
 use crate::{NtpClock, NtpDuration, NtpTimestamp, PollInterval, ReferenceId, SystemSnapshot};
 
@@ -18,7 +17,7 @@ impl Display for PacketParsingError {
             Self::InvalidVersion(version) => {
                 f.write_fmt(format_args!("Invalid version {}", version))
             }
-            Self::IncorrectLength => f.write_str("Provided packet has incorrect length"),
+            Self::IncorrectLength => f.write_str("Incorrect packet length"),
         }
     }
 }
@@ -108,8 +107,167 @@ impl NtpAssociationMode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NtpPacket {
+pub struct NtpPacket<'a> {
     header: NtpHeader,
+    efdata: ExtensionFieldData<'a>,
+    mac: Option<Mac<'a>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExtensionField<'a> {
+    Unknown { typeid: u16, data: Cow<'a, [u8]> },
+}
+
+impl<'a> ExtensionField<'a> {
+    const MINIMUM_SIZE: usize = 16;
+
+    fn into_owned(self) -> ExtensionField<'static> {
+        match self {
+            ExtensionField::Unknown { typeid, data } => ExtensionField::Unknown {
+                typeid,
+                data: Cow::Owned(data.into_owned()),
+            },
+        }
+    }
+
+    fn serialize<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
+        match self {
+            ExtensionField::Unknown { typeid, data } => {
+                if data.len() > u16::MAX as usize {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        PacketParsingError::IncorrectLength,
+                    ));
+                }
+                w.write_all(&typeid.to_be_bytes())?;
+                w.write_all(&(data.len() as u16).to_be_bytes())?;
+                w.write_all(data)
+            }
+        }
+    }
+
+    fn deserialize(data: &'a [u8]) -> Result<(ExtensionField<'a>, usize), PacketParsingError> {
+        if data.len() < 4 {
+            return Err(PacketParsingError::IncorrectLength);
+        }
+        let typeid = u16::from_be_bytes(data[0..2].try_into().unwrap());
+        let ef_len = u16::from_be_bytes(data[2..4].try_into().unwrap()) as usize;
+        if ef_len < Self::MINIMUM_SIZE || ef_len > data.len() {
+            return Err(PacketParsingError::IncorrectLength);
+        }
+        Ok((
+            ExtensionField::Unknown {
+                typeid,
+                data: Cow::Borrowed(&data[4..ef_len]),
+            },
+            ef_len,
+        ))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ExtensionFieldData<'a> {
+    Raw(Cow<'a, [u8]>),
+    #[allow(dead_code)]
+    List(Vec<ExtensionField<'a>>),
+}
+
+impl<'a> Default for ExtensionFieldData<'a> {
+    fn default() -> Self {
+        Self::Raw(Cow::Borrowed(&[]))
+    }
+}
+
+impl<'a> ExtensionFieldData<'a> {
+    fn into_owned(self) -> ExtensionFieldData<'static> {
+        match self {
+            ExtensionFieldData::Raw(data) => ExtensionFieldData::Raw(Cow::Owned(data.into_owned())),
+            ExtensionFieldData::List(fields) => {
+                ExtensionFieldData::List(fields.into_iter().map(|v| v.into_owned()).collect())
+            }
+        }
+    }
+
+    fn iter<'b: 'a>(&'b self) -> impl Iterator<Item = Cow<'b, ExtensionField<'a>>> + 'b {
+        let mut offset = 0;
+        std::iter::from_fn(move || match self {
+            ExtensionFieldData::Raw(data) => {
+                if offset < data.len() {
+                    let (field, len) = ExtensionField::deserialize(&data[offset..]).unwrap();
+                    offset += len;
+                    Some(Cow::Owned(field))
+                } else {
+                    None
+                }
+            }
+            ExtensionFieldData::List(fields) => {
+                if offset < fields.len() {
+                    offset += 1;
+                    Some(Cow::Borrowed(&fields[offset - 1]))
+                } else {
+                    None
+                }
+            }
+        })
+    }
+
+    fn serialize<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
+        match self {
+            ExtensionFieldData::Raw(efdata) => w.write_all(efdata),
+            ExtensionFieldData::List(fields) => {
+                for field in fields {
+                    field.serialize(w)?;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn deserialize(data: &'a [u8]) -> Result<(ExtensionFieldData<'a>, usize), PacketParsingError> {
+        let mut offset = 0;
+        while data.len() - offset >= Mac::MAXIMUM_SIZE {
+            let (_, len) = ExtensionField::deserialize(&data[offset..])?;
+            offset += len;
+        }
+
+        Ok((
+            ExtensionFieldData::Raw(Cow::Borrowed(&data[..offset])),
+            offset,
+        ))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Mac<'a> {
+    keyid: u32,
+    mac: Cow<'a, [u8]>,
+}
+
+impl<'a> Mac<'a> {
+    const MAXIMUM_SIZE: usize = 28;
+
+    fn into_owned(self) -> Mac<'static> {
+        Mac {
+            keyid: self.keyid,
+            mac: Cow::Owned(self.mac.into_owned()),
+        }
+    }
+
+    fn serialize<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
+        w.write_all(&self.keyid.to_be_bytes())?;
+        w.write_all(&self.mac)
+    }
+
+    fn deserialize(data: &'a [u8]) -> Result<Mac<'a>, PacketParsingError> {
+        if data.len() < 4 || data.len() >= Self::MAXIMUM_SIZE {
+            return Err(PacketParsingError::IncorrectLength);
+        }
+
+        Ok(Mac {
+            keyid: u32::from_be_bytes(data[0..4].try_into().unwrap()),
+            mac: Cow::Borrowed(&data[4..]),
+        })
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -264,8 +422,22 @@ impl NtpHeaderV3V4 {
     }
 }
 
-impl NtpPacket {
-    pub fn deserialize(data: &[u8]) -> Result<Self, PacketParsingError> {
+impl<'a> NtpPacket<'a> {
+    pub fn into_owned(self) -> NtpPacket<'static> {
+        NtpPacket::<'static> {
+            header: self.header,
+            efdata: self.efdata.into_owned(),
+            mac: self.mac.map(|v| v.into_owned()),
+        }
+    }
+
+    pub fn extension_fields<'b: 'a>(
+        &'b self,
+    ) -> impl Iterator<Item = Cow<'b, ExtensionField<'a>>> + 'b {
+        self.efdata.iter()
+    }
+
+    pub fn deserialize(data: &'a [u8]) -> Result<Self, PacketParsingError> {
         if data.is_empty() {
             return Err(PacketParsingError::IncorrectLength);
         }
@@ -275,20 +447,29 @@ impl NtpPacket {
         match version {
             3 => {
                 let (header, header_size) = NtpHeaderV3V4::deserialize(data)?;
-                if header_size != data.len() {
-                    debug!("Ignored potential extension fields or MAC");
-                }
+                let mac = if header_size != data.len() {
+                    Some(Mac::deserialize(&data[header_size..])?)
+                } else {
+                    None
+                };
                 Ok(NtpPacket {
                     header: NtpHeader::V3(header),
+                    efdata: ExtensionFieldData::default(),
+                    mac,
                 })
             }
             4 => {
                 let (header, header_size) = NtpHeaderV3V4::deserialize(data)?;
-                if header_size != data.len() {
-                    debug!("Ignored potential extension fields or MAC");
-                }
+                let (efdata, fields_len) = ExtensionFieldData::deserialize(&data[header_size..])?;
+                let mac = if header_size != data.len() {
+                    Some(Mac::deserialize(&data[header_size + fields_len..])?)
+                } else {
+                    None
+                };
                 Ok(NtpPacket {
                     header: NtpHeader::V4(header),
+                    efdata,
+                    mac,
                 })
             }
             _ => Err(PacketParsingError::InvalidVersion(version)),
@@ -299,7 +480,14 @@ impl NtpPacket {
         match self.header {
             NtpHeader::V3(header) => header.serialize(w, 3),
             NtpHeader::V4(header) => header.serialize(w, 4),
+        }?;
+        if !matches!(self.header, NtpHeader::V3(_)) {
+            self.efdata.serialize(w)?;
         }
+        if let Some(ref mac) = self.mac {
+            mac.serialize(w)?;
+        }
+        Ok(())
     }
 
     pub fn poll_message(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
@@ -307,6 +495,8 @@ impl NtpPacket {
         (
             NtpPacket {
                 header: NtpHeader::V4(header),
+                efdata: Default::default(),
+                mac: None,
             },
             id,
         )
@@ -326,6 +516,8 @@ impl NtpPacket {
                     recv_timestamp,
                     clock,
                 )),
+                efdata: Default::default(),
+                mac: None,
             },
             NtpHeader::V4(header) => NtpPacket {
                 header: NtpHeader::V4(NtpHeaderV3V4::timestamp_response(
@@ -334,6 +526,8 @@ impl NtpPacket {
                     recv_timestamp,
                     clock,
                 )),
+                efdata: Default::default(),
+                mac: None,
             },
         }
     }
@@ -342,9 +536,13 @@ impl NtpPacket {
         match packet_from_client.header {
             NtpHeader::V3(header) => NtpPacket {
                 header: NtpHeader::V3(NtpHeaderV3V4::rate_limit_response(header)),
+                efdata: Default::default(),
+                mac: None,
             },
             NtpHeader::V4(header) => NtpPacket {
                 header: NtpHeader::V4(NtpHeaderV3V4::rate_limit_response(header)),
+                efdata: Default::default(),
+                mac: None,
             },
         }
     }
@@ -353,15 +551,19 @@ impl NtpPacket {
         match packet_from_client.header {
             NtpHeader::V3(header) => NtpPacket {
                 header: NtpHeader::V3(NtpHeaderV3V4::deny_response(header)),
+                efdata: Default::default(),
+                mac: None,
             },
             NtpHeader::V4(header) => NtpPacket {
                 header: NtpHeader::V4(NtpHeaderV3V4::deny_response(header)),
+                efdata: Default::default(),
+                mac: None,
             },
         }
     }
 }
 
-impl NtpPacket {
+impl<'a> NtpPacket<'a> {
     pub fn leap(&self) -> NtpLeapIndicator {
         match self.header {
             NtpHeader::V3(header) => header.leap,
@@ -457,7 +659,7 @@ impl NtpPacket {
 }
 
 #[cfg(any(test, feature = "fuzz"))]
-impl NtpPacket {
+impl<'a> NtpPacket<'a> {
     pub fn test() -> Self {
         Self::default()
     }
@@ -533,10 +735,12 @@ impl NtpPacket {
     }
 }
 
-impl Default for NtpPacket {
+impl<'a> Default for NtpPacket<'a> {
     fn default() -> Self {
         Self {
             header: NtpHeader::V4(NtpHeaderV3V4::new()),
+            efdata: Default::default(),
+            mac: None,
         }
     }
 }
@@ -585,6 +789,8 @@ mod tests {
                 receive_timestamp: NtpTimestamp::from_fixed_int(0xe5f6636681405590),
                 transmit_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a8761dde48),
             }),
+            efdata: Default::default(),
+            mac: None,
         };
 
         assert_eq!(reference, NtpPacket::deserialize(packet).unwrap());
@@ -608,6 +814,8 @@ mod tests {
                 receive_timestamp: NtpTimestamp::from_fixed_int(0xe5f6636681405590),
                 transmit_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a8761dde48),
             }),
+            efdata: Default::default(),
+            mac: None,
         };
 
         assert_eq!(reference, NtpPacket::deserialize(packet).unwrap());
@@ -634,6 +842,8 @@ mod tests {
                 receive_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a8798c6581),
                 transmit_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a8798eae2b),
             }),
+            efdata: Default::default(),
+            mac: None,
         };
 
         assert_eq!(reference, NtpPacket::deserialize(packet).unwrap());

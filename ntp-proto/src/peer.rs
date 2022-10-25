@@ -36,7 +36,7 @@ pub struct Peer {
 
     statistics: PeerStatistics,
     last_measurements: LastMeasurements,
-    last_packet: NtpPacket,
+    last_packet: NtpPacket<'static>,
     time: NtpInstant,
     peer_id: ReferenceId,
     our_id: ReferenceId,
@@ -306,7 +306,7 @@ impl Peer {
         &mut self,
         system: SystemSnapshot,
         system_config: &SystemConfig,
-    ) -> NtpPacket {
+    ) -> NtpPacket<'static> {
         self.reach.poll();
 
         let poll_interval = self.current_poll_interval(system);
@@ -417,7 +417,7 @@ impl Peer {
             recv_time,
         );
 
-        self.last_packet = message;
+        self.last_packet = message.into_owned();
 
         let updated = self.last_measurements.step(
             filter_input,
