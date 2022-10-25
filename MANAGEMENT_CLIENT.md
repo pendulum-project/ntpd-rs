@@ -13,11 +13,11 @@ For the configuration socket, default permissions restrict access to the group u
 ## Using the management client
 
 The current client exposes 3 different commands:
- - `ntp-client peers` displays information on the currently active peer connections
- - `ntp-client system` displays information on the current synchronization state of the system.
- - `ntp-client prometheus` combines output of `ntp-client peers` and `ntp-client system` in the
+ - `ntp-ctl peers` displays information on the currently active peer connections
+ - `ntp-ctl system` displays information on the current synchronization state of the system.
+ - `ntp-ctl prometheus` combines output of `ntp-ctl peers` and `ntp-ctl system` in the
    prometheus export format
- - `ntp-client config` allows changing of some configuration parameters
+ - `ntp-ctl config` allows changing of some configuration parameters
 
 ## Available configuration parameters
 
@@ -92,42 +92,74 @@ Output is given as formatted json
 
 **prometheus**
 
-NOTE: the `ntp_system_accumulated_steps_threshold` is only printed if it is set.
-
 ```
-# TYPE ntp_peer_offset gauge
-# TYPE ntp_peer_delay gauge
-# TYPE ntp_peer_dispersion gauge
-# TYPE ntp_peer_jitter gauge
-# TYPE ntp_peer_reachability_status gauge
-# TYPE ntp_peer_reachability_unanswered_polls gauge
-# TYPE ntp_peer_uptime gauge
-# TYPE ntp_peer_poll_interval gauge
-
-ntp_peer_offset {address = "0.pool.ntp.org:123"} -0.00021074060355563196
-ntp_peer_delay {address = "0.pool.ntp.org:123"} 0.007240572014646738
-ntp_peer_dispersion {address = "0.pool.ntp.org:123"} 3.9375658409990293
-ntp_peer_jitter {address = "0.pool.ntp.org:123"} 0.000574177596851759
-ntp_peer_uptime {address = "0.pool.ntp.org:123"} 3.719465959
-ntp_peer_poll_interval {address = "0.pool.ntp.org:123"} 16
-ntp_peer_reachability_status {address = "0.pool.ntp.org:123"} 1
-ntp_peer_reachability_unanswered_polls {address = "0.pool.ntp.org:123", result = "success"} 6
-
-ntp_peer_offset {address = "1.pool.ntp.org:123"} 0.0016808533113638064
-ntp_peer_delay {address = "1.pool.ntp.org:123"} 0.007762117545996355
-ntp_peer_dispersion {address = "1.pool.ntp.org:123"} 3.937565868007384
-ntp_peer_jitter {address = "1.pool.ntp.org:123"} 0.0005751959980873382
-ntp_peer_uptime {address = "1.pool.ntp.org:123"} 3.723291563
-ntp_peer_poll_interval {address = "1.pool.ntp.org:123"} 16
-ntp_peer_reachability_status {address = "1.pool.ntp.org:123"} 1
-ntp_peer_reachability_unanswered_polls {address = "1.pool.ntp.org:123", result = "success"} 6
-
+# HELP ntp_system_poll_interval_seconds Time between polls of the system.
+# TYPE ntp_system_poll_interval_seconds gauge
+# UNIT ntp_system_poll_interval_seconds seconds
+ntp_system_poll_interval_seconds 16.00000000372529
+# HELP ntp_system_poll_interval Exponent of time between poll intervals.
 # TYPE ntp_system_poll_interval gauge
-ntp_system_poll_interval 256.00000005960464
-# TYPE ntp_system_precision gauge
-ntp_system_precision 0.000003814697266513178
-# TYPE ntp_system_accumulated_steps gauge
-ntp_system_accumulated_steps 0.005327121588710491
+ntp_system_poll_interval 4.0
+# HELP ntp_system_precision_seconds Precision of the local clock.
+# TYPE ntp_system_precision_seconds gauge
+# UNIT ntp_system_precision_seconds seconds
+ntp_system_precision_seconds 0.000003814697266513178
+# HELP ntp_system_accumulated_steps_seconds Accumulated amount of seconds that the system needed to jump the time.
+# TYPE ntp_system_accumulated_steps_seconds gauge
+# UNIT ntp_system_accumulated_steps_seconds seconds
+ntp_system_accumulated_steps_seconds 0.0
+# HELP ntp_system_accumulated_steps_threshold_seconds Threshold for the accumulated step amount at which the NTP daemon will exit (or -1 if no threshold was set).
+# TYPE ntp_system_accumulated_steps_threshold_seconds gauge
+# UNIT ntp_system_accumulated_steps_threshold_seconds seconds
+ntp_system_accumulated_steps_threshold_seconds -1.0
+# HELP ntp_system_leap_indicator Indicates that a leap second will take place.
 # TYPE ntp_system_leap_indicator gauge
-ntp_system_leap_indicator {type = "NoWarning"} 0
+ntp_system_leap_indicator 3
+# HELP ntp_peer_uptime_seconds Time since the peer was started.
+# TYPE ntp_peer_uptime_seconds gauge
+# UNIT ntp_peer_uptime_seconds seconds
+ntp_peer_uptime_seconds{address="127.0.0.1:123"} 51
+# HELP ntp_peer_poll_interval_seconds Time between polls of the peer.
+# TYPE ntp_peer_poll_interval_seconds gauge
+# UNIT ntp_peer_poll_interval_seconds seconds
+ntp_peer_poll_interval_seconds{address="127.0.0.1:123"} 16.00000000372529
+# HELP ntp_peer_poll_interval Exponent of time between polls of the peer.
+# TYPE ntp_peer_poll_interval gauge
+ntp_peer_poll_interval{address="127.0.0.1:123"} 4.0
+# HELP ntp_peer_reachability_status Number of polls until the upstream server is unreachable, zero if it is.
+# TYPE ntp_peer_reachability_status gauge
+ntp_peer_reachability_status{address="127.0.0.1:123"} 8
+# HELP ntp_peer_offset_seconds Offset between the upstream server and system time.
+# TYPE ntp_peer_offset_seconds gauge
+# UNIT ntp_peer_offset_seconds seconds
+ntp_peer_offset_seconds{address="127.0.0.1:123"} 0.00004205643200363415
+# HELP ntp_peer_delay_seconds Current round-trip delay to the upstream server.
+# TYPE ntp_peer_delay_seconds gauge
+# UNIT ntp_peer_delay_seconds seconds
+ntp_peer_delay_seconds{address="127.0.0.1:123"} 0.00020051281903882344
+# HELP ntp_peer_dispersion_seconds Maximum error of the clock.
+# TYPE ntp_peer_dispersion_seconds gauge
+# UNIT ntp_peer_dispersion_seconds seconds
+ntp_peer_dispersion_seconds{address="127.0.0.1:123"} 0.0007732014639240694
+# HELP ntp_peer_jitter_seconds Variance of network latency.
+# TYPE ntp_peer_jitter_seconds gauge
+# UNIT ntp_peer_jitter_seconds seconds
+ntp_peer_jitter_seconds{address="127.0.0.1:123"} 0.000015067552900017188
+# HELP ntp_server_received_packets Number of incoming received packets.
+# TYPE ntp_server_received_packets counter
+ntp_server_received_packets_total{listen_address="127.0.0.1:123"} 11
+# HELP ntp_server_accepted_packets Number of packets accepted.
+# TYPE ntp_server_accepted_packets counter
+ntp_server_accepted_packets_total{listen_address="127.0.0.1:123"} 11
+# HELP ntp_server_denied_packets Number of denied packets.
+# TYPE ntp_server_denied_packets counter
+ntp_server_denied_packets_total{listen_address="127.0.0.1:123"} 0
+# HELP ntp_server_rate_limited_packets Number of rate limited packets.
+# TYPE ntp_server_rate_limited_packets counter
+ntp_server_rate_limited_packets_total{listen_address="127.0.0.1:123"} 0
+# HELP ntp_server_response_send_errors Number of packets where there was an error responding.
+# TYPE ntp_server_response_send_errors counter
+ntp_server_response_send_errors_total{listen_address="127.0.0.1:123"} 0
+# EOF
+
 ```

@@ -46,7 +46,7 @@ pub struct Peer {
 /// Used to determine whether the server is reachable and the data are fresh
 ///
 /// This value is represented as an 8-bit shift register. The register is shifted left
-/// by one bit when a packet is sent and the rightmost bit is set to zero.  
+/// by one bit when a packet is sent and the rightmost bit is set to zero.
 /// As valid packets arrive, the rightmost bit is set to one.
 /// If the register contains any nonzero bits, the server is considered reachable;
 /// otherwise, it is unreachable.
@@ -87,6 +87,11 @@ impl Reach {
     /// Number of polls since the last message we received
     pub fn unanswered_polls(&self) -> u32 {
         self.0.leading_zeros()
+    }
+
+    /// Number of polls remaining until unreachable
+    pub fn reachability_score(&self) -> u32 {
+        8 - self.0.trailing_zeros()
     }
 }
 

@@ -6,17 +6,61 @@ use std::{
 
 use ntp_proto::{NtpAssociationMode, NtpClock, NtpPacket, NtpTimestamp, SystemSnapshot};
 use ntp_udp::UdpSocket;
+use prometheus_client::metrics::{counter::Counter, gauge::Atomic};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tokio::{sync::RwLock, task::JoinHandle};
 use tracing::{error, info, instrument, trace, warn};
 
 use crate::config::{FilterAction, ServerConfig};
 
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+pub struct ServerStats {
+    pub received_packets: WrappedCounter,
+    pub accepted_packets: WrappedCounter,
+    pub denied_packets: WrappedCounter,
+    pub rate_limited_packets: WrappedCounter,
+    pub response_send_errors: WrappedCounter,
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct WrappedCounter(Counter);
+
+impl Serialize for WrappedCounter {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u64(self.0.get())
+    }
+}
+
+impl<'de> Deserialize<'de> for WrappedCounter {
+    fn deserialize<D>(deserializer: D) -> Result<WrappedCounter, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let d: u64 = Deserialize::deserialize(deserializer)?;
+        let counter: Counter = Default::default();
+        counter.inner().set(d);
+        Ok(WrappedCounter(counter))
+    }
+}
+
+impl std::ops::Deref for WrappedCounter {
+    type Target = Counter;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 pub struct ServerTask<C: 'static + NtpClock + Send> {
-    config: Arc<ServerConfig>,
+    config: ServerConfig,
     network_wait_period: std::time::Duration,
     system: Arc<RwLock<SystemSnapshot>>,
     client_cache: TimestampedCache<SocketAddr>,
     clock: C,
+    stats: ServerStats,
 }
 
 #[derive(Debug)]
@@ -30,7 +74,8 @@ enum AcceptResult {
 
 impl<C: 'static + NtpClock + Send> ServerTask<C> {
     pub fn spawn(
-        config: Arc<ServerConfig>,
+        config: ServerConfig,
+        stats: ServerStats,
         system: Arc<RwLock<SystemSnapshot>>,
         clock: C,
         network_wait_period: Duration,
@@ -45,6 +90,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 system,
                 clock,
                 client_cache: TimestampedCache::new(rate_limiting_cache_size),
+                stats,
             };
 
             process.serve(rate_limiting_cutoff).await
@@ -86,22 +132,27 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
 
             let mut buf = [0_u8; 48];
             let recv_res = socket.recv(&mut buf).await;
+            self.stats.received_packets.inc();
             let accept_result = self.accept_packet(rate_limiting_cutoff, recv_res, &buf);
 
             match accept_result {
                 AcceptResult::Accept(packet, peer_addr, recv_timestamp) => {
+                    self.stats.accepted_packets.inc();
                     let system = *self.system.read().await;
 
                     let response =
                         NtpPacket::timestamp_response(&system, packet, recv_timestamp, &self.clock);
 
                     if let Err(send_err) = socket.send_to(&response.serialize(), peer_addr).await {
+                        self.stats.response_send_errors.inc();
                         warn!(error=?send_err, "Could not send response packet");
                     }
                 }
                 AcceptResult::Deny(packet, peer_addr) => {
+                    self.stats.denied_packets.inc();
                     let response = NtpPacket::deny_response(packet);
                     if let Err(send_err) = socket.send_to(&response.serialize(), peer_addr).await {
+                        self.stats.response_send_errors.inc();
                         warn!(error=?send_err, "Could not send deny packet");
                     }
                 }
@@ -111,9 +162,11 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     continue;
                 }
                 AcceptResult::RateLimit(packet, peer_addr) => {
+                    self.stats.rate_limited_packets.inc();
                     let response = NtpPacket::rate_limit_response(packet);
 
                     if let Err(send_err) = socket.send_to(&response.serialize(), peer_addr).await {
+                        self.stats.response_send_errors.inc();
                         warn!(error=?send_err, "Could not send response packet");
                     }
                 }
@@ -335,7 +388,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_server_filter_allow_ok() {
-        let config = Arc::new(ServerConfig {
+        let config = ServerConfig {
             addr: "127.0.0.1:9000".parse().unwrap(),
             denylist: IpFilter::none(),
             denylist_action: FilterAction::Ignore,
@@ -343,11 +396,17 @@ mod tests {
             allowlist_action: FilterAction::Ignore,
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
-        });
+        };
         let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
         let clock = TestClock {};
 
-        let server = ServerTask::spawn(config, system_snapshots, clock, Duration::from_secs(1));
+        let server = ServerTask::spawn(
+            config,
+            Default::default(),
+            system_snapshots,
+            clock,
+            Duration::from_secs(1),
+        );
 
         let mut socket = UdpSocket::client(
             "127.0.0.1:9001".parse().unwrap(),
@@ -372,7 +431,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_server_filter_allow_deny() {
-        let config = Arc::new(ServerConfig {
+        let config = ServerConfig {
             addr: "127.0.0.1:9002".parse().unwrap(),
             denylist: IpFilter::none(),
             denylist_action: FilterAction::Ignore,
@@ -380,11 +439,17 @@ mod tests {
             allowlist_action: FilterAction::Deny,
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
-        });
+        };
         let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
         let clock = TestClock {};
 
-        let server = ServerTask::spawn(config, system_snapshots, clock, Duration::from_secs(1));
+        let server = ServerTask::spawn(
+            config,
+            Default::default(),
+            system_snapshots,
+            clock,
+            Duration::from_secs(1),
+        );
 
         let mut socket = UdpSocket::client(
             "127.0.0.1:9003".parse().unwrap(),
@@ -410,7 +475,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_server_filter_allow_ignore() {
-        let config = Arc::new(ServerConfig {
+        let config = ServerConfig {
             addr: "127.0.0.1:9004".parse().unwrap(),
             denylist: IpFilter::none(),
             denylist_action: FilterAction::Ignore,
@@ -418,11 +483,17 @@ mod tests {
             allowlist_action: FilterAction::Ignore,
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
-        });
+        };
         let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
         let clock = TestClock {};
 
-        let server = ServerTask::spawn(config, system_snapshots, clock, Duration::from_secs(1));
+        let server = ServerTask::spawn(
+            config,
+            Default::default(),
+            system_snapshots,
+            clock,
+            Duration::from_secs(1),
+        );
 
         let mut socket = UdpSocket::client(
             "127.0.0.1:9005".parse().unwrap(),
@@ -442,7 +513,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_server_filter_deny_ok() {
-        let config = Arc::new(ServerConfig {
+        let config = ServerConfig {
             addr: "127.0.0.1:9006".parse().unwrap(),
             denylist: IpFilter::new(&["192.168.0.0/16".parse().unwrap()]),
             denylist_action: FilterAction::Ignore,
@@ -450,11 +521,17 @@ mod tests {
             allowlist_action: FilterAction::Ignore,
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
-        });
+        };
         let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
         let clock = TestClock {};
 
-        let server = ServerTask::spawn(config, system_snapshots, clock, Duration::from_secs(1));
+        let server = ServerTask::spawn(
+            config,
+            Default::default(),
+            system_snapshots,
+            clock,
+            Duration::from_secs(1),
+        );
 
         let mut socket = UdpSocket::client(
             "127.0.0.1:9007".parse().unwrap(),
@@ -479,7 +556,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_server_filter_deny_deny() {
-        let config = Arc::new(ServerConfig {
+        let config = ServerConfig {
             addr: "127.0.0.1:9008".parse().unwrap(),
             denylist: IpFilter::new(&["127.0.0.0/24".parse().unwrap()]),
             denylist_action: FilterAction::Deny,
@@ -487,11 +564,17 @@ mod tests {
             allowlist_action: FilterAction::Ignore,
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
-        });
+        };
         let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
         let clock = TestClock {};
 
-        let server = ServerTask::spawn(config, system_snapshots, clock, Duration::from_secs(1));
+        let server = ServerTask::spawn(
+            config,
+            Default::default(),
+            system_snapshots,
+            clock,
+            Duration::from_secs(1),
+        );
 
         let mut socket = UdpSocket::client(
             "127.0.0.1:9009".parse().unwrap(),
@@ -517,7 +600,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_server_filter_deny_ignore() {
-        let config = Arc::new(ServerConfig {
+        let config = ServerConfig {
             addr: "127.0.0.1:9010".parse().unwrap(),
             denylist: IpFilter::new(&["127.0.0.0/24".parse().unwrap()]),
             denylist_action: FilterAction::Ignore,
@@ -525,11 +608,17 @@ mod tests {
             allowlist_action: FilterAction::Ignore,
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
-        });
+        };
         let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
         let clock = TestClock {};
 
-        let server = ServerTask::spawn(config, system_snapshots, clock, Duration::from_secs(1));
+        let server = ServerTask::spawn(
+            config,
+            Default::default(),
+            system_snapshots,
+            clock,
+            Duration::from_secs(1),
+        );
 
         let mut socket = UdpSocket::client(
             "127.0.0.1:9011".parse().unwrap(),
@@ -549,7 +638,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_server_rate_limit() {
-        let config = Arc::new(ServerConfig {
+        let config = ServerConfig {
             addr: "127.0.0.1:9012".parse().unwrap(),
             denylist: IpFilter::none(),
             denylist_action: FilterAction::Ignore,
@@ -557,11 +646,17 @@ mod tests {
             allowlist_action: FilterAction::Ignore,
             rate_limiting_cutoff: Duration::from_millis(100),
             rate_limiting_cache_size: 32,
-        });
+        };
         let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
         let clock = TestClock {};
 
-        let server = ServerTask::spawn(config, system_snapshots, clock, Duration::from_secs(1));
+        let server = ServerTask::spawn(
+            config,
+            Default::default(),
+            system_snapshots,
+            clock,
+            Duration::from_secs(1),
+        );
 
         let mut socket = UdpSocket::client(
             "127.0.0.1:9013".parse().unwrap(),
@@ -611,7 +706,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_server_rate_limit_defaults() {
-        let config = Arc::new(ServerConfig {
+        let config = ServerConfig {
             addr: "127.0.0.1:9014".parse().unwrap(),
             denylist: IpFilter::none(),
             denylist_action: FilterAction::Ignore,
@@ -619,11 +714,17 @@ mod tests {
             allowlist_action: FilterAction::Ignore,
             rate_limiting_cutoff: Duration::default(),
             rate_limiting_cache_size: Default::default(),
-        });
+        };
         let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
         let clock = TestClock {};
 
-        let server = ServerTask::spawn(config, system_snapshots, clock, Duration::from_secs(1));
+        let server = ServerTask::spawn(
+            config,
+            Default::default(),
+            system_snapshots,
+            clock,
+            Duration::from_secs(1),
+        );
 
         let mut socket = UdpSocket::client(
             "127.0.0.1:9015".parse().unwrap(),
