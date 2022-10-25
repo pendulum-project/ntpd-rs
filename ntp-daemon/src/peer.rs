@@ -275,7 +275,7 @@ where
                         // reset the measurement state (as if this association was just created).
                         // crucially, this sets `self.next_expected_origin = None`, meaning that
                         // in-flight requests are ignored
-                        self.peer.reset_measurements();
+                        self.peer.reset();
 
                         // our next measurement will have the new reset epoch
                         self.reset_epoch = *self.channels.reset.borrow_and_update();
