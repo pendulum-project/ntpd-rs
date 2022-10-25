@@ -28,38 +28,28 @@ pub struct StepThreshold {
     pub backward: Option<NtpDuration>,
 }
 
-// We have a custom deserializer for StepThreshold because we
-// want to deserialize it from either a number or map
-impl<'de> Deserialize<'de> for StepThreshold {
+#[derive(Debug, Copy, Clone)]
+struct ThresholdPart(Option<NtpDuration>);
+
+impl<'de> Deserialize<'de> for ThresholdPart {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        struct StepThresholdVisitor;
+        struct ThresholdPartVisitor;
 
-        impl<'de> Visitor<'de> for StepThresholdVisitor {
-            type Value = StepThreshold;
+        impl<'de> Visitor<'de> for ThresholdPartVisitor {
+            type Value = ThresholdPart;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("float or map")
+                formatter.write_str("float or \"inf\"")
             }
 
             fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
             where
                 E: de::Error,
             {
-                let duration = NtpDuration::from_seconds(v);
-                if duration == NtpDuration::ZERO {
-                    Ok(StepThreshold {
-                        forward: None,
-                        backward: None,
-                    })
-                } else {
-                    Ok(StepThreshold {
-                        forward: Some(duration),
-                        backward: Some(duration),
-                    })
-                }
+                Ok(ThresholdPart(Some(NtpDuration::from_seconds(v))))
             }
 
             fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
@@ -76,6 +66,81 @@ impl<'de> Deserialize<'de> for StepThreshold {
                 self.visit_f64(v as f64)
             }
 
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if v != "inf" {
+                    return Err(de::Error::invalid_value(
+                        de::Unexpected::Str(v),
+                        &"float or \"inf\"",
+                    ));
+                }
+                Ok(ThresholdPart(None))
+            }
+        }
+
+        deserializer.deserialize_any(ThresholdPartVisitor)
+    }
+}
+
+// We have a custom deserializer for StepThreshold because we
+// want to deserialize it from either a number or map
+impl<'de> Deserialize<'de> for StepThreshold {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct StepThresholdVisitor;
+
+        impl<'de> Visitor<'de> for StepThresholdVisitor {
+            type Value = StepThreshold;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("float, map or \"inf\"")
+            }
+
+            fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let duration = NtpDuration::from_seconds(v);
+                Ok(StepThreshold {
+                    forward: Some(duration),
+                    backward: Some(duration),
+                })
+            }
+
+            fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_f64(v as f64)
+            }
+
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_f64(v as f64)
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if v != "inf" {
+                    return Err(de::Error::invalid_value(
+                        de::Unexpected::Str(v),
+                        &"float, map or \"inf\"",
+                    ));
+                }
+                Ok(StepThreshold {
+                    forward: None,
+                    backward: None,
+                })
+            }
+
             fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<StepThreshold, M::Error> {
                 let mut forward = None;
                 let mut backward = None;
@@ -86,25 +151,15 @@ impl<'de> Deserialize<'de> for StepThreshold {
                             if forward.is_some() {
                                 return Err(de::Error::duplicate_field("forward"));
                             }
-                            let raw: NtpDuration = map.next_value()?;
-
-                            if NtpDuration::ZERO == raw {
-                                forward = Some(None)
-                            } else {
-                                forward = Some(Some(raw))
-                            }
+                            let raw: ThresholdPart = map.next_value()?;
+                            forward = Some(raw.0);
                         }
                         "backward" => {
                             if backward.is_some() {
                                 return Err(de::Error::duplicate_field("backward"));
                             }
-                            let raw: NtpDuration = map.next_value()?;
-
-                            if NtpDuration::ZERO == raw {
-                                backward = Some(None)
-                            } else {
-                                backward = Some(Some(raw))
-                            }
+                            let raw: ThresholdPart = map.next_value()?;
+                            backward = Some(raw.0);
                         }
                         _ => {
                             return Err(de::Error::unknown_field(key, &["addr", "mode"]));

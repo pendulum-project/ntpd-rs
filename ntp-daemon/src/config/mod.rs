@@ -266,6 +266,8 @@ impl Config {
 mod tests {
     use std::{env, ffi::OsString};
 
+    use ntp_proto::NtpDuration;
+
     use super::*;
 
     #[test]
@@ -301,6 +303,25 @@ mod tests {
         let config: Config =
             toml::from_str("[[peers]]\naddr = \"example.com\"\n[system]\npanic-threshold = 0")
                 .unwrap();
+        assert_eq!(
+            config.peers,
+            vec![PeerConfig::Standard(StandardPeerConfig {
+                addr: NormalizedAddress::new_unchecked("example.com:123"),
+            })]
+        );
+        assert_eq!(
+            config.system.panic_threshold.forward,
+            Some(NtpDuration::from_seconds(0.))
+        );
+        assert_eq!(
+            config.system.panic_threshold.backward,
+            Some(NtpDuration::from_seconds(0.))
+        );
+
+        let config: Config = toml::from_str(
+            "[[peers]]\naddr = \"example.com\"\n[system]\npanic-threshold = \"inf\"",
+        )
+        .unwrap();
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
