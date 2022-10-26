@@ -165,8 +165,8 @@ impl<C: NtpClock> System<C> {
             clock_select.system_offset,
             clock_select.system_root_delay,
             clock_select.system_root_dispersion,
-            clock_select.system_peer_snapshot.leap_indicator,
-            clock_select.system_peer_snapshot.time,
+            clock_select.system_peer_snapshot.timedata.leap_indicator,
+            clock_select.system_peer_snapshot.timedata.time,
         );
         let offset_ms = self.controller.offset().to_seconds() * 1000.0;
         let jitter_ms = self.controller.jitter().to_seconds() * 1000.0;
@@ -184,8 +184,12 @@ impl<C: NtpClock> System<C> {
         if adjust_type != ClockUpdateResult::Ignore {
             let mut global = self.global_system_snapshot.write().await;
             global.poll_interval = self.controller.preferred_poll_interval();
-            global.leap_indicator = clock_select.system_peer_snapshot.leap_indicator;
-            global.stratum = clock_select.system_peer_snapshot.stratum.saturating_add(1);
+            global.leap_indicator = clock_select.system_peer_snapshot.timedata.leap_indicator;
+            global.stratum = clock_select
+                .system_peer_snapshot
+                .timedata
+                .stratum
+                .saturating_add(1);
             global.reference_id = clock_select.system_peer_snapshot.peer_id;
             global.accumulated_steps = self.controller.accumulated_steps();
             global.accumulated_steps_threshold = config.accumulated_threshold;

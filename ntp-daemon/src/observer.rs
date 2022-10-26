@@ -119,7 +119,7 @@ mod tests {
 
     use ntp_proto::{
         NtpDuration, NtpInstant, NtpLeapIndicator, NtpTimestamp, PeerSnapshot, PeerStatistics,
-        PollInterval, PollIntervalLimits, Reach, ReferenceId,
+        PeerTimeSnapshot, PollInterval, PollIntervalLimits, Reach, ReferenceId,
     };
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
@@ -173,23 +173,26 @@ mod tests {
             PeerStatus::NoMeasurement,
             PeerStatus::NoMeasurement,
             PeerStatus::Measurement(PeerSnapshot {
-                root_distance_without_time: NtpDuration::from_seconds(0.2),
-                statistics: PeerStatistics {
-                    offset: NtpDuration::from_seconds(0.05),
-                    delay: NtpDuration::from_seconds(0.03),
-                    dispersion: NtpDuration::from_seconds(0.05),
-                    jitter: 0.2,
-                },
-                time: NtpInstant::now(),
-                stratum: 2,
                 peer_id: ReferenceId::from_ip("127.0.0.1".parse().unwrap()),
                 poll_interval: PollIntervalLimits::default().max,
-                reference_id: ReferenceId::from_ip("127.0.0.3".parse().unwrap()),
                 our_id: ReferenceId::from_ip("127.0.0.2".parse().unwrap()),
                 reach: Reach::default(),
-                leap_indicator: NtpLeapIndicator::NoWarning,
-                root_delay: NtpDuration::from_seconds(0.2),
-                root_dispersion: NtpDuration::from_seconds(0.02),
+
+                timedata: PeerTimeSnapshot {
+                    leap_indicator: NtpLeapIndicator::NoWarning,
+                    root_delay: NtpDuration::from_seconds(0.2),
+                    root_dispersion: NtpDuration::from_seconds(0.02),
+                    reference_id: ReferenceId::from_ip("127.0.0.3".parse().unwrap()),
+                    root_distance_without_time: NtpDuration::from_seconds(0.2),
+                    statistics: PeerStatistics {
+                        offset: NtpDuration::from_seconds(0.05),
+                        delay: NtpDuration::from_seconds(0.03),
+                        dispersion: NtpDuration::from_seconds(0.05),
+                        jitter: 0.2,
+                    },
+                    time: NtpInstant::now(),
+                    stratum: 2,
+                },
             }),
         ];
 
@@ -260,23 +263,27 @@ mod tests {
             PeerStatus::NoMeasurement,
             PeerStatus::NoMeasurement,
             PeerStatus::Measurement(PeerSnapshot {
-                root_distance_without_time: NtpDuration::from_seconds(0.2),
-                statistics: PeerStatistics {
-                    offset: NtpDuration::from_seconds(0.05),
-                    delay: NtpDuration::from_seconds(0.03),
-                    dispersion: NtpDuration::from_seconds(0.05),
-                    jitter: 0.2,
-                },
-                time: NtpInstant::now(),
-                stratum: 2,
                 peer_id: ReferenceId::from_ip("127.0.0.1".parse().unwrap()),
                 poll_interval: PollIntervalLimits::default().max,
-                reference_id: ReferenceId::from_ip("127.0.0.3".parse().unwrap()),
                 our_id: ReferenceId::from_ip("127.0.0.2".parse().unwrap()),
                 reach: Reach::default(),
-                leap_indicator: NtpLeapIndicator::NoWarning,
-                root_delay: NtpDuration::from_seconds(0.2),
-                root_dispersion: NtpDuration::from_seconds(0.02),
+
+                timedata: PeerTimeSnapshot {
+                    root_distance_without_time: NtpDuration::from_seconds(0.2),
+                    statistics: PeerStatistics {
+                        offset: NtpDuration::from_seconds(0.05),
+                        delay: NtpDuration::from_seconds(0.03),
+                        dispersion: NtpDuration::from_seconds(0.05),
+                        jitter: 0.2,
+                    },
+                    time: NtpInstant::now(),
+                    stratum: 2,
+                    reference_id: ReferenceId::from_ip("127.0.0.3".parse().unwrap()),
+
+                    leap_indicator: NtpLeapIndicator::NoWarning,
+                    root_delay: NtpDuration::from_seconds(0.2),
+                    root_dispersion: NtpDuration::from_seconds(0.02),
+                },
             }),
         ];
 

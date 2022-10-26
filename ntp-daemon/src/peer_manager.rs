@@ -184,9 +184,9 @@ impl<C: NtpClock> Peers<C> {
         self.peers.iter().map(|(_, data)| match data.status {
             PeerStatus::NoMeasurement => ObservablePeerState::Nothing,
             PeerStatus::Measurement(snapshot) => ObservablePeerState::Observable {
-                statistics: snapshot.statistics,
+                statistics: snapshot.timedata.statistics,
                 reachability: snapshot.reach,
-                uptime: snapshot.time.elapsed(),
+                uptime: snapshot.timedata.time.elapsed(),
                 poll_interval: snapshot.poll_interval,
                 peer_id: snapshot.peer_id,
                 address: match &*data.config {

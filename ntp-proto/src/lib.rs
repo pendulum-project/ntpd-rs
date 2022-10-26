@@ -22,8 +22,8 @@ pub use identifiers::ReferenceId;
 
 pub use packet::{NtpAssociationMode, NtpLeapIndicator, NtpPacket};
 pub use peer::{
-    AcceptSynchronizationError, IgnoreReason, Peer, PeerSnapshot, PeerStatistics, Reach,
-    SystemSnapshot, Update,
+    AcceptSynchronizationError, IgnoreReason, Peer, PeerSnapshot, PeerStatistics, PeerTimeSnapshot,
+    Reach, SystemSnapshot, Update,
 };
 #[cfg(feature = "fuzz")]
 pub use time_types::fuzz_duration_from_seconds;
