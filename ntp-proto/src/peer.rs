@@ -264,21 +264,51 @@ pub enum IgnoreReason {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PeerSnapshot {
+    pub peer_id: ReferenceId,
+    pub our_id: ReferenceId,
+
+    pub poll_interval: PollInterval,
+    pub reach: Reach,
+
+    pub timedata: PeerTimeSnapshot,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PeerTimeSnapshot {
     pub root_distance_without_time: NtpDuration,
     pub statistics: PeerStatistics,
 
     pub time: NtpInstant,
     pub stratum: u8,
-    pub peer_id: ReferenceId,
-    pub poll_interval: PollInterval,
-
     pub reference_id: ReferenceId,
-    pub our_id: ReferenceId,
-    pub reach: Reach,
 
     pub leap_indicator: NtpLeapIndicator,
     pub root_delay: NtpDuration,
     pub root_dispersion: NtpDuration,
+}
+
+impl PeerTimeSnapshot {
+    pub(crate) fn root_distance(
+        &self,
+        local_clock_time: NtpInstant,
+        frequency_tolerance: FrequencyTolerance,
+    ) -> NtpDuration {
+        self.root_distance_without_time
+            + (NtpInstant::abs_diff(local_clock_time, self.time) * frequency_tolerance)
+    }
+
+    fn from_timestate(timestate: &PeerTimeState) -> Self {
+        Self {
+            root_distance_without_time: timestate.root_distance_without_time(),
+            statistics: timestate.statistics,
+            time: timestate.time,
+            stratum: timestate.last_packet.stratum(),
+            reference_id: timestate.last_packet.reference_id(),
+            leap_indicator: timestate.last_packet.leap(),
+            root_delay: timestate.last_packet.root_delay(),
+            root_dispersion: timestate.last_packet.root_dispersion(),
+        }
+    }
 }
 
 impl PeerSnapshot {
@@ -297,9 +327,10 @@ impl PeerSnapshot {
         // A stratum error occurs if
         //     1: the server has never been synchronized,
         //     2: the server stratum is higher than the local stratum
-        if !self.leap_indicator.is_synchronized() || self.stratum >= local_stratum {
+        if !self.timedata.leap_indicator.is_synchronized() || self.timedata.stratum >= local_stratum
+        {
             warn!(
-                stratum = debug(self.stratum),
+                stratum = debug(self.timedata.stratum),
                 "Peer rejected due to invalid stratum"
             );
             return Err(Stratum);
@@ -307,7 +338,9 @@ impl PeerSnapshot {
 
         //  A distance error occurs if the root distance exceeds the
         //  distance threshold plus an increment equal to one poll interval.
-        let distance = self.root_distance(local_clock_time, frequency_tolerance);
+        let distance = self
+            .timedata
+            .root_distance(local_clock_time, frequency_tolerance);
         if distance > distance_threshold + (system_poll * frequency_tolerance) {
             debug!(
                 ?distance,
@@ -322,7 +355,7 @@ impl PeerSnapshot {
         // if so, we shouldn't sync to them as that would create a loop.
         // Note, this can only ever be an issue if the peer is not using
         // hardware as its source, so ignore reference_id if stratum is 1.
-        if self.stratum != 1 && self.reference_id == self.our_id {
+        if self.timedata.stratum != 1 && self.timedata.reference_id == self.our_id {
             debug!("Peer rejected because of detected synchornization loop");
             return Err(Loop);
         }
@@ -336,29 +369,13 @@ impl PeerSnapshot {
         Ok(())
     }
 
-    pub(crate) fn root_distance(
-        &self,
-        local_clock_time: NtpInstant,
-        frequency_tolerance: FrequencyTolerance,
-    ) -> NtpDuration {
-        self.root_distance_without_time
-            + (NtpInstant::abs_diff(local_clock_time, self.time) * frequency_tolerance)
-    }
-
     pub fn from_peer(peer: &Peer) -> Self {
         Self {
-            root_distance_without_time: peer.timestate.root_distance_without_time(),
-            statistics: peer.timestate.statistics,
-            time: peer.timestate.time,
-            stratum: peer.timestate.last_packet.stratum(),
             peer_id: peer.peer_id,
-            reference_id: peer.timestate.last_packet.reference_id(),
             our_id: peer.our_id,
             reach: peer.reach,
-            leap_indicator: peer.timestate.last_packet.leap(),
-            root_delay: peer.timestate.last_packet.root_delay(),
-            root_dispersion: peer.timestate.last_packet.root_dispersion(),
             poll_interval: peer.last_poll_interval,
+            timedata: PeerTimeSnapshot::from_timestate(&peer.timestate),
         }
     }
 }
