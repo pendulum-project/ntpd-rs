@@ -204,7 +204,7 @@ jobs:
           default: true
           components: llvm-tools-preview
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@68642cc5901b14c13cb04aa371b7d64ce70103bd
+        uses: taiki-e/install-action@ba4b012f190b7b686be12ff3bbe35b5872a50c37
         with:
           tool: cargo-llvm-cov
       - name: Generate code coverage
