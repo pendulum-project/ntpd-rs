@@ -1,6 +1,10 @@
-use crate::sockets::create_unix_socket;
+use crate::server::ServerStats;
 use crate::Peers;
-use ntp_proto::{NtpClock, PeerStatistics, Reach, ReferenceId, SystemSnapshot};
+use crate::{peer_manager::ServerData, sockets::create_unix_socket};
+use ntp_proto::{NtpClock, PeerStatistics, PollInterval, Reach, ReferenceId, SystemSnapshot};
+use prometheus_client::encoding::text::Encode;
+use std::io::Write;
+use std::net::SocketAddr;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
@@ -12,6 +16,37 @@ use serde::{Deserialize, Serialize};
 pub struct ObservableState {
     pub system: SystemSnapshot,
     pub peers: Vec<ObservablePeerState>,
+    pub servers: Vec<ObservableServerState>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ObservableServerState {
+    pub address: WrappedSocketAddr,
+    pub stats: ServerStats,
+}
+
+impl From<ServerData> for ObservableServerState {
+    fn from(data: ServerData) -> Self {
+        ObservableServerState {
+            address: data.config.addr.into(),
+            stats: data.stats,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct WrappedSocketAddr(SocketAddr);
+
+impl From<SocketAddr> for WrappedSocketAddr {
+    fn from(s: SocketAddr) -> Self {
+        WrappedSocketAddr(s)
+    }
+}
+
+impl Encode for WrappedSocketAddr {
+    fn encode(&self, writer: &mut dyn Write) -> Result<(), std::io::Error> {
+        writer.write_all(self.0.to_string().as_bytes())
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -21,7 +56,7 @@ pub enum ObservablePeerState {
         statistics: PeerStatistics,
         reachability: Reach,
         uptime: std::time::Duration,
-        poll_interval: std::time::Duration,
+        poll_interval: PollInterval,
         peer_id: ReferenceId,
         address: String,
     },
@@ -64,8 +99,14 @@ async fn observer<C: NtpClock>(
         let (mut stream, _addr) = peers_listener.accept().await?;
 
         let observe = ObservableState {
-            peers: peers_reader.read().await.observe().collect(),
+            peers: peers_reader.read().await.observe_peers().collect(),
             system: *system_reader.read().await,
+            servers: peers_reader
+                .read()
+                .await
+                .servers()
+                .map(|s| s.into())
+                .collect(),
         };
 
         crate::sockets::write_json(&mut stream, &observe).await?;
@@ -78,7 +119,7 @@ mod tests {
 
     use ntp_proto::{
         NtpDuration, NtpInstant, NtpLeapIndicator, NtpTimestamp, PeerSnapshot, PeerStatistics,
-        PollInterval, Reach, ReferenceId,
+        PollInterval, PollIntervalLimits, Reach, ReferenceId,
     };
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
@@ -142,7 +183,7 @@ mod tests {
                 time: NtpInstant::now(),
                 stratum: 2,
                 peer_id: ReferenceId::from_ip("127.0.0.1".parse().unwrap()),
-                poll_interval: PollInterval::MAX,
+                poll_interval: PollIntervalLimits::default().max,
                 reference_id: ReferenceId::from_ip("127.0.0.3".parse().unwrap()),
                 our_id: ReferenceId::from_ip("127.0.0.2".parse().unwrap()),
                 reach: Reach::default(),
@@ -171,7 +212,7 @@ mod tests {
         )));
 
         let system_reader = Arc::new(tokio::sync::RwLock::new(SystemSnapshot {
-            poll_interval: PollInterval::MIN,
+            poll_interval: PollIntervalLimits::default().min,
             stratum: 1,
             precision: NtpDuration::from_seconds(1e-3),
             root_delay: NtpDuration::ZERO,
@@ -229,7 +270,7 @@ mod tests {
                 time: NtpInstant::now(),
                 stratum: 2,
                 peer_id: ReferenceId::from_ip("127.0.0.1".parse().unwrap()),
-                poll_interval: PollInterval::MAX,
+                poll_interval: PollIntervalLimits::default().max,
                 reference_id: ReferenceId::from_ip("127.0.0.3".parse().unwrap()),
                 our_id: ReferenceId::from_ip("127.0.0.2".parse().unwrap()),
                 reach: Reach::default(),
@@ -260,7 +301,7 @@ mod tests {
         let peers_writer = peers_reader.clone();
 
         let system_reader = Arc::new(tokio::sync::RwLock::new(SystemSnapshot {
-            poll_interval: PollInterval::MIN,
+            poll_interval: PollIntervalLimits::default().min,
             stratum: 1,
             precision: NtpDuration::from_seconds(1e-3),
             reference_id: ReferenceId::NONE,

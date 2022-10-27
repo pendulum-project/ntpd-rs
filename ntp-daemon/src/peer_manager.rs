@@ -1,17 +1,17 @@
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
 use crate::{
-    config::{NormalizedAddress, PeerConfig, PoolPeerConfig, ServerConfig, StandardPeerConfig},
+    config::{NormalizedAddress, PoolPeerConfig, ServerConfig, StandardPeerConfig},
     observer::ObservablePeerState,
     peer::{MsgForSystem, PeerChannels, PeerTask, ResetEpoch},
-    server::ServerTask,
+    server::{ServerStats, ServerTask},
 };
 use ntp_proto::{NtpClock, PeerSnapshot};
 use tokio::{
     sync::mpsc::{Receiver, Sender},
     task::JoinHandle,
 };
-use tracing::{debug, warn};
+use tracing::warn;
 
 const NETWORK_WAIT_PERIOD: std::time::Duration = std::time::Duration::from_secs(1);
 
@@ -91,10 +91,16 @@ struct PeerState {
     peer_address: PeerAddress,
 }
 
+#[derive(Debug, Clone)]
+pub struct ServerData {
+    pub stats: ServerStats,
+    pub config: ServerConfig,
+}
+
 #[derive(Debug)]
 pub struct Peers<C: NtpClock> {
     peers: HashMap<PeerIndex, PeerState>,
-    servers: Vec<Arc<ServerConfig>>,
+    servers: Vec<ServerData>,
     peer_indexer: PeerIndexIssuer,
     pool_indexer: PoolIndexIssuer,
 
@@ -200,18 +206,19 @@ impl<C: NtpClock> Peers<C> {
         self.add_peer_internal(address).await
     }
 
-    fn add_server_internal(&mut self, config: Arc<ServerConfig>) -> JoinHandle<()> {
-        self.servers.push(config.clone());
+    pub async fn add_server(&mut self, config: ServerConfig) -> JoinHandle<()> {
+        let stats = ServerStats::default();
+        self.servers.push(ServerData {
+            stats: stats.clone(),
+            config: config.clone(),
+        });
         ServerTask::spawn(
             config,
+            stats,
             self.channels.system_snapshots.clone(),
             self.clock.clone(),
             NETWORK_WAIT_PERIOD,
         )
-    }
-
-    pub async fn add_server(&mut self, config: ServerConfig) -> JoinHandle<()> {
-        self.add_server_internal(Arc::new(config))
     }
 
     #[cfg(test)]
@@ -220,7 +227,7 @@ impl<C: NtpClock> Peers<C> {
         raw_configs: &[crate::config::PeerConfig],
         clock: C,
     ) -> Self {
-        use crate::config::{PeerConfig, PoolPeerConfig, StandardPeerConfig};
+        use crate::config::PeerConfig;
 
         assert_eq!(data.len(), raw_configs.len());
 
@@ -262,14 +269,14 @@ impl<C: NtpClock> Peers<C> {
         self.peers.len()
     }
 
-    pub fn observe(&self) -> impl Iterator<Item = ObservablePeerState> + '_ {
+    pub fn observe_peers(&self) -> impl Iterator<Item = ObservablePeerState> + '_ {
         self.peers.iter().map(|(_, data)| match data.status {
             PeerStatus::NoMeasurement => ObservablePeerState::Nothing,
             PeerStatus::Measurement(snapshot) => ObservablePeerState::Observable {
                 statistics: snapshot.statistics,
                 reachability: snapshot.reach,
                 uptime: snapshot.time.elapsed(),
-                poll_interval: snapshot.poll_interval.as_system_duration(),
+                poll_interval: snapshot.poll_interval,
                 peer_id: snapshot.peer_id,
                 address: match &data.peer_address {
                     PeerAddress::Peer { address } => address.as_str().to_string(),
@@ -277,6 +284,10 @@ impl<C: NtpClock> Peers<C> {
                 },
             },
         })
+    }
+
+    pub fn servers(&self) -> impl Iterator<Item = ServerData> + '_ {
+        self.servers.iter().cloned()
     }
 
     pub fn valid_snapshots(&self) -> impl Iterator<Item = PeerSnapshot> + '_ {
@@ -483,8 +494,6 @@ impl Spawner {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use ntp_proto::{
         peer_snapshot, NtpDuration, NtpInstant, NtpLeapIndicator, NtpTimestamp, PeerStatistics,
         PollInterval, SystemConfig, SystemSnapshot,

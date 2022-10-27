@@ -10,7 +10,7 @@
 use crate::packet::NtpAssociationMode;
 use crate::peer::PeerStatistics;
 use crate::time_types::{FrequencyTolerance, NtpInstant};
-use crate::{packet::NtpLeapIndicator, NtpDuration, NtpHeader, NtpTimestamp};
+use crate::{packet::NtpLeapIndicator, NtpDuration, NtpPacket, NtpTimestamp};
 use tracing::{debug, instrument, warn};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,7 +42,7 @@ impl FilterTuple {
     /// A Broadcast association requires different logic.
     /// All other associations should use this function
     pub(crate) fn from_packet_default(
-        packet: &NtpHeader,
+        packet: &NtpPacket,
         system_precision: NtpDuration,
         local_clock_time: NtpInstant,
         frequency_tolerance: FrequencyTolerance,
@@ -57,9 +57,9 @@ impl FilterTuple {
         // | dst       | T4         | destination timestamp |
 
         // for a broadcast association, different logic is used
-        debug_assert_ne!(packet.mode, NtpAssociationMode::Broadcast);
+        debug_assert_ne!(packet.mode(), NtpAssociationMode::Broadcast);
 
-        let packet_precision = NtpDuration::from_exponent(packet.precision);
+        let packet_precision = NtpDuration::from_exponent(packet.precision());
 
         // NOTE: origin_timestamp and destination_timestamp are passed in explicitly, and are not
         // part of the packet.
@@ -71,13 +71,13 @@ impl FilterTuple {
         // was sent.
 
         // offset is the average of the deltas (T2 - T1) and (T3 - T4)
-        let offset1 = packet.receive_timestamp - origin_timestamp;
-        let offset2 = packet.transmit_timestamp - destination_timestamp;
+        let offset1 = packet.receive_timestamp() - origin_timestamp;
+        let offset2 = packet.transmit_timestamp() - destination_timestamp;
         let offset = (offset1 + offset2) / 2i64;
 
         // delay is (T4 - T1) - (T3 - T2)
         let delta1 = destination_timestamp - origin_timestamp;
-        let delta2 = packet.transmit_timestamp - packet.receive_timestamp;
+        let delta2 = packet.transmit_timestamp() - packet.receive_timestamp();
         // In cases where the server and client clocks are running at different rates
         // and with very fast networks, the delay can appear negative.
         // delay is clamped to ensure it is always positive
@@ -279,19 +279,20 @@ pub fn fuzz_tuple_from_packet_default(
     client_precision: i8,
     server_precision: i8,
 ) {
-    let mut packet = NtpHeader::new();
-    packet.origin_timestamp = NtpTimestamp::from_fixed_int(client);
-    packet.receive_timestamp = NtpTimestamp::from_fixed_int(server);
-    packet.transmit_timestamp =
-        NtpTimestamp::from_fixed_int(server.wrapping_add(server_interval as u64));
-    packet.precision = server_precision;
+    let mut packet = NtpPacket::test();
+    packet.set_origin_timestamp(NtpTimestamp::from_fixed_int(client));
+    packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(server));
+    packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(
+        server.wrapping_add(server_interval as u64),
+    ));
+    packet.set_precision(server_precision);
 
     let result = FilterTuple::from_packet_default(
         &packet,
         NtpDuration::from_exponent(client_precision),
         NtpInstant::now(),
         FrequencyTolerance::ppm(15),
-        packet.origin_timestamp,
+        NtpTimestamp::from_fixed_int(client),
         NtpTimestamp::from_fixed_int(client.wrapping_add(client_interval as u64)),
     );
 
@@ -469,52 +470,52 @@ mod test {
     fn test_tuple_from_packet_default() {
         let instant = NtpInstant::now();
 
-        let mut packet = NtpHeader::new();
-        packet.origin_timestamp = NtpTimestamp::from_fixed_int(0);
-        packet.receive_timestamp = NtpTimestamp::from_fixed_int(1);
-        packet.transmit_timestamp = NtpTimestamp::from_fixed_int(2);
-        packet.precision = -32;
+        let mut packet = NtpPacket::test();
+        packet.set_origin_timestamp(NtpTimestamp::from_fixed_int(0));
+        packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(1));
+        packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(2));
+        packet.set_precision(-32);
 
         let result = FilterTuple::from_packet_default(
             &packet,
             NtpDuration::from_exponent(-32),
             instant,
             FrequencyTolerance::ppm(15),
-            packet.origin_timestamp,
+            NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(3),
         );
         assert_eq!(result.offset, NtpDuration::from_fixed_int(0));
         assert_eq!(result.delay, NtpDuration::from_fixed_int(2));
         assert!(result.dispersion >= NtpDuration::from_fixed_int(0));
 
-        packet.origin_timestamp = NtpTimestamp::from_fixed_int(0);
-        packet.receive_timestamp = NtpTimestamp::from_fixed_int(2);
-        packet.transmit_timestamp = NtpTimestamp::from_fixed_int(3);
-        packet.precision = -32;
+        packet.set_origin_timestamp(NtpTimestamp::from_fixed_int(0));
+        packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(2));
+        packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(3));
+        packet.set_precision(-32);
 
         let result = FilterTuple::from_packet_default(
             &packet,
             NtpDuration::from_exponent(-32),
             instant,
             FrequencyTolerance::ppm(15),
-            packet.origin_timestamp,
+            NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(3),
         );
         assert_eq!(result.offset, NtpDuration::from_fixed_int(1));
         assert_eq!(result.delay, NtpDuration::from_fixed_int(2));
         assert!(result.dispersion >= NtpDuration::from_fixed_int(0));
 
-        packet.origin_timestamp = NtpTimestamp::from_fixed_int(0);
-        packet.receive_timestamp = NtpTimestamp::from_fixed_int(0);
-        packet.transmit_timestamp = NtpTimestamp::from_fixed_int(5);
-        packet.precision = -32;
+        packet.set_origin_timestamp(NtpTimestamp::from_fixed_int(0));
+        packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(0));
+        packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(5));
+        packet.set_precision(-32);
 
         let result = FilterTuple::from_packet_default(
             &packet,
             NtpDuration::from_exponent(-32),
             instant,
             FrequencyTolerance::ppm(15),
-            packet.origin_timestamp,
+            NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(3),
         );
         assert_eq!(result.offset, NtpDuration::from_fixed_int(1));

@@ -6,7 +6,6 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use ntp_daemon::{Config, ConfigUpdate, ObservableState};
-use prometheus::DisplayPrometheus;
 
 #[derive(Parser)]
 #[command(version = "0.1.0", about = "Query and configure the ntpd-rs daemon")]
@@ -43,7 +42,7 @@ enum Command {
 }
 
 #[tokio::main]
-async fn main() -> std::io::Result<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     let config = Config::from_args(cli.config, vec![], vec![]).await;
@@ -123,15 +122,23 @@ async fn main() -> std::io::Result<()> {
             let output: ObservableState =
                 ntp_daemon::sockets::read_json(&mut stream, &mut msg).await?;
 
-            println!("{}", prometheus::PEER_TYPE_HEADERS);
+            let metrics = prometheus::Metrics::default();
+            metrics.fill(&output);
+            let registry = prometheus::create_registry(&metrics);
+            let mut buf = vec![];
+            prometheus_client::encoding::text::encode(&mut buf, &registry)?;
+            let result = String::from_utf8(buf)?;
+            println!("{}", result);
 
-            for peer in output.peers.iter() {
-                peer.write_prometheus(&mut std::io::stdout(), &[])?;
-            }
+            // println!("{}", prometheus::PEER_TYPE_HEADERS);
 
-            output
-                .system
-                .write_prometheus(&mut std::io::stdout(), &[])?;
+            // for peer in output.peers.iter() {
+            //     peer.write_prometheus(&mut std::io::stdout(), &[])?;
+            // }
+
+            // output
+            //     .system
+            //     .write_prometheus(&mut std::io::stdout(), &[])?;
 
             0
         }

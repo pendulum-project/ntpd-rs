@@ -20,11 +20,13 @@ pub use config::{StepThreshold, SystemConfig};
 pub use filter::fuzz_tuple_from_packet_default;
 pub use identifiers::ReferenceId;
 
-pub use packet::{NtpAssociationMode, NtpHeader, NtpLeapIndicator};
+pub use packet::{NtpAssociationMode, NtpLeapIndicator, NtpPacket};
 pub use peer::{
     AcceptSynchronizationError, IgnoreReason, Peer, PeerSnapshot, PeerStatistics, Reach,
     SystemSnapshot, Update,
 };
 #[cfg(feature = "fuzz")]
 pub use time_types::fuzz_duration_from_seconds;
-pub use time_types::{FrequencyTolerance, NtpDuration, NtpInstant, NtpTimestamp, PollInterval};
+pub use time_types::{
+    FrequencyTolerance, NtpDuration, NtpInstant, NtpTimestamp, PollInterval, PollIntervalLimits,
+};

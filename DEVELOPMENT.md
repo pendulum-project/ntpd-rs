@@ -32,9 +32,9 @@ The `ntp-daemon` crate contains the code orchestrating the running of the daemon
 
 For each of these tasks, the daemon crate contains the logic for input/output and handing of relevant communications between the tasks. In particular, all code needed to deal with the async and parallel execution environment lives here. The implementation of the actual parsing of network packets, and the steering and filtering algorithms is handled by the `ntp-proto` crate.
 
-### ntp-client
+### ntp-ctl
 
-The `ntp-client` crate communicates with the daemon's observability and configuration tasks (see below) to provide information about the daemon's state and change configuration options at runtime. 
+The `ntp-ctl` crate communicates with the daemon's observability and configuration tasks (see below) to provide information about the daemon's state and change configuration options at runtime.
 
 ### ntp-udp
 
@@ -96,7 +96,7 @@ Note that it never reads from any opened connection on the socket. This is on pu
 ### Configuration task
 
 The configuration task changes configuration dynamically at runtime. The task listens to a socket
-for new configuration changes. The `ntp-client` executable is an example of how to interact with 
+for new configuration changes. The `ntp-ctl` executable is an example of how to interact with
 this socket.
 
-Because this task reads from its socket, it is advised to restrict the permissions on this socket. 
+Because this task reads from its socket, it is advised to restrict the permissions on this socket.

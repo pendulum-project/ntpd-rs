@@ -1,20 +1,14 @@
 #![forbid(unsafe_code)]
 
-use std::{
-    io::{self, IoSliceMut},
-    mem::size_of,
-    net::SocketAddr,
-    os::unix::prelude::RawFd,
-};
+use std::{io, net::SocketAddr, os::unix::prelude::RawFd};
 
 use ntp_proto::NtpTimestamp;
 use tokio::io::unix::AsyncFd;
 use tracing::{debug, instrument, trace, warn};
 
-use crate::{
-    control_message_space, control_messages, exceptional_condition_fd,
-    interface_name::sockaddr_storage_to_socket_addr, receive_message, set_timestamping_options,
-    zeroed_sockaddr_storage, ControlMessage, TimestampingConfig,
+use crate::raw_socket::{
+    control_message_space, exceptional_condition_fd, receive_message, set_timestamping_options,
+    ControlMessage, MessageQueue, TimestampingConfig,
 };
 
 enum Timestamping {
@@ -254,45 +248,21 @@ fn recv(
     socket: &std::net::UdpSocket,
     buf: &mut [u8],
 ) -> io::Result<(usize, SocketAddr, Option<NtpTimestamp>)> {
-    let mut buf_slice = IoSliceMut::new(buf);
-
     let mut control_buf = [0; control_message_space::<[libc::timespec; 3]>()];
-    let mut addr = zeroed_sockaddr_storage();
-    let mut mhdr = libc::msghdr {
-        msg_control: control_buf.as_mut_ptr().cast::<libc::c_void>(),
-        msg_controllen: control_buf.len(),
-        msg_iov: (&mut buf_slice as *mut IoSliceMut).cast::<libc::iovec>(),
-        msg_iovlen: 1,
-        msg_flags: 0,
-        msg_name: (&mut addr as *mut libc::sockaddr_storage).cast::<libc::c_void>(),
-        msg_namelen: size_of::<libc::sockaddr_storage>() as u32,
-    };
 
     // loops for when we receive an interrupt during the recv
-    let flags = 0;
-    let bytes_read = receive_message(socket, &mut mhdr, flags)? as usize;
-
-    let sock_addr = sockaddr_storage_to_socket_addr(&addr)
-        .unwrap_or_else(|| unreachable!("We never constructed a non-ip socket"));
-
-    if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
-        warn!(
-            max_len = buf.len(),
-            "truncated packet because it was larger than expected",
-        );
-    }
-
-    if mhdr.msg_flags & libc::MSG_CTRUNC > 0 {
-        warn!("truncated control messages");
-    }
+    let (bytes_read, control_messages, sock_addr) =
+        receive_message(socket, buf, &mut control_buf, MessageQueue::Normal)?;
+    let sock_addr =
+        sock_addr.unwrap_or_else(|| unreachable!("We never constructed a non-ip socket"));
 
     // Loops through the control messages, but we should only get a single message in practice
-    for msg in control_messages(&mhdr) {
+    for msg in control_messages {
         match msg {
             ControlMessage::Timestamping(timespec) => {
                 let timestamp = read_ntp_timestamp(timespec);
 
-                return Ok((bytes_read, sock_addr, Some(timestamp)));
+                return Ok((bytes_read as usize, sock_addr, Some(timestamp)));
             }
 
             ControlMessage::ReceiveError(_error) => {
@@ -308,7 +278,7 @@ fn recv(
         }
     }
 
-    Ok((bytes_read, sock_addr, None))
+    Ok((bytes_read as usize, sock_addr, None))
 }
 
 fn fetch_send_timestamp_help(
@@ -328,28 +298,12 @@ fn fetch_send_timestamp_help(
         + control_message_space::<(libc::sock_extended_err, libc::sockaddr_storage)>();
 
     let mut control_buf = [0; CONTROL_SIZE];
-    let mut mhdr = libc::msghdr {
-        msg_control: control_buf.as_mut_ptr().cast::<libc::c_void>(),
-        msg_controllen: control_buf.len(),
-        msg_iov: std::ptr::null_mut(),
-        msg_iovlen: 0,
-        msg_flags: 0,
-        msg_name: std::ptr::null_mut(),
-        msg_namelen: 0,
-    };
 
-    receive_message(socket, &mut mhdr, libc::MSG_ERRQUEUE)?;
-
-    if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
-        warn!("truncated packet because it was larger than expected",);
-    }
-
-    if mhdr.msg_flags & libc::MSG_CTRUNC > 0 {
-        warn!("truncated control messages");
-    }
+    let (_, control_messages, _) =
+        receive_message(socket, &mut [], &mut control_buf, MessageQueue::Error)?;
 
     let mut send_ts = None;
-    for msg in control_messages(&mhdr) {
+    for msg in control_messages {
         match msg {
             ControlMessage::Timestamping(timespec) => {
                 send_ts = Some(read_ntp_timestamp(timespec));

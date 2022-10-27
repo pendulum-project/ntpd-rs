@@ -7,7 +7,7 @@ use std::{
 };
 
 use ntp_proto::{
-    IgnoreReason, NtpClock, NtpHeader, NtpInstant, NtpTimestamp, Peer, PeerSnapshot, ReferenceId,
+    IgnoreReason, NtpClock, NtpInstant, NtpPacket, NtpTimestamp, Peer, PeerSnapshot, ReferenceId,
     SystemConfig, SystemSnapshot, Update,
 };
 use ntp_udp::UdpSocket;
@@ -144,7 +144,10 @@ where
 
     async fn handle_poll(&mut self, poll_wait: &mut Pin<&mut T>) -> PollResult {
         let system_snapshot = *self.channels.system_snapshots.read().await;
-        let packet = self.peer.generate_poll_message(system_snapshot);
+        let config_snapshot = *self.channels.system_config.read().await;
+        let packet = self
+            .peer
+            .generate_poll_message(system_snapshot, &config_snapshot);
 
         // Sent a poll, so update waiting to match deadline of next
         self.last_poll_sent = Instant::now();
@@ -192,18 +195,19 @@ where
     async fn handle_packet(
         &mut self,
         poll_wait: &mut Pin<&mut T>,
-        packet: NtpHeader,
+        packet: NtpPacket,
         send_timestamp: NtpTimestamp,
         recv_timestamp: NtpTimestamp,
     ) -> PacketResult {
         let ntp_instant = NtpInstant::now();
 
         let system_snapshot = *self.channels.system_snapshots.read().await;
+        let system_config = *self.channels.system_config.read().await;
         let result = self.peer.handle_incoming(
             system_snapshot,
+            &system_config,
             packet,
             ntp_instant,
-            self.channels.system_config.read().await.frequency_tolerance,
             send_timestamp,
             recv_timestamp,
         );
@@ -331,7 +335,8 @@ where
                 let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
 
                 let local_clock_time = NtpInstant::now();
-                let peer = Peer::new(our_id, peer_id, local_clock_time);
+                let config_snapshot = *channels.system_config.read().await;
+                let peer = Peer::new(our_id, peer_id, local_clock_time, &config_snapshot);
 
                 let poll_wait = tokio::time::sleep(std::time::Duration::default());
                 tokio::pin!(poll_wait);
@@ -361,7 +366,7 @@ where
 
 #[derive(Debug)]
 enum AcceptResult {
-    Accept(NtpHeader, NtpTimestamp),
+    Accept(NtpPacket, NtpTimestamp),
     Ignore,
     NetworkGone,
 }
@@ -388,7 +393,7 @@ fn accept_packet(
 
                 AcceptResult::Ignore
             } else {
-                match NtpHeader::deserialize(buf) {
+                match NtpPacket::deserialize(buf) {
                     Ok(packet) => AcceptResult::Accept(packet, recv_timestamp),
                     Err(e) => {
                         warn!("received invalid packet: {}", e);
@@ -420,7 +425,7 @@ fn accept_packet(
 mod tests {
     use std::time::Duration;
 
-    use ntp_proto::{NtpAssociationMode, NtpDuration, NtpLeapIndicator, PollInterval};
+    use ntp_proto::{NtpDuration, NtpLeapIndicator, PollInterval};
     use tokio::sync::{mpsc, watch, RwLock};
 
     use super::*;
@@ -557,14 +562,19 @@ mod tests {
         let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
         let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
 
-        let local_clock_time = NtpInstant::now();
-        let peer = Peer::new(our_id, peer_id, local_clock_time);
-
         let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
         let system_config = Arc::new(RwLock::new(SystemConfig::default()));
         let (msg_for_system_sender, msg_for_system_receiver) = mpsc::channel(1);
         let (spawn_config, _) = mpsc::channel(1);
         let (reset_send, reset) = watch::channel(ResetEpoch::default());
+
+        let local_clock_time = NtpInstant::now();
+        let peer = Peer::new(
+            our_id,
+            peer_id,
+            local_clock_time,
+            &*system_config.read().await,
+        );
 
         let process = PeerTask {
             _wait: PhantomData,
@@ -694,6 +704,11 @@ mod tests {
         // Note: Ports must be unique among tests to deal with parallelism
         let (mut process, mut socket, mut msg_recv, _reset) = test_startup(8008).await;
 
+        let system = SystemSnapshot {
+            leap_indicator: NtpLeapIndicator::NoWarning,
+            ..Default::default()
+        };
+
         let (poll_wait, poll_send) = TestWait::new();
         let clock = TestClock {};
 
@@ -712,14 +727,8 @@ mod tests {
         assert_eq!(size, 48);
         let timestamp = timestamp.unwrap();
 
-        let rec_packet = NtpHeader::deserialize(&buf).unwrap();
-        let mut send_packet = NtpHeader::new();
-        send_packet.leap = NtpLeapIndicator::NoWarning;
-        send_packet.stratum = 1;
-        send_packet.mode = NtpAssociationMode::Server;
-        send_packet.origin_timestamp = rec_packet.transmit_timestamp;
-        send_packet.receive_timestamp = timestamp;
-        send_packet.transmit_timestamp = clock.now().unwrap();
+        let rec_packet = NtpPacket::deserialize(&buf).unwrap();
+        let send_packet = NtpPacket::timestamp_response(&system, rec_packet, timestamp, &clock);
 
         socket.send(&send_packet.serialize()).await.unwrap();
 
@@ -751,12 +760,8 @@ mod tests {
         assert_eq!(size, 48);
         assert!(timestamp.is_some());
 
-        let rec_packet = NtpHeader::deserialize(&buf).unwrap();
-        let mut send_packet = NtpHeader::new();
-        send_packet.stratum = 0;
-        send_packet.mode = NtpAssociationMode::Server;
-        send_packet.origin_timestamp = rec_packet.transmit_timestamp;
-        send_packet.reference_id = ReferenceId::KISS_DENY;
+        let rec_packet = NtpPacket::deserialize(&buf).unwrap();
+        let send_packet = NtpPacket::deny_response(rec_packet);
 
         socket.send(&send_packet.serialize()).await.unwrap();
 

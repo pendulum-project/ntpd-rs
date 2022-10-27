@@ -45,6 +45,7 @@ The following command line options are available. When an option is not provided
 | `-c <FILE>`, `--config <FILE>` | First existing of `./ntp.toml`, `/etc/ntp.toml` | Which configuration file to use. When provided, the fallback locations are not used. |
 | `-l <LEVEL>`, `--log-filter <LEVEL>` | From configuration file | Override for the configuration file `log-filter` parameter, see explanation there. |
 | `-p <ADDR>`, `--peer <ADDR>` | | Setup a connection to the given server, overrides the peers in the configuration file. Can be given multiple times to configure multiple servers as reference. |
+| `-s <ADDR>`, `--server <ADDR>` | | Respond as NTP server to packets arriving to the given address, overrides server configuration in the configuration file. Can be given multiple times to attach as NTP server to multiple network interfaces. |
 
 ### Configuration file
 
@@ -58,16 +59,29 @@ General options:
 Peers are configured in the `peers` section. Per peer, the following options are available:
 | Option | Default | Description |
 | --- | --- | --- |
-| addr | | Address of the remote server |
+| addr | | Address of the remote server. |
 Note that peers can also be generated from simply a string containing the address, see also the example below.
 
-The daemon can expose an observation socket that can be read to obtain information on the current state of the peer connections and clock steering algorithm. This socket can be configured via the `observe` sections:
+Interfaces on which to act as a server are configured in the `server` section. Per interface configured, the following options are available:
+| Option | Default | Description |
+| --- | --- | --- |
+| addr | | Address of the interface to bind to. |
+| allowlist | ["0.0.0.0/0", "::/0"] | List of IP subnets allowed to contact through this interface. |
+| allowlist-action | | Action taken when a client's IP is not on the list of allowed clients. Can be `Ignore` to ignore packets from such clients, or `Deny` to send a deny response to those clients. |
+| denylist | [] | List of IP subnets disallowed to contact through this interface. |
+| denylist-action | | Action taken when a client's IP is on the list of denied clients. Can be `Ignore` to ignore packets from such clients, or `Deny` to send a deny response to those clients. |
+| rate-limiting-cache-size | 0 | How many clients to remember for the purpose of rate limiting. Increasing this number also decreases the probability of two clients sharing an entry in the table. A size of 0 disables rate limiting. |
+| rate-limiting-cutoff-ms | 1000 | Minimum time between two client requests from the same IP address, in milliseconds. When a client send requests closer together than this it is sent a rate limit message instead of a normal time-providing response. |
+For rate limiting, the server uses a hashtable to store when it has last seen a client. On a hash collision, the previous entry at that position is evicted. At small table sizes, this might reduce the effectiveness of ratelimiting when combined with high overall server load.
+In applying the three client filters (deny, allow and ratelimiting), the server first checks whether the clients IP is on the denylist, then it checks whether it is on the allowlist, and finally it checks whether the client needs to be rate-limited. At each of these stages, the appropriate action is taken when the client fails the check.
+
+The daemon can expose an observation socket that can be read to obtain information on the current state of the peer connections and clock steering algorithm. This socket can be configured via the `observe` section:
 | Option | Default | Description |
 | --- | --- | --- |
 | path | | Path on which the observation socket is exposed. If no path is given, the observation socket is disabled. |
 | mode | 0o777 | Permissions with which the socket should be created, given as (octal) integer. |
 
-The daemon can also expose a configuration socket that can be used to change some configuration options dynamically. This socket can be configured via the `configure` sections:
+The daemon can also expose a configuration socket that can be used to change some configuration options dynamically. This socket can be configured via the `configure` section:
 | Option | Default | Description |
 | --- | --- | --- |
 | path | | Path on which the configuration socket is exposed. If no path is given, the configuration socket is disabled. |
@@ -84,8 +98,8 @@ There are a number of options available to influence how time differences to the
 | distance-threshold | 1 | Maximum delay to the clock representing ground truth via a peer for that peer to be considered acceptable, in seconds. |
 | frequency-measurement-period | 900 | Amount of time to spend on startup measuring the frequency offset of the system clock, in seconds. Lowering this means the clock is kept actively synchronized sooner, but reduces the precision of the initial frequency estimate, which could result in lower stability of the clock early on. |
 | spike-threshold | 900 | Amount of time before a clock difference larger than 125ms is considered real instead of a spike in the network. Lower values ensure large errors are corrected faster, but make the client more sensitive to network issues. Value provided is in seconds. |
-| panic-threshold | 1800 (symmetric) | Largest time difference the client is allowed to correct in one go. Differences beyond this cause the client to abort synchronization. Value provided is in seconds, set to 0 to disable checking of jumps. |
-| startup-panic-threshold | No limit forward, 1800 backward | Largest time difference the client is allowed to correct during startup. By default, this is unrestricted as we may be the initial source of time for systems without a hardware backed clock. Value provided is in seconds, set to 0 to disable checking of jumps. |
+| panic-threshold | 1800 (symmetric) | Largest time difference the client is allowed to correct in one go. Differences beyond this cause the client to abort synchronization. Value provided is in seconds, set to "inf" to disable checking of jumps. Setting this to 0 will disable time jumps except at startup. |
+| startup-panic-threshold | No limit forward, 1800 backward | Largest time difference the client is allowed to correct during startup. By default, this is unrestricted as we may be the initial source of time for systems without a hardware backed clock. Value provided is in seconds, set to "inf" to disable checking of jumps. |
 | accumulated-threshold | Disabled | Total amount of time difference the client is allowed to correct using steps whilst running. By default, this is unrestricted. Value provided is in seconds, set to 0 to disable checking of accumulated steps. |
 
 For panic thresholds, asymetric thresholds can be configured, allowing a different sized step going forwards compared to going backwards. This is done by configuring a struct with two values, `forward` and `backward` for the panic threshold.
@@ -113,7 +127,7 @@ min-cluster-survivors = 3
 frequency-tolerance = 15
 distance-threshold = 1
 panic-threshold = 10
-startup-panic-threshold = { forward = 0, backward = 1800 }
+startup-panic-threshold = { forward = "inf", backward = 1800 }
 ```
 
 ## Operational concerns
