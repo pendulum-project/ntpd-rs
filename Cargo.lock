@@ -548,7 +548,7 @@ dependencies = [
 
 [[package]]
 name = "ntp-ctl"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "ntp-daemon",
@@ -563,7 +563,7 @@ dependencies = [
 
 [[package]]
 name = "ntp-daemon"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "exitcode",
@@ -586,7 +586,7 @@ dependencies = [
 
 [[package]]
 name = "ntp-os-clock"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libc",
  "ntp-proto",
@@ -595,7 +595,7 @@ dependencies = [
 
 [[package]]
 name = "ntp-proto"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "exitcode",
  "md-5",
@@ -606,7 +606,7 @@ dependencies = [
 
 [[package]]
 name = "ntp-udp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libc",
  "ntp-proto",
@@ -1176,7 +1176,7 @@ dependencies = [
 
 [[package]]
 name = "test-binaries"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "ntp-daemon",

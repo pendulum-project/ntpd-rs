@@ -8,7 +8,7 @@ use clap::{Parser, Subcommand};
 use ntp_daemon::{Config, ConfigUpdate, ObservableState};
 
 #[derive(Parser)]
-#[command(version = "0.1.0", about = "Query and configure the ntpd-rs daemon")]
+#[command(version = "0.2.0", about = "Query and configure the ntpd-rs daemon")]
 #[command(arg_required_else_help(true))]
 struct Cli {
     #[command(subcommand)]
