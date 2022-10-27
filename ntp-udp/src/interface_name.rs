@@ -13,7 +13,7 @@ use std::net::SocketAddr;
 use std::option::Option;
 
 #[allow(dead_code)]
-pub fn interface_name(local_addr: SocketAddr) -> std::io::Result<Option<[u8; 16]>> {
+pub fn interface_name(local_addr: SocketAddr) -> std::io::Result<Option<[libc::c_char; 16]>> {
     let matches_inferface = |interface: &InterfaceAddress| match interface.address {
         None => false,
         Some(address) => address.ip() == local_addr.ip(),
@@ -23,8 +23,10 @@ pub fn interface_name(local_addr: SocketAddr) -> std::io::Result<Option<[u8; 16]
         let mut ifrn_name = [0; 16];
 
         let name = interface.interface_name;
-        let length = Ord::min(name.len(), ifrn_name.len());
-        ifrn_name[0..length].copy_from_slice(&name.as_bytes()[0..length]);
+
+        for (source, target) in name.as_bytes().iter().zip(ifrn_name.iter_mut()) {
+            *target = *source as libc::c_char;
+        }
 
         Ok(Some(ifrn_name))
     } else {

@@ -307,45 +307,6 @@ mod timestamping_config {
         rx_reserved: [u32; 3],
     }
 
-    // Rust mirror of https://github.com/torvalds/linux/blob/master/include/uapi/linux/if.h#L241
-    #[repr(C)]
-    union ifr_ifru {
-        ifr_addr: libc::sockaddr,
-        ifr_dstaddr: libc::sockaddr,
-        ifr_broadaddr: libc::sockaddr,
-        ifr_netmask: libc::sockaddr,
-        ifr_hwaddr: libc::sockaddr,
-        ifr_flags: libc::c_short,
-        ifr_ifindex: libc::c_int,
-        ifr_metric: libc::c_int,
-        ifr_mtu: libc::c_int,
-        ifr_map: ifmap,
-        ifr_slave: [libc::c_char; libc::IFNAMSIZ],
-        ifr_newname: [libc::c_char; libc::IFNAMSIZ],
-        ifr_data: *mut libc::c_char,
-    }
-
-    // Rust mirror of https://github.com/torvalds/linux/blob/master/include/uapi/linux/if.h#L196
-    #[repr(C)]
-    #[allow(non_camel_case_types)]
-    #[derive(Clone, Copy)]
-    struct ifmap {
-        mem_start: libc::c_ulong,
-        mem_end: libc::c_ulong,
-        base_addr: libc::c_ushort,
-        irq: libc::c_uchar,
-        dma: libc::c_uchar,
-        port: libc::c_uchar,
-    }
-
-    // Rust mirror of https://github.com/torvalds/linux/blob/master/include/uapi/linux/if.h#L234
-    #[repr(C)]
-    #[allow(non_camel_case_types)]
-    struct ifreq {
-        ifr_name: [u8; libc::IFNAMSIZ],
-        ifr_ifru: ifr_ifru,
-    }
-
     impl TimestampingConfig {
         /// Enable all timestamping options that are supported by this crate and the hardware/software
         /// of the device we're running on
@@ -362,10 +323,10 @@ mod timestamping_config {
             let fd = udp_socket.as_raw_fd();
 
             if let Some(ifr_name) = interface_name::interface_name(udp_socket.local_addr()?)? {
-                let ifr: ifreq = ifreq {
+                let ifr: libc::ifreq = libc::ifreq {
                     ifr_name,
-                    ifr_ifru: ifr_ifru {
-                        ifr_data: (&mut tsi as *mut _) as *mut libc::c_char,
+                    ifr_ifru: libc::__c_anonymous_ifr_ifru {
+                        ifru_data: (&mut tsi as *mut _) as *mut libc::c_char,
                     },
                 };
 
