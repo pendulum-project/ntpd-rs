@@ -1,7 +1,7 @@
 use crate::{
     config::{PeerConfig, PoolPeerConfig, ServerConfig, StandardPeerConfig},
     peer::{MsgForSystem, PeerChannels, ResetEpoch},
-    peer_manager::{Peers, SpawnConfig, SpawnTask, Spawner},
+    peer_manager::{Peers, SpawnTask},
 };
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
@@ -38,15 +38,7 @@ pub async fn spawn(
     // receive peer snapshots from all peers
     let (msg_for_system_tx, msg_for_system_rx) = mpsc::channel::<MsgForSystem>(32);
 
-    let (spawn_config_tx, spawn_config_rx) = mpsc::channel::<SpawnConfig>(32);
     let (spawn_task_tx, spawn_task_rx) = mpsc::channel::<SpawnTask>(32);
-
-    // Peer spawner
-    tokio::spawn(async move {
-        Spawner::default()
-            .spawn(spawn_config_rx, spawn_task_tx)
-            .await;
-    });
 
     // System snapshot
     let system_snapshot = SystemSnapshot {
@@ -66,9 +58,9 @@ pub async fn spawn(
             system_snapshots: system.clone(),
             reset: reset_rx.clone(),
             system_config: config.clone(),
-            spawn_config: spawn_config_tx,
         },
         UnixNtpClock::new(),
+        spawn_task_tx,
     );
 
     for peer_config in peer_configs {

@@ -7,10 +7,7 @@ use crate::{
     server::{ServerStats, ServerTask},
 };
 use ntp_proto::{NtpClock, PeerSnapshot};
-use tokio::{
-    sync::mpsc::{Receiver, Sender},
-    task::JoinHandle,
-};
+use tokio::{sync::mpsc::Sender, task::JoinHandle};
 use tracing::warn;
 
 const NETWORK_WAIT_PERIOD: std::time::Duration = std::time::Duration::from_secs(1);
@@ -101,6 +98,7 @@ pub struct ServerData {
 pub struct Peers<C: NtpClock> {
     peers: HashMap<PeerIndex, PeerState>,
     servers: Vec<ServerData>,
+    spawner: Spawner,
     peer_indexer: PeerIndexIssuer,
     pool_indexer: PoolIndexIssuer,
 
@@ -109,10 +107,14 @@ pub struct Peers<C: NtpClock> {
 }
 
 impl<C: NtpClock> Peers<C> {
-    pub fn new(channels: PeerChannels, clock: C) -> Self {
+    pub fn new(channels: PeerChannels, clock: C, spawn_task: Sender<SpawnTask>) -> Self {
         Peers {
             peers: Default::default(),
             servers: Default::default(),
+            spawner: Spawner {
+                pools: Default::default(),
+                sender: spawn_task,
+            },
             peer_indexer: Default::default(),
             pool_indexer: Default::default(),
             channels,
@@ -149,9 +151,7 @@ impl<C: NtpClock> Peers<C> {
             config: StandardPeerConfig { addr: address },
         };
 
-        if let Err(e) = self.channels.spawn_config.send(config).await {
-            warn!(?e, "spawn_config channel failed to add peer");
-        }
+        self.spawner.spawn(config).await;
     }
 
     /// Adds up to `max_peers` peers from a pool.
@@ -179,9 +179,14 @@ impl<C: NtpClock> Peers<C> {
                 PeerAddress::Peer { .. } => None,
                 PeerAddress::Pool {
                     index: pool_index,
+                    address: peer_address,
                     socket_address,
                     ..
-                } => (index == *pool_index).then_some(*socket_address),
+                } => {
+                    let in_this_pool = index == *pool_index;
+                    let not_removed_peer = peer_address != &address;
+                    (in_this_pool && not_removed_peer).then_some(*socket_address)
+                }
             })
             .collect();
 
@@ -194,11 +199,7 @@ impl<C: NtpClock> Peers<C> {
             in_use,
         };
 
-        if let Err(e) = self.channels.spawn_config.send(config).await {
-            warn!(?e, "spawn_config channel failed to add pool");
-            println!("fail");
-        }
-        println!("sent");
+        self.spawner.spawn(config).await;
     }
 
     /// Adds a single peer (that is not part of a pool!)
@@ -255,9 +256,15 @@ impl<C: NtpClock> Peers<C> {
             };
         }
 
+        let (spawn_task_tx, _spawn_task_rx) = tokio::sync::mpsc::channel(32);
+
         Self {
             peers,
             servers: vec![],
+            spawner: Spawner {
+                pools: Default::default(),
+                sender: spawn_task_tx,
+            },
             peer_indexer,
             pool_indexer: Default::default(),
             channels: PeerChannels::test(),
@@ -298,6 +305,8 @@ impl<C: NtpClock> Peers<C> {
     }
 
     pub async fn update(&mut self, msg: MsgForSystem, current_reset_epoch: ResetEpoch) {
+        tracing::debug!(?msg, "updating peer");
+
         match msg {
             MsgForSystem::MustDemobilize(index) => {
                 self.peers.remove(&index);
@@ -340,9 +349,10 @@ impl<C: NtpClock> Peers<C> {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Spawner {
     pools: HashMap<PoolIndex, Arc<tokio::sync::Mutex<PoolAddresses>>>,
+    sender: Sender<SpawnTask>,
 }
 
 #[derive(Debug, Default)]
@@ -369,28 +379,24 @@ pub struct SpawnTask {
 }
 
 impl Spawner {
-    pub(crate) async fn spawn(
-        &mut self,
-        mut input_channel: Receiver<SpawnConfig>,
-        output_channel: Sender<SpawnTask>,
-    ) {
-        while let Some(config) = input_channel.recv().await {
-            let sender = output_channel.clone();
+    pub(crate) async fn spawn(&mut self, config: SpawnConfig) -> tokio::task::JoinHandle<()> {
+        let sender = self.sender.clone();
 
-            match dbg!(config) {
-                SpawnConfig::Standard { config } => self.spawn_standard(config, sender).await,
-                SpawnConfig::Pool {
-                    config,
-                    index,
-                    in_use,
-                } => self.spawn_pool(index, config, &in_use, sender).await,
+        match config {
+            SpawnConfig::Standard { config } => tokio::spawn(Self::spawn_standard(config, sender)),
+
+            SpawnConfig::Pool {
+                config,
+                index,
+                in_use,
+            } => {
+                let pool = self.pools.entry(index).or_default().clone();
+                tokio::spawn(Self::spawn_pool(index, pool, config, in_use, sender))
             }
         }
-
-        println!("receive failed");
     }
 
-    async fn spawn_standard(&mut self, config: StandardPeerConfig, sender: Sender<SpawnTask>) {
+    async fn spawn_standard(config: StandardPeerConfig, sender: Sender<SpawnTask>) {
         let addr = loop {
             match config.addr.lookup_host().await {
                 Ok(mut addresses) => match addresses.next() {
@@ -422,17 +428,16 @@ impl Spawner {
     }
 
     async fn spawn_pool(
-        &mut self,
         pool_index: PoolIndex,
+        pool: Arc<tokio::sync::Mutex<PoolAddresses>>,
         config: PoolPeerConfig,
-        in_use: &[SocketAddr],
+        in_use: Vec<SocketAddr>,
         sender: Sender<SpawnTask>,
     ) {
         let mut wait_period = NETWORK_WAIT_PERIOD;
         let mut remaining;
 
         loop {
-            let pool = self.pools.entry(pool_index).or_default();
             let mut pool = pool.lock().await;
 
             remaining = config.max_peers - in_use.len();
@@ -473,6 +478,8 @@ impl Spawner {
                     address: addr,
                 };
 
+                tracing::debug!(?spawn_task, "intending to spawn new pool peer at");
+
                 if let Err(send_error) = sender.send(spawn_task).await {
                     tracing::error!(?send_error, "Receive half got disconnected");
                 }
@@ -484,7 +491,13 @@ impl Spawner {
                 return;
             }
 
-            wait_period = Ord::max(2 * wait_period, std::time::Duration::from_secs(60));
+            let wait_period_max = if cfg!(test) {
+                std::time::Duration::default()
+            } else {
+                std::time::Duration::from_secs(60)
+            };
+
+            wait_period = Ord::min(2 * wait_period, wait_period_max);
 
             warn!(?pool_index, remaining, "could not fully fill pool");
             tokio::time::sleep(wait_period).await;
@@ -656,14 +669,20 @@ mod tests {
         let prev_epoch = ResetEpoch::default();
         let epoch = prev_epoch.inc();
 
-        let mut peers = Peers::new(PeerChannels::test(), TestClock {});
+        let (spawn_task_tx, mut spawn_task_rx) = tokio::sync::mpsc::channel(32);
+        let mut peers = Peers::new(PeerChannels::test(), TestClock {}, spawn_task_tx);
 
-        let peer_address = NormalizedAddress::new_unchecked("127.0.0.0:123");
+        let peer_address = NormalizedAddress::new_unchecked("127.0.0.2:123");
         peers.add_peer(peer_address).await;
 
         let pool_address = NormalizedAddress::new_unchecked("127.0.0.1:123");
         let max_peers = 1;
         peers.add_new_pool(pool_address.clone(), max_peers).await;
+
+        for _ in 0..2 {
+            let task = spawn_task_rx.recv().await.unwrap();
+            peers.spawn_task(task.peer_address, task.address);
+        }
 
         // we have 2 peers
         assert_eq!(peers.peers.len(), 2);
@@ -672,6 +691,11 @@ mod tests {
         peers
             .update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }), epoch)
             .await;
+
+        for _ in 0..1 {
+            let task = spawn_task_rx.recv().await.unwrap();
+            peers.spawn_task(task.peer_address, task.address);
+        }
 
         // automatically selects another peer from the pool
         assert_eq!(peers.peers.len(), 2);
@@ -682,22 +706,49 @@ mod tests {
         let prev_epoch = ResetEpoch::default();
         let epoch = prev_epoch.inc();
 
-        let mut peers = Peers::new(PeerChannels::test(), TestClock {});
+        let (msg_for_system_sender, _) = tokio::sync::mpsc::channel(2);
+        let (_, reset) = tokio::sync::watch::channel(ResetEpoch::default());
+        let peer_channels = PeerChannels {
+            msg_for_system_sender,
+            system_snapshots: Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default())),
+            system_config: Arc::new(tokio::sync::RwLock::new(SystemConfig::default())),
+            reset,
+        };
 
-        let peer_address = NormalizedAddress::new_unchecked("127.0.0.0:123");
+        let (spawn_task_tx, mut spawn_task_rx) = tokio::sync::mpsc::channel(32);
+        let mut peers = Peers::new(peer_channels, TestClock {}, spawn_task_tx);
+
+        let peer_address = NormalizedAddress::new_unchecked("127.0.0.5:123");
         peers.add_peer(peer_address).await;
 
-        let pool_address = NormalizedAddress::new_unchecked("127.0.0.1:123");
+        let pool_address = NormalizedAddress::with_hardcoded_dns(
+            "tweedegolf.nl:123",
+            vec!["127.0.0.1:123".parse().unwrap()],
+        );
         let max_peers = 2;
         peers.add_new_pool(pool_address.clone(), max_peers).await;
 
+        for _ in 0..2 {
+            let task = spawn_task_rx.recv().await.unwrap();
+            peers.spawn_task(task.peer_address, task.address);
+        }
+
         // we have only 2 peers, because the pool has size 1
         assert_eq!(peers.peers.len(), 2);
+
+        dbg!("initial spawns completed");
 
         // our pool peer has a network issue
         peers
             .update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }), epoch)
             .await;
+
+        for _ in 0..1 {
+            dbg!("waiting");
+            let task = spawn_task_rx.recv().await.unwrap();
+            dbg!(&task);
+            peers.spawn_task(task.peer_address, task.address);
+        }
 
         // automatically selects another peer from the pool
         assert_eq!(peers.peers.len(), 2);
@@ -705,29 +756,20 @@ mod tests {
 
     #[tokio::test]
     async fn simulate_pool() {
-        tracing_subscriber::fmt::init();
-
         let prev_epoch = ResetEpoch::default();
         let epoch = prev_epoch.inc();
 
         let (msg_for_system_sender, _) = tokio::sync::mpsc::channel(2);
-        let (spawn_config, spawn_config_rx) = tokio::sync::mpsc::channel(32);
         let (_, reset) = tokio::sync::watch::channel(ResetEpoch::default());
         let peer_channels = PeerChannels {
             msg_for_system_sender,
             system_snapshots: Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default())),
             system_config: Arc::new(tokio::sync::RwLock::new(SystemConfig::default())),
             reset,
-            spawn_config,
         };
-        let mut peers = Peers::new(peer_channels, TestClock {});
 
         let (spawn_task_tx, mut spawn_task_rx) = tokio::sync::mpsc::channel(32);
-        let _handle = tokio::spawn(async move {
-            Spawner::default()
-                .spawn(spawn_config_rx, spawn_task_tx)
-                .await;
-        });
+        let mut peers = Peers::new(peer_channels, TestClock {}, spawn_task_tx);
 
         let peer_address = NormalizedAddress::new_unchecked("127.0.0.5:123");
         peers.add_peer(peer_address).await;
