@@ -2,7 +2,7 @@
 
 # ntpd-rs
 
-ntpd-rs is an implementation of NTP completely written in Rust, with a focus on exposing a minimal attack surface. The project is currently at an early stage. The client functionality is stable (see release v0.1.0), although features are still limited. The server is under active development. If a feature you need is missing please let us know.
+ntpd-rs is an implementation of NTP completely written in Rust, with a focus on exposing a minimal attack surface. The project is currently at an early stage. Both client and server functionality are stable (see release v0.2.0), although features are still limited. NTS support is under active development. If a feature you need is missing please let us know.
 
 ## Quick start
 
@@ -33,9 +33,10 @@ We are currently looking for a better name for this project. Suggestions for thi
 
 ## Package substructure
 
-Currently, the code is split up into five separate crates:
+Currently, the code is split up into six separate crates:
  - `ntp-proto` contains the packet parsing and the algorithms needed for clock selection, filtering and steering.
  - `ntp-daemon` contains the main NTP daemon, and deals with orchestrating the networking and configuration.
+ - `ntp-ctl` contains a control interface for the NTP daemon, allowing readout of current synchronisation state and dynamic configuration changes.
  - `test-binaries` contains a number of simple NTP servers that can be used for testing (see below).
  - `ntp-os-clock` contains the unsafe code needed to interface with system clocks.
  - `ntp-udp` contains the unsafe code needed to deal with timestamping on the network layer.
@@ -57,11 +58,7 @@ Please note that the Rust project only supports the latest stable rust release. 
 
 ## Roadmap
 
-With the support of Prossimo we aim to build a complete NTP implementation that provides a modern alternative for ntpd and chrony. In the short term, there are two milestones on our roadmap:
-
-**NTP server**
-
-Our current stable implementation is just an NTP client. The server part is under development and expected to be finished in Q4 2022.
+With the support of Prossimo we aim to build a complete NTP implementation that provides a modern alternative for ntpd and chrony. In the short term, there is one milestones on our roadmap:
 
 **NTS support**
 
