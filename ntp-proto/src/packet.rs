@@ -2,12 +2,14 @@ use std::fmt::Display;
 
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 use crate::{NtpClock, NtpDuration, NtpTimestamp, PollInterval, ReferenceId, SystemSnapshot};
 
 #[derive(Debug)]
 pub enum PacketParsingError {
     InvalidVersion(u8),
+    IncorrectLength,
 }
 
 impl Display for PacketParsingError {
@@ -16,6 +18,7 @@ impl Display for PacketParsingError {
             Self::InvalidVersion(version) => {
                 f.write_fmt(format_args!("Invalid version {}", version))
             }
+            Self::IncorrectLength => f.write_str("Provided packet has incorrect length"),
         }
     }
 }
@@ -140,6 +143,8 @@ pub struct RequestIdentifier {
 }
 
 impl NtpHeaderV3V4 {
+    const LENGTH: usize = 48;
+
     /// A new, empty NtpHeader
     fn new() -> Self {
         Self {
@@ -158,82 +163,41 @@ impl NtpHeaderV3V4 {
         }
     }
 
-    fn deserialize(data: &[u8; 48]) -> Self {
-        Self {
-            leap: NtpLeapIndicator::from_bits((data[0] & 0xC0) >> 6),
-            mode: NtpAssociationMode::from_bits(data[0] & 0x07),
-            stratum: data[1],
-            poll: data[2] as i8,
-            precision: data[3] as i8,
-            root_delay: NtpDuration::from_bits_short(data[4..8].try_into().unwrap()),
-            root_dispersion: NtpDuration::from_bits_short(data[8..12].try_into().unwrap()),
-            reference_id: ReferenceId::from_bytes(data[12..16].try_into().unwrap()),
-            reference_timestamp: NtpTimestamp::from_bits(data[16..24].try_into().unwrap()),
-            origin_timestamp: NtpTimestamp::from_bits(data[24..32].try_into().unwrap()),
-            receive_timestamp: NtpTimestamp::from_bits(data[32..40].try_into().unwrap()),
-            transmit_timestamp: NtpTimestamp::from_bits(data[40..48].try_into().unwrap()),
+    fn deserialize(data: &[u8]) -> Result<(Self, usize), PacketParsingError> {
+        if data.len() < Self::LENGTH {
+            return Err(PacketParsingError::IncorrectLength);
         }
+
+        Ok((
+            Self {
+                leap: NtpLeapIndicator::from_bits((data[0] & 0xC0) >> 6),
+                mode: NtpAssociationMode::from_bits(data[0] & 0x07),
+                stratum: data[1],
+                poll: data[2] as i8,
+                precision: data[3] as i8,
+                root_delay: NtpDuration::from_bits_short(data[4..8].try_into().unwrap()),
+                root_dispersion: NtpDuration::from_bits_short(data[8..12].try_into().unwrap()),
+                reference_id: ReferenceId::from_bytes(data[12..16].try_into().unwrap()),
+                reference_timestamp: NtpTimestamp::from_bits(data[16..24].try_into().unwrap()),
+                origin_timestamp: NtpTimestamp::from_bits(data[24..32].try_into().unwrap()),
+                receive_timestamp: NtpTimestamp::from_bits(data[32..40].try_into().unwrap()),
+                transmit_timestamp: NtpTimestamp::from_bits(data[40..48].try_into().unwrap()),
+            },
+            Self::LENGTH,
+        ))
     }
 
-    fn serialize(&self, version: u8) -> [u8; 48] {
-        let root_delay = self.root_delay.to_bits_short();
-        let root_dispersion = self.root_dispersion.to_bits_short();
-        let reference_id = self.reference_id.to_bytes();
-        let reference_timestamp = self.reference_timestamp.to_bits();
-        let origin_timestamp = self.origin_timestamp.to_bits();
-        let receive_timestamp = self.receive_timestamp.to_bits();
-        let transmit_timestamp = self.transmit_timestamp.to_bits();
-
-        [
-            (self.leap.to_bits() << 6) | (version << 3) | self.mode.to_bits(),
-            self.stratum,
-            self.poll as u8,
-            self.precision as u8,
-            root_delay[0],
-            root_delay[1],
-            root_delay[2],
-            root_delay[3],
-            root_dispersion[0],
-            root_dispersion[1],
-            root_dispersion[2],
-            root_dispersion[3],
-            reference_id[0],
-            reference_id[1],
-            reference_id[2],
-            reference_id[3],
-            reference_timestamp[0],
-            reference_timestamp[1],
-            reference_timestamp[2],
-            reference_timestamp[3],
-            reference_timestamp[4],
-            reference_timestamp[5],
-            reference_timestamp[6],
-            reference_timestamp[7],
-            origin_timestamp[0],
-            origin_timestamp[1],
-            origin_timestamp[2],
-            origin_timestamp[3],
-            origin_timestamp[4],
-            origin_timestamp[5],
-            origin_timestamp[6],
-            origin_timestamp[7],
-            receive_timestamp[0],
-            receive_timestamp[1],
-            receive_timestamp[2],
-            receive_timestamp[3],
-            receive_timestamp[4],
-            receive_timestamp[5],
-            receive_timestamp[6],
-            receive_timestamp[7],
-            transmit_timestamp[0],
-            transmit_timestamp[1],
-            transmit_timestamp[2],
-            transmit_timestamp[3],
-            transmit_timestamp[4],
-            transmit_timestamp[5],
-            transmit_timestamp[6],
-            transmit_timestamp[7],
-        ]
+    fn serialize<W: std::io::Write>(&self, w: &mut W, version: u8) -> std::io::Result<()> {
+        w.write_all(&[(self.leap.to_bits() << 6) | (version << 3) | self.mode.to_bits()])?;
+        w.write_all(&[self.stratum, self.poll as u8, self.precision as u8])?;
+        w.write_all(&self.root_delay.to_bits_short())?;
+        w.write_all(&self.root_dispersion.to_bits_short())?;
+        w.write_all(&self.reference_id.to_bytes())?;
+        w.write_all(&self.reference_timestamp.to_bits())?;
+        w.write_all(&self.origin_timestamp.to_bits())?;
+        w.write_all(&self.receive_timestamp.to_bits())?;
+        w.write_all(&self.transmit_timestamp.to_bits())?;
+        Ok(())
     }
 
     fn poll_message(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
@@ -301,24 +265,40 @@ impl NtpHeaderV3V4 {
 }
 
 impl NtpPacket {
-    pub fn deserialize(data: &[u8; 48]) -> Result<Self, PacketParsingError> {
+    pub fn deserialize(data: &[u8]) -> Result<Self, PacketParsingError> {
+        if data.is_empty() {
+            return Err(PacketParsingError::IncorrectLength);
+        }
+
         let version = (data[0] & 0x38) >> 3;
 
         match version {
-            3 => Ok(NtpPacket {
-                header: NtpHeader::V3(NtpHeaderV3V4::deserialize(data)),
-            }),
-            4 => Ok(NtpPacket {
-                header: NtpHeader::V4(NtpHeaderV3V4::deserialize(data)),
-            }),
+            3 => {
+                let (header, header_size) = NtpHeaderV3V4::deserialize(data)?;
+                if header_size != data.len() {
+                    debug!("Ignored potential extension fields or MAC");
+                }
+                Ok(NtpPacket {
+                    header: NtpHeader::V3(header),
+                })
+            }
+            4 => {
+                let (header, header_size) = NtpHeaderV3V4::deserialize(data)?;
+                if header_size != data.len() {
+                    debug!("Ignored potential extension fields or MAC");
+                }
+                Ok(NtpPacket {
+                    header: NtpHeader::V4(header),
+                })
+            }
             _ => Err(PacketParsingError::InvalidVersion(version)),
         }
     }
 
-    pub fn serialize(&self) -> [u8; 48] {
+    pub fn serialize<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
         match self.header {
-            NtpHeader::V3(header) => header.serialize(3),
-            NtpHeader::V4(header) => header.serialize(4),
+            NtpHeader::V3(header) => header.serialize(w, 3),
+            NtpHeader::V4(header) => header.serialize(w, 4),
         }
     }
 
@@ -608,7 +588,9 @@ mod tests {
         };
 
         assert_eq!(reference, NtpPacket::deserialize(packet).unwrap());
-        assert_eq!(packet[..], reference.serialize()[..]);
+        let mut buf = vec![];
+        assert!(reference.serialize(&mut buf).is_ok());
+        assert_eq!(packet[..], buf[..]);
 
         let packet = b"\x1B\x02\x06\xe8\x00\x00\x03\xff\x00\x00\x03\x7d\x5e\xc6\x9f\x0f\xe5\xf6\x62\x98\x7b\x61\xb9\xaf\xe5\xf6\x63\x66\x7b\x64\x99\x5d\xe5\xf6\x63\x66\x81\x40\x55\x90\xe5\xf6\x63\xa8\x76\x1d\xde\x48";
         let reference = NtpPacket {
@@ -629,7 +611,9 @@ mod tests {
         };
 
         assert_eq!(reference, NtpPacket::deserialize(packet).unwrap());
-        assert_eq!(packet[..], reference.serialize()[..]);
+        let mut buf = vec![];
+        assert!(reference.serialize(&mut buf).is_ok());
+        assert_eq!(packet[..], buf[..]);
     }
 
     #[test]
@@ -653,7 +637,9 @@ mod tests {
         };
 
         assert_eq!(reference, NtpPacket::deserialize(packet).unwrap());
-        assert_eq!(packet[..], reference.serialize()[..])
+        let mut buf = vec![];
+        assert!(reference.serialize(&mut buf).is_ok());
+        assert_eq!(packet[..], buf[..])
     }
 
     #[test]
@@ -683,7 +669,8 @@ mod tests {
                 header.set_leap(NtpLeapIndicator::from_bits(leap_type));
                 header.set_mode(NtpAssociationMode::from_bits(mode));
 
-                let data = header.serialize();
+                let mut data = vec![];
+                header.serialize(&mut data).unwrap();
                 let copy = NtpPacket::deserialize(&data).unwrap();
                 assert_eq!(header, copy);
             }
@@ -694,8 +681,9 @@ mod tests {
             packet[0] = i;
 
             if let Ok(a) = NtpPacket::deserialize(&packet) {
-                let b = a.serialize();
-                assert_eq!(packet, b);
+                let mut b = vec![];
+                a.serialize(&mut b).unwrap();
+                assert_eq!(packet[..], b[..]);
             }
         }
     }

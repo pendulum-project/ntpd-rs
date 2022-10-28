@@ -20,8 +20,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         };
 
         let packet = NtpPacket::deny_response(parsed);
+        let mut pdata = vec![];
+        packet.serialize(&mut pdata).unwrap();
 
-        let len = sock.send_to(&packet.serialize(), addr).await?;
+        let len = sock.send_to(&pdata, addr).await?;
         println!("{:?} bytes sent", len);
     }
 }

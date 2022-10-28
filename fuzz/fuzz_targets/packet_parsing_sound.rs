@@ -2,9 +2,10 @@
 use libfuzzer_sys::fuzz_target;
 use ntp_proto::NtpPacket;
 
-fuzz_target!(|data: [u8; 48]| {
+fuzz_target!(|data: Vec<u8>| {
     if let Ok(a) = NtpPacket::deserialize(&data) {
-        let b = a.serialize();
-        assert_eq!(data, b);
+        let mut buf = vec![];
+        a.serialize(&mut buf).unwrap();
+        assert_eq!(data[..buf.len()], buf);
     }
 });
