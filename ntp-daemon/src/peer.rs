@@ -75,7 +75,6 @@ impl PeerChannels {
     pub fn test() -> Self {
         let (msg_for_system_sender, _) = tokio::sync::mpsc::channel(1);
         let (_, reset) = tokio::sync::watch::channel(ResetEpoch::default());
-        let (_, reset) = tokio::sync::watch::channel(ResetEpoch::default());
         PeerChannels {
             msg_for_system_sender,
             system_snapshots: Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default())),
