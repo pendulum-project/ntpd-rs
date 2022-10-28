@@ -65,11 +65,11 @@ pub struct ServerTask<C: 'static + NtpClock + Send> {
 }
 
 #[derive(Debug)]
-enum AcceptResult {
-    Accept(NtpPacket, SocketAddr, NtpTimestamp),
+enum AcceptResult<'a> {
+    Accept(NtpPacket<'a>, SocketAddr, NtpTimestamp),
     Ignore,
-    Deny(NtpPacket, SocketAddr),
-    RateLimit(NtpPacket, SocketAddr),
+    Deny(NtpPacket<'a>, SocketAddr),
+    RateLimit(NtpPacket<'a>, SocketAddr),
     NetworkGone,
 }
 
@@ -143,7 +143,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
 
                     let response =
                         NtpPacket::timestamp_response(&system, packet, recv_timestamp, &self.clock);
-                    let mut cursor = Cursor::new(&mut buf as &mut [u8]);
+                    let mut cursor = Cursor::new([0; 48]);
                     if let Err(serialize_err) = response.serialize(&mut cursor) {
                         error!(error=?serialize_err, "Could not serialize response");
                         continue;
@@ -160,7 +160,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 AcceptResult::Deny(packet, peer_addr) => {
                     self.stats.denied_packets.inc();
                     let response = NtpPacket::deny_response(packet);
-                    let mut cursor = Cursor::new(&mut buf as &mut [u8]);
+                    let mut cursor = Cursor::new([0; 48]);
                     if let Err(serialize_err) = response.serialize(&mut cursor) {
                         self.stats.response_send_errors.inc();
                         error!(error=?serialize_err, "Could not serialize response");
@@ -182,7 +182,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 AcceptResult::RateLimit(packet, peer_addr) => {
                     self.stats.rate_limited_packets.inc();
                     let response = NtpPacket::rate_limit_response(packet);
-                    let mut cursor = Cursor::new(&mut buf as &mut [u8]);
+                    let mut cursor = Cursor::new([0; 48]);
                     if let Err(serialize_err) = response.serialize(&mut cursor) {
                         self.stats.response_send_errors.inc();
                         error!(error=?serialize_err, "Could not serialize response");
@@ -201,12 +201,12 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         }
     }
 
-    fn accept_packet(
-        &mut self,
+    fn accept_packet<'a, 'b>(
+        &'b mut self,
         rate_limiting_cutoff: Duration,
         result: Result<(usize, SocketAddr, Option<NtpTimestamp>), std::io::Error>,
-        buf: &[u8; 48],
-    ) -> AcceptResult {
+        buf: &'a [u8; 48],
+    ) -> AcceptResult<'a> {
         match result {
             Ok((size, peer_addr, Some(recv_timestamp))) if size >= 48 => {
                 // Note: packets are allowed to be bigger when including extensions.
@@ -269,12 +269,12 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         }
     }
 
-    fn accept_data(
-        &self,
-        buf: &[u8; 48],
+    fn accept_data<'a, 'b>(
+        &'b self,
+        buf: &'a [u8; 48],
         peer_addr: SocketAddr,
         recv_timestamp: NtpTimestamp,
-    ) -> AcceptResult {
+    ) -> AcceptResult<'a> {
         match NtpPacket::deserialize(buf) {
             Ok(packet) => match packet.mode() {
                 NtpAssociationMode::Client => {
