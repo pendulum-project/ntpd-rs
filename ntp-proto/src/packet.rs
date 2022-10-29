@@ -26,10 +26,15 @@ impl std::error::Error for PacketParsingError {}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NtpLeapIndicator {
-    NoWarning,
-    Leap61,
+    Synchronized(Option<NtpLeapStatus>),
+    Unsynchronized,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NtpLeapStatus {
+    None,
     Leap59,
-    Unknown,
+    Leap61,
 }
 
 impl NtpLeapIndicator {
@@ -37,10 +42,10 @@ impl NtpLeapIndicator {
     // (in the least significant position)
     fn from_bits(bits: u8) -> NtpLeapIndicator {
         match bits {
-            0 => NtpLeapIndicator::NoWarning,
-            1 => NtpLeapIndicator::Leap61,
-            2 => NtpLeapIndicator::Leap59,
-            3 => NtpLeapIndicator::Unknown,
+            0 => NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
+            1 => NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::Leap61)),
+            2 => NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::Leap59)),
+            3 => NtpLeapIndicator::Unsynchronized,
             // This function should only ever be called from the packet parser
             // with just two bits, so this really should be unreachable
             _ => unreachable!(),
@@ -49,15 +54,15 @@ impl NtpLeapIndicator {
 
     fn to_bits(self) -> u8 {
         match self {
-            NtpLeapIndicator::NoWarning => 0,
-            NtpLeapIndicator::Leap61 => 1,
-            NtpLeapIndicator::Leap59 => 2,
-            NtpLeapIndicator::Unknown => 3,
+            NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::Leap61)) => 1,
+            NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::Leap59)) => 2,
+            NtpLeapIndicator::Synchronized(_) => 0,
+            NtpLeapIndicator::Unsynchronized => 3,
         }
     }
 
     pub fn is_synchronized(&self) -> bool {
-        !matches!(self, Self::Unknown)
+        matches!(self, Self::Synchronized(_))
     }
 }
 
@@ -306,7 +311,7 @@ impl NtpHeaderV3V4 {
     /// A new, empty NtpHeader
     fn new() -> Self {
         Self {
-            leap: NtpLeapIndicator::NoWarning,
+            leap: NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
             mode: NtpAssociationMode::Client,
             stratum: 0,
             poll: 0,
@@ -776,7 +781,7 @@ mod tests {
         let packet = b"\x23\x02\x06\xe8\x00\x00\x03\xff\x00\x00\x03\x7d\x5e\xc6\x9f\x0f\xe5\xf6\x62\x98\x7b\x61\xb9\xaf\xe5\xf6\x63\x66\x7b\x64\x99\x5d\xe5\xf6\x63\x66\x81\x40\x55\x90\xe5\xf6\x63\xa8\x76\x1d\xde\x48";
         let reference = NtpPacket {
             header: NtpHeader::V4(NtpHeaderV3V4 {
-                leap: NtpLeapIndicator::NoWarning,
+                leap: NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 mode: NtpAssociationMode::Client,
                 stratum: 2,
                 poll: 6,
@@ -801,7 +806,7 @@ mod tests {
         let packet = b"\x1B\x02\x06\xe8\x00\x00\x03\xff\x00\x00\x03\x7d\x5e\xc6\x9f\x0f\xe5\xf6\x62\x98\x7b\x61\xb9\xaf\xe5\xf6\x63\x66\x7b\x64\x99\x5d\xe5\xf6\x63\x66\x81\x40\x55\x90\xe5\xf6\x63\xa8\x76\x1d\xde\x48";
         let reference = NtpPacket {
             header: NtpHeader::V3(NtpHeaderV3V4 {
-                leap: NtpLeapIndicator::NoWarning,
+                leap: NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 mode: NtpAssociationMode::Client,
                 stratum: 2,
                 poll: 6,
@@ -829,7 +834,7 @@ mod tests {
         let packet = b"\x24\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
         let reference = NtpPacket {
             header: NtpHeader::V4(NtpHeaderV3V4 {
-                leap: NtpLeapIndicator::NoWarning,
+                leap: NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 mode: NtpAssociationMode::Server,
                 stratum: 2,
                 poll: 6,

@@ -371,7 +371,7 @@ impl<C: NtpClock> ClockController<C> {
 
 #[cfg(test)]
 mod tests {
-    use crate::time_types::PollIntervalLimits;
+    use crate::{packet::NtpLeapStatus, time_types::PollIntervalLimits};
 
     use super::*;
     use core::cell::RefCell;
@@ -448,7 +448,7 @@ mod tests {
                 NtpDuration::from_fixed_int(0),
                 NtpDuration::from_fixed_int(20),
                 NtpDuration::from_fixed_int(10),
-                NtpLeapIndicator::NoWarning,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 base + Duration::from_secs(1),
             ),
             ClockUpdateResult::Slew
@@ -459,7 +459,7 @@ mod tests {
             *controller.clock.last_max_error.borrow()
         );
         assert_eq!(
-            Some(NtpLeapIndicator::NoWarning),
+            Some(NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None))),
             *controller.clock.last_leap_status.borrow()
         );
         assert_eq!(
@@ -479,7 +479,7 @@ mod tests {
                 NtpDuration::from_fixed_int(0),
                 NtpDuration::from_fixed_int(40),
                 NtpDuration::from_fixed_int(60),
-                NtpLeapIndicator::Leap59,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::Leap59)),
                 base + Duration::from_secs(1),
             ),
             ClockUpdateResult::Slew
@@ -490,7 +490,7 @@ mod tests {
             *controller.clock.last_max_error.borrow()
         );
         assert_eq!(
-            Some(NtpLeapIndicator::Leap59),
+            Some(NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::Leap59))),
             *controller.clock.last_leap_status.borrow()
         );
         assert_eq!(
@@ -512,7 +512,7 @@ mod tests {
             NtpDuration::from_fixed_int(0),
             NtpDuration::from_seconds(0.01),
             NtpDuration::from_seconds(0.03),
-            NtpLeapIndicator::NoWarning,
+            NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
             base + Duration::from_secs(1),
         );
 
@@ -528,7 +528,7 @@ mod tests {
             NtpDuration::from_fixed_int(1 << 32),
             NtpDuration::from_seconds(0.02),
             NtpDuration::from_seconds(0.03),
-            NtpLeapIndicator::NoWarning,
+            NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
             base + Duration::from_secs(1801),
         );
 
@@ -563,7 +563,7 @@ mod tests {
             NtpDuration::from_fixed_int(0),
             NtpDuration::from_seconds(0.02),
             NtpDuration::from_seconds(0.03),
-            NtpLeapIndicator::NoWarning,
+            NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
             base + Duration::from_secs(1),
         );
 
@@ -597,7 +597,7 @@ mod tests {
             2 * NtpDuration::STEP_THRESHOLD,
             NtpDuration::from_seconds(0.02),
             NtpDuration::from_seconds(0.03),
-            NtpLeapIndicator::NoWarning,
+            NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
             base + Duration::from_secs(1),
         );
 
@@ -610,7 +610,7 @@ mod tests {
             NtpDuration::from_fixed_int(0),
             NtpDuration::from_seconds(0.02),
             NtpDuration::from_seconds(0.03),
-            NtpLeapIndicator::NoWarning,
+            NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
             base + Duration::from_secs(2),
         );
 
@@ -644,7 +644,7 @@ mod tests {
             2 * NtpDuration::STEP_THRESHOLD,
             NtpDuration::from_seconds(0.02),
             NtpDuration::from_seconds(0.03),
-            NtpLeapIndicator::NoWarning,
+            NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
             base + Duration::from_secs(1),
         );
 
@@ -657,7 +657,7 @@ mod tests {
             2 * NtpDuration::STEP_THRESHOLD,
             NtpDuration::from_seconds(0.02),
             NtpDuration::from_seconds(0.03),
-            NtpLeapIndicator::NoWarning,
+            NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
             base + Duration::from_secs(902),
         );
 
@@ -695,7 +695,7 @@ mod tests {
                 NtpDuration::from_seconds(80.),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
-                NtpLeapIndicator::NoWarning,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 base + Duration::from_secs(1)
             ),
             ClockUpdateResult::Ignore
@@ -707,7 +707,7 @@ mod tests {
                 NtpDuration::from_seconds(80.),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
-                NtpLeapIndicator::NoWarning,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 base + Duration::from_secs(1000),
             ),
             ClockUpdateResult::Step
@@ -719,7 +719,7 @@ mod tests {
                 NtpDuration::from_seconds(80.),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
-                NtpLeapIndicator::NoWarning,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 base + Duration::from_secs(1001)
             ),
             ClockUpdateResult::Panic
@@ -750,7 +750,7 @@ mod tests {
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
-                NtpLeapIndicator::NoWarning,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 base + Duration::from_secs(1),
             ),
             ClockUpdateResult::Slew
@@ -765,7 +765,7 @@ mod tests {
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
-                NtpLeapIndicator::NoWarning,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 base + Duration::from_secs(1),
             ),
             ClockUpdateResult::Slew
@@ -778,7 +778,7 @@ mod tests {
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
-                NtpLeapIndicator::NoWarning,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 base + Duration::from_secs(1),
             ),
             ClockUpdateResult::Slew
@@ -791,7 +791,7 @@ mod tests {
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
-                NtpLeapIndicator::NoWarning,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 base + Duration::from_secs(1),
             ),
             ClockUpdateResult::Slew
@@ -804,7 +804,7 @@ mod tests {
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
-                NtpLeapIndicator::NoWarning,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 base + Duration::from_secs(1),
             ),
             ClockUpdateResult::Slew
@@ -836,7 +836,7 @@ mod tests {
                 NtpDuration::from_seconds(2e-3),
                 NtpDuration::from_seconds(2e-4),
                 NtpDuration::from_seconds(3e-4),
-                NtpLeapIndicator::NoWarning,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 base + Duration::from_secs(1),
             ),
             ClockUpdateResult::Slew
@@ -853,7 +853,7 @@ mod tests {
                 NtpDuration::from_seconds(-2e-3),
                 NtpDuration::from_seconds(2e-4),
                 NtpDuration::from_seconds(3e-4),
-                NtpLeapIndicator::NoWarning,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 base + Duration::from_secs(1),
             ),
             ClockUpdateResult::Slew
@@ -870,7 +870,7 @@ mod tests {
                 NtpDuration::from_seconds(2e-3),
                 NtpDuration::from_seconds(2e-4),
                 NtpDuration::from_seconds(3e-4),
-                NtpLeapIndicator::NoWarning,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 base + Duration::from_secs(1),
             ),
             ClockUpdateResult::Slew
@@ -887,7 +887,7 @@ mod tests {
                 NtpDuration::from_seconds(-2e-3),
                 NtpDuration::from_seconds(2e-4),
                 NtpDuration::from_seconds(3e-4),
-                NtpLeapIndicator::NoWarning,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 base + Duration::from_secs(1),
             ),
             ClockUpdateResult::Slew
@@ -919,7 +919,7 @@ mod tests {
                 2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
-                NtpLeapIndicator::NoWarning,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 base + Duration::from_secs(1),
             ),
             ClockUpdateResult::Panic
@@ -943,7 +943,7 @@ mod tests {
                 -2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
-                NtpLeapIndicator::NoWarning,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 base + Duration::from_secs(1),
             ),
             ClockUpdateResult::Panic
@@ -967,7 +967,7 @@ mod tests {
                 2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
-                NtpLeapIndicator::NoWarning,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 base + Duration::from_secs(1),
             ),
             ClockUpdateResult::Panic
@@ -991,7 +991,7 @@ mod tests {
                 -2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
-                NtpLeapIndicator::NoWarning,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 base + Duration::from_secs(1),
             ),
             ClockUpdateResult::Panic
@@ -1015,7 +1015,7 @@ mod tests {
                 2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
-                NtpLeapIndicator::NoWarning,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 base + Duration::from_secs(1),
             ),
             ClockUpdateResult::Panic
@@ -1039,7 +1039,7 @@ mod tests {
                 -2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
-                NtpLeapIndicator::NoWarning,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 base + Duration::from_secs(1),
             ),
             ClockUpdateResult::Panic
@@ -1063,7 +1063,7 @@ mod tests {
                 2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
-                NtpLeapIndicator::NoWarning,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 base + Duration::from_secs(1),
             ),
             ClockUpdateResult::Step
@@ -1087,7 +1087,7 @@ mod tests {
                 2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.03),
-                NtpLeapIndicator::NoWarning,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 base + Duration::from_secs(1),
             ),
             ClockUpdateResult::Step

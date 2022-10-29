@@ -126,7 +126,7 @@ impl Default for SystemSnapshot {
             root_delay: NtpDuration::ZERO,
             root_dispersion: NtpDuration::ZERO,
             reference_id: ReferenceId::NONE,
-            leap_indicator: NtpLeapIndicator::Unknown,
+            leap_indicator: NtpLeapIndicator::Unsynchronized,
             accumulated_steps: NtpDuration::ZERO,
             accumulated_steps_threshold: None,
         }
@@ -496,7 +496,7 @@ impl Peer {
 
 #[cfg(test)]
 mod test {
-    use crate::time_types::PollIntervalLimits;
+    use crate::{packet::NtpLeapStatus, time_types::PollIntervalLimits};
 
     use super::*;
     use std::time::Duration;
@@ -669,10 +669,11 @@ mod test {
 
         assert_eq!(accept!(), Ok(()));
 
-        peer.last_packet.set_leap(NtpLeapIndicator::Unknown);
+        peer.last_packet.set_leap(NtpLeapIndicator::Unsynchronized);
         assert_eq!(accept!(), Err(Stratum));
 
-        peer.last_packet.set_leap(NtpLeapIndicator::NoWarning);
+        peer.last_packet
+            .set_leap(NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)));
         peer.last_packet.set_stratum(42);
         assert_eq!(accept!(), Err(Stratum));
 

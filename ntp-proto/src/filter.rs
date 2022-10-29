@@ -302,6 +302,8 @@ pub fn fuzz_tuple_from_packet_default(
 
 #[cfg(test)]
 mod test {
+    use crate::packet::NtpLeapStatus;
+
     use super::*;
 
     #[test]
@@ -374,7 +376,7 @@ mod test {
         let update = measurements.step(
             new_tuple,
             peer_time,
-            NtpLeapIndicator::NoWarning,
+            NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
             NtpDuration::ZERO,
             FrequencyTolerance::ppm(15),
         );
@@ -402,7 +404,7 @@ mod test {
         let update = measurements.step(
             new_tuple,
             peer_time,
-            NtpLeapIndicator::NoWarning,
+            NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
             NtpDuration::ZERO,
             FrequencyTolerance::ppm(15),
         );
@@ -436,7 +438,7 @@ mod test {
         let update = measurements.step(
             new_tuple,
             peer_time,
-            NtpLeapIndicator::NoWarning,
+            NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
             NtpDuration::ZERO,
             FrequencyTolerance::ppm(15),
         );
@@ -458,7 +460,7 @@ mod test {
         let update = measurements.step(
             new_tuple,
             peer_time,
-            NtpLeapIndicator::NoWarning,
+            NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
             NtpDuration::ZERO,
             FrequencyTolerance::ppm(15),
         );
@@ -544,14 +546,14 @@ mod test {
         filter.step(
             a,
             base,
-            NtpLeapIndicator::NoWarning,
+            NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
             NtpDuration::from_exponent(-32),
             FrequencyTolerance::ppm(15),
         );
         filter.step(
             b,
             base,
-            NtpLeapIndicator::NoWarning,
+            NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
             NtpDuration::from_exponent(-32),
             FrequencyTolerance::ppm(15),
         );

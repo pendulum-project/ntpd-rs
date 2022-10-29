@@ -431,7 +431,7 @@ fn accept_packet(
 mod tests {
     use std::time::Duration;
 
-    use ntp_proto::{NtpDuration, NtpLeapIndicator, PollInterval};
+    use ntp_proto::{NtpDuration, NtpLeapIndicator, NtpLeapStatus, PollInterval};
     use tokio::sync::{mpsc, watch, RwLock};
 
     use super::*;
@@ -707,7 +707,7 @@ mod tests {
         let (mut process, mut socket, mut msg_recv, _reset) = test_startup(8008).await;
 
         let system = SystemSnapshot {
-            leap_indicator: NtpLeapIndicator::NoWarning,
+            leap_indicator: NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
             ..Default::default()
         };
 

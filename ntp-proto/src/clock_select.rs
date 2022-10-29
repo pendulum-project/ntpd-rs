@@ -513,7 +513,10 @@ pub fn peer_snapshot(
     root_delay: NtpDuration,
     root_dispersion: NtpDuration,
 ) -> PeerSnapshot {
-    use crate::{packet::NtpLeapIndicator, ReferenceId};
+    use crate::{
+        packet::{NtpLeapIndicator, NtpLeapStatus},
+        ReferenceId,
+    };
 
     let root_distance_without_time = NtpDuration::MIN_DISPERSION.max(root_delay + statistics.delay)
         / 2i64
@@ -531,7 +534,7 @@ pub fn peer_snapshot(
 
         peer_id: ReferenceId::from_int(0),
 
-        leap_indicator: NtpLeapIndicator::NoWarning,
+        leap_indicator: NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
         root_delay,
         root_dispersion,
 

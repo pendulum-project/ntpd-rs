@@ -118,8 +118,8 @@ mod tests {
     use std::time::Duration;
 
     use ntp_proto::{
-        NtpDuration, NtpInstant, NtpLeapIndicator, NtpTimestamp, PeerSnapshot, PeerStatistics,
-        PollInterval, PollIntervalLimits, Reach, ReferenceId,
+        NtpDuration, NtpInstant, NtpLeapIndicator, NtpLeapStatus, NtpTimestamp, PeerSnapshot,
+        PeerStatistics, PollInterval, PollIntervalLimits, Reach, ReferenceId,
     };
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
@@ -187,7 +187,7 @@ mod tests {
                 reference_id: ReferenceId::from_ip("127.0.0.3".parse().unwrap()),
                 our_id: ReferenceId::from_ip("127.0.0.2".parse().unwrap()),
                 reach: Reach::default(),
-                leap_indicator: NtpLeapIndicator::NoWarning,
+                leap_indicator: NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 root_delay: NtpDuration::from_seconds(0.2),
                 root_dispersion: NtpDuration::from_seconds(0.02),
             }),
@@ -218,7 +218,7 @@ mod tests {
             root_delay: NtpDuration::ZERO,
             root_dispersion: NtpDuration::ZERO,
             reference_id: ReferenceId::NONE,
-            leap_indicator: NtpLeapIndicator::Leap59,
+            leap_indicator: NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::Leap59)),
             accumulated_steps: NtpDuration::ZERO,
             accumulated_steps_threshold: None,
         }));
@@ -274,7 +274,7 @@ mod tests {
                 reference_id: ReferenceId::from_ip("127.0.0.3".parse().unwrap()),
                 our_id: ReferenceId::from_ip("127.0.0.2".parse().unwrap()),
                 reach: Reach::default(),
-                leap_indicator: NtpLeapIndicator::NoWarning,
+                leap_indicator: NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)),
                 root_delay: NtpDuration::from_seconds(0.2),
                 root_dispersion: NtpDuration::from_seconds(0.02),
             }),
@@ -307,7 +307,7 @@ mod tests {
             reference_id: ReferenceId::NONE,
             root_delay: NtpDuration::ZERO,
             root_dispersion: NtpDuration::ZERO,
-            leap_indicator: NtpLeapIndicator::Leap59,
+            leap_indicator: NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::Leap59)),
             accumulated_steps: NtpDuration::ZERO,
             accumulated_steps_threshold: None,
         }));

@@ -1,4 +1,5 @@
 use ntp_daemon::{observer::WrappedSocketAddr, ObservablePeerState, ObservableState};
+use ntp_proto::NtpLeapStatus;
 use prometheus_client::{
     encoding::text::{Encode, SendSyncEncodeMetric},
     metrics::{
@@ -59,7 +60,13 @@ impl Metrics {
                 .unwrap_or(-1.0),
         );
         self.system_leap_indicator
-            .set(data.system.leap_indicator as u64);
+            .set(match data.system.leap_indicator {
+                ntp_proto::NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::None)) => 0,
+                ntp_proto::NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::Leap61)) => 1,
+                ntp_proto::NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::Leap59)) => 2,
+                ntp_proto::NtpLeapIndicator::Unsynchronized => 3,
+                ntp_proto::NtpLeapIndicator::Synchronized(None) => 4,
+            });
 
         for peer in &data.peers {
             if let ObservablePeerState::Observable {

@@ -5,7 +5,9 @@
 // is constructed in such a way that use of the public functions is
 // safe regardless of given arguments.
 
-use ntp_proto::{NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, PollInterval};
+use ntp_proto::{
+    NtpClock, NtpDuration, NtpLeapIndicator, NtpLeapStatus, NtpTimestamp, PollInterval,
+};
 use thiserror::Error as ThisError;
 
 #[derive(Debug, Copy, Clone, ThisError)]
@@ -189,8 +191,8 @@ impl NtpClock for UnixNtpClock {
         ntp_kapi_timex.constant = poll_interval.as_log() as libc::c_long;
         ntp_kapi_timex.status = libc::STA_PLL
             | match leap_status {
-                NtpLeapIndicator::Leap59 => libc::STA_DEL,
-                NtpLeapIndicator::Leap61 => libc::STA_INS,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::Leap59)) => libc::STA_DEL,
+                NtpLeapIndicator::Synchronized(Some(NtpLeapStatus::Leap61)) => libc::STA_INS,
                 _ => 0,
             };
 
