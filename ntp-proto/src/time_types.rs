@@ -220,6 +220,12 @@ impl NtpDuration {
         }
     }
 
+    pub(crate) const fn from_bits_v5(bits: [u8; 4]) -> Self {
+        NtpDuration {
+            duration: (u32::from_be_bytes(bits) as i64) << 4,
+        }
+    }
+
     pub(crate) const fn to_bits_short(self) -> [u8; 4] {
         // serializing negative durations should never happen
         // and indicates a programming error elsewhere.
@@ -237,6 +243,63 @@ impl NtpDuration {
             false => ((self.duration & 0x0000FFFFFFFF0000) >> 16) as u32,
         }
         .to_be_bytes()
+    }
+
+    pub(crate) const fn to_bits_v5(self) -> [u8; 4] {
+        // serializing negative durations should never happen
+        // and indicates a programming error elsewhere.
+        // as for duration that are too large, saturating is
+        // the safe option.
+        assert!(self.duration >= 0);
+
+        // Although saturating is safe to do, it probably still
+        // should never happen in practice, so ensure we will
+        // see it when running in debug mode.
+        debug_assert!(self.duration <= 0x0000000FFFFFFFFF);
+
+        match self.duration > 0x0000000FFFFFFFFF {
+            true => 0xFFFFFFFF_u32,
+            false => ((self.duration & 0x0000000FFFFFFFF0) >> 4) as u32,
+        }
+        .to_be_bytes()
+    }
+
+    pub(crate) fn from_i16_seconds(seconds: i16) -> Self {
+        Self {
+            duration: (seconds as i64) << 32,
+        }
+    }
+
+    /// Deserialize for timestamp offsets (does not generate 0x8000!)
+    pub(crate) fn to_i16_seconds(self) -> i16 {
+        debug_assert!(self.duration.abs() <= 0x0000FFFFFFFFFFFF);
+
+        if self.duration > 0x0000FFFFFFFFFFFF {
+            i16::MAX
+        } else if self.duration < -0x0000FFFFFFFFFFFF {
+            i16::MIN + 1
+        } else {
+            (self.duration >> 32) as _
+        }
+    }
+
+    pub(crate) fn from_i16_fractions(fraction: i16) -> Self {
+        Self {
+            duration: (fraction as i64) << 16,
+        }
+    }
+
+    /// Deserialize for timestamp offsets (does not generate 0x8000!)
+    pub(crate) fn to_i16_fractions(self) -> i16 {
+        debug_assert!(self.duration.abs() <= i32::MAX as i64);
+
+        if self.duration > i32::MAX as i64 {
+            i16::MAX
+        } else if self.duration < -(i32::MAX as i64) {
+            i16::MIN + 1
+        } else {
+            (self.duration >> 16) as _
+        }
     }
 
     /// Convert to an f64; required for statistical calculations

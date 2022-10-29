@@ -1,6 +1,6 @@
 use crate::{
     filter::{FilterTuple, LastMeasurements},
-    packet::{NtpAssociationMode, NtpLeapIndicator, RequestIdentifier},
+    packet::{NtpAssociationMode, NtpLeapIndicator, NtpVersion, RequestIdentifier},
     time_types::{FrequencyTolerance, NtpInstant},
     NtpDuration, NtpPacket, NtpTimestamp, PollInterval, ReferenceId, SystemConfig,
 };
@@ -310,7 +310,7 @@ impl Peer {
         self.reach.poll();
 
         let poll_interval = self.current_poll_interval(system);
-        let (packet, identifier) = NtpPacket::poll_message(poll_interval);
+        let (packet, identifier) = NtpPacket::poll_message(NtpVersion::V4, poll_interval);
         self.current_request_identifier = Some((identifier, NtpInstant::now() + POLL_WINDOW));
 
         // Ensure we don't spam the remote with polls if it is not reachable

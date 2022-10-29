@@ -368,7 +368,9 @@ impl<T: std::hash::Hash + Eq> TimestampedCache<T> {
 mod tests {
     use std::time::Duration;
 
-    use ntp_proto::{NtpDuration, NtpLeapIndicator, PollInterval, PollIntervalLimits, ReferenceId};
+    use ntp_proto::{
+        NtpDuration, NtpLeapIndicator, NtpVersion, PollInterval, PollIntervalLimits, ReferenceId,
+    };
 
     use crate::ipfilter::IpFilter;
 
@@ -440,7 +442,8 @@ mod tests {
         )
         .await
         .unwrap();
-        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let (packet, id) =
+            NtpPacket::poll_message(NtpVersion::V4, PollIntervalLimits::default().min);
         let mut pdata = vec![];
         packet.serialize(&mut pdata).unwrap();
 
@@ -485,7 +488,8 @@ mod tests {
         )
         .await
         .unwrap();
-        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let (packet, id) =
+            NtpPacket::poll_message(NtpVersion::V4, PollIntervalLimits::default().min);
         let mut pdata = vec![];
         packet.serialize(&mut pdata).unwrap();
 
@@ -531,7 +535,8 @@ mod tests {
         )
         .await
         .unwrap();
-        let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let (packet, _) =
+            NtpPacket::poll_message(NtpVersion::V4, PollIntervalLimits::default().min);
         let mut pdata = vec![];
         packet.serialize(&mut pdata).unwrap();
 
@@ -571,7 +576,8 @@ mod tests {
         )
         .await
         .unwrap();
-        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let (packet, id) =
+            NtpPacket::poll_message(NtpVersion::V4, PollIntervalLimits::default().min);
         let mut pdata = vec![];
         packet.serialize(&mut pdata).unwrap();
 
@@ -616,7 +622,8 @@ mod tests {
         )
         .await
         .unwrap();
-        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let (packet, id) =
+            NtpPacket::poll_message(NtpVersion::V4, PollIntervalLimits::default().min);
         let mut pdata = vec![];
         packet.serialize(&mut pdata).unwrap();
 
@@ -662,7 +669,8 @@ mod tests {
         )
         .await
         .unwrap();
-        let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let (packet, _) =
+            NtpPacket::poll_message(NtpVersion::V4, PollIntervalLimits::default().min);
         let mut pdata = vec![];
         packet.serialize(&mut pdata).unwrap();
 
@@ -703,7 +711,8 @@ mod tests {
         .await
         .unwrap();
 
-        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let (packet, id) =
+            NtpPacket::poll_message(NtpVersion::V4, PollIntervalLimits::default().min);
         let mut pdata = vec![];
         packet.serialize(&mut pdata).unwrap();
         socket.send(&pdata).await.unwrap();
@@ -718,7 +727,8 @@ mod tests {
 
         tokio::time::sleep(std::time::Duration::from_millis(120)).await;
 
-        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let (packet, id) =
+            NtpPacket::poll_message(NtpVersion::V4, PollIntervalLimits::default().min);
         let mut pdata = vec![];
         packet.serialize(&mut pdata).unwrap();
         socket.send(&pdata).await.unwrap();
@@ -731,7 +741,8 @@ mod tests {
         assert_ne!(packet.stratum(), 0);
         assert!(packet.valid_server_response(id));
 
-        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let (packet, id) =
+            NtpPacket::poll_message(NtpVersion::V4, PollIntervalLimits::default().min);
         let mut pdata = vec![];
         packet.serialize(&mut pdata).unwrap();
         socket.send(&pdata).await.unwrap();
@@ -777,7 +788,8 @@ mod tests {
         .await
         .unwrap();
 
-        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let (packet, id) =
+            NtpPacket::poll_message(NtpVersion::V4, PollIntervalLimits::default().min);
         let mut pdata = vec![];
         packet.serialize(&mut pdata).unwrap();
         socket.send(&pdata).await.unwrap();
