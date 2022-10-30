@@ -482,6 +482,7 @@ impl NtpHeaderV5 {
     ) -> Self {
         Self {
             mode: NtpAssociationMode::Server,
+            leap: system.leap_indicator,
             stratum: system.stratum,
             client_cookie: input.client_cookie,
             timescale: NtpTimescale::Utc(None),
@@ -604,6 +605,7 @@ impl NtpHeaderV3V4 {
         if input.reference_timestamp == NtpTimestamp::NTP5_NEGOTIATION {
             Self {
                 mode: NtpAssociationMode::Server,
+                leap: system.leap_indicator,
                 stratum: system.stratum,
                 reference_timestamp: NtpTimestamp::NTP5_NEGOTIATION,
                 origin_timestamp: input.transmit_timestamp,
@@ -620,6 +622,7 @@ impl NtpHeaderV3V4 {
         } else {
             Self {
                 mode: NtpAssociationMode::Server,
+                leap: system.leap_indicator,
                 stratum: system.stratum,
                 origin_timestamp: input.transmit_timestamp,
                 receive_timestamp: recv_timestamp,
