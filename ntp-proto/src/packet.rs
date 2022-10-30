@@ -601,19 +601,37 @@ impl NtpHeaderV3V4 {
         recv_timestamp: NtpTimestamp,
         clock: &C,
     ) -> Self {
-        Self {
-            mode: NtpAssociationMode::Server,
-            stratum: system.stratum,
-            origin_timestamp: input.transmit_timestamp,
-            receive_timestamp: recv_timestamp,
-            reference_id: system.reference_id,
-            poll: input.poll,
-            precision: system.precision.log2(),
-            root_delay: system.root_delay,
-            root_dispersion: system.root_dispersion,
-            // Timestamp must be last to make it as accurate as possible.
-            transmit_timestamp: clock.now().expect("Failed to read time"),
-            ..Self::new()
+        if input.reference_timestamp == NtpTimestamp::NTP5_NEGOTIATION {
+            Self {
+                mode: NtpAssociationMode::Server,
+                stratum: system.stratum,
+                reference_timestamp: NtpTimestamp::NTP5_NEGOTIATION,
+                origin_timestamp: input.transmit_timestamp,
+                receive_timestamp: recv_timestamp,
+                reference_id: system.reference_id,
+                poll: input.poll,
+                precision: system.precision.log2(),
+                root_delay: system.root_delay,
+                root_dispersion: system.root_dispersion,
+                // Timestamp must be last to make it as accurate as possible.
+                transmit_timestamp: clock.now().expect("Failed to read time"),
+                ..Self::new()
+            }
+        } else {
+            Self {
+                mode: NtpAssociationMode::Server,
+                stratum: system.stratum,
+                origin_timestamp: input.transmit_timestamp,
+                receive_timestamp: recv_timestamp,
+                reference_id: system.reference_id,
+                poll: input.poll,
+                precision: system.precision.log2(),
+                root_delay: system.root_delay,
+                root_dispersion: system.root_dispersion,
+                // Timestamp must be last to make it as accurate as possible.
+                transmit_timestamp: clock.now().expect("Failed to read time"),
+                ..Self::new()
+            }
         }
     }
 
