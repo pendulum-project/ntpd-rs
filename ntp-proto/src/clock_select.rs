@@ -10,6 +10,7 @@ pub struct FilterAndCombine {
     pub system_root_delay: NtpDuration,
     pub system_root_dispersion: NtpDuration,
     pub system_peer_snapshot: PeerSnapshot,
+    pub system_stratum: u8,
 }
 
 impl FilterAndCombine {
@@ -19,8 +20,9 @@ impl FilterAndCombine {
         peers: &[PeerSnapshot],
         local_clock_time: NtpInstant,
         system_poll: PollInterval,
+        system_stratum: u8,
     ) -> Option<Self> {
-        let selection = clock_select(config, peers, local_clock_time, system_poll)?;
+        let selection = clock_select(config, peers, local_clock_time, system_poll, system_stratum)?;
 
         // the clustering algorithm (part of `clock_select`) sorts the peers, best peer first.
         // the first (and best) peer is chosen as the system peer, and its variables are used
@@ -31,6 +33,14 @@ impl FilterAndCombine {
         // it calls clock hopping). We'll have to see if that is something we should do too;
         // the spec text does not talk about keeping the existing system peer if it's in the candidate list
         let system_peer_snapshot = *selection.survivors[0].peer;
+
+        let stratum = selection
+            .survivors
+            .iter()
+            .map(|v| v.peer.stratum)
+            .max()
+            .unwrap()
+            .saturating_add(1);
 
         let combined = clock_combine(
             &selection.survivors,
@@ -57,6 +67,7 @@ impl FilterAndCombine {
             system_root_delay: root_delay,
             system_root_dispersion: root_dispersion,
             system_peer_snapshot,
+            system_stratum: stratum,
         })
     }
 
@@ -124,6 +135,7 @@ fn clock_select<'a>(
     peers: &'a [PeerSnapshot],
     local_clock_time: NtpInstant,
     system_poll: PollInterval,
+    system_stratum: u8,
 ) -> Option<ClockSelect<'a>> {
     let valid_associations = peers.iter().filter(|p| {
         p.accept_synchronization(
@@ -131,7 +143,7 @@ fn clock_select<'a>(
             config.frequency_tolerance,
             config.distance_threshold,
             system_poll,
-            config.local_stratum,
+            system_stratum,
         )
         .is_ok()
     });
@@ -1324,6 +1336,7 @@ mod test {
                 NtpDuration::ZERO,
                 NtpDuration::ZERO,
             ),
+            system_stratum: 15,
         };
 
         let frequency_tolerance = FrequencyTolerance::ppm(15);
@@ -1366,9 +1379,14 @@ mod test {
             NtpDuration::from_seconds(0.002),
             NtpDuration::from_seconds(0.001),
         );
-        let baseline_result =
-            FilterAndCombine::run(&config, &[peer], base, PollIntervalLimits::default().min)
-                .unwrap();
+        let baseline_result = FilterAndCombine::run(
+            &config,
+            &[peer],
+            base,
+            PollIntervalLimits::default().min,
+            16,
+        )
+        .unwrap();
         assert!(baseline_result.system_root_delay >= NtpDuration::from_seconds(0.002));
         assert!(baseline_result.system_root_dispersion > NtpDuration::from_seconds(0.001));
 
@@ -1377,6 +1395,7 @@ mod test {
             &[peer],
             base + Duration::from_secs(1000),
             PollIntervalLimits::default().min,
+            16,
         )
         .unwrap();
         assert!(result.system_root_delay >= NtpDuration::from_seconds(0.002));
@@ -1394,9 +1413,14 @@ mod test {
             NtpDuration::from_seconds(0.002),
             NtpDuration::from_seconds(0.001),
         );
-        let result =
-            FilterAndCombine::run(&config, &[peer], base, PollIntervalLimits::default().min)
-                .unwrap();
+        let result = FilterAndCombine::run(
+            &config,
+            &[peer],
+            base,
+            PollIntervalLimits::default().min,
+            16,
+        )
+        .unwrap();
         assert!(result.system_root_delay >= NtpDuration::from_seconds(0.002));
         assert!(result.system_root_dispersion > NtpDuration::from_seconds(0.001));
         assert!(result.system_root_dispersion > baseline_result.system_root_dispersion);
@@ -1412,9 +1436,14 @@ mod test {
             NtpDuration::from_seconds(0.002),
             NtpDuration::from_seconds(0.001),
         );
-        let result =
-            FilterAndCombine::run(&config, &[peer], base, PollIntervalLimits::default().min)
-                .unwrap();
+        let result = FilterAndCombine::run(
+            &config,
+            &[peer],
+            base,
+            PollIntervalLimits::default().min,
+            16,
+        )
+        .unwrap();
         assert!(result.system_root_delay >= NtpDuration::from_seconds(0.002));
         assert!(result.system_root_dispersion > NtpDuration::from_seconds(0.001));
         assert!(result.system_root_dispersion > baseline_result.system_root_dispersion);
@@ -1430,9 +1459,14 @@ mod test {
             NtpDuration::from_seconds(0.002),
             NtpDuration::from_seconds(0.001),
         );
-        let result =
-            FilterAndCombine::run(&config, &[peer], base, PollIntervalLimits::default().min)
-                .unwrap();
+        let result = FilterAndCombine::run(
+            &config,
+            &[peer],
+            base,
+            PollIntervalLimits::default().min,
+            16,
+        )
+        .unwrap();
         assert!(result.system_root_delay >= NtpDuration::from_seconds(0.002));
         assert!(result.system_root_dispersion > NtpDuration::from_seconds(0.001));
         assert!(result.system_root_dispersion > baseline_result.system_root_dispersion);
@@ -1448,9 +1482,14 @@ mod test {
             NtpDuration::from_seconds(0.002),
             NtpDuration::from_seconds(0.001),
         );
-        let result =
-            FilterAndCombine::run(&config, &[peer], base, PollIntervalLimits::default().min)
-                .unwrap();
+        let result = FilterAndCombine::run(
+            &config,
+            &[peer],
+            base,
+            PollIntervalLimits::default().min,
+            16,
+        )
+        .unwrap();
         assert!(result.system_root_delay >= NtpDuration::from_seconds(0.002));
         assert!(result.system_root_dispersion > NtpDuration::from_seconds(0.001));
         assert!(result.system_root_delay > baseline_result.system_root_delay);

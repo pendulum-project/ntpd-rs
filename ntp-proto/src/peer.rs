@@ -103,6 +103,9 @@ pub struct SystemSnapshot {
     pub precision: NtpDuration,
     /// Log of the precision of the local clock
     pub stratum: u8,
+    /// Reference id bloom filter
+    #[serde(skip, default = "empty_bloom")]
+    pub refids: [u8; 512],
     /// Current root delay
     pub root_delay: NtpDuration,
     /// Current root dispersion
@@ -117,12 +120,17 @@ pub struct SystemSnapshot {
     pub accumulated_steps_threshold: Option<NtpDuration>,
 }
 
+const fn empty_bloom() -> [u8; 512] {
+    [0; 512]
+}
+
 impl Default for SystemSnapshot {
     fn default() -> Self {
         Self {
             poll_interval: PollInterval::default(),
             precision: NtpDuration::from_exponent(-18),
             stratum: 16,
+            refids: empty_bloom(),
             root_delay: NtpDuration::ZERO,
             root_dispersion: NtpDuration::ZERO,
             reference_id: ReferenceId::NONE,
@@ -177,7 +185,7 @@ impl PeerSnapshot {
         frequency_tolerance: FrequencyTolerance,
         distance_threshold: NtpDuration,
         system_poll: PollInterval,
-        local_stratum: u8,
+        system_stratum: u8,
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
 
@@ -185,8 +193,8 @@ impl PeerSnapshot {
 
         // A stratum error occurs if
         //     1: the server has never been synchronized,
-        //     2: the server stratum is higher than the local stratum
-        if !self.leap_indicator.is_synchronized() || self.stratum >= local_stratum {
+        //     2: the server stratum is higher than the current stratum
+        if !self.leap_indicator.is_synchronized() || self.stratum >= system_stratum {
             warn!(
                 stratum = debug(self.stratum),
                 "Peer rejected due to invalid stratum"

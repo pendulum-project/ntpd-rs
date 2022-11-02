@@ -131,7 +131,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 cur_socket.as_ref().unwrap()
             };
 
-            let mut buf = [0_u8; 48];
+            let mut buf = [0_u8; 1024];
             let recv_res = socket.recv(&mut buf).await;
             self.stats.received_packets.inc();
             let accept_result = self.accept_packet(rate_limiting_cutoff, recv_res, &buf);
@@ -143,7 +143,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
 
                     let response =
                         NtpPacket::timestamp_response(&system, packet, recv_timestamp, &self.clock);
-                    let mut cursor = Cursor::new([0; 48]);
+                    let mut cursor = Cursor::new([0; 1024]);
                     if let Err(serialize_err) = response.serialize(&mut cursor) {
                         error!(error=?serialize_err, "Could not serialize response");
                         continue;
@@ -205,7 +205,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         &'b mut self,
         rate_limiting_cutoff: Duration,
         result: Result<(usize, SocketAddr, Option<NtpTimestamp>), std::io::Error>,
-        buf: &'a [u8; 48],
+        buf: &'a [u8],
     ) -> AcceptResult<'a> {
         match result {
             Ok((size, peer_addr, Some(recv_timestamp))) if size >= 48 => {
@@ -231,7 +231,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                         let cutoff = rate_limiting_cutoff;
                         let too_soon = !self.client_cache.is_allowed(peer_addr, timestamp, cutoff);
 
-                        match self.accept_data(buf, peer_addr, recv_timestamp) {
+                        match self.accept_data(&buf[0..size], peer_addr, recv_timestamp) {
                             AcceptResult::Accept(packet, _, _) if too_soon => {
                                 AcceptResult::RateLimit(packet, peer_addr)
                             }
@@ -271,7 +271,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
 
     fn accept_data<'a, 'b>(
         &'b self,
-        buf: &'a [u8; 48],
+        buf: &'a [u8],
         peer_addr: SocketAddr,
         recv_timestamp: NtpTimestamp,
     ) -> AcceptResult<'a> {

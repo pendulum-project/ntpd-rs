@@ -148,7 +148,13 @@ impl<C: NtpClock> System<C> {
     ) {
         snapshots.clear();
         snapshots.extend(self.peers_rwlock.read().await.valid_snapshots());
-        let result = FilterAndCombine::run(&config, &*snapshots, ntp_instant, system.poll_interval);
+        let result = FilterAndCombine::run(
+            &config,
+            &*snapshots,
+            ntp_instant,
+            system.poll_interval,
+            system.stratum,
+        );
         let clock_select = match result {
             Some(clock_select) => clock_select,
             None => {
@@ -185,7 +191,7 @@ impl<C: NtpClock> System<C> {
             let mut global = self.global_system_snapshot.write().await;
             global.poll_interval = self.controller.preferred_poll_interval();
             global.leap_indicator = clock_select.system_peer_snapshot.leap_indicator;
-            global.stratum = clock_select.system_peer_snapshot.stratum.saturating_add(1);
+            global.stratum = clock_select.system_stratum;
             global.reference_id = clock_select.system_peer_snapshot.peer_id;
             global.accumulated_steps = self.controller.accumulated_steps();
             global.accumulated_steps_threshold = config.accumulated_threshold;

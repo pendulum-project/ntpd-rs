@@ -214,6 +214,7 @@ mod tests {
         let system_reader = Arc::new(tokio::sync::RwLock::new(SystemSnapshot {
             poll_interval: PollIntervalLimits::default().min,
             stratum: 1,
+            refids: [0;512],
             precision: NtpDuration::from_seconds(1e-3),
             root_delay: NtpDuration::ZERO,
             root_dispersion: NtpDuration::ZERO,
@@ -303,6 +304,7 @@ mod tests {
         let system_reader = Arc::new(tokio::sync::RwLock::new(SystemSnapshot {
             poll_interval: PollIntervalLimits::default().min,
             stratum: 1,
+            refids: [0;512],
             precision: NtpDuration::from_seconds(1e-3),
             reference_id: ReferenceId::NONE,
             root_delay: NtpDuration::ZERO,

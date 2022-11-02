@@ -71,7 +71,7 @@ impl std::fmt::Debug for NtpTimestamp {
 
 impl NtpTimestamp {
     pub const NTP5_NEGOTIATION: NtpTimestamp = NtpTimestamp {
-        timestamp: u64::from_be_bytes(*b"NTP5NTP5")
+        timestamp: u64::from_be_bytes(*b"NTP5NTP5"),
     };
 
     pub(crate) const fn from_bits(bits: [u8; 8]) -> NtpTimestamp {
