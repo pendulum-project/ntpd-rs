@@ -45,7 +45,8 @@ pub async fn spawn(
     };
 
     // Clock controller
-    let controller = ClockController::new(UnixNtpClock::new(), &system_snapshot, &config);
+    let controller =
+        ClockController::new(UnixNtpClock::new(), &system_snapshot.time_snapshot, &config);
 
     // Daemon channels
     let system = Arc::new(tokio::sync::RwLock::new(system_snapshot));
@@ -128,7 +129,7 @@ impl<C: NtpClock> System<C> {
                 self.reset_epoch,
                 ntp_instant,
                 config,
-                system.poll_interval,
+                system.time_snapshot.poll_interval,
             ) {
                 self.recalculate_clock(&mut snapshots, config, &system, ntp_instant)
                     .await;
@@ -148,7 +149,12 @@ impl<C: NtpClock> System<C> {
     ) {
         snapshots.clear();
         snapshots.extend(self.peers_rwlock.read().await.valid_snapshots());
-        let result = FilterAndCombine::run(&config, &*snapshots, ntp_instant, system.poll_interval);
+        let result = FilterAndCombine::run(
+            &config,
+            &*snapshots,
+            ntp_instant,
+            system.time_snapshot.poll_interval,
+        );
         let clock_select = match result {
             Some(clock_select) => clock_select,
             None => {
@@ -161,7 +167,7 @@ impl<C: NtpClock> System<C> {
         info!(offset_ms, jitter_ms, "Measured offset and jitter");
         let adjust_type = self.controller.update(
             &config,
-            system,
+            &system.time_snapshot,
             clock_select.system_offset,
             clock_select.system_root_delay,
             clock_select.system_root_dispersion,
@@ -183,18 +189,19 @@ impl<C: NtpClock> System<C> {
         }
         if adjust_type != ClockUpdateResult::Ignore {
             let mut global = self.global_system_snapshot.write().await;
-            global.poll_interval = self.controller.preferred_poll_interval();
-            global.leap_indicator = clock_select.system_peer_snapshot.timedata.leap_indicator;
+            global.time_snapshot.poll_interval = self.controller.preferred_poll_interval();
+            global.time_snapshot.leap_indicator =
+                clock_select.system_peer_snapshot.timedata.leap_indicator;
             global.stratum = clock_select
                 .system_peer_snapshot
                 .timedata
                 .stratum
                 .saturating_add(1);
             global.reference_id = clock_select.system_peer_snapshot.peer_id;
-            global.accumulated_steps = self.controller.accumulated_steps();
+            global.time_snapshot.accumulated_steps = self.controller.accumulated_steps();
             global.accumulated_steps_threshold = config.accumulated_threshold;
-            global.root_delay = clock_select.system_root_delay;
-            global.root_dispersion = clock_select.system_root_dispersion;
+            global.time_snapshot.root_delay = clock_select.system_root_delay;
+            global.time_snapshot.root_dispersion = clock_select.system_root_dispersion;
         }
     }
 
@@ -233,7 +240,7 @@ fn requires_clock_recalculation(
 mod tests {
     use ntp_proto::{
         peer_snapshot, NtpDuration, NtpLeapIndicator, NtpTimestamp, PeerStatistics,
-        PollIntervalLimits,
+        PollIntervalLimits, TimeSnapshot,
     };
 
     use crate::{
@@ -425,7 +432,7 @@ mod tests {
                 reset_epoch,
                 controller: ClockController::new(
                     TestClock {},
-                    &SystemSnapshot::default(),
+                    &TimeSnapshot::default(),
                     &SystemConfig::default(),
                 ),
             };

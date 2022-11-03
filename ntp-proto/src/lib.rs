@@ -23,7 +23,7 @@ pub use packet::{NtpAssociationMode, NtpLeapIndicator, NtpPacket};
 pub use peer::fuzz_measurement_from_packet;
 pub use peer::{
     AcceptSynchronizationError, IgnoreReason, Peer, PeerSnapshot, PeerStatistics, PeerTimeSnapshot,
-    Reach, SystemSnapshot, Update,
+    Reach, SystemSnapshot, TimeSnapshot, Update,
 };
 #[cfg(feature = "fuzz")]
 pub use time_types::fuzz_duration_from_seconds;

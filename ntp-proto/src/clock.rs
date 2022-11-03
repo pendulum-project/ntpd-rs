@@ -1,6 +1,6 @@
 use crate::{
     packet::NtpLeapIndicator, time_types::PollInterval, NtpDuration, NtpInstant, NtpTimestamp,
-    SystemConfig, SystemSnapshot,
+    SystemConfig, TimeSnapshot,
 };
 use tracing::{debug, error, info, instrument, trace};
 
@@ -63,7 +63,7 @@ pub enum ClockUpdateResult {
 }
 
 impl<C: NtpClock> ClockController<C> {
-    pub fn new(clock: C, system: &SystemSnapshot, config: &SystemConfig) -> Self {
+    pub fn new(clock: C, system: &TimeSnapshot, config: &SystemConfig) -> Self {
         if let Err(e) = clock.set_freq(0.) {
             error!(error = %e, "Could not set clock frequency, exiting");
             std::process::exit(exitcode::NOPERM);
@@ -93,7 +93,7 @@ impl<C: NtpClock> ClockController<C> {
     pub fn update(
         &mut self,
         config: &SystemConfig,
-        system: &SystemSnapshot,
+        system: &TimeSnapshot,
         offset: NtpDuration,
         root_delay: NtpDuration,
         root_dispersion: NtpDuration,
@@ -426,7 +426,7 @@ mod tests {
         let base = NtpInstant::now();
 
         let config = SystemConfig::default();
-        let system = SystemSnapshot::default();
+        let system = TimeSnapshot::default();
 
         let mut controller = ClockController {
             clock: TestClock::default(),
@@ -501,7 +501,7 @@ mod tests {
 
     #[test]
     fn test_startup_logic() {
-        let system = SystemSnapshot::default();
+        let system = TimeSnapshot::default();
         let config = SystemConfig::default();
         let mut controller = ClockController::new(TestClock::default(), &system, &config);
         let base = controller.last_update_time;
@@ -544,7 +544,7 @@ mod tests {
     fn test_startup_logic_freq() {
         let base = NtpInstant::now();
         let config = SystemConfig::default();
-        let system = SystemSnapshot::default();
+        let system = TimeSnapshot::default();
 
         let mut controller = ClockController {
             clock: TestClock::default(),
@@ -578,7 +578,7 @@ mod tests {
     fn test_spike_rejection() {
         let base = NtpInstant::now();
         let config = SystemConfig::default();
-        let system = SystemSnapshot::default();
+        let system = TimeSnapshot::default();
 
         let mut controller = ClockController {
             clock: TestClock::default(),
@@ -625,7 +625,7 @@ mod tests {
     fn test_spike_acceptance_over_time() {
         let base = NtpInstant::now();
         let config = SystemConfig::default();
-        let system = SystemSnapshot::default();
+        let system = TimeSnapshot::default();
 
         let mut controller = ClockController {
             clock: TestClock::default(),
@@ -675,7 +675,7 @@ mod tests {
             accumulated_threshold: Some(NtpDuration::from_seconds(100.0)),
             ..Default::default()
         };
-        let system = SystemSnapshot::default();
+        let system = TimeSnapshot::default();
 
         let mut controller = ClockController {
             clock: TestClock::default(),
@@ -730,7 +730,7 @@ mod tests {
     fn test_jitter_calc() {
         let base = NtpInstant::now();
         let config = SystemConfig::default();
-        let system = SystemSnapshot::default();
+        let system = TimeSnapshot::default();
 
         let mut controller = ClockController {
             clock: TestClock::default(),
@@ -816,7 +816,7 @@ mod tests {
     fn test_poll_preference_update() {
         let base = NtpInstant::now();
         let config = SystemConfig::default();
-        let system = SystemSnapshot::default();
+        let system = TimeSnapshot::default();
 
         let mut controller = ClockController {
             clock: TestClock::default(),
@@ -899,7 +899,7 @@ mod tests {
     fn test_excess_detection() {
         let base = NtpInstant::now();
         let config = SystemConfig::default();
-        let system = SystemSnapshot::default();
+        let system = TimeSnapshot::default();
 
         let mut controller = ClockController {
             clock: TestClock::default(),

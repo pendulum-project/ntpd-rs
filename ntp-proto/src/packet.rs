@@ -392,9 +392,9 @@ impl NtpHeaderV3V4 {
             receive_timestamp: recv_timestamp,
             reference_id: system.reference_id,
             poll: input.poll,
-            precision: system.precision.log2(),
-            root_delay: system.root_delay,
-            root_dispersion: system.root_dispersion,
+            precision: system.time_snapshot.precision.log2(),
+            root_delay: system.time_snapshot.root_delay,
+            root_dispersion: system.time_snapshot.root_dispersion,
             // Timestamp must be last to make it as accurate as possible.
             transmit_timestamp: clock.now().expect("Failed to read time"),
             ..Self::new()
