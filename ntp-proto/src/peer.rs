@@ -585,6 +585,34 @@ impl Peer {
     }
 }
 
+#[cfg(feature = "fuzz")]
+pub fn fuzz_measurement_from_packet(
+    client: u64,
+    client_interval: u32,
+    server: u64,
+    server_interval: u32,
+    client_precision: i8,
+    server_precision: i8,
+) {
+    let mut packet = NtpPacket::test();
+    packet.set_origin_timestamp(NtpTimestamp::from_fixed_int(client));
+    packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(server));
+    packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(
+        server.wrapping_add(server_interval as u64),
+    ));
+    packet.set_precision(server_precision);
+
+    let result = Measurement::from_packet(
+        &packet,
+        NtpTimestamp::from_fixed_int(client),
+        NtpTimestamp::from_fixed_int(client.wrapping_add(client_interval as u64)),
+        NtpInstant::now(),
+        NtpDuration::from_exponent(client_precision),
+    );
+
+    assert!(result.delay >= NtpDuration::ZERO);
+}
+
 #[cfg(test)]
 mod test {
     use crate::time_types::PollIntervalLimits;
