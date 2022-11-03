@@ -177,12 +177,13 @@ mod tests {
                 poll_interval: PollIntervalLimits::default().max,
                 our_id: ReferenceId::from_ip("127.0.0.2".parse().unwrap()),
                 reach: Reach::default(),
+                reference_id: ReferenceId::from_ip("127.0.0.3".parse().unwrap()),
+                stratum: 2,
 
                 timedata: PeerTimeSnapshot {
                     leap_indicator: NtpLeapIndicator::NoWarning,
                     root_delay: NtpDuration::from_seconds(0.2),
                     root_dispersion: NtpDuration::from_seconds(0.02),
-                    reference_id: ReferenceId::from_ip("127.0.0.3".parse().unwrap()),
                     root_distance_without_time: NtpDuration::from_seconds(0.2),
                     statistics: PeerStatistics {
                         offset: NtpDuration::from_seconds(0.05),
@@ -269,6 +270,8 @@ mod tests {
                 poll_interval: PollIntervalLimits::default().max,
                 our_id: ReferenceId::from_ip("127.0.0.2".parse().unwrap()),
                 reach: Reach::default(),
+                reference_id: ReferenceId::from_ip("127.0.0.3".parse().unwrap()),
+                stratum: 2,
 
                 timedata: PeerTimeSnapshot {
                     root_distance_without_time: NtpDuration::from_seconds(0.2),
@@ -280,7 +283,6 @@ mod tests {
                     },
                     time: NtpInstant::now(),
                     stratum: 2,
-                    reference_id: ReferenceId::from_ip("127.0.0.3".parse().unwrap()),
 
                     leap_indicator: NtpLeapIndicator::NoWarning,
                     root_delay: NtpDuration::from_seconds(0.2),

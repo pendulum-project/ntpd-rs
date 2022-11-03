@@ -1,12 +1,12 @@
 use crate::{
     config::{PeerConfig, PoolPeerConfig, ServerConfig, StandardPeerConfig},
     peer::{MsgForSystem, PeerChannels, ResetEpoch},
-    peer_manager::{Peers, SpawnTask},
+    peer_manager::{PeerIndex, Peers, SpawnTask},
 };
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
-    ClockController, ClockUpdateResult, FilterAndCombine, NtpClock, NtpInstant, PeerSnapshot,
-    PollInterval, SystemConfig, SystemSnapshot,
+    ClockController, ClockUpdateResult, FilterAndCombine, NtpClock, NtpInstant, PeerTimeSnapshot,
+    PollInterval, ReferenceId, SystemConfig, SystemSnapshot,
 };
 use tracing::{error, info};
 
@@ -185,7 +185,7 @@ impl<C: NtpClock> System<C> {
 
     async fn recalculate_clock(
         &mut self,
-        snapshots: &mut Vec<PeerSnapshot>,
+        snapshots: &mut Vec<(PeerIndex, PeerTimeSnapshot)>,
         config: SystemConfig,
         system: &SystemSnapshot,
         ntp_instant: NtpInstant,
@@ -214,8 +214,8 @@ impl<C: NtpClock> System<C> {
             clock_select.system_offset,
             clock_select.system_root_delay,
             clock_select.system_root_dispersion,
-            clock_select.system_peer_snapshot.timedata.leap_indicator,
-            clock_select.system_peer_snapshot.timedata.time,
+            clock_select.system_peer_snapshot.1.leap_indicator,
+            clock_select.system_peer_snapshot.1.time,
         );
         let offset_ms = self.controller.offset().to_seconds() * 1000.0;
         let jitter_ms = self.controller.jitter().to_seconds() * 1000.0;
@@ -231,16 +231,23 @@ impl<C: NtpClock> System<C> {
             _ => {}
         }
         if adjust_type != ClockUpdateResult::Ignore {
+            let reference_id = self
+                .peers_rwlock
+                .read()
+                .await
+                .peer_snapshot(clock_select.system_peer_snapshot.0)
+                .map(|s| s.peer_id)
+                .unwrap_or(ReferenceId::NONE);
             let mut global = self.global_system_snapshot.write().await;
             global.time_snapshot.poll_interval = self.controller.preferred_poll_interval();
             global.time_snapshot.leap_indicator =
-                clock_select.system_peer_snapshot.timedata.leap_indicator;
+                clock_select.system_peer_snapshot.1.leap_indicator;
             global.stratum = clock_select
                 .system_peer_snapshot
-                .timedata
+                .1
                 .stratum
                 .saturating_add(1);
-            global.reference_id = clock_select.system_peer_snapshot.peer_id;
+            global.reference_id = reference_id;
             global.time_snapshot.accumulated_steps = self.controller.accumulated_steps();
             global.accumulated_steps_threshold = config.accumulated_threshold;
             global.time_snapshot.root_delay = clock_select.system_root_delay;

@@ -6,7 +6,7 @@ use crate::{
     peer::{MsgForSystem, PeerChannels, PeerTask, ResetEpoch},
     server::{ServerStats, ServerTask},
 };
-use ntp_proto::{NtpClock, PeerSnapshot};
+use ntp_proto::{NtpClock, PeerSnapshot, PeerTimeSnapshot};
 use tokio::{sync::mpsc::Sender, task::JoinHandle};
 use tracing::warn;
 
@@ -295,8 +295,17 @@ impl<C: NtpClock> Peers<C> {
         self.servers.iter().cloned()
     }
 
-    pub fn valid_snapshots(&self) -> impl Iterator<Item = PeerSnapshot> + '_ {
-        self.peers.iter().filter_map(|(_, data)| match data.status {
+    pub fn valid_snapshots(&self) -> impl Iterator<Item = (PeerIndex, PeerTimeSnapshot)> + '_ {
+        self.peers
+            .iter()
+            .filter_map(|(index, data)| match data.status {
+                PeerStatus::NoMeasurement => None,
+                PeerStatus::Measurement(snapshot) => Some((*index, snapshot.timedata)),
+            })
+    }
+
+    pub fn peer_snapshot(&self, id: PeerIndex) -> Option<PeerSnapshot> {
+        self.peers.get(&id).and_then(|data| match data.status {
             PeerStatus::NoMeasurement => None,
             PeerStatus::Measurement(snapshot) => Some(snapshot),
         })
