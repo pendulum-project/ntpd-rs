@@ -74,15 +74,15 @@ impl Measurement {
 }
 
 #[derive(Debug, Clone)]
-struct PeerTimeState {
-    statistics: PeerStatistics,
-    last_measurements: LastMeasurements,
-    last_packet: NtpPacket<'static>,
-    time: NtpInstant,
+pub(crate) struct PeerTimeState {
+    pub(crate) statistics: PeerStatistics,
+    pub(crate) last_measurements: LastMeasurements,
+    pub(crate) last_packet: NtpPacket<'static>,
+    pub(crate) time: NtpInstant,
 }
 
 impl PeerTimeState {
-    fn update(
+    pub(crate) fn update(
         &mut self,
         measurement: Measurement,
         packet: NtpPacket,
@@ -317,7 +317,7 @@ impl PeerTimeSnapshot {
             + (NtpInstant::abs_diff(local_clock_time, self.time) * frequency_tolerance)
     }
 
-    fn from_timestate(timestate: &PeerTimeState) -> Self {
+    pub(crate) fn from_timestate(timestate: &PeerTimeState) -> Self {
         Self {
             root_distance_without_time: timestate.root_distance_without_time(),
             statistics: timestate.statistics,
