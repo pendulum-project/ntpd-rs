@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod algorithm;
 mod clock;
 mod clock_select;
 mod config;
@@ -9,6 +10,7 @@ mod packet;
 mod peer;
 mod time_types;
 
+pub use algorithm::{DefaultTimeSyncController, TimeSyncController};
 pub use clock::{ClockController, ClockUpdateResult, NtpClock};
 #[cfg(feature = "fuzz")]
 pub use clock_select::fuzz_find_interval;
