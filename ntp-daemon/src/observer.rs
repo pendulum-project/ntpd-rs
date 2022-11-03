@@ -119,7 +119,7 @@ mod tests {
 
     use ntp_proto::{
         NtpDuration, NtpInstant, NtpLeapIndicator, NtpTimestamp, PeerSnapshot, PeerStatistics,
-        PeerTimeSnapshot, PollInterval, PollIntervalLimits, Reach, ReferenceId,
+        PeerTimeSnapshot, PollInterval, PollIntervalLimits, Reach, ReferenceId, TimeSnapshot,
     };
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
@@ -215,15 +215,17 @@ mod tests {
         )));
 
         let system_reader = Arc::new(tokio::sync::RwLock::new(SystemSnapshot {
-            poll_interval: PollIntervalLimits::default().min,
             stratum: 1,
-            precision: NtpDuration::from_seconds(1e-3),
-            root_delay: NtpDuration::ZERO,
-            root_dispersion: NtpDuration::ZERO,
             reference_id: ReferenceId::NONE,
-            leap_indicator: NtpLeapIndicator::Leap59,
-            accumulated_steps: NtpDuration::ZERO,
             accumulated_steps_threshold: None,
+            time_snapshot: TimeSnapshot {
+                poll_interval: PollIntervalLimits::default().min,
+                precision: NtpDuration::from_seconds(1e-3),
+                root_delay: NtpDuration::ZERO,
+                root_dispersion: NtpDuration::ZERO,
+                leap_indicator: NtpLeapIndicator::Leap59,
+                accumulated_steps: NtpDuration::ZERO,
+            },
         }));
 
         let handle = tokio::spawn(async move {
@@ -308,15 +310,17 @@ mod tests {
         let peers_writer = peers_reader.clone();
 
         let system_reader = Arc::new(tokio::sync::RwLock::new(SystemSnapshot {
-            poll_interval: PollIntervalLimits::default().min,
             stratum: 1,
-            precision: NtpDuration::from_seconds(1e-3),
             reference_id: ReferenceId::NONE,
-            root_delay: NtpDuration::ZERO,
-            root_dispersion: NtpDuration::ZERO,
-            leap_indicator: NtpLeapIndicator::Leap59,
-            accumulated_steps: NtpDuration::ZERO,
             accumulated_steps_threshold: None,
+            time_snapshot: TimeSnapshot {
+                poll_interval: PollIntervalLimits::default().min,
+                precision: NtpDuration::from_seconds(1e-3),
+                root_delay: NtpDuration::ZERO,
+                root_dispersion: NtpDuration::ZERO,
+                leap_indicator: NtpLeapIndicator::Leap59,
+                accumulated_steps: NtpDuration::ZERO,
+            },
         }));
 
         let system_writer = system_reader.clone();
