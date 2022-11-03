@@ -34,6 +34,9 @@ pub struct Peer {
     // attacks and packet reordering.
     current_request_identifier: Option<(RequestIdentifier, NtpInstant)>,
 
+    stratum: u8,
+    reference_id: ReferenceId,
+
     peer_id: ReferenceId,
     our_id: ReferenceId,
     reach: Reach,
@@ -285,6 +288,9 @@ pub struct PeerSnapshot {
     pub poll_interval: PollInterval,
     pub reach: Reach,
 
+    pub stratum: u8,
+    pub reference_id: ReferenceId,
+
     pub timedata: PeerTimeSnapshot,
 }
 
@@ -295,7 +301,6 @@ pub struct PeerTimeSnapshot {
 
     pub time: NtpInstant,
     pub stratum: u8,
-    pub reference_id: ReferenceId,
 
     pub leap_indicator: NtpLeapIndicator,
     pub root_delay: NtpDuration,
@@ -318,11 +323,43 @@ impl PeerTimeSnapshot {
             statistics: timestate.statistics,
             time: timestate.time,
             stratum: timestate.last_packet.stratum(),
-            reference_id: timestate.last_packet.reference_id(),
             leap_indicator: timestate.last_packet.leap(),
             root_delay: timestate.last_packet.root_delay(),
             root_dispersion: timestate.last_packet.root_dispersion(),
         }
+    }
+
+    pub fn accept_synchronization(
+        &self,
+        local_clock_time: NtpInstant,
+        frequency_tolerance: FrequencyTolerance,
+        distance_threshold: NtpDuration,
+        system_poll: PollInterval,
+    ) -> Result<(), AcceptSynchronizationError> {
+        use AcceptSynchronizationError::*;
+
+        let system_poll = system_poll.as_duration();
+
+        // A stratum error occurs when the server has never been synchronized.
+        if !self.leap_indicator.is_synchronized() {
+            warn!("Rejected peer due to not being synchronized");
+            return Err(Stratum);
+        }
+
+        //  A distance error occurs if the root distance exceeds the
+        //  distance threshold plus an increment equal to one poll interval.
+        let distance = self.root_distance(local_clock_time, frequency_tolerance);
+        if distance > distance_threshold + (system_poll * frequency_tolerance) {
+            debug!(
+                ?distance,
+                limit = debug(distance_threshold + (system_poll * frequency_tolerance)),
+                "Peer rejected due to excessive distance"
+            );
+
+            return Err(Distance);
+        }
+
+        Ok(())
     }
 }
 
@@ -337,40 +374,19 @@ impl PeerSnapshot {
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
 
-        let system_poll = system_poll.as_duration();
-
-        // A stratum error occurs if
-        //     1: the server has never been synchronized,
-        //     2: the server stratum is higher than the local stratum
-        if !self.timedata.leap_indicator.is_synchronized() || self.timedata.stratum >= local_stratum
-        {
+        if self.stratum >= local_stratum {
             warn!(
-                stratum = debug(self.timedata.stratum),
+                stratum = debug(self.stratum),
                 "Peer rejected due to invalid stratum"
             );
             return Err(Stratum);
-        }
-
-        //  A distance error occurs if the root distance exceeds the
-        //  distance threshold plus an increment equal to one poll interval.
-        let distance = self
-            .timedata
-            .root_distance(local_clock_time, frequency_tolerance);
-        if distance > distance_threshold + (system_poll * frequency_tolerance) {
-            debug!(
-                ?distance,
-                limit = debug(distance_threshold + (system_poll * frequency_tolerance)),
-                "Peer rejected due to excessive distance"
-            );
-
-            return Err(Distance);
         }
 
         // Detect whether the remote uses us as their main time reference.
         // if so, we shouldn't sync to them as that would create a loop.
         // Note, this can only ever be an issue if the peer is not using
         // hardware as its source, so ignore reference_id if stratum is 1.
-        if self.timedata.stratum != 1 && self.timedata.reference_id == self.our_id {
+        if self.stratum != 1 && self.reference_id == self.our_id {
             debug!("Peer rejected because of detected synchornization loop");
             return Err(Loop);
         }
@@ -381,13 +397,20 @@ impl PeerSnapshot {
             return Err(ServerUnreachable);
         }
 
-        Ok(())
+        self.timedata.accept_synchronization(
+            local_clock_time,
+            frequency_tolerance,
+            distance_threshold,
+            system_poll,
+        )
     }
 
     pub fn from_peer(peer: &Peer) -> Self {
         Self {
             peer_id: peer.peer_id,
             our_id: peer.our_id,
+            stratum: peer.stratum,
+            reference_id: peer.reference_id,
             reach: peer.reach,
             poll_interval: peer.last_poll_interval,
             timedata: PeerTimeSnapshot::from_timestate(&peer.timestate),
@@ -430,6 +453,9 @@ impl Peer {
             our_id,
             peer_id,
             reach: Default::default(),
+
+            stratum: 16,
+            reference_id: ReferenceId::NONE,
 
             timestate: PeerTimeState {
                 statistics: Default::default(),
@@ -554,6 +580,10 @@ impl Peer {
         // we received this packet, and don't want to accept future ones with this next_expected_origin
         self.current_request_identifier = None;
 
+        // Update stratum and reference id
+        self.stratum = message.stratum();
+        self.reference_id = message.reference_id();
+
         // generate a measurement
         let measurement = Measurement::from_packet(
             &message,
@@ -595,6 +625,9 @@ impl Peer {
             peer_id: ReferenceId::from_int(0),
             our_id: ReferenceId::from_int(0),
             reach: Reach::default(),
+
+            stratum: 0,
+            reference_id: ReferenceId::from_int(0),
 
             timestate: PeerTimeState::test_timestate(instant),
         }
@@ -855,9 +888,11 @@ mod test {
             .last_packet
             .set_leap(NtpLeapIndicator::NoWarning);
         peer.timestate.last_packet.set_stratum(42);
+        peer.stratum = 42;
         assert_eq!(accept!(), Err(Stratum));
 
         peer.timestate.last_packet.set_stratum(0);
+        peer.stratum = 0;
 
         peer.timestate.last_packet.set_root_dispersion(dt * 2);
         assert_eq!(accept!(), Err(Distance));
