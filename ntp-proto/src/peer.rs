@@ -83,7 +83,7 @@ impl PeerTimeState {
         &mut self,
         measurement: Measurement,
         packet: NtpPacket,
-        system: SystemSnapshot,
+        system: TimeSnapshot,
         system_config: &SystemConfig,
     ) -> Option<()> {
         let filter_input = FilterTuple::from_measurement(
@@ -207,39 +207,54 @@ impl Reach {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct SystemSnapshot {
+pub struct TimeSnapshot {
     /// Desired poll interval
     pub poll_interval: PollInterval,
     /// Precision of the local clock
     pub precision: NtpDuration,
-    /// Log of the precision of the local clock
-    pub stratum: u8,
     /// Current root delay
     pub root_delay: NtpDuration,
     /// Current root dispersion
     pub root_dispersion: NtpDuration,
-    /// Reference ID of current primary time source
-    pub reference_id: ReferenceId,
     /// Current leap indicator state
     pub leap_indicator: NtpLeapIndicator,
     /// Total amount that the clock has stepped
     pub accumulated_steps: NtpDuration,
+}
+
+impl Default for TimeSnapshot {
+    fn default() -> Self {
+        Self {
+            poll_interval: PollInterval::default(),
+            precision: NtpDuration::from_exponent(-18),
+            root_delay: NtpDuration::ZERO,
+            root_dispersion: NtpDuration::ZERO,
+            leap_indicator: NtpLeapIndicator::Unknown,
+            accumulated_steps: NtpDuration::ZERO,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct SystemSnapshot {
+    /// Log of the precision of the local clock
+    pub stratum: u8,
+    /// Reference ID of current primary time source
+    pub reference_id: ReferenceId,
     /// Crossing this amount of stepping will cause a Panic
     pub accumulated_steps_threshold: Option<NtpDuration>,
+    /// Timekeeping data
+    #[serde(flatten)]
+    pub time_snapshot: TimeSnapshot,
 }
 
 impl Default for SystemSnapshot {
     fn default() -> Self {
         Self {
-            poll_interval: PollInterval::default(),
-            precision: NtpDuration::from_exponent(-18),
             stratum: 16,
-            root_delay: NtpDuration::ZERO,
-            root_dispersion: NtpDuration::ZERO,
             reference_id: ReferenceId::NONE,
-            leap_indicator: NtpLeapIndicator::Unknown,
-            accumulated_steps: NtpDuration::ZERO,
             accumulated_steps_threshold: None,
+            time_snapshot: TimeSnapshot::default(),
         }
     }
 }
@@ -427,6 +442,7 @@ impl Peer {
 
     pub fn current_poll_interval(&self, system: SystemSnapshot) -> PollInterval {
         system
+            .time_snapshot
             .poll_interval
             .max(self.backoff_interval)
             .max(self.remote_min_poll_interval)
@@ -544,12 +560,12 @@ impl Peer {
             send_time,
             recv_time,
             local_clock_time,
-            system.precision,
+            system.time_snapshot.precision,
         );
 
         match self
             .timestate
-            .update(measurement, message, system, system_config)
+            .update(measurement, message, system.time_snapshot, system_config)
         {
             None => Update::BareUpdate(PeerSnapshot::from_peer(self)),
             Some(_) => Update::NewMeasurement(PeerSnapshot::from_peer(self)),
@@ -854,18 +870,18 @@ mod test {
         let mut system = SystemSnapshot::default();
 
         assert!(peer.current_poll_interval(system) >= peer.remote_min_poll_interval);
-        assert!(peer.current_poll_interval(system) >= system.poll_interval);
+        assert!(peer.current_poll_interval(system) >= system.time_snapshot.poll_interval);
 
-        system.poll_interval = PollIntervalLimits::default().max;
+        system.time_snapshot.poll_interval = PollIntervalLimits::default().max;
 
         assert!(peer.current_poll_interval(system) >= peer.remote_min_poll_interval);
-        assert!(peer.current_poll_interval(system) >= system.poll_interval);
+        assert!(peer.current_poll_interval(system) >= system.time_snapshot.poll_interval);
 
-        system.poll_interval = PollIntervalLimits::default().min;
+        system.time_snapshot.poll_interval = PollIntervalLimits::default().min;
         peer.remote_min_poll_interval = PollIntervalLimits::default().max;
 
         assert!(peer.current_poll_interval(system) >= peer.remote_min_poll_interval);
-        assert!(peer.current_poll_interval(system) >= system.poll_interval);
+        assert!(peer.current_poll_interval(system) >= system.time_snapshot.poll_interval);
 
         peer.remote_min_poll_interval = PollIntervalLimits::default().min;
 

@@ -44,14 +44,19 @@ pub(crate) struct Metrics {
 
 impl Metrics {
     pub(crate) fn fill(&self, data: &ObservableState) {
-        self.system_poll_interval
-            .set(data.system.poll_interval.as_duration().to_seconds());
+        self.system_poll_interval.set(
+            data.system
+                .time_snapshot
+                .poll_interval
+                .as_duration()
+                .to_seconds(),
+        );
         self.system_poll_interval_exp
-            .set(data.system.poll_interval.as_log() as f64);
+            .set(data.system.time_snapshot.poll_interval.as_log() as f64);
         self.system_precision
-            .set(data.system.precision.to_seconds());
+            .set(data.system.time_snapshot.precision.to_seconds());
         self.system_accumulated_steps
-            .set(data.system.accumulated_steps.to_seconds());
+            .set(data.system.time_snapshot.accumulated_steps.to_seconds());
         self.system_accumulated_steps_threshold.set(
             data.system
                 .accumulated_steps_threshold
@@ -59,7 +64,7 @@ impl Metrics {
                 .unwrap_or(-1.0),
         );
         self.system_leap_indicator
-            .set(data.system.leap_indicator as u64);
+            .set(data.system.time_snapshot.leap_indicator as u64);
 
         for peer in &data.peers {
             if let ObservablePeerState::Observable {
