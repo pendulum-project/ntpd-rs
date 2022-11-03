@@ -242,36 +242,6 @@ impl TemporaryList {
     }
 }
 
-#[cfg(feature = "fuzz")]
-pub fn fuzz_tuple_from_packet_default(
-    client: u64,
-    client_interval: u32,
-    server: u64,
-    server_interval: u32,
-    client_precision: i8,
-    server_precision: i8,
-) {
-    let mut packet = NtpPacket::test();
-    packet.set_origin_timestamp(NtpTimestamp::from_fixed_int(client));
-    packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(server));
-    packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(
-        server.wrapping_add(server_interval as u64),
-    ));
-    packet.set_precision(server_precision);
-
-    let result = FilterTuple::from_packet_default(
-        &packet,
-        NtpDuration::from_exponent(client_precision),
-        NtpInstant::now(),
-        FrequencyTolerance::ppm(15),
-        NtpTimestamp::from_fixed_int(client),
-        NtpTimestamp::from_fixed_int(client.wrapping_add(client_interval as u64)),
-    );
-
-    assert!(result.delay >= NtpDuration::from_fixed_int(0));
-    assert!(result.dispersion >= NtpDuration::from_fixed_int(0));
-}
-
 #[cfg(test)]
 mod test {
     use super::*;

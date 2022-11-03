@@ -3,7 +3,7 @@ use libfuzzer_sys::{
     arbitrary::{self, Arbitrary},
     fuzz_target,
 };
-use ntp_proto::fuzz_tuple_from_packet_default;
+use ntp_proto::fuzz_measurement_from_packet;
 
 #[derive(Debug, Clone, Arbitrary)]
 struct InputData {
@@ -16,7 +16,7 @@ struct InputData {
 }
 
 fuzz_target!(|input: InputData| {
-    fuzz_tuple_from_packet_default(
+    fuzz_measurement_from_packet(
         input.client,
         input.client_interval,
         input.server,
