@@ -476,8 +476,8 @@ pub fn fuzz_find_interval(spec: &[(i64, u64)]) {
     let instant = NtpInstant::now();
 
     let mut peers = vec![];
-    for _ in 0..spec.len() {
-        peers.push(test_peer_snapshot(instant))
+    for i in 0..spec.len() {
+        peers.push((i, test_peer_time_snapshot(instant)))
     }
     let mut candidates = vec![];
     for (i, (center, size)) in spec.iter().enumerate() {
@@ -508,7 +508,7 @@ pub fn fuzz_find_interval(spec: &[(i64, u64)]) {
     assert!(survivors.is_empty() || 2 * survivors.len() > spec.len());
 }
 
-#[cfg(any(feature = "fuzz", feature = "ext-test"))]
+#[cfg(feature = "ext-test")]
 pub fn test_peer_snapshot(instant: NtpInstant) -> crate::PeerSnapshot {
     peer_snapshot(
         crate::peer::PeerStatistics::default(),
@@ -518,7 +518,7 @@ pub fn test_peer_snapshot(instant: NtpInstant) -> crate::PeerSnapshot {
     )
 }
 
-#[cfg(any(feature = "fuzz", feature = "ext-test"))]
+#[cfg(feature = "ext-test")]
 pub fn peer_snapshot(
     statistics: crate::peer::PeerStatistics,
     instant: NtpInstant,
@@ -542,7 +542,7 @@ pub fn peer_snapshot(
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "fuzz"))]
 fn test_peer_time_snapshot(instant: NtpInstant) -> crate::PeerTimeSnapshot {
     peer_time_snapshot(
         crate::peer::PeerStatistics::default(),
