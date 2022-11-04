@@ -11,6 +11,7 @@ pub struct FilterAndCombine {
     pub system_root_dispersion: NtpDuration,
     pub system_peer_snapshot: PeerSnapshot,
     pub system_stratum: u8,
+    pub system_remote_refids: [u8;512],
 }
 
 impl FilterAndCombine {
@@ -21,8 +22,9 @@ impl FilterAndCombine {
         local_clock_time: NtpInstant,
         system_poll: PollInterval,
         system_stratum: u8,
+        our_id: &[u8;512],
     ) -> Option<Self> {
-        let selection = clock_select(config, peers, local_clock_time, system_poll, system_stratum)?;
+        let selection = clock_select(config, peers, local_clock_time, system_poll, system_stratum, our_id)?;
 
         // the clustering algorithm (part of `clock_select`) sorts the peers, best peer first.
         // the first (and best) peer is chosen as the system peer, and its variables are used
@@ -60,6 +62,13 @@ impl FilterAndCombine {
                         * config.frequency_tolerance
                     + combined.system_offset.abs(),
             );
+        
+        let mut system_remote_refids = [0;512];
+        for survivor in selection.survivors {
+            for i in 0..512 {
+                system_remote_refids[i] |= survivor.peer.remote_refids[i];
+            }
+        }
 
         Some(FilterAndCombine {
             system_offset: combined.system_offset,
@@ -68,6 +77,7 @@ impl FilterAndCombine {
             system_root_dispersion: root_dispersion,
             system_peer_snapshot,
             system_stratum: stratum,
+            system_remote_refids,
         })
     }
 
@@ -136,6 +146,7 @@ fn clock_select<'a>(
     local_clock_time: NtpInstant,
     system_poll: PollInterval,
     system_stratum: u8,
+    our_id: &[u8;512],
 ) -> Option<ClockSelect<'a>> {
     let valid_associations = peers.iter().filter(|p| {
         p.accept_synchronization(
@@ -144,6 +155,7 @@ fn clock_select<'a>(
             config.distance_threshold,
             system_poll,
             system_stratum,
+            our_id,
         )
         .is_ok()
     });
@@ -554,6 +566,9 @@ pub fn peer_snapshot(
         our_id: ReferenceId::from_int(1),
         reach,
         poll_interval: crate::time_types::PollIntervalLimits::default().min,
+
+        ntp_version: crate::NtpVersion::V4,
+        remote_refids: [0;512],
     }
 }
 
@@ -1337,6 +1352,7 @@ mod test {
                 NtpDuration::ZERO,
             ),
             system_stratum: 15,
+            system_remote_refids: [0;512],
         };
 
         let frequency_tolerance = FrequencyTolerance::ppm(15);
@@ -1363,6 +1379,8 @@ mod test {
     fn root_delay_dispersion_calculation() {
         let base = NtpInstant::now();
 
+        let our_id = [0;512];
+
         let config = SystemConfig {
             min_intersection_survivors: 1,
             ..Default::default()
@@ -1385,6 +1403,7 @@ mod test {
             base,
             PollIntervalLimits::default().min,
             16,
+            &our_id,
         )
         .unwrap();
         assert!(baseline_result.system_root_delay >= NtpDuration::from_seconds(0.002));
@@ -1396,6 +1415,7 @@ mod test {
             base + Duration::from_secs(1000),
             PollIntervalLimits::default().min,
             16,
+            &our_id,
         )
         .unwrap();
         assert!(result.system_root_delay >= NtpDuration::from_seconds(0.002));
@@ -1419,6 +1439,7 @@ mod test {
             base,
             PollIntervalLimits::default().min,
             16,
+            &our_id,
         )
         .unwrap();
         assert!(result.system_root_delay >= NtpDuration::from_seconds(0.002));
@@ -1442,6 +1463,7 @@ mod test {
             base,
             PollIntervalLimits::default().min,
             16,
+            &our_id,
         )
         .unwrap();
         assert!(result.system_root_delay >= NtpDuration::from_seconds(0.002));
@@ -1465,6 +1487,7 @@ mod test {
             base,
             PollIntervalLimits::default().min,
             16,
+            &our_id,
         )
         .unwrap();
         assert!(result.system_root_delay >= NtpDuration::from_seconds(0.002));
@@ -1488,6 +1511,7 @@ mod test {
             base,
             PollIntervalLimits::default().min,
             16,
+            &our_id,
         )
         .unwrap();
         assert!(result.system_root_delay >= NtpDuration::from_seconds(0.002));

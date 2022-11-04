@@ -8,6 +8,7 @@ use ntp_proto::{
     ClockController, ClockUpdateResult, FilterAndCombine, NtpClock, NtpInstant, PeerSnapshot,
     PollInterval, SystemConfig, SystemSnapshot,
 };
+use rand::{thread_rng, Rng};
 use tracing::{error, info};
 
 use std::sync::Arc;
@@ -39,10 +40,16 @@ pub async fn spawn(
     let (msg_for_system_tx, msg_for_system_rx) = mpsc::channel::<MsgForSystem>(32);
 
     // System snapshot
-    let system_snapshot = SystemSnapshot {
+    let mut system_snapshot = SystemSnapshot {
         stratum: config.local_stratum,
         ..Default::default()
     };
+
+    // Generate an NTPv5 id
+    for _ in 0..10 {
+        let j = thread_rng().gen_range(0..4096_usize);
+        system_snapshot.our_id[j/8] |= 1 << (j % 8);
+    }
 
     // Clock controller
     let controller = ClockController::new(UnixNtpClock::new(), &system_snapshot, &config);
@@ -129,6 +136,7 @@ impl<C: NtpClock> System<C> {
                 ntp_instant,
                 config,
                 system.poll_interval,
+                &system.our_id,
             ) {
                 self.recalculate_clock(&mut snapshots, config, &system, ntp_instant)
                     .await;
@@ -154,6 +162,7 @@ impl<C: NtpClock> System<C> {
             ntp_instant,
             system.poll_interval,
             system.stratum,
+            &system.our_id,
         );
         let clock_select = match result {
             Some(clock_select) => clock_select,
@@ -197,6 +206,9 @@ impl<C: NtpClock> System<C> {
             global.accumulated_steps_threshold = config.accumulated_threshold;
             global.root_delay = clock_select.system_root_delay;
             global.root_dispersion = clock_select.system_root_dispersion;
+            for i in 0..512 {
+                global.refids[i] = global.our_id[i] | clock_select.system_remote_refids[i];
+            }
         }
     }
 
@@ -214,6 +226,7 @@ fn requires_clock_recalculation(
     local_clock_time: NtpInstant,
     config: SystemConfig,
     system_poll: PollInterval,
+    our_id: &[u8;512],
 ) -> bool {
     if let MsgForSystem::NewMeasurement(_, msg_reset_epoch, snapshot) = msg {
         msg_reset_epoch == current_reset_epoch
@@ -224,6 +237,7 @@ fn requires_clock_recalculation(
                     config.distance_threshold,
                     system_poll,
                     config.local_stratum,
+                    our_id,
                 )
                 .is_ok()
     } else {
@@ -282,6 +296,7 @@ mod tests {
         let epoch = prev_epoch.inc();
 
         let config = SystemConfig::default();
+        let our_id = [0;512];
 
         assert!(!requires_clock_recalculation(
             MsgForSystem::NewMeasurement(
@@ -303,6 +318,7 @@ mod tests {
             base,
             config,
             PollIntervalLimits::default().min,
+            &our_id,
         ));
 
         assert!(!requires_clock_recalculation(
@@ -325,6 +341,7 @@ mod tests {
             base,
             config,
             PollIntervalLimits::default().min,
+            &our_id,
         ));
 
         assert!(requires_clock_recalculation(
@@ -347,6 +364,7 @@ mod tests {
             base,
             config,
             PollIntervalLimits::default().min,
+            &our_id,
         ));
 
         assert!(!requires_clock_recalculation(
@@ -369,6 +387,7 @@ mod tests {
             base,
             config,
             PollIntervalLimits::default().min,
+            &our_id,
         ));
 
         assert!(!requires_clock_recalculation(
@@ -377,6 +396,7 @@ mod tests {
             base,
             config,
             PollIntervalLimits::default().min,
+            &our_id,
         ));
     }
 

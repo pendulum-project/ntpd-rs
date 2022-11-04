@@ -169,7 +169,7 @@ where
             }
         }
 
-        let mut buf = Cursor::new([0; 48]);
+        let mut buf = Cursor::new([0; 1024]);
         if let Err(error) = packet.serialize(&mut buf) {
             error!(?error, "poll message could not be serialized");
             return PollResult::Ok;
@@ -256,7 +256,7 @@ where
 
     async fn run(&mut self, mut poll_wait: Pin<&mut T>) {
         loop {
-            let mut buf = [0_u8; 48];
+            let mut buf = [0_u8; 1024];
 
             tokio::select! {
                 () = &mut poll_wait => {
@@ -386,7 +386,7 @@ fn unspecified_for(addr: SocketAddr) -> SocketAddr {
 
 fn accept_packet(
     result: Result<(usize, SocketAddr, Option<NtpTimestamp>), std::io::Error>,
-    buf: &[u8; 48],
+    buf: &[u8],
 ) -> AcceptResult {
     match result {
         Ok((size, _, Some(recv_timestamp))) => {
@@ -399,7 +399,7 @@ fn accept_packet(
 
                 AcceptResult::Ignore
             } else {
-                match NtpPacket::deserialize(buf) {
+                match NtpPacket::deserialize(&buf[0..size]) {
                     Ok(packet) => AcceptResult::Accept(packet, recv_timestamp),
                     Err(e) => {
                         warn!("received invalid packet: {}", e);

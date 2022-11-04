@@ -215,7 +215,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 // Messages of fewer than 48 bytes are skipped entirely
                 match self.filter(&peer_addr.ip()) {
                     Some(FilterAction::Deny) => {
-                        match self.accept_data(buf, peer_addr, recv_timestamp) {
+                        match self.accept_data(&buf[0..size], peer_addr, recv_timestamp) {
                             // We should send deny messages only to reasonable requests
                             // otherwise two servers could end up in a loop of sending
                             // deny's to each other.

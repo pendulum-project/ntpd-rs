@@ -1,11 +1,11 @@
 use crate::{
     filter::{FilterTuple, LastMeasurements},
-    packet::{NtpAssociationMode, NtpLeapIndicator, NtpVersion, RequestIdentifier},
+    packet::{NtpAssociationMode, NtpLeapIndicator, NtpVersion, RequestIdentifier, ExtensionField},
     time_types::{FrequencyTolerance, NtpInstant},
     NtpDuration, NtpPacket, NtpTimestamp, PollInterval, ReferenceId, SystemConfig,
 };
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, instrument, trace, warn};
+use tracing::{debug, info, instrument, trace, warn, error};
 
 const MAX_STRATUM: u8 = 16;
 const POLL_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
@@ -33,6 +33,9 @@ pub struct Peer {
     // with any received response from the server to guard against replay
     // attacks and packet reordering.
     current_request_identifier: Option<(RequestIdentifier, NtpInstant)>,
+
+    ntp_version: NtpVersion,
+    remote_refids: [u8;512],
 
     statistics: PeerStatistics,
     last_measurements: LastMeasurements,
@@ -106,6 +109,9 @@ pub struct SystemSnapshot {
     /// Reference id bloom filter
     #[serde(skip, default = "empty_bloom")]
     pub refids: [u8; 512],
+    /// Our reference id
+    #[serde(skip, default = "empty_bloom")]
+    pub our_id: [u8; 512],
     /// Current root delay
     pub root_delay: NtpDuration,
     /// Current root dispersion
@@ -131,6 +137,7 @@ impl Default for SystemSnapshot {
             precision: NtpDuration::from_exponent(-18),
             stratum: 16,
             refids: empty_bloom(),
+            our_id: empty_bloom(),
             root_delay: NtpDuration::ZERO,
             root_dispersion: NtpDuration::ZERO,
             reference_id: ReferenceId::NONE,
@@ -176,6 +183,9 @@ pub struct PeerSnapshot {
     pub leap_indicator: NtpLeapIndicator,
     pub root_delay: NtpDuration,
     pub root_dispersion: NtpDuration,
+
+    pub ntp_version: NtpVersion,
+    pub remote_refids: [u8;512],
 }
 
 impl PeerSnapshot {
@@ -186,6 +196,7 @@ impl PeerSnapshot {
         distance_threshold: NtpDuration,
         system_poll: PollInterval,
         system_stratum: u8,
+        our_id: &[u8;512],
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
 
@@ -194,7 +205,7 @@ impl PeerSnapshot {
         // A stratum error occurs if
         //     1: the server has never been synchronized,
         //     2: the server stratum is higher than the current stratum
-        if !self.leap_indicator.is_synchronized() || self.stratum >= system_stratum {
+        if !self.leap_indicator.is_synchronized() || (self.stratum >= system_stratum && self.ntp_version != NtpVersion::V5) {
             warn!(
                 stratum = debug(self.stratum),
                 "Peer rejected due to invalid stratum"
@@ -219,7 +230,19 @@ impl PeerSnapshot {
         // if so, we shouldn't sync to them as that would create a loop.
         // Note, this can only ever be an issue if the peer is not using
         // hardware as its source, so ignore reference_id if stratum is 1.
-        if self.stratum != 1 && self.reference_id == self.our_id {
+        if self.stratum != 1 && self.ntp_version != NtpVersion::V5 && self.reference_id == self.our_id {
+            debug!("Peer rejected because of detected synchornization loop");
+            return Err(Loop);
+        }
+
+        let mut contains_self = true;
+        for i in 0..512 {
+            if (self.remote_refids[i] & our_id[i]) != our_id[i] {
+                contains_self = false;
+            }
+        }
+
+        if self.stratum != 1 && self.ntp_version == NtpVersion::V5 && contains_self {
             debug!("Peer rejected because of detected synchornization loop");
             return Err(Loop);
         }
@@ -256,6 +279,8 @@ impl PeerSnapshot {
             root_delay: peer.last_packet.root_delay(),
             root_dispersion: peer.last_packet.root_dispersion(),
             poll_interval: peer.last_poll_interval,
+            ntp_version: peer.ntp_version,
+            remote_refids: peer.remote_refids,
         }
     }
 }
@@ -300,6 +325,9 @@ impl Peer {
             our_id,
             peer_id,
             reach: Default::default(),
+
+            ntp_version: NtpVersion::V4,
+            remote_refids: [0;512],
         }
     }
 
@@ -318,7 +346,7 @@ impl Peer {
         self.reach.poll();
 
         let poll_interval = self.current_poll_interval(system);
-        let (packet, identifier) = NtpPacket::poll_message(NtpVersion::V4, poll_interval);
+        let (packet, identifier) = NtpPacket::poll_message(self.ntp_version, poll_interval);
         self.current_request_identifier = Some((identifier, NtpInstant::now() + POLL_WINDOW));
 
         // Ensure we don't spam the remote with polls if it is not reachable
@@ -425,6 +453,24 @@ impl Peer {
             recv_time,
         );
 
+        if matches!(message.reference_timestamp(), Some(NtpTimestamp::NTP5_NEGOTIATION)) {
+            info!("Upgrading to NTPv5");
+            self.ntp_version = NtpVersion::V5;
+        }
+
+        for ef in message.extension_fields() {
+            match ef.as_ref() {
+                ExtensionField::RefIDResponse { data } => {
+                    if data.len() == 512 {
+                        self.remote_refids = data.as_ref().try_into().unwrap();
+                    } else {
+                        error!("Invalid refid response");
+                    }
+                }
+                _ => {},
+            }
+        }
+
         self.last_packet = message.into_owned();
 
         let updated = self.last_measurements.step(
@@ -498,6 +544,9 @@ impl Peer {
             peer_id: ReferenceId::from_int(0),
             our_id: ReferenceId::from_int(0),
             reach: Reach::default(),
+
+            ntp_version: NtpVersion::V4,
+            remote_refids: [0;512],
         }
     }
 }
@@ -659,10 +708,12 @@ mod test {
 
         let mut peer = Peer::test_peer(local_clock_time);
 
+        let our_id = [0;512];
+
         macro_rules! accept {
             () => {{
                 let snapshot = PeerSnapshot::from_peer(&peer);
-                snapshot.accept_synchronization(local_clock_time, ft, dt, system_poll, 16)
+                snapshot.accept_synchronization(local_clock_time, ft, dt, system_poll, 16, &our_id)
             }};
         }
 

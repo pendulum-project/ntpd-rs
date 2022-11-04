@@ -543,6 +543,7 @@ impl NtpHeaderV5 {
             Self {
                 poll: poll_interval.as_log(),
                 mode: NtpAssociationMode::Client,
+                client_cookie,
                 ..Self::new()
             },
             RequestIdentifier {
@@ -657,6 +658,7 @@ impl NtpHeaderV3V4 {
         let poll_interval = poll_interval;
         packet.poll = poll_interval.as_log();
         packet.mode = NtpAssociationMode::Client;
+        packet.reference_timestamp = NtpTimestamp::NTP5_NEGOTIATION;
 
         // In order to increase the entropy of the transmit timestamp
         // it is just a randomly generated timestamp.
@@ -849,7 +851,9 @@ impl<'a> NtpPacket<'a> {
                 (
                     NtpPacket {
                         header: NtpHeader::V5(header),
-                        efdata: Default::default(),
+                        efdata: ExtensionFieldData::List(vec![
+                            ExtensionField::RefIDRequest { offset: 0, length: 512 }
+                        ]),
                         mac: None,
                     },
                     id,
@@ -1016,6 +1020,13 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V3(header) => header.transmit_timestamp,
             NtpHeader::V4(header) => header.transmit_timestamp,
             NtpHeader::V5(header) => header.transmit_timestamp,
+        }
+    }
+
+    pub fn reference_timestamp(&self) -> Option<NtpTimestamp> {
+        match self.header {
+            NtpHeader::V3(header) | NtpHeader::V4(header) => Some(header.reference_timestamp),
+            _ => None,
         }
     }
 
