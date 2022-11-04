@@ -192,7 +192,7 @@ impl UdpSocket {
         trace!(size = buf.len(), ?addr, "sending bytes");
         loop {
             let mut guard = self.io.writable().await?;
-            match guard.try_io(|inner| inner.get_ref().send_to(buf, &addr)) {
+            match guard.try_io(|inner| inner.get_ref().send_to(buf, addr)) {
                 Ok(result) => {
                     match &result {
                         Ok(size) => trace!(sent = size, "sent bytes"),
