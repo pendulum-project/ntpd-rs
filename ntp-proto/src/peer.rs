@@ -1,11 +1,11 @@
 use crate::{
     filter::{FilterTuple, LastMeasurements},
-    packet::{NtpAssociationMode, NtpLeapIndicator, NtpVersion, RequestIdentifier, ExtensionField},
+    packet::{ExtensionField, NtpAssociationMode, NtpLeapIndicator, NtpVersion, RequestIdentifier},
     time_types::{FrequencyTolerance, NtpInstant},
     NtpDuration, NtpPacket, NtpTimestamp, PollInterval, ReferenceId, SystemConfig,
 };
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, instrument, trace, warn, error};
+use tracing::{debug, error, info, instrument, trace, warn};
 
 const MAX_STRATUM: u8 = 16;
 const POLL_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
@@ -35,7 +35,7 @@ pub struct Peer {
     current_request_identifier: Option<(RequestIdentifier, NtpInstant)>,
 
     ntp_version: NtpVersion,
-    remote_refids: [u8;512],
+    remote_refids: [u8; 512],
 
     statistics: PeerStatistics,
     last_measurements: LastMeasurements,
@@ -185,7 +185,7 @@ pub struct PeerSnapshot {
     pub root_dispersion: NtpDuration,
 
     pub ntp_version: NtpVersion,
-    pub remote_refids: [u8;512],
+    pub remote_refids: [u8; 512],
 }
 
 impl PeerSnapshot {
@@ -196,7 +196,7 @@ impl PeerSnapshot {
         distance_threshold: NtpDuration,
         system_poll: PollInterval,
         system_stratum: u8,
-        our_id: &[u8;512],
+        our_id: &[u8; 512],
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
 
@@ -205,7 +205,9 @@ impl PeerSnapshot {
         // A stratum error occurs if
         //     1: the server has never been synchronized,
         //     2: the server stratum is higher than the current stratum
-        if !self.leap_indicator.is_synchronized() || (self.stratum >= system_stratum && self.ntp_version != NtpVersion::V5) {
+        if !self.leap_indicator.is_synchronized()
+            || (self.stratum >= system_stratum && self.ntp_version != NtpVersion::V5)
+        {
             warn!(
                 stratum = debug(self.stratum),
                 "Peer rejected due to invalid stratum"
@@ -230,7 +232,10 @@ impl PeerSnapshot {
         // if so, we shouldn't sync to them as that would create a loop.
         // Note, this can only ever be an issue if the peer is not using
         // hardware as its source, so ignore reference_id if stratum is 1.
-        if self.stratum != 1 && self.ntp_version != NtpVersion::V5 && self.reference_id == self.our_id {
+        if self.stratum != 1
+            && self.ntp_version != NtpVersion::V5
+            && self.reference_id == self.our_id
+        {
             debug!("Peer rejected because of detected synchornization loop");
             return Err(Loop);
         }
@@ -327,7 +332,7 @@ impl Peer {
             reach: Default::default(),
 
             ntp_version: NtpVersion::V4,
-            remote_refids: [0;512],
+            remote_refids: [0; 512],
         }
     }
 
@@ -453,7 +458,10 @@ impl Peer {
             recv_time,
         );
 
-        if matches!(message.reference_timestamp(), Some(NtpTimestamp::NTP5_NEGOTIATION)) {
+        if matches!(
+            message.reference_timestamp(),
+            Some(NtpTimestamp::NTP5_NEGOTIATION)
+        ) {
             info!("Upgrading to NTPv5");
             self.ntp_version = NtpVersion::V5;
         }
@@ -467,7 +475,7 @@ impl Peer {
                         error!("Invalid refid response");
                     }
                 }
-                _ => {},
+                _ => {}
             }
         }
 
@@ -546,7 +554,7 @@ impl Peer {
             reach: Reach::default(),
 
             ntp_version: NtpVersion::V4,
-            remote_refids: [0;512],
+            remote_refids: [0; 512],
         }
     }
 }
@@ -708,7 +716,7 @@ mod test {
 
         let mut peer = Peer::test_peer(local_clock_time);
 
-        let our_id = [0;512];
+        let our_id = [0; 512];
 
         macro_rules! accept {
             () => {{

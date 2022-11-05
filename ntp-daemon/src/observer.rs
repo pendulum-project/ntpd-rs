@@ -191,7 +191,7 @@ mod tests {
                 root_delay: NtpDuration::from_seconds(0.2),
                 root_dispersion: NtpDuration::from_seconds(0.02),
                 ntp_version: ntp_proto::NtpVersion::V4,
-                remote_refids: [0;512],
+                remote_refids: [0; 512],
             }),
         ];
 
@@ -216,8 +216,8 @@ mod tests {
         let system_reader = Arc::new(tokio::sync::RwLock::new(SystemSnapshot {
             poll_interval: PollIntervalLimits::default().min,
             stratum: 1,
-            refids: [0;512],
-            our_id: [0;512],
+            refids: [0; 512],
+            our_id: [0; 512],
             precision: NtpDuration::from_seconds(1e-3),
             root_delay: NtpDuration::ZERO,
             root_dispersion: NtpDuration::ZERO,
@@ -282,7 +282,7 @@ mod tests {
                 root_delay: NtpDuration::from_seconds(0.2),
                 root_dispersion: NtpDuration::from_seconds(0.02),
                 ntp_version: ntp_proto::NtpVersion::V4,
-                remote_refids: [0;512],
+                remote_refids: [0; 512],
             }),
         ];
 
@@ -309,8 +309,8 @@ mod tests {
         let system_reader = Arc::new(tokio::sync::RwLock::new(SystemSnapshot {
             poll_interval: PollIntervalLimits::default().min,
             stratum: 1,
-            refids: [0;512],
-            our_id: [0;512],
+            refids: [0; 512],
+            our_id: [0; 512],
             precision: NtpDuration::from_seconds(1e-3),
             reference_id: ReferenceId::NONE,
             root_delay: NtpDuration::ZERO,

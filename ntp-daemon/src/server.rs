@@ -278,8 +278,13 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         match NtpPacket::deserialize(buf) {
             Ok(packet) => match packet.mode() {
                 NtpAssociationMode::Client => {
-                    trace!("NTP client request accepted from {}", peer_addr);
-                    AcceptResult::Accept(packet, peer_addr, recv_timestamp)
+                    if packet.contains_proper_sized_draft_header() {
+                        trace!("NTP client request accepted from {}", peer_addr);
+                        AcceptResult::Accept(packet, peer_addr, recv_timestamp)
+                    } else {
+                        warn!("NTPv5 packet ignored due to draft field");
+                        AcceptResult::Ignore
+                    }
                 }
                 _ => {
                     trace!(

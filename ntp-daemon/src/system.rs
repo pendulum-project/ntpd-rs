@@ -48,7 +48,7 @@ pub async fn spawn(
     // Generate an NTPv5 id
     for _ in 0..10 {
         let j = thread_rng().gen_range(0..4096_usize);
-        system_snapshot.our_id[j/8] |= 1 << (j % 8);
+        system_snapshot.our_id[j / 8] |= 1 << (j % 8);
     }
 
     // Clock controller
@@ -226,7 +226,7 @@ fn requires_clock_recalculation(
     local_clock_time: NtpInstant,
     config: SystemConfig,
     system_poll: PollInterval,
-    our_id: &[u8;512],
+    our_id: &[u8; 512],
 ) -> bool {
     if let MsgForSystem::NewMeasurement(_, msg_reset_epoch, snapshot) = msg {
         msg_reset_epoch == current_reset_epoch
@@ -296,7 +296,7 @@ mod tests {
         let epoch = prev_epoch.inc();
 
         let config = SystemConfig::default();
-        let our_id = [0;512];
+        let our_id = [0; 512];
 
         assert!(!requires_clock_recalculation(
             MsgForSystem::NewMeasurement(
