@@ -256,8 +256,7 @@ impl<'a> ExtensionField<'a> {
                 w.write_all(&Self::REFID_REQUEST.to_be_bytes())?;
                 w.write_all(&(*length + 4).to_be_bytes())?;
                 w.write_all(&offset.to_be_bytes())?;
-                w.write_all(&[0; 2])?;
-                for _ in 1..*length {
+                for _ in 2..*length {
                     w.write_all(&[0])?;
                 }
                 match length % 4 {
@@ -1259,6 +1258,8 @@ impl<'a> Default for NtpPacket<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::PollIntervalLimits;
+
     use super::*;
 
     #[test]
@@ -1281,6 +1282,15 @@ mod tests {
             assert_eq!(i, b);
             assert_eq!(a, c);
         }
+    }
+
+    #[test]
+    fn test_ntpv5_basics() {
+        let (packet,_) = NtpPacket::poll_message(NtpVersion::V5, PollIntervalLimits::default().min);
+
+        let mut buf = vec![];
+        assert!(packet.serialize(&mut buf).is_ok());
+        assert!(NtpPacket::deserialize(&buf).is_ok());
     }
 
     #[test]
