@@ -32,11 +32,11 @@ pub fn create_unix_socket(path: &Path) -> std::io::Result<UnixListener> {
 
     // must unlink path before the bind below (otherwise we get "address already in use")
     if path.exists() {
-        std::fs::remove_file(&path)?;
+        std::fs::remove_file(path)?;
     }
 
     // OS errors are terrible; let's try to do better
-    let error = match UnixListener::bind(&path) {
+    let error = match UnixListener::bind(path) {
         Ok(listener) => return Ok(listener),
         Err(e) => e,
     };
