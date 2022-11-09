@@ -195,11 +195,13 @@ pub enum ExtensionField<'a> {
     DraftIdentification { data: Cow<'a, [u8]> },
     RefIDRequest { offset: u16, length: u16 },
     RefIDResponse { data: Cow<'a, [u8]> },
+    Padding { length: u16 },
     Unknown { typeid: u16, data: Cow<'a, [u8]> },
 }
 
 impl<'a> ExtensionField<'a> {
     const MINIMUM_SIZE: usize = 4;
+    const PADDING: u16 = 0xF501;
     const REFID_REQUEST: u16 = 0xF503;
     const REFID_RESPONSE: u16 = 0xF504;
     const SERVER_INFORMATION: u16 = 0xF505;
@@ -219,10 +221,22 @@ impl<'a> ExtensionField<'a> {
             ExtensionField::RefIDResponse { data } => ExtensionField::RefIDResponse {
                 data: Cow::Owned(data.into_owned()),
             },
+            ExtensionField::Padding { length } => ExtensionField::Padding { length },
             ExtensionField::Unknown { typeid, data } => ExtensionField::Unknown {
                 typeid,
                 data: Cow::Owned(data.into_owned()),
             },
+        }
+    }
+
+    fn serialized_length(&self) -> usize {
+        match self {
+            ExtensionField::ServerInformation { .. } => 8,
+            ExtensionField::DraftIdentification { data } => 4 + ((data.len()+3)/4)*4,
+            ExtensionField::RefIDRequest { length, .. } => 4 + ((*length as usize + 3)/4)*4,
+            ExtensionField::RefIDResponse { data } => 4 + ((data.len() + 3)/4)*4,
+            ExtensionField::Padding { length } => ((*length as usize + 3)/4)*4,
+            ExtensionField::Unknown { data, .. } => 4+((data.len()+3)/4)*4,
         }
     }
 
@@ -285,6 +299,20 @@ impl<'a> ExtensionField<'a> {
                     3 => w.write_all(&[0])?,
                     _ => unreachable!(),
                 };
+                Ok(())
+            }
+            ExtensionField::Padding { length } => {
+                if *length < 4 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        PacketParsingError::IncorrectLength,
+                    ));
+                }
+                w.write_all(&Self::PADDING.to_be_bytes())?;
+                w.write_all(&length.to_be_bytes())?;
+                for _ in 1..(length + 3)/4 {
+                    w.write_all(&[0,0,0,0])?;
+                }
                 Ok(())
             }
             ExtensionField::Unknown { typeid, data } => {
@@ -386,6 +414,13 @@ impl<'a> ExtensionFieldData<'a> {
             }
         }
     }
+    
+    fn serialized_length(&self) -> usize {
+        match self {
+            ExtensionFieldData::Raw(data) => data.len(),
+            ExtensionFieldData::List(efs) => efs.iter().map(|ef| ef.serialized_length()).sum(),
+        }
+    }
 
     fn iter<'b: 'a>(&'b self) -> impl Iterator<Item = Cow<'b, ExtensionField<'a>>> + 'b {
         let mut offset = 0;
@@ -470,6 +505,10 @@ impl<'a> Mac<'a> {
             mac: Cow::Borrowed(&data[4..]),
         })
     }
+
+    fn serialized_length(&self) -> usize {
+        4 + self.mac.len()
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -528,6 +567,10 @@ impl NtpHeaderV5 {
             receive_timestamp: NtpTimestamp::default(),
             transmit_timestamp: NtpTimestamp::default(),
         }
+    }
+
+    fn serialized_length(&self) -> usize {
+        Self::LENGTH
     }
 
     fn deserialize(data: &[u8]) -> Result<(Self, usize), PacketParsingError> {
@@ -666,6 +709,10 @@ impl NtpHeaderV3V4 {
         }
     }
 
+    fn serialized_length(&self) -> usize {
+        Self::LENGTH
+    }
+
     fn deserialize(data: &[u8]) -> Result<(Self, usize), PacketParsingError> {
         if data.len() < Self::LENGTH {
             return Err(PacketParsingError::IncorrectLength);
@@ -795,6 +842,14 @@ impl<'a> NtpPacket<'a> {
             header: self.header,
             efdata: self.efdata.into_owned(),
             mac: self.mac.map(|v| v.into_owned()),
+        }
+    }
+
+    fn serialized_length(&self) -> usize {
+        match self.header {
+            NtpHeader::V3(header) => header.serialized_length() + self.mac.as_ref().map(|mac| mac.serialized_length()).unwrap_or(0),
+            NtpHeader::V4(header) => header.serialized_length() + self.efdata.serialized_length() + self.mac.as_ref().map(|mac| mac.serialized_length()).unwrap_or(0),
+            NtpHeader::V5(header) => header.serialized_length() + self.efdata.serialized_length() + self.mac.as_ref().map(|mac| mac.serialized_length()).unwrap_or(0),
         }
     }
 
@@ -996,7 +1051,7 @@ impl<'a> NtpPacket<'a> {
                         _ => {}
                     }
                 }
-                NtpPacket {
+                let mut result = NtpPacket {
                     header: NtpHeader::V5(NtpHeaderV5::timestamp_response(
                         system,
                         header,
@@ -1005,7 +1060,19 @@ impl<'a> NtpPacket<'a> {
                     )),
                     efdata: ExtensionFieldData::List(responsefields),
                     mac: None,
+                };
+
+                if result.serialized_length() < input.serialized_length() {
+                    let padding_length = input.serialized_length() - result.serialized_length();
+                    let mut efs = match result.efdata {
+                        ExtensionFieldData::List(fields) => fields,
+                        _ => unreachable!(),
+                    };
+                    efs.push(ExtensionField::Padding{ length: padding_length as u16 });
+                    result.efdata = ExtensionFieldData::List(efs);
                 }
+
+                result
             }
         }
     }
