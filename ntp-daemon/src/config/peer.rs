@@ -9,6 +9,8 @@ use serde::{
 pub enum PeerHostMode {
     #[serde(alias = "server")]
     Server,
+    #[serde(alias = "nts-server")]
+    NtsServer,
     #[serde(alias = "pool")]
     Pool,
 }
@@ -25,6 +27,11 @@ pub struct StandardPeerConfig {
 }
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+pub struct NtsPeerConfig {
+    pub addr: NormalizedAddress,
+}
+
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct PoolPeerConfig {
     pub addr: NormalizedAddress,
     pub max_peers: usize,
@@ -33,6 +40,7 @@ pub struct PoolPeerConfig {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum PeerConfig {
     Standard(StandardPeerConfig),
+    Nts(NtsPeerConfig),
     Pool(PoolPeerConfig),
     // Consul(ConsulPeerConfig),
 }
@@ -226,6 +234,13 @@ impl<'de> Deserialize<'de> for PeerConfig {
                             Ok(PeerConfig::Standard(StandardPeerConfig { addr }))
                         }
                     }
+                    PeerHostMode::NtsServer => {
+                        if max_peers.is_some() {
+                            Err(de::Error::unknown_field("max_peers", &["addr", "mode"]))
+                        } else {
+                            Ok(PeerConfig::Nts(NtsPeerConfig { addr }))
+                        }
+                    }
                     PeerHostMode::Pool => {
                         let max_peers = max_peers.unwrap_or(1);
 
@@ -246,6 +261,9 @@ mod tests {
     fn peer_addr(config: &PeerConfig) -> &str {
         match config {
             PeerConfig::Standard(c) => c.addr.as_str(),
+            PeerConfig::Nts(_) => {
+                unimplemented!("nts peers only know their address after connecting")
+            }
             PeerConfig::Pool(c) => c.addr.as_str(),
         }
     }
@@ -311,6 +329,19 @@ mod tests {
         if let PeerConfig::Pool(config) = test.peer {
             assert_eq!(config.addr.as_str(), "example.com:123");
             assert_eq!(config.max_peers, 42);
+        }
+
+        let test: TestConfig = toml::from_str(
+            r#"
+            [peer]
+            addr = "example.com"
+            mode = "NtsServer"
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(test.peer, PeerConfig::Nts(_)));
+        if let PeerConfig::Nts(config) = test.peer {
+            assert_eq!(config.addr.as_str(), "example.com:123");
         }
     }
 
