@@ -1,5 +1,5 @@
 use crate::{
-    config::{PeerConfig, PoolPeerConfig, ServerConfig, StandardPeerConfig},
+    config::{NtsPeerConfig, PeerConfig, PoolPeerConfig, ServerConfig, StandardPeerConfig},
     peer::{MsgForSystem, PeerChannels, ResetEpoch},
     peer_manager::{Peers, SpawnTask},
 };
@@ -67,6 +67,9 @@ pub async fn spawn(
         match peer_config {
             PeerConfig::Standard(StandardPeerConfig { addr }) => {
                 peers.add_peer(addr.clone()).await;
+            }
+            PeerConfig::Nts(NtsPeerConfig { addr }) => {
+                peers.add_nts_peer(addr.clone()).await;
             }
             PeerConfig::Pool(PoolPeerConfig {
                 addr, max_peers, ..

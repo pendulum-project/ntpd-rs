@@ -1,7 +1,7 @@
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
 use crate::{
-    config::{NormalizedAddress, PoolPeerConfig, ServerConfig, StandardPeerConfig},
+    config::{NormalizedAddress, NtsPeerConfig, PoolPeerConfig, ServerConfig, StandardPeerConfig},
     observer::ObservablePeerState,
     peer::{MsgForSystem, PeerChannels, PeerTask, ResetEpoch},
     server::{ServerStats, ServerTask},
@@ -205,6 +205,14 @@ impl<C: NtpClock> Peers<C> {
         self.add_peer_internal(address).await
     }
 
+    pub async fn add_nts_peer(&mut self, address: NormalizedAddress) {
+        let config = SpawnConfig::Nts {
+            config: NtsPeerConfig { addr: address },
+        };
+
+        self.spawner.spawn(config).await;
+    }
+
     pub async fn add_server(&mut self, config: ServerConfig) -> JoinHandle<()> {
         let stats = ServerStats::default();
         self.servers.push(ServerData {
@@ -250,6 +258,9 @@ impl<C: NtpClock> Peers<C> {
                 }
                 PeerConfig::Pool(PoolPeerConfig { .. }) => {
                     unimplemented!("this testing function does not support pool configs")
+                }
+                PeerConfig::Nts(NtsPeerConfig { .. }) => {
+                    unimplemented!("this testing function does not support nts configs")
                 }
             };
         }
@@ -363,6 +374,9 @@ pub enum SpawnConfig {
     Standard {
         config: StandardPeerConfig,
     },
+    Nts {
+        config: NtsPeerConfig,
+    },
     Pool {
         index: PoolIndex,
         config: PoolPeerConfig,
@@ -382,6 +396,8 @@ impl Spawner {
 
         match config {
             SpawnConfig::Standard { config } => tokio::spawn(Self::spawn_standard(config, sender)),
+
+            SpawnConfig::Nts { config } => tokio::spawn(Self::spawn_nts(config, sender)),
 
             SpawnConfig::Pool {
                 config,
@@ -423,6 +439,10 @@ impl Spawner {
         if let Err(send_error) = sender.send(spawn_task).await {
             tracing::error!(?send_error, "Receive half got disconnected");
         }
+    }
+
+    async fn spawn_nts(_config: NtsPeerConfig, _sender: Sender<SpawnTask>) {
+        todo!()
     }
 
     async fn spawn_pool(
