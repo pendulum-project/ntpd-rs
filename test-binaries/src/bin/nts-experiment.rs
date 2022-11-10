@@ -1,6 +1,6 @@
 use std::{
     io::Write,
-    net::{TcpStream, ToSocketAddrs, UdpSocket},
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket},
     sync::Arc,
 };
 
@@ -69,63 +69,7 @@ fn key_exchange_request(writer: &mut impl Write) -> std::io::Result<()> {
     Ok(())
 }
 
-fn main() -> std::io::Result<()> {
-    let domain = "time.cloudflare.com";
-    let mut client = key_exchange_client(domain.try_into().unwrap()).unwrap();
-
-    key_exchange_request(&mut client.writer())?;
-
-    let mut socket = TcpStream::connect(format!("{}:4460", domain)).unwrap();
-    let mut response = vec![];
-    loop {
-        if client.wants_write() {
-            client.write_tls(&mut socket)?;
-        } else if client.wants_read() {
-            client.read_tls(&mut socket)?;
-            client.process_new_packets().unwrap();
-        } else {
-            let record = Record::read(&mut client.reader()).unwrap();
-            match record {
-                Record::EndOfMessage => break,
-                r => {
-                    println!("{:?}", r);
-                    response.push(r);
-                }
-            }
-        }
-    }
-
-    let mut remote = domain;
-    let mut port = 123;
-    let mut cookie = None;
-    for r in response.iter() {
-        match r {
-            Record::NewCookie { cookie_data } => cookie = Some(cookie_data),
-            Record::Server { name, .. } => remote = name,
-            Record::Port { port: p, .. } => port = *p,
-            _ => {}
-        }
-    }
-    let cookie = cookie.unwrap();
-    println!("cookie: {:?}", &cookie);
-
-    let mut c2s = [0; 32];
-    let mut s2c = [0; 32];
-    client
-        .export_keying_material(
-            &mut c2s,
-            b"EXPORTER-network-time-security",
-            Some(&[0, 0, 0, 15, 0]),
-        )
-        .unwrap();
-    client
-        .export_keying_material(
-            &mut s2c,
-            b"EXPORTER-network-time-security",
-            Some(&[0, 0, 0, 15, 1]),
-        )
-        .unwrap();
-
+fn key_exchange_packet(cookie: &[u8], c2s: &[u8; 32]) -> Vec<u8> {
     let mut packet = vec![
         0b00100011, 0, 10, 0, //hdr
         0, 0, 0, 0, // root delay
@@ -152,7 +96,7 @@ fn main() -> std::io::Result<()> {
     packet.extend_from_slice(cookie);
     packet.extend(std::iter::repeat(0).take(4 - cookie.len() % 4));
 
-    let cipher = Aes128SivAead::new(Key::<Aes128SivAead>::from_slice(&c2s));
+    let cipher = Aes128SivAead::new(Key::<Aes128SivAead>::from_slice(c2s));
     let nonce = b"any unique nonce";
     let ct = cipher
         .encrypt(
@@ -183,22 +127,93 @@ fn main() -> std::io::Result<()> {
     packet.extend_from_slice(&ct);
     packet.extend(std::iter::repeat(0).take(4 - ct.len() % 4));
 
-    println!("{:?}", &packet);
+    packet
+}
 
-    let addr = format!("{}:{}", remote, port)
+struct CookieForRemote {
+    remote: String,
+    port: u16,
+    cookie: Vec<u8>,
+}
+
+fn receive_response(
+    client: &mut rustls::ClientConnection,
+    domain: &str,
+) -> std::io::Result<CookieForRemote> {
+    const KE_PORT: u16 = 4460;
+    let mut socket = TcpStream::connect((domain, KE_PORT))?;
+
+    let mut remote = domain.to_string();
+    let mut port = 123;
+    let mut cookie = None;
+
+    loop {
+        if client.wants_write() {
+            client.write_tls(&mut socket)?;
+        } else if client.wants_read() {
+            client.read_tls(&mut socket)?;
+            client.process_new_packets().unwrap();
+        } else {
+            match Record::read(&mut client.reader())? {
+                Record::EndOfMessage => break,
+                Record::NewCookie { cookie_data } => cookie = Some(cookie_data),
+                Record::Server { name, .. } => remote = name.to_string(),
+                Record::Port { port: p, .. } => port = p,
+                _ => { /* ignore */ }
+            }
+        }
+    }
+
+    match cookie {
+        Some(cookie) => Ok(CookieForRemote {
+            remote,
+            port,
+            cookie,
+        }),
+        None => Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "did not receive cookie",
+        )),
+    }
+}
+
+fn main() -> std::io::Result<()> {
+    let domain = "time.cloudflare.com";
+    let mut client = key_exchange_client(domain.try_into().unwrap()).unwrap();
+
+    key_exchange_request(&mut client.writer())?;
+
+    let response = receive_response(&mut client, domain)?;
+    println!("cookie: {:?}", &response.cookie);
+
+    let mut c2s = [0; 32];
+    let mut s2c = [0; 32];
+    let label = b"EXPORTER-network-time-security";
+
+    client
+        .export_keying_material(&mut c2s, label, Some(&[0, 0, 0, 15, 0]))
+        .unwrap();
+    client
+        .export_keying_material(&mut s2c, label, Some(&[0, 0, 0, 15, 1]))
+        .unwrap();
+
+    let addr = (response.remote, response.port)
         .to_socket_addrs()
         .unwrap()
         .next()
         .unwrap();
-    let socket = if addr.is_ipv4() {
-        UdpSocket::bind("0.0.0.0:0").unwrap()
-    } else {
-        UdpSocket::bind("[::]:0").unwrap()
+
+    let socket = match addr {
+        SocketAddr::V4(_) => UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?,
+        SocketAddr::V6(_) => UdpSocket::bind((Ipv6Addr::UNSPECIFIED, 0))?,
     };
-    socket.connect(addr).unwrap();
-    socket.send(&packet).unwrap();
+
+    socket.connect(addr)?;
+
+    let packet = key_exchange_packet(&response.cookie, &c2s);
+    socket.send(&packet)?;
     let mut buf = [0; 1024];
-    let n = socket.recv(&mut buf).unwrap();
+    let n = socket.recv(&mut buf)?;
     println!("{:?}", &buf[0..n]);
 
     Ok(())
