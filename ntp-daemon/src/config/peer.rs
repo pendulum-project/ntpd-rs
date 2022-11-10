@@ -48,20 +48,35 @@ impl PeerConfig {
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct NormalizedAddress {
     address: String,
+
+    /// Used to inject socket addrs into the DNS lookup result
+    #[cfg(test)]
+    hardcoded_dns_resolve: Vec<SocketAddr>,
 }
 
 impl NormalizedAddress {
     /// Specifically, this adds the `:123` port if no port is specified
-    fn from_string(mut address: String) -> std::io::Result<Self> {
+    fn from_string(address: String) -> std::io::Result<Self> {
+        let address = Self::from_string_help(address)?;
+
+        Ok(Self {
+            address,
+
+            #[cfg(test)]
+            hardcoded_dns_resolve: vec![],
+        })
+    }
+
+    fn from_string_help(mut address: String) -> std::io::Result<String> {
         if address.split(':').count() > 2 {
             // IPv6, try to parse it as such
             match address.parse::<SocketAddr>() {
-                Ok(_) => Ok(Self { address }),
+                Ok(_) => Ok(address),
                 Err(e) => {
                     // Could be because of no port, add one and see
                     address = format!("[{address}]:123");
                     if address.parse::<SocketAddr>().is_ok() {
-                        Ok(Self { address })
+                        Ok(address)
                     } else {
                         Err(std::io::Error::new(std::io::ErrorKind::Other, e))
                     }
@@ -72,14 +87,14 @@ impl NormalizedAddress {
             // check whether the host is valid, but at least check that
             // the port is.
             match port.parse::<u16>() {
-                Ok(_) => Ok(Self { address }),
+                Ok(_) => Ok(address),
                 Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
             }
         } else {
             // Not ipv6 and no port. As we cant reasonably check host
             // so just append a port
             address.push_str(":123");
-            Ok(Self { address })
+            Ok(address)
         }
     }
 
@@ -91,11 +106,35 @@ impl NormalizedAddress {
     pub(crate) fn new_unchecked(value: &str) -> Self {
         Self {
             address: value.to_string(),
+            hardcoded_dns_resolve: vec![],
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn with_hardcoded_dns(
+        address: &str,
+        hardcoded_dns_resolve: Vec<SocketAddr>,
+    ) -> Self {
+        Self {
+            address: address.to_string(),
+            hardcoded_dns_resolve,
+        }
+    }
+
+    #[cfg(not(test))]
     pub async fn lookup_host(&self) -> std::io::Result<impl Iterator<Item = SocketAddr> + '_> {
         tokio::net::lookup_host(&self.address).await
+    }
+
+    #[cfg(test)]
+    pub async fn lookup_host(&self) -> std::io::Result<impl Iterator<Item = SocketAddr> + '_> {
+        let addresses = if !self.hardcoded_dns_resolve.is_empty() {
+            self.hardcoded_dns_resolve.to_vec()
+        } else {
+            tokio::net::lookup_host(&self.address).await?.collect()
+        };
+
+        Ok(addresses.into_iter())
     }
 }
 
