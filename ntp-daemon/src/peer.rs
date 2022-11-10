@@ -74,13 +74,13 @@ pub struct PeerChannels {
 impl PeerChannels {
     #[cfg(test)]
     pub fn test() -> Self {
-        let (tx, _) = tokio::sync::mpsc::channel(1);
-        let (_, rx) = tokio::sync::watch::channel(ResetEpoch::default());
+        let (msg_for_system_sender, _) = tokio::sync::mpsc::channel(1);
+        let (_, reset) = tokio::sync::watch::channel(ResetEpoch::default());
         PeerChannels {
-            msg_for_system_sender: tx,
+            msg_for_system_sender,
             system_snapshots: Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default())),
             system_config: Arc::new(tokio::sync::RwLock::new(SystemConfig::default())),
-            reset: rx,
+            reset,
         }
     }
 }
@@ -260,6 +260,7 @@ where
 
             tokio::select! {
                 () = &mut poll_wait => {
+                    tracing::debug!("wait completed");
                     match self.handle_poll(&mut poll_wait).await {
                         PollResult::Ok => {},
                         PollResult::NetworkGone => {
@@ -269,6 +270,7 @@ where
                     }
                 },
                 result = (self.channels.reset.changed()), if self.channels.reset.has_changed().is_ok() => {
+                    tracing::debug!("wait completed");
                     if let Ok(()) = result {
                         // reset the measurement state (as if this association was just created).
                         // crucially, this sets `self.next_expected_origin = None`, meaning that
@@ -280,6 +282,7 @@ where
                     }
                 }
                 result = self.socket.recv(&mut buf) => {
+                    tracing::debug!("accept packet");
                     match accept_packet(result, &buf) {
                         AcceptResult::Accept(packet, recv_timestamp) => {
                             let send_timestamp = match self.last_send_timestamp {

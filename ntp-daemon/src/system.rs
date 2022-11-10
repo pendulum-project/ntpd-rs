@@ -1,7 +1,7 @@
 use crate::{
-    config::{PeerConfig, ServerConfig},
+    config::{PeerConfig, PoolPeerConfig, ServerConfig, StandardPeerConfig},
     peer::{MsgForSystem, PeerChannels, ResetEpoch},
-    peer_manager::Peers,
+    peer_manager::{Peers, SpawnTask},
 };
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
@@ -38,6 +38,8 @@ pub async fn spawn(
     // receive peer snapshots from all peers
     let (msg_for_system_tx, msg_for_system_rx) = mpsc::channel::<MsgForSystem>(32);
 
+    let (spawn_task_tx, spawn_task_rx) = mpsc::channel::<SpawnTask>(32);
+
     // System snapshot
     let system_snapshot = SystemSnapshot {
         stratum: config.local_stratum,
@@ -58,9 +60,20 @@ pub async fn spawn(
             system_config: config.clone(),
         },
         UnixNtpClock::new(),
+        spawn_task_tx,
     );
-    for peer_config in peer_configs.iter() {
-        peers.add_peer(peer_config.to_owned()).await;
+
+    for peer_config in peer_configs {
+        match peer_config {
+            PeerConfig::Standard(StandardPeerConfig { addr }) => {
+                peers.add_peer(addr.clone()).await;
+            }
+            PeerConfig::Pool(PoolPeerConfig {
+                addr, max_peers, ..
+            }) => {
+                peers.add_new_pool(addr.clone(), *max_peers).await;
+            }
+        }
     }
 
     for server_config in server_configs.iter() {
@@ -82,6 +95,7 @@ pub async fn spawn(
             peers_rwlock: peers,
 
             msg_for_system_rx,
+            spawn_task_rx,
             reset_tx,
 
             reset_epoch,
@@ -100,6 +114,7 @@ struct System<C: NtpClock> {
     peers_rwlock: Arc<tokio::sync::RwLock<Peers<C>>>,
 
     msg_for_system_rx: mpsc::Receiver<MsgForSystem>,
+    spawn_task_rx: mpsc::Receiver<SpawnTask>,
     reset_tx: watch::Sender<ResetEpoch>,
 
     reset_epoch: ResetEpoch,
@@ -110,7 +125,15 @@ impl<C: NtpClock> System<C> {
     async fn run(&mut self) -> std::io::Result<()> {
         let mut snapshots = Vec::with_capacity(self.peers_rwlock.read().await.size());
 
-        while let Some(msg_for_system) = self.msg_for_system_rx.recv().await {
+        loop {
+            tokio::select! {
+                opt_msg_for_system = self.msg_for_system_rx.recv() => {
+                    match opt_msg_for_system {
+                        None => {
+                            // the channel closed and has no more messages in it
+                            break
+                        }
+                        Some(msg_for_system) => {
             let ntp_instant = NtpInstant::now();
             let system = *self.global_system_snapshot.read().await;
 
@@ -132,6 +155,26 @@ impl<C: NtpClock> System<C> {
             ) {
                 self.recalculate_clock(&mut snapshots, config, &system, ntp_instant)
                     .await;
+                            }
+
+                        }
+                    }
+                }
+                opt_spawn_task = self.spawn_task_rx.recv() => {
+                    match opt_spawn_task {
+                        None => {
+                            // the channel closed and has no more messages in it
+                            tracing::warn!("the spawn channel closed unexpectedly");
+                        }
+                        Some(spawn_task) => {
+                            self.peers_rwlock
+                                .write()
+                                .await
+                                .spawn_task(spawn_task.peer_address, spawn_task.address)
+                                .await.unwrap();
+                        }
+                    }
+                }
             }
         }
 
@@ -381,6 +424,7 @@ mod tests {
         let reset_epoch = ResetEpoch::default();
         let (reset_tx, mut reset_rx) = watch::channel::<ResetEpoch>(reset_epoch);
         let (msg_for_system_tx, msg_for_system_rx) = mpsc::channel::<MsgForSystem>(32);
+        let (_spawn_task_tx, spawn_task_rx) = mpsc::channel::<SpawnTask>(32);
         let global_system_snapshot = Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default()));
 
         let peers = Peers::from_statuslist(
@@ -416,6 +460,7 @@ mod tests {
                 peers_rwlock,
 
                 msg_for_system_rx,
+                spawn_task_rx,
                 reset_tx,
 
                 reset_epoch,
