@@ -170,8 +170,6 @@ impl<C: NtpClock> Peers<C> {
         address: NormalizedAddress,
         max_peers: usize,
     ) {
-        println!("add to pool");
-
         let in_use: Vec<_> = self
             .peers
             .values()
@@ -251,7 +249,7 @@ impl<C: NtpClock> Peers<C> {
                     );
                 }
                 PeerConfig::Pool(PoolPeerConfig { .. }) => {
-                    unimplemented!()
+                    unimplemented!("this testing function does not support pool configs")
                 }
             };
         }
@@ -442,10 +440,7 @@ impl Spawner {
 
             remaining = config.max_peers - in_use.len();
 
-            tracing::trace!(?config.addr);
-
             if pool.backups.len() < config.max_peers - in_use.len() {
-                tracing::trace!("we don't have enough backups; try to get more");
                 match config.addr.lookup_host().await {
                     Ok(addresses) => {
                         pool.backups = addresses.collect();
@@ -457,8 +452,6 @@ impl Spawner {
                     }
                 }
             }
-
-            tracing::trace!(?in_use, ?pool.backups);
 
             // then, empty out our backups
             while let Some(addr) = pool.backups.pop() {
@@ -793,8 +786,6 @@ mod tests {
 
         // we have only 2 peers, because the pool has size 1
         assert_eq!(peers.peers.len(), 4);
-
-        println!("----------------------");
 
         // simulate that a pool peer has a network issue
         peers
