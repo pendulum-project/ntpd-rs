@@ -17,50 +17,6 @@ impl std::fmt::Display for WriteError {
 
 impl std::error::Error for WriteError {}
 
-// #[cfg(feature = "fuzz")]
-impl<'a> arbitrary::Arbitrary<'a> for Record {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let record = u16::arbitrary(u)?;
-
-        let critical = record & 0x8000 != 0;
-        let record_type = record & !0x8000;
-
-        use Record::*;
-        Ok(match record_type {
-            0 => EndOfMessage,
-            1 => NextProtocol {
-                protocol_ids: u.arbitrary()?,
-            },
-            2 => Error {
-                errorcode: u.arbitrary()?,
-            },
-            3 => Warning {
-                warningcode: u.arbitrary()?,
-            },
-            4 => AeadAlgorithm {
-                critical,
-                algorithm_ids: u.arbitrary()?,
-            },
-            5 => NewCookie {
-                cookie_data: u.arbitrary()?,
-            },
-            6 => Server {
-                critical,
-                name: u.arbitrary()?,
-            },
-            7 => Port {
-                critical,
-                port: u.arbitrary()?,
-            },
-            _ => Record::Unknown {
-                record_type,
-                critical,
-                data: u.arbitrary()?,
-            },
-        })
-    }
-}
-
 impl Record {
     fn record_type(&self) -> u16 {
         match self {
@@ -201,12 +157,6 @@ fn read_bytes_exact(reader: &mut impl Read, length: usize) -> std::io::Result<Ve
     Ok(output)
 }
 
-fn write_record_type(writer: &mut impl Write, record: &Record) -> std::io::Result<()> {
-    let record_type = record.record_type() | ((record.is_critical() as u16) << 15);
-
-    writer.write_all(&record_type.to_be_bytes())
-}
-
 impl Record {
     pub fn read<A: Read>(reader: &mut A) -> std::io::Result<Record> {
         let raw_record_type = read_u16_be(reader)?;
@@ -266,7 +216,9 @@ impl Record {
         // error out early when the record is invalid
         self.validate()?;
 
-        write_record_type(writer, self)?;
+        // all messages start with the record type
+        let record_type = self.record_type() | ((self.is_critical() as u16) << 15);
+        writer.write_all(&record_type.to_be_bytes())?;
 
         let size_of_u16 = std::mem::size_of::<u16>() as u16;
         match self {
@@ -302,11 +254,15 @@ impl Record {
                 }
             }
             Record::NewCookie { cookie_data } => {
-                writer.write_all(&cookie_data.len().to_be_bytes())?;
+                let length = cookie_data.len() as u16;
+                writer.write_all(&length.to_be_bytes())?;
+
                 writer.write_all(cookie_data)?;
             }
             Record::Server { name, .. } => {
-                writer.write_all(&name.len().to_be_bytes())?;
+                let length = name.len() as u16;
+                writer.write_all(&length.to_be_bytes())?;
+
                 writer.write_all(name.as_bytes())?;
             }
             Record::Port { port, .. } => {
@@ -316,5 +272,49 @@ impl Record {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(feature = "fuzz")]
+impl<'a> arbitrary::Arbitrary<'a> for Record {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let record = u16::arbitrary(u)?;
+
+        let critical = record & 0x8000 != 0;
+        let record_type = record & !0x8000;
+
+        use Record::*;
+        Ok(match record_type {
+            0 => EndOfMessage,
+            1 => NextProtocol {
+                protocol_ids: u.arbitrary()?,
+            },
+            2 => Error {
+                errorcode: u.arbitrary()?,
+            },
+            3 => Warning {
+                warningcode: u.arbitrary()?,
+            },
+            4 => AeadAlgorithm {
+                critical,
+                algorithm_ids: u.arbitrary()?,
+            },
+            5 => NewCookie {
+                cookie_data: u.arbitrary()?,
+            },
+            6 => Server {
+                critical,
+                name: u.arbitrary()?,
+            },
+            7 => Port {
+                critical,
+                port: u.arbitrary()?,
+            },
+            _ => Record::Unknown {
+                record_type,
+                critical,
+                data: u.arbitrary()?,
+            },
+        })
     }
 }
