@@ -316,7 +316,7 @@ impl NtpDuration {
         // alternatively, abuse FP arithmetic to save an instruction
         // let fraction = (nanos as f64 * 4.294967296) as u64;
 
-        let timestamp = ((seconds as u64) << 32) + fraction;
+        let timestamp = (seconds << 32) + fraction;
         NtpDuration::from_bits(timestamp.to_be_bytes())
     }
 

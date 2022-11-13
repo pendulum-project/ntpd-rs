@@ -275,7 +275,7 @@ impl<C: NtpClock> Peers<C> {
     }
 
     pub fn observe_peers(&self) -> impl Iterator<Item = ObservablePeerState> + '_ {
-        self.peers.iter().map(|(_, data)| match data.status {
+        self.peers.values().map(|data| match data.status {
             PeerStatus::NoMeasurement => ObservablePeerState::Nothing,
             PeerStatus::Measurement(snapshot) => ObservablePeerState::Observable {
                 statistics: snapshot.timedata.statistics,
