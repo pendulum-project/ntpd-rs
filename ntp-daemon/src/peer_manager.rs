@@ -3,10 +3,13 @@ use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use crate::{
     config::{NormalizedAddress, PoolPeerConfig, ServerConfig, StandardPeerConfig},
     observer::ObservablePeerState,
-    peer::{MsgForSystem, PeerChannels, PeerTask, ResetEpoch},
+    peer::{MsgForSystem, PeerChannels, PeerTask},
     server::{ServerStats, ServerTask},
 };
-use ntp_proto::{NtpClock, PeerSnapshot, PeerTimeSnapshot};
+use ntp_proto::{
+    DefaultTimeSyncController, NtpClock, PeerSnapshot, SystemConfig, TimeSnapshot,
+    TimeSyncController,
+};
 use tokio::{sync::mpsc::Sender, task::JoinHandle};
 use tracing::warn;
 
@@ -104,10 +107,17 @@ pub struct Peers<C: NtpClock> {
 
     channels: PeerChannels,
     clock: C,
+
+    controller: DefaultTimeSyncController<C, PeerIndex>,
 }
 
 impl<C: NtpClock> Peers<C> {
-    pub fn new(channels: PeerChannels, clock: C, spawn_task: Sender<SpawnTask>) -> Self {
+    pub fn new(
+        channels: PeerChannels,
+        clock: C,
+        spawn_task: Sender<SpawnTask>,
+        config: SystemConfig,
+    ) -> Self {
         Peers {
             peers: Default::default(),
             servers: Default::default(),
@@ -118,7 +128,8 @@ impl<C: NtpClock> Peers<C> {
             peer_indexer: Default::default(),
             pool_indexer: Default::default(),
             channels,
-            clock,
+            clock: clock.clone(),
+            controller: DefaultTimeSyncController::new(clock, config),
         }
     }
 
@@ -136,6 +147,7 @@ impl<C: NtpClock> Peers<C> {
                 peer_address,
             },
         );
+        self.controller.peer_add(index);
         PeerTask::spawn(
             index,
             addr,
@@ -266,7 +278,8 @@ impl<C: NtpClock> Peers<C> {
             peer_indexer,
             pool_indexer: Default::default(),
             channels: PeerChannels::test(),
-            clock,
+            clock: clock.clone(),
+            controller: DefaultTimeSyncController::new(clock, SystemConfig::default()),
         }
     }
 
@@ -275,19 +288,32 @@ impl<C: NtpClock> Peers<C> {
     }
 
     pub fn observe_peers(&self) -> impl Iterator<Item = ObservablePeerState> + '_ {
-        self.peers.values().map(|data| match data.status {
+        self.peers.iter().map(|(index, data)| match data.status {
             PeerStatus::NoMeasurement => ObservablePeerState::Nothing,
-            PeerStatus::Measurement(snapshot) => ObservablePeerState::Observable {
-                statistics: snapshot.timedata.statistics,
-                reachability: snapshot.reach,
-                uptime: snapshot.timedata.time.elapsed(),
-                poll_interval: snapshot.poll_interval,
-                peer_id: snapshot.peer_id,
-                address: match &data.peer_address {
-                    PeerAddress::Peer { address } => address.as_str().to_string(),
-                    PeerAddress::Pool { address, .. } => address.as_str().to_string(),
-                },
-            },
+            PeerStatus::Measurement(snapshot) => {
+                if let Some(timedata) = self.controller.peer_snapshot(*index) {
+                    ObservablePeerState::Observable {
+                        statistics: timedata.statistics,
+                        reachability: snapshot.reach,
+                        uptime: timedata.time.elapsed(),
+                        poll_interval: snapshot.poll_interval,
+                        peer_id: snapshot.peer_id,
+                        address: match &data.peer_address {
+                            PeerAddress::Peer { address } => address.as_str().to_string(),
+                            PeerAddress::Pool { address, .. } => address.as_str().to_string(),
+                        },
+                    }
+                } else {
+                    ObservablePeerState::Nothing
+                }
+            }
+        })
+    }
+
+    pub fn peer_snapshot(&self, index: PeerIndex) -> Option<PeerSnapshot> {
+        self.peers.get(&index).and_then(|data| match data.status {
+            PeerStatus::NoMeasurement => None,
+            PeerStatus::Measurement(snapshot) => Some(snapshot.clone()),
         })
     }
 
@@ -295,38 +321,40 @@ impl<C: NtpClock> Peers<C> {
         self.servers.iter().cloned()
     }
 
-    pub fn valid_snapshots(&self) -> impl Iterator<Item = (PeerIndex, PeerTimeSnapshot)> + '_ {
-        self.peers
-            .iter()
-            .filter_map(|(index, data)| match data.status {
-                PeerStatus::NoMeasurement => None,
-                PeerStatus::Measurement(snapshot) => Some((*index, snapshot.timedata)),
-            })
-    }
-
-    pub fn peer_snapshot(&self, id: PeerIndex) -> Option<PeerSnapshot> {
-        self.peers.get(&id).and_then(|data| match data.status {
-            PeerStatus::NoMeasurement => None,
-            PeerStatus::Measurement(snapshot) => Some(snapshot),
-        })
-    }
-
-    pub async fn update(&mut self, msg: MsgForSystem, current_reset_epoch: ResetEpoch) {
+    pub async fn update(
+        &mut self,
+        msg: MsgForSystem,
+        config: SystemConfig,
+    ) -> Option<(Vec<PeerIndex>, TimeSnapshot)> {
         tracing::debug!(?msg, "updating peer");
+
+        self.controller.update_config(config);
 
         match msg {
             MsgForSystem::MustDemobilize(index) => {
+                self.controller.peer_remove(index);
                 self.peers.remove(&index);
+                None
             }
-            MsgForSystem::NewMeasurement(index, msg_reset_epoch, snapshot) => {
-                if current_reset_epoch == msg_reset_epoch {
-                    self.peers.get_mut(&index).unwrap().status = PeerStatus::Measurement(snapshot);
-                }
+            MsgForSystem::NewMeasurement(index, snapshot, measurement, packet) => {
+                self.controller.peer_update(
+                    index,
+                    snapshot
+                        .accept_synchronization(config.local_stratum)
+                        .is_ok(),
+                );
+                self.peers.get_mut(&index).unwrap().status = PeerStatus::Measurement(snapshot);
+                self.controller.peer_measurement(index, measurement, packet)
             }
-            MsgForSystem::UpdatedSnapshot(index, msg_reset_epoch, snapshot) => {
-                if current_reset_epoch == msg_reset_epoch {
-                    self.peers.get_mut(&index).unwrap().status = PeerStatus::Measurement(snapshot);
-                }
+            MsgForSystem::UpdatedSnapshot(index, snapshot) => {
+                self.controller.peer_update(
+                    index,
+                    snapshot
+                        .accept_synchronization(config.local_stratum)
+                        .is_ok(),
+                );
+                self.peers.get_mut(&index).unwrap().status = PeerStatus::Measurement(snapshot);
+                None
             }
             MsgForSystem::NetworkIssue(index) => {
                 // Restart the peer reusing its configuration.
@@ -345,6 +373,8 @@ impl<C: NtpClock> Peers<C> {
                         self.add_to_pool(index, address, max_peers).await;
                     }
                 }
+
+                None
             }
         }
     }

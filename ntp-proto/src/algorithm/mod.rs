@@ -23,7 +23,7 @@ pub trait TimeSyncController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> {
         &mut self,
         id: PeerID,
         measurement: Measurement,
-        packet: &NtpPacket,
+        packet: NtpPacket<'static>,
     ) -> Option<(Vec<PeerID>, TimeSnapshot)>;
     /// Get a snapshot of the timekeeping state of a peer.
     fn peer_snapshot(&self, id: PeerID) -> Option<Self::PeerTimeSnapshot>;
