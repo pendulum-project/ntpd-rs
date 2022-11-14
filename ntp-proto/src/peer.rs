@@ -40,8 +40,6 @@ pub struct Peer {
     peer_id: ReferenceId,
     our_id: ReferenceId,
     reach: Reach,
-
-    timestate: PeerTimeState,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -290,8 +288,6 @@ pub struct PeerSnapshot {
 
     pub stratum: u8,
     pub reference_id: ReferenceId,
-
-    pub timedata: PeerTimeSnapshot,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -366,10 +362,6 @@ impl PeerTimeSnapshot {
 impl PeerSnapshot {
     pub fn accept_synchronization(
         &self,
-        local_clock_time: NtpInstant,
-        frequency_tolerance: FrequencyTolerance,
-        distance_threshold: NtpDuration,
-        system_poll: PollInterval,
         local_stratum: u8,
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
@@ -397,12 +389,7 @@ impl PeerSnapshot {
             return Err(ServerUnreachable);
         }
 
-        self.timedata.accept_synchronization(
-            local_clock_time,
-            frequency_tolerance,
-            distance_threshold,
-            system_poll,
-        )
+        Ok(())
     }
 
     pub fn from_peer(peer: &Peer) -> Self {
@@ -413,7 +400,6 @@ impl PeerSnapshot {
             reference_id: peer.reference_id,
             reach: peer.reach,
             poll_interval: peer.last_poll_interval,
-            timedata: PeerTimeSnapshot::from_timestate(&peer.timestate),
         }
     }
 }
@@ -430,7 +416,7 @@ pub enum AcceptSynchronizationError {
 #[derive(Debug)]
 pub enum Update {
     BareUpdate(PeerSnapshot),
-    NewMeasurement(PeerSnapshot),
+    NewMeasurement(PeerSnapshot, Measurement, NtpPacket<'static>),
 }
 
 impl Peer {
@@ -441,9 +427,6 @@ impl Peer {
         local_clock_time: NtpInstant,
         system_config: &SystemConfig,
     ) -> Self {
-        // we initialize with the current time so that we're in the correct epoch.
-        let time = local_clock_time;
-
         Self {
             last_poll_interval: system_config.poll_limits.min,
             backoff_interval: system_config.poll_limits.min,
@@ -456,13 +439,6 @@ impl Peer {
 
             stratum: 16,
             reference_id: ReferenceId::NONE,
-
-            timestate: PeerTimeState {
-                statistics: Default::default(),
-                last_measurements: LastMeasurements::new(time),
-                last_packet: Default::default(),
-                time,
-            },
         }
     }
 
@@ -593,20 +569,15 @@ impl Peer {
             system.time_snapshot.precision,
         );
 
-        match self
-            .timestate
-            .update(measurement, message, system.time_snapshot, system_config)
-        {
-            None => Update::BareUpdate(PeerSnapshot::from_peer(self)),
-            Some(_) => Update::NewMeasurement(PeerSnapshot::from_peer(self)),
-        }
+        Update::NewMeasurement(
+            PeerSnapshot::from_peer(self),
+            measurement,
+            message.into_owned(),
+        )
     }
 
     #[instrument(level="trace", skip(self), fields(peer = debug(self.peer_id)))]
     pub fn reset(&mut self) {
-        // Reset timestate
-        self.timestate.reset_measurements();
-
         // make sure in-flight messages are ignored
         self.current_request_identifier = None;
 
@@ -614,7 +585,7 @@ impl Peer {
     }
 
     #[cfg(test)]
-    pub(crate) fn test_peer(instant: NtpInstant) -> Self {
+    pub(crate) fn test_peer() -> Self {
         Peer {
             last_poll_interval: PollInterval::default(),
             backoff_interval: PollInterval::default(),
@@ -628,8 +599,6 @@ impl Peer {
 
             stratum: 0,
             reference_id: ReferenceId::from_int(0),
-
-            timestate: PeerTimeState::test_timestate(instant),
         }
     }
 }
@@ -854,17 +823,12 @@ mod test {
     fn test_accept_synchronization() {
         use AcceptSynchronizationError::*;
 
-        let local_clock_time = NtpInstant::now();
-        let ft = FrequencyTolerance::ppm(15);
-        let dt = NtpDuration::ONE;
-        let system_poll = PollIntervalLimits::default().min;
-
-        let mut peer = Peer::test_peer(local_clock_time);
+        let mut peer = Peer::test_peer();
 
         macro_rules! accept {
             () => {{
                 let snapshot = PeerSnapshot::from_peer(&peer);
-                snapshot.accept_synchronization(local_clock_time, ft, dt, system_poll, 16)
+                snapshot.accept_synchronization(16)
             }};
         }
 
@@ -879,29 +843,40 @@ mod test {
 
         assert_eq!(accept!(), Ok(()));
 
-        peer.timestate
-            .last_packet
-            .set_leap(NtpLeapIndicator::Unknown);
-        assert_eq!(accept!(), Err(Stratum));
-
-        peer.timestate
-            .last_packet
-            .set_leap(NtpLeapIndicator::NoWarning);
-        peer.timestate.last_packet.set_stratum(42);
         peer.stratum = 42;
         assert_eq!(accept!(), Err(Stratum));
+    }
 
-        peer.timestate.last_packet.set_stratum(0);
-        peer.stratum = 0;
+    #[test]
+    fn test_timesnapshot_accept_synchronization() {
+        use AcceptSynchronizationError::*;
 
-        peer.timestate.last_packet.set_root_dispersion(dt * 2);
+        let local_clock_time = NtpInstant::now();
+        let mut timestate = PeerTimeState::test_timestate(local_clock_time);
+        let ft = FrequencyTolerance::ppm(15);
+        let dt = NtpDuration::ONE;
+        let system_poll = PollIntervalLimits::default().min;
+
+        macro_rules! accept {
+            () => {{
+                let snapshot = PeerTimeSnapshot::from_timestate(&timestate);
+                snapshot.accept_synchronization(local_clock_time, ft, dt, system_poll)
+            }};
+        }
+
+        timestate.last_packet.set_leap(NtpLeapIndicator::Unknown);
+        assert_eq!(accept!(), Err(Stratum));
+
+        timestate.last_packet.set_leap(NtpLeapIndicator::NoWarning);
+
+        timestate.last_packet.set_root_dispersion(dt * 2);
         assert_eq!(accept!(), Err(Distance));
     }
 
     #[test]
     fn test_poll_interval() {
         let base = NtpInstant::now();
-        let mut peer = Peer::test_peer(base);
+        let mut peer = Peer::test_peer();
         let mut system = SystemSnapshot::default();
 
         assert!(peer.current_poll_interval(system) >= peer.remote_min_poll_interval);
@@ -964,7 +939,7 @@ mod test {
     #[test]
     fn test_handle_incoming() {
         let base = NtpInstant::now();
-        let mut peer = Peer::test_peer(base);
+        let mut peer = Peer::test_peer();
 
         let system = SystemSnapshot::default();
         let outgoing = peer.generate_poll_message(system, &SystemConfig::default());
@@ -986,7 +961,7 @@ mod test {
                 NtpTimestamp::from_fixed_int(400)
             )
             .is_ok());
-        assert_eq!(peer.timestate.last_packet, packet);
+        //assert_eq!(peer.timestate.last_packet, packet);
         assert!(peer
             .handle_incoming(
                 system,
@@ -1002,7 +977,7 @@ mod test {
     #[test]
     fn test_stratum_checks() {
         let base = NtpInstant::now();
-        let mut peer = Peer::test_peer(base);
+        let mut peer = Peer::test_peer();
 
         let system = SystemSnapshot::default();
         let outgoing = peer.generate_poll_message(system, &SystemConfig::default());
@@ -1040,7 +1015,7 @@ mod test {
     #[test]
     fn test_handle_kod() {
         let base = NtpInstant::now();
-        let mut peer = Peer::test_peer(base);
+        let mut peer = Peer::test_peer();
 
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();

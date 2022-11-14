@@ -481,9 +481,10 @@ pub fn fuzz_find_interval(spec: &[(i64, u64)]) {
     }
     let mut candidates = vec![];
     for (i, (center, size)) in spec.iter().enumerate() {
-        let size = (*size)
-            .min((std::i64::MAX as u64).wrapping_sub(*center as u64))
-            .max((*center as u64).wrapping_sub(std::i64::MIN as u64));
+        let size = (*size).clamp(
+            (std::i64::MAX as u64).wrapping_sub(*center as u64),
+            (*center as u64).wrapping_sub(std::i64::MIN as u64),
+        );
         candidates.push(CandidateTuple {
             peer: &peers[i],
             endpoint_type: EndpointType::Lower,
@@ -509,22 +510,7 @@ pub fn fuzz_find_interval(spec: &[(i64, u64)]) {
 }
 
 #[cfg(feature = "ext-test")]
-pub fn test_peer_snapshot(instant: NtpInstant) -> crate::PeerSnapshot {
-    peer_snapshot(
-        crate::peer::PeerStatistics::default(),
-        instant,
-        NtpDuration::default(),
-        NtpDuration::default(),
-    )
-}
-
-#[cfg(feature = "ext-test")]
-pub fn peer_snapshot(
-    statistics: crate::peer::PeerStatistics,
-    instant: NtpInstant,
-    root_delay: NtpDuration,
-    root_dispersion: NtpDuration,
-) -> crate::PeerSnapshot {
+pub fn peer_snapshot() -> crate::PeerSnapshot {
     use crate::ReferenceId;
 
     let mut reach = crate::peer::Reach::default();
@@ -538,7 +524,6 @@ pub fn peer_snapshot(
         our_id: ReferenceId::from_int(1),
         reach,
         poll_interval: crate::time_types::PollIntervalLimits::default().min,
-        timedata: peer_time_snapshot(statistics, instant, root_delay, root_dispersion),
     }
 }
 
@@ -552,7 +537,7 @@ fn test_peer_time_snapshot(instant: NtpInstant) -> crate::PeerTimeSnapshot {
     )
 }
 
-#[cfg(any(test, feature = "fuzz", feature = "ext-test"))]
+#[cfg(any(test, feature = "fuzz"))]
 fn peer_time_snapshot(
     statistics: crate::peer::PeerStatistics,
     instant: NtpInstant,

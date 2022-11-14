@@ -8,17 +8,14 @@ use std::{
 };
 
 use ntp_proto::{
-    IgnoreReason, NtpClock, NtpInstant, NtpPacket, NtpTimestamp, Peer, PeerSnapshot, ReferenceId,
-    SystemConfig, SystemSnapshot, Update,
+    IgnoreReason, Measurement, NtpClock, NtpInstant, NtpPacket, NtpTimestamp, Peer, PeerSnapshot,
+    ReferenceId, SystemConfig, SystemSnapshot, Update,
 };
 use ntp_udp::UdpSocket;
 use rand::{thread_rng, Rng};
 use tracing::{debug, error, instrument, warn, Instrument, Span};
 
-use tokio::{
-    sync::watch,
-    time::{Instant, Sleep},
-};
+use tokio::time::{Instant, Sleep};
 
 use crate::peer_manager::PeerIndex;
 
@@ -33,23 +30,7 @@ impl Wait for Sleep {
     }
 }
 
-/// Only messages from the current reset epoch are valid. The system's reset epoch is incremented
-/// (with wrapping addition) on every reset. Only after a reset does the peer update its reset
-/// epoch, thereby indicating to the system that the reset was successful and the peer's messages
-/// are valid measurements again.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct ResetEpoch(u64);
-
-impl ResetEpoch {
-    #[must_use]
-    pub const fn inc(mut self) -> Self {
-        self.0 = self.0.wrapping_add(1);
-
-        self
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum MsgForSystem {
     /// Received a Kiss-o'-Death and must demobilize
     MustDemobilize(PeerIndex),
@@ -57,10 +38,10 @@ pub enum MsgForSystem {
     NetworkIssue(PeerIndex),
     /// Received an acceptable packet and made a new peer snapshot
     /// A new measurement should try to trigger a clock select
-    NewMeasurement(PeerIndex, ResetEpoch, PeerSnapshot),
+    NewMeasurement(PeerIndex, PeerSnapshot, Measurement, NtpPacket<'static>),
     /// A snapshot may have been updated, but this should not
     /// trigger a clock select in System
-    UpdatedSnapshot(PeerIndex, ResetEpoch, PeerSnapshot),
+    UpdatedSnapshot(PeerIndex, PeerSnapshot),
 }
 
 #[derive(Debug, Clone)]
@@ -68,19 +49,16 @@ pub struct PeerChannels {
     pub msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
     pub system_snapshots: Arc<tokio::sync::RwLock<SystemSnapshot>>,
     pub system_config: Arc<tokio::sync::RwLock<SystemConfig>>,
-    pub reset: watch::Receiver<ResetEpoch>,
 }
 
 impl PeerChannels {
     #[cfg(test)]
     pub fn test() -> Self {
         let (msg_for_system_sender, _) = tokio::sync::mpsc::channel(1);
-        let (_, reset) = tokio::sync::watch::channel(ResetEpoch::default());
         PeerChannels {
             msg_for_system_sender,
             system_snapshots: Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default())),
             system_config: Arc::new(tokio::sync::RwLock::new(SystemConfig::default())),
-            reset,
         }
     }
 }
@@ -103,9 +81,6 @@ pub(crate) struct PeerTask<C: 'static + NtpClock + Send, T: Wait> {
 
     /// Instant last poll message was sent (used for timing the wait)
     last_poll_sent: Instant,
-
-    /// Number of resets that this peer has performed
-    reset_epoch: ResetEpoch,
 }
 
 #[derive(Debug)]
@@ -153,7 +128,7 @@ where
 
         // NOTE: fitness check is not performed here, but by System
         let snapshot = PeerSnapshot::from_peer(&self.peer);
-        let msg = MsgForSystem::UpdatedSnapshot(self.index, self.reset_epoch, snapshot);
+        let msg = MsgForSystem::UpdatedSnapshot(self.index, snapshot);
         self.channels.msg_for_system_sender.send(msg).await.ok();
 
         match self.clock.now() {
@@ -230,11 +205,9 @@ where
                 // NOTE: fitness check is not performed here, but by System
 
                 let msg = match update {
-                    Update::BareUpdate(update) => {
-                        MsgForSystem::UpdatedSnapshot(self.index, self.reset_epoch, update)
-                    }
-                    Update::NewMeasurement(update) => {
-                        MsgForSystem::NewMeasurement(self.index, self.reset_epoch, update)
+                    Update::BareUpdate(update) => MsgForSystem::UpdatedSnapshot(self.index, update),
+                    Update::NewMeasurement(update, measurement, packet) => {
+                        MsgForSystem::NewMeasurement(self.index, update, measurement, packet)
                     }
                 };
                 self.channels.msg_for_system_sender.send(msg).await.ok();
@@ -269,18 +242,6 @@ where
                         }
                     }
                 },
-                result = (self.channels.reset.changed()), if self.channels.reset.has_changed().is_ok() => {
-                    tracing::debug!("wait completed");
-                    if let Ok(()) = result {
-                        // reset the measurement state (as if this association was just created).
-                        // crucially, this sets `self.next_expected_origin = None`, meaning that
-                        // in-flight requests are ignored
-                        self.peer.reset();
-
-                        // our next measurement will have the new reset epoch
-                        self.reset_epoch = *self.channels.reset.borrow_and_update();
-                    }
-                }
                 result = self.socket.recv(&mut buf) => {
                     tracing::debug!("accept packet");
                     match accept_packet(result, &buf) {
@@ -320,7 +281,7 @@ where
         addr: SocketAddr,
         clock: C,
         network_wait_period: std::time::Duration,
-        mut channels: PeerChannels,
+        channels: PeerChannels,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(
             (async move {
@@ -350,10 +311,6 @@ where
                 let poll_wait = tokio::time::sleep(std::time::Duration::default());
                 tokio::pin!(poll_wait);
 
-                // Even though we currently always have reset_epoch start at
-                // the default value, we shouldn't rely on that.
-                let reset_epoch = *channels.reset.borrow_and_update();
-
                 let mut process = PeerTask {
                     _wait: PhantomData,
                     index,
@@ -363,7 +320,6 @@ where
                     peer,
                     last_send_timestamp: None,
                     last_poll_sent: Instant::now(),
-                    reset_epoch,
                 };
 
                 process.run(poll_wait).await
