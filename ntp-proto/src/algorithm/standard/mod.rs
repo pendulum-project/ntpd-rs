@@ -32,7 +32,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> StandardClockController<C, P
         now: NtpInstant,
         id: PeerID,
         measurement: Measurement,
-        packet: &crate::NtpPacket,
+        packet: crate::NtpPacket<'static>,
     ) -> bool {
         let current_peerstate = match self.peerstate.get_mut(&id) {
             Some(v) => v,
@@ -166,7 +166,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
         &mut self,
         id: PeerID,
         measurement: crate::peer::Measurement,
-        packet: &crate::NtpPacket,
+        packet: crate::NtpPacket<'static>,
     ) -> Option<(Vec<PeerID>, TimeSnapshot)> {
         let now = NtpInstant::now();
 
