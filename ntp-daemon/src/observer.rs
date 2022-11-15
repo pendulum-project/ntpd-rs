@@ -118,8 +118,8 @@ mod tests {
     use std::time::Duration;
 
     use ntp_proto::{
-        NtpDuration, NtpInstant, NtpLeapIndicator, NtpTimestamp, PeerSnapshot, PeerStatistics,
-        PeerTimeSnapshot, PollInterval, PollIntervalLimits, Reach, ReferenceId, TimeSnapshot,
+        NtpDuration, NtpLeapIndicator, NtpTimestamp, PeerSnapshot, PollInterval,
+        PollIntervalLimits, Reach, ReferenceId, TimeSnapshot,
     };
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
@@ -179,21 +179,6 @@ mod tests {
                 reach: Reach::default(),
                 reference_id: ReferenceId::from_ip("127.0.0.3".parse().unwrap()),
                 stratum: 2,
-
-                timedata: PeerTimeSnapshot {
-                    leap_indicator: NtpLeapIndicator::NoWarning,
-                    root_delay: NtpDuration::from_seconds(0.2),
-                    root_dispersion: NtpDuration::from_seconds(0.02),
-                    root_distance_without_time: NtpDuration::from_seconds(0.2),
-                    statistics: PeerStatistics {
-                        offset: NtpDuration::from_seconds(0.05),
-                        delay: NtpDuration::from_seconds(0.03),
-                        dispersion: NtpDuration::from_seconds(0.05),
-                        jitter: 0.2,
-                    },
-                    time: NtpInstant::now(),
-                    stratum: 2,
-                },
             }),
         ];
 
@@ -272,22 +257,6 @@ mod tests {
                 reach: Reach::default(),
                 reference_id: ReferenceId::from_ip("127.0.0.3".parse().unwrap()),
                 stratum: 2,
-
-                timedata: PeerTimeSnapshot {
-                    root_distance_without_time: NtpDuration::from_seconds(0.2),
-                    statistics: PeerStatistics {
-                        offset: NtpDuration::from_seconds(0.05),
-                        delay: NtpDuration::from_seconds(0.03),
-                        dispersion: NtpDuration::from_seconds(0.05),
-                        jitter: 0.2,
-                    },
-                    time: NtpInstant::now(),
-                    stratum: 2,
-
-                    leap_indicator: NtpLeapIndicator::NoWarning,
-                    root_delay: NtpDuration::from_seconds(0.2),
-                    root_dispersion: NtpDuration::from_seconds(0.02),
-                },
             }),
         ];
 

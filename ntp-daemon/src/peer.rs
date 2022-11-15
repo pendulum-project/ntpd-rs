@@ -391,7 +391,7 @@ mod tests {
     use std::time::Duration;
 
     use ntp_proto::{NtpDuration, NtpLeapIndicator, PollInterval, TimeSnapshot};
-    use tokio::sync::{mpsc, watch, RwLock};
+    use tokio::sync::{mpsc, RwLock};
 
     use super::*;
 
@@ -508,7 +508,6 @@ mod tests {
         PeerTask<TestClock, T>,
         UdpSocket,
         mpsc::Receiver<MsgForSystem>,
-        watch::Sender<ResetEpoch>,
     ) {
         // Note: Ports must be unique among tests to deal with parallelism, hence
         // port_base
@@ -530,7 +529,6 @@ mod tests {
         let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
         let system_config = Arc::new(RwLock::new(SystemConfig::default()));
         let (msg_for_system_sender, msg_for_system_receiver) = mpsc::channel(1);
-        let (reset_send, reset) = watch::channel(ResetEpoch::default());
 
         let local_clock_time = NtpInstant::now();
         let peer = Peer::new(
@@ -548,61 +546,20 @@ mod tests {
                 msg_for_system_sender,
                 system_snapshots,
                 system_config,
-                reset,
             },
             socket,
             peer,
             last_send_timestamp: None,
             last_poll_sent: Instant::now(),
-            reset_epoch: ResetEpoch::default(),
         };
 
-        (process, test_socket, msg_for_system_receiver, reset_send)
-    }
-
-    #[tokio::test]
-    async fn test_spawn_reset_epoch() {
-        // Note: Ports must be unique among tests to deal with parallelism
-        let _recv_socket = UdpSocket::client(
-            SocketAddr::from((Ipv4Addr::LOCALHOST, 8003)),
-            SocketAddr::from((Ipv4Addr::LOCALHOST, 8002)),
-        )
-        .await
-        .unwrap();
-
-        let epoch = ResetEpoch::default().inc();
-        let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
-        let system_config = Arc::new(RwLock::new(SystemConfig::default()));
-        let (msg_for_system_sender, mut msg_for_system_receiver) = mpsc::channel(1);
-        let (_reset_send, reset) = watch::channel(epoch);
-
-        let handle = PeerTask::spawn(
-            PeerIndex::from_inner(0),
-            SocketAddr::from((Ipv4Addr::LOCALHOST, 8003)),
-            TestClock {},
-            std::time::Duration::from_secs(60),
-            PeerChannels {
-                msg_for_system_sender,
-                system_snapshots,
-                system_config,
-                reset,
-            },
-        );
-
-        let peer_epoch = match msg_for_system_receiver.recv().await.unwrap() {
-            MsgForSystem::UpdatedSnapshot(_, peer_epoch, _) => peer_epoch,
-            _ => panic!("Unexpected message"),
-        };
-
-        assert_eq!(epoch, peer_epoch);
-
-        handle.abort();
+        (process, test_socket, msg_for_system_receiver)
     }
 
     #[tokio::test]
     async fn test_poll_sends_state_update_and_packet() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, socket, mut msg_recv, _reset) = test_startup(8004).await;
+        let (mut process, socket, mut msg_recv) = test_startup(8004).await;
 
         let (poll_wait, poll_send) = TestWait::new();
 
@@ -614,7 +571,7 @@ mod tests {
         poll_send.notify();
 
         let msg = msg_recv.recv().await.unwrap();
-        assert!(matches!(msg, MsgForSystem::UpdatedSnapshot(_, _, _)));
+        assert!(matches!(msg, MsgForSystem::UpdatedSnapshot(_, _)));
 
         let mut buf = [0; 48];
         let network = socket.recv(&mut buf).await.unwrap();
@@ -624,46 +581,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_reset_updates_epoch() {
-        // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, _socket, mut msg_recv, reset) = test_startup(8006).await;
-
-        let epoch_a = ResetEpoch::default();
-        let epoch_b = epoch_a.inc();
-
-        let (poll_wait, poll_send) = TestWait::new();
-
-        let handle = tokio::spawn(async move {
-            tokio::pin!(poll_wait);
-            process.run(poll_wait).await;
-        });
-
-        poll_send.notify();
-        let peer_epoch = match msg_recv.recv().await.unwrap() {
-            MsgForSystem::UpdatedSnapshot(_, peer_epoch, _) => peer_epoch,
-            _ => panic!("Unexpected message"),
-        };
-        assert_eq!(peer_epoch, epoch_a);
-
-        reset.send(epoch_b).unwrap();
-
-        // Not foolproof, but hopefully this ensures the reset is processed first
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-        poll_send.notify();
-        let peer_epoch = match msg_recv.recv().await.unwrap() {
-            MsgForSystem::UpdatedSnapshot(_, peer_epoch, _) => peer_epoch,
-            _ => panic!("Unexpected message"),
-        };
-        assert_eq!(peer_epoch, epoch_b);
-
-        handle.abort();
-    }
-
-    #[tokio::test]
     async fn test_timeroundtrip() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, mut socket, mut msg_recv, _reset) = test_startup(8008).await;
+        let (mut process, mut socket, mut msg_recv) = test_startup(8008).await;
 
         let system = SystemSnapshot {
             time_snapshot: TimeSnapshot {
@@ -684,7 +604,7 @@ mod tests {
         poll_send.notify();
 
         let msg = msg_recv.recv().await.unwrap();
-        assert!(matches!(msg, MsgForSystem::UpdatedSnapshot(_, _, _)));
+        assert!(matches!(msg, MsgForSystem::UpdatedSnapshot(_, _)));
 
         let mut buf = [0; 48];
         let (size, _, timestamp) = socket.recv(&mut buf).await.unwrap();
@@ -699,7 +619,7 @@ mod tests {
         socket.send(&pdata).await.unwrap();
 
         let msg = msg_recv.recv().await.unwrap();
-        assert!(matches!(msg, MsgForSystem::NewMeasurement(_, _, _)));
+        assert!(matches!(msg, MsgForSystem::NewMeasurement(_, _, _, _)));
 
         handle.abort();
     }
@@ -707,7 +627,7 @@ mod tests {
     #[tokio::test]
     async fn test_deny_stops_poll() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, mut socket, mut msg_recv, _reset) = test_startup(8010).await;
+        let (mut process, mut socket, mut msg_recv) = test_startup(8010).await;
 
         let (poll_wait, poll_send) = TestWait::new();
 
@@ -719,7 +639,7 @@ mod tests {
         poll_send.notify();
 
         let msg = msg_recv.recv().await.unwrap();
-        assert!(matches!(msg, MsgForSystem::UpdatedSnapshot(_, _, _)));
+        assert!(matches!(msg, MsgForSystem::UpdatedSnapshot(_, _)));
 
         let mut buf = [0; 48];
         let (size, _, timestamp) = socket.recv(&mut buf).await.unwrap();

@@ -658,7 +658,7 @@ impl<'a> NtpPacket<'a> {
     }
 }
 
-#[cfg(any(test, feature = "fuzz"))]
+#[cfg(any(test, feature = "fuzz", feature = "ext-test"))]
 impl<'a> NtpPacket<'a> {
     pub fn test() -> Self {
         Self::default()
