@@ -471,7 +471,7 @@ fn clock_combine<'a, PeerID: Hash + Eq + Copy + Debug>(
     }
 }
 
-#[cfg(feature = "fuzz")]
+#[cfg(any(test, feature = "fuzz"))]
 pub fn fuzz_find_interval(spec: &[(i64, u64)]) {
     let instant = NtpInstant::now();
 
@@ -481,10 +481,9 @@ pub fn fuzz_find_interval(spec: &[(i64, u64)]) {
     }
     let mut candidates = vec![];
     for (i, (center, size)) in spec.iter().enumerate() {
-        let size = (*size).clamp(
-            (std::i64::MAX as u64).wrapping_sub(*center as u64),
-            (*center as u64).wrapping_sub(std::i64::MIN as u64),
-        );
+        let size = (*size)
+            .min((std::i64::MAX as u64).wrapping_sub(*center as u64))
+            .min((*center as u64).wrapping_sub(std::i64::MIN as u64));
         candidates.push(CandidateTuple {
             peer: &peers[i],
             endpoint_type: EndpointType::Lower,
@@ -566,6 +565,11 @@ mod test {
 
     use super::*;
     use crate::{peer::PeerStatistics, time_types::PollIntervalLimits};
+
+    #[test]
+    fn interval_find_bug_1() {
+        fuzz_find_interval(&[(-1, 2)]);
+    }
 
     #[test]
     fn clock_combine_simple() {
