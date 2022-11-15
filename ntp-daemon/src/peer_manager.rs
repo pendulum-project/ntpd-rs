@@ -244,6 +244,7 @@ impl<C: NtpClock> Peers<C> {
 
         let mut peers = HashMap::new();
         let mut peer_indexer = PeerIndexIssuer::default();
+        let mut controller = DefaultTimeSyncController::new(clock.clone(), SystemConfig::default());
 
         for (i, status) in data.iter().enumerate() {
             let index = peer_indexer.get();
@@ -264,6 +265,7 @@ impl<C: NtpClock> Peers<C> {
                     unimplemented!("this testing function does not support pool configs")
                 }
             };
+            controller.peer_add(index);
         }
 
         let (spawn_task_tx, _spawn_task_rx) = tokio::sync::mpsc::channel(32);
@@ -278,8 +280,8 @@ impl<C: NtpClock> Peers<C> {
             peer_indexer,
             pool_indexer: Default::default(),
             channels: PeerChannels::test(),
-            clock: clock.clone(),
-            controller: DefaultTimeSyncController::new(clock, SystemConfig::default()),
+            clock,
+            controller,
         }
     }
 
@@ -313,7 +315,7 @@ impl<C: NtpClock> Peers<C> {
     pub fn peer_snapshot(&self, index: PeerIndex) -> Option<PeerSnapshot> {
         self.peers.get(&index).and_then(|data| match data.status {
             PeerStatus::NoMeasurement => None,
-            PeerStatus::Measurement(snapshot) => Some(snapshot.clone()),
+            PeerStatus::Measurement(snapshot) => Some(snapshot),
         })
     }
 
@@ -376,12 +378,6 @@ impl<C: NtpClock> Peers<C> {
 
                 None
             }
-        }
-    }
-
-    pub fn reset_all(&mut self) {
-        for (_, data) in self.peers.iter_mut() {
-            data.status = PeerStatus::NoMeasurement;
         }
     }
 }
@@ -540,8 +536,8 @@ impl Spawner {
 #[cfg(test)]
 mod tests {
     use ntp_proto::{
-        peer_snapshot, NtpDuration, NtpInstant, NtpLeapIndicator, NtpTimestamp, PeerStatistics,
-        PollInterval, SystemConfig, SystemSnapshot,
+        peer_snapshot, Measurement, NtpDuration, NtpInstant, NtpLeapIndicator, NtpPacket,
+        NtpTimestamp, PollInterval, SystemConfig, SystemSnapshot,
     };
 
     use crate::config::{NormalizedAddress, StandardPeerConfig};
@@ -583,9 +579,6 @@ mod tests {
     async fn test_peers() {
         use crate::config::PeerConfig;
 
-        let base = NtpInstant::now();
-        let prev_epoch = ResetEpoch::default();
-        let epoch = prev_epoch.inc();
         let mut peers = Peers::from_statuslist(
             &[PeerStatus::NoMeasurement; 4],
             &(0..4)
@@ -597,112 +590,121 @@ mod tests {
                 .collect::<Vec<_>>(),
             TestClock {},
         );
-        assert_eq!(peers.valid_snapshots().count(), 0);
+        let base = NtpInstant::now();
+        assert_eq!(
+            peers
+                .peers
+                .values()
+                .map(|v| match v.status {
+                    PeerStatus::Measurement(_) => 1,
+                    PeerStatus::NoMeasurement => 0,
+                })
+                .sum::<i32>(),
+            0
+        );
 
         peers
             .update(
                 MsgForSystem::NewMeasurement(
                     PeerIndex { index: 0 },
-                    prev_epoch,
-                    peer_snapshot(
-                        PeerStatistics {
-                            delay: NtpDuration::from_seconds(0.1),
-                            offset: NtpDuration::from_seconds(0.),
-                            dispersion: NtpDuration::from_seconds(0.05),
-                            jitter: 0.05,
-                        },
-                        base,
-                        NtpDuration::from_seconds(0.1),
-                        NtpDuration::from_seconds(0.05),
-                    ),
+                    peer_snapshot(),
+                    Measurement {
+                        delay: NtpDuration::from_seconds(0.1),
+                        offset: NtpDuration::from_seconds(0.),
+                        localtime: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 0),
+                        monotime: base,
+                    },
+                    NtpPacket::test(),
                 ),
-                epoch,
+                SystemConfig::default(),
             )
             .await;
-        assert_eq!(peers.valid_snapshots().count(), 0);
+        assert_eq!(
+            peers
+                .peers
+                .values()
+                .map(|v| match v.status {
+                    PeerStatus::Measurement(_) => 1,
+                    PeerStatus::NoMeasurement => 0,
+                })
+                .sum::<i32>(),
+            1
+        );
 
         peers
             .update(
                 MsgForSystem::NewMeasurement(
                     PeerIndex { index: 0 },
-                    epoch,
-                    peer_snapshot(
-                        PeerStatistics {
-                            delay: NtpDuration::from_seconds(0.1),
-                            offset: NtpDuration::from_seconds(0.),
-                            dispersion: NtpDuration::from_seconds(0.05),
-                            jitter: 0.05,
-                        },
-                        base,
-                        NtpDuration::from_seconds(1.0),
-                        NtpDuration::from_seconds(2.0),
-                    ),
+                    peer_snapshot(),
+                    Measurement {
+                        delay: NtpDuration::from_seconds(0.1),
+                        offset: NtpDuration::from_seconds(0.),
+                        localtime: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 0),
+                        monotime: base,
+                    },
+                    NtpPacket::test(),
                 ),
-                epoch,
+                SystemConfig::default(),
             )
             .await;
-        assert_eq!(peers.valid_snapshots().count(), 1);
+        assert_eq!(
+            peers
+                .peers
+                .values()
+                .map(|v| match v.status {
+                    PeerStatus::Measurement(_) => 1,
+                    PeerStatus::NoMeasurement => 0,
+                })
+                .sum::<i32>(),
+            1
+        );
 
         peers
             .update(
-                MsgForSystem::NewMeasurement(
-                    PeerIndex { index: 0 },
-                    epoch,
-                    peer_snapshot(
-                        PeerStatistics {
-                            delay: NtpDuration::from_seconds(0.1),
-                            offset: NtpDuration::from_seconds(0.),
-                            dispersion: NtpDuration::from_seconds(0.05),
-                            jitter: 0.05,
-                        },
-                        base,
-                        NtpDuration::from_seconds(0.1),
-                        NtpDuration::from_seconds(0.05),
-                    ),
-                ),
-                epoch,
+                MsgForSystem::UpdatedSnapshot(PeerIndex { index: 1 }, peer_snapshot()),
+                SystemConfig::default(),
             )
             .await;
-        assert_eq!(peers.valid_snapshots().count(), 1);
+        assert_eq!(
+            peers
+                .peers
+                .values()
+                .map(|v| match v.status {
+                    PeerStatus::Measurement(_) => 1,
+                    PeerStatus::NoMeasurement => 0,
+                })
+                .sum::<i32>(),
+            2
+        );
 
         peers
             .update(
-                MsgForSystem::UpdatedSnapshot(
-                    PeerIndex { index: 1 },
-                    epoch,
-                    peer_snapshot(
-                        PeerStatistics {
-                            delay: NtpDuration::from_seconds(0.1),
-                            offset: NtpDuration::from_seconds(0.),
-                            dispersion: NtpDuration::from_seconds(0.05),
-                            jitter: 0.05,
-                        },
-                        base,
-                        NtpDuration::from_seconds(0.1),
-                        NtpDuration::from_seconds(0.05),
-                    ),
-                ),
-                epoch,
+                MsgForSystem::MustDemobilize(PeerIndex { index: 1 }),
+                SystemConfig::default(),
             )
             .await;
-        assert_eq!(peers.valid_snapshots().count(), 2);
-
-        peers
-            .update(MsgForSystem::MustDemobilize(PeerIndex { index: 1 }), epoch)
-            .await;
-        assert_eq!(peers.valid_snapshots().count(), 1);
-
-        peers.reset_all();
-        assert_eq!(peers.valid_snapshots().count(), 0);
+        assert_eq!(
+            peers
+                .peers
+                .values()
+                .map(|v| match v.status {
+                    PeerStatus::Measurement(_) => 1,
+                    PeerStatus::NoMeasurement => 0,
+                })
+                .sum::<i32>(),
+            1
+        );
     }
 
     #[tokio::test]
     async fn single_peer_pool() {
-        let prev_epoch = ResetEpoch::default();
-        let epoch = prev_epoch.inc();
-
         let (spawn_task_tx, mut spawn_task_rx) = tokio::sync::mpsc::channel(32);
-        let mut peers = Peers::new(PeerChannels::test(), TestClock {}, spawn_task_tx);
+        let mut peers = Peers::new(
+            PeerChannels::test(),
+            TestClock {},
+            spawn_task_tx,
+            SystemConfig::default(),
+        );
 
         let peer_address = NormalizedAddress::new_unchecked("127.0.0.2:123");
         peers.add_peer(peer_address).await;
@@ -721,7 +723,10 @@ mod tests {
 
         // our pool peer has a network issue
         peers
-            .update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }), epoch)
+            .update(
+                MsgForSystem::NetworkIssue(PeerIndex { index: 1 }),
+                SystemConfig::default(),
+            )
             .await;
 
         for _ in 0..1 {
@@ -735,20 +740,20 @@ mod tests {
 
     #[tokio::test]
     async fn max_peers_bigger_than_pool_size() {
-        let prev_epoch = ResetEpoch::default();
-        let epoch = prev_epoch.inc();
-
         let (msg_for_system_sender, _) = tokio::sync::mpsc::channel(2);
-        let (_, reset) = tokio::sync::watch::channel(ResetEpoch::default());
         let peer_channels = PeerChannels {
             msg_for_system_sender,
             system_snapshots: Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default())),
             system_config: Arc::new(tokio::sync::RwLock::new(SystemConfig::default())),
-            reset,
         };
 
         let (spawn_task_tx, mut spawn_task_rx) = tokio::sync::mpsc::channel(32);
-        let mut peers = Peers::new(peer_channels, TestClock {}, spawn_task_tx);
+        let mut peers = Peers::new(
+            peer_channels,
+            TestClock {},
+            spawn_task_tx,
+            SystemConfig::default(),
+        );
 
         let peer_address = NormalizedAddress::new_unchecked("127.0.0.5:123");
         peers.add_peer(peer_address).await;
@@ -772,7 +777,10 @@ mod tests {
 
         // our pool peer has a network issue
         peers
-            .update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }), epoch)
+            .update(
+                MsgForSystem::NetworkIssue(PeerIndex { index: 1 }),
+                SystemConfig::default(),
+            )
             .await;
 
         for _ in 0..1 {
@@ -788,20 +796,20 @@ mod tests {
 
     #[tokio::test]
     async fn simulate_pool() {
-        let prev_epoch = ResetEpoch::default();
-        let epoch = prev_epoch.inc();
-
         let (msg_for_system_sender, _) = tokio::sync::mpsc::channel(2);
-        let (_, reset) = tokio::sync::watch::channel(ResetEpoch::default());
         let peer_channels = PeerChannels {
             msg_for_system_sender,
             system_snapshots: Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default())),
             system_config: Arc::new(tokio::sync::RwLock::new(SystemConfig::default())),
-            reset,
         };
 
         let (spawn_task_tx, mut spawn_task_rx) = tokio::sync::mpsc::channel(32);
-        let mut peers = Peers::new(peer_channels, TestClock {}, spawn_task_tx);
+        let mut peers = Peers::new(
+            peer_channels,
+            TestClock {},
+            spawn_task_tx,
+            SystemConfig::default(),
+        );
 
         let peer_address = NormalizedAddress::new_unchecked("127.0.0.5:123");
         peers.add_peer(peer_address).await;
@@ -828,7 +836,10 @@ mod tests {
 
         // simulate that a pool peer has a network issue
         peers
-            .update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }), epoch)
+            .update(
+                MsgForSystem::NetworkIssue(PeerIndex { index: 1 }),
+                SystemConfig::default(),
+            )
             .await;
 
         let task = spawn_task_rx.recv().await.unwrap();
