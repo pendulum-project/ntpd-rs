@@ -27,6 +27,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "arbitrary"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29d47fbf90d5149a107494b15a7dc8d69b351be2db3bb9691740e88ec17fd880"
+
+[[package]]
 name = "atty"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -603,6 +609,7 @@ dependencies = [
 name = "ntp-proto"
 version = "0.2.0"
 dependencies = [
+ "arbitrary",
  "exitcode",
  "md-5",
  "rand",
