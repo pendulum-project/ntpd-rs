@@ -12,7 +12,7 @@ ntp-proto = { path = "../ntp-proto" }
 ntp-daemon = { path = "../ntp-daemon" }
 tracing = "0.1.37"
 tracing-subscriber = "0.3.16"
-clap = { version = "4.0.24", features = ["derive", "env"] }
+clap = { version = "4.0.26", features = ["derive", "env"] }
 serde = { version = "1.0.147", features = ["derive"] }
 serde_json = "1.0.87"
 prometheus-client = "0.18.1"
