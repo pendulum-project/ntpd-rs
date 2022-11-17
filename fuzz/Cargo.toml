@@ -53,3 +53,9 @@ name = "ipfilter"
 path = "fuzz_targets/ipfilter.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "record_encode_decode"
+path = "fuzz_targets/record_encode_decode.rs"
+test = false
+doc = false

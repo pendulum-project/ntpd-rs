@@ -8,6 +8,7 @@ mod filter;
 mod identifiers;
 mod packet;
 mod peer;
+mod record;
 mod time_types;
 
 pub use algorithm::{DefaultTimeSyncController, TimeSyncController};
@@ -32,3 +33,5 @@ pub use time_types::fuzz_duration_from_seconds;
 pub use time_types::{
     FrequencyTolerance, NtpDuration, NtpInstant, NtpTimestamp, PollInterval, PollIntervalLimits,
 };
+
+pub use record::{Record, WriteError};
