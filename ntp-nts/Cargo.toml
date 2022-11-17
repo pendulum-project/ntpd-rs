@@ -12,7 +12,6 @@ ntp-proto = { path = "../ntp-proto" }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter", "serde", "json"] }
 tokio-rustls = "0.23.4"
-rustls = "0.20.7"
 rustls-native-certs = "0.6.2"
 aes-siv = "0.7.0"
 

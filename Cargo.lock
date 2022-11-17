@@ -708,7 +708,6 @@ version = "0.2.0"
 dependencies = [
  "aes-siv",
  "ntp-proto",
- "rustls",
  "rustls-native-certs",
  "tokio",
  "tokio-rustls",

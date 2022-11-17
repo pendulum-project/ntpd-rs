@@ -1,5 +1,4 @@
 use std::{
-    io::Write,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket},
     sync::Arc,
 };
@@ -12,9 +11,9 @@ use aes_siv::{
 };
 
 use ntp_proto::Record;
-use rustls::ServerName;
+use tokio_rustls::rustls;
 
-fn key_exchange_client(server_name: ServerName) -> Result<rustls::ClientConnection, rustls::Error> {
+fn key_exchange_client() -> Result<tokio_rustls::TlsConnector, rustls::Error> {
     let mut roots = rustls::RootCertStore::empty();
     for cert in rustls_native_certs::load_native_certs().expect("could not load platform certs") {
         roots.add(&rustls::Certificate(cert.0)).unwrap();
@@ -28,7 +27,7 @@ fn key_exchange_client(server_name: ServerName) -> Result<rustls::ClientConnecti
 
     let rc_config = Arc::new(config);
 
-    rustls::ClientConnection::new(rc_config, server_name)
+    Ok(tokio_rustls::TlsConnector::from(rc_config))
 }
 
 // unstable in std; check on https://github.com/rust-lang/rust/issues/88581 some time in the future
@@ -50,23 +49,17 @@ pub const fn div_ceil(lhs: usize, rhs: usize) -> usize {
     }
 }
 
-fn key_exchange_request(writer: &mut impl Write) -> std::io::Result<()> {
-    let message = [
+fn key_exchange_records() -> [Record; 3] {
+    [
         Record::NextProtocol {
-            protocol_ids: [0].into(),
+            protocol_ids: vec![0],
         },
         Record::AeadAlgorithm {
             critical: false,
-            algorithm_ids: [15].into(),
+            algorithm_ids: vec![15],
         },
         Record::EndOfMessage,
-    ];
-
-    for r in message {
-        r.write(writer)?;
-    }
-
-    Ok(())
+    ]
 }
 
 fn key_exchange_packet(cookie: &[u8], c2s: &[u8; 32]) -> Vec<u8> {
@@ -177,23 +170,39 @@ fn receive_response(
     }
 }
 
-pub fn main() -> std::io::Result<()> {
+pub async fn main() -> std::io::Result<()> {
     let domain = "time.cloudflare.com";
-    let mut client = key_exchange_client(domain.try_into().unwrap()).unwrap();
+    let config = key_exchange_client().unwrap();
 
-    key_exchange_request(&mut client.writer())?;
+    let stream = tokio::net::TcpStream::connect("127.0.0.1:8080").await?;
+    let mut stream = config.connect(domain.try_into().unwrap(), stream).await?;
 
-    let response = receive_response(&mut client, domain)?;
+    let records = key_exchange_records();
+
+    let mut buffer = Vec::new();
+    for record in records {
+        use tokio::io::AsyncWriteExt;
+
+        buffer.clear();
+        record.write(&mut buffer)?;
+        stream.write_all(&buffer).await?;
+    }
+
+    let response = receive_response(stream.get_mut().1, domain)?;
     println!("cookie: {:?}", &response.cookie);
 
     let mut c2s = [0; 32];
     let mut s2c = [0; 32];
     let label = b"EXPORTER-network-time-security";
 
-    client
+    stream
+        .get_ref()
+        .1
         .export_keying_material(&mut c2s, label, Some(&[0, 0, 0, 15, 0]))
         .unwrap();
-    client
+    stream
+        .get_ref()
+        .1
         .export_keying_material(&mut s2c, label, Some(&[0, 0, 0, 15, 1]))
         .unwrap();
 
