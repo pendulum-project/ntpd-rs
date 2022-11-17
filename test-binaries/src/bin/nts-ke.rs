@@ -1,6 +1,5 @@
 use std::{
-    io::Write,
-    net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket},
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs},
     sync::Arc,
 };
 
@@ -12,9 +11,10 @@ use aes_siv::{
 };
 
 use ntp_proto::NtsRecord;
-use tokio_rustls::rustls::{self, ServerName};
+use ntp_udp::UdpSocket;
+use tokio_rustls::rustls;
 
-fn key_exchange_client(server_name: ServerName) -> Result<rustls::ClientConnection, rustls::Error> {
+fn key_exchange_client() -> Result<tokio_rustls::TlsConnector, rustls::Error> {
     let mut roots = rustls::RootCertStore::empty();
     for cert in rustls_native_certs::load_native_certs().expect("could not load platform certs") {
         roots.add(&rustls::Certificate(cert.0)).unwrap();
@@ -28,7 +28,7 @@ fn key_exchange_client(server_name: ServerName) -> Result<rustls::ClientConnecti
 
     let rc_config = Arc::new(config);
 
-    rustls::ClientConnection::new(rc_config, server_name)
+    Ok(tokio_rustls::TlsConnector::from(rc_config))
 }
 
 // unstable in std; check on https://github.com/rust-lang/rust/issues/88581 some time in the future
@@ -48,25 +48,6 @@ pub const fn div_ceil(lhs: usize, rhs: usize) -> usize {
     } else {
         d
     }
-}
-
-fn key_exchange_request(writer: &mut impl Write) -> std::io::Result<()> {
-    let message = [
-        NtsRecord::NextProtocol {
-            protocol_ids: [0].into(),
-        },
-        NtsRecord::AeadAlgorithm {
-            critical: false,
-            algorithm_ids: [15].into(),
-        },
-        NtsRecord::EndOfMessage,
-    ];
-
-    for r in message {
-        r.write(writer)?;
-    }
-
-    Ok(())
 }
 
 fn key_exchange_packet(cookie: &[u8], c2s: &[u8; 32]) -> Vec<u8> {
@@ -130,91 +111,94 @@ fn key_exchange_packet(cookie: &[u8], c2s: &[u8; 32]) -> Vec<u8> {
     packet
 }
 
-struct CookieForRemote {
-    remote: String,
-    port: u16,
-    cookie: Vec<u8>,
+fn key_exchange_records() -> [NtsRecord; 3] {
+    [
+        NtsRecord::NextProtocol {
+            protocol_ids: vec![0],
+        },
+        NtsRecord::AeadAlgorithm {
+            critical: false,
+            algorithm_ids: vec![15],
+        },
+        NtsRecord::EndOfMessage,
+    ]
 }
 
-fn receive_response(
-    client: &mut rustls::ClientConnection,
-    domain: &str,
-) -> std::io::Result<CookieForRemote> {
-    const KE_PORT: u16 = 4460;
-    let mut socket = TcpStream::connect((domain, KE_PORT))?;
+#[tokio::main]
+async fn main() -> std::io::Result<()> {
+    let domain = "time.cloudflare.com";
+    let config = key_exchange_client().unwrap();
+
+    let addr = (domain, 4460)
+        .to_socket_addrs()?
+        .next()
+        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))?;
+
+    let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let mut stream = config
+        .connect(domain.try_into().unwrap(), stream)
+        .await
+        .unwrap();
+
+    let records = key_exchange_records();
+
+    for record in records {
+        record.async_write(&mut stream).await?;
+    }
 
     let mut remote = domain.to_string();
     let mut port = 123;
     let mut cookie = None;
 
     loop {
-        if client.wants_write() {
-            client.write_tls(&mut socket)?;
-        } else if client.wants_read() {
-            client.read_tls(&mut socket)?;
-            client.process_new_packets().unwrap();
-        } else {
-            match NtsRecord::read(&mut client.reader())? {
-                NtsRecord::EndOfMessage => break,
-                NtsRecord::NewCookie { cookie_data } => cookie = Some(cookie_data),
-                NtsRecord::Server { name, .. } => remote = name.to_string(),
-                NtsRecord::Port { port: p, .. } => port = p,
-                _ => { /* ignore */ }
-            }
+        match NtsRecord::async_read(&mut stream).await? {
+            NtsRecord::EndOfMessage => break,
+            NtsRecord::NewCookie { cookie_data } => cookie = Some(cookie_data),
+            NtsRecord::Server { name, .. } => remote = name.to_string(),
+            NtsRecord::Port { port: p, .. } => port = p,
+            _ => { /* ignore */ }
         }
     }
 
-    match cookie {
-        Some(cookie) => Ok(CookieForRemote {
-            remote,
-            port,
-            cookie,
-        }),
-        None => Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "did not receive cookie",
-        )),
-    }
-}
+    let cookie = match cookie {
+        Some(cookie) => cookie,
+        None => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "did not receive cookie",
+            ))
+        }
+    };
 
-fn main() -> std::io::Result<()> {
-    let domain = "time.cloudflare.com";
-    let mut client = key_exchange_client(domain.try_into().unwrap()).unwrap();
-
-    key_exchange_request(&mut client.writer())?;
-
-    let response = receive_response(&mut client, domain)?;
-    println!("cookie: {:?}", &response.cookie);
+    println!("cookie: {:?}", &cookie);
 
     let mut c2s = [0; 32];
     let mut s2c = [0; 32];
     let label = b"EXPORTER-network-time-security";
 
-    client
+    stream
+        .get_ref()
+        .1
         .export_keying_material(&mut c2s, label, Some(&[0, 0, 0, 15, 0]))
         .unwrap();
-    client
+    stream
+        .get_ref()
+        .1
         .export_keying_material(&mut s2c, label, Some(&[0, 0, 0, 15, 1]))
         .unwrap();
 
-    let addr = (response.remote, response.port)
-        .to_socket_addrs()
-        .unwrap()
-        .next()
-        .unwrap();
+    let addr = (remote, port).to_socket_addrs().unwrap().next().unwrap();
 
-    let socket = match addr {
-        SocketAddr::V4(_) => UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?,
-        SocketAddr::V6(_) => UdpSocket::bind((Ipv6Addr::UNSPECIFIED, 0))?,
+    let mut socket = match addr {
+        SocketAddr::V4(_) => UdpSocket::client((Ipv4Addr::UNSPECIFIED, 0).into(), addr).await?,
+        SocketAddr::V6(_) => UdpSocket::client((Ipv6Addr::UNSPECIFIED, 0).into(), addr).await?,
     };
 
-    socket.connect(addr)?;
-
-    let packet = key_exchange_packet(&response.cookie, &c2s);
-    socket.send(&packet)?;
+    let packet = key_exchange_packet(&cookie, &c2s);
+    socket.send(&packet).await?;
     let mut buf = [0; 1024];
-    let n = socket.recv(&mut buf)?;
-    println!("{:?}", &buf[0..n]);
+    let (n, _remote, _timestamp) = socket.recv(&mut buf).await?;
+    println!("response: {:?}", &buf[0..n]);
 
     Ok(())
 }
