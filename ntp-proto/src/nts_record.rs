@@ -17,38 +17,38 @@ impl std::fmt::Display for WriteError {
 
 impl std::error::Error for WriteError {}
 
-impl Record {
+impl NtsRecord {
     fn record_type(&self) -> u16 {
         match self {
-            Record::EndOfMessage => 0,
-            Record::NextProtocol { .. } => 1,
-            Record::Error { .. } => 2,
-            Record::Warning { .. } => 3,
-            Record::AeadAlgorithm { .. } => 4,
-            Record::NewCookie { .. } => 5,
-            Record::Server { .. } => 6,
-            Record::Port { .. } => 7,
-            Record::Unknown { record_type, .. } => record_type & !0x8000,
+            NtsRecord::EndOfMessage => 0,
+            NtsRecord::NextProtocol { .. } => 1,
+            NtsRecord::Error { .. } => 2,
+            NtsRecord::Warning { .. } => 3,
+            NtsRecord::AeadAlgorithm { .. } => 4,
+            NtsRecord::NewCookie { .. } => 5,
+            NtsRecord::Server { .. } => 6,
+            NtsRecord::Port { .. } => 7,
+            NtsRecord::Unknown { record_type, .. } => record_type & !0x8000,
         }
     }
 
     fn is_critical(&self) -> bool {
         match self {
-            Record::EndOfMessage => true,
-            Record::NextProtocol { .. } => true,
-            Record::Error { .. } => true,
-            Record::Warning { .. } => true,
-            Record::AeadAlgorithm { critical, .. } => *critical,
-            Record::NewCookie { .. } => false,
-            Record::Server { critical, .. } => *critical,
-            Record::Port { critical, .. } => *critical,
-            Record::Unknown { critical, .. } => *critical,
+            NtsRecord::EndOfMessage => true,
+            NtsRecord::NextProtocol { .. } => true,
+            NtsRecord::Error { .. } => true,
+            NtsRecord::Warning { .. } => true,
+            NtsRecord::AeadAlgorithm { critical, .. } => *critical,
+            NtsRecord::NewCookie { .. } => false,
+            NtsRecord::Server { critical, .. } => *critical,
+            NtsRecord::Port { critical, .. } => *critical,
+            NtsRecord::Unknown { critical, .. } => *critical,
         }
     }
 
     fn validate(&self) -> std::io::Result<()> {
         match self {
-            Record::Unknown {
+            NtsRecord::Unknown {
                 record_type, data, ..
             } => {
                 if *record_type & 0x8000 != 0 {
@@ -64,7 +64,7 @@ impl Record {
                     ));
                 }
             }
-            Record::NextProtocol { protocol_ids } => {
+            NtsRecord::NextProtocol { protocol_ids } => {
                 if protocol_ids.len() >= (u16::MAX as usize) / 2 {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::Other,
@@ -73,7 +73,7 @@ impl Record {
                 }
             }
 
-            Record::AeadAlgorithm { algorithm_ids, .. } => {
+            NtsRecord::AeadAlgorithm { algorithm_ids, .. } => {
                 if algorithm_ids.len() >= (u16::MAX as usize) / 2 {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::Other,
@@ -81,7 +81,7 @@ impl Record {
                     ));
                 }
             }
-            Record::NewCookie { cookie_data } => {
+            NtsRecord::NewCookie { cookie_data } => {
                 if cookie_data.len() > u16::MAX as usize {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::Other,
@@ -89,7 +89,7 @@ impl Record {
                     ));
                 }
             }
-            Record::Server { name, .. } => {
+            NtsRecord::Server { name, .. } => {
                 if name.as_bytes().len() >= (u16::MAX as usize) {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::Other,
@@ -106,7 +106,7 @@ impl Record {
 }
 
 #[derive(Debug, Clone)]
-pub enum Record {
+pub enum NtsRecord {
     EndOfMessage,
     NextProtocol {
         protocol_ids: Vec<u16>,
@@ -157,54 +157,55 @@ fn read_bytes_exact(reader: &mut impl Read, length: usize) -> std::io::Result<Ve
     Ok(output)
 }
 
-impl Record {
-    pub fn read<A: Read>(reader: &mut A) -> std::io::Result<Record> {
+impl NtsRecord {
+    pub fn read<A: Read>(reader: &mut A) -> std::io::Result<NtsRecord> {
         let raw_record_type = read_u16_be(reader)?;
         let critical = raw_record_type & 0x8000 != 0;
         let record_type = raw_record_type & !0x8000;
         let record_len = read_u16_be(reader)? as usize;
 
         Ok(match record_type {
-            0 if record_len == 0 && critical => Record::EndOfMessage,
+            0 if record_len == 0 && critical => NtsRecord::EndOfMessage,
             1 if record_len % 2 == 0 && critical => {
                 let n_protocols = record_len / 2;
                 let protocol_ids = read_u16s_be(reader, n_protocols)?;
-                Record::NextProtocol { protocol_ids }
+                NtsRecord::NextProtocol { protocol_ids }
             }
-            2 if record_len == 2 && critical => Record::Error {
+            2 if record_len == 2 && critical => NtsRecord::Error {
                 errorcode: read_u16_be(reader)?,
             },
-            3 if record_len == 2 && critical => Record::Warning {
+            3 if record_len == 2 && critical => NtsRecord::Warning {
                 warningcode: read_u16_be(reader)?,
             },
             4 if record_len % 2 == 0 => {
                 let n_algorithms = record_len / 2;
                 let algorithm_ids = read_u16s_be(reader, n_algorithms)?;
-                Record::AeadAlgorithm {
+                NtsRecord::AeadAlgorithm {
                     critical,
                     algorithm_ids,
                 }
             }
             5 if !critical => {
                 let cookie_data = read_bytes_exact(reader, record_len)?;
-                Record::NewCookie { cookie_data }
+                NtsRecord::NewCookie { cookie_data }
             }
             6 => {
+                // NOTE: the string data should be ascii (not utf8) but we don't enforce that here
                 let str_data = read_bytes_exact(reader, record_len)?;
                 match String::from_utf8(str_data) {
-                    Ok(name) => Record::Server { critical, name },
-                    Err(e) => Record::Unknown {
+                    Ok(name) => NtsRecord::Server { critical, name },
+                    Err(e) => NtsRecord::Unknown {
                         record_type,
                         critical,
                         data: e.into_bytes(),
                     },
                 }
             }
-            7 if record_len == 2 => Record::Port {
+            7 if record_len == 2 => NtsRecord::Port {
                 critical,
                 port: read_u16_be(reader)?,
             },
-            _ => Record::Unknown {
+            _ => NtsRecord::Unknown {
                 record_type,
                 critical,
                 data: read_bytes_exact(reader, record_len)?,
@@ -222,14 +223,14 @@ impl Record {
 
         let size_of_u16 = std::mem::size_of::<u16>() as u16;
         match self {
-            Record::EndOfMessage => {
+            NtsRecord::EndOfMessage => {
                 writer.write_all(&0_u16.to_be_bytes())?;
             }
-            Record::Unknown { data, .. } => {
+            NtsRecord::Unknown { data, .. } => {
                 writer.write_all(&(data.len() as u16).to_be_bytes())?;
                 writer.write_all(data)?;
             }
-            Record::NextProtocol { protocol_ids } => {
+            NtsRecord::NextProtocol { protocol_ids } => {
                 let length = size_of_u16 * protocol_ids.len() as u16;
                 writer.write_all(&length.to_be_bytes())?;
 
@@ -237,15 +238,15 @@ impl Record {
                     writer.write_all(&id.to_be_bytes())?;
                 }
             }
-            Record::Error { errorcode } => {
+            NtsRecord::Error { errorcode } => {
                 writer.write_all(&size_of_u16.to_be_bytes())?;
                 writer.write_all(&errorcode.to_be_bytes())?;
             }
-            Record::Warning { warningcode } => {
+            NtsRecord::Warning { warningcode } => {
                 writer.write_all(&size_of_u16.to_be_bytes())?;
                 writer.write_all(&warningcode.to_be_bytes())?;
             }
-            Record::AeadAlgorithm { algorithm_ids, .. } => {
+            NtsRecord::AeadAlgorithm { algorithm_ids, .. } => {
                 let length = size_of_u16 * algorithm_ids.len() as u16;
                 writer.write_all(&length.to_be_bytes())?;
 
@@ -253,19 +254,21 @@ impl Record {
                     writer.write_all(&id.to_be_bytes())?;
                 }
             }
-            Record::NewCookie { cookie_data } => {
+            NtsRecord::NewCookie { cookie_data } => {
                 let length = cookie_data.len() as u16;
                 writer.write_all(&length.to_be_bytes())?;
 
                 writer.write_all(cookie_data)?;
             }
-            Record::Server { name, .. } => {
+            NtsRecord::Server { name, .. } => {
+                // NOTE: the server name should be ascii
+                debug_assert!(name.is_ascii());
                 let length = name.len() as u16;
                 writer.write_all(&length.to_be_bytes())?;
 
                 writer.write_all(name.as_bytes())?;
             }
-            Record::Port { port, .. } => {
+            NtsRecord::Port { port, .. } => {
                 writer.write_all(&size_of_u16.to_be_bytes())?;
                 writer.write_all(&port.to_be_bytes())?;
             }
@@ -276,14 +279,14 @@ impl Record {
 }
 
 #[cfg(feature = "fuzz")]
-impl<'a> arbitrary::Arbitrary<'a> for Record {
+impl<'a> arbitrary::Arbitrary<'a> for NtsRecord {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let record = u16::arbitrary(u)?;
 
         let critical = record & 0x8000 != 0;
         let record_type = record & !0x8000;
 
-        use Record::*;
+        use NtsRecord::*;
         Ok(match record_type {
             0 => EndOfMessage,
             1 => NextProtocol {
@@ -310,7 +313,7 @@ impl<'a> arbitrary::Arbitrary<'a> for Record {
                 critical,
                 port: u.arbitrary()?,
             },
-            _ => Record::Unknown {
+            _ => NtsRecord::Unknown {
                 record_type,
                 critical,
                 data: u.arbitrary()?,
