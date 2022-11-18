@@ -10,7 +10,8 @@ use std::sync::Arc;
 use tokio::{sync::mpsc, task::JoinHandle};
 
 pub struct DaemonChannels<C: NtpClock> {
-    pub config: Arc<tokio::sync::RwLock<SystemConfig>>,
+    pub config_receiver: tokio::sync::watch::Receiver<SystemConfig>,
+    pub config_sender: tokio::sync::watch::Sender<SystemConfig>,
     pub peers: Arc<tokio::sync::RwLock<Peers<C>>>,
     pub system: Arc<tokio::sync::RwLock<SystemSnapshot>>,
 }
@@ -37,17 +38,16 @@ pub async fn spawn(
 
     // Daemon channels
     let system = Arc::new(tokio::sync::RwLock::new(system_snapshot));
-    let sysconfig = config;
-    let config = Arc::new(tokio::sync::RwLock::new(config));
+    let (config_sender, config_receiver) = tokio::sync::watch::channel(config);
     let mut peers = Peers::new(
         PeerChannels {
             msg_for_system_sender: msg_for_system_tx.clone(),
             system_snapshots: system.clone(),
-            system_config: config.clone(),
+            system_config_receiver: config_receiver.clone(),
         },
         UnixNtpClock::new(),
         spawn_task_tx,
-        sysconfig,
+        config,
     );
 
     for peer_config in peer_configs {
@@ -70,13 +70,15 @@ pub async fn spawn(
     let peers = Arc::new(tokio::sync::RwLock::new(peers));
 
     let channels = DaemonChannels {
-        config: config.clone(),
+        config_sender,
+        config_receiver: config_receiver.clone(),
         peers: peers.clone(),
         system: system.clone(),
     };
 
     let handle = tokio::spawn(async move {
         let mut system = System {
+            config_receiver,
             config,
             global_system_snapshot: system,
             peers_rwlock: peers,
@@ -92,7 +94,8 @@ pub async fn spawn(
 }
 
 struct System<C: NtpClock> {
-    config: Arc<tokio::sync::RwLock<SystemConfig>>,
+    config_receiver: tokio::sync::watch::Receiver<SystemConfig>,
+    config: SystemConfig,
     global_system_snapshot: Arc<tokio::sync::RwLock<SystemSnapshot>>,
     peers_rwlock: Arc<tokio::sync::RwLock<Peers<C>>>,
 
@@ -113,13 +116,10 @@ impl<C: NtpClock> System<C> {
                             break
                         }
                         Some(msg_for_system) => {
-                            // ensure the config is not updated in the middle of clock selection
-                            let config = *self.config.read().await;
-
                             let result = self.peers_rwlock
                                 .write()
                                 .await
-                                .update(msg_for_system, config)
+                                .update(msg_for_system)
                                 .await;
 
                             if let Some((used_peers, timedata)) = result {
@@ -135,7 +135,7 @@ impl<C: NtpClock> System<C> {
                                     .stratum
                                     .saturating_add(1);
                                 global.reference_id = system_peer_snapshot.reference_id;
-                                global.accumulated_steps_threshold = config.accumulated_threshold;
+                                global.accumulated_steps_threshold = self.config.accumulated_threshold;
                             }
                         }
                     }
@@ -153,6 +153,11 @@ impl<C: NtpClock> System<C> {
                                 .spawn_task(spawn_task.peer_address, spawn_task.address);
                         }
                     }
+                }
+                _ = self.config_receiver.changed(), if self.config_receiver.has_changed().is_ok() => {
+                    let config = *self.config_receiver.borrow_and_update();
+                    self.peers_rwlock.write().await.update_config(config);
+                    self.config = config;
                 }
             }
         }

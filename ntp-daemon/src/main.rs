@@ -56,7 +56,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     ntp_daemon::config::dynamic::spawn(
         config.configure,
-        channels.config,
+        channels.config_sender,
         tracing_state.reload_handle,
     )
     .await;

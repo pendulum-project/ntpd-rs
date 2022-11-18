@@ -109,6 +109,7 @@ pub struct Peers<C: NtpClock> {
     clock: C,
 
     controller: DefaultTimeSyncController<C, PeerIndex>,
+    config: SystemConfig,
 }
 
 impl<C: NtpClock> Peers<C> {
@@ -130,6 +131,7 @@ impl<C: NtpClock> Peers<C> {
             channels,
             clock: clock.clone(),
             controller: DefaultTimeSyncController::new(clock, config),
+            config,
         }
     }
 
@@ -278,6 +280,7 @@ impl<C: NtpClock> Peers<C> {
             channels: PeerChannels::test(),
             clock,
             controller,
+            config: SystemConfig::default(),
         }
     }
 
@@ -319,14 +322,13 @@ impl<C: NtpClock> Peers<C> {
         self.servers.iter().cloned()
     }
 
-    pub async fn update(
-        &mut self,
-        msg: MsgForSystem,
-        config: SystemConfig,
-    ) -> Option<(Vec<PeerIndex>, TimeSnapshot)> {
-        tracing::debug!(?msg, "updating peer");
-
+    pub fn update_config(&mut self, config: SystemConfig) {
         self.controller.update_config(config);
+        self.config = config;
+    }
+
+    pub async fn update(&mut self, msg: MsgForSystem) -> Option<(Vec<PeerIndex>, TimeSnapshot)> {
+        tracing::debug!(?msg, "updating peer");
 
         match msg {
             MsgForSystem::MustDemobilize(index) => {
@@ -338,7 +340,7 @@ impl<C: NtpClock> Peers<C> {
                 self.controller.peer_update(
                     index,
                     snapshot
-                        .accept_synchronization(config.local_stratum)
+                        .accept_synchronization(self.config.local_stratum)
                         .is_ok(),
                 );
                 self.peers.get_mut(&index).unwrap().status = PeerStatus::Measurement(snapshot);
@@ -348,7 +350,7 @@ impl<C: NtpClock> Peers<C> {
                 self.controller.peer_update(
                     index,
                     snapshot
-                        .accept_synchronization(config.local_stratum)
+                        .accept_synchronization(self.config.local_stratum)
                         .is_ok(),
                 );
                 self.peers.get_mut(&index).unwrap().status = PeerStatus::Measurement(snapshot);
@@ -600,20 +602,17 @@ mod tests {
         );
 
         peers
-            .update(
-                MsgForSystem::NewMeasurement(
-                    PeerIndex { index: 0 },
-                    peer_snapshot(),
-                    Measurement {
-                        delay: NtpDuration::from_seconds(0.1),
-                        offset: NtpDuration::from_seconds(0.),
-                        localtime: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 0),
-                        monotime: base,
-                    },
-                    NtpPacket::test(),
-                ),
-                SystemConfig::default(),
-            )
+            .update(MsgForSystem::NewMeasurement(
+                PeerIndex { index: 0 },
+                peer_snapshot(),
+                Measurement {
+                    delay: NtpDuration::from_seconds(0.1),
+                    offset: NtpDuration::from_seconds(0.),
+                    localtime: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 0),
+                    monotime: base,
+                },
+                NtpPacket::test(),
+            ))
             .await;
         assert_eq!(
             peers
@@ -628,20 +627,17 @@ mod tests {
         );
 
         peers
-            .update(
-                MsgForSystem::NewMeasurement(
-                    PeerIndex { index: 0 },
-                    peer_snapshot(),
-                    Measurement {
-                        delay: NtpDuration::from_seconds(0.1),
-                        offset: NtpDuration::from_seconds(0.),
-                        localtime: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 0),
-                        monotime: base,
-                    },
-                    NtpPacket::test(),
-                ),
-                SystemConfig::default(),
-            )
+            .update(MsgForSystem::NewMeasurement(
+                PeerIndex { index: 0 },
+                peer_snapshot(),
+                Measurement {
+                    delay: NtpDuration::from_seconds(0.1),
+                    offset: NtpDuration::from_seconds(0.),
+                    localtime: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 0),
+                    monotime: base,
+                },
+                NtpPacket::test(),
+            ))
             .await;
         assert_eq!(
             peers
@@ -656,10 +652,10 @@ mod tests {
         );
 
         peers
-            .update(
-                MsgForSystem::UpdatedSnapshot(PeerIndex { index: 1 }, peer_snapshot()),
-                SystemConfig::default(),
-            )
+            .update(MsgForSystem::UpdatedSnapshot(
+                PeerIndex { index: 1 },
+                peer_snapshot(),
+            ))
             .await;
         assert_eq!(
             peers
@@ -674,10 +670,7 @@ mod tests {
         );
 
         peers
-            .update(
-                MsgForSystem::MustDemobilize(PeerIndex { index: 1 }),
-                SystemConfig::default(),
-            )
+            .update(MsgForSystem::MustDemobilize(PeerIndex { index: 1 }))
             .await;
         assert_eq!(
             peers
@@ -719,10 +712,7 @@ mod tests {
 
         // our pool peer has a network issue
         peers
-            .update(
-                MsgForSystem::NetworkIssue(PeerIndex { index: 1 }),
-                SystemConfig::default(),
-            )
+            .update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }))
             .await;
 
         for _ in 0..1 {
@@ -737,10 +727,11 @@ mod tests {
     #[tokio::test]
     async fn max_peers_bigger_than_pool_size() {
         let (msg_for_system_sender, _) = tokio::sync::mpsc::channel(2);
+        let (_, system_config_receiver) = tokio::sync::watch::channel(SystemConfig::default());
         let peer_channels = PeerChannels {
             msg_for_system_sender,
             system_snapshots: Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default())),
-            system_config: Arc::new(tokio::sync::RwLock::new(SystemConfig::default())),
+            system_config_receiver,
         };
 
         let (spawn_task_tx, mut spawn_task_rx) = tokio::sync::mpsc::channel(32);
@@ -773,10 +764,7 @@ mod tests {
 
         // our pool peer has a network issue
         peers
-            .update(
-                MsgForSystem::NetworkIssue(PeerIndex { index: 1 }),
-                SystemConfig::default(),
-            )
+            .update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }))
             .await;
 
         for _ in 0..1 {
@@ -793,10 +781,11 @@ mod tests {
     #[tokio::test]
     async fn simulate_pool() {
         let (msg_for_system_sender, _) = tokio::sync::mpsc::channel(2);
+        let (_, system_config_receiver) = tokio::sync::watch::channel(SystemConfig::default());
         let peer_channels = PeerChannels {
             msg_for_system_sender,
             system_snapshots: Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default())),
-            system_config: Arc::new(tokio::sync::RwLock::new(SystemConfig::default())),
+            system_config_receiver,
         };
 
         let (spawn_task_tx, mut spawn_task_rx) = tokio::sync::mpsc::channel(32);
@@ -832,10 +821,7 @@ mod tests {
 
         // simulate that a pool peer has a network issue
         peers
-            .update(
-                MsgForSystem::NetworkIssue(PeerIndex { index: 1 }),
-                SystemConfig::default(),
-            )
+            .update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }))
             .await;
 
         let task = spawn_task_rx.recv().await.unwrap();
