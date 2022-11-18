@@ -6,9 +6,9 @@ mod clock_select;
 mod config;
 mod filter;
 mod identifiers;
+mod nts_record;
 mod packet;
 mod peer;
-mod record;
 mod time_types;
 
 pub use algorithm::{DefaultTimeSyncController, TimeSyncController};
@@ -34,4 +34,4 @@ pub use time_types::{
     FrequencyTolerance, NtpDuration, NtpInstant, NtpTimestamp, PollInterval, PollIntervalLimits,
 };
 
-pub use record::{Record, WriteError};
+pub use nts_record::{NtsRecord, WriteError};
