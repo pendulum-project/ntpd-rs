@@ -1,5 +1,5 @@
 use crate::server::ServerStats;
-use crate::{peer_manager::ServerData, sockets::create_unix_socket};
+use crate::{sockets::create_unix_socket, system::ServerData};
 use ntp_proto::{PeerStatistics, PollInterval, Reach, ReferenceId, SystemSnapshot};
 use prometheus_client::encoding::text::Encode;
 use std::io::Write;

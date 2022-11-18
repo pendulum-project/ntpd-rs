@@ -16,7 +16,7 @@ use tracing::{debug, error, instrument, warn, Instrument, Span};
 
 use tokio::time::{Instant, Sleep};
 
-use crate::peer_manager::PeerIndex;
+use crate::system::PeerIndex;
 
 /// Trait needed to allow injecting of futures other than tokio::time::Sleep for testing
 pub trait Wait: Future<Output = ()> {
