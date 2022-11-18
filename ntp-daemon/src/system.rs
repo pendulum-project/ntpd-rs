@@ -150,8 +150,7 @@ impl<C: NtpClock> System<C> {
                             self.peers_rwlock
                                 .write()
                                 .await
-                                .spawn_task(spawn_task.peer_address, spawn_task.address)
-                                .await.unwrap();
+                                .spawn_task(spawn_task.peer_address, spawn_task.address);
                         }
                     }
                 }

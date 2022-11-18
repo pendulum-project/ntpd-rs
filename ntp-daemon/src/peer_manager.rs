@@ -133,11 +133,7 @@ impl<C: NtpClock> Peers<C> {
         }
     }
 
-    pub(crate) fn spawn_task(
-        &mut self,
-        peer_address: PeerAddress,
-        addr: SocketAddr,
-    ) -> JoinHandle<()> {
+    pub(crate) fn spawn_task(&mut self, peer_address: PeerAddress, addr: SocketAddr) {
         let index = self.peer_indexer.get();
 
         self.peers.insert(
@@ -154,7 +150,7 @@ impl<C: NtpClock> Peers<C> {
             self.clock.clone(),
             NETWORK_WAIT_PERIOD,
             self.channels.clone(),
-        )
+        );
     }
 
     /// Add a single standard peer
