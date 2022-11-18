@@ -262,6 +262,7 @@ impl NtsRecord {
             }
             NtsRecord::Server { name, .. } => {
                 // NOTE: the server name should be ascii
+                #[cfg(not(feature = "fuzz"))]
                 debug_assert!(name.is_ascii());
                 let length = name.len() as u16;
                 writer.write_all(&length.to_be_bytes())?;
