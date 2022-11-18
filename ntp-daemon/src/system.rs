@@ -1,7 +1,8 @@
 use crate::{
     config::{PeerConfig, PoolPeerConfig, ServerConfig, StandardPeerConfig},
     peer::{MsgForSystem, PeerChannels},
-    peer_manager::{Peers, SpawnTask},
+    peer_manager::{Peers, ServerData, SpawnTask},
+    ObservablePeerState,
 };
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{NtpClock, SystemConfig, SystemSnapshot};
@@ -9,10 +10,11 @@ use ntp_proto::{NtpClock, SystemConfig, SystemSnapshot};
 use std::sync::Arc;
 use tokio::{sync::mpsc, task::JoinHandle};
 
-pub struct DaemonChannels<C: NtpClock> {
+pub struct DaemonChannels {
     pub config_receiver: tokio::sync::watch::Receiver<SystemConfig>,
     pub config_sender: tokio::sync::watch::Sender<SystemConfig>,
-    pub peers: Arc<tokio::sync::RwLock<Peers<C>>>,
+    pub peer_snapshots_receiver: tokio::sync::watch::Receiver<Vec<ObservablePeerState>>,
+    pub server_data_receiver: tokio::sync::watch::Receiver<Vec<ServerData>>,
     pub system: Arc<tokio::sync::RwLock<SystemSnapshot>>,
 }
 
@@ -21,10 +23,7 @@ pub async fn spawn(
     config: SystemConfig,
     peer_configs: &[PeerConfig],
     server_configs: &[ServerConfig],
-) -> std::io::Result<(
-    JoinHandle<std::io::Result<()>>,
-    DaemonChannels<UnixNtpClock>,
-)> {
+) -> std::io::Result<(JoinHandle<std::io::Result<()>>, DaemonChannels)> {
     // receive peer snapshots from all peers
     let (msg_for_system_tx, msg_for_system_rx) = mpsc::channel::<MsgForSystem>(32);
 
@@ -67,12 +66,17 @@ pub async fn spawn(
         peers.add_server(server_config.to_owned()).await;
     }
 
-    let peers = Arc::new(tokio::sync::RwLock::new(peers));
+    let (peer_snapshots_sender, peer_snapshots_receiver) =
+        tokio::sync::watch::channel(peers.observe_peers().collect());
+
+    let (server_data_sender, server_data_receiver) =
+        tokio::sync::watch::channel(peers.servers().collect());
 
     let channels = DaemonChannels {
         config_sender,
         config_receiver: config_receiver.clone(),
-        peers: peers.clone(),
+        peer_snapshots_receiver,
+        server_data_receiver,
         system: system.clone(),
     };
 
@@ -81,10 +85,13 @@ pub async fn spawn(
             config_receiver,
             config,
             global_system_snapshot: system,
-            peers_rwlock: peers,
+            peer_snapshots_sender,
+            server_data_sender,
 
             msg_for_system_rx,
             spawn_task_rx,
+
+            peers,
         };
 
         system.run().await
@@ -97,10 +104,13 @@ struct System<C: NtpClock> {
     config_receiver: tokio::sync::watch::Receiver<SystemConfig>,
     config: SystemConfig,
     global_system_snapshot: Arc<tokio::sync::RwLock<SystemSnapshot>>,
-    peers_rwlock: Arc<tokio::sync::RwLock<Peers<C>>>,
+    peer_snapshots_sender: tokio::sync::watch::Sender<Vec<ObservablePeerState>>,
+    server_data_sender: tokio::sync::watch::Sender<Vec<ServerData>>,
 
     msg_for_system_rx: mpsc::Receiver<MsgForSystem>,
     spawn_task_rx: mpsc::Receiver<SpawnTask>,
+
+    peers: Peers<C>,
 }
 
 impl<C: NtpClock> System<C> {
@@ -116,17 +126,12 @@ impl<C: NtpClock> System<C> {
                             break
                         }
                         Some(msg_for_system) => {
-                            let result = self.peers_rwlock
-                                .write()
-                                .await
+                            let result = self.peers
                                 .update(msg_for_system)
                                 .await;
 
                             if let Some((used_peers, timedata)) = result {
-                                let system_peer_snapshot = self
-                                    .peers_rwlock
-                                    .read()
-                                    .await
+                                let system_peer_snapshot = self.peers
                                     .peer_snapshot(used_peers[0])
                                     .unwrap();
                                 let mut global = self.global_system_snapshot.write().await;
@@ -137,6 +142,10 @@ impl<C: NtpClock> System<C> {
                                 global.reference_id = system_peer_snapshot.reference_id;
                                 global.accumulated_steps_threshold = self.config.accumulated_threshold;
                             }
+
+                            // Don't care if there is no receiver for peer snapshots (which might happen if
+                            // we don't enable observing in the configuration)
+                            let _ = self.peer_snapshots_sender.send(self.peers.observe_peers().collect());
                         }
                     }
                 }
@@ -147,16 +156,19 @@ impl<C: NtpClock> System<C> {
                             tracing::warn!("the spawn channel closed unexpectedly");
                         }
                         Some(spawn_task) => {
-                            self.peers_rwlock
-                                .write()
-                                .await
+                            self.peers
                                 .spawn_task(spawn_task.peer_address, spawn_task.address);
+
+                            // Don't care if there is no receiver for peer snapshots (which might happen if
+                            // we don't enable observing in the configuration)
+                            let _ = self.peer_snapshots_sender.send(self.peers.observe_peers().collect());
+                            let _ = self.server_data_sender.send(self.peers.servers().collect());
                         }
                     }
                 }
                 _ = self.config_receiver.changed(), if self.config_receiver.has_changed().is_ok() => {
                     let config = *self.config_receiver.borrow_and_update();
-                    self.peers_rwlock.write().await.update_config(config);
+                    self.peers.update_config(config);
                     self.config = config;
                 }
             }

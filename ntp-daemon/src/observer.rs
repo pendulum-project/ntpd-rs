@@ -1,7 +1,6 @@
 use crate::server::ServerStats;
-use crate::Peers;
 use crate::{peer_manager::ServerData, sockets::create_unix_socket};
-use ntp_proto::{NtpClock, PeerStatistics, PollInterval, Reach, ReferenceId, SystemSnapshot};
+use ntp_proto::{PeerStatistics, PollInterval, Reach, ReferenceId, SystemSnapshot};
 use prometheus_client::encoding::text::Encode;
 use std::io::Write;
 use std::net::SocketAddr;
@@ -25,11 +24,11 @@ pub struct ObservableServerState {
     pub stats: ServerStats,
 }
 
-impl From<ServerData> for ObservableServerState {
-    fn from(data: ServerData) -> Self {
+impl From<&ServerData> for ObservableServerState {
+    fn from(data: &ServerData) -> Self {
         ObservableServerState {
             address: data.config.addr.into(),
-            stats: data.stats,
+            stats: data.stats.clone(),
         }
     }
 }
@@ -49,7 +48,7 @@ impl Encode for WrappedSocketAddr {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum ObservablePeerState {
     Nothing,
     Observable {
@@ -62,14 +61,15 @@ pub enum ObservablePeerState {
     },
 }
 
-pub async fn spawn<C: NtpClock + Sync + Send + 'static>(
+pub async fn spawn(
     config: &crate::config::ObserveConfig,
-    peers_reader: Arc<tokio::sync::RwLock<Peers<C>>>,
+    peers_reader: tokio::sync::watch::Receiver<Vec<ObservablePeerState>>,
+    server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
     system_reader: Arc<tokio::sync::RwLock<SystemSnapshot>>,
 ) -> JoinHandle<std::io::Result<()>> {
     let config = config.clone();
     tokio::spawn(async move {
-        let result = observer(config, peers_reader, system_reader).await;
+        let result = observer(config, peers_reader, server_reader, system_reader).await;
         if let Err(ref e) = result {
             error!("Abnormal termination of state observer: {}", e);
         }
@@ -77,9 +77,10 @@ pub async fn spawn<C: NtpClock + Sync + Send + 'static>(
     })
 }
 
-async fn observer<C: NtpClock>(
+async fn observer(
     config: crate::config::ObserveConfig,
-    peers_reader: Arc<tokio::sync::RwLock<Peers<C>>>,
+    peers_reader: tokio::sync::watch::Receiver<Vec<ObservablePeerState>>,
+    server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
     system_reader: Arc<tokio::sync::RwLock<SystemSnapshot>>,
 ) -> std::io::Result<()> {
     let path = match config.path {
@@ -98,15 +99,11 @@ async fn observer<C: NtpClock>(
     loop {
         let (mut stream, _addr) = peers_listener.accept().await?;
 
+        let peers = peers_reader.borrow().to_owned();
         let observe = ObservableState {
-            peers: peers_reader.read().await.observe_peers().collect(),
+            peers,
             system: *system_reader.read().await,
-            servers: peers_reader
-                .read()
-                .await
-                .servers()
-                .map(|s| s.into())
-                .collect(),
+            servers: server_reader.borrow().iter().map(|s| s.into()).collect(),
         };
 
         crate::sockets::write_json(&mut stream, &observe).await?;
@@ -115,18 +112,13 @@ async fn observer<C: NtpClock>(
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{borrow::BorrowMut, time::Duration};
 
     use ntp_proto::{
-        NtpDuration, NtpLeapIndicator, NtpTimestamp, PeerSnapshot, PollInterval,
-        PollIntervalLimits, Reach, ReferenceId, TimeSnapshot,
+        NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, PollInterval, PollIntervalLimits,
+        Reach, ReferenceId, TimeSnapshot,
     };
     use tokio::{io::AsyncReadExt, net::UnixStream};
-
-    use crate::{
-        config::{NormalizedAddress, PeerConfig, StandardPeerConfig},
-        peer_manager::PeerStatus,
-    };
 
     use super::*;
 
@@ -169,36 +161,20 @@ mod tests {
             mode: 0o700,
         };
 
-        let status_list = [
-            PeerStatus::NoMeasurement,
-            PeerStatus::NoMeasurement,
-            PeerStatus::Measurement(PeerSnapshot {
+        let (_, peers_reader) = tokio::sync::watch::channel(vec![
+            ObservablePeerState::Nothing,
+            ObservablePeerState::Nothing,
+            ObservablePeerState::Observable {
+                statistics: PeerStatistics::default(),
+                reachability: Reach::default(),
+                uptime: std::time::Duration::from_secs(1),
+                poll_interval: PollIntervalLimits::default().min,
                 peer_id: ReferenceId::from_ip("127.0.0.1".parse().unwrap()),
-                poll_interval: PollIntervalLimits::default().max,
-                our_id: ReferenceId::from_ip("127.0.0.2".parse().unwrap()),
-                reach: Reach::default(),
-                reference_id: ReferenceId::from_ip("127.0.0.3".parse().unwrap()),
-                stratum: 2,
-            }),
-        ];
+                address: "127.0.0.3:123".into(),
+            },
+        ]);
 
-        let peer_configs = [
-            PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("127.0.0.1:123"),
-            }),
-            PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("127.0.0.2:123"),
-            }),
-            PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("127.0.0.3:123"),
-            }),
-        ];
-
-        let peers_reader = Arc::new(tokio::sync::RwLock::new(Peers::from_statuslist(
-            &status_list,
-            &peer_configs,
-            TestClock {},
-        )));
+        let (_, servers_reader) = tokio::sync::watch::channel(vec![]);
 
         let system_reader = Arc::new(tokio::sync::RwLock::new(SystemSnapshot {
             stratum: 1,
@@ -215,7 +191,9 @@ mod tests {
         }));
 
         let handle = tokio::spawn(async move {
-            observer(config, peers_reader, system_reader).await.unwrap();
+            observer(config, peers_reader, servers_reader, system_reader)
+                .await
+                .unwrap();
         });
 
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -247,38 +225,20 @@ mod tests {
             mode: 0o700,
         };
 
-        let status_list = [
-            PeerStatus::NoMeasurement,
-            PeerStatus::NoMeasurement,
-            PeerStatus::Measurement(PeerSnapshot {
+        let (mut peers_writer, peers_reader) = tokio::sync::watch::channel(vec![
+            ObservablePeerState::Nothing,
+            ObservablePeerState::Nothing,
+            ObservablePeerState::Observable {
+                statistics: PeerStatistics::default(),
+                reachability: Reach::default(),
+                uptime: std::time::Duration::from_secs(1),
+                poll_interval: PollIntervalLimits::default().min,
                 peer_id: ReferenceId::from_ip("127.0.0.1".parse().unwrap()),
-                poll_interval: PollIntervalLimits::default().max,
-                our_id: ReferenceId::from_ip("127.0.0.2".parse().unwrap()),
-                reach: Reach::default(),
-                reference_id: ReferenceId::from_ip("127.0.0.3".parse().unwrap()),
-                stratum: 2,
-            }),
-        ];
+                address: "127.0.0.3:123".into(),
+            },
+        ]);
 
-        let peer_configs = [
-            PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("127.0.0.1:123"),
-            }),
-            PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("127.0.0.2:123"),
-            }),
-            PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("127.0.0.3:123"),
-            }),
-        ];
-
-        let peers_reader = Arc::new(tokio::sync::RwLock::new(Peers::from_statuslist(
-            &status_list,
-            &peer_configs,
-            TestClock {},
-        )));
-
-        let peers_writer = peers_reader.clone();
+        let (mut server_writer, servers_reader) = tokio::sync::watch::channel(vec![]);
 
         let system_reader = Arc::new(tokio::sync::RwLock::new(SystemSnapshot {
             stratum: 1,
@@ -297,7 +257,9 @@ mod tests {
         let system_writer = system_reader.clone();
 
         let handle = tokio::spawn(async move {
-            observer(config, peers_reader, system_reader).await.unwrap();
+            observer(config, peers_reader, servers_reader, system_reader)
+                .await
+                .unwrap();
         });
 
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -311,9 +273,10 @@ mod tests {
         let mut bufref: &mut [u8] = &mut buf;
         reader.read_buf(&mut bufref).await.unwrap();
 
-        // Ensure neither lock is held long term
+        // Ensure none of the locks is held long term
         let _ = system_writer.write().await;
-        let _ = peers_writer.write().await;
+        let _ = peers_writer.borrow_mut();
+        let _ = server_writer.borrow_mut();
 
         handle.abort();
     }

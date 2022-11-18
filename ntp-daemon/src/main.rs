@@ -52,7 +52,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (main_loop_handle, channels) =
         ntp_daemon::spawn(config.system, &config.peers, &config.servers).await?;
 
-    ntp_daemon::observer::spawn(&config.observe, channels.peers, channels.system).await;
+    ntp_daemon::observer::spawn(
+        &config.observe,
+        channels.peer_snapshots_receiver,
+        channels.server_data_receiver,
+        channels.system,
+    )
+    .await;
 
     ntp_daemon::config::dynamic::spawn(
         config.configure,
