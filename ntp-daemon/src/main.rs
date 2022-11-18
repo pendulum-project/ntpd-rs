@@ -56,7 +56,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         &config.observe,
         channels.peer_snapshots_receiver,
         channels.server_data_receiver,
-        channels.system,
+        channels.system_snapshot_receiver,
     )
     .await;
 

@@ -224,7 +224,7 @@ impl<C: NtpClock> Peers<C> {
         ServerTask::spawn(
             config,
             stats,
-            self.channels.system_snapshots.clone(),
+            self.channels.system_snapshot_receiver.clone(),
             self.clock.clone(),
             NETWORK_WAIT_PERIOD,
         )
@@ -728,9 +728,10 @@ mod tests {
     async fn max_peers_bigger_than_pool_size() {
         let (msg_for_system_sender, _) = tokio::sync::mpsc::channel(2);
         let (_, system_config_receiver) = tokio::sync::watch::channel(SystemConfig::default());
+        let (_, system_snapshot_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
         let peer_channels = PeerChannels {
             msg_for_system_sender,
-            system_snapshots: Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default())),
+            system_snapshot_receiver,
             system_config_receiver,
         };
 
@@ -782,9 +783,10 @@ mod tests {
     async fn simulate_pool() {
         let (msg_for_system_sender, _) = tokio::sync::mpsc::channel(2);
         let (_, system_config_receiver) = tokio::sync::watch::channel(SystemConfig::default());
+        let (_, system_snapshot_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
         let peer_channels = PeerChannels {
             msg_for_system_sender,
-            system_snapshots: Arc::new(tokio::sync::RwLock::new(SystemSnapshot::default())),
+            system_snapshot_receiver,
             system_config_receiver,
         };
 

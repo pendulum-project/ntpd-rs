@@ -7,7 +7,6 @@ use crate::{
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{NtpClock, SystemConfig, SystemSnapshot};
 
-use std::sync::Arc;
 use tokio::{sync::mpsc, task::JoinHandle};
 
 pub struct DaemonChannels {
@@ -15,7 +14,7 @@ pub struct DaemonChannels {
     pub config_sender: tokio::sync::watch::Sender<SystemConfig>,
     pub peer_snapshots_receiver: tokio::sync::watch::Receiver<Vec<ObservablePeerState>>,
     pub server_data_receiver: tokio::sync::watch::Receiver<Vec<ServerData>>,
-    pub system: Arc<tokio::sync::RwLock<SystemSnapshot>>,
+    pub system_snapshot_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
 }
 
 /// Spawn the NTP daemon
@@ -36,12 +35,13 @@ pub async fn spawn(
     };
 
     // Daemon channels
-    let system = Arc::new(tokio::sync::RwLock::new(system_snapshot));
+    let (system_snapshot_sender, system_snapshot_receiver) =
+        tokio::sync::watch::channel(system_snapshot);
     let (config_sender, config_receiver) = tokio::sync::watch::channel(config);
     let mut peers = Peers::new(
         PeerChannels {
             msg_for_system_sender: msg_for_system_tx.clone(),
-            system_snapshots: system.clone(),
+            system_snapshot_receiver: system_snapshot_receiver.clone(),
             system_config_receiver: config_receiver.clone(),
         },
         UnixNtpClock::new(),
@@ -77,14 +77,15 @@ pub async fn spawn(
         config_receiver: config_receiver.clone(),
         peer_snapshots_receiver,
         server_data_receiver,
-        system: system.clone(),
+        system_snapshot_receiver,
     };
 
     let handle = tokio::spawn(async move {
         let mut system = System {
             config_receiver,
             config,
-            global_system_snapshot: system,
+            system: system_snapshot,
+            system_snapshot_sender,
             peer_snapshots_sender,
             server_data_sender,
 
@@ -103,7 +104,8 @@ pub async fn spawn(
 struct System<C: NtpClock> {
     config_receiver: tokio::sync::watch::Receiver<SystemConfig>,
     config: SystemConfig,
-    global_system_snapshot: Arc<tokio::sync::RwLock<SystemSnapshot>>,
+    system: SystemSnapshot,
+    system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
     peer_snapshots_sender: tokio::sync::watch::Sender<Vec<ObservablePeerState>>,
     server_data_sender: tokio::sync::watch::Sender<Vec<ServerData>>,
 
@@ -134,13 +136,14 @@ impl<C: NtpClock> System<C> {
                                 let system_peer_snapshot = self.peers
                                     .peer_snapshot(used_peers[0])
                                     .unwrap();
-                                let mut global = self.global_system_snapshot.write().await;
-                                global.time_snapshot = timedata;
-                                global.stratum = system_peer_snapshot
+                                self.system.time_snapshot = timedata;
+                                self.system.stratum = system_peer_snapshot
                                     .stratum
                                     .saturating_add(1);
-                                global.reference_id = system_peer_snapshot.reference_id;
-                                global.accumulated_steps_threshold = self.config.accumulated_threshold;
+                                self.system.reference_id = system_peer_snapshot.reference_id;
+                                self.system.accumulated_steps_threshold = self.config.accumulated_threshold;
+                                // Don't care if there is no receiver.
+                                let _ = self.system_snapshot_sender.send(self.system);
                             }
 
                             // Don't care if there is no receiver for peer snapshots (which might happen if

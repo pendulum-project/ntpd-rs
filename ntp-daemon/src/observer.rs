@@ -5,7 +5,6 @@ use prometheus_client::encoding::text::Encode;
 use std::io::Write;
 use std::net::SocketAddr;
 use std::os::unix::fs::PermissionsExt;
-use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::error;
 
@@ -65,7 +64,7 @@ pub async fn spawn(
     config: &crate::config::ObserveConfig,
     peers_reader: tokio::sync::watch::Receiver<Vec<ObservablePeerState>>,
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
-    system_reader: Arc<tokio::sync::RwLock<SystemSnapshot>>,
+    system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
 ) -> JoinHandle<std::io::Result<()>> {
     let config = config.clone();
     tokio::spawn(async move {
@@ -81,7 +80,7 @@ async fn observer(
     config: crate::config::ObserveConfig,
     peers_reader: tokio::sync::watch::Receiver<Vec<ObservablePeerState>>,
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
-    system_reader: Arc<tokio::sync::RwLock<SystemSnapshot>>,
+    system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
 ) -> std::io::Result<()> {
     let path = match config.path {
         Some(path) => path,
@@ -99,10 +98,9 @@ async fn observer(
     loop {
         let (mut stream, _addr) = peers_listener.accept().await?;
 
-        let peers = peers_reader.borrow().to_owned();
         let observe = ObservableState {
-            peers,
-            system: *system_reader.read().await,
+            peers: peers_reader.borrow().to_owned(),
+            system: *system_reader.borrow(),
             servers: server_reader.borrow().iter().map(|s| s.into()).collect(),
         };
 
@@ -176,7 +174,7 @@ mod tests {
 
         let (_, servers_reader) = tokio::sync::watch::channel(vec![]);
 
-        let system_reader = Arc::new(tokio::sync::RwLock::new(SystemSnapshot {
+        let (_, system_reader) = tokio::sync::watch::channel(SystemSnapshot {
             stratum: 1,
             reference_id: ReferenceId::NONE,
             accumulated_steps_threshold: None,
@@ -188,7 +186,7 @@ mod tests {
                 leap_indicator: NtpLeapIndicator::Leap59,
                 accumulated_steps: NtpDuration::ZERO,
             },
-        }));
+        });
 
         let handle = tokio::spawn(async move {
             observer(config, peers_reader, servers_reader, system_reader)
@@ -240,7 +238,7 @@ mod tests {
 
         let (mut server_writer, servers_reader) = tokio::sync::watch::channel(vec![]);
 
-        let system_reader = Arc::new(tokio::sync::RwLock::new(SystemSnapshot {
+        let (mut system_writer, system_reader) = tokio::sync::watch::channel(SystemSnapshot {
             stratum: 1,
             reference_id: ReferenceId::NONE,
             accumulated_steps_threshold: None,
@@ -252,9 +250,7 @@ mod tests {
                 leap_indicator: NtpLeapIndicator::Leap59,
                 accumulated_steps: NtpDuration::ZERO,
             },
-        }));
-
-        let system_writer = system_reader.clone();
+        });
 
         let handle = tokio::spawn(async move {
             observer(config, peers_reader, servers_reader, system_reader)
@@ -274,7 +270,7 @@ mod tests {
         reader.read_buf(&mut bufref).await.unwrap();
 
         // Ensure none of the locks is held long term
-        let _ = system_writer.write().await;
+        let _ = system_writer.borrow_mut();
         let _ = peers_writer.borrow_mut();
         let _ = server_writer.borrow_mut();
 
