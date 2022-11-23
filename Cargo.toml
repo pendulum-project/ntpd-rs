@@ -2,6 +2,7 @@
 members = [
     "ntp-daemon",
     "ntp-ctl",
+    "ntp-metrics-exporter",
     "ntp-proto",
     "ntp-os-clock",
     "ntp-udp",
