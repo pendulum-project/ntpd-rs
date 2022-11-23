@@ -33,10 +33,11 @@ We are currently looking for a better name for this project. Suggestions for thi
 
 ## Package substructure
 
-Currently, the code is split up into six separate crates:
+Currently, the code is split up into seven separate crates:
  - `ntp-proto` contains the packet parsing and the algorithms needed for clock selection, filtering and steering.
  - `ntp-daemon` contains the main NTP daemon, and deals with orchestrating the networking and configuration.
  - `ntp-ctl` contains a control interface for the NTP daemon, allowing readout of current synchronisation state and dynamic configuration changes.
+ - `ntp-metrics-exporter` contains a HTTP interface for exporting the prometheus metrics.
  - `test-binaries` contains a number of simple NTP servers that can be used for testing (see below).
  - `ntp-os-clock` contains the unsafe code needed to interface with system clocks.
  - `ntp-udp` contains the unsafe code needed to deal with timestamping on the network layer.

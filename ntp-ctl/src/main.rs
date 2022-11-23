@@ -1,11 +1,10 @@
 #![forbid(unsafe_code)]
 
-mod prometheus;
-
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use ntp_daemon::{Config, ConfigUpdate, ObservableState};
+use ntp_metrics_exporter::Metrics;
 
 #[derive(Parser)]
 #[command(version = "0.2.0", about = "Query and configure the ntpd-rs daemon")]
@@ -122,23 +121,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let output: ObservableState =
                 ntp_daemon::sockets::read_json(&mut stream, &mut msg).await?;
 
-            let metrics = prometheus::Metrics::default();
+            let metrics = Metrics::default();
             metrics.fill(&output);
-            let registry = prometheus::create_registry(&metrics);
+            let registry = metrics.registry();
             let mut buf = vec![];
             prometheus_client::encoding::text::encode(&mut buf, &registry)?;
             let result = String::from_utf8(buf)?;
             println!("{}", result);
-
-            // println!("{}", prometheus::PEER_TYPE_HEADERS);
-
-            // for peer in output.peers.iter() {
-            //     peer.write_prometheus(&mut std::io::stdout(), &[])?;
-            // }
-
-            // output
-            //     .system
-            //     .write_prometheus(&mut std::io::stdout(), &[])?;
 
             0
         }

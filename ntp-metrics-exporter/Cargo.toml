@@ -1,5 +1,5 @@
 [package]
-name = "ntp-ctl"
+name = "ntp-metrics-exporter"
 version = "0.2.0"
 edition = "2021"
 license = "Apache-2.0 OR MIT"
@@ -7,13 +7,14 @@ license = "Apache-2.0 OR MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "1.22.0", features = ["full"] }
+axum = "0.5.17"
+tokio = { version = "1.21.2", features = ["full"] }
 ntp-proto = { path = "../ntp-proto" }
 ntp-daemon = { path = "../ntp-daemon" }
-ntp-metrics-exporter = { path = "../ntp-metrics-exporter" }
 tracing = "0.1.37"
 tracing-subscriber = "0.3.16"
-clap = { version = "4.0.26", features = ["derive", "env"] }
+clap = { version = "4.0.18", features = ["derive", "env"] }
 serde = { version = "1.0.147", features = ["derive"] }
-serde_json = "1.0.89"
+serde_json = "1.0.87"
 prometheus-client = "0.18.1"
+thiserror = "1.0.37"
