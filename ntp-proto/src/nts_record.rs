@@ -284,50 +284,6 @@ impl NtsRecord {
 }
 
 #[cfg(feature = "fuzz")]
-impl<'a> arbitrary::Arbitrary<'a> for Record {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let record = u16::arbitrary(u)?;
-
-        let critical = record & 0x8000 != 0;
-        let record_type = record & !0x8000;
-
-        use Record::*;
-        Ok(match record_type {
-            0 => EndOfMessage,
-            1 => NextProtocol {
-                protocol_ids: u.arbitrary()?,
-            },
-            2 => Error {
-                errorcode: u.arbitrary()?,
-            },
-            3 => Warning {
-                warningcode: u.arbitrary()?,
-            },
-            4 => AeadAlgorithm {
-                critical,
-                algorithm_ids: u.arbitrary()?,
-            },
-            5 => NewCookie {
-                cookie_data: u.arbitrary()?,
-            },
-            6 => Server {
-                critical,
-                name: u.arbitrary()?,
-            },
-            7 => Port {
-                critical,
-                port: u.arbitrary()?,
-            },
-            _ => Record::Unknown {
-                record_type,
-                critical,
-                data: u.arbitrary()?,
-            },
-        })
-    }
-}
-
-#[cfg(feature = "fuzz")]
 impl<'a> arbitrary::Arbitrary<'a> for NtsRecord {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let record = u16::arbitrary(u)?;
