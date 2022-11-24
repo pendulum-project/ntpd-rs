@@ -38,6 +38,7 @@ pub struct Metrics {
     server_received_packets: Family<ServerLabels, Counter>,
     server_accepted_packets: Family<ServerLabels, Counter>,
     server_denied_packets: Family<ServerLabels, Counter>,
+    server_ignored_packets: Family<ServerLabels, Counter>,
     server_rate_limited_packets: Family<ServerLabels, Counter>,
     server_response_send_errors: Family<ServerLabels, Counter>,
 }
@@ -123,6 +124,10 @@ impl Metrics {
                 .get_or_create(&labels)
                 .inner()
                 .set(server.stats.denied_packets.get());
+            self.server_ignored_packets
+                .get_or_create(&labels)
+                .inner()
+                .set(server.stats.ignored_packets.get());
             self.server_rate_limited_packets
                 .get_or_create(&labels)
                 .inner()
@@ -248,6 +253,12 @@ impl Metrics {
             "denied_packets",
             "Number of denied packets",
             Box::new(self.server_denied_packets.clone()),
+        );
+
+        server.register(
+            "ignored_packets",
+            "Number of packets ignored",
+            Box::new(self.server_ignored_packets.clone()),
         );
 
         server.register(
