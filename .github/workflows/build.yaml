@@ -144,27 +144,29 @@ jobs:
           command: clippy
           args: --manifest-path ./fuzz/Cargo.toml --all-targets -- -D warnings
 
-  clippy-raspberry-pi:
-    name: ClippyRaspberryPi
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8
-        with:
-          persist-credentials: false
-      - name: Install rust toolchain
-        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
-        with:
-          toolchain: stable
-          override: true
-          default: true
-          components: clippy
-          target: armv7-unknown-linux-gnueabihf
-      - name: Run clippy
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
-        with:
-          command: clippy
-          args: --target armv7-unknown-linux-gnueabihf --workspace --all-targets -- -D warnings
+      # disabled because ring (depended on via tokio_rustls) cannot cross-compile by default.
+      #
+      #  clippy-raspberry-pi:
+      #    name: ClippyRaspberryPi
+      #    runs-on: ubuntu-latest
+      #    steps:
+      #      - name: Checkout sources
+      #        uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8
+      #        with:
+      #          persist-credentials: false
+      #      - name: Install rust toolchain
+      #        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
+      #        with:
+      #          toolchain: stable
+      #          override: true
+      #          default: true
+      #          components: clippy
+      #          target: armv7-unknown-linux-gnueabihf
+      #      - name: Run clippy
+      #        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
+      #        with:
+      #          command: clippy
+      #          args: --target armv7-unknown-linux-gnueabihf --workspace --all-targets -- -D warnings
 
   fuzz:
     name: Smoke-test fuzzing targets
