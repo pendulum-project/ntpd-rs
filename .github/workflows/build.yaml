@@ -169,11 +169,11 @@ jobs:
           version: 0.9.0
       - name: Run clippy
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
+        env:
+          TARGET_CC: zig cc -target arm-linux-gnueabihf -mcpu=generic+v7a+vfp3-d32+thumb2-neon
         with:
           command: clippy
           args: --target armv7-unknown-linux-gnueabihf --workspace --all-targets -- -D warnings
-          env:
-            TARGET_CC: zig cc -target arm-linux-gnueabihf -mcpu=generic+v7a+vfp3-d32+thumb2-neon
 
   fuzz:
     name: Smoke-test fuzzing targets
