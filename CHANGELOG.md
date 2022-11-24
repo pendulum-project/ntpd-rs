@@ -1,3 +1,16 @@
+Master
+======
+
+Major Changes
+-----
+- Pool support.
+- Prometheus exporter.
+
+Minor Changes
+-----
+- Upgraded dependencies
+- Refactored internal structure of the code.
+
 Version 0.2.0
 ======
 
