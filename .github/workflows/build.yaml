@@ -164,11 +164,14 @@ jobs:
       # This crate uses C and assembly code, and because of its build scripts, `cargo clippy` needs to be able to compile
       # that code for our target.
       - name: Install cargo-zigbuild
-        run: cargo install cargo-zigbuild
+        uses: actions-rs/install@9da1d2adcfe5e7c16992e8242ca33a56b6d9b101
+        with:
+          crate: cargo-zigbuild
+          version: latest
       - name: Run clippy
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
         env:
-          TARGET_CC: "\"/home/runner/.cargo/bin/cargo-zigbuild zig cc -- -target arm-linux-gnueabihf -mcpu=generic+v7a+vfp3-d32+thumb2-neon -g \""
+          TARGET_CC: "/home/runner/.cargo/bin/cargo-zigbuild zig cc -- -target arm-linux-gnueabihf -mcpu=generic+v7a+vfp3-d32+thumb2-neon -g"
         with:
           command: clippy
           args: --target armv7-unknown-linux-gnueabihf --workspace --all-targets -- -D warnings
