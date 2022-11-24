@@ -12,6 +12,7 @@ use aes_siv::{
 
 use ntp_proto::NtsRecord;
 use ntp_udp::UdpSocket;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_rustls::rustls;
 
 fn key_exchange_client() -> Result<tokio_rustls::TlsConnector, rustls::Error> {
@@ -142,21 +143,32 @@ async fn main() -> std::io::Result<()> {
 
     let records = key_exchange_records();
 
+    let mut buffer = Vec::with_capacity(1024);
     for record in records {
-        record.async_write(&mut stream).await?;
+        buffer.clear();
+        record.write(&mut buffer)?;
+        stream.write_all(&buffer).await?;
     }
 
     let mut remote = domain.to_string();
     let mut port = 123;
     let mut cookie = None;
 
-    loop {
-        match NtsRecord::async_read(&mut stream).await? {
-            NtsRecord::EndOfMessage => break,
-            NtsRecord::NewCookie { cookie_data } => cookie = Some(cookie_data),
-            NtsRecord::Server { name, .. } => remote = name.to_string(),
-            NtsRecord::Port { port: p, .. } => port = p,
-            _ => { /* ignore */ }
+    let mut buffer = [0; 1024];
+    let mut decoder = ntp_proto::NtsRecord::decoder();
+
+    'outer: loop {
+        let n = stream.read(&mut buffer).await.unwrap();
+        decoder.extend(buffer[..n].iter().copied());
+
+        while let Some(record) = decoder.next().unwrap() {
+            match record {
+                NtsRecord::EndOfMessage => break 'outer,
+                NtsRecord::NewCookie { cookie_data } => cookie = Some(cookie_data),
+                NtsRecord::Server { name, .. } => remote = name.to_string(),
+                NtsRecord::Port { port: p, .. } => port = p,
+                _ => { /* ignore */ }
+            }
         }
     }
 

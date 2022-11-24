@@ -158,79 +158,6 @@ fn read_bytes_exact(reader: &mut impl Read, length: usize) -> std::io::Result<Ve
 }
 
 impl NtsRecord {
-    pub async fn async_read<A: tokio::io::AsyncReadExt + std::marker::Unpin>(
-        reader: &mut A,
-    ) -> std::io::Result<NtsRecord> {
-        let raw_record_type = reader.read_u16().await?;
-        let critical = raw_record_type & 0x8000 != 0;
-        let record_type = raw_record_type & !0x8000;
-        let record_len = reader.read_u16().await? as usize;
-
-        Ok(match record_type {
-            0 if record_len == 0 && critical => NtsRecord::EndOfMessage,
-            1 if record_len % 2 == 0 && critical => {
-                let n_protocols = record_len / 2;
-
-                let mut protocol_ids = Vec::with_capacity(n_protocols);
-                for _ in 0..n_protocols {
-                    protocol_ids.push(reader.read_u16().await?);
-                }
-
-                NtsRecord::NextProtocol { protocol_ids }
-            }
-            2 if record_len == 2 && critical => NtsRecord::Error {
-                errorcode: reader.read_u16().await?,
-            },
-            3 if record_len == 2 && critical => NtsRecord::Warning {
-                warningcode: reader.read_u16().await?,
-            },
-            4 if record_len % 2 == 0 => {
-                let n_algorithms = record_len / 2;
-
-                let mut algorithm_ids = Vec::with_capacity(n_algorithms);
-                for _ in 0..n_algorithms {
-                    algorithm_ids.push(reader.read_u16().await?);
-                }
-
-                NtsRecord::AeadAlgorithm {
-                    critical,
-                    algorithm_ids,
-                }
-            }
-            5 if !critical => {
-                let mut cookie_data = vec![0; record_len];
-                reader.read_exact(&mut cookie_data).await?;
-                NtsRecord::NewCookie { cookie_data }
-            }
-            6 => {
-                let mut str_data = vec![0; record_len];
-                reader.read_exact(&mut str_data).await?;
-                match String::from_utf8(str_data) {
-                    Ok(name) => NtsRecord::Server { critical, name },
-                    Err(e) => NtsRecord::Unknown {
-                        record_type,
-                        critical,
-                        data: e.into_bytes(),
-                    },
-                }
-            }
-            7 if record_len == 2 => NtsRecord::Port {
-                critical,
-                port: reader.read_u16().await?,
-            },
-            _ => {
-                let mut data = vec![0; record_len];
-                reader.read_exact(&mut data).await?;
-
-                NtsRecord::Unknown {
-                    record_type,
-                    critical,
-                    data,
-                }
-            }
-        })
-    }
-
     pub fn read<A: Read>(reader: &mut A) -> std::io::Result<NtsRecord> {
         let raw_record_type = read_u16_be(reader)?;
         let critical = raw_record_type & 0x8000 != 0;
@@ -351,69 +278,8 @@ impl NtsRecord {
         Ok(())
     }
 
-    pub async fn async_write<A: tokio::io::AsyncWriteExt + std::marker::Unpin>(
-        &self,
-        writer: &mut A,
-    ) -> std::io::Result<()> {
-        // error out early when the record is invalid
-        self.validate()?;
-
-        // all messages start with the record type
-        let record_type = self.record_type() | ((self.is_critical() as u16) << 15);
-        writer.write_all(&record_type.to_be_bytes()).await?;
-
-        let size_of_u16 = std::mem::size_of::<u16>() as u16;
-        match self {
-            NtsRecord::EndOfMessage => {
-                writer.write_all(&0_u16.to_be_bytes()).await?;
-            }
-            NtsRecord::Unknown { data, .. } => {
-                writer.write_all(&(data.len() as u16).to_be_bytes()).await?;
-                writer.write_all(data).await?;
-            }
-            NtsRecord::NextProtocol { protocol_ids } => {
-                let length = size_of_u16 * protocol_ids.len() as u16;
-                writer.write_all(&length.to_be_bytes()).await?;
-
-                for id in protocol_ids {
-                    writer.write_all(&id.to_be_bytes()).await?;
-                }
-            }
-            NtsRecord::Error { errorcode } => {
-                writer.write_all(&size_of_u16.to_be_bytes()).await?;
-                writer.write_all(&errorcode.to_be_bytes()).await?;
-            }
-            NtsRecord::Warning { warningcode } => {
-                writer.write_all(&size_of_u16.to_be_bytes()).await?;
-                writer.write_all(&warningcode.to_be_bytes()).await?;
-            }
-            NtsRecord::AeadAlgorithm { algorithm_ids, .. } => {
-                let length = size_of_u16 * algorithm_ids.len() as u16;
-                writer.write_all(&length.to_be_bytes()).await?;
-
-                for id in algorithm_ids {
-                    writer.write_all(&id.to_be_bytes()).await?;
-                }
-            }
-            NtsRecord::NewCookie { cookie_data } => {
-                let length = cookie_data.len() as u16;
-                writer.write_all(&length.to_be_bytes()).await?;
-
-                writer.write_all(cookie_data).await?;
-            }
-            NtsRecord::Server { name, .. } => {
-                let length = name.len() as u16;
-                writer.write_all(&length.to_be_bytes()).await?;
-
-                writer.write_all(name.as_bytes()).await?;
-            }
-            NtsRecord::Port { port, .. } => {
-                writer.write_all(&size_of_u16.to_be_bytes()).await?;
-                writer.write_all(&port.to_be_bytes()).await?;
-            }
-        }
-
-        Ok(())
+    pub fn decoder() -> NtsRecordDecoder {
+        NtsRecordDecoder { bytes: vec![] }
     }
 }
 
@@ -502,5 +368,45 @@ impl<'a> arbitrary::Arbitrary<'a> for NtsRecord {
                 data: u.arbitrary()?,
             },
         })
+    }
+}
+
+pub struct NtsRecordDecoder {
+    bytes: Vec<u8>,
+}
+
+impl Extend<u8> for NtsRecordDecoder {
+    fn extend<T: IntoIterator<Item = u8>>(&mut self, iter: T) {
+        self.bytes.extend(iter);
+    }
+}
+
+impl NtsRecordDecoder {
+    /// the size of the KE packet header:
+    ///
+    /// - 2 bytes for the record type + critical flag
+    /// - 2 bytes for the record length
+    const HEADER_BYTES: usize = 4;
+
+    /// Try to decode the next record. Returns None when there are not enough bytes
+    pub fn next(&mut self) -> std::io::Result<Option<NtsRecord>> {
+        if self.bytes.len() < Self::HEADER_BYTES {
+            return Ok(None);
+        }
+
+        let record_len = u16::from_be_bytes([self.bytes[2], self.bytes[3]]);
+        let message_len = Self::HEADER_BYTES + record_len as usize;
+
+        if self.bytes.len() >= message_len {
+            let record = NtsRecord::read(&mut self.bytes.as_slice())?;
+
+            // remove the first `message_len` bytes from the buffer
+            self.bytes.copy_within(message_len.., 0);
+            self.bytes.truncate(self.bytes.len() - message_len);
+
+            Ok(Some(record))
+        } else {
+            Ok(None)
+        }
     }
 }
