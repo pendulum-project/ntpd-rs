@@ -18,6 +18,7 @@ pub struct ServerStats {
     pub received_packets: WrappedCounter,
     pub accepted_packets: WrappedCounter,
     pub denied_packets: WrappedCounter,
+    pub ignored_packets: WrappedCounter,
     pub rate_limited_packets: WrappedCounter,
     pub response_send_errors: WrappedCounter,
 }
@@ -222,7 +223,9 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     warn!(error=?send_err, "Could not send response packet");
                 }
             }
-            AcceptResult::Ignore => {}
+            AcceptResult::Ignore => {
+                self.stats.ignored_packets.inc();
+            }
         }
         true
     }
