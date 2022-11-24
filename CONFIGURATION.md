@@ -9,7 +9,6 @@ The current implementation has several important limitations:
  - The current implementation is client-only, and does not support acting as an NTP server.
  - There is no support for broadcast client/server or symmetric active/passive connections, only acting as the client towards a server node is implemented.
  - DNS lookup is currently only done at startup. Changes in the IP address of a remote server are not picked up until a restart of the daemon.
- - There is no support for NTP pools yet. Multiple servers should be configured manually in the configuration file.
  - Changes in network interfaces are not picked up dynamically and will require a restart of the daemon.
 
 ## Building
@@ -129,6 +128,39 @@ distance-threshold = 1
 panic-threshold = 10
 startup-panic-threshold = { forward = "inf", backward = 1800 }
 ```
+
+### Peer configuration
+
+#### Standard
+
+A vanilly direct NTP peer connection. This mode is the default. Standard peers can be configured in two ways:
+
+```
+# As a simple list (pool servers from ntppool.org)
+peers = ["0.pool.ntp.org", "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
+
+# Or by providing written out configuration
+[[peers]]
+addr = "0.pool.ntp.org:123"
+
+[[peers]]
+addr = "1.pool.ntp.org:123"
+```
+
+#### Pool
+
+`Pool` mode is a convenient way to configure many NTP servers, without having to worry about individual server's IP addresses.
+
+A peer in `Pool` mode will try to aquire `max_peers` addresses of NTP servers from the pool. `ntpd-rs` will actively try to keep a pool filled up. For instance if a server cannot be reached, a different server will be picked from the pool.
+
+A pool peer can be configured like so: 
+```
+[[peers]]
+addr = "pool.ntp.org"
+mode = "Pool"
+max_peers = 4
+```
+
 
 ## Operational concerns
 
