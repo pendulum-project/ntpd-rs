@@ -36,88 +36,38 @@ pub async fn spawn(
     peer_configs: &[PeerConfig],
     server_configs: &[ServerConfig],
 ) -> std::io::Result<(JoinHandle<std::io::Result<()>>, DaemonChannels)> {
-    // receive peer snapshots from all peers
-    let (msg_for_system_tx, msg_for_system_rx) = mpsc::channel::<MsgForSystem>(32);
-
-    let (spawn_task_tx, spawn_task_rx) = mpsc::channel::<SpawnTask>(32);
-
-    // System snapshot
-    let system_snapshot = SystemSnapshot {
-        stratum: config.local_stratum,
-        ..Default::default()
-    };
-
-    // Daemon channels
-    let (system_snapshot_sender, system_snapshot_receiver) =
-        tokio::sync::watch::channel(system_snapshot);
-    let (config_sender, config_receiver) = tokio::sync::watch::channel(config);
-    let mut peers = Peers::new(
-        PeerChannels {
-            msg_for_system_sender: msg_for_system_tx.clone(),
-            system_snapshot_receiver: system_snapshot_receiver.clone(),
-            system_config_receiver: config_receiver.clone(),
-        },
-        UnixNtpClock::new(),
-        spawn_task_tx,
-        config,
-    );
+    let clock = UnixNtpClock::new();
+    let (mut system, channels) = System::new(clock, config);
 
     for peer_config in peer_configs {
         match peer_config {
             PeerConfig::Standard(StandardPeerConfig { addr }) => {
-                peers.add_peer(addr.clone()).await;
+                system.peers.add_peer(addr.clone()).await;
             }
             PeerConfig::Pool(PoolPeerConfig {
                 addr, max_peers, ..
             }) => {
-                peers.add_new_pool(addr.clone(), *max_peers).await;
+                system.peers.add_new_pool(addr.clone(), *max_peers).await;
             }
         }
     }
 
     for server_config in server_configs.iter() {
-        peers.add_server(server_config.to_owned()).await;
+        system.peers.add_server(server_config.to_owned()).await;
     }
 
-    let (peer_snapshots_sender, peer_snapshots_receiver) =
-        tokio::sync::watch::channel(peers.observe_peers().collect());
+    system.update_snapshots_post_spawn();
 
-    let (server_data_sender, server_data_receiver) =
-        tokio::sync::watch::channel(peers.servers().collect());
-
-    let channels = DaemonChannels {
-        config_sender,
-        config_receiver: config_receiver.clone(),
-        peer_snapshots_receiver,
-        server_data_receiver,
-        system_snapshot_receiver,
-    };
-
-    let handle = tokio::spawn(async move {
-        let mut system = System {
-            config_receiver,
-            config,
-            system: system_snapshot,
-            system_snapshot_sender,
-            peer_snapshots_sender,
-            server_data_sender,
-
-            msg_for_system_rx,
-            spawn_task_rx,
-
-            peers,
-        };
-
-        system.run().await
-    });
+    let handle = tokio::spawn(async move { system.run().await });
 
     Ok((handle, channels))
 }
 
 struct System<C: NtpClock> {
-    config_receiver: tokio::sync::watch::Receiver<SystemConfig>,
     config: SystemConfig,
     system: SystemSnapshot,
+
+    config_receiver: tokio::sync::watch::Receiver<SystemConfig>,
     system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
     peer_snapshots_sender: tokio::sync::watch::Sender<Vec<ObservablePeerState>>,
     server_data_sender: tokio::sync::watch::Sender<Vec<ServerData>>,
@@ -129,6 +79,63 @@ struct System<C: NtpClock> {
 }
 
 impl<C: NtpClock> System<C> {
+    const MESSAGE_BUFFER_SIZE: usize = 32;
+
+    fn new(clock: C, config: SystemConfig) -> (Self, DaemonChannels) {
+        // Setup system snapshot
+        let system = SystemSnapshot {
+            stratum: config.local_stratum,
+            ..Default::default()
+        };
+
+        // Create communication channels
+        let (config_sender, config_receiver) = tokio::sync::watch::channel(config);
+        let (system_snapshot_sender, system_snapshot_receiver) =
+            tokio::sync::watch::channel(system);
+        let (peer_snapshots_sender, peer_snapshots_receiver) = tokio::sync::watch::channel(vec![]);
+        let (server_data_sender, server_data_receiver) = tokio::sync::watch::channel(vec![]);
+        let (spawn_task_sender, spawn_task_receiver) =
+            tokio::sync::mpsc::channel(Self::MESSAGE_BUFFER_SIZE);
+        let (msg_for_system_sender, msg_for_system_receiver) =
+            tokio::sync::mpsc::channel(Self::MESSAGE_BUFFER_SIZE);
+
+        // Setup peers structure
+        let peers = Peers::new(
+            PeerChannels {
+                msg_for_system_sender,
+                system_snapshot_receiver: system_snapshot_receiver.clone(),
+                system_config_receiver: config_receiver.clone(),
+            },
+            clock,
+            spawn_task_sender,
+            config,
+        );
+
+        // Build System and its channels
+        (
+            System {
+                config,
+                system,
+
+                config_receiver: config_receiver.clone(),
+                system_snapshot_sender,
+                peer_snapshots_sender,
+                server_data_sender,
+
+                msg_for_system_rx: msg_for_system_receiver,
+                spawn_task_rx: spawn_task_receiver,
+                peers,
+            },
+            DaemonChannels {
+                config_receiver,
+                config_sender,
+                peer_snapshots_receiver,
+                server_data_receiver,
+                system_snapshot_receiver,
+            },
+        )
+    }
+
     async fn run(&mut self) -> std::io::Result<()> {
         //let mut snapshots = Vec::with_capacity(self.peers_rwlock.read().await.size());
 
@@ -175,10 +182,7 @@ impl<C: NtpClock> System<C> {
                             self.peers
                                 .spawn_task(spawn_task.peer_address, spawn_task.address);
 
-                            // Don't care if there is no receiver for peer snapshots (which might happen if
-                            // we don't enable observing in the configuration)
-                            let _ = self.peer_snapshots_sender.send(self.peers.observe_peers().collect());
-                            let _ = self.server_data_sender.send(self.peers.servers().collect());
+                            self.update_snapshots_post_spawn();
                         }
                     }
                 }
@@ -192,6 +196,15 @@ impl<C: NtpClock> System<C> {
 
         // the channel closed and has no more messages in it
         Ok(())
+    }
+
+    fn update_snapshots_post_spawn(&self) {
+        // Don't care if there is no receiver for peer snapshots (which might happen if
+        // we don't enable observing in the configuration)
+        let _ = self
+            .peer_snapshots_sender
+            .send(self.peers.observe_peers().collect());
+        let _ = self.server_data_sender.send(self.peers.servers().collect());
     }
 }
 
