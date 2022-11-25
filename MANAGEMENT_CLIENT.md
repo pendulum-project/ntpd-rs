@@ -171,6 +171,6 @@ HTTP server and serve the metrics on the `/metrics` endpoint. By default the
 metrics exporter listens on localhost port 9975, but this can be changed via
 command line parameters, see `ntp-metrics-exporter --help` for details. Note
 that the metrics exporter does not do any authentication or HTTPS, so if the
-metrics are transfered via a public network you should add a reverse proxy that
+metrics are transferred via a public network you should add a reverse proxy that
 does authentication and HTTPS termination if required. The metrics exported are
 the same as with the `ntp-ctl prometheus` command.
