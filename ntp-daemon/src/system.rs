@@ -11,7 +11,7 @@ use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
-    DefaultTimeSyncController, NtpClock, PeerSnapshot, SystemConfig, SystemSnapshot, TimeSnapshot,
+    DefaultTimeSyncController, NtpClock, PeerSnapshot, SystemConfig, SystemSnapshot,
     TimeSyncController,
 };
 use tokio::{
@@ -55,8 +55,6 @@ pub async fn spawn(
     for server_config in server_configs.iter() {
         system.add_server(server_config.to_owned()).await;
     }
-
-    system.update_snapshots_post_spawn();
 
     let handle = tokio::spawn(async move { system.run().await });
 
@@ -160,27 +158,8 @@ impl<C: NtpClock> System<C> {
                             break
                         }
                         Some(msg_for_system) => {
-                            let result = self
-                                .update(msg_for_system)
+                            self.handle_peer_update(msg_for_system)
                                 .await;
-
-                            if let Some((used_peers, timedata)) = result {
-                                let system_peer_snapshot = self
-                                    .peer_snapshot(used_peers[0])
-                                    .unwrap();
-                                self.system.time_snapshot = timedata;
-                                self.system.stratum = system_peer_snapshot
-                                    .stratum
-                                    .saturating_add(1);
-                                self.system.reference_id = system_peer_snapshot.reference_id;
-                                self.system.accumulated_steps_threshold = self.config.accumulated_threshold;
-                                // Don't care if there is no receiver.
-                                let _ = self.system_snapshot_sender.send(self.system);
-                            }
-
-                            // Don't care if there is no receiver for peer snapshots (which might happen if
-                            // we don't enable observing in the configuration)
-                            let _ = self.peer_snapshots_sender.send(self.observe_peers().collect());
                         }
                     }
                 }
@@ -191,32 +170,18 @@ impl<C: NtpClock> System<C> {
                             tracing::warn!("the spawn channel closed unexpectedly");
                         }
                         Some(spawn_task) => {
-                            self
-                                .spawn_task(spawn_task.peer_address, spawn_task.address);
-
-                            self.update_snapshots_post_spawn();
+                            self.spawn_task(spawn_task.peer_address, spawn_task.address);
                         }
                     }
                 }
                 _ = self.config_receiver.changed(), if self.config_receiver.has_changed().is_ok() => {
-                    let config = *self.config_receiver.borrow_and_update();
-                    self.update_config(config);
-                    self.config = config;
+                    self.update_config();
                 }
             }
         }
 
         // the channel closed and has no more messages in it
         Ok(())
-    }
-
-    fn update_snapshots_post_spawn(&self) {
-        // Don't care if there is no receiver for peer snapshots (which might happen if
-        // we don't enable observing in the configuration)
-        let _ = self
-            .peer_snapshots_sender
-            .send(self.observe_peers().collect());
-        let _ = self.server_data_sender.send(self.servers().collect());
     }
 
     #[cfg(test)]
@@ -253,6 +218,11 @@ impl<C: NtpClock> System<C> {
             NETWORK_WAIT_PERIOD,
             self.peer_channels.clone(),
         );
+
+        // Don't care if there is no receiver
+        let _ = self
+            .peer_snapshots_sender
+            .send(self.observe_peers().collect());
     }
 
     /// Add a single standard peer
@@ -315,7 +285,7 @@ impl<C: NtpClock> System<C> {
         self.add_peer_internal(address).await
     }
 
-    async fn add_server(&mut self, config: ServerConfig) -> JoinHandle<()> {
+    async fn add_server(&mut self, config: ServerConfig) {
         let stats = ServerStats::default();
         self.servers.push(ServerData {
             stats: stats.clone(),
@@ -327,7 +297,8 @@ impl<C: NtpClock> System<C> {
             self.peer_channels.system_snapshot_receiver.clone(),
             self.clock.clone(),
             NETWORK_WAIT_PERIOD,
-        )
+        );
+        let _ = self.server_data_sender.send(self.servers.clone());
     }
 
     pub fn observe_peers(&self) -> impl Iterator<Item = ObservablePeerState> + '_ {
@@ -354,27 +325,19 @@ impl<C: NtpClock> System<C> {
         })
     }
 
-    fn peer_snapshot(&self, index: PeerIndex) -> Option<PeerSnapshot> {
-        self.peers.get(&index).and_then(|data| data.snapshot)
-    }
-
-    fn servers(&self) -> impl Iterator<Item = ServerData> + '_ {
-        self.servers.iter().cloned()
-    }
-
-    fn update_config(&mut self, config: SystemConfig) {
+    fn update_config(&mut self) {
+        let config = *self.config_receiver.borrow_and_update();
         self.controller.update_config(config);
         self.config = config;
     }
 
-    async fn update(&mut self, msg: MsgForSystem) -> Option<(Vec<PeerIndex>, TimeSnapshot)> {
+    async fn handle_peer_update(&mut self, msg: MsgForSystem) {
         tracing::debug!(?msg, "updating peer");
 
         match msg {
             MsgForSystem::MustDemobilize(index) => {
                 self.controller.peer_remove(index);
                 self.peers.remove(&index);
-                None
             }
             MsgForSystem::NewMeasurement(index, snapshot, measurement, packet) => {
                 self.controller.peer_update(
@@ -384,7 +347,19 @@ impl<C: NtpClock> System<C> {
                         .is_ok(),
                 );
                 self.peers.get_mut(&index).unwrap().snapshot = Some(snapshot);
-                self.controller.peer_measurement(index, measurement, packet)
+                let result = self.controller.peer_measurement(index, measurement, packet);
+
+                if let Some((used_peers, timedata)) = result {
+                    self.system.update(
+                        used_peers
+                            .iter()
+                            .map(|v| self.peers.get(v).and_then(|data| data.snapshot).unwrap()),
+                        timedata,
+                        &self.config,
+                    );
+                    // Don't care if there is no receiver.
+                    let _ = self.system_snapshot_sender.send(self.system);
+                }
             }
             MsgForSystem::UpdatedSnapshot(index, snapshot) => {
                 self.controller.peer_update(
@@ -394,7 +369,6 @@ impl<C: NtpClock> System<C> {
                         .is_ok(),
                 );
                 self.peers.get_mut(&index).unwrap().snapshot = Some(snapshot);
-                None
             }
             MsgForSystem::NetworkIssue(index) => {
                 // Restart the peer reusing its configuration.
@@ -413,10 +387,14 @@ impl<C: NtpClock> System<C> {
                         self.add_to_pool(index, address, max_peers).await;
                     }
                 }
-
-                None
             }
         }
+
+        // Don't care if there is no receiver for peer snapshots (which might happen if
+        // we don't enable observing in the configuration)
+        let _ = self
+            .peer_snapshots_sender
+            .send(self.observe_peers().collect());
     }
 }
 
@@ -707,7 +685,7 @@ mod tests {
         );
 
         system
-            .update(MsgForSystem::NewMeasurement(
+            .handle_peer_update(MsgForSystem::NewMeasurement(
                 indices[0],
                 peer_snapshot(),
                 Measurement {
@@ -732,7 +710,7 @@ mod tests {
         );
 
         system
-            .update(MsgForSystem::NewMeasurement(
+            .handle_peer_update(MsgForSystem::NewMeasurement(
                 indices[0],
                 peer_snapshot(),
                 Measurement {
@@ -757,7 +735,7 @@ mod tests {
         );
 
         system
-            .update(MsgForSystem::UpdatedSnapshot(indices[1], peer_snapshot()))
+            .handle_peer_update(MsgForSystem::UpdatedSnapshot(indices[1], peer_snapshot()))
             .await;
         assert_eq!(
             system
@@ -772,7 +750,7 @@ mod tests {
         );
 
         system
-            .update(MsgForSystem::MustDemobilize(indices[1]))
+            .handle_peer_update(MsgForSystem::MustDemobilize(indices[1]))
             .await;
         assert_eq!(
             system
@@ -808,7 +786,7 @@ mod tests {
 
         // our pool peer has a network issue
         system
-            .update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }))
+            .handle_peer_update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }))
             .await;
 
         for _ in 0..1 {
@@ -846,7 +824,7 @@ mod tests {
 
         // our pool peer has a network issue
         system
-            .update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }))
+            .handle_peer_update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }))
             .await;
 
         for _ in 0..1 {
@@ -889,7 +867,7 @@ mod tests {
 
         // simulate that a pool peer has a network issue
         system
-            .update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }))
+            .handle_peer_update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }))
             .await;
 
         let task = system.spawn_task_rx.recv().await.unwrap();

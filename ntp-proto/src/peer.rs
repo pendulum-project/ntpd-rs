@@ -251,6 +251,22 @@ pub struct SystemSnapshot {
     pub time_snapshot: TimeSnapshot,
 }
 
+impl SystemSnapshot {
+    pub fn update(
+        &mut self,
+        mut used_peers: impl Iterator<Item = PeerSnapshot>,
+        timedata: TimeSnapshot,
+        config: &SystemConfig,
+    ) {
+        self.time_snapshot = timedata;
+        self.accumulated_steps_threshold = config.accumulated_threshold;
+        if let Some(system_peer_snapshot) = used_peers.next() {
+            self.stratum = system_peer_snapshot.stratum.saturating_add(1);
+            self.reference_id = system_peer_snapshot.reference_id;
+        }
+    }
+}
+
 impl Default for SystemSnapshot {
     fn default() -> Self {
         Self {
