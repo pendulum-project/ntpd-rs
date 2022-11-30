@@ -17,12 +17,21 @@ pub trait NtpClock: Clone + Send + 'static {
 
     fn set_freq(&self, freq: f64) -> Result<(), Self::Error>;
     fn step_clock(&self, offset: NtpDuration) -> Result<(), Self::Error>;
+    // Update using the NTP discipline
     fn update_clock(
         &self,
         offset: NtpDuration,
         est_error: NtpDuration,
         max_error: NtpDuration,
         poll_interval: PollInterval,
+        leap_status: NtpLeapIndicator,
+    ) -> Result<(), Self::Error>;
+    // Update with NTP discipline disabled
+    fn bare_update(
+        &self,
+        offset: NtpDuration,
+        est_error: NtpDuration,
+        max_error: NtpDuration,
         leap_status: NtpLeapIndicator,
     ) -> Result<(), Self::Error>;
 }
@@ -418,6 +427,16 @@ mod tests {
             *self.last_poll_interval.borrow_mut() = Some(poll_interval);
             *self.last_leap_status.borrow_mut() = Some(leap_status);
             Ok(())
+        }
+
+        fn bare_update(
+            &self,
+            _offset: NtpDuration,
+            _est_error: NtpDuration,
+            _max_error: NtpDuration,
+            _leap_status: NtpLeapIndicator,
+        ) -> Result<(), Self::Error> {
+            unimplemented!()
         }
     }
 

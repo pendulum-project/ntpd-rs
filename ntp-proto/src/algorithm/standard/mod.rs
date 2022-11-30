@@ -1,12 +1,13 @@
 use std::{collections::HashMap, fmt::Debug, hash::Hash};
 
+use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 
 use crate::{
     filter::LastMeasurements,
     peer::{Measurement, PeerTimeState},
     ClockController, ClockUpdateResult, FilterAndCombine, NtpClock, NtpDuration, NtpInstant,
-    PeerTimeSnapshot, SystemConfig, TimeSnapshot,
+    PeerStatistics, PeerTimeSnapshot, SystemConfig, TimeSnapshot,
 };
 
 use super::TimeSyncController;
@@ -116,10 +117,15 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> StandardClockController<C, P
     }
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Snapshot {
+    statistics: PeerStatistics,
+}
+
 impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID>
     for StandardClockController<C, PeerID>
 {
-    type PeerTimeSnapshot = PeerTimeSnapshot;
+    type PeerTimeSnapshot = Snapshot;
 
     fn new(clock: C, config: SystemConfig) -> Self {
         let timestate = TimeSnapshot::default();
@@ -186,8 +192,8 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
     }
 
     fn peer_snapshot(&self, id: PeerID) -> Option<Self::PeerTimeSnapshot> {
-        self.peerstate
-            .get(&id)
-            .map(|state| PeerTimeSnapshot::from_timestate(&state.timestate))
+        self.peerstate.get(&id).map(|state| Snapshot {
+            statistics: state.timestate.statistics,
+        })
     }
 }

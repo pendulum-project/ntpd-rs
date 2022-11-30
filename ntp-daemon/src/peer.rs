@@ -108,7 +108,7 @@ where
             .as_system_duration();
 
         // randomize the poll interval a little to make it harder to predict poll requests
-        let poll_interval = poll_interval.mul_f64(thread_rng().gen_range(1.01..=1.05));
+        //let poll_interval = poll_interval.mul_f64(thread_rng().gen_range(1.01..=1.05));
 
         poll_wait
             .as_mut()
@@ -496,6 +496,16 @@ mod tests {
             _est_error: NtpDuration,
             _max_error: NtpDuration,
             _poll_interval: PollInterval,
+            _leap_status: NtpLeapIndicator,
+        ) -> Result<(), Self::Error> {
+            panic!("Shouldn't be called by peer");
+        }
+
+        fn bare_update(
+            &self,
+            _offset: NtpDuration,
+            _est_error: NtpDuration,
+            _max_error: NtpDuration,
             _leap_status: NtpLeapIndicator,
         ) -> Result<(), Self::Error> {
             panic!("Shouldn't be called by peer");

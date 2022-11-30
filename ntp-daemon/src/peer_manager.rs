@@ -291,9 +291,8 @@ impl<C: NtpClock> Peers<C> {
             PeerStatus::Measurement(snapshot) => {
                 if let Some(timedata) = self.controller.peer_snapshot(*index) {
                     ObservablePeerState::Observable {
-                        statistics: timedata.statistics,
+                        timedata,
                         reachability: snapshot.reach,
-                        uptime: timedata.time.elapsed(),
                         poll_interval: snapshot.poll_interval,
                         peer_id: snapshot.peer_id,
                         address: match &data.peer_address {
@@ -565,6 +564,16 @@ mod tests {
             _est_error: NtpDuration,
             _max_error: NtpDuration,
             _poll_interval: PollInterval,
+            _leap_status: NtpLeapIndicator,
+        ) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn bare_update(
+            &self,
+            _offset: NtpDuration,
+            _est_error: NtpDuration,
+            _max_error: NtpDuration,
             _leap_status: NtpLeapIndicator,
         ) -> Result<(), Self::Error> {
             Ok(())

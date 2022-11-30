@@ -3,7 +3,7 @@ use std::{fmt::Debug, hash::Hash};
 use crate::{peer::Measurement, NtpClock, NtpPacket, SystemConfig, TimeSnapshot};
 
 pub trait TimeSyncController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> {
-    type PeerTimeSnapshot;
+    type PeerTimeSnapshot: Debug + Serialize + for<'a> Deserialize<'a> + Clone;
 
     /// Create a new clock controller controling the given clock
     fn new(clock: C, config: SystemConfig) -> Self;
@@ -29,6 +29,11 @@ pub trait TimeSyncController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> {
     fn peer_snapshot(&self, id: PeerID) -> Option<Self::PeerTimeSnapshot>;
 }
 
+mod kalman;
 mod standard;
 
-pub type DefaultTimeSyncController<C, PeerID> = standard::StandardClockController<C, PeerID>;
+pub type DefaultTimeSyncController<C, PeerID> = kalman::KalmanClockController<C, PeerID>;
+
+pub use kalman::KalmanClockController;
+use serde::{Deserialize, Serialize};
+pub use standard::StandardClockController;

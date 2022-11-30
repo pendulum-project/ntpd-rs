@@ -410,6 +410,16 @@ mod tests {
         ) -> Result<(), Self::Error> {
             panic!("Shouldn't be called by peer");
         }
+
+        fn bare_update(
+            &self,
+            _offset: NtpDuration,
+            _est_error: NtpDuration,
+            _max_error: NtpDuration,
+            _leap_status: NtpLeapIndicator,
+        ) -> Result<(), Self::Error> {
+            panic!("Shouldn't be called by peer");
+        }
     }
 
     #[tokio::test]

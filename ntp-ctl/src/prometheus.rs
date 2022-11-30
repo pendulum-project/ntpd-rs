@@ -1,4 +1,5 @@
 use ntp_daemon::{observer::WrappedSocketAddr, ObservablePeerState, ObservableState};
+use ntp_proto::DefaultTimeSyncController;
 use prometheus_client::{
     encoding::text::{Encode, SendSyncEncodeMetric},
     metrics::{
@@ -68,9 +69,7 @@ impl Metrics {
 
         for peer in &data.peers {
             if let ObservablePeerState::Observable {
-                statistics,
                 reachability,
-                uptime,
                 poll_interval,
                 address,
                 ..
@@ -79,9 +78,9 @@ impl Metrics {
                 let labels = PeerLabels {
                     address: address.clone(),
                 };
-                self.peer_uptime
-                    .get_or_create(&labels)
-                    .set(uptime.as_secs());
+                /*self.peer_uptime
+                .get_or_create(&labels)
+                .set(uptime.as_secs());*/
                 self.peer_poll_interval
                     .get_or_create(&labels)
                     .set(poll_interval.as_duration().to_seconds());
@@ -91,7 +90,7 @@ impl Metrics {
                 self.peer_reachability_status
                     .get_or_create(&labels)
                     .set(reachability.reachability_score() as u64);
-                self.peer_offset
+                /*self.peer_offset
                     .get_or_create(&labels)
                     .set(statistics.offset.to_seconds());
                 self.peer_delay
@@ -102,7 +101,7 @@ impl Metrics {
                     .set(statistics.dispersion.to_seconds());
                 self.peer_jitter
                     .get_or_create(&labels)
-                    .set(statistics.jitter);
+                    .set(statistics.jitter);*/
             }
         }
 

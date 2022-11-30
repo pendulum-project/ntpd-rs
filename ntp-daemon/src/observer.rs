@@ -1,7 +1,12 @@
+use crate::peer_manager::PeerIndex;
 use crate::server::ServerStats;
 use crate::Peers;
 use crate::{peer_manager::ServerData, sockets::create_unix_socket};
-use ntp_proto::{NtpClock, PeerStatistics, PollInterval, Reach, ReferenceId, SystemSnapshot};
+use ntp_os_clock::UnixNtpClock;
+use ntp_proto::{
+    DefaultTimeSyncController, NtpClock, PeerStatistics, PollInterval, Reach, ReferenceId,
+    SystemSnapshot, TimeSyncController,
+};
 use prometheus_client::encoding::text::Encode;
 use std::io::Write;
 use std::net::SocketAddr;
@@ -53,9 +58,12 @@ impl Encode for WrappedSocketAddr {
 pub enum ObservablePeerState {
     Nothing,
     Observable {
-        statistics: PeerStatistics,
+        #[serde(flatten)]
+        timedata: <DefaultTimeSyncController<UnixNtpClock, PeerIndex> as TimeSyncController<
+            UnixNtpClock,
+            PeerIndex,
+        >>::PeerTimeSnapshot,
         reachability: Reach,
-        uptime: std::time::Duration,
         poll_interval: PollInterval,
         peer_id: ReferenceId,
         address: String,
@@ -154,6 +162,16 @@ mod tests {
             _est_error: NtpDuration,
             _max_error: NtpDuration,
             _poll_interval: PollInterval,
+            _leap_status: NtpLeapIndicator,
+        ) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn bare_update(
+            &self,
+            _offset: NtpDuration,
+            _est_error: NtpDuration,
+            _max_error: NtpDuration,
             _leap_status: NtpLeapIndicator,
         ) -> Result<(), Self::Error> {
             Ok(())
