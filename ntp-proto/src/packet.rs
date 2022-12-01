@@ -113,7 +113,7 @@ pub struct NtpPacket<'a> {
     mac: Option<Mac<'a>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum ExtensionField<'a> {
     UniqueIdentifier(Cow<'a, [u8]>),
     NtsCookie(Cow<'a, [u8]>),
@@ -129,6 +129,30 @@ pub enum ExtensionField<'a> {
         typeid: u16,
         data: Cow<'a, [u8]>,
     },
+}
+
+impl<'a> std::fmt::Debug for ExtensionField<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UniqueIdentifier(arg0) => f.debug_tuple("UniqueIdentifier").field(arg0).finish(),
+            Self::NtsCookie(arg0) => f.debug_tuple("NtsCookie").field(arg0).finish(),
+            Self::NtsCookiePlaceholder { body_length } => f
+                .debug_struct("NtsCookiePlaceholder")
+                .field("body_length", body_length)
+                .finish(),
+            Self::NtsEncryptedField { nonce, ciphertext } => f
+                .debug_struct("NtsEncryptedField")
+                .field("nonce", nonce)
+                .field("ciphertext", ciphertext)
+                .finish(),
+            Self::Unknown { typeid, data } => f
+                .debug_struct("Unknown")
+                .field("typeid", typeid)
+                .field("length", &data.len())
+                .field("data", data)
+                .finish(),
+        }
+    }
 }
 
 pub const fn next_multiple_of(lhs: usize, rhs: usize) -> usize {
@@ -184,7 +208,7 @@ impl<'a> ExtensionField<'a> {
                 w.write_all(&(4 + body_length).to_be_bytes())?;
 
                 let zeros = [0u8; 100];
-                let mut remaining = *body_length as usize;
+                let mut remaining = next_multiple_of(*body_length as usize, 4);
                 while remaining > 0 {
                     let n = usize::min(zeros.len(), remaining);
                     w.write_all(&zeros[..n])?;
@@ -197,11 +221,13 @@ impl<'a> ExtensionField<'a> {
             } => {
                 w.write_all(&0x0404u16.to_be_bytes())?;
 
-                let nonce_octet_count = next_multiple_of(nonce.len(), 4);
-                let ct_octet_count = next_multiple_of(ct.len(), 4);
+                // NOTE: these are NOT rounded up to a number of words
+                let nonce_octet_count = nonce.len();
+                let ct_octet_count = ct.len();
 
                 // + 8 for the extension field header (4 bytes) and nonce/cypher text length (2 bytes each)
-                let signature_octet_count = 8 + nonce_octet_count + ct_octet_count;
+                let signature_octet_count =
+                    8 + next_multiple_of(nonce_octet_count + ct_octet_count, 4);
 
                 w.write_all(&(signature_octet_count as u16).to_be_bytes())?;
                 w.write_all(&(nonce_octet_count as u16).to_be_bytes())?;
@@ -223,8 +249,11 @@ impl<'a> ExtensionField<'a> {
                     ));
                 }
                 w.write_all(&typeid.to_be_bytes())?;
-                w.write_all(&(data.len() as u16).to_be_bytes())?;
+                w.write_all(&(4u16 + data.len() as u16).to_be_bytes())?;
                 w.write_all(data)?;
+
+                let padding_bytes = next_multiple_of(data.len(), 4) - data.len();
+                w.write_all(&padding[..padding_bytes])?;
             }
         }
 
@@ -234,7 +263,7 @@ impl<'a> ExtensionField<'a> {
     pub fn deserialize(data: &'a [u8]) -> Result<(ExtensionField<'a>, usize), PacketParsingError> {
         use PacketParsingError::IncorrectLength;
 
-        if data.len() < 4 {
+        if data.len() < 4 || data.len() % 4 != 0 {
             return Err(IncorrectLength);
         }
 
@@ -246,6 +275,11 @@ impl<'a> ExtensionField<'a> {
 
         let value = data.get(4..ef_len).ok_or(IncorrectLength)?;
 
+        // check that the padding is all zeros. This is required for the fuzz tests to work
+        if data[ef_len..].iter().any(|b| *b != 0) {
+            return Err(PacketParsingError::IncorrectLength);
+        }
+
         let field = match typeid {
             0x104 => {
                 // The string MUST be at least 32 octets long
@@ -256,19 +290,51 @@ impl<'a> ExtensionField<'a> {
                 ExtensionField::UniqueIdentifier(value[..].into())
             }
             0x204 => ExtensionField::NtsCookie(value[..].into()),
-            0x304 => ExtensionField::NtsCookiePlaceholder {
-                body_length: value.len() as u16,
-            },
+            0x304 => {
+                if value.iter().any(|b| *b != 0) {
+                    return Err(PacketParsingError::IncorrectLength);
+                }
+
+                ExtensionField::NtsCookiePlaceholder {
+                    body_length: value.len() as u16,
+                }
+            }
             0x404 => {
                 let nonce_length = u16::from_be_bytes(value[0..2].try_into().unwrap()) as usize;
                 let ciphertext_length =
                     u16::from_be_bytes(value[2..4].try_into().unwrap()) as usize;
 
+                if next_multiple_of(nonce_length, 4) + next_multiple_of(ciphertext_length, 4)
+                    != next_multiple_of(value.len(), 4)
+                {
+                    return Err(PacketParsingError::IncorrectLength);
+                }
+
                 let ciphertext_start = 4 + next_multiple_of(nonce_length as usize, 4);
 
+                let nonce = value.get(4..4 + nonce_length).ok_or(IncorrectLength)?;
+                let nonce_padding = value
+                    .get(4 + nonce_length..ciphertext_start)
+                    .ok_or(IncorrectLength)?;
+
+                if nonce_padding.iter().any(|b| *b != 0) {
+                    return Err(PacketParsingError::IncorrectLength);
+                }
+
+                let ciphertext = value
+                    .get(ciphertext_start..ciphertext_start + ciphertext_length)
+                    .ok_or(IncorrectLength)?;
+                let ciphertext_padding = value
+                    .get(ciphertext_start + ciphertext_length..)
+                    .ok_or(IncorrectLength)?;
+
+                if ciphertext_padding.iter().any(|b| *b != 0) {
+                    return Err(PacketParsingError::IncorrectLength);
+                }
+
                 ExtensionField::NtsEncryptedField {
-                    nonce: value[4..][..nonce_length].into(),
-                    ciphertext: value[ciphertext_start..][..ciphertext_length].into(),
+                    nonce: nonce.into(),
+                    ciphertext: ciphertext.into(),
                 }
             }
             _ => ExtensionField::Unknown {
@@ -277,7 +343,7 @@ impl<'a> ExtensionField<'a> {
             },
         };
 
-        Ok((field, ef_len))
+        Ok((field, next_multiple_of(ef_len, 4)))
     }
 }
 
@@ -374,7 +440,7 @@ impl<'a> Mac<'a> {
         w.write_all(&self.mac)
     }
 
-    fn deserialize(data: &'a [u8]) -> Result<Mac<'a>, PacketParsingError> {
+    fn deserialize(data: &'a [u8]) -> Result<Self, PacketParsingError> {
         if data.len() < 4 || data.len() >= Self::MAXIMUM_SIZE {
             return Err(PacketParsingError::IncorrectLength);
         }
@@ -594,15 +660,19 @@ impl<'a> NtpPacket<'a> {
 
     pub fn serialize<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
         match self.header {
-            NtpHeader::V3(header) => header.serialize(w, 3),
-            NtpHeader::V4(header) => header.serialize(w, 4),
-        }?;
-        if !matches!(self.header, NtpHeader::V3(_)) {
-            self.efdata.serialize(w)?;
+            NtpHeader::V3(header) => header.serialize(w, 3)?,
+            NtpHeader::V4(header) => header.serialize(w, 4)?,
+        };
+
+        match self.header {
+            NtpHeader::V3(_) => { /* v3 does not support NTS, so we ignore extension fields */ }
+            NtpHeader::V4(_) => self.efdata.serialize(w)?,
         }
+
         if let Some(ref mac) = self.mac {
             mac.serialize(w)?;
         }
+
         Ok(())
     }
 
@@ -864,6 +934,7 @@ impl<'a> Default for NtpPacket<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn roundtrip_bitrep_leap() {

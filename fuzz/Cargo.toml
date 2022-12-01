@@ -20,6 +20,9 @@ features = ["fuzz"]
 path = "../ntp-daemon"
 features = ["fuzz"]
 
+[dependencies.pretty_assertions]
+version = "1.3.0"
+
 # Prevent this from interfering with workspaces
 [workspace]
 members = ["."]
