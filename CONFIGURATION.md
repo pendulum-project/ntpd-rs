@@ -133,7 +133,7 @@ startup-panic-threshold = { forward = "inf", backward = 1800 }
 
 #### Standard
 
-A vanilly direct NTP peer connection. This mode is the default. Standard peers can be configured in two ways:
+A vanilla direct NTP peer connection. This mode is the default. Standard peers can be configured in two ways:
 
 ```
 # As a simple list (pool servers from ntppool.org)
