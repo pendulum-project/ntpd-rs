@@ -13,6 +13,9 @@ impl ReferenceId {
     pub const KISS_RSTR: ReferenceId = ReferenceId(u32::from_be_bytes(*b"RSTR"));
     pub const NONE: ReferenceId = ReferenceId(u32::from_be_bytes(*b"XNON"));
 
+    // Network Time Security (NTS) negative-acknowledgment (NAK), from rfc8915
+    pub const KISS_NTSN: ReferenceId = ReferenceId(u32::from_be_bytes(*b"NTSN"));
+
     pub fn from_ip(addr: IpAddr) -> ReferenceId {
         match addr {
             IpAddr::V4(addr) => ReferenceId(u32::from_be_bytes(addr.octets())),
