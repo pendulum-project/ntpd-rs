@@ -8,10 +8,12 @@
 //      https://datatracker.ietf.org/doc/html/rfc5905#appendix-A.5.2
 
 use crate::packet::NtpAssociationMode;
-use crate::peer::{Measurement, PeerStatistics};
+use crate::peer::Measurement;
 use crate::time_types::{FrequencyTolerance, NtpInstant};
 use crate::{packet::NtpLeapIndicator, NtpDuration, NtpPacket};
 use tracing::{debug, instrument, warn};
+
+use super::peer::PeerStatistics;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FilterTuple {

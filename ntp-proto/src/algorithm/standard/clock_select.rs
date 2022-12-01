@@ -1,18 +1,18 @@
 use std::fmt::Debug;
 use std::hash::Hash;
 
-use crate::peer::PeerTimeSnapshot;
+use super::peer::PeerTimeSnapshot;
 use crate::time_types::{FrequencyTolerance, NtpInstant};
 use crate::{NtpDuration, PollInterval, SystemConfig};
 use tracing::{debug, instrument, trace, warn};
 
 #[derive(Debug, Clone)]
-pub struct FilterAndCombine<PeerID: Hash + Eq + Copy + Debug> {
-    pub system_offset: NtpDuration,
-    pub system_jitter: NtpDuration,
-    pub system_root_delay: NtpDuration,
-    pub system_root_dispersion: NtpDuration,
-    pub system_peer_snapshot: (PeerID, PeerTimeSnapshot),
+pub(crate) struct FilterAndCombine<PeerID: Hash + Eq + Copy + Debug> {
+    pub(crate) system_offset: NtpDuration,
+    pub(crate) system_jitter: NtpDuration,
+    pub(crate) system_root_delay: NtpDuration,
+    pub(crate) system_root_dispersion: NtpDuration,
+    pub(crate) system_peer_snapshot: (PeerID, PeerTimeSnapshot),
 }
 
 impl<PeerID: Hash + Eq + Copy + Debug> FilterAndCombine<PeerID> {
@@ -61,58 +61,6 @@ impl<PeerID: Hash + Eq + Copy + Debug> FilterAndCombine<PeerID> {
             system_root_dispersion: root_dispersion,
             system_peer_snapshot: *selection.survivors[0].peer,
         })
-    }
-
-    pub fn system_root_delay(&self) -> NtpDuration {
-        self.system_peer_snapshot.1.root_delay + self.system_peer_snapshot.1.statistics.delay
-    }
-
-    pub fn system_root_dispersion(
-        &self,
-        local_clock_time: NtpInstant,
-        frequency_tolerance: FrequencyTolerance,
-    ) -> NtpDuration {
-        let peer = self.system_peer_snapshot;
-        let statistics = self.system_peer_snapshot.1.statistics;
-        let jitter = NtpDuration::from_seconds(statistics.jitter);
-
-        // in this delta, we expect the drift due to inaccurate frequency to be at most this value
-        let drift_upper_bound =
-            NtpInstant::abs_diff(local_clock_time, peer.1.time) * frequency_tolerance;
-
-        // NOTES:
-        //
-        // 1) the skeleton combines the peer's jitter with the current system jitter
-        //
-        // > SQRT(SQUARE(p->jitter) + SQUARE(s.jitter))
-        //
-        // or well, it calculates the "vector" between them. I'd expect a "divide by 2" but it's
-        // not there. Anyhow, we don't currently consider the system's jitter.
-        //
-        // 2) the spec uses the component `|THETA|`
-        //
-        // > The system offset (THETA) represents the maximum-likelihood offset estimate for the server population.
-        //
-        // The code skeleton instead uses `p.offset`. We use the fresh system offset here.
-        let dispersion_increment =
-            statistics.dispersion + jitter + drift_upper_bound + self.system_offset.abs();
-
-        // per the spec
-        //
-        // > The dispersion increment (p.epsilon + p.psi + PHI * (s.t - p.t) + |THETA|) is bounded from
-        // > below by MINDISP.  In subnets with very fast processors and networks and very small delay
-        // > and dispersion this forces a monotone-definite increase in s.rootdisp (EPSILON), which avoids
-        // > loops between peers operating at the same stratum.
-        peer.1.root_dispersion + Ord::max(NtpDuration::MIN_DISPERSION, dispersion_increment)
-    }
-
-    pub fn root_synchronization_distance(
-        &self,
-        local_clock_time: NtpInstant,
-        frequency_tolerance: FrequencyTolerance,
-    ) -> NtpDuration {
-        self.system_root_dispersion(local_clock_time, frequency_tolerance)
-            + self.system_root_delay() / 2
     }
 }
 
@@ -508,28 +456,10 @@ pub fn fuzz_find_interval(spec: &[(i64, u64)]) {
     assert!(survivors.is_empty() || 2 * survivors.len() > spec.len());
 }
 
-#[cfg(feature = "ext-test")]
-pub fn peer_snapshot() -> crate::PeerSnapshot {
-    use crate::ReferenceId;
-
-    let mut reach = crate::peer::Reach::default();
-    reach.received_packet();
-
-    crate::PeerSnapshot {
-        peer_id: ReferenceId::from_int(0),
-        stratum: 0,
-        reference_id: ReferenceId::from_int(0),
-
-        our_id: ReferenceId::from_int(1),
-        reach,
-        poll_interval: crate::time_types::PollIntervalLimits::default().min,
-    }
-}
-
 #[cfg(any(test, feature = "fuzz"))]
-fn test_peer_time_snapshot(instant: NtpInstant) -> crate::PeerTimeSnapshot {
+fn test_peer_time_snapshot(instant: NtpInstant) -> super::peer::PeerTimeSnapshot {
     peer_time_snapshot(
-        crate::peer::PeerStatistics::default(),
+        super::peer::PeerStatistics::default(),
         instant,
         NtpDuration::default(),
         NtpDuration::default(),
@@ -538,7 +468,7 @@ fn test_peer_time_snapshot(instant: NtpInstant) -> crate::PeerTimeSnapshot {
 
 #[cfg(any(test, feature = "fuzz"))]
 fn peer_time_snapshot(
-    statistics: crate::peer::PeerStatistics,
+    statistics: super::peer::PeerStatistics,
     instant: NtpInstant,
     root_delay: NtpDuration,
     root_dispersion: NtpDuration,
@@ -563,8 +493,9 @@ fn peer_time_snapshot(
 mod test {
     use std::time::Duration;
 
+    use super::super::peer::PeerStatistics;
     use super::*;
-    use crate::{peer::PeerStatistics, time_types::PollIntervalLimits};
+    use crate::time_types::PollIntervalLimits;
 
     #[test]
     fn interval_find_bug_1() {
@@ -1348,46 +1279,6 @@ mod test {
         for candidate in candidates {
             assert_eq!(candidate.peer.1.statistics.offset, NtpDuration::ONE);
         }
-    }
-
-    #[test]
-    fn system_variable_update() {
-        let instant = NtpInstant::now();
-
-        let base_state = FilterAndCombine {
-            system_offset: Default::default(),
-            system_jitter: Default::default(),
-            system_root_delay: Default::default(),
-            system_root_dispersion: Default::default(),
-            system_peer_snapshot: (
-                1,
-                peer_time_snapshot(
-                    PeerStatistics::default(),
-                    instant,
-                    NtpDuration::ZERO,
-                    NtpDuration::ZERO,
-                ),
-            ),
-        };
-
-        let frequency_tolerance = FrequencyTolerance::ppm(15);
-
-        let local_clock_time = instant;
-        let _baseline =
-            base_state.root_synchronization_distance(local_clock_time, frequency_tolerance);
-
-        let mut state = base_state.clone();
-        state.system_offset = NtpDuration::ONE;
-        let distance = state.root_synchronization_distance(local_clock_time, frequency_tolerance);
-
-        // equal to 1 up to rounding
-        assert!(distance == NtpDuration::ONE);
-
-        let mut state = base_state;
-        state.system_jitter = NtpDuration::ONE;
-        let distance = state.root_synchronization_distance(local_clock_time, frequency_tolerance);
-
-        assert!(distance < NtpDuration::ONE / 2i64);
     }
 
     #[test]

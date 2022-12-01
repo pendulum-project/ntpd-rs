@@ -2,9 +2,7 @@
 
 mod algorithm;
 mod clock;
-mod clock_select;
 mod config;
-mod filter;
 mod identifiers;
 mod nts_record;
 mod packet;
@@ -12,22 +10,20 @@ mod peer;
 mod system;
 mod time_types;
 
-pub use algorithm::{DefaultTimeSyncController, ObservablePeerTimedata, TimeSyncController};
-pub use clock::{ClockController, ClockUpdateResult, NtpClock};
 #[cfg(feature = "fuzz")]
-pub use clock_select::fuzz_find_interval;
-#[cfg(feature = "ext-test")]
-pub use clock_select::peer_snapshot;
-pub use clock_select::FilterAndCombine;
+pub use algorithm::fuzz_find_interval;
+pub use algorithm::{DefaultTimeSyncController, ObservablePeerTimedata, TimeSyncController};
+pub use clock::NtpClock;
 pub use config::{StepThreshold, SystemConfig};
 pub use identifiers::ReferenceId;
 
 pub use packet::{NtpAssociationMode, NtpLeapIndicator, NtpPacket};
 #[cfg(feature = "fuzz")]
 pub use peer::fuzz_measurement_from_packet;
+#[cfg(feature = "ext-test")]
+pub use peer::peer_snapshot;
 pub use peer::{
-    AcceptSynchronizationError, IgnoreReason, Measurement, Peer, PeerSnapshot, PeerStatistics,
-    PeerTimeSnapshot, Reach, Update,
+    AcceptSynchronizationError, IgnoreReason, Measurement, Peer, PeerSnapshot, Reach, Update,
 };
 pub use system::{SystemSnapshot, TimeSnapshot};
 #[cfg(feature = "fuzz")]
