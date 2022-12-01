@@ -461,7 +461,7 @@ impl<'a> NtpPacket<'a> {
             4 => {
                 let (header, header_size) = NtpHeaderV3V4::deserialize(data)?;
                 let (efdata, fields_len) = ExtensionFieldData::deserialize(&data[header_size..])?;
-                let mac = if header_size != data.len() {
+                let mac = if header_size + fields_len != data.len() {
                     Some(Mac::deserialize(&data[header_size + fields_len..])?)
                 } else {
                     None
