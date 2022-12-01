@@ -9,6 +9,7 @@ mod identifiers;
 mod nts_record;
 mod packet;
 mod peer;
+mod system;
 mod time_types;
 
 pub use algorithm::{DefaultTimeSyncController, ObservablePeerTimedata, TimeSyncController};
@@ -26,8 +27,9 @@ pub use packet::{NtpAssociationMode, NtpLeapIndicator, NtpPacket};
 pub use peer::fuzz_measurement_from_packet;
 pub use peer::{
     AcceptSynchronizationError, IgnoreReason, Measurement, Peer, PeerSnapshot, PeerStatistics,
-    PeerTimeSnapshot, Reach, SystemSnapshot, TimeSnapshot, Update,
+    PeerTimeSnapshot, Reach, Update,
 };
+pub use system::{SystemSnapshot, TimeSnapshot};
 #[cfg(feature = "fuzz")]
 pub use time_types::fuzz_duration_from_seconds;
 pub use time_types::{
