@@ -1,4 +1,6 @@
 use ntp_daemon::{observer::WrappedSocketAddr, ObservablePeerState, ObservableState};
+use ntp_os_clock::UnixNtpClock;
+use ntp_proto::NtpClock;
 use prometheus_client::{
     encoding::text::{Encode, SendSyncEncodeMetric},
     metrics::{
@@ -27,14 +29,13 @@ pub struct Metrics {
     system_accumulated_steps: Gauge<f64>,
     system_accumulated_steps_threshold: Gauge<f64>,
     system_leap_indicator: Gauge,
-    peer_uptime: Family<PeerLabels, Gauge>,
+    peer_last_update: Family<PeerLabels, Gauge<f64>>,
     peer_poll_interval: Family<PeerLabels, Gauge<f64>>,
     peer_poll_interval_exp: Family<PeerLabels, Gauge<f64>>,
     peer_reachability_status: Family<PeerLabels, Gauge>,
     peer_offset: Family<PeerLabels, Gauge<f64>>,
+    peer_uncertainty: Family<PeerLabels, Gauge<f64>>,
     peer_delay: Family<PeerLabels, Gauge<f64>>,
-    peer_dispersion: Family<PeerLabels, Gauge<f64>>,
-    peer_jitter: Family<PeerLabels, Gauge<f64>>,
     server_received_packets: Family<ServerLabels, Counter>,
     server_accepted_packets: Family<ServerLabels, Counter>,
     server_denied_packets: Family<ServerLabels, Counter>,
@@ -45,6 +46,8 @@ pub struct Metrics {
 
 impl Metrics {
     pub fn fill(&self, data: &ObservableState) {
+        let clock = UnixNtpClock::new();
+
         self.system_poll_interval.set(
             data.system
                 .time_snapshot
@@ -69,9 +72,8 @@ impl Metrics {
 
         for peer in &data.peers {
             if let ObservablePeerState::Observable {
-                statistics,
+                timedata,
                 reachability,
-                uptime,
                 poll_interval,
                 address,
                 ..
@@ -80,9 +82,11 @@ impl Metrics {
                 let labels = PeerLabels {
                     address: address.clone(),
                 };
-                self.peer_uptime
-                    .get_or_create(&labels)
-                    .set(uptime.as_secs());
+                self.peer_last_update.get_or_create(&labels).set(
+                    (timedata.last_update
+                        - clock.now().expect("Unable to get current system time"))
+                    .to_seconds(),
+                );
                 self.peer_poll_interval
                     .get_or_create(&labels)
                     .set(poll_interval.as_duration().to_seconds());
@@ -94,16 +98,13 @@ impl Metrics {
                     .set(reachability.reachability_score() as u64);
                 self.peer_offset
                     .get_or_create(&labels)
-                    .set(statistics.offset.to_seconds());
+                    .set(timedata.offset.to_seconds());
                 self.peer_delay
                     .get_or_create(&labels)
-                    .set(statistics.delay.to_seconds());
-                self.peer_dispersion
+                    .set(timedata.delay.to_seconds());
+                self.peer_uncertainty
                     .get_or_create(&labels)
-                    .set(statistics.dispersion.to_seconds());
-                self.peer_jitter
-                    .get_or_create(&labels)
-                    .set(statistics.jitter);
+                    .set(timedata.uncertainty.to_seconds());
             }
         }
 
@@ -185,7 +186,7 @@ impl Metrics {
             "uptime",
             "Time since the peer was started",
             Unit::Seconds,
-            Box::new(self.peer_uptime.clone()),
+            Box::new(self.peer_last_update.clone()),
         );
 
         peer.register_with_unit(
@@ -222,17 +223,10 @@ impl Metrics {
         );
 
         peer.register_with_unit(
-            "dispersion",
-            "Maximum error of the clock",
+            "uncertainty",
+            "Estimated error of the clock",
             Unit::Seconds,
-            Box::new(self.peer_dispersion.clone()),
-        );
-
-        peer.register_with_unit(
-            "jitter",
-            "Variance of network latency",
-            Unit::Seconds,
-            Box::new(self.peer_jitter.clone()),
+            Box::new(self.peer_uncertainty.clone()),
         );
 
         let server = registry.sub_registry_with_prefix("server");

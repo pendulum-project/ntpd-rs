@@ -56,7 +56,7 @@ impl Add<Duration> for NtpInstant {
 }
 
 /// NtpTimestamp represents an ntp timestamp without the era number.
-#[derive(Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Default)]
+#[derive(Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Default, Serialize, Deserialize)]
 pub struct NtpTimestamp {
     timestamp: u64,
 }
