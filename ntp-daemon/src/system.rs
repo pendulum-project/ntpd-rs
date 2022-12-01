@@ -254,9 +254,11 @@ impl<C: NtpClock> System<C> {
         let result = self.controller.peer_measurement(index, measurement, packet);
         if let Some((used_peers, timedata)) = result {
             self.system.update(
-                used_peers
-                    .iter()
-                    .map(|v| self.peers.get(v).and_then(|data| data.snapshot).unwrap()),
+                used_peers.iter().map(|v| {
+                    self.peers.get(v).and_then(|data| data.snapshot).expect(
+                        "Critical error: Peer used for synchronization that is not known to system",
+                    )
+                }),
                 timedata,
                 &self.config,
             );
