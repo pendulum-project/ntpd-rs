@@ -21,7 +21,7 @@ pub use clock_select::FilterAndCombine;
 pub use config::{StepThreshold, SystemConfig};
 pub use identifiers::ReferenceId;
 
-pub use packet::{NtpAssociationMode, NtpLeapIndicator, NtpPacket};
+pub use packet::{ExtensionField, NtpAssociationMode, NtpLeapIndicator, NtpPacket};
 #[cfg(feature = "fuzz")]
 pub use peer::fuzz_measurement_from_packet;
 pub use peer::{

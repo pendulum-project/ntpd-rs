@@ -1,5 +1,4 @@
 use std::{
-    iter::repeat,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs},
     sync::Arc,
 };
@@ -11,7 +10,7 @@ use aes_siv::{
     Nonce,
 };
 
-use ntp_proto::NtsRecord;
+use ntp_proto::{ExtensionField, NtsRecord};
 use ntp_udp::UdpSocket;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_rustls::rustls;
@@ -52,7 +51,12 @@ pub const fn div_ceil(lhs: usize, rhs: usize) -> usize {
     }
 }
 
-fn key_exchange_packet(cookie: &[u8], c2s: &[u8; 64]) -> Vec<u8> {
+fn key_exchange_packet(
+    identifier: &[u8],
+    cookie: &[u8],
+    cipher: Aes256SivAead,
+    nonce: &Nonce,
+) -> Vec<u8> {
     let mut packet = vec![
         0b00100011, 0, 10, 0, //hdr
         0, 0, 0, 0, // root delay
@@ -64,51 +68,24 @@ fn key_exchange_packet(cookie: &[u8], c2s: &[u8; 64]) -> Vec<u8> {
         1, 2, 3, 4, 5, 6, 7, 8, // xmt timestamp
     ];
 
-    // Add unique identifier EF
-    packet.extend_from_slice(&0x0104_u16.to_be_bytes());
-    packet.extend_from_slice(&(32_u16 + 4).to_be_bytes());
-    packet.extend((0..).take(32));
+    let unique_identifier = ExtensionField::UniqueIdentifier(identifier.into());
+    unique_identifier.serialize(&mut packet).unwrap();
 
-    // Add cookie EF
-    packet.extend_from_slice(&0x0204_u16.to_be_bytes());
+    let cookie = ExtensionField::NtsCookie(cookie.into());
+    cookie.serialize(&mut packet).unwrap();
 
-    // + 4 for the extension field header
-    let cookie_octet_count = next_multiple_of(cookie.len(), 4) + 4;
-    packet.extend_from_slice(&(cookie_octet_count as u16).to_be_bytes());
+    let payload = Payload {
+        msg: b"",
+        aad: &packet,
+    };
 
-    packet.extend_from_slice(cookie);
-    packet.extend(repeat(0).take(next_multiple_of(cookie.len(), 4) - cookie.len()));
+    let ciphertext = cipher.encrypt(nonce, payload).unwrap();
 
-    let cipher = Aes256SivAead::new(Key::<Aes256SivAead>::from_slice(c2s.as_slice()));
-    let nonce = b"any unique nonce";
-    let ct = cipher
-        .encrypt(
-            Nonce::from_slice(nonce),
-            Payload {
-                msg: b"",
-                aad: &packet,
-            },
-        )
-        .unwrap();
-
-    // Add signature EF
-    packet.extend_from_slice(&0x0404_u16.to_be_bytes());
-
-    let nonce_octet_count = next_multiple_of(nonce.len(), 4);
-    let ct_octet_count = next_multiple_of(ct.len(), 4);
-
-    // + 8 for the extension field header (4 bytes) and nonce/cypher text length (2 bytes each)
-    let signature_octet_count = nonce_octet_count + ct_octet_count + 8;
-
-    packet.extend_from_slice(&(signature_octet_count as u16).to_be_bytes());
-    packet.extend_from_slice(&(nonce_octet_count as u16).to_be_bytes());
-    packet.extend_from_slice(&(ct_octet_count as u16).to_be_bytes());
-
-    packet.extend_from_slice(nonce);
-    packet.extend(repeat(0).take(next_multiple_of(nonce.len(), 4) - nonce.len()));
-
-    packet.extend_from_slice(&ct);
-    packet.extend(repeat(0).take(next_multiple_of(ct.len(), 4) - ct.len()));
+    let signature = ExtensionField::NtsEncryptedField {
+        nonce: nonce.as_slice().into(),
+        ciphertext: ciphertext.into(),
+    };
+    signature.serialize(&mut packet).unwrap();
 
     packet
 }
@@ -207,7 +184,10 @@ async fn main() -> std::io::Result<()> {
         SocketAddr::V6(_) => UdpSocket::client((Ipv6Addr::UNSPECIFIED, 0).into(), addr).await?,
     };
 
-    let packet = key_exchange_packet(&cookie, &c2s);
+    let identifier: Vec<u8> = (0..).take(32).collect();
+    let cipher = Aes256SivAead::new(Key::<Aes256SivAead>::from_slice(c2s.as_slice()));
+    let nonce = Nonce::from_slice(b"any unique nonce");
+    let packet = key_exchange_packet(&identifier, &cookie, cipher, nonce);
 
     socket.send(&packet).await?;
     let mut buf = [0; 1024];

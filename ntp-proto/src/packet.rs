@@ -115,23 +115,106 @@ pub struct NtpPacket<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExtensionField<'a> {
-    Unknown { typeid: u16, data: Cow<'a, [u8]> },
+    UniqueIdentifier(Cow<'a, [u8]>),
+    NtsCookie(Cow<'a, [u8]>),
+    NtsCookiePlaceholder {
+        body_length: u16,
+    },
+    NtsEncryptedField {
+        nonce: Cow<'a, [u8]>,
+        ciphertext: Cow<'a, [u8]>,
+    },
+
+    Unknown {
+        typeid: u16,
+        data: Cow<'a, [u8]>,
+    },
+}
+
+pub const fn next_multiple_of(lhs: usize, rhs: usize) -> usize {
+    match lhs % rhs {
+        0 => lhs,
+        r => lhs + (rhs - r),
+    }
 }
 
 impl<'a> ExtensionField<'a> {
     const MINIMUM_SIZE: usize = 16;
 
     fn into_owned(self) -> ExtensionField<'static> {
+        use ExtensionField::*;
+
         match self {
-            ExtensionField::Unknown { typeid, data } => ExtensionField::Unknown {
+            Unknown { typeid, data } => Unknown {
                 typeid,
                 data: Cow::Owned(data.into_owned()),
+            },
+            UniqueIdentifier(data) => UniqueIdentifier(Cow::Owned(data.into_owned())),
+            NtsCookie(data) => NtsCookie(Cow::Owned(data.into_owned())),
+            NtsCookiePlaceholder { body_length } => NtsCookiePlaceholder { body_length },
+            NtsEncryptedField { nonce, ciphertext } => NtsEncryptedField {
+                nonce: Cow::Owned(nonce.into_owned()),
+                ciphertext: Cow::Owned(ciphertext.into_owned()),
             },
         }
     }
 
-    fn serialize<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
+    pub fn serialize<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
+        let padding = [0; 4];
+
         match self {
+            ExtensionField::UniqueIdentifier(string) => {
+                w.write_all(&0x0104u16.to_be_bytes())?;
+                w.write_all(&(4 + string.len() as u16).to_be_bytes())?;
+                w.write_all(string)?;
+
+                let padding_bytes = next_multiple_of(string.len(), 4) - string.len();
+                w.write_all(&padding[..padding_bytes])?;
+            }
+            ExtensionField::NtsCookie(cookie) => {
+                w.write_all(&0x0204u16.to_be_bytes())?;
+                w.write_all(&(4 + cookie.len() as u16).to_be_bytes())?;
+                w.write_all(cookie)?;
+
+                let padding_bytes = next_multiple_of(cookie.len(), 4) - cookie.len();
+                w.write_all(&padding[..padding_bytes])?;
+            }
+            ExtensionField::NtsCookiePlaceholder { body_length } => {
+                w.write_all(&0x0304u16.to_be_bytes())?;
+                w.write_all(&(4 + body_length).to_be_bytes())?;
+
+                let zeros = [0u8; 100];
+                let mut remaining = *body_length as usize;
+                while remaining > 0 {
+                    let n = usize::min(zeros.len(), remaining);
+                    w.write_all(&zeros[..n])?;
+                    remaining -= n;
+                }
+            }
+            ExtensionField::NtsEncryptedField {
+                nonce,
+                ciphertext: ct,
+            } => {
+                w.write_all(&0x0404u16.to_be_bytes())?;
+
+                let nonce_octet_count = next_multiple_of(nonce.len(), 4);
+                let ct_octet_count = next_multiple_of(ct.len(), 4);
+
+                // + 8 for the extension field header (4 bytes) and nonce/cypher text length (2 bytes each)
+                let signature_octet_count = 8 + nonce_octet_count + ct_octet_count;
+
+                w.write_all(&(signature_octet_count as u16).to_be_bytes())?;
+                w.write_all(&(nonce_octet_count as u16).to_be_bytes())?;
+                w.write_all(&(ct_octet_count as u16).to_be_bytes())?;
+
+                w.write_all(nonce)?;
+                let padding_bytes = next_multiple_of(nonce.len(), 4) - nonce.len();
+                w.write_all(&padding[..padding_bytes])?;
+
+                w.write_all(ct)?;
+                let padding_bytes = next_multiple_of(ct.len(), 4) - ct.len();
+                w.write_all(&padding[..padding_bytes])?;
+            }
             ExtensionField::Unknown { typeid, data } => {
                 if data.len() > u16::MAX as usize {
                     return Err(std::io::Error::new(
@@ -141,33 +224,60 @@ impl<'a> ExtensionField<'a> {
                 }
                 w.write_all(&typeid.to_be_bytes())?;
                 w.write_all(&(data.len() as u16).to_be_bytes())?;
-                w.write_all(data)
+                w.write_all(data)?;
             }
         }
+
+        Ok(())
     }
 
-    fn deserialize(data: &'a [u8]) -> Result<(ExtensionField<'a>, usize), PacketParsingError> {
+    pub fn deserialize(data: &'a [u8]) -> Result<(ExtensionField<'a>, usize), PacketParsingError> {
+        use PacketParsingError::IncorrectLength;
+
         if data.len() < 4 {
-            return Err(PacketParsingError::IncorrectLength);
+            return Err(IncorrectLength);
         }
 
         let typeid = u16::from_be_bytes(data[0..2].try_into().unwrap());
         let ef_len = u16::from_be_bytes(data[2..4].try_into().unwrap()) as usize;
-        if ef_len < Self::MINIMUM_SIZE || ef_len > data.len() {
+        if ef_len < Self::MINIMUM_SIZE {
             return Err(PacketParsingError::IncorrectLength);
         }
 
-        match data.get(4..ef_len) {
-            None => Err(PacketParsingError::IncorrectLength),
-            Some(value) => {
-                let field = ExtensionField::Unknown {
-                    typeid,
-                    data: Cow::Borrowed(value),
-                };
+        let value = data.get(4..ef_len).ok_or(IncorrectLength)?;
 
-                Ok((field, ef_len))
+        let field = match typeid {
+            0x104 => {
+                // The string MUST be at least 32 octets long
+                if value.len() < 32 {
+                    return Err(IncorrectLength);
+                }
+
+                ExtensionField::UniqueIdentifier(value[..].into())
             }
-        }
+            0x204 => ExtensionField::NtsCookie(value[..].into()),
+            0x304 => ExtensionField::NtsCookiePlaceholder {
+                body_length: value.len() as u16,
+            },
+            0x404 => {
+                let nonce_length = u16::from_be_bytes(value[0..2].try_into().unwrap()) as usize;
+                let ciphertext_length =
+                    u16::from_be_bytes(value[2..4].try_into().unwrap()) as usize;
+
+                let ciphertext_start = 4 + next_multiple_of(nonce_length as usize, 4);
+
+                ExtensionField::NtsEncryptedField {
+                    nonce: value[4..][..nonce_length].into(),
+                    ciphertext: value[ciphertext_start..][..ciphertext_length].into(),
+                }
+            }
+            _ => ExtensionField::Unknown {
+                typeid,
+                data: Cow::Borrowed(value),
+            },
+        };
+
+        Ok((field, ef_len))
     }
 }
 
