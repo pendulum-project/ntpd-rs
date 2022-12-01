@@ -395,9 +395,8 @@ impl<C: NtpClock> System<C> {
                 .map(|snapshot| {
                     if let Some(timedata) = self.controller.peer_snapshot(*index) {
                         ObservablePeerState::Observable {
-                            statistics: timedata.statistics,
+                            timedata,
                             reachability: snapshot.reach,
-                            uptime: timedata.time.elapsed(),
                             poll_interval: snapshot.poll_interval,
                             peer_id: snapshot.peer_id,
                             address: match &data.peer_address {

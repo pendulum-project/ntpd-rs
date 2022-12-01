@@ -11,7 +11,7 @@ mod packet;
 mod peer;
 mod time_types;
 
-pub use algorithm::{DefaultTimeSyncController, TimeSyncController};
+pub use algorithm::{DefaultTimeSyncController, ObservablePeerTimedata, TimeSyncController};
 pub use clock::{ClockController, ClockUpdateResult, NtpClock};
 #[cfg(feature = "fuzz")]
 pub use clock_select::fuzz_find_interval;

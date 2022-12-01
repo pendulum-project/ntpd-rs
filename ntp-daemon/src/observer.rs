@@ -1,6 +1,6 @@
 use crate::server::ServerStats;
 use crate::{sockets::create_unix_socket, system::ServerData};
-use ntp_proto::{PeerStatistics, PollInterval, Reach, ReferenceId, SystemSnapshot};
+use ntp_proto::{ObservablePeerTimedata, PollInterval, Reach, ReferenceId, SystemSnapshot};
 use prometheus_client::encoding::text::Encode;
 use std::io::Write;
 use std::net::SocketAddr;
@@ -51,9 +51,9 @@ impl Encode for WrappedSocketAddr {
 pub enum ObservablePeerState {
     Nothing,
     Observable {
-        statistics: PeerStatistics,
+        #[serde(flatten)]
+        timedata: ObservablePeerTimedata,
         reachability: Reach,
-        uptime: std::time::Duration,
         poll_interval: PollInterval,
         peer_id: ReferenceId,
         address: String,
@@ -163,9 +163,8 @@ mod tests {
             ObservablePeerState::Nothing,
             ObservablePeerState::Nothing,
             ObservablePeerState::Observable {
-                statistics: PeerStatistics::default(),
+                timedata: Default::default(),
                 reachability: Reach::default(),
-                uptime: std::time::Duration::from_secs(1),
                 poll_interval: PollIntervalLimits::default().min,
                 peer_id: ReferenceId::from_ip("127.0.0.1".parse().unwrap()),
                 address: "127.0.0.3:123".into(),
@@ -227,9 +226,8 @@ mod tests {
             ObservablePeerState::Nothing,
             ObservablePeerState::Nothing,
             ObservablePeerState::Observable {
-                statistics: PeerStatistics::default(),
+                timedata: Default::default(),
                 reachability: Reach::default(),
-                uptime: std::time::Duration::from_secs(1),
                 poll_interval: PollIntervalLimits::default().min,
                 peer_id: ReferenceId::from_ip("127.0.0.1".parse().unwrap()),
                 address: "127.0.0.3:123".into(),

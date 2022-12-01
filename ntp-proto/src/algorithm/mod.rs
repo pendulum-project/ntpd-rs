@@ -1,10 +1,24 @@
 use std::{fmt::Debug, hash::Hash};
 
-use crate::{peer::Measurement, NtpClock, NtpPacket, SystemConfig, TimeSnapshot};
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    peer::Measurement, NtpClock, NtpDuration, NtpPacket, NtpTimestamp, SystemConfig, TimeSnapshot,
+};
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct ObservablePeerTimedata {
+    pub offset: NtpDuration,
+    pub uncertainty: NtpDuration,
+    pub delay: NtpDuration,
+
+    pub remote_delay: NtpDuration,
+    pub remote_uncertainty: NtpDuration,
+
+    pub last_update: NtpTimestamp,
+}
 
 pub trait TimeSyncController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> {
-    type PeerTimeSnapshot;
-
     /// Create a new clock controller controling the given clock
     fn new(clock: C, config: SystemConfig) -> Self;
     /// Update used system config
@@ -26,7 +40,7 @@ pub trait TimeSyncController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> {
         packet: NtpPacket<'static>,
     ) -> Option<(Vec<PeerID>, TimeSnapshot)>;
     /// Get a snapshot of the timekeeping state of a peer.
-    fn peer_snapshot(&self, id: PeerID) -> Option<Self::PeerTimeSnapshot>;
+    fn peer_snapshot(&self, id: PeerID) -> Option<ObservablePeerTimedata>;
 }
 
 mod standard;

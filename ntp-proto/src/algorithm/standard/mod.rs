@@ -6,13 +6,14 @@ use crate::{
     filter::LastMeasurements,
     peer::{Measurement, PeerTimeState},
     ClockController, ClockUpdateResult, FilterAndCombine, NtpClock, NtpDuration, NtpInstant,
-    PeerTimeSnapshot, SystemConfig, TimeSnapshot,
+    ObservablePeerTimedata, PeerTimeSnapshot, SystemConfig, TimeSnapshot,
 };
 
 use super::TimeSyncController;
 
 #[derive(Debug)]
 pub struct StandardClockController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> {
+    clock: C,
     controller: ClockController<C>,
     peerstate: HashMap<PeerID, ControllerPeerState>,
     timestate: TimeSnapshot,
@@ -119,11 +120,10 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> StandardClockController<C, P
 impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID>
     for StandardClockController<C, PeerID>
 {
-    type PeerTimeSnapshot = PeerTimeSnapshot;
-
     fn new(clock: C, config: SystemConfig) -> Self {
         let timestate = TimeSnapshot::default();
         Self {
+            clock: clock.clone(),
             controller: ClockController::new(clock, &timestate, &config),
             peerstate: HashMap::new(),
             timestate,
@@ -185,9 +185,19 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
         self.recalculate_clock(now)
     }
 
-    fn peer_snapshot(&self, id: PeerID) -> Option<Self::PeerTimeSnapshot> {
+    fn peer_snapshot(&self, id: PeerID) -> Option<ObservablePeerTimedata> {
         self.peerstate
             .get(&id)
             .map(|state| PeerTimeSnapshot::from_timestate(&state.timestate))
+            .map(|snapshot| ObservablePeerTimedata {
+                offset: snapshot.statistics.offset,
+                uncertainty: snapshot.statistics.dispersion
+                    + NtpDuration::from_seconds(snapshot.statistics.jitter),
+                delay: snapshot.statistics.delay,
+                remote_delay: snapshot.root_delay,
+                remote_uncertainty: snapshot.root_dispersion,
+                last_update: self.clock.now().expect("Unable to get current time")
+                    + NtpDuration::from_system_duration(snapshot.time.elapsed()),
+            })
     }
 }
