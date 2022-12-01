@@ -50,20 +50,6 @@ pub struct PeerChannels {
     pub system_config_receiver: tokio::sync::watch::Receiver<SystemConfig>,
 }
 
-impl PeerChannels {
-    #[cfg(test)]
-    pub fn test() -> Self {
-        let (msg_for_system_sender, _) = tokio::sync::mpsc::channel(1);
-        let (_, system_config_receiver) = tokio::sync::watch::channel(SystemConfig::default());
-        let (_, system_snapshot_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
-        PeerChannels {
-            msg_for_system_sender,
-            system_snapshot_receiver,
-            system_config_receiver,
-        }
-    }
-}
-
 pub(crate) struct PeerTask<C: 'static + NtpClock + Send, T: Wait> {
     _wait: PhantomData<T>,
     index: PeerIndex,
