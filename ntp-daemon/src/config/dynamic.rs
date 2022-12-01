@@ -2,8 +2,6 @@ use crate::sockets::create_unix_socket;
 use crate::tracing::ReloadHandle;
 use ntp_proto::{NtpDuration, StepThreshold, SystemConfig};
 use std::os::unix::fs::PermissionsExt;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use tracing::error;
 use tracing_subscriber::EnvFilter;
@@ -51,11 +49,11 @@ impl LogReloader for ReloadHandle {
 
 pub async fn spawn<H: LogReloader + Send + 'static>(
     config: ConfigureConfig,
-    system_config: Arc<RwLock<SystemConfig>>,
+    system_config_sender: tokio::sync::watch::Sender<SystemConfig>,
     log_reload_handle: H,
 ) -> JoinHandle<std::io::Result<()>> {
     tokio::spawn(async move {
-        let result = dynamic_configuration(config, system_config, log_reload_handle).await;
+        let result = dynamic_configuration(config, system_config_sender, log_reload_handle).await;
         if let Err(ref e) = result {
             error!("Abnormal termination of dynamic configurator: {}", e);
         }
@@ -65,7 +63,7 @@ pub async fn spawn<H: LogReloader + Send + 'static>(
 
 async fn dynamic_configuration<H: LogReloader>(
     config: ConfigureConfig,
-    system_config: Arc<RwLock<SystemConfig>>,
+    system_config_sender: tokio::sync::watch::Sender<SystemConfig>,
     log_reload_handle: H,
 ) -> std::io::Result<()> {
     let path = match config.path {
@@ -94,13 +92,13 @@ async fn dynamic_configuration<H: LogReloader>(
             log_reload_handle.update_log(EnvFilter::new(filter));
         }
 
-        let mut config = system_config.write().await;
-
         if let Some(panic_threshold) = operation.panic_threshold {
-            config.panic_threshold = StepThreshold {
-                forward: Some(NtpDuration::from_seconds(panic_threshold)),
-                backward: Some(NtpDuration::from_seconds(panic_threshold)),
-            };
+            system_config_sender.send_modify(|config| {
+                config.panic_threshold = StepThreshold {
+                    forward: Some(NtpDuration::from_seconds(panic_threshold)),
+                    backward: Some(NtpDuration::from_seconds(panic_threshold)),
+                };
+            });
         }
     }
 }
@@ -120,8 +118,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_dynamic_configuration_change() {
-        let system_config = Arc::new(RwLock::new(SystemConfig::default()));
-        let system_config_test = system_config.clone();
+        let (system_config_sender, system_config_receiver) =
+            tokio::sync::watch::channel(SystemConfig::default());
 
         let path = std::env::temp_dir().join("ntp-test-stream-4");
         let config = ConfigureConfig {
@@ -129,7 +127,7 @@ mod tests {
             mode: 0o700,
         };
 
-        let handle = spawn(config, system_config, TestLogReloader {}).await;
+        let handle = spawn(config, system_config_sender, TestLogReloader {}).await;
 
         // Ensure client has started.
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -150,7 +148,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(10)).await;
 
         assert_eq!(
-            system_config_test.read().await.panic_threshold.forward,
+            system_config_receiver.borrow().panic_threshold.forward,
             Some(NtpDuration::from_seconds(600.))
         );
 

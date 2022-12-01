@@ -40,6 +40,8 @@ pub struct Peer {
     peer_id: ReferenceId,
     our_id: ReferenceId,
     reach: Reach,
+
+    system_config: SystemConfig,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -249,6 +251,22 @@ pub struct SystemSnapshot {
     pub time_snapshot: TimeSnapshot,
 }
 
+impl SystemSnapshot {
+    pub fn update(
+        &mut self,
+        mut used_peers: impl Iterator<Item = PeerSnapshot>,
+        timedata: TimeSnapshot,
+        config: &SystemConfig,
+    ) {
+        self.time_snapshot = timedata;
+        self.accumulated_steps_threshold = config.accumulated_threshold;
+        if let Some(system_peer_snapshot) = used_peers.next() {
+            self.stratum = system_peer_snapshot.stratum.saturating_add(1);
+            self.reference_id = system_peer_snapshot.reference_id;
+        }
+    }
+}
+
 impl Default for SystemSnapshot {
     fn default() -> Self {
         Self {
@@ -425,7 +443,7 @@ impl Peer {
         our_id: ReferenceId,
         peer_id: ReferenceId,
         local_clock_time: NtpInstant,
-        system_config: &SystemConfig,
+        system_config: SystemConfig,
     ) -> Self {
         Self {
             last_poll_interval: system_config.poll_limits.min,
@@ -439,7 +457,13 @@ impl Peer {
 
             stratum: 16,
             reference_id: ReferenceId::NONE,
+
+            system_config,
         }
+    }
+
+    pub fn update_config(&mut self, system_config: SystemConfig) {
+        self.system_config = system_config;
     }
 
     pub fn current_poll_interval(&self, system: SystemSnapshot) -> PollInterval {
@@ -467,12 +491,10 @@ impl Peer {
         packet
     }
 
-    #[allow(clippy::too_many_arguments)]
-    #[instrument(skip(self, system, system_config), fields(peer = debug(self.peer_id)))]
+    #[instrument(skip(self, system), fields(peer = debug(self.peer_id)))]
     pub fn handle_incoming(
         &mut self,
         system: SystemSnapshot,
-        system_config: &SystemConfig,
         message: NtpPacket,
         local_clock_time: NtpInstant,
         send_time: NtpTimestamp,
@@ -500,7 +522,8 @@ impl Peer {
         } else if message.is_kiss_rate() {
             // KISS packets may not have correct timestamps at all, handle them anyway
             self.remote_min_poll_interval = Ord::max(
-                self.remote_min_poll_interval.inc(system_config.poll_limits),
+                self.remote_min_poll_interval
+                    .inc(self.system_config.poll_limits),
                 self.last_poll_interval,
             );
             warn!(?self.remote_min_poll_interval, "Peer requested rate limit");
@@ -525,14 +548,7 @@ impl Peer {
             warn!("Received packet with invalid mode");
             Err(IgnoreReason::InvalidMode)
         } else {
-            Ok(self.process_message(
-                system,
-                system_config,
-                message,
-                local_clock_time,
-                send_time,
-                recv_time,
-            ))
+            Ok(self.process_message(system, message, local_clock_time, send_time, recv_time))
         }
     }
 
@@ -540,7 +556,6 @@ impl Peer {
     fn process_message(
         &mut self,
         system: SystemSnapshot,
-        system_config: &SystemConfig,
         message: NtpPacket,
         local_clock_time: NtpInstant,
         send_time: NtpTimestamp,
@@ -551,7 +566,7 @@ impl Peer {
         self.reach.received_packet();
 
         // Got a response, so no need for unreachability backoff
-        self.backoff_interval = system_config.poll_limits.min;
+        self.backoff_interval = self.system_config.poll_limits.min;
 
         // we received this packet, and don't want to accept future ones with this next_expected_origin
         self.current_request_identifier = None;
@@ -599,6 +614,8 @@ impl Peer {
 
             stratum: 0,
             reference_id: ReferenceId::from_int(0),
+
+            system_config: SystemConfig::default(),
         }
     }
 }
@@ -905,7 +922,6 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                &SystemConfig::default(),
                 response,
                 base,
                 NtpTimestamp::default(),
@@ -925,7 +941,6 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                &SystemConfig::default(),
                 response,
                 base,
                 NtpTimestamp::default(),
@@ -954,7 +969,6 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                &SystemConfig::default(),
                 packet.clone(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
@@ -965,7 +979,6 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                &SystemConfig::default(),
                 packet,
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
@@ -991,7 +1004,6 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                &SystemConfig::default(),
                 packet.clone(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
@@ -1003,7 +1015,6 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                &SystemConfig::default(),
                 packet.clone(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
@@ -1024,7 +1035,6 @@ mod test {
         assert!(!matches!(
             peer.handle_incoming(
                 system,
-                &SystemConfig::default(),
                 packet,
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
@@ -1042,7 +1052,6 @@ mod test {
         assert!(matches!(
             peer.handle_incoming(
                 system,
-                &SystemConfig::default(),
                 packet,
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
@@ -1058,7 +1067,6 @@ mod test {
         assert!(!matches!(
             peer.handle_incoming(
                 system,
-                &SystemConfig::default(),
                 packet,
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
@@ -1076,7 +1084,6 @@ mod test {
         assert!(matches!(
             peer.handle_incoming(
                 system,
-                &SystemConfig::default(),
                 packet,
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
@@ -1094,7 +1101,6 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                &SystemConfig::default(),
                 packet,
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
@@ -1115,7 +1121,6 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                &SystemConfig::default(),
                 packet,
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),

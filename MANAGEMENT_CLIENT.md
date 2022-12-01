@@ -163,3 +163,14 @@ ntp_server_response_send_errors_total{listen_address="127.0.0.1:123"} 0
 # EOF
 
 ```
+
+## Prometheus metrics exporter
+Prometheus prefers to use a pull-based architecture via HTTP. To facilitate this
+a separate executable `ntp-metrics-exporter` can be used. This will start up a
+HTTP server and serve the metrics on the `/metrics` endpoint. By default the
+metrics exporter listens on localhost port 9975, but this can be changed via
+command line parameters, see `ntp-metrics-exporter --help` for details. Note
+that the metrics exporter does not do any authentication or HTTPS, so if the
+metrics are transferred via a public network you should add a reverse proxy that
+does authentication and HTTPS termination if required. The metrics exported are
+the same as with the `ntp-ctl prometheus` command.

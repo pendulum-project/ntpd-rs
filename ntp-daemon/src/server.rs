@@ -1,7 +1,6 @@
 use std::{
     io::Cursor,
     net::{IpAddr, SocketAddr},
-    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -9,7 +8,7 @@ use ntp_proto::{NtpAssociationMode, NtpClock, NtpPacket, NtpTimestamp, SystemSna
 use ntp_udp::UdpSocket;
 use prometheus_client::metrics::{counter::Counter, gauge::Atomic};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use tokio::{sync::RwLock, task::JoinHandle};
+use tokio::task::JoinHandle;
 use tracing::{error, info, instrument, trace, warn};
 
 use crate::config::{FilterAction, ServerConfig};
@@ -19,6 +18,7 @@ pub struct ServerStats {
     pub received_packets: WrappedCounter,
     pub accepted_packets: WrappedCounter,
     pub denied_packets: WrappedCounter,
+    pub ignored_packets: WrappedCounter,
     pub rate_limited_packets: WrappedCounter,
     pub response_send_errors: WrappedCounter,
 }
@@ -58,7 +58,8 @@ impl std::ops::Deref for WrappedCounter {
 pub struct ServerTask<C: 'static + NtpClock + Send> {
     config: ServerConfig,
     network_wait_period: std::time::Duration,
-    system: Arc<RwLock<SystemSnapshot>>,
+    system_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
+    system: SystemSnapshot,
     client_cache: TimestampedCache<SocketAddr>,
     clock: C,
     stats: ServerStats,
@@ -77,18 +78,20 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
     pub fn spawn(
         config: ServerConfig,
         stats: ServerStats,
-        system: Arc<RwLock<SystemSnapshot>>,
+        mut system_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
         clock: C,
         network_wait_period: Duration,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
             let rate_limiting_cutoff = config.rate_limiting_cutoff;
             let rate_limiting_cache_size = config.rate_limiting_cache_size;
+            let system = *system_receiver.borrow_and_update();
 
             let mut process = ServerTask {
                 config,
                 network_wait_period,
                 system,
+                system_receiver,
                 clock,
                 client_cache: TimestampedCache::new(rate_limiting_cache_size),
                 stats,
@@ -128,77 +131,103 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                         }
                     }
                 });
+                // system may now be wildly out of date, ensure it is always updated.
+                self.system = *self.system_receiver.borrow_and_update();
+
                 cur_socket.as_ref().unwrap()
             };
 
             let mut buf = [0_u8; 48];
-            let recv_res = socket.recv(&mut buf).await;
-            self.stats.received_packets.inc();
-            let accept_result = self.accept_packet(rate_limiting_cutoff, recv_res, &buf);
-
-            match accept_result {
-                AcceptResult::Accept(packet, peer_addr, recv_timestamp) => {
-                    self.stats.accepted_packets.inc();
-                    let system = *self.system.read().await;
-
-                    let response =
-                        NtpPacket::timestamp_response(&system, packet, recv_timestamp, &self.clock);
-                    let mut cursor = Cursor::new([0; 48]);
-                    if let Err(serialize_err) = response.serialize(&mut cursor) {
-                        error!(error=?serialize_err, "Could not serialize response");
-                        continue;
+            tokio::select! {
+                recv_res = socket.recv(&mut buf) => {
+                    if !self.serve_packet(socket, &buf, recv_res, rate_limiting_cutoff).await {
+                        cur_socket = None;
                     }
-
-                    if let Err(send_err) = socket
-                        .send_to(&cursor.get_ref()[0..cursor.position() as usize], peer_addr)
-                        .await
-                    {
-                        self.stats.response_send_errors.inc();
-                        warn!(error=?send_err, "Could not send response packet");
-                    }
+                },
+                _ = self.system_receiver.changed(), if self.system_receiver.has_changed().is_ok() => {
+                    self.system = *self.system_receiver.borrow_and_update();
                 }
-                AcceptResult::Deny(packet, peer_addr) => {
-                    self.stats.denied_packets.inc();
-                    let response = NtpPacket::deny_response(packet);
-                    let mut cursor = Cursor::new([0; 48]);
-                    if let Err(serialize_err) = response.serialize(&mut cursor) {
-                        self.stats.response_send_errors.inc();
-                        error!(error=?serialize_err, "Could not serialize response");
-                        continue;
-                    }
-                    if let Err(send_err) = socket
-                        .send_to(&cursor.get_ref()[0..cursor.position() as usize], peer_addr)
-                        .await
-                    {
-                        self.stats.response_send_errors.inc();
-                        warn!(error=?send_err, "Could not send deny packet");
-                    }
-                }
-                AcceptResult::NetworkGone => {
-                    error!("Server connection gone");
-                    cur_socket = None;
-                    continue;
-                }
-                AcceptResult::RateLimit(packet, peer_addr) => {
-                    self.stats.rate_limited_packets.inc();
-                    let response = NtpPacket::rate_limit_response(packet);
-                    let mut cursor = Cursor::new([0; 48]);
-                    if let Err(serialize_err) = response.serialize(&mut cursor) {
-                        self.stats.response_send_errors.inc();
-                        error!(error=?serialize_err, "Could not serialize response");
-                        continue;
-                    }
-                    if let Err(send_err) = socket
-                        .send_to(&cursor.get_ref()[0..cursor.position() as usize], peer_addr)
-                        .await
-                    {
-                        self.stats.response_send_errors.inc();
-                        warn!(error=?send_err, "Could not send response packet");
-                    }
-                }
-                AcceptResult::Ignore => {}
             }
         }
+    }
+
+    async fn serve_packet(
+        &mut self,
+        socket: &UdpSocket,
+        buf: &[u8; 48],
+        recv_res: std::io::Result<(usize, SocketAddr, Option<NtpTimestamp>)>,
+        rate_limiting_cutoff: Duration,
+    ) -> bool {
+        self.stats.received_packets.inc();
+        let accept_result = self.accept_packet(rate_limiting_cutoff, recv_res, buf);
+
+        match accept_result {
+            AcceptResult::Accept(packet, peer_addr, recv_timestamp) => {
+                self.stats.accepted_packets.inc();
+
+                let response = NtpPacket::timestamp_response(
+                    &self.system,
+                    packet,
+                    recv_timestamp,
+                    &self.clock,
+                );
+                let mut cursor = Cursor::new([0; 48]);
+                if let Err(serialize_err) = response.serialize(&mut cursor) {
+                    error!(error=?serialize_err, "Could not serialize response");
+                    return true;
+                }
+
+                if let Err(send_err) = socket
+                    .send_to(&cursor.get_ref()[0..cursor.position() as usize], peer_addr)
+                    .await
+                {
+                    self.stats.response_send_errors.inc();
+                    warn!(error=?send_err, "Could not send response packet");
+                }
+            }
+            AcceptResult::Deny(packet, peer_addr) => {
+                self.stats.denied_packets.inc();
+                let response = NtpPacket::deny_response(packet);
+                let mut cursor = Cursor::new([0; 48]);
+                if let Err(serialize_err) = response.serialize(&mut cursor) {
+                    self.stats.response_send_errors.inc();
+                    error!(error=?serialize_err, "Could not serialize response");
+                    return true;
+                }
+                if let Err(send_err) = socket
+                    .send_to(&cursor.get_ref()[0..cursor.position() as usize], peer_addr)
+                    .await
+                {
+                    self.stats.response_send_errors.inc();
+                    warn!(error=?send_err, "Could not send deny packet");
+                }
+            }
+            AcceptResult::NetworkGone => {
+                error!("Server connection gone");
+                return false;
+            }
+            AcceptResult::RateLimit(packet, peer_addr) => {
+                self.stats.rate_limited_packets.inc();
+                let response = NtpPacket::rate_limit_response(packet);
+                let mut cursor = Cursor::new([0; 48]);
+                if let Err(serialize_err) = response.serialize(&mut cursor) {
+                    self.stats.response_send_errors.inc();
+                    error!(error=?serialize_err, "Could not serialize response");
+                    return true;
+                }
+                if let Err(send_err) = socket
+                    .send_to(&cursor.get_ref()[0..cursor.position() as usize], peer_addr)
+                    .await
+                {
+                    self.stats.response_send_errors.inc();
+                    warn!(error=?send_err, "Could not send response packet");
+                }
+            }
+            AcceptResult::Ignore => {
+                self.stats.ignored_packets.inc();
+            }
+        }
+        true
     }
 
     fn accept_packet<'a, 'b>(
@@ -423,7 +452,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
         };
-        let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
+        let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
 
         let server = ServerTask::spawn(
@@ -468,7 +497,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
         };
-        let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
+        let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
 
         let server = ServerTask::spawn(
@@ -514,7 +543,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
         };
-        let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
+        let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
 
         let server = ServerTask::spawn(
@@ -554,7 +583,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
         };
-        let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
+        let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
 
         let server = ServerTask::spawn(
@@ -599,7 +628,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
         };
-        let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
+        let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
 
         let server = ServerTask::spawn(
@@ -645,7 +674,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
         };
-        let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
+        let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
 
         let server = ServerTask::spawn(
@@ -685,7 +714,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_millis(100),
             rate_limiting_cache_size: 32,
         };
-        let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
+        let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
 
         let server = ServerTask::spawn(
@@ -759,7 +788,7 @@ mod tests {
             rate_limiting_cutoff: Duration::default(),
             rate_limiting_cache_size: Default::default(),
         };
-        let system_snapshots = Arc::new(RwLock::new(SystemSnapshot::default()));
+        let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
 
         let server = ServerTask::spawn(
