@@ -277,6 +277,10 @@ impl NtsRecord {
 
         Ok(())
     }
+
+    pub fn decoder() -> NtsRecordDecoder {
+        NtsRecordDecoder { bytes: vec![] }
+    }
 }
 
 #[cfg(feature = "fuzz")]
@@ -320,5 +324,45 @@ impl<'a> arbitrary::Arbitrary<'a> for NtsRecord {
                 data: u.arbitrary()?,
             },
         })
+    }
+}
+
+pub struct NtsRecordDecoder {
+    bytes: Vec<u8>,
+}
+
+impl Extend<u8> for NtsRecordDecoder {
+    fn extend<T: IntoIterator<Item = u8>>(&mut self, iter: T) {
+        self.bytes.extend(iter);
+    }
+}
+
+impl NtsRecordDecoder {
+    /// the size of the KE packet header:
+    ///
+    /// - 2 bytes for the record type + critical flag
+    /// - 2 bytes for the record length
+    const HEADER_BYTES: usize = 4;
+
+    /// Try to decode the next record. Returns None when there are not enough bytes
+    pub fn next(&mut self) -> std::io::Result<Option<NtsRecord>> {
+        if self.bytes.len() < Self::HEADER_BYTES {
+            return Ok(None);
+        }
+
+        let record_len = u16::from_be_bytes([self.bytes[2], self.bytes[3]]);
+        let message_len = Self::HEADER_BYTES + record_len as usize;
+
+        if self.bytes.len() >= message_len {
+            let record = NtsRecord::read(&mut self.bytes.as_slice())?;
+
+            // remove the first `message_len` bytes from the buffer
+            self.bytes.copy_within(message_len.., 0);
+            self.bytes.truncate(self.bytes.len() - message_len);
+
+            Ok(Some(record))
+        } else {
+            Ok(None)
+        }
     }
 }
