@@ -150,31 +150,38 @@ impl<'a> ExtensionField<'a> {
         if data.len() < 4 {
             return Err(PacketParsingError::IncorrectLength);
         }
+
         let typeid = u16::from_be_bytes(data[0..2].try_into().unwrap());
         let ef_len = u16::from_be_bytes(data[2..4].try_into().unwrap()) as usize;
         if ef_len < Self::MINIMUM_SIZE || ef_len > data.len() {
             return Err(PacketParsingError::IncorrectLength);
         }
-        Ok((
-            ExtensionField::Unknown {
-                typeid,
-                data: Cow::Borrowed(&data[4..ef_len]),
-            },
-            ef_len,
-        ))
+
+        match data.get(4..ef_len) {
+            None => Err(PacketParsingError::IncorrectLength),
+            Some(value) => {
+                let field = ExtensionField::Unknown {
+                    typeid,
+                    data: Cow::Borrowed(value),
+                };
+
+                Ok((field, ef_len))
+            }
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ExtensionFieldData<'a> {
-    Raw(Cow<'a, [u8]>),
     #[allow(dead_code)]
+    Raw(Cow<'a, [u8]>),
     List(Vec<ExtensionField<'a>>),
 }
 
 impl<'a> Default for ExtensionFieldData<'a> {
     fn default() -> Self {
-        Self::Raw(Cow::Borrowed(&[]))
+        // Self::Raw(Cow::Borrowed(&[]))
+        Self::List(vec![])
     }
 }
 
@@ -224,16 +231,15 @@ impl<'a> ExtensionFieldData<'a> {
     }
 
     fn deserialize(data: &'a [u8]) -> Result<(ExtensionFieldData<'a>, usize), PacketParsingError> {
+        let mut fields = vec![];
         let mut offset = 0;
         while data.len() - offset >= Mac::MAXIMUM_SIZE {
-            let (_, len) = ExtensionField::deserialize(&data[offset..])?;
+            let (field, len) = ExtensionField::deserialize(&data[offset..])?;
+            fields.push(field);
             offset += len;
         }
 
-        Ok((
-            ExtensionFieldData::Raw(Cow::Borrowed(&data[..offset])),
-            offset,
-        ))
+        Ok((ExtensionFieldData::List(fields), offset))
     }
 }
 
