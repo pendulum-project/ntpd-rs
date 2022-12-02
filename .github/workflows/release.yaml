@@ -69,7 +69,7 @@ jobs:
           dst="ntpd-rs-${{ matrix.target }}-${version}"
           tar cavf "$dst.tgz" "$dst"
           sha256sum -b "$dst.tgz" > "$dst.tgz.sha256"
-      - uses: softprops/action-gh-release@1e07f4398721186383de40550babbdf2b84acfc5
+      - uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844
         with:
           files: |
             ntpd-rs-*.tgz
