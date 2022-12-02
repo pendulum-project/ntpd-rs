@@ -16,7 +16,7 @@ use tracing::{debug, instrument, warn};
 use super::peer::PeerStatistics;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FilterTuple {
+pub(super) struct FilterTuple {
     offset: NtpDuration,
     delay: NtpDuration,
     dispersion: NtpDuration,
@@ -43,7 +43,7 @@ impl FilterTuple {
     ///
     /// A Broadcast association requires different logic.
     /// All other associations should use this function
-    pub(crate) fn from_measurement(
+    pub fn from_measurement(
         measurement: Measurement,
         packet: &NtpPacket,
         system_precision: NtpDuration,
@@ -69,7 +69,7 @@ impl FilterTuple {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct LastMeasurements {
+pub(super) struct LastMeasurements {
     register: [FilterTuple; 8],
 }
 
@@ -94,7 +94,7 @@ impl LastMeasurements {
     }
 
     #[instrument(level = "trace")]
-    pub(crate) fn step(
+    pub fn step(
         &mut self,
         new_tuple: FilterTuple,
         peer_time: NtpInstant,

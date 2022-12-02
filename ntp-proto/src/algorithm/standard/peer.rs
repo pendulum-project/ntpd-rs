@@ -8,24 +8,24 @@ use crate::{
 };
 
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
-pub(crate) struct PeerStatistics {
-    pub(crate) offset: NtpDuration,
-    pub(crate) delay: NtpDuration,
+pub(super) struct PeerStatistics {
+    pub offset: NtpDuration,
+    pub delay: NtpDuration,
 
-    pub(crate) dispersion: NtpDuration,
-    pub(crate) jitter: f64,
+    pub dispersion: NtpDuration,
+    pub jitter: f64,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct PeerTimeState {
-    pub(crate) statistics: PeerStatistics,
-    pub(crate) last_measurements: LastMeasurements,
-    pub(crate) last_packet: NtpPacket<'static>,
-    pub(crate) time: NtpInstant,
+pub(super) struct PeerTimeState {
+    pub statistics: PeerStatistics,
+    pub last_measurements: LastMeasurements,
+    pub last_packet: NtpPacket<'static>,
+    pub time: NtpInstant,
 }
 
 impl PeerTimeState {
-    pub(crate) fn update(
+    pub fn update(
         &mut self,
         measurement: Measurement,
         packet: NtpPacket,
@@ -90,7 +90,7 @@ impl PeerTimeState {
     }
 
     #[cfg(test)]
-    pub(crate) fn test_timestate(instant: NtpInstant) -> Self {
+    pub fn test_timestate(instant: NtpInstant) -> Self {
         PeerTimeState {
             statistics: Default::default(),
             last_measurements: LastMeasurements::new(instant),
@@ -101,20 +101,20 @@ impl PeerTimeState {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct PeerTimeSnapshot {
-    pub(crate) root_distance_without_time: NtpDuration,
-    pub(crate) statistics: PeerStatistics,
+pub(super) struct PeerTimeSnapshot {
+    pub root_distance_without_time: NtpDuration,
+    pub statistics: PeerStatistics,
 
-    pub(crate) time: NtpInstant,
-    pub(crate) stratum: u8,
+    pub time: NtpInstant,
+    pub stratum: u8,
 
-    pub(crate) leap_indicator: NtpLeapIndicator,
-    pub(crate) root_delay: NtpDuration,
-    pub(crate) root_dispersion: NtpDuration,
+    pub leap_indicator: NtpLeapIndicator,
+    pub root_delay: NtpDuration,
+    pub root_dispersion: NtpDuration,
 }
 
 impl PeerTimeSnapshot {
-    pub(crate) fn root_distance(
+    pub fn root_distance(
         &self,
         local_clock_time: NtpInstant,
         frequency_tolerance: FrequencyTolerance,
@@ -123,7 +123,7 @@ impl PeerTimeSnapshot {
             + (NtpInstant::abs_diff(local_clock_time, self.time) * frequency_tolerance)
     }
 
-    pub(crate) fn from_timestate(timestate: &PeerTimeState) -> Self {
+    pub fn from_timestate(timestate: &PeerTimeState) -> Self {
         Self {
             root_distance_without_time: timestate.root_distance_without_time(),
             statistics: timestate.statistics,

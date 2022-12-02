@@ -23,7 +23,7 @@ enum ClockState {
 /// on results from the filtering and
 /// combining algorithms.
 #[derive(Debug, Copy, Clone)]
-pub struct ClockController<C: NtpClock> {
+pub(super) struct ClockController<C: NtpClock> {
     clock: C,
     state: ClockState,
     last_update_time: NtpInstant,
@@ -35,7 +35,7 @@ pub struct ClockController<C: NtpClock> {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ClockUpdateResult {
+pub(super) enum ClockUpdateResult {
     Ignore,
     Step,
     Slew,

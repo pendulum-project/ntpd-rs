@@ -7,12 +7,12 @@ use crate::{NtpDuration, PollInterval, SystemConfig};
 use tracing::{debug, instrument, trace, warn};
 
 #[derive(Debug, Clone)]
-pub(crate) struct FilterAndCombine<PeerID: Hash + Eq + Copy + Debug> {
-    pub(crate) system_offset: NtpDuration,
-    pub(crate) system_jitter: NtpDuration,
-    pub(crate) system_root_delay: NtpDuration,
-    pub(crate) system_root_dispersion: NtpDuration,
-    pub(crate) system_peer_snapshot: (PeerID, PeerTimeSnapshot),
+pub(super) struct FilterAndCombine<PeerID: Hash + Eq + Copy + Debug> {
+    pub system_offset: NtpDuration,
+    pub system_jitter: NtpDuration,
+    pub system_root_delay: NtpDuration,
+    pub system_root_dispersion: NtpDuration,
+    pub system_peer_snapshot: (PeerID, PeerTimeSnapshot),
 }
 
 impl<PeerID: Hash + Eq + Copy + Debug> FilterAndCombine<PeerID> {
