@@ -1,7 +1,6 @@
 use super::duration::Duration;
 use crate::datastructures::common::Timestamp;
 use fixed::{traits::ToFixed, types::U96F32};
-use nix::sys::time::TimeSpec;
 use std::{
     fmt::Display,
     ops::{Add, AddAssign, Sub, SubAssign},
@@ -43,10 +42,6 @@ impl Instant {
     }
     pub fn secs(&self) -> u64 {
         (self.inner / 1_000_000_000.to_fixed::<U96F32>()).to_num()
-    }
-
-    pub fn from_timespec(spec: &TimeSpec) -> Self {
-        Self::from_fixed_nanos(spec.tv_sec() as i128 * 1_000_000_000i128 + spec.tv_nsec() as i128)
     }
 
     pub fn from_timestamp(ts: &Timestamp) -> Self {

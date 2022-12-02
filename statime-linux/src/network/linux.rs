@@ -1,25 +1,28 @@
 //! Implementation of the abstract network types for the linux platform
 
-use crate::{network::linux_syscall::driver_enable_hardware_timestamping, time::Instant};
+use std::{os::unix::prelude::RawFd, str::FromStr, sync::mpsc::Sender, thread::JoinHandle};
 
-use super::{NetworkPacket, NetworkPort, NetworkRuntime};
 use nix::{
     cmsg_space,
     errno::Errno,
     ifaddrs::{getifaddrs, InterfaceAddress, InterfaceAddressIterator},
     net::if_::if_nametoindex,
     sys::{
-        select::{select, FdSet},
+        select::{FdSet, select},
         socket::{
-            recvmsg, sendmsg, setsockopt, socket,
-            sockopt::{BindToDevice, ReuseAddr, Timestamping},
-            AddressFamily, ControlMessageOwned, InetAddr, IpAddr, Ipv4Addr, Ipv6Addr, MsgFlags,
-            SetSockOpt, SockAddr, SockFlag, SockType, TimestampingFlag, Timestamps,
+            AddressFamily, ControlMessageOwned, InetAddr, IpAddr,
+            Ipv4Addr,
+            Ipv6Addr, MsgFlags, recvmsg, sendmsg, setsockopt, SetSockOpt, SockAddr,
+            socket, SockFlag, sockopt::{BindToDevice, ReuseAddr, Timestamping}, SockType, TimestampingFlag, Timestamps,
         },
         uio::IoVec,
     },
 };
-use std::{os::unix::prelude::RawFd, str::FromStr, sync::mpsc::Sender, thread::JoinHandle};
+
+use statime::network::{NetworkPacket, NetworkPort, NetworkRuntime};
+use statime::time::Instant;
+
+use crate::network::linux_syscall::driver_enable_hardware_timestamping;
 
 #[derive(Clone)]
 pub struct LinuxRuntime {
@@ -278,7 +281,7 @@ impl<'a> NetworkRuntime for LinuxRuntime {
             SockFlag::empty(),
             None,
         )
-        .map_err(|_| NetworkError::UnknownError)?;
+            .map_err(|_| NetworkError::UnknownError)?;
 
         // create the socket
         let port = if time_critical { 319 } else { 320 };
@@ -359,7 +362,7 @@ impl<'a> NetworkRuntime for LinuxRuntime {
                         | TimestampingFlag::SOF_TIMESTAMPING_RX_HARDWARE
                         | TimestampingFlag::SOF_TIMESTAMPING_TX_HARDWARE),
                 )
-                .map_err(|_| NetworkError::UnknownError)?;
+                    .map_err(|_| NetworkError::UnknownError)?;
             } else {
                 setsockopt(
                     socket,
@@ -368,7 +371,7 @@ impl<'a> NetworkRuntime for LinuxRuntime {
                         | TimestampingFlag::SOF_TIMESTAMPING_RX_SOFTWARE
                         | TimestampingFlag::SOF_TIMESTAMPING_TX_SOFTWARE),
                 )
-                .map_err(|_| NetworkError::UnknownError)?;
+                    .map_err(|_| NetworkError::UnknownError)?;
             }
         }
 
@@ -417,7 +420,7 @@ impl NetworkPort for LinuxNetworkPort {
             MsgFlags::empty(),
             Some(&self.addr),
         )
-        .unwrap();
+            .unwrap();
 
         // TODO: Implement better method for send timestamps
         Some(u16::from_be_bytes(data[30..32].try_into().unwrap()) as usize)
@@ -435,18 +438,19 @@ impl LinuxNetworkPort {
             let mut ts = None;
             for c in recv.cmsgs() {
                 if let ControlMessageOwned::ScmTimestampsns(timestamps) = c {
-                    if hardware_timestamping {
-                        ts = Some(Instant::from_timespec(&timestamps.hw_raw));
+                    let spec = if hardware_timestamping {
+                        timestamps.hw_raw
                     } else {
-                        ts = Some(Instant::from_timespec(&timestamps.system));
-                    }
+                        timestamps.system
+                    };
+                    ts = Some(Instant::from_fixed_nanos(spec.tv_sec() as i128 * 1_000_000_000i128 + spec.tv_nsec() as i128));
                 }
             }
             tx.send(NetworkPacket {
                 data: io_vec[0].as_slice()[0..recv.bytes].to_vec(),
                 timestamp: ts,
             })
-            .unwrap();
+                .unwrap();
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
     }

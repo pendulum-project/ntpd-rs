@@ -5,8 +5,6 @@ use crate::{
     time::{Duration, Instant},
 };
 
-pub mod linux_clock;
-
 /// Clock type for use in the PTP stack
 pub trait Clock {
     type E: std::fmt::Debug;

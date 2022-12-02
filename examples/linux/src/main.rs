@@ -1,15 +1,17 @@
-use clap::{AppSettings, Parser};
-use statime::{
-    clock::linux_clock::{LinuxClock, RawLinuxClock},
-    datastructures::{common::ClockIdentity, messages::Message},
-    filters::basic::BasicFilter,
-    network::linux::{get_clock_id, LinuxInterfaceDescriptor, LinuxRuntime},
-    ptp_instance::{Config, PtpInstance},
-};
 use std::sync::mpsc;
 
+use clap::{AppSettings, Parser};
+
+use statime::{
+    datastructures::{common::ClockIdentity, messages::Message},
+    filters::basic::BasicFilter,
+    ptp_instance::{Config, PtpInstance},
+};
+use statime_linux::clock::{LinuxClock, RawLinuxClock};
+use statime_linux::network::linux::{get_clock_id, LinuxInterfaceDescriptor, LinuxRuntime};
+
 #[derive(Parser, Debug)]
-#[clap(author, version, about, long_about=None, setting = AppSettings::DeriveDisplayOrder)]
+#[clap(author, version, about, long_about = None, setting = AppSettings::DeriveDisplayOrder)]
 struct Args {
     /// Set desired logging level
     #[clap(short, long, default_value_t = log::LevelFilter::Info)]

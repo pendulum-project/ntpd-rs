@@ -1,9 +1,11 @@
-use crate::time::{Duration, Instant};
-
-use super::raw::Fixed;
-use bitflags::bitflags;
-use libc::timex;
 use std::ops::{Deref, DerefMut};
+
+use libc::timex;
+
+use bitflags::bitflags;
+use statime::time::{Duration, Instant};
+
+use crate::clock::raw::Fixed;
 
 #[derive(Clone)]
 pub struct Timex(timex);

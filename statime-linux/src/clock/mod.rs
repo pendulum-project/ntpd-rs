@@ -1,18 +1,15 @@
 //! Implementation of the abstract clock for the linux platform
 
-use super::{Clock, Watch};
-use crate::{
-    clock::TimeProperties,
-    datastructures::common::ClockQuality,
-    time::{Duration, Instant},
-};
-use fixed::traits::LossyInto;
 use std::{collections::HashMap, sync::mpsc};
+
+use fixed::traits::LossyInto;
+pub use raw::RawLinuxClock;
+use statime::clock::{Clock, TimeProperties, Watch};
+use statime::datastructures::common::ClockQuality;
+use statime::time::{Duration, Instant};
 
 mod raw;
 mod timex;
-
-pub use raw::RawLinuxClock;
 
 #[derive(Debug, Clone)]
 pub enum Error {

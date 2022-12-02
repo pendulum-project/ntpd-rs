@@ -1,10 +1,11 @@
-use super::timex::{AdjustFlags, StatusFlags, Timex};
-use crate::{
-    datastructures::common::{ClockAccuracy, ClockQuality},
-    time::{Duration, Instant},
-};
-use libc::{clockid_t, timespec};
 use std::{ffi::CString, fmt::Display, ops::DerefMut};
+
+use libc::{clockid_t, timespec};
+
+use statime::datastructures::common::{ClockAccuracy, ClockQuality};
+use statime::time::{Duration, Instant};
+
+use crate::clock::timex::{AdjustFlags, StatusFlags, Timex};
 
 #[cfg(target_pointer_width = "64")]
 pub(super) type Fixed = fixed::types::I48F16;
@@ -25,7 +26,7 @@ pub(super) type Int = i32;
 /// # Example
 ///
 /// ```no_run
-/// use statime::clock::linux_clock::RawLinuxClock;
+/// use statime_linux::clock::RawLinuxClock;
 ///
 /// println!("Available clocks:");
 /// for clock in RawLinuxClock::get_clocks() {
@@ -41,6 +42,7 @@ pub struct RawLinuxClock {
     name: String,
     quality: ClockQuality,
 }
+
 impl RawLinuxClock {
     /// https://manpages.debian.org/testing/manpages-dev/ntp_adjtime.3.en.html#DESCRIPTION
     pub(super) fn get_clock_state(&self) -> Result<(Timex, ClockState), i32> {
@@ -79,10 +81,10 @@ impl RawLinuxClock {
         frequency_timex.set_status(
             current_timex.get_status()
                 | StatusFlags::FREQHOLD // We want no automatic frequency updates
-            & !StatusFlags::PLL
-            & !StatusFlags::PPSFREQ
-            & !StatusFlags::FLL
-            & !StatusFlags::PPSTIME,
+                & !StatusFlags::PLL
+                & !StatusFlags::PPSFREQ
+                & !StatusFlags::FLL
+                & !StatusFlags::PPSTIME,
         );
 
         frequency_timex.set_mode(
@@ -113,15 +115,15 @@ impl RawLinuxClock {
         offset_timex.set_status(
             current_timex.get_status()
                 | StatusFlags::FREQHOLD // We want no automatic frequency updates
-            & !StatusFlags::PLL
-            & !StatusFlags::PPSFREQ
-            & !StatusFlags::FLL
-            & !StatusFlags::PPSTIME,
+                & !StatusFlags::PLL
+                & !StatusFlags::PPSFREQ
+                & !StatusFlags::FLL
+                & !StatusFlags::PPSTIME,
         );
 
         offset_timex.set_mode(
             AdjustFlags::SETOFFSET // We have an offset to set
-            | AdjustFlags::NANO, // We're using nanoseconds
+                | AdjustFlags::NANO, // We're using nanoseconds
         );
 
         // Start with a seconds value of 0 and express the full time offset in nanos
@@ -142,7 +144,7 @@ impl RawLinuxClock {
         }
     }
 
-    pub fn get_clocks() -> impl Iterator<Item = Self> {
+    pub fn get_clocks() -> impl Iterator<Item=Self> {
         const SYSTEM_CLOCKS: [(clockid_t, &str); 11] = [
             (libc::CLOCK_BOOTTIME, "CLOCK_BOOTTIME"),
             (libc::CLOCK_BOOTTIME_ALARM, "CLOCK_BOOTTIME_ALARM"),
@@ -289,7 +291,7 @@ impl Display for RawLinuxClock {
                 "     resolution: {:10}.{:09}",
                 resolution.tv_sec, resolution.tv_nsec
             )?,
-            None => writeln!(f, "     resolution: RESOLUTION ERROR",)?,
+            None => writeln!(f, "     resolution: RESOLUTION ERROR", )?,
         }
 
         Ok(())
