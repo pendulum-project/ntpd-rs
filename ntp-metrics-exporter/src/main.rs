@@ -7,7 +7,6 @@ use thiserror::Error;
 use std::{net::SocketAddr, path::PathBuf};
 
 use axum::{
-    handler::Handler,
     http::{HeaderMap, HeaderValue, StatusCode},
     response::{AppendHeaders, IntoResponse},
     routing::get,
@@ -100,17 +99,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
             }),
         )
-        .fallback(
-            (|| async {
-                (
-                    StatusCode::NOT_FOUND,
-                    Json(json!({
-                        "error": 404,
-                    })),
-                )
-            })
-            .into_service(),
-        );
+        .fallback(|| async {
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({
+                    "error": 404,
+                })),
+            )
+        });
 
     axum::Server::bind(&cli.listen_socket)
         .serve(app.into_make_service())
