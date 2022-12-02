@@ -1,5 +1,6 @@
 mod clock_controller;
 mod clock_select;
+mod config;
 mod filter;
 mod peer;
 
@@ -20,6 +21,8 @@ use crate::{
     TimeSnapshot,
 };
 
+use self::config::AlgorithmConfig;
+
 use super::TimeSyncController;
 
 #[derive(Debug)]
@@ -29,6 +32,7 @@ pub struct StandardClockController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug
     peerstate: HashMap<PeerID, ControllerPeerState>,
     timestate: TimeSnapshot,
     config: SystemConfig,
+    algo_config: AlgorithmConfig,
     last_reset: Option<NtpInstant>,
 }
 
@@ -54,15 +58,15 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> StandardClockController<C, P
             measurement,
             packet.clone().into_owned(),
             self.timestate,
-            &self.config,
+            &self.algo_config,
         );
         update_result.is_none()
             || !current_peerstate.usable
             || PeerTimeSnapshot::from_timestate(&current_peerstate.timestate)
                 .accept_synchronization(
                     now,
-                    self.config.frequency_tolerance,
-                    self.config.distance_threshold,
+                    self.algo_config.frequency_tolerance,
+                    self.algo_config.distance_threshold,
                     self.timestate.poll_interval,
                 )
                 .is_err()
@@ -77,8 +81,13 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> StandardClockController<C, P
                 false => None,
             })
             .collect();
-        let result =
-            FilterAndCombine::run(&self.config, &snapshots, now, self.timestate.poll_interval);
+        let result = FilterAndCombine::run(
+            &self.config,
+            &self.algo_config,
+            &snapshots,
+            now,
+            self.timestate.poll_interval,
+        );
         let clock_select = match result {
             Some(clock_select) => clock_select,
             None => {
@@ -91,6 +100,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> StandardClockController<C, P
         info!(offset_ms, jitter_ms, "Measured offset and jitter");
         let adjust_type = self.controller.update(
             &self.config,
+            &self.algo_config,
             &self.timestate,
             clock_select.system_offset,
             clock_select.system_root_delay,
@@ -131,7 +141,9 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> StandardClockController<C, P
 impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID>
     for StandardClockController<C, PeerID>
 {
-    fn new(clock: C, config: SystemConfig) -> Self {
+    type AlgorithmConfig = AlgorithmConfig;
+
+    fn new(clock: C, config: SystemConfig, algo_config: AlgorithmConfig) -> Self {
         let timestate = TimeSnapshot::default();
         Self {
             clock: clock.clone(),
@@ -139,12 +151,14 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
             peerstate: HashMap::new(),
             timestate,
             config,
+            algo_config,
             last_reset: None,
         }
     }
 
-    fn update_config(&mut self, config: SystemConfig) {
+    fn update_config(&mut self, config: SystemConfig, algo_config: AlgorithmConfig) {
         self.config = config;
+        self.algo_config = algo_config;
     }
 
     fn peer_add(&mut self, id: PeerID) {

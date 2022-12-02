@@ -1,10 +1,13 @@
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
-use super::filter::{FilterTuple, LastMeasurements};
+use super::{
+    config::AlgorithmConfig,
+    filter::{FilterTuple, LastMeasurements},
+};
 use crate::{
     AcceptSynchronizationError, FrequencyTolerance, Measurement, NtpDuration, NtpInstant,
-    NtpLeapIndicator, NtpPacket, PollInterval, SystemConfig, TimeSnapshot,
+    NtpLeapIndicator, NtpPacket, PollInterval, TimeSnapshot,
 };
 
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
@@ -30,13 +33,13 @@ impl PeerTimeState {
         measurement: Measurement,
         packet: NtpPacket,
         system: TimeSnapshot,
-        system_config: &SystemConfig,
+        config: &AlgorithmConfig,
     ) -> Option<()> {
         let filter_input = FilterTuple::from_measurement(
             measurement,
             &packet,
             system.precision,
-            system_config.frequency_tolerance,
+            config.frequency_tolerance,
         );
 
         self.last_packet = packet.into_owned();
@@ -46,7 +49,7 @@ impl PeerTimeState {
             self.time,
             system.leap_indicator,
             system.precision,
-            system_config.frequency_tolerance,
+            config.frequency_tolerance,
         );
 
         if let Some((statistics, time)) = updated {
