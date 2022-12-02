@@ -45,9 +45,15 @@ pub trait TimeSyncController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> {
     fn peer_snapshot(&self, id: PeerID) -> Option<ObservablePeerTimedata>;
 }
 
+mod kalman;
 mod standard;
 
+pub use kalman::KalmanClockController;
+pub use standard::StandardClockController;
+#[cfg(not(feature = "new-algorithm"))]
 pub type DefaultTimeSyncController<C, PeerID> = standard::StandardClockController<C, PeerID>;
+#[cfg(feature = "new-algorithm")]
+pub type DefaultTimeSyncController<C, PeerID> = kalman::KalmanClockController<C, PeerID>;
 
 #[cfg(feature = "fuzz")]
 pub use standard::fuzz_find_interval;
