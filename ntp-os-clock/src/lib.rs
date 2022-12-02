@@ -202,6 +202,38 @@ impl NtpClock for UnixNtpClock {
             Err(convert_errno())
         }
     }
+
+    fn bare_update(
+        &self,
+        offset: NtpDuration,
+        est_error: NtpDuration,
+        max_error: NtpDuration,
+        leap_status: NtpLeapIndicator,
+    ) -> Result<(), Self::Error> {
+        let mut ntp_kapi_timex = EMPTY_TIMEX;
+        ntp_kapi_timex.modes = libc::MOD_OFFSET
+            | libc::MOD_MAXERROR
+            | libc::MOD_ESTERROR
+            | libc::MOD_STATUS
+            | libc::MOD_NANO;
+        ntp_kapi_timex.offset = duration_in_nanos(offset);
+        ntp_kapi_timex.esterror = duration_in_nanos(est_error) / 1000;
+        ntp_kapi_timex.maxerror = duration_in_nanos(max_error) / 1000;
+        ntp_kapi_timex.status = libc::STA_FREQHOLD
+            | match leap_status {
+                NtpLeapIndicator::Leap59 => libc::STA_DEL,
+                NtpLeapIndicator::Leap61 => libc::STA_INS,
+                _ => 0,
+            };
+
+        if unsafe { libc::ntp_adjtime(&mut ntp_kapi_timex as *mut _) } != -1 {
+            // We don't care here about the time status, so the non-error
+            // information in the return value of ntp_adjtime can be ignored
+            Ok(())
+        } else {
+            Err(convert_errno())
+        }
+    }
 }
 
 #[cfg(test)]

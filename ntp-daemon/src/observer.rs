@@ -148,6 +148,16 @@ mod tests {
         ) -> Result<(), Self::Error> {
             Ok(())
         }
+
+        fn bare_update(
+            &self,
+            _offset: NtpDuration,
+            _est_error: NtpDuration,
+            _max_error: NtpDuration,
+            _leap_status: NtpLeapIndicator,
+        ) -> Result<(), Self::Error> {
+            Ok(())
+        }
     }
 
     #[tokio::test]

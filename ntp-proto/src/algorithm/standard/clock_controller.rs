@@ -402,6 +402,20 @@ mod tests {
             *self.last_leap_status.borrow_mut() = Some(leap_status);
             Ok(())
         }
+
+        fn bare_update(
+            &self,
+            offset: NtpDuration,
+            est_error: NtpDuration,
+            max_error: NtpDuration,
+            leap_status: NtpLeapIndicator,
+        ) -> Result<(), Self::Error> {
+            *self.last_offset.borrow_mut() = Some(offset);
+            *self.last_est_error.borrow_mut() = Some(est_error);
+            *self.last_max_error.borrow_mut() = Some(max_error);
+            *self.last_leap_status.borrow_mut() = Some(leap_status);
+            Ok(())
+        }
     }
 
     #[test]
