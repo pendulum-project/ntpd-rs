@@ -320,6 +320,7 @@ dependencies = [
  "getset",
  "log",
  "num_enum",
+ "thiserror",
 ]
 
 [[package]]
