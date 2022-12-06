@@ -1,12 +1,23 @@
+mod clock_controller;
+mod clock_select;
+mod filter;
+mod peer;
+
+#[cfg(feature = "fuzz")]
+pub use clock_select::fuzz_find_interval;
+
 use std::{collections::HashMap, fmt::Debug, hash::Hash};
 
 use tracing::{error, info};
 
+use clock_controller::{ClockController, ClockUpdateResult};
+use clock_select::FilterAndCombine;
+use filter::LastMeasurements;
+use peer::{PeerTimeSnapshot, PeerTimeState};
+
 use crate::{
-    filter::LastMeasurements,
-    peer::{Measurement, PeerTimeState},
-    ClockController, ClockUpdateResult, FilterAndCombine, NtpClock, NtpDuration, NtpInstant,
-    ObservablePeerTimedata, PeerTimeSnapshot, SystemConfig, TimeSnapshot,
+    Measurement, NtpClock, NtpDuration, NtpInstant, ObservablePeerTimedata, SystemConfig,
+    TimeSnapshot,
 };
 
 use super::TimeSyncController;

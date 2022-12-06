@@ -46,3 +46,6 @@ pub trait TimeSyncController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> {
 mod standard;
 
 pub type DefaultTimeSyncController<C, PeerID> = standard::StandardClockController<C, PeerID>;
+
+#[cfg(feature = "fuzz")]
+pub use standard::fuzz_find_interval;
