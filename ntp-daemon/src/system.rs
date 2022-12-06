@@ -1,5 +1,5 @@
 use crate::{
-    config::NormalizedAddress,
+    config::{CombinedSystemConfig, NormalizedAddress},
     config::{PeerConfig, PoolPeerConfig, ServerConfig, StandardPeerConfig},
     peer::PeerTask,
     peer::{MsgForSystem, PeerChannels},
@@ -11,8 +11,7 @@ use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
-    DefaultTimeSyncController, NtpClock, PeerSnapshot, SystemConfig, SystemSnapshot,
-    TimeSyncController,
+    DefaultTimeSyncController, NtpClock, PeerSnapshot, SystemSnapshot, TimeSyncController,
 };
 use tokio::{
     sync::mpsc::{self, Sender},
@@ -23,8 +22,8 @@ use tracing::warn;
 const NETWORK_WAIT_PERIOD: std::time::Duration = std::time::Duration::from_secs(1);
 
 pub struct DaemonChannels {
-    pub config_receiver: tokio::sync::watch::Receiver<SystemConfig>,
-    pub config_sender: tokio::sync::watch::Sender<SystemConfig>,
+    pub config_receiver: tokio::sync::watch::Receiver<CombinedSystemConfig>,
+    pub config_sender: tokio::sync::watch::Sender<CombinedSystemConfig>,
     pub peer_snapshots_receiver: tokio::sync::watch::Receiver<Vec<ObservablePeerState>>,
     pub server_data_receiver: tokio::sync::watch::Receiver<Vec<ServerData>>,
     pub system_snapshot_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
@@ -32,7 +31,7 @@ pub struct DaemonChannels {
 
 /// Spawn the NTP daemon
 pub async fn spawn(
-    config: SystemConfig,
+    config: CombinedSystemConfig,
     peer_configs: &[PeerConfig],
     server_configs: &[ServerConfig],
 ) -> std::io::Result<(JoinHandle<std::io::Result<()>>, DaemonChannels)> {
@@ -62,10 +61,10 @@ pub async fn spawn(
 }
 
 struct System<C: NtpClock> {
-    config: SystemConfig,
+    config: CombinedSystemConfig,
     system: SystemSnapshot,
 
-    config_receiver: tokio::sync::watch::Receiver<SystemConfig>,
+    config_receiver: tokio::sync::watch::Receiver<CombinedSystemConfig>,
     system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
     peer_snapshots_sender: tokio::sync::watch::Sender<Vec<ObservablePeerState>>,
     server_data_sender: tokio::sync::watch::Sender<Vec<ServerData>>,
@@ -88,10 +87,10 @@ struct System<C: NtpClock> {
 impl<C: NtpClock> System<C> {
     const MESSAGE_BUFFER_SIZE: usize = 32;
 
-    fn new(clock: C, config: SystemConfig) -> (Self, DaemonChannels) {
+    fn new(clock: C, config: CombinedSystemConfig) -> (Self, DaemonChannels) {
         // Setup system snapshot
         let system = SystemSnapshot {
-            stratum: config.local_stratum,
+            stratum: config.system.local_stratum,
             ..Default::default()
         };
 
@@ -134,7 +133,7 @@ impl<C: NtpClock> System<C> {
                     system_config_receiver: config_receiver.clone(),
                 },
                 clock: clock.clone(),
-                controller: DefaultTimeSyncController::new(clock, config),
+                controller: DefaultTimeSyncController::new(clock, config.system, config.algorithm),
             },
             DaemonChannels {
                 config_receiver,
@@ -186,7 +185,8 @@ impl<C: NtpClock> System<C> {
 
     fn handle_config_update(&mut self) {
         let config = *self.config_receiver.borrow_and_update();
-        self.controller.update_config(config);
+        self.controller
+            .update_config(config.system, config.algorithm);
         self.config = config;
     }
 
@@ -237,7 +237,7 @@ impl<C: NtpClock> System<C> {
         self.controller.peer_update(
             index,
             snapshot
-                .accept_synchronization(self.config.local_stratum)
+                .accept_synchronization(self.config.system.local_stratum)
                 .is_ok(),
         );
         self.peers.get_mut(&index).unwrap().snapshot = Some(snapshot);
@@ -260,7 +260,7 @@ impl<C: NtpClock> System<C> {
                     )
                 }),
                 timedata,
-                &self.config,
+                &self.config.system,
             );
             // Don't care if there is no receiver.
             let _ = self.system_snapshot_sender.send(self.system);
@@ -636,7 +636,7 @@ impl Spawner {
 mod tests {
     use ntp_proto::{
         peer_snapshot, Measurement, NtpDuration, NtpInstant, NtpLeapIndicator, NtpPacket,
-        NtpTimestamp, PollInterval, SystemConfig,
+        NtpTimestamp, PollInterval,
     };
 
     use crate::config::NormalizedAddress;
@@ -676,7 +676,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_peers() {
-        let (mut system, _) = System::new(TestClock {}, SystemConfig::default());
+        let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
 
         let mut indices = [PeerIndex { index: 0 }; 4];
 
@@ -782,7 +782,7 @@ mod tests {
 
     #[tokio::test]
     async fn single_peer_pool() {
-        let (mut system, _) = System::new(TestClock {}, SystemConfig::default());
+        let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
 
         let peer_address = NormalizedAddress::new_unchecked("127.0.0.2:123");
         system.add_peer(peer_address).await;
@@ -815,7 +815,7 @@ mod tests {
 
     #[tokio::test]
     async fn max_peers_bigger_than_pool_size() {
-        let (mut system, _) = System::new(TestClock {}, SystemConfig::default());
+        let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
 
         let peer_address = NormalizedAddress::new_unchecked("127.0.0.5:123");
         system.add_peer(peer_address).await;
@@ -855,7 +855,7 @@ mod tests {
 
     #[tokio::test]
     async fn simulate_pool() {
-        let (mut system, _) = System::new(TestClock {}, SystemConfig::default());
+        let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
 
         let peer_address = NormalizedAddress::new_unchecked("127.0.0.5:123");
         system.add_peer(peer_address).await;

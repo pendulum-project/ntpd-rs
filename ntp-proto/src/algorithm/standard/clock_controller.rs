@@ -4,6 +4,8 @@ use crate::{
 };
 use tracing::{debug, error, info, instrument, trace};
 
+use super::config::AlgorithmConfig;
+
 /// Jitter averaging factor
 const JITTER_AVG: f64 = 4.;
 
@@ -73,6 +75,7 @@ impl<C: NtpClock> ClockController<C> {
     pub fn update(
         &mut self,
         config: &SystemConfig,
+        algo_config: &AlgorithmConfig,
         system: &TimeSnapshot,
         offset: NtpDuration,
         root_delay: NtpDuration,
@@ -112,7 +115,7 @@ impl<C: NtpClock> ClockController<C> {
                 }
                 ClockState::MeasureFreq => {
                     if NtpInstant::abs_diff(last_peer_update, self.last_update_time)
-                        < config.frequency_measurement_period
+                        < algo_config.frequency_measurement_period
                     {
                         // Initial frequency measurement needs some time
                         debug!("Frequency measurement not finished yet");
@@ -124,7 +127,7 @@ impl<C: NtpClock> ClockController<C> {
                 }
                 ClockState::Spike => {
                     if NtpInstant::abs_diff(last_peer_update, self.last_update_time)
-                        < config.spike_threshold
+                        < algo_config.spike_threshold
                     {
                         // Filter out short spikes
                         debug!("Spike continues");
@@ -156,7 +159,7 @@ impl<C: NtpClock> ClockController<C> {
                 }
                 ClockState::MeasureFreq => {
                     if NtpInstant::abs_diff(last_peer_update, self.last_update_time)
-                        < config.frequency_measurement_period
+                        < algo_config.frequency_measurement_period
                     {
                         // Initial frequency measurement needs some time
                         debug!("Frequency measurement not finished yet");
@@ -406,6 +409,7 @@ mod tests {
         let base = NtpInstant::now();
 
         let config = SystemConfig::default();
+        let algo_config = AlgorithmConfig::default();
         let system = TimeSnapshot::default();
 
         let mut controller = ClockController {
@@ -424,6 +428,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &algo_config,
                 &system,
                 NtpDuration::from_fixed_int(0),
                 NtpDuration::from_fixed_int(20),
@@ -455,6 +460,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &algo_config,
                 &system,
                 NtpDuration::from_fixed_int(0),
                 NtpDuration::from_fixed_int(40),
@@ -483,11 +489,13 @@ mod tests {
     fn test_startup_logic() {
         let system = TimeSnapshot::default();
         let config = SystemConfig::default();
+        let algo_config = AlgorithmConfig::default();
         let mut controller = ClockController::new(TestClock::default(), &system, &config);
         let base = controller.last_update_time;
 
         controller.update(
             &config,
+            &algo_config,
             &system,
             NtpDuration::from_fixed_int(0),
             NtpDuration::from_seconds(0.01),
@@ -504,6 +512,7 @@ mod tests {
 
         controller.update(
             &config,
+            &algo_config,
             &system,
             NtpDuration::from_fixed_int(1 << 32),
             NtpDuration::from_seconds(0.02),
@@ -524,6 +533,7 @@ mod tests {
     fn test_startup_logic_freq() {
         let base = NtpInstant::now();
         let config = SystemConfig::default();
+        let algo_config = AlgorithmConfig::default();
         let system = TimeSnapshot::default();
 
         let mut controller = ClockController {
@@ -539,6 +549,7 @@ mod tests {
 
         controller.update(
             &config,
+            &algo_config,
             &system,
             NtpDuration::from_fixed_int(0),
             NtpDuration::from_seconds(0.02),
@@ -558,6 +569,7 @@ mod tests {
     fn test_spike_rejection() {
         let base = NtpInstant::now();
         let config = SystemConfig::default();
+        let algo_config = AlgorithmConfig::default();
         let system = TimeSnapshot::default();
 
         let mut controller = ClockController {
@@ -573,6 +585,7 @@ mod tests {
 
         controller.update(
             &config,
+            &algo_config,
             &system,
             2 * NtpDuration::STEP_THRESHOLD,
             NtpDuration::from_seconds(0.02),
@@ -586,6 +599,7 @@ mod tests {
 
         controller.update(
             &config,
+            &algo_config,
             &system,
             NtpDuration::from_fixed_int(0),
             NtpDuration::from_seconds(0.02),
@@ -605,6 +619,7 @@ mod tests {
     fn test_spike_acceptance_over_time() {
         let base = NtpInstant::now();
         let config = SystemConfig::default();
+        let algo_config = AlgorithmConfig::default();
         let system = TimeSnapshot::default();
 
         let mut controller = ClockController {
@@ -620,6 +635,7 @@ mod tests {
 
         controller.update(
             &config,
+            &algo_config,
             &system,
             2 * NtpDuration::STEP_THRESHOLD,
             NtpDuration::from_seconds(0.02),
@@ -633,6 +649,7 @@ mod tests {
 
         controller.update(
             &config,
+            &algo_config,
             &system,
             2 * NtpDuration::STEP_THRESHOLD,
             NtpDuration::from_seconds(0.02),
@@ -655,6 +672,7 @@ mod tests {
             accumulated_threshold: Some(NtpDuration::from_seconds(100.0)),
             ..Default::default()
         };
+        let algo_config = AlgorithmConfig::default();
         let system = TimeSnapshot::default();
 
         let mut controller = ClockController {
@@ -671,6 +689,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &algo_config,
                 &system,
                 NtpDuration::from_seconds(80.),
                 NtpDuration::from_seconds(0.02),
@@ -683,6 +702,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &algo_config,
                 &system,
                 NtpDuration::from_seconds(80.),
                 NtpDuration::from_seconds(0.02),
@@ -695,6 +715,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &algo_config,
                 &system,
                 NtpDuration::from_seconds(80.),
                 NtpDuration::from_seconds(0.02),
@@ -710,6 +731,7 @@ mod tests {
     fn test_jitter_calc() {
         let base = NtpInstant::now();
         let config = SystemConfig::default();
+        let algo_config = AlgorithmConfig::default();
         let system = TimeSnapshot::default();
 
         let mut controller = ClockController {
@@ -726,6 +748,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &algo_config,
                 &system,
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.02),
@@ -741,6 +764,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &algo_config,
                 &system,
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.02),
@@ -754,6 +778,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &algo_config,
                 &system,
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.02),
@@ -767,6 +792,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &algo_config,
                 &system,
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.02),
@@ -780,6 +806,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &algo_config,
                 &system,
                 NtpDuration::from_seconds(0.02),
                 NtpDuration::from_seconds(0.02),
@@ -796,6 +823,7 @@ mod tests {
     fn test_poll_preference_update() {
         let base = NtpInstant::now();
         let config = SystemConfig::default();
+        let algo_config = AlgorithmConfig::default();
         let system = TimeSnapshot::default();
 
         let mut controller = ClockController {
@@ -812,6 +840,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &algo_config,
                 &system,
                 NtpDuration::from_seconds(2e-3),
                 NtpDuration::from_seconds(2e-4),
@@ -829,6 +858,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &algo_config,
                 &system,
                 NtpDuration::from_seconds(-2e-3),
                 NtpDuration::from_seconds(2e-4),
@@ -846,6 +876,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &algo_config,
                 &system,
                 NtpDuration::from_seconds(2e-3),
                 NtpDuration::from_seconds(2e-4),
@@ -863,6 +894,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &algo_config,
                 &system,
                 NtpDuration::from_seconds(-2e-3),
                 NtpDuration::from_seconds(2e-4),
@@ -879,6 +911,7 @@ mod tests {
     fn test_excess_detection() {
         let base = NtpInstant::now();
         let config = SystemConfig::default();
+        let algo_config = AlgorithmConfig::default();
         let system = TimeSnapshot::default();
 
         let mut controller = ClockController {
@@ -895,6 +928,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &algo_config,
                 &system,
                 2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.02),
@@ -919,6 +953,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &algo_config,
                 &system,
                 -2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.02),
@@ -943,6 +978,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &algo_config,
                 &system,
                 2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.02),
@@ -967,6 +1003,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &algo_config,
                 &system,
                 -2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.02),
@@ -991,6 +1028,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &algo_config,
                 &system,
                 2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.02),
@@ -1015,6 +1053,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &algo_config,
                 &system,
                 -2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.02),
@@ -1039,6 +1078,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &algo_config,
                 &system,
                 2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.02),
@@ -1063,6 +1103,7 @@ mod tests {
         assert_eq!(
             controller.update(
                 &config,
+                &algo_config,
                 &system,
                 2 * config.panic_threshold.forward.unwrap(),
                 NtpDuration::from_seconds(0.02),

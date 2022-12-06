@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 use std::hash::Hash;
 
+use super::config::AlgorithmConfig;
 use super::peer::PeerTimeSnapshot;
 use crate::time_types::{FrequencyTolerance, NtpInstant};
 use crate::{NtpDuration, PollInterval, SystemConfig};
@@ -19,11 +20,12 @@ impl<PeerID: Hash + Eq + Copy + Debug> FilterAndCombine<PeerID> {
     #[instrument(skip(peers), fields(peers = debug(peers.iter().map(|peer| peer.0).collect::<Vec<_>>())))]
     pub fn run(
         config: &SystemConfig,
+        algo_config: &AlgorithmConfig,
         peers: &[(PeerID, PeerTimeSnapshot)],
         local_clock_time: NtpInstant,
         system_poll: PollInterval,
     ) -> Option<Self> {
-        let selection = clock_select(config, peers, local_clock_time, system_poll)?;
+        let selection = clock_select(config, algo_config, peers, local_clock_time, system_poll)?;
 
         // the clustering algorithm (part of `clock_select`) sorts the peers, best peer first.
         // the first (and best) peer is chosen as the system peer, and its variables are used
@@ -39,7 +41,7 @@ impl<PeerID: Hash + Eq + Copy + Debug> FilterAndCombine<PeerID> {
             &selection.survivors,
             selection.system_selection_jitter,
             local_clock_time,
-            config.frequency_tolerance,
+            algo_config.frequency_tolerance,
         );
 
         // Update the system root delay and dispersion with the contributions from our synchronization process.
@@ -50,7 +52,7 @@ impl<PeerID: Hash + Eq + Copy + Debug> FilterAndCombine<PeerID> {
                 system_peer_snapshot.statistics.dispersion
                     + NtpDuration::from_seconds(system_peer_snapshot.statistics.jitter)
                     + local_clock_time.abs_diff(system_peer_snapshot.time)
-                        * config.frequency_tolerance
+                        * algo_config.frequency_tolerance
                     + combined.system_offset.abs(),
             );
 
@@ -69,9 +71,10 @@ struct ClockSelect<'a, PeerID: Hash + Eq + Copy + Debug> {
     system_selection_jitter: NtpDuration,
 }
 
-#[instrument(skip(config, local_clock_time, system_poll))]
+#[instrument(skip(config, algo_config, local_clock_time, system_poll))]
 fn clock_select<'a, PeerID: Hash + Eq + Copy + Debug>(
     config: &SystemConfig,
+    algo_config: &AlgorithmConfig,
     peers: &'a [(PeerID, PeerTimeSnapshot)],
     local_clock_time: NtpInstant,
     system_poll: PollInterval,
@@ -79,16 +82,16 @@ fn clock_select<'a, PeerID: Hash + Eq + Copy + Debug>(
     let valid_associations = peers.iter().filter(|p| {
         p.1.accept_synchronization(
             local_clock_time,
-            config.frequency_tolerance,
-            config.distance_threshold,
+            algo_config.frequency_tolerance,
+            algo_config.distance_threshold,
             system_poll,
         )
         .is_ok()
     });
 
-    let candidates = construct_candidate_list(config, valid_associations, local_clock_time);
+    let candidates = construct_candidate_list(algo_config, valid_associations, local_clock_time);
 
-    let mut survivors = construct_survivors(config, &candidates, local_clock_time);
+    let mut survivors = construct_survivors(algo_config, &candidates, local_clock_time);
 
     trace!(survivors = debug(&survivors));
     if survivors.len() < config.min_intersection_survivors {
@@ -97,7 +100,7 @@ fn clock_select<'a, PeerID: Hash + Eq + Copy + Debug>(
     }
 
     let system_selection_jitter =
-        NtpDuration::from_seconds(cluster_algorithm(config, &mut survivors));
+        NtpDuration::from_seconds(cluster_algorithm(algo_config, &mut survivors));
 
     Some(ClockSelect {
         survivors,
@@ -123,7 +126,7 @@ struct CandidateTuple<'a, PeerID: Hash + Eq + Copy + Debug> {
 }
 
 fn construct_candidate_list<'a, PeerID: Hash + Eq + Copy + Debug>(
-    config: &SystemConfig,
+    config: &AlgorithmConfig,
     valid_associations: impl IntoIterator<Item = &'a (PeerID, PeerTimeSnapshot)>,
     local_clock_time: NtpInstant,
 ) -> Vec<CandidateTuple<'a, PeerID>> {
@@ -169,7 +172,7 @@ struct SurvivorTuple<'a, PeerID: Hash + Eq + Copy + Debug> {
 
 /// Collect the candidates within the correctness interval
 fn construct_survivors<'a, PeerID: Hash + Eq + Copy + Debug>(
-    config: &SystemConfig,
+    config: &AlgorithmConfig,
     chime_list: &[CandidateTuple<'a, PeerID>],
     local_clock_time: NtpInstant,
 ) -> Vec<SurvivorTuple<'a, PeerID>> {
@@ -183,7 +186,7 @@ fn construct_survivors<'a, PeerID: Hash + Eq + Copy + Debug>(
 }
 
 fn filter_survivor<'a, PeerID: Hash + Eq + Copy + Debug>(
-    config: &SystemConfig,
+    config: &AlgorithmConfig,
     candidate: &CandidateTuple<'a, PeerID>,
     local_clock_time: NtpInstant,
     low: NtpDuration,
@@ -287,7 +290,7 @@ fn find_interval<PeerID: Hash + Eq + Copy + Debug>(
 /// returns the (maximum) selection jitter
 #[instrument]
 fn cluster_algorithm<PeerID: Hash + Eq + Copy + Debug>(
-    config: &SystemConfig,
+    config: &AlgorithmConfig,
     candidates: &mut Vec<SurvivorTuple<PeerID>>,
 ) -> f64 {
     // sort the candidates by increasing lambda_p (the merit factor)
@@ -449,7 +452,7 @@ pub fn fuzz_find_interval(spec: &[(i64, u64)]) {
         });
     }
     candidates.sort_by(|a, b| a.edge.cmp(&b.edge));
-    let config = SystemConfig::default();
+    let config = AlgorithmConfig::default();
     let survivors = construct_survivors(&config, &candidates, instant);
 
     // check that if we find a cluster, it contains more than half of the peers we work with.
@@ -715,7 +718,7 @@ mod test {
             ))
         );
 
-        let config = SystemConfig::default();
+        let config = AlgorithmConfig::default();
         let survivors = construct_survivors(&config, &intervals, instant);
         assert_eq!(survivors.len(), 3);
     }
@@ -784,7 +787,7 @@ mod test {
             ))
         );
 
-        let config = SystemConfig::default();
+        let config = AlgorithmConfig::default();
         let survivors = construct_survivors(&config, &intervals, instant);
         assert_eq!(survivors.len(), 2);
     }
@@ -855,7 +858,7 @@ mod test {
             ))
         );
 
-        let config = SystemConfig::default();
+        let config = AlgorithmConfig::default();
         let survivors = construct_survivors(&config, &intervals, instant);
         assert_eq!(survivors.len(), 3);
     }
@@ -925,7 +928,7 @@ mod test {
             ))
         );
 
-        let config = SystemConfig::default();
+        let config = AlgorithmConfig::default();
         let survivors = construct_survivors(&config, &intervals, instant);
         assert_eq!(survivors.len(), 3);
     }
@@ -988,7 +991,7 @@ mod test {
 
         assert_eq!(find_interval(&intervals), None);
 
-        let config = SystemConfig::default();
+        let config = AlgorithmConfig::default();
         let survivors = construct_survivors(&config, &intervals, instant);
         assert_eq!(survivors.len(), 0);
     }
@@ -1052,7 +1055,7 @@ mod test {
 
         assert_eq!(find_interval(&intervals), None);
 
-        let config = SystemConfig::default();
+        let config = AlgorithmConfig::default();
         let survivors = construct_survivors(&config, &intervals, instant);
         assert_eq!(survivors.len(), 0);
     }
@@ -1084,7 +1087,7 @@ mod test {
             root_dispersion,
         );
 
-        let config = SystemConfig::default();
+        let config = AlgorithmConfig::default();
         let local_clock_time = instant;
         let actual: Vec<_> =
             construct_candidate_list(&config, [&(1, peer1), &(2, peer2)], local_clock_time)
@@ -1123,13 +1126,13 @@ mod test {
     #[test]
     fn cluster_algorithm_empty() {
         // this should not happen in practice
-        let config = SystemConfig::default();
+        let config = AlgorithmConfig::default();
         assert_eq!(cluster_algorithm::<usize>(&config, &mut vec![]), 0.0)
     }
 
     #[test]
     fn cluster_algorithm_single() {
-        let config = SystemConfig::default();
+        let config = AlgorithmConfig::default();
         let peer = test_peer_time_snapshot(NtpInstant::now());
         let candidate = SurvivorTuple {
             peer: &(1, peer),
@@ -1154,7 +1157,7 @@ mod test {
             metric: NtpDuration::ONE * 3i64,
         };
 
-        let config = SystemConfig::default();
+        let config = AlgorithmConfig::default();
         let mut candidates = vec![candidate1, candidate2];
         let answer = cluster_algorithm(&config, &mut candidates);
 
@@ -1175,7 +1178,7 @@ mod test {
         };
 
         let mut candidates = vec![candidate1; 10];
-        let config = SystemConfig::default();
+        let config = AlgorithmConfig::default();
         let answer = cluster_algorithm(&config, &mut candidates);
         assert!((answer - 0.0).abs() < 1e-9);
 
@@ -1208,7 +1211,7 @@ mod test {
             })
             .collect();
 
-        let config = SystemConfig::default();
+        let config = AlgorithmConfig::default();
         let answer = cluster_algorithm(&config, &mut candidates);
         assert!((answer - 2.7386127881634637).abs() < 1e-9);
 
@@ -1238,7 +1241,7 @@ mod test {
             })
             .collect();
 
-        let config = SystemConfig::default();
+        let config = AlgorithmConfig::default();
         let _answer = cluster_algorithm(&config, &mut candidates);
 
         // check that peer 2 was discarded
@@ -1271,7 +1274,7 @@ mod test {
             })
             .collect();
 
-        let config = SystemConfig::default();
+        let config = AlgorithmConfig::default();
         let _answer = cluster_algorithm(&config, &mut candidates);
 
         // check that peer 2 and 3 were
@@ -1289,6 +1292,7 @@ mod test {
             min_intersection_survivors: 1,
             ..Default::default()
         };
+        let algo_config = AlgorithmConfig::default();
 
         let peer = peer_time_snapshot(
             PeerStatistics {
@@ -1303,6 +1307,7 @@ mod test {
         );
         let baseline_result = FilterAndCombine::run(
             &config,
+            &algo_config,
             &[(1, peer)],
             base,
             PollIntervalLimits::default().min,
@@ -1313,6 +1318,7 @@ mod test {
 
         let result = FilterAndCombine::run(
             &config,
+            &algo_config,
             &[(1, peer)],
             base + Duration::from_secs(1000),
             PollIntervalLimits::default().min,
@@ -1335,6 +1341,7 @@ mod test {
         );
         let result = FilterAndCombine::run(
             &config,
+            &algo_config,
             &[(1, peer)],
             base,
             PollIntervalLimits::default().min,
@@ -1357,6 +1364,7 @@ mod test {
         );
         let result = FilterAndCombine::run(
             &config,
+            &algo_config,
             &[(1, peer)],
             base,
             PollIntervalLimits::default().min,
@@ -1379,6 +1387,7 @@ mod test {
         );
         let result = FilterAndCombine::run(
             &config,
+            &algo_config,
             &[(1, peer)],
             base,
             PollIntervalLimits::default().min,
@@ -1401,6 +1410,7 @@ mod test {
         );
         let result = FilterAndCombine::run(
             &config,
+            &algo_config,
             &[(1, peer)],
             base,
             PollIntervalLimits::default().min,

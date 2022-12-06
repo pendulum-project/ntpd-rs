@@ -4,11 +4,12 @@ mod peer;
 mod server;
 pub mod subnet;
 
+use ntp_os_clock::UnixNtpClock;
 pub use peer::*;
 pub use server::*;
 
 use clap::Parser;
-use ntp_proto::SystemConfig;
+use ntp_proto::{DefaultTimeSyncController, SystemConfig, TimeSyncController};
 use serde::{de, Deserialize, Deserializer};
 use std::{
     io::ErrorKind,
@@ -19,6 +20,8 @@ use thiserror::Error;
 use tokio::{fs::read_to_string, io};
 use tracing::{info, warn};
 use tracing_subscriber::filter::EnvFilter;
+
+use crate::system::PeerIndex;
 
 use self::format::LogFormat;
 
@@ -99,6 +102,17 @@ pub struct CmdArgs {
     pub servers: Vec<ServerConfig>,
 }
 
+#[derive(Deserialize, Debug, Default, Copy, Clone)]
+pub struct CombinedSystemConfig {
+    #[serde(flatten)]
+    pub system: SystemConfig,
+    #[serde(flatten)]
+    pub algorithm: <DefaultTimeSyncController<UnixNtpClock, PeerIndex> as TimeSyncController<
+        UnixNtpClock,
+        PeerIndex,
+    >>::AlgorithmConfig,
+}
+
 #[derive(Deserialize, Debug, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct Config {
@@ -107,7 +121,7 @@ pub struct Config {
     #[serde(alias = "server", default)]
     pub servers: Vec<ServerConfig>,
     #[serde(default)]
-    pub system: SystemConfig,
+    pub system: CombinedSystemConfig,
     #[serde(deserialize_with = "deserialize_option_env_filter", default)]
     pub log_filter: Option<EnvFilter>,
     #[serde(default)]
@@ -256,7 +270,7 @@ impl Config {
             warn!("No peers configured. Daemon will not do anything.");
         }
 
-        if self.peers.len() < self.system.min_intersection_survivors {
+        if self.peers.len() < self.system.system.min_intersection_survivors {
             warn!("Fewer peers configured than are required to agree on the current time. Daemon will not do anything.");
         }
     }
@@ -310,11 +324,11 @@ mod tests {
             })]
         );
         assert_eq!(
-            config.system.panic_threshold.forward,
+            config.system.system.panic_threshold.forward,
             Some(NtpDuration::from_seconds(0.))
         );
         assert_eq!(
-            config.system.panic_threshold.backward,
+            config.system.system.panic_threshold.backward,
             Some(NtpDuration::from_seconds(0.))
         );
 
@@ -328,8 +342,8 @@ mod tests {
                 addr: NormalizedAddress::new_unchecked("example.com:123"),
             })]
         );
-        assert!(config.system.panic_threshold.forward.is_none());
-        assert!(config.system.panic_threshold.backward.is_none());
+        assert!(config.system.system.panic_threshold.forward.is_none());
+        assert!(config.system.system.panic_threshold.backward.is_none());
 
         let config: Config = toml::from_str(
             r#"
@@ -391,13 +405,13 @@ mod tests {
         let config = Config::from_args(None as Option<&'static str>, vec![], vec![])
             .await
             .unwrap();
-        assert_eq!(config.system.min_intersection_survivors, 2);
+        assert_eq!(config.system.system.min_intersection_survivors, 2);
         assert_eq!(config.peers.len(), 1);
 
         let config = Config::from_args(Some("other.toml"), vec![], vec![])
             .await
             .unwrap();
-        assert_eq!(config.system.min_intersection_survivors, 3);
+        assert_eq!(config.system.system.min_intersection_survivors, 3);
         assert_eq!(config.peers.len(), 1);
 
         let config = Config::from_args(
@@ -410,7 +424,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(config.system.min_intersection_survivors, 2);
+        assert_eq!(config.system.system.min_intersection_survivors, 2);
         assert_eq!(config.peers.len(), 2);
 
         let config = Config::from_args(
@@ -423,7 +437,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(config.system.min_intersection_survivors, 3);
+        assert_eq!(config.system.system.min_intersection_survivors, 3);
         assert_eq!(config.peers.len(), 2);
     }
 

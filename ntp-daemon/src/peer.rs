@@ -8,7 +8,7 @@ use std::{
 
 use ntp_proto::{
     IgnoreReason, Measurement, NtpClock, NtpInstant, NtpPacket, NtpTimestamp, Peer, PeerSnapshot,
-    ReferenceId, SystemConfig, SystemSnapshot, Update,
+    ReferenceId, SystemSnapshot, Update,
 };
 use ntp_udp::UdpSocket;
 use rand::{thread_rng, Rng};
@@ -16,7 +16,7 @@ use tracing::{debug, error, instrument, warn, Instrument, Span};
 
 use tokio::time::{Instant, Sleep};
 
-use crate::system::PeerIndex;
+use crate::{config::CombinedSystemConfig, system::PeerIndex};
 
 /// Trait needed to allow injecting of futures other than tokio::time::Sleep for testing
 pub trait Wait: Future<Output = ()> {
@@ -47,7 +47,7 @@ pub enum MsgForSystem {
 pub struct PeerChannels {
     pub msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
     pub system_snapshot_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
-    pub system_config_receiver: tokio::sync::watch::Receiver<SystemConfig>,
+    pub system_config_receiver: tokio::sync::watch::Receiver<CombinedSystemConfig>,
 }
 
 pub(crate) struct PeerTask<C: 'static + NtpClock + Send, T: Wait> {
@@ -107,7 +107,7 @@ where
         let config_snapshot = *self.channels.system_config_receiver.borrow_and_update();
         let packet = self
             .peer
-            .generate_poll_message(system_snapshot, &config_snapshot);
+            .generate_poll_message(system_snapshot, &config_snapshot.system);
 
         // Sent a poll, so update waiting to match deadline of next
         self.last_poll_sent = Instant::now();
@@ -252,7 +252,7 @@ where
                     }
                 },
                 _ = self.channels.system_config_receiver.changed(), if self.channels.system_config_receiver.has_changed().is_ok() => {
-                    self.peer.update_config(*self.channels.system_config_receiver.borrow_and_update());
+                    self.peer.update_config(self.channels.system_config_receiver.borrow_and_update().system);
                 },
             }
         }
@@ -294,7 +294,7 @@ where
 
                 let local_clock_time = NtpInstant::now();
                 let config_snapshot = *channels.system_config_receiver.borrow_and_update();
-                let peer = Peer::new(our_id, peer_id, local_clock_time, config_snapshot);
+                let peer = Peer::new(our_id, peer_id, local_clock_time, config_snapshot.system);
 
                 let poll_wait = tokio::time::sleep(std::time::Duration::default());
                 tokio::pin!(poll_wait);
@@ -515,7 +515,8 @@ mod tests {
         let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
 
         let (_, system_snapshot_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
-        let (_, mut system_config_receiver) = tokio::sync::watch::channel(SystemConfig::default());
+        let (_, mut system_config_receiver) =
+            tokio::sync::watch::channel(CombinedSystemConfig::default());
         let (msg_for_system_sender, msg_for_system_receiver) = mpsc::channel(1);
 
         let local_clock_time = NtpInstant::now();
@@ -523,7 +524,7 @@ mod tests {
             our_id,
             peer_id,
             local_clock_time,
-            *system_config_receiver.borrow_and_update(),
+            system_config_receiver.borrow_and_update().system,
         );
 
         let process = PeerTask {

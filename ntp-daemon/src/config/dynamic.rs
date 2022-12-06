@@ -1,6 +1,6 @@
 use crate::sockets::create_unix_socket;
 use crate::tracing::ReloadHandle;
-use ntp_proto::{NtpDuration, StepThreshold, SystemConfig};
+use ntp_proto::{NtpDuration, StepThreshold};
 use std::os::unix::fs::PermissionsExt;
 use tokio::task::JoinHandle;
 use tracing::error;
@@ -9,7 +9,7 @@ use tracing_subscriber::EnvFilter;
 use clap::Args;
 use serde::{Deserialize, Serialize};
 
-use super::ConfigureConfig;
+use super::{CombinedSystemConfig, ConfigureConfig};
 
 fn parse_env_filter(input: &str) -> Result<String, tracing_subscriber::filter::ParseError> {
     // run the parser to error on any invalid input
@@ -49,7 +49,7 @@ impl LogReloader for ReloadHandle {
 
 pub async fn spawn<H: LogReloader + Send + 'static>(
     config: ConfigureConfig,
-    system_config_sender: tokio::sync::watch::Sender<SystemConfig>,
+    system_config_sender: tokio::sync::watch::Sender<CombinedSystemConfig>,
     log_reload_handle: H,
 ) -> JoinHandle<std::io::Result<()>> {
     tokio::spawn(async move {
@@ -63,7 +63,7 @@ pub async fn spawn<H: LogReloader + Send + 'static>(
 
 async fn dynamic_configuration<H: LogReloader>(
     config: ConfigureConfig,
-    system_config_sender: tokio::sync::watch::Sender<SystemConfig>,
+    system_config_sender: tokio::sync::watch::Sender<CombinedSystemConfig>,
     log_reload_handle: H,
 ) -> std::io::Result<()> {
     let path = match config.path {
@@ -94,7 +94,7 @@ async fn dynamic_configuration<H: LogReloader>(
 
         if let Some(panic_threshold) = operation.panic_threshold {
             system_config_sender.send_modify(|config| {
-                config.panic_threshold = StepThreshold {
+                config.system.panic_threshold = StepThreshold {
                     forward: Some(NtpDuration::from_seconds(panic_threshold)),
                     backward: Some(NtpDuration::from_seconds(panic_threshold)),
                 };
@@ -119,7 +119,7 @@ mod tests {
     #[tokio::test]
     async fn test_dynamic_configuration_change() {
         let (system_config_sender, system_config_receiver) =
-            tokio::sync::watch::channel(SystemConfig::default());
+            tokio::sync::watch::channel(CombinedSystemConfig::default());
 
         let path = std::env::temp_dir().join("ntp-test-stream-4");
         let config = ConfigureConfig {
@@ -148,7 +148,11 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(10)).await;
 
         assert_eq!(
-            system_config_receiver.borrow().panic_threshold.forward,
+            system_config_receiver
+                .borrow()
+                .system
+                .panic_threshold
+                .forward,
             Some(NtpDuration::from_seconds(600.))
         );
 
