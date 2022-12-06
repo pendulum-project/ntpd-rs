@@ -8,12 +8,12 @@ use nix::{
     ifaddrs::{getifaddrs, InterfaceAddress, InterfaceAddressIterator},
     net::if_::if_nametoindex,
     sys::{
-        select::{FdSet, select},
+        select::{select, FdSet},
         socket::{
-            AddressFamily, ControlMessageOwned, InetAddr, IpAddr,
-            Ipv4Addr,
-            Ipv6Addr, MsgFlags, recvmsg, sendmsg, setsockopt, SetSockOpt, SockAddr,
-            socket, SockFlag, sockopt::{BindToDevice, ReuseAddr, Timestamping}, SockType, TimestampingFlag, Timestamps,
+            recvmsg, sendmsg, setsockopt, socket,
+            sockopt::{BindToDevice, ReuseAddr, Timestamping},
+            AddressFamily, ControlMessageOwned, InetAddr, IpAddr, Ipv4Addr, Ipv6Addr, MsgFlags,
+            SetSockOpt, SockAddr, SockFlag, SockType, TimestampingFlag, Timestamps,
         },
         uio::IoVec,
     },
@@ -96,22 +96,18 @@ impl LinuxInterfaceDescriptor {
                         if let Some(SockAddr::Inet(a @ InetAddr::V6(_))) = i.address {
                             return Ok(a.ip());
                         }
-                    } else {
-                        if let Some(SockAddr::Inet(a @ InetAddr::V4(_))) = i.address {
-                            return Ok(a.ip());
-                        }
+                    } else if let Some(SockAddr::Inet(a @ InetAddr::V4(_))) = i.address {
+                        return Ok(a.ip());
                     }
                 }
             }
             Err(NetworkError::InterfaceDoesNotExist)
+        } else if self.mode == LinuxNetworkMode::Ipv6 {
+            Ok(IpAddr::V6(Ipv6Addr::from_std(
+                &std::net::Ipv6Addr::UNSPECIFIED,
+            )))
         } else {
-            if self.mode == LinuxNetworkMode::Ipv6 {
-                Ok(IpAddr::V6(Ipv6Addr::from_std(
-                    &std::net::Ipv6Addr::UNSPECIFIED,
-                )))
-            } else {
-                Ok(IpAddr::V4(Ipv4Addr::any()))
-            }
+            Ok(IpAddr::V4(Ipv4Addr::any()))
         }
     }
 }
@@ -142,7 +138,7 @@ impl FromStr for LinuxInterfaceDescriptor {
                 for ifaddr in interfaces {
                     if if_has_address(&ifaddr, &sock_addr) {
                         return Ok(LinuxInterfaceDescriptor {
-                            interface_name: Some(ifaddr.interface_name.clone()),
+                            interface_name: Some(ifaddr.interface_name),
                             mode: LinuxNetworkMode::Ipv4,
                         });
                     }
@@ -264,7 +260,7 @@ impl SetSockOpt for Ipv6AddMembership {
     }
 }
 
-impl<'a> NetworkRuntime for LinuxRuntime {
+impl NetworkRuntime for LinuxRuntime {
     type InterfaceDescriptor = LinuxInterfaceDescriptor;
     type PortType = LinuxNetworkPort;
     type Error = NetworkError;
@@ -281,7 +277,7 @@ impl<'a> NetworkRuntime for LinuxRuntime {
             SockFlag::empty(),
             None,
         )
-            .map_err(|_| NetworkError::UnknownError)?;
+        .map_err(|_| NetworkError::UnknownError)?;
 
         // create the socket
         let port = if time_critical { 319 } else { 320 };
@@ -362,7 +358,7 @@ impl<'a> NetworkRuntime for LinuxRuntime {
                         | TimestampingFlag::SOF_TIMESTAMPING_RX_HARDWARE
                         | TimestampingFlag::SOF_TIMESTAMPING_TX_HARDWARE),
                 )
-                    .map_err(|_| NetworkError::UnknownError)?;
+                .map_err(|_| NetworkError::UnknownError)?;
             } else {
                 setsockopt(
                     socket,
@@ -371,7 +367,7 @@ impl<'a> NetworkRuntime for LinuxRuntime {
                         | TimestampingFlag::SOF_TIMESTAMPING_RX_SOFTWARE
                         | TimestampingFlag::SOF_TIMESTAMPING_TX_SOFTWARE),
                 )
-                    .map_err(|_| NetworkError::UnknownError)?;
+                .map_err(|_| NetworkError::UnknownError)?;
             }
         }
 
@@ -420,7 +416,7 @@ impl NetworkPort for LinuxNetworkPort {
             MsgFlags::empty(),
             Some(&self.addr),
         )
-            .unwrap();
+        .unwrap();
 
         // TODO: Implement better method for send timestamps
         Some(u16::from_be_bytes(data[30..32].try_into().unwrap()) as usize)
@@ -443,14 +439,16 @@ impl LinuxNetworkPort {
                     } else {
                         timestamps.system
                     };
-                    ts = Some(Instant::from_fixed_nanos(spec.tv_sec() as i128 * 1_000_000_000i128 + spec.tv_nsec() as i128));
+                    ts = Some(Instant::from_fixed_nanos(
+                        spec.tv_sec() as i128 * 1_000_000_000i128 + spec.tv_nsec() as i128,
+                    ));
                 }
             }
             tx.send(NetworkPacket {
                 data: io_vec[0].as_slice()[0..recv.bytes].to_vec(),
                 timestamp: ts,
             })
-                .unwrap();
+            .unwrap();
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
     }

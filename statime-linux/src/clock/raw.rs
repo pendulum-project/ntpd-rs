@@ -144,7 +144,7 @@ impl RawLinuxClock {
         }
     }
 
-    pub fn get_clocks() -> impl Iterator<Item=Self> {
+    pub fn get_clocks() -> impl Iterator<Item = Self> {
         const SYSTEM_CLOCKS: [(clockid_t, &str); 11] = [
             (libc::CLOCK_BOOTTIME, "CLOCK_BOOTTIME"),
             (libc::CLOCK_BOOTTIME_ALARM, "CLOCK_BOOTTIME_ALARM"),
@@ -291,7 +291,7 @@ impl Display for RawLinuxClock {
                 "     resolution: {:10}.{:09}",
                 resolution.tv_sec, resolution.tv_nsec
             )?,
-            None => writeln!(f, "     resolution: RESOLUTION ERROR", )?,
+            None => writeln!(f, "     resolution: RESOLUTION ERROR")?,
         }
 
         Ok(())

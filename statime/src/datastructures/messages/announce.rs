@@ -68,7 +68,7 @@ impl AnnounceMessage {
                 current_utc_offset: self
                     .header
                     .current_utc_offset_valid
-                    .then(|| self.current_utc_offset),
+                    .then_some(self.current_utc_offset),
                 leap_61: self.header.leap61,
                 leap_59: self.header.leap59,
                 time_traceable: self.header.time_tracable,

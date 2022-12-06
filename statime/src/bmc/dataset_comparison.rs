@@ -9,7 +9,7 @@ use std::cmp::Ordering;
 /// A collection of data that is gathered from other sources (mainly announce messages and the DefaultDS).
 /// When gathered from two different sources, the [compare](crate::bmc::dataset_comparison::ComparisonDataset) method can be used to find out which source
 /// is better according to the dataset comparison algorithm.
-#[derive(PartialEq, Default)]
+#[derive(Eq, PartialEq, Default)]
 pub struct ComparisonDataset {
     gm_priority_1: u8,
     gm_identity: ClockIdentity,

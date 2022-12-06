@@ -31,9 +31,7 @@ impl MessageBuilder {
             header: Header::new(),
         }
     }
-}
 
-impl MessageBuilder {
     pub fn sdo_id(mut self, sdo_id: u16) -> Result<Self, MessageBuilderError> {
         if sdo_id >= 0x1000 {
             return Err(MessageBuilderError::IllegalValue);
@@ -192,6 +190,12 @@ impl MessageBuilder {
             steps_removed,
             time_source,
         })
+    }
+}
+
+impl Default for MessageBuilder {
+    fn default() -> Self {
+        MessageBuilder::new()
     }
 }
 

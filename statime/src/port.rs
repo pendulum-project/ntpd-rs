@@ -95,7 +95,7 @@ pub struct Port<NR: NetworkRuntime> {
     state: State,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Measurement {
     pub event_time: Instant,
     pub master_offset: Duration,
@@ -140,7 +140,8 @@ impl StateSlave {
                     + Duration::from_interval(&message.header().correction_field()),
             );
         }
-        if self.mean_delay == None || self.next_delay_measurement.unwrap_or_default() < timestamp {
+        if self.mean_delay.is_none() || self.next_delay_measurement.unwrap_or_default() < timestamp
+        {
             let delay_id = port.delay_req_ids.get();
             let delay_req = MessageBuilder::new()
                 .source_port_identity(port.identity)
