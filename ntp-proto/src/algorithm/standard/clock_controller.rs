@@ -46,7 +46,11 @@ pub(super) enum ClockUpdateResult {
 
 impl<C: NtpClock> ClockController<C> {
     pub fn new(clock: C, system: &TimeSnapshot, config: &SystemConfig) -> Self {
-        if let Err(e) = clock.set_freq(0.) {
+        if let Err(e) = clock.enable_ntp_algorithm() {
+            error!(error = %e, "Could not enable ntp kernel clock discipline");
+            std::process::exit(exitcode::NOPERM);
+        }
+        if let Err(e) = clock.set_frequency(0.) {
             error!(error = %e, "Could not set clock frequency, exiting");
             std::process::exit(exitcode::NOPERM);
         }
@@ -196,13 +200,14 @@ impl<C: NtpClock> ClockController<C> {
 
         // It is reasonable to panic here, as there is very little we can
         // be expected to do if the clock is not amenable to change
-        let result = self.clock.update_clock(
-            self.offset,
-            self.jitter,
-            root_delay / 2 + root_dispersion,
-            self.preferred_poll_interval,
-            leap_status,
-        );
+        let result = self
+            .clock
+            .ntp_algorithm_update(self.offset, self.preferred_poll_interval)
+            .and_then(|_| {
+                self.clock
+                    .error_estimate_update(self.jitter, root_delay / 2 + root_dispersion)
+            })
+            .and_then(|_| self.clock.status_update(leap_status));
         if let Err(e) = result {
             error!(error = %e, "Failed to update the clock, exiting");
             std::process::exit(exitcode::NOPERM);
@@ -341,7 +346,7 @@ impl<C: NtpClock> ClockController<C> {
             ),
             "Setting initial frequency"
         );
-        let result = self.clock.set_freq(
+        let result = self.clock.set_frequency(
             offset.to_seconds()
                 / NtpInstant::abs_diff(last_peer_update, self.last_update_time).to_seconds(),
         );
@@ -368,6 +373,7 @@ mod tests {
         last_max_error: RefCell<Option<NtpDuration>>,
         last_poll_interval: RefCell<Option<PollInterval>>,
         last_leap_status: RefCell<Option<NtpLeapIndicator>>,
+        last_algorithm_status: RefCell<Option<bool>>,
     }
 
     impl NtpClock for TestClock {
@@ -377,28 +383,47 @@ mod tests {
             Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
         }
 
-        fn set_freq(&self, freq: f64) -> Result<(), Self::Error> {
+        fn set_frequency(&self, freq: f64) -> Result<NtpTimestamp, Self::Error> {
             *self.last_freq.borrow_mut() = Some(freq);
-            Ok(())
+            Ok(NtpTimestamp::from_fixed_int(0))
         }
 
-        fn step_clock(&self, offset: NtpDuration) -> Result<(), Self::Error> {
+        fn step_clock(&self, offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
             *self.last_offset.borrow_mut() = Some(offset);
+            Ok(NtpTimestamp::from_fixed_int(0))
+        }
+
+        fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
+            *self.last_algorithm_status.borrow_mut() = Some(true);
             Ok(())
         }
 
-        fn update_clock(
+        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
+            *self.last_algorithm_status.borrow_mut() = Some(false);
+            Ok(())
+        }
+
+        fn ntp_algorithm_update(
             &self,
             offset: NtpDuration,
-            est_error: NtpDuration,
-            max_error: NtpDuration,
             poll_interval: PollInterval,
-            leap_status: NtpLeapIndicator,
         ) -> Result<(), Self::Error> {
             *self.last_offset.borrow_mut() = Some(offset);
+            *self.last_poll_interval.borrow_mut() = Some(poll_interval);
+            Ok(())
+        }
+
+        fn error_estimate_update(
+            &self,
+            est_error: NtpDuration,
+            max_error: NtpDuration,
+        ) -> Result<(), Self::Error> {
             *self.last_est_error.borrow_mut() = Some(est_error);
             *self.last_max_error.borrow_mut() = Some(max_error);
-            *self.last_poll_interval.borrow_mut() = Some(poll_interval);
+            Ok(())
+        }
+
+        fn status_update(&self, leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
             *self.last_leap_status.borrow_mut() = Some(leap_status);
             Ok(())
         }
@@ -492,6 +517,9 @@ mod tests {
         let algo_config = AlgorithmConfig::default();
         let mut controller = ClockController::new(TestClock::default(), &system, &config);
         let base = controller.last_update_time;
+
+        assert_eq!(*controller.clock.last_freq.borrow(), Some(0.));
+        assert_eq!(*controller.clock.last_algorithm_status.borrow(), Some(true));
 
         controller.update(
             &config,

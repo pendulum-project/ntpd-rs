@@ -8,14 +8,21 @@ pub trait NtpClock: Clone + Send + 'static {
 
     fn now(&self) -> Result<NtpTimestamp, Self::Error>;
 
-    fn set_freq(&self, freq: f64) -> Result<(), Self::Error>;
-    fn step_clock(&self, offset: NtpDuration) -> Result<(), Self::Error>;
-    fn update_clock(
+    fn set_frequency(&self, freq: f64) -> Result<NtpTimestamp, Self::Error>;
+    fn step_clock(&self, offset: NtpDuration) -> Result<NtpTimestamp, Self::Error>;
+
+    fn disable_ntp_algorithm(&self) -> Result<(), Self::Error>;
+    fn enable_ntp_algorithm(&self) -> Result<(), Self::Error>;
+    fn ntp_algorithm_update(
         &self,
         offset: NtpDuration,
+        poll_interval: PollInterval,
+    ) -> Result<(), Self::Error>;
+
+    fn error_estimate_update(
+        &self,
         est_error: NtpDuration,
         max_error: NtpDuration,
-        poll_interval: PollInterval,
-        leap_status: NtpLeapIndicator,
     ) -> Result<(), Self::Error>;
+    fn status_update(&self, leap_status: NtpLeapIndicator) -> Result<(), Self::Error>;
 }

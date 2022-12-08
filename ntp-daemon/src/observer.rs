@@ -130,22 +130,39 @@ mod tests {
             Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
         }
 
-        fn set_freq(&self, _freq: f64) -> Result<(), Self::Error> {
+        fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
+            Ok(NtpTimestamp::default())
+        }
+
+        fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
+            Ok(NtpTimestamp::default())
+        }
+
+        fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
             Ok(())
         }
 
-        fn step_clock(&self, _offset: NtpDuration) -> Result<(), Self::Error> {
+        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
             Ok(())
         }
 
-        fn update_clock(
+        fn ntp_algorithm_update(
             &self,
             _offset: NtpDuration,
+            _poll_interval: PollInterval,
+        ) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn error_estimate_update(
+            &self,
             _est_error: NtpDuration,
             _max_error: NtpDuration,
-            _poll_interval: PollInterval,
-            _leap_status: NtpLeapIndicator,
         ) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
             Ok(())
         }
     }
