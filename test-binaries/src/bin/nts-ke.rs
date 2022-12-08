@@ -1,4 +1,5 @@
 use std::{
+    io::Cursor,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs},
     sync::Arc,
 };
@@ -67,16 +68,23 @@ fn key_exchange_packet(
         0, 0, 0, 0, 0, 0, 0, 0, // recv timestamp
         1, 2, 3, 4, 5, 6, 7, 8, // xmt timestamp
     ];
+    let start_position = packet.len();
+
+    packet.resize(1024, 0u8);
+    let mut cursor = Cursor::new(packet.as_mut_slice());
+    cursor.set_position(start_position as u64);
 
     let unique_identifier = ExtensionField::UniqueIdentifier(identifier.into());
-    unique_identifier.serialize(&mut packet).unwrap();
+    unique_identifier
+        .serialize_without_encryption(&mut cursor)
+        .unwrap();
 
     let cookie = ExtensionField::NtsCookie(cookie.into());
-    cookie.serialize(&mut packet).unwrap();
+    cookie.serialize_without_encryption(&mut cursor).unwrap();
 
     let payload = Payload {
         msg: b"",
-        aad: &packet,
+        aad: &cursor.get_ref()[..cursor.position() as usize],
     };
 
     let ciphertext = cipher.encrypt(nonce, payload).unwrap();
@@ -85,9 +93,9 @@ fn key_exchange_packet(
         nonce: nonce.as_slice().into(),
         ciphertext: ciphertext.into(),
     };
-    signature.serialize(&mut packet).unwrap();
+    signature.serialize(&mut cursor, &cipher).unwrap();
 
-    packet
+    cursor.get_ref()[..cursor.position() as usize].to_vec()
 }
 
 fn key_exchange_records() -> [NtsRecord; 3] {

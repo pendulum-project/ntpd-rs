@@ -1,5 +1,9 @@
-use std::{borrow::Cow, fmt::Display};
+use std::{borrow::Cow, fmt::Display, io::Cursor, io::Write};
 
+use aes_siv::{
+    aead::{Aead, Payload},
+    Aes256SivAead, Nonce,
+};
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 
@@ -183,7 +187,7 @@ impl<'a> ExtensionField<'a> {
         }
     }
 
-    pub fn serialize<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
+    pub fn serialize_old<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
         let padding = [0; 4];
 
         match self {
@@ -238,6 +242,106 @@ impl<'a> ExtensionField<'a> {
                 w.write_all(&padding[..padding_bytes])?;
 
                 w.write_all(ct)?;
+                let padding_bytes = next_multiple_of(ct.len(), 4) - ct.len();
+                w.write_all(&padding[..padding_bytes])?;
+            }
+            ExtensionField::Unknown { typeid, data } => {
+                if data.len() > u16::MAX as usize {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        PacketParsingError::IncorrectLength,
+                    ));
+                }
+                w.write_all(&typeid.to_be_bytes())?;
+                w.write_all(&(4u16 + data.len() as u16).to_be_bytes())?;
+                w.write_all(data)?;
+
+                let padding_bytes = next_multiple_of(data.len(), 4) - data.len();
+                w.write_all(&padding[..padding_bytes])?;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn serialize_without_encryption(&self, w: &mut Cursor<&mut [u8]>) -> std::io::Result<()> {
+        use aes_siv::{aead::KeyInit, Key};
+
+        let cipher = Aes256SivAead::new(Key::<Aes256SivAead>::from_slice([0; 64].as_slice()));
+
+        self.serialize(w, &cipher)
+    }
+
+    pub fn serialize(
+        &self,
+        w: &mut Cursor<&mut [u8]>,
+        cipher: &Aes256SivAead,
+    ) -> std::io::Result<()> {
+        let padding = [0; 4];
+
+        match self {
+            ExtensionField::UniqueIdentifier(string) => {
+                w.write_all(&0x0104u16.to_be_bytes())?;
+                w.write_all(&(4 + string.len() as u16).to_be_bytes())?;
+                w.write_all(string)?;
+
+                let padding_bytes = next_multiple_of(string.len(), 4) - string.len();
+                w.write_all(&padding[..padding_bytes])?;
+            }
+            ExtensionField::NtsCookie(cookie) => {
+                w.write_all(&0x0204u16.to_be_bytes())?;
+                w.write_all(&(4 + cookie.len() as u16).to_be_bytes())?;
+                w.write_all(cookie)?;
+
+                let padding_bytes = next_multiple_of(cookie.len(), 4) - cookie.len();
+                w.write_all(&padding[..padding_bytes])?;
+            }
+            ExtensionField::NtsCookiePlaceholder { body_length } => {
+                w.write_all(&0x0304u16.to_be_bytes())?;
+                w.write_all(&(4 + body_length).to_be_bytes())?;
+
+                let zeros = [0u8; 100];
+                let mut remaining = next_multiple_of(*body_length as usize, 4);
+                while remaining > 0 {
+                    let n = usize::min(zeros.len(), remaining);
+                    w.write_all(&zeros[..n])?;
+                    remaining -= n;
+                }
+            }
+            ExtensionField::NtsEncryptedField {
+                nonce,
+                ciphertext: _plain_text,
+            } => {
+                let current_position = w.position();
+
+                let packet = &w.get_ref()[..current_position as usize];
+                let payload = Payload {
+                    msg: b"",
+                    aad: packet,
+                };
+
+                let nonce = Nonce::from_slice(nonce);
+                let ct = cipher.encrypt(nonce, payload).unwrap();
+
+                w.write_all(&0x0404u16.to_be_bytes())?;
+
+                // NOTE: these are NOT rounded up to a number of words
+                let nonce_octet_count = nonce.len();
+                let ct_octet_count = ct.len();
+
+                // + 8 for the extension field header (4 bytes) and nonce/cypher text length (2 bytes each)
+                let signature_octet_count =
+                    8 + next_multiple_of(nonce_octet_count + ct_octet_count, 4);
+
+                w.write_all(&(signature_octet_count as u16).to_be_bytes())?;
+                w.write_all(&(nonce_octet_count as u16).to_be_bytes())?;
+                w.write_all(&(ct_octet_count as u16).to_be_bytes())?;
+
+                w.write_all(nonce)?;
+                let padding_bytes = next_multiple_of(nonce.len(), 4) - nonce.len();
+                w.write_all(&padding[..padding_bytes])?;
+
+                w.write_all(ct.as_slice())?;
                 let padding_bytes = next_multiple_of(ct.len(), 4) - ct.len();
                 w.write_all(&padding[..padding_bytes])?;
             }
@@ -394,12 +498,12 @@ impl<'a> ExtensionFieldData<'a> {
         })
     }
 
-    fn serialize<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
+    fn serialize(&self, w: &mut Cursor<&mut [u8]>, cipher: &Aes256SivAead) -> std::io::Result<()> {
         match self {
             ExtensionFieldData::Raw(efdata) => w.write_all(efdata),
             ExtensionFieldData::List(fields) => {
                 for field in fields {
-                    field.serialize(w)?;
+                    field.serialize(w, cipher)?;
                 }
                 Ok(())
             }
@@ -658,7 +762,32 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    pub fn serialize<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
+    #[cfg(test)]
+    fn serialize_without_encryption_vec(&self) -> std::io::Result<Vec<u8>> {
+        let mut buffer = vec![0u8; 1024];
+        let mut cursor = Cursor::new(buffer.as_mut_slice());
+
+        self.serialize_without_encryption(&mut cursor)?;
+
+        let length = cursor.position() as usize;
+        let buffer = cursor.into_inner()[..length].to_vec();
+
+        Ok(buffer)
+    }
+
+    pub fn serialize_without_encryption(&self, w: &mut Cursor<&mut [u8]>) -> std::io::Result<()> {
+        use aes_siv::{aead::KeyInit, Key};
+
+        let cipher = Aes256SivAead::new(Key::<Aes256SivAead>::from_slice([0; 64].as_slice()));
+
+        self.serialize(w, &cipher)
+    }
+
+    pub fn serialize(
+        &self,
+        w: &mut Cursor<&mut [u8]>,
+        cipher: &Aes256SivAead,
+    ) -> std::io::Result<()> {
         match self.header {
             NtpHeader::V3(header) => header.serialize(w, 3)?,
             NtpHeader::V4(header) => header.serialize(w, 4)?,
@@ -666,7 +795,7 @@ impl<'a> NtpPacket<'a> {
 
         match self.header {
             NtpHeader::V3(_) => { /* v3 does not support NTS, so we ignore extension fields */ }
-            NtpHeader::V4(_) => self.efdata.serialize(w)?,
+            NtpHeader::V4(_) => self.efdata.serialize(w, cipher)?,
         }
 
         if let Some(ref mac) = self.mac {
@@ -981,9 +1110,10 @@ mod tests {
         };
 
         assert_eq!(reference, NtpPacket::deserialize(packet).unwrap());
-        let mut buf = vec![];
-        assert!(reference.serialize(&mut buf).is_ok());
-        assert_eq!(packet[..], buf[..]);
+        match reference.serialize_without_encryption_vec() {
+            Ok(buf) => assert_eq!(packet[..], buf[..]),
+            Err(e) => panic!("{:?}", e),
+        }
 
         let packet = b"\x1B\x02\x06\xe8\x00\x00\x03\xff\x00\x00\x03\x7d\x5e\xc6\x9f\x0f\xe5\xf6\x62\x98\x7b\x61\xb9\xaf\xe5\xf6\x63\x66\x7b\x64\x99\x5d\xe5\xf6\x63\x66\x81\x40\x55\x90\xe5\xf6\x63\xa8\x76\x1d\xde\x48";
         let reference = NtpPacket {
@@ -1006,9 +1136,10 @@ mod tests {
         };
 
         assert_eq!(reference, NtpPacket::deserialize(packet).unwrap());
-        let mut buf = vec![];
-        assert!(reference.serialize(&mut buf).is_ok());
-        assert_eq!(packet[..], buf[..]);
+        match reference.serialize_without_encryption_vec() {
+            Ok(buf) => assert_eq!(packet[..], buf[..]),
+            Err(e) => panic!("{:?}", e),
+        }
     }
 
     #[test]
@@ -1034,9 +1165,10 @@ mod tests {
         };
 
         assert_eq!(reference, NtpPacket::deserialize(packet).unwrap());
-        let mut buf = vec![];
-        assert!(reference.serialize(&mut buf).is_ok());
-        assert_eq!(packet[..], buf[..])
+        match reference.serialize_without_encryption_vec() {
+            Ok(buf) => assert_eq!(packet[..], buf[..]),
+            Err(e) => panic!("{:?}", e),
+        }
     }
 
     #[test]
@@ -1066,8 +1198,7 @@ mod tests {
                 header.set_leap(NtpLeapIndicator::from_bits(leap_type));
                 header.set_mode(NtpAssociationMode::from_bits(mode));
 
-                let mut data = vec![];
-                header.serialize(&mut data).unwrap();
+                let data = header.serialize_without_encryption_vec().unwrap();
                 let copy = NtpPacket::deserialize(&data).unwrap();
                 assert_eq!(header, copy);
             }
@@ -1078,8 +1209,7 @@ mod tests {
             packet[0] = i;
 
             if let Ok(a) = NtpPacket::deserialize(&packet) {
-                let mut b = vec![];
-                a.serialize(&mut b).unwrap();
+                let b = a.serialize_without_encryption_vec().unwrap();
                 assert_eq!(packet[..], b[..]);
             }
         }
