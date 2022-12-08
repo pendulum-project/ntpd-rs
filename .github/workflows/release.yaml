@@ -53,12 +53,12 @@ jobs:
       - name: Package
         shell: bash
         run: |
-          bins=(target/${{ matrix.target }}/release/{ntp-ctl,ntp-daemon})
+          bins=(target/${{ matrix.target }}/release/{ntp-ctl,ntp-daemon,ntp-metrics-exporter})
           version=$(echo "${{ github.ref }}" | cut -d/ -f3)
           dst="ntpd-rs-${{ matrix.target }}-${version}"
           mkdir "$dst"
           mv "${bins[@]}" "$dst/"
-          mv README.md CONFIGURATION.md MANAGEMENT_CLIENT.md OPERATIONAL_CONSIDERATIONS.md "$dst/"
+          mv README.md CONFIGURATION.md MANAGEMENT_CLIENT.md OPERATIONAL_CONSIDERATIONS.md CHANGELOG.md "$dst/"
           mv LICENSE LICENSE-APACHE LICENSE-MIT "$dst/"
           mv ntp.toml "$dst/"
           mv ntpd-rs.service.example "$dst/"
