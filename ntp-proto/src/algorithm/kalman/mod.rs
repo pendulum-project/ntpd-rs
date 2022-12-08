@@ -20,6 +20,8 @@ pub struct KalmanClockController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> 
     clock: C,
     config: SystemConfig,
     algo_config: AlgorithmConfig,
+    ignore_before: NtpTimestamp,
+    freq_offset: f64,
 }
 
 impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, PeerID> {
@@ -30,6 +32,10 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
         measurement: Measurement,
         packet: NtpPacket<'static>,
     ) -> bool {
+        if measurement.localtime - self.ignore_before < NtpDuration::ZERO {
+            return false;
+        }
+
         self.peers.get_mut(&id).map(|state| {
             state
                 .0
@@ -93,6 +99,34 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
 
             used_peers.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
 
+            info!("Offset: {}+-{}ms, frequency: {}+-{}ppm", estimate.entry(0)*1e3, uncertainty.entry(0,0).sqrt()*1e3, estimate.entry(1)*1e6, uncertainty.entry(1,1).sqrt()*1e6);
+
+            if estimate.entry(1).abs() > uncertainty.entry(1,1).sqrt() * self.algo_config.steer_frequency_threshold {
+                let change = estimate.entry(1)*0.5;
+                self.freq_offset = (1.0 + self.freq_offset)*(1.0 + change) - 1.0;
+                self.clock.set_freq(self.freq_offset).unwrap();
+                let freq_update = self.clock.now().unwrap();
+                for (state, _) in self.peers.values_mut() {
+                    state.process_frequency_steering(freq_update, change)
+                }
+                info!("Changed frequency, current steer {}ppm", self.freq_offset*1e6);
+            }
+
+            if estimate.entry(0).abs() > uncertainty.entry(0,0).sqrt() * self.algo_config.steer_offset_threshold {
+                let change = estimate.entry(0);
+                //if change.abs() > self.algo_config.jump_threshold {
+                    self.clock.step_clock(NtpDuration::from_seconds(change)).unwrap();
+                //} else {
+                //    self.clock.bare_update(NtpDuration::from_seconds(change), NtpDuration::from_seconds(uncertainty.entry(0,0).sqrt()), NtpDuration::ZERO, crate::NtpLeapIndicator::Unknown).unwrap();
+
+                //    self.ignore_before = self.clock.now().unwrap() + NtpDuration::from_seconds(5e3*change.abs());
+                //}
+                for (state, _) in self.peers.values_mut() {
+                    state.process_offset_steering(estimate.entry(0))
+                }
+                info!("Changed offset by {}ms", change*1e3);
+            }
+
             None   
         } else {
             info!("No concensus cluster found");
@@ -122,9 +156,11 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
 
         KalmanClockController {
             peers: HashMap::new(),
+            ignore_before: clock.now().unwrap(),
             clock,
             config,
             algo_config,
+            freq_offset: 0.0,
         }
     }
 

@@ -1,4 +1,4 @@
-use tracing::{debug, trace};
+use tracing::{debug, trace, info};
 
 use crate::{
     Measurement, NtpDuration, NtpPacket, NtpTimestamp, ObservablePeerTimedata, PollInterval,
@@ -51,6 +51,12 @@ impl InitialPeerFilter {
         self.init_offset.update(measurement.offset.to_seconds());
         self.samples += 1;
         debug!(samples = self.samples, "Initial peer update");
+    }
+
+    fn process_offset_steering(&mut self, steer: f64) {
+        for ref mut sample in self.init_offset.data {
+            *sample -= steer;
+        }
     }
 }
 
@@ -106,7 +112,7 @@ impl PeerFilter {
     fn absorb_measurement(&mut self, measurement: Measurement) -> (f64, f64) {
         // Measurement paramaters
         let delay_variance = self.rtt_stats.var();
-        let m_delta_t = (measurement.offset - self.last_measurement.offset).to_seconds();
+        let m_delta_t = (measurement.localtime - self.last_measurement.localtime).to_seconds();
 
         // Kalman filter update
         let measurement_vec = Vector::new(
@@ -260,6 +266,17 @@ impl PeerFilter {
 
         true
     }
+
+    fn process_offset_steering(&mut self, steer: f64) {
+        self.state = self.state - Vector::new(steer, 0.0);
+        self.last_measurement.offset -= NtpDuration::from_seconds(steer);
+        self.last_measurement.localtime += NtpDuration::from_seconds(steer);
+    }
+
+    fn process_frequency_steering(&mut self, time: NtpTimestamp, steer: f64) {
+        self.progress_filtertime(time);
+        self.state = self.state - Vector::new(0.0, steer);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -297,7 +314,7 @@ impl PeerState {
                             filter.init_offset.var(),
                             0.,
                             0.,
-                            algo_config.initial_frequency_uncertainty,
+                            algo_config.initial_frequency_uncertainty * algo_config.initial_frequency_uncertainty,
                         ),
                         clock_wander: algo_config.initial_wander * algo_config.initial_wander,
                         rtt_stats: filter.rtt_stats,
@@ -377,7 +394,69 @@ impl PeerState {
             }),
         }
     }
+
+    pub fn process_offset_steering(&mut self, steer: f64) {
+        match &mut self.0 {
+            PeerStateInner::Initial(filter) => filter.process_offset_steering(steer),
+            PeerStateInner::Stable(filter) => filter.process_offset_steering(steer),
+        }
+    }
+
+    pub fn process_frequency_steering(&mut self, time: NtpTimestamp, steer: f64) {
+        match &mut self.0 {
+            PeerStateInner::Initial(_) => {},
+            PeerStateInner::Stable(filter) => filter.process_frequency_steering(time, steer),
+        }
+    }
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use crate::{NtpPacket, PollIntervalLimits, Measurement, NtpInstant};
+
+    use super::*;
+
+    #[test]
+    fn test_offset_steering() {
+        let base = NtpTimestamp::from_fixed_int(0);
+        let basei = NtpInstant::now();
+        let mut peer = PeerFilter {
+            state: Vector::new(20e-3, 0.),
+            uncertainty: Matrix::new(
+                1e-6,
+                0.,
+                0.,
+                1e-8,
+            ),
+            clock_wander: 1e-8,
+            rtt_stats: RttBuf {
+                data: [0.0,0.0,0.0,0.0,0.875e-6,0.875e-6,0.875e-6,0.875e-6],
+                next_idx: 0,
+            },
+            precision_score: 0,
+            poll_score: 0,
+            desired_poll_interval: PollIntervalLimits::default().min,
+            last_measurement: Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(20e-3),
+                localtime: base,
+                monotime: basei,
+            },
+            last_packet: NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+            prev_was_outlier: false,
+            last_iter: base,
+            filter_time: base,
+        };
+
+        peer.process_offset_steering(20e-3);
+
+        peer.update(&SystemConfig::default(), &AlgorithmConfig::default(), Measurement {
+            delay: NtpDuration::from_seconds(0.0),
+            offset: NtpDuration::from_seconds(20e-3),
+            localtime: base + NtpDuration::from_seconds(1000.0),
+            monotime: basei,
+        }, NtpPacket::poll_message(PollIntervalLimits::default().min).0);
+
+        println!("{} {}", peer.state.entry(0), peer.state.entry(1));
+    }
+}

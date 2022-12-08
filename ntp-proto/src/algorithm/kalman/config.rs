@@ -64,6 +64,19 @@ pub struct AlgorithmConfig {
     /// ranges
     #[serde(default = "default_range_delay_weight")]
     pub range_delay_weight: f64,
+
+    /// How far from 0 (in multiples of the uncertainty) should
+    /// the offset be before we correct
+    #[serde(default = "default_steer_offset_threshold")]
+    pub steer_offset_threshold: f64,
+    /// How far from 0 (in multiples of the uncertainty) should
+    /// the frequency estimate be before we correct
+    #[serde(default = "default_steer_frequency_threshold")]
+    pub steer_frequency_threshold: f64,
+    /// From what offset should we jump the clock instead of
+    /// trying to adjust gradually?
+    #[serde(default = "default_jump_threshold")]
+    pub jump_threshold: f64,
 }
 
 impl Default for AlgorithmConfig {
@@ -87,6 +100,10 @@ impl Default for AlgorithmConfig {
             max_peer_uncertainty: default_max_peer_uncertainty(),
             range_statistical_weight: default_range_statistical_weight(),
             range_delay_weight: default_range_delay_weight(),
+
+            steer_offset_threshold: default_steer_offset_threshold(),
+            steer_frequency_threshold: default_steer_frequency_threshold(),
+            jump_threshold: default_jump_threshold(),
         }
     }
 }
@@ -145,4 +162,16 @@ fn default_range_statistical_weight() -> f64 {
 
 fn default_range_delay_weight() -> f64 {
     0.25
+}
+
+fn default_steer_offset_threshold() -> f64 {
+    2.0
+}
+
+fn default_steer_frequency_threshold() -> f64 {
+    2.0
+}
+
+fn default_jump_threshold() -> f64 {
+    0.010
 }
