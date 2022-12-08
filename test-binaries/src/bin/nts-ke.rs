@@ -260,9 +260,9 @@ mod tests {
         let mut buffer = actual.to_vec();
         buffer.resize(next_multiple_of(buffer.len(), 4), 0);
 
-        let _ = NtpPacket::deserialize(&buffer).unwrap();
-
         let cipher = Aes256SivAead::new(Key::<Aes256SivAead>::from_slice(c2s.as_slice()));
+
+        let _ = NtpPacket::deserialize(&buffer, &cipher).unwrap();
 
         let ciphertext = [
             13, 206, 73, 176, 25, 142, 99, 133, 226, 101, 22, 19, 5, 163, 184, 132, 179, 17, 69,
