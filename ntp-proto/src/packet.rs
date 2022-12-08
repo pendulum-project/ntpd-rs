@@ -1,9 +1,6 @@
 use std::{borrow::Cow, fmt::Display, io::Cursor, io::Write};
 
-use aes_siv::{
-    aead::{Aead, Payload},
-    Aes256SivAead, Nonce,
-};
+use aes_siv::{aead::Aead, Aes256SivAead, Nonce};
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 
@@ -314,14 +311,10 @@ impl<'a> ExtensionField<'a> {
             } => {
                 let current_position = w.position();
 
-                let packet = &w.get_ref()[..current_position as usize];
-                let payload = Payload {
-                    msg: b"",
-                    aad: packet,
-                };
+                let packet_so_far = &w.get_ref()[..current_position as usize];
 
                 let nonce = Nonce::from_slice(nonce);
-                let ct = cipher.encrypt(nonce, payload).unwrap();
+                let ct = cipher.encrypt(nonce, packet_so_far).unwrap();
 
                 w.write_all(&0x0404u16.to_be_bytes())?;
 
@@ -380,7 +373,8 @@ impl<'a> ExtensionField<'a> {
         let value = data.get(4..ef_len).ok_or(IncorrectLength)?;
 
         // check that the padding is all zeros. This is required for the fuzz tests to work
-        if data[ef_len..].iter().any(|b| *b != 0) {
+        let padding = &data[ef_len..next_multiple_of(ef_len, 4)];
+        if padding.iter().any(|b| *b != 0) {
             return Err(PacketParsingError::IncorrectLength);
         }
 
@@ -408,7 +402,7 @@ impl<'a> ExtensionField<'a> {
                 let ciphertext_length =
                     u16::from_be_bytes(value[2..4].try_into().unwrap()) as usize;
 
-                if next_multiple_of(nonce_length, 4) + next_multiple_of(ciphertext_length, 4)
+                if 4 + next_multiple_of(nonce_length, 4) + next_multiple_of(ciphertext_length, 4)
                     != next_multiple_of(value.len(), 4)
                 {
                     return Err(PacketParsingError::IncorrectLength);
