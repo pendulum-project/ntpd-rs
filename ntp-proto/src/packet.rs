@@ -123,7 +123,7 @@ pub enum ExtensionField<'a> {
     },
     NtsEncryptedField {
         nonce: Cow<'a, [u8]>,
-        ciphertext: Cow<'a, [u8]>,
+        plaintext: Cow<'a, [u8]>,
     },
 
     Unknown {
@@ -141,10 +141,10 @@ impl<'a> std::fmt::Debug for ExtensionField<'a> {
                 .debug_struct("NtsCookiePlaceholder")
                 .field("body_length", body_length)
                 .finish(),
-            Self::NtsEncryptedField { nonce, ciphertext } => f
+            Self::NtsEncryptedField { nonce, plaintext } => f
                 .debug_struct("NtsEncryptedField")
                 .field("nonce", nonce)
-                .field("ciphertext", ciphertext)
+                .field("plaintext", plaintext)
                 .finish(),
             Self::Unknown { typeid, data } => f
                 .debug_struct("Unknown")
@@ -177,10 +177,19 @@ impl<'a> ExtensionField<'a> {
             UniqueIdentifier(data) => UniqueIdentifier(Cow::Owned(data.into_owned())),
             NtsCookie(data) => NtsCookie(Cow::Owned(data.into_owned())),
             NtsCookiePlaceholder { body_length } => NtsCookiePlaceholder { body_length },
-            NtsEncryptedField { nonce, ciphertext } => NtsEncryptedField {
+            NtsEncryptedField { nonce, plaintext } => NtsEncryptedField {
                 nonce: Cow::Owned(nonce.into_owned()),
-                ciphertext: Cow::Owned(ciphertext.into_owned()),
+                plaintext: Cow::Owned(plaintext.into_owned()),
             },
+        }
+    }
+
+    pub fn key_exchange_signature(nonce: &'a Nonce) -> Self {
+        // the real plaintext is the packet up to the start of this extension field
+        // it is inserted implicitly by the encoder
+        ExtensionField::NtsEncryptedField {
+            nonce: nonce.as_slice().into(),
+            plaintext: [].as_slice().into(),
         }
     }
 
@@ -230,7 +239,7 @@ impl<'a> ExtensionField<'a> {
             }
             ExtensionField::NtsEncryptedField {
                 nonce,
-                ciphertext: _plain_text,
+                plaintext: _,
             } => {
                 let current_position = w.position();
 
@@ -374,7 +383,7 @@ impl<'a> ExtensionField<'a> {
 
                 ExtensionField::NtsEncryptedField {
                     nonce: nonce.into(),
-                    ciphertext: plaintext.into(),
+                    plaintext: plaintext.into(),
                 }
             }
             _ => ExtensionField::Unknown {
@@ -634,7 +643,7 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    pub fn deserialize_without_encryption(data: &'a [u8]) -> Result<Self, PacketParsingError> {
+    pub fn deserialize_without_decryption(data: &'a [u8]) -> Result<Self, PacketParsingError> {
         use aes_siv::{aead::KeyInit, Key};
 
         let cipher = Aes256SivAead::new(Key::<Aes256SivAead>::from_slice([0; 64].as_slice()));
@@ -1031,7 +1040,7 @@ mod tests {
 
         assert_eq!(
             reference,
-            NtpPacket::deserialize_without_encryption(packet).unwrap()
+            NtpPacket::deserialize_without_decryption(packet).unwrap()
         );
         match reference.serialize_without_encryption_vec() {
             Ok(buf) => assert_eq!(packet[..], buf[..]),
@@ -1060,7 +1069,7 @@ mod tests {
 
         assert_eq!(
             reference,
-            NtpPacket::deserialize_without_encryption(packet).unwrap()
+            NtpPacket::deserialize_without_decryption(packet).unwrap()
         );
         match reference.serialize_without_encryption_vec() {
             Ok(buf) => assert_eq!(packet[..], buf[..]),
@@ -1092,7 +1101,7 @@ mod tests {
 
         assert_eq!(
             reference,
-            NtpPacket::deserialize_without_encryption(packet).unwrap()
+            NtpPacket::deserialize_without_decryption(packet).unwrap()
         );
         match reference.serialize_without_encryption_vec() {
             Ok(buf) => assert_eq!(packet[..], buf[..]),
@@ -1103,23 +1112,23 @@ mod tests {
     #[test]
     fn test_version() {
         let packet = b"\x04\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize_without_encryption(packet).is_err());
+        assert!(NtpPacket::deserialize_without_decryption(packet).is_err());
         let packet = b"\x0B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize_without_encryption(packet).is_err());
+        assert!(NtpPacket::deserialize_without_decryption(packet).is_err());
         let packet = b"\x14\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize_without_encryption(packet).is_err());
+        assert!(NtpPacket::deserialize_without_decryption(packet).is_err());
         let packet = b"\x2B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize_without_encryption(packet).is_err());
+        assert!(NtpPacket::deserialize_without_decryption(packet).is_err());
         let packet = b"\x34\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize_without_encryption(packet).is_err());
+        assert!(NtpPacket::deserialize_without_decryption(packet).is_err());
         let packet = b"\x3B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize_without_encryption(packet).is_err());
+        assert!(NtpPacket::deserialize_without_decryption(packet).is_err());
     }
 
     #[test]
     fn test_packed_flags() {
         let base = b"\x24\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b".to_owned();
-        let base_structured = NtpPacket::deserialize_without_encryption(&base).unwrap();
+        let base_structured = NtpPacket::deserialize_without_decryption(&base).unwrap();
 
         for leap_type in 0..3 {
             for mode in 0..8 {
@@ -1128,7 +1137,7 @@ mod tests {
                 header.set_mode(NtpAssociationMode::from_bits(mode));
 
                 let data = header.serialize_without_encryption_vec().unwrap();
-                let copy = NtpPacket::deserialize_without_encryption(&data).unwrap();
+                let copy = NtpPacket::deserialize_without_decryption(&data).unwrap();
                 assert_eq!(header, copy);
             }
         }
@@ -1137,7 +1146,7 @@ mod tests {
             let mut packet = base;
             packet[0] = i;
 
-            if let Ok(a) = NtpPacket::deserialize_without_encryption(&packet) {
+            if let Ok(a) = NtpPacket::deserialize_without_decryption(&packet) {
                 let b = a.serialize_without_encryption_vec().unwrap();
                 assert_eq!(packet[..], b[..]);
             }

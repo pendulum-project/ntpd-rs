@@ -347,7 +347,7 @@ fn accept_packet(
 
                 AcceptResult::Ignore
             } else {
-                match NtpPacket::deserialize_without_encryption(buf) {
+                match NtpPacket::deserialize_without_decryption(buf) {
                     Ok(packet) => AcceptResult::Accept(packet, recv_timestamp),
                     Err(e) => {
                         warn!("received invalid packet: {}", e);
@@ -600,7 +600,7 @@ mod tests {
         assert_eq!(size, 48);
         let timestamp = timestamp.unwrap();
 
-        let rec_packet = NtpPacket::deserialize_without_encryption(&buf).unwrap();
+        let rec_packet = NtpPacket::deserialize_without_decryption(&buf).unwrap();
         let send_packet = NtpPacket::timestamp_response(&system, rec_packet, timestamp, &clock);
 
         let mut buf = [0; 48];
@@ -640,7 +640,7 @@ mod tests {
         assert_eq!(size, 48);
         assert!(timestamp.is_some());
 
-        let rec_packet = NtpPacket::deserialize_without_encryption(&buf).unwrap();
+        let rec_packet = NtpPacket::deserialize_without_decryption(&buf).unwrap();
         let send_packet = NtpPacket::deny_response(rec_packet);
 
         let mut buf = [0; 48];

@@ -82,13 +82,7 @@ fn key_exchange_packet(
     let cookie = ExtensionField::NtsCookie(cookie.into());
     cookie.serialize_without_encryption(&mut cursor).unwrap();
 
-    let payload = &cursor.get_ref()[..cursor.position() as usize];
-    let ciphertext = cipher.encrypt(nonce, payload).unwrap();
-
-    let signature = ExtensionField::NtsEncryptedField {
-        nonce: nonce.as_slice().into(),
-        ciphertext: ciphertext.into(),
-    };
+    let signature = ExtensionField::key_exchange_signature(nonce);
     signature.serialize(&mut cursor, &cipher).unwrap();
 
     cursor.get_ref()[..cursor.position() as usize].to_vec()
