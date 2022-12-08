@@ -1,3 +1,15 @@
+Master
+======
+
+Major Changes
+-----
+- Changed format of timedata reported for peers to ensure compatibility with different algorithms.
+
+Minor Changes
+-----
+- Upgraded dependencies
+- Refactored internal structure of the code.
+
 Version 0.2.1
 ======
 

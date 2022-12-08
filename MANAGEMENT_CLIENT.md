@@ -38,55 +38,52 @@ Output is given as formatted json
 [
   {
     "Observable": {
-      "statistics": {
-        "offset": -0.0005991163199299752,
-        "delay": 0.011262269460424378,
-        "dispersion": 7.93750205494871,
-        "jitter": 3.814697266513178e-6
+      "offset": 0.002731145127380999,
+      "uncertainty": 0.0010577326177288156,
+      "delay": 0.007663535188805204,
+      "remote_delay": 0.020446777348510636,
+      "remote_uncertainty": 0.06361389161637376,
+      "last_update": {
+        "timestamp": 16662280508228141032
       },
-      "reachability": 1,
-      "uptime": {
-        "secs": 11,
-        "nanos": 132546117
-      },
-      "poll_interval": {
-        "secs": 16,
-        "nanos": 0
-      },
-      "peer_id": 1566498883
+      "reachability": 255,
+      "poll_interval": 4,
+      "peer_id": 89091106,
+      "address": "0.pool.ntp.org:123"
     }
   },
   {
     "Observable": {
-      "statistics": {
-        "offset": 0.0019689977639282584,
-        "delay": 0.014038344615613657,
-        "dispersion": 7.937502046101145,
-        "jitter": 3.814697266513178e-6
+      "offset": 0.0032871617011928844,
+      "uncertainty": 0.0006341086702035062,
+      "delay": 0.0108117456573089,
+      "remote_delay": 0.000015258789066052714,
+      "remote_uncertainty": 0.000015258789066052714,
+      "last_update": {
+        "timestamp": 16662280293865599110
       },
-      "reachability": 1,
-      "uptime": {
-        "secs": 11,
-        "nanos": 127481359
-      },
-      "poll_interval": {
-        "secs": 16,
-        "nanos": 0
-      },
-      "peer_id": 2928306951
+      "reachability": 255,
+      "poll_interval": 4,
+      "peer_id": 1590075152,
+      "address": "1.pool.ntp.org:123"
     }
   }
 ]
+
 ```
 
-**client:**
+**system:**
 ```
 {
+  "stratum": 2,
+  "reference_id": 1414352460,
+  "accumulated_steps_threshold": null,
   "poll_interval": 4,
   "precision": 3.814697266513178e-6,
+  "root_delay": 0.012669552819027928,
+  "root_dispersion": 0.9487744674432963,
   "leap_indicator": "NoWarning",
-  "accumulated_steps": 0.005327121588710491,
-  "accumulated_steps_threshold": null
+  "accumulated_steps": 0.009811621860091487
 }
 ```
 
@@ -107,59 +104,59 @@ ntp_system_precision_seconds 0.000003814697266513178
 # HELP ntp_system_accumulated_steps_seconds Accumulated amount of seconds that the system needed to jump the time.
 # TYPE ntp_system_accumulated_steps_seconds gauge
 # UNIT ntp_system_accumulated_steps_seconds seconds
-ntp_system_accumulated_steps_seconds 0.0
+ntp_system_accumulated_steps_seconds 0.009811621860091488
 # HELP ntp_system_accumulated_steps_threshold_seconds Threshold for the accumulated step amount at which the NTP daemon will exit (or -1 if no threshold was set).
 # TYPE ntp_system_accumulated_steps_threshold_seconds gauge
 # UNIT ntp_system_accumulated_steps_threshold_seconds seconds
 ntp_system_accumulated_steps_threshold_seconds -1.0
 # HELP ntp_system_leap_indicator Indicates that a leap second will take place.
 # TYPE ntp_system_leap_indicator gauge
-ntp_system_leap_indicator 3
+ntp_system_leap_indicator 0
 # HELP ntp_peer_uptime_seconds Time since the peer was started.
 # TYPE ntp_peer_uptime_seconds gauge
 # UNIT ntp_peer_uptime_seconds seconds
-ntp_peer_uptime_seconds{address="127.0.0.1:123"} 51
+ntp_peer_uptime_seconds{address="1.pool.ntp.org:123"} -10.098467026394435
+ntp_peer_uptime_seconds{address="0.pool.ntp.org:123"} 23.02104354207894
 # HELP ntp_peer_poll_interval_seconds Time between polls of the peer.
 # TYPE ntp_peer_poll_interval_seconds gauge
 # UNIT ntp_peer_poll_interval_seconds seconds
-ntp_peer_poll_interval_seconds{address="127.0.0.1:123"} 16.00000000372529
+ntp_peer_poll_interval_seconds{address="0.pool.ntp.org:123"} 16.00000000372529
+ntp_peer_poll_interval_seconds{address="1.pool.ntp.org:123"} 16.00000000372529
 # HELP ntp_peer_poll_interval Exponent of time between polls of the peer.
 # TYPE ntp_peer_poll_interval gauge
-ntp_peer_poll_interval{address="127.0.0.1:123"} 4.0
+ntp_peer_poll_interval{address="0.pool.ntp.org:123"} 4.0
+ntp_peer_poll_interval{address="1.pool.ntp.org:123"} 4.0
 # HELP ntp_peer_reachability_status Number of polls until the upstream server is unreachable, zero if it is.
 # TYPE ntp_peer_reachability_status gauge
-ntp_peer_reachability_status{address="127.0.0.1:123"} 8
+ntp_peer_reachability_status{address="1.pool.ntp.org:123"} 8
+ntp_peer_reachability_status{address="0.pool.ntp.org:123"} 8
 # HELP ntp_peer_offset_seconds Offset between the upstream server and system time.
 # TYPE ntp_peer_offset_seconds gauge
 # UNIT ntp_peer_offset_seconds seconds
-ntp_peer_offset_seconds{address="127.0.0.1:123"} 0.00004205643200363415
+ntp_peer_offset_seconds{address="0.pool.ntp.org:123"} 0.0038458579228832056
+ntp_peer_offset_seconds{address="1.pool.ntp.org:123"} 0.00432991446096681
 # HELP ntp_peer_delay_seconds Current round-trip delay to the upstream server.
 # TYPE ntp_peer_delay_seconds gauge
 # UNIT ntp_peer_delay_seconds seconds
-ntp_peer_delay_seconds{address="127.0.0.1:123"} 0.00020051281903882344
-# HELP ntp_peer_dispersion_seconds Maximum error of the clock.
-# TYPE ntp_peer_dispersion_seconds gauge
-# UNIT ntp_peer_dispersion_seconds seconds
-ntp_peer_dispersion_seconds{address="127.0.0.1:123"} 0.0007732014639240694
-# HELP ntp_peer_jitter_seconds Variance of network latency.
-# TYPE ntp_peer_jitter_seconds gauge
-# UNIT ntp_peer_jitter_seconds seconds
-ntp_peer_jitter_seconds{address="127.0.0.1:123"} 0.000015067552900017188
+ntp_peer_delay_seconds{address="1.pool.ntp.org:123"} 0.010786478875853699
+ntp_peer_delay_seconds{address="0.pool.ntp.org:123"} 0.00760143553083796
+# HELP ntp_peer_uncertainty_seconds Estimated error of the clock.
+# TYPE ntp_peer_uncertainty_seconds gauge
+# UNIT ntp_peer_uncertainty_seconds seconds
+ntp_peer_uncertainty_seconds{address="1.pool.ntp.org:123"} 0.0008779882921087529
+ntp_peer_uncertainty_seconds{address="0.pool.ntp.org:123"} 0.0009309677409313078
 # HELP ntp_server_received_packets Number of incoming received packets.
 # TYPE ntp_server_received_packets counter
-ntp_server_received_packets_total{listen_address="127.0.0.1:123"} 11
 # HELP ntp_server_accepted_packets Number of packets accepted.
 # TYPE ntp_server_accepted_packets counter
-ntp_server_accepted_packets_total{listen_address="127.0.0.1:123"} 11
 # HELP ntp_server_denied_packets Number of denied packets.
 # TYPE ntp_server_denied_packets counter
-ntp_server_denied_packets_total{listen_address="127.0.0.1:123"} 0
+# HELP ntp_server_ignored_packets Number of packets ignored.
+# TYPE ntp_server_ignored_packets counter
 # HELP ntp_server_rate_limited_packets Number of rate limited packets.
 # TYPE ntp_server_rate_limited_packets counter
-ntp_server_rate_limited_packets_total{listen_address="127.0.0.1:123"} 0
 # HELP ntp_server_response_send_errors Number of packets where there was an error responding.
 # TYPE ntp_server_response_send_errors counter
-ntp_server_response_send_errors_total{listen_address="127.0.0.1:123"} 0
 # EOF
 
 ```
