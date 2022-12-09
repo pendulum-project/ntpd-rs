@@ -158,7 +158,11 @@ impl NtpClock for UnixNtpClock {
         let mut timex = EMPTY_TIMEX;
         adjtime(&mut timex)?;
         timex.modes = libc::MOD_STATUS;
+        // Enable the kernel phase locked loop
         timex.status |= libc::STA_PLL;
+        // and disable the frequency locked loop,
+        // pps input based time control, and pps
+        // input based frequency control.
         timex.status &= !libc::STA_FLL & !libc::STA_PPSTIME & !libc::STA_PPSFREQ;
         adjtime(&mut timex)
     }
@@ -167,6 +171,9 @@ impl NtpClock for UnixNtpClock {
         let mut timex = EMPTY_TIMEX;
         adjtime(&mut timex)?;
         timex.modes = libc::MOD_STATUS;
+        // Disable all kernel time control loops
+        // (phase lock, frequency lock, pps time
+        // and pps frequency).
         timex.status &= !libc::STA_PLL & !libc::STA_FLL & !libc::STA_PPSTIME & !libc::STA_PPSFREQ;
         adjtime(&mut timex)
     }
@@ -199,7 +206,9 @@ impl NtpClock for UnixNtpClock {
         let mut timex = EMPTY_TIMEX;
         adjtime(&mut timex)?;
         timex.modes = libc::MOD_STATUS;
+        // Clear out the leap seconds and synchronization flags
         timex.status &= !libc::STA_INS & !libc::STA_DEL & !libc::STA_UNSYNC;
+        // and add back in what is needed.
         match leap_status {
             NtpLeapIndicator::NoWarning => {}
             NtpLeapIndicator::Leap61 => timex.status |= libc::STA_INS,
