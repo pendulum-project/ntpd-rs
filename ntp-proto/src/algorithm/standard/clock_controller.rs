@@ -373,7 +373,7 @@ mod tests {
         last_max_error: RefCell<Option<NtpDuration>>,
         last_poll_interval: RefCell<Option<PollInterval>>,
         last_leap_status: RefCell<Option<NtpLeapIndicator>>,
-        last_algorithm_status: RefCell<Option<bool>>,
+        last_ntp_discipline_enabled: RefCell<Option<bool>>,
     }
 
     impl NtpClock for TestClock {
@@ -394,12 +394,12 @@ mod tests {
         }
 
         fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            *self.last_algorithm_status.borrow_mut() = Some(true);
+            *self.last_ntp_discipline_enabled.borrow_mut() = Some(true);
             Ok(())
         }
 
         fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            *self.last_algorithm_status.borrow_mut() = Some(false);
+            *self.last_ntp_discipline_enabled.borrow_mut() = Some(false);
             Ok(())
         }
 
@@ -519,7 +519,10 @@ mod tests {
         let base = controller.last_update_time;
 
         assert_eq!(*controller.clock.last_freq.borrow(), Some(0.));
-        assert_eq!(*controller.clock.last_algorithm_status.borrow(), Some(true));
+        assert_eq!(
+            *controller.clock.last_ntp_discipline_enabled.borrow(),
+            Some(true)
+        );
 
         controller.update(
             &config,
