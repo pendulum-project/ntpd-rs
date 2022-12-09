@@ -118,18 +118,10 @@ pub struct NtpPacket<'a> {
 pub enum ExtensionField<'a> {
     UniqueIdentifier(Cow<'a, [u8]>),
     NtsCookie(Cow<'a, [u8]>),
-    NtsCookiePlaceholder {
-        body_length: u16,
-    },
-    NtsEncryptedField {
-        nonce: Cow<'a, [u8]>,
-        plaintext: Cow<'a, [u8]>,
-    },
+    NtsCookiePlaceholder { body_length: u16 },
+    NtsEncryptedField { plaintext: Cow<'a, [u8]> },
 
-    Unknown {
-        typeid: u16,
-        data: Cow<'a, [u8]>,
-    },
+    Unknown { typeid: u16, data: Cow<'a, [u8]> },
 }
 
 impl<'a> std::fmt::Debug for ExtensionField<'a> {
@@ -141,9 +133,8 @@ impl<'a> std::fmt::Debug for ExtensionField<'a> {
                 .debug_struct("NtsCookiePlaceholder")
                 .field("body_length", body_length)
                 .finish(),
-            Self::NtsEncryptedField { nonce, plaintext } => f
+            Self::NtsEncryptedField { plaintext } => f
                 .debug_struct("NtsEncryptedField")
-                .field("nonce", nonce)
                 .field("plaintext", plaintext)
                 .finish(),
             Self::Unknown { typeid, data } => f
@@ -177,34 +168,25 @@ impl<'a> ExtensionField<'a> {
             UniqueIdentifier(data) => UniqueIdentifier(Cow::Owned(data.into_owned())),
             NtsCookie(data) => NtsCookie(Cow::Owned(data.into_owned())),
             NtsCookiePlaceholder { body_length } => NtsCookiePlaceholder { body_length },
-            NtsEncryptedField { nonce, plaintext } => NtsEncryptedField {
-                nonce: Cow::Owned(nonce.into_owned()),
+            NtsEncryptedField { plaintext } => NtsEncryptedField {
                 plaintext: Cow::Owned(plaintext.into_owned()),
             },
         }
     }
 
-    pub fn key_exchange_signature(nonce: &'a Nonce) -> Self {
+    pub fn key_exchange_signature() -> Self {
         // the real plaintext is the packet up to the start of this extension field
         // it is inserted implicitly by the encoder
         ExtensionField::NtsEncryptedField {
-            nonce: nonce.as_slice().into(),
             plaintext: [].as_slice().into(),
         }
-    }
-
-    pub fn serialize_without_encryption(&self, w: &mut Cursor<&mut [u8]>) -> std::io::Result<()> {
-        use aes_siv::{aead::KeyInit, Key};
-
-        let cipher = Aes256SivAead::new(Key::<Aes256SivAead>::from_slice([0; 64].as_slice()));
-
-        self.serialize(w, &cipher)
     }
 
     pub fn serialize(
         &self,
         w: &mut Cursor<&mut [u8]>,
         cipher: &Aes256SivAead,
+        nonce: &Nonce,
     ) -> std::io::Result<()> {
         let padding = [0; 4];
 
@@ -237,15 +219,11 @@ impl<'a> ExtensionField<'a> {
                     remaining -= n;
                 }
             }
-            ExtensionField::NtsEncryptedField {
-                nonce,
-                plaintext: _,
-            } => {
+            ExtensionField::NtsEncryptedField { plaintext: _ } => {
                 let current_position = w.position();
 
                 let packet_so_far = &w.get_ref()[..current_position as usize];
 
-                let nonce = Nonce::from_slice(nonce);
                 let ct = cipher.encrypt(nonce, packet_so_far).unwrap();
 
                 w.write_all(&0x0404u16.to_be_bytes())?;
@@ -287,16 +265,6 @@ impl<'a> ExtensionField<'a> {
         }
 
         Ok(())
-    }
-
-    pub fn deserialize_without_encryption(
-        data: &'a [u8],
-    ) -> Result<(ExtensionField<'a>, usize), PacketParsingError> {
-        use aes_siv::{aead::KeyInit, Key};
-
-        let cipher = Aes256SivAead::new(Key::<Aes256SivAead>::from_slice([0; 64].as_slice()));
-
-        Self::deserialize(data, &cipher)
     }
 
     pub fn deserialize(
@@ -382,7 +350,6 @@ impl<'a> ExtensionField<'a> {
                 }
 
                 ExtensionField::NtsEncryptedField {
-                    nonce: nonce.into(),
                     plaintext: plaintext.into(),
                 }
             }
@@ -420,12 +387,17 @@ impl<'a> ExtensionFieldData<'a> {
         }
     }
 
-    fn serialize(&self, w: &mut Cursor<&mut [u8]>, cipher: &Aes256SivAead) -> std::io::Result<()> {
+    fn serialize(
+        &self,
+        w: &mut Cursor<&mut [u8]>,
+        cipher: &Aes256SivAead,
+        nonce: &Nonce,
+    ) -> std::io::Result<()> {
         match self {
             ExtensionFieldData::Raw(efdata) => w.write_all(efdata),
             ExtensionFieldData::List(fields) => {
                 for field in fields {
-                    field.serialize(w, cipher)?;
+                    field.serialize(w, cipher, nonce)?;
                 }
                 Ok(())
             }
@@ -709,13 +681,14 @@ impl<'a> NtpPacket<'a> {
 
         let cipher = Aes256SivAead::new(Key::<Aes256SivAead>::from_slice([0; 64].as_slice()));
 
-        self.serialize(w, &cipher)
+        self.serialize(w, &cipher, Nonce::from_slice(&[0u8; 16]))
     }
 
     pub fn serialize(
         &self,
         w: &mut Cursor<&mut [u8]>,
         cipher: &Aes256SivAead,
+        nonce: &Nonce,
     ) -> std::io::Result<()> {
         match self.header {
             NtpHeader::V3(header) => header.serialize(w, 3)?,
@@ -724,7 +697,7 @@ impl<'a> NtpPacket<'a> {
 
         match self.header {
             NtpHeader::V3(_) => { /* v3 does not support NTS, so we ignore extension fields */ }
-            NtpHeader::V4(_) => self.efdata.serialize(w, cipher)?,
+            NtpHeader::V4(_) => self.efdata.serialize(w, cipher, nonce)?,
         }
 
         if let Some(ref mac) = self.mac {

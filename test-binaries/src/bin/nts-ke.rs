@@ -4,12 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use aes_siv::{
-    aead::{Aead, KeyInit},
-    Aes256SivAead,
-    Key, // Or `Aes128SivAead`
-    Nonce,
-};
+use aes_siv::{aead::KeyInit, Aes256SivAead, Key, Nonce};
 
 use ntp_proto::{ExtensionField, NtsRecord};
 use ntp_udp::UdpSocket;
@@ -76,14 +71,14 @@ fn key_exchange_packet(
 
     let unique_identifier = ExtensionField::UniqueIdentifier(identifier.into());
     unique_identifier
-        .serialize_without_encryption(&mut cursor)
+        .serialize(&mut cursor, &cipher, nonce)
         .unwrap();
 
     let cookie = ExtensionField::NtsCookie(cookie.into());
-    cookie.serialize_without_encryption(&mut cursor).unwrap();
+    cookie.serialize(&mut cursor, &cipher, nonce).unwrap();
 
-    let signature = ExtensionField::key_exchange_signature(nonce);
-    signature.serialize(&mut cursor, &cipher).unwrap();
+    let signature = ExtensionField::key_exchange_signature();
+    signature.serialize(&mut cursor, &cipher, nonce).unwrap();
 
     cursor.get_ref()[..cursor.position() as usize].to_vec()
 }
@@ -197,6 +192,7 @@ async fn main() -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use aes_siv::aead::Aead;
     use ntp_proto::NtpPacket;
 
     use super::*;
