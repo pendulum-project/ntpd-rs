@@ -6,16 +6,38 @@ use crate::{packet::NtpLeapIndicator, time_types::PollInterval, NtpDuration, Ntp
 pub trait NtpClock: Clone + Send + 'static {
     type Error: std::error::Error;
 
+    // Get current time
     fn now(&self) -> Result<NtpTimestamp, Self::Error>;
 
-    fn set_freq(&self, freq: f64) -> Result<(), Self::Error>;
-    fn step_clock(&self, offset: NtpDuration) -> Result<(), Self::Error>;
-    fn update_clock(
+    // Change the frequency of the clock, returning the time
+    // at which the change was applied.
+    fn set_frequency(&self, freq: f64) -> Result<NtpTimestamp, Self::Error>;
+    // Change the current time of the clock by offset. Returns
+    // the time at which the change was applied.
+    fn step_clock(&self, offset: NtpDuration) -> Result<NtpTimestamp, Self::Error>;
+
+    // A clock can have a built in NTP clock discipline algorithm
+    // that does more processing on the offsets it receives. These
+    // functions enable/disable that discipline, and allow us to
+    // feed it with the information it needs to function
+    fn disable_ntp_algorithm(&self) -> Result<(), Self::Error>;
+    fn enable_ntp_algorithm(&self) -> Result<(), Self::Error>;
+    fn ntp_algorithm_update(
         &self,
         offset: NtpDuration,
+        poll_interval: PollInterval,
+    ) -> Result<(), Self::Error>;
+
+    // Provide the system with our current best estimates for
+    // the statistical error of the clock (est_error), and
+    // the maximum deviation due to frequency error and
+    // distance to the root clock.
+    fn error_estimate_update(
+        &self,
         est_error: NtpDuration,
         max_error: NtpDuration,
-        poll_interval: PollInterval,
-        leap_status: NtpLeapIndicator,
     ) -> Result<(), Self::Error>;
+    // Change the indicators for upcoming leap seconds and
+    // the clocks synchronization status.
+    fn status_update(&self, leap_status: NtpLeapIndicator) -> Result<(), Self::Error>;
 }
