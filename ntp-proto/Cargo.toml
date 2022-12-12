@@ -15,6 +15,6 @@ ext-test = []
 md-5 = "0.10.5"
 rand = "0.8.5"
 tracing = "0.1.37"
-serde = { version = "1.0.149", features = ["derive"] }
+serde = { version = "1.0.150", features = ["derive"] }
 exitcode = "1.1.2"
 arbitrary = { version = "1.2.0", optional = true }
