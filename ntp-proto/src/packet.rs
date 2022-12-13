@@ -187,6 +187,103 @@ impl<'a> ExtensionField<'a> {
         }
     }
 
+    fn encode_unique_identifier<W: std::io::Write>(
+        w: &mut W,
+        identifier: &[u8],
+    ) -> std::io::Result<()> {
+        let padding = [0; 4];
+
+        w.write_all(&0x0104u16.to_be_bytes())?;
+        w.write_all(&(4 + identifier.len() as u16).to_be_bytes())?;
+        w.write_all(identifier)?;
+
+        let padding_bytes = next_multiple_of(identifier.len(), 4) - identifier.len();
+        w.write_all(&padding[..padding_bytes])?;
+
+        Ok(())
+    }
+
+    fn encode_nts_cookie<W: std::io::Write>(w: &mut W, cookie: &[u8]) -> std::io::Result<()> {
+        let padding = [0; 4];
+
+        w.write_all(&0x0204u16.to_be_bytes())?;
+        w.write_all(&(4 + cookie.len() as u16).to_be_bytes())?;
+        w.write_all(cookie)?;
+
+        let padding_bytes = next_multiple_of(cookie.len(), 4) - cookie.len();
+        w.write_all(&padding[..padding_bytes])?;
+
+        Ok(())
+    }
+
+    fn encode_nts_cookie_request_extra<W: std::io::Write>(
+        w: &mut W,
+        cookie: &[u8],
+        extra: u8,
+    ) -> std::io::Result<()> {
+        let padding = [0; 4];
+
+        Self::encode_nts_cookie(w, cookie)?;
+
+        let body_length: u16 = cookie.len() as u16;
+        for _ in 0..extra {
+            w.write_all(&0x0304u16.to_be_bytes())?;
+            w.write_all(&(4 + body_length).to_be_bytes())?;
+
+            let zeros = [0u8; 100];
+            let mut remaining = next_multiple_of(body_length as usize, 4);
+            while remaining > 0 {
+                let n = usize::min(zeros.len(), remaining);
+                w.write_all(&zeros[..n])?;
+                remaining -= n;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn encode_encryped(
+        w: &mut Cursor<&mut Vec<u8>>,
+        cipher: &Cipher,
+        nonce: &Nonce,
+    ) -> std::io::Result<()> {
+        let padding = [0; 4];
+
+        let current_position = w.position();
+
+        let packet_so_far = &w.get_ref()[..current_position as usize];
+
+        let payload = Payload {
+            msg: b"",
+            aad: packet_so_far,
+        };
+
+        let ct = cipher.encrypt(nonce, payload).unwrap();
+
+        w.write_all(&0x0404u16.to_be_bytes())?;
+
+        // NOTE: these are NOT rounded up to a number of words
+        let nonce_octet_count = nonce.len();
+        let ct_octet_count = ct.len();
+
+        // + 8 for the extension field header (4 bytes) and nonce/cypher text length (2 bytes each)
+        let signature_octet_count = 8 + next_multiple_of(nonce_octet_count + ct_octet_count, 4);
+
+        w.write_all(&(signature_octet_count as u16).to_be_bytes())?;
+        w.write_all(&(nonce_octet_count as u16).to_be_bytes())?;
+        w.write_all(&(ct_octet_count as u16).to_be_bytes())?;
+
+        w.write_all(nonce)?;
+        let padding_bytes = next_multiple_of(nonce.len(), 4) - nonce.len();
+        w.write_all(&padding[..padding_bytes])?;
+
+        w.write_all(ct.as_slice())?;
+        let padding_bytes = next_multiple_of(ct.len(), 4) - ct.len();
+        w.write_all(&padding[..padding_bytes])?;
+
+        Ok(())
+    }
+
     pub fn serialize(
         &self,
         w: &mut Cursor<&mut [u8]>,
@@ -235,13 +332,6 @@ impl<'a> ExtensionField<'a> {
                 };
 
                 let ct = cipher.encrypt(nonce, payload).unwrap();
-
-                let payload2 = Payload {
-                    msg: &ct,
-                    aad: packet_so_far,
-                };
-
-                let plain = cipher.decrypt(nonce, payload2).unwrap();
 
                 w.write_all(&0x0404u16.to_be_bytes())?;
 
@@ -471,26 +561,21 @@ impl<'a> WireExtensionField<'a> {
         use PacketParsingError::IncorrectLength;
 
         if data.len() < 4 || data.len() % 4 != 0 {
-            return dbg!(Err(IncorrectLength));
+            return Err(IncorrectLength);
         }
 
         let type_id = u16::from_be_bytes(data[0..2].try_into().unwrap());
         let field_length = u16::from_be_bytes(data[2..4].try_into().unwrap()) as usize;
         if field_length < Self::MINIMUM_SIZE {
-            return dbg!(Err(PacketParsingError::IncorrectLength));
+            return Err(PacketParsingError::IncorrectLength);
         }
 
-        dbg!(
-            data.len(),
-            field_length,
-            ExtensionFieldTypeId::from_type_id(type_id)
-        );
         let value = data.get(4..field_length).ok_or(IncorrectLength)?;
 
         // check that the padding is all zeros. This is required for the fuzz tests to work
         let padding = &data[field_length..next_multiple_of(field_length, 4)];
         if padding.iter().any(|b| *b != 0) {
-            return dbg!(Err(PacketParsingError::IncorrectLength));
+            return Err(PacketParsingError::IncorrectLength);
         }
 
         Ok(Self {
@@ -575,7 +660,6 @@ impl<'a> ExtensionFieldData<'a> {
 
             let field = match raw_ext_field.type_id {
                 TypeId::NtsEncryptedField => {
-                    dbg!(offset, offset % 4);
                     let packet_so_far = &data[..offset];
                     let field = WireEncryptedField::from_message_bytes(message)?;
                     encrypted_field = Some((field, packet_so_far));
@@ -610,19 +694,17 @@ impl<'a> ExtensionFieldData<'a> {
                 type EF<'a> = ExtensionField<'a>;
                 type TypeId = ExtensionFieldTypeId;
 
-                let raw_ext_field = dbg!(WireExtensionField::parse(&plaintext[offset..]))?;
+                let raw_ext_field = WireExtensionField::parse(&plaintext[offset..])?;
                 let message = raw_ext_field.message_bytes;
 
                 let field = match raw_ext_field.type_id {
                     TypeId::NtsEncryptedField => {
                         todo!("nested encrypted field should not happen")
                     }
-                    TypeId::UniqueIdentifier => dbg!(EF::decode_unique_identifier(message))?,
-                    TypeId::NtsCookie => dbg!(EF::decode_nts_cookie(message))?,
-                    TypeId::NtsCookiePlaceholder => {
-                        dbg!(EF::decode_nts_cookie_placeholder(message))?
-                    }
-                    TypeId::Unknown => dbg!(EF::decode_unknown(message))?,
+                    TypeId::UniqueIdentifier => EF::decode_unique_identifier(message)?,
+                    TypeId::NtsCookie => EF::decode_nts_cookie(message)?,
+                    TypeId::NtsCookiePlaceholder => EF::decode_nts_cookie_placeholder(message)?,
+                    TypeId::Unknown => EF::decode_unknown(message)?,
                 };
 
                 this.encrypted.push(field.into_owned());
@@ -944,6 +1026,42 @@ impl<'a> NtpPacket<'a> {
         }
 
         Ok(())
+    }
+
+    pub fn serialize_nts_poll_message(
+        output: &mut Vec<u8>,
+        identifier: &[u8],
+        cookie: &[u8],
+        cipher: Cipher,
+        nonce: &Nonce,
+        poll_interval: PollInterval,
+    ) -> std::io::Result<RequestIdentifier> {
+        let (header, id) = Self::serialize_poll_message(poll_interval)?;
+
+        output.extend(&header);
+
+        ExtensionField::encode_unique_identifier(output, identifier).unwrap();
+        ExtensionField::encode_nts_cookie_request_extra(output, cookie, 1).unwrap();
+
+        let start_position = output.len();
+        let mut cursor = Cursor::new(output);
+        cursor.set_position(start_position as u64);
+
+        ExtensionField::encode_encryped(&mut cursor, &cipher, nonce).unwrap();
+
+        Ok(id)
+    }
+
+    pub fn serialize_poll_message(
+        poll_interval: PollInterval,
+    ) -> std::io::Result<([u8; 48], RequestIdentifier)> {
+        let (header, id) = NtpHeaderV3V4::poll_message(poll_interval);
+
+        let mut output = [0; 48];
+        let mut w = Cursor::new(output.as_mut_slice());
+        header.serialize(&mut w, 4)?;
+
+        Ok((output, id))
     }
 
     pub fn poll_message(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
