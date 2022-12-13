@@ -41,6 +41,10 @@ impl ReferenceId {
         *self == Self::KISS_RSTR
     }
 
+    pub(crate) fn is_ntsn(&self) -> bool {
+        *self == Self::KISS_NTSN
+    }
+
     pub(crate) fn to_bytes(self) -> [u8; 4] {
         self.0.to_be_bytes()
     }

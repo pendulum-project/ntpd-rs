@@ -1,10 +1,15 @@
 use std::{borrow::Cow, fmt::Display, io::Cursor, io::Write};
 
-use aes_siv::{aead::Aead, Aes256SivAead, Nonce};
+use aes_siv::{
+    aead::{Aead, Payload},
+    Nonce,
+};
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 
 use crate::{NtpClock, NtpDuration, NtpTimestamp, PollInterval, ReferenceId, SystemSnapshot};
+
+type Cipher = aes_siv::Aes128SivAead;
 
 #[derive(Debug)]
 pub enum PacketParsingError {
@@ -185,7 +190,7 @@ impl<'a> ExtensionField<'a> {
     pub fn serialize(
         &self,
         w: &mut Cursor<&mut [u8]>,
-        cipher: &Aes256SivAead,
+        cipher: &Cipher,
         nonce: &Nonce,
     ) -> std::io::Result<()> {
         let padding = [0; 4];
@@ -224,7 +229,19 @@ impl<'a> ExtensionField<'a> {
 
                 let packet_so_far = &w.get_ref()[..current_position as usize];
 
-                let ct = cipher.encrypt(nonce, packet_so_far).unwrap();
+                let payload = Payload {
+                    msg: b"",
+                    aad: packet_so_far,
+                };
+
+                let ct = cipher.encrypt(nonce, payload).unwrap();
+
+                let payload2 = Payload {
+                    msg: &ct,
+                    aad: packet_so_far,
+                };
+
+                let plain = cipher.decrypt(nonce, payload2).unwrap();
 
                 w.write_all(&0x0404u16.to_be_bytes())?;
 
@@ -269,7 +286,7 @@ impl<'a> ExtensionField<'a> {
 
     pub fn deserialize(
         data: &'a [u8],
-        cipher: &Aes256SivAead,
+        cipher: &Cipher,
     ) -> Result<(ExtensionField<'a>, usize), PacketParsingError> {
         use PacketParsingError::IncorrectLength;
 
@@ -338,7 +355,7 @@ impl<'a> ExtensionField<'a> {
 
                 let plaintext = match cipher.decrypt(Nonce::from_slice(nonce), ciphertext) {
                     Ok(plain) => plain,
-                    Err(e) => panic!("{e:?}"),
+                    Err(e) => panic!("decryption failed {e:?}"),
                 };
 
                 let ciphertext_padding = value
@@ -361,63 +378,280 @@ impl<'a> ExtensionField<'a> {
 
         Ok((field, next_multiple_of(ef_len, 4)))
     }
-}
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum ExtensionFieldData<'a> {
-    #[allow(dead_code)]
-    Raw(Cow<'a, [u8]>),
-    List(Vec<ExtensionField<'a>>),
-}
+    fn decode_unique_identifier(message: &'a [u8]) -> Result<Self, PacketParsingError> {
+        // The string MUST be at least 32 octets long
+        if message.len() < 32 {
+            return Err(PacketParsingError::IncorrectLength);
+        }
 
-impl<'a> Default for ExtensionFieldData<'a> {
-    fn default() -> Self {
-        // Self::Raw(Cow::Borrowed(&[]))
-        Self::List(vec![])
+        Ok(ExtensionField::UniqueIdentifier(message[..].into()))
     }
+
+    fn decode_nts_cookie(message: &'a [u8]) -> Result<Self, PacketParsingError> {
+        Ok(ExtensionField::NtsCookie(message[..].into()))
+    }
+
+    fn decode_nts_cookie_placeholder(message: &'a [u8]) -> Result<Self, PacketParsingError> {
+        if message.iter().any(|b| *b != 0) {
+            Err(PacketParsingError::IncorrectLength)
+        } else {
+            Ok(ExtensionField::NtsCookiePlaceholder {
+                body_length: message.len() as u16,
+            })
+        }
+    }
+
+    fn decode_unknown(message: &'a [u8]) -> Result<Self, PacketParsingError> {
+        Ok(ExtensionField::Unknown {
+            typeid: 0, // TODO is it actually required that we keep this around?
+            data: Cow::Borrowed(message),
+        })
+    }
+}
+
+struct WireEncryptedField<'a> {
+    nonce: &'a Nonce,
+    ciphertext: &'a [u8],
+}
+
+impl<'a> WireEncryptedField<'a> {
+    fn from_message_bytes(message_bytes: &'a [u8]) -> Result<Self, PacketParsingError> {
+        use PacketParsingError::*;
+
+        let value = message_bytes;
+
+        let nonce_length = u16::from_be_bytes(value[0..2].try_into().unwrap()) as usize;
+        let ciphertext_length = u16::from_be_bytes(value[2..4].try_into().unwrap()) as usize;
+
+        if 4 + next_multiple_of(nonce_length, 4) + next_multiple_of(ciphertext_length, 4)
+            != next_multiple_of(value.len(), 4)
+        {
+            return Err(PacketParsingError::IncorrectLength);
+        }
+
+        let ciphertext_start = 4 + next_multiple_of(nonce_length as usize, 4);
+
+        let nonce_bytes = value.get(4..4 + nonce_length).ok_or(IncorrectLength)?;
+        let nonce_padding = value
+            .get(4 + nonce_length..ciphertext_start)
+            .ok_or(IncorrectLength)?;
+
+        if nonce_padding.iter().any(|b| *b != 0) {
+            return Err(PacketParsingError::IncorrectLength);
+        }
+
+        let ciphertext = value
+            .get(ciphertext_start..ciphertext_start + ciphertext_length)
+            .ok_or(IncorrectLength)?;
+
+        Ok(Self {
+            nonce: Nonce::from_slice(nonce_bytes),
+            ciphertext,
+        })
+    }
+}
+
+#[derive(Debug)]
+struct WireExtensionField<'a> {
+    type_id: ExtensionFieldTypeId,
+    // bytes of just the message: does not include the header or padding
+    message_bytes: &'a [u8],
+}
+
+impl<'a> WireExtensionField<'a> {
+    const MINIMUM_SIZE: usize = 16;
+
+    fn wire_length(&self) -> usize {
+        // type_id and extension_field_length + data + padding
+        4 + next_multiple_of(self.message_bytes.len(), 4)
+    }
+
+    pub fn parse(data: &'a [u8]) -> Result<Self, PacketParsingError> {
+        use PacketParsingError::IncorrectLength;
+
+        if data.len() < 4 || data.len() % 4 != 0 {
+            return dbg!(Err(IncorrectLength));
+        }
+
+        let type_id = u16::from_be_bytes(data[0..2].try_into().unwrap());
+        let field_length = u16::from_be_bytes(data[2..4].try_into().unwrap()) as usize;
+        if field_length < Self::MINIMUM_SIZE {
+            return dbg!(Err(PacketParsingError::IncorrectLength));
+        }
+
+        dbg!(
+            data.len(),
+            field_length,
+            ExtensionFieldTypeId::from_type_id(type_id)
+        );
+        let value = data.get(4..field_length).ok_or(IncorrectLength)?;
+
+        // check that the padding is all zeros. This is required for the fuzz tests to work
+        let padding = &data[field_length..next_multiple_of(field_length, 4)];
+        if padding.iter().any(|b| *b != 0) {
+            return dbg!(Err(PacketParsingError::IncorrectLength));
+        }
+
+        Ok(Self {
+            type_id: ExtensionFieldTypeId::from_type_id(type_id),
+            message_bytes: value,
+        })
+    }
+}
+
+#[derive(Debug)]
+#[repr(u16)]
+enum ExtensionFieldTypeId {
+    UniqueIdentifier = 0x104,
+    NtsCookie = 0x204,
+    NtsCookiePlaceholder = 0x304,
+    NtsEncryptedField = 0x404,
+    Unknown,
+}
+
+impl ExtensionFieldTypeId {
+    fn from_type_id(type_id: u16) -> Self {
+        match type_id {
+            0x104 => Self::UniqueIdentifier,
+            0x204 => Self::NtsCookie,
+            0x304 => Self::NtsCookiePlaceholder,
+            0x404 => Self::NtsEncryptedField,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct ExtensionFieldData<'a> {
+    authenticated: Vec<ExtensionField<'a>>,
+    encrypted: Vec<ExtensionField<'a>>,
+    trailing: Vec<ExtensionField<'a>>,
 }
 
 impl<'a> ExtensionFieldData<'a> {
     fn into_owned(self) -> ExtensionFieldData<'static> {
-        match self {
-            ExtensionFieldData::Raw(data) => ExtensionFieldData::Raw(Cow::Owned(data.into_owned())),
-            ExtensionFieldData::List(fields) => {
-                ExtensionFieldData::List(fields.into_iter().map(|v| v.into_owned()).collect())
-            }
+        let map_into_owned =
+            |vec: Vec<ExtensionField>| vec.into_iter().map(ExtensionField::into_owned).collect();
+
+        ExtensionFieldData {
+            authenticated: map_into_owned(self.authenticated),
+            encrypted: map_into_owned(self.encrypted),
+            trailing: map_into_owned(self.trailing),
         }
     }
 
     fn serialize(
         &self,
         w: &mut Cursor<&mut [u8]>,
-        cipher: &Aes256SivAead,
+        cipher: &Cipher,
         nonce: &Nonce,
     ) -> std::io::Result<()> {
-        match self {
-            ExtensionFieldData::Raw(efdata) => w.write_all(efdata),
-            ExtensionFieldData::List(fields) => {
-                for field in fields {
-                    field.serialize(w, cipher, nonce)?;
-                }
-                Ok(())
-            }
+        let fields = [&self.authenticated, &self.encrypted, &self.trailing];
+
+        for field in fields.into_iter().flatten() {
+            field.serialize(w, cipher, nonce)?;
         }
+
+        Ok(())
     }
 
     fn deserialize(
         data: &'a [u8],
-        cipher: &Aes256SivAead,
-    ) -> Result<(ExtensionFieldData<'a>, usize), PacketParsingError> {
-        let mut fields = vec![];
-        let mut offset = 0;
+        header_size: usize,
+        cipher: &Cipher,
+    ) -> Result<(Self, usize), PacketParsingError> {
+        let mut offset = header_size;
+
+        let mut this = Self::default();
+        let mut encrypted_field = None;
 
         while data.len() - offset >= Mac::MAXIMUM_SIZE {
-            let (field, len) = ExtensionField::deserialize(&data[offset..], cipher)?;
-            fields.push(field);
-            offset += len;
+            type EF<'a> = ExtensionField<'a>;
+            type TypeId = ExtensionFieldTypeId;
+
+            let raw_ext_field = WireExtensionField::parse(&data[offset..])?;
+            let message = raw_ext_field.message_bytes;
+
+            let field = match raw_ext_field.type_id {
+                TypeId::NtsEncryptedField => {
+                    dbg!(offset, offset % 4);
+                    let packet_so_far = &data[..offset];
+                    let field = WireEncryptedField::from_message_bytes(message)?;
+                    encrypted_field = Some((field, packet_so_far));
+                    offset += raw_ext_field.wire_length();
+                    break;
+                }
+                TypeId::UniqueIdentifier => EF::decode_unique_identifier(message)?,
+                TypeId::NtsCookie => EF::decode_nts_cookie(message)?,
+                TypeId::NtsCookiePlaceholder => EF::decode_nts_cookie_placeholder(message)?,
+                TypeId::Unknown => EF::decode_unknown(message)?,
+            };
+
+            this.authenticated.push(field);
+            offset += raw_ext_field.wire_length();
         }
 
-        Ok((ExtensionFieldData::List(fields), offset))
+        if let Some((encrypted, packet_so_far)) = encrypted_field {
+            let payload = Payload {
+                msg: encrypted.ciphertext,
+                aad: packet_so_far,
+            };
+
+            let plaintext = match cipher.decrypt(encrypted.nonce, payload) {
+                Ok(plain) => plain,
+                Err(e) => panic!("failed to decrypt: {e:?}"),
+            };
+
+            dbg!(plaintext.len());
+
+            let mut offset = 0;
+            while offset < plaintext.len() {
+                type EF<'a> = ExtensionField<'a>;
+                type TypeId = ExtensionFieldTypeId;
+
+                let raw_ext_field = dbg!(WireExtensionField::parse(&plaintext[offset..]))?;
+                let message = raw_ext_field.message_bytes;
+
+                let field = match raw_ext_field.type_id {
+                    TypeId::NtsEncryptedField => {
+                        todo!("nested encrypted field should not happen")
+                    }
+                    TypeId::UniqueIdentifier => dbg!(EF::decode_unique_identifier(message))?,
+                    TypeId::NtsCookie => dbg!(EF::decode_nts_cookie(message))?,
+                    TypeId::NtsCookiePlaceholder => {
+                        dbg!(EF::decode_nts_cookie_placeholder(message))?
+                    }
+                    TypeId::Unknown => dbg!(EF::decode_unknown(message))?,
+                };
+
+                this.encrypted.push(field.into_owned());
+                offset += raw_ext_field.wire_length();
+            }
+        }
+
+        while data.len() - offset >= Mac::MAXIMUM_SIZE {
+            type EF<'a> = ExtensionField<'a>;
+            type TypeId = ExtensionFieldTypeId;
+
+            let raw_ext_field = WireExtensionField::parse(&data[offset..])?;
+            let message = raw_ext_field.message_bytes;
+
+            let field = match raw_ext_field.type_id {
+                TypeId::NtsEncryptedField => {
+                    todo!("nested encrypted field should not happen")
+                }
+                TypeId::UniqueIdentifier => EF::decode_unique_identifier(message)?,
+                TypeId::NtsCookie => EF::decode_nts_cookie(message)?,
+                TypeId::NtsCookiePlaceholder => EF::decode_nts_cookie_placeholder(message)?,
+                TypeId::Unknown => EF::decode_unknown(message)?,
+            };
+
+            this.trailing.push(field.into_owned());
+            offset += raw_ext_field.wire_length();
+        }
+
+        Ok((this, offset))
     }
 }
 
@@ -618,17 +852,20 @@ impl<'a> NtpPacket<'a> {
     pub fn deserialize_without_decryption(data: &'a [u8]) -> Result<Self, PacketParsingError> {
         use aes_siv::{aead::KeyInit, Key};
 
-        let cipher = Aes256SivAead::new(Key::<Aes256SivAead>::from_slice([0; 64].as_slice()));
+        let cipher = Cipher::new(Key::<Cipher>::from_slice([0; 64].as_slice()));
 
         Self::deserialize(data, &cipher)
     }
 
-    pub fn deserialize(data: &'a [u8], cipher: &Aes256SivAead) -> Result<Self, PacketParsingError> {
+    pub fn deserialize(data: &'a [u8], cipher: &Cipher) -> Result<Self, PacketParsingError> {
         if data.is_empty() {
             return Err(PacketParsingError::IncorrectLength);
         }
 
         let version = (data[0] & 0x38) >> 3;
+
+        println!("{:08b}", data[0]);
+        dbg!(data[0], version);
 
         match version {
             3 => {
@@ -646,13 +883,15 @@ impl<'a> NtpPacket<'a> {
             }
             4 => {
                 let (header, header_size) = NtpHeaderV3V4::deserialize(data)?;
-                let (efdata, fields_len) =
-                    ExtensionFieldData::deserialize(&data[header_size..], cipher)?;
-                let mac = if header_size + fields_len != data.len() {
-                    Some(Mac::deserialize(&data[header_size + fields_len..])?)
+                let (efdata, header_plus_fields_len) =
+                    dbg!(ExtensionFieldData::deserialize(data, header_size, cipher))?;
+
+                let mac = if header_plus_fields_len != data.len() {
+                    Some(dbg!(Mac::deserialize(&data[header_plus_fields_len..]))?)
                 } else {
                     None
                 };
+
                 Ok(NtpPacket {
                     header: NtpHeader::V4(header),
                     efdata,
@@ -679,7 +918,7 @@ impl<'a> NtpPacket<'a> {
     pub fn serialize_without_encryption(&self, w: &mut Cursor<&mut [u8]>) -> std::io::Result<()> {
         use aes_siv::{aead::KeyInit, Key};
 
-        let cipher = Aes256SivAead::new(Key::<Aes256SivAead>::from_slice([0; 64].as_slice()));
+        let cipher = Cipher::new(Key::<Cipher>::from_slice([0; 64].as_slice()));
 
         self.serialize(w, &cipher, Nonce::from_slice(&[0u8; 16]))
     }
@@ -687,7 +926,7 @@ impl<'a> NtpPacket<'a> {
     pub fn serialize(
         &self,
         w: &mut Cursor<&mut [u8]>,
-        cipher: &Aes256SivAead,
+        cipher: &Cipher,
         nonce: &Nonce,
     ) -> std::io::Result<()> {
         match self.header {
@@ -861,6 +1100,10 @@ impl<'a> NtpPacket<'a> {
 
     pub fn is_kiss_rstr(&self) -> bool {
         self.is_kiss() && self.reference_id().is_rstr()
+    }
+
+    pub fn is_kiss_ntsn(&self) -> bool {
+        self.is_kiss() && self.reference_id().is_ntsn()
     }
 
     pub fn valid_server_response(&self, identifier: RequestIdentifier) -> bool {

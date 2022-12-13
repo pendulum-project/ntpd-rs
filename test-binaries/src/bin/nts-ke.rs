@@ -4,9 +4,9 @@ use std::{
     sync::Arc,
 };
 
-use aes_siv::{aead::KeyInit, Aes256SivAead, Key, Nonce};
+use aes_siv::{aead::KeyInit, Aes128SivAead, Key, Nonce};
 
-use ntp_proto::{ExtensionField, NtsRecord};
+use ntp_proto::{ExtensionField, NtpPacket, NtsRecord};
 use ntp_udp::UdpSocket;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_rustls::rustls;
@@ -50,11 +50,20 @@ pub const fn div_ceil(lhs: usize, rhs: usize) -> usize {
 fn key_exchange_packet(
     identifier: &[u8],
     cookie: &[u8],
-    cipher: Aes256SivAead,
+    cipher: Aes128SivAead,
     nonce: &Nonce,
 ) -> Vec<u8> {
+    let version = 4;
+    let leap = 0; // NoWarning
+    let mode = 3; // NtpAssociationMode::Client
+
+    let hdr = (leap << 6) | (version << 3) | mode;
+    let version = (hdr & 0b111000) >> 3;
+    println!("{:08b}", hdr);
+    dbg!(version);
+
     let mut packet = vec![
-        0b00100011, 0, 10, 0, //hdr
+        hdr, 0, 10, 0, //hdr
         0, 0, 0, 0, // root delay
         0, 0, 0, 0, // root dispersion
         0, 0, 0, 0, // refid
@@ -68,17 +77,21 @@ fn key_exchange_packet(
     packet.resize(1024, 0u8);
     let mut cursor = Cursor::new(packet.as_mut_slice());
     cursor.set_position(start_position as u64);
+    assert_eq!(cursor.get_ref()[0], hdr);
 
     let unique_identifier = ExtensionField::UniqueIdentifier(identifier.into());
     unique_identifier
         .serialize(&mut cursor, &cipher, nonce)
         .unwrap();
+    assert_eq!(cursor.get_ref()[0], hdr);
 
     let cookie = ExtensionField::NtsCookie(cookie.into());
     cookie.serialize(&mut cursor, &cipher, nonce).unwrap();
+    assert_eq!(cursor.get_ref()[0], hdr);
 
     let signature = ExtensionField::key_exchange_signature();
     signature.serialize(&mut cursor, &cipher, nonce).unwrap();
+    assert_eq!(cursor.get_ref()[0], hdr);
 
     cursor.get_ref()[..cursor.position() as usize].to_vec()
 }
@@ -88,6 +101,7 @@ fn key_exchange_records() -> [NtsRecord; 3] {
         NtsRecord::NextProtocol {
             protocol_ids: vec![0],
         },
+        // https://www.iana.org/assignments/aead-parameters/aead-parameters.xhtml
         NtsRecord::AeadAlgorithm {
             critical: false,
             algorithm_ids: vec![15],
@@ -133,7 +147,7 @@ async fn main() -> std::io::Result<()> {
         decoder.extend(buffer[..n].iter().copied());
 
         while let Some(record) = decoder.next().unwrap() {
-            match record {
+            match dbg!(record) {
                 NtsRecord::EndOfMessage => break 'outer,
                 NtsRecord::NewCookie { cookie_data } => cookie = Some(cookie_data),
                 NtsRecord::Server { name, .. } => remote = name.to_string(),
@@ -155,8 +169,8 @@ async fn main() -> std::io::Result<()> {
 
     println!("cookie: {:?}", &cookie);
 
-    let mut c2s = [0; 64];
-    let mut s2c = [0; 64];
+    let mut c2s = [0; 32];
+    let mut s2c = [0; 32];
     let label = b"EXPORTER-network-time-security";
 
     stream
@@ -178,7 +192,7 @@ async fn main() -> std::io::Result<()> {
     };
 
     let identifier: Vec<u8> = (0..).take(32).collect();
-    let cipher = Aes256SivAead::new(Key::<Aes256SivAead>::from_slice(c2s.as_slice()));
+    let cipher = Aes128SivAead::new(Key::<Aes128SivAead>::from_slice(c2s.as_slice()));
     let nonce = Nonce::from_slice(b"any unique nonce");
     let packet = key_exchange_packet(&identifier, &cookie, cipher, nonce);
 
@@ -186,6 +200,11 @@ async fn main() -> std::io::Result<()> {
     let mut buf = [0; 1024];
     let (n, _remote, _timestamp) = socket.recv(&mut buf).await?;
     println!("response ({n} bytes): {:?}", &buf[0..n]);
+
+    let cipher = Aes128SivAead::new(Key::<Aes128SivAead>::from_slice(s2c.as_slice()));
+    let _ = dbg!(NtpPacket::deserialize(&buf[..n], &cipher)
+        .unwrap()
+        .is_kiss_ntsn());
 
     Ok(())
 }
