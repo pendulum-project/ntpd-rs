@@ -1,4 +1,7 @@
-use std::io::{Read, Write};
+use std::{
+    io::{Read, Write},
+    ops::ControlFlow,
+};
 
 #[derive(Debug)]
 pub enum WriteError {
@@ -158,6 +161,20 @@ fn read_bytes_exact(reader: &mut impl Read, length: usize) -> std::io::Result<Ve
 }
 
 impl NtsRecord {
+    pub fn client_key_exchange_records() -> [NtsRecord; 3] {
+        [
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            // https://www.iana.org/assignments/aead-parameters/aead-parameters.xhtml
+            NtsRecord::AeadAlgorithm {
+                critical: false,
+                algorithm_ids: vec![15],
+            },
+            NtsRecord::EndOfMessage,
+        ]
+    }
+
     pub fn read<A: Read>(reader: &mut A) -> std::io::Result<NtsRecord> {
         let raw_record_type = read_u16_be(reader)?;
         let critical = raw_record_type & 0x8000 != 0;
@@ -363,6 +380,90 @@ impl NtsRecordDecoder {
             Ok(Some(record))
         } else {
             Ok(None)
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum KeyExchangeError {
+    UnrecognizedCriticalRecord,
+    BadRequest,
+    InternalServerError,
+    UnknownErrorCode(u16),
+    NoValidProtocol,
+    NoValidAlgorithm,
+    NoCookies,
+}
+
+#[derive(Debug)]
+pub struct KeyExchange {
+    pub remote: String,
+    pub port: u16,
+    pub cookies: Vec<Vec<u8>>,
+}
+
+impl KeyExchange {
+    pub fn step_with_record(
+        self,
+        record: NtsRecord,
+    ) -> ControlFlow<Result<Self, KeyExchangeError>, Self> {
+        use ControlFlow::{Break, Continue};
+        use KeyExchangeError::*;
+        use NtsRecord::*;
+
+        let mut state = self;
+
+        match record {
+            EndOfMessage => Break(Ok(state)),
+            NewCookie { cookie_data } => {
+                state.cookies.push(cookie_data);
+                Continue(state)
+            }
+            Server { name, .. } => {
+                state.remote = name;
+                Continue(state)
+            }
+            Port { port, .. } => {
+                state.port = port;
+                Continue(state)
+            }
+            Error { errorcode } => {
+                let error = match errorcode {
+                    0 => UnrecognizedCriticalRecord,
+                    1 => BadRequest,
+                    2 => InternalServerError,
+                    _ => UnknownErrorCode(errorcode),
+                };
+
+                Break(Err(error))
+            }
+            Warning { warningcode } => {
+                eprintln!("Received warning code: {warningcode}");
+
+                Continue(state)
+            }
+            NextProtocol { protocol_ids } => {
+                // NTP4 has protocol id 0, it is the only protocol we support
+                const NTP4: u16 = 0;
+
+                if !protocol_ids.contains(&NTP4) {
+                    Break(Err(NoValidProtocol))
+                } else {
+                    Continue(state)
+                }
+            }
+            AeadAlgorithm { algorithm_ids, .. } => {
+                // for now, AEAD_AES_SIV_CMAC_256 is the only algorithm we support, it has id 15
+                // https://www.iana.org/assignments/aead-parameters/aead-parameters.xhtml
+
+                if !algorithm_ids.contains(&15) {
+                    Break(Err(NoValidAlgorithm))
+                } else {
+                    Continue(state)
+                }
+            }
+
+            Unknown { .. } => Continue(state),
         }
     }
 }
