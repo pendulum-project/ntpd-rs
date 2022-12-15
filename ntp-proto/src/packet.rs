@@ -267,7 +267,7 @@ impl<'a> ExtensionField<'a> {
 
     fn encode_encryped(
         w: &mut Cursor<&mut [u8]>,
-        encrypted_fields: &[ExtensionField],
+        fields_to_encrypt: &[ExtensionField],
         cipher: &Cipher,
         nonce: &Nonce,
     ) -> std::io::Result<()> {
@@ -278,7 +278,7 @@ impl<'a> ExtensionField<'a> {
         let packet_so_far = &w.get_ref()[..current_position as usize];
 
         let mut plaintext = Vec::new();
-        for field in encrypted_fields {
+        for field in fields_to_encrypt {
             field.serialize(&mut plaintext)?;
         }
 
