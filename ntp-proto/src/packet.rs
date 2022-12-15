@@ -123,8 +123,7 @@ pub struct NtpPacket<'a> {
 pub enum ExtensionField<'a> {
     UniqueIdentifier(Cow<'a, [u8]>),
     NtsCookie(Cow<'a, [u8]>),
-    NtsCookiePlaceholder { body_length: u16 },
-    NtsEncryptedField { plaintext: Cow<'a, [u8]> },
+    NtsCookiePlaceholder { cookie_length: u16 },
 
     Unknown { typeid: u16, data: Cow<'a, [u8]> },
 }
@@ -134,13 +133,11 @@ impl<'a> std::fmt::Debug for ExtensionField<'a> {
         match self {
             Self::UniqueIdentifier(arg0) => f.debug_tuple("UniqueIdentifier").field(arg0).finish(),
             Self::NtsCookie(arg0) => f.debug_tuple("NtsCookie").field(arg0).finish(),
-            Self::NtsCookiePlaceholder { body_length } => f
+            Self::NtsCookiePlaceholder {
+                cookie_length: body_length,
+            } => f
                 .debug_struct("NtsCookiePlaceholder")
                 .field("body_length", body_length)
-                .finish(),
-            Self::NtsEncryptedField { plaintext } => f
-                .debug_struct("NtsEncryptedField")
-                .field("plaintext", plaintext)
                 .finish(),
             Self::Unknown { typeid, data } => f
                 .debug_struct("Unknown")
@@ -172,9 +169,10 @@ impl<'a> ExtensionField<'a> {
             },
             UniqueIdentifier(data) => UniqueIdentifier(Cow::Owned(data.into_owned())),
             NtsCookie(data) => NtsCookie(Cow::Owned(data.into_owned())),
-            NtsCookiePlaceholder { body_length } => NtsCookiePlaceholder { body_length },
-            NtsEncryptedField { plaintext } => NtsEncryptedField {
-                plaintext: Cow::Owned(plaintext.into_owned()),
+            NtsCookiePlaceholder {
+                cookie_length: body_length,
+            } => NtsCookiePlaceholder {
+                cookie_length: body_length,
             },
         }
     }
@@ -185,19 +183,10 @@ impl<'a> ExtensionField<'a> {
         match self {
             UniqueIdentifier(identifier) => Self::encode_unique_identifier(w, identifier),
             NtsCookie(cookie) => Self::encode_nts_cookie(w, cookie),
-            NtsCookiePlaceholder { body_length } => {
-                Self::encode_nts_cookie_placeholder(w, *body_length as u16)
-            }
-            NtsEncryptedField { plaintext } => unreachable!(),
+            NtsCookiePlaceholder {
+                cookie_length: body_length,
+            } => Self::encode_nts_cookie_placeholder(w, *body_length as u16),
             Unknown { typeid, data } => unreachable!("we should never encode unknown fields"),
-        }
-    }
-
-    pub fn key_exchange_signature() -> Self {
-        // the real plaintext is the packet up to the start of this extension field
-        // it is inserted implicitly by the encoder
-        ExtensionField::NtsEncryptedField {
-            plaintext: [].as_slice().into(),
         }
     }
 
@@ -355,7 +344,7 @@ impl<'a> ExtensionField<'a> {
                 }
 
                 ExtensionField::NtsCookiePlaceholder {
-                    body_length: value.len() as u16,
+                    cookie_length: value.len() as u16,
                 }
             }
             0x404 => {
@@ -397,9 +386,8 @@ impl<'a> ExtensionField<'a> {
                     return Err(PacketParsingError::IncorrectLength);
                 }
 
-                ExtensionField::NtsEncryptedField {
-                    plaintext: plaintext.into(),
-                }
+                // ExtensionField::NtsEncryptedField { plaintext: plaintext.into(), }
+                todo!()
             }
             _ => ExtensionField::Unknown {
                 typeid,
@@ -428,7 +416,7 @@ impl<'a> ExtensionField<'a> {
             Err(PacketParsingError::IncorrectLength)
         } else {
             Ok(ExtensionField::NtsCookiePlaceholder {
-                body_length: message.len() as u16,
+                cookie_length: message.len() as u16,
             })
         }
     }
@@ -915,10 +903,10 @@ impl<'a> NtpPacket<'a> {
             4 => {
                 let (header, header_size) = NtpHeaderV3V4::deserialize(data)?;
                 let (efdata, header_plus_fields_len) =
-                    dbg!(ExtensionFieldData::deserialize(data, header_size, cipher))?;
+                    ExtensionFieldData::deserialize(data, header_size, cipher)?;
 
                 let mac = if header_plus_fields_len != data.len() {
-                    Some(dbg!(Mac::deserialize(&data[header_plus_fields_len..]))?)
+                    Some(Mac::deserialize(&data[header_plus_fields_len..])?)
                 } else {
                     None
                 };
@@ -991,16 +979,33 @@ impl<'a> NtpPacket<'a> {
         cookie: &'a [u8],
         poll_interval: PollInterval,
     ) -> (Self, RequestIdentifier) {
+        Self::nts_poll_message_request_extra_cookies(identifier, cookie, 0, poll_interval)
+    }
+
+    pub fn nts_poll_message_request_extra_cookies(
+        identifier: &'a [u8],
+        cookie: &'a [u8],
+        request_extra_cookies: u8,
+        poll_interval: PollInterval,
+    ) -> (Self, RequestIdentifier) {
         let (header, id) = NtpHeaderV3V4::poll_message(poll_interval);
+
+        let mut authenticated = vec![
+            ExtensionField::UniqueIdentifier(identifier.into()),
+            ExtensionField::NtsCookie(cookie.into()),
+        ];
+
+        for _ in 0..request_extra_cookies {
+            authenticated.push(ExtensionField::NtsCookiePlaceholder {
+                cookie_length: cookie.len() as u16,
+            });
+        }
 
         (
             NtpPacket {
                 header: NtpHeader::V4(header),
                 efdata: ExtensionFieldData {
-                    authenticated: vec![
-                        ExtensionField::UniqueIdentifier(identifier.into()),
-                        ExtensionField::NtsCookie(cookie.into()),
-                    ],
+                    authenticated,
                     encrypted: vec![],
                     untrusted: vec![],
                 },

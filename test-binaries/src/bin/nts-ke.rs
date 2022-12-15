@@ -147,7 +147,12 @@ async fn main() -> std::io::Result<()> {
     let identifier: Vec<u8> = (0..).take(32).collect();
     let cipher = Aes128SivAead::new(Key::<Aes128SivAead>::from_slice(c2s.as_slice()));
 
-    let (packet, _) = NtpPacket::nts_poll_message(&identifier, &cookie, PollInterval::default());
+    let (packet, _) = NtpPacket::nts_poll_message_request_extra_cookies(
+        &identifier,
+        &cookie,
+        2,
+        PollInterval::default(),
+    );
 
     let mut raw = [0u8; 1024];
     let mut w = Cursor::new(raw.as_mut_slice());
@@ -159,9 +164,7 @@ async fn main() -> std::io::Result<()> {
     println!("response ({n} bytes): {:?}", &buf[0..n]);
 
     let cipher = Aes128SivAead::new(Key::<Aes128SivAead>::from_slice(s2c.as_slice()));
-    let _ = NtpPacket::deserialize(&buf[..n], &cipher)
-        .unwrap()
-        .is_kiss_ntsn();
+    let _ = dbg!(NtpPacket::deserialize(&buf[..n], &cipher).unwrap());
 
     Ok(())
 }
