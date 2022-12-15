@@ -14,7 +14,8 @@ mod time_types;
 #[cfg(feature = "fuzz")]
 pub use algorithm::fuzz_find_interval;
 pub use algorithm::{
-    DefaultTimeSyncController, ObservablePeerTimedata, StandardClockController, TimeSyncController,
+    DefaultTimeSyncController, ObservablePeerTimedata, StandardClockController, StateUpdate,
+    TimeSyncController,
 };
 pub use clock::NtpClock;
 pub use config::{StepThreshold, SystemConfig};
