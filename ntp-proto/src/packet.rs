@@ -16,6 +16,8 @@ pub enum PacketParsingError {
     InvalidVersion(u8),
     IncorrectLength,
     MalformedNtsExtensionFields,
+    MalformedNonce,
+    DecryptError,
 }
 
 impl Display for PacketParsingError {
@@ -26,6 +28,8 @@ impl Display for PacketParsingError {
             }
             Self::IncorrectLength => f.write_str("Incorrect packet length"),
             Self::MalformedNtsExtensionFields => f.write_str("Malformed nts extension fields"),
+            Self::MalformedNonce => f.write_str("Malformed nonce (likely invalid length)"),
+            Self::DecryptError => f.write_str("Failed to decrypt NTS extension fields"),
         }
     }
 }
@@ -127,7 +131,7 @@ pub enum ExtensionField<'a> {
     NtsCookie(Cow<'a, [u8]>),
     NtsCookiePlaceholder { cookie_length: u16 },
 
-    Unknown { typeid: u16, data: Cow<'a, [u8]> },
+    Unknown { type_id: u16, data: Cow<'a, [u8]> },
 }
 
 impl<'a> std::fmt::Debug for ExtensionField<'a> {
@@ -141,7 +145,10 @@ impl<'a> std::fmt::Debug for ExtensionField<'a> {
                 .debug_struct("NtsCookiePlaceholder")
                 .field("body_length", body_length)
                 .finish(),
-            Self::Unknown { typeid, data } => f
+            Self::Unknown {
+                type_id: typeid,
+                data,
+            } => f
                 .debug_struct("Unknown")
                 .field("typeid", typeid)
                 .field("length", &data.len())
@@ -163,8 +170,11 @@ impl<'a> ExtensionField<'a> {
         use ExtensionField::*;
 
         match self {
-            Unknown { typeid, data } => Unknown {
-                typeid,
+            Unknown {
+                type_id: typeid,
+                data,
+            } => Unknown {
+                type_id: typeid,
                 data: Cow::Owned(data.into_owned()),
             },
             UniqueIdentifier(data) => UniqueIdentifier(Cow::Owned(data.into_owned())),
@@ -186,7 +196,7 @@ impl<'a> ExtensionField<'a> {
             NtsCookiePlaceholder {
                 cookie_length: body_length,
             } => Self::encode_nts_cookie_placeholder(w, *body_length as u16),
-            Unknown { .. } => unreachable!("we should never encode unknown fields"),
+            Unknown { type_id, data } => Self::encode_unknown(w, *type_id, data),
         }
     }
 
@@ -233,6 +243,24 @@ impl<'a> ExtensionField<'a> {
             w.write_all(&zeros[..n])?;
             remaining -= n;
         }
+
+        Ok(())
+    }
+
+    fn encode_unknown<W: std::io::Write>(
+        w: &mut W,
+        type_id: u16,
+        data: &[u8],
+    ) -> std::io::Result<()> {
+        let padding = [0; 4];
+
+        w.write_all(&type_id.to_be_bytes())?;
+        w.write_all(&(4 + data.len() as u16).to_be_bytes())?;
+
+        w.write_all(data)?;
+
+        let padding_bytes = next_multiple_of(data.len(), 4) - data.len();
+        w.write_all(&padding[..padding_bytes])?;
 
         Ok(())
     }
@@ -308,9 +336,9 @@ impl<'a> ExtensionField<'a> {
         }
     }
 
-    fn decode_unknown(message: &'a [u8]) -> Result<Self, PacketParsingError> {
+    fn decode_unknown(type_id: u16, message: &'a [u8]) -> Result<Self, PacketParsingError> {
         Ok(ExtensionField::Unknown {
-            typeid: 0, // TODO is it actually required that we keep this around?
+            type_id,
             data: Cow::Borrowed(message),
         })
     }
@@ -350,6 +378,10 @@ impl<'a> UnparsedEncryptedField<'a> {
         let ciphertext = value
             .get(ciphertext_start..ciphertext_start + ciphertext_length)
             .ok_or(IncorrectLength)?;
+
+        if nonce_bytes.len() != 16 {
+            return Err(PacketParsingError::MalformedNonce);
+        }
 
         Ok(Self {
             nonce: Nonce::from_slice(nonce_bytes),
@@ -404,11 +436,11 @@ impl<'a> UnparsedExtensionField<'a> {
 #[derive(Debug)]
 #[repr(u16)]
 enum ExtensionFieldTypeId {
-    UniqueIdentifier = 0x104,
-    NtsCookie = 0x204,
-    NtsCookiePlaceholder = 0x304,
-    NtsEncryptedField = 0x404,
-    Unknown,
+    UniqueIdentifier,
+    NtsCookie,
+    NtsCookiePlaceholder,
+    NtsEncryptedField,
+    Unknown { type_id: u16 },
 }
 
 impl ExtensionFieldTypeId {
@@ -418,7 +450,7 @@ impl ExtensionFieldTypeId {
             0x204 => Self::NtsCookie,
             0x304 => Self::NtsCookiePlaceholder,
             0x404 => Self::NtsEncryptedField,
-            _ => Self::Unknown,
+            _ => Self::Unknown { type_id },
         }
     }
 }
@@ -472,7 +504,7 @@ impl<'a> ExtensionFieldData<'a> {
             TypeId::UniqueIdentifier => EF::decode_unique_identifier(message)?,
             TypeId::NtsCookie => EF::decode_nts_cookie(message)?,
             TypeId::NtsCookiePlaceholder => EF::decode_nts_cookie_placeholder(message)?,
-            TypeId::Unknown => EF::decode_unknown(message)?,
+            TypeId::Unknown { type_id } => EF::decode_unknown(type_id, message)?,
         };
 
         Ok(Some(field))
@@ -516,7 +548,7 @@ impl<'a> ExtensionFieldData<'a> {
 
             let plaintext = match cipher.decrypt(encrypted.nonce, payload) {
                 Ok(plain) => plain,
-                Err(e) => panic!("failed to decrypt: {e:?}"),
+                Err(_) => return Err(PacketParsingError::DecryptError),
             };
 
             // the message has been authenticated
@@ -827,9 +859,10 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(_) => { /* v3 does not support NTS, so we ignore extension fields */ }
             NtpHeader::V4(_) => {
-                eprintln!("not actually encoding any extension fields");
+                use aes_siv::{aead::KeyInit, Key};
 
-                // self.efdata.serialize(w, cipher, nonce)?,
+                let cipher = Cipher::new(Key::<Cipher>::from_slice([0; 32].as_slice()));
+                self.efdata.serialize(w, &cipher)?;
             }
         }
 

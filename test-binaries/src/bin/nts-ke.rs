@@ -172,3 +172,27 @@ async fn main() -> std::io::Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn foobar() {
+        let data = [
+            33, 255, 255, 1, 0, 0, 0, 0, 0, 0, 128, 0, 255, 255, 255, 148, 1, 76, 0, 52, 0, 52, 1,
+            52, 16, 255, 64, 1, 0, 255, 255, 255, 255, 10, 1, 0, 0, 0, 0, 0, 52, 0, 0, 0, 253, 255,
+            255, 255, 4, 4, 0, 28, 0, 16, 0, 2, 0, 246, 0, 0, 1, 0, 251, 0, 0, 128, 16, 240, 239,
+            7, 33, 16, 16, 16, 16, 128,
+        ];
+
+        let packet = NtpPacket::deserialize_without_decryption(&data[..]).unwrap();
+        dbg!(&packet);
+        let mut buf = [0u8; 1024];
+        let mut w = Cursor::new(buf.as_mut_slice());
+        packet.serialize_without_encryption(&mut w).unwrap();
+        let used = w.position() as usize;
+
+        debug_assert_eq!(&data[48..], &buf[48..used]);
+    }
+}
