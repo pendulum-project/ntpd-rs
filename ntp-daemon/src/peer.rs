@@ -569,6 +569,18 @@ mod tests {
         handle.abort();
     }
 
+    fn serialize_packet_unencryped(send_packet: &NtpPacket) -> [u8; 48] {
+        let mut buf = [0; 48];
+        let mut cursor = Cursor::new(buf.as_mut_slice());
+        send_packet
+            .serialize_without_encryption(&mut cursor)
+            .unwrap();
+
+        assert_eq!(cursor.position(), 48);
+
+        buf
+    }
+
     #[tokio::test]
     async fn test_timeroundtrip() {
         // Note: Ports must be unique among tests to deal with parallelism
@@ -603,14 +615,8 @@ mod tests {
         let rec_packet = NtpPacket::deserialize_without_decryption(&buf).unwrap();
         let send_packet = NtpPacket::timestamp_response(&system, rec_packet, timestamp, &clock);
 
-        let mut buf = [0; 48];
-        let mut cursor = Cursor::new(buf.as_mut_slice());
-        send_packet
-            .serialize_without_encryption(&mut cursor)
-            .unwrap();
-
-        let pdata = &cursor.get_ref()[..cursor.position() as usize];
-        socket.send(pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&send_packet);
+        socket.send(&serialized).await.unwrap();
 
         let msg = msg_recv.recv().await.unwrap();
         assert!(matches!(msg, MsgForSystem::NewMeasurement(_, _, _, _)));
@@ -643,14 +649,8 @@ mod tests {
         let rec_packet = NtpPacket::deserialize_without_decryption(&buf).unwrap();
         let send_packet = NtpPacket::deny_response(rec_packet);
 
-        let mut buf = [0; 48];
-        let mut cursor = Cursor::new(buf.as_mut_slice());
-        send_packet
-            .serialize_without_encryption(&mut cursor)
-            .unwrap();
-
-        let pdata = &cursor.get_ref()[..cursor.position() as usize];
-        socket.send(pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&send_packet);
+        socket.send(&serialized).await.unwrap();
 
         let msg = msg_recv.recv().await.unwrap();
         assert!(matches!(msg, MsgForSystem::MustDemobilize(_)));

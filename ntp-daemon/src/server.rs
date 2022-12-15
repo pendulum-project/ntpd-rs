@@ -450,6 +450,18 @@ mod tests {
         }
     }
 
+    fn serialize_packet_unencryped(send_packet: &NtpPacket) -> [u8; 48] {
+        let mut buf = [0; 48];
+        let mut cursor = Cursor::new(buf.as_mut_slice());
+        send_packet
+            .serialize_without_encryption(&mut cursor)
+            .unwrap();
+
+        assert_eq!(cursor.position(), 48);
+
+        buf
+    }
+
     #[tokio::test]
     async fn test_server_filter_allow_ok() {
         let config = ServerConfig {
@@ -480,12 +492,8 @@ mod tests {
         .unwrap();
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
 
-        let mut buf = [0; 48];
-        let mut cursor = Cursor::new(buf.as_mut_slice());
-        packet.serialize_without_encryption(&mut cursor).unwrap();
-
-        let pdata = &cursor.get_ref()[..cursor.position() as usize];
-        socket.send(pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&packet);
+        socket.send(&serialized).await.unwrap();
 
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
@@ -529,12 +537,8 @@ mod tests {
         .unwrap();
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
 
-        let mut buf = [0; 48];
-        let mut cursor = Cursor::new(buf.as_mut_slice());
-        packet.serialize_without_encryption(&mut cursor).unwrap();
-
-        let pdata = &cursor.get_ref()[..cursor.position() as usize];
-        socket.send(pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&packet);
+        socket.send(&serialized).await.unwrap();
 
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
@@ -579,12 +583,8 @@ mod tests {
         .unwrap();
         let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
 
-        let mut buf = [0; 48];
-        let mut cursor = Cursor::new(buf.as_mut_slice());
-        packet.serialize_without_encryption(&mut cursor).unwrap();
-
-        let pdata = &cursor.get_ref()[..cursor.position() as usize];
-        socket.send(pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&packet);
+        socket.send(&serialized).await.unwrap();
 
         let mut buf = [0; 48];
         let res = tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf)).await;
@@ -623,12 +623,8 @@ mod tests {
         .unwrap();
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
 
-        let mut buf = [0; 48];
-        let mut cursor = Cursor::new(buf.as_mut_slice());
-        packet.serialize_without_encryption(&mut cursor).unwrap();
-
-        let pdata = &cursor.get_ref()[..cursor.position() as usize];
-        socket.send(pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&packet);
+        socket.send(&serialized).await.unwrap();
 
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
@@ -671,12 +667,10 @@ mod tests {
         .await
         .unwrap();
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let mut buf = [0; 48];
-        let mut cursor = Cursor::new(buf.as_mut_slice());
-        packet.serialize_without_encryption(&mut cursor).unwrap();
 
-        let pdata = &cursor.get_ref()[..cursor.position() as usize];
-        socket.send(pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&packet);
+        socket.send(&serialized).await.unwrap();
+
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
             .await
@@ -719,12 +713,10 @@ mod tests {
         .await
         .unwrap();
         let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let mut buf = [0; 48];
-        let mut cursor = Cursor::new(buf.as_mut_slice());
-        packet.serialize_without_encryption(&mut cursor).unwrap();
 
-        let pdata = &cursor.get_ref()[..cursor.position() as usize];
-        socket.send(pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&packet);
+        socket.send(&serialized).await.unwrap();
+
         let mut buf = [0; 48];
         let res = tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf)).await;
         assert!(res.is_err());
@@ -762,12 +754,10 @@ mod tests {
         .unwrap();
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let mut buf = [0; 48];
-        let mut cursor = Cursor::new(buf.as_mut_slice());
-        packet.serialize_without_encryption(&mut cursor).unwrap();
 
-        let pdata = &cursor.get_ref()[..cursor.position() as usize];
-        socket.send(pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&packet);
+        socket.send(&serialized).await.unwrap();
+
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
             .await
@@ -780,12 +770,10 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(120)).await;
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let mut buf = [0; 48];
-        let mut cursor = Cursor::new(buf.as_mut_slice());
-        packet.serialize_without_encryption(&mut cursor).unwrap();
 
-        let pdata = &cursor.get_ref()[..cursor.position() as usize];
-        socket.send(pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&packet);
+        socket.send(&serialized).await.unwrap();
+
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
             .await
@@ -796,12 +784,10 @@ mod tests {
         assert!(packet.valid_server_response(id));
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let mut buf = [0; 48];
-        let mut cursor = Cursor::new(buf.as_mut_slice());
-        packet.serialize_without_encryption(&mut cursor).unwrap();
 
-        let pdata = &cursor.get_ref()[..cursor.position() as usize];
-        socket.send(pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&packet);
+        socket.send(&serialized).await.unwrap();
+
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
             .await
@@ -845,12 +831,10 @@ mod tests {
         .unwrap();
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let mut buf = [0; 48];
-        let mut cursor = Cursor::new(buf.as_mut_slice());
-        packet.serialize_without_encryption(&mut cursor).unwrap();
 
-        let pdata = &cursor.get_ref()[..cursor.position() as usize];
-        socket.send(pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&packet);
+        socket.send(&serialized).await.unwrap();
+
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
             .await
