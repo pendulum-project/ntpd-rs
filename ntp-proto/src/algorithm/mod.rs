@@ -18,6 +18,24 @@ pub struct ObservablePeerTimedata {
     pub last_update: NtpTimestamp,
 }
 
+#[derive(Debug, Clone)]
+pub struct StateUpdate<PeerID: Eq + Copy + Debug> {
+    pub timesnapshot: Option<TimeSnapshot>,
+    pub used_peers: Option<Vec<PeerID>>,
+}
+
+// Note: this default implementation is neccessary since the
+// derive only works if PeerID is Default (which it isn't
+// neccessarily)
+impl<PeerID: Eq + Copy + Debug> Default for StateUpdate<PeerID> {
+    fn default() -> Self {
+        Self {
+            timesnapshot: None,
+            used_peers: None,
+        }
+    }
+}
+
 pub trait TimeSyncController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> {
     type AlgorithmConfig: Debug + Copy + DeserializeOwned;
 
@@ -40,7 +58,7 @@ pub trait TimeSyncController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> {
         id: PeerID,
         measurement: Measurement,
         packet: NtpPacket<'static>,
-    ) -> Option<(Vec<PeerID>, TimeSnapshot)>;
+    ) -> StateUpdate<PeerID>;
     /// Get a snapshot of the timekeeping state of a peer.
     fn peer_snapshot(&self, id: PeerID) -> Option<ObservablePeerTimedata>;
 }

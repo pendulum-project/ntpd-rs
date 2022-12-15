@@ -4,7 +4,7 @@ use tracing::{info, instrument};
 
 use crate::{
     Measurement, NtpClock, NtpDuration, NtpLeapIndicator, NtpPacket, NtpTimestamp,
-    ObservablePeerTimedata, SystemConfig, TimeSnapshot, TimeSyncController,
+    ObservablePeerTimedata, StateUpdate, SystemConfig, TimeSnapshot, TimeSyncController,
 };
 
 use self::{
@@ -160,7 +160,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
         }) == Some(true)
     }
 
-    fn update_clock(&mut self, time: NtpTimestamp) -> Option<(Vec<PeerID>, crate::TimeSnapshot)> {
+    fn update_clock(&mut self, time: NtpTimestamp) -> StateUpdate<PeerID> {
         // ensure all filters represent the same (current) time
         if self
             .peers
@@ -168,7 +168,10 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
             .filter_map(|(_, (state, _))| state.get_filtertime())
             .any(|peertime| time - peertime < NtpDuration::ZERO)
         {
-            return None;
+            return StateUpdate {
+                used_peers: None,
+                timesnapshot: Some(self.timedata),
+            };
         }
         for (_, (state, _)) in self.peers.iter_mut() {
             state.progress_filtertime(time);
@@ -223,10 +226,16 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
                 self.clock.status_update(leap).expect("Cannot update clock");
             }
 
-            Some((combined.peers, self.timedata))
+            StateUpdate {
+                used_peers: Some(combined.peers),
+                timesnapshot: Some(self.timedata),
+            }
         } else {
             info!("No concensus cluster found");
-            None
+            StateUpdate {
+                used_peers: None,
+                timesnapshot: Some(self.timedata),
+            }
         }
     }
 
@@ -315,13 +324,16 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
         id: PeerID,
         measurement: Measurement,
         packet: NtpPacket<'static>,
-    ) -> Option<(Vec<PeerID>, crate::TimeSnapshot)> {
+    ) -> StateUpdate<PeerID> {
         let should_update_clock = self.update_peer(id, measurement, packet);
         self.update_desired_poll();
         if should_update_clock {
             self.update_clock(measurement.localtime)
         } else {
-            None
+            StateUpdate {
+                used_peers: None,
+                timesnapshot: Some(self.timedata),
+            }
         }
     }
 
