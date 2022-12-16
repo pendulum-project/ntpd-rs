@@ -25,6 +25,13 @@ pub struct StepThreshold {
     pub backward: Option<NtpDuration>,
 }
 
+impl StepThreshold {
+    pub fn is_within(&self, duration: NtpDuration) -> bool {
+        self.forward.map(|v| duration < v).unwrap_or(true)
+            && self.backward.map(|v| duration > -v).unwrap_or(true)
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 struct ThresholdPart(Option<NtpDuration>);
 

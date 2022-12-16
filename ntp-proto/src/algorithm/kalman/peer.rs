@@ -272,12 +272,13 @@ impl PeerFilter {
         self.state = self.state - Vector::new(steer, 0.0);
         self.last_measurement.offset -= NtpDuration::from_seconds(steer);
         self.last_measurement.localtime += NtpDuration::from_seconds(steer);
+        self.filter_time += NtpDuration::from_seconds(steer);
     }
 
     fn process_frequency_steering(&mut self, time: NtpTimestamp, steer: f64) {
         self.progress_filtertime(time);
         self.state = self.state - Vector::new(0.0, steer);
-        self.last_measurement.offset -= NtpDuration::from_seconds(
+        self.last_measurement.offset += NtpDuration::from_seconds(
             steer * (time - self.last_measurement.localtime).to_seconds(),
         );
     }
@@ -444,5 +445,42 @@ mod tests {
 
         assert!((peer.state.entry(0) - 20e-3) < 1e-7);
         assert!((peer.state.entry(1) - 20e-6) < 1e-7);
+    }
+
+    #[test]
+    fn test_freq_steering() {
+        let base = NtpTimestamp::from_fixed_int(0);
+        let basei = NtpInstant::now();
+        let mut peer = PeerFilter {
+            state: Vector::new(0.0, 0.),
+            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            clock_wander: 1e-8,
+            rtt_stats: RttBuf {
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                next_idx: 0,
+            },
+            precision_score: 0,
+            poll_score: 0,
+            desired_poll_interval: PollIntervalLimits::default().min,
+            last_measurement: Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(0.0),
+                localtime: base,
+                monotime: basei,
+            },
+            last_packet: NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+            prev_was_outlier: false,
+            last_iter: base,
+            filter_time: base,
+        };
+
+        peer.process_frequency_steering(base + NtpDuration::from_seconds(5.0), 200e-6);
+        assert!((peer.state.entry(1) - -200e-6).abs() < 1e-10);
+        assert!(peer.state.entry(0).abs() < 1e-8);
+        assert!((peer.last_measurement.offset.to_seconds() - 1e-3).abs() < 1e-8);
+        peer.process_frequency_steering(base + NtpDuration::from_seconds(10.0), -200e-6);
+        assert!(peer.state.entry(1).abs() < 1e-10);
+        assert!((peer.state.entry(0) - -1e-3).abs() < 1e-8);
+        assert!((peer.last_measurement.offset.to_seconds() - -1e-3).abs() < 1e-8);
     }
 }

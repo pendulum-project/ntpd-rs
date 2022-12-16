@@ -134,6 +134,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> StandardClockController<C, P
             StateUpdate {
                 used_peers: Some(vec![clock_select.system_peer_snapshot.0]),
                 timesnapshot: Some(self.timestate),
+                next_update: None,
             }
         } else {
             StateUpdate::default()
@@ -211,6 +212,11 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
         }
 
         self.recalculate_clock(now)
+    }
+
+    fn time_update(&mut self) -> StateUpdate<PeerID> {
+        // Not needed for standard algorithm
+        StateUpdate::default()
     }
 
     fn peer_snapshot(&self, id: PeerID) -> Option<ObservablePeerTimedata> {

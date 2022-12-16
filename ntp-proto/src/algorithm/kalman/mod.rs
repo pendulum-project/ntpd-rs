@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Debug, hash::Hash};
 
-use tracing::{info, instrument};
+use tracing::{error, info, instrument};
 
 use crate::{
     Measurement, NtpClock, NtpDuration, NtpLeapIndicator, NtpPacket, NtpTimestamp,
@@ -138,6 +138,8 @@ pub struct KalmanClockController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> 
     ignore_before: NtpTimestamp,
     freq_offset: f64,
     timedata: TimeSnapshot,
+    desired_freq: f64,
+    in_startup: bool,
 }
 
 impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, PeerID> {
@@ -171,6 +173,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
             return StateUpdate {
                 used_peers: None,
                 timesnapshot: Some(self.timedata),
+                next_update: None,
             };
         }
         for (_, (state, _)) in self.peers.iter_mut() {
@@ -201,18 +204,31 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
                 combined.uncertainty.entry(1, 1).sqrt() * 1e6
             );
 
-            if combined.estimate.entry(1).abs()
-                > combined.uncertainty.entry(1, 1).sqrt()
-                    * self.algo_config.steer_frequency_threshold
-            {
-                self.steer_frequency(combined.estimate.entry(1) * 0.5);
+            let freq_delta = combined.estimate.entry(1) - self.desired_freq;
+            let freq_uncertainty = combined.uncertainty.entry(1, 1).sqrt();
+            if freq_delta.abs() > freq_uncertainty * self.algo_config.steer_frequency_threshold {
+                self.steer_frequency(
+                    freq_delta
+                        - freq_uncertainty
+                            * self.algo_config.steer_frequency_leftover
+                            * freq_delta.signum(),
+                );
             }
 
-            if combined.estimate.entry(0).abs()
-                > combined.uncertainty.entry(0, 0).sqrt() * self.algo_config.steer_offset_threshold
+            let offset_delta = combined.estimate.entry(0);
+            let offset_uncertainty = combined.uncertainty.entry(0, 0).sqrt();
+            let next_update = if self.desired_freq == 0.0
+                && offset_delta.abs() > offset_uncertainty * self.algo_config.steer_offset_threshold
             {
-                self.steer_offset(combined.estimate.entry(0));
-            }
+                self.steer_offset(
+                    offset_delta
+                        - offset_uncertainty
+                            * self.algo_config.steer_offset_leftover
+                            * offset_delta.signum(),
+                )
+            } else {
+                None
+            };
 
             // Unwrap is ok since selection will always be non-empty
             self.timedata.root_delay = combined.delay;
@@ -226,30 +242,76 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
                 self.clock.status_update(leap).expect("Cannot update clock");
             }
 
+            // After a succesfull measurement we are out of startup.
+            self.in_startup = false;
+
             StateUpdate {
                 used_peers: Some(combined.peers),
                 timesnapshot: Some(self.timedata),
+                next_update,
             }
         } else {
             info!("No concensus cluster found");
             StateUpdate {
                 used_peers: None,
                 timesnapshot: Some(self.timedata),
+                next_update: None,
             }
         }
     }
 
-    fn steer_offset(&mut self, change: f64) {
-        self.clock
-            .step_clock(NtpDuration::from_seconds(change))
-            .unwrap();
-        for (state, _) in self.peers.values_mut() {
-            state.process_offset_steering(change)
+    fn check_offset_steer(&mut self, change: f64) {
+        let change = NtpDuration::from_seconds(change);
+        if self.in_startup {
+            if !self.config.startup_panic_threshold.is_within(change) {
+                error!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate.");
+                std::process::exit(exitcode::SOFTWARE);
+            }
+        } else {
+            self.timedata.accumulated_steps += change;
+            if !self.config.panic_threshold.is_within(change)
+                || !self
+                    .config
+                    .accumulated_threshold
+                    .map(|v| change.abs() < v)
+                    .unwrap_or(true)
+            {
+                error!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate.");
+                std::process::exit(exitcode::SOFTWARE);
+            }
         }
-        info!("Changed offset by {}ms", change * 1e3);
     }
 
-    fn steer_frequency(&mut self, change: f64) {
+    fn steer_offset(&mut self, change: f64) -> Option<NtpTimestamp> {
+        self.check_offset_steer(change);
+        if change.abs() > self.algo_config.jump_threshold {
+            // jump
+            self.clock
+                .step_clock(NtpDuration::from_seconds(change))
+                .unwrap();
+            for (state, _) in self.peers.values_mut() {
+                state.process_offset_steering(change)
+            }
+            info!("Jumped offset by {}ms", change * 1e3);
+            None
+        } else {
+            // start slew
+            let freq = self
+                .algo_config
+                .slew_max_frequency_offset
+                .min(change.abs() / self.algo_config.slew_min_duration);
+            self.desired_freq = -freq * change.signum();
+            let duration = NtpDuration::from_seconds(change.abs() / freq);
+            info!(
+                "Slewing by {}ms over {}s",
+                change * 1e3,
+                duration.to_seconds()
+            );
+            Some(self.steer_frequency(-self.desired_freq) + duration)
+        }
+    }
+
+    fn steer_frequency(&mut self, change: f64) -> NtpTimestamp {
         self.freq_offset = (1.0 + self.freq_offset) * (1.0 + change) - 1.0;
         self.clock.set_frequency(self.freq_offset).unwrap();
         let freq_update = self.clock.now().unwrap();
@@ -257,9 +319,11 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
             state.process_frequency_steering(freq_update, change)
         }
         info!(
-            "Changed frequency, current steer {}ppm",
-            self.freq_offset * 1e6
+            "Changed frequency, current steer {}ppm, desired freq {}ppm",
+            self.freq_offset * 1e6,
+            self.desired_freq * 1e6,
         );
+        freq_update
     }
 
     fn update_desired_poll(&mut self) {
@@ -296,7 +360,9 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
             config,
             algo_config,
             freq_offset: 0.0,
+            desired_freq: 0.0,
             timedata: TimeSnapshot::default(),
+            in_startup: false,
         }
     }
 
@@ -333,8 +399,16 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
             StateUpdate {
                 used_peers: None,
                 timesnapshot: Some(self.timedata),
+                next_update: None,
             }
         }
+    }
+
+    fn time_update(&mut self) -> StateUpdate<PeerID> {
+        // End slew
+        self.steer_frequency(self.desired_freq);
+        self.desired_freq = 0.0;
+        StateUpdate::default()
     }
 
     fn peer_snapshot(&self, id: PeerID) -> Option<ObservablePeerTimedata> {
