@@ -69,14 +69,28 @@ pub struct AlgorithmConfig {
     /// the offset be before we correct
     #[serde(default = "default_steer_offset_threshold")]
     pub steer_offset_threshold: f64,
+    /// How many standard deviations do we leave after offset
+    /// correction?
+    #[serde(default = "default_steer_offset_leftover")]
+    pub steer_offset_leftover: f64,
     /// How far from 0 (in multiples of the uncertainty) should
     /// the frequency estimate be before we correct
     #[serde(default = "default_steer_frequency_threshold")]
     pub steer_frequency_threshold: f64,
+    /// How many standard deviations do we leave after frequency
+    /// correction?
+    #[serde(default = "default_steer_frequency_leftover")]
+    pub steer_frequency_leftover: f64,
     /// From what offset should we jump the clock instead of
     /// trying to adjust gradually?
     #[serde(default = "default_jump_threshold")]
     pub jump_threshold: f64,
+    /// What is the maximum frequency offset during a slew (in s/s)
+    #[serde(default = "default_slew_max_frequency_offset")]
+    pub slew_max_frequency_offset: f64,
+    /// What is the minimum duration of a slew (in s)
+    #[serde(default = "default_slew_min_duration")]
+    pub slew_min_duration: f64,
 }
 
 impl Default for AlgorithmConfig {
@@ -102,8 +116,12 @@ impl Default for AlgorithmConfig {
             range_delay_weight: default_range_delay_weight(),
 
             steer_offset_threshold: default_steer_offset_threshold(),
+            steer_offset_leftover: default_steer_offset_leftover(),
             steer_frequency_threshold: default_steer_frequency_threshold(),
+            steer_frequency_leftover: default_steer_frequency_leftover(),
             jump_threshold: default_jump_threshold(),
+            slew_max_frequency_offset: default_slew_max_frequency_offset(),
+            slew_min_duration: default_slew_min_duration(),
         }
     }
 }
@@ -168,10 +186,26 @@ fn default_steer_offset_threshold() -> f64 {
     2.0
 }
 
+fn default_steer_offset_leftover() -> f64 {
+    1.0
+}
+
 fn default_steer_frequency_threshold() -> f64 {
     2.0
 }
 
+fn default_steer_frequency_leftover() -> f64 {
+    1.0
+}
+
 fn default_jump_threshold() -> f64 {
     0.010
+}
+
+fn default_slew_max_frequency_offset() -> f64 {
+    200e-6
+}
+
+fn default_slew_min_duration() -> f64 {
+    1.0
 }
