@@ -91,6 +91,12 @@ pub struct AlgorithmConfig {
     /// What is the minimum duration of a slew (in s)
     #[serde(default = "default_slew_min_duration")]
     pub slew_min_duration: f64,
+
+    /// Ignore a servers advertised dispersion when synchronizing.
+    /// Can improve synchronization quality with servers reporting
+    /// overly conservative root dispersion.
+    #[serde(default)]
+    pub ignore_server_dispersion: bool,
 }
 
 impl Default for AlgorithmConfig {
@@ -122,6 +128,8 @@ impl Default for AlgorithmConfig {
             jump_threshold: default_jump_threshold(),
             slew_max_frequency_offset: default_slew_max_frequency_offset(),
             slew_min_duration: default_slew_min_duration(),
+
+            ignore_server_dispersion: false,
         }
     }
 }
