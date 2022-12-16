@@ -90,18 +90,28 @@ fn vote_leap<Index: Copy>(selection: &[PeerSnapshot<Index>]) -> Option<NtpLeapIn
     }
 }
 
-fn combine<Index: Copy>(selection: &[PeerSnapshot<Index>]) -> Option<Combine<Index>> {
+fn combine<Index: Copy>(
+    selection: &[PeerSnapshot<Index>],
+    algo_config: &AlgorithmConfig,
+) -> Option<Combine<Index>> {
     if let Some(first) = selection.first() {
         let mut estimate = first.state;
-        let mut uncertainty =
-            first.uncertainty + Matrix::new(sqr(first.peer_uncertainty.to_seconds()), 0., 0., 0.);
+        let mut uncertainty = if algo_config.ignore_server_dispersion {
+            first.uncertainty
+        } else {
+            first.uncertainty + Matrix::new(sqr(first.peer_uncertainty.to_seconds()), 0., 0., 0.)
+        };
 
         let mut used_peers = vec![(first.index, uncertainty.determinant())];
 
         for snapshot in selection.iter().skip(1) {
             let peer_estimate = snapshot.state;
-            let peer_uncertainty = snapshot.uncertainty
-                + Matrix::new(sqr(snapshot.peer_uncertainty.to_seconds()), 0., 0., 0.);
+            let peer_uncertainty = if algo_config.ignore_server_dispersion {
+                snapshot.uncertainty
+            } else {
+                snapshot.uncertainty
+                    + Matrix::new(sqr(snapshot.peer_uncertainty.to_seconds()), 0., 0., 0.)
+            };
 
             used_peers.push((snapshot.index, peer_uncertainty.determinant()));
 
@@ -195,7 +205,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
                 .collect(),
         );
 
-        if let Some(combined) = combine(&selection) {
+        if let Some(combined) = combine(&selection, &self.algo_config) {
             info!(
                 "Offset: {}+-{}ms, frequency: {}+-{}ppm",
                 combined.estimate.entry(0) * 1e3,
