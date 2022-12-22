@@ -8,11 +8,13 @@ use crate::{
 };
 
 use self::{
+    combiner::combine,
     config::AlgorithmConfig,
     matrix::{Matrix, Vector},
     peer::PeerState,
 };
 
+mod combiner;
 mod config;
 mod matrix;
 mod peer;
@@ -54,88 +56,6 @@ impl<Index: Copy> PeerSnapshot<Index> {
             remote_uncertainty: self.peer_uncertainty,
             last_update: self.last_update,
         }
-    }
-}
-
-struct Combine<Index: Copy> {
-    estimate: Vector,
-    uncertainty: Matrix,
-    peers: Vec<Index>,
-    delay: NtpDuration,
-    leap_indicator: Option<NtpLeapIndicator>,
-}
-
-fn vote_leap<Index: Copy>(selection: &[PeerSnapshot<Index>]) -> Option<NtpLeapIndicator> {
-    let mut votes_59 = 0;
-    let mut votes_61 = 0;
-    let mut votes_none = 0;
-    for snapshot in selection {
-        match snapshot.leap_indicator {
-            NtpLeapIndicator::NoWarning => votes_none += 1,
-            NtpLeapIndicator::Leap61 => votes_61 += 1,
-            NtpLeapIndicator::Leap59 => votes_59 += 1,
-            NtpLeapIndicator::Unknown => {
-                panic!("Unsynchronized peer selected for synchronization!")
-            }
-        }
-    }
-    if votes_none * 2 > selection.len() {
-        Some(NtpLeapIndicator::NoWarning)
-    } else if votes_59 * 2 > selection.len() {
-        Some(NtpLeapIndicator::Leap59)
-    } else if votes_61 * 2 > selection.len() {
-        Some(NtpLeapIndicator::Leap61)
-    } else {
-        None
-    }
-}
-
-fn combine<Index: Copy>(
-    selection: &[PeerSnapshot<Index>],
-    algo_config: &AlgorithmConfig,
-) -> Option<Combine<Index>> {
-    if let Some(first) = selection.first() {
-        let mut estimate = first.state;
-        let mut uncertainty = if algo_config.ignore_server_dispersion {
-            first.uncertainty
-        } else {
-            first.uncertainty + Matrix::new(sqr(first.peer_uncertainty.to_seconds()), 0., 0., 0.)
-        };
-
-        let mut used_peers = vec![(first.index, uncertainty.determinant())];
-
-        for snapshot in selection.iter().skip(1) {
-            let peer_estimate = snapshot.state;
-            let peer_uncertainty = if algo_config.ignore_server_dispersion {
-                snapshot.uncertainty
-            } else {
-                snapshot.uncertainty
-                    + Matrix::new(sqr(snapshot.peer_uncertainty.to_seconds()), 0., 0., 0.)
-            };
-
-            used_peers.push((snapshot.index, peer_uncertainty.determinant()));
-
-            // Merge measurements
-            let mixer = (uncertainty + peer_uncertainty).inverse();
-            estimate = estimate + uncertainty * mixer * (peer_estimate - estimate);
-            uncertainty = uncertainty * mixer * peer_uncertainty;
-        }
-
-        used_peers.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-
-        Some(Combine {
-            estimate,
-            uncertainty,
-            peers: used_peers.iter().map(|v| v.0).collect(),
-            delay: selection
-                .iter()
-                .map(|v| NtpDuration::from_seconds(v.delay) + v.peer_delay)
-                .min()
-                .unwrap_or(NtpDuration::from_seconds(first.delay) + first.peer_delay),
-            leap_indicator: vote_leap(selection),
-        })
-    } else {
-        None
     }
 }
 
