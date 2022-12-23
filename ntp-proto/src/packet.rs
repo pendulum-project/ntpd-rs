@@ -403,7 +403,11 @@ impl<'a> RawEncryptedField<'a> {
         })
     }
 
-    fn decrypt(&self, cipher: &Cipher, aad: &[u8]) -> Result<Vec<ExtensionField<'a>>, PacketParsingError> {
+    fn decrypt(
+        &self,
+        cipher: &Cipher,
+        aad: &[u8],
+    ) -> Result<Vec<ExtensionField<'a>>, PacketParsingError> {
         let payload = Payload {
             msg: self.ciphertext,
             aad,
@@ -470,7 +474,10 @@ impl<'a> RawExtensionField<'a> {
         })
     }
 
-    pub fn deserialize_sequence(buffer: &'a [u8], cutoff: usize) -> impl Iterator<Item = Result<(usize, RawExtensionField<'a>), PacketParsingError>> + 'a {
+    pub fn deserialize_sequence(
+        buffer: &'a [u8],
+        cutoff: usize,
+    ) -> impl Iterator<Item = Result<(usize, RawExtensionField<'a>), PacketParsingError>> + 'a {
         ExtensionFieldStreamer {
             buffer,
             cutoff,
@@ -490,7 +497,7 @@ impl<'a> Iterator for ExtensionFieldStreamer<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.buffer.len() - self.offset <= self.cutoff {
-            return None
+            return None;
         }
 
         match RawExtensionField::deserialize(&self.buffer[self.offset..]) {
@@ -577,30 +584,36 @@ impl<'a> ExtensionFieldData<'a> {
     fn deserialize(
         data: &'a [u8],
         header_size: usize,
-        cipher: &Cipher,
+        cipher: Option<&Cipher>,
     ) -> Result<(Self, usize), PacketParsingError> {
         let mut this = Self::default();
         let mut size = 0;
-        for field in RawExtensionField::deserialize_sequence(&data[header_size..], Mac::MAXIMUM_SIZE) {
+        for field in
+            RawExtensionField::deserialize_sequence(&data[header_size..], Mac::MAXIMUM_SIZE)
+        {
             let (offset, field) = field?;
             size = offset + field.wire_length();
             match field.type_id {
                 ExtensionFieldTypeId::NtsEncryptedField => {
                     let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)?;
+                    let cipher = cipher.ok_or(PacketParsingError::DecryptError)?;
 
                     // TODO: Discuss whether we want to do this check
                     if this.authenticated.len() > 0 || this.encrypted.len() > 0 {
                         return Err(PacketParsingError::MalformedNtsExtensionFields);
                     }
 
-                    this.encrypted.extend(encrypted.decrypt(cipher, &data[..header_size + offset])?.into_iter());
+                    this.encrypted.extend(
+                        encrypted
+                            .decrypt(cipher, &data[..header_size + offset])?
+                            .into_iter(),
+                    );
 
                     // All previous untrusted fields are now validated
-                    this.authenticated.extend(this.untrusted.drain(0..this.untrusted.len()));
+                    this.authenticated
+                        .extend(this.untrusted.drain(0..this.untrusted.len()));
                 }
-                _ => {
-                    this.untrusted.push(ExtensionField::decode(field)?)
-                }
+                _ => this.untrusted.push(ExtensionField::decode(field)?),
             }
         }
         Ok((this, size + header_size))
@@ -801,15 +814,10 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    pub fn deserialize_without_decryption(data: &'a [u8]) -> Result<Self, PacketParsingError> {
-        use aes_siv::{aead::KeyInit, Key};
-
-        let cipher = Cipher::new(Key::<Cipher>::from_slice([0; 32].as_slice()));
-
-        Self::deserialize(data, &cipher)
-    }
-
-    pub fn deserialize(data: &'a [u8], cipher: &Cipher) -> Result<Self, PacketParsingError> {
+    pub fn deserialize(
+        data: &'a [u8],
+        cipher: Option<&Cipher>,
+    ) -> Result<Self, PacketParsingError> {
         if data.is_empty() {
             return Err(PacketParsingError::IncorrectLength);
         }
@@ -1262,10 +1270,7 @@ mod tests {
             mac: None,
         };
 
-        assert_eq!(
-            reference,
-            NtpPacket::deserialize_without_decryption(packet).unwrap()
-        );
+        assert_eq!(reference, NtpPacket::deserialize(packet, None).unwrap());
         match reference.serialize_without_encryption_vec() {
             Ok(buf) => assert_eq!(packet[..], buf[..]),
             Err(e) => panic!("{:?}", e),
@@ -1291,10 +1296,7 @@ mod tests {
             mac: None,
         };
 
-        assert_eq!(
-            reference,
-            NtpPacket::deserialize_without_decryption(packet).unwrap()
-        );
+        assert_eq!(reference, NtpPacket::deserialize(packet, None).unwrap());
         match reference.serialize_without_encryption_vec() {
             Ok(buf) => assert_eq!(packet[..], buf[..]),
             Err(e) => panic!("{:?}", e),
@@ -1323,10 +1325,7 @@ mod tests {
             mac: None,
         };
 
-        assert_eq!(
-            reference,
-            NtpPacket::deserialize_without_decryption(packet).unwrap()
-        );
+        assert_eq!(reference, NtpPacket::deserialize(packet, None).unwrap());
         match reference.serialize_without_encryption_vec() {
             Ok(buf) => assert_eq!(packet[..], buf[..]),
             Err(e) => panic!("{:?}", e),
@@ -1336,23 +1335,23 @@ mod tests {
     #[test]
     fn test_version() {
         let packet = b"\x04\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize_without_decryption(packet).is_err());
+        assert!(NtpPacket::deserialize(packet, None).is_err());
         let packet = b"\x0B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize_without_decryption(packet).is_err());
+        assert!(NtpPacket::deserialize(packet, None).is_err());
         let packet = b"\x14\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize_without_decryption(packet).is_err());
+        assert!(NtpPacket::deserialize(packet, None).is_err());
         let packet = b"\x2B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize_without_decryption(packet).is_err());
+        assert!(NtpPacket::deserialize(packet, None).is_err());
         let packet = b"\x34\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize_without_decryption(packet).is_err());
+        assert!(NtpPacket::deserialize(packet, None).is_err());
         let packet = b"\x3B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize_without_decryption(packet).is_err());
+        assert!(NtpPacket::deserialize(packet, None).is_err());
     }
 
     #[test]
     fn test_packed_flags() {
         let base = b"\x24\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b".to_owned();
-        let base_structured = NtpPacket::deserialize_without_decryption(&base).unwrap();
+        let base_structured = NtpPacket::deserialize(&base, None).unwrap();
 
         for leap_type in 0..3 {
             for mode in 0..8 {
@@ -1361,7 +1360,7 @@ mod tests {
                 header.set_mode(NtpAssociationMode::from_bits(mode));
 
                 let data = header.serialize_without_encryption_vec().unwrap();
-                let copy = NtpPacket::deserialize_without_decryption(&data).unwrap();
+                let copy = NtpPacket::deserialize(&data, None).unwrap();
                 assert_eq!(header, copy);
             }
         }
@@ -1370,7 +1369,7 @@ mod tests {
             let mut packet = base;
             packet[0] = i;
 
-            if let Ok(a) = NtpPacket::deserialize_without_decryption(&packet) {
+            if let Ok(a) = NtpPacket::deserialize(&packet, None) {
                 let b = a.serialize_without_encryption_vec().unwrap();
                 assert_eq!(packet[..], b[..]);
             }

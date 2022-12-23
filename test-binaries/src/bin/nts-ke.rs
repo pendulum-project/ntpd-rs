@@ -168,7 +168,7 @@ async fn main() -> std::io::Result<()> {
     println!("response ({n} bytes): {:?}", &buf[0..n]);
 
     let cipher = Aes128SivAead::new(Key::<Aes128SivAead>::from_slice(s2c.as_slice()));
-    let _ = dbg!(NtpPacket::deserialize(&buf[..n], &cipher).unwrap());
+    let _ = dbg!(NtpPacket::deserialize(&buf[..n], Some(&cipher)).unwrap());
 
     Ok(())
 }

@@ -313,7 +313,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         peer_addr: SocketAddr,
         recv_timestamp: NtpTimestamp,
     ) -> AcceptResult<'a> {
-        match NtpPacket::deserialize_without_decryption(buf) {
+        match NtpPacket::deserialize(buf, None) {
             Ok(packet) => match packet.mode() {
                 NtpAssociationMode::Client => {
                     trace!("NTP client request accepted from {}", peer_addr);
@@ -500,7 +500,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize_without_decryption(&buf).unwrap();
+        let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_ne!(packet.stratum(), 0);
         assert!(packet.valid_server_response(id));
 
@@ -545,7 +545,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize_without_decryption(&buf).unwrap();
+        let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_eq!(packet.stratum(), 0);
         assert_eq!(packet.reference_id(), ReferenceId::KISS_DENY);
         assert!(packet.valid_server_response(id));
@@ -631,7 +631,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize_without_decryption(&buf).unwrap();
+        let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_ne!(packet.stratum(), 0);
         assert!(packet.valid_server_response(id));
 
@@ -676,7 +676,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize_without_decryption(&buf).unwrap();
+        let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_eq!(packet.stratum(), 0);
         assert_eq!(packet.reference_id(), ReferenceId::KISS_DENY);
         assert!(packet.valid_server_response(id));
@@ -763,7 +763,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize_without_decryption(&buf).unwrap();
+        let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_ne!(packet.stratum(), 0);
         assert!(packet.valid_server_response(id));
 
@@ -779,7 +779,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize_without_decryption(&buf).unwrap();
+        let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_ne!(packet.stratum(), 0);
         assert!(packet.valid_server_response(id));
 
@@ -793,7 +793,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize_without_decryption(&buf).unwrap();
+        let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_eq!(packet.stratum(), 0);
         assert_eq!(packet.reference_id(), ReferenceId::KISS_RATE);
         assert!(packet.valid_server_response(id));
@@ -840,7 +840,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize_without_decryption(&buf).unwrap();
+        let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_ne!(packet.stratum(), 0);
         assert!(packet.valid_server_response(id));
 
