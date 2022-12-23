@@ -342,14 +342,28 @@ impl<'a> ExtensionField<'a> {
             data: Cow::Borrowed(message),
         })
     }
+
+    fn decode(raw: RawExtensionField<'a>) -> Result<Self, PacketParsingError> {
+        type EF<'a> = ExtensionField<'a>;
+        type TypeId = ExtensionFieldTypeId;
+
+        let message = &raw.message_bytes;
+
+        match raw.type_id {
+            TypeId::UniqueIdentifier => EF::decode_unique_identifier(message),
+            TypeId::NtsCookie => EF::decode_nts_cookie(message),
+            TypeId::NtsCookiePlaceholder => EF::decode_nts_cookie_placeholder(message),
+            type_id => EF::decode_unknown(type_id.to_type_id(), message),
+        }
+    }
 }
 
-struct UnparsedEncryptedField<'a> {
+struct RawEncryptedField<'a> {
     nonce: &'a Nonce,
     ciphertext: &'a [u8],
 }
 
-impl<'a> UnparsedEncryptedField<'a> {
+impl<'a> RawEncryptedField<'a> {
     fn from_message_bytes(message_bytes: &'a [u8]) -> Result<Self, PacketParsingError> {
         use PacketParsingError::*;
 
@@ -388,16 +402,40 @@ impl<'a> UnparsedEncryptedField<'a> {
             ciphertext,
         })
     }
+
+    fn decrypt(&self, cipher: &Cipher, aad: &[u8]) -> Result<Vec<ExtensionField<'a>>, PacketParsingError> {
+        let payload = Payload {
+            msg: self.ciphertext,
+            aad,
+        };
+
+        let plaintext = match cipher.decrypt(self.nonce, payload) {
+            Ok(plain) => plain,
+            Err(_) => return Err(PacketParsingError::DecryptError),
+        };
+
+        let mut result = vec![];
+        for encrypted_field in RawExtensionField::deserialize_sequence(&plaintext, 0) {
+            let encrypted_field = encrypted_field?.1;
+            if encrypted_field.type_id == ExtensionFieldTypeId::NtsEncryptedField {
+                // TODO: Discuss whether we want this check
+                return Err(PacketParsingError::MalformedNtsExtensionFields);
+            }
+            result.push(ExtensionField::decode(encrypted_field)?.into_owned());
+        }
+
+        Ok(result)
+    }
 }
 
 #[derive(Debug)]
-struct UnparsedExtensionField<'a> {
+struct RawExtensionField<'a> {
     type_id: ExtensionFieldTypeId,
     // bytes of just the message: does not include the header or padding
     message_bytes: &'a [u8],
 }
 
-impl<'a> UnparsedExtensionField<'a> {
+impl<'a> RawExtensionField<'a> {
     const MINIMUM_SIZE: usize = 16;
 
     fn wire_length(&self) -> usize {
@@ -431,10 +469,45 @@ impl<'a> UnparsedExtensionField<'a> {
             message_bytes: value,
         })
     }
+
+    pub fn deserialize_sequence(buffer: &'a [u8], cutoff: usize) -> impl Iterator<Item = Result<(usize, RawExtensionField<'a>), PacketParsingError>> + 'a {
+        ExtensionFieldStreamer {
+            buffer,
+            cutoff,
+            offset: 0,
+        }
+    }
 }
 
-#[derive(Debug)]
-#[repr(u16)]
+struct ExtensionFieldStreamer<'a> {
+    buffer: &'a [u8],
+    cutoff: usize,
+    offset: usize,
+}
+
+impl<'a> Iterator for ExtensionFieldStreamer<'a> {
+    type Item = Result<(usize, RawExtensionField<'a>), PacketParsingError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.buffer.len() - self.offset <= self.cutoff {
+            return None
+        }
+
+        match RawExtensionField::deserialize(&self.buffer[self.offset..]) {
+            Ok(field) => {
+                let offset = self.offset;
+                self.offset += field.wire_length();
+                Some(Ok((offset, field)))
+            }
+            Err(error) => {
+                self.offset = self.buffer.len();
+                Some(Err(error))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum ExtensionFieldTypeId {
     UniqueIdentifier,
     NtsCookie,
@@ -451,6 +524,16 @@ impl ExtensionFieldTypeId {
             0x304 => Self::NtsCookiePlaceholder,
             0x404 => Self::NtsEncryptedField,
             _ => Self::Unknown { type_id },
+        }
+    }
+
+    fn to_type_id(self) -> u16 {
+        match self {
+            ExtensionFieldTypeId::UniqueIdentifier => 0x104,
+            ExtensionFieldTypeId::NtsCookie => 0x204,
+            ExtensionFieldTypeId::NtsCookiePlaceholder => 0x304,
+            ExtensionFieldTypeId::NtsEncryptedField => 0x404,
+            ExtensionFieldTypeId::Unknown { type_id } => type_id,
         }
     }
 }
@@ -491,105 +574,36 @@ impl<'a> ExtensionFieldData<'a> {
         Ok(())
     }
 
-    fn decode_basic_field(
-        unparsed: UnparsedExtensionField,
-    ) -> Result<Option<ExtensionField>, PacketParsingError> {
-        type EF<'a> = ExtensionField<'a>;
-        type TypeId = ExtensionFieldTypeId;
-
-        let message = &unparsed.message_bytes;
-
-        let field = match unparsed.type_id {
-            TypeId::NtsEncryptedField => return Ok(None),
-            TypeId::UniqueIdentifier => EF::decode_unique_identifier(message)?,
-            TypeId::NtsCookie => EF::decode_nts_cookie(message)?,
-            TypeId::NtsCookiePlaceholder => EF::decode_nts_cookie_placeholder(message)?,
-            TypeId::Unknown { type_id } => EF::decode_unknown(type_id, message)?,
-        };
-
-        Ok(Some(field))
-    }
-
     fn deserialize(
         data: &'a [u8],
         header_size: usize,
         cipher: &Cipher,
     ) -> Result<(Self, usize), PacketParsingError> {
-        let mut offset = header_size;
-
         let mut this = Self::default();
-        let mut encrypted_field = None;
+        let mut size = 0;
+        for field in RawExtensionField::deserialize_sequence(&data[header_size..], Mac::MAXIMUM_SIZE) {
+            let (offset, field) = field?;
+            size = offset + field.wire_length();
+            match field.type_id {
+                ExtensionFieldTypeId::NtsEncryptedField => {
+                    let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)?;
 
-        while data.len() - offset >= Mac::MAXIMUM_SIZE {
-            let unparsed = UnparsedExtensionField::deserialize(&data[offset..])?;
-            let message = unparsed.message_bytes;
-            let wire_length = unparsed.wire_length();
-
-            let field = match Self::decode_basic_field(unparsed)? {
-                None => {
-                    let packet_so_far = &data[..offset];
-                    let field = UnparsedEncryptedField::from_message_bytes(message)?;
-                    encrypted_field = Some((field, packet_so_far));
-                    offset += wire_length;
-                    break;
-                }
-                Some(field) => field,
-            };
-
-            this.untrusted.push(field);
-            offset += wire_length;
-        }
-
-        if let Some((encrypted, packet_so_far)) = encrypted_field {
-            let payload = Payload {
-                msg: encrypted.ciphertext,
-                aad: packet_so_far,
-            };
-
-            let plaintext = match cipher.decrypt(encrypted.nonce, payload) {
-                Ok(plain) => plain,
-                Err(_) => return Err(PacketParsingError::DecryptError),
-            };
-
-            // the message has been authenticated
-            this.authenticated = this.untrusted;
-            this.untrusted = vec![];
-
-            let mut offset = 0;
-            while offset < plaintext.len() {
-                let unparsed = UnparsedExtensionField::deserialize(&plaintext[offset..])?;
-                let wire_length = unparsed.wire_length();
-
-                let field = match Self::decode_basic_field(unparsed)? {
-                    None => {
-                        // nested encrypted field should not happen
+                    // TODO: Discuss whether we want to do this check
+                    if this.authenticated.len() > 0 || this.encrypted.len() > 0 {
                         return Err(PacketParsingError::MalformedNtsExtensionFields);
                     }
-                    Some(field) => field,
-                };
 
-                this.encrypted.push(field.into_owned());
-                offset += wire_length;
+                    this.encrypted.extend(encrypted.decrypt(cipher, &data[..header_size + offset])?.into_iter());
+
+                    // All previous untrusted fields are now validated
+                    this.authenticated.extend(this.untrusted.drain(0..this.untrusted.len()));
+                }
+                _ => {
+                    this.untrusted.push(ExtensionField::decode(field)?)
+                }
             }
         }
-
-        while data.len() - offset >= Mac::MAXIMUM_SIZE {
-            let unparsed = UnparsedExtensionField::deserialize(&data[offset..])?;
-            let wire_length = unparsed.wire_length();
-
-            let field = match Self::decode_basic_field(unparsed)? {
-                None => {
-                    // unexpected second encrypted message
-                    return Err(PacketParsingError::MalformedNtsExtensionFields);
-                }
-                Some(field) => field,
-            };
-
-            this.untrusted.push(field);
-            offset += wire_length;
-        }
-
-        Ok((this, offset))
+        Ok((this, size + header_size))
     }
 }
 
@@ -1215,6 +1229,14 @@ mod tests {
             let c = NtpAssociationMode::from_bits(b);
             assert_eq!(i, b);
             assert_eq!(a, c);
+        }
+    }
+
+    #[test]
+    fn roundtrip_ef_typeid() {
+        for i in 0..=u16::MAX {
+            let a = ExtensionFieldTypeId::from_type_id(i);
+            assert_eq!(i, a.to_type_id());
         }
     }
 
