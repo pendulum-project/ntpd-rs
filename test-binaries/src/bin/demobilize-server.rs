@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let packet = NtpPacket::deny_response(parsed);
         let mut buf = [0; 48];
         let mut cursor = Cursor::new(buf.as_mut_slice());
-        packet.serialize_without_encryption(&mut cursor).unwrap();
+        packet.serialize(&mut cursor, None).unwrap();
 
         let pdata = &cursor.get_ref()[..cursor.position() as usize];
         let len = socket.send(pdata).await.unwrap();

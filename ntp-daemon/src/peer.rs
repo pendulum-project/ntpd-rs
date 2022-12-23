@@ -133,7 +133,7 @@ where
 
         let mut buf = [0; 48];
         let mut cursor = Cursor::new(buf.as_mut_slice());
-        if let Err(error) = packet.serialize_without_encryption(&mut cursor) {
+        if let Err(error) = packet.serialize(&mut cursor, None) {
             error!(?error, "poll message could not be serialized");
             return PollResult::Ok;
         }
@@ -572,9 +572,7 @@ mod tests {
     fn serialize_packet_unencryped(send_packet: &NtpPacket) -> [u8; 48] {
         let mut buf = [0; 48];
         let mut cursor = Cursor::new(buf.as_mut_slice());
-        send_packet
-            .serialize_without_encryption(&mut cursor)
-            .unwrap();
+        send_packet.serialize(&mut cursor, None).unwrap();
 
         assert_eq!(cursor.position(), 48);
 

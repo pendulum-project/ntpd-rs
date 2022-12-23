@@ -2,7 +2,7 @@ use std::{borrow::Cow, fmt::Display, io::Cursor, io::Write};
 
 use aes_siv::{
     aead::{Aead, Payload},
-    Nonce,
+    AeadCore, Nonce,
 };
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
@@ -206,7 +206,11 @@ impl<'a> ExtensionField<'a> {
     ) -> std::io::Result<()> {
         let padding = [0; 4];
 
-        w.write_all(&0x0104u16.to_be_bytes())?;
+        w.write_all(
+            &ExtensionFieldTypeId::UniqueIdentifier
+                .to_type_id()
+                .to_be_bytes(),
+        )?;
         w.write_all(&(4 + identifier.len() as u16).to_be_bytes())?;
         w.write_all(identifier)?;
 
@@ -219,7 +223,7 @@ impl<'a> ExtensionField<'a> {
     fn encode_nts_cookie<W: std::io::Write>(w: &mut W, cookie: &[u8]) -> std::io::Result<()> {
         let padding = [0; 4];
 
-        w.write_all(&0x0204u16.to_be_bytes())?;
+        w.write_all(&ExtensionFieldTypeId::NtsCookie.to_type_id().to_be_bytes())?;
         w.write_all(&(4 + cookie.len() as u16).to_be_bytes())?;
         w.write_all(cookie)?;
 
@@ -233,7 +237,11 @@ impl<'a> ExtensionField<'a> {
         w: &mut W,
         cookie_length: u16,
     ) -> std::io::Result<()> {
-        w.write_all(&0x0304u16.to_be_bytes())?;
+        w.write_all(
+            &ExtensionFieldTypeId::NtsCookiePlaceholder
+                .to_type_id()
+                .to_be_bytes(),
+        )?;
         w.write_all(&(4 + cookie_length).to_be_bytes())?;
 
         let zeros = [0u8; 100];
@@ -269,7 +277,6 @@ impl<'a> ExtensionField<'a> {
         w: &mut Cursor<&mut [u8]>,
         fields_to_encrypt: &[ExtensionField],
         cipher: &Cipher,
-        nonce: &Nonce,
     ) -> std::io::Result<()> {
         let padding = [0; 4];
 
@@ -287,9 +294,14 @@ impl<'a> ExtensionField<'a> {
             aad: packet_so_far,
         };
 
-        let ct = cipher.encrypt(nonce, payload).unwrap();
+        let nonce = Cipher::generate_nonce(rand::thread_rng());
+        let ct = cipher.encrypt(&nonce, payload).unwrap();
 
-        w.write_all(&0x0404u16.to_be_bytes())?;
+        w.write_all(
+            &ExtensionFieldTypeId::NtsEncryptedField
+                .to_type_id()
+                .to_be_bytes(),
+        )?;
 
         // NOTE: these are NOT rounded up to a number of words
         let nonce_octet_count = nonce.len();
@@ -302,7 +314,7 @@ impl<'a> ExtensionField<'a> {
         w.write_all(&(nonce_octet_count as u16).to_be_bytes())?;
         w.write_all(&(ct_octet_count as u16).to_be_bytes())?;
 
-        w.write_all(nonce)?;
+        w.write_all(&nonce)?;
         let padding_bytes = next_multiple_of(nonce.len(), 4) - nonce.len();
         w.write_all(&padding[..padding_bytes])?;
 
@@ -564,14 +576,15 @@ impl<'a> ExtensionFieldData<'a> {
         }
     }
 
-    fn serialize(&self, w: &mut Cursor<&mut [u8]>, cipher: &Cipher) -> std::io::Result<()> {
-        for field in &self.authenticated {
-            field.serialize(w)?;
-        }
-
+    fn serialize(&self, w: &mut Cursor<&mut [u8]>, cipher: Option<&Cipher>) -> std::io::Result<()> {
         if !self.authenticated.is_empty() || !self.encrypted.is_empty() {
-            let nonce = Nonce::from_slice(b"any odd nonce$$$");
-            ExtensionField::encode_encryped(w, &self.encrypted, cipher, nonce)?;
+            let cipher = cipher.ok_or(std::io::Error::new(std::io::ErrorKind::Other, ""))?;
+
+            for field in &self.authenticated {
+                field.serialize(w)?;
+            }
+
+            ExtensionField::encode_encryped(w, &self.encrypted, cipher)?;
         }
 
         for field in &self.untrusted {
@@ -864,7 +877,7 @@ impl<'a> NtpPacket<'a> {
         let mut buffer = vec![0u8; 1024];
         let mut cursor = Cursor::new(buffer.as_mut_slice());
 
-        self.serialize_without_encryption(&mut cursor)?;
+        self.serialize(&mut cursor, None)?;
 
         let length = cursor.position() as usize;
         let buffer = cursor.into_inner()[..length].to_vec();
@@ -872,37 +885,18 @@ impl<'a> NtpPacket<'a> {
         Ok(buffer)
     }
 
-    pub fn serialize_without_encryption(&self, w: &mut Cursor<&mut [u8]>) -> std::io::Result<()> {
+    pub fn serialize(
+        &self,
+        w: &mut Cursor<&mut [u8]>,
+        cipher: Option<&Cipher>,
+    ) -> std::io::Result<()> {
         match self.header {
             NtpHeader::V3(header) => header.serialize(w, 3)?,
             NtpHeader::V4(header) => header.serialize(w, 4)?,
         };
 
         match self.header {
-            NtpHeader::V3(_) => { /* v3 does not support NTS, so we ignore extension fields */ }
-            NtpHeader::V4(_) => {
-                use aes_siv::{aead::KeyInit, Key};
-
-                let cipher = Cipher::new(Key::<Cipher>::from_slice([0; 32].as_slice()));
-                self.efdata.serialize(w, &cipher)?;
-            }
-        }
-
-        if let Some(ref mac) = self.mac {
-            mac.serialize(w)?;
-        }
-
-        Ok(())
-    }
-
-    pub fn serialize(&self, w: &mut Cursor<&mut [u8]>, cipher: &Cipher) -> std::io::Result<()> {
-        match self.header {
-            NtpHeader::V3(header) => header.serialize(w, 3)?,
-            NtpHeader::V4(header) => header.serialize(w, 4)?,
-        };
-
-        match self.header {
-            NtpHeader::V3(_) => { /* v3 does not support NTS, so we ignore extension fields */ }
+            NtpHeader::V3(_) => { /* No extension fields in V3 */ }
             NtpHeader::V4(_) => self.efdata.serialize(w, cipher)?,
         }
 

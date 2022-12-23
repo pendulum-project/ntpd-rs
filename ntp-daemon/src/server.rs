@@ -175,7 +175,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 let mut buf = [0; 48];
                 let mut cursor = Cursor::new(buf.as_mut_slice());
 
-                if let Err(serialize_err) = response.serialize_without_encryption(&mut cursor) {
+                if let Err(serialize_err) = response.serialize(&mut cursor, None) {
                     error!(error=?serialize_err, "Could not serialize response");
                     return true;
                 }
@@ -195,7 +195,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 let mut buf = [0; 48];
                 let mut cursor = Cursor::new(buf.as_mut_slice());
 
-                if let Err(serialize_err) = response.serialize_without_encryption(&mut cursor) {
+                if let Err(serialize_err) = response.serialize(&mut cursor, None) {
                     self.stats.response_send_errors.inc();
                     error!(error=?serialize_err, "Could not serialize response");
                     return true;
@@ -219,7 +219,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 let mut buf = [0; 48];
                 let mut cursor = Cursor::new(buf.as_mut_slice());
 
-                if let Err(serialize_err) = response.serialize_without_encryption(&mut cursor) {
+                if let Err(serialize_err) = response.serialize(&mut cursor, None) {
                     self.stats.response_send_errors.inc();
                     error!(error=?serialize_err, "Could not serialize response");
                     return true;
@@ -453,9 +453,7 @@ mod tests {
     fn serialize_packet_unencryped(send_packet: &NtpPacket) -> [u8; 48] {
         let mut buf = [0; 48];
         let mut cursor = Cursor::new(buf.as_mut_slice());
-        send_packet
-            .serialize_without_encryption(&mut cursor)
-            .unwrap();
+        send_packet.serialize(&mut cursor, None).unwrap();
 
         assert_eq!(cursor.position(), 48);
 
