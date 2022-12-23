@@ -8,7 +8,7 @@ license = "Apache-2.0 OR MIT"
 
 [dependencies]
 tokio = { version = "1.23.0", features = ["net"] }
-libc = "0.2.138"
+libc = "0.2.139"
 ntp-proto = { path = "../ntp-proto" }
 tracing = "0.1.37"
 
