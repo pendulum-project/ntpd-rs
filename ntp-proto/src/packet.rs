@@ -327,6 +327,7 @@ impl<'a> ExtensionField<'a> {
 
     fn decode_unique_identifier(message: &'a [u8]) -> Result<Self, PacketParsingError> {
         // The string MUST be at least 32 octets long
+        // TODO: Discuss if we really want this check here
         if message.len() < 32 {
             return Err(PacketParsingError::IncorrectLength);
         }
@@ -384,12 +385,6 @@ impl<'a> RawEncryptedField<'a> {
         let nonce_length = u16::from_be_bytes(value[0..2].try_into().unwrap()) as usize;
         let ciphertext_length = u16::from_be_bytes(value[2..4].try_into().unwrap()) as usize;
 
-        if 4 + next_multiple_of(nonce_length, 4) + next_multiple_of(ciphertext_length, 4)
-            != next_multiple_of(value.len(), 4)
-        {
-            return Err(PacketParsingError::IncorrectLength);
-        }
-
         let ciphertext_start = 4 + next_multiple_of(nonce_length as usize, 4);
 
         let nonce_bytes = value.get(4..4 + nonce_length).ok_or(IncorrectLength)?;
@@ -397,17 +392,9 @@ impl<'a> RawEncryptedField<'a> {
             .get(4 + nonce_length..ciphertext_start)
             .ok_or(IncorrectLength)?;
 
-        if nonce_padding.iter().any(|b| *b != 0) {
-            return Err(PacketParsingError::IncorrectLength);
-        }
-
         let ciphertext = value
             .get(ciphertext_start..ciphertext_start + ciphertext_length)
             .ok_or(IncorrectLength)?;
-
-        if nonce_bytes.len() != 16 {
-            return Err(PacketParsingError::MalformedNonce);
-        }
 
         Ok(Self {
             nonce: Nonce::from_slice(nonce_bytes),
@@ -456,29 +443,23 @@ impl<'a> RawExtensionField<'a> {
 
     fn wire_length(&self) -> usize {
         // type_id and extension_field_length + data + padding
-        4 + next_multiple_of(self.message_bytes.len(), 4)
+        4 + self.message_bytes.len()
     }
 
     pub fn deserialize(data: &'a [u8]) -> Result<Self, PacketParsingError> {
         use PacketParsingError::IncorrectLength;
 
-        if data.len() < 4 || data.len() % 4 != 0 {
+        if data.len() < 4 {
             return Err(IncorrectLength);
         }
 
         let type_id = u16::from_be_bytes(data[0..2].try_into().unwrap());
         let field_length = u16::from_be_bytes(data[2..4].try_into().unwrap()) as usize;
-        if field_length < Self::MINIMUM_SIZE {
+        if field_length < Self::MINIMUM_SIZE || field_length % 4 != 0 {
             return Err(PacketParsingError::IncorrectLength);
         }
 
         let value = data.get(4..field_length).ok_or(IncorrectLength)?;
-
-        // check that the padding is all zeros. This is required for the fuzz tests to work
-        let padding = &data[field_length..next_multiple_of(field_length, 4)];
-        if padding.iter().any(|b| *b != 0) {
-            return Err(PacketParsingError::IncorrectLength);
-        }
 
         Ok(Self {
             type_id: ExtensionFieldTypeId::from_type_id(type_id),
