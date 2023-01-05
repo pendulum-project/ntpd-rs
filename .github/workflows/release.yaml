@@ -5,6 +5,9 @@ on:
     tags:
       - v*.*.*
 
+env:
+  CARGO_INCREMENTAL: 0
+
 jobs:
   build:
     strategy:

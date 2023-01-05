@@ -11,6 +11,9 @@ on:
   schedule:
     - cron: '0 4 * * *'
 
+env:
+  CARGO_INCREMENTAL: 0
+
 jobs:
   build:
     name: Build+test
@@ -32,6 +35,17 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Cache cargo directories
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ matrix.rust }}
+
       - name: Install ${{ matrix.rust }} toolchain
         uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
         with:
@@ -42,6 +56,11 @@ jobs:
         uses: taiki-e/install-action@be9d4e566a6d59aa24f9976dab45072b36fc8b45
         with:
           tool: cargo-llvm-cov
+
+      - name: Install cargo-sweep
+        uses: taiki-e/install-action@be9d4e566a6d59aa24f9976dab45072b36fc8b45
+        with:
+          tool: cargo-sweep
 
       - name: cargo build
         run: cargo build ${{ matrix.features }}
@@ -57,6 +76,9 @@ jobs:
           files: lcov.info
           fail_ci_if_error: true
 
+      - name: Clean out caches
+        run: cargo sweep -i; cargo sweep -t 7
+
   unused:
     name: Unused dependencies
     runs-on: ubuntu-latest
@@ -71,14 +93,27 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Cache cargo directories
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-nightly
+
       - name: Install nightly toolchain
         uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
         with:
           toolchain: nightly
           override: true
 
-      - name: Install udeps
-        run: cargo install cargo-udeps --locked
+      - name: Install cargo-udeps
+        uses: taiki-e/install-action@be9d4e566a6d59aa24f9976dab45072b36fc8b45
+        with:
+          tool: cargo-udeps
 
       - name: cargo udeps
         run: cargo udeps --workspace --all-targets ${{ matrix.features }}
@@ -92,14 +127,27 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Cache cargo directories
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-nightly
+
       - name: Install nightly toolchain
         uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
         with:
           toolchain: nightly
           override: true
 
-      - name: Install udeps
-        run: cargo install cargo-udeps --locked
+      - name: Install cargo-udeps
+        uses: taiki-e/install-action@be9d4e566a6d59aa24f9976dab45072b36fc8b45
+        with:
+          tool: cargo-udeps
 
       - name: cargo udeps
         run: cargo udeps --manifest-path ./fuzz/Cargo.toml --all-targets
@@ -112,6 +160,16 @@ jobs:
         uses: actions/checkout@755da8c3cf115ac066823e79a1e1788f8940201b
         with:
           persist-credentials: false
+      - name: Cache cargo directories
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-stable
       - name: Install rust toolchain
         uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
         with:
@@ -137,6 +195,16 @@ jobs:
         uses: actions/checkout@755da8c3cf115ac066823e79a1e1788f8940201b
         with:
           persist-credentials: false
+      - name: Cache cargo directories
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-stable
       - name: Install rust toolchain
         uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
         with:
@@ -163,6 +231,16 @@ jobs:
         uses: actions/checkout@755da8c3cf115ac066823e79a1e1788f8940201b
         with:
           persist-credentials: false
+      - name: Cache cargo directories
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: rpi-cargo-stable
       - name: Install rust toolchain
         uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
         with:
@@ -171,6 +249,10 @@ jobs:
           default: true
           components: clippy
           target: armv7-unknown-linux-gnueabihf
+      - name: Install cargo-sweep
+        uses: taiki-e/install-action@be9d4e566a6d59aa24f9976dab45072b36fc8b45
+        with:
+          tool: cargo-sweep
       # Use zig as our C compiler for convenient cross-compilation. We run into rustls having a dependency on `ring`.
       # This crate uses C and assembly code, and because of its build scripts, `cargo clippy` needs to be able to compile
       # that code for our target.
@@ -178,10 +260,9 @@ jobs:
         with:
           version: 0.9.0
       - name: Install cargo-zigbuild
-        uses: actions-rs/install@9da1d2adcfe5e7c16992e8242ca33a56b6d9b101
+        uses: taiki-e/install-action@be9d4e566a6d59aa24f9976dab45072b36fc8b45
         with:
-          crate: cargo-zigbuild
-          version: latest
+          tool: cargo-zigbuild
       - name: Run clippy
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
         env:
@@ -189,6 +270,8 @@ jobs:
         with:
           command: clippy
           args: --target armv7-unknown-linux-gnueabihf --workspace --all-targets -- -D warnings
+      - name: Clean caches
+        run: cargo sweep -i; cargo sweep -t 7;
 
   fuzz:
     name: Smoke-test fuzzing targets
@@ -199,6 +282,17 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Cache cargo directories
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-nightly
+
       - name: Install nightly toolchain
         uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
         with:
@@ -206,8 +300,10 @@ jobs:
           override: true
           default: true
 
-      - name: Install cargo fuzz
-        run: cargo install cargo-fuzz
+      - name: Install cargo-fuzz
+        uses: taiki-e/install-action@be9d4e566a6d59aa24f9976dab45072b36fc8b45
+        with:
+          tool: cargo-fuzz
 
       - name: Smoke-test fuzz targets
         run: |
