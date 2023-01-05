@@ -273,7 +273,7 @@ impl<'a> ExtensionField<'a> {
         Ok(())
     }
 
-    fn encode_encryped(
+    fn encode_encrypted(
         w: &mut Cursor<&mut [u8]>,
         fields_to_encrypt: &[ExtensionField],
         cipher: &Cipher,
@@ -388,9 +388,6 @@ impl<'a> RawEncryptedField<'a> {
         let ciphertext_start = 4 + next_multiple_of(nonce_length as usize, 4);
 
         let nonce_bytes = value.get(4..4 + nonce_length).ok_or(IncorrectLength)?;
-        let nonce_padding = value
-            .get(4 + nonce_length..ciphertext_start)
-            .ok_or(IncorrectLength)?;
 
         let ciphertext = value
             .get(ciphertext_start..ciphertext_start + ciphertext_length)
@@ -565,7 +562,7 @@ impl<'a> ExtensionFieldData<'a> {
                 field.serialize(w)?;
             }
 
-            ExtensionField::encode_encryped(w, &self.encrypted, cipher)?;
+            ExtensionField::encode_encrypted(w, &self.encrypted, cipher)?;
         }
 
         for field in &self.untrusted {
@@ -621,7 +618,7 @@ pub struct Mac<'a> {
 }
 
 impl<'a> Mac<'a> {
-    const MAXIMUM_SIZE: usize = 28;
+    const MAXIMUM_SIZE: usize = 24;
 
     fn into_owned(self) -> Mac<'static> {
         Mac {
