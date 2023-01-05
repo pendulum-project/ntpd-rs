@@ -1273,6 +1273,7 @@ impl<'a> Default for NtpPacket<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aes_siv::{aead::KeyInit, Aes128SivAead, Key};
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -1431,5 +1432,115 @@ mod tests {
                 assert_eq!(packet[..], b[..]);
             }
         }
+    }
+
+    #[test]
+    fn test_unique_identifier() {
+        let identifier: Vec<_> = (0..16).collect();
+        let mut w = vec![];
+        ExtensionField::encode_unique_identifier(&mut w, &identifier, 0).unwrap();
+
+        assert_eq!(
+            w,
+            &[1, 4, 0, 20, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        );
+    }
+
+    #[test]
+    fn test_nts_cookie() {
+        let cookie: Vec<_> = (0..16).collect();
+        let mut w = vec![];
+        ExtensionField::encode_nts_cookie(&mut w, &cookie, 0).unwrap();
+
+        assert_eq!(
+            w,
+            &[2, 4, 0, 20, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        );
+    }
+
+    #[test]
+    fn test_nts_cookie_placeholder() {
+        let mut w = vec![];
+        ExtensionField::encode_nts_cookie_placeholder(&mut w, 16, 0).unwrap();
+
+        assert_eq!(
+            w,
+            &[3, 4, 0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,]
+        );
+    }
+
+    #[test]
+    fn test_unknown() {
+        let data: Vec<_> = (0..16).collect();
+        let mut w = vec![];
+        ExtensionField::encode_unknown(&mut w, 42, &data, 0).unwrap();
+
+        assert_eq!(
+            w,
+            &[0, 42, 0, 20, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        );
+    }
+
+    #[test]
+    fn extension_field_minimum_size() {
+        let minimum_size = 32;
+        let expected_size = minimum_size as usize;
+        let data: Vec<_> = (0..16).collect();
+
+        let mut w = vec![];
+        ExtensionField::encode_unique_identifier(&mut w, &data, minimum_size).unwrap();
+        assert_eq!(w.len(), expected_size);
+
+        let mut w = vec![];
+        ExtensionField::encode_nts_cookie(&mut w, &data, minimum_size).unwrap();
+        assert_eq!(w.len(), expected_size);
+
+        let mut w = vec![];
+        ExtensionField::encode_nts_cookie_placeholder(&mut w, data.len() as u16, minimum_size)
+            .unwrap();
+        assert_eq!(w.len(), expected_size);
+
+        let mut w = vec![];
+        ExtensionField::encode_unknown(&mut w, 42, &data, minimum_size).unwrap();
+        assert_eq!(w.len(), expected_size);
+
+        // NOTE: encryped fields do not have a minimum_size
+    }
+
+    #[test]
+    fn extension_field_padding() {
+        let minimum_size = 0;
+        let expected_size = 20;
+        let data: Vec<_> = (0..15).collect(); // 15 bytes, so padding is needed
+
+        let mut w = vec![];
+        ExtensionField::encode_unique_identifier(&mut w, &data, minimum_size).unwrap();
+        assert_eq!(w.len(), expected_size);
+
+        let mut w = vec![];
+        ExtensionField::encode_nts_cookie(&mut w, &data, minimum_size).unwrap();
+        assert_eq!(w.len(), expected_size);
+
+        let mut w = vec![];
+        ExtensionField::encode_nts_cookie_placeholder(&mut w, data.len() as u16, minimum_size)
+            .unwrap();
+        assert_eq!(w.len(), expected_size);
+
+        let mut w = vec![];
+        ExtensionField::encode_unknown(&mut w, 42, &data, minimum_size).unwrap();
+        assert_eq!(w.len(), expected_size);
+
+        let mut w = [0u8; 128];
+        let mut cursor = Cursor::new(w.as_mut_slice());
+        let c2s = [0; 32];
+        let cipher = Aes128SivAead::new(Key::<Aes128SivAead>::from_slice(c2s.as_slice()));
+        let fields_to_encrypt = [ExtensionField::UniqueIdentifier(Cow::Borrowed(
+            data.as_slice(),
+        ))];
+        ExtensionField::encode_encrypted(&mut cursor, &fields_to_encrypt, &cipher).unwrap();
+        assert_eq!(
+            cursor.position() as usize,
+            2 + 6 + c2s.len() + expected_size
+        );
     }
 }
