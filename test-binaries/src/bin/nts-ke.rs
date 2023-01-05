@@ -154,7 +154,7 @@ async fn main() -> std::io::Result<()> {
     let (packet, _) = NtpPacket::nts_poll_message_request_extra_cookies(
         &identifier,
         &ke.cookies[0],
-        1,
+        0,
         PollInterval::default(),
     );
 

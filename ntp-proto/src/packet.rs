@@ -187,46 +187,57 @@ impl<'a> ExtensionField<'a> {
         }
     }
 
-    fn serialize<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
+    fn serialize<W: std::io::Write>(&self, w: &mut W, minimum_size: u16) -> std::io::Result<()> {
         use ExtensionField::*;
 
         match self {
-            UniqueIdentifier(identifier) => Self::encode_unique_identifier(w, identifier),
-            NtsCookie(cookie) => Self::encode_nts_cookie(w, cookie),
+            UniqueIdentifier(identifier) => {
+                Self::encode_unique_identifier(w, identifier, minimum_size)
+            }
+            NtsCookie(cookie) => Self::encode_nts_cookie(w, cookie, minimum_size),
             NtsCookiePlaceholder {
                 cookie_length: body_length,
-            } => Self::encode_nts_cookie_placeholder(w, *body_length as u16),
-            Unknown { type_id, data } => Self::encode_unknown(w, *type_id, data),
+            } => Self::encode_nts_cookie_placeholder(w, *body_length as u16, minimum_size),
+            Unknown { type_id, data } => Self::encode_unknown(w, *type_id, data, minimum_size),
         }
     }
 
     fn encode_framing<W: std::io::Write>(
         w: &mut W,
-        ef_id: u16,
+        ef_id: ExtensionFieldTypeId,
         data_length: usize,
         minimum_size: u16,
     ) -> std::io::Result<()> {
         if data_length > u16::MAX as usize - 4 {
-            return Err(std::io::Error::new(std::io::ErrorKind::Other, "Extension field too long"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Extension field too long",
+            ));
         }
-        let actual_length = next_multiple_of((data_length as u16+4).max(minimum_size), 4);
-        w.write_all(&ef_id.to_be_bytes())?;
+        let actual_length = next_multiple_of((data_length as u16 + 4).max(minimum_size), 4);
+        w.write_all(&ef_id.to_type_id().to_be_bytes())?;
         w.write_all(&actual_length.to_be_bytes())
     }
 
-    fn encode_padding<W: std::io::Write> (
+    fn encode_padding<W: std::io::Write>(
         w: &mut W,
         data_length: usize,
         minimum_size: u16,
     ) -> std::io::Result<()> {
         if data_length > u16::MAX as usize - 4 {
-            return Err(std::io::Error::new(std::io::ErrorKind::Other, "Extension field too long"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Extension field too long",
+            ));
         }
         let actual_length = next_multiple_of((data_length as u16 + 4).max(minimum_size), 4);
         let mut padding_length = actual_length - (data_length as u16) - 4;
-        let padding_bytes = [0_u8;16];
+        let padding_bytes = [0_u8; 32];
         while padding_length > 0 {
-            w.write_all(&padding_bytes[..(padding_length as usize).min(padding_bytes.len())])?;
+            let added = (padding_length as usize).min(padding_bytes.len());
+            w.write_all(&padding_bytes[..added])?;
+
+            padding_length -= added as u16;
         }
         Ok(())
     }
@@ -236,20 +247,31 @@ impl<'a> ExtensionField<'a> {
         identifier: &[u8],
         minimum_size: u16,
     ) -> std::io::Result<()> {
-        Self::encode_framing(w, ExtensionFieldTypeId::UniqueIdentifier.to_type_id(), identifier.len(), minimum_size)?;
+        Self::encode_framing(
+            w,
+            ExtensionFieldTypeId::UniqueIdentifier,
+            identifier.len(),
+            minimum_size,
+        )?;
         w.write_all(identifier)?;
         Self::encode_padding(w, identifier.len(), minimum_size)
     }
 
-    fn encode_nts_cookie<W: std::io::Write>(w: &mut W, cookie: &[u8]) -> std::io::Result<()> {
-        let padding = [0; 4];
+    fn encode_nts_cookie<W: std::io::Write>(
+        w: &mut W,
+        cookie: &[u8],
+        minimum_size: u16,
+    ) -> std::io::Result<()> {
+        Self::encode_framing(
+            w,
+            ExtensionFieldTypeId::NtsCookie,
+            cookie.len(),
+            minimum_size,
+        )?;
 
-        w.write_all(&ExtensionFieldTypeId::NtsCookie.to_type_id().to_be_bytes())?;
-        w.write_all(&(4 + cookie.len() as u16).to_be_bytes())?;
         w.write_all(cookie)?;
 
-        let padding_bytes = next_multiple_of(cookie.len(), 4) - cookie.len();
-        w.write_all(&padding[..padding_bytes])?;
+        Self::encode_padding(w, cookie.len(), minimum_size)?;
 
         Ok(())
     }
@@ -257,21 +279,16 @@ impl<'a> ExtensionField<'a> {
     fn encode_nts_cookie_placeholder<W: std::io::Write>(
         w: &mut W,
         cookie_length: u16,
+        minimum_size: u16,
     ) -> std::io::Result<()> {
-        w.write_all(
-            &ExtensionFieldTypeId::NtsCookiePlaceholder
-                .to_type_id()
-                .to_be_bytes(),
+        Self::encode_framing(
+            w,
+            ExtensionFieldTypeId::NtsCookiePlaceholder,
+            cookie_length as usize,
+            minimum_size,
         )?;
-        w.write_all(&(4 + cookie_length).to_be_bytes())?;
 
-        let zeros = [0u8; 100];
-        let mut remaining = next_multiple_of(cookie_length as usize, 4);
-        while remaining > 0 {
-            let n = usize::min(zeros.len(), remaining);
-            w.write_all(&zeros[..n])?;
-            remaining -= n;
-        }
+        Self::encode_padding(w, 0, minimum_size.max(cookie_length))?;
 
         Ok(())
     }
@@ -280,16 +297,18 @@ impl<'a> ExtensionField<'a> {
         w: &mut W,
         type_id: u16,
         data: &[u8],
+        minimum_size: u16,
     ) -> std::io::Result<()> {
-        let padding = [0; 4];
-
-        w.write_all(&type_id.to_be_bytes())?;
-        w.write_all(&(4 + data.len() as u16).to_be_bytes())?;
+        Self::encode_framing(
+            w,
+            ExtensionFieldTypeId::Unknown { type_id },
+            data.len(),
+            minimum_size,
+        )?;
 
         w.write_all(data)?;
 
-        let padding_bytes = next_multiple_of(data.len(), 4) - data.len();
-        w.write_all(&padding[..padding_bytes])?;
+        Self::encode_padding(w, data.len(), minimum_size)?;
 
         Ok(())
     }
@@ -307,7 +326,10 @@ impl<'a> ExtensionField<'a> {
 
         let mut plaintext = Vec::new();
         for field in fields_to_encrypt {
-            field.serialize(&mut plaintext)?;
+            // RFC 8915, section 5.5: contrary to the RFC 7822 requirement that fields have a minimum length of 16 or 28 octets,
+            // encrypted extension fields MAY be arbitrarily short (but still MUST be a multiple of 4 octets in length)
+            let minimum_size = 0;
+            field.serialize(&mut plaintext, minimum_size)?;
         }
 
         let payload = Payload {
@@ -329,19 +351,20 @@ impl<'a> ExtensionField<'a> {
         let ct_octet_count = ct.len();
 
         // + 8 for the extension field header (4 bytes) and nonce/cypher text length (2 bytes each)
-        let signature_octet_count = 8 + next_multiple_of(nonce_octet_count + ct_octet_count, 4);
+        let signature_octet_count =
+            8 + next_multiple_of((nonce_octet_count + ct_octet_count) as u16, 4);
 
         w.write_all(&(signature_octet_count as u16).to_be_bytes())?;
         w.write_all(&(nonce_octet_count as u16).to_be_bytes())?;
         w.write_all(&(ct_octet_count as u16).to_be_bytes())?;
 
         w.write_all(&nonce)?;
-        let padding_bytes = next_multiple_of(nonce.len(), 4) - nonce.len();
-        w.write_all(&padding[..padding_bytes])?;
+        let padding_bytes = next_multiple_of(nonce.len() as u16, 4) - nonce.len() as u16;
+        w.write_all(&padding[..padding_bytes as usize])?;
 
         w.write_all(ct.as_slice())?;
-        let padding_bytes = next_multiple_of(ct.len(), 4) - ct.len();
-        w.write_all(&padding[..padding_bytes])?;
+        let padding_bytes = next_multiple_of(ct.len() as u16, 4) - ct.len() as u16;
+        w.write_all(&padding[..padding_bytes as usize])?;
 
         Ok(())
     }
@@ -406,7 +429,7 @@ impl<'a> RawEncryptedField<'a> {
         let nonce_length = u16::from_be_bytes(value[0..2].try_into().unwrap()) as usize;
         let ciphertext_length = u16::from_be_bytes(value[2..4].try_into().unwrap()) as usize;
 
-        let ciphertext_start = 4 + next_multiple_of(nonce_length as usize, 4);
+        let ciphertext_start = 4 + next_multiple_of(nonce_length as u16, 4) as usize;
 
         let nonce_bytes = value.get(4..4 + nonce_length).ok_or(IncorrectLength)?;
 
@@ -436,7 +459,11 @@ impl<'a> RawEncryptedField<'a> {
         };
 
         let mut result = vec![];
-        for encrypted_field in RawExtensionField::deserialize_sequence(&plaintext, 0, RawExtensionField::BARE_MINIMUM_SIZE) {
+        for encrypted_field in RawExtensionField::deserialize_sequence(
+            &plaintext,
+            0,
+            RawExtensionField::BARE_MINIMUM_SIZE,
+        ) {
             let encrypted_field = encrypted_field?.1;
             if encrypted_field.type_id == ExtensionFieldTypeId::NtsEncryptedField {
                 // TODO: Discuss whether we want this check
@@ -581,17 +608,31 @@ impl<'a> ExtensionFieldData<'a> {
 
     fn serialize(&self, w: &mut Cursor<&mut [u8]>, cipher: Option<&Cipher>) -> std::io::Result<()> {
         if !self.authenticated.is_empty() || !self.encrypted.is_empty() {
-            let cipher = cipher.ok_or(std::io::Error::new(std::io::ErrorKind::Other, ""))?;
+            let cipher = match cipher {
+                Some(cipher) => cipher,
+                None => return Err(std::io::Error::new(std::io::ErrorKind::Other, "")),
+            };
+
+            // the authenticated extension fields are always followed by the encrypted extension
+            // field. We don't (currently) encode a MAC, so the minimum size per RFC 7822 is 16 octecs
+            let minimum_size = 16;
 
             for field in &self.authenticated {
-                field.serialize(w)?;
+                field.serialize(w, minimum_size)?;
             }
 
+            // RFC 8915, section 5.5: contrary to the RFC 7822 requirement that fields have a minimum length of 16 or 28 octets,
+            // encrypted extension fields MAY be arbitrarily short (but still MUST be a multiple of 4 octets in length)
+            // hence we don't provide a minimum size here
             ExtensionField::encode_encrypted(w, &self.encrypted, cipher)?;
         }
 
-        for field in &self.untrusted {
-            field.serialize(w)?;
+        // per RFC 7822, section 7.5.1.4.
+        let mut it = self.untrusted.iter().peekable();
+        while let Some(field) = it.next() {
+            let is_last = it.peek().is_none();
+            let minimum_size = if is_last { 28 } else { 16 };
+            field.serialize(w, minimum_size)?;
         }
 
         Ok(())
@@ -604,9 +645,11 @@ impl<'a> ExtensionFieldData<'a> {
     ) -> Result<(Self, usize), PacketParsingError> {
         let mut this = Self::default();
         let mut size = 0;
-        for field in
-            RawExtensionField::deserialize_sequence(&data[header_size..], Mac::MAXIMUM_SIZE, RawExtensionField::V4_UNENCRYPTED_MINIMUM_SIZE)
-        {
+        for field in RawExtensionField::deserialize_sequence(
+            &data[header_size..],
+            Mac::MAXIMUM_SIZE,
+            RawExtensionField::V4_UNENCRYPTED_MINIMUM_SIZE,
+        ) {
             let (offset, field) = field?;
             size = offset + field.wire_length();
             match field.type_id {
@@ -615,7 +658,7 @@ impl<'a> ExtensionFieldData<'a> {
                     let cipher = cipher.ok_or(PacketParsingError::DecryptError)?;
 
                     // TODO: Discuss whether we want to do this check
-                    if this.authenticated.len() > 0 || this.encrypted.len() > 0 {
+                    if !this.authenticated.is_empty() || !this.encrypted.is_empty() {
                         return Err(PacketParsingError::MalformedNtsExtensionFields);
                     }
 
@@ -626,8 +669,7 @@ impl<'a> ExtensionFieldData<'a> {
                     );
 
                     // All previous untrusted fields are now validated
-                    this.authenticated
-                        .extend(this.untrusted.drain(0..this.untrusted.len()));
+                    this.authenticated.append(&mut this.untrusted);
                 }
                 _ => this.untrusted.push(ExtensionField::decode(field)?),
             }
