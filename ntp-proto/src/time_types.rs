@@ -98,6 +98,10 @@ impl NtpTimestamp {
         NtpTimestamp::from_bits(timestamp.to_be_bytes())
     }
 
+    pub fn is_before(self, other: NtpTimestamp) -> bool {
+        self - other < NtpDuration::ZERO
+    }
+
     #[cfg(any(test, feature = "fuzz"))]
     pub(crate) const fn from_fixed_int(timestamp: u64) -> NtpTimestamp {
         NtpTimestamp { timestamp }

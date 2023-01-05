@@ -81,7 +81,7 @@ struct PeerFilter {
 impl PeerFilter {
     /// Move the filter forward to reflect the situation at a new, later timestamp
     fn progress_filtertime(&mut self, time: NtpTimestamp) {
-        debug_assert!(time >= self.filter_time);
+        debug_assert!(!time.is_before(self.filter_time));
         if time < self.filter_time {
             return;
         }
@@ -231,7 +231,7 @@ impl PeerFilter {
         // information on the synchronization quality of the remote and any upcoming leap seconds.
         self.last_packet = packet;
 
-        if measurement.localtime < self.filter_time {
+        if measurement.localtime.is_before(self.filter_time) {
             // Ignore the past
             return false;
         }
@@ -398,12 +398,14 @@ impl PeerState {
 
 #[cfg(test)]
 mod tests {
+    use std::panic::catch_unwind;
+
     use crate::{Measurement, NtpInstant, NtpPacket, PollIntervalLimits};
 
     use super::*;
 
     #[test]
-    fn test_offset_steering() {
+    fn test_offset_steering_and_measurements() {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
         let mut peer = PeerFilter {
@@ -430,6 +432,38 @@ mod tests {
         };
 
         peer.process_offset_steering(20e-3);
+        assert!(peer.state.entry(0).abs() < 1e-7);
+
+        assert!(catch_unwind(
+            move || peer.progress_filtertime(base + NtpDuration::from_seconds(10e-3))
+        )
+        .is_err());
+
+        let mut peer = PeerFilter {
+            state: Vector::new(20e-3, 0.),
+            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            clock_wander: 1e-8,
+            rtt_stats: RttBuf {
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                next_idx: 0,
+            },
+            precision_score: 0,
+            poll_score: 0,
+            desired_poll_interval: PollIntervalLimits::default().min,
+            last_measurement: Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(20e-3),
+                localtime: base,
+                monotime: basei,
+            },
+            last_packet: NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+            prev_was_outlier: false,
+            last_iter: base,
+            filter_time: base,
+        };
+
+        peer.process_offset_steering(20e-3);
+        assert!(peer.state.entry(0).abs() < 1e-7);
 
         peer.update(
             &SystemConfig::default(),
@@ -443,8 +477,51 @@ mod tests {
             NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
 
-        assert!((peer.state.entry(0) - 20e-3) < 1e-7);
-        assert!((peer.state.entry(1) - 20e-6) < 1e-7);
+        assert!(dbg!((peer.state.entry(0) - 20e-3).abs()) < 1e-7);
+        assert!((peer.state.entry(1) - 20e-6).abs() < 1e-7);
+
+        let mut peer = PeerFilter {
+            state: Vector::new(-20e-3, 0.),
+            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            clock_wander: 1e-8,
+            rtt_stats: RttBuf {
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                next_idx: 0,
+            },
+            precision_score: 0,
+            poll_score: 0,
+            desired_poll_interval: PollIntervalLimits::default().min,
+            last_measurement: Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(-20e-3),
+                localtime: base,
+                monotime: basei,
+            },
+            last_packet: NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+            prev_was_outlier: false,
+            last_iter: base,
+            filter_time: base,
+        };
+
+        peer.process_offset_steering(-20e-3);
+        assert!(peer.state.entry(0).abs() < 1e-7);
+
+        peer.progress_filtertime(base - NtpDuration::from_seconds(10e-3)); // should succeed
+
+        peer.update(
+            &SystemConfig::default(),
+            &AlgorithmConfig::default(),
+            Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(-20e-3),
+                localtime: base + NtpDuration::from_seconds(1000.0),
+                monotime: basei,
+            },
+            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+        );
+
+        assert!(dbg!((peer.state.entry(0) - -20e-3).abs()) < 1e-7);
+        assert!((peer.state.entry(1) - -20e-6).abs() < 1e-7);
     }
 
     #[test]
@@ -483,4 +560,10 @@ mod tests {
         assert!((peer.state.entry(0) - -1e-3).abs() < 1e-8);
         assert!((peer.last_measurement.offset.to_seconds() - -1e-3).abs() < 1e-8);
     }
+
+    #[test]
+    fn test_init() {}
+
+    #[test]
+    fn test_steer_during_init() {}
 }
