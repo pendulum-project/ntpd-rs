@@ -158,7 +158,7 @@ impl<'a> std::fmt::Debug for ExtensionField<'a> {
     }
 }
 
-pub const fn next_multiple_of(lhs: usize, rhs: usize) -> usize {
+pub const fn next_multiple_of(lhs: u16, rhs: u16) -> u16 {
     match lhs % rhs {
         0 => lhs,
         r => lhs + (rhs - r),
@@ -200,24 +200,45 @@ impl<'a> ExtensionField<'a> {
         }
     }
 
+    fn encode_framing<W: std::io::Write>(
+        w: &mut W,
+        ef_id: u16,
+        data_length: usize,
+        minimum_size: u16,
+    ) -> std::io::Result<()> {
+        if data_length > u16::MAX as usize - 4 {
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, "Extension field too long"));
+        }
+        let actual_length = next_multiple_of((data_length as u16+4).max(minimum_size), 4);
+        w.write_all(&ef_id.to_be_bytes())?;
+        w.write_all(&actual_length.to_be_bytes())
+    }
+
+    fn encode_padding<W: std::io::Write> (
+        w: &mut W,
+        data_length: usize,
+        minimum_size: u16,
+    ) -> std::io::Result<()> {
+        if data_length > u16::MAX as usize - 4 {
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, "Extension field too long"));
+        }
+        let actual_length = next_multiple_of((data_length as u16 + 4).max(minimum_size), 4);
+        let mut padding_length = actual_length - (data_length as u16) - 4;
+        let padding_bytes = [0_u8;16];
+        while padding_length > 0 {
+            w.write_all(&padding_bytes[..(padding_length as usize).min(padding_bytes.len())])?;
+        }
+        Ok(())
+    }
+
     fn encode_unique_identifier<W: std::io::Write>(
         w: &mut W,
         identifier: &[u8],
+        minimum_size: u16,
     ) -> std::io::Result<()> {
-        let padding = [0; 4];
-
-        w.write_all(
-            &ExtensionFieldTypeId::UniqueIdentifier
-                .to_type_id()
-                .to_be_bytes(),
-        )?;
-        w.write_all(&(4 + identifier.len() as u16).to_be_bytes())?;
+        Self::encode_framing(w, ExtensionFieldTypeId::UniqueIdentifier.to_type_id(), identifier.len(), minimum_size)?;
         w.write_all(identifier)?;
-
-        let padding_bytes = next_multiple_of(identifier.len(), 4) - identifier.len();
-        w.write_all(&padding[..padding_bytes])?;
-
-        Ok(())
+        Self::encode_padding(w, identifier.len(), minimum_size)
     }
 
     fn encode_nts_cookie<W: std::io::Write>(w: &mut W, cookie: &[u8]) -> std::io::Result<()> {
