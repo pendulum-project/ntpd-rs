@@ -50,54 +50,50 @@ impl NtsRecord {
     }
 
     fn validate(&self) -> std::io::Result<()> {
+        let invalid = || {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                WriteError::Invalid,
+            ))
+        };
+
+        let too_long = || {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                WriteError::TooLong,
+            ))
+        };
+
         match self {
             NtsRecord::Unknown {
                 record_type, data, ..
             } => {
                 if *record_type & 0x8000 != 0 {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        WriteError::Invalid,
-                    ));
+                    return invalid();
                 }
                 if data.len() > u16::MAX as usize {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        WriteError::TooLong,
-                    ));
+                    return too_long();
                 }
             }
             NtsRecord::NextProtocol { protocol_ids } => {
                 if protocol_ids.len() >= (u16::MAX as usize) / 2 {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        WriteError::TooLong,
-                    ));
+                    return too_long();
                 }
             }
 
             NtsRecord::AeadAlgorithm { algorithm_ids, .. } => {
                 if algorithm_ids.len() >= (u16::MAX as usize) / 2 {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        WriteError::TooLong,
-                    ));
+                    return too_long();
                 }
             }
             NtsRecord::NewCookie { cookie_data } => {
                 if cookie_data.len() > u16::MAX as usize {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        WriteError::TooLong,
-                    ));
+                    return too_long();
                 }
             }
             NtsRecord::Server { name, .. } => {
                 if name.as_bytes().len() >= (u16::MAX as usize) {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        WriteError::TooLong,
-                    ));
+                    return too_long();
                 }
             }
 
