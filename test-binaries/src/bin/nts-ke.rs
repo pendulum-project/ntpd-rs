@@ -64,21 +64,19 @@ async fn key_exchange(
     let mut buffer = [0; 1024];
     let mut decoder = ntp_proto::NtsRecord::decoder();
 
-    'outer: loop {
+    loop {
         let n = stream.read(&mut buffer).await?;
-        decoder.extend(buffer[..n].iter().copied());
 
-        while let Some(record) = decoder.next()? {
-            match state.step_with_record(record) {
-                ControlFlow::Continue(new_state) => {
-                    state = new_state;
-                    continue;
-                }
-                ControlFlow::Break(Ok(new_state)) => {
-                    state = new_state;
-                    break 'outer;
-                }
-                ControlFlow::Break(Err(e)) => return Ok(Err(e)),
+        match state.step_with_slice(&mut decoder, &buffer[..n])? {
+            ControlFlow::Continue(new_state) => {
+                state = new_state;
+            }
+            ControlFlow::Break(Ok(final_state)) => {
+                state = final_state;
+                break;
+            }
+            ControlFlow::Break(Err(e)) => {
+                return Ok(Err(e));
             }
         }
     }
