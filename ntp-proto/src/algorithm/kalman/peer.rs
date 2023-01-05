@@ -803,4 +803,199 @@ mod tests {
         assert!((peer.snapshot(0_usize).unwrap().state.entry(0) - 3.5e-3).abs() < 1e-7);
         assert!((peer.snapshot(0_usize).unwrap().uncertainty.entry(0, 0) - 1e-6) > 0.);
     }
+
+    #[test]
+    fn test_poll_duration_variation() {
+        let config = SystemConfig::default();
+        let algo_config = AlgorithmConfig {
+            poll_histeresis: 2,
+            ..Default::default()
+        };
+
+        let base = NtpTimestamp::from_fixed_int(0);
+        let basei = NtpInstant::now();
+        let mut peer = PeerFilter {
+            state: Vector::new(0.0, 0.),
+            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            clock_wander: 1e-8,
+            rtt_stats: RttBuf {
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                next_idx: 0,
+            },
+            precision_score: 0,
+            poll_score: 0,
+            desired_poll_interval: PollIntervalLimits::default().min,
+            last_measurement: Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(0.0),
+                localtime: base,
+                monotime: basei,
+            },
+            last_packet: NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+            prev_was_outlier: false,
+            last_iter: base,
+            filter_time: base,
+        };
+
+        let baseinterval = peer.desired_poll_interval.as_duration().to_seconds();
+        let pollup = peer
+            .desired_poll_interval
+            .inc(PollIntervalLimits::default());
+        peer.update_desired_poll(&config, &algo_config, 0.0, 1.0, baseinterval * 2.);
+        assert_eq!(peer.poll_score, 0);
+        assert_eq!(
+            peer.desired_poll_interval,
+            PollIntervalLimits::default().min
+        );
+        peer.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval * 2.);
+        assert_eq!(peer.poll_score, -1);
+        assert_eq!(
+            peer.desired_poll_interval,
+            PollIntervalLimits::default().min
+        );
+        peer.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval * 2.);
+        assert_eq!(peer.poll_score, 0);
+        assert_eq!(peer.desired_poll_interval, pollup);
+        peer.update_desired_poll(&config, &algo_config, 0.0, 1.0, baseinterval * 3.);
+        assert_eq!(peer.poll_score, 0);
+        assert_eq!(peer.desired_poll_interval, pollup);
+        peer.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval);
+        assert_eq!(peer.poll_score, 0);
+        assert_eq!(peer.desired_poll_interval, pollup);
+        peer.update_desired_poll(&config, &algo_config, 100.0, 0.0, baseinterval * 3.);
+        assert_eq!(peer.poll_score, 0);
+        assert_eq!(
+            peer.desired_poll_interval,
+            PollIntervalLimits::default().min
+        );
+        peer.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval * 2.);
+        assert_eq!(peer.poll_score, -1);
+        assert_eq!(
+            peer.desired_poll_interval,
+            PollIntervalLimits::default().min
+        );
+        peer.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval * 2.);
+        assert_eq!(peer.poll_score, 0);
+        assert_eq!(peer.desired_poll_interval, pollup);
+        peer.update_desired_poll(&config, &algo_config, 0.0, 1.0, baseinterval);
+        assert_eq!(peer.poll_score, 1);
+        assert_eq!(peer.desired_poll_interval, pollup);
+        peer.update_desired_poll(&config, &algo_config, 0.0, 1.0, baseinterval);
+        assert_eq!(peer.poll_score, 0);
+        assert_eq!(
+            peer.desired_poll_interval,
+            PollIntervalLimits::default().min
+        );
+        peer.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval);
+        assert_eq!(peer.poll_score, -1);
+        assert_eq!(
+            peer.desired_poll_interval,
+            PollIntervalLimits::default().min
+        );
+        peer.update_desired_poll(
+            &config,
+            &algo_config,
+            0.0,
+            (algo_config.poll_high_weight + algo_config.poll_low_weight) / 2.,
+            baseinterval,
+        );
+        assert_eq!(peer.poll_score, 0);
+        assert_eq!(
+            peer.desired_poll_interval,
+            PollIntervalLimits::default().min
+        );
+        peer.update_desired_poll(&config, &algo_config, 0.0, 1.0, baseinterval);
+        assert_eq!(peer.poll_score, 1);
+        assert_eq!(
+            peer.desired_poll_interval,
+            PollIntervalLimits::default().min
+        );
+        peer.update_desired_poll(
+            &config,
+            &algo_config,
+            0.0,
+            (algo_config.poll_high_weight + algo_config.poll_low_weight) / 2.,
+            baseinterval,
+        );
+        assert_eq!(peer.poll_score, 0);
+        assert_eq!(
+            peer.desired_poll_interval,
+            PollIntervalLimits::default().min
+        );
+    }
+
+    #[test]
+    fn test_wander_estimation() {
+        let algo_config = AlgorithmConfig {
+            precision_histeresis: 2,
+            ..Default::default()
+        };
+
+        let base = NtpTimestamp::from_fixed_int(0);
+        let basei = NtpInstant::now();
+        let mut peer = PeerFilter {
+            state: Vector::new(0.0, 0.),
+            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            clock_wander: 1e-8,
+            rtt_stats: RttBuf {
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                next_idx: 0,
+            },
+            precision_score: 0,
+            poll_score: 0,
+            desired_poll_interval: PollIntervalLimits::default().min,
+            last_measurement: Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(0.0),
+                localtime: base,
+                monotime: basei,
+            },
+            last_packet: NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+            prev_was_outlier: false,
+            last_iter: base,
+            filter_time: base,
+        };
+
+        peer.update_wander_estimate(&algo_config, 0.0, 0.0);
+        assert_eq!(peer.precision_score, 0);
+        assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
+        peer.update_wander_estimate(&algo_config, 0.0, 1.0);
+        assert_eq!(peer.precision_score, -1);
+        assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
+        peer.update_wander_estimate(&algo_config, 0.0, 1.0);
+        assert_eq!(peer.precision_score, 0);
+        assert!(dbg!((peer.clock_wander - 0.25e-8).abs()) < 1e-12);
+        peer.update_wander_estimate(&algo_config, 100.0, 0.0);
+        assert_eq!(peer.precision_score, 1);
+        assert!(dbg!((peer.clock_wander - 0.25e-8).abs()) < 1e-12);
+        peer.update_wander_estimate(&algo_config, 100.0, 1.0);
+        assert_eq!(peer.precision_score, 0);
+        assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
+        peer.update_wander_estimate(&algo_config, 100.0, 0.0);
+        assert_eq!(peer.precision_score, 1);
+        assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
+        peer.update_wander_estimate(
+            &algo_config,
+            -2.0 * (1.0
+                - (algo_config.precision_high_probability + algo_config.precision_low_probability)
+                    / 2.0)
+                .ln(),
+            0.0,
+        );
+        assert_eq!(peer.precision_score, 0);
+        assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
+        peer.update_wander_estimate(&algo_config, 0.0, 1.0);
+        assert_eq!(peer.precision_score, -1);
+        assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
+        peer.update_wander_estimate(
+            &algo_config,
+            -2.0 * (1.0
+                - (algo_config.precision_high_probability + algo_config.precision_low_probability)
+                    / 2.0)
+                .ln(),
+            0.0,
+        );
+        assert_eq!(peer.precision_score, 0);
+        assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
+    }
 }

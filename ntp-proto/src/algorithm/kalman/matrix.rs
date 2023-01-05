@@ -271,4 +271,18 @@ mod tests {
 
         assert_eq!(a - b, c);
     }
+
+    #[test]
+    fn test_matrix_rendering() {
+        let a = Matrix::new(1.0, 2.0, 3.0, 4.0);
+        assert_eq!(format!("{}", a), "1 2\n3 4");
+        assert_eq!(format!("{:?}", a), "Matrix(((1.0,2.0),(3.0,4.0)))");
+    }
+
+    #[test]
+    fn test_vector_rendering() {
+        let a = Vector::new(5.0, 6.0);
+        assert_eq!(format!("{}", a), "5\n6");
+        assert_eq!(format!("{:?}", a), "Vector((5.0,6.0))");
+    }
 }
