@@ -214,7 +214,12 @@ impl<'a> ExtensionField<'a> {
                 "Extension field too long",
             ));
         }
-        let actual_length = next_multiple_of((data_length as u16 + 4).max(minimum_size), 4);
+
+        // u16 for the type_id, u16 for the length
+        let header_width = 4;
+
+        let actual_length =
+            next_multiple_of((data_length as u16 + header_width).max(minimum_size), 4);
         w.write_all(&ef_id.to_type_id().to_be_bytes())?;
         w.write_all(&actual_length.to_be_bytes())
     }
@@ -230,15 +235,26 @@ impl<'a> ExtensionField<'a> {
                 "Extension field too long",
             ));
         }
-        let actual_length = next_multiple_of((data_length as u16 + 4).max(minimum_size), 4);
-        let mut padding_length = actual_length - (data_length as u16) - 4;
+
+        // u16 for the type_id, u16 for the length
+        let header_width = 4;
+
+        let actual_length =
+            next_multiple_of((data_length as u16 + header_width).max(minimum_size), 4);
+
+        Self::write_zeros(w, actual_length - (data_length as u16) - 4)
+    }
+
+    fn write_zeros(w: &mut impl std::io::Write, n: u16) -> std::io::Result<()> {
+        let mut remaining = n;
         let padding_bytes = [0_u8; 32];
-        while padding_length > 0 {
-            let added = (padding_length as usize).min(padding_bytes.len());
+        while remaining > 0 {
+            let added = usize::min(remaining as usize, padding_bytes.len());
             w.write_all(&padding_bytes[..added])?;
 
-            padding_length -= added as u16;
+            remaining -= added as u16;
         }
+
         Ok(())
     }
 
@@ -288,7 +304,9 @@ impl<'a> ExtensionField<'a> {
             minimum_size,
         )?;
 
-        Self::encode_padding(w, 0, minimum_size.max(cookie_length))?;
+        Self::write_zeros(w, cookie_length)?;
+
+        Self::encode_padding(w, cookie_length as usize, minimum_size)?;
 
         Ok(())
     }
