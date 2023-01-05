@@ -161,7 +161,7 @@ async fn main() -> std::io::Result<()> {
         let n = stream.read(&mut buffer).await.unwrap();
         decoder.extend(buffer[..n].iter().copied());
 
-        while let Some(record) = decoder.next().unwrap() {
+        while let Some(record) = decoder.step().unwrap() {
             match record {
                 NtsRecord::EndOfMessage => break 'outer,
                 NtsRecord::NewCookie { cookie_data } => cookie = Some(cookie_data),
