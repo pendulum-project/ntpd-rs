@@ -415,7 +415,7 @@ impl<'a> RawEncryptedField<'a> {
         };
 
         let mut result = vec![];
-        for encrypted_field in RawExtensionField::deserialize_sequence(&plaintext, 0) {
+        for encrypted_field in RawExtensionField::deserialize_sequence(&plaintext, 0, RawExtensionField::BARE_MINIMUM_SIZE) {
             let encrypted_field = encrypted_field?.1;
             if encrypted_field.type_id == ExtensionFieldTypeId::NtsEncryptedField {
                 // TODO: Discuss whether we want this check
@@ -436,14 +436,15 @@ struct RawExtensionField<'a> {
 }
 
 impl<'a> RawExtensionField<'a> {
-    const MINIMUM_SIZE: usize = 16;
+    const BARE_MINIMUM_SIZE: usize = 4;
+    const V4_UNENCRYPTED_MINIMUM_SIZE: usize = 4;
 
     fn wire_length(&self) -> usize {
         // type_id and extension_field_length + data + padding
         4 + self.message_bytes.len()
     }
 
-    pub fn deserialize(data: &'a [u8]) -> Result<Self, PacketParsingError> {
+    pub fn deserialize(data: &'a [u8], minimum_size: usize) -> Result<Self, PacketParsingError> {
         use PacketParsingError::IncorrectLength;
 
         if data.len() < 4 {
@@ -452,7 +453,7 @@ impl<'a> RawExtensionField<'a> {
 
         let type_id = u16::from_be_bytes(data[0..2].try_into().unwrap());
         let field_length = u16::from_be_bytes(data[2..4].try_into().unwrap()) as usize;
-        if field_length < Self::MINIMUM_SIZE || field_length % 4 != 0 {
+        if field_length < minimum_size || field_length % 4 != 0 {
             return Err(PacketParsingError::IncorrectLength);
         }
 
@@ -467,10 +468,12 @@ impl<'a> RawExtensionField<'a> {
     pub fn deserialize_sequence(
         buffer: &'a [u8],
         cutoff: usize,
+        minimum_size: usize,
     ) -> impl Iterator<Item = Result<(usize, RawExtensionField<'a>), PacketParsingError>> + 'a {
         ExtensionFieldStreamer {
             buffer,
             cutoff,
+            minimum_size,
             offset: 0,
         }
     }
@@ -479,6 +482,7 @@ impl<'a> RawExtensionField<'a> {
 struct ExtensionFieldStreamer<'a> {
     buffer: &'a [u8],
     cutoff: usize,
+    minimum_size: usize,
     offset: usize,
 }
 
@@ -490,7 +494,7 @@ impl<'a> Iterator for ExtensionFieldStreamer<'a> {
             return None;
         }
 
-        match RawExtensionField::deserialize(&self.buffer[self.offset..]) {
+        match RawExtensionField::deserialize(&self.buffer[self.offset..], self.minimum_size) {
             Ok(field) => {
                 let offset = self.offset;
                 self.offset += field.wire_length();
@@ -580,7 +584,7 @@ impl<'a> ExtensionFieldData<'a> {
         let mut this = Self::default();
         let mut size = 0;
         for field in
-            RawExtensionField::deserialize_sequence(&data[header_size..], Mac::MAXIMUM_SIZE)
+            RawExtensionField::deserialize_sequence(&data[header_size..], Mac::MAXIMUM_SIZE, RawExtensionField::V4_UNENCRYPTED_MINIMUM_SIZE)
         {
             let (offset, field) = field?;
             size = offset + field.wire_length();
