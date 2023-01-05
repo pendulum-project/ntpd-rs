@@ -50,7 +50,7 @@ impl InitialPeerFilter {
     }
 
     fn process_offset_steering(&mut self, steer: f64) {
-        for ref mut sample in self.init_offset.data {
+        for sample in self.init_offset.data.iter_mut() {
             *sample -= steer;
         }
     }
@@ -408,7 +408,7 @@ mod tests {
     fn test_offset_steering_and_measurements() {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
-        let mut peer = PeerFilter {
+        let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
             state: Vector::new(20e-3, 0.),
             uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
             clock_wander: 1e-8,
@@ -429,17 +429,17 @@ mod tests {
             prev_was_outlier: false,
             last_iter: base,
             filter_time: base,
-        };
+        }));
 
         peer.process_offset_steering(20e-3);
-        assert!(peer.state.entry(0).abs() < 1e-7);
+        assert!(peer.snapshot(0_usize).unwrap().state.entry(0).abs() < 1e-7);
 
         assert!(catch_unwind(
             move || peer.progress_filtertime(base + NtpDuration::from_seconds(10e-3))
         )
         .is_err());
 
-        let mut peer = PeerFilter {
+        let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
             state: Vector::new(20e-3, 0.),
             uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
             clock_wander: 1e-8,
@@ -460,10 +460,10 @@ mod tests {
             prev_was_outlier: false,
             last_iter: base,
             filter_time: base,
-        };
+        }));
 
         peer.process_offset_steering(20e-3);
-        assert!(peer.state.entry(0).abs() < 1e-7);
+        assert!(peer.snapshot(0_usize).unwrap().state.entry(0).abs() < 1e-7);
 
         peer.update(
             &SystemConfig::default(),
@@ -477,10 +477,10 @@ mod tests {
             NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
 
-        assert!(dbg!((peer.state.entry(0) - 20e-3).abs()) < 1e-7);
-        assert!((peer.state.entry(1) - 20e-6).abs() < 1e-7);
+        assert!(dbg!((peer.snapshot(0_usize).unwrap().state.entry(0) - 20e-3).abs()) < 1e-7);
+        assert!((peer.snapshot(0_usize).unwrap().state.entry(1) - 20e-6).abs() < 1e-7);
 
-        let mut peer = PeerFilter {
+        let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
             state: Vector::new(-20e-3, 0.),
             uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
             clock_wander: 1e-8,
@@ -501,10 +501,10 @@ mod tests {
             prev_was_outlier: false,
             last_iter: base,
             filter_time: base,
-        };
+        }));
 
         peer.process_offset_steering(-20e-3);
-        assert!(peer.state.entry(0).abs() < 1e-7);
+        assert!(peer.snapshot(0_usize).unwrap().state.entry(0).abs() < 1e-7);
 
         peer.progress_filtertime(base - NtpDuration::from_seconds(10e-3)); // should succeed
 
@@ -520,8 +520,8 @@ mod tests {
             NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
 
-        assert!(dbg!((peer.state.entry(0) - -20e-3).abs()) < 1e-7);
-        assert!((peer.state.entry(1) - -20e-6).abs() < 1e-7);
+        assert!(dbg!((peer.snapshot(0_usize).unwrap().state.entry(0) - -20e-3).abs()) < 1e-7);
+        assert!((peer.snapshot(0_usize).unwrap().state.entry(1) - -20e-6).abs() < 1e-7);
     }
 
     #[test]
@@ -559,11 +559,248 @@ mod tests {
         assert!(peer.state.entry(1).abs() < 1e-10);
         assert!((peer.state.entry(0) - -1e-3).abs() < 1e-8);
         assert!((peer.last_measurement.offset.to_seconds() - -1e-3).abs() < 1e-8);
+
+        let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
+            state: Vector::new(0.0, 0.),
+            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            clock_wander: 1e-8,
+            rtt_stats: RttBuf {
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                next_idx: 0,
+            },
+            precision_score: 0,
+            poll_score: 0,
+            desired_poll_interval: PollIntervalLimits::default().min,
+            last_measurement: Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(0.0),
+                localtime: base,
+                monotime: basei,
+            },
+            last_packet: NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+            prev_was_outlier: false,
+            last_iter: base,
+            filter_time: base,
+        }));
+
+        peer.process_frequency_steering(base + NtpDuration::from_seconds(5.0), 200e-6);
+        assert!((peer.snapshot(0_usize).unwrap().state.entry(1) - -200e-6).abs() < 1e-10);
+        assert!(peer.snapshot(0_usize).unwrap().state.entry(0).abs() < 1e-8);
+        peer.process_frequency_steering(base + NtpDuration::from_seconds(10.0), -200e-6);
+        assert!(peer.snapshot(0_usize).unwrap().state.entry(1).abs() < 1e-10);
+        assert!((peer.snapshot(0_usize).unwrap().state.entry(0) - -1e-3).abs() < 1e-8);
     }
 
     #[test]
-    fn test_init() {}
+    fn test_init() {
+        let base = NtpTimestamp::from_fixed_int(0);
+        let basei = NtpInstant::now();
+        let mut peer = PeerState::new();
+        assert!(peer.snapshot(0_usize).is_none());
+        peer.update(
+            &SystemConfig::default(),
+            &AlgorithmConfig::default(),
+            Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(0e-3),
+                localtime: base + NtpDuration::from_seconds(1000.0),
+                monotime: basei,
+            },
+            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+        );
+        assert!(peer.snapshot(0_usize).is_none());
+        peer.update(
+            &SystemConfig::default(),
+            &AlgorithmConfig::default(),
+            Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(1e-3),
+                localtime: base + NtpDuration::from_seconds(1000.0),
+                monotime: basei,
+            },
+            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+        );
+        assert!(peer.snapshot(0_usize).is_none());
+        peer.update(
+            &SystemConfig::default(),
+            &AlgorithmConfig::default(),
+            Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(2e-3),
+                localtime: base + NtpDuration::from_seconds(1000.0),
+                monotime: basei,
+            },
+            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+        );
+        assert!(peer.snapshot(0_usize).is_none());
+        peer.update(
+            &SystemConfig::default(),
+            &AlgorithmConfig::default(),
+            Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(3e-3),
+                localtime: base + NtpDuration::from_seconds(1000.0),
+                monotime: basei,
+            },
+            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+        );
+        assert!(peer.snapshot(0_usize).is_none());
+        peer.update(
+            &SystemConfig::default(),
+            &AlgorithmConfig::default(),
+            Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(4e-3),
+                localtime: base + NtpDuration::from_seconds(1000.0),
+                monotime: basei,
+            },
+            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+        );
+        assert!(peer.snapshot(0_usize).is_none());
+        peer.update(
+            &SystemConfig::default(),
+            &AlgorithmConfig::default(),
+            Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(5e-3),
+                localtime: base + NtpDuration::from_seconds(1000.0),
+                monotime: basei,
+            },
+            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+        );
+        assert!(peer.snapshot(0_usize).is_none());
+        peer.update(
+            &SystemConfig::default(),
+            &AlgorithmConfig::default(),
+            Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(6e-3),
+                localtime: base + NtpDuration::from_seconds(1000.0),
+                monotime: basei,
+            },
+            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+        );
+        assert!(peer.snapshot(0_usize).is_none());
+        peer.update(
+            &SystemConfig::default(),
+            &AlgorithmConfig::default(),
+            Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(7e-3),
+                localtime: base + NtpDuration::from_seconds(1000.0),
+                monotime: basei,
+            },
+            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+        );
+        assert!(peer.snapshot(0_usize).is_some());
+        assert!((peer.snapshot(0_usize).unwrap().state.entry(0) - 3.5e-3).abs() < 1e-7);
+        assert!((peer.snapshot(0_usize).unwrap().uncertainty.entry(0, 0) - 1e-6) > 0.);
+    }
 
     #[test]
-    fn test_steer_during_init() {}
+    fn test_steer_during_init() {
+        let base = NtpTimestamp::from_fixed_int(0);
+        let basei = NtpInstant::now();
+        let mut peer = PeerState::new();
+        assert!(peer.snapshot(0_usize).is_none());
+        peer.update(
+            &SystemConfig::default(),
+            &AlgorithmConfig::default(),
+            Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(4e-3),
+                localtime: base + NtpDuration::from_seconds(1000.0),
+                monotime: basei,
+            },
+            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+        );
+        assert!(peer.snapshot(0_usize).is_none());
+        peer.update(
+            &SystemConfig::default(),
+            &AlgorithmConfig::default(),
+            Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(5e-3),
+                localtime: base + NtpDuration::from_seconds(1000.0),
+                monotime: basei,
+            },
+            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+        );
+        assert!(peer.snapshot(0_usize).is_none());
+        peer.update(
+            &SystemConfig::default(),
+            &AlgorithmConfig::default(),
+            Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(6e-3),
+                localtime: base + NtpDuration::from_seconds(1000.0),
+                monotime: basei,
+            },
+            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+        );
+        assert!(peer.snapshot(0_usize).is_none());
+        peer.update(
+            &SystemConfig::default(),
+            &AlgorithmConfig::default(),
+            Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(7e-3),
+                localtime: base + NtpDuration::from_seconds(1000.0),
+                monotime: basei,
+            },
+            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+        );
+        peer.process_offset_steering(4e-3);
+        assert!(peer.snapshot(0_usize).is_none());
+        peer.update(
+            &SystemConfig::default(),
+            &AlgorithmConfig::default(),
+            Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(4e-3),
+                localtime: base + NtpDuration::from_seconds(1000.0),
+                monotime: basei,
+            },
+            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+        );
+        assert!(peer.snapshot(0_usize).is_none());
+        peer.update(
+            &SystemConfig::default(),
+            &AlgorithmConfig::default(),
+            Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(5e-3),
+                localtime: base + NtpDuration::from_seconds(1000.0),
+                monotime: basei,
+            },
+            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+        );
+        assert!(peer.snapshot(0_usize).is_none());
+        peer.update(
+            &SystemConfig::default(),
+            &AlgorithmConfig::default(),
+            Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(6e-3),
+                localtime: base + NtpDuration::from_seconds(1000.0),
+                monotime: basei,
+            },
+            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+        );
+        assert!(peer.snapshot(0_usize).is_none());
+        peer.update(
+            &SystemConfig::default(),
+            &AlgorithmConfig::default(),
+            Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(7e-3),
+                localtime: base + NtpDuration::from_seconds(1000.0),
+                monotime: basei,
+            },
+            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
+        );
+        assert!(peer.snapshot(0_usize).is_some());
+        assert!((peer.snapshot(0_usize).unwrap().state.entry(0) - 3.5e-3).abs() < 1e-7);
+        assert!((peer.snapshot(0_usize).unwrap().uncertainty.entry(0, 0) - 1e-6) > 0.);
+    }
 }
