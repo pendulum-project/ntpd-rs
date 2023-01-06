@@ -1,7 +1,10 @@
 use std::{
     io::{Read, Write},
     ops::ControlFlow,
+    sync::Arc,
 };
+
+use aes_siv::{Aes128SivAead, KeyInit};
 
 #[derive(Debug)]
 pub enum WriteError {
@@ -403,6 +406,10 @@ pub enum KeyExchangeError {
     NoCookies,
     #[error("{0}")]
     Io(#[from] std::io::Error),
+    #[error("{0}")]
+    Tls(#[from] rustls::Error),
+    #[error("{0}")]
+    DnsName(#[from] rustls::client::InvalidDnsNameError),
     #[error("Incomplete response")]
     IncompleteResponse,
 }
@@ -517,6 +524,110 @@ impl KeyExchangeResultDecoder {
 
     fn new() -> Self {
         Self::default()
+    }
+}
+
+pub struct KeyExchangeResult {
+    pub remote: String,
+    pub port: u16,
+    pub cookies: Vec<Vec<u8>>,
+    pub key_c2s: Aes128SivAead,
+    pub key_s2c: Aes128SivAead,
+}
+
+pub struct KeyExchangeClient {
+    tls_connection: rustls::ClientConnection,
+    decoder: KeyExchangeResultDecoder,
+    server_name: String,
+}
+
+impl KeyExchangeClient {
+    const NTS_KEY_EXPORT_LABEL: &[u8] = b"EXPORTER-network-time-security";
+    const NTS_KEY_EXPORT_AESSIV128_C2S_CONTEXT: &[u8] = &[0, 0, 0, 15, 0];
+    const NTS_KEY_EXPORT_AESSIV128_S2C_CONTEXT: &[u8] = &[0, 0, 0, 15, 1];
+
+    pub fn wants_read(&mut self) -> bool {
+        self.tls_connection.wants_read()
+    }
+
+    pub fn read_socket(&mut self, rd: &mut dyn Read) -> std::io::Result<usize> {
+        self.tls_connection.read_tls(rd)
+    }
+
+    pub fn wants_write(&mut self) -> bool {
+        self.tls_connection.wants_write()
+    }
+
+    pub fn write_socket(&mut self, wr: &mut dyn Write) -> std::io::Result<usize> {
+        self.tls_connection.write_tls(wr)
+    }
+
+    pub fn progress(mut self) -> ControlFlow<Result<KeyExchangeResult, KeyExchangeError>, Self> {
+        // Move any received data from tls to decoder
+        let mut buf = [0; 128];
+        loop {
+            let read_result = self.tls_connection.reader().read(&mut buf);
+            match read_result {
+                Ok(0) => return ControlFlow::Break(Err(KeyExchangeError::IncompleteResponse)),
+                Ok(n) => {
+                    self.decoder = match self.decoder.step_with_slice(&buf[..n]) {
+                        ControlFlow::Continue(decoder) => decoder,
+                        ControlFlow::Break(Ok(result)) => {
+                            let mut c2s: aead::Key<Aes128SivAead> = Default::default();
+                            if let Err(e) = self.tls_connection.export_keying_material(
+                                &mut c2s,
+                                Self::NTS_KEY_EXPORT_LABEL,
+                                Some(Self::NTS_KEY_EXPORT_AESSIV128_C2S_CONTEXT),
+                            ) {
+                                return ControlFlow::Break(Err(KeyExchangeError::Tls(e)));
+                            }
+                            let mut s2c: aead::Key<Aes128SivAead> = Default::default();
+                            if let Err(e) = self.tls_connection.export_keying_material(
+                                &mut s2c,
+                                Self::NTS_KEY_EXPORT_LABEL,
+                                Some(Self::NTS_KEY_EXPORT_AESSIV128_S2C_CONTEXT),
+                            ) {
+                                return ControlFlow::Break(Err(KeyExchangeError::Tls(e)));
+                            }
+                            return ControlFlow::Break(Ok(KeyExchangeResult {
+                                remote: result.remote.unwrap_or(self.server_name),
+                                port: result.port.unwrap_or(123),
+                                cookies: result.cookies,
+                                key_c2s: Aes128SivAead::new(&c2s),
+                                key_s2c: Aes128SivAead::new(&s2c),
+                            }));
+                        }
+                        ControlFlow::Break(Err(error)) => return ControlFlow::Break(Err(error)),
+                    }
+                }
+                Err(e) => match e.kind() {
+                    std::io::ErrorKind::WouldBlock => return ControlFlow::Continue(self),
+                    _ => return ControlFlow::Break(Err(e.into())),
+                },
+            }
+        }
+    }
+
+    pub fn new(
+        server_name: String,
+        tls_config: Arc<rustls::ClientConfig>,
+    ) -> Result<Self, KeyExchangeError> {
+        let mut tls_connection =
+            rustls::ClientConnection::new(tls_config, (server_name.as_ref() as &str).try_into()?)?;
+
+        // Make the request immediately (note, this will only go out to the wire via the write functions above)
+        // use an intermediary buffer to work around issues in some NTS-ke server implementations
+        let mut buffer = Vec::with_capacity(1024);
+        for record in NtsRecord::client_key_exchange_records() {
+            record.write(&mut buffer)?;
+        }
+        tls_connection.writer().write_all(&buffer)?;
+
+        Ok(KeyExchangeClient {
+            tls_connection,
+            decoder: KeyExchangeResultDecoder::new(),
+            server_name,
+        })
     }
 }
 
