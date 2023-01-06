@@ -3,6 +3,7 @@
 mod algorithm;
 mod clock;
 mod config;
+mod cookiestash;
 mod identifiers;
 mod nts_record;
 mod packet;
