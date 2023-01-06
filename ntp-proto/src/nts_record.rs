@@ -340,6 +340,7 @@ impl<'a> arbitrary::Arbitrary<'a> for NtsRecord {
     }
 }
 
+#[derive(Debug, Clone, Default)]
 pub struct NtsRecordDecoder {
     bytes: Vec<u8>,
 }
@@ -378,66 +379,72 @@ impl NtsRecordDecoder {
             Ok(None)
         }
     }
+
+    pub fn new() -> Self {
+        Self::default()
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum KeyExchangeError {
+    #[error("Unrecognized record is marked as critical")]
     UnrecognizedCriticalRecord,
+    #[error("Remote: Bad request")]
     BadRequest,
+    #[error("Remote: Internal server error")]
     InternalServerError,
+    #[error("Remote: Error with unknown code {0}")]
     UnknownErrorCode(u16),
+    #[error("No continuation protocol supported by both us and server")]
     NoValidProtocol,
+    #[error("No encryption algorithm supported by both us and server")]
     NoValidAlgorithm,
+    #[error("Missing cookies")]
     NoCookies,
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
+    #[error("Incomplete response")]
+    IncompleteResponse,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct KeyExchange {
-    pub remote: String,
-    pub port: u16,
-    pub cookies: Vec<Vec<u8>>,
+struct PartialKeyExchangeData {
+    remote: Option<String>,
+    port: Option<u16>,
+    cookies: Vec<Vec<u8>>,
 }
 
-pub type KeyExchangeStep = ControlFlow<Result<KeyExchange, KeyExchangeError>, KeyExchange>;
-
-pub enum NextStep {
-    NeedMoreInput(KeyExchange),
-    Done(KeyExchange),
-    ReadError(std::io::Error),
-    KeyExchangeError(KeyExchangeError),
+#[derive(Debug, Clone, Default)]
+struct KeyExchangeResultDecoder {
+    decoder: NtsRecordDecoder,
+    remote: Option<String>,
+    port: Option<u16>,
+    cookies: Vec<Vec<u8>>,
 }
 
-impl KeyExchange {
-    pub fn step_with_slice(mut self, decoder: &mut NtsRecordDecoder, bytes: &[u8]) -> NextStep {
-        decoder.extend(bytes.iter().copied());
+impl KeyExchangeResultDecoder {
+    pub fn step_with_slice(
+        mut self,
+        bytes: &[u8],
+    ) -> ControlFlow<Result<PartialKeyExchangeData, KeyExchangeError>, Self> {
+        self.decoder.extend(bytes.iter().copied());
 
         loop {
-            match decoder.step() {
-                Err(read_error) => return NextStep::ReadError(read_error),
-                Ok(Some(record)) => match self.step_with_record(record) {
-                    ControlFlow::Continue(new_state) => {
-                        self = new_state;
-                    }
-                    ControlFlow::Break(Err(key_exchange_error)) => {
-                        return NextStep::KeyExchangeError(key_exchange_error);
-                    }
-                    ControlFlow::Break(Ok(final_state)) => {
-                        if final_state.cookies.is_empty() {
-                            return NextStep::KeyExchangeError(KeyExchangeError::NoCookies);
-                        } else {
-                            return NextStep::Done(final_state);
-                        }
-                    }
-                },
+            match self.decoder.step() {
+                Err(e) => return ControlFlow::Break(Err(e.into())),
+                Ok(Some(record)) => self = self.step_with_record(record)?,
                 Ok(None) => {
-                    return NextStep::NeedMoreInput(self);
+                    return ControlFlow::Continue(self);
                 }
             }
         }
     }
 
     #[inline(always)]
-    fn step_with_record(self, record: NtsRecord) -> KeyExchangeStep {
+    fn step_with_record(
+        self,
+        record: NtsRecord,
+    ) -> ControlFlow<Result<PartialKeyExchangeData, KeyExchangeError>, Self> {
         use ControlFlow::{Break, Continue};
         use KeyExchangeError::*;
         use NtsRecord::*;
@@ -445,17 +452,27 @@ impl KeyExchange {
         let mut state = self;
 
         match record {
-            EndOfMessage => Break(Ok(state)),
+            EndOfMessage => {
+                if state.cookies.is_empty() {
+                    Break(Err(KeyExchangeError::NoCookies))
+                } else {
+                    Break(Ok(PartialKeyExchangeData {
+                        remote: state.remote,
+                        port: state.port,
+                        cookies: state.cookies,
+                    }))
+                }
+            }
             NewCookie { cookie_data } => {
                 state.cookies.push(cookie_data);
                 Continue(state)
             }
             Server { name, .. } => {
-                state.remote = name;
+                state.remote = Some(name);
                 Continue(state)
             }
             Port { port, .. } => {
-                state.port = port;
+                state.port = Some(port);
                 Continue(state)
             }
             Error { errorcode } => {
@@ -497,6 +514,10 @@ impl KeyExchange {
             Unknown { .. } => Continue(state),
         }
     }
+
+    fn new() -> Self {
+        Self::default()
+    }
 }
 
 #[cfg(test)]
@@ -535,34 +556,20 @@ mod test {
         assert!(decoder.step().unwrap().is_none());
     }
 
-    fn roundtrip(records: &[NtsRecord]) -> std::io::Result<Result<KeyExchange, KeyExchangeError>> {
-        let mut decoder = NtsRecord::decoder();
-
-        let mut state = KeyExchange {
-            remote: String::from("default.nts.server"),
-            port: 1234,
-            cookies: vec![],
-        };
+    fn roundtrip(records: &[NtsRecord]) -> Result<PartialKeyExchangeData, KeyExchangeError> {
+        let mut decoder = KeyExchangeResultDecoder::new();
 
         for record in records {
             let mut buffer = Vec::with_capacity(1024);
             record.write(&mut buffer).unwrap();
 
-            match state.step_with_slice(&mut decoder, &buffer) {
-                NextStep::NeedMoreInput(new_state) => {
-                    state = new_state;
-                    continue;
-                }
-                NextStep::Done(final_state) => {
-                    state = final_state;
-                    break;
-                }
-                NextStep::ReadError(io_error) => return Err(io_error),
-                NextStep::KeyExchangeError(ke_error) => return Ok(Err(ke_error)),
+            decoder = match decoder.step_with_slice(&buffer) {
+                ControlFlow::Continue(decoder) => decoder,
+                ControlFlow::Break(result) => return result,
             }
         }
 
-        Ok(Ok(state))
+        Err(KeyExchangeError::IncompleteResponse)
     }
 
     #[test]
@@ -573,7 +580,7 @@ mod test {
         };
 
         assert!(matches!(
-            roundtrip(&[algorithm]).unwrap(),
+            roundtrip(&[algorithm]),
             Err(KeyExchangeError::NoValidAlgorithm)
         ));
 
@@ -583,7 +590,7 @@ mod test {
         };
 
         assert!(matches!(
-            roundtrip(&[algorithm]).unwrap(),
+            roundtrip(&[algorithm]),
             Err(KeyExchangeError::NoValidAlgorithm)
         ));
     }
@@ -602,12 +609,23 @@ mod test {
                 critical: true,
                 port,
             },
+            NtsRecord::NewCookie {
+                cookie_data: vec![
+                    178, 15, 188, 164, 68, 107, 175, 34, 77, 63, 18, 34, 122, 22, 95, 242, 175,
+                    224, 29, 173, 58, 187, 47, 11, 245, 247, 119, 89, 5, 8, 221, 162, 106, 66, 30,
+                    65, 218, 13, 108, 238, 12, 29, 200, 9, 92, 218, 38, 20, 238, 251, 68, 35, 44,
+                    129, 189, 132, 4, 93, 117, 136, 91, 234, 58, 195, 223, 171, 207, 247, 172, 128,
+                    5, 219, 97, 21, 128, 107, 96, 220, 189, 53, 223, 111, 181, 164, 185, 173, 80,
+                    101, 75, 18, 180, 129, 243, 140, 253, 236, 45, 62, 101, 155, 252, 51, 102, 97,
+                ],
+            },
+            NtsRecord::EndOfMessage,
         ];
 
-        let state = roundtrip(records.as_slice()).unwrap().unwrap();
+        let state = roundtrip(records.as_slice()).unwrap();
 
-        assert_eq!(state.remote, name);
-        assert_eq!(state.port, port);
+        assert_eq!(state.remote, Some(name));
+        assert_eq!(state.port, Some(port));
     }
 
     const NTS_TIME_NL_RESPONSE: &[u8] = &[
@@ -758,12 +776,10 @@ mod test {
 
     #[test]
     fn test_nts_time_nl_response() {
-        let state = roundtrip(nts_time_nl_records().as_slice())
-            .unwrap()
-            .unwrap();
+        let state = roundtrip(nts_time_nl_records().as_slice()).unwrap();
 
-        assert_eq!(state.remote, String::from("default.nts.server"));
-        assert_eq!(state.port, 1234);
+        assert_eq!(state.remote, None);
+        assert_eq!(state.port, None);
         assert_eq!(state.cookies.len(), 8);
     }
 
