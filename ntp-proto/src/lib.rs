@@ -32,4 +32,4 @@ pub use time_types::{
     FrequencyTolerance, NtpDuration, NtpInstant, NtpTimestamp, PollInterval, PollIntervalLimits,
 };
 
-pub use nts_record::{NtsRecord, NtsRecordDecoder, WriteError};
+pub use nts_record::{KeyExchangeClient, NtsRecord, NtsRecordDecoder, WriteError};
