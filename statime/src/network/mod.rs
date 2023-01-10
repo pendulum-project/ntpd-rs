@@ -1,8 +1,7 @@
 //! Definitions and implementations of the abstract network types
 
+use arrayvec::ArrayVec;
 use crate::time::Instant;
-
-use alloc::vec::Vec;
 
 #[cfg(test)]
 pub mod test;
@@ -16,7 +15,7 @@ pub trait NetworkRuntime: Clone {
     /// or to select between IPv4 and IPv6.
     type InterfaceDescriptor: Clone;
     type PortType: NetworkPort;
-    type Error: core::error::Error + core::fmt::Display;
+    type Error: core::fmt::Debug + core::fmt::Display;
 
     /// Open a port on the given network interface.
     ///
@@ -38,7 +37,7 @@ pub trait NetworkRuntime: Clone {
 #[derive(Debug, Clone)]
 pub struct NetworkPacket {
     /// The received data of a network port
-    pub data: Vec<u8>,
+    pub data: ArrayVec<u8, 255>,
     /// The timestamp at which the packet was received. This is preferrably a timestamp
     /// that has been reported by the network hardware.
     ///

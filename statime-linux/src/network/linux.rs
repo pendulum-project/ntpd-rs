@@ -1,5 +1,7 @@
 //! Implementation of the abstract network types for the linux platform
 
+use arrayvec::ArrayVec;
+
 use std::{os::unix::prelude::RawFd, str::FromStr, sync::mpsc::Sender, thread::JoinHandle};
 
 use nix::{
@@ -426,7 +428,7 @@ impl NetworkPort for LinuxNetworkPort {
 
 impl LinuxNetworkPort {
     fn recv_thread(socket: i32, tx: Sender<NetworkPacket>, hardware_timestamping: bool) {
-        let mut read_buf = [0u8; 2048];
+        let mut read_buf = [0u8; 255];
         let io_vec = [IoVec::from_mut_slice(&mut read_buf)];
         let mut cmsg = cmsg_space!(Timestamps);
         let flags = MsgFlags::empty();
@@ -443,8 +445,15 @@ impl LinuxNetworkPort {
                     ts = Some(timespec_into_instant(spec));
                 }
             }
+
+            // TODO: Add a length check; there has to be a better way...
+            let mut data = ArrayVec::<u8, 255>::new();
+            for item in io_vec[0].as_slice()[0..recv.bytes].to_vec() {
+                data.push(item);
+            }
+
             tx.send(NetworkPacket {
-                data: io_vec[0].as_slice()[0..recv.bytes].to_vec(),
+                data: data,
                 timestamp: ts,
             })
             .unwrap();

@@ -8,7 +8,7 @@ use crate::{
     time::{Duration, Instant},
 };
 
-use alloc::vec::Vec;
+use arrayvec::ArrayVec;
 
 /// The time window in which announce messages are valid.
 /// To get the real window, multiply it with the announce interval of the port.
@@ -20,14 +20,16 @@ const FOREIGN_MASTER_THRESHOLD: usize = 2;
 pub struct ForeignMaster {
     foreign_master_port_identity: PortIdentity,
     // Must have a capacity of at least 2
-    announce_messages: Vec<(AnnounceMessage, Timestamp)>,
+    announce_messages: ArrayVec::<(AnnounceMessage, Timestamp), 2>,
 }
 
 impl ForeignMaster {
     fn new(announce_message: AnnounceMessage, current_time: Timestamp) -> Self {
+        let mut messages = ArrayVec::<_, 2>::new();
+        messages.push((announce_message, current_time));
         Self {
             foreign_master_port_identity: announce_message.header().source_port_identity(),
-            announce_messages: Vec::from([(announce_message, current_time)]),
+            announce_messages: messages,
         }
     }
 
@@ -65,7 +67,7 @@ impl ForeignMaster {
 
 pub struct ForeignMasterList {
     // Must have a capacity of at least 5
-    foreign_masters: Vec<ForeignMaster>,
+    foreign_masters: ArrayVec<ForeignMaster, 5>,
     own_port_announce_interval: TimeInterval,
     own_port_identity: PortIdentity,
 }
@@ -75,7 +77,7 @@ impl ForeignMasterList {
     /// - `port_identity`: The identity of the port for which this list is used
     pub fn new(own_port_announce_interval: TimeInterval, own_port_identity: PortIdentity) -> Self {
         Self {
-            foreign_masters: Vec::new(),
+            foreign_masters: ArrayVec::<ForeignMaster, 5>::new(),
             own_port_announce_interval,
             own_port_identity,
         }
@@ -86,7 +88,7 @@ impl ForeignMasterList {
         &mut self,
         current_time: Timestamp,
     ) -> impl Iterator<Item = (AnnounceMessage, Timestamp)> {
-        let mut qualified_foreign_masters = Vec::new();
+        let mut qualified_foreign_masters = ArrayVec::<_, 5>::new();
 
         for i in (0..self.foreign_masters.len()).rev() {
             // Purge the old timestamps so we can check the FOREIGN_MASTER_THRESHOLD

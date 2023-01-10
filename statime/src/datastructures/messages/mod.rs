@@ -1,7 +1,6 @@
 //! Ptp network messages
 
-use alloc::vec::Vec;
-
+use arrayvec::ArrayVec;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 mod announce;
@@ -131,8 +130,11 @@ impl Message {
     /// Serializes the message into the PTP wire format.
     ///
     /// Returns a vector with the bytes of the message or an error.
-    pub fn serialize_vec(&self) -> Result<Vec<u8>, super::WireFormatError> {
-        let mut buffer = vec![0; self.wire_size()];
+    pub fn serialize_vec(&self) -> Result<ArrayVec<u8, 255>, super::WireFormatError> {
+        let mut buffer = ArrayVec::<u8, 255>::new();
+        for _i in 0..self.wire_size() {
+            buffer.push(0);
+        }
         self.serialize(&mut buffer)?;
         Ok(buffer)
     }
