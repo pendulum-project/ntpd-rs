@@ -542,9 +542,9 @@ pub struct KeyExchangeClient {
 }
 
 impl KeyExchangeClient {
-    const NTS_KEY_EXPORT_LABEL: &[u8] = b"EXPORTER-network-time-security";
-    const NTS_KEY_EXPORT_AESSIV128_C2S_CONTEXT: &[u8] = &[0, 0, 0, 15, 0];
-    const NTS_KEY_EXPORT_AESSIV128_S2C_CONTEXT: &[u8] = &[0, 0, 0, 15, 1];
+    const NTS_KEY_EXPORT_LABEL: &'static [u8] = b"EXPORTER-network-time-security";
+    const NTS_KEY_EXPORT_AESSIV128_C2S_CONTEXT: &'static [u8] = &[0, 0, 0, 15, 0];
+    const NTS_KEY_EXPORT_AESSIV128_S2C_CONTEXT: &'static [u8] = &[0, 0, 0, 15, 1];
 
     pub fn wants_read(&mut self) -> bool {
         self.tls_connection.wants_read()
@@ -566,6 +566,9 @@ impl KeyExchangeClient {
         // Move any received data from tls to decoder
         let mut buf = [0; 128];
         loop {
+            if let Err(e) = self.tls_connection.process_new_packets() {
+                return ControlFlow::Break(Err(e.into()));
+            }
             let read_result = self.tls_connection.reader().read(&mut buf);
             match read_result {
                 Ok(0) => return ControlFlow::Break(Err(KeyExchangeError::IncompleteResponse)),
@@ -610,10 +613,16 @@ impl KeyExchangeClient {
 
     pub fn new(
         server_name: String,
-        tls_config: Arc<rustls::ClientConfig>,
+        mut tls_config: rustls::ClientConfig,
     ) -> Result<Self, KeyExchangeError> {
-        let mut tls_connection =
-            rustls::ClientConnection::new(tls_config, (server_name.as_ref() as &str).try_into()?)?;
+        // Ensure we send only ntske/1 as alpn
+        tls_config.alpn_protocols.clear();
+        tls_config.alpn_protocols.push(b"ntske/1".to_vec());
+
+        let mut tls_connection = rustls::ClientConnection::new(
+            Arc::new(tls_config),
+            (server_name.as_ref() as &str).try_into()?,
+        )?;
 
         // Make the request immediately (note, this will only go out to the wire via the write functions above)
         // use an intermediary buffer to work around issues in some NTS-ke server implementations
