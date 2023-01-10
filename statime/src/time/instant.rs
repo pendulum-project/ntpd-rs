@@ -2,11 +2,11 @@
 
 use super::duration::Duration;
 use crate::datastructures::common::Timestamp;
-use fixed::{traits::ToFixed, types::U96F32};
 use core::{
     fmt::Display,
     ops::{Add, AddAssign, Sub, SubAssign},
 };
+use fixed::{traits::ToFixed, types::U96F32};
 
 /// An instant is a specific moment in time. The starting 0 point is not defined and can be something arbitrary or something like unix time
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]

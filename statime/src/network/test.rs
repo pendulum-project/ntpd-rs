@@ -1,10 +1,11 @@
+use arrayvec::ArrayVec;
 use std::{cell::RefCell, rc::Rc};
 
 use super::{NetworkPort, NetworkRuntime};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TestNetworkPacket {
-    pub data: Vec<u8>,
+    pub data: ArrayVec<u8, 255>,
     pub interface: String,
     pub time_critical: bool,
     pub index: usize,
@@ -12,7 +13,7 @@ pub struct TestNetworkPacket {
 
 #[derive(Debug, Default)]
 pub struct TestRuntimeData {
-    pub packet_buffer: Vec<TestNetworkPacket>,
+    pub packet_buffer: ArrayVec<TestNetworkPacket, 255>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -28,7 +29,7 @@ pub struct TestRuntimePort {
     pub send_index: usize,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum TestError {}
 
 impl TestRuntime {

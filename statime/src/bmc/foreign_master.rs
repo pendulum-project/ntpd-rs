@@ -27,7 +27,7 @@ const MAX_FOREIGN_MASTERS: usize = 8;
 pub struct ForeignMaster {
     foreign_master_port_identity: PortIdentity,
     // Must have a capacity of at least 2
-    announce_messages: ArrayVec::<(AnnounceMessage, Timestamp), MAX_ANNOUNCE_MESSAGES>,
+    announce_messages: ArrayVec<(AnnounceMessage, Timestamp), MAX_ANNOUNCE_MESSAGES>,
 }
 
 impl ForeignMaster {
@@ -67,8 +67,16 @@ impl ForeignMaster {
         announce_interval: TimeInterval,
     ) {
         self.purge_old_messages(current_time, announce_interval);
-        self.announce_messages
-            .push((announce_message, current_time));
+        // Try to add new message; otherwise remove the first message and then add
+        if !self
+            .announce_messages
+            .try_push((announce_message, current_time))
+            .is_ok()
+        {
+            self.announce_messages.remove(0);
+            self.announce_messages
+                .push((announce_message, current_time));
+        }
     }
 }
 
@@ -96,8 +104,6 @@ impl ForeignMasterList {
         current_time: Timestamp,
     ) -> impl Iterator<Item = (AnnounceMessage, Timestamp)> {
         let mut qualified_foreign_masters = ArrayVec::<_, MAX_FOREIGN_MASTERS>::new();
-
-        // TODO: What if there are more than MAX_FOREIGN_MASTERS?
 
         for i in (0..self.foreign_masters.len()).rev() {
             // Purge the old timestamps so we can check the FOREIGN_MASTER_THRESHOLD
@@ -146,9 +152,11 @@ impl ForeignMasterList {
                 port_announce_interval,
             );
         } else {
-            // No, insert a new foreign master
-            self.foreign_masters
-                .push(ForeignMaster::new(*announce_message, current_time));
+            // No, insert a new foreign master, if there is room in the array
+            if self.foreign_masters.len() < MAX_FOREIGN_MASTERS {
+                self.foreign_masters
+                    .push(ForeignMaster::new(*announce_message, current_time));
+            }
         }
     }
 

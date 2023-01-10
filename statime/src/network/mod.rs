@@ -1,7 +1,7 @@
 //! Definitions and implementations of the abstract network types
 
-use arrayvec::ArrayVec;
 use crate::time::Instant;
+use arrayvec::ArrayVec;
 
 #[cfg(test)]
 pub mod test;
