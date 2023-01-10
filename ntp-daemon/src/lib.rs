@@ -8,6 +8,7 @@ mod server;
 pub mod sockets;
 mod system;
 pub mod tracing;
+pub mod spawn;
 
 pub use config::dynamic::ConfigUpdate;
 pub use config::Config;

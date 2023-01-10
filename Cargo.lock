@@ -802,6 +802,7 @@ dependencies = [
 name = "ntp-daemon"
 version = "0.2.1"
 dependencies = [
+ "async-trait",
  "clap",
  "exitcode",
  "libc",

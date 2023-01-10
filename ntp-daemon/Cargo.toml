@@ -24,6 +24,7 @@ rand = "0.8.5"
 libc = "0.2.139"
 exitcode = "1.1.2"
 prometheus-client = "0.18.1"
+async-trait = "0.1.59"
 
 [dev-dependencies]
 ntp-proto = { path = "../ntp-proto", features=["ext-test"]}
