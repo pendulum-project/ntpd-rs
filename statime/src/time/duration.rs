@@ -6,6 +6,7 @@ use core::{
     fmt::Display,
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, RemAssign, Sub, SubAssign},
 };
+use libm::F64Ext;
 
 /// A duration is a span of time that can also be negative.
 ///
