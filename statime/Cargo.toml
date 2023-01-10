@@ -14,8 +14,9 @@ repository = "https://github.com/tweedegolf/statime"
 arrayvec = { version = "0.7.2", default-features = false }
 fixed = "1.11.0"
 getset = "0.1.2"
-log = "0.4.14"
+log = { version = "0.4.14", default-features = false }
 num_enum = { version = "0.5.1", default-features = false }
+libm = "0.1.2"
 
 [dev-dependencies]
 thiserror = "1.0.30"
