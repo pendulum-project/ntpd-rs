@@ -2,8 +2,10 @@ use std::{ffi::CString, fmt::Display, ops::DerefMut};
 
 use libc::{clockid_t, timespec};
 
-use statime::datastructures::common::{ClockAccuracy, ClockQuality};
-use statime::time::{Duration, Instant};
+use statime::{
+    datastructures::common::{ClockAccuracy, ClockQuality},
+    time::{Duration, Instant},
+};
 
 use crate::clock::timex::{AdjustFlags, StatusFlags, Timex};
 

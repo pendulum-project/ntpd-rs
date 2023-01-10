@@ -20,9 +20,10 @@ use nix::{
 };
 
 use statime::network::{NetworkPacket, NetworkPort, NetworkRuntime};
-use statime::time::Instant;
 
-use crate::network::linux_syscall::driver_enable_hardware_timestamping;
+use crate::{
+    clock::timespec_into_instant, network::linux_syscall::driver_enable_hardware_timestamping,
+};
 
 #[derive(Clone)]
 pub struct LinuxRuntime {
@@ -439,9 +440,7 @@ impl LinuxNetworkPort {
                     } else {
                         timestamps.system
                     };
-                    ts = Some(Instant::from_fixed_nanos(
-                        spec.tv_sec() as i128 * 1_000_000_000i128 + spec.tv_nsec() as i128,
-                    ));
+                    ts = Some(timespec_into_instant(spec));
                 }
             }
             tx.send(NetworkPacket {

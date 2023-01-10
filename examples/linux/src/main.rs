@@ -7,8 +7,10 @@ use statime::{
     filters::basic::BasicFilter,
     ptp_instance::{Config, PtpInstance},
 };
-use statime_linux::clock::{LinuxClock, RawLinuxClock};
-use statime_linux::network::linux::{get_clock_id, LinuxInterfaceDescriptor, LinuxRuntime};
+use statime_linux::{
+    clock::{LinuxClock, RawLinuxClock},
+    network::linux::{get_clock_id, LinuxInterfaceDescriptor, LinuxRuntime},
+};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None, setting = AppSettings::DeriveDisplayOrder)]

@@ -1,4 +1,7 @@
-use crate::datastructures::{WireFormat, WireFormatError};
+use crate::{
+    datastructures::{WireFormat, WireFormatError},
+    time::Instant,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Timestamp {
@@ -29,6 +32,15 @@ impl WireFormat for Timestamp {
             seconds: u64::from_be_bytes(seconds_buffer),
             nanos: u32::from_be_bytes(buffer[6..10].try_into().unwrap()),
         })
+    }
+}
+
+impl From<Instant> for Timestamp {
+    fn from(instant: Instant) -> Self {
+        Timestamp {
+            seconds: instant.secs(),
+            nanos: instant.subsec_nanos(),
+        }
     }
 }
 

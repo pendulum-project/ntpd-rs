@@ -4,9 +4,11 @@ use std::{collections::HashMap, sync::mpsc};
 
 use fixed::traits::LossyInto;
 pub use raw::RawLinuxClock;
-use statime::clock::{Clock, TimeProperties, Watch};
-use statime::datastructures::common::ClockQuality;
-use statime::time::{Duration, Instant};
+use statime::{
+    clock::{Clock, TimeProperties, Watch},
+    datastructures::common::ClockQuality,
+    time::{Duration, Instant},
+};
 
 mod raw;
 mod timex;
@@ -163,6 +165,10 @@ impl AlarmReceiver {
             _ => None,
         }
     }
+}
+
+pub fn timespec_into_instant(spec: nix::sys::time::TimeSpec) -> Instant {
+    Instant::from_fixed_nanos(spec.tv_sec() as i128 * 1_000_000_000i128 + spec.tv_nsec() as i128)
 }
 
 #[cfg(test)]

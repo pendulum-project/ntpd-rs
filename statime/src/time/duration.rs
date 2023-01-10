@@ -1,3 +1,5 @@
+//! Implementation of the [Duration] type
+
 use crate::datastructures::common::TimeInterval;
 use fixed::{traits::ToFixed, types::I96F32};
 use std::{
@@ -5,6 +7,10 @@ use std::{
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, RemAssign, Sub, SubAssign},
 };
 
+/// A duration is a span of time that can also be negative.
+///
+/// For example, the difference between two instants is a duration.
+/// And an instant plus a duration is another instant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Duration {
     /// Time in nanos
@@ -12,54 +18,60 @@ pub struct Duration {
 }
 
 impl Duration {
+    /// Create an instance with the given amount of seconds
     pub fn from_secs(secs: i64) -> Self {
         let inner = secs.to_fixed::<I96F32>() * 1_000_000_000.to_fixed::<I96F32>();
         Self { inner }
     }
+    /// Create an instance with the given amount of milliseconds
     pub fn from_millis(millis: i64) -> Self {
         let inner = millis.to_fixed::<I96F32>() * 1_000_000.to_fixed::<I96F32>();
         Self { inner }
     }
+    /// Create an instance with the given amount of microseconds
     pub fn from_micros(micros: i64) -> Self {
         let inner = micros.to_fixed::<I96F32>() * 1_000.to_fixed::<I96F32>();
         Self { inner }
     }
+    /// Create an instance with the given amount of nanoseconds
     pub fn from_nanos(nanos: i64) -> Self {
         let inner = nanos.to_fixed::<I96F32>();
         Self { inner }
     }
-
+    /// Create an instance with the given amount of nanoseconds, using a fixed point number
+    /// so the subnanoseconds can be specified as well
     pub fn from_fixed_nanos<F: ToFixed>(nanos: F) -> Self {
         Self {
             inner: nanos.to_fixed(),
         }
     }
 
+    /// Get the total amount of nanoseconds
     pub fn nanos(&self) -> I96F32 {
         self.inner
     }
 
+    /// Get the total amount of seconds
     pub fn secs(&self) -> i64 {
         (self.inner / 1_000_000_000.to_fixed::<I96F32>()).to_num()
     }
 
-    pub fn from_interval(interval: &TimeInterval) -> Self {
-        Self::from_fixed_nanos(interval.0)
-    }
-
-    pub fn to_interval(&self) -> TimeInterval {
-        let val = (self.inner.to_bits() >> 16) as i64;
-        TimeInterval(fixed::types::I48F16::from_bits(val))
-    }
-
+    /// Converts a log interval (as defined by the PTP spec) to a duration
     pub fn from_log_interval(log_interval: i8) -> Self {
         let seconds = 2.0f64.powi(log_interval as i32);
         let nanos = seconds * 1_000_000_000.0;
         Self::from_fixed_nanos(nanos)
     }
 
+    /// Takes the absolute (non-negative) value of the duration
     pub fn abs(self) -> Duration {
         Duration::from_fixed_nanos(self.nanos().abs())
+    }
+}
+
+impl From<TimeInterval> for Duration {
+    fn from(interval: TimeInterval) -> Self {
+        Self::from_fixed_nanos(interval.0)
     }
 }
 
@@ -192,11 +204,11 @@ mod tests {
     fn interval() {
         assert_eq!(
             Duration::from_fixed_nanos(2.25f64),
-            Duration::from_interval(&TimeInterval(2.25f64.to_fixed()))
+            Duration::from(TimeInterval(2.25f64.to_fixed()))
         );
         assert_eq!(
-            Duration::from_fixed_nanos(2.25f64).to_interval(),
-            TimeInterval(2.25f64.to_fixed())
+            TimeInterval(2.25f64.to_fixed()),
+            Duration::from_fixed_nanos(2.25f64).into()
         );
     }
 }

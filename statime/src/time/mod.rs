@@ -1,3 +1,5 @@
+//! Time definitions
+
 mod duration;
 mod instant;
 
