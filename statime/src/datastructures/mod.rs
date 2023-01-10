@@ -3,6 +3,7 @@
 use core::fmt::Debug;
 
 pub mod common;
+pub mod datasets;
 pub mod messages;
 
 #[derive(Debug, Clone)]
