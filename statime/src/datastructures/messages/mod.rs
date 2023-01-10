@@ -1,5 +1,7 @@
 //! Ptp network messages
 
+use alloc::vec::Vec;
+
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 mod announce;

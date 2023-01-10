@@ -7,7 +7,7 @@ use crate::{
 
 /// Clock type for use in the PTP stack
 pub trait Clock {
-    type E: std::fmt::Debug;
+    type E: core::fmt::Debug;
     type W: Watch;
 
     /// Get the current time of the clock
@@ -36,7 +36,7 @@ pub trait Clock {
 ///
 /// How the alarm event is fed back into the PTP runtime is implementation defined.
 pub trait Watch {
-    type WatchId: std::fmt::Debug + Eq;
+    type WatchId: core::fmt::Debug + Eq;
 
     /// Get the current time
     fn now(&self) -> Instant;

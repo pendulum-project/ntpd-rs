@@ -3,7 +3,7 @@
 use super::duration::Duration;
 use crate::datastructures::common::Timestamp;
 use fixed::{traits::ToFixed, types::U96F32};
-use std::{
+use core::{
     fmt::Display,
     ops::{Add, AddAssign, Sub, SubAssign},
 };
@@ -109,7 +109,7 @@ impl Sub<Instant> for Instant {
 }
 
 impl Display for Instant {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.inner)
     }
 }

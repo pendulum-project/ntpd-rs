@@ -2,6 +2,8 @@
 
 use crate::time::Instant;
 
+use alloc::vec::Vec;
+
 #[cfg(test)]
 pub mod test;
 
@@ -14,7 +16,7 @@ pub trait NetworkRuntime: Clone {
     /// or to select between IPv4 and IPv6.
     type InterfaceDescriptor: Clone;
     type PortType: NetworkPort;
-    type Error: std::error::Error + std::fmt::Display;
+    type Error: core::error::Error + core::fmt::Display;
 
     /// Open a port on the given network interface.
     ///

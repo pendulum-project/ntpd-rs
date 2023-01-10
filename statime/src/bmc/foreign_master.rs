@@ -8,6 +8,8 @@ use crate::{
     time::{Duration, Instant},
 };
 
+use alloc::vec::Vec;
+
 /// The time window in which announce messages are valid.
 /// To get the real window, multiply it with the announce interval of the port.
 const FOREIGN_MASTER_TIME_WINDOW: u16 = 4;

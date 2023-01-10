@@ -4,7 +4,7 @@ use crate::datastructures::{
     common::{ClockIdentity, ClockQuality, PortIdentity},
     messages::AnnounceMessage,
 };
-use std::cmp::Ordering;
+use core::cmp::Ordering;
 
 /// A collection of data that is gathered from other sources (mainly announce messages and the DefaultDS).
 /// When gathered from two different sources, the [compare](crate::bmc::dataset_comparison::ComparisonDataset) method can be used to find out which source
