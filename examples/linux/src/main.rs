@@ -43,6 +43,10 @@ struct Args {
     #[clap(long, default_value_t = 1)]
     log_announce_interval: i8,
 
+    /// Timeout
+    #[clap(long, default_value_t = 5)]
+    announce_receipt_timeout_interval: i32,
+
     /// Use hardware clock
     #[clap(long, short)]
     hardware_clock: Option<String>,
@@ -87,6 +91,7 @@ fn main() {
         interface: args.interface,
         port_config: statime::port::PortConfig {
             log_announce_interval: args.log_announce_interval,
+            announce_receipt_timeout_interval: args.announce_receipt_timeout_interval,
             priority_1: args.priority_1,
             priority_2: args.priority_2,
         },

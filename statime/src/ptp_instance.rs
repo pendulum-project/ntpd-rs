@@ -20,7 +20,7 @@ pub struct Config<NR: NetworkRuntime> {
 ///
 /// The instance doesn't run on its own, but requires the user to invoke the `handle_*` methods whenever required.
 pub struct PtpInstance<NR: NetworkRuntime, C: Clock, F: Filter> {
-    port: Port<NR>,
+    port: Port<NR, C::W>,
     clock: C,
     bmca_watch: C::W,
     filter: F,
@@ -40,6 +40,15 @@ impl<NR: NetworkRuntime, C: Clock, F: Filter> PtpInstance<NR, C, F> {
             config.port_config.log_announce_interval,
         ));
 
+        // Set the announce receipt timeout
+        // TODO: what to do when we have multiple ports?
+        let mut announce_timeout_watch = clock.get_watch();
+        announce_timeout_watch.set_alarm(Duration::from_timeout(
+            config.port_config.announce_receipt_timeout_interval,
+        ));
+        let mut announce_watch = clock.get_watch();
+        let mut sync_watch = clock.get_watch();
+
         PtpInstance {
             port: Port::new(
                 PortIdentity {
@@ -52,6 +61,9 @@ impl<NR: NetworkRuntime, C: Clock, F: Filter> PtpInstance<NR, C, F> {
                 runtime,
                 config.interface,
                 clock.quality(),
+                announce_timeout_watch,
+                announce_watch,
+                sync_watch,
             ),
             clock,
             bmca_watch,
@@ -98,9 +110,12 @@ impl<NR: NetworkRuntime, C: Clock, F: Filter> PtpInstance<NR, C, F> {
                 .as_ref()
                 .map(|(message, identity)| (message, identity));
 
+            // Run the state decision
             self.port.perform_state_decision(erbest, erbest);
 
-            // Run the state decision
+        } else {
+            // TODO: what to do when we have multiple ports?
+            self.port.handle_alarm(id);
         }
     }
 }

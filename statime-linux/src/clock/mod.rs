@@ -21,13 +21,12 @@ pub enum Error {
 pub struct LinuxClock {
     clock: RawLinuxClock,
     next_watch_id: u32,
-    alarm_sender: mpsc::Sender<(<<Self as Clock>::W as Watch>::WatchId, Instant)>,
+    alarm_sender: mpsc::Sender<(<<Self as Clock>::W as Watch>::WatchId, Instant, bool)>,
 }
 
 impl LinuxClock {
     pub fn new(clock: RawLinuxClock) -> (Self, AlarmReceiver) {
         let (alarm_sender, alarm_receiver) = mpsc::channel();
-
         (
             Self {
                 clock: clock.clone(),
@@ -38,7 +37,7 @@ impl LinuxClock {
                 alarm_receiver,
                 clock,
                 alarms: HashMap::new(),
-            },
+            }
         )
     }
 }
@@ -96,7 +95,7 @@ impl Clock for LinuxClock {
 pub struct LinuxWatch {
     clock: RawLinuxClock,
     id: u32,
-    alarm_sender: mpsc::Sender<(<Self as Watch>::WatchId, Instant)>,
+    alarm_sender: mpsc::Sender<(<Self as Watch>::WatchId, Instant, bool)>,
 }
 
 impl Watch for LinuxWatch {
@@ -109,7 +108,12 @@ impl Watch for LinuxWatch {
     fn set_alarm(&mut self, from_now: Duration) {
         let alarm_time = self.now() + from_now;
         // Send the alarm time to the alarm receiver
-        self.alarm_sender.send((self.id, alarm_time)).unwrap();
+        self.alarm_sender.send((self.id, alarm_time, false)).unwrap();
+    }
+
+    fn clear(&mut self) {
+        let alarm_time = self.now();
+        self.alarm_sender.send((self.id, alarm_time, true)).unwrap();
     }
 
     fn id(&self) -> Self::WatchId {
@@ -120,7 +124,7 @@ impl Watch for LinuxWatch {
 /// Object that receives all set alarms of all watches
 pub struct AlarmReceiver {
     clock: RawLinuxClock,
-    alarm_receiver: mpsc::Receiver<(u32, Instant)>,
+    alarm_receiver: mpsc::Receiver<(u32, Instant, bool)>,
     alarms: HashMap<u32, Instant>,
 }
 
@@ -138,10 +142,19 @@ impl AlarmReceiver {
         }
     }
 
+    /// Clear any existing alarms
+    pub fn clear(&mut self) {
+        self.alarms.clear();
+    }
+
     fn earliest_alarm(&mut self) -> Option<(u32, Instant)> {
         // Gather all alarms into the hashmap
-        while let Ok((clock_id, alarm_time)) = self.alarm_receiver.try_recv() {
-            self.alarms.insert(clock_id, alarm_time);
+        while let Ok((clock_id, alarm_time, clear)) = self.alarm_receiver.try_recv() {
+            if !clear {
+              self.alarms.insert(clock_id, alarm_time);
+            } else {
+              self.alarms.clear();
+            }
         }
 
         // Get which one will go off the earliest

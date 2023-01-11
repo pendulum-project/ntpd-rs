@@ -3,7 +3,7 @@ use crate::{
         bmca::{Bmca, RecommendedState},
         dataset_comparison::DefaultDS,
     },
-    clock::TimeProperties,
+    clock::{Clock, Watch, TimeProperties},
     datastructures::{
         common::{ClockQuality, PortIdentity, Timestamp},
         messages::{
@@ -86,12 +86,16 @@ impl<NR: NetworkRuntime> PortData<NR> {
 
 pub struct PortConfig {
     pub log_announce_interval: i8,
+    pub announce_receipt_timeout_interval: i32,
     pub priority_1: u8,
     pub priority_2: u8,
 }
 
-pub struct Port<NR: NetworkRuntime> {
+pub struct Port<NR: NetworkRuntime, W: Watch> {
     portdata: PortData<NR>,
+    watch: W,
+    announce_watch: W,
+    sync_watch: W,
     state: State,
 }
 
@@ -101,7 +105,7 @@ pub struct Measurement {
     pub master_offset: Duration,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Copy, Clone)]
 pub struct StateSlave {
     remote_master: PortIdentity,
     mean_delay: Option<Duration>,
@@ -128,6 +132,7 @@ impl StateSlave {
         self.sync_recv_time = Some(timestamp);
         self.delay_send_time = None;
         self.delay_recv_time = None;
+
         if message.header().two_step_flag() {
             self.sync_correction = Some(Duration::from(message.header().correction_field()));
             self.sync_send_time = None;
@@ -138,6 +143,7 @@ impl StateSlave {
                     + Duration::from(message.header().correction_field()),
             );
         }
+
         if self.mean_delay.is_none() || self.next_delay_measurement.unwrap_or_default() < timestamp
         {
             let delay_id = port.delay_req_ids.get();
@@ -162,10 +168,14 @@ impl StateSlave {
             self.handle_followup(follow_up);
         }
 
+        log::info!("Handle sync. ");
+
         Some(())
     }
 
     fn handle_followup(&mut self, message: FollowUpMessage) -> Option<()> {
+        log::info!("Handle followup");
+
         // Ignore messages not belonging to currently processing sync
         if self.sync_id != Some(message.header().sequence_id()) {
             self.pending_followup = Some(message); // Store it for a potentially coming sync
@@ -187,6 +197,8 @@ impl StateSlave {
     }
 
     fn handle_delayresp(&mut self, message: DelayRespMessage) -> Option<()> {
+        log::info!("Handle delayresp");
+
         // Ignore messages not belonging to currently processing sync
         if self.delay_id? != message.header().sequence_id() {
             return None;
@@ -221,7 +233,6 @@ impl StateSlave {
         if message.header().source_port_identity() != self.remote_master {
             return None;
         }
-
         match message {
             Message::Sync(message) => self.handle_sync(port, message, timestamp?),
             Message::FollowUp(message) => self.handle_followup(message),
@@ -269,10 +280,26 @@ impl StateSlave {
     }
 }
 
+#[derive(Debug, Default, Copy, Clone)]
+pub struct StateMaster {
+}
+
+impl StateMaster {
+
+    fn send_announce_message() {
+    }
+
+    fn send_sync_message() {
+
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
 #[allow(clippy::large_enum_variant)]
 pub enum State {
     Listening,
     Slave(StateSlave),
+    Master(StateMaster),
 }
 
 impl State {
@@ -295,26 +322,94 @@ impl State {
         }
     }
 
-    fn handle_recommended_state(&mut self, recommended_state: &RecommendedState) {
+    fn handle_recommended_state<W: Watch>(
+        &mut self,
+        recommended_state: &RecommendedState,
+        watch: &mut W,
+        announce_receipt_timeout_interval: i32,
+    ) {
+
+        log::info!("Recommended state: {:?} ", recommended_state);
+
         match recommended_state {
             // TODO set things like steps_removed once they are added
+
             RecommendedState::S1(announce_message) => match self {
+
                 State::Listening => {
                     *self = State::Slave(StateSlave {
                         remote_master: announce_message.header().source_port_identity(),
                         ..Default::default()
-                    })
+                    });
+
+                    // Restart announce receipt timeout timer
+                    watch.set_alarm(Duration::from_timeout(announce_receipt_timeout_interval));
+
+                    log::info!(
+                        "New state for port: Listening -> Slave. Remove master: {:?}",
+                        announce_message.header().source_port_identity().clock_identity
+                    );
                 }
+
                 State::Slave(slave_state) => {
                     slave_state.remote_master = announce_message.header().source_port_identity();
+                },
+
+                // Transition to slave
+                State::Master(master_state) => {
+
+                    *self = State::Slave(StateSlave {
+                        remote_master: announce_message.header().source_port_identity(),
+                        ..Default::default()
+                    });
+
+                    // Restart announce receipt timeout timer
+                    watch.set_alarm(Duration::from_timeout(announce_receipt_timeout_interval));
+
+                    log::info!("New state for port: Master -> Slave");
+                },
+            },
+
+            /// Recommended state is master
+            RecommendedState::M2(DefaultDs) => match self {
+
+                State::Master(master_state) => {
+                    // Nothing to do
+                },
+
+                // Otherwise become master
+                _ => {
+                    watch.clear();
+                    *self = State::Master(StateMaster { });
+                    log::info!(
+                        "New state for port: Master",
+                    );
                 }
             },
-            _ => *self = State::Listening,
+
+            // All other cases
+            _ => match self {
+
+                State::Listening => {
+                    // Ignore
+                }
+
+                _ => {
+                    *self = State::Listening;
+
+                    // Restart announce receipt timeout timer
+                    watch.set_alarm(Duration::from_timeout(announce_receipt_timeout_interval));
+
+                    log::info!(
+                        "New state for port: Listening",
+                    );
+                }
+            }
         }
     }
 }
 
-impl<NR: NetworkRuntime> Port<NR> {
+impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
     pub fn new(
         identity: PortIdentity,
         sdo: u16,
@@ -323,6 +418,9 @@ impl<NR: NetworkRuntime> Port<NR> {
         mut runtime: NR,
         interface: NR::InterfaceDescriptor,
         clock_quality: ClockQuality,
+        watch: W,
+        announce_watch: W,
+        sync_watch: W,
     ) -> Self {
         // Ptp needs two ports, 1 time critical one and 1 general port
         let tc_port = runtime
@@ -344,6 +442,26 @@ impl<NR: NetworkRuntime> Port<NR> {
                 clock_quality,
             ),
             state: State::Listening,
+            watch: watch,
+            announce_watch,
+            sync_watch,
+        }
+    }
+
+    pub fn handle_alarm(&mut self, id: W::WatchId) {
+        if id == self.watch.id() {
+
+            log::info!("Announce interval timeout");
+
+            self.state = State::Master(StateMaster { });
+            log::info!(
+                "New state for port: Master",
+            );
+
+            // if state == slave and announce message received, restart
+            // when entering listening or slave
+            // stopped and not restarted when entering master
+            //
         }
     }
 
@@ -368,10 +486,14 @@ impl<NR: NetworkRuntime> Port<NR> {
 
         #[allow(clippy::single_match)]
         match message {
-            Message::Announce(announce) => self
-                .portdata
-                .bmca
-                .register_announce_message(&announce, current_time.into()),
+            Message::Announce(announce) => {
+                self.portdata.bmca.register_announce_message(&announce, current_time.into());
+
+                // Restart announce receipt timeout timer
+                self.watch.set_alarm(Duration::from_timeout(
+                    self.portdata.port_config.announce_receipt_timeout_interval,
+                ));
+            },
             _ => {}
         };
 
@@ -415,8 +537,10 @@ impl<NR: NetworkRuntime> Port<NR> {
             &self.state,
         );
 
+        log::info!("Recommended: {:?} ", recommended_state);
+
         if let Some(recommended_state) = recommended_state {
-            self.state.handle_recommended_state(&recommended_state);
+            self.state.handle_recommended_state(&recommended_state, &mut self.watch, self.portdata.port_config.announce_receipt_timeout_interval);
             #[allow(clippy::single_match)]
             match &recommended_state {
                 RecommendedState::S1(announce_message) => {
@@ -470,6 +594,7 @@ mod tests {
             domain: 0,
             port_config: PortConfig {
                 log_announce_interval: 0,
+                announce_receipt_timeout_interval: 1000,
                 priority_1: 0,
                 priority_2: 0,
             },
@@ -551,6 +676,7 @@ mod tests {
             domain: 0,
             port_config: PortConfig {
                 log_announce_interval: 0,
+                announce_receipt_timeout_interval: 1000,
                 priority_1: 0,
                 priority_2: 0,
             },
@@ -633,6 +759,7 @@ mod tests {
             domain: 0,
             port_config: PortConfig {
                 log_announce_interval: 0,
+                announce_receipt_timeout_interval: 1000,
                 priority_1: 0,
                 priority_2: 0,
             },
@@ -732,6 +859,7 @@ mod tests {
             domain: 0,
             port_config: PortConfig {
                 log_announce_interval: 0,
+                announce_receipt_timeout_interval: 1000,
                 priority_1: 0,
                 priority_2: 0,
             },

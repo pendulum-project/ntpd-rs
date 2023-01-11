@@ -42,6 +42,8 @@ pub trait Watch {
     fn now(&self) -> Instant;
     /// Set an alarm. A previously set alarm will be overwritten
     fn set_alarm(&mut self, from_now: Duration);
+    /// Clear existing alarm, if any exists
+    fn clear(&mut self);
     /// The id of the watch.
     ///
     /// Used by the alarm API to know which watch went off
