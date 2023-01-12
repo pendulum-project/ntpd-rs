@@ -8,7 +8,7 @@ license = "Apache-2.0 OR MIT"
 
 [dependencies]
 tokio = { version = "1.24.1", features = ["full"] }
-ntp-proto = { path = "../ntp-proto" }
+ntp-proto = { path = "../ntp-proto", features = ["ext-test"] }
 ntp-udp = { path = "../ntp-udp" }
 ntp-daemon = { path = "../ntp-daemon" }
 ntp-os-clock = { path = "../ntp-os-clock" }

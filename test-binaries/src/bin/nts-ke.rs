@@ -213,12 +213,13 @@ async fn main() -> std::io::Result<()> {
         .with_root_certificates(roots)
         .with_no_client_auth();
 
-    let key_exchange = BoundKeyExchangeClient::new(socket, domain.to_string(), config)
+    let mut key_exchange = BoundKeyExchangeClient::new(socket, domain.to_string(), config)
         .unwrap()
         .await
         .unwrap();
 
-    let cookie = &key_exchange.cookies[0];
+    let cookie = key_exchange.nts.get_cookie().unwrap();
+    let (c2s, _) = key_exchange.nts.get_keys();
 
     println!("cookie: {:?}", cookie);
 
@@ -238,14 +239,14 @@ async fn main() -> std::io::Result<()> {
     let additional_cookies = 0;
     let (packet, _) = NtpPacket::nts_poll_message_request_extra_cookies(
         &identifier,
-        &key_exchange.cookies[0],
+        &cookie,
         additional_cookies,
         PollInterval::default(),
     );
 
     let mut raw = [0u8; 1024];
     let mut w = Cursor::new(raw.as_mut_slice());
-    packet.serialize(&mut w, Some(&key_exchange.key_c2s))?;
+    packet.serialize(&mut w, Some(&c2s))?;
     socket.send(&w.get_ref()[..w.position() as usize]).await?;
 
     let mut buf = [0; 1024];

@@ -18,9 +18,20 @@ pub enum NtsError {
 }
 
 pub struct PeerNtsData {
-    cookies: CookieStash,
-    c2s: Aes128SivAead,
-    s2c: Aes128SivAead,
+    pub(crate) cookies: CookieStash,
+    pub(crate) c2s: Aes128SivAead,
+    pub(crate) s2c: Aes128SivAead,
+}
+
+#[cfg(feature="ext-test")]
+impl PeerNtsData {
+    pub fn get_cookie(&mut self) -> Option<Vec<u8>> {
+        self.cookies.get()
+    }
+
+    pub fn get_keys(self) -> (Aes128SivAead, Aes128SivAead) {
+        (self.c2s, self.s2c)
+    }
 }
 
 impl std::fmt::Debug for PeerNtsData {
