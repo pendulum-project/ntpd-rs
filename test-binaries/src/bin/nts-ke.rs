@@ -192,16 +192,13 @@ where
     }
 }
 
-#[tokio::main]
-async fn main() -> std::io::Result<()> {
-    let domain = "time.cloudflare.com";
-
-    let addr = (domain, 4460)
-        .to_socket_addrs()?
-        .next()
-        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))?;
-
-    let socket = tokio::net::TcpStream::connect(addr).await.unwrap();
+pub(crate) async fn perform_key_exchange(
+    server_name: String,
+    port: u16,
+) -> Result<KeyExchangeResult, KeyExchangeError> {
+    let socket = tokio::net::TcpStream::connect((server_name.as_str(), port))
+        .await
+        .unwrap();
 
     let mut roots = rustls::RootCertStore::empty();
     for cert in rustls_native_certs::load_native_certs().expect("could not load platform certs") {
@@ -213,8 +210,15 @@ async fn main() -> std::io::Result<()> {
         .with_root_certificates(roots)
         .with_no_client_auth();
 
-    let mut key_exchange = BoundKeyExchangeClient::new(socket, domain.to_string(), config)
-        .unwrap()
+    BoundKeyExchangeClient::new(socket, server_name, config)?.await
+}
+
+#[tokio::main]
+async fn main() -> std::io::Result<()> {
+    let domain = "time.cloudflare.com";
+    let port = 4460;
+
+    let mut key_exchange = perform_key_exchange(domain.to_string(), port)
         .await
         .unwrap();
 
