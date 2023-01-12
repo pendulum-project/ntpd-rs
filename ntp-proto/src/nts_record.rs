@@ -625,7 +625,8 @@ impl KeyExchangeClient {
         )?;
 
         // Make the request immediately (note, this will only go out to the wire via the write functions above)
-        // use an intermediary buffer to work around issues in some NTS-ke server implementations
+        // We use an intermediary buffer to ensure that all records are sent at once.
+        // This should not be needed, but works around issues in some NTS-ke server implementations
         let mut buffer = Vec::with_capacity(1024);
         for record in NtsRecord::client_key_exchange_records() {
             record.write(&mut buffer)?;
