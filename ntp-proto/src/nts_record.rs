@@ -6,6 +6,8 @@ use std::{
 
 use aes_siv::{Aes128SivAead, KeyInit};
 
+use crate::{peer::PeerNtsData, cookiestash::CookieStash};
+
 #[derive(Debug)]
 pub enum WriteError {
     Invalid,
@@ -418,15 +420,15 @@ pub enum KeyExchangeError {
 struct PartialKeyExchangeData {
     remote: Option<String>,
     port: Option<u16>,
-    cookies: Vec<Vec<u8>>,
+    cookies: CookieStash,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 struct KeyExchangeResultDecoder {
     decoder: NtsRecordDecoder,
     remote: Option<String>,
     port: Option<u16>,
-    cookies: Vec<Vec<u8>>,
+    cookies: CookieStash,
 }
 
 impl KeyExchangeResultDecoder {
@@ -469,7 +471,7 @@ impl KeyExchangeResultDecoder {
                 }
             }
             NewCookie { cookie_data } => {
-                state.cookies.push(cookie_data);
+                state.cookies.store(cookie_data);
                 Continue(state)
             }
             Server { name, .. } => {
@@ -528,9 +530,7 @@ impl KeyExchangeResultDecoder {
 pub struct KeyExchangeResult {
     pub remote: String,
     pub port: u16,
-    pub cookies: Vec<Vec<u8>>,
-    pub key_c2s: Aes128SivAead,
-    pub key_s2c: Aes128SivAead,
+    pub nts: PeerNtsData,
 }
 
 pub struct KeyExchangeClient {
@@ -593,9 +593,11 @@ impl KeyExchangeClient {
                             return ControlFlow::Break(Ok(KeyExchangeResult {
                                 remote: result.remote.unwrap_or(self.server_name),
                                 port: result.port.unwrap_or(123),
-                                cookies: result.cookies,
-                                key_c2s: Aes128SivAead::new(&c2s),
-                                key_s2c: Aes128SivAead::new(&s2c),
+                                nts: PeerNtsData {
+                                    cookies: result.cookies,
+                                    c2s: Aes128SivAead::new(&c2s),
+                                    s2c: Aes128SivAead::new(&s2c),
+                                },
                             }));
                         }
                         ControlFlow::Break(Err(error)) => return ControlFlow::Break(Err(error)),
@@ -899,7 +901,7 @@ mod test {
 
         assert_eq!(state.remote, None);
         assert_eq!(state.port, None);
-        assert_eq!(state.cookies.len(), 8);
+        assert_eq!(state.cookies.gap(), 0);
     }
 
     #[test]

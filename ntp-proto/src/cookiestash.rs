@@ -3,7 +3,7 @@
 ///   - Each cookie is yielded at most once
 ///   - The oldest cookie is always yielded first
 /// Note that as a consequence, this type is not Clone!
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct CookieStash {
     cookies: [Vec<u8>; 8],
     read: usize,
@@ -41,6 +41,10 @@ impl CookieStash {
     /// Number of cookies missing from the stash
     pub fn gap(&self) -> usize {
         self.cookies.len() - self.valid
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.valid == 0
     }
 }
 
