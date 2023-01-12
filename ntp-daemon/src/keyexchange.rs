@@ -1,4 +1,9 @@
-use std::{task::{Context, Poll}, io::{Write, IoSlice, Read}, pin::Pin, future::Future};
+use std::{
+    future::Future,
+    io::{IoSlice, Read, Write},
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use ntp_proto::{KeyExchangeClient, KeyExchangeError, KeyExchangeResult};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
@@ -14,6 +19,7 @@ impl<IO> BoundKeyExchangeClient<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin,
 {
+    #[allow(unused)]
     pub fn new(
         io: IO,
         server_name: String,
@@ -159,10 +165,12 @@ where
 
             while !read_blocks && this.client.wants_read() {
                 match this.do_read(cx) {
-                    Poll::Ready(Ok(_)) => this.client = match this.client.progress() {
-                        std::ops::ControlFlow::Continue(client) => client,
-                        std::ops::ControlFlow::Break(result) => return Poll::Ready(result),
-                    },
+                    Poll::Ready(Ok(_)) => {
+                        this.client = match this.client.progress() {
+                            std::ops::ControlFlow::Continue(client) => client,
+                            std::ops::ControlFlow::Break(result) => return Poll::Ready(result),
+                        }
+                    }
                     Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),
                     Poll::Pending => {
                         read_blocks = true;

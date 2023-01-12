@@ -2,13 +2,13 @@
 
 pub mod config;
 mod ipfilter;
+mod keyexchange;
 pub mod observer;
 mod peer;
 mod server;
 pub mod sockets;
 mod system;
 pub mod tracing;
-mod keyexchange;
 
 pub use config::dynamic::ConfigUpdate;
 pub use config::Config;
