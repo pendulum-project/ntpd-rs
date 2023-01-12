@@ -6,7 +6,7 @@ use std::{
 
 use aes_siv::{Aes128SivAead, KeyInit};
 
-use crate::{peer::PeerNtsData, cookiestash::CookieStash};
+use crate::{cookiestash::CookieStash, peer::PeerNtsData};
 
 #[derive(Debug)]
 pub enum WriteError {

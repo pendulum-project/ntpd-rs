@@ -39,6 +39,7 @@ impl CookieStash {
     }
 
     /// Number of cookies missing from the stash
+    #[allow(unused)]
     pub fn gap(&self) -> usize {
         self.cookies.len() - self.valid
     }
@@ -48,6 +49,7 @@ impl CookieStash {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 

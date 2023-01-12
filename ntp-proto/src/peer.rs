@@ -23,7 +23,7 @@ pub struct PeerNtsData {
     pub(crate) s2c: Aes128SivAead,
 }
 
-#[cfg(feature="ext-test")]
+#[cfg(feature = "ext-test")]
 impl PeerNtsData {
     pub fn get_cookie(&mut self) -> Option<Vec<u8>> {
         self.cookies.get()
@@ -333,7 +333,7 @@ impl Peer {
         let poll_interval = self.current_poll_interval(system);
         let (packet, identifier) = match &mut self.nts {
             Some(nts) => {
-                let cookie = nts.cookies.get().ok_or(NtsError::OutOfCookies)?;
+                let _cookie = nts.cookies.get().ok_or(NtsError::OutOfCookies)?;
                 todo!()
             }
             None => NtpPacket::poll_message(poll_interval),
