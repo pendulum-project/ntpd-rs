@@ -308,7 +308,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         peer_addr: SocketAddr,
         recv_timestamp: NtpTimestamp,
     ) -> AcceptResult<'a> {
-        match NtpPacket::deserialize(buf) {
+        match NtpPacket::deserialize(buf, None) {
             Ok(packet) => match packet.mode() {
                 NtpAssociationMode::Client => {
                     trace!("NTP client request accepted from {}", peer_addr);

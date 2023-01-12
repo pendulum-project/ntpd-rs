@@ -859,7 +859,10 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    pub fn deserialize(data: &'a [u8]) -> Result<Self, PacketParsingError> {
+    pub fn deserialize(
+        data: &'a [u8],
+        cipher: Option<&Cipher>,
+    ) -> Result<Self, PacketParsingError> {
         if data.is_empty() {
             return Err(PacketParsingError::IncorrectLength);
         }
@@ -882,13 +885,15 @@ impl<'a> NtpPacket<'a> {
             }
             4 => {
                 let (header, header_size) = NtpHeaderV3V4::deserialize(data)?;
-                let (efdata, fields_len) =
-                    ExtensionFieldData::deserialize(&data[header_size..], todo!(), todo!())?;
-                let mac = if header_size != data.len() {
-                    Some(Mac::deserialize(&data[header_size + fields_len..])?)
+                let (efdata, header_plus_fields_len) =
+                    ExtensionFieldData::deserialize(data, header_size, cipher)?;
+
+                let mac = if header_plus_fields_len != data.len() {
+                    Some(Mac::deserialize(&data[header_plus_fields_len..])?)
                 } else {
                     None
                 };
+
                 Ok(NtpPacket {
                     header: NtpHeader::V4(header),
                     efdata,

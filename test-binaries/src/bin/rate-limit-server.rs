@@ -24,7 +24,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         println!("{}s since last packet", delta.as_secs());
         last_message = now;
 
-        let parsed = match NtpPacket::deserialize(&buf) {
+        let parsed = match NtpPacket::deserialize(&buf, None) {
             Ok(packet) => packet,
             Err(_) => continue,
         };
