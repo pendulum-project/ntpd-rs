@@ -1,5 +1,5 @@
 use crate::{
-    config::{CombinedSystemConfig, NormalizedAddress},
+    config::{CombinedSystemConfig, NormalizedAddress, NtsPeerConfig},
     config::{PeerConfig, PoolPeerConfig, ServerConfig, StandardPeerConfig},
     peer::PeerTask,
     peer::{MsgForSystem, PeerChannels},
@@ -41,7 +41,10 @@ pub async fn spawn(
     for peer_config in peer_configs {
         match peer_config {
             PeerConfig::Standard(StandardPeerConfig { addr }) => {
-                system.add_peer(addr.clone()).await;
+                system.add_standard_peer(addr.clone()).await;
+            }
+            PeerConfig::Nts(NtsPeerConfig { ke_addr, addr }) => {
+                system.add_nts_peer(ke_addr.clone(), addr.clone()).await;
             }
             PeerConfig::Pool(PoolPeerConfig {
                 addr, max_peers, ..
@@ -369,8 +372,15 @@ impl<C: NtpClock> System<C> {
     }
 
     /// Adds a single peer (that is not part of a pool!)
-    async fn add_peer(&mut self, address: NormalizedAddress) {
+    async fn add_standard_peer(&mut self, address: NormalizedAddress) {
         self.add_peer_internal(address).await
+    }
+
+    /// Adds a single peer (that is not part of a pool!)
+    async fn add_nts_peer(&mut self, ke_address: NormalizedAddress, address: NormalizedAddress) {
+        let _ = ke_address;
+        let _ = address;
+        todo!();
     }
 
     async fn add_server(&mut self, config: ServerConfig) {
@@ -802,7 +812,7 @@ mod tests {
         let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
 
         let peer_address = NormalizedAddress::new_unchecked("127.0.0.2:123");
-        system.add_peer(peer_address).await;
+        system.add_standard_peer(peer_address).await;
 
         let pool_address = NormalizedAddress::new_unchecked("127.0.0.1:123");
         let max_peers = 1;
@@ -835,7 +845,7 @@ mod tests {
         let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
 
         let peer_address = NormalizedAddress::new_unchecked("127.0.0.5:123");
-        system.add_peer(peer_address).await;
+        system.add_standard_peer(peer_address).await;
 
         let pool_address = NormalizedAddress::with_hardcoded_dns(
             "tweedegolf.nl:123",
@@ -875,7 +885,7 @@ mod tests {
         let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
 
         let peer_address = NormalizedAddress::new_unchecked("127.0.0.5:123");
-        system.add_peer(peer_address).await;
+        system.add_standard_peer(peer_address).await;
 
         let pool_address = NormalizedAddress::with_hardcoded_dns(
             "tweedegolf.nl:123",
