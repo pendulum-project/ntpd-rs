@@ -30,6 +30,7 @@ impl Wait for Sleep {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum MsgForSystem {
     /// Received a Kiss-o'-Death and must demobilize
     MustDemobilize(PeerIndex),
@@ -133,7 +134,7 @@ where
 
         let mut buf = [0; 48];
         let mut cursor = Cursor::new(buf.as_mut_slice());
-        if let Err(error) = packet.serialize(&mut cursor, todo!()) {
+        if let Err(error) = packet.serialize(&mut cursor, None) {
             error!(?error, "poll message could not be serialized");
             return PollResult::Ok;
         }
@@ -471,39 +472,22 @@ mod tests {
             ))
         }
 
-        fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
+        fn set_freq(&self, _freq: f64) -> Result<(), Self::Error> {
             panic!("Shouldn't be called by peer");
         }
 
-        fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
+        fn step_clock(&self, _offset: NtpDuration) -> Result<(), Self::Error> {
             panic!("Shouldn't be called by peer");
         }
 
-        fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
-        }
-
-        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
-        }
-
-        fn ntp_algorithm_update(
+        fn update_clock(
             &self,
             _offset: NtpDuration,
-            _poll_interval: PollInterval,
-        ) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
-        }
-
-        fn error_estimate_update(
-            &self,
             _est_error: NtpDuration,
             _max_error: NtpDuration,
+            _poll_interval: PollInterval,
+            _leap_status: NtpLeapIndicator,
         ) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
-        }
-
-        fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
             panic!("Shouldn't be called by peer");
         }
     }
@@ -533,8 +517,7 @@ mod tests {
         let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
 
         let (_, system_snapshot_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
-        let (_, mut system_config_receiver) =
-            tokio::sync::watch::channel(CombinedSystemConfig::default());
+        let (_, mut system_config_receiver) = tokio::sync::watch::channel(SystemConfig::default());
         let (msg_for_system_sender, msg_for_system_receiver) = mpsc::channel(1);
 
         let local_clock_time = NtpInstant::now();
@@ -542,7 +525,7 @@ mod tests {
             our_id,
             peer_id,
             local_clock_time,
-            system_config_receiver.borrow_and_update().system,
+            *system_config_receiver.borrow_and_update(),
         );
 
         let process = PeerTask {
@@ -587,6 +570,16 @@ mod tests {
         handle.abort();
     }
 
+    fn serialize_packet_unencryped(send_packet: &NtpPacket) -> [u8; 48] {
+        let mut buf = [0; 48];
+        let mut cursor = Cursor::new(buf.as_mut_slice());
+        send_packet.serialize(&mut cursor, None).unwrap();
+
+        assert_eq!(cursor.position(), 48);
+
+        buf
+    }
+
     #[tokio::test]
     async fn test_timeroundtrip() {
         // Note: Ports must be unique among tests to deal with parallelism
@@ -620,10 +613,9 @@ mod tests {
 
         let rec_packet = NtpPacket::deserialize(&buf, None).unwrap();
         let send_packet = NtpPacket::timestamp_response(&system, rec_packet, timestamp, &clock);
-        let mut pdata = vec![];
-        send_packet.serialize(&mut pdata).unwrap();
 
-        socket.send(&pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&send_packet);
+        socket.send(&serialized).await.unwrap();
 
         let msg = msg_recv.recv().await.unwrap();
         assert!(matches!(msg, MsgForSystem::NewMeasurement(_, _, _, _)));
@@ -653,14 +645,11 @@ mod tests {
         assert_eq!(size, 48);
         assert!(timestamp.is_some());
 
-        let rec_packet =
-            NtpPacket::deserialize(&buf, None, None, None, None, None, None, None, None, None)
-                .unwrap();
+        let rec_packet = NtpPacket::deserialize(&buf, None).unwrap();
         let send_packet = NtpPacket::deny_response(rec_packet);
-        let mut pdata = vec![];
-        send_packet.serialize(&mut pdata).unwrap();
 
-        socket.send(&pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&send_packet);
+        socket.send(&serialized).await.unwrap();
 
         let msg = msg_recv.recv().await.unwrap();
         assert!(matches!(msg, MsgForSystem::MustDemobilize(_)));
