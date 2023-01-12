@@ -811,6 +811,7 @@ dependencies = [
  "prometheus-client",
  "rand",
  "rustls",
+ "rustls-native-certs",
  "sentry",
  "sentry-tracing",
  "serde",
