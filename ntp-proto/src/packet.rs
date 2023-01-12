@@ -751,6 +751,37 @@ impl<'a> Default for NtpPacket<'a> {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum ExtensionFieldTypeId {
+    UniqueIdentifier,
+    NtsCookie,
+    NtsCookiePlaceholder,
+    NtsEncryptedField,
+    Unknown { type_id: u16 },
+}
+
+impl ExtensionFieldTypeId {
+    fn from_type_id(type_id: u16) -> Self {
+        match type_id {
+            0x104 => Self::UniqueIdentifier,
+            0x204 => Self::NtsCookie,
+            0x304 => Self::NtsCookiePlaceholder,
+            0x404 => Self::NtsEncryptedField,
+            _ => Self::Unknown { type_id },
+        }
+    }
+
+    fn to_type_id(self) -> u16 {
+        match self {
+            ExtensionFieldTypeId::UniqueIdentifier => 0x104,
+            ExtensionFieldTypeId::NtsCookie => 0x204,
+            ExtensionFieldTypeId::NtsCookiePlaceholder => 0x304,
+            ExtensionFieldTypeId::NtsEncryptedField => 0x404,
+            ExtensionFieldTypeId::Unknown { type_id } => type_id,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
