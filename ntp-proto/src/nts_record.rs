@@ -440,9 +440,7 @@ impl KeyExchangeResultDecoder {
             match self.decoder.step() {
                 Err(e) => return ControlFlow::Break(Err(e.into())),
                 Ok(Some(record)) => self = self.step_with_record(record)?,
-                Ok(None) => {
-                    return ControlFlow::Continue(self);
-                }
+                Ok(None) => return ControlFlow::Continue(self),
             }
         }
     }
