@@ -852,11 +852,15 @@ dependencies = [
 name = "ntp-proto"
 version = "0.2.1"
 dependencies = [
+ "aead",
+ "aes-siv",
  "arbitrary",
  "exitcode",
  "md-5",
  "rand",
+ "rustls",
  "serde",
+ "thiserror",
  "tracing",
 ]
 

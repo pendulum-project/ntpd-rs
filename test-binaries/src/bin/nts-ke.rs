@@ -1,36 +1,20 @@
 use std::{
+    future::Future,
+    io::{IoSlice, Read, Write},
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs},
-    sync::Arc,
+    pin::Pin,
+    task::{Context, Poll},
 };
 
 use aes_siv::{
-    aead::{Aead, KeyInit, Payload},
-    Aes128SivAead,
-    Key, // Or `Aes128SivAead`
-    Nonce,
+    aead::{Aead, Payload},
+    Aes128SivAead, Nonce,
 };
 
-use ntp_proto::NtsRecord;
+use ntp_proto::{KeyExchangeClient, KeyExchangeError, KeyExchangeResult};
 use ntp_udp::UdpSocket;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_rustls::rustls;
-
-fn key_exchange_client() -> Result<tokio_rustls::TlsConnector, rustls::Error> {
-    let mut roots = rustls::RootCertStore::empty();
-    for cert in rustls_native_certs::load_native_certs().expect("could not load platform certs") {
-        roots.add(&rustls::Certificate(cert.0)).unwrap();
-    }
-
-    let mut config = rustls::ClientConfig::builder()
-        .with_safe_defaults()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
-    config.alpn_protocols.push(b"ntske/1".to_vec());
-
-    let rc_config = Arc::new(config);
-
-    Ok(tokio_rustls::TlsConnector::from(rc_config))
-}
 
 // unstable in std; check on https://github.com/rust-lang/rust/issues/88581 some time in the future
 pub const fn next_multiple_of(lhs: usize, rhs: usize) -> usize {
@@ -51,7 +35,7 @@ pub const fn div_ceil(lhs: usize, rhs: usize) -> usize {
     }
 }
 
-fn key_exchange_packet(cookie: &[u8], c2s: &[u8; 32]) -> Vec<u8> {
+fn key_exchange_packet(cookie: &[u8], cipher: Aes128SivAead) -> Vec<u8> {
     let mut packet = vec![
         0b00100011, 0, 10, 0, //hdr
         0, 0, 0, 0, // root delay
@@ -72,13 +56,12 @@ fn key_exchange_packet(cookie: &[u8], c2s: &[u8; 32]) -> Vec<u8> {
     packet.extend_from_slice(&0x0204_u16.to_be_bytes());
 
     // + 4 for the extension field header
-    let cookie_octet_count = next_multiple_of(cookie.len(), 4) * 4 + 4;
+    let cookie_octet_count = next_multiple_of(cookie.len(), 4) + 4;
     packet.extend_from_slice(&(cookie_octet_count as u16).to_be_bytes());
 
     packet.extend_from_slice(cookie);
-    packet.extend(std::iter::repeat(0).take(4 - cookie.len() % 4));
+    packet.extend(std::iter::repeat(0).take(cookie_octet_count - 4 - cookie.len()));
 
-    let cipher = Aes128SivAead::new(Key::<Aes128SivAead>::from_slice(c2s));
     let nonce = b"any unique nonce";
     let ct = cipher
         .encrypt(
@@ -93,120 +76,229 @@ fn key_exchange_packet(cookie: &[u8], c2s: &[u8; 32]) -> Vec<u8> {
     // Add signature EF
     packet.extend_from_slice(&0x0404_u16.to_be_bytes());
 
-    let nonce_octet_count = next_multiple_of(nonce.len(), 4) * 4;
-    let ct_octet_count = next_multiple_of(ct.len(), 4) * 4;
+    let nonce_octet_count = next_multiple_of(nonce.len(), 4);
+    let ct_octet_count = next_multiple_of(ct.len(), 4);
 
     // + 8 for the extension field header (4 bytes) and nonce/cypher text length (2 bytes each)
     let signature_octet_count = nonce_octet_count + ct_octet_count + 8;
 
     packet.extend_from_slice(&(signature_octet_count as u16).to_be_bytes());
-    packet.extend_from_slice(&(nonce_octet_count as u16).to_be_bytes());
-    packet.extend_from_slice(&(ct_octet_count as u16).to_be_bytes());
+    packet.extend_from_slice(&(nonce.len() as u16).to_be_bytes());
+    packet.extend_from_slice(&(ct.len() as u16).to_be_bytes());
 
     packet.extend_from_slice(nonce);
-    packet.extend(std::iter::repeat(0).take(4 - nonce.len() % 4));
+    packet.extend(std::iter::repeat(0).take(nonce_octet_count - nonce.len()));
 
     packet.extend_from_slice(&ct);
-    packet.extend(std::iter::repeat(0).take(4 - ct.len() % 4));
+    packet.extend(std::iter::repeat(0).take(ct_octet_count - ct.len()));
 
     packet
 }
 
-fn key_exchange_records() -> [NtsRecord; 3] {
-    [
-        NtsRecord::NextProtocol {
-            protocol_ids: vec![0],
-        },
-        NtsRecord::AeadAlgorithm {
-            critical: false,
-            algorithm_ids: vec![15],
-        },
-        NtsRecord::EndOfMessage,
-    ]
+struct BoundKeyExchangeClient<IO>
+where
+    IO: AsyncRead + AsyncWrite + Unpin,
+{
+    io: IO,
+    client: Option<KeyExchangeClient>,
+    need_flush: bool,
+}
+
+// IO approach taken from tokio
+impl<IO> BoundKeyExchangeClient<IO>
+where
+    IO: AsyncRead + AsyncWrite + Unpin,
+{
+    pub fn new(
+        io: IO,
+        server_name: String,
+        config: rustls::ClientConfig,
+    ) -> Result<Self, KeyExchangeError> {
+        Ok(Self {
+            io,
+            client: Some(KeyExchangeClient::new(server_name, config)?),
+            need_flush: false,
+        })
+    }
+
+    // adapter between AsyncWrite and std::io::Write
+    fn do_write(&mut self, cx: &mut Context<'_>) -> Poll<std::io::Result<usize>> {
+        struct Writer<'a, 'b, T> {
+            io: &'a mut T,
+            cx: &'a mut Context<'b>,
+        }
+
+        impl<'a, 'b, T: AsyncWrite + Unpin> Write for Writer<'a, 'b, T> {
+            #[inline]
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                match Pin::<&mut T>::new(self.io).poll_write(self.cx, buf) {
+                    Poll::Ready(result) => result,
+                    Poll::Pending => Err(std::io::ErrorKind::WouldBlock.into()),
+                }
+            }
+
+            #[inline]
+            fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> std::io::Result<usize> {
+                match Pin::<&mut T>::new(self.io).poll_write_vectored(self.cx, bufs) {
+                    Poll::Ready(result) => result,
+                    Poll::Pending => Err(std::io::ErrorKind::WouldBlock.into()),
+                }
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                match Pin::<&mut T>::new(self.io).poll_flush(self.cx) {
+                    Poll::Ready(result) => result,
+                    Poll::Pending => Err(std::io::ErrorKind::WouldBlock.into()),
+                }
+            }
+        }
+
+        let mut writer = Writer {
+            io: &mut self.io,
+            cx,
+        };
+
+        match self.client.as_mut().unwrap().write_socket(&mut writer) {
+            Err(ref err) if err.kind() == std::io::ErrorKind::WouldBlock => Poll::Pending,
+            result => Poll::Ready(result),
+        }
+    }
+
+    // adapter between AsyncRead and std::io::Read
+    fn do_read(&mut self, cx: &mut Context<'_>) -> Poll<std::io::Result<usize>> {
+        struct Reader<'a, 'b, T> {
+            io: &'a mut T,
+            cx: &'a mut Context<'b>,
+        }
+
+        impl<'a, 'b, T: AsyncRead + Unpin> Read for Reader<'a, 'b, T> {
+            fn read(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {
+                let mut buf = ReadBuf::new(buf);
+                match Pin::<&mut T>::new(self.io).poll_read(self.cx, &mut buf) {
+                    Poll::Ready(Ok(())) => Ok(buf.filled().len()),
+                    Poll::Ready(Err(e)) => Err(e),
+                    Poll::Pending => Err(std::io::ErrorKind::WouldBlock.into()),
+                }
+            }
+        }
+
+        let mut reader = Reader {
+            io: &mut self.io,
+            cx,
+        };
+        match self.client.as_mut().unwrap().read_socket(&mut reader) {
+            Err(ref err) if err.kind() == std::io::ErrorKind::WouldBlock => Poll::Pending,
+            result => Poll::Ready(result),
+        }
+    }
+}
+
+impl<IO> Future for BoundKeyExchangeClient<IO>
+where
+    IO: AsyncRead + AsyncWrite + Unpin,
+{
+    type Output = Result<KeyExchangeResult, KeyExchangeError>;
+
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        let this = self.get_mut();
+
+        let mut write_blocks = false;
+        let mut read_blocks = false;
+
+        loop {
+            while !write_blocks && this.client.as_mut().unwrap().wants_write() {
+                match this.do_write(cx) {
+                    Poll::Ready(Ok(_)) => {
+                        this.need_flush = true;
+                    }
+                    Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),
+                    Poll::Pending => {
+                        write_blocks = true;
+                        break;
+                    }
+                }
+            }
+
+            if !write_blocks && this.need_flush {
+                match Pin::new(&mut this.io).poll_flush(cx) {
+                    Poll::Ready(Ok(())) => {
+                        this.need_flush = false;
+                    }
+                    Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),
+                    Poll::Pending => {
+                        write_blocks = true;
+                    }
+                }
+            }
+
+            while !read_blocks && this.client.as_mut().unwrap().wants_read() {
+                match this.do_read(cx) {
+                    Poll::Ready(Ok(_)) => match this.client.take().unwrap().progress() {
+                        std::ops::ControlFlow::Continue(client) => this.client = Some(client),
+                        std::ops::ControlFlow::Break(result) => return Poll::Ready(result),
+                    },
+                    Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),
+                    Poll::Pending => {
+                        read_blocks = true;
+                        break;
+                    }
+                }
+            }
+
+            if (write_blocks || !this.client.as_mut().unwrap().wants_write())
+                && (read_blocks || !this.client.as_mut().unwrap().wants_read())
+            {
+                return Poll::Pending;
+            }
+        }
+    }
 }
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let domain = "time.cloudflare.com";
-    let config = key_exchange_client().unwrap();
 
     let addr = (domain, 4460)
         .to_socket_addrs()?
         .next()
         .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))?;
 
-    let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
-    let mut stream = config
-        .connect(domain.try_into().unwrap(), stream)
+    let socket = tokio::net::TcpStream::connect(addr).await.unwrap();
+
+    let mut roots = rustls::RootCertStore::empty();
+    for cert in rustls_native_certs::load_native_certs().expect("could not load platform certs") {
+        roots.add(&rustls::Certificate(cert.0)).unwrap();
+    }
+
+    let config = rustls::ClientConfig::builder()
+        .with_safe_defaults()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+
+    let result = BoundKeyExchangeClient::new(socket, domain.to_string(), config)
+        .unwrap()
         .await
         .unwrap();
 
-    let records = key_exchange_records();
+    let cookie = &result.cookies[0];
 
-    let mut buffer = Vec::with_capacity(1024);
-    for record in records {
-        buffer.clear();
-        record.write(&mut buffer)?;
-        stream.write_all(&buffer).await?;
-    }
+    println!("cookie: {:?}", cookie);
 
-    let mut remote = domain.to_string();
-    let mut port = 123;
-    let mut cookie = None;
-
-    let mut buffer = [0; 1024];
-    let mut decoder = ntp_proto::NtsRecord::decoder();
-
-    'outer: loop {
-        let n = stream.read(&mut buffer).await.unwrap();
-        decoder.extend(buffer[..n].iter().copied());
-
-        while let Some(record) = decoder.next().unwrap() {
-            match record {
-                NtsRecord::EndOfMessage => break 'outer,
-                NtsRecord::NewCookie { cookie_data } => cookie = Some(cookie_data),
-                NtsRecord::Server { name, .. } => remote = name.to_string(),
-                NtsRecord::Port { port: p, .. } => port = p,
-                _ => { /* ignore */ }
-            }
-        }
-    }
-
-    let cookie = match cookie {
-        Some(cookie) => cookie,
-        None => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "did not receive cookie",
-            ))
-        }
-    };
-
-    println!("cookie: {:?}", &cookie);
-
-    let mut c2s = [0; 32];
-    let mut s2c = [0; 32];
-    let label = b"EXPORTER-network-time-security";
-
-    stream
-        .get_ref()
-        .1
-        .export_keying_material(&mut c2s, label, Some(&[0, 0, 0, 15, 0]))
+    let addr = (result.remote, result.port)
+        .to_socket_addrs()
+        .unwrap()
+        .next()
         .unwrap();
-    stream
-        .get_ref()
-        .1
-        .export_keying_material(&mut s2c, label, Some(&[0, 0, 0, 15, 1]))
-        .unwrap();
-
-    let addr = (remote, port).to_socket_addrs().unwrap().next().unwrap();
 
     let mut socket = match addr {
         SocketAddr::V4(_) => UdpSocket::client((Ipv4Addr::UNSPECIFIED, 0).into(), addr).await?,
         SocketAddr::V6(_) => UdpSocket::client((Ipv6Addr::UNSPECIFIED, 0).into(), addr).await?,
     };
 
-    let packet = key_exchange_packet(&cookie, &c2s);
+    let packet = key_exchange_packet(cookie, result.key_c2s);
     socket.send(&packet).await?;
     let mut buf = [0; 1024];
     let (n, _remote, _timestamp) = socket.recv(&mut buf).await?;
