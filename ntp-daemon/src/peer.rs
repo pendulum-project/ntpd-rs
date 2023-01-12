@@ -472,40 +472,40 @@ mod tests {
             ))
         }
 
-        fn set_frequency(&self, freq: f64) -> Result<NtpTimestamp, Self::Error> {
-            panic!("Should not be called by peer");
+        fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
+            panic!("Shouldn't be called by peer");
         }
 
-        fn step_clock(&self, offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
-            panic!("Should not be called by peer");
-        }
-
-        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            panic!("Should not be called by peer");
+        fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
+            panic!("Shouldn't be called by peer");
         }
 
         fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            panic!("Should not be called by peer");
+            panic!("Shouldn't be called by peer");
+        }
+
+        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
+            panic!("Shouldn't be called by peer");
         }
 
         fn ntp_algorithm_update(
             &self,
-            offset: NtpDuration,
-            poll_interval: PollInterval,
+            _offset: NtpDuration,
+            _poll_interval: PollInterval,
         ) -> Result<(), Self::Error> {
-            panic!("Should not be called by peer");
+            panic!("Shouldn't be called by peer");
         }
 
         fn error_estimate_update(
             &self,
-            est_error: NtpDuration,
-            max_error: NtpDuration,
+            _est_error: NtpDuration,
+            _max_error: NtpDuration,
         ) -> Result<(), Self::Error> {
-            panic!("Should not be called by peer");
+            panic!("Shouldn't be called by peer");
         }
 
-        fn status_update(&self, leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
-            panic!("Should not be called by peer");
+        fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
+            panic!("Shouldn't be called by peer");
         }
     }
 
