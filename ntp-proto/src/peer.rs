@@ -294,20 +294,7 @@ impl Peer {
     ) -> Self {
         Self {
             nts: Some(nts),
-
-            last_poll_interval: system_config.poll_limits.min,
-            backoff_interval: system_config.poll_limits.min,
-            remote_min_poll_interval: system_config.poll_limits.min,
-
-            current_request_identifier: None,
-            our_id,
-            peer_id,
-            reach: Default::default(),
-
-            stratum: 16,
-            reference_id: ReferenceId::NONE,
-
-            system_config,
+            ..Self::new(our_id, peer_id, local_clock_time, system_config)
         }
     }
 

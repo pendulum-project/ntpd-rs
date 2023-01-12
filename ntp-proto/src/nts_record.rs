@@ -540,6 +540,7 @@ pub struct KeyExchangeClient {
 }
 
 impl KeyExchangeClient {
+    const NTP_DEFAULT_PORT: u16 = 123;
     const NTS_KEY_EXPORT_LABEL: &'static [u8] = b"EXPORTER-network-time-security";
     const NTS_KEY_EXPORT_AESSIV128_C2S_CONTEXT: &'static [u8] = &[0, 0, 0, 15, 0];
     const NTS_KEY_EXPORT_AESSIV128_S2C_CONTEXT: &'static [u8] = &[0, 0, 0, 15, 1];
@@ -592,7 +593,7 @@ impl KeyExchangeClient {
                             }
                             return ControlFlow::Break(Ok(KeyExchangeResult {
                                 remote: result.remote.unwrap_or(self.server_name),
-                                port: result.port.unwrap_or(123),
+                                port: result.port.unwrap_or(Self::NTP_DEFAULT_PORT),
                                 nts: PeerNtsData {
                                     cookies: result.cookies,
                                     c2s: Aes128SivAead::new(&c2s),
