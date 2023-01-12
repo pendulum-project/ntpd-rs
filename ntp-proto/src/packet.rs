@@ -166,8 +166,6 @@ pub const fn next_multiple_of(lhs: u16, rhs: u16) -> u16 {
 }
 
 impl<'a> ExtensionField<'a> {
-    const MINIMUM_SIZE: usize = 16;
-
     fn into_owned(self) -> ExtensionField<'static> {
         use ExtensionField::*;
 
@@ -1134,6 +1132,10 @@ impl<'a> NtpPacket<'a> {
 
     pub fn is_kiss_rstr(&self) -> bool {
         self.is_kiss() && self.reference_id().is_rstr()
+    }
+
+    pub fn is_kiss_ntsn(&self) -> bool {
+        self.is_kiss() && self.reference_id().is_ntsn()
     }
 
     pub fn valid_server_response(&self, identifier: RequestIdentifier) -> bool {
