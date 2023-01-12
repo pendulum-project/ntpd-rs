@@ -72,9 +72,9 @@ impl Clock for LinuxClock {
         frequency_multiplier: f64,
         time_properties: TimePropertiesDS,
     ) -> Result<bool, Self::E> {
-        if time_properties.ptp_timescale {
+        if time_properties.is_ptp() {
             self.clock
-                .set_leap_seconds(time_properties.leap61, time_properties.leap59)
+                .set_leap_seconds(time_properties.leap61(), time_properties.leap59())
                 .map_err(Error::LinuxError)?;
         }
 

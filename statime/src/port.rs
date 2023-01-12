@@ -735,6 +735,7 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
             self.portdata.port_config.priority_2,
             0,
             true,
+            1337,
         );
 
         let recommended_state = Bmca::calculate_recommended_state(

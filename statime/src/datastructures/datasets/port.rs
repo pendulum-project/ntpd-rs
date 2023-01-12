@@ -3,22 +3,22 @@ use crate::time::Duration;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct PortDS {
-    pub port_identity: PortIdentity,
-    pub port_state: PortState,
-    pub log_min_delay_req_interval: i8,
-    pub mean_link_delay: Duration,
-    pub log_announce_interval: i8,
-    pub announce_receipt_timeout: u8,
-    pub log_sync_interval: i8,
-    pub delay_mechanism: DelayMechanism,
-    pub log_min_p_delay_req_interval: i8,
+    port_identity: PortIdentity,
+    pub(crate) port_state: PortState,
+    log_min_delay_req_interval: i8,
+    mean_link_delay: Duration,
+    log_announce_interval: i8,
+    announce_receipt_timeout: u8,
+    log_sync_interval: i8,
+    delay_mechanism: DelayMechanism,
+    log_min_p_delay_req_interval: i8,
     // TODO: u4
-    pub version_number: u8,
+    version_number: u8,
     // TODO: u4
-    pub minor_version_number: u8,
-    pub delay_asymmetry: Duration,
-    pub port_enable: bool,
-    pub master_only: bool,
+    minor_version_number: u8,
+    delay_asymmetry: Duration,
+    pub(crate) port_enable: bool,
+    master_only: bool,
 }
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]

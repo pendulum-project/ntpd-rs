@@ -2,14 +2,14 @@ use crate::datastructures::common::TimeSource;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct TimePropertiesDS {
-    pub current_utc_offset: i16,
-    pub current_utc_offset_valid: bool,
-    pub leap59: bool,
-    pub leap61: bool,
-    pub time_traceable: bool,
-    pub frequency_traceable: bool,
-    pub ptp_timescale: bool,
-    pub time_source: TimeSource,
+    pub(crate) current_utc_offset: i16,
+    pub(crate) current_utc_offset_valid: bool,
+    pub(crate) leap59: bool,
+    pub(crate) leap61: bool,
+    pub(crate) time_traceable: bool,
+    pub(crate) frequency_traceable: bool,
+    pub(crate) ptp_timescale: bool,
+    pub(crate) time_source: TimeSource,
 }
 
 impl TimePropertiesDS {
@@ -49,5 +49,17 @@ impl TimePropertiesDS {
             ptp_timescale: false,
             time_source,
         }
+    }
+
+    pub fn is_ptp(&self) -> bool {
+        self.ptp_timescale
+    }
+
+    pub fn leap59(&self) -> bool {
+        self.leap59
+    }
+
+    pub fn leap61(&self) -> bool {
+        self.leap61
     }
 }
