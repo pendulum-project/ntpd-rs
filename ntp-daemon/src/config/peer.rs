@@ -9,6 +9,8 @@ use serde::{
 pub enum PeerHostMode {
     #[serde(alias = "server")]
     Server,
+    #[serde(alias = "nts-server")]
+    NtsServer,
     #[serde(alias = "pool")]
     Pool,
 }
@@ -25,6 +27,12 @@ pub struct StandardPeerConfig {
 }
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+pub struct NtsPeerConfig {
+    pub ke_addr: NormalizedAddress,
+    pub addr: NormalizedAddress,
+}
+
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct PoolPeerConfig {
     pub addr: NormalizedAddress,
     pub max_peers: usize,
@@ -33,6 +41,7 @@ pub struct PoolPeerConfig {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum PeerConfig {
     Standard(StandardPeerConfig),
+    Nts(NtsPeerConfig),
     Pool(PoolPeerConfig),
     // Consul(ConsulPeerConfig),
 }
@@ -55,9 +64,12 @@ pub struct NormalizedAddress {
 }
 
 impl NormalizedAddress {
+    const NTP_DEFAULT_PORT: u16 = 123;
+    const NTS_KE_DEFAULT_PORT: u16 = 4460;
+
     /// Specifically, this adds the `:123` port if no port is specified
-    fn from_string(address: String) -> std::io::Result<Self> {
-        let address = Self::from_string_help(address)?;
+    fn from_string_ntp(address: String) -> std::io::Result<Self> {
+        let address = Self::from_string_help(address, Self::NTP_DEFAULT_PORT)?;
 
         Ok(Self {
             address,
@@ -67,14 +79,26 @@ impl NormalizedAddress {
         })
     }
 
-    fn from_string_help(mut address: String) -> std::io::Result<String> {
+    /// Specifically, this adds the `:123` port if no port is specified
+    fn from_string_nts_ke(address: String) -> std::io::Result<Self> {
+        let address = Self::from_string_help(address, Self::NTS_KE_DEFAULT_PORT)?;
+
+        Ok(Self {
+            address,
+
+            #[cfg(test)]
+            hardcoded_dns_resolve: vec![],
+        })
+    }
+
+    fn from_string_help(mut address: String, default_port: u16) -> std::io::Result<String> {
         if address.split(':').count() > 2 {
             // IPv6, try to parse it as such
             match address.parse::<SocketAddr>() {
                 Ok(_) => Ok(address),
                 Err(e) => {
                     // Could be because of no port, add one and see
-                    address = format!("[{address}]:123");
+                    address = format!("[{address}]:{default_port}");
                     if address.parse::<SocketAddr>().is_ok() {
                         Ok(address)
                     } else {
@@ -93,7 +117,7 @@ impl NormalizedAddress {
         } else {
             // Not ipv6 and no port. As we cant reasonably check host
             // so just append a port
-            address.push_str(":123");
+            address.push_str(&format!(":{default_port}"));
             Ok(address)
         }
     }
@@ -143,7 +167,7 @@ impl TryFrom<&str> for StandardPeerConfig {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Ok(Self {
-            addr: NormalizedAddress::from_string(value.to_string())?,
+            addr: NormalizedAddress::from_string_ntp(value.to_string())?,
         })
     }
 }
@@ -177,6 +201,7 @@ impl<'de> Deserialize<'de> for PeerConfig {
             }
 
             fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<PeerConfig, M::Error> {
+                let mut ke_addr = None;
                 let mut addr = None;
                 let mut mode = None;
                 let mut max_peers = None;
@@ -189,10 +214,22 @@ impl<'de> Deserialize<'de> for PeerConfig {
                             let raw: String = map.next_value()?;
 
                             let parsed_addr =
-                                NormalizedAddress::from_string(raw.as_str().to_string())
+                                NormalizedAddress::from_string_ntp(raw.as_str().to_string())
                                     .map_err(de::Error::custom)?;
 
                             addr = Some(parsed_addr);
+                        }
+                        "ke_addr" => {
+                            if ke_addr.is_some() {
+                                return Err(de::Error::duplicate_field("ke_addr"));
+                            }
+                            let raw: String = map.next_value()?;
+
+                            let parsed_addr =
+                                NormalizedAddress::from_string_nts_ke(raw.as_str().to_string())
+                                    .map_err(de::Error::custom)?;
+
+                            ke_addr = Some(parsed_addr);
                         }
                         "mode" => {
                             if mode.is_some() {
@@ -209,7 +246,7 @@ impl<'de> Deserialize<'de> for PeerConfig {
                         _ => {
                             return Err(de::Error::unknown_field(
                                 key,
-                                &["addr", "mode", "max_peers"],
+                                &["addr", "mode", "max_peers", "ke_addr"],
                             ));
                         }
                     }
@@ -218,18 +255,40 @@ impl<'de> Deserialize<'de> for PeerConfig {
                 let addr = addr.ok_or_else(|| de::Error::missing_field("addr"))?;
                 let mode = mode.unwrap_or_default();
 
+                let unknown_field =
+                    |field, valid_fields| Err(de::Error::unknown_field(field, valid_fields));
+
                 match mode {
                     PeerHostMode::Server => {
+                        let valid_fields = &["addr", "mode"];
                         if max_peers.is_some() {
-                            Err(de::Error::unknown_field("max_peers", &["addr", "mode"]))
+                            unknown_field("max_peers", valid_fields)
+                        } else if ke_addr.is_some() {
+                            unknown_field("ke_addr", valid_fields)
                         } else {
                             Ok(PeerConfig::Standard(StandardPeerConfig { addr }))
                         }
                     }
+                    PeerHostMode::NtsServer => {
+                        let valid_fields = &["addr", "mode", "ke_addr"];
+                        if max_peers.is_some() {
+                            unknown_field("max_peers", valid_fields)
+                        } else {
+                            // use the `addr` as the default `ke_addr`
+                            let ke_addr =
+                                ke_addr.ok_or_else(|| de::Error::missing_field("ke_addr"))?;
+                            Ok(PeerConfig::Nts(NtsPeerConfig { ke_addr, addr }))
+                        }
+                    }
                     PeerHostMode::Pool => {
-                        let max_peers = max_peers.unwrap_or(1);
+                        let valid_fields = &["addr", "mode", "max_peers"];
+                        if ke_addr.is_some() {
+                            unknown_field("ke_addr", valid_fields)
+                        } else {
+                            let max_peers = max_peers.unwrap_or(1);
 
-                        Ok(PeerConfig::Pool(PoolPeerConfig { addr, max_peers }))
+                            Ok(PeerConfig::Pool(PoolPeerConfig { addr, max_peers }))
+                        }
                     }
                 }
             }
@@ -246,6 +305,7 @@ mod tests {
     fn peer_addr(config: &PeerConfig) -> &str {
         match config {
             PeerConfig::Standard(c) => c.addr.as_str(),
+            PeerConfig::Nts(c) => c.addr.as_str(),
             PeerConfig::Pool(c) => c.addr.as_str(),
         }
     }
@@ -312,6 +372,21 @@ mod tests {
             assert_eq!(config.addr.as_str(), "example.com:123");
             assert_eq!(config.max_peers, 42);
         }
+
+        let test: TestConfig = toml::from_str(
+            r#"
+            [peer]
+            addr = "example.com"
+            ke_addr = "example.com"
+            mode = "NtsServer"
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(test.peer, PeerConfig::Nts(_)));
+        if let PeerConfig::Nts(config) = test.peer {
+            assert_eq!(config.addr.as_str(), "example.com:123");
+            assert_eq!(config.ke_addr.as_str(), "example.com:4460");
+        }
     }
 
     #[test]
@@ -327,16 +402,16 @@ mod tests {
 
     #[test]
     fn test_normalize_addr() {
-        let addr = NormalizedAddress::from_string("[::1]:456".into()).unwrap();
+        let addr = NormalizedAddress::from_string_ntp("[::1]:456".into()).unwrap();
         assert_eq!(addr.as_str(), "[::1]:456");
-        let addr = NormalizedAddress::from_string("::1".into()).unwrap();
+        let addr = NormalizedAddress::from_string_ntp("::1".into()).unwrap();
         assert_eq!(addr.as_str(), "[::1]:123");
-        assert!(NormalizedAddress::from_string(":some:invalid:1".into()).is_err());
-        let addr = NormalizedAddress::from_string("127.0.0.1:456".into()).unwrap();
+        assert!(NormalizedAddress::from_string_ntp(":some:invalid:1".into()).is_err());
+        let addr = NormalizedAddress::from_string_ntp("127.0.0.1:456".into()).unwrap();
         assert_eq!(addr.as_str(), "127.0.0.1:456");
-        let addr = NormalizedAddress::from_string("127.0.0.1".into()).unwrap();
+        let addr = NormalizedAddress::from_string_ntp("127.0.0.1".into()).unwrap();
         assert_eq!(addr.as_str(), "127.0.0.1:123");
-        let addr = NormalizedAddress::from_string("1234567890.example.com".into()).unwrap();
+        let addr = NormalizedAddress::from_string_ntp("1234567890.example.com".into()).unwrap();
         assert_eq!(addr.as_str(), "1234567890.example.com:123");
     }
 }
