@@ -620,6 +620,7 @@ impl KeyExchangeClient {
         tls_config.alpn_protocols.clear();
         tls_config.alpn_protocols.push(b"ntske/1".to_vec());
 
+        // TLS only works when the server name is a DNS name; an IP address does not work
         let mut tls_connection = rustls::ClientConnection::new(
             Arc::new(tls_config),
             (server_name.as_ref() as &str).try_into()?,

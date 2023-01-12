@@ -8,6 +8,28 @@ use std::{
 use ntp_proto::{KeyExchangeClient, KeyExchangeError, KeyExchangeResult};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
+#[allow(unused)]
+pub(crate) async fn key_exchange(
+    server_name: String,
+    port: u16,
+) -> Result<KeyExchangeResult, KeyExchangeError> {
+    let socket = tokio::net::TcpStream::connect((server_name.as_str(), port))
+        .await
+        .unwrap();
+
+    let mut roots = rustls::RootCertStore::empty();
+    for cert in rustls_native_certs::load_native_certs().expect("could not load platform certs") {
+        roots.add(&rustls::Certificate(cert.0)).unwrap();
+    }
+
+    let config = rustls::ClientConfig::builder()
+        .with_safe_defaults()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+
+    BoundKeyExchangeClient::new(socket, server_name, config)?.await
+}
+
 pub(crate) struct BoundKeyExchangeClient<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin,
