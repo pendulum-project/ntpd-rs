@@ -198,7 +198,7 @@ impl<'a> ExtensionField<'a> {
             NtsCookie(cookie) => Self::encode_nts_cookie(w, cookie, minimum_size),
             NtsCookiePlaceholder {
                 cookie_length: body_length,
-            } => Self::encode_nts_cookie_placeholder(w, *body_length as u16, minimum_size),
+            } => Self::encode_nts_cookie_placeholder(w, *body_length, minimum_size),
         }
     }
 
@@ -372,7 +372,7 @@ impl<'a> ExtensionField<'a> {
         let signature_octet_count =
             8 + next_multiple_of((nonce_octet_count + ct_octet_count) as u16, 4);
 
-        w.write_all(&(signature_octet_count as u16).to_be_bytes())?;
+        w.write_all(&signature_octet_count.to_be_bytes())?;
         w.write_all(&(nonce_octet_count as u16).to_be_bytes())?;
         w.write_all(&(ct_octet_count as u16).to_be_bytes())?;
 

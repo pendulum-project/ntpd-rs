@@ -380,7 +380,7 @@ fn accept_packet(
 mod tests {
     use std::{sync::Arc, time::Duration};
 
-    use ntp_proto::{NtpDuration, NtpLeapIndicator, PollInterval, SystemConfig, TimeSnapshot};
+    use ntp_proto::{NtpDuration, NtpLeapIndicator, PollInterval, TimeSnapshot};
     use tokio::sync::mpsc;
 
     use super::*;
