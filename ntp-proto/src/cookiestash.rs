@@ -30,8 +30,8 @@ impl CookieStash {
         if self.valid == 0 {
             None
         } else {
-            let mut result = vec![];
-            std::mem::swap(&mut result, &mut self.cookies[self.read]);
+            // takes the cookie, puts `vec![]` in its place
+            let result = std::mem::take(&mut self.cookies[self.read]);
             self.read = (self.read + 1) % self.cookies.len();
             self.valid -= 1;
             Some(result)
