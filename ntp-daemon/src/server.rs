@@ -174,6 +174,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
 
                 let mut buf = [0; 48];
                 let mut cursor = Cursor::new(buf.as_mut_slice());
+
                 if let Err(serialize_err) = response.serialize(&mut cursor, None) {
                     error!(error=?serialize_err, "Could not serialize response");
                     return true;
@@ -190,8 +191,10 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             AcceptResult::Deny(packet, peer_addr) => {
                 self.stats.denied_packets.inc();
                 let response = NtpPacket::deny_response(packet);
+
                 let mut buf = [0; 48];
                 let mut cursor = Cursor::new(buf.as_mut_slice());
+
                 if let Err(serialize_err) = response.serialize(&mut cursor, None) {
                     self.stats.response_send_errors.inc();
                     error!(error=?serialize_err, "Could not serialize response");
@@ -212,8 +215,10 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             AcceptResult::RateLimit(packet, peer_addr) => {
                 self.stats.rate_limited_packets.inc();
                 let response = NtpPacket::rate_limit_response(packet);
+
                 let mut buf = [0; 48];
                 let mut cursor = Cursor::new(buf.as_mut_slice());
+
                 if let Err(serialize_err) = response.serialize(&mut cursor, None) {
                     self.stats.response_send_errors.inc();
                     error!(error=?serialize_err, "Could not serialize response");
@@ -425,41 +430,34 @@ mod tests {
             ))
         }
 
-        fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
+        fn set_freq(&self, _freq: f64) -> Result<(), Self::Error> {
             panic!("Shouldn't be called by peer");
         }
 
-        fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
+        fn step_clock(&self, _offset: NtpDuration) -> Result<(), Self::Error> {
             panic!("Shouldn't be called by peer");
         }
 
-        fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
-        }
-
-        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
-        }
-
-        fn ntp_algorithm_update(
+        fn update_clock(
             &self,
             _offset: NtpDuration,
-            _poll_interval: PollInterval,
-        ) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
-        }
-
-        fn error_estimate_update(
-            &self,
             _est_error: NtpDuration,
             _max_error: NtpDuration,
+            _poll_interval: PollInterval,
+            _leap_status: NtpLeapIndicator,
         ) -> Result<(), Self::Error> {
             panic!("Shouldn't be called by peer");
         }
+    }
 
-        fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
-        }
+    fn serialize_packet_unencryped(send_packet: &NtpPacket) -> [u8; 48] {
+        let mut buf = [0; 48];
+        let mut cursor = Cursor::new(buf.as_mut_slice());
+        send_packet.serialize(&mut cursor, None).unwrap();
+
+        assert_eq!(cursor.position(), 48);
+
+        buf
     }
 
     #[tokio::test]
@@ -491,16 +489,16 @@ mod tests {
         .await
         .unwrap();
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let mut pdata = vec![];
-        packet.serialize(&mut pdata).unwrap();
 
-        socket.send(&pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&packet);
+        socket.send(&serialized).await.unwrap();
+
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize(&buf).unwrap();
+        let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_ne!(packet.stratum(), 0);
         assert!(packet.valid_server_response(id));
 
@@ -536,16 +534,16 @@ mod tests {
         .await
         .unwrap();
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let mut pdata = vec![];
-        packet.serialize(&mut pdata).unwrap();
 
-        socket.send(&pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&packet);
+        socket.send(&serialized).await.unwrap();
+
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize(&buf).unwrap();
+        let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_eq!(packet.stratum(), 0);
         assert_eq!(packet.reference_id(), ReferenceId::KISS_DENY);
         assert!(packet.valid_server_response(id));
@@ -582,10 +580,10 @@ mod tests {
         .await
         .unwrap();
         let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let mut pdata = vec![];
-        packet.serialize(&mut pdata).unwrap();
 
-        socket.send(&pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&packet);
+        socket.send(&serialized).await.unwrap();
+
         let mut buf = [0; 48];
         let res = tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf)).await;
         assert!(res.is_err());
@@ -622,16 +620,16 @@ mod tests {
         .await
         .unwrap();
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let mut pdata = vec![];
-        packet.serialize(&mut pdata).unwrap();
 
-        socket.send(&pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&packet);
+        socket.send(&serialized).await.unwrap();
+
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize(&buf).unwrap();
+        let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_ne!(packet.stratum(), 0);
         assert!(packet.valid_server_response(id));
 
@@ -667,16 +665,16 @@ mod tests {
         .await
         .unwrap();
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let mut pdata = vec![];
-        packet.serialize(&mut pdata).unwrap();
 
-        socket.send(&pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&packet);
+        socket.send(&serialized).await.unwrap();
+
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize(&buf).unwrap();
+        let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_eq!(packet.stratum(), 0);
         assert_eq!(packet.reference_id(), ReferenceId::KISS_DENY);
         assert!(packet.valid_server_response(id));
@@ -713,10 +711,10 @@ mod tests {
         .await
         .unwrap();
         let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let mut pdata = vec![];
-        packet.serialize(&mut pdata).unwrap();
 
-        socket.send(&pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&packet);
+        socket.send(&serialized).await.unwrap();
+
         let mut buf = [0; 48];
         let res = tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf)).await;
         assert!(res.is_err());
@@ -754,43 +752,46 @@ mod tests {
         .unwrap();
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let mut pdata = vec![];
-        packet.serialize(&mut pdata).unwrap();
-        socket.send(&pdata).await.unwrap();
+
+        let serialized = serialize_packet_unencryped(&packet);
+        socket.send(&serialized).await.unwrap();
+
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize(&buf).unwrap();
+        let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_ne!(packet.stratum(), 0);
         assert!(packet.valid_server_response(id));
 
         tokio::time::sleep(std::time::Duration::from_millis(120)).await;
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let mut pdata = vec![];
-        packet.serialize(&mut pdata).unwrap();
-        socket.send(&pdata).await.unwrap();
+
+        let serialized = serialize_packet_unencryped(&packet);
+        socket.send(&serialized).await.unwrap();
+
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize(&buf).unwrap();
+        let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_ne!(packet.stratum(), 0);
         assert!(packet.valid_server_response(id));
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let mut pdata = vec![];
-        packet.serialize(&mut pdata).unwrap();
-        socket.send(&pdata).await.unwrap();
+
+        let serialized = serialize_packet_unencryped(&packet);
+        socket.send(&serialized).await.unwrap();
+
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize(&buf).unwrap();
+        let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_eq!(packet.stratum(), 0);
         assert_eq!(packet.reference_id(), ReferenceId::KISS_RATE);
         assert!(packet.valid_server_response(id));
@@ -828,15 +829,16 @@ mod tests {
         .unwrap();
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let mut pdata = vec![];
-        packet.serialize(&mut pdata).unwrap();
-        socket.send(&pdata).await.unwrap();
+
+        let serialized = serialize_packet_unencryped(&packet);
+        socket.send(&serialized).await.unwrap();
+
         let mut buf = [0; 48];
         tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize(&buf).unwrap();
+        let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_ne!(packet.stratum(), 0);
         assert!(packet.valid_server_response(id));
 
