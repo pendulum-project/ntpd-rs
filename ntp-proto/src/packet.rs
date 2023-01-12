@@ -1,9 +1,22 @@
 use std::{borrow::Cow, fmt::Display};
 
+use aes_siv::{
+    aead::{Aead, Payload},
+    AeadCore, Nonce,
+};
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 
 use crate::{NtpClock, NtpDuration, NtpTimestamp, PollInterval, ReferenceId, SystemSnapshot};
+
+type Cipher = aes_siv::Aes128SivAead;
+
+pub const fn next_multiple_of(lhs: u16, rhs: u16) -> u16 {
+    match lhs % rhs {
+        0 => lhs,
+        r => lhs + (rhs - r),
+    }
+}
 
 #[derive(Debug)]
 pub enum PacketParsingError {
@@ -169,6 +182,10 @@ impl<'a> ExtensionField<'a> {
             ef_len,
         ))
     }
+
+    fn decode(raw: RawExtensionField<'a>) -> Result<Self, PacketParsingError> {
+        todo!()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -240,6 +257,146 @@ impl<'a> ExtensionFieldData<'a> {
             ExtensionFieldData::Raw(Cow::Borrowed(&data[..offset])),
             offset,
         ))
+    }
+}
+
+struct RawEncryptedField<'a> {
+    nonce: &'a Nonce,
+    ciphertext: &'a [u8],
+}
+
+impl<'a> RawEncryptedField<'a> {
+    fn from_message_bytes(message_bytes: &'a [u8]) -> Result<Self, PacketParsingError> {
+        use PacketParsingError::*;
+
+        let value = message_bytes;
+
+        let nonce_length = u16::from_be_bytes(value[0..2].try_into().unwrap()) as usize;
+        let ciphertext_length = u16::from_be_bytes(value[2..4].try_into().unwrap()) as usize;
+
+        let ciphertext_start = 4 + next_multiple_of(nonce_length as u16, 4) as usize;
+
+        let nonce_bytes = value.get(4..4 + nonce_length).ok_or(IncorrectLength)?;
+
+        let ciphertext = value
+            .get(ciphertext_start..ciphertext_start + ciphertext_length)
+            .ok_or(IncorrectLength)?;
+
+        Ok(Self {
+            nonce: Nonce::from_slice(nonce_bytes),
+            ciphertext,
+        })
+    }
+
+    fn decrypt(
+        &self,
+        cipher: &Cipher,
+        aad: &[u8],
+    ) -> Result<Vec<ExtensionField<'a>>, PacketParsingError> {
+        let payload = Payload {
+            msg: self.ciphertext,
+            aad,
+        };
+
+        let plaintext = match cipher.decrypt(self.nonce, payload) {
+            Ok(plain) => plain,
+            Err(_) => return Err(PacketParsingError::DecryptError),
+        };
+
+        let mut result = vec![];
+        for encrypted_field in RawExtensionField::deserialize_sequence(
+            &plaintext,
+            0,
+            RawExtensionField::BARE_MINIMUM_SIZE,
+        ) {
+            let encrypted_field = encrypted_field?.1;
+            if encrypted_field.type_id == ExtensionFieldTypeId::NtsEncryptedField {
+                // TODO: Discuss whether we want this check
+                return Err(PacketParsingError::MalformedNtsExtensionFields);
+            }
+            result.push(ExtensionField::decode(encrypted_field)?.into_owned());
+        }
+
+        Ok(result)
+    }
+}
+
+#[derive(Debug)]
+struct RawExtensionField<'a> {
+    type_id: ExtensionFieldTypeId,
+    // bytes of just the message: does not include the header or padding
+    message_bytes: &'a [u8],
+}
+
+impl<'a> RawExtensionField<'a> {
+    const BARE_MINIMUM_SIZE: usize = 4;
+    const V4_UNENCRYPTED_MINIMUM_SIZE: usize = 4;
+
+    fn wire_length(&self) -> usize {
+        // type_id and extension_field_length + data + padding
+        4 + self.message_bytes.len()
+    }
+
+    pub fn deserialize(data: &'a [u8], minimum_size: usize) -> Result<Self, PacketParsingError> {
+        use PacketParsingError::IncorrectLength;
+
+        if data.len() < 4 {
+            return Err(IncorrectLength);
+        }
+
+        let type_id = u16::from_be_bytes(data[0..2].try_into().unwrap());
+        let field_length = u16::from_be_bytes(data[2..4].try_into().unwrap()) as usize;
+        if field_length < minimum_size || field_length % 4 != 0 {
+            return Err(PacketParsingError::IncorrectLength);
+        }
+
+        let value = data.get(4..field_length).ok_or(IncorrectLength)?;
+
+        Ok(Self {
+            type_id: ExtensionFieldTypeId::from_type_id(type_id),
+            message_bytes: value,
+        })
+    }
+
+    pub fn deserialize_sequence(
+        buffer: &'a [u8],
+        cutoff: usize,
+        minimum_size: usize,
+    ) -> impl Iterator<Item = Result<(usize, RawExtensionField<'a>), PacketParsingError>> + 'a {
+        ExtensionFieldStreamer {
+            buffer,
+            cutoff,
+            minimum_size,
+            offset: 0,
+        }
+    }
+}
+struct ExtensionFieldStreamer<'a> {
+    buffer: &'a [u8],
+    cutoff: usize,
+    minimum_size: usize,
+    offset: usize,
+}
+
+impl<'a> Iterator for ExtensionFieldStreamer<'a> {
+    type Item = Result<(usize, RawExtensionField<'a>), PacketParsingError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.buffer.len() - self.offset <= self.cutoff {
+            return None;
+        }
+
+        match RawExtensionField::deserialize(&self.buffer[self.offset..], self.minimum_size) {
+            Ok(field) => {
+                let offset = self.offset;
+                self.offset += field.wire_length();
+                Some(Ok((offset, field)))
+            }
+            Err(error) => {
+                self.offset = self.buffer.len();
+                Some(Err(error))
+            }
+        }
     }
 }
 
