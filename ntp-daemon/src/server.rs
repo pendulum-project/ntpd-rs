@@ -174,7 +174,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
 
                 let mut buf = [0; 48];
                 let mut cursor = Cursor::new(buf.as_mut_slice());
-                if let Err(serialize_err) = response.serialize(&mut cursor, todo!()) {
+                if let Err(serialize_err) = response.serialize(&mut cursor, None) {
                     error!(error=?serialize_err, "Could not serialize response");
                     return true;
                 }
@@ -192,7 +192,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 let response = NtpPacket::deny_response(packet);
                 let mut buf = [0; 48];
                 let mut cursor = Cursor::new(buf.as_mut_slice());
-                if let Err(serialize_err) = response.serialize(&mut cursor, todo!()) {
+                if let Err(serialize_err) = response.serialize(&mut cursor, None) {
                     self.stats.response_send_errors.inc();
                     error!(error=?serialize_err, "Could not serialize response");
                     return true;
@@ -214,7 +214,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 let response = NtpPacket::rate_limit_response(packet);
                 let mut buf = [0; 48];
                 let mut cursor = Cursor::new(buf.as_mut_slice());
-                if let Err(serialize_err) = response.serialize(&mut cursor, todo!()) {
+                if let Err(serialize_err) = response.serialize(&mut cursor, None) {
                     self.stats.response_send_errors.inc();
                     error!(error=?serialize_err, "Could not serialize response");
                     return true;
