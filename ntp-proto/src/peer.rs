@@ -1,16 +1,40 @@
 use crate::{
+    cookiestash::CookieStash,
     packet::{NtpAssociationMode, RequestIdentifier},
     time_types::NtpInstant,
     NtpDuration, NtpPacket, NtpTimestamp, PollInterval, ReferenceId, SystemConfig, SystemSnapshot,
 };
+use aes_siv::Aes128SivAead;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument, trace, warn};
 
 const MAX_STRATUM: u8 = 16;
 const POLL_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, thiserror::Error)]
+pub enum NtsError {
+    #[error("Ran out of nts cookies")]
+    OutOfCookies,
+}
+
+pub struct PeerNtsData {
+    cookies: CookieStash,
+    c2s: Aes128SivAead,
+    s2c: Aes128SivAead,
+}
+
+impl std::fmt::Debug for PeerNtsData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PeerNtsData")
+            .field("cookies", &self.cookies)
+            .finish()
+    }
+}
+
+#[derive(Debug)]
 pub struct Peer {
+    nts: Option<PeerNtsData>,
+
     // Poll interval dictated by unreachability backoff
     backoff_interval: PollInterval,
     // Poll interval used when sending last poll mesage.
@@ -231,6 +255,35 @@ impl Peer {
         system_config: SystemConfig,
     ) -> Self {
         Self {
+            nts: None,
+
+            last_poll_interval: system_config.poll_limits.min,
+            backoff_interval: system_config.poll_limits.min,
+            remote_min_poll_interval: system_config.poll_limits.min,
+
+            current_request_identifier: None,
+            our_id,
+            peer_id,
+            reach: Default::default(),
+
+            stratum: 16,
+            reference_id: ReferenceId::NONE,
+
+            system_config,
+        }
+    }
+
+    #[instrument]
+    pub fn new_nts(
+        our_id: ReferenceId,
+        peer_id: ReferenceId,
+        local_clock_time: NtpInstant,
+        system_config: SystemConfig,
+        nts: PeerNtsData,
+    ) -> Self {
+        Self {
+            nts: Some(nts),
+
             last_poll_interval: system_config.poll_limits.min,
             backoff_interval: system_config.poll_limits.min,
             remote_min_poll_interval: system_config.poll_limits.min,
@@ -263,17 +316,23 @@ impl Peer {
         &mut self,
         system: SystemSnapshot,
         system_config: &SystemConfig,
-    ) -> NtpPacket<'static> {
+    ) -> Result<NtpPacket<'static>, NtsError> {
         self.reach.poll();
 
         let poll_interval = self.current_poll_interval(system);
-        let (packet, identifier) = NtpPacket::poll_message(poll_interval);
+        let (packet, identifier) = match &mut self.nts {
+            Some(nts) => {
+                let cookie = nts.cookies.get().ok_or(NtsError::OutOfCookies)?;
+                todo!()
+            }
+            None => NtpPacket::poll_message(poll_interval),
+        };
         self.current_request_identifier = Some((identifier, NtpInstant::now() + POLL_WINDOW));
 
         // Ensure we don't spam the remote with polls if it is not reachable
         self.backoff_interval = poll_interval.inc(system_config.poll_limits);
 
-        packet
+        Ok(packet)
     }
 
     #[instrument(skip(self, system), fields(peer = debug(self.peer_id)))]
@@ -387,6 +446,8 @@ impl Peer {
     #[cfg(test)]
     pub(crate) fn test_peer() -> Self {
         Peer {
+            nts: None,
+
             last_poll_interval: PollInterval::default(),
             backoff_interval: PollInterval::default(),
             remote_min_poll_interval: PollInterval::default(),
@@ -563,7 +624,9 @@ mod test {
         peer.remote_min_poll_interval = PollIntervalLimits::default().min;
 
         let prev = peer.current_poll_interval(system);
-        let packet = peer.generate_poll_message(system, &SystemConfig::default());
+        let packet = peer
+            .generate_poll_message(system, &SystemConfig::default())
+            .unwrap();
         assert!(peer.current_poll_interval(system) > prev);
         let mut response = NtpPacket::test();
         response.set_mode(NtpAssociationMode::Server);
@@ -581,7 +644,9 @@ mod test {
         assert_eq!(peer.current_poll_interval(system), prev);
 
         let prev = peer.current_poll_interval(system);
-        let packet = peer.generate_poll_message(system, &SystemConfig::default());
+        let packet = peer
+            .generate_poll_message(system, &SystemConfig::default())
+            .unwrap();
         assert!(peer.current_poll_interval(system) > prev);
         let mut response = NtpPacket::test();
         response.set_mode(NtpAssociationMode::Server);
@@ -607,7 +672,9 @@ mod test {
         let mut peer = Peer::test_peer();
 
         let system = SystemSnapshot::default();
-        let outgoing = peer.generate_poll_message(system, &SystemConfig::default());
+        let outgoing = peer
+            .generate_poll_message(system, &SystemConfig::default())
+            .unwrap();
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_stratum(1);
@@ -643,7 +710,9 @@ mod test {
         let mut peer = Peer::test_peer();
 
         let system = SystemSnapshot::default();
-        let outgoing = peer.generate_poll_message(system, &SystemConfig::default());
+        let outgoing = peer
+            .generate_poll_message(system, &SystemConfig::default())
+            .unwrap();
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_stratum(MAX_STRATUM + 1);
@@ -695,7 +764,9 @@ mod test {
 
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
-        let outgoing = peer.generate_poll_message(system, &SystemConfig::default());
+        let outgoing = peer
+            .generate_poll_message(system, &SystemConfig::default())
+            .unwrap();
         packet.set_reference_id(ReferenceId::KISS_RSTR);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
@@ -727,7 +798,9 @@ mod test {
 
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
-        let outgoing = peer.generate_poll_message(system, &SystemConfig::default());
+        let outgoing = peer
+            .generate_poll_message(system, &SystemConfig::default())
+            .unwrap();
         packet.set_reference_id(ReferenceId::KISS_DENY);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
@@ -764,7 +837,9 @@ mod test {
         let old_remote_interval = peer.remote_min_poll_interval;
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
-        let outgoing = peer.generate_poll_message(system, &SystemConfig::default());
+        let outgoing = peer
+            .generate_poll_message(system, &SystemConfig::default())
+            .unwrap();
         packet.set_reference_id(ReferenceId::KISS_RATE);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
