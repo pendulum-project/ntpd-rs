@@ -106,9 +106,17 @@ where
     async fn handle_poll(&mut self, poll_wait: &mut Pin<&mut T>) -> PollResult {
         let system_snapshot = *self.channels.system_snapshot_receiver.borrow();
         let config_snapshot = *self.channels.system_config_receiver.borrow_and_update();
-        let packet = self
+        let packet = match self
             .peer
-            .generate_poll_message(system_snapshot, &config_snapshot.system);
+            .generate_poll_message(system_snapshot, &config_snapshot.system)
+        {
+            Ok(packet) => packet,
+            Err(e) => {
+                error!(error = ?e, "Could not generate poll message");
+                // not exactly a network gone situation, but needs the same response
+                return PollResult::NetworkGone;
+            }
+        };
 
         // Sent a poll, so update waiting to match deadline of next
         self.last_poll_sent = Instant::now();
