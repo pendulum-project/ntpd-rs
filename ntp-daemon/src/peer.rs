@@ -380,7 +380,7 @@ fn accept_packet(
 mod tests {
     use std::{sync::Arc, time::Duration};
 
-    use ntp_proto::{NtpDuration, NtpLeapIndicator, PollInterval, TimeSnapshot};
+    use ntp_proto::{NtpDuration, NtpLeapIndicator, PollInterval, SystemConfig, TimeSnapshot};
     use tokio::sync::mpsc;
 
     use super::*;
@@ -472,23 +472,40 @@ mod tests {
             ))
         }
 
-        fn set_freq(&self, _freq: f64) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
+        fn set_frequency(&self, freq: f64) -> Result<NtpTimestamp, Self::Error> {
+            panic!("Should not be called by peer");
         }
 
-        fn step_clock(&self, _offset: NtpDuration) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
+        fn step_clock(&self, offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
+            panic!("Should not be called by peer");
         }
 
-        fn update_clock(
+        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
+            panic!("Should not be called by peer");
+        }
+
+        fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
+            panic!("Should not be called by peer");
+        }
+
+        fn ntp_algorithm_update(
             &self,
-            _offset: NtpDuration,
-            _est_error: NtpDuration,
-            _max_error: NtpDuration,
-            _poll_interval: PollInterval,
-            _leap_status: NtpLeapIndicator,
+            offset: NtpDuration,
+            poll_interval: PollInterval,
         ) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
+            panic!("Should not be called by peer");
+        }
+
+        fn error_estimate_update(
+            &self,
+            est_error: NtpDuration,
+            max_error: NtpDuration,
+        ) -> Result<(), Self::Error> {
+            panic!("Should not be called by peer");
+        }
+
+        fn status_update(&self, leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
+            panic!("Should not be called by peer");
         }
     }
 
@@ -517,7 +534,8 @@ mod tests {
         let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
 
         let (_, system_snapshot_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
-        let (_, mut system_config_receiver) = tokio::sync::watch::channel(SystemConfig::default());
+        let (_, mut system_config_receiver) =
+            tokio::sync::watch::channel(CombinedSystemConfig::default());
         let (msg_for_system_sender, msg_for_system_receiver) = mpsc::channel(1);
 
         let local_clock_time = NtpInstant::now();
@@ -525,7 +543,7 @@ mod tests {
             our_id,
             peer_id,
             local_clock_time,
-            *system_config_receiver.borrow_and_update(),
+            system_config_receiver.borrow_and_update().system,
         );
 
         let process = PeerTask {
