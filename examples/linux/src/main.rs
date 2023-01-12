@@ -43,9 +43,16 @@ struct Args {
     #[clap(long, default_value_t = 1)]
     log_announce_interval: i8,
 
-    /// Timeout
+    /// The timeout interval to wait for announce messages before
+    /// swithing to the master state
     #[clap(long, default_value_t = 5)]
     announce_receipt_timeout_interval: i32,
+
+    #[clap(long, default_value_t = 1)]
+    announce_interval: i32,
+
+    #[clap(long, default_value_t = 1)]
+    sync_interval: i32,
 
     /// Use hardware clock
     #[clap(long, short)]
@@ -94,6 +101,8 @@ fn main() {
             announce_receipt_timeout_interval: args.announce_receipt_timeout_interval,
             priority_1: args.priority_1,
             priority_2: args.priority_2,
+            announce_interval: args.announce_interval,
+            sync_interval: args.sync_interval,
         },
     };
 
