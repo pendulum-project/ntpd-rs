@@ -121,6 +121,7 @@ where
         })
     }
 
+    // adapter between AsyncWrite and std::io::Write
     fn do_write(&mut self, cx: &mut Context<'_>) -> Poll<std::io::Result<usize>> {
         struct Writer<'a, 'b, T> {
             io: &'a mut T,
@@ -163,6 +164,7 @@ where
         }
     }
 
+    // adapter between AsyncRead and std::io::Read
     fn do_read(&mut self, cx: &mut Context<'_>) -> Poll<std::io::Result<usize>> {
         struct Reader<'a, 'b, T> {
             io: &'a mut T,
