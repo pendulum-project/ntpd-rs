@@ -810,6 +810,7 @@ dependencies = [
  "ntp-udp",
  "prometheus-client",
  "rand",
+ "rustls",
  "sentry",
  "sentry-tracing",
  "serde",
