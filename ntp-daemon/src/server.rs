@@ -171,8 +171,10 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     recv_timestamp,
                     &self.clock,
                 );
-                let mut cursor = Cursor::new([0; 48]);
-                if let Err(serialize_err) = response.serialize(&mut cursor) {
+
+                let mut buf = [0; 48];
+                let mut cursor = Cursor::new(buf.as_mut_slice());
+                if let Err(serialize_err) = response.serialize(&mut cursor, todo!()) {
                     error!(error=?serialize_err, "Could not serialize response");
                     return true;
                 }
@@ -188,8 +190,9 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             AcceptResult::Deny(packet, peer_addr) => {
                 self.stats.denied_packets.inc();
                 let response = NtpPacket::deny_response(packet);
-                let mut cursor = Cursor::new([0; 48]);
-                if let Err(serialize_err) = response.serialize(&mut cursor) {
+                let mut buf = [0; 48];
+                let mut cursor = Cursor::new(buf.as_mut_slice());
+                if let Err(serialize_err) = response.serialize(&mut cursor, todo!()) {
                     self.stats.response_send_errors.inc();
                     error!(error=?serialize_err, "Could not serialize response");
                     return true;
@@ -209,8 +212,9 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             AcceptResult::RateLimit(packet, peer_addr) => {
                 self.stats.rate_limited_packets.inc();
                 let response = NtpPacket::rate_limit_response(packet);
-                let mut cursor = Cursor::new([0; 48]);
-                if let Err(serialize_err) = response.serialize(&mut cursor) {
+                let mut buf = [0; 48];
+                let mut cursor = Cursor::new(buf.as_mut_slice());
+                if let Err(serialize_err) = response.serialize(&mut cursor, todo!()) {
                     self.stats.response_send_errors.inc();
                     error!(error=?serialize_err, "Could not serialize response");
                     return true;

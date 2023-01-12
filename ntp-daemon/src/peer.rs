@@ -131,15 +131,16 @@ where
             }
         }
 
-        let mut buf = Cursor::new([0; 48]);
-        if let Err(error) = packet.serialize(&mut buf) {
+        let mut buf = [0; 48];
+        let mut cursor = Cursor::new(buf.as_mut_slice());
+        if let Err(error) = packet.serialize(&mut cursor, todo!()) {
             error!(?error, "poll message could not be serialized");
             return PollResult::Ok;
         }
 
         match self
             .socket
-            .send(&buf.get_ref()[..buf.position() as usize])
+            .send(&cursor.get_ref()[..cursor.position() as usize])
             .await
         {
             Err(error) => {
