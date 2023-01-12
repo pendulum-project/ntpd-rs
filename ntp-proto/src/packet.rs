@@ -1269,6 +1269,7 @@ impl ExtensionFieldTypeId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aes_siv::{aead::KeyInit, Aes128SivAead, Key};
 
     #[test]
     fn roundtrip_bitrep_leap() {
@@ -1289,6 +1290,14 @@ mod tests {
             let c = NtpAssociationMode::from_bits(b);
             assert_eq!(i, b);
             assert_eq!(a, c);
+        }
+    }
+
+    #[test]
+    fn roundtrip_ef_typeid() {
+        for i in 0..=u16::MAX {
+            let a = ExtensionFieldTypeId::from_type_id(i);
+            assert_eq!(i, a.to_type_id());
         }
     }
 
@@ -1314,10 +1323,11 @@ mod tests {
             mac: None,
         };
 
-        assert_eq!(reference, NtpPacket::deserialize(packet).unwrap());
-        let mut buf = vec![];
-        assert!(reference.serialize(&mut buf).is_ok());
-        assert_eq!(packet[..], buf[..]);
+        assert_eq!(reference, NtpPacket::deserialize(packet, None).unwrap());
+        match reference.serialize_without_encryption_vec() {
+            Ok(buf) => assert_eq!(packet[..], buf[..]),
+            Err(e) => panic!("{:?}", e),
+        }
 
         let packet = b"\x1B\x02\x06\xe8\x00\x00\x03\xff\x00\x00\x03\x7d\x5e\xc6\x9f\x0f\xe5\xf6\x62\x98\x7b\x61\xb9\xaf\xe5\xf6\x63\x66\x7b\x64\x99\x5d\xe5\xf6\x63\x66\x81\x40\x55\x90\xe5\xf6\x63\xa8\x76\x1d\xde\x48";
         let reference = NtpPacket {
@@ -1339,10 +1349,11 @@ mod tests {
             mac: None,
         };
 
-        assert_eq!(reference, NtpPacket::deserialize(packet).unwrap());
-        let mut buf = vec![];
-        assert!(reference.serialize(&mut buf).is_ok());
-        assert_eq!(packet[..], buf[..]);
+        assert_eq!(reference, NtpPacket::deserialize(packet, None).unwrap());
+        match reference.serialize_without_encryption_vec() {
+            Ok(buf) => assert_eq!(packet[..], buf[..]),
+            Err(e) => panic!("{:?}", e),
+        }
     }
 
     #[test]
@@ -1367,32 +1378,33 @@ mod tests {
             mac: None,
         };
 
-        assert_eq!(reference, NtpPacket::deserialize(packet).unwrap());
-        let mut buf = vec![];
-        assert!(reference.serialize(&mut buf).is_ok());
-        assert_eq!(packet[..], buf[..])
+        assert_eq!(reference, NtpPacket::deserialize(packet, None).unwrap());
+        match reference.serialize_without_encryption_vec() {
+            Ok(buf) => assert_eq!(packet[..], buf[..]),
+            Err(e) => panic!("{:?}", e),
+        }
     }
 
     #[test]
     fn test_version() {
         let packet = b"\x04\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet).is_err());
+        assert!(NtpPacket::deserialize(packet, None).is_err());
         let packet = b"\x0B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet).is_err());
+        assert!(NtpPacket::deserialize(packet, None).is_err());
         let packet = b"\x14\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet).is_err());
+        assert!(NtpPacket::deserialize(packet, None).is_err());
         let packet = b"\x2B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet).is_err());
+        assert!(NtpPacket::deserialize(packet, None).is_err());
         let packet = b"\x34\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet).is_err());
+        assert!(NtpPacket::deserialize(packet, None).is_err());
         let packet = b"\x3B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet).is_err());
+        assert!(NtpPacket::deserialize(packet, None).is_err());
     }
 
     #[test]
     fn test_packed_flags() {
         let base = b"\x24\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b".to_owned();
-        let base_structured = NtpPacket::deserialize(&base).unwrap();
+        let base_structured = NtpPacket::deserialize(&base, None).unwrap();
 
         for leap_type in 0..3 {
             for mode in 0..8 {
@@ -1400,9 +1412,8 @@ mod tests {
                 header.set_leap(NtpLeapIndicator::from_bits(leap_type));
                 header.set_mode(NtpAssociationMode::from_bits(mode));
 
-                let mut data = vec![];
-                header.serialize(&mut data).unwrap();
-                let copy = NtpPacket::deserialize(&data).unwrap();
+                let data = header.serialize_without_encryption_vec().unwrap();
+                let copy = NtpPacket::deserialize(&data, None).unwrap();
                 assert_eq!(header, copy);
             }
         }
@@ -1411,11 +1422,120 @@ mod tests {
             let mut packet = base;
             packet[0] = i;
 
-            if let Ok(a) = NtpPacket::deserialize(&packet) {
-                let mut b = vec![];
-                a.serialize(&mut b).unwrap();
+            if let Ok(a) = NtpPacket::deserialize(&packet, None) {
+                let b = a.serialize_without_encryption_vec().unwrap();
                 assert_eq!(packet[..], b[..]);
             }
         }
+    }
+
+    #[test]
+    fn test_unique_identifier() {
+        let identifier: Vec<_> = (0..16).collect();
+        let mut w = vec![];
+        ExtensionField::encode_unique_identifier(&mut w, &identifier, 0).unwrap();
+
+        assert_eq!(
+            w,
+            &[1, 4, 0, 20, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        );
+    }
+
+    #[test]
+    fn test_nts_cookie() {
+        let cookie: Vec<_> = (0..16).collect();
+        let mut w = vec![];
+        ExtensionField::encode_nts_cookie(&mut w, &cookie, 0).unwrap();
+
+        assert_eq!(
+            w,
+            &[2, 4, 0, 20, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        );
+    }
+
+    #[test]
+    fn test_nts_cookie_placeholder() {
+        let mut w = vec![];
+        ExtensionField::encode_nts_cookie_placeholder(&mut w, 16, 0).unwrap();
+
+        assert_eq!(
+            w,
+            &[3, 4, 0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,]
+        );
+    }
+
+    #[test]
+    fn test_unknown() {
+        let data: Vec<_> = (0..16).collect();
+        let mut w = vec![];
+        ExtensionField::encode_unknown(&mut w, 42, &data, 0).unwrap();
+
+        assert_eq!(
+            w,
+            &[0, 42, 0, 20, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        );
+    }
+
+    #[test]
+    fn extension_field_minimum_size() {
+        let minimum_size = 32;
+        let expected_size = minimum_size as usize;
+        let data: Vec<_> = (0..16).collect();
+
+        let mut w = vec![];
+        ExtensionField::encode_unique_identifier(&mut w, &data, minimum_size).unwrap();
+        assert_eq!(w.len(), expected_size);
+
+        let mut w = vec![];
+        ExtensionField::encode_nts_cookie(&mut w, &data, minimum_size).unwrap();
+        assert_eq!(w.len(), expected_size);
+
+        let mut w = vec![];
+        ExtensionField::encode_nts_cookie_placeholder(&mut w, data.len() as u16, minimum_size)
+            .unwrap();
+        assert_eq!(w.len(), expected_size);
+
+        let mut w = vec![];
+        ExtensionField::encode_unknown(&mut w, 42, &data, minimum_size).unwrap();
+        assert_eq!(w.len(), expected_size);
+
+        // NOTE: encryped fields do not have a minimum_size
+    }
+
+    #[test]
+    fn extension_field_padding() {
+        let minimum_size = 0;
+        let expected_size = 20;
+        let data: Vec<_> = (0..15).collect(); // 15 bytes, so padding is needed
+
+        let mut w = vec![];
+        ExtensionField::encode_unique_identifier(&mut w, &data, minimum_size).unwrap();
+        assert_eq!(w.len(), expected_size);
+
+        let mut w = vec![];
+        ExtensionField::encode_nts_cookie(&mut w, &data, minimum_size).unwrap();
+        assert_eq!(w.len(), expected_size);
+
+        let mut w = vec![];
+        ExtensionField::encode_nts_cookie_placeholder(&mut w, data.len() as u16, minimum_size)
+            .unwrap();
+        assert_eq!(w.len(), expected_size);
+
+        let mut w = vec![];
+        ExtensionField::encode_unknown(&mut w, 42, &data, minimum_size).unwrap();
+        assert_eq!(w.len(), expected_size);
+
+        let mut w = [0u8; 128];
+        let mut cursor = Cursor::new(w.as_mut_slice());
+        let c2s = [0; 32];
+        let cipher = Aes128SivAead::new(Key::<Aes128SivAead>::from_slice(c2s.as_slice()));
+        let fields_to_encrypt = [ExtensionField::UniqueIdentifier(Cow::Borrowed(
+            data.as_slice(),
+        ))];
+        ExtensionField::encode_encrypted(&mut cursor, &fields_to_encrypt, &cipher).unwrap();
+        assert_eq!(
+            cursor.position() as usize,
+            2 + 6 + c2s.len() + expected_size
+        );
     }
 }
