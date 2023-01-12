@@ -9,6 +9,9 @@ use crate::{NtpClock, NtpDuration, NtpTimestamp, PollInterval, ReferenceId, Syst
 pub enum PacketParsingError {
     InvalidVersion(u8),
     IncorrectLength,
+    MalformedNtsExtensionFields,
+    MalformedNonce,
+    DecryptError,
 }
 
 impl Display for PacketParsingError {
@@ -18,6 +21,9 @@ impl Display for PacketParsingError {
                 f.write_fmt(format_args!("Invalid version {}", version))
             }
             Self::IncorrectLength => f.write_str("Incorrect packet length"),
+            Self::MalformedNtsExtensionFields => f.write_str("Malformed nts extension fields"),
+            Self::MalformedNonce => f.write_str("Malformed nonce (likely invalid length)"),
+            Self::DecryptError => f.write_str("Failed to decrypt NTS extension fields"),
         }
     }
 }
