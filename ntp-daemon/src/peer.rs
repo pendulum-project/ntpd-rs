@@ -1,6 +1,5 @@
 use std::{
     future::Future,
-    io::Cursor,
     marker::PhantomData,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr},
     pin::Pin,
@@ -106,10 +105,12 @@ where
     async fn handle_poll(&mut self, poll_wait: &mut Pin<&mut T>) -> PollResult {
         let system_snapshot = *self.channels.system_snapshot_receiver.borrow();
         let config_snapshot = *self.channels.system_config_receiver.borrow_and_update();
-        let packet = match self
-            .peer
-            .generate_poll_message(system_snapshot, &config_snapshot.system)
-        {
+        let mut buf = [0; 1024];
+        let packet = match self.peer.generate_poll_message(
+            &mut buf,
+            system_snapshot,
+            &config_snapshot.system,
+        ) {
             Ok(packet) => packet,
             Err(e) => {
                 error!(error = ?e, "Could not generate poll message");
@@ -140,18 +141,7 @@ where
             }
         }
 
-        let mut buf = [0; 48];
-        let mut cursor = Cursor::new(buf.as_mut_slice());
-        if let Err(error) = packet.serialize(&mut cursor, None) {
-            error!(?error, "poll message could not be serialized");
-            return PollResult::Ok;
-        }
-
-        match self
-            .socket
-            .send(&cursor.get_ref()[..cursor.position() as usize])
-            .await
-        {
+        match self.socket.send(packet).await {
             Err(error) => {
                 warn!(?error, "poll message could not be sent");
 
@@ -175,7 +165,7 @@ where
     async fn handle_packet<'a>(
         &mut self,
         poll_wait: &mut Pin<&mut T>,
-        packet: NtpPacket<'a>,
+        packet: &'a [u8],
         send_timestamp: NtpTimestamp,
         recv_timestamp: NtpTimestamp,
     ) -> PacketResult {
@@ -224,7 +214,7 @@ where
 
     async fn run(&mut self, mut poll_wait: Pin<&mut T>) {
         loop {
-            let mut buf = [0_u8; 48];
+            let mut buf = [0_u8; 1024];
 
             tokio::select! {
                 () = &mut poll_wait => {
@@ -329,7 +319,7 @@ where
 
 #[derive(Debug)]
 enum AcceptResult<'a> {
-    Accept(NtpPacket<'a>, NtpTimestamp),
+    Accept(&'a [u8], NtpTimestamp),
     Ignore,
     NetworkGone,
 }
@@ -343,7 +333,7 @@ fn unspecified_for(addr: SocketAddr) -> SocketAddr {
 
 fn accept_packet(
     result: Result<(usize, SocketAddr, Option<NtpTimestamp>), std::io::Error>,
-    buf: &[u8; 48],
+    buf: &[u8],
 ) -> AcceptResult {
     match result {
         Ok((size, _, Some(recv_timestamp))) => {
@@ -356,13 +346,7 @@ fn accept_packet(
 
                 AcceptResult::Ignore
             } else {
-                match NtpPacket::deserialize(buf, None) {
-                    Ok(packet) => AcceptResult::Accept(packet, recv_timestamp),
-                    Err(e) => {
-                        warn!("received invalid packet: {}", e);
-                        AcceptResult::Ignore
-                    }
-                }
+                AcceptResult::Accept(&buf[0..size], recv_timestamp)
             }
         }
         Ok((size, _, None)) => {
@@ -386,7 +370,7 @@ fn accept_packet(
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, time::Duration};
+    use std::{io::Cursor, sync::Arc, time::Duration};
 
     use ntp_proto::{NtpDuration, NtpLeapIndicator, PollInterval, TimeSnapshot};
     use tokio::sync::mpsc;
