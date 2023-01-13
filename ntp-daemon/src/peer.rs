@@ -30,6 +30,7 @@ impl Wait for Sleep {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum MsgForSystem {
     /// Received a Kiss-o'-Death and must demobilize
     MustDemobilize(PeerIndex),
@@ -131,15 +132,16 @@ where
             }
         }
 
-        let mut buf = Cursor::new([0; 48]);
-        if let Err(error) = packet.serialize(&mut buf) {
+        let mut buf = [0; 48];
+        let mut cursor = Cursor::new(buf.as_mut_slice());
+        if let Err(error) = packet.serialize(&mut cursor, None) {
             error!(?error, "poll message could not be serialized");
             return PollResult::Ok;
         }
 
         match self
             .socket
-            .send(&buf.get_ref()[..buf.position() as usize])
+            .send(&cursor.get_ref()[..cursor.position() as usize])
             .await
         {
             Err(error) => {
@@ -346,7 +348,7 @@ fn accept_packet(
 
                 AcceptResult::Ignore
             } else {
-                match NtpPacket::deserialize(buf) {
+                match NtpPacket::deserialize(buf, None) {
                     Ok(packet) => AcceptResult::Accept(packet, recv_timestamp),
                     Err(e) => {
                         warn!("received invalid packet: {}", e);
@@ -586,6 +588,16 @@ mod tests {
         handle.abort();
     }
 
+    fn serialize_packet_unencryped(send_packet: &NtpPacket) -> [u8; 48] {
+        let mut buf = [0; 48];
+        let mut cursor = Cursor::new(buf.as_mut_slice());
+        send_packet.serialize(&mut cursor, None).unwrap();
+
+        assert_eq!(cursor.position(), 48);
+
+        buf
+    }
+
     #[tokio::test]
     async fn test_timeroundtrip() {
         // Note: Ports must be unique among tests to deal with parallelism
@@ -617,12 +629,11 @@ mod tests {
         assert_eq!(size, 48);
         let timestamp = timestamp.unwrap();
 
-        let rec_packet = NtpPacket::deserialize(&buf).unwrap();
+        let rec_packet = NtpPacket::deserialize(&buf, None).unwrap();
         let send_packet = NtpPacket::timestamp_response(&system, rec_packet, timestamp, &clock);
-        let mut pdata = vec![];
-        send_packet.serialize(&mut pdata).unwrap();
 
-        socket.send(&pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&send_packet);
+        socket.send(&serialized).await.unwrap();
 
         let msg = msg_recv.recv().await.unwrap();
         assert!(matches!(msg, MsgForSystem::NewMeasurement(_, _, _, _)));
@@ -652,12 +663,11 @@ mod tests {
         assert_eq!(size, 48);
         assert!(timestamp.is_some());
 
-        let rec_packet = NtpPacket::deserialize(&buf).unwrap();
+        let rec_packet = NtpPacket::deserialize(&buf, None).unwrap();
         let send_packet = NtpPacket::deny_response(rec_packet);
-        let mut pdata = vec![];
-        send_packet.serialize(&mut pdata).unwrap();
 
-        socket.send(&pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&send_packet);
+        socket.send(&serialized).await.unwrap();
 
         let msg = msg_recv.recv().await.unwrap();
         assert!(matches!(msg, MsgForSystem::MustDemobilize(_)));

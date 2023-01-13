@@ -1,17 +1,12 @@
 use std::{
     future::Future,
-    io::{IoSlice, Read, Write},
+    io::{Cursor, IoSlice, Read, Write},
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs},
     pin::Pin,
     task::{Context, Poll},
 };
 
-use aes_siv::{
-    aead::{Aead, Payload},
-    Aes128SivAead, Nonce,
-};
-
-use ntp_proto::{KeyExchangeClient, KeyExchangeError, KeyExchangeResult};
+use ntp_proto::{KeyExchangeClient, KeyExchangeError, KeyExchangeResult, NtpPacket, PollInterval};
 use ntp_udp::UdpSocket;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_rustls::rustls;
@@ -33,66 +28,6 @@ pub const fn div_ceil(lhs: usize, rhs: usize) -> usize {
     } else {
         d
     }
-}
-
-fn key_exchange_packet(cookie: &[u8], cipher: Aes128SivAead) -> Vec<u8> {
-    let mut packet = vec![
-        0b00100011, 0, 10, 0, //hdr
-        0, 0, 0, 0, // root delay
-        0, 0, 0, 0, // root dispersion
-        0, 0, 0, 0, // refid
-        0, 0, 0, 0, 0, 0, 0, 0, // ref timestamp
-        0, 0, 0, 0, 0, 0, 0, 0, // org timestamp
-        0, 0, 0, 0, 0, 0, 0, 0, // recv timestamp
-        1, 2, 3, 4, 5, 6, 7, 8, // xmt timestamp
-    ];
-
-    // Add unique identifier EF
-    packet.extend_from_slice(&0x0104_u16.to_be_bytes());
-    packet.extend_from_slice(&(32_u16 + 4).to_be_bytes());
-    packet.extend((0..).take(32));
-
-    // Add cookie EF
-    packet.extend_from_slice(&0x0204_u16.to_be_bytes());
-
-    // + 4 for the extension field header
-    let cookie_octet_count = next_multiple_of(cookie.len(), 4) + 4;
-    packet.extend_from_slice(&(cookie_octet_count as u16).to_be_bytes());
-
-    packet.extend_from_slice(cookie);
-    packet.extend(std::iter::repeat(0).take(cookie_octet_count - 4 - cookie.len()));
-
-    let nonce = b"any unique nonce";
-    let ct = cipher
-        .encrypt(
-            Nonce::from_slice(nonce),
-            Payload {
-                msg: b"",
-                aad: &packet,
-            },
-        )
-        .unwrap();
-
-    // Add signature EF
-    packet.extend_from_slice(&0x0404_u16.to_be_bytes());
-
-    let nonce_octet_count = next_multiple_of(nonce.len(), 4);
-    let ct_octet_count = next_multiple_of(ct.len(), 4);
-
-    // + 8 for the extension field header (4 bytes) and nonce/cypher text length (2 bytes each)
-    let signature_octet_count = nonce_octet_count + ct_octet_count + 8;
-
-    packet.extend_from_slice(&(signature_octet_count as u16).to_be_bytes());
-    packet.extend_from_slice(&(nonce.len() as u16).to_be_bytes());
-    packet.extend_from_slice(&(ct.len() as u16).to_be_bytes());
-
-    packet.extend_from_slice(nonce);
-    packet.extend(std::iter::repeat(0).take(nonce_octet_count - nonce.len()));
-
-    packet.extend_from_slice(&ct);
-    packet.extend(std::iter::repeat(0).take(ct_octet_count - ct.len()));
-
-    packet
 }
 
 struct BoundKeyExchangeClient<IO>
@@ -278,16 +213,16 @@ async fn main() -> std::io::Result<()> {
         .with_root_certificates(roots)
         .with_no_client_auth();
 
-    let result = BoundKeyExchangeClient::new(socket, domain.to_string(), config)
+    let key_exchange = BoundKeyExchangeClient::new(socket, domain.to_string(), config)
         .unwrap()
         .await
         .unwrap();
 
-    let cookie = &result.cookies[0];
+    let cookie = &key_exchange.cookies[0];
 
     println!("cookie: {:?}", cookie);
 
-    let addr = (result.remote, result.port)
+    let addr = (key_exchange.remote, key_exchange.port)
         .to_socket_addrs()
         .unwrap()
         .next()
@@ -298,8 +233,21 @@ async fn main() -> std::io::Result<()> {
         SocketAddr::V6(_) => UdpSocket::client((Ipv6Addr::UNSPECIFIED, 0).into(), addr).await?,
     };
 
-    let packet = key_exchange_packet(cookie, result.key_c2s);
-    socket.send(&packet).await?;
+    let identifier: Vec<u8> = (0..).take(32).collect();
+
+    let additional_cookies = 0;
+    let (packet, _) = NtpPacket::nts_poll_message_request_extra_cookies(
+        &identifier,
+        &key_exchange.cookies[0],
+        additional_cookies,
+        PollInterval::default(),
+    );
+
+    let mut raw = [0u8; 1024];
+    let mut w = Cursor::new(raw.as_mut_slice());
+    packet.serialize(&mut w, Some(&key_exchange.key_c2s))?;
+    socket.send(&w.get_ref()[..w.position() as usize]).await?;
+
     let mut buf = [0; 1024];
     let (n, _remote, _timestamp) = socket.recv(&mut buf).await?;
     println!("response: {:?}", &buf[0..n]);
