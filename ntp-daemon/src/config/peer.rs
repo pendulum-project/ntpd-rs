@@ -436,6 +436,33 @@ mod tests {
     }
 
     #[test]
+    fn test_deserialize_peer_pem_certificate() {
+        let contents = include_bytes!("../../testdata/certificates/nos-nl.pem");
+        let path = std::env::temp_dir().join("nos-nl.pem");
+        std::fs::write(&path, contents).unwrap();
+
+        #[derive(Deserialize, Debug)]
+        struct TestConfig {
+            peer: PeerConfig,
+        }
+
+        let test: TestConfig = toml::from_str(&format!(
+            r#"
+                [peer]
+                ke_addr = "example.com"
+                certificate = "{}"
+                mode = "NtsServer"
+                "#,
+            path.display()
+        ))
+        .unwrap();
+        assert!(matches!(test.peer, PeerConfig::Nts(_)));
+        if let PeerConfig::Nts(config) = test.peer {
+            assert_eq!(config.ke_addr.to_string(), "example.com:4460");
+        }
+    }
+
+    #[test]
     fn test_peer_from_string() {
         let peer = PeerConfig::try_from("example.com").unwrap();
         assert_eq!(peer_addr(&peer), "example.com:123");
