@@ -255,6 +255,6 @@ mod tests {
         let input = include_bytes!("../testdata/certificates/nos-nl-chain.pem");
         let certificates = certificates_from_bufread(input.as_slice()).unwrap();
 
-        assert_eq!(certificates.len(), 1);
+        assert_eq!(certificates.len(), 3);
     }
 }
