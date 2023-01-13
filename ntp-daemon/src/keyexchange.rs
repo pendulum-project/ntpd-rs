@@ -1,6 +1,6 @@
 use std::{
     future::Future,
-    io::{BufReader, IoSlice, Read, Write},
+    io::{BufRead, BufReader, IoSlice, Read, Write},
     path::Path,
     pin::Pin,
     task::{Context, Poll},
@@ -14,6 +14,7 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 pub(crate) async fn key_exchange(
     server_name: String,
     port: u16,
+    extra_certificates: &[Certificate],
 ) -> Result<KeyExchangeResult, KeyExchangeError> {
     let socket = tokio::net::TcpStream::connect((server_name.as_str(), port))
         .await
@@ -22,6 +23,10 @@ pub(crate) async fn key_exchange(
     let mut roots = rustls::RootCertStore::empty();
     for cert in rustls_native_certs::load_native_certs().expect("could not load platform certs") {
         roots.add(&rustls::Certificate(cert.0)).unwrap();
+    }
+
+    for cert in extra_certificates {
+        roots.add(cert).unwrap();
     }
 
     let config = rustls::ClientConfig::builder()
@@ -213,12 +218,17 @@ where
 }
 
 pub(crate) fn certificates_from_file(path: &Path) -> std::io::Result<Vec<Certificate>> {
+    let file = std::fs::File::open(path)?;
+    let reader = BufReader::new(file);
+
+    certificates_from_bufread(reader)
+}
+
+pub fn certificates_from_bufread(mut reader: impl BufRead) -> std::io::Result<Vec<Certificate>> {
     use rustls_pemfile::{read_one, Item};
 
     let mut output = Vec::new();
 
-    let file = std::fs::File::open(path)?;
-    let mut reader = BufReader::new(file);
     for item in std::iter::from_fn(|| read_one(&mut reader).transpose()) {
         if let Item::X509Certificate(cert) = item? {
             output.push(Certificate(cert));
@@ -226,4 +236,25 @@ pub(crate) fn certificates_from_file(path: &Path) -> std::io::Result<Vec<Certifi
     }
 
     Ok(output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::certificates_from_bufread;
+
+    #[test]
+    fn nos_nl_pem() {
+        let input = include_bytes!("../testdata/certificates/nos-nl.pem");
+        let certificates = certificates_from_bufread(input.as_slice()).unwrap();
+
+        assert_eq!(certificates.len(), 1);
+    }
+
+    #[test]
+    fn nos_nl_chain_pem() {
+        let input = include_bytes!("../testdata/certificates/nos-nl-chain.pem");
+        let certificates = certificates_from_bufread(input.as_slice()).unwrap();
+
+        assert_eq!(certificates.len(), 1);
+    }
 }

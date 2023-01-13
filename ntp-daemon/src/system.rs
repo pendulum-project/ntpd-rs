@@ -15,6 +15,7 @@ use ntp_proto::{
     DefaultTimeSyncController, KeyExchangeError, KeyExchangeResult, NtpClock, PeerNtsData,
     PeerSnapshot, SystemSnapshot, TimeSyncController,
 };
+use rustls::Certificate;
 use tokio::{
     sync::mpsc::{self, Sender},
     task::JoinHandle,
@@ -47,9 +48,12 @@ pub async fn spawn(
             }
             PeerConfig::Nts(NtsPeerConfig {
                 ke_addr,
-                certificates: _,
+                certificates,
             }) => {
-                if let Err(e) = system.add_nts_peer(ke_addr.clone()).await {
+                if let Err(e) = system
+                    .add_nts_peer(ke_addr.clone(), certificates.clone())
+                    .await
+                {
                     return Err(std::io::Error::new(ErrorKind::Other, e));
                 }
             }
@@ -234,8 +238,11 @@ impl<C: NtpClock> System<C> {
             PeerAddress::Peer { address } => {
                 self.add_standard_peer_internal(address).await;
             }
-            PeerAddress::Nts { address } => {
-                self.add_nts_peer(address)
+            PeerAddress::Nts {
+                address,
+                extra_certificates,
+            } => {
+                self.add_nts_peer(address, extra_certificates)
                     .await
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
             }
@@ -408,12 +415,16 @@ impl<C: NtpClock> System<C> {
     async fn add_nts_peer(
         &mut self,
         ke_address: NormalizedAddress,
+        extra_certificates: Arc<[Certificate]>,
     ) -> Result<(), KeyExchangeError> {
         // NOTE: this call here effectively blocks the main thread until key exchange is done.
         // in the new spawner, we should figure out a better approach that off-loads this work
-        let ke = key_exchange(ke_address.server_name, ke_address.port).await?;
+        let ke = key_exchange(ke_address.server_name, ke_address.port, &extra_certificates).await?;
 
-        let config = SpawnConfig::Nts { ke };
+        let config = SpawnConfig::Nts {
+            ke,
+            extra_certificates,
+        };
 
         self.spawner.spawn(config).await;
 
@@ -449,7 +460,7 @@ impl<C: NtpClock> System<C> {
                             address: match &data.peer_address {
                                 PeerAddress::Peer { address } => address.to_string(),
                                 PeerAddress::Pool { address, .. } => address.to_string(),
-                                PeerAddress::Nts { address } => address.to_string(),
+                                PeerAddress::Nts { address, .. } => address.to_string(),
                             },
                         }
                     } else {
@@ -511,6 +522,7 @@ enum PeerAddress {
     },
     Nts {
         address: NormalizedAddress,
+        extra_certificates: Arc<[Certificate]>,
     },
     Pool {
         index: PoolIndex,
@@ -548,6 +560,7 @@ struct PoolAddresses {
 enum SpawnConfig {
     Nts {
         ke: KeyExchangeResult,
+        extra_certificates: Arc<[Certificate]>,
     },
     Standard {
         config: StandardPeerConfig,
@@ -573,7 +586,10 @@ impl Spawner {
         match config {
             SpawnConfig::Standard { config } => tokio::spawn(Self::spawn_standard(config, sender)),
 
-            SpawnConfig::Nts { ke } => tokio::spawn(Self::spawn_nts(ke, sender)),
+            SpawnConfig::Nts {
+                ke,
+                extra_certificates,
+            } => tokio::spawn(Self::spawn_nts(ke, extra_certificates, sender)),
 
             SpawnConfig::Pool {
                 config,
@@ -618,7 +634,11 @@ impl Spawner {
         }
     }
 
-    async fn spawn_nts(ke: KeyExchangeResult, sender: Sender<SpawnTask>) {
+    async fn spawn_nts(
+        ke: KeyExchangeResult,
+        extra_certificates: Arc<[Certificate]>,
+        sender: Sender<SpawnTask>,
+    ) {
         let addr = loop {
             let address = (ke.remote.as_str(), ke.port);
             match tokio::net::lookup_host(address).await {
@@ -641,7 +661,10 @@ impl Spawner {
         let address = NormalizedAddress::new_unchecked(&ke.remote, ke.port);
 
         let spawn_task = SpawnTask {
-            peer_address: PeerAddress::Nts { address },
+            peer_address: PeerAddress::Nts {
+                address,
+                extra_certificates,
+            },
             address: addr,
             nts: Some(ke.nts),
         };
