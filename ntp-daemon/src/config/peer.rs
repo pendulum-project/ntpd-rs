@@ -29,7 +29,6 @@ pub struct StandardPeerConfig {
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct NtsPeerConfig {
     pub ke_addr: NormalizedAddress,
-    pub addr: NormalizedAddress,
 }
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
@@ -56,8 +55,8 @@ impl PeerConfig {
 /// invalid, we didn't yet perform a DNS lookup.
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct NormalizedAddress {
-    server_name: String,
-    port: u16,
+    pub(crate) server_name: String,
+    pub(crate) port: u16,
 
     /// Used to inject socket addrs into the DNS lookup result
     #[cfg(test)]
@@ -129,15 +128,12 @@ impl NormalizedAddress {
         }
     }
 
-    pub fn to_string(&self) -> String {
-        format!("{}:{}", self.server_name, self.port)
-    }
-
     #[cfg(test)]
     pub(crate) fn new_unchecked(server_name: &str, port: u16) -> Self {
         Self {
             server_name: server_name.to_string(),
             port,
+
             hardcoded_dns_resolve: vec![],
         }
     }
@@ -171,6 +167,12 @@ impl NormalizedAddress {
         };
 
         Ok(addresses.into_iter())
+    }
+}
+
+impl std::fmt::Display for NormalizedAddress {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.server_name, self.port)
     }
 }
 
@@ -264,7 +266,6 @@ impl<'de> Deserialize<'de> for PeerConfig {
                     }
                 }
 
-                let addr = addr.ok_or_else(|| de::Error::missing_field("addr"))?;
                 let mode = mode.unwrap_or_default();
 
                 let unknown_field =
@@ -272,6 +273,8 @@ impl<'de> Deserialize<'de> for PeerConfig {
 
                 match mode {
                     PeerHostMode::Server => {
+                        let addr = addr.ok_or_else(|| de::Error::missing_field("addr"))?;
+
                         let valid_fields = &["addr", "mode"];
                         if max_peers.is_some() {
                             unknown_field("max_peers", valid_fields)
@@ -282,17 +285,18 @@ impl<'de> Deserialize<'de> for PeerConfig {
                         }
                     }
                     PeerHostMode::NtsServer => {
-                        let valid_fields = &["addr", "mode", "ke_addr"];
+                        let ke_addr = ke_addr.ok_or_else(|| de::Error::missing_field("ke_addr"))?;
+
+                        let valid_fields = &["mode", "ke_addr"];
                         if max_peers.is_some() {
                             unknown_field("max_peers", valid_fields)
                         } else {
-                            // use the `addr` as the default `ke_addr`
-                            let ke_addr =
-                                ke_addr.ok_or_else(|| de::Error::missing_field("ke_addr"))?;
-                            Ok(PeerConfig::Nts(NtsPeerConfig { ke_addr, addr }))
+                            Ok(PeerConfig::Nts(NtsPeerConfig { ke_addr }))
                         }
                     }
                     PeerHostMode::Pool => {
+                        let addr = addr.ok_or_else(|| de::Error::missing_field("addr"))?;
+
                         let valid_fields = &["addr", "mode", "max_peers"];
                         if ke_addr.is_some() {
                             unknown_field("ke_addr", valid_fields)
@@ -317,7 +321,7 @@ mod tests {
     fn peer_addr(config: &PeerConfig) -> String {
         match config {
             PeerConfig::Standard(c) => c.addr.to_string(),
-            PeerConfig::Nts(c) => c.addr.to_string(),
+            PeerConfig::Nts(c) => c.ke_addr.to_string(),
             PeerConfig::Pool(c) => c.addr.to_string(),
         }
     }
@@ -388,7 +392,6 @@ mod tests {
         let test: TestConfig = toml::from_str(
             r#"
             [peer]
-            addr = "example.com"
             ke_addr = "example.com"
             mode = "NtsServer"
             "#,
@@ -396,7 +399,6 @@ mod tests {
         .unwrap();
         assert!(matches!(test.peer, PeerConfig::Nts(_)));
         if let PeerConfig::Nts(config) = test.peer {
-            assert_eq!(config.addr.to_string(), "example.com:123");
             assert_eq!(config.ke_addr.to_string(), "example.com:4460");
         }
     }
