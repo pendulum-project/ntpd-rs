@@ -290,7 +290,7 @@ mod tests {
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com:123"),
+                addr: NormalizedAddress::new_unchecked("example.com", 123),
             })]
         );
 
@@ -300,7 +300,7 @@ mod tests {
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com:123"),
+                addr: NormalizedAddress::new_unchecked("example.com", 123),
             })]
         );
 
@@ -310,7 +310,7 @@ mod tests {
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com:123"),
+                addr: NormalizedAddress::new_unchecked("example.com", 123),
             })]
         );
 
@@ -320,7 +320,7 @@ mod tests {
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com:123"),
+                addr: NormalizedAddress::new_unchecked("example.com", 123),
             })]
         );
         assert_eq!(
@@ -339,7 +339,7 @@ mod tests {
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com:123"),
+                addr: NormalizedAddress::new_unchecked("example.com", 123),
             })]
         );
         assert!(config.system.system.panic_threshold.forward.is_none());
@@ -373,7 +373,7 @@ mod tests {
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com:123"),
+                addr: NormalizedAddress::new_unchecked("example.com", 123),
             })]
         );
     }
@@ -505,7 +505,7 @@ mod tests {
         assert_eq!(
             parsed_empty.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("foo.nl:123"),
+                addr: NormalizedAddress::new_unchecked("foo.nl", 123),
             })]
         );
         assert!(parsed_empty.config.is_none());
@@ -518,10 +518,10 @@ mod tests {
             parsed_empty.peers,
             vec![
                 PeerConfig::Standard(StandardPeerConfig {
-                    addr: NormalizedAddress::new_unchecked("foo.rs:123"),
+                    addr: NormalizedAddress::new_unchecked("foo.rs", 123),
                 }),
                 PeerConfig::Standard(StandardPeerConfig {
-                    addr: NormalizedAddress::new_unchecked("spam.nl:123"),
+                    addr: NormalizedAddress::new_unchecked("spam.nl", 123),
                 }),
             ]
         );

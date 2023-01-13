@@ -410,8 +410,8 @@ impl<C: NtpClock> System<C> {
                             poll_interval: snapshot.poll_interval,
                             peer_id: snapshot.peer_id,
                             address: match &data.peer_address {
-                                PeerAddress::Peer { address } => address.as_str().to_string(),
-                                PeerAddress::Pool { address, .. } => address.as_str().to_string(),
+                                PeerAddress::Peer { address } => address.to_string(),
+                                PeerAddress::Pool { address, .. } => address.to_string(),
                             },
                         }
                     } else {
@@ -708,9 +708,10 @@ mod tests {
         let mut indices = [PeerIndex { index: 0 }; 4];
 
         for (i, item) in indices.iter_mut().enumerate() {
-            *item = system.create_test_peer(NormalizedAddress::new_unchecked(&format!(
-                "127.0.0.{i}:123"
-            )));
+            *item = system.create_test_peer(NormalizedAddress::new_unchecked(
+                &format!("127.0.0.{i}",),
+                123,
+            ));
         }
 
         let base = NtpInstant::now();
@@ -811,10 +812,10 @@ mod tests {
     async fn single_peer_pool() {
         let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
 
-        let peer_address = NormalizedAddress::new_unchecked("127.0.0.2:123");
+        let peer_address = NormalizedAddress::new_unchecked("127.0.0.2", 123);
         system.add_standard_peer(peer_address).await;
 
-        let pool_address = NormalizedAddress::new_unchecked("127.0.0.1:123");
+        let pool_address = NormalizedAddress::new_unchecked("127.0.0.1", 123);
         let max_peers = 1;
         system.add_new_pool(pool_address.clone(), max_peers).await;
 
@@ -844,11 +845,12 @@ mod tests {
     async fn max_peers_bigger_than_pool_size() {
         let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
 
-        let peer_address = NormalizedAddress::new_unchecked("127.0.0.5:123");
+        let peer_address = NormalizedAddress::new_unchecked("127.0.0.5", 123);
         system.add_standard_peer(peer_address).await;
 
         let pool_address = NormalizedAddress::with_hardcoded_dns(
-            "tweedegolf.nl:123",
+            "tweedegolf.nl",
+            123,
             vec!["127.0.0.1:123".parse().unwrap()],
         );
         let max_peers = 2;
@@ -884,11 +886,12 @@ mod tests {
     async fn simulate_pool() {
         let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
 
-        let peer_address = NormalizedAddress::new_unchecked("127.0.0.5:123");
+        let peer_address = NormalizedAddress::new_unchecked("127.0.0.5", 123);
         system.add_standard_peer(peer_address).await;
 
         let pool_address = NormalizedAddress::with_hardcoded_dns(
-            "tweedegolf.nl:123",
+            "tweedegolf.nl",
+            123,
             vec![
                 "127.0.0.1:123".parse().unwrap(),
                 "127.0.0.2:123".parse().unwrap(),
