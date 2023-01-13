@@ -293,6 +293,8 @@ impl<'de> Deserialize<'de> for PeerConfig {
                             unknown_field("max_peers", valid_fields)
                         } else if ke_addr.is_some() {
                             unknown_field("ke_addr", valid_fields)
+                        } else if opt_certificate_path.is_some() {
+                            unknown_field("certificate", valid_fields)
                         } else {
                             Ok(PeerConfig::Standard(StandardPeerConfig { addr }))
                         }
@@ -332,6 +334,8 @@ impl<'de> Deserialize<'de> for PeerConfig {
                         let valid_fields = &["addr", "mode", "max_peers"];
                         if ke_addr.is_some() {
                             unknown_field("ke_addr", valid_fields)
+                        } else if opt_certificate_path.is_some() {
+                            unknown_field("certificate", valid_fields)
                         } else {
                             let max_peers = max_peers.unwrap_or(1);
 
