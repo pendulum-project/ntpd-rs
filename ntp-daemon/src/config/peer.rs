@@ -1,9 +1,12 @@
-use std::{fmt, net::SocketAddr};
+use std::{fmt, net::SocketAddr, path::PathBuf, sync::Arc};
 
+use rustls::Certificate;
 use serde::{
     de::{self, MapAccess, Visitor},
     Deserialize, Deserializer,
 };
+
+use crate::keyexchange::certificates_from_file;
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PeerHostMode {
@@ -26,9 +29,10 @@ pub struct StandardPeerConfig {
     pub addr: NormalizedAddress,
 }
 
-#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct NtsPeerConfig {
     pub ke_addr: NormalizedAddress,
+    pub certificates: Arc<[Certificate]>,
 }
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
@@ -216,6 +220,7 @@ impl<'de> Deserialize<'de> for PeerConfig {
 
             fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<PeerConfig, M::Error> {
                 let mut ke_addr = None;
+                let mut opt_certificate_path = None;
                 let mut addr = None;
                 let mut mode = None;
                 let mut max_peers = None;
@@ -244,6 +249,14 @@ impl<'de> Deserialize<'de> for PeerConfig {
                                     .map_err(de::Error::custom)?;
 
                             ke_addr = Some(parsed_addr);
+                        }
+                        "certificate" => {
+                            if opt_certificate_path.is_some() {
+                                return Err(de::Error::duplicate_field("certificate"));
+                            }
+                            let raw: String = map.next_value()?;
+
+                            opt_certificate_path = Some(PathBuf::from(raw));
                         }
                         "mode" => {
                             if mode.is_some() {
@@ -287,11 +300,30 @@ impl<'de> Deserialize<'de> for PeerConfig {
                     PeerHostMode::NtsServer => {
                         let ke_addr = ke_addr.ok_or_else(|| de::Error::missing_field("ke_addr"))?;
 
-                        let valid_fields = &["mode", "ke_addr"];
+                        let valid_fields = &["mode", "ke_addr", "certificate"];
                         if max_peers.is_some() {
                             unknown_field("max_peers", valid_fields)
                         } else {
-                            Ok(PeerConfig::Nts(NtsPeerConfig { ke_addr }))
+                            let certificates: Arc<[Certificate]> =
+                                if let Some(certificate_path) = opt_certificate_path {
+                                    match certificates_from_file(&certificate_path) {
+                                        Ok(certificates) => Arc::from(certificates),
+                                        Err(io_error) => {
+                                            let msg = format!(
+                                                "error while parsing certificate file {:?}: {:?}",
+                                                certificate_path, io_error
+                                            );
+                                            return Err(de::Error::custom(msg));
+                                        }
+                                    }
+                                } else {
+                                    Arc::from([])
+                                };
+
+                            Ok(PeerConfig::Nts(NtsPeerConfig {
+                                ke_addr,
+                                certificates,
+                            }))
                         }
                     }
                     PeerHostMode::Pool => {

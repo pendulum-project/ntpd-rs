@@ -1,11 +1,13 @@
 use std::{
     future::Future,
-    io::{IoSlice, Read, Write},
+    io::{BufReader, IoSlice, Read, Write},
+    path::Path,
     pin::Pin,
     task::{Context, Poll},
 };
 
 use ntp_proto::{KeyExchangeClient, KeyExchangeError, KeyExchangeResult};
+use rustls::Certificate;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 #[allow(unused)]
@@ -208,4 +210,20 @@ where
             }
         }
     }
+}
+
+pub(crate) fn certificates_from_file(path: &Path) -> std::io::Result<Vec<Certificate>> {
+    use rustls_pemfile::{read_one, Item};
+
+    let mut output = Vec::new();
+
+    let file = std::fs::File::open(path)?;
+    let mut reader = BufReader::new(file);
+    for item in std::iter::from_fn(|| read_one(&mut reader).transpose()) {
+        if let Item::X509Certificate(cert) = item? {
+            output.push(Certificate(cert));
+        }
+    }
+
+    Ok(output)
 }

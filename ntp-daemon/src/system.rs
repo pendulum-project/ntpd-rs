@@ -45,7 +45,10 @@ pub async fn spawn(
             PeerConfig::Standard(StandardPeerConfig { addr }) => {
                 system.add_standard_peer(addr.clone()).await;
             }
-            PeerConfig::Nts(NtsPeerConfig { ke_addr }) => {
+            PeerConfig::Nts(NtsPeerConfig {
+                ke_addr,
+                certificates: _,
+            }) => {
                 if let Err(e) = system.add_nts_peer(ke_addr.clone()).await {
                     return Err(std::io::Error::new(ErrorKind::Other, e));
                 }
