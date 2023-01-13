@@ -534,8 +534,16 @@ impl<'a> RawEncryptedField<'a> {
 
         let value = message_bytes;
 
+        if message_bytes.len() < 4 {
+            return Err(IncorrectLength);
+        }
+
         let nonce_length = u16::from_be_bytes(value[0..2].try_into().unwrap()) as usize;
         let ciphertext_length = u16::from_be_bytes(value[2..4].try_into().unwrap()) as usize;
+
+        if nonce_length != 16 {
+            return Err(IncorrectLength);
+        }
 
         let ciphertext_start = 4 + next_multiple_of(nonce_length as u16, 4) as usize;
 
@@ -1539,5 +1547,27 @@ mod tests {
             cursor.position() as usize,
             2 + 6 + c2s.len() + expected_size
         );
+    }
+
+    #[test]
+    fn encryption_fuzz_panic() {
+        let input = [
+            32, 206, 206, 206, 77, 206, 206, 255, 216, 216, 216, 127, 0, 0, 0, 0, 0, 0, 0, 216,
+            216, 216, 216, 206, 217, 216, 216, 216, 216, 216, 216, 206, 206, 206, 1, 0, 0, 0, 206,
+            206, 206, 4, 44, 4, 4, 4, 4, 4, 4, 4, 0, 12, 0, 0, 0, 0, 79, 0, 0, 0, 206, 0, 0, 0, 47,
+            206, 206, 0, 0, 0, 206, 206, 206, 206, 206, 206, 131, 206, 206,
+        ];
+        let _ = NtpPacket::deserialize(&input, None); //shouldn't panic
+    }
+
+    #[test]
+    fn encryption_fuzz_panic2() {
+        let input = [
+            32, 206, 206, 206, 77, 206, 216, 216, 127, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 216, 216, 216,
+            216, 206, 217, 216, 216, 216, 216, 216, 216, 206, 206, 206, 1, 0, 0, 0, 206, 206, 206,
+            4, 44, 4, 4, 4, 4, 4, 4, 4, 0, 4, 4, 0, 12, 206, 206, 222, 206, 206, 206, 206, 0, 0, 0,
+            12, 206, 206, 222, 206, 206, 206, 206, 206, 206, 206, 206, 131, 206, 206,
+        ];
+        let _ = NtpPacket::deserialize(&input, None); //shouldn't panic
     }
 }
