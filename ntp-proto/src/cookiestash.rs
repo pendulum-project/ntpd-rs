@@ -39,9 +39,10 @@ impl CookieStash {
     }
 
     /// Number of cookies missing from the stash
-    #[allow(unused)]
-    pub fn gap(&self) -> usize {
-        self.cookies.len() - self.valid
+    pub fn gap(&self) -> u8 {
+        // This never overflows or underflows since cookies.len will
+        // fit in a u8 and 0 <= self.valid <= self.cookies.len()
+        (self.cookies.len() - self.valid) as u8
     }
 
     pub fn is_empty(&self) -> bool {
@@ -74,7 +75,7 @@ mod tests {
         let mut stash = CookieStash::default();
         for i in 0..8_u8 {
             stash.store(vec![i]);
-            assert_eq!(stash.gap(), 7 - (i as usize));
+            assert_eq!(stash.gap(), 7 - i);
         }
 
         for i in 8_u8..32_u8 {

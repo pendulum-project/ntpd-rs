@@ -517,7 +517,7 @@ mod tests {
             .unwrap();
         let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_ne!(packet.stratum(), 0);
-        assert!(packet.valid_server_response(id));
+        assert!(packet.valid_server_response(id, false));
 
         server.abort();
     }
@@ -563,7 +563,7 @@ mod tests {
         let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_eq!(packet.stratum(), 0);
         assert_eq!(packet.reference_id(), ReferenceId::KISS_DENY);
-        assert!(packet.valid_server_response(id));
+        assert!(packet.valid_server_response(id, false));
 
         server.abort();
     }
@@ -648,7 +648,7 @@ mod tests {
             .unwrap();
         let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_ne!(packet.stratum(), 0);
-        assert!(packet.valid_server_response(id));
+        assert!(packet.valid_server_response(id, false));
 
         server.abort();
     }
@@ -694,7 +694,7 @@ mod tests {
         let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_eq!(packet.stratum(), 0);
         assert_eq!(packet.reference_id(), ReferenceId::KISS_DENY);
-        assert!(packet.valid_server_response(id));
+        assert!(packet.valid_server_response(id, false));
 
         server.abort();
     }
@@ -780,7 +780,7 @@ mod tests {
             .unwrap();
         let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_ne!(packet.stratum(), 0);
-        assert!(packet.valid_server_response(id));
+        assert!(packet.valid_server_response(id, false));
 
         tokio::time::sleep(std::time::Duration::from_millis(120)).await;
 
@@ -796,7 +796,7 @@ mod tests {
             .unwrap();
         let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_ne!(packet.stratum(), 0);
-        assert!(packet.valid_server_response(id));
+        assert!(packet.valid_server_response(id, false));
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
 
@@ -811,7 +811,7 @@ mod tests {
         let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_eq!(packet.stratum(), 0);
         assert_eq!(packet.reference_id(), ReferenceId::KISS_RATE);
-        assert!(packet.valid_server_response(id));
+        assert!(packet.valid_server_response(id, false));
 
         server.abort();
     }
@@ -857,7 +857,7 @@ mod tests {
             .unwrap();
         let packet = NtpPacket::deserialize(&buf, None).unwrap();
         assert_ne!(packet.stratum(), 0);
-        assert!(packet.valid_server_response(id));
+        assert!(packet.valid_server_response(id, false));
 
         server.abort();
     }

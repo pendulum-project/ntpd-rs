@@ -19,7 +19,6 @@ impl<IO> BoundKeyExchangeClient<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin,
 {
-    #[allow(unused)]
     pub fn new(
         io: IO,
         server_name: String,

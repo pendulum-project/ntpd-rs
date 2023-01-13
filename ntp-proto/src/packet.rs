@@ -732,6 +732,7 @@ struct NtpHeaderV3V4 {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct RequestIdentifier {
     expected_origin_timestamp: NtpTimestamp,
+    uid: Option<[u8; 32]>,
 }
 
 impl NtpHeaderV3V4 {
@@ -809,6 +810,7 @@ impl NtpHeaderV3V4 {
             packet,
             RequestIdentifier {
                 expected_origin_timestamp: transmit_timestamp,
+                uid: None,
             },
         )
     }
@@ -911,7 +913,7 @@ impl<'a> NtpPacket<'a> {
     }
 
     #[cfg(test)]
-    fn serialize_without_encryption_vec(&self) -> std::io::Result<Vec<u8>> {
+    pub fn serialize_without_encryption_vec(&self) -> std::io::Result<Vec<u8>> {
         let mut buffer = vec![0u8; 1024];
         let mut cursor = Cursor::new(buffer.as_mut_slice());
 
@@ -946,27 +948,20 @@ impl<'a> NtpPacket<'a> {
     }
 
     pub fn nts_poll_message(
-        identifier: &'a [u8],
         cookie: &'a [u8],
+        new_cookies: u8,
         poll_interval: PollInterval,
-    ) -> (Self, RequestIdentifier) {
-        Self::nts_poll_message_request_extra_cookies(identifier, cookie, 0, poll_interval)
-    }
-
-    pub fn nts_poll_message_request_extra_cookies(
-        identifier: &'a [u8],
-        cookie: &'a [u8],
-        request_extra_cookies: u8,
-        poll_interval: PollInterval,
-    ) -> (Self, RequestIdentifier) {
+    ) -> (NtpPacket<'static>, RequestIdentifier) {
         let (header, id) = NtpHeaderV3V4::poll_message(poll_interval);
 
+        let identifier: [u8; 32] = rand::thread_rng().gen();
+
         let mut authenticated = vec![
-            ExtensionField::UniqueIdentifier(identifier.into()),
-            ExtensionField::NtsCookie(cookie.into()),
+            ExtensionField::UniqueIdentifier(identifier.to_vec().into()),
+            ExtensionField::NtsCookie(cookie.to_vec().into()),
         ];
 
-        for _ in 0..request_extra_cookies {
+        for _ in 1..new_cookies {
             authenticated.push(ExtensionField::NtsCookiePlaceholder {
                 cookie_length: cookie.len() as u16,
             });
@@ -982,7 +977,10 @@ impl<'a> NtpPacket<'a> {
                 },
                 mac: None,
             },
-            id,
+            RequestIdentifier {
+                uid: Some(identifier),
+                ..id
+            },
         )
     }
 
@@ -1060,6 +1058,13 @@ impl<'a> NtpPacket<'a> {
 }
 
 impl<'a> NtpPacket<'a> {
+    pub fn new_cookies<'b: 'a>(&'b self) -> impl Iterator<Item = Vec<u8>> + 'b {
+        self.efdata.encrypted.iter().filter_map(|ef| match ef {
+            ExtensionField::NtsCookie(cookie) => Some(cookie.to_vec()),
+            _ => None,
+        })
+    }
+
     pub fn leap(&self) -> NtpLeapIndicator {
         match self.header {
             NtpHeader::V3(header) => header.leap,
@@ -1146,7 +1151,25 @@ impl<'a> NtpPacket<'a> {
         self.is_kiss() && self.reference_id().is_ntsn()
     }
 
-    pub fn valid_server_response(&self, identifier: RequestIdentifier) -> bool {
+    pub fn valid_server_response(&self, identifier: RequestIdentifier, nts_enabled: bool) -> bool {
+        if let Some(uid) = identifier.uid {
+            let auth = check_uid_extensionfield(self.efdata.authenticated.iter(), &uid);
+            let encr = check_uid_extensionfield(self.efdata.encrypted.iter(), &uid);
+            let untrusted = check_uid_extensionfield(self.efdata.untrusted.iter(), &uid);
+
+            // we need at least one uid ef that matches, and none should contradict
+            // our uid. Untrusted uids should only be considered on nts naks or
+            // non-nts requests.
+            let uid_ok = auth != Some(false)
+                && encr != Some(false)
+                && (untrusted != Some(false) || (nts_enabled && !self.is_kiss_ntsn()))
+                && (auth.is_some()
+                    || encr.is_some()
+                    || ((!nts_enabled || self.is_kiss_ntsn()) && untrusted.is_some()));
+            if !uid_ok {
+                return false;
+            }
+        }
         match self.header {
             NtpHeader::V3(header) => {
                 header.origin_timestamp == identifier.expected_origin_timestamp
@@ -1155,6 +1178,28 @@ impl<'a> NtpPacket<'a> {
                 header.origin_timestamp == identifier.expected_origin_timestamp
             }
         }
+    }
+}
+
+// Returns whether all uid extension fields found match the given uid, or
+// None if there were none.
+fn check_uid_extensionfield<'a, I: IntoIterator<Item = &'a ExtensionField<'a>>>(
+    iter: I,
+    uid: &[u8],
+) -> Option<bool> {
+    let mut found_uid = false;
+    for ef in iter {
+        if let ExtensionField::UniqueIdentifier(pid) = ef {
+            if pid.len() < uid.len() || &pid[0..uid.len()] != uid {
+                return Some(false);
+            }
+            found_uid = true;
+        }
+    }
+    if found_uid {
+        Some(true)
+    } else {
+        None
     }
 }
 
