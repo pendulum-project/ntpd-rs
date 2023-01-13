@@ -845,7 +845,8 @@ mod tests {
                 },
                 NtpPacket::test(),
             ))
-            .await;
+            .await
+            .unwrap();
         assert_eq!(
             system
                 .peers
@@ -870,7 +871,8 @@ mod tests {
                 },
                 NtpPacket::test(),
             ))
-            .await;
+            .await
+            .unwrap();
         assert_eq!(
             system
                 .peers
@@ -885,7 +887,8 @@ mod tests {
 
         system
             .handle_peer_update(MsgForSystem::UpdatedSnapshot(indices[1], peer_snapshot()))
-            .await;
+            .await
+            .unwrap();
         assert_eq!(
             system
                 .peers
@@ -900,7 +903,8 @@ mod tests {
 
         system
             .handle_peer_update(MsgForSystem::MustDemobilize(indices[1]))
-            .await;
+            .await
+            .unwrap();
         assert_eq!(
             system
                 .peers
@@ -936,7 +940,8 @@ mod tests {
         // our pool peer has a network issue
         system
             .handle_peer_update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }))
-            .await;
+            .await
+            .unwrap();
 
         for _ in 0..1 {
             let task = system.spawn_task_rx.recv().await.unwrap();
@@ -975,7 +980,8 @@ mod tests {
         // our pool peer has a network issue
         system
             .handle_peer_update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }))
-            .await;
+            .await
+            .unwrap();
 
         for _ in 0..1 {
             dbg!("waiting");
@@ -1019,7 +1025,8 @@ mod tests {
         // simulate that a pool peer has a network issue
         system
             .handle_peer_update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }))
-            .await;
+            .await
+            .unwrap();
 
         let task = system.spawn_task_rx.recv().await.unwrap();
         system.handle_spawn_no_nts(task.peer_address, task.address);
