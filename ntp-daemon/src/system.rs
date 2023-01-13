@@ -1,17 +1,19 @@
 use crate::{
     config::{CombinedSystemConfig, NormalizedAddress, NtsPeerConfig},
     config::{PeerConfig, PoolPeerConfig, ServerConfig, StandardPeerConfig},
+    keyexchange::key_exchange,
     peer::PeerTask,
     peer::{MsgForSystem, PeerChannels},
     server::{ServerStats, ServerTask},
     ObservablePeerState,
 };
 
-use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+use std::{collections::HashMap, io::ErrorKind, net::SocketAddr, sync::Arc};
 
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
-    DefaultTimeSyncController, NtpClock, PeerSnapshot, SystemSnapshot, TimeSyncController,
+    DefaultTimeSyncController, KeyExchangeError, KeyExchangeResult, NtpClock, PeerSnapshot,
+    SystemSnapshot, TimeSyncController,
 };
 use tokio::{
     sync::mpsc::{self, Sender},
@@ -43,8 +45,10 @@ pub async fn spawn(
             PeerConfig::Standard(StandardPeerConfig { addr }) => {
                 system.add_standard_peer(addr.clone()).await;
             }
-            PeerConfig::Nts(NtsPeerConfig { ke_addr, addr }) => {
-                system.add_nts_peer(ke_addr.clone(), addr.clone()).await;
+            PeerConfig::Nts(NtsPeerConfig { ke_addr }) => {
+                if let Err(e) = system.add_nts_peer(ke_addr.clone()).await {
+                    return Err(std::io::Error::new(ErrorKind::Other, e));
+                }
             }
             PeerConfig::Pool(PoolPeerConfig {
                 addr, max_peers, ..
@@ -223,7 +227,10 @@ impl<C: NtpClock> System<C> {
         let config = self.peers.remove(&index).unwrap().peer_address;
         match config {
             PeerAddress::Peer { address } => {
-                self.add_peer_internal(address).await;
+                self.add_standard_peer_internal(address).await;
+            }
+            PeerAddress::Nts { ke } => {
+                self.add_nts_peer_internal(ke).await;
             }
             PeerAddress::Pool {
                 index,
@@ -317,10 +324,17 @@ impl<C: NtpClock> System<C> {
     }
 
     /// Add a single standard peer
-    async fn add_peer_internal(&mut self, address: NormalizedAddress) {
+    async fn add_standard_peer_internal(&mut self, address: NormalizedAddress) {
         let config = SpawnConfig::Standard {
             config: StandardPeerConfig { addr: address },
         };
+
+        self.spawner.spawn(config).await;
+    }
+
+    /// Add a single nts peer
+    async fn add_nts_peer_internal(&mut self, ke: KeyExchangeResult) {
+        let config = SpawnConfig::Nts { ke };
 
         self.spawner.spawn(config).await;
     }
@@ -345,7 +359,7 @@ impl<C: NtpClock> System<C> {
             .peers
             .values()
             .filter_map(|v| match &v.peer_address {
-                PeerAddress::Peer { .. } => None,
+                PeerAddress::Peer { .. } | PeerAddress::Nts { .. } => None,
                 PeerAddress::Pool {
                     index: pool_index,
                     address: peer_address,
@@ -373,14 +387,21 @@ impl<C: NtpClock> System<C> {
 
     /// Adds a single peer (that is not part of a pool!)
     async fn add_standard_peer(&mut self, address: NormalizedAddress) {
-        self.add_peer_internal(address).await
+        self.add_standard_peer_internal(address).await
     }
 
     /// Adds a single peer (that is not part of a pool!)
-    async fn add_nts_peer(&mut self, ke_address: NormalizedAddress, address: NormalizedAddress) {
-        let _ = ke_address;
-        let _ = address;
-        todo!();
+    async fn add_nts_peer(
+        &mut self,
+        ke_address: NormalizedAddress,
+    ) -> Result<(), KeyExchangeError> {
+        let ke = key_exchange(ke_address.server_name, ke_address.port).await?;
+
+        let config = SpawnConfig::Nts { ke };
+
+        self.spawner.spawn(config).await;
+
+        Ok(())
     }
 
     async fn add_server(&mut self, config: ServerConfig) {
@@ -412,6 +433,7 @@ impl<C: NtpClock> System<C> {
                             address: match &data.peer_address {
                                 PeerAddress::Peer { address } => address.to_string(),
                                 PeerAddress::Pool { address, .. } => address.to_string(),
+                                PeerAddress::Nts { ke, .. } => format!("{}:{}", ke.remote, ke.port),
                             },
                         }
                     } else {
@@ -471,6 +493,9 @@ enum PeerAddress {
     Peer {
         address: NormalizedAddress,
     },
+    Nts {
+        ke: KeyExchangeResult,
+    },
     Pool {
         index: PoolIndex,
         address: NormalizedAddress,
@@ -503,7 +528,11 @@ struct PoolAddresses {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 enum SpawnConfig {
+    Nts {
+        ke: KeyExchangeResult,
+    },
     Standard {
         config: StandardPeerConfig,
     },
@@ -526,6 +555,8 @@ impl Spawner {
 
         match config {
             SpawnConfig::Standard { config } => tokio::spawn(Self::spawn_standard(config, sender)),
+
+            SpawnConfig::Nts { ke } => tokio::spawn(Self::spawn_nts(ke, sender)),
 
             SpawnConfig::Pool {
                 config,
@@ -561,6 +592,36 @@ impl Spawner {
             peer_address: PeerAddress::Peer {
                 address: config.addr,
             },
+            address: addr,
+        };
+
+        if let Err(send_error) = sender.send(spawn_task).await {
+            tracing::error!(?send_error, "Receive half got disconnected");
+        }
+    }
+
+    async fn spawn_nts(ke: KeyExchangeResult, sender: Sender<SpawnTask>) {
+        let addr = loop {
+            let address = (ke.remote.as_str(), ke.port);
+            match tokio::net::lookup_host(address).await {
+                Ok(mut addresses) => match addresses.next() {
+                    None => {
+                        warn!("Could not resolve peer address, retrying");
+                        tokio::time::sleep(NETWORK_WAIT_PERIOD).await
+                    }
+                    Some(first) => {
+                        break first;
+                    }
+                },
+                Err(e) => {
+                    warn!(error = ?e, "error while resolving peer address, retrying");
+                    tokio::time::sleep(NETWORK_WAIT_PERIOD).await
+                }
+            }
+        };
+
+        let spawn_task = SpawnTask {
+            peer_address: PeerAddress::Nts { ke },
             address: addr,
         };
 

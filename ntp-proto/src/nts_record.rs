@@ -527,6 +527,7 @@ impl KeyExchangeResultDecoder {
     }
 }
 
+#[derive(Debug)]
 pub struct KeyExchangeResult {
     pub remote: String,
     pub port: u16,
