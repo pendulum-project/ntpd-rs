@@ -46,14 +46,15 @@ impl<NR: NetworkRuntime, C: Clock, F: Filter> PtpInstance<NR, C, F> {
         announce_timeout_watch.set_alarm(Duration::from_timeout(
             config.port_config.announce_receipt_timeout_interval,
         ));
-        let mut announce_watch = clock.get_watch();
-        let mut sync_watch = clock.get_watch();
+        let announce_watch = clock.get_watch();
+        let sync_watch = clock.get_watch();
 
         PtpInstance {
             port: Port::new(
                 PortIdentity {
                     clock_identity: config.identity,
-                    port_number: 0,
+                    // Portnumber starts at 1, see: 7.5.2.3 portNumber
+                    port_number: 1,
                 },
                 config.sdo,
                 config.domain,
@@ -115,7 +116,8 @@ impl<NR: NetworkRuntime, C: Clock, F: Filter> PtpInstance<NR, C, F> {
 
         } else {
             // TODO: what to do when we have multiple ports?
-            self.port.handle_alarm(id);
+            let current_time = self.clock.now();
+            self.port.handle_alarm(id, current_time);
         }
     }
 }

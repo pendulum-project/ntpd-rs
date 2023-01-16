@@ -5,7 +5,7 @@ use crate::{
     },
     clock::{Watch, TimeProperties},
     datastructures::{
-        common::{ClockQuality, PortIdentity, Timestamp, TimeSource},
+        common::{ClockIdentity, ClockQuality, PortIdentity, Timestamp, TimeSource},
         messages::{
             AnnounceMessage, DelayRespMessage, DelayReqMessage, FollowUpMessage, Message, MessageBuilder,
             SyncMessage,
@@ -283,6 +283,10 @@ impl StateSlave {
 
 #[derive(Debug, Default, Copy, Clone)]
 pub struct StateMaster {
+    priority_1: u8,
+    priority_2: u8,
+    clock_identity: ClockIdentity,
+    clock_quality: ClockQuality,
 }
 
 impl StateMaster {
@@ -302,6 +306,35 @@ impl StateMaster {
             Message::DelayReq(message) => self.handle_delayreq(message),
             _ => None,
         }
+    }
+
+    /// Create an announce message
+    pub fn create_announce_message(&mut self, identity: PortIdentity) -> Message {
+
+        // TODO: Send correct settings.
+        let announce_message = MessageBuilder::new()
+        .source_port_identity(identity)
+        .announce_message(
+            Timestamp::default(), //origin_timestamp: Timestamp,
+            0, //current_utc_offset: u16,
+            self.priority_1, //grandmaster_priority_1: u8,
+            self.clock_quality, //grandmaster_clock_quality: ClockQuality,
+            self.priority_2, //grandmaster_priority_2: u8,
+            self.clock_identity, //grandmaster_identity: ClockIdentity,
+            0, //steps_removed: u16,
+            TimeSource::from_primitive(0xa0), //time_source: TimeSource,
+        );
+
+        announce_message
+    }
+
+    /// Create a sync message
+    pub fn create_sync_message(&mut self, identity: PortIdentity, current_time: Instant) -> Message {
+        let sync_message = MessageBuilder::new()
+            .source_port_identity(identity)
+            .sync_message(Timestamp::from(current_time));
+
+        sync_message
     }
 
     fn handle_delayreq(&mut self, message: DelayReqMessage) -> Option<()> {
@@ -375,7 +408,7 @@ impl State {
         sync_interval: i32,
     ) {
 
-        //log::info!("Recommended state: {:?} ", recommended_state);
+        log::info!("Recommended state: {:?} ", recommended_state);
 
         match recommended_state {
             // TODO set things like steps_removed once they are added
@@ -387,10 +420,6 @@ impl State {
                         remote_master: announce_message.header().source_port_identity(),
                         ..Default::default()
                     });
-
-                    // Stop MASTER watches
-                    announce_watch.clear();
-                    sync_watch.clear();
 
                     // Restart announce receipt timeout timer
                     watch.set_alarm(Duration::from_timeout(announce_receipt_timeout_interval));
@@ -405,7 +434,7 @@ impl State {
                     slave_state.remote_master = announce_message.header().source_port_identity();
                 },
 
-                // Transition to slave
+                // Transition MASTER to SLAVE
                 State::Master(master_state) => {
 
                     *self = State::Slave(StateSlave {
@@ -428,13 +457,26 @@ impl State {
             RecommendedState::M2(DefaultDs) => match self {
 
                 State::Master(master_state) => {
-                    // Nothing to do
+                    *self = State::Master(StateMaster {
+                        priority_1: DefaultDs.priority_1,
+                        priority_2: DefaultDs.priority_2,
+                        clock_identity: DefaultDs.clock_identity,
+                        clock_quality: DefaultDs.clock_quality,
+                    });
                 },
 
                 // Otherwise become master
                 _ => {
+
+                    // Stop the announce timeout alarm
                     watch.clear();
-                    *self = State::Master(StateMaster { });
+
+                    *self = State::Master(StateMaster {
+                        priority_1: DefaultDs.priority_1,
+                        priority_2: DefaultDs.priority_2,
+                        clock_identity: DefaultDs.clock_identity,
+                        clock_quality: DefaultDs.clock_quality,
+                    });
                     log::info!(
                         "New state for port: Master",
                     );
@@ -512,7 +554,7 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
         }
     }
 
-    pub fn handle_alarm(&mut self, id: W::WatchId) {
+    pub fn handle_alarm(&mut self, id: W::WatchId, current_time: Instant) {
 
         // When the announce timout expires, it means there
         // have been no announce messages in a while, so we
@@ -521,7 +563,12 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
 
             log::info!("Announce interval timeout");
 
-            self.state = State::Master(StateMaster { });
+            self.state = State::Master(StateMaster {
+                priority_1: self.portdata.port_config.priority_1,
+                priority_2: self.portdata.port_config.priority_2,
+                clock_identity: self.portdata.identity.clock_identity,
+                clock_quality: self.portdata.clock_quality,
+            });
             log::info!(
                 "New state for port: Master",
             );
@@ -549,7 +596,7 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
         // When the sync watch expires, send a sync message and restart
         if id == self.sync_watch.id() {
             log::info!("Send sync message");
-            self.send_sync_message();
+            self.send_sync_message(current_time);
             self.sync_watch.set_alarm(Duration::from_timeout(
                 self.portdata.port_config.sync_interval,
             ));
@@ -558,32 +605,35 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
 
     /// Send an announce message
     pub fn send_announce_message(&mut self) {
+        match self.state {
+            State::Master(mut state) => {
+                let announce_message = &state.create_announce_message(self.portdata.identity);
+                // TODO: set sequence Id
+                let announce_message_encode = announce_message.serialize_vec().unwrap();
 
-        // TODO: Send correct settings.
-        let announce_message = MessageBuilder::new().announce_message(
-            Timestamp::default(), //origin_timestamp: Timestamp,
-            0, //current_utc_offset: u16,
-            self.portdata.port_config.priority_1, //grandmaster_priority_1: u8,
-            self.portdata.clock_quality, //grandmaster_clock_quality: ClockQuality,
-            self.portdata.port_config.priority_2, //grandmaster_priority_2: u8,
-            self.portdata.identity.clock_identity, //grandmaster_identity: ClockIdentity,
-            0, //steps_removed: u16,
-            TimeSource::from_primitive(0xa0), //time_source: TimeSource,
-        );
-
-        let announce_message_encode = announce_message.serialize_vec().unwrap();
-        self.portdata.tc_port
-            .send(&announce_message_encode);
+                self.portdata.tc_port.send(&announce_message_encode)
+            },
+            _ => None,
+        };
     }
 
     /// Send a sync message
-    pub fn send_sync_message(&mut self) {
-        let sync_message = MessageBuilder::new().sync_message(Timestamp::default());
-        let sync_message_encode = sync_message.serialize_vec().unwrap();
-
+    pub fn send_sync_message(&mut self, current_time: Instant) {
         // TODO: Store timestamp and stuff
-        self.portdata.tc_port
-            .send(&sync_message_encode);
+        match self.state {
+            State::Master(mut state) => {
+                let sync_message = &state.create_sync_message(
+                    self.portdata.identity,
+                    current_time
+                );
+
+                // TODO: set sequence Id
+                let sync_message_encode = sync_message.serialize_vec().unwrap();
+
+                self.portdata.tc_port.send(&sync_message_encode)
+            },
+            _ => None,
+        };
     }
 
     pub fn handle_network(&mut self, packet: NetworkPacket, current_time: Instant) {
@@ -657,8 +707,6 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
             best_port_announce_message,
             &self.state,
         );
-
-        //log::info!("Recommended: {:?} ", recommended_state);
 
         if let Some(recommended_state) = recommended_state {
             self.state.handle_recommended_state(
