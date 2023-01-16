@@ -9,7 +9,7 @@ use std::cmp::Ordering;
 /// A collection of data that is gathered from other sources (mainly announce messages and the DefaultDS).
 /// When gathered from two different sources, the [compare](crate::bmc::dataset_comparison::ComparisonDataset) method can be used to find out which source
 /// is better according to the dataset comparison algorithm.
-#[derive(Eq, PartialEq, Default)]
+#[derive(Eq, PartialEq, Default, Debug)]
 pub struct ComparisonDataset {
     gm_priority_1: u8,
     gm_identity: ClockIdentity,
@@ -57,7 +57,7 @@ impl ComparisonDataset {
             identity_of_senders: data.clock_identity,
             identity_of_receiver: PortIdentity {
                 clock_identity: data.clock_identity,
-                port_number: 0,
+                port_number: 1,
             },
         }
     }
@@ -106,10 +106,12 @@ impl ComparisonDataset {
                     Ordering::Greater => return DatasetOrdering::Worse,
                     Ordering::Less => return DatasetOrdering::Better,
                 }
+
+                // TODO: Check this logic. How to compare GM identity?
                 match self.gm_identity.cmp(&other.gm_identity) {
                     Ordering::Equal => unreachable!(),
-                    Ordering::Greater => DatasetOrdering::Worse,
-                    Ordering::Less => DatasetOrdering::Better,
+                    _ => DatasetOrdering::Worse,
+                    //Ordering::Less => DatasetOrdering::Better,
                 }
             }
             // Figure 35
