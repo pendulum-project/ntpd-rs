@@ -159,6 +159,7 @@ impl StateSlave {
             );
             self.delay_id = Some(delay_id);
             self.mean_delay = None;
+            log::info!("Send delay req");
         } else {
             self.delay_id = None;
         }
@@ -304,7 +305,7 @@ impl StateMaster {
 
         // TODO: Add master messages and check state
         match message {
-            Message::DelayReq(message) => self.handle_delayreq(message),
+            Message::DelayReq(message) => self.handle_delayreq(message, port, timestamp?),
             _ => {
                 log::info!("Unknown message received {:?}", message);
 
@@ -342,32 +343,21 @@ impl StateMaster {
         sync_message
     }
 
-    fn handle_delayreq(&mut self, message: DelayReqMessage) -> Option<()> {
+    /// Handle delay req by sending a delay resp
+    fn handle_delayreq<NR: NetworkRuntime>(&mut self, message: DelayReqMessage, port: &mut PortData<NR>, timestamp: Instant) -> Option<()> {
         log::info!("Handle delayreq");
 
-        /*
-        // Ignore messages not belonging to currently processing sync
-        if self.delay_id? != message.header().sequence_id() {
-            return None;
-        }
+        // Send delay response
+        let delay_resp_message = MessageBuilder::new()
+            .source_port_identity(port.identity)
+            .delay_resp_message(
+                Timestamp::from(timestamp),
+                message.header().source_port_identity()
+            );
 
-        // Absorb into state
-        self.delay_recv_time = Some(
-            Instant::from(message.receive_timestamp())
-                - Duration::from(message.header().correction_field()),
-        );
+        let delay_resp_encode = delay_resp_message.serialize_vec().unwrap();
 
-        // Calculate when we should next measure delay
-        //  note that sync_recv_time should always be set here, but if it isn't,
-        //  taking the default (0) is safe for recovery.
-        self.next_delay_measurement = Some(
-            self.sync_recv_time.unwrap_or_default()
-                + Duration::from_log_interval(message.header().log_message_interval())
-                - Duration::from_fixed_nanos(0.1f64),
-        );
-
-        self.finish_delay_measurement();
-        */
+        port.tc_port.send(&delay_resp_encode);
 
         Some(())
     }
@@ -656,6 +646,8 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
         {
             return None;
         }
+
+        log::info!("Received {:?}", message);
 
         self.state
             .handle_message(&mut self.portdata, message, packet.timestamp);
