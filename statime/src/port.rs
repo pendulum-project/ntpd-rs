@@ -297,15 +297,16 @@ impl StateMaster {
         message: Message,
         timestamp: Option<Instant>,
     ) -> Option<()> {
-        if message.header().source_port_identity() != port.identity {
-            return None;
-        }
+
+        //if message.header().source_port_identity() != port.identity {
+        //    return None;
+        //}
 
         // TODO: Add master messages and check state
         match message {
             Message::DelayReq(message) => self.handle_delayreq(message),
             _ => {
-                log::info!("Unknown {:?}", message);
+                log::info!("Unknown message received {:?}", message);
 
                 Some(())
             },
