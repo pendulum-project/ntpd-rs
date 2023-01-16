@@ -304,7 +304,11 @@ impl StateMaster {
         // TODO: Add master messages and check state
         match message {
             Message::DelayReq(message) => self.handle_delayreq(message),
-            _ => None,
+            _ => {
+                log::info!("Unknown {:?}", message);
+
+                Some(())
+            },
         }
     }
 
@@ -408,7 +412,7 @@ impl State {
         sync_interval: i32,
     ) {
 
-        log::info!("Recommended state: {:?} ", recommended_state);
+        //log::info!("Recommended state: {:?} ", recommended_state);
 
         match recommended_state {
             // TODO set things like steps_removed once they are added
@@ -708,7 +712,7 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
             &self.state,
         );
 
-        log::info!("{:?}", recommended_state);
+        //log::info!("{:?}", recommended_state);
 
         if let Some(recommended_state) = recommended_state {
             self.state.handle_recommended_state(
