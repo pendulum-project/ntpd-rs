@@ -708,6 +708,8 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
             &self.state,
         );
 
+        log::info!("{:?}", recommended_state);
+
         if let Some(recommended_state) = recommended_state {
             self.state.handle_recommended_state(
                 &recommended_state,
