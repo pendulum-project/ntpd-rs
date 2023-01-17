@@ -827,6 +827,8 @@ mod tests {
                 announce_receipt_timeout_interval: 1000,
                 priority_1: 0,
                 priority_2: 0,
+                announce_interval: 1,
+                sync_interval: 1,
             },
             bmca: Bmca::new(TimeInterval(2_000_000_000u64.to_fixed()), test_id),
             clock_quality: ClockQuality::default(),
@@ -834,6 +836,10 @@ mod tests {
                 time_traceable: false,
                 frequency_traceable: false,
             },
+            announce_seq_id: 0,
+            delay_resp_seq_id: 0,
+            follow_up_seq_id: 0,
+            sync_seq_id: 0,
         };
 
         test_state.handle_message(
@@ -909,6 +915,8 @@ mod tests {
                 announce_receipt_timeout_interval: 1000,
                 priority_1: 0,
                 priority_2: 0,
+                announce_interval: 1,
+                sync_interval: 1,
             },
             bmca: Bmca::new(TimeInterval(2_000_000_000u64.to_fixed()), test_id),
             clock_quality: ClockQuality::default(),
@@ -916,6 +924,10 @@ mod tests {
                 time_traceable: false,
                 frequency_traceable: false,
             },
+            announce_seq_id: 0,
+            delay_resp_seq_id: 0,
+            follow_up_seq_id: 0,
+            sync_seq_id: 0,
         };
 
         test_state.handle_message(
@@ -992,6 +1004,8 @@ mod tests {
                 announce_receipt_timeout_interval: 1000,
                 priority_1: 0,
                 priority_2: 0,
+                announce_interval: 1,
+                sync_interval: 1,
             },
             bmca: Bmca::new(TimeInterval(2_000_000_000u64.to_fixed()), test_id),
             clock_quality: ClockQuality::default(),
@@ -999,6 +1013,10 @@ mod tests {
                 time_traceable: false,
                 frequency_traceable: false,
             },
+            announce_seq_id: 0,
+            delay_resp_seq_id: 0,
+            follow_up_seq_id: 0,
+            sync_seq_id: 0,
         };
 
         test_state.handle_message(
@@ -1092,6 +1110,8 @@ mod tests {
                 announce_receipt_timeout_interval: 1000,
                 priority_1: 0,
                 priority_2: 0,
+                announce_interval: 1,
+                sync_interval: 1,
             },
             bmca: Bmca::new(TimeInterval(2_000_000_000u64.to_fixed()), test_id),
             clock_quality: ClockQuality::default(),
@@ -1099,6 +1119,10 @@ mod tests {
                 time_traceable: false,
                 frequency_traceable: false,
             },
+            announce_seq_id: 0,
+            delay_resp_seq_id: 0,
+            follow_up_seq_id: 0,
+            sync_seq_id: 0,
         };
 
         test_state.handle_message(
