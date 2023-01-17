@@ -391,7 +391,6 @@ impl StateMaster {
 
     /// Handle delay req by sending a delay resp
     fn handle_delayreq<NR: NetworkRuntime>(&mut self, message: DelayReqMessage, port: &mut PortData<NR>, timestamp: Instant) -> Option<()> {
-        log::info!("Handle delayreq");
 
         // Send delay response
         let delay_resp_message = MessageBuilder::new()

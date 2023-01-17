@@ -107,13 +107,10 @@ impl ComparisonDataset {
                     Ordering::Less => return DatasetOrdering::Better,
                 }
 
-                log::info!("GM1: {:?} GM2: {:?} CMP {:?}", self.gm_identity, other.gm_identity, self.gm_identity.cmp(&other.gm_identity));
-
-                // TODO: Check this logic. How to compare GM identity?
                 match self.gm_identity.cmp(&other.gm_identity) {
                     Ordering::Equal => unreachable!(),
-                    _ => DatasetOrdering::Worse,
-                    //Ordering::Less => DatasetOrdering::Better,
+                    Ordering::Greater => DatasetOrdering::Worse,
+                    Ordering::Less => DatasetOrdering::Better,
                 }
             }
             // Figure 35

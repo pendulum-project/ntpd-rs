@@ -149,9 +149,7 @@ impl AlarmReceiver {
             if !clear {
               self.alarms.insert(clock_id, alarm_time);
             } else {
-              //self.alarms = self.alarms.iter().filter(|item| item.0 != &clock_id);
               self.alarms.retain(|id, _val| id != &clock_id);
-              //self.alarms.clear();
             }
         }
 
