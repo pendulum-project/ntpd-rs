@@ -45,8 +45,7 @@ impl Bmca {
         current_time: Timestamp,
     ) {
         // Ignore messages comming from the same port
-        if announce_message.header().source_port_identity() != self.own_port_identity
-        {
+        if announce_message.header().source_port_identity() != self.own_port_identity {
             self.foreign_master_list
                 .register_announce_message(announce_message, current_time);
         }

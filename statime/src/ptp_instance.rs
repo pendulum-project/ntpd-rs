@@ -97,7 +97,6 @@ impl<NR: NetworkRuntime, C: Clock, F: Filter> PtpInstance<NR, C, F> {
     /// more than 10ms after the alarm time.
     pub fn handle_alarm(&mut self, id: <<C as Clock>::W as Watch>::WatchId) {
         if id == self.bmca_watch.id() {
-
             // The bmca watch triggered, we must run the bmca
             // But first set a new alarm
             self.bmca_watch.set_alarm(self.port.get_announce_interval());
@@ -114,7 +113,6 @@ impl<NR: NetworkRuntime, C: Clock, F: Filter> PtpInstance<NR, C, F> {
 
             // Run the state decision
             self.port.perform_state_decision(erbest, erbest);
-
         } else {
             // TODO: what to do when we have multiple ports?
             let current_time = self.clock.now();

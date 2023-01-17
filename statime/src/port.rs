@@ -3,12 +3,12 @@ use crate::{
         bmca::{Bmca, RecommendedState},
         dataset_comparison::DefaultDS,
     },
-    clock::{Watch, TimeProperties},
+    clock::{TimeProperties, Watch},
     datastructures::{
-        common::{ClockIdentity, ClockQuality, PortIdentity, Timestamp, TimeSource},
+        common::{ClockIdentity, ClockQuality, PortIdentity, TimeSource, Timestamp},
         messages::{
-            AnnounceMessage, DelayRespMessage, DelayReqMessage, FollowUpMessage, Message, MessageBuilder,
-            SyncMessage,
+            AnnounceMessage, DelayReqMessage, DelayRespMessage, FollowUpMessage, Message,
+            MessageBuilder, SyncMessage,
         },
     },
     network::{NetworkPacket, NetworkPort, NetworkRuntime},
@@ -131,7 +131,6 @@ pub struct StateSlave {
 }
 
 impl StateSlave {
-
     fn handle_sync<NR: NetworkRuntime>(
         &mut self,
         port: &mut PortData<NR>,
@@ -182,7 +181,6 @@ impl StateSlave {
     }
 
     fn handle_followup(&mut self, message: FollowUpMessage) -> Option<()> {
-
         // Ignore messages not belonging to currently processing sync
         if self.sync_id != Some(message.header().sequence_id()) {
             self.pending_followup = Some(message); // Store it for a potentially coming sync
@@ -204,7 +202,6 @@ impl StateSlave {
     }
 
     fn handle_delayresp(&mut self, message: DelayRespMessage) -> Option<()> {
-
         // Ignore messages not belonging to currently processing sync
         if self.delay_id? != message.header().sequence_id() {
             return None;
@@ -297,14 +294,12 @@ pub struct StateMaster {
 }
 
 impl StateMaster {
-
     fn handle_message<NR: NetworkRuntime>(
         &mut self,
         port: &mut PortData<NR>,
         message: Message,
         timestamp: Option<Instant>,
     ) -> Option<()> {
-
         // Always ignore messages from own port
         if message.header().source_port_identity() == port.identity {
             return None;
@@ -312,28 +307,28 @@ impl StateMaster {
 
         match message {
             Message::DelayReq(message) => self.handle_delayreq(message, port, timestamp?),
-            _ => {
-                //log::info!("Unknown message received {:?}", message);
-                None
-            },
+            _ => None,
         }
     }
 
     /// Create an announce message
-    pub fn send_announce_message<NR: NetworkRuntime>(&mut self, port: &mut PortData<NR>) -> Option<()> {
+    pub fn send_announce_message<NR: NetworkRuntime>(
+        &mut self,
+        port: &mut PortData<NR>,
+    ) -> Option<()> {
         let announce_message = MessageBuilder::new()
-        .sequence_id(port.announce_seq_id)
-        .source_port_identity(port.identity)
-        .announce_message(
-            Timestamp::default(), //origin_timestamp: Timestamp,
-            0, //current_utc_offset: u16,
-            self.priority_1, //grandmaster_priority_1: u8,
-            self.clock_quality, //grandmaster_clock_quality: ClockQuality,
-            self.priority_2, //grandmaster_priority_2: u8,
-            self.clock_identity, //grandmaster_identity: ClockIdentity,
-            0, //steps_removed: u16,
-            TimeSource::from_primitive(0xa0), //time_source: TimeSource,
-        );
+            .sequence_id(port.announce_seq_id)
+            .source_port_identity(port.identity)
+            .announce_message(
+                Timestamp::default(),             //origin_timestamp: Timestamp,
+                0,                                //current_utc_offset: u16,
+                self.priority_1,                  //grandmaster_priority_1: u8,
+                self.clock_quality,               //grandmaster_clock_quality: ClockQuality,
+                self.priority_2,                  //grandmaster_priority_2: u8,
+                self.clock_identity,              //grandmaster_identity: ClockIdentity,
+                0,                                //steps_removed: u16,
+                TimeSource::from_primitive(0xa0), //time_source: TimeSource,
+            );
 
         if port.announce_seq_id == u16::MAX {
             port.announce_seq_id = 0;
@@ -348,7 +343,11 @@ impl StateMaster {
     }
 
     /// Create a sync message
-    pub fn send_sync_message<NR: NetworkRuntime>(&mut self, port: &mut PortData<NR>, current_time: Instant) -> Option<()> {
+    pub fn send_sync_message<NR: NetworkRuntime>(
+        &mut self,
+        port: &mut PortData<NR>,
+        current_time: Instant,
+    ) -> Option<()> {
         let sync_message = MessageBuilder::new()
             .sequence_id(port.sync_seq_id)
             .source_port_identity(port.identity)
@@ -369,7 +368,11 @@ impl StateMaster {
     }
 
     /// Create a follow up message
-    pub fn send_follow_up_message<NR: NetworkRuntime>(&mut self, port: &mut PortData<NR>, current_time: Instant) -> Option<()> {
+    pub fn send_follow_up_message<NR: NetworkRuntime>(
+        &mut self,
+        port: &mut PortData<NR>,
+        current_time: Instant,
+    ) -> Option<()> {
         let follow_up_message = MessageBuilder::new()
             .sequence_id(port.sync_seq_id)
             .source_port_identity(port.identity)
@@ -390,15 +393,19 @@ impl StateMaster {
     }
 
     /// Handle delay req by sending a delay resp
-    fn handle_delayreq<NR: NetworkRuntime>(&mut self, message: DelayReqMessage, port: &mut PortData<NR>, timestamp: Instant) -> Option<()> {
-
+    fn handle_delayreq<NR: NetworkRuntime>(
+        &mut self,
+        message: DelayReqMessage,
+        port: &mut PortData<NR>,
+        timestamp: Instant,
+    ) -> Option<()> {
         // Send delay response
         let delay_resp_message = MessageBuilder::new()
             .sequence_id(port.delay_resp_seq_id)
             .source_port_identity(port.identity)
             .delay_resp_message(
                 Timestamp::from(timestamp),
-                message.header().source_port_identity()
+                message.header().source_port_identity(),
             );
 
         if port.delay_resp_seq_id == u16::MAX {
@@ -451,18 +458,14 @@ impl State {
         announce_watch: &mut W,
         sync_watch: &mut W,
     ) {
-
         let announce_receipt_timeout_interval = port.port_config.announce_receipt_timeout_interval;
         let announce_interval = port.port_config.announce_interval;
         let sync_interval = port.port_config.sync_interval;
 
         match recommended_state {
-
             // TODO set things like steps_removed once they are added
             // TODO make sure states are complete
-
             RecommendedState::S1(announce_message) => match self {
-
                 State::Listening => {
                     *self = State::Slave(StateSlave {
                         remote_master: announce_message.header().source_port_identity(),
@@ -474,17 +477,19 @@ impl State {
 
                     log::info!(
                         "New state for port: Listening -> Slave. Remote master: {:?}",
-                        announce_message.header().source_port_identity().clock_identity
+                        announce_message
+                            .header()
+                            .source_port_identity()
+                            .clock_identity
                     );
                 }
 
                 State::Slave(slave_state) => {
                     slave_state.remote_master = announce_message.header().source_port_identity();
-                },
+                }
 
                 // Transition MASTER to SLAVE
                 State::Master(_master_state) => {
-
                     *self = State::Slave(StateSlave {
                         remote_master: announce_message.header().source_port_identity(),
                         ..Default::default()
@@ -498,12 +503,11 @@ impl State {
                     watch.set_alarm(Duration::from_timeout(announce_receipt_timeout_interval));
 
                     log::info!("New state for port: Master -> Slave");
-                },
+                }
             },
 
             // Recommended state is master
             RecommendedState::M2(default_ds) => match self {
-
                 // Stay master
                 State::Master(_master_state) => {
                     *self = State::Master(StateMaster {
@@ -512,11 +516,10 @@ impl State {
                         clock_identity: default_ds.clock_identity,
                         clock_quality: default_ds.clock_quality,
                     });
-                },
+                }
 
                 // Otherwise become master
                 _ => {
-
                     // Stop the announce timeout alarm
                     watch.clear();
 
@@ -533,9 +536,7 @@ impl State {
                     port.follow_up_seq_id = 0;
                     port.delay_resp_seq_id = 0;
 
-                    log::info!(
-                        "New state for port: Master",
-                    );
+                    log::info!("New state for port: Master");
 
                     // Start sending announce messages
                     announce_watch.set_alarm(Duration::from_timeout(announce_interval));
@@ -547,7 +548,6 @@ impl State {
 
             // All other cases
             _ => match self {
-
                 State::Listening => {
                     // Ignore
                 }
@@ -562,11 +562,9 @@ impl State {
                     // Restart announce receipt timeout timer
                     watch.set_alarm(Duration::from_timeout(announce_receipt_timeout_interval));
 
-                    log::info!(
-                        "New state for port: Listening",
-                    );
+                    log::info!("New state for port: Listening");
                 }
-            }
+            },
         }
     }
 }
@@ -611,12 +609,10 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
     }
 
     pub fn handle_alarm(&mut self, id: W::WatchId, current_time: Instant) {
-
         // When the announce timout expires, it means there
         // have been no announce messages in a while, so we
         // force a switch to the master state
         if id == self.watch.id() {
-
             log::info!("Announce interval timeout");
 
             self.state = State::Master(StateMaster {
@@ -632,9 +628,7 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
             self.portdata.follow_up_seq_id = 0;
             self.portdata.delay_resp_seq_id = 0;
 
-            log::info!(
-                "New state for port: Master",
-            );
+            log::info!("New state for port: Master");
 
             // Start sending announce messages
             self.announce_watch.set_alarm(Duration::from_timeout(
@@ -671,9 +665,7 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
     /// Send an announce message
     pub fn send_announce_message(&mut self) {
         match self.state {
-            State::Master(mut state) => {
-                &state.send_announce_message(&mut self.portdata)
-            },
+            State::Master(mut state) => &state.send_announce_message(&mut self.portdata),
             _ => &None,
         };
     }
@@ -681,9 +673,7 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
     /// Send a sync message
     pub fn send_sync_message(&mut self, current_time: Instant) {
         match self.state {
-            State::Master(mut state) => {
-                &state.send_sync_message(&mut self.portdata, current_time)
-            },
+            State::Master(mut state) => &state.send_sync_message(&mut self.portdata, current_time),
             _ => &None,
         };
     }
@@ -693,7 +683,7 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
         match self.state {
             State::Master(mut state) => {
                 &state.send_follow_up_message(&mut self.portdata, current_time)
-            },
+            }
             _ => &None,
         };
     }
@@ -721,14 +711,15 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
         #[allow(clippy::single_match)]
         match message {
             Message::Announce(announce) => {
-
-                self.portdata.bmca.register_announce_message(&announce, current_time.into());
+                self.portdata
+                    .bmca
+                    .register_announce_message(&announce, current_time.into());
 
                 // When an announce message is received, restart announce receipt timeout timer
                 self.watch.set_alarm(Duration::from_timeout(
                     self.portdata.port_config.announce_receipt_timeout_interval,
                 ));
-            },
+            }
             _ => {}
         };
 
@@ -779,7 +770,6 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
                 &mut self.portdata,
                 &mut self.announce_watch,
                 &mut self.sync_watch,
-
             );
             #[allow(clippy::single_match)]
             match &recommended_state {

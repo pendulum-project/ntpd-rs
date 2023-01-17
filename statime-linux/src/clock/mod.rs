@@ -37,7 +37,7 @@ impl LinuxClock {
                 alarm_receiver,
                 clock,
                 alarms: HashMap::new(),
-            }
+            },
         )
     }
 }
@@ -108,7 +108,9 @@ impl Watch for LinuxWatch {
     fn set_alarm(&mut self, from_now: Duration) {
         let alarm_time = self.now() + from_now;
         // Send the alarm time to the alarm receiver
-        self.alarm_sender.send((self.id, alarm_time, false)).unwrap();
+        self.alarm_sender
+            .send((self.id, alarm_time, false))
+            .unwrap();
     }
 
     fn clear(&mut self) {
@@ -143,13 +145,12 @@ impl AlarmReceiver {
     }
 
     fn earliest_alarm(&mut self) -> Option<(u32, Instant)> {
-
         // Gather all alarms into the hashmap
         while let Ok((clock_id, alarm_time, clear)) = self.alarm_receiver.try_recv() {
             if !clear {
-              self.alarms.insert(clock_id, alarm_time);
+                self.alarms.insert(clock_id, alarm_time);
             } else {
-              self.alarms.retain(|id, _val| id != &clock_id);
+                self.alarms.retain(|id, _val| id != &clock_id);
             }
         }
 
