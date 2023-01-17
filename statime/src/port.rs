@@ -170,7 +170,6 @@ impl StateSlave {
             );
             self.delay_id = Some(delay_id);
             self.mean_delay = None;
-            log::info!("Send delay req");
         } else {
             self.delay_id = None;
         }
@@ -179,13 +178,10 @@ impl StateSlave {
             self.handle_followup(follow_up);
         }
 
-        log::info!("Handle sync. ");
-
         Some(())
     }
 
     fn handle_followup(&mut self, message: FollowUpMessage) -> Option<()> {
-        log::info!("Handle followup");
 
         // Ignore messages not belonging to currently processing sync
         if self.sync_id != Some(message.header().sequence_id()) {
@@ -208,7 +204,6 @@ impl StateSlave {
     }
 
     fn handle_delayresp(&mut self, message: DelayRespMessage) -> Option<()> {
-        log::info!("Handle delayresp");
 
         // Ignore messages not belonging to currently processing sync
         if self.delay_id? != message.header().sequence_id() {
@@ -310,15 +305,16 @@ impl StateMaster {
         timestamp: Option<Instant>,
     ) -> Option<()> {
 
-        //if message.header().source_port_identity() != port.identity {
-        //    return None;
-        //}
+        // Always ignore messages from own port
+        if message.header().source_port_identity() == port.identity {
+            return None;
+        }
 
         match message {
             Message::DelayReq(message) => self.handle_delayreq(message, port, timestamp?),
             _ => {
-                log::info!("Unknown message received {:?}", message);
-                Some(())
+                //log::info!("Unknown message received {:?}", message);
+                None
             },
         }
     }
@@ -464,6 +460,7 @@ impl State {
         match recommended_state {
 
             // TODO set things like steps_removed once they are added
+            // TODO make sure states are complete
 
             RecommendedState::S1(announce_message) => match self {
 
@@ -477,7 +474,7 @@ impl State {
                     watch.set_alarm(Duration::from_timeout(announce_receipt_timeout_interval));
 
                     log::info!(
-                        "New state for port: Listening -> Slave. Remove master: {:?}",
+                        "New state for port: Listening -> Slave. Remote master: {:?}",
                         announce_message.header().source_port_identity().clock_identity
                     );
                 }
@@ -653,7 +650,6 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
 
         // When the announce watch expires, send an announce message and restart
         if id == self.announce_watch.id() {
-            log::info!("Send announce message");
             self.send_announce_message();
             self.announce_watch.set_alarm(Duration::from_timeout(
                 self.portdata.port_config.announce_interval,
@@ -662,7 +658,6 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
 
         // When the sync watch expires, send a sync message and restart
         if id == self.sync_watch.id() {
-            log::info!("Send sync message");
             self.send_sync_message(current_time);
 
             // TODO: Is the follow up a config?
@@ -727,6 +722,7 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
         #[allow(clippy::single_match)]
         match message {
             Message::Announce(announce) => {
+
                 self.portdata.bmca.register_announce_message(&announce, current_time.into());
 
                 // When an announce message is received, restart announce receipt timeout timer

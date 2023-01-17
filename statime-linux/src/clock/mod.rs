@@ -142,18 +142,16 @@ impl AlarmReceiver {
         }
     }
 
-    /// Clear any existing alarms
-    pub fn clear(&mut self) {
-        self.alarms.clear();
-    }
-
     fn earliest_alarm(&mut self) -> Option<(u32, Instant)> {
+
         // Gather all alarms into the hashmap
         while let Ok((clock_id, alarm_time, clear)) = self.alarm_receiver.try_recv() {
             if !clear {
               self.alarms.insert(clock_id, alarm_time);
             } else {
-              self.alarms.clear();
+              //self.alarms = self.alarms.iter().filter(|item| item.0 != &clock_id);
+              self.alarms.retain(|id, _val| id != &clock_id);
+              //self.alarms.clear();
             }
         }
 

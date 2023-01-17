@@ -107,6 +107,8 @@ impl ComparisonDataset {
                     Ordering::Less => return DatasetOrdering::Better,
                 }
 
+                log::info!("GM1: {:?} GM2: {:?} CMP {:?}", self.gm_identity, other.gm_identity, self.gm_identity.cmp(&other.gm_identity));
+
                 // TODO: Check this logic. How to compare GM identity?
                 match self.gm_identity.cmp(&other.gm_identity) {
                     Ordering::Equal => unreachable!(),
@@ -118,6 +120,7 @@ impl ComparisonDataset {
             true => {
                 let steps_removed_difference =
                     self.steps_removed as i32 - other.steps_removed as i32;
+
                 match steps_removed_difference {
                     2..=i32::MAX => DatasetOrdering::Worse,
                     i32::MIN..=-2 => DatasetOrdering::Better,

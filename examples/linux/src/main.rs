@@ -32,11 +32,11 @@ struct Args {
     domain: u8,
 
     /// Local clock priority (part 1) used in master clock selection
-    #[clap(long, default_value_t = 128)]
+    #[clap(long, default_value_t = 255)]
     priority_1: u8,
 
     /// Locqal clock priority (part 2) used in master clock selection
-    #[clap(long, default_value_t = 128)]
+    #[clap(long, default_value_t = 255)]
     priority_2: u8,
 
     /// Log value of interval expected between announce messages
