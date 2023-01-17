@@ -15,7 +15,7 @@ pub trait NetworkRuntime: Clone {
     /// or to select between IPv4 and IPv6.
     type InterfaceDescriptor: Clone;
     type PortType: NetworkPort;
-    type Error: core::fmt::Debug + core::fmt::Display;
+    type Error: core::fmt::Debug;
 
     /// Open a port on the given network interface.
     ///

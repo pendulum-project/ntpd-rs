@@ -64,12 +64,17 @@ impl NetworkRuntime for TestRuntime {
 impl NetworkPort for TestRuntimePort {
     fn send(&mut self, data: &[u8]) -> Option<usize> {
         let index = self.send_index;
+        let mut data_array = ArrayVec::<u8, 255>::new();
+        for item in data.iter() {
+            data_array.push(*item);
+        }
+
         self.send_index += 1;
         self.data
             .borrow_mut()
             .packet_buffer
             .push(TestNetworkPacket {
-                data: data.to_owned(),
+                data: data_array,
                 interface: self.interface.clone(),
                 time_critical: self.time_critical,
                 index,
