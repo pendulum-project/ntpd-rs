@@ -34,7 +34,7 @@ impl IdSequencer {
 pub struct PortData<NR: NetworkRuntime> {
     _runtime: NR,
     tc_port: NR::PortType,
-    _nc_port: NR::PortType,
+    nc_port: NR::PortType,
     delay_req_ids: IdSequencer,
     identity: PortIdentity,
     sdo: u16,
@@ -53,7 +53,7 @@ impl<NR: NetworkRuntime> PortData<NR> {
     pub fn new(
         _runtime: NR,
         tc_port: NR::PortType,
-        _nc_port: NR::PortType,
+        nc_port: NR::PortType,
         identity: PortIdentity,
         sdo: u16,
         domain: u8,
@@ -68,7 +68,7 @@ impl<NR: NetworkRuntime> PortData<NR> {
         Self {
             _runtime,
             tc_port,
-            _nc_port,
+            nc_port,
             delay_req_ids: IdSequencer::default(),
             identity,
             sdo,
@@ -80,9 +80,6 @@ impl<NR: NetworkRuntime> PortData<NR> {
             },
             port_config,
             bmca,
-
-            // TODO: Keep track of request ids when MASTER
-            // should maybe be done in State, but kept resetting there
             announce_seq_id: 0,
             sync_seq_id: 0,
             follow_up_seq_id: 0,
@@ -93,16 +90,15 @@ impl<NR: NetworkRuntime> PortData<NR> {
 
 pub struct PortConfig {
     pub log_announce_interval: i8,
-    pub announce_receipt_timeout_interval: i32,
+    pub log_sync_interval: i8,
+    pub announce_receipt_timeout: i8,
     pub priority_1: u8,
     pub priority_2: u8,
-    pub announce_interval: i32,
-    pub sync_interval: i32,
 }
 
 pub struct Port<NR: NetworkRuntime, W: Watch> {
     portdata: PortData<NR>,
-    watch: W,
+    announce_timeout_watch: W,
     announce_watch: W,
     sync_watch: W,
     state: State,
@@ -321,23 +317,18 @@ impl StateMaster {
             .source_port_identity(port.identity)
             .announce_message(
                 Timestamp::default(),             //origin_timestamp: Timestamp,
-                0,                                //current_utc_offset: u16,
+                0,                                // TODO implement current_utc_offset: u16,
                 self.priority_1,                  //grandmaster_priority_1: u8,
                 self.clock_quality,               //grandmaster_clock_quality: ClockQuality,
                 self.priority_2,                  //grandmaster_priority_2: u8,
                 self.clock_identity,              //grandmaster_identity: ClockIdentity,
-                0,                                //steps_removed: u16,
-                TimeSource::from_primitive(0xa0), //time_source: TimeSource,
+                0,                                // TODO implement steps_removed: u16,
+                TimeSource::from_primitive(0xa0), // TODO implement time_source: TimeSource,
             );
 
-        if port.announce_seq_id == u16::MAX {
-            port.announce_seq_id = 0;
-        } else {
-            port.announce_seq_id += 1;
-        }
-
+        port.announce_seq_id = port.announce_seq_id.wrapping_add(1);
         let announce_message_encode = announce_message.serialize_vec().unwrap();
-        port.tc_port.send(&announce_message_encode);
+        port.nc_port.send(&announce_message_encode);
 
         Some(())
     }
@@ -353,17 +344,10 @@ impl StateMaster {
             .source_port_identity(port.identity)
             .sync_message(Timestamp::from(current_time));
 
-        if port.sync_seq_id == u16::MAX {
-            port.sync_seq_id = 0;
-        } else {
-            port.sync_seq_id += 1;
-        }
-
-        // TODO: This uses a Vec, is that allowed?
+        port.sync_seq_id = port.sync_seq_id.wrapping_add(1);
         let sync_message_encode = sync_message.serialize_vec().unwrap();
         port.tc_port.send(&sync_message_encode);
 
-        // TODO: What response would be best?
         Some(())
     }
 
@@ -378,17 +362,10 @@ impl StateMaster {
             .source_port_identity(port.identity)
             .follow_up_message(Timestamp::from(current_time));
 
-        if port.follow_up_seq_id == u16::MAX {
-            port.follow_up_seq_id = 0;
-        } else {
-            port.follow_up_seq_id += 1;
-        }
-
-        // TODO: This uses a Vec, is that allowed?
+        port.follow_up_seq_id = port.follow_up_seq_id.wrapping_add(1);
         let follow_up_message_encode = follow_up_message.serialize_vec().unwrap();
-        port.tc_port.send(&follow_up_message_encode);
+        port.nc_port.send(&follow_up_message_encode);
 
-        // TODO: What response would be best?
         Some(())
     }
 
@@ -408,14 +385,9 @@ impl StateMaster {
                 message.header().source_port_identity(),
             );
 
-        if port.delay_resp_seq_id == u16::MAX {
-            port.delay_resp_seq_id = 0;
-        } else {
-            port.delay_resp_seq_id += 1;
-        }
-
+        port.delay_resp_seq_id = port.delay_resp_seq_id.wrapping_add(1);
         let delay_resp_encode = delay_resp_message.serialize_vec().unwrap();
-        port.tc_port.send(&delay_resp_encode);
+        port.nc_port.send(&delay_resp_encode);
 
         Some(())
     }
@@ -453,14 +425,14 @@ impl State {
     fn handle_recommended_state<W: Watch, NR: NetworkRuntime>(
         &mut self,
         recommended_state: &RecommendedState,
-        watch: &mut W,
+        announce_timeout_watch: &mut W,
         port: &mut PortData<NR>,
         announce_watch: &mut W,
         sync_watch: &mut W,
     ) {
-        let announce_receipt_timeout_interval = port.port_config.announce_receipt_timeout_interval;
-        let announce_interval = port.port_config.announce_interval;
-        let sync_interval = port.port_config.sync_interval;
+        let announce_receipt_timeout = port.port_config.announce_receipt_timeout;
+        let log_announce_interval = port.port_config.log_announce_interval;
+        let log_sync_interval = port.port_config.log_sync_interval;
 
         match recommended_state {
             // TODO set things like steps_removed once they are added
@@ -473,7 +445,8 @@ impl State {
                     });
 
                     // Restart announce receipt timeout timer
-                    watch.set_alarm(Duration::from_timeout(announce_receipt_timeout_interval));
+                    announce_timeout_watch
+                        .set_alarm(Duration::from_log_interval(announce_receipt_timeout));
 
                     log::info!(
                         "New state for port: Listening -> Slave. Remote master: {:?}",
@@ -500,7 +473,8 @@ impl State {
                     sync_watch.clear();
 
                     // Restart announce receipt timeout timer
-                    watch.set_alarm(Duration::from_timeout(announce_receipt_timeout_interval));
+                    announce_timeout_watch
+                        .set_alarm(Duration::from_log_interval(announce_receipt_timeout));
 
                     log::info!("New state for port: Master -> Slave");
                 }
@@ -521,7 +495,7 @@ impl State {
                 // Otherwise become master
                 _ => {
                     // Stop the announce timeout alarm
-                    watch.clear();
+                    announce_timeout_watch.clear();
 
                     *self = State::Master(StateMaster {
                         priority_1: default_ds.priority_1,
@@ -539,10 +513,10 @@ impl State {
                     log::info!("New state for port: Master");
 
                     // Start sending announce messages
-                    announce_watch.set_alarm(Duration::from_timeout(announce_interval));
+                    announce_watch.set_alarm(Duration::from_log_interval(log_announce_interval));
 
                     // Start sending sync messages
-                    sync_watch.set_alarm(Duration::from_timeout(sync_interval));
+                    sync_watch.set_alarm(Duration::from_log_interval(log_sync_interval));
                 }
             },
 
@@ -560,7 +534,8 @@ impl State {
                     sync_watch.clear();
 
                     // Restart announce receipt timeout timer
-                    watch.set_alarm(Duration::from_timeout(announce_receipt_timeout_interval));
+                    announce_timeout_watch
+                        .set_alarm(Duration::from_log_interval(announce_receipt_timeout));
 
                     log::info!("New state for port: Listening");
                 }
@@ -578,7 +553,7 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
         mut runtime: NR,
         interface: NR::InterfaceDescriptor,
         clock_quality: ClockQuality,
-        watch: W,
+        announce_timeout_watch: W,
         announce_watch: W,
         sync_watch: W,
     ) -> Self {
@@ -602,7 +577,7 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
                 clock_quality,
             ),
             state: State::Listening,
-            watch: watch,
+            announce_timeout_watch: announce_timeout_watch,
             announce_watch,
             sync_watch,
         }
@@ -612,7 +587,7 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
         // When the announce timout expires, it means there
         // have been no announce messages in a while, so we
         // force a switch to the master state
-        if id == self.watch.id() {
+        if id == self.announce_timeout_watch.id() {
             log::info!("Announce interval timeout");
 
             self.state = State::Master(StateMaster {
@@ -631,21 +606,21 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
             log::info!("New state for port: Master");
 
             // Start sending announce messages
-            self.announce_watch.set_alarm(Duration::from_timeout(
-                self.portdata.port_config.announce_interval,
+            self.announce_watch.set_alarm(Duration::from_log_interval(
+                self.portdata.port_config.log_announce_interval,
             ));
 
             // Start sending sync messages
-            self.sync_watch.set_alarm(Duration::from_timeout(
-                self.portdata.port_config.sync_interval,
+            self.sync_watch.set_alarm(Duration::from_log_interval(
+                self.portdata.port_config.log_sync_interval,
             ));
         }
 
         // When the announce watch expires, send an announce message and restart
         if id == self.announce_watch.id() {
             self.send_announce_message();
-            self.announce_watch.set_alarm(Duration::from_timeout(
-                self.portdata.port_config.announce_interval,
+            self.announce_watch.set_alarm(Duration::from_log_interval(
+                self.portdata.port_config.log_announce_interval,
             ));
         }
 
@@ -656,8 +631,8 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
             // TODO: Is the follow up a config?
             self.send_follow_up_message(current_time);
 
-            self.sync_watch.set_alarm(Duration::from_timeout(
-                self.portdata.port_config.sync_interval,
+            self.sync_watch.set_alarm(Duration::from_log_interval(
+                self.portdata.port_config.log_sync_interval,
             ));
         }
     }
@@ -716,9 +691,10 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
                     .register_announce_message(&announce, current_time.into());
 
                 // When an announce message is received, restart announce receipt timeout timer
-                self.watch.set_alarm(Duration::from_timeout(
-                    self.portdata.port_config.announce_receipt_timeout_interval,
-                ));
+                self.announce_timeout_watch
+                    .set_alarm(Duration::from_log_interval(
+                        self.portdata.port_config.announce_receipt_timeout,
+                    ));
             }
             _ => {}
         };
@@ -766,7 +742,7 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
         if let Some(recommended_state) = recommended_state {
             self.state.handle_recommended_state(
                 &recommended_state,
-                &mut self.watch,
+                &mut self.announce_timeout_watch,
                 &mut self.portdata,
                 &mut self.announce_watch,
                 &mut self.sync_watch,
@@ -781,7 +757,7 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
         }
     }
 
-    pub fn get_announce_interval(&self) -> Duration {
+    pub fn get_log_announce_interval(&self) -> Duration {
         Duration::from_log_interval(self.portdata.port_config.log_announce_interval)
     }
 }
@@ -817,18 +793,17 @@ mod tests {
         let mut test_port_data = PortData {
             _runtime: network_runtime.clone(),
             tc_port: network_runtime.open("".to_owned(), true).unwrap(),
-            _nc_port: network_runtime.open("".to_owned(), false).unwrap(),
+            nc_port: network_runtime.open("".to_owned(), false).unwrap(),
             delay_req_ids: IdSequencer::default(),
             identity: test_id,
             sdo: 0,
             domain: 0,
             port_config: PortConfig {
-                log_announce_interval: 0,
-                announce_receipt_timeout_interval: 1000,
+                log_announce_interval: 1,
+                log_sync_interval: 1,
+                announce_receipt_timeout: 5,
                 priority_1: 0,
                 priority_2: 0,
-                announce_interval: 1,
-                sync_interval: 1,
             },
             bmca: Bmca::new(TimeInterval(2_000_000_000u64.to_fixed()), test_id),
             clock_quality: ClockQuality::default(),
@@ -905,18 +880,17 @@ mod tests {
         let mut test_port_data = PortData {
             _runtime: network_runtime.clone(),
             tc_port: network_runtime.open("".to_owned(), true).unwrap(),
-            _nc_port: network_runtime.open("".to_owned(), false).unwrap(),
+            nc_port: network_runtime.open("".to_owned(), false).unwrap(),
             delay_req_ids: IdSequencer::default(),
             identity: test_id,
             sdo: 0,
             domain: 0,
             port_config: PortConfig {
-                log_announce_interval: 0,
-                announce_receipt_timeout_interval: 1000,
+                log_announce_interval: 1,
+                log_sync_interval: 1,
+                announce_receipt_timeout: 5,
                 priority_1: 0,
                 priority_2: 0,
-                announce_interval: 1,
-                sync_interval: 1,
             },
             bmca: Bmca::new(TimeInterval(2_000_000_000u64.to_fixed()), test_id),
             clock_quality: ClockQuality::default(),
@@ -994,18 +968,17 @@ mod tests {
         let mut test_port_data = PortData {
             _runtime: network_runtime.clone(),
             tc_port: network_runtime.open("".to_owned(), true).unwrap(),
-            _nc_port: network_runtime.open("".to_owned(), false).unwrap(),
+            nc_port: network_runtime.open("".to_owned(), false).unwrap(),
             delay_req_ids: IdSequencer::default(),
             identity: test_id,
             sdo: 0,
             domain: 0,
             port_config: PortConfig {
-                log_announce_interval: 0,
-                announce_receipt_timeout_interval: 1000,
+                log_announce_interval: 1,
+                log_sync_interval: 1,
+                announce_receipt_timeout: 5,
                 priority_1: 0,
                 priority_2: 0,
-                announce_interval: 1,
-                sync_interval: 1,
             },
             bmca: Bmca::new(TimeInterval(2_000_000_000u64.to_fixed()), test_id),
             clock_quality: ClockQuality::default(),
@@ -1100,18 +1073,17 @@ mod tests {
         let mut test_port_data = PortData {
             _runtime: network_runtime.clone(),
             tc_port: network_runtime.open("".to_owned(), true).unwrap(),
-            _nc_port: network_runtime.open("".to_owned(), false).unwrap(),
+            nc_port: network_runtime.open("".to_owned(), false).unwrap(),
             delay_req_ids: IdSequencer::default(),
             identity: test_id,
             sdo: 0,
             domain: 0,
             port_config: PortConfig {
-                log_announce_interval: 0,
-                announce_receipt_timeout_interval: 1000,
+                log_announce_interval: 1,
+                log_sync_interval: 1,
+                announce_receipt_timeout: 5,
                 priority_1: 0,
                 priority_2: 0,
-                announce_interval: 1,
-                sync_interval: 1,
             },
             bmca: Bmca::new(TimeInterval(2_000_000_000u64.to_fixed()), test_id),
             clock_quality: ClockQuality::default(),

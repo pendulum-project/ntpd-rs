@@ -32,27 +32,27 @@ struct Args {
     domain: u8,
 
     /// Local clock priority (part 1) used in master clock selection
+    /// Default init value is 128, see: A.9.4.2
     #[clap(long, default_value_t = 255)]
     priority_1: u8,
 
-    /// Locqal clock priority (part 2) used in master clock selection
+    /// Local clock priority (part 2) used in master clock selection
+    /// Default init value is 128, see: A.9.4.2
     #[clap(long, default_value_t = 255)]
     priority_2: u8,
 
     /// Log value of interval expected between announce messages
+    /// Default init value is 1, see: A.9.4.2
     #[clap(long, default_value_t = 1)]
     log_announce_interval: i8,
 
-    /// The timeout interval to wait for announce messages before
-    /// swithing to the master state
-    #[clap(long, default_value_t = 5)]
-    announce_receipt_timeout_interval: i32,
+    /// Default init value is 0, see: A.9.4.2
+    #[clap(long, default_value_t = 0)]
+    log_sync_interval: i8,
 
-    #[clap(long, default_value_t = 1)]
-    announce_interval: i32,
-
-    #[clap(long, default_value_t = 1)]
-    sync_interval: i32,
+    /// Default init value is 3, see: A.9.4.2
+    #[clap(long, default_value_t = 3)]
+    announce_receipt_timeout: i8,
 
     /// Use hardware clock
     #[clap(long, short)]
@@ -98,11 +98,10 @@ fn main() {
         interface: args.interface,
         port_config: statime::port::PortConfig {
             log_announce_interval: args.log_announce_interval,
-            announce_receipt_timeout_interval: args.announce_receipt_timeout_interval,
+            log_sync_interval: args.log_sync_interval,
+            announce_receipt_timeout: args.announce_receipt_timeout,
             priority_1: args.priority_1,
             priority_2: args.priority_2,
-            announce_interval: args.announce_interval,
-            sync_interval: args.sync_interval,
         },
     };
 

@@ -63,12 +63,6 @@ impl Duration {
         Self::from_fixed_nanos(nanos)
     }
 
-    pub fn from_timeout(interval: i32) -> Self {
-        let seconds = 2.0f64.powi(interval);
-        let nanos = seconds * 1_000_000_000.0;
-        Self::from_fixed_nanos(nanos)
-    }
-
     /// Takes the absolute (non-negative) value of the duration
     pub fn abs(self) -> Duration {
         Duration::from_fixed_nanos(self.nanos().abs())

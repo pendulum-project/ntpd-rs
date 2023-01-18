@@ -57,7 +57,7 @@ impl ComparisonDataset {
             identity_of_senders: data.clock_identity,
             identity_of_receiver: PortIdentity {
                 clock_identity: data.clock_identity,
-                port_number: 1,
+                port_number: 0,
             },
         }
     }

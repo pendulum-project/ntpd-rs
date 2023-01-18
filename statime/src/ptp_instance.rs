@@ -43,8 +43,8 @@ impl<NR: NetworkRuntime, C: Clock, F: Filter> PtpInstance<NR, C, F> {
         // Set the announce receipt timeout
         // TODO: what to do when we have multiple ports?
         let mut announce_timeout_watch = clock.get_watch();
-        announce_timeout_watch.set_alarm(Duration::from_timeout(
-            config.port_config.announce_receipt_timeout_interval,
+        announce_timeout_watch.set_alarm(Duration::from_log_interval(
+            config.port_config.announce_receipt_timeout,
         ));
         let announce_watch = clock.get_watch();
         let sync_watch = clock.get_watch();
@@ -99,7 +99,8 @@ impl<NR: NetworkRuntime, C: Clock, F: Filter> PtpInstance<NR, C, F> {
         if id == self.bmca_watch.id() {
             // The bmca watch triggered, we must run the bmca
             // But first set a new alarm
-            self.bmca_watch.set_alarm(self.port.get_announce_interval());
+            self.bmca_watch
+                .set_alarm(self.port.get_log_announce_interval());
 
             // Currently we only have one port, so erbest is also automatically our ebest
             let current_time = self.clock.now();
