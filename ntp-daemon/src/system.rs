@@ -417,8 +417,6 @@ impl<C: NtpClock> System<C> {
         ke_address: NormalizedAddress,
         extra_certificates: Arc<[Certificate]>,
     ) -> Result<(), KeyExchangeError> {
-        // NOTE: this call here effectively blocks the main thread until key exchange is done.
-        // in the new spawner, we should figure out a better approach that off-loads this work
         let ke = key_exchange(ke_address.server_name, ke_address.port, &extra_certificates).await?;
 
         let config = SpawnConfig::Nts {
