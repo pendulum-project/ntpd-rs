@@ -299,11 +299,6 @@ impl<C: NtpClock> System<C> {
         self.peers.remove(&index);
     }
 
-    #[cfg(test)]
-    fn handle_spawn_no_nts(&mut self, peer_address: PeerAddress, addr: SocketAddr) {
-        self.handle_spawn(peer_address, addr, None)
-    }
-
     fn handle_spawn(
         &mut self,
         peer_address: PeerAddress,
@@ -411,7 +406,7 @@ impl<C: NtpClock> System<C> {
         self.add_standard_peer_internal(address).await
     }
 
-    /// Adds a single peer (that is not part of a pool!)
+    /// Adds a peer that will use NTS
     async fn add_nts_peer(
         &mut self,
         ke_address: NormalizedAddress,
@@ -419,9 +414,12 @@ impl<C: NtpClock> System<C> {
     ) -> Result<(), KeyExchangeError> {
         let ke = key_exchange(ke_address.server_name, ke_address.port, &extra_certificates).await?;
 
+        let address = NormalizedAddress::from_string_ntp(format!("{}:{}", ke.remote, ke.port))?;
+
         let config = SpawnConfig::Nts {
             ke,
             extra_certificates,
+            address,
         };
 
         self.spawner.spawn(config).await;
@@ -559,6 +557,7 @@ enum SpawnConfig {
     Nts {
         ke: KeyExchangeResult,
         extra_certificates: Arc<[Certificate]>,
+        address: NormalizedAddress,
     },
     Standard {
         config: StandardPeerConfig,
@@ -587,7 +586,8 @@ impl Spawner {
             SpawnConfig::Nts {
                 ke,
                 extra_certificates,
-            } => tokio::spawn(Self::spawn_nts(ke, extra_certificates, sender)),
+                address,
+            } => tokio::spawn(Self::spawn_nts(ke, address, extra_certificates, sender)),
 
             SpawnConfig::Pool {
                 config,
@@ -634,6 +634,7 @@ impl Spawner {
 
     async fn spawn_nts(
         ke: KeyExchangeResult,
+        address: NormalizedAddress,
         extra_certificates: Arc<[Certificate]>,
         sender: Sender<SpawnTask>,
     ) {
@@ -655,9 +656,6 @@ impl Spawner {
                 }
             }
         };
-
-        // we assume that when KE succeeds, it gives back a structurally valid remote and port.
-        let address = NormalizedAddress::new_unchecked(&ke.remote, ke.port);
 
         let spawn_task = SpawnTask {
             peer_address: PeerAddress::Nts {
@@ -806,6 +804,14 @@ mod tests {
         }
     }
 
+    fn handle_spawn_no_nts<C: NtpClock>(
+        system: &mut System<C>,
+        peer_address: PeerAddress,
+        addr: SocketAddr,
+    ) {
+        system.handle_spawn(peer_address, addr, None)
+    }
+
     #[tokio::test]
     async fn test_peers() {
         let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
@@ -930,7 +936,7 @@ mod tests {
 
         for _ in 0..2 {
             let task = system.spawn_task_rx.recv().await.unwrap();
-            system.handle_spawn_no_nts(task.peer_address, task.address);
+            handle_spawn_no_nts(&mut system, task.peer_address, task.address);
         }
 
         // we have 2 peers
@@ -944,7 +950,7 @@ mod tests {
 
         for _ in 0..1 {
             let task = system.spawn_task_rx.recv().await.unwrap();
-            system.handle_spawn_no_nts(task.peer_address, task.address);
+            handle_spawn_no_nts(&mut system, task.peer_address, task.address);
         }
 
         // automatically selects another peer from the pool
@@ -968,7 +974,7 @@ mod tests {
 
         for _ in 0..2 {
             let task = system.spawn_task_rx.recv().await.unwrap();
-            system.handle_spawn_no_nts(task.peer_address, task.address);
+            handle_spawn_no_nts(&mut system, task.peer_address, task.address);
         }
 
         // we have only 2 peers, because the pool has size 1
@@ -983,10 +989,8 @@ mod tests {
             .unwrap();
 
         for _ in 0..1 {
-            dbg!("waiting");
             let task = system.spawn_task_rx.recv().await.unwrap();
-            dbg!(&task);
-            system.handle_spawn_no_nts(task.peer_address, task.address);
+            handle_spawn_no_nts(&mut system, task.peer_address, task.address);
         }
 
         // automatically selects another peer from the pool
@@ -1015,7 +1019,7 @@ mod tests {
 
         for _ in 0..4 {
             let task = system.spawn_task_rx.recv().await.unwrap();
-            system.handle_spawn_no_nts(task.peer_address, task.address);
+            handle_spawn_no_nts(&mut system, task.peer_address, task.address);
         }
 
         // we have only 2 peers, because the pool has size 1
@@ -1028,7 +1032,7 @@ mod tests {
             .unwrap();
 
         let task = system.spawn_task_rx.recv().await.unwrap();
-        system.handle_spawn_no_nts(task.peer_address, task.address);
+        handle_spawn_no_nts(&mut system, task.peer_address, task.address);
 
         // automatically selects another peer from the pool
         assert_eq!(system.peers.len(), 4);
