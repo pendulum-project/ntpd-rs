@@ -7,8 +7,8 @@ use ntp_proto::NtpPacket;
 
 fuzz_target!(|data: Vec<u8>| {
     // packets expand by a factor of at most 4 on re-encode
-    let mut buf = [0u8; 4096*4];
-    let mut buf2 = [0u8; 4096*4];
+    let mut buf = [0u8; 4096 * 4];
+    let mut buf2 = [0u8; 4096 * 4];
     if let Ok(a) = NtpPacket::deserialize(&data, None) {
         let mut cursor = Cursor::new(buf.as_mut_slice());
         a.serialize(&mut cursor, None).unwrap();
