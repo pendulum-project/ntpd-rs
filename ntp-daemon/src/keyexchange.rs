@@ -21,7 +21,7 @@ pub(crate) async fn key_exchange(
         .unwrap();
 
     let mut roots = rustls::RootCertStore::empty();
-    for cert in rustls_native_certs::load_native_certs().expect("could not load platform certs") {
+    for cert in rustls_native_certs::load_native_certs()? {
         roots.add(&rustls::Certificate(cert.0)).unwrap();
     }
 
