@@ -5,6 +5,7 @@ mod clock;
 mod config;
 mod cookiestash;
 mod identifiers;
+mod nts_cookie;
 mod nts_record;
 mod packet;
 mod peer;
