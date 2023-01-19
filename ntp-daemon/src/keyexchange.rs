@@ -224,7 +224,7 @@ pub(crate) fn certificates_from_file(path: &Path) -> std::io::Result<Vec<Certifi
     certificates_from_bufread(reader)
 }
 
-pub fn certificates_from_bufread(mut reader: impl BufRead) -> std::io::Result<Vec<Certificate>> {
+fn certificates_from_bufread(mut reader: impl BufRead) -> std::io::Result<Vec<Certificate>> {
     use rustls_pemfile::{read_one, Item};
 
     let mut output = Vec::new();
