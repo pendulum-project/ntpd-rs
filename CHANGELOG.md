@@ -4,6 +4,9 @@ Master
 Major Changes
 -----
 - Changed format of timedata reported for peers to ensure compatibility with different algorithms.
+- Implemented (de)serialization of NTP extension fields
+- Implemented NTS Key Exchange
+- Implemented NTS client functionality and configuration
 
 Minor Changes
 -----
