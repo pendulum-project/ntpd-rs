@@ -10,7 +10,6 @@ use ntp_proto::{KeyExchangeClient, KeyExchangeError, KeyExchangeResult};
 use rustls::Certificate;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-#[allow(unused)]
 pub(crate) async fn key_exchange(
     server_name: String,
     port: u16,

@@ -72,7 +72,7 @@ impl NormalizedAddress {
     const NTS_KE_DEFAULT_PORT: u16 = 4460;
 
     /// Specifically, this adds the `:123` port if no port is specified
-    fn from_string_ntp(address: String) -> std::io::Result<Self> {
+    pub(crate) fn from_string_ntp(address: String) -> std::io::Result<Self> {
         let (server_name, port) = Self::from_string_help(address, Self::NTP_DEFAULT_PORT)?;
 
         Ok(Self {
@@ -84,7 +84,7 @@ impl NormalizedAddress {
         })
     }
 
-    /// Specifically, this adds the `:123` port if no port is specified
+    /// Specifically, this adds the `:4460` port if no port is specified
     fn from_string_nts_ke(address: String) -> std::io::Result<Self> {
         let (server_name, port) = Self::from_string_help(address, Self::NTS_KE_DEFAULT_PORT)?;
 
@@ -132,6 +132,7 @@ impl NormalizedAddress {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn new_unchecked(server_name: &str, port: u16) -> Self {
         Self {
             server_name: server_name.to_string(),
