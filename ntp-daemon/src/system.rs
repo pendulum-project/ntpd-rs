@@ -658,6 +658,7 @@ impl Spawner {
             }
         };
 
+        // we assume that when KE succeeds, it gives back a structurally valid remote and port.
         let address = NormalizedAddress::new_unchecked(&ke.remote, ke.port);
 
         let spawn_task = SpawnTask {
