@@ -1331,8 +1331,59 @@ impl ExtensionFieldTypeId {
 
 #[cfg(test)]
 mod tests {
+    use crate::PollIntervalLimits;
+
     use super::*;
     use aes_siv::{aead::KeyInit, Aes128SivAead, Key};
+
+    #[derive(Debug, Clone)]
+    struct TestClock {
+        now: NtpTimestamp,
+    }
+
+    impl NtpClock for TestClock {
+        type Error = std::io::Error;
+
+        fn now(&self) -> Result<NtpTimestamp, Self::Error> {
+            Ok(self.now)
+        }
+
+        fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
+            panic!("Unexpected clock steer");
+        }
+
+        fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
+            panic!("Unexpected clock steer");
+        }
+
+        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
+            panic!("Unexpected clock steer");
+        }
+
+        fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
+            panic!("Unexpected clock steer");
+        }
+
+        fn ntp_algorithm_update(
+            &self,
+            _offset: NtpDuration,
+            _poll_interval: PollInterval,
+        ) -> Result<(), Self::Error> {
+            panic!("Unexpected clock steer");
+        }
+
+        fn error_estimate_update(
+            &self,
+            _est_error: NtpDuration,
+            _max_error: NtpDuration,
+        ) -> Result<(), Self::Error> {
+            panic!("Unexpected clock steer");
+        }
+
+        fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
+            panic!("Unexpected clock steer");
+        }
+    }
 
     #[test]
     fn roundtrip_bitrep_leap() {
@@ -1603,25 +1654,196 @@ mod tests {
     }
 
     #[test]
-    fn dont_crash_on_undersized_encryption_ef() {
-        let data = [
+    fn test_nts_poll_message() {
+        let cookie = [0; 16];
+        let (packet1, ref1) =
+            NtpPacket::nts_poll_message(&cookie, 1, PollIntervalLimits::default().min);
+        assert_eq!(0, packet1.efdata.encrypted.len());
+        assert_eq!(0, packet1.efdata.untrusted.len());
+        let mut have_uid = false;
+        let mut have_cookie = false;
+        let mut nplaceholders = 0;
+        for ef in packet1.efdata.authenticated {
+            match ef {
+                ExtensionField::UniqueIdentifier(uid) => {
+                    assert_eq!(ref1.uid.as_ref().unwrap(), uid.as_ref());
+                    assert!(!have_uid);
+                    have_uid = true;
+                }
+                ExtensionField::NtsCookie(cookie_p) => {
+                    assert_eq!(&cookie, cookie_p.as_ref());
+                    assert!(!have_cookie);
+                    have_cookie = true;
+                }
+                ExtensionField::NtsCookiePlaceholder { cookie_length } => {
+                    assert_eq!(cookie_length, cookie.len() as u16);
+                    nplaceholders += 1;
+                }
+                _ => assert!(false),
+            }
+        }
+        assert!(have_cookie);
+        assert!(have_uid);
+        assert_eq!(nplaceholders, 0);
+
+        let (packet2, ref2) =
+            NtpPacket::nts_poll_message(&cookie, 3, PollIntervalLimits::default().min);
+        assert_ne!(
+            ref1.expected_origin_timestamp,
+            ref2.expected_origin_timestamp
+        );
+        assert_ne!(ref1.uid, ref2.uid);
+
+        assert_eq!(0, packet2.efdata.encrypted.len());
+        assert_eq!(0, packet2.efdata.untrusted.len());
+        let mut have_uid = false;
+        let mut have_cookie = false;
+        let mut nplaceholders = 0;
+        for ef in packet2.efdata.authenticated {
+            match ef {
+                ExtensionField::UniqueIdentifier(uid) => {
+                    assert_eq!(ref2.uid.as_ref().unwrap(), uid.as_ref());
+                    assert!(!have_uid);
+                    have_uid = true;
+                }
+                ExtensionField::NtsCookie(cookie_p) => {
+                    assert_eq!(&cookie, cookie_p.as_ref());
+                    assert!(!have_cookie);
+                    have_cookie = true;
+                }
+                ExtensionField::NtsCookiePlaceholder { cookie_length } => {
+                    assert_eq!(cookie_length, cookie.len() as u16);
+                    nplaceholders += 1;
+                }
+                _ => assert!(false),
+            }
+        }
+        assert!(have_cookie);
+        assert!(have_uid);
+        assert_eq!(nplaceholders, 2);
+    }
+
+    #[test]
+    fn test_nts_response_validation() {
+        let cookie = [0; 16];
+        let (packet, id) =
+            NtpPacket::nts_poll_message(&cookie, 0, PollIntervalLimits::default().min);
+        let mut response = NtpPacket::timestamp_response(
+            &SystemSnapshot::default(),
+            packet,
+            NtpTimestamp::from_fixed_int(0),
+            &TestClock {
+                now: NtpTimestamp::from_fixed_int(2),
+            },
+        );
+
+        assert!(!response.valid_server_response(id, false));
+        assert!(!response.valid_server_response(id, true));
+
+        response
+            .efdata
+            .untrusted
+            .push(ExtensionField::UniqueIdentifier(Cow::Borrowed(
+                id.uid.as_ref().unwrap(),
+            )));
+
+        assert!(response.valid_server_response(id, false));
+        assert!(!response.valid_server_response(id, true));
+
+        response.efdata.untrusted.clear();
+        response
+            .efdata
+            .authenticated
+            .push(ExtensionField::UniqueIdentifier(Cow::Borrowed(
+                id.uid.as_ref().unwrap(),
+            )));
+
+        assert!(response.valid_server_response(id, false));
+        assert!(response.valid_server_response(id, true));
+
+        response
+            .efdata
+            .untrusted
+            .push(ExtensionField::UniqueIdentifier(Cow::Borrowed(&[])));
+
+        assert!(!response.valid_server_response(id, false));
+        assert!(response.valid_server_response(id, true));
+
+        response.efdata.untrusted.clear();
+        response
+            .efdata
+            .encrypted
+            .push(ExtensionField::UniqueIdentifier(Cow::Borrowed(&[])));
+
+        assert!(!response.valid_server_response(id, false));
+        assert!(!response.valid_server_response(id, true));
+    }
+
+    #[test]
+    fn test_new_cookies_only_from_encrypted() {
+        let allowed: [u8; 16] = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let disallowed: [u8; 16] = [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let packet = NtpPacket {
+            header: NtpHeader::V4(NtpHeaderV3V4::poll_message(PollIntervalLimits::default().min).0),
+            efdata: ExtensionFieldData {
+                authenticated: vec![ExtensionField::NtsCookie(Cow::Borrowed(&disallowed))],
+                encrypted: vec![ExtensionField::NtsCookie(Cow::Borrowed(&allowed))],
+                untrusted: vec![ExtensionField::NtsCookie(Cow::Borrowed(&disallowed))],
+            },
+            mac: None,
+        };
+
+        assert_eq!(1, packet.new_cookies().count());
+        for cookie in packet.new_cookies() {
+            assert_eq!(&cookie, &allowed);
+        }
+    }
+
+    #[test]
+    fn test_undersized_ef_in_encrypted_data() {
+        let cipher = Aes128SivAead::new(&[0_u8; 32].into());
+        let packet = [
+            35, 2, 6, 232, 0, 0, 3, 255, 0, 0, 3, 125, 94, 198, 159, 15, 229, 246, 98, 152, 123,
+            97, 185, 175, 229, 246, 99, 102, 123, 100, 153, 93, 229, 246, 99, 102, 129, 64, 85,
+            144, 229, 246, 99, 168, 118, 29, 222, 72, 4, 4, 0, 44, 0, 16, 0, 18, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 39, 24, 181, 156, 166, 35, 154, 207, 38, 150, 15, 190,
+            152, 87, 142, 206, 254, 105, 0, 0,
+        ];
+        //should not crash
+        assert!(NtpPacket::deserialize(&packet, Some(&cipher)).is_err());
+    }
+
+    #[test]
+    fn test_undersized_ef() {
+        let packet = [
+            35, 2, 6, 232, 0, 0, 3, 255, 0, 0, 3, 125, 94, 198, 159, 15, 229, 246, 98, 152, 123,
+            97, 185, 175, 229, 246, 99, 102, 123, 100, 153, 93, 229, 246, 99, 102, 129, 64, 85,
+            144, 229, 246, 99, 168, 118, 29, 222, 72, 4, 4,
+        ];
+        //should not crash
+        assert!(NtpPacket::deserialize(&packet, None).is_err());
+    }
+
+    #[test]
+    fn test_undersized_nonce() {
+        let input = [
             32, 206, 206, 206, 77, 206, 206, 255, 216, 216, 216, 127, 0, 0, 0, 0, 0, 0, 0, 216,
             216, 216, 216, 206, 217, 216, 216, 216, 216, 216, 216, 206, 206, 206, 1, 0, 0, 0, 206,
             206, 206, 4, 44, 4, 4, 4, 4, 4, 4, 4, 0, 4, 206, 206, 222, 206, 206, 206, 206, 0, 0, 0,
             206, 206, 206, 0, 0, 0, 206, 206, 206, 206, 206, 206, 131, 206, 206,
         ];
         //should not crash
-        assert!(NtpPacket::deserialize(&data, None).is_err());
+        assert!(NtpPacket::deserialize(&input, None).is_err());
     }
 
     #[test]
-    fn dont_crash_on_incorrect_nonce_size() {
-        let data = [
-            32, 206, 206, 206, 77, 206, 206, 255, 216, 216, 216, 127, 0, 0, 0, 0, 0, 0, 0, 216,
-            216, 216, 216, 206, 217, 216, 216, 216, 216, 216, 216, 48, 206, 206, 1, 0, 0, 0, 206,
-            206, 206, 4, 44, 4, 4, 4, 4, 4, 4, 4, 0, 12, 0, 0, 0, 0, 206, 79, 0, 0, 0, 0, 0, 206,
-            206, 206, 0, 64, 0, 206, 206, 3, 0, 4, 0, 0, 206, 206,
+    fn test_undersized_encryption_ef() {
+        let input = [
+            32, 206, 206, 206, 77, 206, 216, 216, 127, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 216, 216, 216,
+            216, 206, 217, 216, 216, 216, 216, 216, 216, 206, 206, 206, 1, 0, 0, 0, 206, 206, 206,
+            4, 44, 4, 4, 4, 4, 4, 4, 4, 0, 4, 4, 0, 12, 206, 206, 222, 206, 206, 206, 206, 0, 0, 0,
+            12, 206, 206, 222, 206, 206, 206, 206, 206, 206, 206, 206, 131, 206, 206,
         ];
-        assert!(NtpPacket::deserialize(&data, None).is_err());
+        assert!(NtpPacket::deserialize(&input, None).is_err());
     }
 }
