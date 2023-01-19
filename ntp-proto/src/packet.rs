@@ -532,6 +532,10 @@ impl<'a> RawEncryptedField<'a> {
     fn from_message_bytes(message_bytes: &'a [u8]) -> Result<Self, PacketParsingError> {
         use PacketParsingError::*;
 
+        if message_bytes.len() < 4 {
+            return Err(IncorrectLength);
+        }
+
         let value = message_bytes;
 
         if message_bytes.len() < 4 {
@@ -539,6 +543,10 @@ impl<'a> RawEncryptedField<'a> {
         }
 
         let nonce_length = u16::from_be_bytes(value[0..2].try_into().unwrap()) as usize;
+        if nonce_length != 16 {
+            // for now, only support 16 byte nonces.
+            return Err(IncorrectLength);
+        }
         let ciphertext_length = u16::from_be_bytes(value[2..4].try_into().unwrap()) as usize;
 
         if nonce_length != 16 {
@@ -1595,24 +1603,25 @@ mod tests {
     }
 
     #[test]
-    fn encryption_fuzz_panic() {
-        let input = [
+    fn dont_crash_on_undersized_encryption_ef() {
+        let data = [
             32, 206, 206, 206, 77, 206, 206, 255, 216, 216, 216, 127, 0, 0, 0, 0, 0, 0, 0, 216,
             216, 216, 216, 206, 217, 216, 216, 216, 216, 216, 216, 206, 206, 206, 1, 0, 0, 0, 206,
-            206, 206, 4, 44, 4, 4, 4, 4, 4, 4, 4, 0, 12, 0, 0, 0, 0, 79, 0, 0, 0, 206, 0, 0, 0, 47,
-            206, 206, 0, 0, 0, 206, 206, 206, 206, 206, 206, 131, 206, 206,
+            206, 206, 4, 44, 4, 4, 4, 4, 4, 4, 4, 0, 4, 206, 206, 222, 206, 206, 206, 206, 0, 0, 0,
+            206, 206, 206, 0, 0, 0, 206, 206, 206, 206, 206, 206, 131, 206, 206,
         ];
-        let _ = NtpPacket::deserialize(&input, None); //shouldn't panic
+        //should not crash
+        assert!(NtpPacket::deserialize(&data, None).is_err());
     }
 
     #[test]
-    fn encryption_fuzz_panic2() {
-        let input = [
-            32, 206, 206, 206, 77, 206, 216, 216, 127, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 216, 216, 216,
-            216, 206, 217, 216, 216, 216, 216, 216, 216, 206, 206, 206, 1, 0, 0, 0, 206, 206, 206,
-            4, 44, 4, 4, 4, 4, 4, 4, 4, 0, 4, 4, 0, 12, 206, 206, 222, 206, 206, 206, 206, 0, 0, 0,
-            12, 206, 206, 222, 206, 206, 206, 206, 206, 206, 206, 206, 131, 206, 206,
+    fn dont_crash_on_incorrect_nonce_size() {
+        let data = [
+            32, 206, 206, 206, 77, 206, 206, 255, 216, 216, 216, 127, 0, 0, 0, 0, 0, 0, 0, 216,
+            216, 216, 216, 206, 217, 216, 216, 216, 216, 216, 216, 48, 206, 206, 1, 0, 0, 0, 206,
+            206, 206, 4, 44, 4, 4, 4, 4, 4, 4, 4, 0, 12, 0, 0, 0, 0, 206, 79, 0, 0, 0, 0, 0, 206,
+            206, 206, 0, 64, 0, 206, 206, 3, 0, 4, 0, 0, 206, 206,
         ];
-        let _ = NtpPacket::deserialize(&input, None); //shouldn't panic
+        assert!(NtpPacket::deserialize(&data, None).is_err());
     }
 }
