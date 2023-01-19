@@ -756,7 +756,7 @@ mod test {
         let outgoingbuf = peer
             .generate_poll_message(&mut buf, system, &SystemConfig::default())
             .unwrap();
-        let outgoing = NtpPacket::deserialize(&outgoingbuf, None).unwrap();
+        let outgoing = NtpPacket::deserialize(outgoingbuf, None).unwrap();
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_stratum(MAX_STRATUM + 1);
