@@ -2,8 +2,8 @@ use std::sync::mpsc;
 
 use clap::{AppSettings, Parser};
 
-use statime::datastructures::common::{PortIdentity, TimeSource};
-use statime::datastructures::datasets::{DefaultDS, DelayMechanism, PortDS, TimePropertiesDS};
+use statime::datastructures::common::TimeSource;
+use statime::datastructures::datasets::{DefaultDS, DelayMechanism, TimePropertiesDS};
 use statime::{
     datastructures::{common::ClockIdentity, messages::Message},
     filters::basic::BasicFilter,
@@ -83,7 +83,7 @@ fn main() {
     let args = Args::parse();
     setup_logger(args.loglevel).expect("Could not setup logging");
     let (tx, rx) = mpsc::channel();
-    let network_runtime = LinuxRuntime::new(tx, args.hardware_clock.is_some());
+    let mut network_runtime = LinuxRuntime::new(tx, args.hardware_clock.is_some());
     let (clock, mut clock_runtime) = if let Some(hardware_clock) = &args.hardware_clock {
         LinuxClock::new(
             RawLinuxClock::get_from_file(hardware_clock).expect("Could not open hardware clock"),
@@ -96,11 +96,14 @@ fn main() {
     let default_ds = DefaultDS::new_oc(clock_identity, 128, 128, args.domain, false, args.sdo);
     let time_properties_ds =
         TimePropertiesDS::new_arbitrary(false, false, TimeSource::InternalOscillator);
-    let port_ds = PortDS::new(
-        PortIdentity {
-            clock_identity,
-            port_number: 1,
-        },
+
+    let mut instance = PtpInstance::new::<LinuxRuntime>(
+        default_ds,
+        time_properties_ds,
+        clock,
+        BasicFilter::new(0.25),
+    )
+    .with_port(
         37,
         args.log_announce_interval,
         args.announce_receipt_timeout,
@@ -109,16 +112,8 @@ fn main() {
         37,
         0,
         1,
-    );
-
-    let mut instance = PtpInstance::new(
-        default_ds,
-        time_properties_ds,
-        port_ds,
+        &mut network_runtime,
         args.interface,
-        network_runtime,
-        clock,
-        BasicFilter::new(0.25),
     );
 
     loop {
@@ -147,7 +142,7 @@ fn main() {
                     );
                 }
             } else {
-                instance.handle_network(packet);
+                instance.handle_network(&packet);
             }
         }
 

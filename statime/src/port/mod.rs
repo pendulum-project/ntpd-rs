@@ -13,6 +13,7 @@ use crate::time::{Duration, Instant};
 mod sequence_id;
 
 pub struct Port<P, W> {
+    pub(crate) bmca_watch: W,
     announce_timeout_watch: W,
     announce_watch: W,
     sync_watch: W,
@@ -31,8 +32,9 @@ pub struct Port<P, W> {
 impl<P: NetworkPort, W: Watch> Port<P, W> {
     pub fn new<NR>(
         port_ds: PortDS,
-        mut runtime: NR,
+        runtime: &mut NR,
         interface: NR::InterfaceDescriptor,
+        bmca_watch: W,
         announce_timeout_watch: W,
         announce_watch: W,
         sync_watch: W,
@@ -54,10 +56,11 @@ impl<P: NetworkPort, W: Watch> Port<P, W> {
         );
 
         Port {
-            state: State::Listening,
+            bmca_watch,
             announce_timeout_watch,
             announce_watch,
             sync_watch,
+            state: State::Listening,
             tc_port,
             nc_port,
             delay_req_ids: SequenceIdGenerator::default(),
@@ -185,7 +188,7 @@ impl<P: NetworkPort, W: Watch> Port<P, W> {
 
     pub fn handle_network(
         &mut self,
-        packet: NetworkPacket,
+        packet: &NetworkPacket,
         current_time: Instant,
         default_ds: &DefaultDS,
     ) {
@@ -195,7 +198,7 @@ impl<P: NetworkPort, W: Watch> Port<P, W> {
     /// Process messages, but only if they are from the same domain
     fn process_message(
         &mut self,
-        packet: NetworkPacket,
+        packet: &NetworkPacket,
         current_time: Instant,
         default_ds: &DefaultDS,
     ) -> Option<()> {
@@ -277,7 +280,7 @@ impl<P: NetworkPort, W: Watch> Port<P, W> {
         }
     }
 
-    pub fn get_log_announce_interval(&self) -> Duration {
+    pub fn announce_interval(&self) -> Duration {
         Duration::from_log_interval(self.port_ds.log_announce_interval)
     }
 
