@@ -3,7 +3,6 @@
 use super::Filter;
 use crate::{port::Measurement, time::Duration};
 use fixed::traits::LossyInto;
-use libm::F64Ext;
 
 #[derive(Debug)]
 struct PrevStepData {

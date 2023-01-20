@@ -68,10 +68,10 @@ impl ForeignMaster {
     ) {
         self.purge_old_messages(current_time, announce_interval);
         // Try to add new message; otherwise remove the first message and then add
-        if !self
+        if self
             .announce_messages
             .try_push((announce_message, current_time))
-            .is_ok()
+            .is_err()
         {
             self.announce_messages.remove(0);
             self.announce_messages

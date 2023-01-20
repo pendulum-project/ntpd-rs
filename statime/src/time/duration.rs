@@ -6,7 +6,6 @@ use core::{
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, RemAssign, Sub, SubAssign},
 };
 use fixed::{traits::ToFixed, types::I96F32};
-use libm::F64Ext;
 
 /// A duration is a span of time that can also be negative.
 ///
