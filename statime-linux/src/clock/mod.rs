@@ -4,7 +4,7 @@ use std::{collections::HashMap, sync::mpsc};
 
 use fixed::traits::LossyInto;
 pub use raw::RawLinuxClock;
-use statime::datastructures::datasets::time_properties::TimePropertiesDS;
+use statime::datastructures::datasets::TimePropertiesDS;
 use statime::{
     clock::{Clock, Watch},
     datastructures::common::ClockQuality,

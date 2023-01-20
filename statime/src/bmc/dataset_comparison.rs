@@ -1,6 +1,6 @@
 //! Implementation of chapter 9.3.4 Data set comparison algorithm
 
-use crate::datastructures::datasets::default::DefaultDS;
+use crate::datastructures::datasets::DefaultDS;
 use crate::datastructures::{
     common::{ClockIdentity, ClockQuality, PortIdentity},
     messages::AnnounceMessage,

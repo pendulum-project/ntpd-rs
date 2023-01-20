@@ -1,4 +1,4 @@
-use crate::datastructures::datasets::time_properties::TimePropertiesDS;
+use crate::datastructures::datasets::TimePropertiesDS;
 use crate::datastructures::{
     common::{ClockIdentity, ClockQuality, TimeSource, Timestamp},
     WireFormat,

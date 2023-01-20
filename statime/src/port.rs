@@ -1,5 +1,5 @@
-use crate::datastructures::datasets::default::DefaultDS;
-use crate::datastructures::datasets::time_properties::TimePropertiesDS;
+use crate::datastructures::datasets::DefaultDS;
+use crate::datastructures::datasets::TimePropertiesDS;
 use crate::{
     bmc::bmca::{Bmca, RecommendedState},
     clock::Watch,
@@ -774,7 +774,7 @@ mod tests {
     use fixed::traits::ToFixed;
 
     use crate::datastructures::common::TimeSource;
-    use crate::datastructures::datasets::time_properties::TimePropertiesDS;
+    use crate::datastructures::datasets::TimePropertiesDS;
     use crate::{
         bmc::bmca::Bmca,
         datastructures::{

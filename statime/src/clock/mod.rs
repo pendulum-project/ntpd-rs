@@ -1,6 +1,6 @@
 //! Definitions and implementations of the abstract clock types
 
-use crate::datastructures::datasets::time_properties::TimePropertiesDS;
+use crate::datastructures::datasets::TimePropertiesDS;
 use crate::{
     datastructures::common::ClockQuality,
     time::{Duration, Instant},

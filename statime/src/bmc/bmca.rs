@@ -7,7 +7,7 @@ use super::{
 use crate::{
     datastructures::{
         common::{PortIdentity, TimeInterval, Timestamp},
-        datasets::default::DefaultDS,
+        datasets::DefaultDS,
         messages::AnnounceMessage,
     },
     port::State,
