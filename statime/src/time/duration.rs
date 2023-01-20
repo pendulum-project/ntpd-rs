@@ -18,6 +18,10 @@ pub struct Duration {
 }
 
 impl Duration {
+    pub const ZERO: Duration = Duration {
+        inner: I96F32::ZERO,
+    };
+
     /// Create an instance with the given amount of seconds
     pub fn from_secs(secs: i64) -> Self {
         let inner = secs.to_fixed::<I96F32>() * 1_000_000_000.to_fixed::<I96F32>();

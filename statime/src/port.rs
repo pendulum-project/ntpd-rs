@@ -1,5 +1,5 @@
-use crate::datastructures::datasets::DefaultDS;
 use crate::datastructures::datasets::TimePropertiesDS;
+use crate::datastructures::datasets::{DefaultDS, PortDS};
 use crate::{
     bmc::bmca::{Bmca, RecommendedState},
     clock::Watch,
@@ -35,12 +35,11 @@ pub struct PortData<NR: NetworkRuntime> {
     tc_port: NR::PortType,
     nc_port: NR::PortType,
     delay_req_ids: IdSequencer,
-    identity: PortIdentity,
     sdo: u16,
     domain: u8,
     clock_quality: ClockQuality,
     time_properties: TimePropertiesDS,
-    port_config: PortConfig,
+    port_ds: PortDS,
     bmca: Bmca,
     announce_seq_id: u16,
     sync_seq_id: u16,
@@ -53,15 +52,14 @@ impl<NR: NetworkRuntime> PortData<NR> {
         _runtime: NR,
         tc_port: NR::PortType,
         nc_port: NR::PortType,
-        identity: PortIdentity,
         sdo: u16,
         domain: u8,
-        port_config: PortConfig,
+        port_ds: PortDS,
         clock_quality: ClockQuality,
     ) -> Self {
         let bmca = Bmca::new(
-            Duration::from_log_interval(port_config.log_announce_interval).into(),
-            identity,
+            Duration::from_log_interval(port_ds.log_announce_interval).into(),
+            port_ds.port_identity,
         );
 
         Self {
@@ -69,7 +67,6 @@ impl<NR: NetworkRuntime> PortData<NR> {
             tc_port,
             nc_port,
             delay_req_ids: IdSequencer::default(),
-            identity,
             sdo,
             domain,
             clock_quality,
@@ -78,7 +75,7 @@ impl<NR: NetworkRuntime> PortData<NR> {
                 false,
                 TimeSource::InternalOscillator,
             ),
-            port_config,
+            port_ds,
             bmca,
             announce_seq_id: 0,
             sync_seq_id: 0,
@@ -86,14 +83,6 @@ impl<NR: NetworkRuntime> PortData<NR> {
             delay_resp_seq_id: 0,
         }
     }
-}
-
-pub struct PortConfig {
-    pub log_announce_interval: i8,
-    pub log_sync_interval: i8,
-    pub announce_receipt_timeout: i8,
-    pub priority_1: u8,
-    pub priority_2: u8,
 }
 
 pub struct Port<NR: NetworkRuntime, W: Watch> {
@@ -153,7 +142,7 @@ impl StateSlave {
         {
             let delay_id = port.delay_req_ids.get();
             let delay_req = MessageBuilder::new()
-                .source_port_identity(port.identity)
+                .source_port_identity(port.port_ds.port_identity)
                 .sequence_id(delay_id)
                 .log_message_interval(0x7F)
                 .delay_req_message(Timestamp::default());
@@ -297,7 +286,7 @@ impl StateMaster {
         timestamp: Option<Instant>,
     ) -> Option<()> {
         // Always ignore messages from own port
-        if message.header().source_port_identity() == port.identity {
+        if message.header().source_port_identity() == port.port_ds.port_identity {
             return None;
         }
 
@@ -314,7 +303,7 @@ impl StateMaster {
     ) -> Option<()> {
         let announce_message = MessageBuilder::new()
             .sequence_id(port.announce_seq_id)
-            .source_port_identity(port.identity)
+            .source_port_identity(port.port_ds.port_identity)
             .announce_message(
                 Timestamp::default(),             //origin_timestamp: Timestamp,
                 0,                                // TODO implement current_utc_offset: u16,
@@ -341,7 +330,7 @@ impl StateMaster {
     ) -> Option<()> {
         let sync_message = MessageBuilder::new()
             .sequence_id(port.sync_seq_id)
-            .source_port_identity(port.identity)
+            .source_port_identity(port.port_ds.port_identity)
             .sync_message(Timestamp::from(current_time));
 
         port.sync_seq_id = port.sync_seq_id.wrapping_add(1);
@@ -359,7 +348,7 @@ impl StateMaster {
     ) -> Option<()> {
         let follow_up_message = MessageBuilder::new()
             .sequence_id(port.sync_seq_id)
-            .source_port_identity(port.identity)
+            .source_port_identity(port.port_ds.port_identity)
             .follow_up_message(Timestamp::from(current_time));
 
         port.follow_up_seq_id = port.follow_up_seq_id.wrapping_add(1);
@@ -379,7 +368,7 @@ impl StateMaster {
         // Send delay response
         let delay_resp_message = MessageBuilder::new()
             .sequence_id(port.delay_resp_seq_id)
-            .source_port_identity(port.identity)
+            .source_port_identity(port.port_ds.port_identity)
             .delay_resp_message(
                 Timestamp::from(timestamp),
                 message.header().source_port_identity(),
@@ -430,9 +419,8 @@ impl State {
         announce_watch: &mut W,
         sync_watch: &mut W,
     ) {
-        let announce_receipt_timeout = port.port_config.announce_receipt_timeout;
-        let log_announce_interval = port.port_config.log_announce_interval;
-        let log_sync_interval = port.port_config.log_sync_interval;
+        let log_announce_interval = port.port_ds.log_announce_interval;
+        let log_sync_interval = port.port_ds.log_sync_interval;
 
         match recommended_state {
             // TODO set things like steps_removed once they are added
@@ -446,7 +434,8 @@ impl State {
 
                     // Restart announce receipt timeout timer
                     announce_timeout_watch.set_alarm(Duration::from_log_interval(
-                        announce_receipt_timeout * log_announce_interval,
+                        port.port_ds.announce_receipt_timeout as i8
+                            * port.port_ds.log_announce_interval,
                     ));
 
                     log::info!(
@@ -475,7 +464,8 @@ impl State {
 
                     // Restart announce receipt timeout timer
                     announce_timeout_watch.set_alarm(Duration::from_log_interval(
-                        announce_receipt_timeout * log_announce_interval,
+                        port.port_ds.announce_receipt_timeout as i8
+                            * port.port_ds.log_announce_interval,
                     ));
 
                     log::info!("New state for port: Master -> Slave");
@@ -537,7 +527,8 @@ impl State {
 
                     // Restart announce receipt timeout timer
                     announce_timeout_watch.set_alarm(Duration::from_log_interval(
-                        announce_receipt_timeout * log_announce_interval,
+                        port.port_ds.announce_receipt_timeout as i8
+                            * port.port_ds.log_announce_interval,
                     ));
 
                     log::info!("New state for port: Listening");
@@ -549,10 +540,9 @@ impl State {
 
 impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
     pub fn new(
-        identity: PortIdentity,
         sdo: u16,
         domain: u8,
-        port_config: PortConfig,
+        port_ds: PortDS,
         mut runtime: NR,
         interface: NR::InterfaceDescriptor,
         clock_quality: ClockQuality,
@@ -573,10 +563,9 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
                 runtime,
                 tc_port,
                 nc_port,
-                identity,
                 sdo,
                 domain,
-                port_config,
+                port_ds,
                 clock_quality,
             ),
             state: State::Listening,
@@ -586,7 +575,7 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
         }
     }
 
-    pub fn handle_alarm(&mut self, id: W::WatchId, current_time: Instant) {
+    pub fn handle_alarm(&mut self, id: W::WatchId, current_time: Instant, default_ds: &DefaultDS) {
         // When the announce timout expires, it means there
         // have been no announce messages in a while, so we
         // force a switch to the master state
@@ -594,9 +583,9 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
             log::info!("Announce interval timeout");
 
             self.state = State::Master(StateMaster {
-                priority_1: self.portdata.port_config.priority_1,
-                priority_2: self.portdata.port_config.priority_2,
-                clock_identity: self.portdata.identity.clock_identity,
+                priority_1: default_ds.priority_1,
+                priority_2: default_ds.priority_2,
+                clock_identity: self.portdata.port_ds.port_identity.clock_identity,
                 clock_quality: self.portdata.clock_quality,
             });
 
@@ -610,12 +599,12 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
 
             // Start sending announce messages
             self.announce_watch.set_alarm(Duration::from_log_interval(
-                self.portdata.port_config.log_announce_interval,
+                self.portdata.port_ds.log_announce_interval,
             ));
 
             // Start sending sync messages
             self.sync_watch.set_alarm(Duration::from_log_interval(
-                self.portdata.port_config.log_sync_interval,
+                self.portdata.port_ds.log_sync_interval,
             ));
         }
 
@@ -623,7 +612,7 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
         if id == self.announce_watch.id() {
             self.send_announce_message();
             self.announce_watch.set_alarm(Duration::from_log_interval(
-                self.portdata.port_config.log_announce_interval,
+                self.portdata.port_ds.log_announce_interval,
             ));
         }
 
@@ -635,7 +624,7 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
             self.send_follow_up_message(current_time);
 
             self.sync_watch.set_alarm(Duration::from_log_interval(
-                self.portdata.port_config.log_sync_interval,
+                self.portdata.port_ds.log_sync_interval,
             ));
         }
     }
@@ -696,8 +685,8 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
                 // When an announce message is received, restart announce receipt timeout timer
                 self.announce_timeout_watch
                     .set_alarm(Duration::from_log_interval(
-                        self.portdata.port_config.announce_receipt_timeout
-                            * self.portdata.port_config.log_announce_interval,
+                        self.portdata.port_ds.announce_receipt_timeout as i8
+                            * self.portdata.port_ds.log_announce_interval,
                     ));
             }
             _ => {}
@@ -728,11 +717,12 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
         &mut self,
         best_global_announce_message: Option<(&AnnounceMessage, &PortIdentity)>,
         best_port_announce_message: Option<(&AnnounceMessage, &PortIdentity)>,
+        default_ds: &DefaultDS,
     ) {
         let own_data = DefaultDS::new_oc(
-            self.portdata.identity.clock_identity,
-            self.portdata.port_config.priority_1,
-            self.portdata.port_config.priority_2,
+            self.portdata.port_ds.port_identity.clock_identity,
+            default_ds.priority_1,
+            default_ds.priority_2,
             0,
             true,
             1337,
@@ -764,7 +754,7 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
     }
 
     pub fn get_log_announce_interval(&self) -> Duration {
-        Duration::from_log_interval(self.portdata.port_config.log_announce_interval)
+        Duration::from_log_interval(self.portdata.port_ds.log_announce_interval)
     }
 }
 
@@ -775,8 +765,8 @@ mod tests {
 
     use fixed::traits::ToFixed;
 
-    use crate::datastructures::common::TimeSource;
-    use crate::datastructures::datasets::TimePropertiesDS;
+    use crate::datastructures::common::{ClockIdentity, TimeSource};
+    use crate::datastructures::datasets::{DelayMechanism, PortDS, TimePropertiesDS};
     use crate::{
         bmc::bmca::Bmca,
         datastructures::{
@@ -784,41 +774,32 @@ mod tests {
             messages::MessageBuilder,
         },
         network::{test::TestRuntime, NetworkRuntime},
-        port::{Measurement, PortConfig},
+        port::Measurement,
         time::{Duration, Instant},
     };
 
     use super::{IdSequencer, PortData, StateSlave};
 
-    #[test]
-    fn test_measurement_flow() {
-        let mut network_runtime = TestRuntime::default();
+    fn test_port_data(network_runtime: &mut TestRuntime) -> PortData<TestRuntime> {
+        let tc_port = network_runtime.open("".to_owned(), true).unwrap();
+        let nc_port = network_runtime.open("".to_owned(), false).unwrap();
 
-        let master_id = PortIdentity::default();
-        let mut test_id = PortIdentity::default();
-        test_id.clock_identity.0[0] += 1;
-
-        let mut test_state = StateSlave {
-            remote_master: master_id,
-            ..Default::default()
+        let identity = PortIdentity {
+            clock_identity: ClockIdentity([1, 0, 0, 0, 0, 0, 0, 0]),
+            port_number: 0,
         };
 
-        let mut test_port_data = PortData {
+        let port_ds = PortDS::new(identity, 37, 1, 5, 1, DelayMechanism::E2E, 37, 0, 1);
+
+        PortData {
             _runtime: network_runtime.clone(),
-            tc_port: network_runtime.open("".to_owned(), true).unwrap(),
-            nc_port: network_runtime.open("".to_owned(), false).unwrap(),
+            tc_port,
+            nc_port,
             delay_req_ids: IdSequencer::default(),
-            identity: test_id,
             sdo: 0,
             domain: 0,
-            port_config: PortConfig {
-                log_announce_interval: 1,
-                log_sync_interval: 1,
-                announce_receipt_timeout: 5,
-                priority_1: 0,
-                priority_2: 0,
-            },
-            bmca: Bmca::new(TimeInterval(2_000_000_000u64.to_fixed()), test_id),
+            port_ds,
+            bmca: Bmca::new(TimeInterval(2_000_000_000u64.to_fixed()), identity),
             clock_quality: ClockQuality::default(),
             time_properties: TimePropertiesDS::new_arbitrary(
                 false,
@@ -829,7 +810,21 @@ mod tests {
             delay_resp_seq_id: 0,
             follow_up_seq_id: 0,
             sync_seq_id: 0,
+        }
+    }
+
+    #[test]
+    fn test_measurement_flow() {
+        let mut network_runtime = TestRuntime::default();
+
+        let master_id = PortIdentity::default();
+
+        let mut test_state = StateSlave {
+            remote_master: master_id,
+            ..Default::default()
         };
+
+        let mut test_port_data = test_port_data(&mut network_runtime);
 
         test_state.handle_message(
             &mut test_port_data,
@@ -852,6 +847,7 @@ mod tests {
 
         assert_eq!(test_state.extract_measurement(), None);
 
+        let requesting_port_identity = test_port_data.port_ds.port_identity;
         test_state.handle_message(
             &mut test_port_data,
             MessageBuilder::new()
@@ -864,7 +860,7 @@ mod tests {
                         seconds: 0,
                         nanos: 11,
                     },
-                    test_id,
+                    requesting_port_identity,
                 ),
             None,
         );
@@ -891,33 +887,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mut test_port_data = PortData {
-            _runtime: network_runtime.clone(),
-            tc_port: network_runtime.open("".to_owned(), true).unwrap(),
-            nc_port: network_runtime.open("".to_owned(), false).unwrap(),
-            delay_req_ids: IdSequencer::default(),
-            identity: test_id,
-            sdo: 0,
-            domain: 0,
-            port_config: PortConfig {
-                log_announce_interval: 1,
-                log_sync_interval: 1,
-                announce_receipt_timeout: 5,
-                priority_1: 0,
-                priority_2: 0,
-            },
-            bmca: Bmca::new(TimeInterval(2_000_000_000u64.to_fixed()), test_id),
-            clock_quality: ClockQuality::default(),
-            time_properties: TimePropertiesDS::new_arbitrary(
-                false,
-                false,
-                TimeSource::InternalOscillator,
-            ),
-            announce_seq_id: 0,
-            delay_resp_seq_id: 0,
-            follow_up_seq_id: 0,
-            sync_seq_id: 0,
-        };
+        let mut test_port_data = test_port_data(&mut network_runtime);
 
         test_state.handle_message(
             &mut test_port_data,
@@ -980,33 +950,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mut test_port_data = PortData {
-            _runtime: network_runtime.clone(),
-            tc_port: network_runtime.open("".to_owned(), true).unwrap(),
-            nc_port: network_runtime.open("".to_owned(), false).unwrap(),
-            delay_req_ids: IdSequencer::default(),
-            identity: test_id,
-            sdo: 0,
-            domain: 0,
-            port_config: PortConfig {
-                log_announce_interval: 1,
-                log_sync_interval: 1,
-                announce_receipt_timeout: 5,
-                priority_1: 0,
-                priority_2: 0,
-            },
-            bmca: Bmca::new(TimeInterval(2_000_000_000u64.to_fixed()), test_id),
-            clock_quality: ClockQuality::default(),
-            time_properties: TimePropertiesDS::new_arbitrary(
-                false,
-                false,
-                TimeSource::InternalOscillator,
-            ),
-            announce_seq_id: 0,
-            delay_resp_seq_id: 0,
-            follow_up_seq_id: 0,
-            sync_seq_id: 0,
-        };
+        let mut test_port_data = test_port_data(&mut network_runtime);
 
         test_state.handle_message(
             &mut test_port_data,
@@ -1086,33 +1030,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mut test_port_data = PortData {
-            _runtime: network_runtime.clone(),
-            tc_port: network_runtime.open("".to_owned(), true).unwrap(),
-            nc_port: network_runtime.open("".to_owned(), false).unwrap(),
-            delay_req_ids: IdSequencer::default(),
-            identity: test_id,
-            sdo: 0,
-            domain: 0,
-            port_config: PortConfig {
-                log_announce_interval: 1,
-                log_sync_interval: 1,
-                announce_receipt_timeout: 5,
-                priority_1: 0,
-                priority_2: 0,
-            },
-            bmca: Bmca::new(TimeInterval(2_000_000_000u64.to_fixed()), test_id),
-            clock_quality: ClockQuality::default(),
-            time_properties: TimePropertiesDS::new_arbitrary(
-                false,
-                false,
-                TimeSource::InternalOscillator,
-            ),
-            announce_seq_id: 0,
-            delay_resp_seq_id: 0,
-            follow_up_seq_id: 0,
-            sync_seq_id: 0,
-        };
+        let mut test_port_data = test_port_data(&mut network_runtime);
 
         test_state.handle_message(
             &mut test_port_data,

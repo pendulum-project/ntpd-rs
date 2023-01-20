@@ -2,6 +2,8 @@ use std::sync::mpsc;
 
 use clap::{AppSettings, Parser};
 
+use statime::datastructures::common::PortIdentity;
+use statime::datastructures::datasets::{DelayMechanism, PortDS};
 use statime::{
     datastructures::{common::ClockIdentity, messages::Message},
     filters::basic::BasicFilter,
@@ -53,7 +55,7 @@ struct Args {
 
     /// Default init value is 3, see: A.9.4.2
     #[clap(long, default_value_t = 3)]
-    announce_receipt_timeout: i8,
+    announce_receipt_timeout: u8,
 
     /// Use hardware clock
     #[clap(long, short)]
@@ -96,13 +98,20 @@ fn main() {
         sdo: args.sdo,
         domain: args.domain,
         interface: args.interface,
-        port_config: statime::port::PortConfig {
-            log_announce_interval: args.log_announce_interval,
-            log_sync_interval: args.log_sync_interval,
-            announce_receipt_timeout: args.announce_receipt_timeout,
-            priority_1: args.priority_1,
-            priority_2: args.priority_2,
-        },
+        port_ds: PortDS::new(
+            PortIdentity {
+                clock_identity: clock_id,
+                port_number: 1,
+            },
+            37,
+            args.log_announce_interval,
+            args.announce_receipt_timeout,
+            args.log_sync_interval,
+            DelayMechanism::E2E,
+            37,
+            0,
+            1,
+        ),
     };
 
     let mut instance = PtpInstance::new(config, network_runtime, clock, BasicFilter::new(0.25));

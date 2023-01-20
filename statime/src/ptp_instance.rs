@@ -1,9 +1,10 @@
+use crate::datastructures::datasets::{DefaultDS, PortDS};
 use crate::{
     clock::{Clock, Watch},
-    datastructures::common::{ClockIdentity, PortIdentity},
+    datastructures::common::ClockIdentity,
     filters::Filter,
     network::{NetworkPacket, NetworkRuntime},
-    port::{Port, PortConfig},
+    port::Port,
     time::{Duration, Instant},
 };
 
@@ -12,7 +13,7 @@ pub struct Config<NR: NetworkRuntime> {
     pub sdo: u16,
     pub domain: u8,
     pub interface: NR::InterfaceDescriptor,
-    pub port_config: PortConfig,
+    pub port_ds: PortDS,
 }
 
 /// Object that acts as the central point of this library.
@@ -20,6 +21,7 @@ pub struct Config<NR: NetworkRuntime> {
 ///
 /// The instance doesn't run on its own, but requires the user to invoke the `handle_*` methods whenever required.
 pub struct PtpInstance<NR: NetworkRuntime, C: Clock, F: Filter> {
+    default_ds: DefaultDS,
     port: Port<NR, C::W>,
     clock: C,
     bmca_watch: C::W,
@@ -34,31 +36,31 @@ impl<NR: NetworkRuntime, C: Clock, F: Filter> PtpInstance<NR, C, F> {
     /// - `clock`: The clock that will be adjusted and provides the watches
     /// - `filter`: A filter for time measurements because those are always a bit wrong and need some processing
     pub fn new(config: Config<NR>, runtime: NR, mut clock: C, filter: F) -> Self {
+        let default_ds =
+            DefaultDS::new_oc(config.identity, 128, 128, config.domain, false, config.sdo);
+
         // We always need a loop for the BMCA, so we create a watch immediately and set the alarm
         let mut bmca_watch = clock.get_watch();
         bmca_watch.set_alarm(Duration::from_log_interval(
-            config.port_config.log_announce_interval,
+            config.port_ds.log_announce_interval,
         ));
 
         // Set the announce receipt timeout
         // TODO: what to do when we have multiple ports?
         let mut announce_timeout_watch = clock.get_watch();
+        // TODO: Check
         announce_timeout_watch.set_alarm(Duration::from_log_interval(
-            config.port_config.announce_receipt_timeout,
+            config.port_ds.log_announce_interval,
         ));
         let announce_watch = clock.get_watch();
         let sync_watch = clock.get_watch();
 
         PtpInstance {
+            default_ds,
             port: Port::new(
-                PortIdentity {
-                    clock_identity: config.identity,
-                    // Portnumber starts at 1, see: 7.5.2.3 portNumber
-                    port_number: 1,
-                },
                 config.sdo,
                 config.domain,
-                config.port_config,
+                config.port_ds,
                 runtime,
                 config.interface,
                 clock.quality(),
@@ -113,11 +115,12 @@ impl<NR: NetworkRuntime, C: Clock, F: Filter> PtpInstance<NR, C, F> {
                 .map(|(message, identity)| (message, identity));
 
             // Run the state decision
-            self.port.perform_state_decision(erbest, erbest);
+            self.port
+                .perform_state_decision(erbest, erbest, &self.default_ds);
         } else {
             // TODO: what to do when we have multiple ports?
             let current_time = self.clock.now();
-            self.port.handle_alarm(id, current_time);
+            self.port.handle_alarm(id, current_time, &self.default_ds);
         }
     }
 }
