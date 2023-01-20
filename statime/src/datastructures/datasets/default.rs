@@ -10,10 +10,10 @@ pub struct DefaultDS {
     pub(crate) clock_quality: ClockQuality,
     pub(crate) priority_1: u8,
     pub(crate) priority_2: u8,
-    domain_number: u8,
+    pub(crate) domain_number: u8,
     slave_only: bool,
     // TODO: u12
-    sdo_id: u16,
+    pub(crate) sdo_id: u16,
     current_time: Instant,
     pub(crate) instance_enable: bool,
     external_port_configuration_enabled: bool,

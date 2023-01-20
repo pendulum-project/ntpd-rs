@@ -3,11 +3,11 @@ use std::sync::mpsc;
 use clap::{AppSettings, Parser};
 
 use statime::datastructures::common::PortIdentity;
-use statime::datastructures::datasets::{DelayMechanism, PortDS};
+use statime::datastructures::datasets::{DefaultDS, DelayMechanism, PortDS};
 use statime::{
     datastructures::{common::ClockIdentity, messages::Message},
     filters::basic::BasicFilter,
-    ptp_instance::{Config, PtpInstance},
+    ptp_instance::PtpInstance,
 };
 use statime_linux::{
     clock::{LinuxClock, RawLinuxClock},
@@ -91,30 +91,32 @@ fn main() {
     } else {
         LinuxClock::new(RawLinuxClock::get_realtime_clock())
     };
-    let clock_id = ClockIdentity(get_clock_id().expect("Could not get clock identity"));
+    let clock_identity = ClockIdentity(get_clock_id().expect("Could not get clock identity"));
 
-    let config = Config {
-        identity: clock_id,
-        sdo: args.sdo,
-        domain: args.domain,
-        interface: args.interface,
-        port_ds: PortDS::new(
-            PortIdentity {
-                clock_identity: clock_id,
-                port_number: 1,
-            },
-            37,
-            args.log_announce_interval,
-            args.announce_receipt_timeout,
-            args.log_sync_interval,
-            DelayMechanism::E2E,
-            37,
-            0,
-            1,
-        ),
-    };
+    let default_ds = DefaultDS::new_oc(clock_identity, 128, 128, args.domain, false, args.sdo);
+    let port_ds = PortDS::new(
+        PortIdentity {
+            clock_identity,
+            port_number: 1,
+        },
+        37,
+        args.log_announce_interval,
+        args.announce_receipt_timeout,
+        args.log_sync_interval,
+        DelayMechanism::E2E,
+        37,
+        0,
+        1,
+    );
 
-    let mut instance = PtpInstance::new(config, network_runtime, clock, BasicFilter::new(0.25));
+    let mut instance = PtpInstance::new(
+        default_ds,
+        port_ds,
+        args.interface,
+        network_runtime,
+        clock,
+        BasicFilter::new(0.25),
+    );
 
     loop {
         let packet = if let Some(timeout) = clock_runtime.interval_to_next_alarm() {
@@ -133,7 +135,7 @@ fn main() {
                 .header()
                 .source_port_identity()
                 .clock_identity
-                == clock_id
+                == clock_identity
             {
                 if let Some(timestamp) = packet.timestamp {
                     instance.handle_send_timestamp(
