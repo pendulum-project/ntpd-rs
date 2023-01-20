@@ -16,6 +16,10 @@ repository = "https://github.com/tweedegolf/statime"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["std"]
+std = []
+
 [dependencies]
 arrayvec = { version = "0.7.2", default-features = false }
 fixed = "1.11.0"

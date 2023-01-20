@@ -768,9 +768,10 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
     }
 }
 
+#[cfg(feature = "std")]
 #[cfg(test)]
 mod tests {
-    use alloc::borrow::ToOwned;
+    use std::borrow::ToOwned;
 
     use fixed::traits::ToFixed;
 

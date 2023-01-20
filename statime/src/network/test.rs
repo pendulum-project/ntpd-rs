@@ -1,5 +1,9 @@
-use arrayvec::ArrayVec;
+#![cfg(feature = "std")]
+
+use std::string::String;
 use std::{cell::RefCell, rc::Rc};
+
+use arrayvec::ArrayVec;
 
 use super::{NetworkPort, NetworkRuntime};
 
