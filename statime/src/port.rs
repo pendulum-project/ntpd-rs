@@ -30,10 +30,9 @@ impl IdSequencer {
 }
 
 /// Object containing all non-state specific data
-pub struct PortData<NR: NetworkRuntime> {
-    _runtime: NR,
-    tc_port: NR::PortType,
-    nc_port: NR::PortType,
+pub struct PortData<P> {
+    tc_port: P,
+    nc_port: P,
     delay_req_ids: IdSequencer,
     sdo: u16,
     domain: u8,
@@ -47,11 +46,10 @@ pub struct PortData<NR: NetworkRuntime> {
     delay_resp_seq_id: u16,
 }
 
-impl<NR: NetworkRuntime> PortData<NR> {
+impl<P> PortData<P> {
     pub fn new(
-        _runtime: NR,
-        tc_port: NR::PortType,
-        nc_port: NR::PortType,
+        tc_port: P,
+        nc_port: P,
         sdo: u16,
         domain: u8,
         port_ds: PortDS,
@@ -63,7 +61,6 @@ impl<NR: NetworkRuntime> PortData<NR> {
         );
 
         Self {
-            _runtime,
             tc_port,
             nc_port,
             delay_req_ids: IdSequencer::default(),
@@ -85,8 +82,8 @@ impl<NR: NetworkRuntime> PortData<NR> {
     }
 }
 
-pub struct Port<NR: NetworkRuntime, W: Watch> {
-    portdata: PortData<NR>,
+pub struct Port<P, W> {
+    portdata: PortData<P>,
     announce_timeout_watch: W,
     announce_watch: W,
     sync_watch: W,
@@ -116,9 +113,9 @@ pub struct StateSlave {
 }
 
 impl StateSlave {
-    fn handle_sync<NR: NetworkRuntime>(
+    fn handle_sync<P: NetworkPort>(
         &mut self,
-        port: &mut PortData<NR>,
+        port: &mut PortData<P>,
         message: SyncMessage,
         timestamp: Instant,
     ) -> Option<()> {
@@ -213,9 +210,9 @@ impl StateSlave {
     }
 
     /// Handle all messages in the SLAVE state
-    fn handle_message<NR: NetworkRuntime>(
+    fn handle_message<P: NetworkPort>(
         &mut self,
-        port: &mut PortData<NR>,
+        port: &mut PortData<P>,
         message: Message,
         timestamp: Option<Instant>,
     ) -> Option<()> {
@@ -279,9 +276,9 @@ pub struct StateMaster {
 }
 
 impl StateMaster {
-    fn handle_message<NR: NetworkRuntime>(
+    fn handle_message<P: NetworkPort>(
         &mut self,
-        port: &mut PortData<NR>,
+        port: &mut PortData<P>,
         message: Message,
         timestamp: Option<Instant>,
     ) -> Option<()> {
@@ -297,10 +294,7 @@ impl StateMaster {
     }
 
     /// Create an announce message
-    pub fn send_announce_message<NR: NetworkRuntime>(
-        &mut self,
-        port: &mut PortData<NR>,
-    ) -> Option<()> {
+    pub fn send_announce_message<P: NetworkPort>(&mut self, port: &mut PortData<P>) -> Option<()> {
         let announce_message = MessageBuilder::new()
             .sequence_id(port.announce_seq_id)
             .source_port_identity(port.port_ds.port_identity)
@@ -323,9 +317,9 @@ impl StateMaster {
     }
 
     /// Create a sync message
-    pub fn send_sync_message<NR: NetworkRuntime>(
+    pub fn send_sync_message<P: NetworkPort>(
         &mut self,
-        port: &mut PortData<NR>,
+        port: &mut PortData<P>,
         current_time: Instant,
     ) -> Option<()> {
         let sync_message = MessageBuilder::new()
@@ -341,9 +335,9 @@ impl StateMaster {
     }
 
     /// Create a follow up message
-    pub fn send_follow_up_message<NR: NetworkRuntime>(
+    pub fn send_follow_up_message<P: NetworkPort>(
         &mut self,
-        port: &mut PortData<NR>,
+        port: &mut PortData<P>,
         current_time: Instant,
     ) -> Option<()> {
         let follow_up_message = MessageBuilder::new()
@@ -359,10 +353,10 @@ impl StateMaster {
     }
 
     /// Handle delay req by sending a delay resp
-    fn handle_delayreq<NR: NetworkRuntime>(
+    fn handle_delayreq<P: NetworkPort>(
         &mut self,
         message: DelayReqMessage,
-        port: &mut PortData<NR>,
+        port: &mut PortData<P>,
         timestamp: Instant,
     ) -> Option<()> {
         // Send delay response
@@ -391,9 +385,9 @@ pub enum State {
 }
 
 impl State {
-    fn handle_message<NR: NetworkRuntime>(
+    fn handle_message<P: NetworkPort>(
         &mut self,
-        port: &mut PortData<NR>,
+        port: &mut PortData<P>,
         message: Message,
         timestamp: Option<Instant>,
     ) -> Option<()> {
@@ -411,11 +405,11 @@ impl State {
         }
     }
 
-    fn handle_recommended_state<W: Watch, NR: NetworkRuntime>(
+    fn handle_recommended_state<P: NetworkPort, W: Watch>(
         &mut self,
         recommended_state: &RecommendedState,
         announce_timeout_watch: &mut W,
-        port: &mut PortData<NR>,
+        port: &mut PortData<P>,
         announce_watch: &mut W,
         sync_watch: &mut W,
     ) {
@@ -538,8 +532,8 @@ impl State {
     }
 }
 
-impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
-    pub fn new(
+impl<P: NetworkPort, W: Watch> Port<P, W> {
+    pub fn new<NR>(
         sdo: u16,
         domain: u8,
         port_ds: PortDS,
@@ -549,7 +543,10 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
         announce_timeout_watch: W,
         announce_watch: W,
         sync_watch: W,
-    ) -> Self {
+    ) -> Self
+    where
+        NR: NetworkRuntime<PortType = P>,
+    {
         // Ptp needs two ports, 1 time critical one and 1 general port
         let tc_port = runtime
             .open(interface.clone(), true)
@@ -559,15 +556,7 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
             .expect("Could not create non time critical port");
 
         Port {
-            portdata: PortData::new(
-                runtime,
-                tc_port,
-                nc_port,
-                sdo,
-                domain,
-                port_ds,
-                clock_quality,
-            ),
+            portdata: PortData::new(tc_port, nc_port, sdo, domain, port_ds, clock_quality),
             state: State::Listening,
             announce_timeout_watch,
             announce_watch,
@@ -767,6 +756,7 @@ mod tests {
 
     use crate::datastructures::common::{ClockIdentity, TimeSource};
     use crate::datastructures::datasets::{DelayMechanism, PortDS, TimePropertiesDS};
+    use crate::network::test::TestRuntimePort;
     use crate::{
         bmc::bmca::Bmca,
         datastructures::{
@@ -780,7 +770,7 @@ mod tests {
 
     use super::{IdSequencer, PortData, StateSlave};
 
-    fn test_port_data(network_runtime: &mut TestRuntime) -> PortData<TestRuntime> {
+    fn test_port_data(network_runtime: &mut TestRuntime) -> PortData<TestRuntimePort> {
         let tc_port = network_runtime.open("".to_owned(), true).unwrap();
         let nc_port = network_runtime.open("".to_owned(), false).unwrap();
 
@@ -792,7 +782,6 @@ mod tests {
         let port_ds = PortDS::new(identity, 37, 1, 5, 1, DelayMechanism::E2E, 37, 0, 1);
 
         PortData {
-            _runtime: network_runtime.clone(),
             tc_port,
             nc_port,
             delay_req_ids: IdSequencer::default(),

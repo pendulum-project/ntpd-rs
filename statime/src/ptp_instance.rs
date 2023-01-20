@@ -1,4 +1,5 @@
 use crate::datastructures::datasets::{DefaultDS, PortDS};
+use crate::network::NetworkPort;
 use crate::{
     clock::{Clock, Watch},
     filters::Filter,
@@ -11,29 +12,32 @@ use crate::{
 /// It is the main instance of the running protocol.
 ///
 /// The instance doesn't run on its own, but requires the user to invoke the `handle_*` methods whenever required.
-pub struct PtpInstance<NR: NetworkRuntime, C: Clock, F: Filter> {
+pub struct PtpInstance<P, C: Clock, F> {
     default_ds: DefaultDS,
-    port: Port<NR, C::W>,
+    port: Port<P, C::W>,
     clock: C,
     bmca_watch: C::W,
     filter: F,
 }
 
-impl<NR: NetworkRuntime, C: Clock, F: Filter> PtpInstance<NR, C, F> {
+impl<P: NetworkPort, C: Clock, F: Filter> PtpInstance<P, C, F> {
     /// Create a new instance
     ///
     /// - `config`: The configuration of the ptp instance
     /// - `runtime`: The network runtime with which sockets can be opened
     /// - `clock`: The clock that will be adjusted and provides the watches
     /// - `filter`: A filter for time measurements because those are always a bit wrong and need some processing
-    pub fn new(
+    pub fn new<NR>(
         default_ds: DefaultDS,
         port_ds: PortDS,
         interface: NR::InterfaceDescriptor,
         runtime: NR,
         mut clock: C,
         filter: F,
-    ) -> Self {
+    ) -> Self
+    where
+        NR: NetworkRuntime<PortType = P>,
+    {
         // We always need a loop for the BMCA, so we create a watch immediately and set the alarm
         let mut bmca_watch = clock.get_watch();
         bmca_watch.set_alarm(Duration::from_log_interval(port_ds.log_announce_interval));
