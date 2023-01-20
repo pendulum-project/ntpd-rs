@@ -933,4 +933,78 @@ mod test {
 
         assert!(decoder.step().unwrap().is_none());
     }
+
+    #[test]
+    fn test_keyexchange_client() {
+        let cert_chain: Vec<rustls::Certificate> =
+            rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
+                "../../test-keys/end.fullchain.pem"
+            ) as &[u8]))
+            .unwrap()
+            .into_iter()
+            .map(|v| rustls::Certificate(v))
+            .collect();
+        let key_der = rustls::PrivateKey(
+            rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(include_bytes!(
+                "../../test-keys/end.key"
+            )
+                as &[u8]))
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap(),
+        );
+        let serverconfig = rustls::ServerConfig::builder()
+            .with_safe_defaults()
+            .with_no_client_auth()
+            .with_single_cert(cert_chain, key_der)
+            .unwrap();
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.add_parsable_certificates(
+            &rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
+                "../../test-keys/testca.pem"
+            ) as &[u8]))
+            .unwrap(),
+        );
+
+        let clientconfig = rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
+
+        let mut server = rustls::ServerConnection::new(Arc::new(serverconfig)).unwrap();
+        let mut client = KeyExchangeClient::new("localhost".into(), clientconfig).unwrap();
+
+        server.writer().write_all(NTS_TIME_NL_RESPONSE).unwrap();
+
+        let mut buf = [0; 4096];
+        let result = 'result: loop {
+            while client.wants_write() {
+                let size = client.write_socket(&mut &mut buf[..]).unwrap();
+                let mut offset = 0;
+                while offset < size {
+                    let cur = server.read_tls(&mut &buf[offset..size]).unwrap();
+                    offset += cur;
+                    server.process_new_packets().unwrap();
+                }
+            }
+
+            while server.wants_write() {
+                let size = server.write_tls(&mut &mut buf[..]).unwrap();
+                let mut offset = 0;
+                while offset < size {
+                    let cur = client.read_socket(&mut &buf[offset..size]).unwrap();
+                    offset += cur;
+                    client = match client.progress() {
+                        ControlFlow::Continue(client) => client,
+                        ControlFlow::Break(result) => break 'result result,
+                    }
+                }
+            }
+        }
+        .unwrap();
+
+        assert_eq!(result.remote, "localhost");
+        assert_eq!(result.port, 123);
+    }
 }
