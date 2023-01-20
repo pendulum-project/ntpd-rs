@@ -9,8 +9,8 @@ pub struct ParentDS {
     pub observed_parent_clock_phase_change_rate: u32,
     pub grandmaster_identity: ClockIdentity,
     pub grandmaster_clock_quality: ClockQuality,
-    pub grandmaster_priority1: u8,
-    pub grandmaster_priority2: u8,
+    pub grandmaster_priority_1: u8,
+    pub grandmaster_priority_2: u8,
     pub protocol_address: PortAddress,
     pub synchronization_uncertain: bool,
 }
@@ -30,8 +30,8 @@ impl ParentDS {
             observed_parent_clock_phase_change_rate: 0x7FFF_FFFF,
             grandmaster_identity: default_ds.clock_identity,
             grandmaster_clock_quality: default_ds.clock_quality,
-            grandmaster_priority1: default_ds.priority1,
-            grandmaster_priority2: default_ds.priority2,
+            grandmaster_priority_1: default_ds.priority_1,
+            grandmaster_priority_2: default_ds.priority_2,
             protocol_address,
             synchronization_uncertain: false,
         }

@@ -1,12 +1,13 @@
 //! Implementation of the best master clock algorithm [Bmca]
 
 use super::{
-    dataset_comparison::{ComparisonDataset, DatasetOrdering, DefaultDS},
+    dataset_comparison::{ComparisonDataset, DatasetOrdering},
     foreign_master::ForeignMasterList,
 };
 use crate::{
     datastructures::{
         common::{PortIdentity, TimeInterval, Timestamp},
+        datasets::default::DefaultDS,
         messages::AnnounceMessage,
     },
     port::State,

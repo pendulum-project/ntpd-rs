@@ -8,8 +8,8 @@ pub struct DefaultDS {
     pub clock_identity: ClockIdentity,
     pub number_ports: u16,
     pub clock_quality: ClockQuality,
-    pub priority1: u8,
-    pub priority2: u8,
+    pub priority_1: u8,
+    pub priority_2: u8,
     pub domain_number: u8,
     pub slave_only: bool,
     // TODO: 12 bit number -_-
@@ -24,8 +24,8 @@ pub struct DefaultDS {
 impl DefaultDS {
     pub fn new_oc(
         clock_identity: ClockIdentity,
-        priority1: u8,
-        priority2: u8,
+        priority_1: u8,
+        priority_2: u8,
         domain_number: u8,
         slave_only: bool,
     ) -> Self {
@@ -33,8 +33,8 @@ impl DefaultDS {
             clock_identity,
             number_ports: 1,
             clock_quality: Default::default(),
-            priority1,
-            priority2,
+            priority_1,
+            priority_2,
             domain_number,
             slave_only,
             sdo_id: (),
@@ -49,16 +49,16 @@ impl DefaultDS {
     pub fn new_bc(
         clock_identity: ClockIdentity,
         number_ports: u16,
-        priority1: u8,
-        priority2: u8,
+        priority_1: u8,
+        priority_2: u8,
         domain_number: u8,
     ) -> Self {
         DefaultDS {
             clock_identity,
             number_ports,
             clock_quality: Default::default(),
-            priority1,
-            priority2,
+            priority_1,
+            priority_2,
             domain_number,
             // Not applicable
             slave_only: false,

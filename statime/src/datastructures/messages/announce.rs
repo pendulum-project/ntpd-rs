@@ -1,9 +1,7 @@
-use crate::{
-    clock::TimeProperties,
-    datastructures::{
-        common::{ClockIdentity, ClockQuality, TimeSource, Timestamp},
-        WireFormat,
-    },
+use crate::datastructures::datasets::time_properties::TimePropertiesDS;
+use crate::datastructures::{
+    common::{ClockIdentity, ClockQuality, TimeSource, Timestamp},
+    WireFormat,
 };
 use getset::CopyGetters;
 
@@ -14,7 +12,7 @@ use super::Header;
 pub struct AnnounceMessage {
     pub(super) header: Header,
     pub(super) origin_timestamp: Timestamp,
-    pub(super) current_utc_offset: u16,
+    pub(super) current_utc_offset: i16,
     pub(super) grandmaster_priority_1: u8,
     pub(super) grandmaster_clock_quality: ClockQuality,
     pub(super) grandmaster_priority_2: u8,
@@ -52,7 +50,7 @@ impl AnnounceMessage {
         Ok(Self {
             header,
             origin_timestamp: Timestamp::deserialize(&buffer[0..10])?,
-            current_utc_offset: u16::from_be_bytes(buffer[10..12].try_into().unwrap()),
+            current_utc_offset: i16::from_be_bytes(buffer[10..12].try_into().unwrap()),
             grandmaster_priority_1: buffer[13],
             grandmaster_clock_quality: ClockQuality::deserialize(&buffer[14..18])?,
             grandmaster_priority_2: buffer[18],
@@ -62,23 +60,16 @@ impl AnnounceMessage {
         })
     }
 
-    pub fn time_properties(&self) -> TimeProperties {
-        if self.header.ptp_timescale {
-            TimeProperties::PtpTime {
-                current_utc_offset: self
-                    .header
-                    .current_utc_offset_valid
-                    .then_some(self.current_utc_offset),
-                leap_61: self.header.leap61,
-                leap_59: self.header.leap59,
-                time_traceable: self.header.time_tracable,
-                frequency_traceable: self.header.frequency_tracable,
-            }
-        } else {
-            TimeProperties::ArbitraryTime {
-                time_traceable: self.header.time_tracable,
-                frequency_traceable: self.header.frequency_tracable,
-            }
+    pub fn time_properties(&self) -> TimePropertiesDS {
+        TimePropertiesDS {
+            current_utc_offset: self.current_utc_offset,
+            current_utc_offset_valid: self.header.current_utc_offset_valid,
+            leap59: self.header.leap61,
+            leap61: self.header.leap59,
+            time_traceable: self.header.time_tracable,
+            frequency_traceable: self.header.frequency_tracable,
+            ptp_timescale: self.header.ptp_timescale,
+            time_source: self.time_source,
         }
     }
 }

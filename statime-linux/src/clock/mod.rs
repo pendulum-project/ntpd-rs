@@ -4,8 +4,9 @@ use std::{collections::HashMap, sync::mpsc};
 
 use fixed::traits::LossyInto;
 pub use raw::RawLinuxClock;
+use statime::datastructures::datasets::time_properties::TimePropertiesDS;
 use statime::{
-    clock::{Clock, TimeProperties, Watch},
+    clock::{Clock, Watch},
     datastructures::common::ClockQuality,
     time::{Duration, Instant},
 };
@@ -69,14 +70,11 @@ impl Clock for LinuxClock {
         &mut self,
         time_offset: Duration,
         frequency_multiplier: f64,
-        time_properties: TimeProperties,
+        time_properties: TimePropertiesDS,
     ) -> Result<bool, Self::E> {
-        if let TimeProperties::PtpTime {
-            leap_61, leap_59, ..
-        } = time_properties
-        {
+        if time_properties.ptp_timescale {
             self.clock
-                .set_leap_seconds(leap_61, leap_59)
+                .set_leap_seconds(time_properties.leap61, time_properties.leap59)
                 .map_err(Error::LinuxError)?;
         }
 

@@ -1,5 +1,6 @@
 //! Implementation of chapter 9.3.4 Data set comparison algorithm
 
+use crate::datastructures::datasets::default::DefaultDS;
 use crate::datastructures::{
     common::{ClockIdentity, ClockQuality, PortIdentity},
     messages::AnnounceMessage,
@@ -18,15 +19,6 @@ pub struct ComparisonDataset {
     steps_removed: u16,
     identity_of_senders: ClockIdentity,
     identity_of_receiver: PortIdentity,
-}
-
-// TODO: replace with the proper implementation of our DefaultDS
-#[derive(Debug, Clone, Copy)]
-pub struct DefaultDS {
-    pub priority_1: u8,
-    pub clock_identity: ClockIdentity,
-    pub clock_quality: ClockQuality,
-    pub priority_2: u8,
 }
 
 impl ComparisonDataset {

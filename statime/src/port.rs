@@ -1,9 +1,8 @@
+use crate::datastructures::datasets::default::DefaultDS;
+use crate::datastructures::datasets::time_properties::TimePropertiesDS;
 use crate::{
-    bmc::{
-        bmca::{Bmca, RecommendedState},
-        dataset_comparison::DefaultDS,
-    },
-    clock::{TimeProperties, Watch},
+    bmc::bmca::{Bmca, RecommendedState},
+    clock::Watch,
     datastructures::{
         common::{ClockIdentity, ClockQuality, PortIdentity, TimeSource, Timestamp},
         messages::{
@@ -40,7 +39,7 @@ pub struct PortData<NR: NetworkRuntime> {
     sdo: u16,
     domain: u8,
     clock_quality: ClockQuality,
-    time_properties: TimeProperties,
+    time_properties: TimePropertiesDS,
     port_config: PortConfig,
     bmca: Bmca,
     announce_seq_id: u16,
@@ -74,10 +73,11 @@ impl<NR: NetworkRuntime> PortData<NR> {
             sdo,
             domain,
             clock_quality,
-            time_properties: TimeProperties::ArbitraryTime {
-                time_traceable: false,
-                frequency_traceable: false,
-            },
+            time_properties: TimePropertiesDS::new_arbitrary(
+                false,
+                false,
+                TimeSource::InternalOscillator,
+            ),
             port_config,
             bmca,
             announce_seq_id: 0,
@@ -580,7 +580,7 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
                 clock_quality,
             ),
             state: State::Listening,
-            announce_timeout_watch: announce_timeout_watch,
+            announce_timeout_watch,
             announce_watch,
             sync_watch,
         }
@@ -706,7 +706,7 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
         None
     }
 
-    pub fn extract_measurement(&mut self) -> Option<(Measurement, TimeProperties)> {
+    pub fn extract_measurement(&mut self) -> Option<(Measurement, TimePropertiesDS)> {
         match &mut self.state {
             State::Slave(state) => state
                 .extract_measurement()
@@ -729,12 +729,13 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
         best_global_announce_message: Option<(&AnnounceMessage, &PortIdentity)>,
         best_port_announce_message: Option<(&AnnounceMessage, &PortIdentity)>,
     ) {
-        let own_data = DefaultDS {
-            priority_1: self.portdata.port_config.priority_1,
-            clock_identity: self.portdata.identity.clock_identity,
-            clock_quality: self.portdata.clock_quality,
-            priority_2: self.portdata.port_config.priority_2,
-        };
+        let own_data = DefaultDS::new_oc(
+            self.portdata.identity.clock_identity,
+            self.portdata.port_config.priority_1,
+            self.portdata.port_config.priority_2,
+            0,
+            true,
+        );
 
         let recommended_state = Bmca::calculate_recommended_state(
             &own_data,
@@ -768,7 +769,12 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
 
 #[cfg(test)]
 mod tests {
-    use super::{IdSequencer, PortData, StateSlave};
+    use alloc::borrow::ToOwned;
+
+    use fixed::traits::ToFixed;
+
+    use crate::datastructures::common::TimeSource;
+    use crate::datastructures::datasets::time_properties::TimePropertiesDS;
     use crate::{
         bmc::bmca::Bmca,
         datastructures::{
@@ -779,7 +785,8 @@ mod tests {
         port::{Measurement, PortConfig},
         time::{Duration, Instant},
     };
-    use fixed::traits::ToFixed;
+
+    use super::{IdSequencer, PortData, StateSlave};
 
     #[test]
     fn test_measurement_flow() {
@@ -811,10 +818,11 @@ mod tests {
             },
             bmca: Bmca::new(TimeInterval(2_000_000_000u64.to_fixed()), test_id),
             clock_quality: ClockQuality::default(),
-            time_properties: crate::clock::TimeProperties::ArbitraryTime {
-                time_traceable: false,
-                frequency_traceable: false,
-            },
+            time_properties: TimePropertiesDS::new_arbitrary(
+                false,
+                false,
+                TimeSource::InternalOscillator,
+            ),
             announce_seq_id: 0,
             delay_resp_seq_id: 0,
             follow_up_seq_id: 0,
@@ -898,10 +906,11 @@ mod tests {
             },
             bmca: Bmca::new(TimeInterval(2_000_000_000u64.to_fixed()), test_id),
             clock_quality: ClockQuality::default(),
-            time_properties: crate::clock::TimeProperties::ArbitraryTime {
-                time_traceable: false,
-                frequency_traceable: false,
-            },
+            time_properties: TimePropertiesDS::new_arbitrary(
+                false,
+                false,
+                TimeSource::InternalOscillator,
+            ),
             announce_seq_id: 0,
             delay_resp_seq_id: 0,
             follow_up_seq_id: 0,
@@ -986,10 +995,11 @@ mod tests {
             },
             bmca: Bmca::new(TimeInterval(2_000_000_000u64.to_fixed()), test_id),
             clock_quality: ClockQuality::default(),
-            time_properties: crate::clock::TimeProperties::ArbitraryTime {
-                time_traceable: false,
-                frequency_traceable: false,
-            },
+            time_properties: TimePropertiesDS::new_arbitrary(
+                false,
+                false,
+                TimeSource::InternalOscillator,
+            ),
             announce_seq_id: 0,
             delay_resp_seq_id: 0,
             follow_up_seq_id: 0,
@@ -1091,10 +1101,11 @@ mod tests {
             },
             bmca: Bmca::new(TimeInterval(2_000_000_000u64.to_fixed()), test_id),
             clock_quality: ClockQuality::default(),
-            time_properties: crate::clock::TimeProperties::ArbitraryTime {
-                time_traceable: false,
-                frequency_traceable: false,
-            },
+            time_properties: TimePropertiesDS::new_arbitrary(
+                false,
+                false,
+                TimeSource::InternalOscillator,
+            ),
             announce_seq_id: 0,
             delay_resp_seq_id: 0,
             follow_up_seq_id: 0,
