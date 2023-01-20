@@ -171,7 +171,7 @@ fn default_delay_outlier_threshold() -> f64 {
 }
 
 fn default_initial_wander() -> f64 {
-    1e-7
+    1e-8
 }
 
 fn default_initial_frequency_uncertainty() -> f64 {
@@ -215,5 +215,5 @@ fn default_slew_max_frequency_offset() -> f64 {
 }
 
 fn default_slew_min_duration() -> f64 {
-    1.0
+    8.0
 }
