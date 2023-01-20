@@ -136,15 +136,6 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
 
             let freq_delta = combined.estimate.entry(1) - self.desired_freq;
             let freq_uncertainty = combined.uncertainty.entry(1, 1).sqrt();
-            if freq_delta.abs() > freq_uncertainty * self.algo_config.steer_frequency_threshold {
-                self.steer_frequency(
-                    freq_delta
-                        - freq_uncertainty
-                            * self.algo_config.steer_frequency_leftover
-                            * freq_delta.signum(),
-                );
-            }
-
             let offset_delta = combined.estimate.entry(0);
             let offset_uncertainty = combined.uncertainty.entry(0, 0).sqrt();
             let next_update = if self.desired_freq == 0.0
@@ -155,7 +146,18 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
                         - offset_uncertainty
                             * self.algo_config.steer_offset_leftover
                             * offset_delta.signum(),
+                    freq_delta,
                 )
+            } else if freq_delta.abs()
+                > freq_uncertainty * self.algo_config.steer_frequency_threshold
+            {
+                self.steer_frequency(
+                    freq_delta
+                        - freq_uncertainty
+                            * self.algo_config.steer_frequency_leftover
+                            * freq_delta.signum(),
+                );
+                None
             } else {
                 None
             };
@@ -212,7 +214,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
         }
     }
 
-    fn steer_offset(&mut self, change: f64) -> Option<NtpTimestamp> {
+    fn steer_offset(&mut self, change: f64, freq_delta: f64) -> Option<NtpTimestamp> {
         self.check_offset_steer(change);
         if change.abs() > self.algo_config.jump_threshold {
             // jump
@@ -230,15 +232,20 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
                 .algo_config
                 .slew_max_frequency_offset
                 .min(change.abs() / self.algo_config.slew_min_duration);
-            self.desired_freq = -freq * change.signum();
             let duration = NtpDuration::from_seconds(change.abs() / freq);
             info!(
                 "Slewing by {}ms over {}s",
                 change * 1e3,
                 duration.to_seconds()
             );
-            Some(self.steer_frequency(-self.desired_freq) + duration)
+            Some(self.change_desired_frequency(-freq * change.signum(), freq_delta) + duration)
         }
+    }
+
+    fn change_desired_frequency(&mut self, new_freq: f64, freq_delta: f64) -> NtpTimestamp {
+        let change = self.desired_freq - new_freq + freq_delta;
+        self.desired_freq = new_freq;
+        self.steer_frequency(change)
     }
 
     fn steer_frequency(&mut self, change: f64) -> NtpTimestamp {
@@ -336,8 +343,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
 
     fn time_update(&mut self) -> StateUpdate<PeerID> {
         // End slew
-        self.steer_frequency(self.desired_freq);
-        self.desired_freq = 0.0;
+        self.change_desired_frequency(0.0, 0.0);
         StateUpdate::default()
     }
 
