@@ -22,7 +22,7 @@ pub enum Error {
 pub struct LinuxClock {
     clock: RawLinuxClock,
     next_watch_id: u32,
-    alarm_sender: mpsc::Sender<(<<Self as Clock>::W as Watch>::WatchId, Instant, bool)>,
+    alarm_sender: mpsc::Sender<(<<Self as Clock>::Watch as Watch>::WatchId, Instant, bool)>,
 }
 
 impl LinuxClock {
@@ -44,8 +44,8 @@ impl LinuxClock {
 }
 
 impl Clock for LinuxClock {
-    type E = Error;
-    type W = LinuxWatch;
+    type Error = Error;
+    type Watch = LinuxWatch;
 
     fn now(&self) -> Instant {
         self.clock.get_time().unwrap()
@@ -55,7 +55,7 @@ impl Clock for LinuxClock {
         self.clock.quality()
     }
 
-    fn get_watch(&mut self) -> Self::W {
+    fn get_watch(&mut self) -> Self::Watch {
         let watch_id = self.next_watch_id;
         self.next_watch_id += 1;
 
@@ -71,7 +71,7 @@ impl Clock for LinuxClock {
         time_offset: Duration,
         frequency_multiplier: f64,
         time_properties: TimePropertiesDS,
-    ) -> Result<bool, Self::E> {
+    ) -> Result<bool, Self::Error> {
         if time_properties.is_ptp() {
             self.clock
                 .set_leap_seconds(time_properties.leap61(), time_properties.leap59())

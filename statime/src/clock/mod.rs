@@ -8,8 +8,8 @@ use crate::{
 
 /// Clock type for use in the PTP stack
 pub trait Clock {
-    type E: core::fmt::Debug;
-    type W: Watch;
+    type Error: core::fmt::Debug;
+    type Watch: Watch;
 
     /// Get the current time of the clock
     fn now(&self) -> Instant;
@@ -18,7 +18,7 @@ pub trait Clock {
     fn quality(&self) -> ClockQuality;
 
     /// Create a watch with which the time can be read and an alarm can be set
-    fn get_watch(&mut self) -> Self::W;
+    fn get_watch(&mut self) -> Self::Watch;
 
     /// Adjust the clock with the given time offset and frequency multiplier.
     /// The adjustment is based on the given time properties.
@@ -30,7 +30,7 @@ pub trait Clock {
         time_offset: Duration,
         frequency_multiplier: f64,
         time_properties: TimePropertiesDS,
-    ) -> Result<bool, Self::E>;
+    ) -> Result<bool, Self::Error>;
 }
 
 /// A watch can tell you the time and set an alarm.

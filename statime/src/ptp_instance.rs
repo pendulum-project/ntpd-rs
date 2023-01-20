@@ -14,9 +14,9 @@ use crate::{
 /// The instance doesn't run on its own, but requires the user to invoke the `handle_*` methods whenever required.
 pub struct PtpInstance<P, C: Clock, F> {
     default_ds: DefaultDS,
-    port: Port<P, C::W>,
+    port: Port<P, C::Watch>,
     clock: C,
-    bmca_watch: C::W,
+    bmca_watch: C::Watch,
     filter: F,
 }
 
@@ -93,7 +93,7 @@ impl<P: NetworkPort, C: Clock, F: Filter> PtpInstance<P, C, F> {
     /// When a watch alarm goes off, this function must be called with the id of the watch.
     /// There is no strict timing requirement, but it should not be called before the alarm time and should not be called
     /// more than 10ms after the alarm time.
-    pub fn handle_alarm(&mut self, id: <<C as Clock>::W as Watch>::WatchId) {
+    pub fn handle_alarm(&mut self, id: <<C as Clock>::Watch as Watch>::WatchId) {
         if id == self.bmca_watch.id() {
             // The bmca watch triggered, we must run the bmca
             // But first set a new alarm
