@@ -446,7 +446,7 @@ impl State {
 
                     // Restart announce receipt timeout timer
                     announce_timeout_watch
-                        .set_alarm(Duration::from_log_interval(announce_receipt_timeout));
+                        .set_alarm(Duration::from_log_interval(announce_receipt_timeout * log_announce_interval));
 
                     log::info!(
                         "New state for port: Listening -> Slave. Remote master: {:?}",
@@ -474,7 +474,7 @@ impl State {
 
                     // Restart announce receipt timeout timer
                     announce_timeout_watch
-                        .set_alarm(Duration::from_log_interval(announce_receipt_timeout));
+                        .set_alarm(Duration::from_log_interval(announce_receipt_timeout * log_announce_interval));
 
                     log::info!("New state for port: Master -> Slave");
                 }
@@ -535,7 +535,7 @@ impl State {
 
                     // Restart announce receipt timeout timer
                     announce_timeout_watch
-                        .set_alarm(Duration::from_log_interval(announce_receipt_timeout));
+                        .set_alarm(Duration::from_log_interval(announce_receipt_timeout * log_announce_interval));
 
                     log::info!("New state for port: Listening");
                 }
@@ -693,7 +693,7 @@ impl<NR: NetworkRuntime, W: Watch> Port<NR, W> {
                 // When an announce message is received, restart announce receipt timeout timer
                 self.announce_timeout_watch
                     .set_alarm(Duration::from_log_interval(
-                        self.portdata.port_config.announce_receipt_timeout,
+                        self.portdata.port_config.announce_receipt_timeout * self.portdata.port_config.log_announce_interval
                     ));
             }
             _ => {}

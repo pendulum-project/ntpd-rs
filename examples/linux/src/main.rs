@@ -41,11 +41,12 @@ struct Args {
     #[clap(long, default_value_t = 255)]
     priority_2: u8,
 
-    /// Log value of interval expected between announce messages
+    /// Log value of interval expected between announce messages, see: 7.7.2.2
     /// Default init value is 1, see: A.9.4.2
     #[clap(long, default_value_t = 1)]
     log_announce_interval: i8,
 
+    /// Time interval between Sync messages, see: 7.7.2.3
     /// Default init value is 0, see: A.9.4.2
     #[clap(long, default_value_t = 0)]
     log_sync_interval: i8,
@@ -78,7 +79,6 @@ fn setup_logger(level: log::LevelFilter) -> Result<(), fern::InitError> {
 
 fn main() {
     let args = Args::parse();
-
     setup_logger(args.loglevel).expect("Could not setup logging");
     let (tx, rx) = mpsc::channel();
     let network_runtime = LinuxRuntime::new(tx, args.hardware_clock.is_some());
