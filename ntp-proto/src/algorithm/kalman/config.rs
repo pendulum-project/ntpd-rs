@@ -3,92 +3,92 @@ use serde::Deserialize;
 #[derive(Debug, Copy, Clone, Deserialize)]
 pub struct AlgorithmConfig {
     /// Probability bound below which we start moving towards decreasing
-    /// our precision estimate.
+    /// our precision estimate. (probability, 0-1)
     #[serde(default = "default_precision_low_probability")]
     pub precision_low_probability: f64,
     /// Probability bound above which we start moving towards increasing
-    /// our precision estimate
+    /// our precision estimate. (probability, 0-1)
     #[serde(default = "default_precision_high_probability")]
     pub precision_high_probability: f64,
-    /// Ammount of histeresis in changeing the precision estimate
+    /// Ammount of histeresis in changeing the precision estimate. (count, 1+)
     #[serde(default = "default_precision_histeresis")]
     pub precision_histeresis: i32,
     /// Lower bound on the ammount of effect our precision estimate
     /// has on the total noise estimate before we allow decreasing
-    /// of the precision estimate
+    /// of the precision estimate. (weight, 0-1)
     #[serde(default = "default_precision_min_weight")]
     pub precision_min_weight: f64,
 
     /// Ammount which a measurement contributes to the state, below
-    /// which we start increasing the poll interval
+    /// which we start increasing the poll interval. (weight, 0-1)
     #[serde(default = "default_poll_low_weight")]
     pub poll_low_weight: f64,
     /// Ammount which a measurement contributes to the state, above
-    /// which we start decreasing the poll interval
+    /// which we start decreasing the poll interval. (weight, 0-1)
     #[serde(default = "default_poll_high_weight")]
     pub poll_high_weight: f64,
-    /// Ammount of histeresis in changeing the poll interval
+    /// Ammount of histeresis in changeing the poll interval (count, 1+)
     #[serde(default = "default_poll_histeresis")]
     pub poll_histeresis: i32,
     /// Probability threshold for when a measurement is considered a
     /// significant enough outlier that we decide something weird is
-    /// going on and we need to do more measurements.
+    /// going on and we need to do more measurements. (probability, 0-1)
     #[serde(default = "default_poll_jump_threshold")]
     pub poll_jump_threshold: f64,
 
     /// Threshold (in number of standard deviations) above which
     /// measurements with a significantly larger network delay
-    /// are rejected.
+    /// are rejected. (standard deviations, 0+)
     #[serde(default = "default_delay_outlier_threshold")]
     pub delay_outlier_threshold: f64,
 
     /// Initial estimate of the clock wander of the combination
-    /// of our local clock and that of the peer
+    /// of our local clock and that of the peer. (s/s^2)
     #[serde(default = "default_initial_wander")]
     pub initial_wander: f64,
     /// Initail uncertainty of the frequency difference between
-    /// our clock and that of the peer.
+    /// our clock and that of the peer. (s/s)
     #[serde(default = "default_initial_frequency_uncertainty")]
     pub initial_frequency_uncertainty: f64,
 
     /// Maximum peer uncertainty before we start disregarding it
     /// Note that this is combined uncertainty due to noise and
-    /// possible assymetry error (see also weights below)
+    /// possible assymetry error (see also weights below). (seconds)
     #[serde(default = "default_max_peer_uncertainty")]
     pub max_peer_uncertainty: f64,
     /// Weight of statistical uncertainty when constructing
-    /// overlap ranges
+    /// overlap ranges. (standard deviations, 0+)
     #[serde(default = "default_range_statistical_weight")]
     pub range_statistical_weight: f64,
     /// Weight of delay uncertainty when constructing overlap
-    /// ranges
+    /// ranges. (weight, 0-1)
     #[serde(default = "default_range_delay_weight")]
     pub range_delay_weight: f64,
 
     /// How far from 0 (in multiples of the uncertainty) should
-    /// the offset be before we correct
+    /// the offset be before we correct. (standard deviations, 0+)
     #[serde(default = "default_steer_offset_threshold")]
     pub steer_offset_threshold: f64,
     /// How many standard deviations do we leave after offset
-    /// correction?
+    /// correction? (standard deviations, 0+)
     #[serde(default = "default_steer_offset_leftover")]
     pub steer_offset_leftover: f64,
     /// How far from 0 (in multiples of the uncertainty) should
-    /// the frequency estimate be before we correct
+    /// the frequency estimate be before we correct. (standard deviations, 0+)
     #[serde(default = "default_steer_frequency_threshold")]
     pub steer_frequency_threshold: f64,
     /// How many standard deviations do we leave after frequency
-    /// correction?
+    /// correction? (standard deviations, 0+)
     #[serde(default = "default_steer_frequency_leftover")]
     pub steer_frequency_leftover: f64,
     /// From what offset should we jump the clock instead of
-    /// trying to adjust gradually?
+    /// trying to adjust gradually? (seconds, 0+)
     #[serde(default = "default_jump_threshold")]
     pub jump_threshold: f64,
-    /// What is the maximum frequency offset during a slew (in s/s)
+    /// What is the maximum frequency offset during a slew (s/s)
     #[serde(default = "default_slew_max_frequency_offset")]
     pub slew_max_frequency_offset: f64,
-    /// What is the minimum duration of a slew (in s)
+    /// What is the minimum duration of a slew (s)
     #[serde(default = "default_slew_min_duration")]
     pub slew_min_duration: f64,
 
