@@ -942,7 +942,7 @@ mod test {
             ) as &[u8]))
             .unwrap()
             .into_iter()
-            .map(|v| rustls::Certificate(v))
+            .map(rustls::Certificate)
             .collect();
         let key_der = rustls::PrivateKey(
             rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(include_bytes!(

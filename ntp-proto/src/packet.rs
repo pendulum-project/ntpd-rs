@@ -1679,7 +1679,7 @@ mod tests {
                     assert_eq!(cookie_length, cookie.len() as u16);
                     nplaceholders += 1;
                 }
-                _ => assert!(false),
+                _ => unreachable!(),
             }
         }
         assert!(have_cookie);
@@ -1715,7 +1715,7 @@ mod tests {
                     assert_eq!(cookie_length, cookie.len() as u16);
                     nplaceholders += 1;
                 }
-                _ => assert!(false),
+                _ => unreachable!(),
             }
         }
         assert!(have_cookie);
