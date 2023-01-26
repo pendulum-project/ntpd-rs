@@ -43,6 +43,8 @@ where `<INTERFACE>` is the netwerk interface you want ptpd to use. Here `-n` dis
 
 # Support our work
 
-The first phase of our project is kindly support by the [NLnet Foundation](https://nlnet.nl/project/PTP-Rust/).
+The development of Statime is kindly supported by the [NLnet Foundation](https://nlnet.nl).
+
+[SIDN Fonds](https://www.sidnfonds.nl/excerpt) is supporting us with a grant to develop clock devices running Statime and ntpd-rs, in collaboration with SIDN Labs' [TimeNL](https://www.sidnlabs.nl/en/news-and-blogs/timenl-comes-of-age).
 
 We seek involvement and/or sponsoring of interested parties, see the announcement [here](https://twitter.com/tweedegolfbv/status/1504439532971827208).
