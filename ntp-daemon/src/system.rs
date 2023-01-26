@@ -911,7 +911,8 @@ mod tests {
                 &mut wait,
                 &mut wait_enabled,
             )
-            .await.unwrap();
+            .await
+            .unwrap();
         assert_eq!(
             system
                 .peers
@@ -940,7 +941,8 @@ mod tests {
                 &mut wait,
                 &mut wait_enabled,
             )
-            .await.unwrap();
+            .await
+            .unwrap();
         assert_eq!(
             system
                 .peers
@@ -959,7 +961,8 @@ mod tests {
                 &mut wait,
                 &mut wait_enabled,
             )
-            .await.unwrap();
+            .await
+            .unwrap();
         assert_eq!(
             system
                 .peers
@@ -978,7 +981,8 @@ mod tests {
                 &mut wait,
                 &mut wait_enabled,
             )
-            .await.unwrap();
+            .await
+            .unwrap();
         assert_eq!(
             system
                 .peers
@@ -1021,7 +1025,8 @@ mod tests {
                 &mut wait,
                 &mut wait_enabled,
             )
-            .await.unwrap();
+            .await
+            .unwrap();
 
         for _ in 0..1 {
             let task = system.spawn_task_rx.recv().await.unwrap();
@@ -1067,7 +1072,8 @@ mod tests {
                 &mut wait,
                 &mut wait_enabled,
             )
-            .await.unwrap();
+            .await
+            .unwrap();
 
         for _ in 0..1 {
             let task = system.spawn_task_rx.recv().await.unwrap();
@@ -1116,7 +1122,8 @@ mod tests {
                 &mut wait,
                 &mut wait_enabled,
             )
-            .await.unwrap();
+            .await
+            .unwrap();
 
         let task = system.spawn_task_rx.recv().await.unwrap();
         handle_spawn_no_nts(&mut system, task.peer_address, task.address);

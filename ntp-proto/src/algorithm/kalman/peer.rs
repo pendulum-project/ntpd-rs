@@ -1,3 +1,68 @@
+/// This module implements a kalman filter to filter the measurements
+/// provided by the peers.
+///
+/// The filter tracks the time difference between the local and remote
+/// timescales. For ease of implementation, it actually is programmed
+/// mostly as if the local timescale is absolute truth, and the remote
+/// timescale is the one that is estimated. The filter state is kept at
+/// a local timestamp t, and progressed in time as needed for processing
+/// measurements and producing estimation outputs.
+///
+/// The state is a vector (D, w) where
+///  - d is the offset between the remote and local timescales
+///  - w is (in seconds per second) the frequency difference.
+///
+/// For process noise, we assume this is fully resultant from frequency
+/// drift between the local and remote timescale, and that this frequency
+/// drift is assumed to be the result from a (limit of) a random walk
+/// process (wiener process). Under this assumption, a timechange from t1
+/// to t2 has a state propagation matrix
+/// 1 (t2-t1)
+/// 0    0
+/// and a noise matrix given by
+/// v*(t2-t1)^3/3 v*(t2-t1)^2/2
+/// v*(t2-t1)^2/2   v*(t2-t1)
+/// where v is a constant describing how much the frequency drifts per
+/// unit of time.
+///
+/// This modules input consists of measurements containing:
+///  - the time of the measurement tm
+///  - the measured offset d
+///  - the measured transmission delay r
+/// On these, we assume that
+///  - there is no impact from frequency differences on r
+///  - individual measurements are independent
+///
+/// This information bare is not enough to feed the kalman filter. For
+/// this, two further pieces of information are needed: a measurement
+/// related to the frequency difference. Although mathematically not
+/// entirely sound, we construct the frequency measurement also using
+/// the previous measurement (which we will denote with tp and dp).
+///
+/// The observation is then the vector (tm, tm-tp), and the observation
+/// matrix is given by
+/// 1   0
+/// 0 tm-tp
+///
+/// To estimate the measurement noise, the variance s of the tranmission
+/// delays r is used. Some straight-forward math shows that given s, the
+/// measurement noise matrix is (assuming independence between dp and d)
+/// s/4 s/4
+/// s/4 s/2
+///
+/// This setup leaves two major issues:
+///  - How often do we want measurements (what is the desired polling interval)
+///  - What is v
+///
+/// For the polling interval, this is changed dynamically such that
+/// approximately each measurement is about halved before contributing to
+/// the state (see below).
+///
+/// The value for v is determined by observing how well the distribution
+/// of measurement errors matches up with what we would statistically expect.
+/// If they are often too small, v is quartered, and if they are often too
+/// large, v is quadrupled (note, this corresponds with doubling/halving
+/// the more intuitive standard deviation).
 use tracing::{debug, info, trace};
 
 use crate::{
@@ -19,17 +84,17 @@ struct RttBuf {
 
 impl RttBuf {
     fn mean(&self) -> f64 {
-        self.data.iter().sum::<f64>() / 8.
+        self.data.iter().sum::<f64>() / (self.data.len() as f64)
     }
 
     fn var(&self) -> f64 {
         let mean = self.mean();
-        self.data.iter().map(|v| sqr(v - mean)).sum::<f64>() / 7.
+        self.data.iter().map(|v| sqr(v - mean)).sum::<f64>() / ((self.data.len() - 1) as f64)
     }
 
     fn update(&mut self, rtt: f64) {
         self.data[self.next_idx] = rtt;
-        self.next_idx = (self.next_idx + 1) % 8;
+        self.next_idx = (self.next_idx + 1) % self.data.len();
     }
 }
 
@@ -285,6 +350,7 @@ impl PeerFilter {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 enum PeerStateInner {
     Initial(InitialPeerFilter),
     Stable(PeerFilter),

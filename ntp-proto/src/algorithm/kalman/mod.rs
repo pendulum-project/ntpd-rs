@@ -65,7 +65,6 @@ pub struct KalmanClockController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> 
     clock: C,
     config: SystemConfig,
     algo_config: AlgorithmConfig,
-    ignore_before: NtpTimestamp,
     freq_offset: f64,
     timedata: TimeSnapshot,
     desired_freq: f64,
@@ -80,10 +79,6 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
         measurement: Measurement,
         packet: NtpPacket<'static>,
     ) -> bool {
-        if measurement.localtime - self.ignore_before < NtpDuration::ZERO {
-            return false;
-        }
-
         self.peers.get_mut(&id).map(|state| {
             state
                 .0
@@ -141,6 +136,11 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
             let next_update = if self.desired_freq == 0.0
                 && offset_delta.abs() > offset_uncertainty * self.algo_config.steer_offset_threshold
             {
+                // Note: because of threshold effects, offset_delta is likely an extreme estimate
+                // at this point. Hence we only correct it partially in order to avoid
+                // overcorrecting.
+                // The same does not apply to freq_delta, so if we start slewing
+                // it can be fully corrected without qualms.
                 self.steer_offset(
                     offset_delta
                         - offset_uncertainty
@@ -151,6 +151,9 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
             } else if freq_delta.abs()
                 > freq_uncertainty * self.algo_config.steer_frequency_threshold
             {
+                // Note: because of threshold effects, freq_delta is likely an extreme estimate
+                // at this point. Hence we only correct it partially in order to avoid
+                // overcorrecting.
                 self.steer_frequency(
                     freq_delta
                         - freq_uncertainty
@@ -292,7 +295,6 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
 
         KalmanClockController {
             peers: HashMap::new(),
-            ignore_before: clock.now().unwrap(),
             clock,
             config,
             algo_config,
