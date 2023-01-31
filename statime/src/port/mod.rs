@@ -29,7 +29,7 @@ pub struct Port<P, W> {
     delay_resp_seq_id: u16,
 }
 
-impl<P: NetworkPort, W: Watch> Port<P, W> {
+impl<P, W> Port<P, W> {
     pub fn new<NR>(
         port_ds: PortDS,
         runtime: &mut NR,
@@ -72,7 +72,9 @@ impl<P: NetworkPort, W: Watch> Port<P, W> {
             delay_resp_seq_id: 0,
         }
     }
+}
 
+impl<P: NetworkPort, W: Watch> Port<P, W> {
     pub fn handle_alarm(&mut self, id: W::WatchId, current_time: Instant, default_ds: &DefaultDS) {
         // When the announce timout expires, it means there
         // have been no announce messages in a while, so we

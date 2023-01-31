@@ -97,7 +97,7 @@ fn main() {
     let time_properties_ds =
         TimePropertiesDS::new_arbitrary(false, false, TimeSource::InternalOscillator);
 
-    let mut instance = PtpInstance::new::<LinuxRuntime>(
+    let mut instance = PtpInstance::new(
         default_ds,
         time_properties_ds,
         clock,

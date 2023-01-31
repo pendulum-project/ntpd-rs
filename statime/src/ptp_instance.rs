@@ -19,32 +19,29 @@ const MAX_PORTS: usize = 20;
 /// It is the main instance of the running protocol.
 ///
 /// The instance doesn't run on its own, but requires the user to invoke the `handle_*` methods whenever required.
-pub struct PtpInstance<P, C: Clock, F> {
+pub struct PtpInstance<P, C, W, F> {
     default_ds: DefaultDS,
     current_ds: Option<CurrentDS>,
     parent_ds: Option<ParentDS>,
     time_properties_ds: TimePropertiesDS,
-    ports: ArrayVec<Port<P, C::Watch>, MAX_PORTS>,
+    ports: ArrayVec<Port<P, W>, MAX_PORTS>,
     local_clock: C,
     filter: F,
 }
 
-impl<P: NetworkPort, C: Clock, F: Filter> PtpInstance<P, C, F> {
+impl<P, C, W, F> PtpInstance<P, C, W, F> {
     /// Create a new instance
     ///
     /// - `config`: The configuration of the ptp instance
     /// - `runtime`: The network runtime with which sockets can be opened
     /// - `clock`: The clock that will be adjusted and provides the watches
     /// - `filter`: A filter for time measurements because those are always a bit wrong and need some processing
-    pub fn new<NR>(
+    pub fn new(
         default_ds: DefaultDS,
         time_properties_ds: TimePropertiesDS,
         local_clock: C,
         filter: F,
-    ) -> Self
-    where
-        NR: NetworkRuntime<PortType = P>,
-    {
+    ) -> Self {
         PtpInstance {
             default_ds,
             current_ds: None,
@@ -55,7 +52,9 @@ impl<P: NetworkPort, C: Clock, F: Filter> PtpInstance<P, C, F> {
             filter,
         }
     }
+}
 
+impl<P, C: Clock, F> PtpInstance<P, C, C::Watch, F> {
     pub fn with_port<NR>(
         mut self,
         log_min_delay_req_interval: i8,
@@ -115,7 +114,9 @@ impl<P: NetworkPort, C: Clock, F: Filter> PtpInstance<P, C, F> {
         self.ports.push(port);
         self
     }
+}
 
+impl<P: NetworkPort, C: Clock, W: Watch, F: Filter> PtpInstance<P, C, W, F> {
     /// Let the instance handle a received network packet.
     ///
     /// This should be called for any and all packets that were received on the opened sockets of the network runtime.
@@ -132,7 +133,9 @@ impl<P: NetworkPort, C: Clock, F: Filter> PtpInstance<P, C, F> {
             }
         }
     }
+}
 
+impl<P: NetworkPort, C, W: Watch, F> PtpInstance<P, C, W, F> {
     /// Let the instance know what the TX or send timestamp was of a packet that was recently sent.
     ///
     /// When sending a time critical message we need to know exactly when it was sent to do all of the arithmetic.
@@ -141,7 +144,9 @@ impl<P: NetworkPort, C: Clock, F: Filter> PtpInstance<P, C, F> {
             port.handle_send_timestamp(id, timestamp);
         }
     }
+}
 
+impl<P: NetworkPort, C: Clock, F> PtpInstance<P, C, C::Watch, F> {
     /// When a watch alarm goes off, this function must be called with the id of the watch.
     /// There is no strict timing requirement, but it should not be called before the alarm time and should not be called
     /// more than 10ms after the alarm time.
