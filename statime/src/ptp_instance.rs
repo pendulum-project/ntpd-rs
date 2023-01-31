@@ -50,9 +50,10 @@ impl<P: NetworkPort, C: Clock, F: Filter> PtpInstance<P, C, F> {
         // Set the announce receipt timeout
         // TODO: what to do when we have multiple ports?
         let mut announce_timeout_watch = clock.get_watch();
-        // TODO: Check
-        announce_timeout_watch
-            .set_alarm(Duration::from_log_interval(port_ds.log_announce_interval));
+        announce_timeout_watch.set_alarm(Duration::from_log_interval(
+            port_ds.announce_receipt_timeout as i8 * port_ds.log_announce_interval,
+        ));
+
         let announce_watch = clock.get_watch();
         let sync_watch = clock.get_watch();
 
