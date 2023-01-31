@@ -2,8 +2,8 @@ use std::sync::mpsc;
 
 use clap::{AppSettings, Parser};
 
-use statime::datastructures::common::PortIdentity;
-use statime::datastructures::datasets::{DefaultDS, DelayMechanism, PortDS};
+use statime::datastructures::common::{PortIdentity, TimeSource};
+use statime::datastructures::datasets::{DefaultDS, DelayMechanism, PortDS, TimePropertiesDS};
 use statime::{
     datastructures::{common::ClockIdentity, messages::Message},
     filters::basic::BasicFilter,
@@ -94,6 +94,8 @@ fn main() {
     let clock_identity = ClockIdentity(get_clock_id().expect("Could not get clock identity"));
 
     let default_ds = DefaultDS::new_oc(clock_identity, 128, 128, args.domain, false, args.sdo);
+    let time_properties_ds =
+        TimePropertiesDS::new_arbitrary(false, false, TimeSource::InternalOscillator);
     let port_ds = PortDS::new(
         PortIdentity {
             clock_identity,
@@ -111,6 +113,7 @@ fn main() {
 
     let mut instance = PtpInstance::new(
         default_ds,
+        time_properties_ds,
         port_ds,
         args.interface,
         network_runtime,

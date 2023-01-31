@@ -1,4 +1,4 @@
-use crate::datastructures::datasets::{DefaultDS, PortDS};
+use crate::datastructures::datasets::{CurrentDS, DefaultDS, ParentDS, PortDS, TimePropertiesDS};
 use crate::network::NetworkPort;
 use crate::{
     clock::{Clock, Watch},
@@ -14,6 +14,10 @@ use crate::{
 /// The instance doesn't run on its own, but requires the user to invoke the `handle_*` methods whenever required.
 pub struct PtpInstance<P, C: Clock, F> {
     default_ds: DefaultDS,
+    current_ds: Option<CurrentDS>,
+    parent_ds: Option<ParentDS>,
+    time_properties_ds: TimePropertiesDS,
+
     port: Port<P, C::Watch>,
     clock: C,
     bmca_watch: C::Watch,
@@ -29,6 +33,7 @@ impl<P: NetworkPort, C: Clock, F: Filter> PtpInstance<P, C, F> {
     /// - `filter`: A filter for time measurements because those are always a bit wrong and need some processing
     pub fn new<NR>(
         default_ds: DefaultDS,
+        time_properties_ds: TimePropertiesDS,
         port_ds: PortDS,
         interface: NR::InterfaceDescriptor,
         runtime: NR,
@@ -53,13 +58,13 @@ impl<P: NetworkPort, C: Clock, F: Filter> PtpInstance<P, C, F> {
 
         PtpInstance {
             default_ds,
+            current_ds: None,
+            parent_ds: None,
+            time_properties_ds,
             port: Port::new(
-                default_ds.sdo_id,
-                default_ds.domain_number,
                 port_ds,
                 runtime,
                 interface,
-                clock.quality(),
                 announce_timeout_watch,
                 announce_watch,
                 sync_watch,
@@ -74,11 +79,12 @@ impl<P: NetworkPort, C: Clock, F: Filter> PtpInstance<P, C, F> {
     ///
     /// This should be called for any and all packets that were received on the opened sockets of the network runtime.
     pub fn handle_network(&mut self, packet: NetworkPacket) {
-        self.port.handle_network(packet, self.bmca_watch.now());
-        if let Some((data, time_properties)) = self.port.extract_measurement() {
+        self.port
+            .handle_network(packet, self.bmca_watch.now(), &self.default_ds);
+        if let Some(data) = self.port.extract_measurement() {
             let (offset, freq_corr) = self.filter.absorb(data);
             self.clock
-                .adjust(offset, freq_corr, time_properties)
+                .adjust(offset, freq_corr, &self.time_properties_ds)
                 .expect("Unexpected error adjusting clock");
         }
     }
@@ -111,8 +117,12 @@ impl<P: NetworkPort, C: Clock, F: Filter> PtpInstance<P, C, F> {
                 .map(|(message, identity)| (message, identity));
 
             // Run the state decision
-            self.port
-                .perform_state_decision(erbest, erbest, &self.default_ds);
+            self.port.perform_state_decision(
+                erbest,
+                erbest,
+                &self.default_ds,
+                &mut self.time_properties_ds,
+            );
         } else {
             // TODO: what to do when we have multiple ports?
             let current_time = self.clock.now();

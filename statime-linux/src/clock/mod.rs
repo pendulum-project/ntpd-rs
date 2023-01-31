@@ -70,7 +70,7 @@ impl Clock for LinuxClock {
         &mut self,
         time_offset: Duration,
         frequency_multiplier: f64,
-        time_properties: TimePropertiesDS,
+        time_properties: &TimePropertiesDS,
     ) -> Result<bool, Self::Error> {
         if time_properties.is_ptp() {
             self.clock

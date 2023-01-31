@@ -29,7 +29,7 @@ pub trait Clock {
         &mut self,
         time_offset: Duration,
         frequency_multiplier: f64,
-        time_properties: TimePropertiesDS,
+        time_properties_ds: &TimePropertiesDS,
     ) -> Result<bool, Self::Error>;
 }
 
