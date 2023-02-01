@@ -134,14 +134,12 @@ impl Add for Matrix {
 
     fn add(self, rhs: Self) -> Self::Output {
         Matrix {
-            data: self
-                .data
-                .iter()
-                .zip(rhs.data.iter())
-                .map(|(a, b)| a + b)
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
+            data: [
+                self.data[0] + rhs.data[0],
+                self.data[1] + rhs.data[1],
+                self.data[2] + rhs.data[2],
+                self.data[3] + rhs.data[3],
+            ],
         }
     }
 }
@@ -151,14 +149,12 @@ impl Sub for Matrix {
 
     fn sub(self, rhs: Self) -> Self::Output {
         Matrix {
-            data: self
-                .data
-                .iter()
-                .zip(rhs.data.iter())
-                .map(|(a, b)| a - b)
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
+            data: [
+                self.data[0] - rhs.data[0],
+                self.data[1] - rhs.data[1],
+                self.data[2] - rhs.data[2],
+                self.data[3] - rhs.data[3],
+            ],
         }
     }
 }
@@ -168,14 +164,7 @@ impl Add for Vector {
 
     fn add(self, rhs: Self) -> Self::Output {
         Vector {
-            data: self
-                .data
-                .iter()
-                .zip(rhs.data.iter())
-                .map(|(a, b)| a + b)
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
+            data: [self.data[0] + rhs.data[0], self.data[1] + rhs.data[1]],
         }
     }
 }
@@ -185,14 +174,7 @@ impl Sub for Vector {
 
     fn sub(self, rhs: Self) -> Self::Output {
         Vector {
-            data: self
-                .data
-                .iter()
-                .zip(rhs.data.iter())
-                .map(|(a, b)| a - b)
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
+            data: [self.data[0] - rhs.data[0], self.data[1] - rhs.data[1]],
         }
     }
 }
