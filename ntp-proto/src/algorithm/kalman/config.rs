@@ -46,7 +46,7 @@ pub struct AlgorithmConfig {
     /// of our local clock and that of the peer. (s/s^2)
     #[serde(default = "default_initial_wander")]
     pub initial_wander: f64,
-    /// Initail uncertainty of the frequency difference between
+    /// Initial uncertainty of the frequency difference between
     /// our clock and that of the peer. (s/s)
     #[serde(default = "default_initial_frequency_uncertainty")]
     pub initial_frequency_uncertainty: f64,

@@ -8,8 +8,13 @@
 /// a local timestamp t, and progressed in time as needed for processing
 /// measurements and producing estimation outputs.
 ///
+/// This approach is chosen so that it is possible to line up the filters
+/// from multiple peers (this has no real meaning when using remote
+/// timescales for that), and makes sure that we control the timescale
+/// used to express the filter in.
+///
 /// The state is a vector (D, w) where
-///  - d is the offset between the remote and local timescales
+///  - D is the offset between the remote and local timescales
 ///  - w is (in seconds per second) the frequency difference.
 ///
 /// For process noise, we assume this is fully resultant from frequency
@@ -26,27 +31,31 @@
 /// unit of time.
 ///
 /// This modules input consists of measurements containing:
-///  - the time of the measurement tm
+///  - the time of the measurement t_m
 ///  - the measured offset d
 ///  - the measured transmission delay r
 /// On these, we assume that
 ///  - there is no impact from frequency differences on r
 ///  - individual measurements are independent
 ///
-/// This information bare is not enough to feed the kalman filter. For
-/// this, two further pieces of information are needed: a measurement
+/// This information on its own is not enough to feed the kalman filter.
+/// For this, a further piece of information is needed: a measurement
 /// related to the frequency difference. Although mathematically not
 /// entirely sound, we construct the frequency measurement also using
-/// the previous measurement (which we will denote with tp and dp).
+/// the previous measurement (which we will denote with t_p and D_p).
+/// It turns out this works well in practice
 ///
-/// The observation is then the vector (tm, tm-tp), and the observation
+/// The observation is then the vector (D, D-D_p), and the observation
 /// matrix is given by
 /// 1   0
-/// 0 tm-tp
+/// 0 t_m-t_p
 ///
 /// To estimate the measurement noise, the variance s of the tranmission
-/// delays r is used. Some straight-forward math shows that given s, the
-/// measurement noise matrix is (assuming independence between dp and d)
+/// delays r is used. Writing r as r1 - r2, where r1 is the time
+/// difference on the client-to-server leg and r2 the time difference on
+/// the server to client leg, we have Var(D) = Var(1/2 (r1 + r2)) = 1/4
+/// Var(r1 - r2) = 1/4 Var(r). Furthermore Var(D+Dp) = Var(D) + Var(Dp)
+/// = 1/2 Var(r) and Covar(D, D+Dp) = Covar(D, D) + Covar(D, Dp) = Var(D)
 /// s/4 s/4
 /// s/4 s/2
 ///
@@ -54,7 +63,7 @@
 ///  - How often do we want measurements (what is the desired polling interval)
 ///  - What is v
 ///
-/// For the polling interval, this is changed dynamically such that
+/// The polling interval is changed dynamically such that
 /// approximately each measurement is about halved before contributing to
 /// the state (see below).
 ///
@@ -87,7 +96,7 @@ impl RttBuf {
         self.data.iter().sum::<f64>() / (self.data.len() as f64)
     }
 
-    fn var(&self) -> f64 {
+    fn variance(&self) -> f64 {
         let mean = self.mean();
         self.data.iter().map(|v| sqr(v - mean)).sum::<f64>() / ((self.data.len() - 1) as f64)
     }
@@ -172,7 +181,7 @@ impl PeerFilter {
     /// Absorb knowledge from a measurement
     fn absorb_measurement(&mut self, measurement: Measurement) -> (f64, f64, f64) {
         // Measurement paramaters
-        let delay_variance = self.rtt_stats.var();
+        let delay_variance = self.rtt_stats.variance();
         let m_delta_t = (measurement.localtime - self.last_measurement.localtime).to_seconds();
 
         // Kalman filter update
@@ -304,7 +313,7 @@ impl PeerFilter {
         // Filter out one-time outliers (based on delay!)
         if !self.prev_was_outlier
             && (measurement.delay.to_seconds() - self.rtt_stats.mean())
-                > algo_config.delay_outlier_threshold * self.rtt_stats.var().sqrt()
+                > algo_config.delay_outlier_threshold * self.rtt_stats.variance().sqrt()
         {
             self.prev_was_outlier = true;
             self.last_iter = measurement.localtime;
@@ -382,7 +391,7 @@ impl PeerState {
                     *self = PeerState(PeerStateInner::Stable(PeerFilter {
                         state: Vector::new(filter.init_offset.mean(), 0.),
                         uncertainty: Matrix::new(
-                            filter.init_offset.var(),
+                            filter.init_offset.variance(),
                             0.,
                             0.,
                             sqr(algo_config.initial_frequency_uncertainty),

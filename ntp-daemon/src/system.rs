@@ -361,9 +361,9 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                 )
             }));
         }
-        if let Some(timesnapshot) = update.timesnapshot {
+        if let Some(time_snapshot) = update.time_snapshot {
             self.system
-                .update_timedata(timesnapshot, &self.config.system);
+                .update_timedata(time_snapshot, &self.config.system);
         }
         if let Some(timestamp) = update.next_update {
             let duration = timestamp - self.clock.now().expect("Could not get current time");
@@ -371,7 +371,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                 std::time::Duration::from_secs_f64(duration.max(NtpDuration::ZERO).to_seconds());
             wait.as_mut().reset(tokio::time::Instant::now() + duration);
         }
-        if update.used_peers.is_some() || update.timesnapshot.is_some() {
+        if update.used_peers.is_some() || update.time_snapshot.is_some() {
             // Don't care if there is no receiver.
             let _ = self.system_snapshot_sender.send(self.system);
         }

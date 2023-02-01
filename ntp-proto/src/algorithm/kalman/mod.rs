@@ -97,7 +97,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
         {
             return StateUpdate {
                 used_peers: None,
-                timesnapshot: Some(self.timedata),
+                time_snapshot: Some(self.timedata),
                 next_update: None,
             };
         }
@@ -182,14 +182,14 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
 
             StateUpdate {
                 used_peers: Some(combined.peers),
-                timesnapshot: Some(self.timedata),
+                time_snapshot: Some(self.timedata),
                 next_update,
             }
         } else {
             info!("No concensus cluster found");
             StateUpdate {
                 used_peers: None,
-                timesnapshot: Some(self.timedata),
+                time_snapshot: Some(self.timedata),
                 next_update: None,
             }
         }
@@ -337,7 +337,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
         } else {
             StateUpdate {
                 used_peers: None,
-                timesnapshot: Some(self.timedata),
+                time_snapshot: Some(self.timedata),
                 next_update: None,
             }
         }
