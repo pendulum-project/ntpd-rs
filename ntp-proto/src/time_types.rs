@@ -99,6 +99,10 @@ impl NtpTimestamp {
     }
 
     pub fn is_before(self, other: NtpTimestamp) -> bool {
+        // Around an era change, self can be near the maximum value
+        // for NtpTimestamp and other near the minimum, and that must
+        // be interpreted as self being before other (which it is due
+        // to wrapping in substraction of NtpTimestamp)
         self - other < NtpDuration::ZERO
     }
 
