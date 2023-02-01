@@ -9,7 +9,8 @@ use crate::{
 };
 
 use std::{
-    collections::HashMap, io::ErrorKind, marker::PhantomData, net::SocketAddr, pin::Pin, sync::Arc,
+    collections::HashMap, future::Future, io::ErrorKind, marker::PhantomData, net::SocketAddr,
+    pin::Pin, sync::Arc,
 };
 
 use ntp_os_clock::UnixNtpClock;
@@ -25,6 +26,49 @@ use tokio::{
 use tracing::warn;
 
 const NETWORK_WAIT_PERIOD: std::time::Duration = std::time::Duration::from_secs(1);
+
+struct SingleshotSleep<T> {
+    enabled: bool,
+    sleep: Pin<Box<T>>,
+}
+
+impl<T: Wait> SingleshotSleep<T> {
+    fn new_disabled(t: T) -> Self {
+        SingleshotSleep {
+            enabled: false,
+            sleep: Box::pin(t),
+        }
+    }
+}
+
+impl<T: Wait> Future for SingleshotSleep<T> {
+    type Output = ();
+
+    fn poll(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        let this = self.get_mut();
+        if !this.enabled {
+            return std::task::Poll::Pending;
+        }
+        match this.sleep.as_mut().poll(cx) {
+            std::task::Poll::Ready(v) => {
+                this.enabled = false;
+                std::task::Poll::Ready(v)
+            }
+            u => u,
+        }
+    }
+}
+
+impl<T: Wait> Wait for SingleshotSleep<T> {
+    fn reset(self: Pin<&mut Self>, deadline: tokio::time::Instant) {
+        let this = self.get_mut();
+        this.enabled = true;
+        this.sleep.as_mut().reset(deadline);
+    }
+}
 
 pub struct DaemonChannels {
     pub config_receiver: tokio::sync::watch::Receiver<CombinedSystemConfig>,
@@ -72,7 +116,8 @@ pub async fn spawn(
     }
 
     let handle = tokio::spawn(async move {
-        let sleep = tokio::time::sleep_until(tokio::time::Instant::now());
+        let sleep =
+            SingleshotSleep::new_disabled(tokio::time::sleep_until(tokio::time::Instant::now()));
         tokio::pin!(sleep);
         system.run(sleep).await
     });
@@ -81,7 +126,7 @@ pub async fn spawn(
 }
 
 struct System<C: NtpClock, T: Wait> {
-    _wait: PhantomData<T>,
+    _wait: PhantomData<SingleshotSleep<T>>,
     config: CombinedSystemConfig,
     system: SystemSnapshot,
 
@@ -167,11 +212,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         )
     }
 
-    async fn run(&mut self, mut wait: Pin<&mut T>) -> std::io::Result<()> {
-        //let mut snapshots = Vec::with_capacity(self.peers_rwlock.read().await.size());
-
-        let mut wait_enabled = false;
-
+    async fn run(&mut self, mut wait: Pin<&mut SingleshotSleep<T>>) -> std::io::Result<()> {
         loop {
             tokio::select! {
                 opt_msg_for_system = self.msg_for_system_rx.recv() => {
@@ -181,7 +222,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                             break
                         }
                         Some(msg_for_system) => {
-                            self.handle_peer_update(msg_for_system, &mut wait, &mut wait_enabled)
+                            self.handle_peer_update(msg_for_system, &mut wait)
                                 .await?;
                         }
                     }
@@ -197,8 +238,8 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                         }
                     }
                 }
-                () = &mut wait, if wait_enabled => {
-                    self.handle_timer(&mut wait, &mut wait_enabled);
+                () = &mut wait => {
+                    self.handle_timer(&mut wait);
                 }
                 _ = self.config_receiver.changed(), if self.config_receiver.has_changed().is_ok() => {
                     self.handle_config_update();
@@ -217,19 +258,17 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         self.config = config;
     }
 
-    fn handle_timer(&mut self, wait: &mut Pin<&mut T>, wait_enabled: &mut bool) {
+    fn handle_timer(&mut self, wait: &mut Pin<&mut SingleshotSleep<T>>) {
         tracing::debug!("Timer expired");
-        *wait_enabled = false;
         // note: local needed for borrow checker
         let update = self.controller.time_update();
-        self.handle_algorithm_state_update(update, wait, wait_enabled);
+        self.handle_algorithm_state_update(update, wait);
     }
 
     async fn handle_peer_update(
         &mut self,
         msg: MsgForSystem,
-        wait: &mut Pin<&mut T>,
-        wait_enabled: &mut bool,
+        wait: &mut Pin<&mut SingleshotSleep<T>>,
     ) -> std::io::Result<()> {
         tracing::debug!(?msg, "updating peer");
 
@@ -238,14 +277,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                 self.handle_peer_demobilize(index);
             }
             MsgForSystem::NewMeasurement(index, snapshot, measurement, packet) => {
-                self.handle_peer_measurement(
-                    index,
-                    snapshot,
-                    measurement,
-                    packet,
-                    wait,
-                    wait_enabled,
-                );
+                self.handle_peer_measurement(index, snapshot, measurement, packet, wait);
             }
             MsgForSystem::UpdatedSnapshot(index, snapshot) => {
                 self.handle_peer_snapshot(index, snapshot);
@@ -309,20 +341,18 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         snapshot: PeerSnapshot,
         measurement: ntp_proto::Measurement,
         packet: ntp_proto::NtpPacket<'static>,
-        wait: &mut Pin<&mut T>,
-        wait_enabled: &mut bool,
+        wait: &mut Pin<&mut SingleshotSleep<T>>,
     ) {
         self.handle_peer_snapshot(index, snapshot);
         // note: local needed for borrow checker
         let update = self.controller.peer_measurement(index, measurement, packet);
-        self.handle_algorithm_state_update(update, wait, wait_enabled);
+        self.handle_algorithm_state_update(update, wait);
     }
 
     fn handle_algorithm_state_update(
         &mut self,
         update: ntp_proto::StateUpdate<PeerIndex>,
-        wait: &mut Pin<&mut T>,
-        wait_enabled: &mut bool,
+        wait: &mut Pin<&mut SingleshotSleep<T>>,
     ) {
         if let Some(ref used_peers) = update.used_peers {
             self.system.update_used_peers(used_peers.iter().map(|v| {
@@ -340,7 +370,6 @@ impl<C: NtpClock, T: Wait> System<C, T> {
             let duration =
                 std::time::Duration::from_secs_f64(duration.max(NtpDuration::ZERO).to_seconds());
             wait.as_mut().reset(tokio::time::Instant::now() + duration);
-            *wait_enabled = true;
         }
         if update.used_peers.is_some() || update.timesnapshot.is_some() {
             // Don't care if there is no receiver.
@@ -869,9 +898,9 @@ mod tests {
     #[tokio::test]
     async fn test_peers() {
         let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
-        let wait = tokio::time::sleep(std::time::Duration::from_secs(0));
+        let wait =
+            SingleshotSleep::new_disabled(tokio::time::sleep(std::time::Duration::from_secs(0)));
         tokio::pin!(wait);
-        let mut wait_enabled = false;
 
         let mut indices = [PeerIndex { index: 0 }; 4];
 
@@ -909,7 +938,6 @@ mod tests {
                     NtpPacket::test(),
                 ),
                 &mut wait,
-                &mut wait_enabled,
             )
             .await
             .unwrap();
@@ -939,7 +967,6 @@ mod tests {
                     NtpPacket::test(),
                 ),
                 &mut wait,
-                &mut wait_enabled,
             )
             .await
             .unwrap();
@@ -959,7 +986,6 @@ mod tests {
             .handle_peer_update(
                 MsgForSystem::UpdatedSnapshot(indices[1], peer_snapshot()),
                 &mut wait,
-                &mut wait_enabled,
             )
             .await
             .unwrap();
@@ -976,11 +1002,7 @@ mod tests {
         );
 
         system
-            .handle_peer_update(
-                MsgForSystem::MustDemobilize(indices[1]),
-                &mut wait,
-                &mut wait_enabled,
-            )
+            .handle_peer_update(MsgForSystem::MustDemobilize(indices[1]), &mut wait)
             .await
             .unwrap();
         assert_eq!(
@@ -999,9 +1021,9 @@ mod tests {
     #[tokio::test]
     async fn single_peer_pool() {
         let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
-        let wait = tokio::time::sleep(std::time::Duration::from_secs(0));
+        let wait =
+            SingleshotSleep::new_disabled(tokio::time::sleep(std::time::Duration::from_secs(0)));
         tokio::pin!(wait);
-        let mut wait_enabled = false;
 
         let peer_address = NormalizedAddress::new_unchecked("127.0.0.2", 123);
         system.add_standard_peer(peer_address).await;
@@ -1023,7 +1045,6 @@ mod tests {
             .handle_peer_update(
                 MsgForSystem::NetworkIssue(PeerIndex { index: 1 }),
                 &mut wait,
-                &mut wait_enabled,
             )
             .await
             .unwrap();
@@ -1040,9 +1061,9 @@ mod tests {
     #[tokio::test]
     async fn max_peers_bigger_than_pool_size() {
         let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
-        let wait = tokio::time::sleep(std::time::Duration::from_secs(0));
+        let wait =
+            SingleshotSleep::new_disabled(tokio::time::sleep(std::time::Duration::from_secs(0)));
         tokio::pin!(wait);
-        let mut wait_enabled = false;
 
         let peer_address = NormalizedAddress::new_unchecked("127.0.0.5", 123);
         system.add_standard_peer(peer_address).await;
@@ -1070,7 +1091,6 @@ mod tests {
             .handle_peer_update(
                 MsgForSystem::NetworkIssue(PeerIndex { index: 1 }),
                 &mut wait,
-                &mut wait_enabled,
             )
             .await
             .unwrap();
@@ -1087,9 +1107,9 @@ mod tests {
     #[tokio::test]
     async fn simulate_pool() {
         let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
-        let wait = tokio::time::sleep(std::time::Duration::from_secs(0));
+        let wait =
+            SingleshotSleep::new_disabled(tokio::time::sleep(std::time::Duration::from_secs(0)));
         tokio::pin!(wait);
-        let mut wait_enabled = false;
 
         let peer_address = NormalizedAddress::new_unchecked("127.0.0.5", 123);
         system.add_standard_peer(peer_address).await;
@@ -1120,7 +1140,6 @@ mod tests {
             .handle_peer_update(
                 MsgForSystem::NetworkIssue(PeerIndex { index: 1 }),
                 &mut wait,
-                &mut wait_enabled,
             )
             .await
             .unwrap();
