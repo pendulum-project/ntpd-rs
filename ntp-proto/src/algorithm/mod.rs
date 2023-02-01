@@ -21,7 +21,7 @@ pub struct ObservablePeerTimedata {
 #[derive(Debug, Clone)]
 pub struct StateUpdate<PeerID: Eq + Copy + Debug> {
     // Update to the time snapshot, if any
-    pub timesnapshot: Option<TimeSnapshot>,
+    pub time_snapshot: Option<TimeSnapshot>,
     // Update to the used peers, if any
     pub used_peers: Option<Vec<PeerID>>,
     // Requested timestamp for next non-measurement update
@@ -34,7 +34,7 @@ pub struct StateUpdate<PeerID: Eq + Copy + Debug> {
 impl<PeerID: Eq + Copy + Debug> Default for StateUpdate<PeerID> {
     fn default() -> Self {
         Self {
-            timesnapshot: None,
+            time_snapshot: None,
             used_peers: None,
             next_update: None,
         }

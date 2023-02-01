@@ -133,7 +133,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> StandardClockController<C, P
 
             StateUpdate {
                 used_peers: Some(vec![clock_select.system_peer_snapshot.0]),
-                timesnapshot: Some(self.timestate),
+                time_snapshot: Some(self.timestate),
                 next_update: None,
             }
         } else {
