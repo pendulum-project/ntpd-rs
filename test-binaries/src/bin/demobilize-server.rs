@@ -12,7 +12,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     #[allow(clippy::field_reassign_with_default)] // allow the explicit stratum
     loop {
         let (len, addr) = socket.recv_from(&mut buf).await?;
-        println!("{:?} bytes received from {:?}", len, addr);
+        println!("{len:?} bytes received from {addr:?}");
 
         let parsed = match NtpPacket::deserialize(buf[0..48].try_into().unwrap(), None) {
             Ok(packet) => packet,
@@ -26,6 +26,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         let pdata = &cursor.get_ref()[..cursor.position() as usize];
         let len = socket.send(pdata).await.unwrap();
-        println!("{:?} bytes sent", len);
+        println!("{len:?} bytes sent");
     }
 }

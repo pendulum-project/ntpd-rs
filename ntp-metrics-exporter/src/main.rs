@@ -55,7 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::from_args(cli.config, vec![], vec![]).await;
 
     if let Err(ref e) = config {
-        println!("Warning: Unable to load configuration file: {}", e);
+        println!("Warning: Unable to load configuration file: {e}");
     }
 
     let config = config.unwrap_or_default();

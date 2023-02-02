@@ -23,9 +23,7 @@ pub enum PacketParsingError {
 impl Display for PacketParsingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InvalidVersion(version) => {
-                f.write_fmt(format_args!("Invalid version {}", version))
-            }
+            Self::InvalidVersion(version) => f.write_fmt(format_args!("Invalid version {version}")),
             Self::IncorrectLength => f.write_str("Incorrect packet length"),
             Self::MalformedNtsExtensionFields => f.write_str("Malformed nts extension fields"),
             Self::MalformedNonce => f.write_str("Malformed nonce (likely invalid length)"),
@@ -1440,7 +1438,7 @@ mod tests {
         assert_eq!(reference, NtpPacket::deserialize(packet, None).unwrap());
         match reference.serialize_without_encryption_vec() {
             Ok(buf) => assert_eq!(packet[..], buf[..]),
-            Err(e) => panic!("{:?}", e),
+            Err(e) => panic!("{e:?}"),
         }
 
         let packet = b"\x1B\x02\x06\xe8\x00\x00\x03\xff\x00\x00\x03\x7d\x5e\xc6\x9f\x0f\xe5\xf6\x62\x98\x7b\x61\xb9\xaf\xe5\xf6\x63\x66\x7b\x64\x99\x5d\xe5\xf6\x63\x66\x81\x40\x55\x90\xe5\xf6\x63\xa8\x76\x1d\xde\x48";
@@ -1466,7 +1464,7 @@ mod tests {
         assert_eq!(reference, NtpPacket::deserialize(packet, None).unwrap());
         match reference.serialize_without_encryption_vec() {
             Ok(buf) => assert_eq!(packet[..], buf[..]),
-            Err(e) => panic!("{:?}", e),
+            Err(e) => panic!("{e:?}"),
         }
     }
 
@@ -1495,7 +1493,7 @@ mod tests {
         assert_eq!(reference, NtpPacket::deserialize(packet, None).unwrap());
         match reference.serialize_without_encryption_vec() {
             Ok(buf) => assert_eq!(packet[..], buf[..]),
-            Err(e) => panic!("{:?}", e),
+            Err(e) => panic!("{e:?}"),
         }
     }
 

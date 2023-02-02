@@ -239,8 +239,8 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         true
     }
 
-    fn accept_packet<'a, 'b>(
-        &'b mut self,
+    fn accept_packet<'a>(
+        &mut self,
         rate_limiting_cutoff: Duration,
         result: Result<(usize, SocketAddr, Option<NtpTimestamp>), std::io::Error>,
         buf: &'a [u8; 48],
@@ -307,8 +307,8 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         }
     }
 
-    fn accept_data<'a, 'b>(
-        &'b self,
+    fn accept_data<'a>(
+        &self,
         buf: &'a [u8; 48],
         peer_addr: SocketAddr,
         recv_timestamp: NtpTimestamp,

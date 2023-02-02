@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::from_args(cli.config, vec![], vec![]).await;
 
     if let Err(ref e) = config {
-        println!("Warning: Unable to load configuration file: {}", e);
+        println!("Warning: Unable to load configuration file: {e}");
     }
 
     let config = config.unwrap_or_default();
@@ -92,7 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     0
                 }
                 Err(e) => {
-                    eprintln!("Failed to read state from observation socket: {}", e);
+                    eprintln!("Failed to read state from observation socket: {e}");
 
                     1
                 }
@@ -108,7 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     0
                 }
                 Err(e) => {
-                    eprintln!("Failed to read state from observation socket: {}", e);
+                    eprintln!("Failed to read state from observation socket: {e}");
 
                     1
                 }
@@ -127,7 +127,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut buf = vec![];
             prometheus_client::encoding::text::encode(&mut buf, &registry)?;
             let result = String::from_utf8(buf)?;
-            println!("{}", result);
+            println!("{result}");
 
             0
         }
@@ -135,7 +135,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             match ntp_daemon::sockets::write_json(&mut stream, &config_update).await {
                 Ok(_) => 0,
                 Err(e) => {
-                    eprintln!("Failed to update configuration: {}", e);
+                    eprintln!("Failed to update configuration: {e}");
 
                     1
                 }
