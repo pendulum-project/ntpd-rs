@@ -7,6 +7,14 @@ enum BoundType {
     End,
 }
 
+// Select a maximum overlapping set of candidates. Note that here we define
+// overlapping to mean that any part of their confidence intervals overlaps, instead
+// of the NTP convention that all centers need to be within each others confidence
+// intervals.
+// The advantage of doing this is that the algorithm becomes a lot simpler, and it
+// is also statistically more sound. Any difference (larger set of accepted peers)
+// can be compensated for if desired by setting tighter bounds on the weights
+// determining the confidence interval.
 pub(super) fn select<Index: Copy>(
     config: &SystemConfig,
     algo_config: &AlgorithmConfig,
@@ -87,6 +95,8 @@ mod tests {
 
     #[test]
     fn test_weighing() {
+        // Test that there only is sufficient overlap in the below set when
+        // both statistical and delay based errors are considered.
         let candidates = vec![
             snapshot_for_range(0.0, 0.01, 0.09),
             snapshot_for_range(0.0, 0.09, 0.01),
@@ -128,6 +138,7 @@ mod tests {
 
     #[test]
     fn test_rejection() {
+        // Test peers get properly rejected as rejection bound gets tightened.
         let candidates = vec![
             snapshot_for_range(0.0, 1.0, 1.0),
             snapshot_for_range(0.0, 0.1, 0.1),
@@ -177,6 +188,7 @@ mod tests {
 
     #[test]
     fn test_min_survivors() {
+        // Test that minimum number of survivors is correctly tested for.
         let candidates = vec![
             snapshot_for_range(0.0, 0.1, 0.1),
             snapshot_for_range(0.0, 0.1, 0.1),
@@ -208,6 +220,7 @@ mod tests {
 
     #[test]
     fn test_tie() {
+        // Test that in the case of a tie no group is chosen.
         let candidates = vec![
             snapshot_for_range(0.0, 0.1, 0.1),
             snapshot_for_range(0.0, 0.1, 0.1),
