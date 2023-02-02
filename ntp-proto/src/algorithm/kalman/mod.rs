@@ -455,7 +455,7 @@ mod tests {
 
         while !*algo.clock.has_steered.borrow() {
             cur_instant = cur_instant + std::time::Duration::from_secs(1);
-            algo.clock.current_time = algo.clock.current_time + NtpDuration::from_seconds(1.0);
+            algo.clock.current_time += NtpDuration::from_seconds(1.0);
             noise += 1e-9;
             algo.peer_measurement(
                 0,
@@ -500,7 +500,7 @@ mod tests {
 
         loop {
             cur_instant = cur_instant + std::time::Duration::from_secs(1);
-            algo.clock.current_time = algo.clock.current_time + NtpDuration::from_seconds(1.0);
+            algo.clock.current_time += NtpDuration::from_seconds(1.0);
             noise += 1e-9;
             algo.peer_measurement(
                 0,
@@ -543,7 +543,7 @@ mod tests {
 
         while !*algo.clock.has_steered.borrow() {
             cur_instant = cur_instant + std::time::Duration::from_secs(1);
-            algo.clock.current_time = algo.clock.current_time + NtpDuration::from_seconds(1.0);
+            algo.clock.current_time += NtpDuration::from_seconds(1.0);
             noise *= -1.0;
             algo.peer_measurement(
                 0,
