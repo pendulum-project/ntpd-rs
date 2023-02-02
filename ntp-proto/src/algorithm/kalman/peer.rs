@@ -86,12 +86,12 @@ use super::{
 };
 
 #[derive(Debug, Default, Copy, Clone)]
-struct RttBuf {
+struct AveragingBuffer {
     data: [f64; 8],
     next_idx: usize,
 }
 
-impl RttBuf {
+impl AveragingBuffer {
     fn mean(&self) -> f64 {
         self.data.iter().sum::<f64>() / (self.data.len() as f64)
     }
@@ -109,15 +109,16 @@ impl RttBuf {
 
 #[derive(Debug, Clone)]
 struct InitialPeerFilter {
-    rtt_stats: RttBuf,
-    init_offset: RttBuf,
+    roundtriptime_stats: AveragingBuffer,
+    init_offset: AveragingBuffer,
 
     samples: i32,
 }
 
 impl InitialPeerFilter {
     fn update(&mut self, measurement: Measurement) {
-        self.rtt_stats.update(measurement.delay.to_seconds());
+        self.roundtriptime_stats
+            .update(measurement.delay.to_seconds());
         self.init_offset.update(measurement.offset.to_seconds());
         self.samples += 1;
         debug!(samples = self.samples, "Initial peer update");
@@ -136,7 +137,7 @@ struct PeerFilter {
     uncertainty: Matrix,
     clock_wander: f64,
 
-    rtt_stats: RttBuf,
+    rtt_stats: AveragingBuffer,
 
     precision_score: i32,
     poll_score: i32,
@@ -371,8 +372,8 @@ pub(super) struct PeerState(PeerStateInner);
 impl PeerState {
     pub fn new() -> Self {
         PeerState(PeerStateInner::Initial(InitialPeerFilter {
-            rtt_stats: RttBuf::default(),
-            init_offset: RttBuf::default(),
+            roundtriptime_stats: AveragingBuffer::default(),
+            init_offset: AveragingBuffer::default(),
             samples: 0,
         }))
     }
@@ -397,7 +398,7 @@ impl PeerState {
                             sqr(algo_config.initial_frequency_uncertainty),
                         ),
                         clock_wander: sqr(algo_config.initial_wander),
-                        rtt_stats: filter.rtt_stats,
+                        rtt_stats: filter.roundtriptime_stats,
                         precision_score: 0,
                         poll_score: 0,
                         desired_poll_interval: config.initial_poll,
@@ -487,7 +488,7 @@ mod tests {
             state: Vector::new(20e-3, 0.),
             uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
             clock_wander: 1e-8,
-            rtt_stats: RttBuf {
+            rtt_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
             },
@@ -518,7 +519,7 @@ mod tests {
             state: Vector::new(20e-3, 0.),
             uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
             clock_wander: 1e-8,
-            rtt_stats: RttBuf {
+            rtt_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
             },
@@ -559,7 +560,7 @@ mod tests {
             state: Vector::new(-20e-3, 0.),
             uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
             clock_wander: 1e-8,
-            rtt_stats: RttBuf {
+            rtt_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
             },
@@ -607,7 +608,7 @@ mod tests {
             state: Vector::new(0.0, 0.),
             uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
             clock_wander: 1e-8,
-            rtt_stats: RttBuf {
+            rtt_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
             },
@@ -639,7 +640,7 @@ mod tests {
             state: Vector::new(0.0, 0.),
             uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
             clock_wander: 1e-8,
-            rtt_stats: RttBuf {
+            rtt_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
             },
@@ -893,7 +894,7 @@ mod tests {
             state: Vector::new(0.0, 0.),
             uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
             clock_wander: 1e-8,
-            rtt_stats: RttBuf {
+            rtt_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
             },
@@ -1012,7 +1013,7 @@ mod tests {
             state: Vector::new(0.0, 0.),
             uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
             clock_wander: 1e-8,
-            rtt_stats: RttBuf {
+            rtt_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
             },
