@@ -210,13 +210,16 @@ impl PeerFilter {
 
         // Statistics
         let chi = difference.inner(difference_covariance.inverse() * difference);
-        let weight = measurement_noise.determinant() / difference_covariance.determinant();
+        // Calculate an indicator of how much of the measurement was incorporated
+        // into the state. 1.0 - is needed here as this should become lower as
+        // measurement noise's contribution to difference uncertainty increases.
+        let weight = 1.0 - measurement_noise.determinant() / difference_covariance.determinant();
 
         self.last_measurement = measurement;
 
-        trace!(chi, weight = 1. - weight, "Measurement absorbed");
+        trace!(chi, weight, "Measurement absorbed");
 
-        (chi, 1. - weight, m_delta_t)
+        (chi, weight, m_delta_t)
     }
 
     /// Ensure we poll often enough to keep the filter well-fed with information, but
@@ -379,7 +382,8 @@ impl PeerState {
         }))
     }
 
-    pub fn update(
+    // Returs whether the clock may need adjusting.
+    pub fn update_self_using_measurement(
         &mut self,
         config: &SystemConfig,
         algo_config: &AlgorithmConfig,
@@ -542,7 +546,7 @@ mod tests {
         peer.process_offset_steering(20e-3);
         assert!(peer.snapshot(0_usize).unwrap().state.entry(0).abs() < 1e-7);
 
-        peer.update(
+        peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -585,7 +589,7 @@ mod tests {
 
         peer.progress_filtertime(base - NtpDuration::from_seconds(10e-3)); // should succeed
 
-        peer.update(
+        peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -674,7 +678,7 @@ mod tests {
         let basei = NtpInstant::now();
         let mut peer = PeerState::new();
         assert!(peer.snapshot(0_usize).is_none());
-        peer.update(
+        peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -686,7 +690,7 @@ mod tests {
             NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
-        peer.update(
+        peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -698,7 +702,7 @@ mod tests {
             NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
-        peer.update(
+        peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -710,7 +714,7 @@ mod tests {
             NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
-        peer.update(
+        peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -722,7 +726,7 @@ mod tests {
             NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
-        peer.update(
+        peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -734,7 +738,7 @@ mod tests {
             NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
-        peer.update(
+        peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -746,7 +750,7 @@ mod tests {
             NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
-        peer.update(
+        peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -758,7 +762,7 @@ mod tests {
             NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
-        peer.update(
+        peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -780,7 +784,7 @@ mod tests {
         let basei = NtpInstant::now();
         let mut peer = PeerState::new();
         assert!(peer.snapshot(0_usize).is_none());
-        peer.update(
+        peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -792,7 +796,7 @@ mod tests {
             NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
-        peer.update(
+        peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -804,7 +808,7 @@ mod tests {
             NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
-        peer.update(
+        peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -816,7 +820,7 @@ mod tests {
             NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
-        peer.update(
+        peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -829,7 +833,7 @@ mod tests {
         );
         peer.process_offset_steering(4e-3);
         assert!(peer.snapshot(0_usize).is_none());
-        peer.update(
+        peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -841,7 +845,7 @@ mod tests {
             NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
-        peer.update(
+        peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -853,7 +857,7 @@ mod tests {
             NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
-        peer.update(
+        peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -865,7 +869,7 @@ mod tests {
             NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
-        peer.update(
+        peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {

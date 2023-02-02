@@ -80,10 +80,12 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
         packet: NtpPacket<'static>,
     ) -> bool {
         self.peers.get_mut(&id).map(|state| {
-            state
-                .0
-                .update(&self.config, &self.algo_config, measurement, packet)
-                & state.1
+            state.0.update_self_using_measurement(
+                &self.config,
+                &self.algo_config,
+                measurement,
+                packet,
+            ) && state.1
         }) == Some(true)
     }
 
