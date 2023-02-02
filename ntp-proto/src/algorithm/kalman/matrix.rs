@@ -261,16 +261,16 @@ mod tests {
     fn test_matrix_rendering() {
         let a = Matrix::new(1.0, 2.0, 3.0, 4.0);
         assert_eq!(
-            format!("{}", a),
+            format!("{a}"),
             "  1.0000000000   2.0000000000\n  3.0000000000   4.0000000000"
         );
-        assert_eq!(format!("{:?}", a), "Matrix(((1.0,2.0),(3.0,4.0)))");
+        assert_eq!(format!("{a:?}"), "Matrix(((1.0,2.0),(3.0,4.0)))");
     }
 
     #[test]
     fn test_vector_rendering() {
         let a = Vector::new(5.0, 6.0);
-        assert_eq!(format!("{}", a), "  5.0000000000\n  6.0000000000");
-        assert_eq!(format!("{:?}", a), "Vector((5.0,6.0))");
+        assert_eq!(format!("{a}"), "  5.0000000000\n  6.0000000000");
+        assert_eq!(format!("{a:?}"), "Vector((5.0,6.0))");
     }
 }
