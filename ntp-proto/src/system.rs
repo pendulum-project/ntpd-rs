@@ -79,6 +79,7 @@ mod tests {
     fn test_empty_peer_update() {
         let mut system = SystemSnapshot::default();
 
+        // Should do nothing
         system.update_used_peers(std::iter::empty());
 
         assert_eq!(system.stratum, 16);
@@ -119,14 +120,17 @@ mod tests {
     fn test_timedata_update() {
         let mut system = SystemSnapshot::default();
 
+        let new_root_delay = NtpDuration::from_seconds(1.0);
+        let new_accumulated_threshold = NtpDuration::from_seconds(2.0);
+
         let snapshot = TimeSnapshot {
-            root_delay: NtpDuration::from_seconds(1.0),
+            root_delay: new_root_delay,
             ..Default::default()
         };
         system.update_timedata(
             snapshot,
             &SystemConfig {
-                accumulated_threshold: Some(NtpDuration::from_seconds(1.0)),
+                accumulated_threshold: Some(new_accumulated_threshold),
                 ..Default::default()
             },
         );
@@ -135,7 +139,7 @@ mod tests {
 
         assert_eq!(
             system.accumulated_steps_threshold,
-            Some(NtpDuration::from_seconds(1.0)),
+            Some(new_accumulated_threshold),
         );
     }
 }
