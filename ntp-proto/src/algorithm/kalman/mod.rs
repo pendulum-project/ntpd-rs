@@ -165,7 +165,6 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
                 None
             };
 
-            // Unwrap is ok since selection will always be non-empty
             self.timedata.root_delay = combined.delay;
             self.timedata.root_dispersion =
                 NtpDuration::from_seconds(combined.uncertainty.entry(0, 0).sqrt());
@@ -223,7 +222,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
             // jump
             self.clock
                 .step_clock(NtpDuration::from_seconds(change))
-                .unwrap();
+                .expect("Cannot adjust clock");
             for (state, _) in self.peers.values_mut() {
                 state.process_offset_steering(change)
             }
@@ -253,8 +252,10 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
 
     fn steer_frequency(&mut self, change: f64) -> NtpTimestamp {
         self.freq_offset = (1.0 + self.freq_offset) * (1.0 + change) - 1.0;
-        self.clock.set_frequency(self.freq_offset).unwrap();
-        let freq_update = self.clock.now().unwrap();
+        let freq_update = self
+            .clock
+            .set_frequency(self.freq_offset)
+            .expect("Cannot adjust clock");
         for (state, _) in self.peers.values_mut() {
             state.process_frequency_steering(freq_update, change)
         }
