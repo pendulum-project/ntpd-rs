@@ -70,7 +70,7 @@ pub(super) fn combine<Index: Copy>(
             uncertainty = uncertainty * mixer * peer_uncertainty;
         }
 
-        used_peers.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        used_peers.sort_by(|a, b| a.1.total_cmp(&b.1));
 
         Combine {
             estimate,
