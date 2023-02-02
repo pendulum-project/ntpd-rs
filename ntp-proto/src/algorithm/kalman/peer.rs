@@ -137,7 +137,7 @@ struct PeerFilter {
     uncertainty: Matrix,
     clock_wander: f64,
 
-    rtt_stats: AveragingBuffer,
+    roundtriptime_stats: AveragingBuffer,
 
     precision_score: i32,
     poll_score: i32,
@@ -181,8 +181,8 @@ impl PeerFilter {
 
     /// Absorb knowledge from a measurement
     fn absorb_measurement(&mut self, measurement: Measurement) -> (f64, f64, f64) {
-        // Measurement paramaters
-        let delay_variance = self.rtt_stats.variance();
+        // Measurement parameters
+        let delay_variance = self.roundtriptime_stats.variance();
         let m_delta_t = (measurement.localtime - self.last_measurement.localtime).to_seconds();
 
         // Kalman filter update
@@ -313,8 +313,8 @@ impl PeerFilter {
 
         // Filter out one-time outliers (based on delay!)
         if !self.prev_was_outlier
-            && (measurement.delay.to_seconds() - self.rtt_stats.mean())
-                > algo_config.delay_outlier_threshold * self.rtt_stats.variance().sqrt()
+            && (measurement.delay.to_seconds() - self.roundtriptime_stats.mean())
+                > algo_config.delay_outlier_threshold * self.roundtriptime_stats.variance().sqrt()
         {
             self.prev_was_outlier = true;
             self.last_iter = measurement.localtime;
@@ -323,7 +323,8 @@ impl PeerFilter {
 
         // Environment update
         self.progress_filtertime(measurement.localtime);
-        self.rtt_stats.update(measurement.delay.to_seconds());
+        self.roundtriptime_stats
+            .update(measurement.delay.to_seconds());
 
         let (chi, weight, measurement_period) = self.absorb_measurement(measurement);
 
@@ -398,7 +399,7 @@ impl PeerState {
                             sqr(algo_config.initial_frequency_uncertainty),
                         ),
                         clock_wander: sqr(algo_config.initial_wander),
-                        rtt_stats: filter.roundtriptime_stats,
+                        roundtriptime_stats: filter.roundtriptime_stats,
                         precision_score: 0,
                         poll_score: 0,
                         desired_poll_interval: config.initial_poll,
@@ -427,7 +428,7 @@ impl PeerState {
                 index,
                 state: filter.state,
                 uncertainty: filter.uncertainty,
-                delay: filter.rtt_stats.mean(),
+                delay: filter.roundtriptime_stats.mean(),
                 peer_uncertainty: filter.last_packet.root_dispersion(),
                 peer_delay: filter.last_packet.root_delay(),
                 leap_indicator: filter.last_packet.leap(),
@@ -488,7 +489,7 @@ mod tests {
             state: Vector::new(20e-3, 0.),
             uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
             clock_wander: 1e-8,
-            rtt_stats: AveragingBuffer {
+            roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
             },
@@ -519,7 +520,7 @@ mod tests {
             state: Vector::new(20e-3, 0.),
             uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
             clock_wander: 1e-8,
-            rtt_stats: AveragingBuffer {
+            roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
             },
@@ -560,7 +561,7 @@ mod tests {
             state: Vector::new(-20e-3, 0.),
             uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
             clock_wander: 1e-8,
-            rtt_stats: AveragingBuffer {
+            roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
             },
@@ -608,7 +609,7 @@ mod tests {
             state: Vector::new(0.0, 0.),
             uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
             clock_wander: 1e-8,
-            rtt_stats: AveragingBuffer {
+            roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
             },
@@ -640,7 +641,7 @@ mod tests {
             state: Vector::new(0.0, 0.),
             uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
             clock_wander: 1e-8,
-            rtt_stats: AveragingBuffer {
+            roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
             },
@@ -894,7 +895,7 @@ mod tests {
             state: Vector::new(0.0, 0.),
             uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
             clock_wander: 1e-8,
-            rtt_stats: AveragingBuffer {
+            roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
             },
@@ -1013,7 +1014,7 @@ mod tests {
             state: Vector::new(0.0, 0.),
             uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
             clock_wander: 1e-8,
-            rtt_stats: AveragingBuffer {
+            roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
             },
