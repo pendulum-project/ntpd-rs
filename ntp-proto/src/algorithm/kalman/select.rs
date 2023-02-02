@@ -25,7 +25,7 @@ pub(super) fn select<Index: Copy>(
         bounds.push((snapshot.offset() + radius, BoundType::End));
     }
 
-    bounds.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    bounds.sort_by(|a, b| a.0.total_cmp(&b.0));
 
     let mut max: usize = 0;
     let mut maxt: f64 = 0.0;
