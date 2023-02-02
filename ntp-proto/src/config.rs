@@ -238,7 +238,7 @@ impl Default for SystemConfig {
             min_intersection_survivors: default_min_intersection_survivors(),
 
             panic_threshold: default_panic_threshold(),
-            startup_panic_threshold: StepThreshold::default(),
+            startup_panic_threshold: startup_panic_threshold(),
             accumulated_threshold: None,
 
             local_stratum: default_local_stratum(),

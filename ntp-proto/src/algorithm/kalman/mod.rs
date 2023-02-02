@@ -199,7 +199,10 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
         if self.in_startup {
             if !self.config.startup_panic_threshold.is_within(change) {
                 error!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate.");
+                #[cfg(not(test))]
                 std::process::exit(exitcode::SOFTWARE);
+                #[cfg(test)]
+                panic!("Threshold exceeded");
             }
         } else {
             self.timedata.accumulated_steps += change;
@@ -211,7 +214,10 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
                     .unwrap_or(true)
             {
                 error!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate.");
+                #[cfg(not(test))]
                 std::process::exit(exitcode::SOFTWARE);
+                #[cfg(test)]
+                panic!("Threshold exceeded");
             }
         }
     }
@@ -302,7 +308,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
             freq_offset: 0.0,
             desired_freq: 0.0,
             timedata: TimeSnapshot::default(),
-            in_startup: false,
+            in_startup: true,
         }
     }
 
@@ -355,5 +361,198 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
             .get(&id)
             .and_then(|v| v.0.snapshot(id))
             .map(|v| v.observe())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+
+    use crate::NtpInstant;
+
+    use super::*;
+
+    #[derive(Debug, Clone)]
+    struct TestClock {
+        has_steered: RefCell<bool>,
+        current_time: NtpTimestamp,
+    }
+
+    impl NtpClock for TestClock {
+        type Error = std::io::Error;
+
+        fn now(&self) -> Result<NtpTimestamp, Self::Error> {
+            Ok(self.current_time)
+        }
+
+        fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
+            *self.has_steered.borrow_mut() = true;
+            Ok(self.current_time)
+        }
+
+        fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
+            *self.has_steered.borrow_mut() = true;
+            Ok(self.current_time)
+        }
+
+        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn ntp_algorithm_update(
+            &self,
+            _offset: NtpDuration,
+            _poll_interval: crate::PollInterval,
+        ) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn error_estimate_update(
+            &self,
+            _est_error: NtpDuration,
+            _max_error: NtpDuration,
+        ) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_startup_flag_unsets() {
+        let system_config = SystemConfig {
+            min_intersection_survivors: 1,
+            ..SystemConfig::default()
+        };
+        let algo_config = AlgorithmConfig::default();
+        let mut algo = KalmanClockController::new(
+            TestClock {
+                has_steered: RefCell::new(false),
+                current_time: NtpTimestamp::from_fixed_int(0),
+            },
+            system_config,
+            algo_config,
+        );
+        let mut cur_instant = NtpInstant::now();
+
+        // ignore startup steer of frequency.
+        *algo.clock.has_steered.borrow_mut() = false;
+
+        algo.peer_add(0);
+        algo.peer_update(0, true);
+
+        assert!(algo.in_startup);
+
+        let mut noise = 1e-9;
+
+        while !*algo.clock.has_steered.borrow() {
+            cur_instant = cur_instant + std::time::Duration::from_secs(1);
+            algo.clock.current_time = algo.clock.current_time + NtpDuration::from_seconds(1.0);
+            noise += 1e-9;
+            algo.peer_measurement(
+                0,
+                Measurement {
+                    delay: NtpDuration::from_seconds(0.001 + noise),
+                    offset: NtpDuration::from_seconds(1700.0 + noise),
+                    localtime: algo.clock.current_time,
+                    monotime: cur_instant,
+                },
+                NtpPacket::test(),
+            );
+        }
+
+        assert!(!algo.in_startup);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_large_offset_eventually_panics() {
+        let system_config = SystemConfig {
+            min_intersection_survivors: 1,
+            ..SystemConfig::default()
+        };
+        let algo_config = AlgorithmConfig::default();
+        let mut algo = KalmanClockController::new(
+            TestClock {
+                has_steered: RefCell::new(false),
+                current_time: NtpTimestamp::from_fixed_int(0),
+            },
+            system_config,
+            algo_config,
+        );
+        let mut cur_instant = NtpInstant::now();
+
+        // ignore startup steer of frequency.
+        *algo.clock.has_steered.borrow_mut() = false;
+
+        algo.peer_add(0);
+        algo.peer_update(0, true);
+
+        let mut noise = 1e-9;
+
+        loop {
+            cur_instant = cur_instant + std::time::Duration::from_secs(1);
+            algo.clock.current_time = algo.clock.current_time + NtpDuration::from_seconds(1.0);
+            noise += 1e-9;
+            algo.peer_measurement(
+                0,
+                Measurement {
+                    delay: NtpDuration::from_seconds(0.001 + noise),
+                    offset: NtpDuration::from_seconds(1700.0 + noise),
+                    localtime: algo.clock.current_time,
+                    monotime: cur_instant,
+                },
+                NtpPacket::test(),
+            );
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_backward_step_panics_before_steer() {
+        let system_config = SystemConfig {
+            min_intersection_survivors: 1,
+            ..SystemConfig::default()
+        };
+        let algo_config = AlgorithmConfig::default();
+        let mut algo = KalmanClockController::new(
+            TestClock {
+                has_steered: RefCell::new(false),
+                current_time: NtpTimestamp::from_fixed_int(0),
+            },
+            system_config,
+            algo_config,
+        );
+        let mut cur_instant = NtpInstant::now();
+
+        // ignore startup steer of frequency.
+        *algo.clock.has_steered.borrow_mut() = false;
+
+        algo.peer_add(0);
+        algo.peer_update(0, true);
+
+        let mut noise = 1e-9;
+
+        while !*algo.clock.has_steered.borrow() {
+            cur_instant = cur_instant + std::time::Duration::from_secs(1);
+            algo.clock.current_time = algo.clock.current_time + NtpDuration::from_seconds(1.0);
+            noise *= -1.0;
+            algo.peer_measurement(
+                0,
+                Measurement {
+                    delay: NtpDuration::from_seconds(0.001 + noise),
+                    offset: NtpDuration::from_seconds(-3600.0 + noise),
+                    localtime: algo.clock.current_time,
+                    monotime: cur_instant,
+                },
+                NtpPacket::test(),
+            );
+        }
     }
 }
