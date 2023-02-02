@@ -43,7 +43,7 @@ pub(super) fn combine<Index: Copy>(
     selection: &[PeerSnapshot<Index>],
     algo_config: &AlgorithmConfig,
 ) -> Option<Combine<Index>> {
-    if let Some(first) = selection.first() {
+    selection.first().map(|first| {
         let mut estimate = first.state;
         let mut uncertainty = if algo_config.ignore_server_dispersion {
             first.uncertainty
@@ -72,7 +72,7 @@ pub(super) fn combine<Index: Copy>(
 
         used_peers.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
 
-        Some(Combine {
+        Combine {
             estimate,
             uncertainty,
             peers: used_peers.iter().map(|v| v.0).collect(),
@@ -82,10 +82,8 @@ pub(super) fn combine<Index: Copy>(
                 .min()
                 .unwrap_or(NtpDuration::from_seconds(first.delay) + first.peer_delay),
             leap_indicator: vote_leap(selection),
-        })
-    } else {
-        None
-    }
+        }
+    })
 }
 
 #[cfg(test)]
