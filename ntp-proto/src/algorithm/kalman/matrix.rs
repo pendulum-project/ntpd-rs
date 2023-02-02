@@ -66,7 +66,7 @@ impl std::fmt::Debug for Matrix {
 impl std::fmt::Display for Matrix {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
-            "{} {}\n{} {}",
+            "{:>14.10} {:>14.10}\n{:>14.10} {:>14.10}",
             self.data[0], self.data[1], self.data[2], self.data[3]
         ))
     }
@@ -97,7 +97,10 @@ impl std::fmt::Debug for Vector {
 
 impl std::fmt::Display for Vector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{}\n{}", self.data[0], self.data[1]))
+        f.write_fmt(format_args!(
+            "{:>14.10}\n{:>14.10}",
+            self.data[0], self.data[1]
+        ))
     }
 }
 
@@ -257,14 +260,17 @@ mod tests {
     #[test]
     fn test_matrix_rendering() {
         let a = Matrix::new(1.0, 2.0, 3.0, 4.0);
-        assert_eq!(format!("{}", a), "1 2\n3 4");
+        assert_eq!(
+            format!("{}", a),
+            "  1.0000000000   2.0000000000\n  3.0000000000   4.0000000000"
+        );
         assert_eq!(format!("{:?}", a), "Matrix(((1.0,2.0),(3.0,4.0)))");
     }
 
     #[test]
     fn test_vector_rendering() {
         let a = Vector::new(5.0, 6.0);
-        assert_eq!(format!("{}", a), "5\n6");
+        assert_eq!(format!("{}", a), "  5.0000000000\n  6.0000000000");
         assert_eq!(format!("{:?}", a), "Vector((5.0,6.0))");
     }
 }
