@@ -225,7 +225,7 @@ async fn main() -> std::io::Result<()> {
     let cookie = key_exchange.nts.get_cookie().unwrap();
     let (c2s, _) = key_exchange.nts.get_keys();
 
-    println!("cookie: {:?}", cookie);
+    println!("cookie: {cookie:?}");
 
     let addr = (key_exchange.remote, key_exchange.port)
         .to_socket_addrs()

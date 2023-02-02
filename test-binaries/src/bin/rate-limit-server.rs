@@ -17,7 +17,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     loop {
         let (len, addr) = socket.recv_from(&mut buf).await?;
         let ntp_receive = clock.now().unwrap();
-        println!("{:?} bytes received from {:?}", len, addr);
+        println!("{len:?} bytes received from {addr:?}");
 
         let now = Instant::now();
         let delta = now.duration_since(last_message);
@@ -43,6 +43,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         let pdata = &cursor.get_ref()[..cursor.position() as usize];
         let len = socket.send(pdata).await.unwrap();
-        println!("{:?} bytes sent", len);
+        println!("{len:?} bytes sent");
     }
 }

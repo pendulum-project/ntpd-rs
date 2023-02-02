@@ -307,21 +307,21 @@ impl<'de> Deserialize<'de> for PeerConfig {
                         if max_peers.is_some() {
                             unknown_field("max_peers", valid_fields)
                         } else {
-                            let certificates: Arc<[Certificate]> =
-                                if let Some(certificate_path) = opt_certificate_path {
-                                    match certificates_from_file(&certificate_path) {
-                                        Ok(certificates) => Arc::from(certificates),
-                                        Err(io_error) => {
-                                            let msg = format!(
-                                                "error while parsing certificate file {:?}: {:?}",
-                                                certificate_path, io_error
+                            let certificates: Arc<[Certificate]> = if let Some(certificate_path) =
+                                opt_certificate_path
+                            {
+                                match certificates_from_file(&certificate_path) {
+                                    Ok(certificates) => Arc::from(certificates),
+                                    Err(io_error) => {
+                                        let msg = format!(
+                                                "error while parsing certificate file {certificate_path:?}: {io_error:?}"
                                             );
-                                            return Err(de::Error::custom(msg));
-                                        }
+                                        return Err(de::Error::custom(msg));
                                     }
-                                } else {
-                                    Arc::from([])
-                                };
+                                }
+                            } else {
+                                Arc::from([])
+                            };
 
                             Ok(PeerConfig::Nts(NtsPeerConfig {
                                 ke_addr,
