@@ -1,8 +1,8 @@
 use crate::server::ServerStats;
 use crate::{sockets::create_unix_socket, system::ServerData};
 use ntp_proto::{ObservablePeerTimedata, PollInterval, Reach, ReferenceId, SystemSnapshot};
-use prometheus_client::encoding::text::Encode;
-use std::io::Write;
+use prometheus_client::encoding::EncodeLabelValue;
+use std::fmt::Write;
 use std::net::SocketAddr;
 use std::os::unix::fs::PermissionsExt;
 use tokio::task::JoinHandle;
@@ -41,9 +41,12 @@ impl From<SocketAddr> for WrappedSocketAddr {
     }
 }
 
-impl Encode for WrappedSocketAddr {
-    fn encode(&self, writer: &mut dyn Write) -> Result<(), std::io::Error> {
-        writer.write_all(self.0.to_string().as_bytes())
+impl EncodeLabelValue for WrappedSocketAddr {
+    fn encode(
+        &self,
+        encoder: &mut prometheus_client::encoding::LabelValueEncoder,
+    ) -> Result<(), std::fmt::Error> {
+        encoder.write_str(&self.0.to_string())
     }
 }
 

@@ -6,7 +6,7 @@ use std::{
 
 use ntp_proto::{NtpAssociationMode, NtpClock, NtpPacket, NtpTimestamp, SystemSnapshot};
 use ntp_udp::UdpSocket;
-use prometheus_client::metrics::{counter::Counter, gauge::Atomic};
+use prometheus_client::metrics::counter::Counter;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tokio::task::JoinHandle;
 use tracing::{error, info, instrument, trace, warn};
@@ -42,7 +42,9 @@ impl<'de> Deserialize<'de> for WrappedCounter {
     {
         let d: u64 = Deserialize::deserialize(deserializer)?;
         let counter: Counter = Default::default();
-        counter.inner().set(d);
+        counter
+            .inner()
+            .store(d, std::sync::atomic::Ordering::Relaxed);
         Ok(WrappedCounter(counter))
     }
 }

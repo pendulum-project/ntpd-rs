@@ -34,6 +34,8 @@ struct Cli {
 enum ServeError {
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("fmt error: {0}")]
+    Fmt(#[from] std::fmt::Error),
 }
 
 impl IntoResponse for ServeError {
@@ -79,7 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let metrics = Metrics::default();
                 metrics.fill(&output);
                 let registry = metrics.registry();
-                let mut buf = vec![];
+                let mut buf = String::new();
                 prometheus_client::encoding::text::encode(&mut buf, &registry)?;
                 Ok::<_, ServeError>((
                     HeaderMap::from_iter([(
