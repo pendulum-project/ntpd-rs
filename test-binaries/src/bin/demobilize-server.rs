@@ -14,7 +14,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let (len, addr) = socket.recv_from(&mut buf).await?;
         println!("{len:?} bytes received from {addr:?}");
 
-        let parsed = match NtpPacket::deserialize(buf[0..48].try_into().unwrap(), None) {
+        let parsed = match NtpPacket::deserialize(buf[0..48].try_into().unwrap(), &()) {
             Ok(packet) => packet,
             Err(_) => continue,
         };
@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let packet = NtpPacket::deny_response(parsed);
         let mut buf = [0; 48];
         let mut cursor = Cursor::new(buf.as_mut_slice());
-        packet.serialize(&mut cursor, None).unwrap();
+        packet.serialize(&mut cursor, &()).unwrap();
 
         let pdata = &cursor.get_ref()[..cursor.position() as usize];
         let len = socket.send(pdata).await.unwrap();

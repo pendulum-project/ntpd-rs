@@ -24,7 +24,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         println!("{}s since last packet", delta.as_secs());
         last_message = now;
 
-        let parsed = match NtpPacket::deserialize(&buf, None) {
+        let parsed = match NtpPacket::deserialize(&buf, &()) {
             Ok(packet) => packet,
             Err(_) => continue,
         };
@@ -39,7 +39,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         let mut buf = [0; 48];
         let mut cursor = Cursor::new(buf.as_mut_slice());
-        packet.serialize(&mut cursor, None).unwrap();
+        packet.serialize(&mut cursor, &()).unwrap();
 
         let pdata = &cursor.get_ref()[..cursor.position() as usize];
         let len = socket.send(pdata).await.unwrap();
