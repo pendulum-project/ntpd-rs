@@ -124,10 +124,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let metrics = Metrics::default();
             metrics.fill(&output);
             let registry = metrics.registry();
-            let mut buf = vec![];
+            let mut buf = String::new();
             prometheus_client::encoding::text::encode(&mut buf, &registry)?;
-            let result = String::from_utf8(buf)?;
-            println!("{result}");
+            println!("{buf}");
 
             0
         }
