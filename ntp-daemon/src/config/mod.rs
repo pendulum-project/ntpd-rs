@@ -4,7 +4,7 @@ mod peer;
 mod server;
 pub mod subnet;
 
-use ntp_os_clock::UnixNtpClock;
+use ntp_os_clock::DefaultNtpClock;
 pub use peer::*;
 pub use server::*;
 
@@ -107,8 +107,8 @@ pub struct CombinedSystemConfig {
     #[serde(flatten)]
     pub system: SystemConfig,
     #[serde(flatten)]
-    pub algorithm: <DefaultTimeSyncController<UnixNtpClock, PeerId> as TimeSyncController<
-        UnixNtpClock,
+    pub algorithm: <DefaultTimeSyncController<DefaultNtpClock, PeerId> as TimeSyncController<
+        DefaultNtpClock,
         PeerId,
     >>::AlgorithmConfig,
 }

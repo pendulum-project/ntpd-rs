@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use ntp_daemon::{observer::WrappedSocketAddr, ObservablePeerState, ObservableState};
-use ntp_os_clock::UnixNtpClock;
+use ntp_os_clock::DefaultNtpClock;
 use ntp_proto::NtpClock;
 use prometheus_client::{
     encoding::EncodeLabelSet,
@@ -44,7 +44,7 @@ pub struct Metrics {
 
 impl Metrics {
     pub fn fill(&self, data: &ObservableState) {
-        let clock = UnixNtpClock::new();
+        let clock = DefaultNtpClock::new();
 
         self.system_poll_interval.set(
             data.system
