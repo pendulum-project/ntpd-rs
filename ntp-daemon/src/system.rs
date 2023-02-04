@@ -12,7 +12,7 @@ use crate::{
 
 use std::{collections::HashMap, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
 
-use ntp_os_clock::UnixNtpClock;
+use ntp_os_clock::DefaultNtpClock;
 use ntp_proto::{
     DefaultTimeSyncController, KeySet, NtpClock, NtpDuration, PeerSnapshot, SystemSnapshot,
     TimeSyncController,
@@ -83,7 +83,7 @@ pub async fn spawn(
     server_configs: &[ServerConfig],
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
 ) -> std::io::Result<(JoinHandle<std::io::Result<()>>, DaemonChannels)> {
-    let clock = UnixNtpClock::new();
+    let clock = DefaultNtpClock::new();
     let (mut system, channels) = System::new(clock, config, keyset);
 
     for peer_config in peer_configs {
