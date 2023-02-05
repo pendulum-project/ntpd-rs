@@ -236,17 +236,8 @@ impl<P: NetworkPort, W: Watch> Port<P, W> {
         default_ds: &DefaultDS,
         time_properties_ds: &mut TimePropertiesDS,
     ) {
-        let own_data = DefaultDS::new_oc(
-            self.port_ds.port_identity.clock_identity,
-            default_ds.priority_1,
-            default_ds.priority_2,
-            0,
-            true,
-            1337,
-        );
-
         let recommended_state = Bmca::calculate_recommended_state(
-            &own_data,
+            &default_ds,
             best_global_announce_message,
             best_port_announce_message,
             &self.port_ds.port_state,
@@ -317,7 +308,7 @@ impl<P: NetworkPort, W: Watch> Port<P, W> {
             },
 
             // Recommended state is master
-            RecommendedState::M2(default_ds) => match &self.port_ds.port_state {
+            RecommendedState::M2(_) => match &self.port_ds.port_state {
                 // Stay master
                 PortState::Master(_) => (),
 

@@ -59,7 +59,6 @@ impl MasterState {
             );
 
         let delay_resp_encode = delay_resp_message.serialize_vec()?;
-        // TODO: Handle error
         nc_port.send(&delay_resp_encode);
 
         Ok(())
