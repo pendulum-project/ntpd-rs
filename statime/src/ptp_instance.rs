@@ -156,7 +156,7 @@ impl<P: NetworkPort, C: Clock, F> PtpInstance<P, C, C::Watch, F> {
             if id == port.bmca_watch.id() {
                 // The bmca watch triggered, we must run the bmca
                 // But first set a new alarm
-                port.bmca_watch.set_alarm(port.announce_interval());
+                port.bmca_watch.set_alarm(port.port_ds.announce_interval());
 
                 let current_time = self.local_clock.now();
                 let erbest = port

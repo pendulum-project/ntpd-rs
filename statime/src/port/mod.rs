@@ -8,7 +8,7 @@ use crate::datastructures::messages::{AnnounceMessage, Message, MessageBuilder};
 use crate::network::{NetworkPacket, NetworkPort, NetworkRuntime};
 use crate::port::error::{PortError, Result};
 use crate::port::state::{MasterState, PortState, SlaveState};
-use crate::time::{Duration, Instant};
+use crate::time::Instant;
 
 mod error;
 mod measurement;
@@ -18,7 +18,7 @@ pub mod state;
 mod test;
 
 pub struct Port<P, W> {
-    port_ds: PortDS,
+    pub(crate) port_ds: PortDS,
 
     pub(crate) bmca_watch: W,
     announce_timeout_watch: W,
@@ -52,10 +52,7 @@ impl<P, W> Port<P, W> {
             .open(interface, false)
             .expect("Could not create non time critical port");
 
-        let bmca = Bmca::new(
-            Duration::from_log_interval(port_ds.log_announce_interval).into(),
-            port_ds.port_identity,
-        );
+        let bmca = Bmca::new(port_ds.announce_interval().into(), port_ds.port_identity);
 
         Port {
             port_ds,
@@ -86,21 +83,18 @@ impl<P: NetworkPort, W: Watch> Port<P, W> {
             log::info!("New state for port: Master");
 
             // Start sending announce messages
-            self.announce_watch.set_alarm(Duration::from_log_interval(
-                self.port_ds.log_announce_interval,
-            ));
+            self.announce_watch
+                .set_alarm(self.port_ds.announce_interval());
 
             // Start sending sync messages
-            self.sync_watch
-                .set_alarm(Duration::from_log_interval(self.port_ds.log_sync_interval));
+            self.sync_watch.set_alarm(self.port_ds.sync_interval());
         }
 
         // When the announce watch expires, send an announce message and restart
         if id == self.announce_watch.id() {
             self.send_announce_message(default_ds);
-            self.announce_watch.set_alarm(Duration::from_log_interval(
-                self.port_ds.log_announce_interval,
-            ));
+            self.announce_watch
+                .set_alarm(self.port_ds.announce_interval());
         }
 
         // When the sync watch expires, send a sync message and restart
@@ -110,8 +104,7 @@ impl<P: NetworkPort, W: Watch> Port<P, W> {
             // TODO: Is the follow up a config?
             self.send_follow_up_message(current_time);
 
-            self.sync_watch
-                .set_alarm(Duration::from_log_interval(self.port_ds.log_sync_interval));
+            self.sync_watch.set_alarm(self.port_ds.sync_interval());
         }
     }
 
@@ -211,10 +204,7 @@ impl<P: NetworkPort, W: Watch> Port<P, W> {
 
                 // When an announce message is received, restart announce receipt timeout timer
                 self.announce_timeout_watch
-                    .set_alarm(Duration::from_log_interval(
-                        self.port_ds.announce_receipt_timeout as i8
-                            * self.port_ds.log_announce_interval,
-                    ));
+                    .set_alarm(self.port_ds.announce_receipt_interval());
             }
         }
 
@@ -274,24 +264,7 @@ impl<P: NetworkPort, W: Watch> Port<P, W> {
         }
     }
 
-    pub fn announce_interval(&self) -> Duration {
-        Duration::from_log_interval(self.port_ds.log_announce_interval)
-    }
-
-    pub fn handle_send_timestamp(&mut self, id: usize, timestamp: Instant) -> Result<()> {
-        match &mut self.port_ds.port_state {
-            PortState::Slave(state) => {
-                state.handle_send_timestamp(id, timestamp)?;
-                Ok(())
-            }
-            _ => Err(PortError::InvalidState),
-        }
-    }
-
     fn handle_recommended_state(&mut self, recommended_state: &RecommendedState) {
-        let log_announce_interval = self.port_ds.log_announce_interval;
-        let log_sync_interval = self.port_ds.log_sync_interval;
-
         match recommended_state {
             // TODO set things like steps_removed once they are added
             // TODO make sure states are complete
@@ -303,10 +276,7 @@ impl<P: NetworkPort, W: Watch> Port<P, W> {
 
                     // Restart announce receipt timeout timer
                     self.announce_timeout_watch
-                        .set_alarm(Duration::from_log_interval(
-                            self.port_ds.announce_receipt_timeout as i8
-                                * self.port_ds.log_announce_interval,
-                        ));
+                        .set_alarm(self.port_ds.announce_receipt_interval());
 
                     log::info!(
                         "New state for port: Listening -> Slave. Remote master: {:?}",
@@ -334,10 +304,7 @@ impl<P: NetworkPort, W: Watch> Port<P, W> {
 
                     // Restart announce receipt timeout timer
                     self.announce_timeout_watch
-                        .set_alarm(Duration::from_log_interval(
-                            self.port_ds.announce_receipt_timeout as i8
-                                * self.port_ds.log_announce_interval,
-                        ));
+                        .set_alarm(self.port_ds.announce_receipt_interval());
 
                     log::info!("New state for port: Master -> Slave");
                 }
@@ -365,11 +332,10 @@ impl<P: NetworkPort, W: Watch> Port<P, W> {
 
                     // Start sending announce messages
                     self.announce_watch
-                        .set_alarm(Duration::from_log_interval(log_announce_interval));
+                        .set_alarm(self.port_ds.announce_interval());
 
                     // Start sending sync messages
-                    self.sync_watch
-                        .set_alarm(Duration::from_log_interval(log_sync_interval));
+                    self.sync_watch.set_alarm(self.port_ds.sync_interval());
                 }
             },
 
@@ -388,14 +354,21 @@ impl<P: NetworkPort, W: Watch> Port<P, W> {
 
                     // Restart announce receipt timeout timer
                     self.announce_timeout_watch
-                        .set_alarm(Duration::from_log_interval(
-                            self.port_ds.announce_receipt_timeout as i8
-                                * self.port_ds.log_announce_interval,
-                        ));
+                        .set_alarm(self.port_ds.announce_receipt_interval());
 
                     log::info!("New state for port: Listening");
                 }
             },
+        }
+    }
+
+    pub fn handle_send_timestamp(&mut self, id: usize, timestamp: Instant) -> Result<()> {
+        match &mut self.port_ds.port_state {
+            PortState::Slave(state) => {
+                state.handle_send_timestamp(id, timestamp)?;
+                Ok(())
+            }
+            _ => Err(PortError::InvalidState),
         }
     }
 }

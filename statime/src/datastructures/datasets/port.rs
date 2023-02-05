@@ -8,9 +8,9 @@ pub struct PortDS {
     pub(crate) port_state: PortState,
     log_min_delay_req_interval: i8,
     mean_link_delay: Duration,
-    pub(crate) log_announce_interval: i8,
+    log_announce_interval: i8,
     pub(crate) announce_receipt_timeout: u8,
-    pub(crate) log_sync_interval: i8,
+    log_sync_interval: i8,
     delay_mechanism: DelayMechanism,
     log_min_p_delay_req_interval: i8,
     // TODO: u4
@@ -58,6 +58,29 @@ impl PortDS {
             port_enable: true,
             master_only: false,
         }
+    }
+
+    pub fn min_delay_req_interval(&self) -> Duration {
+        Duration::from_log_interval(self.log_min_delay_req_interval)
+    }
+
+    pub fn announce_interval(&self) -> Duration {
+        Duration::from_log_interval(self.log_announce_interval)
+    }
+
+    pub fn sync_interval(&self) -> Duration {
+        Duration::from_log_interval(self.log_sync_interval)
+    }
+
+    pub fn min_p_delay_req_interval(&self) -> Duration {
+        Duration::from_log_interval(self.log_min_p_delay_req_interval)
+    }
+
+    // TODO: Count the actual number of passed announce intervals, rather than this approximation
+    pub fn announce_receipt_interval(&self) -> Duration {
+        Duration::from_log_interval(
+            self.announce_receipt_timeout as i8 * self.log_announce_interval,
+        )
     }
 }
 
