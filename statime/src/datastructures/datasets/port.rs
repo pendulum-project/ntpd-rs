@@ -1,7 +1,8 @@
 use crate::datastructures::common::PortIdentity;
+use crate::port::state::PortState;
 use crate::time::Duration;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug)]
 pub struct PortDS {
     pub(crate) port_identity: PortIdentity,
     pub(crate) port_state: PortState,
@@ -58,20 +59,6 @@ impl PortDS {
             master_only: false,
         }
     }
-}
-
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub enum PortState {
-    #[default]
-    Initializing = 0x01,
-    Faulty = 0x02,
-    Disabled = 0x03,
-    Listening = 0x04,
-    PreMaster = 0x05,
-    Master = 0x06,
-    Passive = 0x07,
-    Uncalibrated = 0x08,
-    Slave = 0x09,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]

@@ -4,13 +4,13 @@ use super::{
     dataset_comparison::{ComparisonDataset, DatasetOrdering},
     foreign_master::ForeignMasterList,
 };
+use crate::port::state::PortState;
 use crate::{
     datastructures::{
         common::{PortIdentity, TimeInterval, Timestamp},
         datasets::DefaultDS,
         messages::AnnounceMessage,
     },
-    port::State,
     time::Instant,
 };
 
@@ -114,7 +114,7 @@ impl Bmca {
         own_data: &DefaultDS,
         best_global_announce_message: Option<(&AnnounceMessage, &PortIdentity)>,
         best_port_announce_message: Option<(&AnnounceMessage, &PortIdentity)>,
-        port_state: &State,
+        port_state: &PortState,
     ) -> Option<RecommendedState> {
         let d0 = ComparisonDataset::from_own_data(own_data);
         let ebest = best_global_announce_message
@@ -122,7 +122,7 @@ impl Bmca {
         let erbest = best_port_announce_message
             .map(|(announce, pid)| ComparisonDataset::from_announce_message(announce, pid));
 
-        if best_global_announce_message.is_none() && matches!(port_state, State::Listening) {
+        if best_global_announce_message.is_none() && matches!(port_state, PortState::Listening) {
             return None;
         }
 

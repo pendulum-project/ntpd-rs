@@ -125,7 +125,7 @@ impl<P: NetworkPort, C: Clock, W: Watch, F: Filter> PtpInstance<P, C, W, F> {
             port.handle_network(packet, port.bmca_watch.now(), &self.default_ds);
 
             // TODO: Verify this is desired behavior
-            if let Some(data) = port.extract_measurement() {
+            if let Ok(data) = port.extract_measurement() {
                 let (offset, freq_corr) = self.filter.absorb(data);
                 self.local_clock
                     .adjust(offset, freq_corr, &self.time_properties_ds)
