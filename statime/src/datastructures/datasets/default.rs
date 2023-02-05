@@ -22,7 +22,7 @@ pub struct DefaultDS {
 }
 
 impl DefaultDS {
-    pub fn new_oc(
+    pub fn new_ordinary_clock(
         clock_identity: ClockIdentity,
         priority_1: u8,
         priority_2: u8,
@@ -47,7 +47,7 @@ impl DefaultDS {
         }
     }
 
-    pub fn new_bc(
+    pub fn new_boundary_clock(
         clock_identity: ClockIdentity,
         number_ports: u16,
         priority_1: u8,

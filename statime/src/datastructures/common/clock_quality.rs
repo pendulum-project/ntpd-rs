@@ -8,44 +8,6 @@ pub struct ClockQuality {
     pub offset_scaled_log_variance: u16,
 }
 
-impl ClockQuality {
-    pub fn new(slave_only: bool) -> Self {
-        let clock_class = ClockQuality::determine_class(slave_only);
-
-        ClockQuality {
-            clock_class,
-            clock_accuracy: Default::default(),
-            offset_scaled_log_variance: 0,
-        }
-    }
-
-    fn determine_class(slave_only: bool) -> u8 {
-        if slave_only {
-            255
-        } else if false {
-            // If defaultDS.slaveOnly is FALSE and the applicable PTP Profile specifies the
-            // clockClass to be 52, 58, 187, 193, or in the ranges 68 through 122, 133 through 170,
-            // or 216 through 232, then the PTP Profile specified clockClass value shall be used for
-            // initialization.
-            todo!()
-        } else if false {
-            // If defaultDS.slaveOnly is FALSE and if the PTP Instance is designed as a clockClass 6
-            // or 13, the clockClass initialization value shall be 6 or 13, respectively, if these
-            // represent the clockClass of the PTP Instance upon exiting the INITIALIZING state. If
-            // the clockClass 6 or 13, respectively, does not represent the PTP Instance upon
-            // exiting the INITIALIZING state, the clockClass initialization value shall be as
-            // follows:
-            // 1) Either 52, 187, or 248, as specified in the applicable PTP Profile, for a PTP
-            // Instance designed as class 6.
-            // 2) Either 58, 193, or 248, as specified in the applicable PTP Profile, for a PTP
-            // Instance designed as class 13.
-            todo!()
-        } else {
-            248
-        }
-    }
-}
-
 impl WireFormat for ClockQuality {
     fn wire_size(&self) -> usize {
         4

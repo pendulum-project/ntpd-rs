@@ -1,42 +1,76 @@
 use arrayvec::ArrayVec;
 
 use crate::datastructures::common::PortIdentity;
-use crate::datastructures::datasets::{
-    CurrentDS, DefaultDS, DelayMechanism, ParentDS, PortDS, TimePropertiesDS,
-};
+use crate::datastructures::datasets::{CurrentDS, DefaultDS, ParentDS, PortDS, TimePropertiesDS};
 use crate::network::NetworkPort;
 use crate::{
     clock::{Clock, Watch},
     filters::Filter,
     network::{NetworkPacket, NetworkRuntime},
     port::Port,
-    time::{Duration, Instant},
+    time::Instant,
 };
-
-const MAX_PORTS: usize = 20;
 
 /// Object that acts as the central point of this library.
 /// It is the main instance of the running protocol.
 ///
 /// The instance doesn't run on its own, but requires the user to invoke the `handle_*` methods whenever required.
-pub struct PtpInstance<P, C, W, F> {
+pub struct PtpInstance<P, C, W, F, const N: usize> {
     default_ds: DefaultDS,
     current_ds: Option<CurrentDS>,
     parent_ds: Option<ParentDS>,
     time_properties_ds: TimePropertiesDS,
-    ports: ArrayVec<Port<P, W>, MAX_PORTS>,
+    ports: ArrayVec<Port<P, W>, N>,
     local_clock: C,
     filter: F,
 }
 
-impl<P, C, W, F> PtpInstance<P, C, W, F> {
+impl<P, C: Clock, F> PtpInstance<P, C, C::Watch, F, 1> {
+    /// Create a new instance
+    ///
+    /// - `local_clock`: The clock that will be adjusted and provides the watches
+    /// - `filter`: A filter for time measurements because those are always a bit wrong and need some processing
+    /// - `runtime`: The network runtime with which sockets can be opened
+    pub fn new_ordinary_clock<NR>(
+        default_ds: DefaultDS,
+        time_properties_ds: TimePropertiesDS,
+        local_clock: C,
+        filter: F,
+        port_ds: PortDS,
+        runtime: &mut NR,
+        interface: NR::InterfaceDescriptor,
+    ) -> Self
+    where
+        NR: NetworkRuntime<PortType = P>,
+    {
+        assert_eq!(
+            port_ds.port_identity,
+            PortIdentity {
+                clock_identity: default_ds.clock_identity,
+                port_number: 1,
+            }
+        );
+
+        PtpInstance {
+            default_ds,
+            current_ds: None,
+            parent_ds: None,
+            time_properties_ds,
+            ports: ArrayVec::new(),
+            local_clock,
+            filter,
+        }
+        .with_port(port_ds, runtime, interface)
+    }
+}
+
+impl<P, C, W, F, const N: usize> PtpInstance<P, C, W, F, N> {
     /// Create a new instance
     ///
     /// - `config`: The configuration of the ptp instance
-    /// - `runtime`: The network runtime with which sockets can be opened
     /// - `clock`: The clock that will be adjusted and provides the watches
     /// - `filter`: A filter for time measurements because those are always a bit wrong and need some processing
-    pub fn new(
+    pub fn new_boundary_clock(
         default_ds: DefaultDS,
         time_properties_ds: TimePropertiesDS,
         local_clock: C,
@@ -54,50 +88,31 @@ impl<P, C, W, F> PtpInstance<P, C, W, F> {
     }
 }
 
-impl<P, C: Clock, F> PtpInstance<P, C, C::Watch, F> {
+impl<P, C: Clock, F, const N: usize> PtpInstance<P, C, C::Watch, F, N> {
     pub fn with_port<NR>(
         mut self,
-        log_min_delay_req_interval: i8,
-        log_announce_interval: i8,
-        announce_receipt_timeout: u8,
-        log_sync_interval: i8,
-        delay_mechanism: DelayMechanism,
-        log_min_p_delay_req_interval: i8,
-        version_number: u8,
-        minor_version_number: u8,
-
+        port_ds: PortDS,
         runtime: &mut NR,
         interface: NR::InterfaceDescriptor,
     ) -> Self
     where
         NR: NetworkRuntime<PortType = P>,
     {
-        let port_number = self.ports.len() as u16 + 1;
-        let port_identity = PortIdentity {
-            clock_identity: self.default_ds.clock_identity,
-            port_number,
-        };
-        let port_ds = PortDS::new(
-            port_identity,
-            log_min_delay_req_interval,
-            log_announce_interval,
-            announce_receipt_timeout,
-            log_sync_interval,
-            delay_mechanism,
-            log_min_p_delay_req_interval,
-            version_number,
-            minor_version_number,
+        assert_eq!(
+            port_ds.port_identity,
+            PortIdentity {
+                clock_identity: self.default_ds.clock_identity,
+                port_number: self.ports.len() as u16 + 1,
+            }
         );
 
         // We always need a loop for the BMCA, so we create a watch immediately and set the alarm
         let mut bmca_watch = self.local_clock.get_watch();
-        bmca_watch.set_alarm(Duration::from_log_interval(log_announce_interval));
+        bmca_watch.set_alarm(port_ds.announce_interval());
 
         // Set the announce receipt timeout
         let mut announce_timeout_watch = self.local_clock.get_watch();
-        announce_timeout_watch.set_alarm(Duration::from_log_interval(
-            announce_receipt_timeout as i8 * log_announce_interval,
-        ));
+        announce_timeout_watch.set_alarm(port_ds.announce_receipt_interval());
 
         let announce_watch = self.local_clock.get_watch();
         let sync_watch = self.local_clock.get_watch();
@@ -116,7 +131,7 @@ impl<P, C: Clock, F> PtpInstance<P, C, C::Watch, F> {
     }
 }
 
-impl<P: NetworkPort, C: Clock, W: Watch, F: Filter> PtpInstance<P, C, W, F> {
+impl<P: NetworkPort, C: Clock, W: Watch, F: Filter, const N: usize> PtpInstance<P, C, W, F, N> {
     /// Let the instance handle a received network packet.
     ///
     /// This should be called for any and all packets that were received on the opened sockets of the network runtime.
@@ -135,7 +150,7 @@ impl<P: NetworkPort, C: Clock, W: Watch, F: Filter> PtpInstance<P, C, W, F> {
     }
 }
 
-impl<P: NetworkPort, C, W: Watch, F> PtpInstance<P, C, W, F> {
+impl<P: NetworkPort, C, W: Watch, F, const N: usize> PtpInstance<P, C, W, F, N> {
     /// Let the instance know what the TX or send timestamp was of a packet that was recently sent.
     ///
     /// When sending a time critical message we need to know exactly when it was sent to do all of the arithmetic.
@@ -146,7 +161,7 @@ impl<P: NetworkPort, C, W: Watch, F> PtpInstance<P, C, W, F> {
     }
 }
 
-impl<P: NetworkPort, C: Clock, F> PtpInstance<P, C, C::Watch, F> {
+impl<P: NetworkPort, C: Clock, F, const N: usize> PtpInstance<P, C, C::Watch, F, N> {
     /// When a watch alarm goes off, this function must be called with the id of the watch.
     /// There is no strict timing requirement, but it should not be called before the alarm time and should not be called
     /// more than 10ms after the alarm time.
