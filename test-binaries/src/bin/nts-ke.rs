@@ -215,7 +215,8 @@ pub(crate) async fn perform_key_exchange(
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    let domain = "time.cloudflare.com";
+    // let domain = "time.cloudflare.com";
+    let domain = "nts.time.nl"; // supports AesSivCmac512
     let port = 4460;
 
     let mut key_exchange = perform_key_exchange(domain.to_string(), port)
