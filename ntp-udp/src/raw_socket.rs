@@ -27,54 +27,92 @@ pub(crate) fn cerr(t: libc::c_int) -> std::io::Result<libc::c_int> {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+#[repr(i32)]
+#[allow(clippy::enum_variant_names)]
+pub(crate) enum TimestampMethod {
+    #[allow(dead_code)]
+    SoTimestamp = libc::SO_TIMESTAMP,
+    #[cfg(target_os = "linux")]
+    #[allow(dead_code)]
+    SoTimestampns = libc::SO_TIMESTAMPNS,
+    #[cfg(target_os = "linux")]
+    SoTimestamping = libc::SO_TIMESTAMPING,
+}
+
 mod set_timestamping_options {
     use std::os::unix::prelude::AsRawFd;
 
-    use super::{cerr, TimestampingConfig};
+    use super::{cerr, TimestampMethod, TimestampingConfig};
+
+    fn configure_timestamping_socket(
+        udp_socket: &std::net::UdpSocket,
+        method: TimestampMethod,
+        options: u32,
+    ) -> std::io::Result<libc::c_int> {
+        // Documentation on the timestamping calls:
+        //
+        // - linux: https://www.kernel.org/doc/Documentation/networking/timestamping.txt
+        // - freebsd: https://man.freebsd.org/cgi/man.cgi?setsockopt
+        //
+        // SAFETY:
+        //
+        // - the socket is provided by (safe) rust, and will outlive the call
+        // - method is guaranteed to be a valid "name" argument
+        // - the options pointer outlives the call
+        // - the `option_len` corresponds with the options pointer
+        //
+        // Only some bits are valid to set in `options`, but setting invalid bits is perfectly safe
+        //
+        // > Setting other bit returns EINVAL and does not change the current state.
+        unsafe {
+            cerr(libc::setsockopt(
+                udp_socket.as_raw_fd(),
+                libc::SOL_SOCKET,
+                method as i32 as libc::c_int,
+                &options as *const _ as *const libc::c_void,
+                std::mem::size_of_val(&options) as libc::socklen_t,
+            ))
+        }
+    }
 
     pub(crate) fn set_timestamping_options(
         udp_socket: &std::net::UdpSocket,
+        method: TimestampMethod,
         timestamping: TimestampingConfig,
     ) -> std::io::Result<()> {
-        let fd = udp_socket.as_raw_fd();
+        let options = match method {
+            TimestampMethod::SoTimestamp => timestamping.rx_software as u32,
+            #[cfg(target_os = "linux")]
+            TimestampMethod::SoTimestampns => timestamping.rx_software as u32,
+            #[cfg(target_os = "linux")]
+            TimestampMethod::SoTimestamping => {
+                let mut options = 0;
 
-        let mut options = 0;
+                if timestamping.rx_software || timestamping.tx_software {
+                    // enable software timestamping
+                    options |= libc::SOF_TIMESTAMPING_SOFTWARE
+                }
 
-        if timestamping.rx_software || timestamping.tx_software {
-            // enable software timestamping
-            options |= libc::SOF_TIMESTAMPING_SOFTWARE
-        }
+                if timestamping.rx_software {
+                    // we want receive timestamps
+                    options |= libc::SOF_TIMESTAMPING_RX_SOFTWARE
+                }
 
-        if timestamping.rx_software {
-            // we want receive timestamps
-            options |= libc::SOF_TIMESTAMPING_RX_SOFTWARE
-        }
+                if timestamping.tx_software {
+                    // - we want send timestamps
+                    // - return just the timestamp, don't send the full message along
+                    // - tag the timestamp with an ID
+                    options |= libc::SOF_TIMESTAMPING_TX_SOFTWARE
+                        | libc::SOF_TIMESTAMPING_OPT_TSONLY
+                        | libc::SOF_TIMESTAMPING_OPT_ID;
+                }
 
-        if timestamping.tx_software {
-            // - we want send timestamps
-            // - return just the timestamp, don't send the full message along
-            // - tag the timestamp with an ID
-            options |= libc::SOF_TIMESTAMPING_TX_SOFTWARE
-                | libc::SOF_TIMESTAMPING_OPT_TSONLY
-                | libc::SOF_TIMESTAMPING_OPT_ID;
-        }
-
-        // for documentation on SO_TIMESTAMPING see
-        // https://www.kernel.org/doc/Documentation/networking/timestamping.txt
-        // Safety:
-        // we have a reference to the socket, so fd is a valid file descriptor for the duration of the call
-        // SOL_SOCKET + SO_TIMESTAMPING expect a *u32 as value (see section 1.3.4. of above), which &options
-        // is. Furthermore, we own options hence the pointer is valid for the duration of the call.
-        // option_len is set to the size of u32, which is the size for which the value pointer is valid.
-        unsafe {
-            cerr(libc::setsockopt(
-                fd,
-                libc::SOL_SOCKET,
-                libc::SO_TIMESTAMPING,
-                &options as *const _ as *const libc::c_void,
-                std::mem::size_of::<u32>() as libc::socklen_t,
-            ))?
+                options
+            }
         };
+
+        configure_timestamping_socket(udp_socket, method, options)?;
 
         Ok(())
     }
@@ -110,7 +148,7 @@ mod recv_message {
 
         let mut mhdr = libc::msghdr {
             msg_control: control_buf.as_mut_ptr().cast::<libc::c_void>(),
-            msg_controllen: control_buf.len(),
+            msg_controllen: control_buf.len() as _,
             msg_iov: (&mut buf_slice as *mut IoSliceMut).cast::<libc::iovec>(),
             msg_iovlen: 1,
             msg_flags: 0,
@@ -264,6 +302,7 @@ mod recv_message {
             self.next_msg = unsafe { libc::CMSG_NXTHDR(&self.mhdr, self.next_msg) };
 
             Some(match (current_msg.cmsg_level, current_msg.cmsg_type) {
+                #[cfg(target_os = "linux")]
                 (libc::SOL_SOCKET, libc::SO_TIMESTAMPING | libc::SO_TIMESTAMPNS) => {
                     // Safety:
                     // current_msg was constructed from a pointer that pointed to a valid control message.
