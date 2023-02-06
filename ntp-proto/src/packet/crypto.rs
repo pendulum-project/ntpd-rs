@@ -1,4 +1,4 @@
-use aes_siv::{siv::Aes128Siv, Key, KeyInit};
+use aes_siv::{siv::Aes128Siv, siv::Aes256Siv, Key, KeyInit};
 use rand::Rng;
 use tracing::error;
 
@@ -16,6 +16,7 @@ pub trait Cipher: Sync + Send {
         plaintext: &[u8],
         associated_data: &[u8],
     ) -> std::io::Result<EncryptionResult>;
+
     fn decrypt(
         &self,
         nonce: &[u8],
@@ -110,5 +111,58 @@ impl Cipher for AesSivCmac256 {
 impl std::fmt::Debug for AesSivCmac256 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AesSivCmac256").finish()
+    }
+}
+
+pub struct AesSivCmac512 {
+    // 256 vs 512 difference is due to using the official name (us) vs
+    // the number of bits of security (aes_siv crate)
+    key: Key<Aes256Siv>,
+}
+
+impl AesSivCmac512 {
+    pub fn new(key: Key<Aes256Siv>) -> Self {
+        AesSivCmac512 { key }
+    }
+}
+
+impl Cipher for AesSivCmac512 {
+    fn encrypt(
+        &self,
+        plaintext: &[u8],
+        associated_data: &[u8],
+    ) -> std::io::Result<EncryptionResult> {
+        let mut siv = Aes256Siv::new(&self.key);
+        let nonce: [u8; 32] = rand::thread_rng().gen();
+        let ciphertext = match siv.encrypt([associated_data, &nonce], plaintext) {
+            Ok(v) => v,
+            Err(e) => {
+                // This should probably never happen, so log as an error
+                error!(error = ?e, "Encryption failed");
+                return Err(std::io::Error::from(std::io::ErrorKind::Other));
+            }
+        };
+        Ok(EncryptionResult {
+            nonce: nonce.into(),
+            ciphertext,
+        })
+    }
+
+    fn decrypt(
+        &self,
+        nonce: &[u8],
+        ciphertext: &[u8],
+        associated_data: &[u8],
+    ) -> Result<Vec<u8>, PacketParsingError> {
+        let mut siv = Aes256Siv::new(&self.key);
+        siv.decrypt([associated_data, nonce], ciphertext)
+            .map_err(|_| PacketParsingError::DecryptError)
+    }
+}
+
+// Ensure siv is not shown in debug output
+impl std::fmt::Debug for AesSivCmac512 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AesSivCmac512").finish()
     }
 }
