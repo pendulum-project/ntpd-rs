@@ -259,9 +259,7 @@ fn recv(
     // Loops through the control messages, but we should only get a single message in practice
     for msg in control_messages {
         match msg {
-            ControlMessage::Timestamping(timespec) => {
-                let timestamp = read_ntp_timestamp(timespec);
-
+            ControlMessage::Timestamping(timestamp) => {
                 return Ok((bytes_read as usize, sock_addr, Some(timestamp)));
             }
 
@@ -305,8 +303,8 @@ fn fetch_send_timestamp_help(
     let mut send_ts = None;
     for msg in control_messages {
         match msg {
-            ControlMessage::Timestamping(timespec) => {
-                send_ts = Some(read_ntp_timestamp(timespec));
+            ControlMessage::Timestamping(timestamp) => {
+                send_ts = Some(timestamp);
             }
 
             ControlMessage::ReceiveError(error) => {
@@ -339,21 +337,6 @@ fn fetch_send_timestamp_help(
     }
 
     Ok(send_ts)
-}
-
-fn read_ntp_timestamp(timespec: libc::timespec) -> NtpTimestamp {
-    // Unix uses an epoch located at 1/1/1970-00:00h (UTC) and NTP uses 1/1/1900-00:00h.
-    // This leads to an offset equivalent to 70 years in seconds
-    // there are 17 leap years between the two dates so the offset is
-    const EPOCH_OFFSET: u32 = (70 * 365 + 17) * 86400;
-
-    // truncates the higher bits of the i64
-    let seconds = (timespec.tv_sec as u32).wrapping_add(EPOCH_OFFSET);
-
-    // tv_nsec is always within [0, 1e10)
-    let nanos = timespec.tv_nsec as u32;
-
-    NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, nanos)
 }
 
 #[cfg(test)]
