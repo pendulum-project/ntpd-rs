@@ -133,7 +133,7 @@ impl Cipher for AesSivCmac512 {
         associated_data: &[u8],
     ) -> std::io::Result<EncryptionResult> {
         let mut siv = Aes256Siv::new(&self.key);
-        let nonce: [u8; 32] = rand::thread_rng().gen();
+        let nonce: [u8; 16] = rand::thread_rng().gen();
         let ciphertext = match siv.encrypt([associated_data, &nonce], plaintext) {
             Ok(v) => v,
             Err(e) => {

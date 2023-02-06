@@ -4,9 +4,13 @@ use std::{
     sync::Arc,
 };
 
-use aes_siv::Aes128SivAead;
+use aead::KeySizeUser;
+use aes_siv::{Aes128SivAead, Aes256SivAead};
 
-use crate::{cookiestash::CookieStash, packet::AesSivCmac256, peer::PeerNtsData};
+use crate::{
+    cookiestash::CookieStash, packet::AesSivCmac256, packet::AesSivCmac512, peer::PeerNtsData,
+    Cipher,
+};
 
 #[derive(Debug)]
 pub enum WriteError {
@@ -167,10 +171,12 @@ impl NtsRecord {
             NtsRecord::NextProtocol {
                 protocol_ids: vec![0],
             },
-            // https://www.iana.org/assignments/aead-parameters/aead-parameters.xhtml
             NtsRecord::AeadAlgorithm {
                 critical: false,
-                algorithm_ids: vec![15],
+                algorithm_ids: AeadAlgorithm::IN_ORDER_OF_PREFERENCE
+                    .iter()
+                    .map(|algorithm| *algorithm as u16)
+                    .collect(),
             },
             NtsRecord::EndOfMessage,
         ]
@@ -416,10 +422,82 @@ pub enum KeyExchangeError {
     IncompleteResponse,
 }
 
+/// From https://www.iana.org/assignments/aead-parameters/aead-parameters.xhtml
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
+#[repr(u8)]
+enum AeadAlgorithm {
+    #[default]
+    AeadAesSivCmac256 = 15,
+    AeadAesSivCmac512 = 17,
+}
+
+impl AeadAlgorithm {
+    // per https://www.rfc-editor.org/rfc/rfc8915.html#section-5.1
+    pub const fn c2s_context(self) -> [u8; 5] {
+        // The final octet SHALL be 0x00 for the C2S key
+        [0, 0, 0, self as u8, 0]
+    }
+
+    // per https://www.rfc-editor.org/rfc/rfc8915.html#section-5.1
+    pub const fn s2c_context(self) -> [u8; 5] {
+        // The final octet SHALL be 0x01 for the S2C key
+        [0, 0, 0, self as u8, 1]
+    }
+
+    const IN_ORDER_OF_PREFERENCE: &'static [Self] =
+        &[Self::AeadAesSivCmac512, Self::AeadAesSivCmac256];
+
+    fn extract_nts_keys(
+        &self,
+        tls_connection: &rustls::ClientConnection,
+    ) -> Result<NtsKeys, rustls::Error> {
+        match self {
+            AeadAlgorithm::AeadAesSivCmac256 => {
+                let c2s = extract_nts_key::<Aes128SivAead>(tls_connection, self.c2s_context())?;
+                let s2c = extract_nts_key::<Aes128SivAead>(tls_connection, self.s2c_context())?;
+
+                let c2s = Box::new(AesSivCmac256::new(c2s));
+                let s2c = Box::new(AesSivCmac256::new(s2c));
+
+                Ok(NtsKeys { c2s, s2c })
+            }
+            AeadAlgorithm::AeadAesSivCmac512 => {
+                let c2s = extract_nts_key::<Aes256SivAead>(tls_connection, self.c2s_context())?;
+                let s2c = extract_nts_key::<Aes256SivAead>(tls_connection, self.s2c_context())?;
+
+                let c2s = Box::new(AesSivCmac512::new(c2s));
+                let s2c = Box::new(AesSivCmac512::new(s2c));
+
+                Ok(NtsKeys { c2s, s2c })
+            }
+        }
+    }
+}
+
+struct NtsKeys {
+    c2s: Box<dyn Cipher>,
+    s2c: Box<dyn Cipher>,
+}
+
+fn extract_nts_key<T: KeySizeUser>(
+    tls_connection: &rustls::ClientConnection,
+    context: [u8; 5],
+) -> Result<aead::Key<T>, rustls::Error> {
+    let mut key: aead::Key<T> = Default::default();
+    tls_connection.export_keying_material(
+        &mut key,
+        b"EXPORTER-network-time-security",
+        Some(context.as_slice()),
+    )?;
+
+    Ok(key)
+}
+
 #[derive(Debug, PartialEq, Eq)]
 struct PartialKeyExchangeData {
     remote: Option<String>,
     port: Option<u16>,
+    algorithm: Option<AeadAlgorithm>,
     cookies: CookieStash,
 }
 
@@ -428,6 +506,7 @@ struct KeyExchangeResultDecoder {
     decoder: NtsRecordDecoder,
     remote: Option<String>,
     port: Option<u16>,
+    algorithm: Option<AeadAlgorithm>,
     cookies: CookieStash,
 }
 
@@ -452,6 +531,7 @@ impl KeyExchangeResultDecoder {
         self,
         record: NtsRecord,
     ) -> ControlFlow<Result<PartialKeyExchangeData, KeyExchangeError>, Self> {
+        use self::AeadAlgorithm as Algorithm;
         use ControlFlow::{Break, Continue};
         use KeyExchangeError::*;
         use NtsRecord::*;
@@ -466,6 +546,7 @@ impl KeyExchangeResultDecoder {
                     Break(Ok(PartialKeyExchangeData {
                         remote: state.remote,
                         port: state.port,
+                        algorithm: state.algorithm,
                         cookies: state.cookies,
                     }))
                 }
@@ -508,13 +589,16 @@ impl KeyExchangeResultDecoder {
                 }
             }
             AeadAlgorithm { algorithm_ids, .. } => {
-                // for now, AEAD_AES_SIV_CMAC_256 is the only algorithm we support, it has id 15
-                // https://www.iana.org/assignments/aead-parameters/aead-parameters.xhtml
+                let selected = Algorithm::IN_ORDER_OF_PREFERENCE
+                    .iter()
+                    .find_map(|algo| algorithm_ids.contains(&(*algo as u16)).then_some(*algo));
 
-                if !algorithm_ids.contains(&15) {
-                    Break(Err(NoValidAlgorithm))
-                } else {
-                    Continue(state)
+                match selected {
+                    None => Break(Err(NoValidAlgorithm)),
+                    Some(algorithm) => {
+                        state.algorithm = Some(algorithm);
+                        Continue(state)
+                    }
                 }
             }
 
@@ -542,9 +626,6 @@ pub struct KeyExchangeClient {
 
 impl KeyExchangeClient {
     const NTP_DEFAULT_PORT: u16 = 123;
-    const NTS_KEY_EXPORT_LABEL: &'static [u8] = b"EXPORTER-network-time-security";
-    const NTS_KEY_EXPORT_AESSIV128_C2S_CONTEXT: &'static [u8] = &[0, 0, 0, 15, 0];
-    const NTS_KEY_EXPORT_AESSIV128_S2C_CONTEXT: &'static [u8] = &[0, 0, 0, 15, 1];
 
     pub fn wants_read(&mut self) -> bool {
         self.tls_connection.wants_read()
@@ -576,30 +657,25 @@ impl KeyExchangeClient {
                     self.decoder = match self.decoder.step_with_slice(&buf[..n]) {
                         ControlFlow::Continue(decoder) => decoder,
                         ControlFlow::Break(Ok(result)) => {
-                            let mut c2s: aead::Key<Aes128SivAead> = Default::default();
-                            if let Err(e) = self.tls_connection.export_keying_material(
-                                &mut c2s,
-                                Self::NTS_KEY_EXPORT_LABEL,
-                                Some(Self::NTS_KEY_EXPORT_AESSIV128_C2S_CONTEXT),
-                            ) {
-                                return ControlFlow::Break(Err(KeyExchangeError::Tls(e)));
-                            }
-                            let mut s2c: aead::Key<Aes128SivAead> = Default::default();
-                            if let Err(e) = self.tls_connection.export_keying_material(
-                                &mut s2c,
-                                Self::NTS_KEY_EXPORT_LABEL,
-                                Some(Self::NTS_KEY_EXPORT_AESSIV128_S2C_CONTEXT),
-                            ) {
-                                return ControlFlow::Break(Err(KeyExchangeError::Tls(e)));
-                            }
+                            let algorithm = result.algorithm.unwrap_or_default();
+
+                            tracing::info!(?algorithm, "selected AEAD algorithm");
+
+                            let keys = match algorithm.extract_nts_keys(&self.tls_connection) {
+                                Ok(keys) => keys,
+                                Err(e) => return ControlFlow::Break(Err(KeyExchangeError::Tls(e))),
+                            };
+
+                            let nts = PeerNtsData {
+                                cookies: result.cookies,
+                                c2s: keys.c2s,
+                                s2c: keys.s2c,
+                            };
+
                             return ControlFlow::Break(Ok(KeyExchangeResult {
                                 remote: result.remote.unwrap_or(self.server_name),
                                 port: result.port.unwrap_or(Self::NTP_DEFAULT_PORT),
-                                nts: PeerNtsData {
-                                    cookies: result.cookies,
-                                    c2s: Box::new(AesSivCmac256::new(c2s)),
-                                    s2c: Box::new(AesSivCmac256::new(s2c)),
-                                },
+                                nts,
                             }));
                         }
                         ControlFlow::Break(Err(error)) => return ControlFlow::Break(Err(error)),
@@ -657,13 +733,13 @@ mod test {
 
         assert_eq!(
             buffer,
-            &[128, 1, 0, 2, 0, 0, 0, 4, 0, 2, 0, 15, 128, 0, 0, 0]
+            &[128, 1, 0, 2, 0, 0, 0, 4, 0, 4, 0, 17, 0, 15, 128, 0, 0, 0]
         );
     }
 
     #[test]
     fn test_decode_client_key_exchange_records() {
-        let bytes = [128, 1, 0, 2, 0, 0, 0, 4, 0, 2, 0, 15, 128, 0, 0, 0];
+        let bytes = [128, 1, 0, 2, 0, 0, 0, 4, 0, 4, 0, 17, 0, 15, 128, 0, 0, 0];
 
         let mut decoder = NtsRecord::decoder();
         decoder.extend(bytes);
