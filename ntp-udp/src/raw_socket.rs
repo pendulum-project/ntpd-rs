@@ -83,6 +83,7 @@ mod set_timestamping_options {
 mod recv_message {
     use std::{io::IoSliceMut, marker::PhantomData, net::SocketAddr, os::unix::prelude::AsRawFd};
 
+    use ntp_proto::NtpTimestamp;
     use tracing::warn;
 
     use crate::interface_name::sockaddr_storage_to_socket_addr;
@@ -169,6 +170,31 @@ mod recv_message {
         ))
     }
 
+    // Unix uses an epoch located at 1/1/1970-00:00h (UTC) and NTP uses 1/1/1900-00:00h.
+    // This leads to an offset equivalent to 70 years in seconds
+    // there are 17 leap years between the two dates so the offset is
+    const EPOCH_OFFSET: u32 = (70 * 365 + 17) * 86400;
+
+    fn read_ntp_timestamp_timespec(timespec: libc::timespec) -> NtpTimestamp {
+        // truncates the higher bits of the i64
+        let seconds = (timespec.tv_sec as u32).wrapping_add(EPOCH_OFFSET);
+
+        // tv_nsec is always within [0, 1e10)
+        let nanos = timespec.tv_nsec as u32;
+
+        NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, nanos)
+    }
+
+    fn read_ntp_timestamp_timeval(timespec: libc::timeval) -> NtpTimestamp {
+        // truncates the higher bits of the i64
+        let seconds = (timespec.tv_sec as u32).wrapping_add(EPOCH_OFFSET);
+
+        let micros = timespec.tv_usec as u32;
+        let nanos = micros * 1000;
+
+        NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, nanos)
+    }
+
     // Invariants:
     // self.mhdr points to a valid libc::msghdr with a valid control
     // message region.
@@ -212,7 +238,7 @@ mod recv_message {
     }
 
     pub(crate) enum ControlMessage {
-        Timestamping(libc::timespec),
+        Timestamping(NtpTimestamp),
         ReceiveError(libc::sock_extended_err),
         Other(libc::cmsghdr),
     }
@@ -230,7 +256,7 @@ mod recv_message {
             // Invariants ensure that self.mhdr points to a valid libc::msghdr with a valid control
             // message region, and that self.next_msg either points to a valid control message
             // or is NULL.
-            // Since the previous statement ensures self.next_msg is not null, both passed
+            // The previous statement would have returned if self.next_msg were NULL, therefore both passed
             // pointers are valid for use with CMSG_NXTHDR
             // Invariant preservation:
             // CMSG_NXTHDR returns either a pointer to the next valid control message in the control
@@ -238,15 +264,23 @@ mod recv_message {
             self.next_msg = unsafe { libc::CMSG_NXTHDR(&self.mhdr, self.next_msg) };
 
             Some(match (current_msg.cmsg_level, current_msg.cmsg_type) {
-                (libc::SOL_SOCKET, libc::SO_TIMESTAMPING) => {
+                (libc::SOL_SOCKET, libc::SO_TIMESTAMPING | libc::SO_TIMESTAMPNS) => {
                     // Safety:
-                    // current_msg was constructed from a pointer that pointed to a valid
-                    // control message.
-                    // SO_TIMESTAMPING always has a timespec in the data
+                    // current_msg was constructed from a pointer that pointed to a valid control message.
+                    // SO_TIMESTAMPING and SO_TIMESTAMPNS always have a timespec in the data
                     let cmsg_data =
                         unsafe { libc::CMSG_DATA(current_msg) } as *const libc::timespec;
                     let timespec = unsafe { std::ptr::read_unaligned(cmsg_data) };
-                    ControlMessage::Timestamping(timespec)
+                    ControlMessage::Timestamping(read_ntp_timestamp_timespec(timespec))
+                }
+
+                (libc::SOL_SOCKET, libc::SO_TIMESTAMP) => {
+                    // Safety:
+                    // current_msg was constructed from a pointer that pointed to a valid control message.
+                    // SO_TIMESTAMP always has a timeval in the data
+                    let cmsg_data = unsafe { libc::CMSG_DATA(current_msg) } as *const libc::timeval;
+                    let timeval = unsafe { std::ptr::read_unaligned(cmsg_data) };
+                    ControlMessage::Timestamping(read_ntp_timestamp_timeval(timeval))
                 }
 
                 (libc::SOL_IP, libc::IP_RECVERR) | (libc::SOL_IPV6, libc::IPV6_RECVERR) => {
