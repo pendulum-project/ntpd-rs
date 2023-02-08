@@ -46,17 +46,19 @@ enum Handshake {
 #[derive(Debug)]
 enum DelayHandshake {
     Initial,
-    AfterSync { delay_id: u16, delay_send_id: usize },
-    AfterTimestamp { delay_send_time: Instant },
-    AfterMeasurement { mean_delay: Duration },
+    AfterSync {
+        delay_id: u16,
+        delay_send_time: Instant,
+    },
+    AfterMeasurement {
+        mean_delay: Duration,
+    },
 }
 
 impl DelayHandshake {
     pub fn finished(&self) -> bool {
         match self {
-            DelayHandshake::Initial
-            | DelayHandshake::AfterSync { .. }
-            | DelayHandshake::AfterTimestamp { .. } => false,
+            DelayHandshake::Initial | DelayHandshake::AfterSync { .. } => false,
             DelayHandshake::AfterMeasurement { .. } => true,
         }
     }
@@ -74,18 +76,19 @@ impl SlaveState {
         }
     }
 
-    pub(crate) fn handle_message<P: NetworkPort>(
+    pub(crate) async fn handle_message<P: NetworkPort>(
         &mut self,
         message: Message,
         current_time: Instant,
-        tc_port: &mut P,
+        network_port: &mut P,
         port_identity: PortIdentity,
     ) -> Result<()> {
         // Only listen to master
         if message.header().source_port_identity() != self.remote_master {
             match message {
                 Message::Sync(message) => {
-                    self.handle_sync(message, current_time, tc_port, port_identity)
+                    self.handle_sync(message, current_time, network_port, port_identity)
+                        .await
                 }
                 Message::FollowUp(message) => self.handle_follow_up(message),
                 Message::DelayResp(message) => self.handle_delay_resp(message),
@@ -96,11 +99,11 @@ impl SlaveState {
         }
     }
 
-    fn handle_sync<P: NetworkPort>(
+    async fn handle_sync<P: NetworkPort>(
         &mut self,
         message: SyncMessage,
         current_time: Instant,
-        tc_port: &mut P,
+        network_port: &mut P,
         port_identity: PortIdentity,
     ) -> Result<()> {
         match self.handshake {
@@ -130,12 +133,15 @@ impl SlaveState {
                         .log_message_interval(0x7F)
                         .delay_req_message(Timestamp::default());
                     let delay_req_encode = delay_req.serialize_vec().unwrap();
-                    let delay_send_id = tc_port
-                        .send(&delay_req_encode)
+                    let delay_send_time = network_port
+                        .send_time_critical(&delay_req_encode)
+                        .await
                         .expect("Program error: missing timestamp id");
+                    // TODO: This does nothing currently
+                    self.finish_delay_measurement();
                     self.delay_handshake = DelayHandshake::AfterSync {
                         delay_id,
-                        delay_send_id,
+                        delay_send_time,
                     };
                 } else {
                     // TODO: Seems very weird to me
@@ -230,34 +236,15 @@ impl SlaveState {
                         Ok(())
                     }
                     // Wrong state
-                    DelayHandshake::Initial
-                    | DelayHandshake::AfterTimestamp { .. }
-                    | DelayHandshake::AfterMeasurement { .. } => Err(SlaveError::OutOfSequence),
+                    DelayHandshake::Initial | DelayHandshake::AfterMeasurement { .. } => {
+                        Err(SlaveError::OutOfSequence)
+                    }
                 }
             }
             // Wrong state
             Handshake::Initial | Handshake::AfterSync { .. } | Handshake::AfterDelayResp { .. } => {
                 Err(SlaveError::OutOfSequence)
             }
-        }
-    }
-
-    pub(crate) fn handle_send_timestamp(&mut self, id: usize, timestamp: Instant) -> Result<()> {
-        match self.delay_handshake {
-            DelayHandshake::AfterSync { delay_send_id, .. } => {
-                if delay_send_id == id {
-                    self.delay_handshake = DelayHandshake::AfterTimestamp {
-                        delay_send_time: timestamp,
-                    };
-                    self.finish_delay_measurement()
-                } else {
-                    Err(SlaveError::OutOfSequence)
-                }
-            }
-            // Wrong state
-            DelayHandshake::Initial
-            | DelayHandshake::AfterTimestamp { .. }
-            | DelayHandshake::AfterMeasurement { .. } => Err(SlaveError::OutOfSequence),
         }
     }
 
@@ -270,7 +257,9 @@ impl SlaveState {
                 delay_recv_time,
             } => {
                 match self.delay_handshake {
-                    DelayHandshake::AfterTimestamp { delay_send_time } => {
+                    DelayHandshake::AfterSync {
+                        delay_send_time, ..
+                    } => {
                         let mean_delay = (sync_recv_time - sync_send_time
                             + (delay_recv_time - delay_send_time))
                             / 2;
@@ -285,9 +274,9 @@ impl SlaveState {
                         Ok(())
                     }
                     // Wrong state
-                    DelayHandshake::Initial
-                    | DelayHandshake::AfterSync { .. }
-                    | DelayHandshake::AfterMeasurement { .. } => Err(SlaveError::OutOfSequence),
+                    DelayHandshake::Initial | DelayHandshake::AfterMeasurement { .. } => {
+                        Err(SlaveError::OutOfSequence)
+                    }
                 }
             }
             // Wrong state
@@ -321,9 +310,9 @@ impl SlaveState {
                         Ok(result)
                     }
                     // Wrong state
-                    DelayHandshake::Initial
-                    | DelayHandshake::AfterSync { .. }
-                    | DelayHandshake::AfterTimestamp { .. } => Err(SlaveError::OutOfSequence),
+                    DelayHandshake::Initial | DelayHandshake::AfterSync { .. } => {
+                        Err(SlaveError::OutOfSequence)
+                    }
                 }
             }
             // Wrong state

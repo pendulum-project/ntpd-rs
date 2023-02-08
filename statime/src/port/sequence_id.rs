@@ -9,7 +9,8 @@ impl SequenceIdGenerator {
     }
 
     pub fn generate(&mut self) -> u16 {
+        let id = self.current;
         self.current = self.current.wrapping_add(1);
-        self.current
+        id
     }
 }

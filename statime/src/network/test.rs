@@ -1,93 +1,79 @@
 #![cfg(feature = "std")]
 
-use std::string::String;
-use std::{cell::RefCell, rc::Rc};
-
-use arrayvec::ArrayVec;
-
-use super::{NetworkPort, NetworkRuntime};
+use super::{NetworkPacket, NetworkPort, NetworkRuntime};
+use crate::time::Instant;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TestNetworkPacket {
-    pub data: ArrayVec<u8, 255>,
-    pub interface: String,
-    pub time_critical: bool,
-    pub index: usize,
+    data: Vec<u8>,
 }
 
-#[derive(Debug, Default)]
-pub struct TestRuntimeData {
-    pub packet_buffer: ArrayVec<TestNetworkPacket, 255>,
-}
-
-#[derive(Debug, Clone, Default)]
+#[derive(Debug)]
 pub struct TestRuntime {
-    pub data: Rc<RefCell<TestRuntimeData>>,
+    pub data_sender: tokio::sync::broadcast::Sender<TestNetworkPacket>,
 }
 
-#[derive(Debug, Default)]
+impl Default for TestRuntime {
+    fn default() -> Self {
+        Self {
+            data_sender: tokio::sync::broadcast::channel(100).0,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct TestRuntimePort {
-    pub data: Rc<RefCell<TestRuntimeData>>,
-    pub interface: String,
-    pub time_critical: bool,
-    pub send_index: usize,
+    data_sender: tokio::sync::broadcast::Sender<TestNetworkPacket>,
+    data_receiver: tokio::sync::broadcast::Receiver<TestNetworkPacket>,
 }
 
 #[derive(Debug)]
 pub enum TestError {}
 
-impl TestRuntime {
-    pub fn get_sent(&self) -> Option<TestNetworkPacket> {
-        self.data.borrow_mut().packet_buffer.pop()
-    }
-}
-
 impl NetworkRuntime for TestRuntime {
-    type InterfaceDescriptor = String;
-    type PortType = TestRuntimePort;
+    type InterfaceDescriptor = ();
+    type NetworkPort = TestRuntimePort;
     type Error = TestError;
 
-    fn open(
+    async fn open(
         &mut self,
-        interface: Self::InterfaceDescriptor,
-        time_critical: bool,
-    ) -> Result<Self::PortType, Self::Error> {
+        _interface: Self::InterfaceDescriptor,
+    ) -> Result<Self::NetworkPort, Self::Error> {
         Ok(TestRuntimePort {
-            data: Rc::clone(&self.data),
-            interface,
-            time_critical,
-            send_index: 0,
+            data_sender: self.data_sender.clone(),
+            data_receiver: self.data_sender.subscribe(),
         })
-    }
-
-    fn recv(&mut self) -> Result<super::NetworkPacket, Self::Error> {
-        todo!()
     }
 }
 
 impl NetworkPort for TestRuntimePort {
-    fn send(&mut self, data: &[u8]) -> Option<usize> {
-        let index = self.send_index;
-        let mut data_array = ArrayVec::<u8, 255>::new();
-        for item in data.iter() {
-            data_array.push(*item);
-        }
+    type Error = TestError;
 
-        self.send_index += 1;
-        self.data
-            .borrow_mut()
-            .packet_buffer
-            .push(TestNetworkPacket {
-                data: data_array,
-                interface: self.interface.clone(),
-                time_critical: self.time_critical,
-                index,
-            });
+    async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+        self.data_sender
+            .send(TestNetworkPacket {
+                data: data.to_vec(),
+            })
+            .unwrap();
+        Ok(())
+    }
 
-        if self.time_critical {
-            Some(index)
-        } else {
-            None
-        }
+    async fn send_time_critical(
+        &mut self,
+        data: &[u8],
+    ) -> Result<crate::time::Instant, Self::Error> {
+        self.data_sender
+            .send(TestNetworkPacket {
+                data: data.to_vec(),
+            })
+            .unwrap();
+        Ok(Instant::from_secs(0))
+    }
+
+    async fn recv(&mut self) -> Result<super::NetworkPacket, Self::Error> {
+        Ok(NetworkPacket {
+            data: self.data_receiver.recv().await.unwrap().data,
+            timestamp: Instant::from_secs(0),
+        })
     }
 }

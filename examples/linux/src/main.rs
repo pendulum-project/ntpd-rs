@@ -1,16 +1,15 @@
-use std::sync::mpsc;
-
 use clap::{AppSettings, Parser};
 
 use statime::datastructures::common::{PortIdentity, TimeSource};
 use statime::datastructures::datasets::{DefaultDS, DelayMechanism, PortDS, TimePropertiesDS};
+use fern::colors::Color;
 use statime::{
-    datastructures::{common::ClockIdentity, messages::Message},
+    datastructures::common::ClockIdentity,
     filters::basic::BasicFilter,
     ptp_instance::PtpInstance,
 };
 use statime_linux::{
-    clock::{LinuxClock, RawLinuxClock},
+    clock::{LinuxClock, LinuxTimer, RawLinuxClock},
     network::linux::{get_clock_id, LinuxInterfaceDescriptor, LinuxRuntime},
 };
 
@@ -63,13 +62,20 @@ struct Args {
 }
 
 fn setup_logger(level: log::LevelFilter) -> Result<(), fern::InitError> {
+    let colors = fern::colors::ColoredLevelConfig::new()
+        .error(Color::Red)
+        .warn(Color::Yellow)
+        .info(Color::BrightGreen)
+        .debug(Color::BrightBlue)
+        .trace(Color::BrightBlack);
+
     fern::Dispatch::new()
-        .format(|out, message, record| {
+        .format(move |out, message, record| {
             out.finish(format_args!(
                 "{}[{}][{}] {}",
-                chrono::Local::now().format("[%Y-%m-%d][%H:%M:%S]"),
+                chrono::Local::now().format("[%H:%M:%S.%f]"),
                 record.target(),
-                record.level(),
+                colors.color(record.level()),
                 message
             ))
         })
@@ -79,9 +85,13 @@ fn setup_logger(level: log::LevelFilter) -> Result<(), fern::InitError> {
     Ok(())
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = Args::parse();
     setup_logger(args.loglevel).expect("Could not setup logging");
+
+    println!("Starting PTP");
+
     let (tx, rx) = mpsc::channel();
     let mut network_runtime = LinuxRuntime::new(tx, args.hardware_clock.is_some());
     let (clock, mut clock_runtime) = if let Some(hardware_clock) = &args.hardware_clock {
@@ -91,6 +101,7 @@ fn main() {
     } else {
         LinuxClock::new(RawLinuxClock::get_realtime_clock())
     };
+    let network_runtime = LinuxRuntime::new(args.hardware_clock.is_some(), &clock);
     let clock_identity = ClockIdentity(get_clock_id().expect("Could not get clock identity"));
 
     let default_ds =
@@ -119,40 +130,7 @@ fn main() {
         port_ds,
         &mut network_runtime,
         args.interface,
-    );
+    ).await;
 
-    loop {
-        let packet = if let Some(timeout) = clock_runtime.interval_to_next_alarm() {
-            match rx.recv_timeout(std::time::Duration::from_nanos(timeout.nanos().to_num())) {
-                Ok(data) => Some(data),
-                Err(mpsc::RecvTimeoutError::Timeout) => None,
-                Err(e) => Err(e).expect("Could not get further network packets"),
-            }
-        } else {
-            Some(rx.recv().expect("Could not get further network packets"))
-        };
-        if let Some(packet) = packet {
-            // TODO: Implement better mechanism for send timestamps
-            let parsed_message = Message::deserialize(&packet.data).unwrap();
-            if parsed_message
-                .header()
-                .source_port_identity()
-                .clock_identity
-                == clock_identity
-            {
-                if let Some(timestamp) = packet.timestamp {
-                    instance.handle_send_timestamp(
-                        parsed_message.header().sequence_id() as usize,
-                        timestamp,
-                    );
-                }
-            } else {
-                instance.handle_network(&packet);
-            }
-        }
-
-        while let Some(timer_id) = clock_runtime.check() {
-            instance.handle_alarm(timer_id);
-        }
-    }
+    instance.run(&LinuxTimer).await;
 }

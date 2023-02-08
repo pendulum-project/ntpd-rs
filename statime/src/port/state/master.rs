@@ -23,18 +23,19 @@ impl MasterState {
         }
     }
 
-    pub fn handle_message<P: NetworkPort>(
+    pub async fn handle_message<P: NetworkPort>(
         &mut self,
         message: Message,
         current_time: Instant,
-        nc_port: &mut P,
+        network_port: &mut P,
         port_identity: PortIdentity,
     ) -> Result<()> {
         // Always ignore messages from own port
         if message.header().source_port_identity() != port_identity {
             match message {
                 Message::DelayReq(message) => {
-                    self.handle_delay_req(message, current_time, nc_port, port_identity)
+                    self.handle_delay_req(message, current_time, network_port, port_identity)
+                        .await
                 }
                 _ => Err(PortError::UnexpectedMessage),
             }
@@ -43,11 +44,11 @@ impl MasterState {
         }
     }
 
-    fn handle_delay_req<P: NetworkPort>(
+    async fn handle_delay_req<P: NetworkPort>(
         &mut self,
         message: DelayReqMessage,
         current_time: Instant,
-        nc_port: &mut P,
+        network_port: &mut P,
         port_identity: PortIdentity,
     ) -> Result<()> {
         let delay_resp_message = MessageBuilder::new()
@@ -59,7 +60,7 @@ impl MasterState {
             );
 
         let delay_resp_encode = delay_resp_message.serialize_vec()?;
-        nc_port.send(&delay_resp_encode);
+        network_port.send(&delay_resp_encode).await;
 
         Ok(())
     }

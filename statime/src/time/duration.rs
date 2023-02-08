@@ -79,6 +79,12 @@ impl From<TimeInterval> for Duration {
     }
 }
 
+impl From<Duration> for core::time::Duration {
+    fn from(value: Duration) -> Self {
+        core::time::Duration::from_nanos(value.nanos().saturating_to_num())
+    }
+}
+
 impl Neg for Duration {
     type Output = Duration;
 
