@@ -61,8 +61,9 @@ Upon startup, the daemon first parses any given command line arguments and uses 
 Immediately after, further configuration is read from file and used to generate the definitive logging system. At this point, the main configuration steps are completed, and the combined command line and file base configuration is used to setup 4 tasks:
  - The main clock steering task.
  - One peer task per configured peer (remote server).
+ - One server task per configured interface on which to serve time.
  - One task for exposing state for observability.
- - One task for dynamic configuration changes (yet to be implemented).
+ - One task for dynamic configuration changes.
 
 ### Peer tasks
 
@@ -71,19 +72,21 @@ The daemon runs a single peer task per configured peer. This task is responsible
 The main loop of the peer waits on 3 futures concurrently:
  - A timer, which triggers sending a new poll message.
  - The network socket, receiving a packet here triggers packet processing and measurement filtering.
- - A reset channel, which triggers a reset of the filter state and cancels any currently in flight measurements (needed when the system clock needs to make a larger jump).
+ - A configuration channel, receiving configuration changes.
 
 Should any of these events happen, after handling it the peer task then sends an updated version of the sections of its state needed for clock steering to the main clock steering task.
 
+### Server task
+
+The daemon runs a single task per interface on which ntp packets are served (where the any (0.0.0.0) interface counts as a single interface). This task is responsible for managing the socket for that interface, reading messages and providing the proper server responses.
+
+The main loop of the server waits on 2 futures concurrently:
+ - The network socket
+ - A channel providing synchronization state updates
+
 ### Clock steering task
 
-The clock steering task listens for the messages from the peers with their updated state. It keeps a local copy of the last received state from each peer, and also the state of the clock steering algorithm. Some (but not all) updates from a peer indicate that it now has some new measurement data available. If this happens, the clock steering task triggers the following:
- - It creates a list of all peers whose current state is such that they can be used in steering the system clock
- - This list is then processed to see if the peers, with sufficient certainty, agree on the current offset of our system clock, and by how much.
- - If consensus was reached in the previous step, then this information is fed to the clock steering, which adjust the system clock accordingly.
- - Finally, if the system clock steering decided that the offset was large enough that it could only be corrected with a jump larger than 125ms, it tells each of the peers to reset its filter state.
-
-The reset when doing a jump is a critical function of the clock steering task. After the jump, any previous or currently in flight measurements from our peers are invalid, as they either represent the old situation, or worse, effectively used a different timescale for measuring the sending time of the poll request and the reception time of the response.
+The clock steering task listens for the messages from the peers with their updated state. It keeps a local copy of the last received state from each peer, and also the state of the clock steering algorithm. Some (but not all) updates from a peer indicate that it now has some new measurement data available. If this happens, the clock steering task triggers a clock algorithm update.
 
 ### Observability task
 
