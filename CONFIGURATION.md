@@ -4,7 +4,7 @@ If you want to try out ntpd-rs, this guide provides the basic information needed
 
 ## Limitations
 
-Unlike the ntp reference implementation, ntpd-rs does not support either broadcast or symmetric modes, nor is there any plan to do so in the future. The decision to exclude these modes was taken because their design leaves them relatively vulnerable to security issues, and this is not easily mitigated. Furthermore, use of these modes can be replaced with client-server mode connections in almost all usecases at a minimal cost in convenience and network traffic.
+Unlike the ntp reference implementation, ntpd-rs does not support either broadcast or symmetric modes, nor is there any plan to do so in the future. The decision to exclude these modes was taken because their design leaves them relatively vulnerable to security issues, and this is not easily mitigated. Furthermore, use of these modes can be replaced with client-server mode connections in almost all cases at a minimal cost in convenience and network traffic.
 
 ## Building
 
@@ -26,6 +26,12 @@ sudo ./target/release/ntp-daemon -p pool.ntp.org
 
 After a few minutes you should start to see messages indicating the offset of your machine from the server.
 
+### New clock algorithm
+
+NTPD-rs now also supports a new, better performing clock algorithm. This algorithm doesn't conform to the specification in RFC5905, but offers significantly better performance. Experience with both it and Chrony's non-standard algorithm indicates that a different clock algorithm does not impede interoperability.
+
+Currently, the new algorithm is opt-in, and must be selected at build time. To build it, add the additional flags `--features new-algorithm` to the build command. Please note that when using the new clock algorithm, a different set of configuration options needs to be used to tune it, as indicated below.
+
 ## Configuration
 
 The ntp-daemon binary can be configured through two channels: via command line options and via a configuration file. The command line options are primarily intended to tell ntp-daemon where to find its configuration file, and to override the most important settings when debugging problems. The configuration file is the preferred method of configuring ntp-daemon, and allows changing of settings not available through the command line.
@@ -45,16 +51,65 @@ The following command line options are available. When an option is not provided
 
 The ntp-daemon's primary configuration method is through a TOML configuration file. By default, this is looked for first in the current working directory (e.g. under `./ntp.toml`), and next in the system-wide configuration directories under `/etc/ntp.toml`. A non-standard location can be provided via the `-c` or `--config` command line flags.
 
-General options:
+#### General options
+
 | Option | Default | Description |
 | --- | --- | --- |
 | log-filter | info | Set the amount of information logged. Available levels: trace, debug, info, warn. |
 
-Peers are configured in the `peers` section. Per peer, the following options are available:
+#### Peer configuration
+
+Peers are configured in the peers section, which should consist of a list of peers. Per peer, the following options are available:
 | Option | Default | Description |
 | --- | --- | --- |
-| addr | | Address of the remote server. |
-Note that peers can also be generated from simply a string containing the address, see also the example below.
+| mode | server | Type of peer connection to create. Can be any of `server`, `nts-server` or `pool` (for meaning of these, see below). |
+| addr | | Address of the server or pool. The default port (123) is automatically appended if not given. (not valid for nts connections) |
+| addr-ke | | Address of the nts server. The default port (4460) is automatically appended if not given. (only valid for nts connections) |
+| max-peers | 1 | Maximum number of peers to create from the pool. (only  valid for pools) |
+| certifcates | | Path to a pem file containing additional root certificates to accept for the TLS connection to the nts server. In addition to these certificates, the system certificates will also be accepted. (only valid for nts connections) |
+
+##### Server peers
+
+Server peers are direct NTP connections to a single remote server. This is the default. In addition to being able to be configured as a struct, they can also be configured from a string. This is useful when defining multiple servers. For example:
+
+```
+# As a simple list (pool servers from ntppool.org)
+peers = ["0.pool.ntp.org", "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
+
+# Or by providing written out configuration
+[[peers]]
+addr = "0.pool.ntp.org:123"
+
+[[peers]]
+addr = "1.pool.ntp.org:123"
+```
+
+##### Nts peers
+
+A peer in `server-nts` mode will use NTS (Network Times Security) to communicate with its server. The server must support NTS. The configuration requires the address of the Key Exchange server (the address of the actual NTP server that ends up being used may be different). For example:
+
+```
+[[peers]]
+mode = "server-nts"
+ke_addr = "time.cloudflare.com:4460"
+certificate = "/path/to/certificates.pem"
+```
+
+##### Pool
+
+`Pool` mode is a convenient way to configure many NTP servers, without having to worry about individual server's IP addresses.
+
+A peer in `Pool` mode will try to acquire `max_peers` addresses of NTP servers from the pool. `ntpd-rs` will actively try to keep a pool filled up. For instance if a server cannot be reached, a different server will be picked from the pool.
+
+An example configuration for the ntppool.org ntp pool can look like
+```
+[[peers]]
+addr = "pool.ntp.org"
+mode = "Pool"
+max_peers = 4
+```
+
+#### Server
 
 Interfaces on which to act as a server are configured in the `server` section. Per interface configured, the following options are available:
 | Option | Default | Description |
@@ -66,7 +121,9 @@ Interfaces on which to act as a server are configured in the `server` section. P
 | denylist-action | | Action taken when a client's IP is on the list of denied clients. Can be `Ignore` to ignore packets from such clients, or `Deny` to send a deny response to those clients. |
 | rate-limiting-cache-size | 0 | How many clients to remember for the purpose of rate limiting. Increasing this number also decreases the probability of two clients sharing an entry in the table. A size of 0 disables rate limiting. |
 | rate-limiting-cutoff-ms | 1000 | Minimum time between two client requests from the same IP address, in milliseconds. When a client send requests closer together than this it is sent a rate limit message instead of a normal time-providing response. |
+
 For rate limiting, the server uses a hashtable to store when it has last seen a client. On a hash collision, the previous entry at that position is evicted. At small table sizes, this might reduce the effectiveness of ratelimiting when combined with high overall server load.
+
 In applying the three client filters (deny, allow and ratelimiting), the server first checks whether the clients IP is on the denylist, then it checks whether it is on the allowlist, and finally it checks whether the client needs to be rate-limited. At each of these stages, the appropriate action is taken when the client fails the check.
 
 The daemon can expose an observation socket that can be read to obtain information on the current state of the peer connections and clock steering algorithm. This socket can be configured via the `observe` section:
@@ -87,18 +144,64 @@ There are a number of options available to influence how time differences to the
 | Option | Default | Description |
 | --- | --- | --- |
 | min-intersection-survivors | 3 | Minimum number of servers that need to agree on the true time from our perspective for synchronization to start. |
+| panic-threshold | 1800 (symmetric) | Largest time difference the client is allowed to correct in one go. Differences beyond this cause the client to abort synchronization. Value provided is in seconds, set to "inf" to disable checking of jumps. Setting this to 0 will disable time jumps except at startup. |
+| startup-panic-threshold | No limit forward, 1800 backward | Largest time difference the client is allowed to correct during startup. By default, this is unrestricted as we may be the initial source of time for systems without a hardware backed clock. Value provided is in seconds, set to "inf" to disable checking of jumps. |
+| accumulated-threshold | Disabled | Total amount of time difference the client is allowed to correct using steps whilst running. By default, this is unrestricted. Value provided is in seconds, set to 0 to disable checking of accumulated steps. |
+| local-stratum | 16 | Stratum of the local clock, when not synchronized through ntp. The default value of 16 is conventionally used to indicate unsynchronized clocks. This can be used in servers to indicate that there are external mechanisms synchronizing the clock by setting it to the appropriate value for the external source. If the external source is a GPS clock or a direct connection to a UTC source, this will typically be 1. |
+| poll-interval-limits | { min = 4, max = 10 } | Limits on the poll interval towards clients. The defaults are fine for most applications. The values are given as the log2 of the number of seconds, so 4 indicates a poll interval of 32 seconds, and 10 a poll interval of 1024 seconds. |
+| initial-poll | 4 | Initial poll interval used on startup. The value is given as the log2 of the number of seconds, so 4 indicates a poll interval of 32 seconds. |
+
+For panic thresholds, asymmetric thresholds can be configured, allowing a different sized step going forwards compared to going backwards. This is done by configuring a struct with two values, `forward` and `backward` for the panic threshold.
+
+##### Algorithm specific options
+
+NTPD-rs currently supports two choices for algorithms:
+ - The algorithm specified in RFC5905
+ - A custom, higher performance algorithm.
+
+Which algorithm is used is determined by a compile time flag (see above).
+
+The standard algorithm has the following additional configuration options. All of these have reasonable defaults and care should be taken when changing them.
+| Option | Default | Description |
+| --- | --- | --- |
 | min-cluster-survivors | 3 | Number of servers beyond which we do not try to exclude further servers for the purpose of improving measurement precision. Do not change unless familiar with the NTP algorithms. |
 | frequency-tolerance | 15 | Estimate of the short-time frequency precision of the local clock, in parts-per-million. The default is usually a good approximation. |
 | distance-threshold | 1 | Maximum delay to the clock representing ground truth via a peer for that peer to be considered acceptable, in seconds. |
 | frequency-measurement-period | 900 | Amount of time to spend on startup measuring the frequency offset of the system clock, in seconds. Lowering this means the clock is kept actively synchronized sooner, but reduces the precision of the initial frequency estimate, which could result in lower stability of the clock early on. |
 | spike-threshold | 900 | Amount of time before a clock difference larger than 125ms is considered real instead of a spike in the network. Lower values ensure large errors are corrected faster, but make the client more sensitive to network issues. Value provided is in seconds. |
-| panic-threshold | 1800 (symmetric) | Largest time difference the client is allowed to correct in one go. Differences beyond this cause the client to abort synchronization. Value provided is in seconds, set to "inf" to disable checking of jumps. Setting this to 0 will disable time jumps except at startup. |
-| startup-panic-threshold | No limit forward, 1800 backward | Largest time difference the client is allowed to correct during startup. By default, this is unrestricted as we may be the initial source of time for systems without a hardware backed clock. Value provided is in seconds, set to "inf" to disable checking of jumps. |
-| accumulated-threshold | Disabled | Total amount of time difference the client is allowed to correct using steps whilst running. By default, this is unrestricted. Value provided is in seconds, set to 0 to disable checking of accumulated steps. |
 
-For panic thresholds, asymetric thresholds can be configured, allowing a different sized step going forwards compared to going backwards. This is done by configuring a struct with two values, `forward` and `backward` for the panic threshold.
+The new high performance clock algorithm has more options. Most of these are quite straightforward to understand and can be used to tune the style of time synchronization to the users liking (although the defaults are probably fine for most):
+| Option | Default | Description |
+| --- | --- | --- |
+| steer-offset-threshold | 2.0 | How far from 0 (in multiples of the uncertainty) should the offset be before we correct. A higher value reduces the amount of steering, but at the cost of a slower synchronization. (standard deviations, 0+) |
+| steer-offset-leftover | 1.0 | How many standard deviations do we leave after offset correction? A higher value decreases the amount of overcorrections at the cost of slower synchronization and more steering. (standard deviations, 0+) |
+| jump-threshold | 10e-3 | From what offset should we jump the clock instead of trying to adjust gradually? (seconds, 0+) |
+| slew-max-frequency-offset | 200e-6 | What is the maximum frequency offset during a slew (a gradual changing of the time). (s/s) |
+| slew-min-duration | 20.0 | What is the minimum duration of a slew (a gradual changing of the time). Larger values increase the precision of the slew, at the cost of longer time taken per slew. (s) |
+| steer-frequency-threshold | 2.0 | How far from 0 (in multiples of the uncertainty) should the frequency estimate be before we correct. A higher value reduces the amount of steering, but at the cost of a slower synchronization. (standard deviations, 0+) |
+| steer-frequency-leftover | 1.0 | How many standard deviations do we leave after frequency correction? A higher value decreases the amount of overcorrections at the cost of slower synchronization and more steering. (standard deviations, 0+) |
+| ignore-server-dispersion | false | Ignore a servers advertised dispersion when synchronizing. Can improve synchronization quality with servers reporting overly conservative root dispersion. |
+| range-statistical-weight | 2.0 | Weight of statistical uncertainty when constructing a peers uncertainty range. This range is used when checking if two peers agree on the same time, and for choosing whether to use a peer for synchronization. (standard deviations, 0+) |
+| range-delay-weight | 0.25 | Weight of delay uncertainty when constructing overlap ranges. This range is used when checking if two peers agree on the same time, and for choosing whether to use a peer for synchronization. (weight, 0-1) |
+| max-peer-uncertainty | 1.0 | Maximum peer uncertainty before we start disregarding it. Note that this is combined uncertainty due to noise and possible asymmetry error (see also weights above). (seconds) |
+| poll-jump-threshold | 1e-6 | Probability threshold for when a measurement is considered a significant enough outlier that we decide something weird is going on and we need to immediately decrease the polling interval to quickly correct. (probability, 0-1) |
+| delay-outlier-threshold | 5.0 | Threshold (in number of standard deviations) above which measurements with a significantly larger network delay are rejected. (standard deviations, 0+) |
+| initial-wander | 1e-8 | Initial estimate of the clock wander between our local clock and that of the peer. Increasing this results in better synchronization if the hardware matches it, but at the cost of slower synchronization when overly optimistic. (s/s^2) |
+| initial-frequency-uncertainty | 100e-6 | Initial uncertainty of the frequency difference between our clock and that of the peer. Lower values increase the speed of frequency synchronization when correct, but decrease it when overly optimistic. (s/s) |
 
-An example of a configuration file is provided below:
+A second set of options control more internal details of how the algorithm estimates its errors and regulates the poll interval. Care should be taken in choosing the values here, and they are primarily provided for easy access when developing the algorithm further:
+| Option | Default | Description |
+| --- | --- | --- |
+| precision-low-probability | 0.333 | Probability bound below which we start moving towards decreasing our precision estimate. (probability, 0-1) |
+| precision-high-probability | 0.667 | Probability bound above which we start moving towards increasing our precision estimate. (probability, 0-1) |
+| precision-hysteresis | 16 | Ammount of hysteresis in changeing the precision estimate. (count, 1+) |
+| precision-min-weight | 0.1 | Lower bound on the ammount of effect our precision estimate has on the total noise estimate before we allow decreasing of the precision estimate. (weight, 0-1) |
+| poll-low-weight | 0.4 | Ammount which a measurement contributes to the state, below which we start increasing the poll interval. (weight, 0-1) |
+| poll-high-weight | 0.6 | Ammount which a measurement contributes to the state, above which we start decreasing the poll interval. (weight, 0-1) |
+| poll-hysteresis | 16 | Ammount of hysteresis in changeing the poll interval (count, 1+) |
+
+#### Example configuration file:
+
 ```toml
 # Other values include trace, debug, warn and error
 log-filter = "info"
@@ -117,64 +220,10 @@ peers = ["0.pool.ntp.org", "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
 # System parameters used in filtering and steering the clock:
 [system]
 min-intersection-survivors = 1
-min-cluster-survivors = 3
-frequency-tolerance = 15
-distance-threshold = 1
+poll-interval-limits = { min = 6, max = 10 }
 panic-threshold = 10
 startup-panic-threshold = { forward = "inf", backward = 1800 }
 ```
-
-### Peer configuration
-
-#### Standard
-
-A vanilla direct NTP peer connection. This mode is the default. Standard peers can be configured in two ways:
-
-```
-# As a simple list (pool servers from ntppool.org)
-peers = ["0.pool.ntp.org", "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
-
-# Or by providing written out configuration
-[[peers]]
-addr = "0.pool.ntp.org:123"
-
-[[peers]]
-addr = "1.pool.ntp.org:123"
-```
-
-#### Nts
-
-A peer in `Nts` mode will use NTS (Network Times Security) to communicate with its server. The server must support NTS. The configuration requires the address of the Key Exchange server (the address of the actual NTP server that ends up being used may be different). The default port for key exchange, 4460, is automatically appended if no port is given.
-
-```
-[[peers]]
-ke_addr = "nts.time.nl"
-```
-
-Additional certificates can be loaded from a `.pem` file:
-
-```
-[[peers]]
-ke_addr = "time.cloudflare.com:4460"
-certificate = "/path/to/certificates.pem"
-```
-
-
-#### Pool
-
-`Pool` mode is a convenient way to configure many NTP servers, without having to worry about individual server's IP addresses.
-
-A peer in `Pool` mode will try to aquire `max_peers` addresses of NTP servers from the pool. `ntpd-rs` will actively try to keep a pool filled up. For instance if a server cannot be reached, a different server will be picked from the pool.
-
-A pool peer can be configured like so: 
-```
-[[peers]]
-addr = "pool.ntp.org"
-mode = "Pool"
-max_peers = 4
-```
-
-
 
 ## Operational concerns
 
