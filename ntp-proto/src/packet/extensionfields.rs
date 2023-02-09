@@ -351,10 +351,10 @@ impl<'a> ExtensionFieldData<'a> {
         }
     }
 
-    pub(super) fn serialize<CP: CipherProvider>(
+    pub(super) fn serialize(
         &self,
         w: &mut Cursor<&mut [u8]>,
-        cipher: &CP,
+        cipher: &impl CipherProvider,
     ) -> std::io::Result<()> {
         if !self.authenticated.is_empty() || !self.encrypted.is_empty() {
             let cipher = match cipher.get(&self.authenticated) {
@@ -387,10 +387,10 @@ impl<'a> ExtensionFieldData<'a> {
         Ok(())
     }
 
-    pub(super) fn deserialize<CP: CipherProvider>(
+    pub(super) fn deserialize(
         data: &'a [u8],
         header_size: usize,
-        cipher: &CP,
+        cipher: &impl CipherProvider,
     ) -> Result<(Self, usize), PacketParsingError> {
         let mut this = Self::default();
         let mut size = 0;

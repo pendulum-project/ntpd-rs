@@ -20,6 +20,9 @@ pub enum NtsError {
 
 pub struct PeerNtsData {
     pub(crate) cookies: CookieStash,
+    // Note: we use Box<dyn Cipher> to support the use
+    // of multiple different ciphers, that might differ
+    // in the key information they need to keep.
     pub(crate) c2s: Box<dyn Cipher>,
     pub(crate) s2c: Box<dyn Cipher>,
 }
@@ -532,7 +535,7 @@ pub fn fuzz_measurement_from_packet(
 
 #[cfg(test)]
 mod test {
-    use crate::time_types::PollIntervalLimits;
+    use crate::{packet::NoCipher, time_types::PollIntervalLimits};
 
     use super::*;
     use std::time::Duration;
@@ -664,7 +667,7 @@ mod test {
         let packetbuf = peer
             .generate_poll_message(&mut buf, system, &SystemConfig::default())
             .unwrap();
-        let packet = NtpPacket::deserialize(packetbuf, &()).unwrap();
+        let packet = NtpPacket::deserialize(packetbuf, &NoCipher).unwrap();
         assert!(peer.current_poll_interval(system) > prev);
         let mut response = NtpPacket::test();
         response.set_mode(NtpAssociationMode::Server);
@@ -686,7 +689,7 @@ mod test {
         let packetbuf = peer
             .generate_poll_message(&mut buf, system, &SystemConfig::default())
             .unwrap();
-        let packet = NtpPacket::deserialize(packetbuf, &()).unwrap();
+        let packet = NtpPacket::deserialize(packetbuf, &NoCipher).unwrap();
         assert!(peer.current_poll_interval(system) > prev);
         let mut response = NtpPacket::test();
         response.set_mode(NtpAssociationMode::Server);
@@ -716,7 +719,7 @@ mod test {
         let outgoingbuf = peer
             .generate_poll_message(&mut buf, system, &SystemConfig::default())
             .unwrap();
-        let outgoing = NtpPacket::deserialize(outgoingbuf, &()).unwrap();
+        let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap();
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_stratum(1);
@@ -756,7 +759,7 @@ mod test {
         let outgoingbuf = peer
             .generate_poll_message(&mut buf, system, &SystemConfig::default())
             .unwrap();
-        let outgoing = NtpPacket::deserialize(outgoingbuf, &()).unwrap();
+        let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap();
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_stratum(MAX_STRATUM + 1);
@@ -812,7 +815,7 @@ mod test {
         let outgoingbuf = peer
             .generate_poll_message(&mut buf, system, &SystemConfig::default())
             .unwrap();
-        let outgoing = NtpPacket::deserialize(outgoingbuf, &()).unwrap();
+        let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap();
         packet.set_reference_id(ReferenceId::KISS_RSTR);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
@@ -847,7 +850,7 @@ mod test {
         let outgoingbuf = peer
             .generate_poll_message(&mut buf, system, &SystemConfig::default())
             .unwrap();
-        let outgoing = NtpPacket::deserialize(outgoingbuf, &()).unwrap();
+        let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap();
         packet.set_reference_id(ReferenceId::KISS_DENY);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
@@ -888,7 +891,7 @@ mod test {
         let outgoingbuf = peer
             .generate_poll_message(&mut buf, system, &SystemConfig::default())
             .unwrap();
-        let outgoing = NtpPacket::deserialize(outgoingbuf, &()).unwrap();
+        let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap();
         packet.set_reference_id(ReferenceId::KISS_RATE);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);

@@ -28,7 +28,9 @@ pub trait CipherProvider {
     fn get(&self, context: &[ExtensionField<'_>]) -> Option<&dyn Cipher>;
 }
 
-impl CipherProvider for () {
+pub struct NoCipher;
+
+impl CipherProvider for NoCipher {
     fn get<'a>(&self, _context: &[ExtensionField<'_>]) -> Option<&dyn Cipher> {
         None
     }

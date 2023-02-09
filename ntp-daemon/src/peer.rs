@@ -383,7 +383,7 @@ fn accept_packet(
 mod tests {
     use std::{io::Cursor, sync::Arc, time::Duration};
 
-    use ntp_proto::{NtpDuration, NtpLeapIndicator, PollInterval, TimeSnapshot};
+    use ntp_proto::{NoCipher, NtpDuration, NtpLeapIndicator, PollInterval, TimeSnapshot};
     use tokio::sync::mpsc;
 
     use super::*;
@@ -594,7 +594,7 @@ mod tests {
     fn serialize_packet_unencryped(send_packet: &NtpPacket) -> [u8; 48] {
         let mut buf = [0; 48];
         let mut cursor = Cursor::new(buf.as_mut_slice());
-        send_packet.serialize(&mut cursor, &()).unwrap();
+        send_packet.serialize(&mut cursor, &NoCipher).unwrap();
 
         assert_eq!(cursor.position(), 48);
 
@@ -632,7 +632,7 @@ mod tests {
         assert_eq!(size, 48);
         let timestamp = timestamp.unwrap();
 
-        let rec_packet = NtpPacket::deserialize(&buf, &()).unwrap();
+        let rec_packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap();
         let send_packet = NtpPacket::timestamp_response(&system, rec_packet, timestamp, &clock);
 
         let serialized = serialize_packet_unencryped(&send_packet);
@@ -666,7 +666,7 @@ mod tests {
         assert_eq!(size, 48);
         assert!(timestamp.is_some());
 
-        let rec_packet = NtpPacket::deserialize(&buf, &()).unwrap();
+        let rec_packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap();
         let send_packet = NtpPacket::deny_response(rec_packet);
 
         let serialized = serialize_packet_unencryped(&send_packet);
