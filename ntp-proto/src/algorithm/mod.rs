@@ -18,6 +18,29 @@ pub struct ObservablePeerTimedata {
     pub last_update: NtpTimestamp,
 }
 
+#[derive(Debug, Clone)]
+pub struct StateUpdate<PeerID: Eq + Copy + Debug> {
+    // Update to the time snapshot, if any
+    pub time_snapshot: Option<TimeSnapshot>,
+    // Update to the used peers, if any
+    pub used_peers: Option<Vec<PeerID>>,
+    // Requested timestamp for next non-measurement update
+    pub next_update: Option<NtpTimestamp>,
+}
+
+// Note: this default implementation is neccessary since the
+// derive only works if PeerID is Default (which it isn't
+// neccessarily)
+impl<PeerID: Eq + Copy + Debug> Default for StateUpdate<PeerID> {
+    fn default() -> Self {
+        Self {
+            time_snapshot: None,
+            used_peers: None,
+            next_update: None,
+        }
+    }
+}
+
 pub trait TimeSyncController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> {
     type AlgorithmConfig: Debug + Copy + DeserializeOwned;
 
@@ -40,14 +63,22 @@ pub trait TimeSyncController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> {
         id: PeerID,
         measurement: Measurement,
         packet: NtpPacket<'static>,
-    ) -> Option<(Vec<PeerID>, TimeSnapshot)>;
+    ) -> StateUpdate<PeerID>;
+    /// Non-measurement driven update (queued via next_update)
+    fn time_update(&mut self) -> StateUpdate<PeerID>;
     /// Get a snapshot of the timekeeping state of a peer.
     fn peer_snapshot(&self, id: PeerID) -> Option<ObservablePeerTimedata>;
 }
 
+mod kalman;
 mod standard;
 
+pub use kalman::KalmanClockController;
+pub use standard::StandardClockController;
+#[cfg(not(feature = "new-algorithm"))]
 pub type DefaultTimeSyncController<C, PeerID> = standard::StandardClockController<C, PeerID>;
+#[cfg(feature = "new-algorithm")]
+pub type DefaultTimeSyncController<C, PeerID> = kalman::KalmanClockController<C, PeerID>;
 
 #[cfg(feature = "fuzz")]
 pub use standard::fuzz_find_interval;

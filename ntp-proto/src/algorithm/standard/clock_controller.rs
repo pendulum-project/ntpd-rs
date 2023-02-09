@@ -277,19 +277,7 @@ impl<C: NtpClock> ClockController<C> {
             _ => config.panic_threshold,
         };
 
-        let forward_ok = if let Some(forward) = threshold.forward {
-            offset < forward
-        } else {
-            true
-        };
-
-        let backward_ok = if let Some(backward) = threshold.backward {
-            offset > -backward
-        } else {
-            true
-        };
-
-        !(forward_ok && backward_ok)
+        !threshold.is_within(offset)
     }
 
     fn combined_steps_too_large(&self, config: &SystemConfig, offset: NtpDuration) -> bool {

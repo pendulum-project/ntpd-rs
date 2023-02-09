@@ -25,6 +25,13 @@ pub struct StepThreshold {
     pub backward: Option<NtpDuration>,
 }
 
+impl StepThreshold {
+    pub fn is_within(&self, duration: NtpDuration) -> bool {
+        self.forward.map(|v| duration < v).unwrap_or(true)
+            && self.backward.map(|v| duration > -v).unwrap_or(true)
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 struct ThresholdPart(Option<NtpDuration>);
 
@@ -231,7 +238,7 @@ impl Default for SystemConfig {
             min_intersection_survivors: default_min_intersection_survivors(),
 
             panic_threshold: default_panic_threshold(),
-            startup_panic_threshold: StepThreshold::default(),
+            startup_panic_threshold: startup_panic_threshold(),
             accumulated_threshold: None,
 
             local_stratum: default_local_stratum(),

@@ -9,6 +9,7 @@ license = "Apache-2.0 OR MIT"
 [features]
 fuzz = ["arbitrary"]
 ext-test = []
+new-algorithm = []
 
 [dependencies]
 # Note: md5 is needed to calculate ReferenceIDs for IPv6 addresses per RFC5905
@@ -17,7 +18,7 @@ rand = "0.8.5"
 tracing = "0.1.37"
 serde = { version = "1.0.152", features = ["derive"] }
 exitcode = "1.1.2"
-arbitrary = { version = "1.2.2", optional = true }
+arbitrary = { version = "1.2.3", optional = true }
 rustls = "0.20.8"
 thiserror = "1.0.38"
 aead = "0.5.1"

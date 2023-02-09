@@ -8,7 +8,7 @@ license = "Apache-2.0 OR MIT"
 
 [dependencies]
 axum = "0.6.4"
-tokio = { version = "1.24.2", features = ["full"] }
+tokio = { version = "1.25.0", features = ["full"] }
 ntp-proto = { path = "../ntp-proto" }
 ntp-os-clock = { path = "../ntp-os-clock" }
 ntp-daemon = { path = "../ntp-daemon" }
@@ -16,6 +16,6 @@ tracing = "0.1.37"
 tracing-subscriber = "0.3.16"
 clap = { version = "4.0.32", features = ["derive", "env"] }
 serde = { version = "1.0.152", features = ["derive"] }
-serde_json = "1.0.91"
-prometheus-client = "0.18.1"
+serde_json = "1.0.93"
+prometheus-client = "0.19.0"
 thiserror = "1.0.38"

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{NtpDuration, NtpLeapIndicator, PeerSnapshot, PollInterval, ReferenceId, SystemConfig};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TimeSnapshot {
     /// Desired poll interval
     pub poll_interval: PollInterval,
@@ -45,14 +45,12 @@ pub struct SystemSnapshot {
 }
 
 impl SystemSnapshot {
-    pub fn update(
-        &mut self,
-        mut used_peers: impl Iterator<Item = PeerSnapshot>,
-        timedata: TimeSnapshot,
-        config: &SystemConfig,
-    ) {
+    pub fn update_timedata(&mut self, timedata: TimeSnapshot, config: &SystemConfig) {
         self.time_snapshot = timedata;
         self.accumulated_steps_threshold = config.accumulated_threshold;
+    }
+
+    pub fn update_used_peers(&mut self, mut used_peers: impl Iterator<Item = PeerSnapshot>) {
         if let Some(system_peer_snapshot) = used_peers.next() {
             self.stratum = system_peer_snapshot.stratum.saturating_add(1);
             self.reference_id = system_peer_snapshot.reference_id;
@@ -78,31 +76,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_empty_update() {
+    fn test_empty_peer_update() {
         let mut system = SystemSnapshot::default();
 
-        system.update(
-            std::iter::empty(),
-            TimeSnapshot {
-                root_delay: NtpDuration::from_seconds(1.0),
-                ..Default::default()
-            },
-            &SystemConfig::default(),
-        );
+        // Should do nothing
+        system.update_used_peers(std::iter::empty());
 
         assert_eq!(system.stratum, 16);
         assert_eq!(system.reference_id, ReferenceId::NONE);
-        assert_eq!(
-            system.time_snapshot.root_delay,
-            NtpDuration::from_seconds(1.0)
-        );
     }
 
     #[test]
-    fn test_update() {
+    fn test_peer_update() {
         let mut system = SystemSnapshot::default();
 
-        system.update(
+        system.update_used_peers(
             vec![
                 PeerSnapshot {
                     peer_id: ReferenceId::KISS_DENY,
@@ -122,19 +110,36 @@ mod tests {
                 },
             ]
             .into_iter(),
-            TimeSnapshot {
-                root_delay: NtpDuration::from_seconds(1.0),
-                ..Default::default()
-            },
-            &SystemConfig::default(),
         );
 
         assert_eq!(system.stratum, 3);
         assert_eq!(system.reference_id, ReferenceId::KISS_DENY);
-        assert_eq!(
-            system.time_snapshot.root_delay,
-            NtpDuration::from_seconds(1.0)
+    }
+
+    #[test]
+    fn test_timedata_update() {
+        let mut system = SystemSnapshot::default();
+
+        let new_root_delay = NtpDuration::from_seconds(1.0);
+        let new_accumulated_threshold = NtpDuration::from_seconds(2.0);
+
+        let snapshot = TimeSnapshot {
+            root_delay: new_root_delay,
+            ..Default::default()
+        };
+        system.update_timedata(
+            snapshot,
+            &SystemConfig {
+                accumulated_threshold: Some(new_accumulated_threshold),
+                ..Default::default()
+            },
         );
-        assert_eq!(system.time_snapshot.poll_interval, PollInterval::default());
+
+        assert_eq!(system.time_snapshot, snapshot);
+
+        assert_eq!(
+            system.accumulated_steps_threshold,
+            Some(new_accumulated_threshold),
+        );
     }
 }

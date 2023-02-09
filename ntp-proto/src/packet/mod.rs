@@ -10,12 +10,12 @@ use self::{
     mac::Mac,
 };
 
-type Cipher = aes_siv::Aes128SivAead;
-
+mod crypto;
 mod error;
 mod extensionfields;
 mod mac;
 
+pub use crypto::{AesSivCmac256, Cipher, CipherProvider, EncryptionResult, NoCipher};
 pub use error::PacketParsingError;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -272,7 +272,7 @@ impl<'a> NtpPacket<'a> {
 
     pub fn deserialize(
         data: &'a [u8],
-        cipher: Option<&Cipher>,
+        cipher: &impl CipherProvider,
     ) -> Result<Self, PacketParsingError> {
         if data.is_empty() {
             return Err(PacketParsingError::IncorrectLength);
@@ -320,7 +320,7 @@ impl<'a> NtpPacket<'a> {
         let mut buffer = vec![0u8; 1024];
         let mut cursor = Cursor::new(buffer.as_mut_slice());
 
-        self.serialize(&mut cursor, None)?;
+        self.serialize(&mut cursor, &NoCipher)?;
 
         let length = cursor.position() as usize;
         let buffer = cursor.into_inner()[..length].to_vec();
@@ -331,7 +331,7 @@ impl<'a> NtpPacket<'a> {
     pub fn serialize(
         &self,
         w: &mut Cursor<&mut [u8]>,
-        cipher: Option<&Cipher>,
+        cipher: &impl CipherProvider,
     ) -> std::io::Result<()> {
         match self.header {
             NtpHeader::V3(header) => header.serialize(w, 3)?,
@@ -700,7 +700,6 @@ mod tests {
     use crate::PollIntervalLimits;
 
     use super::*;
-    use aes_siv::{aead::KeyInit, Aes128SivAead};
 
     #[derive(Debug, Clone)]
     struct TestClock {
@@ -795,7 +794,10 @@ mod tests {
             mac: None,
         };
 
-        assert_eq!(reference, NtpPacket::deserialize(packet, None).unwrap());
+        assert_eq!(
+            reference,
+            NtpPacket::deserialize(packet, &NoCipher).unwrap()
+        );
         match reference.serialize_without_encryption_vec() {
             Ok(buf) => assert_eq!(packet[..], buf[..]),
             Err(e) => panic!("{e:?}"),
@@ -821,7 +823,10 @@ mod tests {
             mac: None,
         };
 
-        assert_eq!(reference, NtpPacket::deserialize(packet, None).unwrap());
+        assert_eq!(
+            reference,
+            NtpPacket::deserialize(packet, &NoCipher).unwrap()
+        );
         match reference.serialize_without_encryption_vec() {
             Ok(buf) => assert_eq!(packet[..], buf[..]),
             Err(e) => panic!("{e:?}"),
@@ -850,7 +855,10 @@ mod tests {
             mac: None,
         };
 
-        assert_eq!(reference, NtpPacket::deserialize(packet, None).unwrap());
+        assert_eq!(
+            reference,
+            NtpPacket::deserialize(packet, &NoCipher).unwrap()
+        );
         match reference.serialize_without_encryption_vec() {
             Ok(buf) => assert_eq!(packet[..], buf[..]),
             Err(e) => panic!("{e:?}"),
@@ -860,23 +868,23 @@ mod tests {
     #[test]
     fn test_version() {
         let packet = b"\x04\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet, None).is_err());
+        assert!(NtpPacket::deserialize(packet, &NoCipher).is_err());
         let packet = b"\x0B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet, None).is_err());
+        assert!(NtpPacket::deserialize(packet, &NoCipher).is_err());
         let packet = b"\x14\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet, None).is_err());
+        assert!(NtpPacket::deserialize(packet, &NoCipher).is_err());
         let packet = b"\x2B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet, None).is_err());
+        assert!(NtpPacket::deserialize(packet, &NoCipher).is_err());
         let packet = b"\x34\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet, None).is_err());
+        assert!(NtpPacket::deserialize(packet, &NoCipher).is_err());
         let packet = b"\x3B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet, None).is_err());
+        assert!(NtpPacket::deserialize(packet, &NoCipher).is_err());
     }
 
     #[test]
     fn test_packed_flags() {
         let base = b"\x24\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b".to_owned();
-        let base_structured = NtpPacket::deserialize(&base, None).unwrap();
+        let base_structured = NtpPacket::deserialize(&base, &NoCipher).unwrap();
 
         for leap_type in 0..3 {
             for mode in 0..8 {
@@ -885,7 +893,7 @@ mod tests {
                 header.set_mode(NtpAssociationMode::from_bits(mode));
 
                 let data = header.serialize_without_encryption_vec().unwrap();
-                let copy = NtpPacket::deserialize(&data, None).unwrap();
+                let copy = NtpPacket::deserialize(&data, &NoCipher).unwrap();
                 assert_eq!(header, copy);
             }
         }
@@ -894,7 +902,7 @@ mod tests {
             let mut packet = base;
             packet[0] = i;
 
-            if let Ok(a) = NtpPacket::deserialize(&packet, None) {
+            if let Ok(a) = NtpPacket::deserialize(&packet, &NoCipher) {
                 let b = a.serialize_without_encryption_vec().unwrap();
                 assert_eq!(packet[..], b[..]);
             }
@@ -1049,7 +1057,7 @@ mod tests {
 
     #[test]
     fn test_undersized_ef_in_encrypted_data() {
-        let cipher = Aes128SivAead::new(&[0_u8; 32].into());
+        let cipher = AesSivCmac256::new([0_u8; 32].into());
         let packet = [
             35, 2, 6, 232, 0, 0, 3, 255, 0, 0, 3, 125, 94, 198, 159, 15, 229, 246, 98, 152, 123,
             97, 185, 175, 229, 246, 99, 102, 123, 100, 153, 93, 229, 246, 99, 102, 129, 64, 85,
@@ -1058,7 +1066,7 @@ mod tests {
             152, 87, 142, 206, 254, 105, 0, 0,
         ];
         //should not crash
-        assert!(NtpPacket::deserialize(&packet, Some(&cipher)).is_err());
+        assert!(NtpPacket::deserialize(&packet, &cipher).is_err());
     }
 
     #[test]
@@ -1069,7 +1077,7 @@ mod tests {
             144, 229, 246, 99, 168, 118, 29, 222, 72, 4, 4,
         ];
         //should not crash
-        assert!(NtpPacket::deserialize(&packet, None).is_err());
+        assert!(NtpPacket::deserialize(&packet, &NoCipher).is_err());
     }
 
     #[test]
@@ -1081,7 +1089,7 @@ mod tests {
             206, 206, 206, 0, 0, 0, 206, 206, 206, 206, 206, 206, 131, 206, 206,
         ];
         //should not crash
-        assert!(NtpPacket::deserialize(&input, None).is_err());
+        assert!(NtpPacket::deserialize(&input, &NoCipher).is_err());
     }
 
     #[test]
@@ -1092,6 +1100,6 @@ mod tests {
             4, 44, 4, 4, 4, 4, 4, 4, 4, 0, 4, 4, 0, 12, 206, 206, 222, 206, 206, 206, 206, 0, 0, 0,
             12, 206, 206, 222, 206, 206, 206, 206, 206, 206, 206, 206, 131, 206, 206,
         ];
-        assert!(NtpPacket::deserialize(&input, None).is_err());
+        assert!(NtpPacket::deserialize(&input, &NoCipher).is_err());
     }
 }

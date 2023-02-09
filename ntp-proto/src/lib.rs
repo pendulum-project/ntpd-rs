@@ -13,12 +13,17 @@ mod time_types;
 
 #[cfg(feature = "fuzz")]
 pub use algorithm::fuzz_find_interval;
-pub use algorithm::{DefaultTimeSyncController, ObservablePeerTimedata, TimeSyncController};
+pub use algorithm::{
+    DefaultTimeSyncController, ObservablePeerTimedata, StandardClockController, StateUpdate,
+    TimeSyncController,
+};
 pub use clock::NtpClock;
 pub use config::{StepThreshold, SystemConfig};
 pub use identifiers::ReferenceId;
 
-pub use packet::{NtpAssociationMode, NtpLeapIndicator, NtpPacket};
+pub use packet::{
+    Cipher, CipherProvider, NoCipher, NtpAssociationMode, NtpLeapIndicator, NtpPacket,
+};
 #[cfg(feature = "fuzz")]
 pub use peer::fuzz_measurement_from_packet;
 #[cfg(feature = "ext-test")]

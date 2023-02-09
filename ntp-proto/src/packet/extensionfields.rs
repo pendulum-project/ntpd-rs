@@ -3,12 +3,7 @@ use std::{
     io::{Cursor, Write},
 };
 
-use aes_siv::{
-    aead::{Aead, Payload},
-    AeadCore, Nonce,
-};
-
-use super::{Cipher, Mac, PacketParsingError};
+use super::{Cipher, CipherProvider, Mac, PacketParsingError};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum ExtensionFieldTypeId {
@@ -243,7 +238,7 @@ impl<'a> ExtensionField<'a> {
     fn encode_encrypted(
         w: &mut Cursor<&mut [u8]>,
         fields_to_encrypt: &[ExtensionField],
-        cipher: &Cipher,
+        cipher: &dyn Cipher,
     ) -> std::io::Result<()> {
         let padding = [0; 4];
 
@@ -259,13 +254,7 @@ impl<'a> ExtensionField<'a> {
             field.serialize(&mut plaintext, minimum_size)?;
         }
 
-        let payload = Payload {
-            msg: &plaintext,
-            aad: packet_so_far,
-        };
-
-        let nonce = Cipher::generate_nonce(rand::thread_rng());
-        let ct = cipher.encrypt(&nonce, payload).unwrap();
+        let encryptiondata = cipher.encrypt(&plaintext, packet_so_far).unwrap();
 
         w.write_all(
             &ExtensionFieldTypeId::NtsEncryptedField
@@ -274,8 +263,8 @@ impl<'a> ExtensionField<'a> {
         )?;
 
         // NOTE: these are NOT rounded up to a number of words
-        let nonce_octet_count = nonce.len();
-        let ct_octet_count = ct.len();
+        let nonce_octet_count = encryptiondata.nonce.len();
+        let ct_octet_count = encryptiondata.ciphertext.len();
 
         // + 8 for the extension field header (4 bytes) and nonce/cypher text length (2 bytes each)
         let signature_octet_count =
@@ -285,12 +274,14 @@ impl<'a> ExtensionField<'a> {
         w.write_all(&(nonce_octet_count as u16).to_be_bytes())?;
         w.write_all(&(ct_octet_count as u16).to_be_bytes())?;
 
-        w.write_all(&nonce)?;
-        let padding_bytes = next_multiple_of(nonce.len() as u16, 4) - nonce.len() as u16;
+        w.write_all(&encryptiondata.nonce)?;
+        let padding_bytes = next_multiple_of(encryptiondata.nonce.len() as u16, 4)
+            - encryptiondata.nonce.len() as u16;
         w.write_all(&padding[..padding_bytes as usize])?;
 
-        w.write_all(ct.as_slice())?;
-        let padding_bytes = next_multiple_of(ct.len() as u16, 4) - ct.len() as u16;
+        w.write_all(&encryptiondata.ciphertext)?;
+        let padding_bytes = next_multiple_of(encryptiondata.ciphertext.len() as u16, 4)
+            - encryptiondata.ciphertext.len() as u16;
         w.write_all(&padding[..padding_bytes as usize])?;
 
         Ok(())
@@ -363,10 +354,10 @@ impl<'a> ExtensionFieldData<'a> {
     pub(super) fn serialize(
         &self,
         w: &mut Cursor<&mut [u8]>,
-        cipher: Option<&Cipher>,
+        cipher: &impl CipherProvider,
     ) -> std::io::Result<()> {
         if !self.authenticated.is_empty() || !self.encrypted.is_empty() {
-            let cipher = match cipher {
+            let cipher = match cipher.get(&self.authenticated) {
                 Some(cipher) => cipher,
                 None => return Err(std::io::Error::new(std::io::ErrorKind::Other, "")),
             };
@@ -399,7 +390,7 @@ impl<'a> ExtensionFieldData<'a> {
     pub(super) fn deserialize(
         data: &'a [u8],
         header_size: usize,
-        cipher: Option<&Cipher>,
+        cipher: &impl CipherProvider,
     ) -> Result<(Self, usize), PacketParsingError> {
         let mut this = Self::default();
         let mut size = 0;
@@ -413,7 +404,9 @@ impl<'a> ExtensionFieldData<'a> {
             match field.type_id {
                 ExtensionFieldTypeId::NtsEncryptedField => {
                     let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)?;
-                    let cipher = cipher.ok_or(PacketParsingError::DecryptError)?;
+                    let cipher = cipher
+                        .get(&this.untrusted)
+                        .ok_or(PacketParsingError::DecryptError)?;
 
                     // TODO: Discuss whether we want to do this check
                     if !this.authenticated.is_empty() || !this.encrypted.is_empty() {
@@ -437,7 +430,7 @@ impl<'a> ExtensionFieldData<'a> {
 }
 
 struct RawEncryptedField<'a> {
-    nonce: &'a Nonce,
+    nonce: &'a [u8],
     ciphertext: &'a [u8],
 }
 
@@ -456,10 +449,6 @@ impl<'a> RawEncryptedField<'a> {
         }
 
         let nonce_length = u16::from_be_bytes(value[0..2].try_into().unwrap()) as usize;
-        if nonce_length != 16 {
-            // for now, only support 16 byte nonces.
-            return Err(IncorrectLength);
-        }
         let ciphertext_length = u16::from_be_bytes(value[2..4].try_into().unwrap()) as usize;
 
         if nonce_length != 16 {
@@ -468,29 +457,21 @@ impl<'a> RawEncryptedField<'a> {
 
         let ciphertext_start = 4 + next_multiple_of(nonce_length as u16, 4) as usize;
 
-        let nonce_bytes = value.get(4..4 + nonce_length).ok_or(IncorrectLength)?;
+        let nonce = value.get(4..4 + nonce_length).ok_or(IncorrectLength)?;
 
         let ciphertext = value
             .get(ciphertext_start..ciphertext_start + ciphertext_length)
             .ok_or(IncorrectLength)?;
 
-        Ok(Self {
-            nonce: Nonce::from_slice(nonce_bytes),
-            ciphertext,
-        })
+        Ok(Self { nonce, ciphertext })
     }
 
     fn decrypt(
         &self,
-        cipher: &Cipher,
+        cipher: &dyn Cipher,
         aad: &[u8],
     ) -> Result<Vec<ExtensionField<'a>>, PacketParsingError> {
-        let payload = Payload {
-            msg: self.ciphertext,
-            aad,
-        };
-
-        let plaintext = match cipher.decrypt(self.nonce, payload) {
+        let plaintext = match cipher.decrypt(self.nonce, self.ciphertext, aad) {
             Ok(plain) => plain,
             Err(_) => return Err(PacketParsingError::DecryptError),
         };
@@ -601,10 +582,7 @@ const fn next_multiple_of(lhs: u16, rhs: u16) -> u16 {
 
 #[cfg(test)]
 mod tests {
-    use aes_siv::{
-        aead::{Key, KeyInit},
-        Aes128SivAead,
-    };
+    use crate::packet::AesSivCmac256;
 
     use super::*;
 
@@ -715,7 +693,7 @@ mod tests {
         let mut w = [0u8; 128];
         let mut cursor = Cursor::new(w.as_mut_slice());
         let c2s = [0; 32];
-        let cipher = Aes128SivAead::new(Key::<Aes128SivAead>::from_slice(c2s.as_slice()));
+        let cipher = AesSivCmac256::new(c2s.into());
         let fields_to_encrypt = [ExtensionField::UniqueIdentifier(Cow::Borrowed(
             data.as_slice(),
         ))];

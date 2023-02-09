@@ -23,7 +23,7 @@ use crate::{
 
 use self::config::AlgorithmConfig;
 
-use super::TimeSyncController;
+use super::{StateUpdate, TimeSyncController};
 
 #[derive(Debug)]
 pub struct StandardClockController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> {
@@ -72,7 +72,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> StandardClockController<C, P
                 .is_err()
     }
 
-    fn recalculate_clock(&mut self, now: NtpInstant) -> Option<(Vec<PeerID>, TimeSnapshot)> {
+    fn recalculate_clock(&mut self, now: NtpInstant) -> StateUpdate<PeerID> {
         let snapshots: Vec<_> = self
             .peerstate
             .iter()
@@ -92,7 +92,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> StandardClockController<C, P
             Some(clock_select) => clock_select,
             None => {
                 info!("filter and combine did not produce a result");
-                return None;
+                return StateUpdate::default();
             }
         };
         let offset_ms = clock_select.system_offset.to_seconds() * 1000.0;
@@ -131,9 +131,13 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> StandardClockController<C, P
             self.timestate.root_delay = clock_select.system_root_delay;
             self.timestate.root_dispersion = clock_select.system_root_dispersion;
 
-            Some((vec![clock_select.system_peer_snapshot.0], self.timestate))
+            StateUpdate {
+                used_peers: Some(vec![clock_select.system_peer_snapshot.0]),
+                time_snapshot: Some(self.timestate),
+                next_update: None,
+            }
         } else {
-            None
+            StateUpdate::default()
         }
     }
 }
@@ -192,22 +196,27 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
         id: PeerID,
         measurement: crate::peer::Measurement,
         packet: crate::NtpPacket<'static>,
-    ) -> Option<(Vec<PeerID>, TimeSnapshot)> {
+    ) -> StateUpdate<PeerID> {
         let now = NtpInstant::now();
 
         // Ignore measurements within a second of the last reset
         if let Some(reset) = self.last_reset {
             if now.abs_diff(reset) < NtpDuration::ONE {
-                return None;
+                return StateUpdate::default();
             }
         }
 
         // Update peer's state and check if the clock needs recalculation
         if !self.run_peer_update(now, id, measurement, packet) {
-            return None;
+            return StateUpdate::default();
         }
 
         self.recalculate_clock(now)
+    }
+
+    fn time_update(&mut self) -> StateUpdate<PeerID> {
+        // Not needed for standard algorithm
+        StateUpdate::default()
     }
 
     fn peer_snapshot(&self, id: PeerID) -> Option<ObservablePeerTimedata> {

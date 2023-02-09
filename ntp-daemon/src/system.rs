@@ -1,16 +1,16 @@
 use crate::{
     config::{CombinedSystemConfig, NormalizedAddress, PeerConfig, ServerConfig},
-    peer::PeerTask,
     peer::{MsgForSystem, PeerChannels},
+    peer::{PeerTask, Wait},
     server::{ServerStats, ServerTask},
     ObservablePeerState, spawn::{standard::StandardSpawner, pool::PoolSpawner, nts::NtsSpawner, SpawnAction, SpawnerId, SpawnEvent, PeerId, RemovedPeer, PeerRemovalReason, Spawner},
 };
 
-use std::collections::HashMap;
+use std::{collections::HashMap, future::Future, marker::PhantomData, pin::Pin};
 
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
-    DefaultTimeSyncController, NtpClock,
+    DefaultTimeSyncController, NtpClock, NtpDuration,
     PeerSnapshot, SystemSnapshot, TimeSyncController,
 };
 use tokio::{
@@ -19,6 +19,49 @@ use tokio::{
 };
 
 pub const NETWORK_WAIT_PERIOD: std::time::Duration = std::time::Duration::from_secs(1);
+
+struct SingleshotSleep<T> {
+    enabled: bool,
+    sleep: Pin<Box<T>>,
+}
+
+impl<T: Wait> SingleshotSleep<T> {
+    fn new_disabled(t: T) -> Self {
+        SingleshotSleep {
+            enabled: false,
+            sleep: Box::pin(t),
+        }
+    }
+}
+
+impl<T: Wait> Future for SingleshotSleep<T> {
+    type Output = ();
+
+    fn poll(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        let this = self.get_mut();
+        if !this.enabled {
+            return std::task::Poll::Pending;
+        }
+        match this.sleep.as_mut().poll(cx) {
+            std::task::Poll::Ready(v) => {
+                this.enabled = false;
+                std::task::Poll::Ready(v)
+            }
+            u => u,
+        }
+    }
+}
+
+impl<T: Wait> Wait for SingleshotSleep<T> {
+    fn reset(self: Pin<&mut Self>, deadline: tokio::time::Instant) {
+        let this = self.get_mut();
+        this.enabled = true;
+        this.sleep.as_mut().reset(deadline);
+    }
+}
 
 pub struct DaemonChannels {
     pub config_receiver: tokio::sync::watch::Receiver<CombinedSystemConfig>,
@@ -55,7 +98,12 @@ pub async fn spawn(
         system.add_server(server_config.to_owned()).await;
     }
 
-    let handle = tokio::spawn(async move { system.run().await });
+    let handle = tokio::spawn(async move {
+        let sleep =
+            SingleshotSleep::new_disabled(tokio::time::sleep_until(tokio::time::Instant::now()));
+        tokio::pin!(sleep);
+        system.run(sleep).await
+    });
 
     Ok((handle, channels))
 }
@@ -65,7 +113,8 @@ struct SystemSpawnerData {
     notify_tx: mpsc::Sender<RemovedPeer>,
 }
 
-struct System<C: NtpClock> {
+struct System<C: NtpClock, T: Wait> {
+    _wait: PhantomData<SingleshotSleep<T>>,
     config: CombinedSystemConfig,
     system: SystemSnapshot,
 
@@ -89,7 +138,7 @@ struct System<C: NtpClock> {
     controller: DefaultTimeSyncController<C, PeerIndex>,
 }
 
-impl<C: NtpClock> System<C> {
+impl<C: NtpClock, T: Wait> System<C, T> {
     const MESSAGE_BUFFER_SIZE: usize = 32;
 
     fn new(clock: C, config: CombinedSystemConfig) -> (Self, DaemonChannels) {
@@ -112,6 +161,7 @@ impl<C: NtpClock> System<C> {
         // Build System and its channels
         (
             System {
+                _wait: PhantomData,
                 config,
                 system,
 
@@ -153,9 +203,7 @@ impl<C: NtpClock> System<C> {
         spawner.run(self.spawn_tx.clone(), notify_rx);
     }
 
-    async fn run(&mut self) -> std::io::Result<()> {
-        //let mut snapshots = Vec::with_capacity(self.peers_rwlock.read().await.size());
-
+    async fn run(&mut self, mut wait: Pin<&mut SingleshotSleep<T>>) -> std::io::Result<()> {
         loop {
             tokio::select! {
                 opt_msg_for_system = self.msg_for_system_rx.recv() => {
@@ -165,7 +213,7 @@ impl<C: NtpClock> System<C> {
                             break
                         }
                         Some(msg_for_system) => {
-                            self.handle_peer_update(msg_for_system)
+                            self.handle_peer_update(msg_for_system, &mut wait)
                                 .await?;
                         }
                     }
@@ -179,6 +227,9 @@ impl<C: NtpClock> System<C> {
                             self.handle_spawn_event(spawn_event);
                         }
                     }
+                }
+                () = &mut wait => {
+                    self.handle_timer(&mut wait);
                 }
                 _ = self.config_receiver.changed(), if self.config_receiver.has_changed().is_ok() => {
                     self.handle_config_update();
@@ -197,7 +248,18 @@ impl<C: NtpClock> System<C> {
         self.config = config;
     }
 
-    async fn handle_peer_update(&mut self, msg: MsgForSystem) -> std::io::Result<()> {
+    fn handle_timer(&mut self, wait: &mut Pin<&mut SingleshotSleep<T>>) {
+        tracing::debug!("Timer expired");
+        // note: local needed for borrow checker
+        let update = self.controller.time_update();
+        self.handle_algorithm_state_update(update, wait);
+    }
+
+    async fn handle_peer_update(
+        &mut self,
+        msg: MsgForSystem,
+        wait: &mut Pin<&mut SingleshotSleep<T>>,
+    ) -> std::io::Result<()> {
         tracing::debug!(?msg, "updating peer");
 
         match msg {
@@ -205,7 +267,7 @@ impl<C: NtpClock> System<C> {
                 self.handle_peer_demobilize(index).await;
             }
             MsgForSystem::NewMeasurement(index, snapshot, measurement, packet) => {
-                self.handle_peer_measurement(index, snapshot, measurement, packet);
+                self.handle_peer_measurement(index, snapshot, measurement, packet, wait);
             }
             MsgForSystem::UpdatedSnapshot(index, snapshot) => {
                 self.handle_peer_snapshot(index, snapshot);
@@ -253,19 +315,37 @@ impl<C: NtpClock> System<C> {
         snapshot: PeerSnapshot,
         measurement: ntp_proto::Measurement,
         packet: ntp_proto::NtpPacket<'static>,
+        wait: &mut Pin<&mut SingleshotSleep<T>>,
     ) {
         self.handle_peer_snapshot(index, snapshot);
-        let result = self.controller.peer_measurement(index, measurement, packet);
-        if let Some((used_peers, timedata)) = result {
-            self.system.update(
-                used_peers.iter().map(|v| {
-                    self.peers.get(v).and_then(|data| data.snapshot).expect(
-                        "Critical error: Peer used for synchronization that is not known to system",
-                    )
-                }),
-                timedata,
-                &self.config.system,
-            );
+        // note: local needed for borrow checker
+        let update = self.controller.peer_measurement(index, measurement, packet);
+        self.handle_algorithm_state_update(update, wait);
+    }
+
+    fn handle_algorithm_state_update(
+        &mut self,
+        update: ntp_proto::StateUpdate<PeerIndex>,
+        wait: &mut Pin<&mut SingleshotSleep<T>>,
+    ) {
+        if let Some(ref used_peers) = update.used_peers {
+            self.system.update_used_peers(used_peers.iter().map(|v| {
+                self.peers.get(v).and_then(|data| data.snapshot).expect(
+                    "Critical error: Peer used for synchronization that is not known to system",
+                )
+            }));
+        }
+        if let Some(time_snapshot) = update.time_snapshot {
+            self.system
+                .update_timedata(time_snapshot, &self.config.system);
+        }
+        if let Some(timestamp) = update.next_update {
+            let duration = timestamp - self.clock.now().expect("Could not get current time");
+            let duration =
+                std::time::Duration::from_secs_f64(duration.max(NtpDuration::ZERO).to_seconds());
+            wait.as_mut().reset(tokio::time::Instant::now() + duration);
+        }
+        if update.used_peers.is_some() || update.time_snapshot.is_some() {
             // Don't care if there is no receiver.
             let _ = self.system_snapshot_sender.send(self.system);
         }
@@ -471,8 +551,8 @@ mod tests {
         }
     }
 
-    fn handle_spawn_no_nts<C: NtpClock>(
-        system: &mut System<C>,
+    fn handle_spawn_no_nts<C: NtpClock, T: Wait>(
+        system: &mut System<C, T>,
         peer_address: PeerAddress,
         addr: SocketAddr,
     ) {
@@ -482,6 +562,9 @@ mod tests {
     #[tokio::test]
     async fn test_peers() {
         let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
+        let wait =
+            SingleshotSleep::new_disabled(tokio::time::sleep(std::time::Duration::from_secs(0)));
+        tokio::pin!(wait);
 
         let mut indices = [PeerIndex { index: 0 }; 4];
 
@@ -506,17 +589,20 @@ mod tests {
         );
 
         system
-            .handle_peer_update(MsgForSystem::NewMeasurement(
-                indices[0],
-                peer_snapshot(),
-                Measurement {
-                    delay: NtpDuration::from_seconds(0.1),
-                    offset: NtpDuration::from_seconds(0.),
-                    localtime: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 0),
-                    monotime: base,
-                },
-                NtpPacket::test(),
-            ))
+            .handle_peer_update(
+                MsgForSystem::NewMeasurement(
+                    indices[0],
+                    peer_snapshot(),
+                    Measurement {
+                        delay: NtpDuration::from_seconds(0.1),
+                        offset: NtpDuration::from_seconds(0.),
+                        localtime: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 0),
+                        monotime: base,
+                    },
+                    NtpPacket::test(),
+                ),
+                &mut wait,
+            )
             .await
             .unwrap();
         assert_eq!(
@@ -532,17 +618,20 @@ mod tests {
         );
 
         system
-            .handle_peer_update(MsgForSystem::NewMeasurement(
-                indices[0],
-                peer_snapshot(),
-                Measurement {
-                    delay: NtpDuration::from_seconds(0.1),
-                    offset: NtpDuration::from_seconds(0.),
-                    localtime: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 0),
-                    monotime: base,
-                },
-                NtpPacket::test(),
-            ))
+            .handle_peer_update(
+                MsgForSystem::NewMeasurement(
+                    indices[0],
+                    peer_snapshot(),
+                    Measurement {
+                        delay: NtpDuration::from_seconds(0.1),
+                        offset: NtpDuration::from_seconds(0.),
+                        localtime: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 0),
+                        monotime: base,
+                    },
+                    NtpPacket::test(),
+                ),
+                &mut wait,
+            )
             .await
             .unwrap();
         assert_eq!(
@@ -558,7 +647,10 @@ mod tests {
         );
 
         system
-            .handle_peer_update(MsgForSystem::UpdatedSnapshot(indices[1], peer_snapshot()))
+            .handle_peer_update(
+                MsgForSystem::UpdatedSnapshot(indices[1], peer_snapshot()),
+                &mut wait,
+            )
             .await
             .unwrap();
         assert_eq!(
@@ -574,7 +666,7 @@ mod tests {
         );
 
         system
-            .handle_peer_update(MsgForSystem::MustDemobilize(indices[1]))
+            .handle_peer_update(MsgForSystem::MustDemobilize(indices[1]), &mut wait)
             .await
             .unwrap();
         assert_eq!(
@@ -593,6 +685,9 @@ mod tests {
     #[tokio::test]
     async fn single_peer_pool() {
         let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
+        let wait =
+            SingleshotSleep::new_disabled(tokio::time::sleep(std::time::Duration::from_secs(0)));
+        tokio::pin!(wait);
 
         let peer_address = NormalizedAddress::new_unchecked("127.0.0.2", 123);
         system.add_standard_peer(peer_address).await;
@@ -611,7 +706,10 @@ mod tests {
 
         // our pool peer has a network issue
         system
-            .handle_peer_update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }))
+            .handle_peer_update(
+                MsgForSystem::NetworkIssue(PeerIndex { index: 1 }),
+                &mut wait,
+            )
             .await
             .unwrap();
 
@@ -627,6 +725,9 @@ mod tests {
     #[tokio::test]
     async fn max_peers_bigger_than_pool_size() {
         let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
+        let wait =
+            SingleshotSleep::new_disabled(tokio::time::sleep(std::time::Duration::from_secs(0)));
+        tokio::pin!(wait);
 
         let peer_address = NormalizedAddress::new_unchecked("127.0.0.5", 123);
         system.add_standard_peer(peer_address).await;
@@ -651,7 +752,10 @@ mod tests {
 
         // our pool peer has a network issue
         system
-            .handle_peer_update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }))
+            .handle_peer_update(
+                MsgForSystem::NetworkIssue(PeerIndex { index: 1 }),
+                &mut wait,
+            )
             .await
             .unwrap();
 
@@ -667,6 +771,9 @@ mod tests {
     #[tokio::test]
     async fn simulate_pool() {
         let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
+        let wait =
+            SingleshotSleep::new_disabled(tokio::time::sleep(std::time::Duration::from_secs(0)));
+        tokio::pin!(wait);
 
         let peer_address = NormalizedAddress::new_unchecked("127.0.0.5", 123);
         system.add_standard_peer(peer_address).await;
@@ -694,7 +801,10 @@ mod tests {
 
         // simulate that a pool peer has a network issue
         system
-            .handle_peer_update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }))
+            .handle_peer_update(
+                MsgForSystem::NetworkIssue(PeerIndex { index: 1 }),
+                &mut wait,
+            )
             .await
             .unwrap();
 

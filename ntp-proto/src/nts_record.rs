@@ -4,9 +4,9 @@ use std::{
     sync::Arc,
 };
 
-use aes_siv::{Aes128SivAead, KeyInit};
+use aes_siv::Aes128SivAead;
 
-use crate::{cookiestash::CookieStash, peer::PeerNtsData};
+use crate::{cookiestash::CookieStash, packet::AesSivCmac256, peer::PeerNtsData};
 
 #[derive(Debug)]
 pub enum WriteError {
@@ -597,8 +597,8 @@ impl KeyExchangeClient {
                                 port: result.port.unwrap_or(Self::NTP_DEFAULT_PORT),
                                 nts: PeerNtsData {
                                     cookies: result.cookies,
-                                    c2s: Aes128SivAead::new(&c2s),
-                                    s2c: Aes128SivAead::new(&s2c),
+                                    c2s: Box::new(AesSivCmac256::new(c2s)),
+                                    s2c: Box::new(AesSivCmac256::new(s2c)),
                                 },
                             }));
                         }
