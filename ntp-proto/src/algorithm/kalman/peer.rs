@@ -249,11 +249,11 @@ impl PeerFilter {
         if chi >= -2. * algo_config.poll_jump_threshold.ln() {
             self.desired_poll_interval = config.poll_limits.min;
             self.poll_score = 0;
-        } else if self.poll_score <= -algo_config.poll_histeresis {
+        } else if self.poll_score <= -algo_config.poll_hysteresis {
             self.desired_poll_interval = self.desired_poll_interval.inc(config.poll_limits);
             self.poll_score = 0;
             info!(interval = ?self.desired_poll_interval, "Increased poll interval");
-        } else if self.poll_score >= algo_config.poll_histeresis {
+        } else if self.poll_score >= algo_config.poll_hysteresis {
             self.desired_poll_interval = self.desired_poll_interval.dec(config.poll_limits);
             self.poll_score = 0;
             info!(interval = ?self.desired_poll_interval, "Decreased poll interval");
@@ -280,14 +280,14 @@ impl PeerFilter {
             chi,
             "Wander estimate update"
         );
-        if self.precision_score <= -algo_config.precision_histeresis {
+        if self.precision_score <= -algo_config.precision_hysteresis {
             self.clock_wander /= 4.0;
             self.precision_score = 0;
             debug!(
                 wander = self.clock_wander.sqrt(),
                 "Decreased wander estimate"
             );
-        } else if self.precision_score >= algo_config.precision_histeresis {
+        } else if self.precision_score >= algo_config.precision_hysteresis {
             self.clock_wander *= 4.0;
             self.precision_score = 0;
             debug!(
@@ -889,7 +889,7 @@ mod tests {
     fn test_poll_duration_variation() {
         let config = SystemConfig::default();
         let algo_config = AlgorithmConfig {
-            poll_histeresis: 2,
+            poll_hysteresis: 2,
             ..Default::default()
         };
 
@@ -1008,7 +1008,7 @@ mod tests {
     #[test]
     fn test_wander_estimation() {
         let algo_config = AlgorithmConfig {
-            precision_histeresis: 2,
+            precision_hysteresis: 2,
             ..Default::default()
         };
 
