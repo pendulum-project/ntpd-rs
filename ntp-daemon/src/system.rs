@@ -1,17 +1,17 @@
 use crate::{
-    config::{CombinedSystemConfig, NormalizedAddress},
-    config::{PeerConfig, ServerConfig},
+    config::{CombinedSystemConfig, NormalizedAddress, PeerConfig, ServerConfig},
     peer::PeerTask,
     peer::{MsgForSystem, PeerChannels},
     server::{ServerStats, ServerTask},
-    ObservablePeerState, spawn::{standard::StandardSpawner, pool::PoolSpawner, SpawnAction, SpawnerId, SpawnEvent, PeerId, RemovedPeer, PeerRemovalReason, Spawner},
+    ObservablePeerState, spawn::{standard::StandardSpawner, pool::PoolSpawner, nts::NtsSpawner, SpawnAction, SpawnerId, SpawnEvent, PeerId, RemovedPeer, PeerRemovalReason, Spawner},
 };
 
 use std::collections::HashMap;
 
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
-    DefaultTimeSyncController, NtpClock, PeerSnapshot, SystemSnapshot, TimeSyncController,
+    DefaultTimeSyncController, NtpClock,
+    PeerSnapshot, SystemSnapshot, TimeSyncController,
 };
 use tokio::{
     sync::mpsc,
@@ -41,6 +41,9 @@ pub async fn spawn(
         match peer_config {
             PeerConfig::Standard(cfg) => {
                 system.add_spawner(StandardSpawner::new(cfg.clone(), NETWORK_WAIT_PERIOD));
+            }
+            PeerConfig::Nts(cfg) => {
+                system.add_spawner(NtsSpawner::new(cfg.clone(), NETWORK_WAIT_PERIOD));
             }
             PeerConfig::Pool(cfg) => {
                 system.add_spawner(PoolSpawner::new(cfg.clone(), NETWORK_WAIT_PERIOD));
@@ -163,7 +166,7 @@ impl<C: NtpClock> System<C> {
                         }
                         Some(msg_for_system) => {
                             self.handle_peer_update(msg_for_system)
-                                .await;
+                                .await?;
                         }
                     }
                 }
@@ -194,7 +197,7 @@ impl<C: NtpClock> System<C> {
         self.config = config;
     }
 
-    async fn handle_peer_update(&mut self, msg: MsgForSystem) {
+    async fn handle_peer_update(&mut self, msg: MsgForSystem) -> std::io::Result<()> {
         tracing::debug!(?msg, "updating peer");
 
         match msg {
@@ -208,7 +211,7 @@ impl<C: NtpClock> System<C> {
                 self.handle_peer_snapshot(index, snapshot);
             }
             MsgForSystem::NetworkIssue(index) => {
-                self.handle_peer_network_issue(index).await;
+                self.handle_peer_network_issue(index).await?;
             }
         }
 
@@ -217,9 +220,11 @@ impl<C: NtpClock> System<C> {
         let _ = self
             .peer_snapshots_sender
             .send(self.observe_peers().collect());
+
+        Ok(())
     }
 
-    async fn handle_peer_network_issue(&mut self, index: PeerIndex) {
+    async fn handle_peer_network_issue(&mut self, index: PeerIndex) -> std::io::Result<()> {
         // Restart the peer reusing its configuration.
         let state = self.peers.remove(&index).unwrap();
         let spawner_id = state.spawner_id;
@@ -228,6 +233,8 @@ impl<C: NtpClock> System<C> {
         if let Some(spawner) = opt_spawner {
             spawner.notify_tx.send(RemovedPeer::new(peer_id, PeerRemovalReason::NetworkIssue)).await.expect("Could not notify spawner");
         }
+
+        Ok(())
     }
 
     fn handle_peer_snapshot(&mut self, index: PeerIndex, snapshot: PeerSnapshot) {
@@ -279,7 +286,7 @@ impl<C: NtpClock> System<C> {
 
     fn handle_spawn_event(&mut self, event: SpawnEvent) {
         match event.action {
-            SpawnAction::Create(peer_id, addr, peer_address) => {
+            SpawnAction::Create(peer_id, addr, peer_address, nts_data) => {
                 let index = self.peer_indexer.get();
                 self.peers.insert(index, PeerState {
                     snapshot: None,
@@ -295,6 +302,7 @@ impl<C: NtpClock> System<C> {
                     self.clock.clone(),
                     NETWORK_WAIT_PERIOD,
                     self.peer_channels.clone(),
+                    nts_data,
                 );
 
                 // Don't care if there is not receiver
@@ -315,6 +323,12 @@ impl<C: NtpClock> System<C> {
     #[cfg(test)]
     async fn add_peer(&mut self, address: NormalizedAddress) {
         self.add_spawner(StandardSpawner::new(crate::config::StandardPeerConfig { addr: address }, NETWORK_WAIT_PERIOD));
+    }
+
+    /// Adds a single NTS peer
+    #[cfg(test)]
+    async fn add_nts_peer(&mut self, ke_addr: NormalizedAddress, certificates: Arc<[Certificate]>) {
+        self.add_spawner(NtsSpawner::new(crate::config::NtsPeerConfig { ke_addr, certificates }, NETWORK_WAIT_PERIOD));
     }
 
     async fn add_server(&mut self, config: ServerConfig) {
@@ -343,7 +357,7 @@ impl<C: NtpClock> System<C> {
                             reachability: snapshot.reach,
                             poll_interval: snapshot.poll_interval,
                             peer_id: snapshot.peer_id,
-                            address: data.peer_address.as_str().to_string(),
+                            address: data.peer_address.to_string(),
                         }
                     } else {
                         ObservablePeerState::Nothing
@@ -457,6 +471,14 @@ mod tests {
         }
     }
 
+    fn handle_spawn_no_nts<C: NtpClock>(
+        system: &mut System<C>,
+        peer_address: PeerAddress,
+        addr: SocketAddr,
+    ) {
+        system.handle_spawn(peer_address, addr, None)
+    }
+
     #[tokio::test]
     async fn test_peers() {
         let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
@@ -464,9 +486,10 @@ mod tests {
         let mut indices = [PeerIndex { index: 0 }; 4];
 
         for (i, item) in indices.iter_mut().enumerate() {
-            *item = system.create_test_peer(NormalizedAddress::new_unchecked(&format!(
-                "127.0.0.{i}:123"
-            )));
+            *item = system.create_test_peer(NormalizedAddress::new_unchecked(
+                &format!("127.0.0.{i}",),
+                123,
+            ));
         }
 
         let base = NtpInstant::now();
@@ -494,7 +517,8 @@ mod tests {
                 },
                 NtpPacket::test(),
             ))
-            .await;
+            .await
+            .unwrap();
         assert_eq!(
             system
                 .peers
@@ -519,7 +543,8 @@ mod tests {
                 },
                 NtpPacket::test(),
             ))
-            .await;
+            .await
+            .unwrap();
         assert_eq!(
             system
                 .peers
@@ -534,7 +559,8 @@ mod tests {
 
         system
             .handle_peer_update(MsgForSystem::UpdatedSnapshot(indices[1], peer_snapshot()))
-            .await;
+            .await
+            .unwrap();
         assert_eq!(
             system
                 .peers
@@ -549,7 +575,8 @@ mod tests {
 
         system
             .handle_peer_update(MsgForSystem::MustDemobilize(indices[1]))
-            .await;
+            .await
+            .unwrap();
         assert_eq!(
             system
                 .peers
@@ -567,16 +594,16 @@ mod tests {
     async fn single_peer_pool() {
         let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
 
-        let peer_address = NormalizedAddress::new_unchecked("127.0.0.2:123");
-        system.add_peer(peer_address).await;
+        let peer_address = NormalizedAddress::new_unchecked("127.0.0.2", 123);
+        system.add_standard_peer(peer_address).await;
 
-        let pool_address = NormalizedAddress::new_unchecked("127.0.0.1:123");
+        let pool_address = NormalizedAddress::new_unchecked("127.0.0.1", 123);
         let max_peers = 1;
         system.add_new_pool(pool_address.clone(), max_peers).await;
 
         for _ in 0..2 {
             let task = system.spawn_task_rx.recv().await.unwrap();
-            system.handle_spawn(task.peer_address, task.address);
+            handle_spawn_no_nts(&mut system, task.peer_address, task.address);
         }
 
         // we have 2 peers
@@ -585,11 +612,12 @@ mod tests {
         // our pool peer has a network issue
         system
             .handle_peer_update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }))
-            .await;
+            .await
+            .unwrap();
 
         for _ in 0..1 {
             let task = system.spawn_task_rx.recv().await.unwrap();
-            system.handle_spawn(task.peer_address, task.address);
+            handle_spawn_no_nts(&mut system, task.peer_address, task.address);
         }
 
         // automatically selects another peer from the pool
@@ -600,11 +628,12 @@ mod tests {
     async fn max_peers_bigger_than_pool_size() {
         let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
 
-        let peer_address = NormalizedAddress::new_unchecked("127.0.0.5:123");
-        system.add_peer(peer_address).await;
+        let peer_address = NormalizedAddress::new_unchecked("127.0.0.5", 123);
+        system.add_standard_peer(peer_address).await;
 
         let pool_address = NormalizedAddress::with_hardcoded_dns(
-            "tweedegolf.nl:123",
+            "tweedegolf.nl",
+            123,
             vec!["127.0.0.1:123".parse().unwrap()],
         );
         let max_peers = 2;
@@ -612,7 +641,7 @@ mod tests {
 
         for _ in 0..2 {
             let task = system.spawn_task_rx.recv().await.unwrap();
-            system.handle_spawn(task.peer_address, task.address);
+            handle_spawn_no_nts(&mut system, task.peer_address, task.address);
         }
 
         // we have only 2 peers, because the pool has size 1
@@ -623,13 +652,12 @@ mod tests {
         // our pool peer has a network issue
         system
             .handle_peer_update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }))
-            .await;
+            .await
+            .unwrap();
 
         for _ in 0..1 {
-            dbg!("waiting");
             let task = system.spawn_task_rx.recv().await.unwrap();
-            dbg!(&task);
-            system.handle_spawn(task.peer_address, task.address);
+            handle_spawn_no_nts(&mut system, task.peer_address, task.address);
         }
 
         // automatically selects another peer from the pool
@@ -640,11 +668,12 @@ mod tests {
     async fn simulate_pool() {
         let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
 
-        let peer_address = NormalizedAddress::new_unchecked("127.0.0.5:123");
-        system.add_peer(peer_address).await;
+        let peer_address = NormalizedAddress::new_unchecked("127.0.0.5", 123);
+        system.add_standard_peer(peer_address).await;
 
         let pool_address = NormalizedAddress::with_hardcoded_dns(
-            "tweedegolf.nl:123",
+            "tweedegolf.nl",
+            123,
             vec![
                 "127.0.0.1:123".parse().unwrap(),
                 "127.0.0.2:123".parse().unwrap(),
@@ -657,7 +686,7 @@ mod tests {
 
         for _ in 0..4 {
             let task = system.spawn_task_rx.recv().await.unwrap();
-            system.handle_spawn(task.peer_address, task.address);
+            handle_spawn_no_nts(&mut system, task.peer_address, task.address);
         }
 
         // we have only 2 peers, because the pool has size 1
@@ -666,10 +695,11 @@ mod tests {
         // simulate that a pool peer has a network issue
         system
             .handle_peer_update(MsgForSystem::NetworkIssue(PeerIndex { index: 1 }))
-            .await;
+            .await
+            .unwrap();
 
         let task = system.spawn_task_rx.recv().await.unwrap();
-        system.handle_spawn(task.peer_address, task.address);
+        handle_spawn_no_nts(&mut system, task.peer_address, task.address);
 
         // automatically selects another peer from the pool
         assert_eq!(system.peers.len(), 4);

@@ -1,14 +1,13 @@
 use std::{
     future::Future,
-    io::Cursor,
     marker::PhantomData,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr},
     pin::Pin,
 };
 
 use ntp_proto::{
-    IgnoreReason, Measurement, NtpClock, NtpInstant, NtpPacket, NtpTimestamp, Peer, PeerSnapshot,
-    ReferenceId, SystemSnapshot, Update,
+    IgnoreReason, Measurement, NtpClock, NtpInstant, NtpPacket, NtpTimestamp, Peer, PeerNtsData,
+    PeerSnapshot, ReferenceId, SystemSnapshot, Update,
 };
 use ntp_udp::UdpSocket;
 use rand::{thread_rng, Rng};
@@ -30,6 +29,7 @@ impl Wait for Sleep {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum MsgForSystem {
     /// Received a Kiss-o'-Death and must demobilize
     MustDemobilize(PeerIndex),
@@ -105,9 +105,19 @@ where
     async fn handle_poll(&mut self, poll_wait: &mut Pin<&mut T>) -> PollResult {
         let system_snapshot = *self.channels.system_snapshot_receiver.borrow();
         let config_snapshot = *self.channels.system_config_receiver.borrow_and_update();
-        let packet = self
-            .peer
-            .generate_poll_message(system_snapshot, &config_snapshot.system);
+        let mut buf = [0; 1024];
+        let packet = match self.peer.generate_poll_message(
+            &mut buf,
+            system_snapshot,
+            &config_snapshot.system,
+        ) {
+            Ok(packet) => packet,
+            Err(e) => {
+                error!(error = ?e, "Could not generate poll message");
+                // not exactly a network gone situation, but needs the same response
+                return PollResult::NetworkGone;
+            }
+        };
 
         // Sent a poll, so update waiting to match deadline of next
         self.last_poll_sent = Instant::now();
@@ -131,17 +141,7 @@ where
             }
         }
 
-        let mut buf = Cursor::new([0; 48]);
-        if let Err(error) = packet.serialize(&mut buf) {
-            error!(?error, "poll message could not be serialized");
-            return PollResult::Ok;
-        }
-
-        match self
-            .socket
-            .send(&buf.get_ref()[..buf.position() as usize])
-            .await
-        {
+        match self.socket.send(packet).await {
             Err(error) => {
                 warn!(?error, "poll message could not be sent");
 
@@ -165,7 +165,7 @@ where
     async fn handle_packet<'a>(
         &mut self,
         poll_wait: &mut Pin<&mut T>,
-        packet: NtpPacket<'a>,
+        packet: &'a [u8],
         send_timestamp: NtpTimestamp,
         recv_timestamp: NtpTimestamp,
     ) -> PacketResult {
@@ -214,7 +214,7 @@ where
 
     async fn run(&mut self, mut poll_wait: Pin<&mut T>) {
         loop {
-            let mut buf = [0_u8; 48];
+            let mut buf = [0_u8; 1024];
 
             tokio::select! {
                 () = &mut poll_wait => {
@@ -270,6 +270,7 @@ where
         clock: C,
         network_wait_period: std::time::Duration,
         mut channels: PeerChannels,
+        nts: Option<PeerNtsData>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(
             (async move {
@@ -294,7 +295,17 @@ where
 
                 let local_clock_time = NtpInstant::now();
                 let config_snapshot = *channels.system_config_receiver.borrow_and_update();
-                let peer = Peer::new(our_id, peer_id, local_clock_time, config_snapshot.system);
+                let peer = if let Some(nts) = nts {
+                    Peer::new_nts(
+                        our_id,
+                        peer_id,
+                        local_clock_time,
+                        config_snapshot.system,
+                        nts,
+                    )
+                } else {
+                    Peer::new(our_id, peer_id, local_clock_time, config_snapshot.system)
+                };
 
                 let poll_wait = tokio::time::sleep(std::time::Duration::default());
                 tokio::pin!(poll_wait);
@@ -319,7 +330,7 @@ where
 
 #[derive(Debug)]
 enum AcceptResult<'a> {
-    Accept(NtpPacket<'a>, NtpTimestamp),
+    Accept(&'a [u8], NtpTimestamp),
     Ignore,
     NetworkGone,
 }
@@ -333,7 +344,7 @@ fn unspecified_for(addr: SocketAddr) -> SocketAddr {
 
 fn accept_packet(
     result: Result<(usize, SocketAddr, Option<NtpTimestamp>), std::io::Error>,
-    buf: &[u8; 48],
+    buf: &[u8],
 ) -> AcceptResult {
     match result {
         Ok((size, _, Some(recv_timestamp))) => {
@@ -346,13 +357,7 @@ fn accept_packet(
 
                 AcceptResult::Ignore
             } else {
-                match NtpPacket::deserialize(buf) {
-                    Ok(packet) => AcceptResult::Accept(packet, recv_timestamp),
-                    Err(e) => {
-                        warn!("received invalid packet: {}", e);
-                        AcceptResult::Ignore
-                    }
-                }
+                AcceptResult::Accept(&buf[0..size], recv_timestamp)
             }
         }
         Ok((size, _, None)) => {
@@ -376,7 +381,7 @@ fn accept_packet(
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, time::Duration};
+    use std::{io::Cursor, sync::Arc, time::Duration};
 
     use ntp_proto::{NtpDuration, NtpLeapIndicator, PollInterval, TimeSnapshot};
     use tokio::sync::mpsc;
@@ -586,6 +591,16 @@ mod tests {
         handle.abort();
     }
 
+    fn serialize_packet_unencryped(send_packet: &NtpPacket) -> [u8; 48] {
+        let mut buf = [0; 48];
+        let mut cursor = Cursor::new(buf.as_mut_slice());
+        send_packet.serialize(&mut cursor, None).unwrap();
+
+        assert_eq!(cursor.position(), 48);
+
+        buf
+    }
+
     #[tokio::test]
     async fn test_timeroundtrip() {
         // Note: Ports must be unique among tests to deal with parallelism
@@ -617,12 +632,11 @@ mod tests {
         assert_eq!(size, 48);
         let timestamp = timestamp.unwrap();
 
-        let rec_packet = NtpPacket::deserialize(&buf).unwrap();
+        let rec_packet = NtpPacket::deserialize(&buf, None).unwrap();
         let send_packet = NtpPacket::timestamp_response(&system, rec_packet, timestamp, &clock);
-        let mut pdata = vec![];
-        send_packet.serialize(&mut pdata).unwrap();
 
-        socket.send(&pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&send_packet);
+        socket.send(&serialized).await.unwrap();
 
         let msg = msg_recv.recv().await.unwrap();
         assert!(matches!(msg, MsgForSystem::NewMeasurement(_, _, _, _)));
@@ -652,12 +666,11 @@ mod tests {
         assert_eq!(size, 48);
         assert!(timestamp.is_some());
 
-        let rec_packet = NtpPacket::deserialize(&buf).unwrap();
+        let rec_packet = NtpPacket::deserialize(&buf, None).unwrap();
         let send_packet = NtpPacket::deny_response(rec_packet);
-        let mut pdata = vec![];
-        send_packet.serialize(&mut pdata).unwrap();
 
-        socket.send(&pdata).await.unwrap();
+        let serialized = serialize_packet_unencryped(&send_packet);
+        socket.send(&serialized).await.unwrap();
 
         let msg = msg_recv.recv().await.unwrap();
         assert!(matches!(msg, MsgForSystem::MustDemobilize(_)));

@@ -3,6 +3,7 @@
 mod algorithm;
 mod clock;
 mod config;
+mod cookiestash;
 mod identifiers;
 mod nts_record;
 mod packet;
@@ -23,7 +24,8 @@ pub use peer::fuzz_measurement_from_packet;
 #[cfg(feature = "ext-test")]
 pub use peer::peer_snapshot;
 pub use peer::{
-    AcceptSynchronizationError, IgnoreReason, Measurement, Peer, PeerSnapshot, Reach, Update,
+    AcceptSynchronizationError, IgnoreReason, Measurement, Peer, PeerNtsData, PeerSnapshot, Reach,
+    Update,
 };
 pub use system::{SystemSnapshot, TimeSnapshot};
 #[cfg(feature = "fuzz")]
@@ -32,4 +34,6 @@ pub use time_types::{
     FrequencyTolerance, NtpDuration, NtpInstant, NtpTimestamp, PollInterval, PollIntervalLimits,
 };
 
-pub use nts_record::{NtsRecord, WriteError};
+pub use nts_record::{
+    KeyExchangeClient, KeyExchangeError, KeyExchangeResult, NtsRecord, NtsRecordDecoder, WriteError,
+};

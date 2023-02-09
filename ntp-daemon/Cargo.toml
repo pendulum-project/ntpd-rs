@@ -7,7 +7,7 @@ license = "Apache-2.0 OR MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "1.23.1", features = ["full"] }
+tokio = { version = "1.24.2", features = ["full"] }
 ntp-proto = { path = "../ntp-proto" }
 ntp-os-clock = { path = "../ntp-os-clock" }
 ntp-udp = { path = "../ntp-udp" }
@@ -18,13 +18,16 @@ toml = "0.5.10"
 thiserror = "1.0.38"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.91"
-sentry = { version = "0.29.1", optional = true, default-features = false, features = ["backtrace", "contexts", "panic", "reqwest", "rustls"] }
-sentry-tracing = { version = "0.29.1", optional = true }
+sentry = { version = "0.29.2", optional = true, default-features = false, features = ["backtrace", "contexts", "panic", "reqwest", "rustls"] }
+sentry-tracing = { version = "0.29.2", optional = true }
 rand = "0.8.5"
+rustls = "0.20.7"
 libc = "0.2.139"
 exitcode = "1.1.2"
 prometheus-client = "0.18.1"
 async-trait = "0.1.59"
+rustls-native-certs = "0.6.2"
+rustls-pemfile = "1.0.2"
 
 [dev-dependencies]
 ntp-proto = { path = "../ntp-proto", features=["ext-test"]}

@@ -1,11 +1,13 @@
 use std::{sync::atomic::AtomicU64, net::SocketAddr};
 
+use ntp_proto::PeerNtsData;
 use tokio::sync::mpsc;
 
 use crate::config::NormalizedAddress;
 
 pub mod pool;
 pub mod standard;
+pub mod nts;
 
 
 /// Unique identifier for a spawner
@@ -73,7 +75,7 @@ impl SpawnEvent {
 /// Currently a spawner can only create peers
 #[derive(Debug)]
 pub enum SpawnAction {
-    Create(PeerId, SocketAddr, NormalizedAddress),
+    Create(PeerId, SocketAddr, NormalizedAddress, Option<PeerNtsData>),
     // Remove(()),
 }
 

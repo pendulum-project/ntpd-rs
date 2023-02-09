@@ -1,11 +1,24 @@
 #![no_main]
+
+use std::io::Cursor;
+
 use libfuzzer_sys::fuzz_target;
 use ntp_proto::NtpPacket;
 
 fuzz_target!(|data: Vec<u8>| {
-    if let Ok(a) = NtpPacket::deserialize(&data) {
-        let mut buf = vec![];
-        a.serialize(&mut buf).unwrap();
-        assert_eq!(data, buf);
+    // packets expand by a factor of at most 4 on re-encode
+    let mut buf = [0u8; 4096 * 4];
+    let mut buf2 = [0u8; 4096 * 4];
+    if let Ok(a) = NtpPacket::deserialize(&data, None) {
+        let mut cursor = Cursor::new(buf.as_mut_slice());
+        a.serialize(&mut cursor, None).unwrap();
+        let used = cursor.position();
+        let slice = &buf[..used as usize];
+        let b = NtpPacket::deserialize(&data, None).unwrap();
+        let mut cursor = Cursor::new(buf2.as_mut_slice());
+        b.serialize(&mut cursor, None).unwrap();
+        let used = cursor.position();
+        let slice2 = &buf2[..used as usize];
+        assert_eq!(slice, slice2);
     }
 });

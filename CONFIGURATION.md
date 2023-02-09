@@ -147,6 +147,24 @@ addr = "0.pool.ntp.org:123"
 addr = "1.pool.ntp.org:123"
 ```
 
+#### Nts
+
+A peer in `Nts` mode will use NTS (Network Times Security) to communicate with its server. The server must support NTS. The configuration requires the address of the Key Exchange server (the address of the actual NTP server that ends up being used may be different). The default port for key exchange, 4460, is automatically appended if no port is given.
+
+```
+[[peers]]
+ke_addr = "nts.time.nl"
+```
+
+Additional certificates can be loaded from a `.pem` file:
+
+```
+[[peers]]
+ke_addr = "time.cloudflare.com:4460"
+certificate = "/path/to/certificates.pem"
+```
+
+
 #### Pool
 
 `Pool` mode is a convenient way to configure many NTP servers, without having to worry about individual server's IP addresses.
@@ -160,6 +178,7 @@ addr = "pool.ntp.org"
 mode = "Pool"
 max_peers = 4
 ```
+
 
 
 ## Operational concerns

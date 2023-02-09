@@ -59,7 +59,7 @@ impl StandardSpawner {
 
     async fn spawn(&mut self, action_tx: &mpsc::Sender<SpawnEvent>) -> Result<(), StandardSpawnError> {
         let addr = self.do_resolve(false).await;
-        action_tx.send(SpawnEvent::new(self.id, SpawnAction::Create(PeerId::new(), addr, self.config.addr.clone()))).await?;
+        action_tx.send(SpawnEvent::new(self.id, SpawnAction::Create(PeerId::new(), addr, self.config.addr.clone(), None))).await?;
         Ok(())
     }
 }

@@ -1,4 +1,39 @@
 #[derive(Debug)]
+enum PeerAddress {
+    Peer {
+        address: NormalizedAddress,
+    },
+    Nts {
+        address: NormalizedAddress,
+        extra_certificates: Arc<[Certificate]>,
+    },
+    Pool {
+        index: PoolIndex,
+        address: NormalizedAddress,
+        socket_address: std::net::SocketAddr,
+        max_peers: usize,
+    },
+}
+
+#[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
+enum SpawnConfig {
+    Nts {
+        ke: KeyExchangeResult,
+        extra_certificates: Arc<[Certificate]>,
+        address: NormalizedAddress,
+    },
+    Standard {
+        config: StandardPeerConfig,
+    },
+    Pool {
+        index: PoolIndex,
+        config: PoolPeerConfig,
+        in_use: Vec<SocketAddr>,
+    },
+}
+
+#[derive(Debug)]
 struct Spawner {
     pools: HashMap<PoolIndex, Arc<tokio::sync::Mutex<PoolAddresses>>>,
     sender: Sender<SpawnTask>,
@@ -19,6 +54,45 @@ impl Spawner {
                 let pool = self.pools.entry(index).or_default().clone();
                 tokio::spawn(Self::spawn_pool(index, pool, config, in_use, sender))
             }
+        }
+    }
+
+    async fn spawn_nts(
+        ke: KeyExchangeResult,
+        address: NormalizedAddress,
+        extra_certificates: Arc<[Certificate]>,
+        sender: Sender<SpawnTask>,
+    ) {
+        let addr = loop {
+            let address = (ke.remote.as_str(), ke.port);
+            match tokio::net::lookup_host(address).await {
+                Ok(mut addresses) => match addresses.next() {
+                    None => {
+                        warn!("Could not resolve peer address, retrying");
+                        tokio::time::sleep(NETWORK_WAIT_PERIOD).await
+                    }
+                    Some(first) => {
+                        break first;
+                    }
+                },
+                Err(e) => {
+                    warn!(error = ?e, "error while resolving peer address, retrying");
+                    tokio::time::sleep(NETWORK_WAIT_PERIOD).await
+                }
+            }
+        };
+
+        let spawn_task = SpawnTask {
+            peer_address: PeerAddress::Nts {
+                address,
+                extra_certificates,
+            },
+            address: addr,
+            nts: Some(ke.nts),
+        };
+
+        if let Err(send_error) = sender.send(spawn_task).await {
+            tracing::error!(?send_error, "Receive half got disconnected");
         }
     }
 
@@ -124,4 +198,25 @@ impl Spawner {
             tokio::time::sleep(wait_period).await;
         }
     }
+}
+
+
+async fn add_nts_peer(
+    &mut self,
+    ke_address: NormalizedAddress,
+    extra_certificates: Arc<[Certificate]>,
+) -> Result<(), KeyExchangeError> {
+    let ke = key_exchange(ke_address.server_name, ke_address.port, &extra_certificates).await?;
+
+    let address = NormalizedAddress::from_string_ntp(format!("{}:{}", ke.remote, ke.port))?;
+
+    let config = SpawnConfig::Nts {
+        ke,
+        extra_certificates,
+        address,
+    };
+
+    self.spawner.spawn(config).await;
+
+    Ok(())
 }

@@ -1,28 +1,22 @@
-use std::{borrow::Cow, fmt::Display};
+use std::io::Cursor;
 
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 
 use crate::{NtpClock, NtpDuration, NtpTimestamp, PollInterval, ReferenceId, SystemSnapshot};
 
-#[derive(Debug)]
-pub enum PacketParsingError {
-    InvalidVersion(u8),
-    IncorrectLength,
-}
+use self::{
+    extensionfields::{ExtensionField, ExtensionFieldData},
+    mac::Mac,
+};
 
-impl Display for PacketParsingError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::InvalidVersion(version) => {
-                f.write_fmt(format_args!("Invalid version {}", version))
-            }
-            Self::IncorrectLength => f.write_str("Incorrect packet length"),
-        }
-    }
-}
+type Cipher = aes_siv::Aes128SivAead;
 
-impl std::error::Error for PacketParsingError {}
+mod error;
+mod extensionfields;
+mod mac;
+
+pub use error::PacketParsingError;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NtpLeapIndicator {
@@ -113,163 +107,6 @@ pub struct NtpPacket<'a> {
     mac: Option<Mac<'a>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ExtensionField<'a> {
-    Unknown { typeid: u16, data: Cow<'a, [u8]> },
-}
-
-impl<'a> ExtensionField<'a> {
-    const MINIMUM_SIZE: usize = 16;
-
-    fn into_owned(self) -> ExtensionField<'static> {
-        match self {
-            ExtensionField::Unknown { typeid, data } => ExtensionField::Unknown {
-                typeid,
-                data: Cow::Owned(data.into_owned()),
-            },
-        }
-    }
-
-    fn serialize<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
-        match self {
-            ExtensionField::Unknown { typeid, data } => {
-                if data.len() > u16::MAX as usize {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        PacketParsingError::IncorrectLength,
-                    ));
-                }
-                w.write_all(&typeid.to_be_bytes())?;
-                w.write_all(&(data.len() as u16).to_be_bytes())?;
-                w.write_all(data)
-            }
-        }
-    }
-
-    fn deserialize(data: &'a [u8]) -> Result<(ExtensionField<'a>, usize), PacketParsingError> {
-        if data.len() < 4 {
-            return Err(PacketParsingError::IncorrectLength);
-        }
-        let typeid = u16::from_be_bytes(data[0..2].try_into().unwrap());
-        let ef_len = u16::from_be_bytes(data[2..4].try_into().unwrap()) as usize;
-        if ef_len < Self::MINIMUM_SIZE || ef_len > data.len() {
-            return Err(PacketParsingError::IncorrectLength);
-        }
-        Ok((
-            ExtensionField::Unknown {
-                typeid,
-                data: Cow::Borrowed(&data[4..ef_len]),
-            },
-            ef_len,
-        ))
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum ExtensionFieldData<'a> {
-    Raw(Cow<'a, [u8]>),
-    #[allow(dead_code)]
-    List(Vec<ExtensionField<'a>>),
-}
-
-impl<'a> Default for ExtensionFieldData<'a> {
-    fn default() -> Self {
-        Self::Raw(Cow::Borrowed(&[]))
-    }
-}
-
-impl<'a> ExtensionFieldData<'a> {
-    fn into_owned(self) -> ExtensionFieldData<'static> {
-        match self {
-            ExtensionFieldData::Raw(data) => ExtensionFieldData::Raw(Cow::Owned(data.into_owned())),
-            ExtensionFieldData::List(fields) => {
-                ExtensionFieldData::List(fields.into_iter().map(|v| v.into_owned()).collect())
-            }
-        }
-    }
-
-    fn iter<'b: 'a>(&'b self) -> impl Iterator<Item = Cow<'b, ExtensionField<'a>>> + 'b {
-        let mut offset = 0;
-        std::iter::from_fn(move || match self {
-            ExtensionFieldData::Raw(data) => {
-                if offset < data.len() {
-                    let (field, len) = ExtensionField::deserialize(&data[offset..]).unwrap();
-                    offset += len;
-                    Some(Cow::Owned(field))
-                } else {
-                    None
-                }
-            }
-            ExtensionFieldData::List(fields) => {
-                if offset < fields.len() {
-                    offset += 1;
-                    Some(Cow::Borrowed(&fields[offset - 1]))
-                } else {
-                    None
-                }
-            }
-        })
-    }
-
-    fn serialize<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
-        match self {
-            ExtensionFieldData::Raw(efdata) => w.write_all(efdata),
-            ExtensionFieldData::List(fields) => {
-                for field in fields {
-                    field.serialize(w)?;
-                }
-                Ok(())
-            }
-        }
-    }
-
-    fn deserialize(data: &'a [u8]) -> Result<(ExtensionFieldData<'a>, usize), PacketParsingError> {
-        let mut offset = 0;
-        while data.len() - offset >= Mac::MAXIMUM_SIZE {
-            let (_, len) = ExtensionField::deserialize(&data[offset..])?;
-            offset += len;
-        }
-
-        Ok((
-            ExtensionFieldData::Raw(Cow::Borrowed(&data[..offset])),
-            offset,
-        ))
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Mac<'a> {
-    keyid: u32,
-    mac: Cow<'a, [u8]>,
-}
-
-impl<'a> Mac<'a> {
-    const MAXIMUM_SIZE: usize = 28;
-
-    fn into_owned(self) -> Mac<'static> {
-        Mac {
-            keyid: self.keyid,
-            mac: Cow::Owned(self.mac.into_owned()),
-        }
-    }
-
-    fn serialize<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
-        w.write_all(&self.keyid.to_be_bytes())?;
-        w.write_all(&self.mac)
-    }
-
-    fn deserialize(data: &'a [u8]) -> Result<Mac<'a>, PacketParsingError> {
-        if data.len() < 4 || data.len() >= Self::MAXIMUM_SIZE {
-            return Err(PacketParsingError::IncorrectLength);
-        }
-
-        Ok(Mac {
-            keyid: u32::from_be_bytes(data[0..4].try_into().unwrap()),
-            mac: Cow::Borrowed(&data[4..]),
-        })
-    }
-}
-
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum NtpHeader {
     V3(NtpHeaderV3V4),
@@ -298,6 +135,7 @@ struct NtpHeaderV3V4 {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct RequestIdentifier {
     expected_origin_timestamp: NtpTimestamp,
+    uid: Option<[u8; 32]>,
 }
 
 impl NtpHeaderV3V4 {
@@ -375,6 +213,7 @@ impl NtpHeaderV3V4 {
             packet,
             RequestIdentifier {
                 expected_origin_timestamp: transmit_timestamp,
+                uid: None,
             },
         )
     }
@@ -431,13 +270,10 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    pub fn extension_fields<'b: 'a>(
-        &'b self,
-    ) -> impl Iterator<Item = Cow<'b, ExtensionField<'a>>> + 'b {
-        self.efdata.iter()
-    }
-
-    pub fn deserialize(data: &'a [u8]) -> Result<Self, PacketParsingError> {
+    pub fn deserialize(
+        data: &'a [u8],
+        cipher: Option<&Cipher>,
+    ) -> Result<Self, PacketParsingError> {
         if data.is_empty() {
             return Err(PacketParsingError::IncorrectLength);
         }
@@ -460,12 +296,15 @@ impl<'a> NtpPacket<'a> {
             }
             4 => {
                 let (header, header_size) = NtpHeaderV3V4::deserialize(data)?;
-                let (efdata, fields_len) = ExtensionFieldData::deserialize(&data[header_size..])?;
-                let mac = if header_size != data.len() {
-                    Some(Mac::deserialize(&data[header_size + fields_len..])?)
+                let (efdata, header_plus_fields_len) =
+                    ExtensionFieldData::deserialize(data, header_size, cipher)?;
+
+                let mac = if header_plus_fields_len != data.len() {
+                    Some(Mac::deserialize(&data[header_plus_fields_len..])?)
                 } else {
                     None
                 };
+
                 Ok(NtpPacket {
                     header: NtpHeader::V4(header),
                     efdata,
@@ -476,18 +315,76 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    pub fn serialize<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
+    #[cfg(test)]
+    pub fn serialize_without_encryption_vec(&self) -> std::io::Result<Vec<u8>> {
+        let mut buffer = vec![0u8; 1024];
+        let mut cursor = Cursor::new(buffer.as_mut_slice());
+
+        self.serialize(&mut cursor, None)?;
+
+        let length = cursor.position() as usize;
+        let buffer = cursor.into_inner()[..length].to_vec();
+
+        Ok(buffer)
+    }
+
+    pub fn serialize(
+        &self,
+        w: &mut Cursor<&mut [u8]>,
+        cipher: Option<&Cipher>,
+    ) -> std::io::Result<()> {
         match self.header {
-            NtpHeader::V3(header) => header.serialize(w, 3),
-            NtpHeader::V4(header) => header.serialize(w, 4),
-        }?;
-        if !matches!(self.header, NtpHeader::V3(_)) {
-            self.efdata.serialize(w)?;
+            NtpHeader::V3(header) => header.serialize(w, 3)?,
+            NtpHeader::V4(header) => header.serialize(w, 4)?,
+        };
+
+        match self.header {
+            NtpHeader::V3(_) => { /* No extension fields in V3 */ }
+            NtpHeader::V4(_) => self.efdata.serialize(w, cipher)?,
         }
+
         if let Some(ref mac) = self.mac {
             mac.serialize(w)?;
         }
+
         Ok(())
+    }
+
+    pub fn nts_poll_message(
+        cookie: &'a [u8],
+        new_cookies: u8,
+        poll_interval: PollInterval,
+    ) -> (NtpPacket<'static>, RequestIdentifier) {
+        let (header, id) = NtpHeaderV3V4::poll_message(poll_interval);
+
+        let identifier: [u8; 32] = rand::thread_rng().gen();
+
+        let mut authenticated = vec![
+            ExtensionField::UniqueIdentifier(identifier.to_vec().into()),
+            ExtensionField::NtsCookie(cookie.to_vec().into()),
+        ];
+
+        for _ in 1..new_cookies {
+            authenticated.push(ExtensionField::NtsCookiePlaceholder {
+                cookie_length: cookie.len() as u16,
+            });
+        }
+
+        (
+            NtpPacket {
+                header: NtpHeader::V4(header),
+                efdata: ExtensionFieldData {
+                    authenticated,
+                    encrypted: vec![],
+                    untrusted: vec![],
+                },
+                mac: None,
+            },
+            RequestIdentifier {
+                uid: Some(identifier),
+                ..id
+            },
+        )
     }
 
     pub fn poll_message(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
@@ -564,6 +461,13 @@ impl<'a> NtpPacket<'a> {
 }
 
 impl<'a> NtpPacket<'a> {
+    pub fn new_cookies<'b: 'a>(&'b self) -> impl Iterator<Item = Vec<u8>> + 'b {
+        self.efdata.encrypted.iter().filter_map(|ef| match ef {
+            ExtensionField::NtsCookie(cookie) => Some(cookie.to_vec()),
+            _ => None,
+        })
+    }
+
     pub fn leap(&self) -> NtpLeapIndicator {
         match self.header {
             NtpHeader::V3(header) => header.leap,
@@ -646,7 +550,29 @@ impl<'a> NtpPacket<'a> {
         self.is_kiss() && self.reference_id().is_rstr()
     }
 
-    pub fn valid_server_response(&self, identifier: RequestIdentifier) -> bool {
+    pub fn is_kiss_ntsn(&self) -> bool {
+        self.is_kiss() && self.reference_id().is_ntsn()
+    }
+
+    pub fn valid_server_response(&self, identifier: RequestIdentifier, nts_enabled: bool) -> bool {
+        if let Some(uid) = identifier.uid {
+            let auth = check_uid_extensionfield(self.efdata.authenticated.iter(), &uid);
+            let encr = check_uid_extensionfield(self.efdata.encrypted.iter(), &uid);
+            let untrusted = check_uid_extensionfield(self.efdata.untrusted.iter(), &uid);
+
+            // we need at least one uid ef that matches, and none should contradict
+            // our uid. Untrusted uids should only be considered on nts naks or
+            // non-nts requests.
+            let uid_ok = auth != Some(false)
+                && encr != Some(false)
+                && (untrusted != Some(false) || (nts_enabled && !self.is_kiss_ntsn()))
+                && (auth.is_some()
+                    || encr.is_some()
+                    || ((!nts_enabled || self.is_kiss_ntsn()) && untrusted.is_some()));
+            if !uid_ok {
+                return false;
+            }
+        }
         match self.header {
             NtpHeader::V3(header) => {
                 header.origin_timestamp == identifier.expected_origin_timestamp
@@ -655,6 +581,28 @@ impl<'a> NtpPacket<'a> {
                 header.origin_timestamp == identifier.expected_origin_timestamp
             }
         }
+    }
+}
+
+// Returns whether all uid extension fields found match the given uid, or
+// None if there were none.
+fn check_uid_extensionfield<'a, I: IntoIterator<Item = &'a ExtensionField<'a>>>(
+    iter: I,
+    uid: &[u8],
+) -> Option<bool> {
+    let mut found_uid = false;
+    for ef in iter {
+        if let ExtensionField::UniqueIdentifier(pid) = ef {
+            if pid.len() < uid.len() || &pid[0..uid.len()] != uid {
+                return Some(false);
+            }
+            found_uid = true;
+        }
+    }
+    if found_uid {
+        Some(true)
+    } else {
+        None
     }
 }
 
@@ -747,7 +695,61 @@ impl<'a> Default for NtpPacket<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
+
+    use crate::PollIntervalLimits;
+
     use super::*;
+    use aes_siv::{aead::KeyInit, Aes128SivAead};
+
+    #[derive(Debug, Clone)]
+    struct TestClock {
+        now: NtpTimestamp,
+    }
+
+    impl NtpClock for TestClock {
+        type Error = std::io::Error;
+
+        fn now(&self) -> Result<NtpTimestamp, Self::Error> {
+            Ok(self.now)
+        }
+
+        fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
+            panic!("Unexpected clock steer");
+        }
+
+        fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
+            panic!("Unexpected clock steer");
+        }
+
+        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
+            panic!("Unexpected clock steer");
+        }
+
+        fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
+            panic!("Unexpected clock steer");
+        }
+
+        fn ntp_algorithm_update(
+            &self,
+            _offset: NtpDuration,
+            _poll_interval: PollInterval,
+        ) -> Result<(), Self::Error> {
+            panic!("Unexpected clock steer");
+        }
+
+        fn error_estimate_update(
+            &self,
+            _est_error: NtpDuration,
+            _max_error: NtpDuration,
+        ) -> Result<(), Self::Error> {
+            panic!("Unexpected clock steer");
+        }
+
+        fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
+            panic!("Unexpected clock steer");
+        }
+    }
 
     #[test]
     fn roundtrip_bitrep_leap() {
@@ -793,10 +795,11 @@ mod tests {
             mac: None,
         };
 
-        assert_eq!(reference, NtpPacket::deserialize(packet).unwrap());
-        let mut buf = vec![];
-        assert!(reference.serialize(&mut buf).is_ok());
-        assert_eq!(packet[..], buf[..]);
+        assert_eq!(reference, NtpPacket::deserialize(packet, None).unwrap());
+        match reference.serialize_without_encryption_vec() {
+            Ok(buf) => assert_eq!(packet[..], buf[..]),
+            Err(e) => panic!("{e:?}"),
+        }
 
         let packet = b"\x1B\x02\x06\xe8\x00\x00\x03\xff\x00\x00\x03\x7d\x5e\xc6\x9f\x0f\xe5\xf6\x62\x98\x7b\x61\xb9\xaf\xe5\xf6\x63\x66\x7b\x64\x99\x5d\xe5\xf6\x63\x66\x81\x40\x55\x90\xe5\xf6\x63\xa8\x76\x1d\xde\x48";
         let reference = NtpPacket {
@@ -818,10 +821,11 @@ mod tests {
             mac: None,
         };
 
-        assert_eq!(reference, NtpPacket::deserialize(packet).unwrap());
-        let mut buf = vec![];
-        assert!(reference.serialize(&mut buf).is_ok());
-        assert_eq!(packet[..], buf[..]);
+        assert_eq!(reference, NtpPacket::deserialize(packet, None).unwrap());
+        match reference.serialize_without_encryption_vec() {
+            Ok(buf) => assert_eq!(packet[..], buf[..]),
+            Err(e) => panic!("{e:?}"),
+        }
     }
 
     #[test]
@@ -846,32 +850,33 @@ mod tests {
             mac: None,
         };
 
-        assert_eq!(reference, NtpPacket::deserialize(packet).unwrap());
-        let mut buf = vec![];
-        assert!(reference.serialize(&mut buf).is_ok());
-        assert_eq!(packet[..], buf[..])
+        assert_eq!(reference, NtpPacket::deserialize(packet, None).unwrap());
+        match reference.serialize_without_encryption_vec() {
+            Ok(buf) => assert_eq!(packet[..], buf[..]),
+            Err(e) => panic!("{e:?}"),
+        }
     }
 
     #[test]
     fn test_version() {
         let packet = b"\x04\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet).is_err());
+        assert!(NtpPacket::deserialize(packet, None).is_err());
         let packet = b"\x0B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet).is_err());
+        assert!(NtpPacket::deserialize(packet, None).is_err());
         let packet = b"\x14\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet).is_err());
+        assert!(NtpPacket::deserialize(packet, None).is_err());
         let packet = b"\x2B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet).is_err());
+        assert!(NtpPacket::deserialize(packet, None).is_err());
         let packet = b"\x34\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet).is_err());
+        assert!(NtpPacket::deserialize(packet, None).is_err());
         let packet = b"\x3B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet).is_err());
+        assert!(NtpPacket::deserialize(packet, None).is_err());
     }
 
     #[test]
     fn test_packed_flags() {
         let base = b"\x24\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b".to_owned();
-        let base_structured = NtpPacket::deserialize(&base).unwrap();
+        let base_structured = NtpPacket::deserialize(&base, None).unwrap();
 
         for leap_type in 0..3 {
             for mode in 0..8 {
@@ -879,9 +884,8 @@ mod tests {
                 header.set_leap(NtpLeapIndicator::from_bits(leap_type));
                 header.set_mode(NtpAssociationMode::from_bits(mode));
 
-                let mut data = vec![];
-                header.serialize(&mut data).unwrap();
-                let copy = NtpPacket::deserialize(&data).unwrap();
+                let data = header.serialize_without_encryption_vec().unwrap();
+                let copy = NtpPacket::deserialize(&data, None).unwrap();
                 assert_eq!(header, copy);
             }
         }
@@ -890,11 +894,204 @@ mod tests {
             let mut packet = base;
             packet[0] = i;
 
-            if let Ok(a) = NtpPacket::deserialize(&packet) {
-                let mut b = vec![];
-                a.serialize(&mut b).unwrap();
+            if let Ok(a) = NtpPacket::deserialize(&packet, None) {
+                let b = a.serialize_without_encryption_vec().unwrap();
                 assert_eq!(packet[..], b[..]);
             }
         }
+    }
+
+    #[test]
+    fn test_nts_poll_message() {
+        let cookie = [0; 16];
+        let (packet1, ref1) =
+            NtpPacket::nts_poll_message(&cookie, 1, PollIntervalLimits::default().min);
+        assert_eq!(0, packet1.efdata.encrypted.len());
+        assert_eq!(0, packet1.efdata.untrusted.len());
+        let mut have_uid = false;
+        let mut have_cookie = false;
+        let mut nplaceholders = 0;
+        for ef in packet1.efdata.authenticated {
+            match ef {
+                ExtensionField::UniqueIdentifier(uid) => {
+                    assert_eq!(ref1.uid.as_ref().unwrap(), uid.as_ref());
+                    assert!(!have_uid);
+                    have_uid = true;
+                }
+                ExtensionField::NtsCookie(cookie_p) => {
+                    assert_eq!(&cookie, cookie_p.as_ref());
+                    assert!(!have_cookie);
+                    have_cookie = true;
+                }
+                ExtensionField::NtsCookiePlaceholder { cookie_length } => {
+                    assert_eq!(cookie_length, cookie.len() as u16);
+                    nplaceholders += 1;
+                }
+                _ => unreachable!(),
+            }
+        }
+        assert!(have_cookie);
+        assert!(have_uid);
+        assert_eq!(nplaceholders, 0);
+
+        let (packet2, ref2) =
+            NtpPacket::nts_poll_message(&cookie, 3, PollIntervalLimits::default().min);
+        assert_ne!(
+            ref1.expected_origin_timestamp,
+            ref2.expected_origin_timestamp
+        );
+        assert_ne!(ref1.uid, ref2.uid);
+
+        assert_eq!(0, packet2.efdata.encrypted.len());
+        assert_eq!(0, packet2.efdata.untrusted.len());
+        let mut have_uid = false;
+        let mut have_cookie = false;
+        let mut nplaceholders = 0;
+        for ef in packet2.efdata.authenticated {
+            match ef {
+                ExtensionField::UniqueIdentifier(uid) => {
+                    assert_eq!(ref2.uid.as_ref().unwrap(), uid.as_ref());
+                    assert!(!have_uid);
+                    have_uid = true;
+                }
+                ExtensionField::NtsCookie(cookie_p) => {
+                    assert_eq!(&cookie, cookie_p.as_ref());
+                    assert!(!have_cookie);
+                    have_cookie = true;
+                }
+                ExtensionField::NtsCookiePlaceholder { cookie_length } => {
+                    assert_eq!(cookie_length, cookie.len() as u16);
+                    nplaceholders += 1;
+                }
+                _ => unreachable!(),
+            }
+        }
+        assert!(have_cookie);
+        assert!(have_uid);
+        assert_eq!(nplaceholders, 2);
+    }
+
+    #[test]
+    fn test_nts_response_validation() {
+        let cookie = [0; 16];
+        let (packet, id) =
+            NtpPacket::nts_poll_message(&cookie, 0, PollIntervalLimits::default().min);
+        let mut response = NtpPacket::timestamp_response(
+            &SystemSnapshot::default(),
+            packet,
+            NtpTimestamp::from_fixed_int(0),
+            &TestClock {
+                now: NtpTimestamp::from_fixed_int(2),
+            },
+        );
+
+        assert!(!response.valid_server_response(id, false));
+        assert!(!response.valid_server_response(id, true));
+
+        response
+            .efdata
+            .untrusted
+            .push(ExtensionField::UniqueIdentifier(Cow::Borrowed(
+                id.uid.as_ref().unwrap(),
+            )));
+
+        assert!(response.valid_server_response(id, false));
+        assert!(!response.valid_server_response(id, true));
+
+        response.efdata.untrusted.clear();
+        response
+            .efdata
+            .authenticated
+            .push(ExtensionField::UniqueIdentifier(Cow::Borrowed(
+                id.uid.as_ref().unwrap(),
+            )));
+
+        assert!(response.valid_server_response(id, false));
+        assert!(response.valid_server_response(id, true));
+
+        response
+            .efdata
+            .untrusted
+            .push(ExtensionField::UniqueIdentifier(Cow::Borrowed(&[])));
+
+        assert!(!response.valid_server_response(id, false));
+        assert!(response.valid_server_response(id, true));
+
+        response.efdata.untrusted.clear();
+        response
+            .efdata
+            .encrypted
+            .push(ExtensionField::UniqueIdentifier(Cow::Borrowed(&[])));
+
+        assert!(!response.valid_server_response(id, false));
+        assert!(!response.valid_server_response(id, true));
+    }
+
+    #[test]
+    fn test_new_cookies_only_from_encrypted() {
+        let allowed: [u8; 16] = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let disallowed: [u8; 16] = [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let packet = NtpPacket {
+            header: NtpHeader::V4(NtpHeaderV3V4::poll_message(PollIntervalLimits::default().min).0),
+            efdata: ExtensionFieldData {
+                authenticated: vec![ExtensionField::NtsCookie(Cow::Borrowed(&disallowed))],
+                encrypted: vec![ExtensionField::NtsCookie(Cow::Borrowed(&allowed))],
+                untrusted: vec![ExtensionField::NtsCookie(Cow::Borrowed(&disallowed))],
+            },
+            mac: None,
+        };
+
+        assert_eq!(1, packet.new_cookies().count());
+        for cookie in packet.new_cookies() {
+            assert_eq!(&cookie, &allowed);
+        }
+    }
+
+    #[test]
+    fn test_undersized_ef_in_encrypted_data() {
+        let cipher = Aes128SivAead::new(&[0_u8; 32].into());
+        let packet = [
+            35, 2, 6, 232, 0, 0, 3, 255, 0, 0, 3, 125, 94, 198, 159, 15, 229, 246, 98, 152, 123,
+            97, 185, 175, 229, 246, 99, 102, 123, 100, 153, 93, 229, 246, 99, 102, 129, 64, 85,
+            144, 229, 246, 99, 168, 118, 29, 222, 72, 4, 4, 0, 44, 0, 16, 0, 18, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 39, 24, 181, 156, 166, 35, 154, 207, 38, 150, 15, 190,
+            152, 87, 142, 206, 254, 105, 0, 0,
+        ];
+        //should not crash
+        assert!(NtpPacket::deserialize(&packet, Some(&cipher)).is_err());
+    }
+
+    #[test]
+    fn test_undersized_ef() {
+        let packet = [
+            35, 2, 6, 232, 0, 0, 3, 255, 0, 0, 3, 125, 94, 198, 159, 15, 229, 246, 98, 152, 123,
+            97, 185, 175, 229, 246, 99, 102, 123, 100, 153, 93, 229, 246, 99, 102, 129, 64, 85,
+            144, 229, 246, 99, 168, 118, 29, 222, 72, 4, 4,
+        ];
+        //should not crash
+        assert!(NtpPacket::deserialize(&packet, None).is_err());
+    }
+
+    #[test]
+    fn test_undersized_nonce() {
+        let input = [
+            32, 206, 206, 206, 77, 206, 206, 255, 216, 216, 216, 127, 0, 0, 0, 0, 0, 0, 0, 216,
+            216, 216, 216, 206, 217, 216, 216, 216, 216, 216, 216, 206, 206, 206, 1, 0, 0, 0, 206,
+            206, 206, 4, 44, 4, 4, 4, 4, 4, 4, 4, 0, 4, 206, 206, 222, 206, 206, 206, 206, 0, 0, 0,
+            206, 206, 206, 0, 0, 0, 206, 206, 206, 206, 206, 206, 131, 206, 206,
+        ];
+        //should not crash
+        assert!(NtpPacket::deserialize(&input, None).is_err());
+    }
+
+    #[test]
+    fn test_undersized_encryption_ef() {
+        let input = [
+            32, 206, 206, 206, 77, 206, 216, 216, 127, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 216, 216, 216,
+            216, 206, 217, 216, 216, 216, 216, 216, 216, 206, 206, 206, 1, 0, 0, 0, 206, 206, 206,
+            4, 44, 4, 4, 4, 4, 4, 4, 4, 0, 4, 4, 0, 12, 206, 206, 222, 206, 206, 206, 206, 0, 0, 0,
+            12, 206, 206, 222, 206, 206, 206, 206, 206, 206, 206, 206, 131, 206, 206,
+        ];
+        assert!(NtpPacket::deserialize(&input, None).is_err());
     }
 }

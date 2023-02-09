@@ -1,45 +1,48 @@
 use std::{
     future::Future,
-    io::{Cursor, IoSlice, Read, Write},
-    net::{Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs},
+    io::{BufRead, BufReader, IoSlice, Read, Write},
+    path::Path,
     pin::Pin,
     task::{Context, Poll},
 };
 
-use ntp_proto::{KeyExchangeClient, KeyExchangeError, KeyExchangeResult, NtpPacket, PollInterval};
-use ntp_udp::UdpSocket;
+use ntp_proto::{KeyExchangeClient, KeyExchangeError, KeyExchangeResult};
+use rustls::Certificate;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio_rustls::rustls;
 
-// unstable in std; check on https://github.com/rust-lang/rust/issues/88581 some time in the future
-pub const fn next_multiple_of(lhs: usize, rhs: usize) -> usize {
-    match lhs % rhs {
-        0 => lhs,
-        r => lhs + (rhs - r),
+pub(crate) async fn key_exchange(
+    server_name: String,
+    port: u16,
+    extra_certificates: &[Certificate],
+) -> Result<KeyExchangeResult, KeyExchangeError> {
+    let socket = tokio::net::TcpStream::connect((server_name.as_str(), port))
+        .await
+        .unwrap();
+
+    let mut roots = rustls::RootCertStore::empty();
+    for cert in rustls_native_certs::load_native_certs()? {
+        roots.add(&rustls::Certificate(cert.0)).unwrap();
     }
+
+    for cert in extra_certificates {
+        roots.add(cert).unwrap();
+    }
+
+    let config = rustls::ClientConfig::builder()
+        .with_safe_defaults()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+
+    BoundKeyExchangeClient::new(socket, server_name, config)?.await
 }
 
-// unstable in std; check on https://github.com/rust-lang/rust/issues/88581 some time in the future
-pub const fn div_ceil(lhs: usize, rhs: usize) -> usize {
-    let d = lhs / rhs;
-    let r = lhs % rhs;
-    if r > 0 && rhs > 0 {
-        d + 1
-    } else {
-        d
-    }
-}
-
-struct BoundKeyExchangeClient<IO>
+pub(crate) struct BoundKeyExchangeClient<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin,
 {
-    io: IO,
-    client: Option<KeyExchangeClient>,
-    need_flush: bool,
+    inner: Option<BoundKeyExchangeClientData<IO>>,
 }
 
-// IO approach taken from tokio
 impl<IO> BoundKeyExchangeClient<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin,
@@ -50,12 +53,29 @@ where
         config: rustls::ClientConfig,
     ) -> Result<Self, KeyExchangeError> {
         Ok(Self {
-            io,
-            client: Some(KeyExchangeClient::new(server_name, config)?),
-            need_flush: false,
+            inner: Some(BoundKeyExchangeClientData {
+                io,
+                client: KeyExchangeClient::new(server_name, config)?,
+                need_flush: false,
+            }),
         })
     }
+}
 
+struct BoundKeyExchangeClientData<IO>
+where
+    IO: AsyncRead + AsyncWrite + Unpin,
+{
+    io: IO,
+    client: KeyExchangeClient,
+    need_flush: bool,
+}
+
+// IO approach taken from tokio
+impl<IO> BoundKeyExchangeClientData<IO>
+where
+    IO: AsyncRead + AsyncWrite + Unpin,
+{
     // adapter between AsyncWrite and std::io::Write
     fn do_write(&mut self, cx: &mut Context<'_>) -> Poll<std::io::Result<usize>> {
         struct Writer<'a, 'b, T> {
@@ -93,7 +113,7 @@ where
             cx,
         };
 
-        match self.client.as_mut().unwrap().write_socket(&mut writer) {
+        match self.client.write_socket(&mut writer) {
             Err(ref err) if err.kind() == std::io::ErrorKind::WouldBlock => Poll::Pending,
             result => Poll::Ready(result),
         }
@@ -121,7 +141,7 @@ where
             io: &mut self.io,
             cx,
         };
-        match self.client.as_mut().unwrap().read_socket(&mut reader) {
+        match self.client.read_socket(&mut reader) {
             Err(ref err) if err.kind() == std::io::ErrorKind::WouldBlock => Poll::Pending,
             result => Poll::Ready(result),
         }
@@ -138,13 +158,14 @@ where
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Self::Output> {
-        let this = self.get_mut();
+        let outer = self.get_mut();
+        let mut this = outer.inner.take().unwrap();
 
         let mut write_blocks = false;
         let mut read_blocks = false;
 
         loop {
-            while !write_blocks && this.client.as_mut().unwrap().wants_write() {
+            while !write_blocks && this.client.wants_write() {
                 match this.do_write(cx) {
                     Poll::Ready(Ok(_)) => {
                         this.need_flush = true;
@@ -169,12 +190,14 @@ where
                 }
             }
 
-            while !read_blocks && this.client.as_mut().unwrap().wants_read() {
+            while !read_blocks && this.client.wants_read() {
                 match this.do_read(cx) {
-                    Poll::Ready(Ok(_)) => match this.client.take().unwrap().progress() {
-                        std::ops::ControlFlow::Continue(client) => this.client = Some(client),
-                        std::ops::ControlFlow::Break(result) => return Poll::Ready(result),
-                    },
+                    Poll::Ready(Ok(_)) => {
+                        this.client = match this.client.progress() {
+                            std::ops::ControlFlow::Continue(client) => client,
+                            std::ops::ControlFlow::Break(result) => return Poll::Ready(result),
+                        }
+                    }
                     Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),
                     Poll::Pending => {
                         read_blocks = true;
@@ -183,71 +206,54 @@ where
                 }
             }
 
-            if (write_blocks || !this.client.as_mut().unwrap().wants_write())
-                && (read_blocks || !this.client.as_mut().unwrap().wants_read())
+            if (write_blocks || !this.client.wants_write())
+                && (read_blocks || !this.client.wants_read())
             {
+                outer.inner = Some(this);
                 return Poll::Pending;
             }
         }
     }
 }
 
-pub(crate) async fn perform_key_exchange(
-    server_name: String,
-    port: u16,
-) -> Result<KeyExchangeResult, KeyExchangeError> {
-    let socket = tokio::net::TcpStream::connect((server_name.as_str(), port))
-        .await
-        .unwrap();
+pub(crate) fn certificates_from_file(path: &Path) -> std::io::Result<Vec<Certificate>> {
+    let file = std::fs::File::open(path)?;
+    let reader = BufReader::new(file);
 
-    let mut roots = rustls::RootCertStore::empty();
-    for cert in rustls_native_certs::load_native_certs().expect("could not load platform certs") {
-        roots.add(&rustls::Certificate(cert.0)).unwrap();
-    }
-
-    let config = rustls::ClientConfig::builder()
-        .with_safe_defaults()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
-
-    BoundKeyExchangeClient::new(socket, server_name, config)?.await
+    certificates_from_bufread(reader)
 }
 
-#[tokio::main]
-async fn main() -> std::io::Result<()> {
-    let domain = "time.cloudflare.com";
-    let port = 4460;
+fn certificates_from_bufread(mut reader: impl BufRead) -> std::io::Result<Vec<Certificate>> {
+    use rustls_pemfile::{read_one, Item};
 
-    let mut key_exchange = perform_key_exchange(domain.to_string(), port)
-        .await
-        .unwrap();
+    let mut output = Vec::new();
 
-    let cookie = key_exchange.nts.get_cookie().unwrap();
-    let (c2s, _) = key_exchange.nts.get_keys();
+    for item in std::iter::from_fn(|| read_one(&mut reader).transpose()) {
+        if let Item::X509Certificate(cert) = item? {
+            output.push(Certificate(cert));
+        }
+    }
 
-    println!("cookie: {cookie:?}");
+    Ok(output)
+}
 
-    let addr = (key_exchange.remote, key_exchange.port)
-        .to_socket_addrs()
-        .unwrap()
-        .next()
-        .unwrap();
+#[cfg(test)]
+mod tests {
+    use super::certificates_from_bufread;
 
-    let mut socket = match addr {
-        SocketAddr::V4(_) => UdpSocket::client((Ipv4Addr::UNSPECIFIED, 0).into(), addr).await?,
-        SocketAddr::V6(_) => UdpSocket::client((Ipv6Addr::UNSPECIFIED, 0).into(), addr).await?,
-    };
+    #[test]
+    fn nos_nl_pem() {
+        let input = include_bytes!("../testdata/certificates/nos-nl.pem");
+        let certificates = certificates_from_bufread(input.as_slice()).unwrap();
 
-    let (packet, _) = NtpPacket::nts_poll_message(&cookie, 1, PollInterval::default());
+        assert_eq!(certificates.len(), 1);
+    }
 
-    let mut raw = [0u8; 1024];
-    let mut w = Cursor::new(raw.as_mut_slice());
-    packet.serialize(&mut w, Some(&c2s))?;
-    socket.send(&w.get_ref()[..w.position() as usize]).await?;
+    #[test]
+    fn nos_nl_chain_pem() {
+        let input = include_bytes!("../testdata/certificates/nos-nl-chain.pem");
+        let certificates = certificates_from_bufread(input.as_slice()).unwrap();
 
-    let mut buf = [0; 1024];
-    let (n, _remote, _timestamp) = socket.recv(&mut buf).await?;
-    println!("response: {:?}", &buf[0..n]);
-
-    Ok(())
+        assert_eq!(certificates.len(), 3);
+    }
 }

@@ -2,6 +2,7 @@
 
 pub mod config;
 mod ipfilter;
+mod keyexchange;
 pub mod observer;
 mod peer;
 mod server;

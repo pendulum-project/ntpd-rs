@@ -67,7 +67,7 @@ impl PoolSpawner {
                 if let Some(addr) = self.known_ips.pop() {
                     let id = PeerId::new();
                     self.current_peers.push(PoolPeer { id, addr });
-                    let action = SpawnAction::Create(id, addr, self.config.addr.clone());
+                    let action = SpawnAction::Create(id, addr, self.config.addr.clone(), None);
                     tracing::debug!(?action, "intending to spawn new pool peer at");
 
                     action_tx.send(SpawnEvent::new(self.id, action)).await.expect("Channel was no longer connected");

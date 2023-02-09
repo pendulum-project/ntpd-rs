@@ -1,16 +1,53 @@
+use std::io::Cursor;
+
 use crate::{
+    cookiestash::CookieStash,
     packet::{NtpAssociationMode, RequestIdentifier},
     time_types::NtpInstant,
     NtpDuration, NtpPacket, NtpTimestamp, PollInterval, ReferenceId, SystemConfig, SystemSnapshot,
 };
+use aes_siv::Aes128SivAead;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument, trace, warn};
 
 const MAX_STRATUM: u8 = 16;
 const POLL_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, thiserror::Error)]
+pub enum NtsError {
+    #[error("Ran out of nts cookies")]
+    OutOfCookies,
+}
+
+pub struct PeerNtsData {
+    pub(crate) cookies: CookieStash,
+    pub(crate) c2s: Aes128SivAead,
+    pub(crate) s2c: Aes128SivAead,
+}
+
+#[cfg(feature = "ext-test")]
+impl PeerNtsData {
+    pub fn get_cookie(&mut self) -> Option<Vec<u8>> {
+        self.cookies.get()
+    }
+
+    pub fn get_keys(self) -> (Aes128SivAead, Aes128SivAead) {
+        (self.c2s, self.s2c)
+    }
+}
+
+impl std::fmt::Debug for PeerNtsData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PeerNtsData")
+            .field("cookies", &self.cookies)
+            .finish()
+    }
+}
+
+#[derive(Debug)]
 pub struct Peer {
+    nts: Option<PeerNtsData>,
+
     // Poll interval dictated by unreachability backoff
     backoff_interval: PollInterval,
     // Poll interval used when sending last poll mesage.
@@ -117,6 +154,8 @@ impl Reach {
 
 #[derive(Debug)]
 pub enum IgnoreReason {
+    /// The packet doesn't parse
+    InvalidPacket,
     /// The association mode is not one that this peer supports
     InvalidMode,
     /// The NTP version is not one that this implementation supports
@@ -129,6 +168,8 @@ pub enum IgnoreReason {
     KissIgnore,
     /// Received a DENY or RSTR Kiss-o'-Death, and must demobilize the association
     KissDemobilize,
+    /// Received a matching NTS-Nack, no further action needed.
+    KissNtsNack,
     /// The best packet is older than the peer's current time
     TooOld,
 }
@@ -216,6 +257,7 @@ pub enum AcceptSynchronizationError {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum Update {
     BareUpdate(PeerSnapshot),
     NewMeasurement(PeerSnapshot, Measurement, NtpPacket<'static>),
@@ -230,6 +272,8 @@ impl Peer {
         system_config: SystemConfig,
     ) -> Self {
         Self {
+            nts: None,
+
             last_poll_interval: system_config.poll_limits.min,
             backoff_interval: system_config.poll_limits.min,
             remote_min_poll_interval: system_config.poll_limits.min,
@@ -246,6 +290,20 @@ impl Peer {
         }
     }
 
+    #[instrument]
+    pub fn new_nts(
+        our_id: ReferenceId,
+        peer_id: ReferenceId,
+        local_clock_time: NtpInstant,
+        system_config: SystemConfig,
+        nts: PeerNtsData,
+    ) -> Self {
+        Self {
+            nts: Some(nts),
+            ..Self::new(our_id, peer_id, local_clock_time, system_config)
+        }
+    }
+
     pub fn update_config(&mut self, system_config: SystemConfig) {
         self.system_config = system_config;
     }
@@ -258,32 +316,55 @@ impl Peer {
             .max(self.remote_min_poll_interval)
     }
 
-    pub fn generate_poll_message(
+    pub fn generate_poll_message<'a>(
         &mut self,
+        buf: &'a mut [u8],
         system: SystemSnapshot,
         system_config: &SystemConfig,
-    ) -> NtpPacket<'static> {
+    ) -> Result<&'a [u8], std::io::Error> {
         self.reach.poll();
 
         let poll_interval = self.current_poll_interval(system);
-        let (packet, identifier) = NtpPacket::poll_message(poll_interval);
+        let (packet, identifier) = match &mut self.nts {
+            Some(nts) => {
+                let cookie = nts.cookies.get().ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::Other, NtsError::OutOfCookies)
+                })?;
+                NtpPacket::nts_poll_message(&cookie, nts.cookies.gap(), poll_interval)
+            }
+            None => NtpPacket::poll_message(poll_interval),
+        };
         self.current_request_identifier = Some((identifier, NtpInstant::now() + POLL_WINDOW));
 
         // Ensure we don't spam the remote with polls if it is not reachable
         self.backoff_interval = poll_interval.inc(system_config.poll_limits);
 
-        packet
+        // Write packet to buffer
+        let mut cursor = Cursor::new(buf);
+        packet.serialize(&mut cursor, self.nts.as_ref().map(|nts| &nts.c2s))?;
+        let used = cursor.position();
+        let result = &cursor.into_inner()[..used as usize];
+
+        Ok(result)
     }
 
     #[instrument(skip(self, system), fields(peer = debug(self.peer_id)))]
     pub fn handle_incoming(
         &mut self,
         system: SystemSnapshot,
-        message: NtpPacket,
+        message: &[u8],
         local_clock_time: NtpInstant,
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
     ) -> Result<Update, IgnoreReason> {
+        let message = match NtpPacket::deserialize(message, self.nts.as_ref().map(|nts| &nts.s2c)) {
+            Ok(packet) => packet,
+            Err(e) => {
+                warn!("received invalid packet: {}", e);
+                return Err(IgnoreReason::InvalidPacket);
+            }
+        };
+
         let request_identifier = match self.current_request_identifier {
             Some((next_expected_origin, validity)) if validity >= NtpInstant::now() => {
                 next_expected_origin
@@ -294,7 +375,7 @@ impl Peer {
             }
         };
 
-        if !message.valid_server_response(request_identifier) {
+        if !message.valid_server_response(request_identifier, self.nts.is_some()) {
             // Packets should be a response to a previous request from us,
             // if not just ignore. Note that this might also happen when
             // we reset between sending the request and receiving the response.
@@ -316,6 +397,14 @@ impl Peer {
             warn!("Peer denied service");
             // KISS packets may not have correct timestamps at all, handle them anyway
             Err(IgnoreReason::KissDemobilize)
+        } else if message.is_kiss_ntsn() {
+            warn!("Received nts not-acknowledge");
+            // as these can be easily faked, we dont immediately give up on receiving
+            // a response, however, for the purpose of backoff we do count it as a response.
+            // This ensures that if we have expired cookies, we get through them
+            // fairly quickly.
+            self.backoff_interval = self.system_config.poll_limits.min;
+            Err(IgnoreReason::KissNtsNack)
         } else if message.is_kiss() {
             warn!("Unrecognized KISS Message from peer");
             // Ignore unrecognized control messages
@@ -368,6 +457,13 @@ impl Peer {
             system.time_snapshot.precision,
         );
 
+        // Process new cookies
+        if let Some(nts) = self.nts.as_mut() {
+            for cookie in message.new_cookies() {
+                nts.cookies.store(cookie);
+            }
+        }
+
         Update::NewMeasurement(
             PeerSnapshot::from_peer(self),
             measurement,
@@ -386,6 +482,8 @@ impl Peer {
     #[cfg(test)]
     pub(crate) fn test_peer() -> Self {
         Peer {
+            nts: None,
+
             last_poll_interval: PollInterval::default(),
             backoff_interval: PollInterval::default(),
             remote_min_poll_interval: PollInterval::default(),
@@ -562,7 +660,11 @@ mod test {
         peer.remote_min_poll_interval = PollIntervalLimits::default().min;
 
         let prev = peer.current_poll_interval(system);
-        let packet = peer.generate_poll_message(system, &SystemConfig::default());
+        let mut buf = [0; 1024];
+        let packetbuf = peer
+            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .unwrap();
+        let packet = NtpPacket::deserialize(packetbuf, None).unwrap();
         assert!(peer.current_poll_interval(system) > prev);
         let mut response = NtpPacket::test();
         response.set_mode(NtpAssociationMode::Server);
@@ -571,7 +673,7 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                response,
+                &response.serialize_without_encryption_vec().unwrap(),
                 base,
                 NtpTimestamp::default(),
                 NtpTimestamp::default()
@@ -580,7 +682,11 @@ mod test {
         assert_eq!(peer.current_poll_interval(system), prev);
 
         let prev = peer.current_poll_interval(system);
-        let packet = peer.generate_poll_message(system, &SystemConfig::default());
+        let mut buf = [0; 1024];
+        let packetbuf = peer
+            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .unwrap();
+        let packet = NtpPacket::deserialize(packetbuf, None).unwrap();
         assert!(peer.current_poll_interval(system) > prev);
         let mut response = NtpPacket::test();
         response.set_mode(NtpAssociationMode::Server);
@@ -590,7 +696,7 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                response,
+                &response.serialize_without_encryption_vec().unwrap(),
                 base,
                 NtpTimestamp::default(),
                 NtpTimestamp::default()
@@ -606,7 +712,11 @@ mod test {
         let mut peer = Peer::test_peer();
 
         let system = SystemSnapshot::default();
-        let outgoing = peer.generate_poll_message(system, &SystemConfig::default());
+        let mut buf = [0; 1024];
+        let outgoingbuf = peer
+            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .unwrap();
+        let outgoing = NtpPacket::deserialize(outgoingbuf, None).unwrap();
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_stratum(1);
@@ -618,7 +728,7 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                packet.clone(),
+                &packet.serialize_without_encryption_vec().unwrap(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(400)
@@ -628,7 +738,7 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                packet,
+                &packet.serialize_without_encryption_vec().unwrap(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(500)
@@ -642,7 +752,11 @@ mod test {
         let mut peer = Peer::test_peer();
 
         let system = SystemSnapshot::default();
-        let outgoing = peer.generate_poll_message(system, &SystemConfig::default());
+        let mut buf = [0; 1024];
+        let outgoingbuf = peer
+            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .unwrap();
+        let outgoing = NtpPacket::deserialize(outgoingbuf, None).unwrap();
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_stratum(MAX_STRATUM + 1);
@@ -653,7 +767,7 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                packet.clone(),
+                &packet.serialize_without_encryption_vec().unwrap(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(500)
@@ -664,7 +778,7 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                packet.clone(),
+                &packet.serialize_without_encryption_vec().unwrap(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(500)
@@ -684,7 +798,7 @@ mod test {
         assert!(!matches!(
             peer.handle_incoming(
                 system,
-                packet,
+                &packet.serialize_without_encryption_vec().unwrap(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(100)
@@ -694,14 +808,18 @@ mod test {
 
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
-        let outgoing = peer.generate_poll_message(system, &SystemConfig::default());
+        let mut buf = [0; 1024];
+        let outgoingbuf = peer
+            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .unwrap();
+        let outgoing = NtpPacket::deserialize(outgoingbuf, None).unwrap();
         packet.set_reference_id(ReferenceId::KISS_RSTR);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
         assert!(matches!(
             peer.handle_incoming(
                 system,
-                packet,
+                &packet.serialize_without_encryption_vec().unwrap(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(100)
@@ -716,7 +834,7 @@ mod test {
         assert!(!matches!(
             peer.handle_incoming(
                 system,
-                packet,
+                &packet.serialize_without_encryption_vec().unwrap(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(100)
@@ -726,14 +844,17 @@ mod test {
 
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
-        let outgoing = peer.generate_poll_message(system, &SystemConfig::default());
+        let outgoingbuf = peer
+            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .unwrap();
+        let outgoing = NtpPacket::deserialize(outgoingbuf, None).unwrap();
         packet.set_reference_id(ReferenceId::KISS_DENY);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
         assert!(matches!(
             peer.handle_incoming(
                 system,
-                packet,
+                &packet.serialize_without_encryption_vec().unwrap(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(100)
@@ -750,7 +871,7 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                packet,
+                &packet.serialize_without_encryption_vec().unwrap(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(100)
@@ -763,14 +884,18 @@ mod test {
         let old_remote_interval = peer.remote_min_poll_interval;
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
-        let outgoing = peer.generate_poll_message(system, &SystemConfig::default());
+        let mut buf = [0; 1024];
+        let outgoingbuf = peer
+            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .unwrap();
+        let outgoing = NtpPacket::deserialize(outgoingbuf, None).unwrap();
         packet.set_reference_id(ReferenceId::KISS_RATE);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
         assert!(peer
             .handle_incoming(
                 system,
-                packet,
+                &packet.serialize_without_encryption_vec().unwrap(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(100)

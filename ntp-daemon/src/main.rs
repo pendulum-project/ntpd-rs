@@ -27,7 +27,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Ok(c) => c,
         Err(e) => {
             // print to stderr because tracing is not yet setup
-            eprintln!("There was an error loading the config: {}", e);
+            eprintln!("There was an error loading the config: {e}");
             std::process::exit(exitcode::CONFIG);
         }
     };
@@ -39,7 +39,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             Ok(s) => s,
             Err(e) => {
                 // print to stderr because tracing was not correctly initialized
-                eprintln!("Failed to complete logging setup: {}", e);
+                eprintln!("Failed to complete logging setup: {e}");
                 std::process::exit(exitcode::CONFIG);
             }
         };
