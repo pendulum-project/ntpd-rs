@@ -79,8 +79,8 @@ impl<'de> Deserialize<'de> for ServerConfig {
                 let mut allowlist_action = None;
                 let mut denylist = None;
                 let mut denylist_action = None;
-                while let Some(key) = map.next_key::<&str>()? {
-                    match key {
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
                         "addr" => {
                             if addr.is_some() {
                                 return Err(de::Error::duplicate_field("addr"));
@@ -129,7 +129,7 @@ impl<'de> Deserialize<'de> for ServerConfig {
                         }
                         _ => {
                             return Err(de::Error::unknown_field(
-                                key,
+                                key.as_str(),
                                 &[
                                     "addr",
                                     "allowlist",
