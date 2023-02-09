@@ -31,13 +31,25 @@ pub(crate) fn cerr(t: libc::c_int) -> std::io::Result<libc::c_int> {
 #[repr(i32)]
 #[allow(clippy::enum_variant_names)]
 pub(crate) enum TimestampMethod {
+    /// Standard timestamping on linux. It gives us
+    ///
+    /// - nanosecond precision
+    /// - send & receive timestamps
+    #[cfg(target_os = "linux")]
+    SoTimestamping = libc::SO_TIMESTAMPING,
+    /// Original timestamping for unix (linux, freebsd, macos)
+    ///
+    /// - microsecond precision
+    /// - only receive timestamps
     #[allow(dead_code)]
     SoTimestamp = libc::SO_TIMESTAMP,
+    /// Legacy timestamping for linux
+    ///
+    /// - nanosecond precision
+    /// - only receive timestamps
     #[cfg(target_os = "linux")]
     #[allow(dead_code)]
     SoTimestampns = libc::SO_TIMESTAMPNS,
-    #[cfg(target_os = "linux")]
-    SoTimestamping = libc::SO_TIMESTAMPING,
 }
 
 mod set_timestamping_options {
