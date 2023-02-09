@@ -7,9 +7,9 @@ pub mod observer;
 mod peer;
 mod server;
 pub mod sockets;
+pub mod spawn;
 mod system;
 pub mod tracing;
-pub mod spawn;
 
 pub use config::dynamic::ConfigUpdate;
 pub use config::Config;

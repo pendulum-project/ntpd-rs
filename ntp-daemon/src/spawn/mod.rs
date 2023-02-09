@@ -1,14 +1,13 @@
-use std::{sync::atomic::AtomicU64, net::SocketAddr};
+use std::{net::SocketAddr, sync::atomic::AtomicU64};
 
 use ntp_proto::PeerNtsData;
 use tokio::sync::mpsc;
 
 use crate::config::NormalizedAddress;
 
+pub mod nts;
 pub mod pool;
 pub mod standard;
-pub mod nts;
-
 
 /// Unique identifier for a spawner
 /// This is used to identify which spawner was used to create a peer
@@ -22,6 +21,12 @@ impl SpawnerId {
     }
 }
 
+impl Default for SpawnerId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Unique identifier for a peer created by a spawner
 /// This peer id makes sure that even if the network address is the same
 /// that we always know which specific spawned peer we are talking about.
@@ -32,6 +37,12 @@ impl PeerId {
     pub fn new() -> PeerId {
         static COUNTER: AtomicU64 = AtomicU64::new(1);
         PeerId(COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+    }
+}
+
+impl Default for PeerId {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -49,10 +60,7 @@ pub struct RemovedPeer {
 
 impl RemovedPeer {
     pub fn new(id: PeerId, reason: PeerRemovalReason) -> RemovedPeer {
-        RemovedPeer {
-            id,
-            reason,
-        }
+        RemovedPeer { id, reason }
     }
 }
 
@@ -64,10 +72,7 @@ pub enum PeerRemovalReason {
 
 impl SpawnEvent {
     pub fn new(id: SpawnerId, action: SpawnAction) -> SpawnEvent {
-        SpawnEvent {
-            id,
-            action,
-        }
+        SpawnEvent { id, action }
     }
 }
 
@@ -80,21 +85,40 @@ pub enum SpawnAction {
 }
 
 pub trait Spawner {
-    fn run(self, action_tx: mpsc::Sender<SpawnEvent>, peer_removed_notify: mpsc::Receiver<RemovedPeer>);
+    fn run(
+        self,
+        action_tx: mpsc::Sender<SpawnEvent>,
+        peer_removed_notify: mpsc::Receiver<RemovedPeer>,
+    );
     fn get_id(&self) -> SpawnerId;
+    fn get_addr_description(&self) -> String;
 }
 
 #[async_trait::async_trait]
 pub trait BasicSpawner {
     type Error: std::error::Error;
-    async fn handle_init(&mut self, action_tx: &mpsc::Sender<SpawnEvent>) -> Result<(), Self::Error>;
-    async fn handle_peer_removed(&mut self, removed_peer: RemovedPeer, action_tx: &mpsc::Sender<SpawnEvent>) -> Result<(), Self::Error>;
+    async fn handle_init(
+        &mut self,
+        action_tx: &mpsc::Sender<SpawnEvent>,
+    ) -> Result<(), Self::Error>;
+    async fn handle_peer_removed(
+        &mut self,
+        removed_peer: RemovedPeer,
+        action_tx: &mpsc::Sender<SpawnEvent>,
+    ) -> Result<(), Self::Error>;
 
     fn get_id(&self) -> SpawnerId;
+    fn get_addr_description(&self) -> String;
 }
 
-impl<E: std::error::Error + Send + 'static, T: BasicSpawner<Error = E> + Send + 'static> Spawner for T {
-    fn run(mut self, action_tx: mpsc::Sender<SpawnEvent>, mut peer_removed_notify: mpsc::Receiver<RemovedPeer>) {
+impl<E: std::error::Error + Send + 'static, T: BasicSpawner<Error = E> + Send + 'static> Spawner
+    for T
+{
+    fn run(
+        mut self,
+        action_tx: mpsc::Sender<SpawnEvent>,
+        mut peer_removed_notify: mpsc::Receiver<RemovedPeer>,
+    ) {
         tokio::spawn(async move {
             self.handle_init(&action_tx).await?;
             while let Some(removed_peer) = peer_removed_notify.recv().await {
@@ -107,5 +131,9 @@ impl<E: std::error::Error + Send + 'static, T: BasicSpawner<Error = E> + Send + 
 
     fn get_id(&self) -> SpawnerId {
         self.get_id()
+    }
+
+    fn get_addr_description(&self) -> String {
+        self.get_addr_description()
     }
 }

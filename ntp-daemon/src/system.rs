@@ -3,20 +3,22 @@ use crate::{
     peer::{MsgForSystem, PeerChannels},
     peer::{PeerTask, Wait},
     server::{ServerStats, ServerTask},
-    ObservablePeerState, spawn::{standard::StandardSpawner, pool::PoolSpawner, nts::NtsSpawner, SpawnAction, SpawnerId, SpawnEvent, PeerId, RemovedPeer, PeerRemovalReason, Spawner},
+    spawn::{
+        nts::NtsSpawner, pool::PoolSpawner, standard::StandardSpawner, PeerId, PeerRemovalReason,
+        RemovedPeer, SpawnAction, SpawnEvent, Spawner, SpawnerId,
+    },
+    ObservablePeerState,
 };
 
 use std::{collections::HashMap, future::Future, marker::PhantomData, pin::Pin};
 
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
-    DefaultTimeSyncController, NtpClock, NtpDuration,
-    PeerSnapshot, SystemSnapshot, TimeSyncController,
+    DefaultTimeSyncController, NtpClock, NtpDuration, PeerSnapshot, SystemSnapshot,
+    TimeSyncController,
 };
-use tokio::{
-    sync::mpsc,
-    task::JoinHandle,
-};
+use tokio::{sync::mpsc, task::JoinHandle};
+use tracing::info;
 
 pub const NETWORK_WAIT_PERIOD: std::time::Duration = std::time::Duration::from_secs(1);
 
@@ -198,7 +200,11 @@ impl<C: NtpClock, T: Wait> System<C, T> {
 
     fn add_spawner(&mut self, spawner: impl Spawner + Send + Sync + 'static) {
         let (notify_tx, notify_rx) = mpsc::channel(Self::MESSAGE_BUFFER_SIZE);
-        let spawner_data = SystemSpawnerData { id: spawner.get_id(), notify_tx };
+        let spawner_data = SystemSpawnerData {
+            id: spawner.get_id(),
+            notify_tx,
+        };
+        info!(id=?spawner_data.id, addr=spawner.get_addr_description(), "Running spawner");
         self.spawners.push(spawner_data);
         spawner.run(self.spawn_tx.clone(), notify_rx);
     }
@@ -293,7 +299,11 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         let peer_id = state.peer_id;
         let opt_spawner = self.spawners.iter().find(|s| s.id == spawner_id);
         if let Some(spawner) = opt_spawner {
-            spawner.notify_tx.send(RemovedPeer::new(peer_id, PeerRemovalReason::NetworkIssue)).await.expect("Could not notify spawner");
+            spawner
+                .notify_tx
+                .send(RemovedPeer::new(peer_id, PeerRemovalReason::NetworkIssue))
+                .await
+                .expect("Could not notify spawner");
         }
 
         Ok(())
@@ -360,20 +370,28 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         let peer_id = state.peer_id;
         let opt_spawner = self.spawners.iter().find(|s| s.id == spawner_id);
         if let Some(spawner) = opt_spawner {
-            spawner.notify_tx.send(RemovedPeer::new(peer_id, PeerRemovalReason::Demobilized)).await.expect("Could not notify spawner");
+            spawner
+                .notify_tx
+                .send(RemovedPeer::new(peer_id, PeerRemovalReason::Demobilized))
+                .await
+                .expect("Could not notify spawner");
         }
     }
 
     fn handle_spawn_event(&mut self, event: SpawnEvent) {
         match event.action {
             SpawnAction::Create(peer_id, addr, peer_address, nts_data) => {
+                info!(?peer_id, ?addr, spawner=?event.id, "new peer");
                 let index = self.peer_indexer.get();
-                self.peers.insert(index, PeerState {
-                    snapshot: None,
-                    peer_address,
-                    peer_id,
-                    spawner_id: event.id,
-                });
+                self.peers.insert(
+                    index,
+                    PeerState {
+                        snapshot: None,
+                        peer_address,
+                        peer_id,
+                        spawner_id: event.id,
+                    },
+                );
                 self.controller.peer_add(index);
 
                 PeerTask::spawn(
@@ -389,26 +407,45 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                 let _ = self
                     .peer_snapshots_sender
                     .send(self.observe_peers().collect());
-            },
+            }
         }
     }
 
     /// Adds up to `max_peers` peers from a pool.
     #[cfg(test)]
     async fn add_new_pool(&mut self, address: NormalizedAddress, max_peers: usize) {
-        self.add_spawner(PoolSpawner::new(crate::config::PoolPeerConfig { addr: address, max_peers }, NETWORK_WAIT_PERIOD));
+        self.add_spawner(PoolSpawner::new(
+            crate::config::PoolPeerConfig {
+                addr: address,
+                max_peers,
+            },
+            NETWORK_WAIT_PERIOD,
+        ));
     }
 
     /// Adds a single peer (that is not part of a pool!)
     #[cfg(test)]
     async fn add_peer(&mut self, address: NormalizedAddress) {
-        self.add_spawner(StandardSpawner::new(crate::config::StandardPeerConfig { addr: address }, NETWORK_WAIT_PERIOD));
+        self.add_spawner(StandardSpawner::new(
+            crate::config::StandardPeerConfig { addr: address },
+            NETWORK_WAIT_PERIOD,
+        ));
     }
 
     /// Adds a single NTS peer
     #[cfg(test)]
-    async fn add_nts_peer(&mut self, ke_addr: NormalizedAddress, certificates: Arc<[Certificate]>) {
-        self.add_spawner(NtsSpawner::new(crate::config::NtsPeerConfig { ke_addr, certificates }, NETWORK_WAIT_PERIOD));
+    async fn add_nts_peer(
+        &mut self,
+        ke_addr: NormalizedAddress,
+        certificates: std::sync::Arc<[rustls::Certificate]>,
+    ) {
+        self.add_spawner(NtsSpawner::new(
+            crate::config::NtsPeerConfig {
+                ke_addr,
+                certificates,
+            },
+            NETWORK_WAIT_PERIOD,
+        ));
     }
 
     async fn add_server(&mut self, config: ServerConfig) {

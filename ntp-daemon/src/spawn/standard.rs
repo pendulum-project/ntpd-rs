@@ -6,7 +6,7 @@ use tracing::warn;
 
 use crate::config::StandardPeerConfig;
 
-use super::{BasicSpawner, SpawnAction, SpawnerId, SpawnEvent, PeerId, RemovedPeer};
+use super::{BasicSpawner, PeerId, RemovedPeer, SpawnAction, SpawnEvent, SpawnerId};
 
 pub struct StandardSpawner {
     id: SpawnerId,
@@ -18,13 +18,16 @@ pub struct StandardSpawner {
 #[derive(Error, Debug)]
 pub enum StandardSpawnError {
     #[error("Channel send error: {0}")]
-    SendError(#[from] mpsc::error::SendError<SpawnEvent>)
+    SendError(#[from] mpsc::error::SendError<SpawnEvent>),
 }
 
 impl StandardSpawner {
-    pub fn new(config: StandardPeerConfig, network_wait_period: std::time::Duration) -> StandardSpawner {
+    pub fn new(
+        config: StandardPeerConfig,
+        network_wait_period: std::time::Duration,
+    ) -> StandardSpawner {
         StandardSpawner {
-            id: SpawnerId::new(),
+            id: Default::default(),
             config,
             network_wait_period,
             resolved: None,
@@ -57,9 +60,17 @@ impl StandardSpawner {
         }
     }
 
-    async fn spawn(&mut self, action_tx: &mpsc::Sender<SpawnEvent>) -> Result<(), StandardSpawnError> {
+    async fn spawn(
+        &mut self,
+        action_tx: &mpsc::Sender<SpawnEvent>,
+    ) -> Result<(), StandardSpawnError> {
         let addr = self.do_resolve(false).await;
-        action_tx.send(SpawnEvent::new(self.id, SpawnAction::Create(PeerId::new(), addr, self.config.addr.clone(), None))).await?;
+        action_tx
+            .send(SpawnEvent::new(
+                self.id,
+                SpawnAction::Create(PeerId::new(), addr, self.config.addr.clone(), None),
+            ))
+            .await?;
         Ok(())
     }
 }
@@ -68,15 +79,26 @@ impl StandardSpawner {
 impl BasicSpawner for StandardSpawner {
     type Error = StandardSpawnError;
 
-    async fn handle_init(&mut self, action_tx: &mpsc::Sender<SpawnEvent>) -> Result<(), StandardSpawnError> {
+    async fn handle_init(
+        &mut self,
+        action_tx: &mpsc::Sender<SpawnEvent>,
+    ) -> Result<(), StandardSpawnError> {
         self.spawn(action_tx).await
     }
 
-    async fn handle_peer_removed(&mut self, _removed_peer: RemovedPeer, action_tx: &mpsc::Sender<SpawnEvent>) -> Result<(), StandardSpawnError> {
+    async fn handle_peer_removed(
+        &mut self,
+        _removed_peer: RemovedPeer,
+        action_tx: &mpsc::Sender<SpawnEvent>,
+    ) -> Result<(), StandardSpawnError> {
         self.spawn(action_tx).await
     }
 
     fn get_id(&self) -> SpawnerId {
         self.id
+    }
+
+    fn get_addr_description(&self) -> String {
+        self.config.addr.to_string()
     }
 }
