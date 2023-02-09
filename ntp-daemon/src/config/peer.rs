@@ -225,8 +225,8 @@ impl<'de> Deserialize<'de> for PeerConfig {
                 let mut addr = None;
                 let mut mode = None;
                 let mut max_peers = None;
-                while let Some(key) = map.next_key::<&str>()? {
-                    match key {
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
                         "addr" => {
                             if addr.is_some() {
                                 return Err(de::Error::duplicate_field("addr"));
@@ -273,7 +273,7 @@ impl<'de> Deserialize<'de> for PeerConfig {
                         }
                         _ => {
                             return Err(de::Error::unknown_field(
-                                key,
+                                key.as_str(),
                                 &["addr", "mode", "max_peers", "ke_addr"],
                             ));
                         }

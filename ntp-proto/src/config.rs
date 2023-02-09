@@ -149,8 +149,8 @@ impl<'de> Deserialize<'de> for StepThreshold {
                 let mut forward = None;
                 let mut backward = None;
 
-                while let Some(key) = map.next_key::<&str>()? {
-                    match key {
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
                         "forward" => {
                             if forward.is_some() {
                                 return Err(de::Error::duplicate_field("forward"));
@@ -166,7 +166,7 @@ impl<'de> Deserialize<'de> for StepThreshold {
                             backward = Some(raw.0);
                         }
                         _ => {
-                            return Err(de::Error::unknown_field(key, &["addr", "mode"]));
+                            return Err(de::Error::unknown_field(key.as_str(), &["addr", "mode"]));
                         }
                     }
                 }
