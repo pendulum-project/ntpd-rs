@@ -1,6 +1,6 @@
 # Configuring ntpd-rs
 
-If you want to try out ntpd-rs on a non-critical system, this guide provides the basic information needed to properly build and configure ntpd-rs. This software SHOULD NOT be used on any system where you cannot handle either reliability or security issues.
+If you want to try out ntpd-rs, this guide provides the basic information needed to properly build and configure ntpd-rs.
 
 ## Limitations
 
