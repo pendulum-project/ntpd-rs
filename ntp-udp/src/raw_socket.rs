@@ -220,31 +220,6 @@ mod recv_message {
         ))
     }
 
-    // Unix uses an epoch located at 1/1/1970-00:00h (UTC) and NTP uses 1/1/1900-00:00h.
-    // This leads to an offset equivalent to 70 years in seconds
-    // there are 17 leap years between the two dates so the offset is
-    const EPOCH_OFFSET: u32 = (70 * 365 + 17) * 86400;
-
-    fn read_ntp_timestamp_timespec(timespec: libc::timespec) -> NtpTimestamp {
-        // truncates the higher bits of the i64
-        let seconds = (timespec.tv_sec as u32).wrapping_add(EPOCH_OFFSET);
-
-        // tv_nsec is always within [0, 1e10)
-        let nanos = timespec.tv_nsec as u32;
-
-        NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, nanos)
-    }
-
-    fn read_ntp_timestamp_timeval(timespec: libc::timeval) -> NtpTimestamp {
-        // truncates the higher bits of the i64
-        let seconds = (timespec.tv_sec as u32).wrapping_add(EPOCH_OFFSET);
-
-        let micros = timespec.tv_usec as u32;
-        let nanos = micros * 1000;
-
-        NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, nanos)
-    }
-
     // Invariants:
     // self.mhdr points to a valid libc::msghdr with a valid control
     // message region.
@@ -287,8 +262,43 @@ mod recv_message {
         }
     }
 
+    pub(crate) enum LibcTimestamp {
+        Timespec(libc::timespec),
+        Timeval(libc::timeval),
+    }
+
+    impl LibcTimestamp {
+        pub(crate) fn into_ntp_timestamp(self) -> NtpTimestamp {
+            // Unix uses an epoch located at 1/1/1970-00:00h (UTC) and NTP uses 1/1/1900-00:00h.
+            // This leads to an offset equivalent to 70 years in seconds
+            // there are 17 leap years between the two dates so the offset is
+            const EPOCH_OFFSET: u32 = (70 * 365 + 17) * 86400;
+
+            match self {
+                LibcTimestamp::Timespec(timespec) => {
+                    // truncates the higher bits of the i64
+                    let seconds = (timespec.tv_sec as u32).wrapping_add(EPOCH_OFFSET);
+
+                    // tv_nsec is always within [0, 1e10)
+                    let nanos = timespec.tv_nsec as u32;
+
+                    NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, nanos)
+                }
+                LibcTimestamp::Timeval(timeval) => {
+                    // truncates the higher bits of the i64
+                    let seconds = (timeval.tv_sec as u32).wrapping_add(EPOCH_OFFSET);
+
+                    let micros = timeval.tv_usec as u32;
+                    let nanos = micros * 1000;
+
+                    NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, nanos)
+                }
+            }
+        }
+    }
+
     pub(crate) enum ControlMessage {
-        Timestamping(NtpTimestamp),
+        Timestamping(LibcTimestamp),
         ReceiveError(libc::sock_extended_err),
         Other(libc::cmsghdr),
     }
@@ -322,7 +332,7 @@ mod recv_message {
                     let cmsg_data =
                         unsafe { libc::CMSG_DATA(current_msg) } as *const libc::timespec;
                     let timespec = unsafe { std::ptr::read_unaligned(cmsg_data) };
-                    ControlMessage::Timestamping(read_ntp_timestamp_timespec(timespec))
+                    ControlMessage::Timestamping(LibcTimestamp::Timespec(timespec))
                 }
 
                 (libc::SOL_SOCKET, libc::SO_TIMESTAMP) => {
@@ -331,7 +341,7 @@ mod recv_message {
                     // SO_TIMESTAMP always has a timeval in the data
                     let cmsg_data = unsafe { libc::CMSG_DATA(current_msg) } as *const libc::timeval;
                     let timeval = unsafe { std::ptr::read_unaligned(cmsg_data) };
-                    ControlMessage::Timestamping(read_ntp_timestamp_timeval(timeval))
+                    ControlMessage::Timestamping(LibcTimestamp::Timeval(timeval))
                 }
 
                 (libc::SOL_IP, libc::IP_RECVERR) | (libc::SOL_IPV6, libc::IPV6_RECVERR) => {

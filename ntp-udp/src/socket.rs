@@ -267,8 +267,9 @@ fn recv(
     // Loops through the control messages, but we should only get a single message in practice
     for msg in control_messages {
         match msg {
-            ControlMessage::Timestamping(timestamp) => {
-                return Ok((bytes_read as usize, sock_addr, Some(timestamp)));
+            ControlMessage::Timestamping(libc_timestamp) => {
+                let ntp_timestamp = libc_timestamp.into_ntp_timestamp();
+                return Ok((bytes_read as usize, sock_addr, Some(ntp_timestamp)));
             }
 
             ControlMessage::ReceiveError(_error) => {
@@ -344,7 +345,7 @@ fn fetch_send_timestamp_help(
         }
     }
 
-    Ok(send_ts)
+    Ok(send_ts.map(|ts| ts.into_ntp_timestamp()))
 }
 
 #[cfg(test)]
