@@ -4,12 +4,7 @@ If you want to try out ntpd-rs, this guide provides the basic information needed
 
 ## Limitations
 
-The current implementation has several important limitations:
-
- - The current implementation is client-only, and does not support acting as an NTP server.
- - There is no support for broadcast client/server or symmetric active/passive connections, only acting as the client towards a server node is implemented.
- - DNS lookup is currently only done at startup. Changes in the IP address of a remote server are not picked up until a restart of the daemon.
- - Changes in network interfaces are not picked up dynamically and will require a restart of the daemon.
+Unlike the ntp reference implementation, ntpd-rs does not support either broadcast or symmetric modes, nor is there any plan to do so in the future. The decision to exclude these modes was taken because their design leaves them relatively vulnerable to security issues, and this is not easily mitigated. Furthermore, use of these modes can be replaced with client-server mode connections in almost all usecases at a minimal cost in convenience and network traffic.
 
 ## Building
 
