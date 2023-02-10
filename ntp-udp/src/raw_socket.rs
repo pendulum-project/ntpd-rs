@@ -94,11 +94,20 @@ mod set_timestamping_options {
         timestamping: TimestampingConfig,
     ) -> std::io::Result<()> {
         let options = match method {
-            TimestampMethod::SoTimestamp => timestamping.rx_software as u32,
+            TimestampMethod::SoTimestamp => {
+                // only receive software timestamps are supported: 0 disables, 1 enables
+                timestamping.rx_software as u32
+            }
             #[cfg(target_os = "linux")]
-            TimestampMethod::SoTimestampns => timestamping.rx_software as u32,
+            TimestampMethod::SoTimestampns => {
+                // only receive software timestamps are supported: 0 disables, 1 enables
+                timestamping.rx_software as u32
+            }
             #[cfg(target_os = "linux")]
             TimestampMethod::SoTimestamping => {
+                // SO_TIMESTAMPING has many more options: it supports receive and send timestamps, and
+                // software and hardware timestamping. Of those, only software send and receive timestamps
+                // are currently supported
                 let mut options = 0;
 
                 if timestamping.rx_software || timestamping.tx_software {
