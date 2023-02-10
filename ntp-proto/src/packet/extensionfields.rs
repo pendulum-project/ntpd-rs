@@ -3,7 +3,7 @@ use std::{
     io::{Cursor, Write},
 };
 
-use super::{Cipher, CipherProvider, Mac, PacketParsingError};
+use super::{error::ParsingError, Cipher, CipherProvider, Mac};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum ExtensionFieldTypeId {
@@ -41,7 +41,7 @@ pub enum ExtensionField<'a> {
     UniqueIdentifier(Cow<'a, [u8]>),
     NtsCookie(Cow<'a, [u8]>),
     NtsCookiePlaceholder { cookie_length: u16 },
-
+    InvalidNtsEncryptedField,
     Unknown { type_id: u16, data: Cow<'a, [u8]> },
 }
 
@@ -56,6 +56,7 @@ impl<'a> std::fmt::Debug for ExtensionField<'a> {
                 .debug_struct("NtsCookiePlaceholder")
                 .field("body_length", body_length)
                 .finish(),
+            Self::InvalidNtsEncryptedField => f.debug_struct("InvalidNtsEncryptedField").finish(),
             Self::Unknown {
                 type_id: typeid,
                 data,
@@ -88,6 +89,7 @@ impl<'a> ExtensionField<'a> {
             } => NtsCookiePlaceholder {
                 cookie_length: body_length,
             },
+            InvalidNtsEncryptedField => InvalidNtsEncryptedField,
         }
     }
 
@@ -103,6 +105,7 @@ impl<'a> ExtensionField<'a> {
             NtsCookiePlaceholder {
                 cookie_length: body_length,
             } => Self::encode_nts_cookie_placeholder(w, *body_length, minimum_size),
+            InvalidNtsEncryptedField => Err(std::io::ErrorKind::Other.into()),
         }
     }
 
@@ -286,23 +289,30 @@ impl<'a> ExtensionField<'a> {
 
         Ok(())
     }
-    fn decode_unique_identifier(message: &'a [u8]) -> Result<Self, PacketParsingError> {
+
+    fn decode_unique_identifier(
+        message: &'a [u8],
+    ) -> Result<Self, ParsingError<std::convert::Infallible>> {
         // The string MUST be at least 32 octets long
         // TODO: Discuss if we really want this check here
         if message.len() < 32 {
-            return Err(PacketParsingError::IncorrectLength);
+            return Err(ParsingError::IncorrectLength);
         }
 
         Ok(ExtensionField::UniqueIdentifier(message[..].into()))
     }
 
-    fn decode_nts_cookie(message: &'a [u8]) -> Result<Self, PacketParsingError> {
+    fn decode_nts_cookie(
+        message: &'a [u8],
+    ) -> Result<Self, ParsingError<std::convert::Infallible>> {
         Ok(ExtensionField::NtsCookie(message[..].into()))
     }
 
-    fn decode_nts_cookie_placeholder(message: &'a [u8]) -> Result<Self, PacketParsingError> {
+    fn decode_nts_cookie_placeholder(
+        message: &'a [u8],
+    ) -> Result<Self, ParsingError<std::convert::Infallible>> {
         if message.iter().any(|b| *b != 0) {
-            Err(PacketParsingError::IncorrectLength)
+            Err(ParsingError::IncorrectLength)
         } else {
             Ok(ExtensionField::NtsCookiePlaceholder {
                 cookie_length: message.len() as u16,
@@ -310,14 +320,17 @@ impl<'a> ExtensionField<'a> {
         }
     }
 
-    fn decode_unknown(type_id: u16, message: &'a [u8]) -> Result<Self, PacketParsingError> {
+    fn decode_unknown(
+        type_id: u16,
+        message: &'a [u8],
+    ) -> Result<Self, ParsingError<std::convert::Infallible>> {
         Ok(ExtensionField::Unknown {
             type_id,
             data: Cow::Borrowed(message),
         })
     }
 
-    fn decode(raw: RawExtensionField<'a>) -> Result<Self, PacketParsingError> {
+    fn decode(raw: RawExtensionField<'a>) -> Result<Self, ParsingError<std::convert::Infallible>> {
         type EF<'a> = ExtensionField<'a>;
         type TypeId = ExtensionFieldTypeId;
 
@@ -391,41 +404,60 @@ impl<'a> ExtensionFieldData<'a> {
         data: &'a [u8],
         header_size: usize,
         cipher: &impl CipherProvider,
-    ) -> Result<(Self, usize), PacketParsingError> {
+    ) -> Result<(Self, usize), ParsingError<(ExtensionFieldData<'a>, usize)>> {
         let mut this = Self::default();
         let mut size = 0;
+        let mut has_invalid_nts = false;
         for field in RawExtensionField::deserialize_sequence(
             &data[header_size..],
             Mac::MAXIMUM_SIZE,
             RawExtensionField::V4_UNENCRYPTED_MINIMUM_SIZE,
         ) {
-            let (offset, field) = field?;
+            let (offset, field) = field.map_err(|e| e.force())?;
             size = offset + field.wire_length();
             match field.type_id {
                 ExtensionFieldTypeId::NtsEncryptedField => {
-                    let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)?;
-                    let cipher = cipher
-                        .get(&this.untrusted)
-                        .ok_or(PacketParsingError::DecryptError)?;
+                    let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)
+                        .map_err(|e| e.force())?;
+                    let cipher = match cipher.get(&this.untrusted) {
+                        Some(cipher) => cipher,
+                        None => {
+                            this.untrusted
+                                .push(ExtensionField::InvalidNtsEncryptedField);
+                            has_invalid_nts = true;
+                            continue;
+                        }
+                    };
 
-                    // TODO: Discuss whether we want to do this check
-                    if !this.authenticated.is_empty() || !this.encrypted.is_empty() {
-                        return Err(PacketParsingError::MalformedNtsExtensionFields);
-                    }
+                    let encrypted_fields =
+                        match encrypted.decrypt(cipher, &data[..header_size + offset]) {
+                            Ok(encrypted_fields) => encrypted_fields,
+                            Err(e) => match e.coerce() {
+                                Some(e) => return Err(e),
+                                None => {
+                                    this.untrusted
+                                        .push(ExtensionField::InvalidNtsEncryptedField);
+                                    has_invalid_nts = true;
+                                    continue;
+                                }
+                            },
+                        };
 
-                    this.encrypted.extend(
-                        encrypted
-                            .decrypt(cipher, &data[..header_size + offset])?
-                            .into_iter(),
-                    );
+                    this.encrypted.extend(encrypted_fields.into_iter());
 
                     // All previous untrusted fields are now validated
                     this.authenticated.append(&mut this.untrusted);
                 }
-                _ => this.untrusted.push(ExtensionField::decode(field)?),
+                _ => this
+                    .untrusted
+                    .push(ExtensionField::decode(field).map_err(|e| e.force())?),
             }
         }
-        Ok((this, size + header_size))
+        if has_invalid_nts {
+            Err(ParsingError::DecryptError((this, size + header_size)))
+        } else {
+            Ok((this, size + header_size))
+        }
     }
 }
 
@@ -435,8 +467,10 @@ struct RawEncryptedField<'a> {
 }
 
 impl<'a> RawEncryptedField<'a> {
-    fn from_message_bytes(message_bytes: &'a [u8]) -> Result<Self, PacketParsingError> {
-        use PacketParsingError::*;
+    fn from_message_bytes(
+        message_bytes: &'a [u8],
+    ) -> Result<Self, ParsingError<std::convert::Infallible>> {
+        use ParsingError::*;
 
         if message_bytes.len() < 4 {
             return Err(IncorrectLength);
@@ -470,10 +504,14 @@ impl<'a> RawEncryptedField<'a> {
         &self,
         cipher: &dyn Cipher,
         aad: &[u8],
-    ) -> Result<Vec<ExtensionField<'a>>, PacketParsingError> {
+    ) -> Result<Vec<ExtensionField<'a>>, ParsingError<ExtensionField<'a>>> {
         let plaintext = match cipher.decrypt(self.nonce, self.ciphertext, aad) {
             Ok(plain) => plain,
-            Err(_) => return Err(PacketParsingError::DecryptError),
+            Err(_) => {
+                return Err(ParsingError::DecryptError(
+                    ExtensionField::InvalidNtsEncryptedField,
+                ))
+            }
         };
 
         let mut result = vec![];
@@ -482,12 +520,16 @@ impl<'a> RawEncryptedField<'a> {
             0,
             RawExtensionField::BARE_MINIMUM_SIZE,
         ) {
-            let encrypted_field = encrypted_field?.1;
+            let encrypted_field = encrypted_field.map_err(|e| e.force())?.1;
             if encrypted_field.type_id == ExtensionFieldTypeId::NtsEncryptedField {
                 // TODO: Discuss whether we want this check
-                return Err(PacketParsingError::MalformedNtsExtensionFields);
+                return Err(ParsingError::MalformedNtsExtensionFields);
             }
-            result.push(ExtensionField::decode(encrypted_field)?.into_owned());
+            result.push(
+                ExtensionField::decode(encrypted_field)
+                    .map_err(|e| e.force())?
+                    .into_owned(),
+            );
         }
 
         Ok(result)
@@ -510,8 +552,11 @@ impl<'a> RawExtensionField<'a> {
         4 + self.message_bytes.len()
     }
 
-    fn deserialize(data: &'a [u8], minimum_size: usize) -> Result<Self, PacketParsingError> {
-        use PacketParsingError::IncorrectLength;
+    fn deserialize(
+        data: &'a [u8],
+        minimum_size: usize,
+    ) -> Result<Self, ParsingError<std::convert::Infallible>> {
+        use ParsingError::IncorrectLength;
 
         if data.len() < 4 {
             return Err(IncorrectLength);
@@ -520,7 +565,7 @@ impl<'a> RawExtensionField<'a> {
         let type_id = u16::from_be_bytes(data[0..2].try_into().unwrap());
         let field_length = u16::from_be_bytes(data[2..4].try_into().unwrap()) as usize;
         if field_length < minimum_size || field_length % 4 != 0 {
-            return Err(PacketParsingError::IncorrectLength);
+            return Err(ParsingError::IncorrectLength);
         }
 
         let value = data.get(4..field_length).ok_or(IncorrectLength)?;
@@ -535,7 +580,9 @@ impl<'a> RawExtensionField<'a> {
         buffer: &'a [u8],
         cutoff: usize,
         minimum_size: usize,
-    ) -> impl Iterator<Item = Result<(usize, RawExtensionField<'a>), PacketParsingError>> + 'a {
+    ) -> impl Iterator<
+        Item = Result<(usize, RawExtensionField<'a>), ParsingError<std::convert::Infallible>>,
+    > + 'a {
         ExtensionFieldStreamer {
             buffer,
             cutoff,
@@ -552,7 +599,7 @@ struct ExtensionFieldStreamer<'a> {
 }
 
 impl<'a> Iterator for ExtensionFieldStreamer<'a> {
-    type Item = Result<(usize, RawExtensionField<'a>), PacketParsingError>;
+    type Item = Result<(usize, RawExtensionField<'a>), ParsingError<std::convert::Infallible>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.buffer.len() - self.offset <= self.cutoff {
