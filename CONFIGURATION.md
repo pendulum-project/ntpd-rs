@@ -97,7 +97,7 @@ certificate = "/path/to/certificates.pem"
 
 ##### Pool
 
-`Pool` mode is a convenient way to configure many NTP servers, without having to worry about individual server's IP addresses.
+`Pool` mode is a convenient way to configure many NTP servers, without having to worry about individual servers' IP addresses.
 
 A peer in `Pool` mode will try to acquire `max_peers` addresses of NTP servers from the pool. `ntpd-rs` will actively try to keep a pool filled up. For instance if a server cannot be reached, a different server will be picked from the pool.
 
