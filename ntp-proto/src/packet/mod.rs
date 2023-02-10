@@ -15,7 +15,9 @@ mod error;
 mod extensionfields;
 mod mac;
 
-pub use crypto::{AesSivCmac256, Cipher, CipherProvider, EncryptionResult, NoCipher};
+pub use crypto::{
+    AesSivCmac256, AesSivCmac512, Cipher, CipherProvider, EncryptionResult, NoCipher,
+};
 pub use error::PacketParsingError;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
