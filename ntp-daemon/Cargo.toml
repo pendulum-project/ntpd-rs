@@ -18,8 +18,6 @@ toml = "0.7.2"
 thiserror = "1.0.38"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.93"
-sentry = { version = "0.29.2", optional = true, default-features = false, features = ["backtrace", "contexts", "panic", "reqwest", "rustls"] }
-sentry-tracing = { version = "0.29.2", optional = true }
 rand = "0.8.5"
 rustls = "0.20.7"
 libc = "0.2.139"
@@ -32,6 +30,5 @@ rustls-pemfile = "1.0.2"
 ntp-proto = { path = "../ntp-proto", features=["ext-test"]}
 
 [features]
-sentry = ["dep:sentry", "dep:sentry-tracing"]
 new-algorithm = ["ntp-proto/new-algorithm"]
 fuzz = []

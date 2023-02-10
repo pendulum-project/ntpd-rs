@@ -25,7 +25,6 @@ jobs:
         os: [ubuntu-latest]
         features:
           - ""
-          - "--features sentry"
           - "--features new-algorithm"
     steps:
       - name: Checkout sources
@@ -65,7 +64,6 @@ jobs:
       matrix:
         features:
           - ""
-          - "--features sentry"
     steps:
       - name: Checkout sources
         uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c
