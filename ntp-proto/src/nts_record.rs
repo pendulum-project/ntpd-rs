@@ -425,7 +425,7 @@ pub enum KeyExchangeError {
 /// From https://www.iana.org/assignments/aead-parameters/aead-parameters.xhtml
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 #[repr(u8)]
-enum AeadAlgorithm {
+pub(crate) enum AeadAlgorithm {
     #[default]
     AeadAesSivCmac256 = 15,
     AeadAesSivCmac512 = 17,
@@ -446,6 +446,14 @@ impl AeadAlgorithm {
 
     const IN_ORDER_OF_PREFERENCE: &'static [Self] =
         &[Self::AeadAesSivCmac512, Self::AeadAesSivCmac256];
+
+    pub(crate) const fn from_u16(value: u16) -> Option<Self> {
+        match value {
+            15 => Some(Self::AeadAesSivCmac256),
+            17 => Some(Self::AeadAesSivCmac512),
+            _ => None,
+        }
+    }
 
     fn extract_nts_keys(
         &self,
