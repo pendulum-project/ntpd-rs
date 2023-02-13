@@ -17,6 +17,10 @@ pub struct EncryptionResult {
 }
 
 pub trait Cipher: Sync + Send + 'static {
+    /// Number of bytes used in the key for this Cipher
+    // unlikely to need `self`, but it is required for this trait to be object safe
+    fn key_width(&self) -> usize;
+
     fn encrypt(
         &self,
         plaintext: &[u8],
@@ -96,6 +100,10 @@ impl AesSivCmac256 {
 }
 
 impl Cipher for AesSivCmac256 {
+    fn key_width(&self) -> usize {
+        32
+    }
+
     fn encrypt(
         &self,
         plaintext: &[u8],
@@ -153,6 +161,10 @@ impl AesSivCmac512 {
 }
 
 impl Cipher for AesSivCmac512 {
+    fn key_width(&self) -> usize {
+        32
+    }
+
     fn encrypt(
         &self,
         plaintext: &[u8],

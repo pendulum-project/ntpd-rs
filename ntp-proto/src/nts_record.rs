@@ -455,6 +455,14 @@ impl AeadAlgorithm {
     const IN_ORDER_OF_PREFERENCE: &'static [Self] =
         &[Self::AeadAesSivCmac512, Self::AeadAesSivCmac256];
 
+    pub(crate) const fn from_u16(value: u16) -> Option<Self> {
+        match value {
+            15 => Some(Self::AeadAesSivCmac256),
+            17 => Some(Self::AeadAesSivCmac512),
+            _ => None,
+        }
+    }
+
     pub(crate) fn extract_nts_keys<ConnectionData>(
         &self,
         tls_connection: &rustls::ConnectionCommon<ConnectionData>,
