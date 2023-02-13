@@ -226,6 +226,10 @@ pub(crate) async fn perform_key_exchange(
         roots.add(&rustls::Certificate(cert.0)).unwrap();
     }
 
+    for cert in load_certs("test-keys/rootCA.crt").unwrap() {
+        roots.add(&rustls::Certificate(cert.0)).unwrap();
+    }
+
     let config = rustls::ClientConfig::builder()
         .with_safe_defaults()
         .with_root_certificates(roots)
@@ -239,7 +243,7 @@ async fn main() -> std::io::Result<()> {
     // let domain = "time.cloudflare.com";
     // let domain = "nts.time.nl"; // supports AesSivCmac512
     let domain = "localhost"; // supports AesSivCmac512
-    let port = 4461;
+    let port = 4460;
 
     let mut key_exchange = perform_key_exchange(domain.to_string(), port)
         .await

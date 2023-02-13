@@ -900,16 +900,7 @@ impl KeyExchangeServer {
         tls_config.alpn_protocols.push(b"ntske/1".to_vec());
 
         // TLS only works when the server name is a DNS name; an IP address does not work
-        let mut tls_connection = rustls::ServerConnection::new(Arc::new(tls_config))?;
-
-        // Make the request immediately (note, this will only go out to the wire via the write functions above)
-        // We use an intermediary buffer to ensure that all records are sent at once.
-        // This should not be needed, but works around issues in some NTS-ke server implementations
-        let mut buffer = Vec::with_capacity(1024);
-        for record in NtsRecord::client_key_exchange_records() {
-            record.write(&mut buffer)?;
-        }
-        tls_connection.writer().write_all(&buffer)?;
+        let tls_connection = rustls::ServerConnection::new(Arc::new(tls_config))?;
 
         Ok(Self {
             tls_connection,
