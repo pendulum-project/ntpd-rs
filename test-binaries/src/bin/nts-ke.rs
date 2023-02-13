@@ -6,7 +6,9 @@ use std::{
     task::{Context, Poll},
 };
 
-use ntp_proto::{KeyExchangeClient, KeyExchangeError, KeyExchangeResult, NtpPacket, PollInterval};
+use ntp_proto::{
+    KeyExchangeClient, KeyExchangeClientResult, KeyExchangeError, NtpPacket, PollInterval,
+};
 use ntp_udp::UdpSocket;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_rustls::rustls;
@@ -132,7 +134,7 @@ impl<IO> Future for BoundKeyExchangeClient<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin,
 {
-    type Output = Result<KeyExchangeResult, KeyExchangeError>;
+    type Output = Result<KeyExchangeClientResult, KeyExchangeError>;
 
     fn poll(
         self: std::pin::Pin<&mut Self>,
@@ -192,10 +194,29 @@ where
     }
 }
 
+// Load public certificate from file.
+fn load_certs(filename: &str) -> std::io::Result<Vec<rustls::Certificate>> {
+    use std::{fs, io};
+
+    // Open certificate file.
+    let certfile = fs::File::open(filename)
+        .map_err(|e| error(format!("failed to open {}: {}", filename, e)))?;
+    let mut reader = io::BufReader::new(certfile);
+
+    // Load and return certificate.
+    let certs = rustls_pemfile::certs(&mut reader)
+        .map_err(|_| error("failed to load certificate".into()))?;
+    Ok(certs.into_iter().map(rustls::Certificate).collect())
+}
+
+fn error(err: String) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::Other, err)
+}
+
 pub(crate) async fn perform_key_exchange(
     server_name: String,
     port: u16,
-) -> Result<KeyExchangeResult, KeyExchangeError> {
+) -> Result<KeyExchangeClientResult, KeyExchangeError> {
     let socket = tokio::net::TcpStream::connect((server_name.as_str(), port))
         .await
         .unwrap();
@@ -216,8 +237,9 @@ pub(crate) async fn perform_key_exchange(
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     // let domain = "time.cloudflare.com";
-    let domain = "nts.time.nl"; // supports AesSivCmac512
-    let port = 4460;
+    // let domain = "nts.time.nl"; // supports AesSivCmac512
+    let domain = "localhost"; // supports AesSivCmac512
+    let port = 4461;
 
     let mut key_exchange = perform_key_exchange(domain.to_string(), port)
         .await

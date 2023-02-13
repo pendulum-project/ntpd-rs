@@ -1,7 +1,7 @@
 use crate::{
     config::{CombinedSystemConfig, NormalizedAddress, NtsPeerConfig},
     config::{PeerConfig, PoolPeerConfig, ServerConfig, StandardPeerConfig},
-    keyexchange::key_exchange,
+    keyexchange::key_exchange_client,
     peer::{MsgForSystem, PeerChannels},
     peer::{PeerTask, Wait},
     server::{ServerStats, ServerTask},
@@ -15,7 +15,7 @@ use std::{
 
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
-    DefaultTimeSyncController, KeyExchangeError, KeyExchangeResult, NtpClock, NtpDuration,
+    DefaultTimeSyncController, KeyExchangeClientResult, KeyExchangeError, NtpClock, NtpDuration,
     PeerNtsData, PeerSnapshot, SystemSnapshot, TimeSyncController,
 };
 use rustls::Certificate;
@@ -495,7 +495,8 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         ke_address: NormalizedAddress,
         extra_certificates: Arc<[Certificate]>,
     ) -> Result<(), KeyExchangeError> {
-        let ke = key_exchange(ke_address.server_name, ke_address.port, &extra_certificates).await?;
+        let ke = key_exchange_client(ke_address.server_name, ke_address.port, &extra_certificates)
+            .await?;
 
         let address = NormalizedAddress::from_string_ntp(format!("{}:{}", ke.remote, ke.port))?;
 
@@ -638,7 +639,7 @@ struct PoolAddresses {
 #[allow(clippy::large_enum_variant)]
 enum SpawnConfig {
     Nts {
-        ke: KeyExchangeResult,
+        ke: KeyExchangeClientResult,
         extra_certificates: Arc<[Certificate]>,
         address: NormalizedAddress,
     },
@@ -716,7 +717,7 @@ impl Spawner {
     }
 
     async fn spawn_nts(
-        ke: KeyExchangeResult,
+        ke: KeyExchangeClientResult,
         address: NormalizedAddress,
         extra_certificates: Arc<[Certificate]>,
         sender: Sender<SpawnTask>,

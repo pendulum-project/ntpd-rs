@@ -91,10 +91,10 @@ mod tests {
     }
 }
 
-struct Cookie(Vec<u8>);
+pub(crate) struct Cookie(pub Vec<u8>);
 
 impl Cookie {
-    fn new<C: crate::Cipher + ?Sized>(
+    pub(crate) fn new<C: crate::Cipher + ?Sized>(
         server_key: &C,
         identifier: u32,
         algorithm: AeadAlgorithm,
