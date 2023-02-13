@@ -7,13 +7,14 @@ license = "Apache-2.0 OR MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "1.25.0", features = ["full"] }
 ntp-proto = { path = "../ntp-proto" }
 ntp-daemon = { path = "../ntp-daemon" }
 ntp-metrics-exporter = { path = "../ntp-metrics-exporter" }
-tracing = "0.1.37"
-tracing-subscriber = "0.3.16"
-clap = { version = "4.1.6", features = ["derive", "env"] }
-serde = { version = "1.0.152", features = ["derive"] }
-serde_json = "1.0.93"
-prometheus-client = "0.19.0"
+
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+prometheus-client.workspace = true

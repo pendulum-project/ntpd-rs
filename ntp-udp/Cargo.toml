@@ -7,10 +7,10 @@ license = "Apache-2.0 OR MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "1.25.0", features = ["net"] }
-libc = "0.2.139"
 ntp-proto = { path = "../ntp-proto" }
-tracing = "0.1.37"
+tokio = { workspace = true, features = ["net"] }
+libc.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
-tokio = { version = "*", features = ["full"] }
+tokio = { workspace = true, features = ["full"] }
