@@ -3,7 +3,9 @@ use std::io::Cursor;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 
-use crate::{NtpClock, NtpDuration, NtpTimestamp, PollInterval, ReferenceId, SystemSnapshot};
+use crate::{
+    Cookie, NtpClock, NtpDuration, NtpTimestamp, PollInterval, ReferenceId, SystemSnapshot,
+};
 
 use self::{
     extensionfields::{ExtensionField, ExtensionFieldData},
@@ -353,7 +355,7 @@ impl<'a> NtpPacket<'a> {
     }
 
     pub fn nts_poll_message(
-        cookie: &'a [u8],
+        cookie: Cookie,
         new_cookies: u8,
         poll_interval: PollInterval,
     ) -> (NtpPacket<'static>, RequestIdentifier) {
@@ -361,15 +363,15 @@ impl<'a> NtpPacket<'a> {
 
         let identifier: [u8; 32] = rand::thread_rng().gen();
 
+        let cookie_length = cookie.0.len() as u16;
+
         let mut authenticated = vec![
             ExtensionField::UniqueIdentifier(identifier.to_vec().into()),
-            ExtensionField::NtsCookie(cookie.to_vec().into()),
+            ExtensionField::NtsCookie(cookie.0.into()),
         ];
 
         for _ in 1..new_cookies {
-            authenticated.push(ExtensionField::NtsCookiePlaceholder {
-                cookie_length: cookie.len() as u16,
-            });
+            authenticated.push(ExtensionField::NtsCookiePlaceholder { cookie_length });
         }
 
         (
@@ -463,9 +465,9 @@ impl<'a> NtpPacket<'a> {
 }
 
 impl<'a> NtpPacket<'a> {
-    pub fn new_cookies<'b: 'a>(&'b self) -> impl Iterator<Item = Vec<u8>> + 'b {
+    pub fn new_cookies<'b: 'a>(&'b self) -> impl Iterator<Item = Cookie> + 'b {
         self.efdata.encrypted.iter().filter_map(|ef| match ef {
-            ExtensionField::NtsCookie(cookie) => Some(cookie.to_vec()),
+            ExtensionField::NtsCookie(cookie) => Some(Cookie(cookie.to_vec())),
             _ => None,
         })
     }
@@ -913,9 +915,9 @@ mod tests {
 
     #[test]
     fn test_nts_poll_message() {
-        let cookie = [0; 16];
+        let cookie = Cookie([0; 16].to_vec());
         let (packet1, ref1) =
-            NtpPacket::nts_poll_message(&cookie, 1, PollIntervalLimits::default().min);
+            NtpPacket::nts_poll_message(cookie.clone(), 1, PollIntervalLimits::default().min);
         assert_eq!(0, packet1.efdata.encrypted.len());
         assert_eq!(0, packet1.efdata.untrusted.len());
         let mut have_uid = false;
@@ -929,12 +931,12 @@ mod tests {
                     have_uid = true;
                 }
                 ExtensionField::NtsCookie(cookie_p) => {
-                    assert_eq!(&cookie, cookie_p.as_ref());
+                    assert_eq!(&cookie.0, cookie_p.as_ref());
                     assert!(!have_cookie);
                     have_cookie = true;
                 }
                 ExtensionField::NtsCookiePlaceholder { cookie_length } => {
-                    assert_eq!(cookie_length, cookie.len() as u16);
+                    assert_eq!(cookie_length, cookie.0.len() as u16);
                     nplaceholders += 1;
                 }
                 _ => unreachable!(),
@@ -945,7 +947,7 @@ mod tests {
         assert_eq!(nplaceholders, 0);
 
         let (packet2, ref2) =
-            NtpPacket::nts_poll_message(&cookie, 3, PollIntervalLimits::default().min);
+            NtpPacket::nts_poll_message(cookie.clone(), 3, PollIntervalLimits::default().min);
         assert_ne!(
             ref1.expected_origin_timestamp,
             ref2.expected_origin_timestamp
@@ -965,12 +967,12 @@ mod tests {
                     have_uid = true;
                 }
                 ExtensionField::NtsCookie(cookie_p) => {
-                    assert_eq!(&cookie, cookie_p.as_ref());
+                    assert_eq!(&cookie.0, cookie_p.as_ref());
                     assert!(!have_cookie);
                     have_cookie = true;
                 }
                 ExtensionField::NtsCookiePlaceholder { cookie_length } => {
-                    assert_eq!(cookie_length, cookie.len() as u16);
+                    assert_eq!(cookie_length, cookie.0.len() as u16);
                     nplaceholders += 1;
                 }
                 _ => unreachable!(),
@@ -983,9 +985,9 @@ mod tests {
 
     #[test]
     fn test_nts_response_validation() {
-        let cookie = [0; 16];
+        let cookie = Cookie([0; 16].to_vec());
         let (packet, id) =
-            NtpPacket::nts_poll_message(&cookie, 0, PollIntervalLimits::default().min);
+            NtpPacket::nts_poll_message(cookie.clone(), 0, PollIntervalLimits::default().min);
         let mut response = NtpPacket::timestamp_response(
             &SystemSnapshot::default(),
             packet,
@@ -1053,7 +1055,7 @@ mod tests {
 
         assert_eq!(1, packet.new_cookies().count());
         for cookie in packet.new_cookies() {
-            assert_eq!(&cookie, &allowed);
+            assert_eq!(&cookie.0, &allowed);
         }
     }
 

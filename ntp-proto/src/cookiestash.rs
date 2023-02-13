@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use crate::nts_record::AeadAlgorithm;
 
 /// Datastructure for managing cookies. It keeps the following
@@ -9,14 +7,14 @@ use crate::nts_record::AeadAlgorithm;
 /// Note that as a consequence, this type is not Clone!
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct CookieStash {
-    cookies: [Vec<u8>; 8],
+    cookies: [Cookie; 8],
     read: usize,
     valid: usize,
 }
 
 impl CookieStash {
     /// Store a new cookie
-    pub fn store(&mut self, cookie: Vec<u8>) {
+    pub fn store(&mut self, cookie: Cookie) {
         let wpos = (self.read + self.valid) % self.cookies.len();
         self.cookies[wpos] = cookie;
         if self.valid < self.cookies.len() {
@@ -30,7 +28,7 @@ impl CookieStash {
     }
 
     /// Get oldest cookie
-    pub fn get(&mut self) -> Option<Vec<u8>> {
+    pub fn get(&mut self) -> Option<Cookie> {
         if self.valid == 0 {
             None
         } else {
@@ -68,30 +66,31 @@ mod tests {
     fn test_overfill() {
         let mut stash = CookieStash::default();
         for i in 0..10_u8 {
-            stash.store(vec![i])
+            stash.store(Cookie(vec![i]))
         }
-        assert_eq!(stash.get(), Some(vec![2]));
-        assert_eq!(stash.get(), Some(vec![3]));
+        assert_eq!(stash.get(), Some(Cookie(vec![2])));
+        assert_eq!(stash.get(), Some(Cookie(vec![3])));
     }
 
     #[test]
     fn test_normal_op() {
         let mut stash = CookieStash::default();
         for i in 0..8_u8 {
-            stash.store(vec![i]);
+            stash.store(Cookie(vec![i]));
             assert_eq!(stash.gap(), 7 - i);
         }
 
         for i in 8_u8..32_u8 {
-            assert_eq!(stash.get(), Some(vec![i - 8]));
+            assert_eq!(stash.get(), Some(Cookie(vec![i - 8])));
             assert_eq!(stash.gap(), 1);
-            stash.store(vec![i]);
+            stash.store(Cookie(vec![i]));
             assert_eq!(stash.gap(), 0);
         }
     }
 }
 
-struct Cookie(Vec<u8>);
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
+pub struct Cookie(pub(crate) Vec<u8>);
 
 impl Cookie {
     fn new<C: crate::Cipher + ?Sized>(

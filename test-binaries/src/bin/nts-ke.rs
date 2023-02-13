@@ -239,7 +239,7 @@ async fn main() -> std::io::Result<()> {
         SocketAddr::V6(_) => UdpSocket::client((Ipv6Addr::UNSPECIFIED, 0).into(), addr).await?,
     };
 
-    let (packet, _) = NtpPacket::nts_poll_message(&cookie, 1, PollInterval::default());
+    let (packet, _) = NtpPacket::nts_poll_message(cookie, 1, PollInterval::default());
 
     let mut raw = [0u8; 1024];
     let mut w = Cursor::new(raw.as_mut_slice());

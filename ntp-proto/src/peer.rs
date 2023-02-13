@@ -4,7 +4,8 @@ use crate::{
     cookiestash::CookieStash,
     packet::{Cipher, NtpAssociationMode, RequestIdentifier},
     time_types::NtpInstant,
-    NtpDuration, NtpPacket, NtpTimestamp, PollInterval, ReferenceId, SystemConfig, SystemSnapshot,
+    Cookie, NtpDuration, NtpPacket, NtpTimestamp, PollInterval, ReferenceId, SystemConfig,
+    SystemSnapshot,
 };
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument, trace, warn};
@@ -29,7 +30,7 @@ pub struct PeerNtsData {
 
 #[cfg(feature = "ext-test")]
 impl PeerNtsData {
-    pub fn get_cookie(&mut self) -> Option<Vec<u8>> {
+    pub fn get_cookie(&mut self) -> Option<Cookie> {
         self.cookies.get()
     }
 
@@ -332,7 +333,7 @@ impl Peer {
                 let cookie = nts.cookies.get().ok_or_else(|| {
                     std::io::Error::new(std::io::ErrorKind::Other, NtsError::OutOfCookies)
                 })?;
-                NtpPacket::nts_poll_message(&cookie, nts.cookies.gap(), poll_interval)
+                NtpPacket::nts_poll_message(cookie, nts.cookies.gap(), poll_interval)
             }
             None => NtpPacket::poll_message(poll_interval),
         };

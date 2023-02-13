@@ -39,6 +39,7 @@ pub use time_types::{
     FrequencyTolerance, NtpDuration, NtpInstant, NtpTimestamp, PollInterval, PollIntervalLimits,
 };
 
+pub use cookiestash::Cookie;
 pub use nts_record::{
     KeyExchangeClient, KeyExchangeError, KeyExchangeResult, NtsRecord, NtsRecordDecoder, WriteError,
 };

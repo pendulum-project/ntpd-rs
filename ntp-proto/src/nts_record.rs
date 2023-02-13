@@ -9,7 +9,7 @@ use aes_siv::{Aes128SivAead, Aes256SivAead};
 
 use crate::{
     cookiestash::CookieStash, packet::AesSivCmac256, packet::AesSivCmac512, peer::PeerNtsData,
-    Cipher,
+    Cipher, Cookie,
 };
 
 #[derive(Debug)]
@@ -560,7 +560,7 @@ impl KeyExchangeResultDecoder {
                 }
             }
             NewCookie { cookie_data } => {
-                state.cookies.store(cookie_data);
+                state.cookies.store(Cookie(cookie_data));
                 Continue(state)
             }
             Server { name, .. } => {
