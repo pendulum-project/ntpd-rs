@@ -71,18 +71,21 @@ impl<P: NetworkPort> Port<P> {
         loop {
             let packet = self.network_port.recv();
             match embassy_futures::select::select(&mut bmca_timeout, packet).await {
-                Either::First(_) => match clock.try_borrow() {
-                    Ok(clock) => {
-                        self.run_bmca(
-                            clock.now(),
-                            announce_messages,
-                            default_ds,
-                            time_properties_ds,
-                        );
-                        bmca_timeout.set(timer.after(self.port_ds.announce_interval()));
+                Either::First(_) => {
+                    log::trace!("running bmca");
+                    match clock.try_borrow() {
+                        Ok(clock) => {
+                            self.run_bmca(
+                                clock.now(),
+                                announce_messages,
+                                default_ds,
+                                time_properties_ds,
+                            );
+                            bmca_timeout.set(timer.after(self.port_ds.announce_interval()));
+                        }
+                        Err(_) => log::error!("failed to get current time"),
                     }
-                    Err(_) => log::error!("failed to get current time"),
-                },
+                }
                 Either::Second(Ok(packet)) => {
                     match (clock.try_borrow_mut(), filter.try_borrow_mut()) {
                         (Ok(mut clock), Ok(mut filter)) => {
@@ -90,6 +93,7 @@ impl<P: NetworkPort> Port<P> {
                             // If the received packet allowed the (slave) state to calculate its
                             // offset from the master, update the local clock
                             if let Ok(measurement) = self.extract_measurement() {
+                                log::info!("finished measurement");
                                 let (offset, freq_corr) = filter.absorb(measurement);
                                 match time_properties_ds.try_borrow() {
                                     Ok(time_properties_ds) => {
@@ -97,6 +101,7 @@ impl<P: NetworkPort> Port<P> {
                                         clock
                                             .adjust(offset, freq_corr, &time_properties_ds)
                                             .expect("Unexpected error adjusting clock");
+                                        log::info!("adjusted clock");
                                     }
                                     Err(_) => log::error!("could not retrieve time properties"),
                                 }
@@ -261,11 +266,13 @@ impl<P: NetworkPort> Port<P> {
         default_ds: &DefaultDS,
     ) -> Result<()> {
         let message = Message::deserialize(&packet.data)?;
+        log::trace!("received message: {:?}", message);
 
         if message.header().sdo_id() == default_ds.sdo_id
             && message.header().domain_number() == default_ds.domain_number
         {
             match &mut self.port_ds.port_state {
+                PortState::Listening => {}
                 PortState::Slave(state) => {
                     state
                         .handle_message(

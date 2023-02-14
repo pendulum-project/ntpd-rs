@@ -1,7 +1,10 @@
 #![cfg(feature = "std")]
 
-use super::{NetworkPacket, NetworkPort, NetworkRuntime};
+use std::vec::Vec;
+
 use crate::time::Instant;
+
+use super::{NetworkPacket, NetworkPort, NetworkRuntime};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TestNetworkPacket {

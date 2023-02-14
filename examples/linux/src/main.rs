@@ -100,8 +100,14 @@ async fn main() {
     let mut network_runtime = LinuxRuntime::new(args.hardware_clock.is_some(), &clock);
     let clock_identity = ClockIdentity(get_clock_id().expect("Could not get clock identity"));
 
-    let default_ds =
-        DefaultDS::new_ordinary_clock(clock_identity, 128, 128, args.domain, false, args.sdo);
+    let default_ds = DefaultDS::new_ordinary_clock(
+        clock_identity,
+        args.priority_1,
+        args.priority_2,
+        args.domain,
+        false,
+        args.sdo,
+    );
     let time_properties_ds =
         TimePropertiesDS::new_arbitrary(false, false, TimeSource::InternalOscillator);
     let port_ds = PortDS::new(

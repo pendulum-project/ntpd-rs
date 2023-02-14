@@ -44,7 +44,7 @@ impl PortDS {
 
         PortDS {
             port_identity,
-            port_state: PortState::Initializing,
+            port_state: PortState::Listening,
             log_min_delay_req_interval,
             mean_link_delay,
             log_announce_interval,

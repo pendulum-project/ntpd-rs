@@ -11,7 +11,7 @@ type Result<T, E = SlaveError> = core::result::Result<T, E>;
 
 #[derive(Debug)]
 pub struct SlaveState {
-    pub(crate) remote_master: PortIdentity,
+    pub(in crate::port) remote_master: PortIdentity,
 
     handshake: Handshake,
     delay_handshake: DelayHandshake,
@@ -84,7 +84,7 @@ impl SlaveState {
         port_identity: PortIdentity,
     ) -> Result<()> {
         // Only listen to master
-        if message.header().source_port_identity() != self.remote_master {
+        if message.header().source_port_identity() == self.remote_master {
             match message {
                 Message::Sync(message) => {
                     self.handle_sync(message, current_time, network_port, port_identity)
@@ -122,6 +122,7 @@ impl SlaveState {
                             + Duration::from(message.header().correction_field()),
                     }
                 };
+                log::trace!("handshake progress: {:?}", self.handshake);
 
                 if !self.delay_handshake.finished()
                     || self.next_delay_measurement.unwrap_or_default() < current_time
@@ -137,15 +138,15 @@ impl SlaveState {
                         .send_time_critical(&delay_req_encode)
                         .await
                         .expect("Program error: missing timestamp id");
-                    // TODO: This does nothing currently
-                    self.finish_delay_measurement();
                     self.delay_handshake = DelayHandshake::AfterSync {
                         delay_id,
                         delay_send_time,
                     };
+                    log::trace!("delay handshake progress: {:?}", self.delay_handshake);
                 } else {
                     // TODO: Seems very weird to me
                     self.delay_handshake = DelayHandshake::Initial;
+                    log::trace!("delay handshake progress: {:?}", self.delay_handshake);
                 }
 
                 if let Some(follow_up) = self.pending_followup {
@@ -157,7 +158,10 @@ impl SlaveState {
             // Wrong state
             Handshake::AfterSync { .. }
             | Handshake::AfterFollowUp { .. }
-            | Handshake::AfterDelayResp { .. } => Err(SlaveError::OutOfSequence),
+            | Handshake::AfterDelayResp { .. } => {
+                log::error!("unexpected sync message");
+                Err(SlaveError::OutOfSequence)
+            }
         }
     }
 
@@ -181,6 +185,7 @@ impl SlaveState {
                         sync_recv_time,
                         sync_send_time,
                     };
+                    log::trace!("handshake progress: {:?}", self.handshake);
 
                     Ok(())
                 } else {
@@ -192,7 +197,11 @@ impl SlaveState {
             // Wrong state
             Handshake::Initial
             | Handshake::AfterFollowUp { .. }
-            | Handshake::AfterDelayResp { .. } => Err(SlaveError::OutOfSequence),
+            | Handshake::AfterDelayResp { .. } => {
+                log::error!("unexpected follow-up message");
+                self.pending_followup = Some(message);
+                Err(SlaveError::OutOfSequence)
+            }
         }
     }
 
@@ -219,6 +228,7 @@ impl SlaveState {
                             sync_send_time,
                             delay_recv_time,
                         };
+                        log::trace!("handshake progress: {:?}", self.handshake);
 
                         // Calculate when we should next measure delay
                         //  note that sync_recv_time should always be set here, but if it isn't,
@@ -243,6 +253,7 @@ impl SlaveState {
             }
             // Wrong state
             Handshake::Initial | Handshake::AfterSync { .. } | Handshake::AfterDelayResp { .. } => {
+                log::error!("unexpected delay response message");
                 Err(SlaveError::OutOfSequence)
             }
         }
@@ -265,11 +276,13 @@ impl SlaveState {
                             / 2;
 
                         self.delay_handshake = DelayHandshake::AfterMeasurement { mean_delay };
+                        log::trace!("delay handshake progress: {:?}", self.delay_handshake);
                         self.handshake = Handshake::AfterFollowUp {
                             sync_id,
                             sync_recv_time,
                             sync_send_time,
                         };
+                        log::trace!("handshake progress: {:?}", self.handshake);
 
                         Ok(())
                     }
@@ -306,6 +319,7 @@ impl SlaveState {
                         };
 
                         self.handshake = Handshake::Initial;
+                        log::trace!("handshake progress: {:?}", self.handshake);
 
                         Ok(result)
                     }

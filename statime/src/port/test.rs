@@ -7,6 +7,7 @@ use fixed::traits::ToFixed;
 use crate::datastructures::common::{ClockIdentity, TimeSource};
 use crate::datastructures::datasets::{DelayMechanism, PortDS, TimePropertiesDS};
 use crate::network::test::TestRuntimePort;
+use crate::port::sequence_id::SequenceIdGenerator;
 use crate::{
     bmc::bmca::Bmca,
     datastructures::{
@@ -18,11 +19,11 @@ use crate::{
     time::{Duration, Instant},
 };
 
-use super::{SequenceIdGenerator, SlaveState};
+use super::SlaveState;
 
 fn test_port_data(network_runtime: &mut TestRuntime) -> PortData<TestRuntimePort> {
-    let tc_port = network_runtime.open("".to_owned(), true).unwrap();
-    let nc_port = network_runtime.open("".to_owned(), false).unwrap();
+    let tc_port = network_runtime.open((), true).unwrap();
+    let nc_port = network_runtime.open((), false).unwrap();
 
     let identity = PortIdentity {
         clock_identity: ClockIdentity([1, 0, 0, 0, 0, 0, 0, 0]),

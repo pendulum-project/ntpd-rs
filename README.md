@@ -18,7 +18,7 @@ For compiling this software we advise using the latest version of cargo/rustc as
 
 Because of the use of ports 319 and 320 in the PTP protocol, the code here needs to be run as root. It is best to build the code as a non-root user with
 ```
-cargo build
+cargo +nightly build
 ```
 and then run it as root with
 ```
