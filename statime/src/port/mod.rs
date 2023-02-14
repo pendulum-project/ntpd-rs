@@ -2,7 +2,8 @@ use core::cell::RefCell;
 use std::convert::Infallible;
 use std::ops::DerefMut;
 
-use embassy_futures::select::Either;
+use embassy_futures::select;
+use embassy_futures::select::{Either, Either4};
 use futures::pin_mut;
 
 pub use measurement::Measurement;
@@ -13,8 +14,7 @@ use crate::datastructures::common::{PortIdentity, TimeSource, Timestamp};
 use crate::datastructures::datasets::{DefaultDS, PortDS, TimePropertiesDS};
 use crate::datastructures::messages::{AnnounceMessage, Message, MessageBuilder};
 use crate::filters::Filter;
-use crate::network::{NetworkPacket, NetworkPort, NetworkRuntime};
-use crate::port::error::{PortError, Result};
+use crate::network::{NetworkPort, NetworkRuntime};
 use crate::port::state::{MasterState, PortState, SlaveState};
 use crate::time::Instant;
 
@@ -67,49 +67,176 @@ impl<P: NetworkPort> Port<P> {
     ) -> Infallible {
         let bmca_timeout = timer.after(self.port_ds.announce_interval());
         pin_mut!(bmca_timeout);
+        let announce_receipt_timeout = timer.after(self.port_ds.announce_receipt_interval());
+        pin_mut!(announce_receipt_timeout);
+        let sync_timeout = timer.after(self.port_ds.sync_interval());
+        pin_mut!(sync_timeout);
+        let announce_timeout = timer.after(self.port_ds.announce_interval());
+        pin_mut!(announce_timeout);
 
         loop {
+            let timeouts = select::select4(
+                &mut bmca_timeout,
+                &mut announce_receipt_timeout,
+                &mut sync_timeout,
+                &mut announce_timeout,
+            );
             let packet = self.network_port.recv();
-            match embassy_futures::select::select(&mut bmca_timeout, packet).await {
-                Either::First(_) => {
-                    log::trace!("running bmca");
-                    match clock.try_borrow() {
-                        Ok(clock) => {
-                            self.run_bmca(
-                                clock.now(),
-                                announce_messages,
-                                default_ds,
-                                time_properties_ds,
-                            );
-                            bmca_timeout.set(timer.after(self.port_ds.announce_interval()));
+            match select::select(timeouts, packet).await {
+                Either::First(timeout) => match timeout {
+                    Either4::First(_) => {
+                        log::trace!("running bmca");
+                        match clock.try_borrow() {
+                            Ok(clock) => {
+                                self.run_bmca(
+                                    clock.now(),
+                                    announce_messages,
+                                    default_ds,
+                                    time_properties_ds,
+                                );
+                            }
+                            Err(_) => log::error!("failed to get current time"),
                         }
-                        Err(_) => log::error!("failed to get current time"),
+                        bmca_timeout.set(timer.after(self.port_ds.announce_interval()));
                     }
-                }
-                Either::Second(Ok(packet)) => {
-                    match (clock.try_borrow_mut(), filter.try_borrow_mut()) {
-                        (Ok(mut clock), Ok(mut filter)) => {
-                            self.handle_network(&packet, clock.now(), default_ds).await;
-                            // If the received packet allowed the (slave) state to calculate its
-                            // offset from the master, update the local clock
-                            if let Ok(measurement) = self.extract_measurement() {
-                                log::info!("finished measurement");
-                                let (offset, freq_corr) = filter.absorb(measurement);
-                                match time_properties_ds.try_borrow() {
-                                    Ok(time_properties_ds) => {
-                                        // TODO: Currently returns bool instead of ()
-                                        clock
-                                            .adjust(offset, freq_corr, &time_properties_ds)
-                                            .expect("Unexpected error adjusting clock");
-                                        log::info!("adjusted clock");
-                                    }
-                                    Err(_) => log::error!("could not retrieve time properties"),
-                                }
+                    Either4::Second(_) => {
+                        match self.port_ds.port_state {
+                            PortState::Master(_) => {}
+                            _ => {
+                                log::info!(
+                                    "New state for port: {} -> Master",
+                                    self.port_ds.port_state
+                                );
+                                self.port_ds.port_state = PortState::Master(MasterState::new());
                             }
                         }
-                        _ => log::warn!("multiple ports are in slave state (which is wrong)"),
+                        announce_timeout.set(timer.after(self.port_ds.announce_receipt_interval()));
+                    }
+                    Either4::Third(_) => {
+                        log::trace!("sending sync message");
+                        match clock.try_borrow() {
+                            Ok(clock) => {
+                                if let PortState::Master(master) = &mut self.port_ds.port_state {
+                                    let sync_message = MessageBuilder::new()
+                                        .sequence_id(master.sync_seq_ids.generate())
+                                        .source_port_identity(self.port_ds.port_identity)
+                                        .sync_message(Timestamp::from(clock.now()));
+
+                                    let sync_message_encode = sync_message.serialize_vec().unwrap();
+                                    self.network_port.send(&sync_message_encode);
+
+                                    // TODO: Is the follow up a config?
+                                    let follow_up_message = MessageBuilder::new()
+                                        .sequence_id(master.sync_seq_ids.generate())
+                                        .source_port_identity(self.port_ds.port_identity)
+                                        .follow_up_message(Timestamp::from(clock.now()));
+
+                                    let follow_up_message_encode =
+                                        follow_up_message.serialize_vec().unwrap();
+                                    self.network_port.send(&follow_up_message_encode);
+                                }
+                            }
+                            Err(_) => log::error!("failed to get current time"),
+                        }
+                        sync_timeout.set(timer.after(self.port_ds.sync_interval()));
+                    }
+                    Either4::Fourth(_) => {
+                        log::trace!("sending announce message");
+                        if let PortState::Master(master) = &mut self.port_ds.port_state {
+                            let announce_message = MessageBuilder::new()
+                                .sequence_id(master.announce_seq_ids.generate())
+                                .source_port_identity(self.port_ds.port_identity)
+                                .announce_message(
+                                    Timestamp::default(),             //origin_timestamp: Timestamp,
+                                    0, // TODO implement current_utc_offset: u16,
+                                    default_ds.priority_1, //grandmaster_priority_1: u8,
+                                    default_ds.clock_quality, //grandmaster_clock_quality: ClockQuality,
+                                    default_ds.priority_2,    //grandmaster_priority_2: u8,
+                                    default_ds.clock_identity, //grandmaster_identity: ClockIdentity,
+                                    0,                         // TODO implement steps_removed: u16,
+                                    TimeSource::from_primitive(0xa0), // TODO implement time_source: TimeSource,
+                                );
+
+                            let announce_message_encode = announce_message.serialize_vec().unwrap();
+                            self.network_port.send(&announce_message_encode);
+                        }
+                        announce_timeout.set(timer.after(self.port_ds.announce_interval()));
+                    }
+                },
+                Either::Second(Ok(packet)) => {
+                    let message = match Message::deserialize(&packet.data) {
+                        Ok(message) => {
+                            log::trace!("received message: {:?}", message);
+                            message
+                        }
+                        Err(error) => {
+                            log::error!("received invalid message: {:?}", error);
+                            continue;
+                        }
+                    };
+
+                    if message.header().sdo_id() == default_ds.sdo_id
+                        && message.header().domain_number() == default_ds.domain_number
+                    {
+                        match clock.try_borrow_mut() {
+                            Ok(mut clock) => {
+                                // Only process messages from the same domai
+                                if let Message::Announce(announce) = &message {
+                                    self.bmca
+                                        .register_announce_message(announce, clock.now().into());
+
+                                    announce_receipt_timeout
+                                        .set(timer.after(self.port_ds.announce_receipt_interval()));
+                                } else {
+                                    self.port_ds
+                                        .port_state
+                                        .handle_message(
+                                            message,
+                                            clock.now(),
+                                            &mut self.network_port,
+                                            self.port_ds.port_identity,
+                                        )
+                                        .await;
+
+                                    // If the received packet allowed the (slave) state to calculate its
+                                    // offset from the master, update the local clock
+                                    if let PortState::Slave(state) = &mut self.port_ds.port_state {
+                                        if let Ok(measurement) = state.extract_measurement() {
+                                            match filter.try_borrow_mut() {
+                                                Ok(mut filter) => {
+                                                    let (offset, freq_corr) =
+                                                        filter.absorb(measurement);
+                                                    match time_properties_ds.try_borrow() {
+                                                        Ok(time_properties_ds) => {
+                                                            // TODO: Currently returns bool instead of ()
+                                                            clock
+                                                                .adjust(
+                                                                    offset,
+                                                                    freq_corr,
+                                                                    &time_properties_ds,
+                                                                )
+                                                                .expect(
+                                                                    "Unexpected error adjusting clock",
+                                                                );
+                                                        }
+                                                        Err(_) => {
+                                                            log::error!(
+                                                                "could not retrieve time properties"
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                Err(_) => log::error!("could not retrieve filter"),
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            _ => log::warn!("multiple ports are in slave state (which is wrong)"),
+                        }
                     }
                 }
+
                 Either::Second(Err(error)) => panic!("{:?}", error),
             }
         }
@@ -156,162 +283,6 @@ impl<P: NetworkPort> Port<P> {
                 );
             }
             Err(_) => log::error!("could not change time properties"),
-        }
-    }
-
-    // pub fn handle_alarm(&mut self, id: W::WatchId, current_time: Instant, default_ds: &DefaultDS) {
-    //     // When the announce timout expires, it means there
-    //     // have been no announce messages in a while, so we
-    //     // force a switch to the master state
-    //     if id == self.announce_timeout_watch.id() {
-    //         log::info!("Announce interval timeout");
-    //
-    //         self.port_ds.port_state = PortState::Master(MasterState::new());
-    //
-    //         log::info!("New state for port: Master");
-    //
-    //         // Start sending announce messages
-    //         self.announce_watch
-    //             .set_alarm(self.port_ds.announce_interval());
-    //
-    //         // Start sending sync messages
-    //         self.sync_watch.set_alarm(self.port_ds.sync_interval());
-    //     }
-    //
-    //     // When the announce watch expires, send an announce message and restart
-    //     if id == self.announce_watch.id() {
-    //         self.send_announce_message(default_ds);
-    //         self.announce_watch
-    //             .set_alarm(self.port_ds.announce_interval());
-    //     }
-    //
-    //     // When the sync watch expires, send a sync message and restart
-    //     if id == self.sync_watch.id() {
-    //         self.send_sync_message(current_time);
-    //
-    //         // TODO: Is the follow up a config?
-    //         self.send_follow_up_message(current_time);
-    //
-    //         self.sync_watch.set_alarm(self.port_ds.sync_interval());
-    //     }
-    // }
-
-    /// Send an announce message
-    pub fn send_announce_message(&mut self, default_ds: &DefaultDS) -> Result<()> {
-        match &mut self.port_ds.port_state {
-            PortState::Master(master) => {
-                let announce_message = MessageBuilder::new()
-                    .sequence_id(master.announce_seq_ids.generate())
-                    .source_port_identity(self.port_ds.port_identity)
-                    .announce_message(
-                        Timestamp::default(),             //origin_timestamp: Timestamp,
-                        0,                                // TODO implement current_utc_offset: u16,
-                        default_ds.priority_1,            //grandmaster_priority_1: u8,
-                        default_ds.clock_quality,         //grandmaster_clock_quality: ClockQuality,
-                        default_ds.priority_2,            //grandmaster_priority_2: u8,
-                        default_ds.clock_identity,        //grandmaster_identity: ClockIdentity,
-                        0,                                // TODO implement steps_removed: u16,
-                        TimeSource::from_primitive(0xa0), // TODO implement time_source: TimeSource,
-                    );
-
-                let announce_message_encode = announce_message.serialize_vec().unwrap();
-                self.network_port.send(&announce_message_encode);
-
-                Ok(())
-            }
-            _ => Err(PortError::InvalidState),
-        }
-    }
-
-    /// Send a sync message
-    pub fn send_sync_message(&mut self, current_time: Instant) -> Result<()> {
-        match &mut self.port_ds.port_state {
-            PortState::Master(master) => {
-                let sync_message = MessageBuilder::new()
-                    .sequence_id(master.sync_seq_ids.generate())
-                    .source_port_identity(self.port_ds.port_identity)
-                    .sync_message(Timestamp::from(current_time));
-
-                let sync_message_encode = sync_message.serialize_vec().unwrap();
-                self.network_port.send(&sync_message_encode);
-
-                Ok(())
-            }
-            _ => Err(PortError::InvalidState),
-        }
-    }
-
-    /// Send a follow up message
-    pub fn send_follow_up_message(&mut self, current_time: Instant) -> Result<()> {
-        match &mut self.port_ds.port_state {
-            PortState::Master(master) => {
-                let follow_up_message = MessageBuilder::new()
-                    .sequence_id(master.sync_seq_ids.generate())
-                    .source_port_identity(self.port_ds.port_identity)
-                    .follow_up_message(Timestamp::from(current_time));
-
-                let follow_up_message_encode = follow_up_message.serialize_vec().unwrap();
-                self.network_port.send(&follow_up_message_encode);
-
-                Ok(())
-            }
-            _ => Err(PortError::InvalidState),
-        }
-    }
-
-    pub async fn handle_network(
-        &mut self,
-        packet: &NetworkPacket,
-        current_time: Instant,
-        default_ds: &DefaultDS,
-    ) -> Result<()> {
-        let message = Message::deserialize(&packet.data)?;
-        log::trace!("received message: {:?}", message);
-
-        if message.header().sdo_id() == default_ds.sdo_id
-            && message.header().domain_number() == default_ds.domain_number
-        {
-            match &mut self.port_ds.port_state {
-                PortState::Listening => {}
-                PortState::Slave(state) => {
-                    state
-                        .handle_message(
-                            message,
-                            current_time,
-                            &mut self.network_port,
-                            self.port_ds.port_identity,
-                        )
-                        .await?
-                }
-                PortState::Master(master) => {
-                    master
-                        .handle_message(
-                            message,
-                            current_time,
-                            &mut self.network_port,
-                            self.port_ds.port_identity,
-                        )
-                        .await?
-                }
-                _ => unimplemented!(),
-            }
-
-            if let Message::Announce(announce) = message {
-                self.bmca
-                    .register_announce_message(&announce, current_time.into());
-            }
-        }
-
-        Ok(())
-    }
-
-    pub fn extract_measurement(&mut self) -> Result<Measurement> {
-        match &mut self.port_ds.port_state {
-            PortState::Slave(state) => {
-                let measurement = state.extract_measurement()?;
-                Ok(measurement)
-            }
-            _ => Err(PortError::InvalidState),
         }
     }
 

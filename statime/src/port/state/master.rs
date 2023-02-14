@@ -1,3 +1,4 @@
+use crate::clock::Timer;
 use crate::datastructures::common::{PortIdentity, Timestamp};
 use crate::datastructures::messages::{DelayReqMessage, Message, MessageBuilder};
 use crate::network::NetworkPort;
@@ -7,10 +8,10 @@ use crate::time::Instant;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct MasterState {
-    pub(crate) announce_seq_ids: SequenceIdGenerator,
-    pub(crate) sync_seq_ids: SequenceIdGenerator,
-    pub(crate) follow_up_seq_ids: SequenceIdGenerator,
-    pub(crate) delay_resp_seq_ids: SequenceIdGenerator,
+    pub(in crate::port) announce_seq_ids: SequenceIdGenerator,
+    pub(in crate::port) sync_seq_ids: SequenceIdGenerator,
+    pub(in crate::port) follow_up_seq_ids: SequenceIdGenerator,
+    pub(in crate::port) delay_resp_seq_ids: SequenceIdGenerator,
 }
 
 impl MasterState {
@@ -22,6 +23,8 @@ impl MasterState {
             delay_resp_seq_ids: SequenceIdGenerator::new(),
         }
     }
+
+    pub async fn run_master(&mut self, timer: &impl Timer) {}
 
     pub async fn handle_message<P: NetworkPort>(
         &mut self,

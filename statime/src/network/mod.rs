@@ -59,5 +59,11 @@ pub trait NetworkPort {
     async fn send_time_critical(&mut self, data: &[u8]) -> Result<Instant, Self::Error>;
 
     /// Wait until a message is received
+    ///
+    /// # Cancel safety
+    ///
+    /// This method **MUST BE** cancel safe. Otherwise, if recv is used as the event in a select
+    /// statement and some other branch completes first, it is not guaranteed that no messages were
+    /// received on this socket.
     async fn recv(&mut self) -> Result<NetworkPacket, Self::Error>;
 }
