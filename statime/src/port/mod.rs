@@ -1,9 +1,18 @@
+use core::cell::RefCell;
+use std::convert::Infallible;
+use std::ops::DerefMut;
+
+use embassy_futures::select::Either;
+use futures::pin_mut;
+
 pub use measurement::Measurement;
 
 use crate::bmc::bmca::{Bmca, RecommendedState};
+use crate::clock::{Clock, Timer};
 use crate::datastructures::common::{PortIdentity, TimeSource, Timestamp};
 use crate::datastructures::datasets::{DefaultDS, PortDS, TimePropertiesDS};
 use crate::datastructures::messages::{AnnounceMessage, Message, MessageBuilder};
+use crate::filters::Filter;
 use crate::network::{NetworkPacket, NetworkPort, NetworkRuntime};
 use crate::port::error::{PortError, Result};
 use crate::port::state::{MasterState, PortState, SlaveState};
@@ -17,7 +26,7 @@ pub mod state;
 mod test;
 
 pub struct Port<P> {
-    pub(crate) port_ds: PortDS,
+    port_ds: PortDS,
     network_port: P,
     bmca: Bmca,
 }
@@ -47,14 +56,101 @@ impl<P> Port<P> {
 }
 
 impl<P: NetworkPort> Port<P> {
-    pub async fn run_port(&mut self, current_time: Instant, default_ds: &DefaultDS) -> Measurement {
+    pub async fn run_port<C: Clock, F: Filter, const N: usize>(
+        &mut self,
+        timer: &impl Timer,
+        clock: &RefCell<C>,
+        filter: &RefCell<F>,
+        default_ds: &DefaultDS,
+        time_properties_ds: &RefCell<TimePropertiesDS>,
+        announce_messages: &RefCell<[Option<(AnnounceMessage, Timestamp, PortIdentity)>; N]>,
+    ) -> Infallible {
+        let bmca_timeout = timer.after(self.port_ds.announce_interval());
+        pin_mut!(bmca_timeout);
+
         loop {
-            let packet = self.network_port.recv().await.unwrap();
-            // TODO: Is current_time up-to-date?
-            self.handle_network(&packet, current_time, default_ds).await;
-            if let Ok(measurement) = self.extract_measurement() {
-                return measurement;
+            let packet = self.network_port.recv();
+            match embassy_futures::select::select(&mut bmca_timeout, packet).await {
+                Either::First(_) => match clock.try_borrow() {
+                    Ok(clock) => {
+                        self.run_bmca(
+                            clock.now(),
+                            announce_messages,
+                            default_ds,
+                            time_properties_ds,
+                        );
+                        bmca_timeout.set(timer.after(self.port_ds.announce_interval()));
+                    }
+                    Err(_) => log::error!("failed to get current time"),
+                },
+                Either::Second(Ok(packet)) => {
+                    match (clock.try_borrow_mut(), filter.try_borrow_mut()) {
+                        (Ok(mut clock), Ok(mut filter)) => {
+                            self.handle_network(&packet, clock.now(), default_ds).await;
+                            // If the received packet allowed the (slave) state to calculate its
+                            // offset from the master, update the local clock
+                            if let Ok(measurement) = self.extract_measurement() {
+                                let (offset, freq_corr) = filter.absorb(measurement);
+                                match time_properties_ds.try_borrow() {
+                                    Ok(time_properties_ds) => {
+                                        // TODO: Currently returns bool instead of ()
+                                        clock
+                                            .adjust(offset, freq_corr, &time_properties_ds)
+                                            .expect("Unexpected error adjusting clock");
+                                    }
+                                    Err(_) => log::error!("could not retrieve time properties"),
+                                }
+                            }
+                        }
+                        _ => log::warn!("multiple ports are in slave state (which is wrong)"),
+                    }
+                }
+                Either::Second(Err(error)) => panic!("{:?}", error),
             }
+        }
+    }
+
+    fn run_bmca<const N: usize>(
+        &mut self,
+        current_time: Instant,
+        announce_messages: &RefCell<[Option<(AnnounceMessage, Timestamp, PortIdentity)>; N]>,
+        default_ds: &DefaultDS,
+        time_properties_ds: &RefCell<TimePropertiesDS>,
+    ) {
+        let erbest = self.take_best_port_announce_message(current_time);
+
+        let ebest = match announce_messages.try_borrow_mut() {
+            Ok(mut announce_messages) => {
+                // TODO: lelijk >:(
+                let index = (self.port_ds.port_identity.port_number - 1) as usize;
+                announce_messages[index] = erbest;
+                Bmca::find_best_announce_message(announce_messages.into_iter().flatten())
+            }
+            Err(_) => {
+                log::error!("could not access announce messages for BMCA");
+                return;
+            }
+        };
+
+        // TODO: Cleanup
+        let erbest = erbest
+            .as_ref()
+            .map(|(message, _, identity)| (message, identity));
+        let ebest = ebest
+            .as_ref()
+            .map(|(message, _, identity)| (message, identity));
+
+        // Run the state decision
+        match time_properties_ds.try_borrow_mut() {
+            Ok(mut time_properties_ds) => {
+                self.perform_state_decision(
+                    ebest,
+                    erbest,
+                    default_ds,
+                    time_properties_ds.deref_mut(),
+                );
+            }
+            Err(_) => log::error!("could not change time properties"),
         }
     }
 

@@ -1,7 +1,5 @@
 //! Implementation of the abstract network types for the linux platform
 
-use arrayvec::ArrayVec;
-
 use crate::{
     clock::{timespec_into_instant, LinuxClock},
     network::linux_syscall::driver_enable_hardware_timestamping,
@@ -23,6 +21,7 @@ use statime::{
     time::Instant,
 };
 use std::{
+    io,
     io::{ErrorKind, IoSliceMut},
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     os::fd::AsRawFd,
@@ -398,7 +397,9 @@ impl NetworkPort for LinuxNetworkPort {
             let mut buffer = [0; 2048];
             let (received_len, _) = self.ntc_socket.recv_from(&mut buffer).await?;
             Ok(NetworkPacket {
-                data: buffer[..received_len].into(),
+                data: buffer[..received_len]
+                    .try_into()
+                    .map_err(|_| io::Error::new(ErrorKind::InvalidData, "too long"))?,
                 timestamp: clock.now(),
             })
         };
@@ -420,7 +421,7 @@ impl LinuxNetworkPort {
         clock: &LinuxClock,
         hardware_timestamping: bool,
     ) -> Result<NetworkPacket, std::io::Error> {
-        let mut read_buf = [0u8; 255];
+        let mut read_buf = [0u8; 2048];
         let mut io_vec = [IoSliceMut::new(&mut read_buf)];
         let mut cmsg = cmsg_space!(Timestamps);
 
@@ -447,31 +448,15 @@ impl LinuxNetworkPort {
                 } else {
                     timespec_into_instant(timestamps.system)
                 }
-            }
-
-            // TODO: Add a length check; there has to be a better way...
-            let mut data = ArrayVec::<u8, 255>::new();
-            for item in io_vec[0].as_slice()[0..recv.bytes].to_vec() {
-                data.push(item);
-            }
-
-            tx.send(NetworkPacket {
-                data: data,
-                timestamp: ts,
             })
-            .map(|timestamps| {
-                if hardware_timestamping {
-                    timespec_into_instant(timestamps.hw_raw)
-                } else {
-                    timespec_into_instant(timestamps.system)
-                }
-            }))
-        .unwrap_or_else(|| clock.now());
+            .unwrap_or_else(|| clock.now());
 
         let received_len = received.bytes;
 
         Ok(NetworkPacket {
-            data: read_buf[..received_len].into(),
+            data: read_buf[..received_len]
+                .try_into()
+                .map_err(|_| io::Error::new(ErrorKind::InvalidData, "too long"))?,
             timestamp,
         })
     }

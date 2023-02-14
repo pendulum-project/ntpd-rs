@@ -1,14 +1,15 @@
 use arrayvec::ArrayVec;
+use std::cell::RefCell;
+use std::convert::Infallible;
 
 use crate::clock::{Clock, Timer};
-use crate::datastructures::common::PortIdentity;
+use crate::datastructures::common::{PortIdentity, Timestamp};
 use crate::datastructures::datasets::{CurrentDS, DefaultDS, ParentDS, PortDS, TimePropertiesDS};
+use crate::datastructures::messages::AnnounceMessage;
 use crate::filters::Filter;
 use crate::network::NetworkPort;
 use crate::network::NetworkRuntime;
 use crate::port::Port;
-use crate::time::Duration;
-use futures::pin_mut;
 
 /// Object that acts as the central point of this library.
 /// It is the main instance of the running protocol.
@@ -18,10 +19,12 @@ pub struct PtpInstance<P, C, F, const N: usize> {
     default_ds: DefaultDS,
     current_ds: Option<CurrentDS>,
     parent_ds: Option<ParentDS>,
-    time_properties_ds: TimePropertiesDS,
+    time_properties_ds: RefCell<TimePropertiesDS>,
+    // TODO: Might as well be an array
     ports: ArrayVec<Port<P>, N>,
-    local_clock: C,
-    filter: F,
+    local_clock: RefCell<C>,
+    filter: RefCell<F>,
+    announce_messages: RefCell<[Option<(AnnounceMessage, Timestamp, PortIdentity)>; N]>,
 }
 
 impl<P, C: Clock, F> PtpInstance<P, C, F, 1> {
@@ -49,20 +52,22 @@ impl<P, C: Clock, F> PtpInstance<P, C, F, 1> {
                 port_number: 1,
             }
         );
-
         PtpInstance {
             default_ds,
             current_ds: None,
             parent_ds: None,
-            time_properties_ds,
+            time_properties_ds: RefCell::new(time_properties_ds),
             ports: ArrayVec::new(),
-            local_clock,
-            filter,
+            local_clock: RefCell::new(local_clock),
+            filter: RefCell::new(filter),
+            announce_messages: RefCell::new([None; 1]),
         }
         .with_port(port_ds, runtime, interface)
         .await
     }
+}
 
+impl<P, C: Clock, F, const N: usize> PtpInstance<P, C, F, N> {
     /// Create a new instance
     ///
     /// - `config`: The configuration of the ptp instance
@@ -78,10 +83,11 @@ impl<P, C: Clock, F> PtpInstance<P, C, F, 1> {
             default_ds,
             current_ds: None,
             parent_ds: None,
-            time_properties_ds,
+            time_properties_ds: RefCell::new(time_properties_ds),
             ports: ArrayVec::new(),
-            local_clock,
-            filter,
+            local_clock: RefCell::new(local_clock),
+            filter: RefCell::new(filter),
+            announce_messages: RefCell::new([None; N]),
         }
     }
 
@@ -109,71 +115,21 @@ impl<P, C: Clock, F> PtpInstance<P, C, F, 1> {
 }
 
 impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N> {
-    // /// Let the instance handle a received network packet.
-    // ///
-    // /// This should be called for any and all packets that were received on the opened sockets of the network runtime.
-    // pub fn handle_network(&mut self, packet: &NetworkPacket) {
-    //     for port in &mut self.ports {
-    //         port.handle_network(packet, port.bmca_watch.now(), &self.default_ds);
-    //
-    //         // TODO: Verify this is desired behavior
-    //         if let Ok(data) = port.extract_measurement() {
-    //             let (offset, freq_corr) = self.filter.absorb(data);
-    //             self.local_clock
-    //                 .adjust(offset, freq_corr, &self.time_properties_ds)
-    //                 .expect("Unexpected error adjusting clock");
-    //         }
-    //     }
-    // }
-
-    pub async fn run(&mut self, timer: &impl Timer) -> ! {
+    pub async fn run(&mut self, timer: &impl Timer) -> [Infallible; N] {
         log::info!("Running!");
 
-        // TODO: Move this to port?
-        let bmca_timeout = timer.after(Duration::from_secs(1));
-        pin_mut!(bmca_timeout);
-
-        loop {
-            // TODO: Change to support multiple ports
-            for port in &mut self.ports {
-                let current_time = self.local_clock.now();
-                let run_port = port.run_port(current_time, &self.default_ds);
-
-                match embassy_futures::select::select(&mut bmca_timeout, run_port).await {
-                    embassy_futures::select::Either::First(_) => {
-                        self.run_bmca();
-                        bmca_timeout.set(timer.after(Duration::from_secs(1)));
-                    }
-                    embassy_futures::select::Either::Second(data) => {
-                        let (offset, freq_corr) = self.filter.absorb(data);
-                        self.local_clock
-                            .adjust(offset, freq_corr, &self.time_properties_ds)
-                            .expect("Unexpected error adjusting clock");
-                    }
-                }
-            }
-        }
-    }
-
-    fn run_bmca(&mut self) {
-        // TODO: Change to support multiple ports
-        for port in &mut self.ports {
-            // Currently we only have one port, so erbest is also automatically our ebest
-            let current_time = self.local_clock.now();
-            let erbest = port
-                .take_best_port_announce_message(current_time)
-                .map(|v| (v.0, v.2));
-            let erbest = erbest
-                .as_ref()
-                .map(|(message, identity)| (message, identity));
-
-            // Run the state decision
-            port.perform_state_decision(
-                erbest,
-                erbest,
+        let mut run_ports = self.ports.iter_mut().map(|port| {
+            port.run_port(
+                timer,
+                &self.local_clock,
+                &self.filter,
                 &self.default_ds,
-                &mut self.time_properties_ds,
-            );
-        }
+                &self.time_properties_ds,
+                &self.announce_messages,
+            )
+        });
+        let futures = [(); N].map(|_| run_ports.next().expect("not all ports were initialized"));
+
+        embassy_futures::join::join_array(futures).await
     }
 }

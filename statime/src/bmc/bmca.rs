@@ -79,24 +79,26 @@ impl Bmca {
     /// Finds the best announce message in the given iterator.
     /// The port identity in the tuple is the identity of the port that received the announce message.
     pub fn find_best_announce_message(
-        announce_messages: impl Iterator<Item = (AnnounceMessage, Timestamp, PortIdentity)>,
+        announce_messages: impl IntoIterator<Item = (AnnounceMessage, Timestamp, PortIdentity)>,
     ) -> Option<(AnnounceMessage, Timestamp, PortIdentity)> {
-        announce_messages.reduce(|(l, lts, lpid), (r, rts, rpid)| {
-            match ComparisonDataset::from_announce_message(&l, &lpid)
-                .compare(&ComparisonDataset::from_announce_message(&r, &rpid))
-            {
-                DatasetOrdering::Better | DatasetOrdering::BetterByTopology => (l, lts, lpid),
-                // We get errors if two announce messages are (functionally) the same, in that case we just pick the newer one
-                DatasetOrdering::Error1 | DatasetOrdering::Error2 => {
-                    if Instant::from(lts) >= Instant::from(rts) {
-                        (l, lts, lpid)
-                    } else {
-                        (r, rts, rpid)
+        announce_messages
+            .into_iter()
+            .reduce(|(l, lts, lpid), (r, rts, rpid)| {
+                match ComparisonDataset::from_announce_message(&l, &lpid)
+                    .compare(&ComparisonDataset::from_announce_message(&r, &rpid))
+                {
+                    DatasetOrdering::Better | DatasetOrdering::BetterByTopology => (l, lts, lpid),
+                    // We get errors if two announce messages are (functionally) the same, in that case we just pick the newer one
+                    DatasetOrdering::Error1 | DatasetOrdering::Error2 => {
+                        if Instant::from(lts) >= Instant::from(rts) {
+                            (l, lts, lpid)
+                        } else {
+                            (r, rts, rpid)
+                        }
                     }
+                    DatasetOrdering::WorseByTopology | DatasetOrdering::Worse => (r, rts, rpid),
                 }
-                DatasetOrdering::WorseByTopology | DatasetOrdering::Worse => (r, rts, rpid),
-            }
-        })
+            })
     }
 
     /// Calculates the recommended port state. This has to be run for every port.

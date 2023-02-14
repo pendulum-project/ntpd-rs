@@ -1,12 +1,9 @@
 use clap::{AppSettings, Parser};
-
+use fern::colors::Color;
 use statime::datastructures::common::{PortIdentity, TimeSource};
 use statime::datastructures::datasets::{DefaultDS, DelayMechanism, PortDS, TimePropertiesDS};
-use fern::colors::Color;
 use statime::{
-    datastructures::common::ClockIdentity,
-    filters::basic::BasicFilter,
-    ptp_instance::PtpInstance,
+    datastructures::common::ClockIdentity, filters::basic::BasicFilter, ptp_instance::PtpInstance,
 };
 use statime_linux::{
     clock::{LinuxClock, LinuxTimer, RawLinuxClock},
@@ -88,20 +85,19 @@ fn setup_logger(level: log::LevelFilter) -> Result<(), fern::InitError> {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
+
     setup_logger(args.loglevel).expect("Could not setup logging");
 
     println!("Starting PTP");
 
-    let (tx, rx) = mpsc::channel();
-    let mut network_runtime = LinuxRuntime::new(tx, args.hardware_clock.is_some());
-    let (clock, mut clock_runtime) = if let Some(hardware_clock) = &args.hardware_clock {
+    let clock = if let Some(hardware_clock) = &args.hardware_clock {
         LinuxClock::new(
             RawLinuxClock::get_from_file(hardware_clock).expect("Could not open hardware clock"),
         )
     } else {
         LinuxClock::new(RawLinuxClock::get_realtime_clock())
     };
-    let network_runtime = LinuxRuntime::new(args.hardware_clock.is_some(), &clock);
+    let mut network_runtime = LinuxRuntime::new(args.hardware_clock.is_some(), &clock);
     let clock_identity = ClockIdentity(get_clock_id().expect("Could not get clock identity"));
 
     let default_ds =
@@ -130,7 +126,8 @@ async fn main() {
         port_ds,
         &mut network_runtime,
         args.interface,
-    ).await;
+    )
+    .await;
 
     instance.run(&LinuxTimer).await;
 }

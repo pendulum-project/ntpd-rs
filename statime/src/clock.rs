@@ -21,6 +21,8 @@ pub trait Clock {
     ///
     /// The adjustment that is actually being done to the clock doesn't have to be exactly what is being given.
     /// The clock can (and should) do some filtering.
+    // TODO: Should both the PTP instance and the clock itself do filtering?
+    // TODO: Why does this return a bool?
     fn adjust(
         &mut self,
         time_offset: Duration,

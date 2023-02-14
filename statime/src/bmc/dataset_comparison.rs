@@ -38,7 +38,6 @@ impl ComparisonDataset {
         }
     }
 
-    // TODO: Use actual real data instead of the temporary struct
     pub fn from_own_data(data: &DefaultDS) -> Self {
         Self {
             gm_priority_1: data.priority_1,
