@@ -348,6 +348,7 @@ mod tests {
         let config: Config = toml::from_str(
             r#"
             log-filter = "info"
+            log-format = "full"
             [[peers]]
             addr = "example.com"
             [observe]
