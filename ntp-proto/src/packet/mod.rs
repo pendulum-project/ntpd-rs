@@ -287,9 +287,9 @@ impl<'a> NtpPacket<'a> {
         match version {
             3 => {
                 let (header, header_size) =
-                    NtpHeaderV3V4::deserialize(data).map_err(|e| e.force())?;
+                    NtpHeaderV3V4::deserialize(data).map_err(|e| e.generalize())?;
                 let mac = if header_size != data.len() {
-                    Some(Mac::deserialize(&data[header_size..]).map_err(|e| e.force())?)
+                    Some(Mac::deserialize(&data[header_size..]).map_err(|e| e.generalize())?)
                 } else {
                     None
                 };
@@ -303,19 +303,22 @@ impl<'a> NtpPacket<'a> {
                 let mut has_invalid_nts = false;
 
                 let (header, header_size) =
-                    NtpHeaderV3V4::deserialize(data).map_err(|e| e.force())?;
+                    NtpHeaderV3V4::deserialize(data).map_err(|e| e.generalize())?;
                 let (efdata, header_plus_fields_len) =
                     match ExtensionFieldData::deserialize(data, header_size, cipher) {
                         Ok(v) => v,
-                        Err(ParsingError::DecryptError(v)) => {
+                        Err(e) => {
+                            let ret = e.get_decrypt_error()?;
                             has_invalid_nts = true;
-                            v
+                            ret
                         }
-                        Err(e) => return Err(e.coerce().unwrap()), // Won't panic as DecryptError is caught above
                     };
 
                 let mac = if header_plus_fields_len != data.len() {
-                    Some(Mac::deserialize(&data[header_plus_fields_len..]).map_err(|e| e.force())?)
+                    Some(
+                        Mac::deserialize(&data[header_plus_fields_len..])
+                            .map_err(|e| e.generalize())?,
+                    )
                 } else {
                     None
                 };

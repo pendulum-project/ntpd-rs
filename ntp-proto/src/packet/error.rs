@@ -12,27 +12,27 @@ pub enum ParsingError<T> {
 }
 
 impl<T> ParsingError<T> {
-    pub(super) fn coerce<U>(self) -> Option<ParsingError<U>> {
+    pub(super) fn get_decrypt_error<U>(self) -> Result<T, ParsingError<U>> {
         match self {
-            ParsingError::InvalidVersion(v) => Some(ParsingError::InvalidVersion(v)),
-            ParsingError::IncorrectLength => Some(ParsingError::IncorrectLength),
+            ParsingError::InvalidVersion(v) => Err(ParsingError::InvalidVersion(v)),
+            ParsingError::IncorrectLength => Err(ParsingError::IncorrectLength),
             ParsingError::MalformedNtsExtensionFields => {
-                Some(ParsingError::MalformedNtsExtensionFields)
+                Err(ParsingError::MalformedNtsExtensionFields)
             }
-            ParsingError::MalformedNonce => Some(ParsingError::MalformedNonce),
-            ParsingError::DecryptError(_) => None,
+            ParsingError::MalformedNonce => Err(ParsingError::MalformedNonce),
+            ParsingError::DecryptError(decrypt_error) => Ok(decrypt_error),
         }
     }
 }
 
 impl ParsingError<std::convert::Infallible> {
-    pub(super) fn force<U>(self) -> ParsingError<U> {
+    pub(super) fn generalize<U>(self) -> ParsingError<U> {
         match self {
             ParsingError::InvalidVersion(v) => ParsingError::InvalidVersion(v),
             ParsingError::IncorrectLength => ParsingError::IncorrectLength,
             ParsingError::MalformedNtsExtensionFields => ParsingError::MalformedNtsExtensionFields,
             ParsingError::MalformedNonce => ParsingError::MalformedNonce,
-            ParsingError::DecryptError(_) => unreachable!(),
+            ParsingError::DecryptError(decrypt_error) => match decrypt_error {},
         }
     }
 }

@@ -413,12 +413,12 @@ impl<'a> ExtensionFieldData<'a> {
             Mac::MAXIMUM_SIZE,
             RawExtensionField::V4_UNENCRYPTED_MINIMUM_SIZE,
         ) {
-            let (offset, field) = field.map_err(|e| e.force())?;
+            let (offset, field) = field.map_err(|e| e.generalize())?;
             size = offset + field.wire_length();
             match field.type_id {
                 ExtensionFieldTypeId::NtsEncryptedField => {
                     let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)
-                        .map_err(|e| e.force())?;
+                        .map_err(|e| e.generalize())?;
                     let cipher = match cipher.get(&this.untrusted) {
                         Some(cipher) => cipher,
                         None => {
@@ -432,15 +432,13 @@ impl<'a> ExtensionFieldData<'a> {
                     let encrypted_fields =
                         match encrypted.decrypt(cipher, &data[..header_size + offset]) {
                             Ok(encrypted_fields) => encrypted_fields,
-                            Err(e) => match e.coerce() {
-                                Some(e) => return Err(e),
-                                None => {
-                                    this.untrusted
-                                        .push(ExtensionField::InvalidNtsEncryptedField);
-                                    has_invalid_nts = true;
-                                    continue;
-                                }
-                            },
+                            Err(e) => {
+                                e.get_decrypt_error()?;
+                                this.untrusted
+                                    .push(ExtensionField::InvalidNtsEncryptedField);
+                                has_invalid_nts = true;
+                                continue;
+                            }
                         };
 
                     this.encrypted.extend(encrypted_fields.into_iter());
@@ -450,7 +448,7 @@ impl<'a> ExtensionFieldData<'a> {
                 }
                 _ => this
                     .untrusted
-                    .push(ExtensionField::decode(field).map_err(|e| e.force())?),
+                    .push(ExtensionField::decode(field).map_err(|e| e.generalize())?),
             }
         }
         if has_invalid_nts {
@@ -520,14 +518,14 @@ impl<'a> RawEncryptedField<'a> {
             0,
             RawExtensionField::BARE_MINIMUM_SIZE,
         ) {
-            let encrypted_field = encrypted_field.map_err(|e| e.force())?.1;
+            let encrypted_field = encrypted_field.map_err(|e| e.generalize())?.1;
             if encrypted_field.type_id == ExtensionFieldTypeId::NtsEncryptedField {
                 // TODO: Discuss whether we want this check
                 return Err(ParsingError::MalformedNtsExtensionFields);
             }
             result.push(
                 ExtensionField::decode(encrypted_field)
-                    .map_err(|e| e.force())?
+                    .map_err(|e| e.generalize())?
                     .into_owned(),
             );
         }
