@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::{NtpClock, NtpDuration, NtpTimestamp, PollInterval, ReferenceId, SystemSnapshot};
 
 use self::{
+    error::ParsingError,
     extensionfields::{ExtensionField, ExtensionFieldData},
     mac::Mac,
 };
@@ -161,9 +162,9 @@ impl NtpHeaderV3V4 {
         }
     }
 
-    fn deserialize(data: &[u8]) -> Result<(Self, usize), PacketParsingError> {
+    fn deserialize(data: &[u8]) -> Result<(Self, usize), ParsingError<std::convert::Infallible>> {
         if data.len() < Self::LENGTH {
-            return Err(PacketParsingError::IncorrectLength);
+            return Err(ParsingError::IncorrectLength);
         }
 
         Ok((
@@ -272,10 +273,11 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    #[allow(clippy::result_large_err)]
     pub fn deserialize(
         data: &'a [u8],
         cipher: &impl CipherProvider,
-    ) -> Result<Self, PacketParsingError> {
+    ) -> Result<Self, PacketParsingError<'a>> {
         if data.is_empty() {
             return Err(PacketParsingError::IncorrectLength);
         }
@@ -284,9 +286,10 @@ impl<'a> NtpPacket<'a> {
 
         match version {
             3 => {
-                let (header, header_size) = NtpHeaderV3V4::deserialize(data)?;
+                let (header, header_size) =
+                    NtpHeaderV3V4::deserialize(data).map_err(|e| e.generalize())?;
                 let mac = if header_size != data.len() {
-                    Some(Mac::deserialize(&data[header_size..])?)
+                    Some(Mac::deserialize(&data[header_size..]).map_err(|e| e.generalize())?)
                 } else {
                     None
                 };
@@ -297,21 +300,42 @@ impl<'a> NtpPacket<'a> {
                 })
             }
             4 => {
-                let (header, header_size) = NtpHeaderV3V4::deserialize(data)?;
+                let mut has_invalid_nts = false;
+
+                let (header, header_size) =
+                    NtpHeaderV3V4::deserialize(data).map_err(|e| e.generalize())?;
                 let (efdata, header_plus_fields_len) =
-                    ExtensionFieldData::deserialize(data, header_size, cipher)?;
+                    match ExtensionFieldData::deserialize(data, header_size, cipher) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            let ret = e.get_decrypt_error()?;
+                            has_invalid_nts = true;
+                            ret
+                        }
+                    };
 
                 let mac = if header_plus_fields_len != data.len() {
-                    Some(Mac::deserialize(&data[header_plus_fields_len..])?)
+                    Some(
+                        Mac::deserialize(&data[header_plus_fields_len..])
+                            .map_err(|e| e.generalize())?,
+                    )
                 } else {
                     None
                 };
 
-                Ok(NtpPacket {
-                    header: NtpHeader::V4(header),
-                    efdata,
-                    mac,
-                })
+                if has_invalid_nts {
+                    Err(ParsingError::DecryptError(NtpPacket {
+                        header: NtpHeader::V4(header),
+                        efdata,
+                        mac,
+                    }))
+                } else {
+                    Ok(NtpPacket {
+                        header: NtpHeader::V4(header),
+                        efdata,
+                        mac,
+                    })
+                }
             }
             _ => Err(PacketParsingError::InvalidVersion(version)),
         }

@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use super::PacketParsingError;
+use super::error::ParsingError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Mac<'a> {
@@ -23,9 +23,11 @@ impl<'a> Mac<'a> {
         w.write_all(&self.mac)
     }
 
-    pub(super) fn deserialize(data: &'a [u8]) -> Result<Mac<'a>, PacketParsingError> {
+    pub(super) fn deserialize(
+        data: &'a [u8],
+    ) -> Result<Mac<'a>, ParsingError<std::convert::Infallible>> {
         if data.len() < 4 || data.len() >= Self::MAXIMUM_SIZE {
-            return Err(PacketParsingError::IncorrectLength);
+            return Err(ParsingError::IncorrectLength);
         }
 
         Ok(Mac {

@@ -2,7 +2,11 @@ use aes_siv::{siv::Aes128Siv, siv::Aes256Siv, Key, KeyInit};
 use rand::Rng;
 use tracing::error;
 
-use super::{extensionfields::ExtensionField, PacketParsingError};
+use super::extensionfields::ExtensionField;
+
+#[derive(Debug, thiserror::Error)]
+#[error("Could not decrypt ciphertext")]
+pub struct DecryptError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncryptionResult {
@@ -22,7 +26,7 @@ pub trait Cipher: Sync + Send {
         nonce: &[u8],
         ciphertext: &[u8],
         associated_data: &[u8],
-    ) -> Result<Vec<u8>, PacketParsingError>;
+    ) -> Result<Vec<u8>, DecryptError>;
 }
 
 pub trait CipherProvider {
@@ -100,10 +104,10 @@ impl Cipher for AesSivCmac256 {
         nonce: &[u8],
         ciphertext: &[u8],
         associated_data: &[u8],
-    ) -> Result<Vec<u8>, PacketParsingError> {
+    ) -> Result<Vec<u8>, DecryptError> {
         let mut siv = Aes128Siv::new(&self.key);
         siv.decrypt([associated_data, nonce], ciphertext)
-            .map_err(|_| PacketParsingError::DecryptError)
+            .map_err(|_| DecryptError)
     }
 }
 
@@ -153,10 +157,10 @@ impl Cipher for AesSivCmac512 {
         nonce: &[u8],
         ciphertext: &[u8],
         associated_data: &[u8],
-    ) -> Result<Vec<u8>, PacketParsingError> {
+    ) -> Result<Vec<u8>, DecryptError> {
         let mut siv = Aes256Siv::new(&self.key);
         siv.decrypt([associated_data, nonce], ciphertext)
-            .map_err(|_| PacketParsingError::DecryptError)
+            .map_err(|_| DecryptError)
     }
 }
 
