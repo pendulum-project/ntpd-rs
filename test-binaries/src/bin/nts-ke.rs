@@ -9,7 +9,6 @@ use std::{
 use ntp_proto::{KeyExchangeClient, KeyExchangeError, KeyExchangeResult, NtpPacket, PollInterval};
 use ntp_udp::UdpSocket;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio_rustls::rustls;
 
 // unstable in std; check on https://github.com/rust-lang/rust/issues/88581 some time in the future
 pub const fn next_multiple_of(lhs: usize, rhs: usize) -> usize {
