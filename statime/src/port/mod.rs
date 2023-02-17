@@ -117,7 +117,7 @@ impl<P: NetworkPort> Port<P> {
                         match clock.try_borrow() {
                             Ok(clock) => {
                                 if let PortState::Master(master) = &mut self.port_ds.port_state {
-                                    log::info!("sending sync message");
+                                    log::trace!("sending sync message");
 
                                     let sync_message = MessageBuilder::new()
                                         .sequence_id(master.sync_seq_ids.generate())
@@ -125,7 +125,7 @@ impl<P: NetworkPort> Port<P> {
                                         .sync_message(Timestamp::from(clock.now()));
 
                                     let sync_message_encode = sync_message.serialize_vec().unwrap();
-                                    self.network_port.send(&sync_message_encode);
+                                    self.network_port.send(&sync_message_encode).await;
 
                                     // TODO: Is the follow up a config?
                                     let follow_up_message = MessageBuilder::new()
@@ -135,7 +135,7 @@ impl<P: NetworkPort> Port<P> {
 
                                     let follow_up_message_encode =
                                         follow_up_message.serialize_vec().unwrap();
-                                    self.network_port.send(&follow_up_message_encode);
+                                    self.network_port.send(&follow_up_message_encode).await;
                                 }
                             }
                             Err(_) => log::error!("failed to get current time"),
@@ -146,7 +146,7 @@ impl<P: NetworkPort> Port<P> {
                         match clock.try_borrow() {
                             Ok(clock) => {
                                 if let PortState::Master(master) = &mut self.port_ds.port_state {
-                                    log::info!("sending announce message");
+                                    log::trace!("sending announce message");
 
                                     let announce_message = MessageBuilder::new()
                                         .sequence_id(master.announce_seq_ids.generate())
@@ -164,7 +164,7 @@ impl<P: NetworkPort> Port<P> {
 
                                     let announce_message_encode =
                                         announce_message.serialize_vec().unwrap();
-                                    self.network_port.send(&announce_message_encode);
+                                    self.network_port.send(&announce_message_encode).await;
                                 }
                             }
                             Err(_) => log::error!("failed to get current time"),
