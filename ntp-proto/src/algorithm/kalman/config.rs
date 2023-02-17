@@ -93,6 +93,10 @@ pub struct AlgorithmConfig {
     #[serde(default = "default_slew_min_duration")]
     pub slew_min_duration: f64,
 
+    /// Absolute maximum frequency correction (s/s)
+    #[serde(default = "default_max_frequency_steer")]
+    pub max_frequency_steer: f64,
+
     /// Ignore a servers advertised dispersion when synchronizing.
     /// Can improve synchronization quality with servers reporting
     /// overly conservative root dispersion.
@@ -129,6 +133,8 @@ impl Default for AlgorithmConfig {
             jump_threshold: default_jump_threshold(),
             slew_max_frequency_offset: default_slew_max_frequency_offset(),
             slew_min_duration: default_slew_min_duration(),
+
+            max_frequency_steer: default_max_frequency_steer(),
 
             ignore_server_dispersion: false,
         }
@@ -213,6 +219,10 @@ fn default_jump_threshold() -> f64 {
 
 fn default_slew_max_frequency_offset() -> f64 {
     200e-6
+}
+
+fn default_max_frequency_steer() -> f64 {
+    495e-6
 }
 
 fn default_slew_min_duration() -> f64 {
