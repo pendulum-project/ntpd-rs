@@ -114,10 +114,11 @@ impl<P: NetworkPort> Port<P> {
                             .set(timer.after(self.port_ds.announce_receipt_interval()));
                     }
                     Either4::Third(_) => {
-                        log::trace!("sending sync message");
                         match clock.try_borrow() {
                             Ok(clock) => {
                                 if let PortState::Master(master) = &mut self.port_ds.port_state {
+                                    log::info!("sending sync message");
+
                                     let sync_message = MessageBuilder::new()
                                         .sequence_id(master.sync_seq_ids.generate())
                                         .source_port_identity(self.port_ds.port_identity)
@@ -142,24 +143,31 @@ impl<P: NetworkPort> Port<P> {
                         sync_timeout.set(timer.after(self.port_ds.sync_interval()));
                     }
                     Either4::Fourth(_) => {
-                        log::trace!("sending announce message");
-                        if let PortState::Master(master) = &mut self.port_ds.port_state {
-                            let announce_message = MessageBuilder::new()
-                                .sequence_id(master.announce_seq_ids.generate())
-                                .source_port_identity(self.port_ds.port_identity)
-                                .announce_message(
-                                    Timestamp::default(),             //origin_timestamp: Timestamp,
-                                    0, // TODO implement current_utc_offset: u16,
-                                    default_ds.priority_1, //grandmaster_priority_1: u8,
-                                    default_ds.clock_quality, //grandmaster_clock_quality: ClockQuality,
-                                    default_ds.priority_2,    //grandmaster_priority_2: u8,
-                                    default_ds.clock_identity, //grandmaster_identity: ClockIdentity,
-                                    0,                         // TODO implement steps_removed: u16,
-                                    TimeSource::from_primitive(0xa0), // TODO implement time_source: TimeSource,
-                                );
+                        match clock.try_borrow() {
+                            Ok(clock) => {
+                                if let PortState::Master(master) = &mut self.port_ds.port_state {
+                                    log::info!("sending announce message");
 
-                            let announce_message_encode = announce_message.serialize_vec().unwrap();
-                            self.network_port.send(&announce_message_encode);
+                                    let announce_message = MessageBuilder::new()
+                                        .sequence_id(master.announce_seq_ids.generate())
+                                        .source_port_identity(self.port_ds.port_identity)
+                                        .announce_message(
+                                            clock.now().into(),               //origin_timestamp: Timestamp,
+                                            0, // TODO implement current_utc_offset: u16,
+                                            default_ds.priority_1, //grandmaster_priority_1: u8,
+                                            default_ds.clock_quality, //grandmaster_clock_quality: ClockQuality,
+                                            default_ds.priority_2,    //grandmaster_priority_2: u8,
+                                            default_ds.clock_identity, //grandmaster_identity: ClockIdentity,
+                                            0, // TODO implement steps_removed: u16,
+                                            TimeSource::from_primitive(0xa0), // TODO implement time_source: TimeSource,
+                                        );
+
+                                    let announce_message_encode =
+                                        announce_message.serialize_vec().unwrap();
+                                    self.network_port.send(&announce_message_encode);
+                                }
+                            }
+                            Err(_) => log::error!("failed to get current time"),
                         }
                         announce_timeout.set(timer.after(self.port_ds.announce_interval()));
                     }
