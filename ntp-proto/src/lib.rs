@@ -5,6 +5,7 @@ mod clock;
 mod config;
 mod cookiestash;
 mod identifiers;
+mod keyset;
 mod nts_record;
 mod packet;
 mod peer;
@@ -20,6 +21,7 @@ pub use algorithm::{
 pub use clock::NtpClock;
 pub use config::{StepThreshold, SystemConfig};
 pub use identifiers::ReferenceId;
+pub use keyset::{DecodedServerCookie, KeySet};
 
 pub use packet::{
     Cipher, CipherProvider, NoCipher, NtpAssociationMode, NtpLeapIndicator, NtpPacket,

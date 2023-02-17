@@ -2,6 +2,8 @@ use aes_siv::{siv::Aes128Siv, siv::Aes256Siv, Key, KeyInit};
 use rand::Rng;
 use tracing::error;
 
+use crate::DecodedServerCookie;
+
 use super::extensionfields::ExtensionField;
 
 #[derive(Debug, thiserror::Error)]
@@ -14,7 +16,7 @@ pub struct EncryptionResult {
     pub ciphertext: Vec<u8>,
 }
 
-pub trait Cipher: Sync + Send {
+pub trait Cipher: Sync + Send + 'static {
     fn encrypt(
         &self,
         plaintext: &[u8],
@@ -27,41 +29,57 @@ pub trait Cipher: Sync + Send {
         ciphertext: &[u8],
         associated_data: &[u8],
     ) -> Result<Vec<u8>, DecryptError>;
+
+    fn key_bytes(&self) -> &[u8];
+}
+
+pub enum CipherHolder<'a> {
+    DecodedServerCookie(DecodedServerCookie),
+    Other(&'a dyn Cipher),
+}
+
+impl<'a> AsRef<dyn Cipher> for CipherHolder<'a> {
+    fn as_ref(&self) -> &dyn Cipher {
+        match self {
+            CipherHolder::DecodedServerCookie(cookie) => cookie.c2s.as_ref(),
+            CipherHolder::Other(cipher) => *cipher,
+        }
+    }
 }
 
 pub trait CipherProvider {
-    fn get(&self, context: &[ExtensionField<'_>]) -> Option<&dyn Cipher>;
+    fn get(&self, context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>>;
 }
 
 pub struct NoCipher;
 
 impl CipherProvider for NoCipher {
-    fn get<'a>(&self, _context: &[ExtensionField<'_>]) -> Option<&dyn Cipher> {
+    fn get<'a>(&self, _context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
         None
     }
 }
 
 impl CipherProvider for &dyn Cipher {
-    fn get(&self, _context: &[ExtensionField<'_>]) -> Option<&dyn Cipher> {
-        Some(*self)
+    fn get(&self, _context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
+        Some(CipherHolder::Other(*self))
     }
 }
 
 impl CipherProvider for Option<&dyn Cipher> {
-    fn get(&self, _context: &[ExtensionField<'_>]) -> Option<&dyn Cipher> {
-        *self
+    fn get(&self, _context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
+        self.map(CipherHolder::Other)
     }
 }
 
 impl<C: Cipher> CipherProvider for C {
-    fn get(&self, _context: &[ExtensionField<'_>]) -> Option<&dyn Cipher> {
-        Some(self)
+    fn get(&self, _context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
+        Some(CipherHolder::Other(self))
     }
 }
 
 impl<C: Cipher> CipherProvider for Option<C> {
-    fn get(&self, _context: &[ExtensionField<'_>]) -> Option<&dyn Cipher> {
-        self.as_ref().map(|v| v as &dyn Cipher)
+    fn get(&self, _context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
+        self.as_ref().map(|v| CipherHolder::Other(v))
     }
 }
 
@@ -108,6 +126,10 @@ impl Cipher for AesSivCmac256 {
         let mut siv = Aes128Siv::new(&self.key);
         siv.decrypt([associated_data, nonce], ciphertext)
             .map_err(|_| DecryptError)
+    }
+
+    fn key_bytes(&self) -> &[u8] {
+        &self.key
     }
 }
 
@@ -161,6 +183,10 @@ impl Cipher for AesSivCmac512 {
         let mut siv = Aes256Siv::new(&self.key);
         siv.decrypt([associated_data, nonce], ciphertext)
             .map_err(|_| DecryptError)
+    }
+
+    fn key_bytes(&self) -> &[u8] {
+        &self.key
     }
 }
 

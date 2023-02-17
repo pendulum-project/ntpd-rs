@@ -3,6 +3,8 @@ use std::{
     io::{Cursor, Write},
 };
 
+use crate::DecodedServerCookie;
+
 use super::{error::ParsingError, Cipher, CipherProvider, Mac};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -386,7 +388,7 @@ impl<'a> ExtensionFieldData<'a> {
             // RFC 8915, section 5.5: contrary to the RFC 7822 requirement that fields have a minimum length of 16 or 28 octets,
             // encrypted extension fields MAY be arbitrarily short (but still MUST be a multiple of 4 octets in length)
             // hence we don't provide a minimum size here
-            ExtensionField::encode_encrypted(w, &self.encrypted, cipher)?;
+            ExtensionField::encode_encrypted(w, &self.encrypted, cipher.as_ref())?;
         }
 
         // per RFC 7822, section 7.5.1.4.
@@ -400,14 +402,19 @@ impl<'a> ExtensionFieldData<'a> {
         Ok(())
     }
 
+    #[allow(clippy::type_complexity)]
     pub(super) fn deserialize(
         data: &'a [u8],
         header_size: usize,
         cipher: &impl CipherProvider,
-    ) -> Result<(Self, usize), ParsingError<(ExtensionFieldData<'a>, usize)>> {
+    ) -> Result<
+        (Self, usize, Option<DecodedServerCookie>),
+        ParsingError<(ExtensionFieldData<'a>, usize)>,
+    > {
         let mut this = Self::default();
         let mut size = 0;
         let mut has_invalid_nts = false;
+        let mut cookie = None;
         for field in RawExtensionField::deserialize_sequence(
             &data[header_size..],
             Mac::MAXIMUM_SIZE,
@@ -430,7 +437,7 @@ impl<'a> ExtensionFieldData<'a> {
                     };
 
                     let encrypted_fields =
-                        match encrypted.decrypt(cipher, &data[..header_size + offset]) {
+                        match encrypted.decrypt(cipher.as_ref(), &data[..header_size + offset]) {
                             Ok(encrypted_fields) => encrypted_fields,
                             Err(e) => {
                                 e.get_decrypt_error()?;
@@ -442,6 +449,10 @@ impl<'a> ExtensionFieldData<'a> {
                         };
 
                     this.encrypted.extend(encrypted_fields.into_iter());
+                    cookie = match cipher {
+                        super::crypto::CipherHolder::DecodedServerCookie(cookie) => Some(cookie),
+                        super::crypto::CipherHolder::Other(_) => None,
+                    };
 
                     // All previous untrusted fields are now validated
                     this.authenticated.append(&mut this.untrusted);
@@ -454,7 +465,7 @@ impl<'a> ExtensionFieldData<'a> {
         if has_invalid_nts {
             Err(ParsingError::DecryptError((this, size + header_size)))
         } else {
-            Ok((this, size + header_size))
+            Ok((this, size + header_size, cookie))
         }
     }
 }

@@ -424,8 +424,8 @@ pub enum KeyExchangeError {
 
 /// From https://www.iana.org/assignments/aead-parameters/aead-parameters.xhtml
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
-#[repr(u8)]
-enum AeadAlgorithm {
+#[repr(u16)]
+pub(crate) enum AeadAlgorithm {
     #[default]
     AeadAesSivCmac256 = 15,
     AeadAesSivCmac512 = 17,
@@ -435,26 +435,34 @@ impl AeadAlgorithm {
     // per https://www.rfc-editor.org/rfc/rfc8915.html#section-5.1
     pub const fn c2s_context(self) -> [u8; 5] {
         // The final octet SHALL be 0x00 for the C2S key
-        [0, 0, 0, self as u8, 0]
+        [0, 0, (self as u16 >> 8) as u8, self as u8, 0]
     }
 
     // per https://www.rfc-editor.org/rfc/rfc8915.html#section-5.1
     pub const fn s2c_context(self) -> [u8; 5] {
         // The final octet SHALL be 0x01 for the S2C key
-        [0, 0, 0, self as u8, 1]
+        [0, 0, (self as u16 >> 8) as u8, self as u8, 1]
+    }
+
+    pub fn try_deserialize(number: u16) -> Option<AeadAlgorithm> {
+        match number {
+            15 => Some(AeadAlgorithm::AeadAesSivCmac256),
+            17 => Some(AeadAlgorithm::AeadAesSivCmac512),
+            _ => None,
+        }
     }
 
     const IN_ORDER_OF_PREFERENCE: &'static [Self] =
         &[Self::AeadAesSivCmac512, Self::AeadAesSivCmac256];
 
-    fn extract_nts_keys(
+    pub(crate) fn extract_nts_keys<ConnectionData>(
         &self,
-        tls_connection: &rustls::ClientConnection,
+        tls_connection: &rustls::ConnectionCommon<ConnectionData>,
     ) -> Result<NtsKeys, rustls::Error> {
         match self {
             AeadAlgorithm::AeadAesSivCmac256 => {
-                let c2s = extract_nts_key::<Aes128SivAead>(tls_connection, self.c2s_context())?;
-                let s2c = extract_nts_key::<Aes128SivAead>(tls_connection, self.s2c_context())?;
+                let c2s = extract_nts_key::<Aes128SivAead, _>(tls_connection, self.c2s_context())?;
+                let s2c = extract_nts_key::<Aes128SivAead, _>(tls_connection, self.s2c_context())?;
 
                 let c2s = Box::new(AesSivCmac256::new(c2s));
                 let s2c = Box::new(AesSivCmac256::new(s2c));
@@ -462,8 +470,8 @@ impl AeadAlgorithm {
                 Ok(NtsKeys { c2s, s2c })
             }
             AeadAlgorithm::AeadAesSivCmac512 => {
-                let c2s = extract_nts_key::<Aes256SivAead>(tls_connection, self.c2s_context())?;
-                let s2c = extract_nts_key::<Aes256SivAead>(tls_connection, self.s2c_context())?;
+                let c2s = extract_nts_key::<Aes256SivAead, _>(tls_connection, self.c2s_context())?;
+                let s2c = extract_nts_key::<Aes256SivAead, _>(tls_connection, self.s2c_context())?;
 
                 let c2s = Box::new(AesSivCmac512::new(c2s));
                 let s2c = Box::new(AesSivCmac512::new(s2c));
@@ -474,13 +482,13 @@ impl AeadAlgorithm {
     }
 }
 
-struct NtsKeys {
-    c2s: Box<dyn Cipher>,
-    s2c: Box<dyn Cipher>,
+pub(crate) struct NtsKeys {
+    pub(crate) c2s: Box<dyn Cipher>,
+    pub(crate) s2c: Box<dyn Cipher>,
 }
 
-fn extract_nts_key<T: KeySizeUser>(
-    tls_connection: &rustls::ClientConnection,
+fn extract_nts_key<T: KeySizeUser, ConnectionData>(
+    tls_connection: &rustls::ConnectionCommon<ConnectionData>,
     context: [u8; 5],
 ) -> Result<aead::Key<T>, rustls::Error> {
     let mut key: aead::Key<T> = Default::default();
@@ -723,6 +731,15 @@ impl KeyExchangeClient {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_algorithm_decoding() {
+        for i in 0..=u16::MAX {
+            if let Some(alg) = AeadAlgorithm::try_deserialize(i) {
+                assert_eq!(alg as u16, i);
+            }
+        }
+    }
 
     #[test]
     fn test_client_key_exchange_records() {
