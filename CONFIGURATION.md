@@ -199,6 +199,7 @@ A second set of options control more internal details of how the algorithm estim
 | poll-low-weight | 0.4 | Ammount which a measurement contributes to the state, below which we start increasing the poll interval. (weight, 0-1) |
 | poll-high-weight | 0.6 | Ammount which a measurement contributes to the state, above which we start decreasing the poll interval. (weight, 0-1) |
 | poll-hysteresis | 16 | Ammount of hysteresis in changeing the poll interval (count, 1+) |
+| max-frequency-steer | 495e-6 | Maximum steering input to system clock. (s/s) |
 
 #### Example configuration file:
 

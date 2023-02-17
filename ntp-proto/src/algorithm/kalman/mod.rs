@@ -259,13 +259,18 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
     }
 
     fn steer_frequency(&mut self, change: f64) -> NtpTimestamp {
-        self.freq_offset = (1.0 + self.freq_offset) * (1.0 + change) - 1.0;
+        let new_freq_offset = ((1.0 + self.freq_offset) * (1.0 + change) - 1.0).clamp(
+            -self.algo_config.max_frequency_steer,
+            self.algo_config.max_frequency_steer,
+        );
+        let actual_change = (1.0 + new_freq_offset) / (1.0 + self.freq_offset) - 1.0;
+        self.freq_offset = new_freq_offset;
         let freq_update = self
             .clock
             .set_frequency(self.freq_offset)
             .expect("Cannot adjust clock");
         for (state, _) in self.peers.values_mut() {
-            state.process_frequency_steering(freq_update, change)
+            state.process_frequency_steering(freq_update, actual_change)
         }
         info!(
             "Changed frequency, current steer {}ppm, desired freq {}ppm",
