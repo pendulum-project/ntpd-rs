@@ -100,7 +100,7 @@ impl SlaveState {
         network_port: &mut P,
         port_identity: PortIdentity,
     ) -> Result<()> {
-        match self.handshake {
+        let result = match self.handshake {
             Handshake::Initial => {
                 self.handshake = if message.header().two_step_flag() {
                     Handshake::AfterSync {
@@ -118,35 +118,6 @@ impl SlaveState {
                 };
                 log::trace!("handshake progress: {:?}", self.handshake);
 
-                if !self.delay_handshake.finished()
-                    || self.next_delay_measurement.unwrap_or_default() < current_time
-                {
-                    let delay_id = self.delay_req_ids.generate();
-                    let delay_req = MessageBuilder::new()
-                        .source_port_identity(port_identity)
-                        .sequence_id(delay_id)
-                        .log_message_interval(0x7F)
-                        .delay_req_message(Timestamp::default());
-                    let delay_req_encode = delay_req.serialize_vec().unwrap();
-                    let delay_send_time = network_port
-                        .send_time_critical(&delay_req_encode)
-                        .await
-                        .expect("Program error: missing timestamp id");
-                    self.delay_handshake = DelayHandshake::AfterSync {
-                        delay_id,
-                        delay_send_time,
-                    };
-                    log::trace!("delay handshake progress: {:?}", self.delay_handshake);
-                } else {
-                    // TODO: Seems very weird to me
-                    self.delay_handshake = DelayHandshake::Initial;
-                    log::trace!("delay handshake progress: {:?}", self.delay_handshake);
-                }
-
-                if let Some(follow_up) = self.pending_followup {
-                    self.handle_follow_up(follow_up);
-                }
-
                 Ok(())
             }
             // Wrong state
@@ -157,7 +128,38 @@ impl SlaveState {
                 );
                 Err(SlaveError::OutOfSequence)
             }
+        };
+
+        if !self.delay_handshake.finished()
+            || self.next_delay_measurement.unwrap_or_default() < current_time
+        {
+            let delay_id = self.delay_req_ids.generate();
+            let delay_req = MessageBuilder::new()
+                .source_port_identity(port_identity)
+                .sequence_id(delay_id)
+                .log_message_interval(0x7F)
+                .delay_req_message(Timestamp::default());
+            let delay_req_encode = delay_req.serialize_vec().unwrap();
+            let delay_send_time = network_port
+                .send_time_critical(&delay_req_encode)
+                .await
+                .expect("Program error: missing timestamp id");
+            self.delay_handshake = DelayHandshake::AfterSync {
+                delay_id,
+                delay_send_time,
+            };
+            log::trace!("delay handshake progress: {:?}", self.delay_handshake);
+        } else {
+            // TODO: Seems very weird to me
+            self.delay_handshake = DelayHandshake::Initial;
+            log::trace!("delay handshake progress: {:?}", self.delay_handshake);
         }
+
+        if let Some(follow_up) = self.pending_followup {
+            self.handle_follow_up(follow_up)?;
+        }
+
+        Ok(())
     }
 
     fn handle_follow_up(&mut self, message: FollowUpMessage) -> Result<()> {
