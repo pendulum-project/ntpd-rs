@@ -35,12 +35,6 @@ enum Handshake {
         sync_recv_time: Instant,
         sync_send_time: Instant,
     },
-    AfterDelayResp {
-        sync_id: u16,
-        sync_recv_time: Instant,
-        sync_send_time: Instant,
-        delay_recv_time: Instant,
-    },
 }
 
 #[derive(Debug)]
@@ -50,7 +44,7 @@ enum DelayHandshake {
         delay_id: u16,
         delay_send_time: Instant,
     },
-    AfterMeasurement {
+    AfterDelayResp {
         mean_delay: Duration,
     },
 }
@@ -59,7 +53,7 @@ impl DelayHandshake {
     pub fn finished(&self) -> bool {
         match self {
             DelayHandshake::Initial | DelayHandshake::AfterSync { .. } => false,
-            DelayHandshake::AfterMeasurement { .. } => true,
+            DelayHandshake::AfterDelayResp { .. } => true,
         }
     }
 }
@@ -156,9 +150,7 @@ impl SlaveState {
                 Ok(())
             }
             // Wrong state
-            Handshake::AfterSync { .. }
-            | Handshake::AfterFollowUp { .. }
-            | Handshake::AfterDelayResp { .. } => {
+            Handshake::AfterSync { .. } | Handshake::AfterFollowUp { .. } => {
                 log::error!("unexpected sync message");
                 Err(SlaveError::OutOfSequence)
             }
@@ -195,9 +187,7 @@ impl SlaveState {
                 }
             }
             // Wrong state
-            Handshake::Initial
-            | Handshake::AfterFollowUp { .. }
-            | Handshake::AfterDelayResp { .. } => {
+            Handshake::Initial | Handshake::AfterFollowUp { .. } => {
                 log::error!("unexpected follow-up message");
                 self.pending_followup = Some(message);
                 Err(SlaveError::OutOfSequence)
@@ -213,7 +203,10 @@ impl SlaveState {
                 sync_send_time,
             } => {
                 match self.delay_handshake {
-                    DelayHandshake::AfterSync { delay_id, .. } => {
+                    DelayHandshake::AfterSync {
+                        delay_id,
+                        delay_send_time,
+                    } => {
                         // Ignore messages not belonging to currently processing sync
                         if delay_id != message.header().sequence_id() {
                             return Ok(());
@@ -222,13 +215,6 @@ impl SlaveState {
                         // Absorb into state
                         let delay_recv_time = Instant::from(message.receive_timestamp())
                             - Duration::from(message.header().correction_field());
-                        self.handshake = Handshake::AfterDelayResp {
-                            sync_id,
-                            sync_recv_time,
-                            sync_send_time,
-                            delay_recv_time,
-                        };
-                        log::trace!("handshake progress: {:?}", self.handshake);
 
                         // Calculate when we should next measure delay
                         //  note that sync_recv_time should always be set here, but if it isn't,
@@ -241,59 +227,24 @@ impl SlaveState {
                                 - Duration::from_fixed_nanos(0.1f64),
                         );
 
-                        self.finish_delay_measurement();
-
-                        Ok(())
-                    }
-                    // Wrong state
-                    DelayHandshake::Initial | DelayHandshake::AfterMeasurement { .. } => {
-                        Err(SlaveError::OutOfSequence)
-                    }
-                }
-            }
-            // Wrong state
-            Handshake::Initial | Handshake::AfterSync { .. } | Handshake::AfterDelayResp { .. } => {
-                log::error!("unexpected delay response message");
-                Err(SlaveError::OutOfSequence)
-            }
-        }
-    }
-
-    fn finish_delay_measurement(&mut self) -> Result<()> {
-        match self.handshake {
-            Handshake::AfterDelayResp {
-                sync_id,
-                sync_recv_time,
-                sync_send_time,
-                delay_recv_time,
-            } => {
-                match self.delay_handshake {
-                    DelayHandshake::AfterSync {
-                        delay_send_time, ..
-                    } => {
                         let mean_delay = (sync_recv_time - sync_send_time
                             + (delay_recv_time - delay_send_time))
                             / 2;
 
-                        self.delay_handshake = DelayHandshake::AfterMeasurement { mean_delay };
+                        self.delay_handshake = DelayHandshake::AfterDelayResp { mean_delay };
                         log::trace!("delay handshake progress: {:?}", self.delay_handshake);
-                        self.handshake = Handshake::AfterFollowUp {
-                            sync_id,
-                            sync_recv_time,
-                            sync_send_time,
-                        };
-                        log::trace!("handshake progress: {:?}", self.handshake);
 
                         Ok(())
                     }
                     // Wrong state
-                    DelayHandshake::Initial | DelayHandshake::AfterMeasurement { .. } => {
+                    DelayHandshake::Initial | DelayHandshake::AfterDelayResp { .. } => {
                         Err(SlaveError::OutOfSequence)
                     }
                 }
             }
             // Wrong state
-            Handshake::Initial | Handshake::AfterSync { .. } | Handshake::AfterFollowUp { .. } => {
+            Handshake::Initial | Handshake::AfterSync { .. } => {
+                log::error!("unexpected delay response message");
                 Err(SlaveError::OutOfSequence)
             }
         }
@@ -305,14 +256,9 @@ impl SlaveState {
                 sync_recv_time,
                 sync_send_time,
                 ..
-            }
-            | Handshake::AfterDelayResp {
-                sync_recv_time,
-                sync_send_time,
-                ..
             } => {
                 match self.delay_handshake {
-                    DelayHandshake::AfterMeasurement { mean_delay } => {
+                    DelayHandshake::AfterDelayResp { mean_delay } => {
                         let result = Measurement {
                             master_offset: sync_recv_time - sync_send_time - mean_delay,
                             event_time: sync_recv_time,

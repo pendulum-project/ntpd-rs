@@ -184,12 +184,12 @@ impl<P: NetworkPort> Port<P> {
                         }
                     };
 
+                    // Only process messages from the same domain
                     if message.header().sdo_id() == default_ds.sdo_id
                         && message.header().domain_number() == default_ds.domain_number
                     {
                         match clock.try_borrow_mut() {
                             Ok(mut clock) => {
-                                // Only process messages from the same domai
                                 if let Message::Announce(announce) = &message {
                                     self.bmca
                                         .register_announce_message(announce, clock.now().into());
@@ -209,8 +209,10 @@ impl<P: NetworkPort> Port<P> {
 
                                     // If the received packet allowed the (slave) state to calculate its
                                     // offset from the master, update the local clock
-                                    if let PortState::Slave(state) = &mut self.port_ds.port_state {
-                                        if let Ok(measurement) = state.extract_measurement() {
+                                    if let PortState::Slave(slave) = &mut self.port_ds.port_state {
+                                        log::info!("A");
+                                        if let Ok(measurement) = slave.extract_measurement() {
+                                            log::info!("B");
                                             match filter.try_borrow_mut() {
                                                 Ok(mut filter) => {
                                                     let (offset, freq_corr) =
