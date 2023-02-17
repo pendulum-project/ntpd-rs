@@ -110,7 +110,8 @@ impl<P: NetworkPort> Port<P> {
                                 self.port_ds.port_state = PortState::Master(MasterState::new());
                             }
                         }
-                        announce_timeout.set(timer.after(self.port_ds.announce_receipt_interval()));
+                        announce_receipt_timeout
+                            .set(timer.after(self.port_ds.announce_receipt_interval()));
                     }
                     Either4::Third(_) => {
                         log::trace!("sending sync message");
