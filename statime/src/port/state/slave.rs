@@ -151,7 +151,10 @@ impl SlaveState {
             }
             // Wrong state
             Handshake::AfterSync { .. } | Handshake::AfterFollowUp { .. } => {
-                log::error!("unexpected sync message");
+                log::error!(
+                    "unexpected sync message ({})",
+                    message.header().sequence_id()
+                );
                 Err(SlaveError::OutOfSequence)
             }
         }
@@ -188,7 +191,10 @@ impl SlaveState {
             }
             // Wrong state
             Handshake::Initial | Handshake::AfterFollowUp { .. } => {
-                log::error!("unexpected follow-up message");
+                log::error!(
+                    "unexpected follow-up message ({})",
+                    message.header().sequence_id()
+                );
                 self.pending_followup = Some(message);
                 Err(SlaveError::OutOfSequence)
             }
