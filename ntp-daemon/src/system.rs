@@ -5,7 +5,7 @@ use crate::{
     server::{ServerStats, ServerTask},
     spawn::{
         nts::NtsSpawner, pool::PoolSpawner, standard::StandardSpawner, PeerId, PeerRemovalReason,
-        RemovedPeer, SpawnAction, SpawnEvent, Spawner, SpawnerId,
+        SpawnAction, SpawnEvent, Spawner, SpawnerId, SystemEvent,
     },
     ObservablePeerState,
 };
@@ -112,7 +112,7 @@ pub async fn spawn(
 
 struct SystemSpawnerData {
     id: SpawnerId,
-    notify_tx: mpsc::Sender<RemovedPeer>,
+    notify_tx: mpsc::Sender<SystemEvent>,
 }
 
 struct System<C: NtpClock, T: Wait> {
@@ -198,15 +198,17 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         )
     }
 
-    fn add_spawner(&mut self, spawner: impl Spawner + Send + Sync + 'static) {
+    fn add_spawner(&mut self, spawner: impl Spawner + Send + Sync + 'static) -> SpawnerId {
         let (notify_tx, notify_rx) = mpsc::channel(Self::MESSAGE_BUFFER_SIZE);
+        let id = spawner.get_id();
         let spawner_data = SystemSpawnerData {
-            id: spawner.get_id(),
+            id,
             notify_tx,
         };
         info!(id=?spawner_data.id, addr=spawner.get_addr_description(), "Running spawner");
         self.spawners.push(spawner_data);
         spawner.run(self.spawn_tx.clone(), notify_rx);
+        id
     }
 
     async fn run(&mut self, mut wait: Pin<&mut SingleshotSleep<T>>) -> std::io::Result<()> {
@@ -230,7 +232,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                             tracing::warn!("the spawn channel closed unexpectedly");
                         }
                         Some(spawn_event) => {
-                            self.handle_spawn_event(spawn_event);
+                            self.handle_spawn_event(spawn_event).await;
                         }
                     }
                 }
@@ -293,6 +295,8 @@ impl<C: NtpClock, T: Wait> System<C, T> {
     }
 
     async fn handle_peer_network_issue(&mut self, index: PeerIndex) -> std::io::Result<()> {
+        self.controller.peer_remove(index);
+
         // Restart the peer reusing its configuration.
         let state = self.peers.remove(&index).unwrap();
         let spawner_id = state.spawner_id;
@@ -301,10 +305,12 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         if let Some(spawner) = opt_spawner {
             spawner
                 .notify_tx
-                .send(RemovedPeer::new(peer_id, PeerRemovalReason::NetworkIssue))
+                .send(SystemEvent::peer_removed(peer_id, PeerRemovalReason::NetworkIssue))
                 .await
                 .expect("Could not notify spawner");
         }
+
+
 
         Ok(())
     }
@@ -372,23 +378,23 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         if let Some(spawner) = opt_spawner {
             spawner
                 .notify_tx
-                .send(RemovedPeer::new(peer_id, PeerRemovalReason::Demobilized))
+                .send(SystemEvent::peer_removed(peer_id, PeerRemovalReason::Demobilized))
                 .await
                 .expect("Could not notify spawner");
         }
     }
 
-    fn handle_spawn_event(&mut self, event: SpawnEvent) {
+    async fn handle_spawn_event(&mut self, event: SpawnEvent) {
         match event.action {
-            SpawnAction::Create(peer_id, addr, peer_address, nts_data) => {
-                info!(?peer_id, ?addr, spawner=?event.id, "new peer");
+            SpawnAction::Create(mut params) => {
+                info!(peer_id=?params.id, addr=?params.addr, spawner=?event.id, "new peer");
                 let index = self.peer_indexer.get();
                 self.peers.insert(
                     index,
                     PeerState {
                         snapshot: None,
-                        peer_address,
-                        peer_id,
+                        peer_address: params.normalized_addr.clone(),
+                        peer_id: params.id,
                         spawner_id: event.id,
                     },
                 );
@@ -396,40 +402,44 @@ impl<C: NtpClock, T: Wait> System<C, T> {
 
                 PeerTask::spawn(
                     index,
-                    addr,
+                    params.addr,
                     self.clock.clone(),
                     NETWORK_WAIT_PERIOD,
                     self.peer_channels.clone(),
-                    nts_data,
+                    params.nts.take(),
                 );
 
                 // Don't care if there is not receiver
                 let _ = self
                     .peer_snapshots_sender
                     .send(self.observe_peers().collect());
+
+                if let Some(s) = self.spawners.iter().find(|s| s.id == event.id) {
+                    let _ = s.notify_tx.send(SystemEvent::PeerRegistered(params)).await;
+                }
             }
         }
     }
 
     /// Adds up to `max_peers` peers from a pool.
     #[cfg(test)]
-    async fn add_new_pool(&mut self, address: NormalizedAddress, max_peers: usize) {
+    async fn add_new_pool(&mut self, address: NormalizedAddress, max_peers: usize) -> SpawnerId {
         self.add_spawner(PoolSpawner::new(
             crate::config::PoolPeerConfig {
                 addr: address,
                 max_peers,
             },
             NETWORK_WAIT_PERIOD,
-        ));
+        ))
     }
 
     /// Adds a single peer (that is not part of a pool!)
     #[cfg(test)]
-    async fn add_peer(&mut self, address: NormalizedAddress) {
+    async fn add_peer(&mut self, address: NormalizedAddress) -> SpawnerId {
         self.add_spawner(StandardSpawner::new(
             crate::config::StandardPeerConfig { addr: address },
             NETWORK_WAIT_PERIOD,
-        ));
+        ))
     }
 
     /// Adds a single NTS peer
@@ -438,14 +448,14 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         &mut self,
         ke_addr: NormalizedAddress,
         certificates: std::sync::Arc<[rustls::Certificate]>,
-    ) {
+    ) -> SpawnerId {
         self.add_spawner(NtsSpawner::new(
             crate::config::NtsPeerConfig {
                 ke_addr,
                 certificates,
             },
             NETWORK_WAIT_PERIOD,
-        ));
+        ))
     }
 
     async fn add_server(&mut self, config: ServerConfig) {
@@ -531,6 +541,8 @@ pub struct ServerData {
 
 #[cfg(test)]
 mod tests {
+    use std::net::SocketAddr;
+
     use ntp_proto::{
         peer_snapshot, Measurement, NtpDuration, NtpInstant, NtpLeapIndicator, NtpPacket,
         NtpTimestamp, PollInterval,
@@ -590,7 +602,7 @@ mod tests {
 
     fn handle_spawn_no_nts<C: NtpClock, T: Wait>(
         system: &mut System<C, T>,
-        peer_address: PeerAddress,
+        peer_address: NormalizedAddress,
         addr: SocketAddr,
     ) {
         system.handle_spawn(peer_address, addr, None)

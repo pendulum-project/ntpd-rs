@@ -6,7 +6,7 @@ use tracing::warn;
 
 use crate::{config::PoolPeerConfig, spawn::SpawnAction};
 
-use super::{BasicSpawner, PeerId, RemovedPeer, SpawnEvent, SpawnerId};
+use super::{BasicSpawner, PeerId, SpawnEvent, SpawnerId, PeerRemovedEvent};
 
 struct PoolPeer {
     id: PeerId,
@@ -69,7 +69,7 @@ impl PoolSpawner {
                 if let Some(addr) = self.known_ips.pop() {
                     let id = PeerId::new();
                     self.current_peers.push(PoolPeer { id, addr });
-                    let action = SpawnAction::Create(id, addr, self.config.addr.clone(), None);
+                    let action = SpawnAction::create(id, addr, self.config.addr.clone(), None);
                     tracing::debug!(?action, "intending to spawn new pool peer at");
 
                     action_tx
@@ -113,7 +113,7 @@ impl BasicSpawner for PoolSpawner {
 
     async fn handle_peer_removed(
         &mut self,
-        removed_peer: RemovedPeer,
+        removed_peer: PeerRemovedEvent,
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), PoolSpawnError> {
         self.current_peers.retain(|p| p.id != removed_peer.id);

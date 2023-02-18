@@ -53,15 +53,28 @@ pub struct SpawnEvent {
 }
 
 #[derive(Debug)]
-pub struct RemovedPeer {
-    pub id: PeerId,
-    pub reason: PeerRemovalReason,
+pub enum SystemEvent {
+    PeerRemoved(PeerRemovedEvent),
+    PeerRegistered(PeerCreateParameters),
 }
 
-impl RemovedPeer {
-    pub fn new(id: PeerId, reason: PeerRemovalReason) -> RemovedPeer {
-        RemovedPeer { id, reason }
+impl SystemEvent {
+    pub fn peer_removed(id: PeerId, reason: PeerRemovalReason) -> SystemEvent {
+        SystemEvent::PeerRemoved(PeerRemovedEvent {
+            id,
+            reason,
+        })
     }
+
+    pub fn peer_registered(id: PeerId, addr: SocketAddr, normalized_addr: NormalizedAddress, nts: Option<PeerNtsData>) -> SystemEvent {
+        SystemEvent::PeerRegistered(PeerCreateParameters { id, addr, normalized_addr, nts })
+    }
+}
+
+#[derive(Debug)]
+pub struct PeerRemovedEvent {
+    pub id: PeerId,
+    pub reason: PeerRemovalReason,
 }
 
 #[derive(Debug)]
@@ -80,15 +93,29 @@ impl SpawnEvent {
 /// Currently a spawner can only create peers
 #[derive(Debug)]
 pub enum SpawnAction {
-    Create(PeerId, SocketAddr, NormalizedAddress, Option<PeerNtsData>),
+    Create(PeerCreateParameters),
     // Remove(()),
+}
+
+impl SpawnAction {
+    pub fn create(id: PeerId, addr: SocketAddr, normalized_addr: NormalizedAddress, nts: Option<PeerNtsData>) -> SpawnAction {
+        SpawnAction::Create(PeerCreateParameters { id, addr, normalized_addr, nts })
+    }
+}
+
+#[derive(Debug)]
+pub struct PeerCreateParameters {
+    pub id: PeerId,
+    pub addr: SocketAddr,
+    pub normalized_addr: NormalizedAddress,
+    pub nts: Option<PeerNtsData>,
 }
 
 pub trait Spawner {
     fn run(
         self,
         action_tx: mpsc::Sender<SpawnEvent>,
-        peer_removed_notify: mpsc::Receiver<RemovedPeer>,
+        system_notify: mpsc::Receiver<SystemEvent>,
     );
     fn get_id(&self) -> SpawnerId;
     fn get_addr_description(&self) -> String;
@@ -103,9 +130,16 @@ pub trait BasicSpawner {
     ) -> Result<(), Self::Error>;
     async fn handle_peer_removed(
         &mut self,
-        removed_peer: RemovedPeer,
+        event: PeerRemovedEvent,
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), Self::Error>;
+    async fn handle_registered(
+        &mut self,
+        _event: PeerCreateParameters,
+        _action_tx: &mpsc::Sender<SpawnEvent>,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
 
     fn get_id(&self) -> SpawnerId;
     fn get_addr_description(&self) -> String;
@@ -117,12 +151,19 @@ impl<E: std::error::Error + Send + 'static, T: BasicSpawner<Error = E> + Send + 
     fn run(
         mut self,
         action_tx: mpsc::Sender<SpawnEvent>,
-        mut peer_removed_notify: mpsc::Receiver<RemovedPeer>,
+        mut system_notify: mpsc::Receiver<SystemEvent>,
     ) {
         tokio::spawn(async move {
             self.handle_init(&action_tx).await?;
-            while let Some(removed_peer) = peer_removed_notify.recv().await {
-                self.handle_peer_removed(removed_peer, &action_tx).await?;
+            while let Some(event) = system_notify.recv().await {
+                match event {
+                    SystemEvent::PeerRegistered(peer_params) => {
+                        self.handle_registered(peer_params, &action_tx).await?;
+                    },
+                    SystemEvent::PeerRemoved(removed_peer) => {
+                        self.handle_peer_removed(removed_peer, &action_tx).await?;
+                    }
+                }
             }
 
             Ok::<(), E>(())

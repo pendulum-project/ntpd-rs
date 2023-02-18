@@ -6,7 +6,7 @@ use tracing::warn;
 
 use crate::config::StandardPeerConfig;
 
-use super::{BasicSpawner, PeerId, RemovedPeer, SpawnAction, SpawnEvent, SpawnerId};
+use super::{BasicSpawner, PeerId, SpawnAction, SpawnEvent, SpawnerId, PeerRemovedEvent};
 
 pub struct StandardSpawner {
     id: SpawnerId,
@@ -68,7 +68,7 @@ impl StandardSpawner {
         action_tx
             .send(SpawnEvent::new(
                 self.id,
-                SpawnAction::Create(PeerId::new(), addr, self.config.addr.clone(), None),
+                SpawnAction::create(PeerId::new(), addr, self.config.addr.clone(), None),
             ))
             .await?;
         Ok(())
@@ -88,7 +88,7 @@ impl BasicSpawner for StandardSpawner {
 
     async fn handle_peer_removed(
         &mut self,
-        _removed_peer: RemovedPeer,
+        _removed_peer: PeerRemovedEvent,
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), StandardSpawnError> {
         self.spawn(action_tx).await
