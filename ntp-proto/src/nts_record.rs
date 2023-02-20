@@ -817,10 +817,10 @@ pub struct KeyExchangeClientResult {
 
 #[derive(Debug)]
 pub struct KeyExchangeServerResult {
-    tls_connection: rustls::ServerConnection,
-    algorithm: AeadAlgorithm,
-    c2s: Vec<u8>,
-    s2c: Vec<u8>,
+    pub tls_connection: rustls::ServerConnection,
+    pub algorithm: AeadAlgorithm,
+    pub c2s: Vec<u8>,
+    pub s2c: Vec<u8>,
 }
 
 pub struct KeyExchangeServer {
@@ -941,12 +941,14 @@ impl KeyExchangeClient {
         let mut buf = [0; 128];
         loop {
             if let Err(e) = self.tls_connection.process_new_packets() {
+                panic!();
                 return ControlFlow::Break(Err(e.into()));
             }
             let read_result = self.tls_connection.reader().read(&mut buf);
             match read_result {
                 Ok(0) => return ControlFlow::Break(Err(KeyExchangeError::IncompleteResponse)),
                 Ok(n) => {
+                    dbg!(&buf[..n]);
                     self.decoder = match self.decoder.step_with_slice(&buf[..n]) {
                         ControlFlow::Continue(decoder) => decoder,
                         ControlFlow::Break(Ok(result)) => {
@@ -977,7 +979,7 @@ impl KeyExchangeClient {
                 }
                 Err(e) => match e.kind() {
                     std::io::ErrorKind::WouldBlock => return ControlFlow::Continue(self),
-                    _ => return ControlFlow::Break(Err(e.into())),
+                    _ => return ControlFlow::Break(dbg!(Err(e.into()))),
                 },
             }
         }

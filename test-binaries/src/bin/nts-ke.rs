@@ -1,17 +1,24 @@
 use std::{
+    fs::File,
     future::Future,
-    io::{Cursor, IoSlice, Read, Write},
+    io::{BufReader, Cursor, IoSlice, Read, Write},
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs},
     pin::Pin,
+    sync::Arc,
     task::{Context, Poll},
 };
 
 use ntp_proto::{
-    KeyExchangeClient, KeyExchangeClientResult, KeyExchangeError, NtpPacket, PollInterval,
+    KeyExchangeClient, KeyExchangeClientResult, KeyExchangeError, NtpPacket, NtsRecord,
+    PollInterval,
 };
 use ntp_udp::UdpSocket;
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio_rustls::rustls;
+use rustls::OwnedTrustAnchor;
+use tokio::{
+    io::{AsyncRead, AsyncWrite, ReadBuf},
+    net::TcpStream,
+};
+use tokio_rustls::{rustls, webpki, TlsConnector};
 
 // unstable in std; check on https://github.com/rust-lang/rust/issues/88581 some time in the future
 pub const fn next_multiple_of(lhs: usize, rhs: usize) -> usize {
@@ -151,7 +158,7 @@ where
                     Poll::Ready(Ok(_)) => {
                         this.need_flush = true;
                     }
-                    Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),
+                    Poll::Ready(Err(e)) => return Poll::Ready(dbg!(Err(e.into()))),
                     Poll::Pending => {
                         write_blocks = true;
                         break;
@@ -164,7 +171,7 @@ where
                     Poll::Ready(Ok(())) => {
                         this.need_flush = false;
                     }
-                    Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),
+                    Poll::Ready(Err(e)) => return Poll::Ready(dbg!(Err(e.into()))),
                     Poll::Pending => {
                         write_blocks = true;
                     }
@@ -175,9 +182,9 @@ where
                 match this.do_read(cx) {
                     Poll::Ready(Ok(_)) => match this.client.take().unwrap().progress() {
                         std::ops::ControlFlow::Continue(client) => this.client = Some(client),
-                        std::ops::ControlFlow::Break(result) => return Poll::Ready(result),
+                        std::ops::ControlFlow::Break(result) => return Poll::Ready(dbg!(result)),
                     },
-                    Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),
+                    Poll::Ready(Err(e)) => return Poll::Ready(dbg!(Err(e.into()))),
                     Poll::Pending => {
                         read_blocks = true;
                         break;
@@ -221,21 +228,60 @@ pub(crate) async fn perform_key_exchange(
         .await
         .unwrap();
 
-    let mut roots = rustls::RootCertStore::empty();
-    for cert in rustls_native_certs::load_native_certs().expect("could not load platform certs") {
-        roots.add(&rustls::Certificate(cert.0)).unwrap();
+    //    let mut roots = rustls::RootCertStore::empty();
+    //    for cert in rustls_native_certs::load_native_certs().expect("could not load platform certs") {
+    //        roots.add(&rustls::Certificate(cert.0)).unwrap();
+    //    }
+    //
+    //    for cert in load_certs("/home/folkertdev/.local/share/mkcert/rootCA.pem").unwrap() {
+    //        roots.add(&rustls::Certificate(cert.0)).unwrap();
+    //    }
+    //
+    //    let config = rustls::ClientConfig::builder()
+    //        .with_safe_defaults()
+    //        .with_root_certificates(roots)
+    //        .with_no_client_auth();
+
+    let cafile: Option<std::path::PathBuf> =
+        Some("/home/folkertdev/.local/share/mkcert/rootCA.pem".into());
+
+    let mut root_cert_store = rustls::RootCertStore::empty();
+    if let Some(cafile) = cafile {
+        let mut pem = BufReader::new(File::open(cafile).unwrap());
+        let certs = rustls_pemfile::certs(&mut pem).unwrap();
+        let trust_anchors = certs.iter().map(|cert| {
+            let ta = webpki::TrustAnchor::try_from_cert_der(&cert[..]).unwrap();
+            OwnedTrustAnchor::from_subject_spki_name_constraints(
+                ta.subject,
+                ta.spki,
+                ta.name_constraints,
+            )
+        });
+        root_cert_store.add_server_trust_anchors(trust_anchors);
+    } else {
+        //        root_cert_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
+        //            |ta| {
+        //                OwnedTrustAnchor::from_subject_spki_name_constraints(
+        //                    ta.subject,
+        //                    ta.spki,
+        //                    ta.name_constraints,
+        //                )
+        //            },
+        //        ));
+        unreachable!()
     }
 
-    for cert in load_certs("test-keys/rootCA.crt").unwrap() {
-        roots.add(&rustls::Certificate(cert.0)).unwrap();
-    }
-
-    let config = rustls::ClientConfig::builder()
+    let mut config = rustls::ClientConfig::builder()
         .with_safe_defaults()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
+        .with_root_certificates(root_cert_store)
+        .with_no_client_auth(); // i guess this was previously the default?
 
-    BoundKeyExchangeClient::new(socket, server_name, config)?.await
+    config.alpn_protocols.clear();
+    config.alpn_protocols.push(b"ntske/1".to_vec());
+
+    BoundKeyExchangeClient::new(socket, server_name, config)
+        .unwrap()
+        .await
 }
 
 #[tokio::main]
