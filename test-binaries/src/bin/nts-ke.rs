@@ -6,7 +6,9 @@ use std::{
     task::{Context, Poll},
 };
 
-use ntp_proto::{KeyExchangeClient, KeyExchangeError, KeyExchangeResult, NtpPacket, PollInterval};
+use ntp_proto::{
+    KeyExchangeClient, KeyExchangeClientResult, KeyExchangeError, NtpPacket, PollInterval,
+};
 use ntp_udp::UdpSocket;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
@@ -131,7 +133,7 @@ impl<IO> Future for BoundKeyExchangeClient<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin,
 {
-    type Output = Result<KeyExchangeResult, KeyExchangeError>;
+    type Output = Result<KeyExchangeClientResult, KeyExchangeError>;
 
     fn poll(
         self: std::pin::Pin<&mut Self>,
@@ -194,7 +196,7 @@ where
 pub(crate) async fn perform_key_exchange(
     server_name: String,
     port: u16,
-) -> Result<KeyExchangeResult, KeyExchangeError> {
+) -> Result<KeyExchangeClientResult, KeyExchangeError> {
     let socket = tokio::net::TcpStream::connect((server_name.as_str(), port))
         .await
         .unwrap();

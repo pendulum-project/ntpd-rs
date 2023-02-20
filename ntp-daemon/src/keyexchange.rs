@@ -6,7 +6,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use ntp_proto::{KeyExchangeClient, KeyExchangeError, KeyExchangeResult};
+use ntp_proto::{KeyExchangeClient, KeyExchangeClientResult, KeyExchangeError};
 use rustls::Certificate;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
@@ -14,7 +14,7 @@ pub(crate) async fn key_exchange(
     server_name: String,
     port: u16,
     extra_certificates: &[Certificate],
-) -> Result<KeyExchangeResult, KeyExchangeError> {
+) -> Result<KeyExchangeClientResult, KeyExchangeError> {
     let socket = tokio::net::TcpStream::connect((server_name.as_str(), port))
         .await
         .unwrap();
@@ -152,7 +152,7 @@ impl<IO> Future for BoundKeyExchangeClient<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin,
 {
-    type Output = Result<KeyExchangeResult, KeyExchangeError>;
+    type Output = Result<KeyExchangeClientResult, KeyExchangeError>;
 
     fn poll(
         self: std::pin::Pin<&mut Self>,

@@ -628,7 +628,7 @@ impl KeyExchangeResultDecoder {
 }
 
 #[derive(Debug)]
-pub struct KeyExchangeResult {
+pub struct KeyExchangeClientResult {
     pub remote: String,
     pub port: u16,
     pub nts: Box<PeerNtsData>,
@@ -659,7 +659,9 @@ impl KeyExchangeClient {
         self.tls_connection.write_tls(wr)
     }
 
-    pub fn progress(mut self) -> ControlFlow<Result<KeyExchangeResult, KeyExchangeError>, Self> {
+    pub fn progress(
+        mut self,
+    ) -> ControlFlow<Result<KeyExchangeClientResult, KeyExchangeError>, Self> {
         // Move any received data from tls to decoder
         let mut buf = [0; 128];
         loop {
@@ -688,7 +690,7 @@ impl KeyExchangeClient {
                                 s2c: keys.s2c,
                             });
 
-                            return ControlFlow::Break(Ok(KeyExchangeResult {
+                            return ControlFlow::Break(Ok(KeyExchangeClientResult {
                                 remote: result.remote.unwrap_or(self.server_name),
                                 port: result.port.unwrap_or(Self::NTP_DEFAULT_PORT),
                                 nts,
