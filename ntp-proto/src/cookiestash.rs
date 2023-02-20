@@ -91,10 +91,10 @@ mod tests {
     }
 }
 
-struct Cookie(Vec<u8>);
+pub(crate) struct Cookie(Vec<u8>);
 
 impl Cookie {
-    fn new<C: crate::Cipher + ?Sized>(
+    pub fn new<C: crate::Cipher + ?Sized>(
         server_key: &C,
         identifier: u32,
         algorithm: AeadAlgorithm,
@@ -128,6 +128,10 @@ impl Cookie {
         output.extend(encrypted.ciphertext);
 
         Ok(Cookie(output))
+    }
+
+    pub fn into_inner(self) -> Vec<u8> {
+        self.0
     }
 
     fn plaintext<'a, F, K>(&self, identifier_to_key: F) -> Option<(&'a K, u32, Vec<u8>)>

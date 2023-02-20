@@ -8,7 +8,10 @@ use aead::KeySizeUser;
 use aes_siv::{Aes128SivAead, Aes256SivAead};
 
 use crate::{
-    cookiestash::CookieStash, packet::AesSivCmac256, packet::AesSivCmac512, peer::PeerNtsData,
+    cookiestash::{Cookie, CookieStash},
+    packet::AesSivCmac256,
+    packet::AesSivCmac512,
+    peer::PeerNtsData,
     Cipher,
 };
 
@@ -180,6 +183,39 @@ impl NtsRecord {
             },
             NtsRecord::EndOfMessage,
         ]
+    }
+
+    pub fn server_key_exchange_records<C: crate::Cipher + ?Sized>(
+        server_key: &C,
+        identifier: u32,
+        algorithm: AeadAlgorithm,
+        keys: NtsServerKeys,
+    ) -> std::io::Result<[NtsRecord; 11]> {
+        let next_cookie = || -> std::io::Result<NtsRecord> {
+            Ok(NtsRecord::NewCookie {
+                cookie_data: Cookie::new(server_key, identifier, algorithm, &keys.s2c, &keys.c2s)?
+                    .into_inner(),
+            })
+        };
+
+        Ok([
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            NtsRecord::AeadAlgorithm {
+                critical: false,
+                algorithm_ids: vec![algorithm as u16],
+            },
+            next_cookie()?,
+            next_cookie()?,
+            next_cookie()?,
+            next_cookie()?,
+            next_cookie()?,
+            next_cookie()?,
+            next_cookie()?,
+            next_cookie()?,
+            NtsRecord::EndOfMessage,
+        ])
     }
 
     pub fn read<A: Read>(reader: &mut A) -> std::io::Result<NtsRecord> {
@@ -425,7 +461,7 @@ pub enum KeyExchangeError {
 /// From https://www.iana.org/assignments/aead-parameters/aead-parameters.xhtml
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 #[repr(u16)]
-pub(crate) enum AeadAlgorithm {
+pub enum AeadAlgorithm {
     #[default]
     AeadAesSivCmac256 = 15,
     AeadAesSivCmac512 = 17,
@@ -485,6 +521,32 @@ impl AeadAlgorithm {
                 let s2c = Box::new(AesSivCmac512::new(s2c));
 
                 Ok(NtsClientKeys { c2s, s2c })
+            }
+        }
+    }
+
+    fn extract_nts_server_keys<ConnectionData>(
+        &self,
+        tls_connection: &rustls::ConnectionCommon<ConnectionData>,
+    ) -> Result<NtsServerKeys, rustls::Error> {
+        match self {
+            AeadAlgorithm::AeadAesSivCmac256 => {
+                let c2s = extract_nts_key::<Aes128SivAead, _>(tls_connection, self.c2s_context())?;
+                let s2c = extract_nts_key::<Aes128SivAead, _>(tls_connection, self.s2c_context())?;
+
+                let c2s = c2s.to_vec();
+                let s2c = s2c.to_vec();
+
+                Ok(NtsServerKeys { c2s, s2c })
+            }
+            AeadAlgorithm::AeadAesSivCmac512 => {
+                let c2s = extract_nts_key::<Aes256SivAead, _>(tls_connection, self.c2s_context())?;
+                let s2c = extract_nts_key::<Aes256SivAead, _>(tls_connection, self.s2c_context())?;
+
+                let c2s = c2s.to_vec();
+                let s2c = s2c.to_vec();
+
+                Ok(NtsServerKeys { c2s, s2c })
             }
         }
     }

@@ -179,11 +179,7 @@ impl<IO> BoundKeyExchangeServer<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin,
 {
-    pub fn new(
-        io: IO,
-        server_name: String,
-        config: rustls::ServerConfig,
-    ) -> Result<Self, KeyExchangeError> {
+    pub fn new(io: IO, config: rustls::ServerConfig) -> Result<Self, KeyExchangeError> {
         Ok(Self {
             inner: Some(BoundKeyExchangeServerData {
                 io,
