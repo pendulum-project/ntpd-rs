@@ -738,6 +738,127 @@ impl KeyExchangeClient {
     }
 }
 
+#[derive(Debug, Default)]
+struct KeyExchangeServerDecoder {
+    decoder: NtsRecordDecoder,
+    // when NTPv5 is added we also need to store the protocol id here
+    /// AEAD algorithm that the client is able to use and that we support
+    /// it may be that the server and client supported algorithms have no
+    /// intersection!
+    algorithm: AeadAlgorithm,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ServerKeyExchangeData {
+    algorithm: AeadAlgorithm,
+}
+
+impl KeyExchangeServerDecoder {
+    pub fn step_with_slice(
+        mut self,
+        bytes: &[u8],
+    ) -> ControlFlow<Result<ServerKeyExchangeData, KeyExchangeError>, Self> {
+        self.decoder.extend(bytes.iter().copied());
+
+        loop {
+            match self.decoder.step() {
+                Err(e) => return ControlFlow::Break(Err(e.into())),
+                Ok(Some(record)) => self = self.step_with_record(record)?,
+                Ok(None) => return ControlFlow::Continue(self),
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn step_with_record(
+        self,
+        record: NtsRecord,
+    ) -> ControlFlow<Result<ServerKeyExchangeData, KeyExchangeError>, Self> {
+        use self::AeadAlgorithm as Algorithm;
+        use ControlFlow::{Break, Continue};
+        use KeyExchangeError::*;
+        use NtsRecord::*;
+
+        let mut state = self;
+
+        match record {
+            EndOfMessage => {
+                let result = ServerKeyExchangeData {
+                    algorithm: state.algorithm,
+                };
+
+                Break(Ok(result))
+            }
+            NewCookie { .. } => {
+                // > Clients MUST NOT send records of this type
+                //
+                // TODO should we actively error when a client does?
+                Continue(state)
+            }
+            Server { name: _, .. } => {
+                // > When this record is sent by the client, it indicates that the client wishes to associate with the specified NTP
+                // > server. The NTS-KE server MAY incorporate this request when deciding which NTPv4 Server Negotiation
+                // > records to respond with, but honoring the client's preference is OPTIONAL. The client MUST NOT send more
+                // > than one record of this type.
+                //
+                // we ignore the client's preference
+                Continue(state)
+            }
+            Port { port: _, .. } => {
+                // > When this record is sent by the client in conjunction with a NTPv4 Server Negotiation record, it indicates that
+                // > the client wishes to associate with the NTP server at the specified port. The NTS-KE server MAY incorporate this
+                // > request when deciding what NTPv4 Server Negotiation and NTPv4 Port Negotiation records to respond with,
+                // > but honoring the client's preference is OPTIONAL
+                //
+                // we ignore the client's preference
+                Continue(state)
+            }
+            Error { errorcode } => {
+                let error = match errorcode {
+                    0 => UnrecognizedCriticalRecord,
+                    1 => BadRequest,
+                    2 => InternalServerError,
+                    _ => UnknownErrorCode(errorcode),
+                };
+
+                Break(Err(error))
+            }
+            Warning { warningcode } => {
+                tracing::warn!(warningcode, "Received key exchange warning code");
+
+                Continue(state)
+            }
+            NextProtocol { protocol_ids } => {
+                // NTP4 has protocol id 0, it is the only protocol we support
+                const NTP4: u16 = 0;
+
+                if !protocol_ids.contains(&NTP4) {
+                    Break(Err(NoValidProtocol))
+                } else {
+                    Continue(state)
+                }
+            }
+            AeadAlgorithm { algorithm_ids, .. } => {
+                let selected = algorithm_ids.iter().copied().find_map(Algorithm::from_u16);
+
+                match selected {
+                    None => Break(Err(NoValidAlgorithm)),
+                    Some(algorithm) => {
+                        state.algorithm = algorithm;
+                        Continue(state)
+                    }
+                }
+            }
+
+            Unknown { .. } => Continue(state),
+        }
+    }
+
+    fn new() -> Self {
+        Self::default()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -1109,5 +1230,30 @@ mod test {
 
         assert_eq!(result.remote, "localhost");
         assert_eq!(result.port, 123);
+    }
+
+    #[test]
+    fn server_decoder_finds_algorithm() {
+        let mut bytes = Vec::with_capacity(1024);
+        for record in NtsRecord::client_key_exchange_records() {
+            record.write(&mut bytes).unwrap();
+        }
+
+        let mut decoder = KeyExchangeServerDecoder::new();
+
+        let decode_output = 'b: {
+            for chunk in bytes.chunks(24) {
+                decoder = match decoder.step_with_slice(chunk) {
+                    ControlFlow::Continue(d) => d,
+                    ControlFlow::Break(done) => break 'b done,
+                };
+            }
+
+            Err(KeyExchangeError::IncompleteResponse)
+        };
+
+        let result = decode_output.unwrap();
+
+        assert_eq!(result.algorithm, AeadAlgorithm::AeadAesSivCmac512);
     }
 }
