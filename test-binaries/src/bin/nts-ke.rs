@@ -203,8 +203,8 @@ pub(crate) async fn perform_key_exchange(
         .await
         .unwrap();
 
-    let cafile: Option<std::path::PathBuf> = (server_name == "localhost")
-        .then_some("/home/folkertdev/.local/share/mkcert/rootCA.pem".into());
+    let cafile: Option<std::path::PathBuf> =
+        (server_name == "localhost").then_some("test-keys/rootCA.crt".into());
 
     let mut root_cert_store = rustls::RootCertStore::empty();
     if let Some(cafile) = cafile {
@@ -243,9 +243,9 @@ pub(crate) async fn perform_key_exchange(
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    // let domain = "localhost";
+    let domain = "localhost";
     // let domain = "time.cloudflare.com";
-    let domain = "nts.time.nl"; // supports AesSivCmac512
+    // let domain = "nts.time.nl"; // supports AesSivCmac512
     let port = 4460;
 
     let mut key_exchange = perform_key_exchange(domain.to_string(), port)
@@ -257,27 +257,29 @@ async fn main() -> std::io::Result<()> {
 
     println!("cookie: {cookie:?}");
 
-    let addr = (key_exchange.remote, key_exchange.port)
-        .to_socket_addrs()
-        .unwrap()
-        .next()
-        .unwrap();
+    if key_exchange.remote != "localhost" {
+        let addr = (key_exchange.remote, key_exchange.port)
+            .to_socket_addrs()
+            .unwrap()
+            .next()
+            .unwrap();
 
-    let mut socket = match addr {
-        SocketAddr::V4(_) => UdpSocket::client((Ipv4Addr::UNSPECIFIED, 0).into(), addr).await?,
-        SocketAddr::V6(_) => UdpSocket::client((Ipv6Addr::UNSPECIFIED, 0).into(), addr).await?,
-    };
+        let mut socket = match addr {
+            SocketAddr::V4(_) => UdpSocket::client((Ipv4Addr::UNSPECIFIED, 0).into(), addr).await?,
+            SocketAddr::V6(_) => UdpSocket::client((Ipv6Addr::UNSPECIFIED, 0).into(), addr).await?,
+        };
 
-    let (packet, _) = NtpPacket::nts_poll_message(&cookie, 1, PollInterval::default());
+        let (packet, _) = NtpPacket::nts_poll_message(&cookie, 1, PollInterval::default());
 
-    let mut raw = [0u8; 1024];
-    let mut w = Cursor::new(raw.as_mut_slice());
-    packet.serialize(&mut w, &c2s.as_ref())?;
-    socket.send(&w.get_ref()[..w.position() as usize]).await?;
+        let mut raw = [0u8; 1024];
+        let mut w = Cursor::new(raw.as_mut_slice());
+        packet.serialize(&mut w, &c2s.as_ref())?;
+        socket.send(&w.get_ref()[..w.position() as usize]).await?;
 
-    let mut buf = [0; 1024];
-    let (n, _remote, _timestamp) = socket.recv(&mut buf).await?;
-    println!("response: {:?}", &buf[0..n]);
+        let mut buf = [0; 1024];
+        let (n, _remote, _timestamp) = socket.recv(&mut buf).await?;
+        println!("response: {:?}", &buf[0..n]);
+    }
 
     Ok(())
 }
