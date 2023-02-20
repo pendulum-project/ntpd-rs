@@ -76,39 +76,8 @@ impl<IO> BoundKeyExchangeClientData<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin,
 {
-    // adapter between AsyncWrite and std::io::Write
     fn do_write(&mut self, cx: &mut Context<'_>) -> Poll<std::io::Result<usize>> {
-        struct Writer<'a, 'b, T> {
-            io: &'a mut T,
-            cx: &'a mut Context<'b>,
-        }
-
-        impl<'a, 'b, T: AsyncWrite + Unpin> Write for Writer<'a, 'b, T> {
-            #[inline]
-            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-                match Pin::<&mut T>::new(self.io).poll_write(self.cx, buf) {
-                    Poll::Ready(result) => result,
-                    Poll::Pending => Err(std::io::ErrorKind::WouldBlock.into()),
-                }
-            }
-
-            #[inline]
-            fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> std::io::Result<usize> {
-                match Pin::<&mut T>::new(self.io).poll_write_vectored(self.cx, bufs) {
-                    Poll::Ready(result) => result,
-                    Poll::Pending => Err(std::io::ErrorKind::WouldBlock.into()),
-                }
-            }
-
-            fn flush(&mut self) -> std::io::Result<()> {
-                match Pin::<&mut T>::new(self.io).poll_flush(self.cx) {
-                    Poll::Ready(result) => result,
-                    Poll::Pending => Err(std::io::ErrorKind::WouldBlock.into()),
-                }
-            }
-        }
-
-        let mut writer = Writer {
+        let mut writer = WriterAdapter {
             io: &mut self.io,
             cx,
         };
@@ -119,25 +88,8 @@ where
         }
     }
 
-    // adapter between AsyncRead and std::io::Read
     fn do_read(&mut self, cx: &mut Context<'_>) -> Poll<std::io::Result<usize>> {
-        struct Reader<'a, 'b, T> {
-            io: &'a mut T,
-            cx: &'a mut Context<'b>,
-        }
-
-        impl<'a, 'b, T: AsyncRead + Unpin> Read for Reader<'a, 'b, T> {
-            fn read(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {
-                let mut buf = ReadBuf::new(buf);
-                match Pin::<&mut T>::new(self.io).poll_read(self.cx, &mut buf) {
-                    Poll::Ready(Ok(())) => Ok(buf.filled().len()),
-                    Poll::Ready(Err(e)) => Err(e),
-                    Poll::Pending => Err(std::io::ErrorKind::WouldBlock.into()),
-                }
-            }
-        }
-
-        let mut reader = Reader {
+        let mut reader = ReaderAdapter {
             io: &mut self.io,
             cx,
         };
@@ -212,6 +164,54 @@ where
                 outer.inner = Some(this);
                 return Poll::Pending;
             }
+        }
+    }
+}
+
+/// adapter between AsyncWrite and std::io::Write
+struct WriterAdapter<'a, 'b, T> {
+    io: &'a mut T,
+    cx: &'a mut Context<'b>,
+}
+
+impl<'a, 'b, T: AsyncWrite + Unpin> Write for WriterAdapter<'a, 'b, T> {
+    #[inline]
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match Pin::<&mut T>::new(self.io).poll_write(self.cx, buf) {
+            Poll::Ready(result) => result,
+            Poll::Pending => Err(std::io::ErrorKind::WouldBlock.into()),
+        }
+    }
+
+    #[inline]
+    fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> std::io::Result<usize> {
+        match Pin::<&mut T>::new(self.io).poll_write_vectored(self.cx, bufs) {
+            Poll::Ready(result) => result,
+            Poll::Pending => Err(std::io::ErrorKind::WouldBlock.into()),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match Pin::<&mut T>::new(self.io).poll_flush(self.cx) {
+            Poll::Ready(result) => result,
+            Poll::Pending => Err(std::io::ErrorKind::WouldBlock.into()),
+        }
+    }
+}
+
+/// adapter between AsyncRead and std::io::Read
+struct ReaderAdapter<'a, 'b, T> {
+    io: &'a mut T,
+    cx: &'a mut Context<'b>,
+}
+
+impl<'a, 'b, T: AsyncRead + Unpin> Read for ReaderAdapter<'a, 'b, T> {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {
+        let mut buf = ReadBuf::new(buf);
+        match Pin::<&mut T>::new(self.io).poll_read(self.cx, &mut buf) {
+            Poll::Ready(Ok(())) => Ok(buf.filled().len()),
+            Poll::Ready(Err(e)) => Err(e),
+            Poll::Pending => Err(std::io::ErrorKind::WouldBlock.into()),
         }
     }
 }
