@@ -463,10 +463,10 @@ impl AeadAlgorithm {
         }
     }
 
-    pub(crate) fn extract_nts_keys<ConnectionData>(
+    fn extract_nts_client_keys<ConnectionData>(
         &self,
         tls_connection: &rustls::ConnectionCommon<ConnectionData>,
-    ) -> Result<NtsKeys, rustls::Error> {
+    ) -> Result<NtsClientKeys, rustls::Error> {
         match self {
             AeadAlgorithm::AeadAesSivCmac256 => {
                 let c2s = extract_nts_key::<Aes128SivAead, _>(tls_connection, self.c2s_context())?;
@@ -475,7 +475,7 @@ impl AeadAlgorithm {
                 let c2s = Box::new(AesSivCmac256::new(c2s));
                 let s2c = Box::new(AesSivCmac256::new(s2c));
 
-                Ok(NtsKeys { c2s, s2c })
+                Ok(NtsClientKeys { c2s, s2c })
             }
             AeadAlgorithm::AeadAesSivCmac512 => {
                 let c2s = extract_nts_key::<Aes256SivAead, _>(tls_connection, self.c2s_context())?;
@@ -484,19 +484,25 @@ impl AeadAlgorithm {
                 let c2s = Box::new(AesSivCmac512::new(c2s));
                 let s2c = Box::new(AesSivCmac512::new(s2c));
 
-                Ok(NtsKeys { c2s, s2c })
+                Ok(NtsClientKeys { c2s, s2c })
             }
         }
     }
 }
 
-pub(crate) struct NtsKeys {
-    pub(crate) c2s: Box<dyn Cipher>,
-    pub(crate) s2c: Box<dyn Cipher>,
+// for the server, we must be able to get to the key's bytes
+pub struct NtsServerKeys {
+    c2s: Vec<u8>,
+    s2c: Vec<u8>,
 }
 
-fn extract_nts_key<T: KeySizeUser, ConnectionData>(
-    tls_connection: &rustls::ConnectionCommon<ConnectionData>,
+struct NtsClientKeys {
+    c2s: Box<dyn Cipher>,
+    s2c: Box<dyn Cipher>,
+}
+
+fn extract_nts_key<T: KeySizeUser, U>(
+    tls_connection: &rustls::ConnectionCommon<U>,
     context: [u8; 5],
 ) -> Result<aead::Key<T>, rustls::Error> {
     let mut key: aead::Key<T> = Default::default();
@@ -679,7 +685,8 @@ impl KeyExchangeClient {
 
                             tracing::info!(?algorithm, "selected AEAD algorithm");
 
-                            let keys = match algorithm.extract_nts_keys(&self.tls_connection) {
+                            let keys = match algorithm.extract_nts_client_keys(&self.tls_connection)
+                            {
                                 Ok(keys) => keys,
                                 Err(e) => return ControlFlow::Break(Err(KeyExchangeError::Tls(e))),
                             };
