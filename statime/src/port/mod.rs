@@ -8,11 +8,11 @@ use futures::pin_mut;
 
 pub use measurement::Measurement;
 
-use crate::bmc::bmca::{Bmca, RecommendedState};
+use crate::bmc::bmca::{BestAnnounceMessage, Bmca, RecommendedState};
 use crate::clock::{Clock, Timer};
 use crate::datastructures::common::{PortIdentity, TimeSource, Timestamp};
 use crate::datastructures::datasets::{DefaultDS, PortDS, TimePropertiesDS};
-use crate::datastructures::messages::{AnnounceMessage, Message, MessageBuilder};
+use crate::datastructures::messages::{Message, MessageBuilder};
 use crate::filters::Filter;
 use crate::network::{NetworkPort, NetworkRuntime};
 pub use crate::port::error::PortError;
@@ -68,7 +68,7 @@ impl<P: NetworkPort> Port<P> {
         filter: &RefCell<F>,
         default_ds: &DefaultDS,
         time_properties_ds: &RefCell<TimePropertiesDS>,
-        announce_messages: &RefCell<[Option<(AnnounceMessage, Timestamp, PortIdentity)>; N]>,
+        announce_messages: &RefCell<[Option<BestAnnounceMessage>; N]>,
     ) -> Infallible {
         let bmca_timeout = timer.after(self.port_ds.announce_interval());
         pin_mut!(bmca_timeout);
@@ -303,12 +303,11 @@ impl<P: NetworkPort> Port<P> {
     fn run_bmca<const N: usize>(
         &mut self,
         current_time: Instant,
-        announce_messages: &RefCell<[Option<(AnnounceMessage, Timestamp, PortIdentity)>; N]>,
+        announce_messages: &RefCell<[Option<BestAnnounceMessage>; N]>,
         default_ds: &DefaultDS,
         time_properties_ds: &RefCell<TimePropertiesDS>,
     ) {
         let erbest = self.take_best_port_announce_message(current_time);
-
         let ebest = match announce_messages.try_borrow_mut() {
             Ok(mut announce_messages) => {
                 // Uses assertion in PtpInstance constructor
@@ -318,17 +317,9 @@ impl<P: NetworkPort> Port<P> {
             }
             Err(_) => {
                 log::error!("could not access announce messages for BMCA");
-                return;
+                erbest
             }
         };
-
-        // TODO: Cleanup
-        let erbest = erbest
-            .as_ref()
-            .map(|(message, _, identity)| (message, identity));
-        let ebest = ebest
-            .as_ref()
-            .map(|(message, _, identity)| (message, identity));
 
         // Run the state decision
         // TODO: Discuss if we should change the clock's own time properties, or keep the master's time properties separately
@@ -348,15 +339,15 @@ impl<P: NetworkPort> Port<P> {
     pub fn take_best_port_announce_message(
         &mut self,
         current_time: Instant,
-    ) -> Option<(AnnounceMessage, Timestamp, PortIdentity)> {
+    ) -> Option<BestAnnounceMessage> {
         self.bmca
             .take_best_port_announce_message(current_time.into())
     }
 
     pub fn perform_state_decision(
         &mut self,
-        best_global_announce_message: Option<(&AnnounceMessage, &PortIdentity)>,
-        best_port_announce_message: Option<(&AnnounceMessage, &PortIdentity)>,
+        best_global_announce_message: Option<BestAnnounceMessage>,
+        best_port_announce_message: Option<BestAnnounceMessage>,
         default_ds: &DefaultDS,
         time_properties_ds: &mut TimePropertiesDS,
     ) {

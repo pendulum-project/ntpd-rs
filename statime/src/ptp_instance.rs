@@ -1,10 +1,9 @@
 use std::cell::RefCell;
 use std::convert::Infallible;
 
+use crate::bmc::bmca::BestAnnounceMessage;
 use crate::clock::{Clock, Timer};
-use crate::datastructures::common::{PortIdentity, Timestamp};
 use crate::datastructures::datasets::{CurrentDS, DefaultDS, ParentDS, TimePropertiesDS};
-use crate::datastructures::messages::AnnounceMessage;
 use crate::filters::Filter;
 use crate::network::NetworkPort;
 use crate::port::Port;
@@ -21,7 +20,7 @@ pub struct PtpInstance<P, C, F, const N: usize> {
     ports: [Port<P>; N],
     local_clock: RefCell<C>,
     filter: RefCell<F>,
-    announce_messages: RefCell<[Option<(AnnounceMessage, Timestamp, PortIdentity)>; N]>,
+    announce_messages: RefCell<[Option<BestAnnounceMessage>; N]>,
 }
 
 impl<P, C, F> PtpInstance<P, C, F, 1> {

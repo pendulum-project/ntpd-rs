@@ -56,21 +56,26 @@ impl Bmca {
     pub fn take_best_port_announce_message(
         &mut self,
         current_time: Timestamp,
-    ) -> Option<(AnnounceMessage, Timestamp, PortIdentity)> {
+    ) -> Option<BestAnnounceMessage> {
         // Find the announce message we want to use from each foreign master that has qualified messages
         let announce_messages = self
             .foreign_master_list
             .take_qualified_announce_messages(current_time);
 
         // The best of the foreign master messages is our erbest
-        let erbest = Self::find_best_announce_message(
-            announce_messages.map(|(message, ts)| (message, ts, self.own_port_identity)),
-        );
+        let erbest =
+            Self::find_best_announce_message(announce_messages.map(|(message, timestamp)| {
+                BestAnnounceMessage {
+                    message,
+                    timestamp,
+                    identity: self.own_port_identity,
+                }
+            }));
 
-        if let Some((erbest, erbest_ts, _)) = erbest {
+        if let Some(best) = &erbest {
             // All messages that were considered have been removed from the foreignmasterlist.
             // However, the one that has been selected as the Erbest must not be removed, so let's just reregister it.
-            self.register_announce_message(&erbest, erbest_ts);
+            self.register_announce_message(&best.message, best.timestamp);
         }
 
         erbest
@@ -79,26 +84,24 @@ impl Bmca {
     /// Finds the best announce message in the given iterator.
     /// The port identity in the tuple is the identity of the port that received the announce message.
     pub fn find_best_announce_message(
-        announce_messages: impl IntoIterator<Item = (AnnounceMessage, Timestamp, PortIdentity)>,
-    ) -> Option<(AnnounceMessage, Timestamp, PortIdentity)> {
-        announce_messages
-            .into_iter()
-            .reduce(|(l, lts, lpid), (r, rts, rpid)| {
-                match ComparisonDataset::from_announce_message(&l, &lpid)
-                    .compare(&ComparisonDataset::from_announce_message(&r, &rpid))
-                {
-                    DatasetOrdering::Better | DatasetOrdering::BetterByTopology => (l, lts, lpid),
-                    // We get errors if two announce messages are (functionally) the same, in that case we just pick the newer one
-                    DatasetOrdering::Error1 | DatasetOrdering::Error2 => {
-                        if Instant::from(lts) >= Instant::from(rts) {
-                            (l, lts, lpid)
-                        } else {
-                            (r, rts, rpid)
-                        }
+        announce_messages: impl IntoIterator<Item = BestAnnounceMessage>,
+    ) -> Option<BestAnnounceMessage> {
+        announce_messages.into_iter().reduce(|left, right| {
+            match ComparisonDataset::from_announce_message(&left.message, &left.identity).compare(
+                &ComparisonDataset::from_announce_message(&right.message, &right.identity),
+            ) {
+                DatasetOrdering::Better | DatasetOrdering::BetterByTopology => left,
+                // We get errors if two announce messages are (functionally) the same, in that case we just pick the newer one
+                DatasetOrdering::Error1 | DatasetOrdering::Error2 => {
+                    if Instant::from(left.timestamp) >= Instant::from(right.timestamp) {
+                        left
+                    } else {
+                        right
                     }
-                    DatasetOrdering::WorseByTopology | DatasetOrdering::Worse => (r, rts, rpid),
                 }
-            })
+                DatasetOrdering::WorseByTopology | DatasetOrdering::Worse => right,
+            }
+        })
     }
 
     /// Calculates the recommended port state. This has to be run for every port.
@@ -114,15 +117,15 @@ impl Bmca {
     /// If None is returned, then the port should remain in the same state as it is now.
     pub fn calculate_recommended_state(
         own_data: &DefaultDS,
-        best_global_announce_message: Option<(&AnnounceMessage, &PortIdentity)>,
-        best_port_announce_message: Option<(&AnnounceMessage, &PortIdentity)>,
+        best_global_announce_message: Option<BestAnnounceMessage>,
+        best_port_announce_message: Option<BestAnnounceMessage>,
         port_state: &PortState,
     ) -> Option<RecommendedState> {
         let d0 = ComparisonDataset::from_own_data(own_data);
         let ebest = best_global_announce_message
-            .map(|(announce, pid)| ComparisonDataset::from_announce_message(announce, pid));
+            .map(|best| ComparisonDataset::from_announce_message(&best.message, &best.identity));
         let erbest = best_port_announce_message
-            .map(|(announce, pid)| ComparisonDataset::from_announce_message(announce, pid));
+            .map(|best| ComparisonDataset::from_announce_message(&best.message, &best.identity));
 
         if best_global_announce_message.is_none() && matches!(port_state, PortState::Listening) {
             return None;
@@ -135,7 +138,9 @@ impl Bmca {
                     if d0.compare(&erbest).is_better() {
                         Some(RecommendedState::M1(*own_data))
                     } else {
-                        Some(RecommendedState::P1(*best_port_announce_message.unwrap().0))
+                        Some(RecommendedState::P1(
+                            best_port_announce_message.unwrap().message,
+                        ))
                     }
                 }
             };
@@ -155,20 +160,27 @@ impl Bmca {
         let ebest = ebest.unwrap();
 
         match erbest {
-            None => Some(RecommendedState::M3(*best_global_announce_message.0)),
+            None => Some(RecommendedState::M3(best_global_announce_message.message)),
             Some(erbest) => {
                 let best_port_announce_message = best_port_announce_message.unwrap();
 
-                if best_global_announce_message.1 == best_port_announce_message.1 {
-                    Some(RecommendedState::S1(*best_global_announce_message.0))
+                if best_global_announce_message.timestamp == best_port_announce_message.timestamp {
+                    Some(RecommendedState::S1(best_global_announce_message.message))
                 } else if matches!(ebest.compare(&erbest), DatasetOrdering::BetterByTopology) {
-                    Some(RecommendedState::P2(*best_port_announce_message.0))
+                    Some(RecommendedState::P2(best_port_announce_message.message))
                 } else {
-                    Some(RecommendedState::M3(*best_global_announce_message.0))
+                    Some(RecommendedState::M3(best_global_announce_message.message))
                 }
             }
         }
     }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct BestAnnounceMessage {
+    message: AnnounceMessage,
+    timestamp: Timestamp,
+    identity: PortIdentity,
 }
 
 #[derive(Debug)]
