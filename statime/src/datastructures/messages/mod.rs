@@ -3,6 +3,14 @@
 use arrayvec::ArrayVec;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
+pub use announce::*;
+pub use delay_req::*;
+pub use delay_resp::*;
+pub use follow_up::*;
+pub use header::*;
+pub use message_builder::*;
+pub use sync::*;
+
 mod announce;
 mod control_field;
 mod delay_req;
@@ -12,13 +20,7 @@ mod header;
 mod message_builder;
 mod sync;
 
-pub use announce::*;
-pub use delay_req::*;
-pub use delay_resp::*;
-pub use follow_up::*;
-pub use header::*;
-pub use message_builder::*;
-pub use sync::*;
+pub const MAX_DATA_LEN: usize = 255;
 
 #[derive(Debug, Clone, Copy, TryFromPrimitive, IntoPrimitive, PartialEq, Eq)]
 #[repr(u8)]
@@ -130,11 +132,8 @@ impl Message {
     /// Serializes the message into the PTP wire format.
     ///
     /// Returns a vector with the bytes of the message or an error.
-    pub fn serialize_vec(&self) -> Result<ArrayVec<u8, 255>, super::WireFormatError> {
-        let mut buffer = ArrayVec::<u8, 255>::new();
-        for _i in 0..self.wire_size() {
-            buffer.push(0);
-        }
+    pub fn serialize_vec(&self) -> Result<ArrayVec<u8, MAX_DATA_LEN>, super::WireFormatError> {
+        let mut buffer = ArrayVec::new();
         self.serialize(&mut buffer)?;
         Ok(buffer)
     }

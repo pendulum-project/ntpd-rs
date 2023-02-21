@@ -13,9 +13,7 @@ pub struct PortDS {
     log_sync_interval: i8,
     delay_mechanism: DelayMechanism,
     log_min_p_delay_req_interval: i8,
-    // TODO: u4
     version_number: u8,
-    // TODO: u4
     minor_version_number: u8,
     delay_asymmetry: Duration,
     pub(crate) port_enable: bool,

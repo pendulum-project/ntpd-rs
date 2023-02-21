@@ -21,14 +21,13 @@ pub trait Clock {
     ///
     /// The adjustment that is actually being done to the clock doesn't have to be exactly what is being given.
     /// The clock can (and should) do some filtering.
-    // TODO: Should both the PTP instance and the clock itself do filtering?
-    // TODO: Why does this return a bool?
+    // TODO: Discuss whether both the PTP instance and the clock itself should do filtering?
     fn adjust(
         &mut self,
         time_offset: Duration,
         frequency_multiplier: f64,
         time_properties_ds: &TimePropertiesDS,
-    ) -> Result<bool, Self::Error>;
+    ) -> Result<(), Self::Error>;
 }
 
 /// A timer let's you get the current time and wait for durations

@@ -41,7 +41,7 @@ fn test_port_data(network_runtime: &mut TestRuntime) -> PortData<TestRuntimePort
         port_ds,
         bmca: Bmca::new(TimeInterval(2_000_000_000u64.to_fixed()), identity),
         clock_quality: ClockQuality::default(),
-        time_properties: TimePropertiesDS::new_arbitrary(
+        time_properties: TimePropertiesDS::new_arbitrary_time(
             false,
             false,
             TimeSource::InternalOscillator,

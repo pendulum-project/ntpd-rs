@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 
-pub use master::MasterState;
+pub use master::{MasterError, MasterState};
 pub use slave::{SlaveError, SlaveState};
 
 use crate::datastructures::common::PortIdentity;
@@ -39,7 +39,8 @@ impl PortState {
             PortState::Master(master) => {
                 master
                     .handle_message(message, current_time, network_port, port_identity)
-                    .await
+                    .await?;
+                Ok(())
             }
             PortState::Slave(slave) => {
                 slave
@@ -48,21 +49,6 @@ impl PortState {
                 Ok(())
             }
             _ => unimplemented!(),
-        }
-    }
-
-    // TODO: Necessary?
-    fn code(&self) -> u8 {
-        match self {
-            PortState::Initializing => 0x01,
-            PortState::Faulty => 0x02,
-            PortState::Disabled => 0x03,
-            PortState::Listening => 0x04,
-            PortState::PreMaster => 0x05,
-            PortState::Master(_) => 0x06,
-            PortState::Passive => 0x07,
-            PortState::Uncalibrated => 0x08,
-            PortState::Slave(_) => 0x09,
         }
     }
 }

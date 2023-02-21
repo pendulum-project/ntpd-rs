@@ -12,7 +12,6 @@ pub struct DefaultDS {
     pub(crate) priority_2: u8,
     pub(crate) domain_number: u8,
     slave_only: bool,
-    // TODO: u12
     pub(crate) sdo_id: u16,
     current_time: Instant,
     pub(crate) instance_enable: bool,

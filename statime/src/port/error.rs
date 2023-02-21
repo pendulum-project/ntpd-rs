@@ -1,24 +1,18 @@
+use thiserror::Error;
+
 use crate::datastructures::WireFormatError;
-use crate::port::state::SlaveError;
+use crate::port::state::{MasterError, SlaveError};
 
-pub type Result<T, E = PortError> = std::result::Result<T, E>;
+pub type Result<T, E = PortError> = core::result::Result<T, E>;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum PortError {
-    WireFormat(WireFormatError),
-    Slave(SlaveError),
-    InvalidState,
-    UnexpectedMessage,
-}
-
-impl From<WireFormatError> for PortError {
-    fn from(value: WireFormatError) -> Self {
-        PortError::WireFormat(value)
-    }
-}
-
-impl From<SlaveError> for PortError {
-    fn from(value: SlaveError) -> Self {
-        PortError::Slave(value)
-    }
+    #[error("something went wrong on the network")]
+    Network,
+    #[error("wire format error: {0}")]
+    WireFormat(#[from] WireFormatError),
+    #[error("slave error: {0}")]
+    Slave(#[from] SlaveError),
+    #[error("master error: {0}")]
+    Master(#[from] MasterError),
 }

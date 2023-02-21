@@ -1,14 +1,17 @@
 //! General datastructures as defined by the ptp spec
 
 use core::fmt::Debug;
+use thiserror::Error;
 
 pub mod common;
 pub mod datasets;
 pub mod messages;
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, Error)]
 pub enum WireFormatError {
+    #[error("enum conversion failed")]
     EnumConversionError,
+    #[error("buffer too short")]
     BufferTooShort,
 }
 

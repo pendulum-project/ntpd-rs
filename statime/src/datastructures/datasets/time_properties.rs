@@ -13,7 +13,7 @@ pub struct TimePropertiesDS {
 }
 
 impl TimePropertiesDS {
-    pub fn new_ptp(
+    pub fn new_ptp_time(
         current_utc_offset: i16,
         current_utc_offset_valid: bool,
         leap59: bool,
@@ -34,7 +34,7 @@ impl TimePropertiesDS {
         }
     }
 
-    pub fn new_arbitrary(
+    pub fn new_arbitrary_time(
         time_traceable: bool,
         frequency_traceable: bool,
         time_source: TimeSource,

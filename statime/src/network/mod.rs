@@ -1,7 +1,9 @@
 //! Definitions and implementations of the abstract network types
 
-use crate::time::Instant;
 use arrayvec::ArrayVec;
+
+use crate::datastructures::messages::MAX_DATA_LEN;
+use crate::time::Instant;
 
 #[cfg(test)]
 pub mod test;
@@ -33,7 +35,7 @@ pub trait NetworkRuntime {
 #[derive(Debug, Clone)]
 pub struct NetworkPacket {
     /// The received data of a network port
-    pub data: ArrayVec<u8, 255>,
+    pub data: ArrayVec<u8, MAX_DATA_LEN>,
     /// The timestamp at which the packet was received. This is preferrably a timestamp
     /// that has been reported by the network hardware.
     ///

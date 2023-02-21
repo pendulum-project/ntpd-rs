@@ -47,7 +47,7 @@ impl Clock for LinuxClock {
         time_offset: Duration,
         frequency_multiplier: f64,
         time_properties: &TimePropertiesDS,
-    ) -> Result<bool, Self::Error> {
+    ) -> Result<(), Self::Error> {
         if time_properties.is_ptp() {
             self.clock
                 .set_leap_seconds(time_properties.leap61(), time_properties.leap59())
@@ -55,14 +55,10 @@ impl Clock for LinuxClock {
         }
 
         let time_offset_float: f64 = time_offset.nanos().lossy_into();
-        let adjust_result = self
-            .clock
-            .adjust_clock(time_offset_float / 1e9, frequency_multiplier);
 
-        match adjust_result {
-            Ok(_) => Ok(true),
-            Err(e) => Err(Error::LinuxError(e)),
-        }
+        self.clock
+            .adjust_clock(time_offset_float / 1e9, frequency_multiplier)
+            .map_err(Error::LinuxError)
     }
 }
 

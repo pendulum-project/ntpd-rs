@@ -2,6 +2,7 @@ use clap::{AppSettings, Parser};
 use fern::colors::Color;
 use statime::datastructures::common::{PortIdentity, TimeSource};
 use statime::datastructures::datasets::{DefaultDS, DelayMechanism, PortDS, TimePropertiesDS};
+use statime::port::Port;
 use statime::{
     datastructures::common::ClockIdentity, filters::basic::BasicFilter, ptp_instance::PtpInstance,
 };
@@ -90,14 +91,14 @@ async fn main() {
 
     println!("Starting PTP");
 
-    let clock = if let Some(hardware_clock) = &args.hardware_clock {
+    let local_clock = if let Some(hardware_clock) = &args.hardware_clock {
         LinuxClock::new(
             RawLinuxClock::get_from_file(hardware_clock).expect("Could not open hardware clock"),
         )
     } else {
         LinuxClock::new(RawLinuxClock::get_realtime_clock())
     };
-    let mut network_runtime = LinuxRuntime::new(args.hardware_clock.is_some(), &clock);
+    let mut network_runtime = LinuxRuntime::new(args.hardware_clock.is_some(), &local_clock);
     let clock_identity = ClockIdentity(get_clock_id().expect("Could not get clock identity"));
 
     let default_ds = DefaultDS::new_ordinary_clock(
@@ -109,7 +110,7 @@ async fn main() {
         args.sdo,
     );
     let time_properties_ds =
-        TimePropertiesDS::new_arbitrary(false, false, TimeSource::InternalOscillator);
+        TimePropertiesDS::new_arbitrary_time(false, false, TimeSource::InternalOscillator);
     let port_ds = PortDS::new(
         PortIdentity {
             clock_identity,
@@ -124,16 +125,14 @@ async fn main() {
         0,
         1,
     );
+    let port = Port::new(port_ds, &mut network_runtime, args.interface).await;
     let mut instance = PtpInstance::new_ordinary_clock(
         default_ds,
         time_properties_ds,
-        clock,
+        port,
+        local_clock,
         BasicFilter::new(0.25),
-        port_ds,
-        &mut network_runtime,
-        args.interface,
-    )
-    .await;
+    );
 
     instance.run(&LinuxTimer).await;
 }

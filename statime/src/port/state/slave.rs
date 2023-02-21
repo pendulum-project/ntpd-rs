@@ -6,6 +6,7 @@ use crate::network::NetworkPort;
 use crate::port::sequence_id::SequenceIdGenerator;
 use crate::port::Measurement;
 use crate::time::{Duration, Instant};
+use thiserror::Error;
 
 type Result<T, E = SlaveError> = core::result::Result<T, E>;
 
@@ -31,7 +32,6 @@ enum Handshake {
         sync_correction: Duration,
     },
     AfterFollowUp {
-        sync_id: u16,
         sync_recv_time: Instant,
         sync_send_time: Instant,
     },
@@ -110,22 +110,16 @@ impl SlaveState {
                     }
                 } else {
                     Handshake::AfterFollowUp {
-                        sync_id: message.header().sequence_id(),
                         sync_recv_time: current_time,
                         sync_send_time: Instant::from(message.origin_timestamp())
                             + Duration::from(message.header().correction_field()),
                     }
                 };
-                log::trace!("handshake progress: {:?}", self.handshake);
 
                 Ok(())
             }
             // Wrong state
             Handshake::AfterSync { .. } | Handshake::AfterFollowUp { .. } => {
-                log::error!(
-                    "unexpected sync message ({})",
-                    message.header().sequence_id()
-                );
                 Err(SlaveError::OutOfSequence)
             }
         };
@@ -148,18 +142,15 @@ impl SlaveState {
                 delay_id,
                 delay_send_time,
             };
-            log::trace!("delay handshake progress: {:?}", self.delay_handshake);
         } else {
-            // TODO: Seems very weird to me
             self.delay_handshake = DelayHandshake::Initial;
-            log::trace!("delay handshake progress: {:?}", self.delay_handshake);
         }
 
         if let Some(follow_up) = self.pending_followup {
             self.handle_follow_up(follow_up)?;
         }
 
-        Ok(())
+        result
     }
 
     fn handle_follow_up(&mut self, message: FollowUpMessage) -> Result<()> {
@@ -169,6 +160,7 @@ impl SlaveState {
                 sync_recv_time,
                 sync_correction,
             } => {
+                // Ignore messages not belonging to currently processing sync
                 if sync_id == message.header().sequence_id() {
                     // Remove any previous pending messages, they are no longer current
                     self.pending_followup = None;
@@ -178,27 +170,22 @@ impl SlaveState {
                         + Duration::from(message.header().correction_field())
                         + sync_correction;
                     self.handshake = Handshake::AfterFollowUp {
-                        sync_id,
                         sync_recv_time,
                         sync_send_time,
                     };
-                    log::trace!("handshake progress: {:?}", self.handshake);
 
                     Ok(())
                 } else {
-                    // Ignore messages not belonging to currently processing sync
-                    self.pending_followup = Some(message); // Store it for a potentially coming sync
+                    // Store it for a potentially coming sync
+                    self.pending_followup = Some(message);
                     Ok(())
                 }
             }
             // Wrong state
             Handshake::Initial | Handshake::AfterFollowUp { .. } => {
-                log::error!(
-                    "unexpected follow-up message ({})",
-                    message.header().sequence_id()
-                );
+                // Store it for a potentially coming sync
                 self.pending_followup = Some(message);
-                Err(SlaveError::OutOfSequence)
+                Ok(())
             }
         }
     }
@@ -206,7 +193,6 @@ impl SlaveState {
     fn handle_delay_resp(&mut self, message: DelayRespMessage) -> Result<()> {
         match self.handshake {
             Handshake::AfterFollowUp {
-                sync_id,
                 sync_recv_time,
                 sync_send_time,
             } => {
@@ -240,7 +226,6 @@ impl SlaveState {
                             / 2;
 
                         self.delay_handshake = DelayHandshake::AfterDelayResp { mean_delay };
-                        log::trace!("delay handshake progress: {:?}", self.delay_handshake);
 
                         Ok(())
                     }
@@ -251,14 +236,11 @@ impl SlaveState {
                 }
             }
             // Wrong state
-            Handshake::Initial | Handshake::AfterSync { .. } => {
-                log::error!("unexpected delay response message");
-                Err(SlaveError::OutOfSequence)
-            }
+            Handshake::Initial | Handshake::AfterSync { .. } => Err(SlaveError::OutOfSequence),
         }
     }
 
-    pub(crate) fn extract_measurement(&mut self) -> Result<Measurement> {
+    pub(crate) fn extract_measurement(&mut self) -> Option<Measurement> {
         match self.handshake {
             Handshake::AfterFollowUp {
                 sync_recv_time,
@@ -273,26 +255,23 @@ impl SlaveState {
                         };
 
                         self.handshake = Handshake::Initial;
-                        log::trace!("handshake progress: {:?}", self.handshake);
 
-                        Ok(result)
+                        Some(result)
                     }
                     // Wrong state
-                    DelayHandshake::Initial | DelayHandshake::AfterSync { .. } => {
-                        Err(SlaveError::OutOfSequence)
-                    }
+                    DelayHandshake::Initial | DelayHandshake::AfterSync { .. } => None,
                 }
             }
             // Wrong state
-            Handshake::Initial | Handshake::AfterSync { .. } => Err(SlaveError::OutOfSequence),
+            Handshake::Initial | Handshake::AfterSync { .. } => None,
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum SlaveError {
-    /// Received a message that a port in the slave state can never process.
+    #[error("received a message that a port in the slave state can never process")]
     UnexpectedMessage,
-    /// Received a message that can usually be processed, but not right now.
+    #[error("received a message that can usually be processed, but not right now")]
     OutOfSequence,
 }

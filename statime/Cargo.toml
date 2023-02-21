@@ -29,7 +29,7 @@ getset = "0.1.2"
 libm = "0.1.2"
 log = { version = "0.4.14", default-features = false }
 num_enum = { version = "0.5.1", default-features = false }
+thiserror = "1.0.30"
 
 [dev-dependencies]
-thiserror = "1.0.30"
 tokio = { version = "1.25", features = ["test-util", "macros"] }

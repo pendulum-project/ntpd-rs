@@ -15,6 +15,7 @@ use crate::datastructures::datasets::{DefaultDS, PortDS, TimePropertiesDS};
 use crate::datastructures::messages::{AnnounceMessage, Message, MessageBuilder};
 use crate::filters::Filter;
 use crate::network::{NetworkPort, NetworkRuntime};
+pub use crate::port::error::PortError;
 use crate::port::state::{MasterState, PortState, SlaveState};
 use crate::time::Instant;
 
@@ -52,6 +53,10 @@ impl<P> Port<P> {
             network_port,
             bmca,
         }
+    }
+
+    pub fn identity(&self) -> PortIdentity {
+        self.port_ds.port_identity
     }
 }
 
@@ -124,18 +129,40 @@ impl<P: NetworkPort> Port<P> {
                                         .source_port_identity(self.port_ds.port_identity)
                                         .sync_message(Timestamp::from(clock.now()));
 
-                                    let sync_message_encode = sync_message.serialize_vec().unwrap();
-                                    self.network_port.send(&sync_message_encode).await;
+                                    match sync_message.serialize_vec() {
+                                        Ok(sync_message_encode) => {
+                                            if let Err(error) =
+                                                self.network_port.send(&sync_message_encode).await
+                                            {
+                                                log::error!("{:?}", error);
+                                            }
+                                        }
+                                        Err(error) => {
+                                            log::error!("failed to serialize sync: {:?}", error)
+                                        }
+                                    }
 
-                                    // TODO: Is the follow up a config?
+                                    // TODO: Discuss whether follow up is a config?
                                     let follow_up_message = MessageBuilder::new()
                                         .sequence_id(master.sync_seq_ids.generate())
                                         .source_port_identity(self.port_ds.port_identity)
                                         .follow_up_message(Timestamp::from(clock.now()));
 
-                                    let follow_up_message_encode =
-                                        follow_up_message.serialize_vec().unwrap();
-                                    self.network_port.send(&follow_up_message_encode).await;
+                                    match follow_up_message.serialize_vec() {
+                                        Ok(follow_up_message_encode) => {
+                                            if let Err(error) = self
+                                                .network_port
+                                                .send(&follow_up_message_encode)
+                                                .await
+                                            {
+                                                log::error!("{:?}", error);
+                                            }
+                                        }
+                                        Err(error) => log::error!(
+                                            "failed to serialize follow-up: {:?}",
+                                            error
+                                        ),
+                                    }
                                 }
                             }
                             Err(_) => log::error!("failed to get current time"),
@@ -162,9 +189,20 @@ impl<P: NetworkPort> Port<P> {
                                             TimeSource::from_primitive(0xa0), // TODO implement time_source: TimeSource,
                                         );
 
-                                    let announce_message_encode =
-                                        announce_message.serialize_vec().unwrap();
-                                    self.network_port.send(&announce_message_encode).await;
+                                    match announce_message.serialize_vec() {
+                                        Ok(announce_message_encode) => {
+                                            if let Err(error) = self
+                                                .network_port
+                                                .send(&announce_message_encode)
+                                                .await
+                                            {
+                                                log::error!("{:?}", error);
+                                            }
+                                        }
+                                        Err(error) => {
+                                            log::error!("failed to serialize announce: {:?}", error)
+                                        }
+                                    }
                                 }
                             }
                             Err(_) => log::error!("failed to get current time"),
@@ -197,7 +235,8 @@ impl<P: NetworkPort> Port<P> {
                                     announce_receipt_timeout
                                         .set(timer.after(self.port_ds.announce_receipt_interval()));
                                 } else {
-                                    self.port_ds
+                                    let result = self
+                                        .port_ds
                                         .port_state
                                         .handle_message(
                                             message,
@@ -207,38 +246,46 @@ impl<P: NetworkPort> Port<P> {
                                         )
                                         .await;
 
-                                    // If the received packet allowed the (slave) state to calculate its
-                                    // offset from the master, update the local clock
-                                    if let PortState::Slave(slave) = &mut self.port_ds.port_state {
-                                        log::info!("A");
-                                        if let Ok(measurement) = slave.extract_measurement() {
-                                            log::info!("B");
-                                            match filter.try_borrow_mut() {
-                                                Ok(mut filter) => {
-                                                    let (offset, freq_corr) =
-                                                        filter.absorb(measurement);
-                                                    match time_properties_ds.try_borrow() {
-                                                        Ok(time_properties_ds) => {
-                                                            // TODO: Currently returns bool instead of ()
-                                                            clock
-                                                                .adjust(
-                                                                    offset,
-                                                                    freq_corr,
-                                                                    &time_properties_ds,
-                                                                )
-                                                                .expect(
-                                                                    "Unexpected error adjusting clock",
-                                                                );
-                                                        }
-                                                        Err(_) => {
-                                                            log::error!(
+                                    match result {
+                                        Ok(_) => {
+                                            // If the received packet allowed the (slave) state to calculate its
+                                            // offset from the master, update the local clock
+                                            if let PortState::Slave(slave) =
+                                                &mut self.port_ds.port_state
+                                            {
+                                                if let Some(measurement) =
+                                                    slave.extract_measurement()
+                                                {
+                                                    match filter.try_borrow_mut() {
+                                                        Ok(mut filter) => {
+                                                            let (offset, freq_corr) =
+                                                                filter.absorb(measurement);
+                                                            match time_properties_ds.try_borrow() {
+                                                                Ok(time_properties_ds) => clock
+                                                                    .adjust(
+                                                                        offset,
+                                                                        freq_corr,
+                                                                        &time_properties_ds,
+                                                                    )
+                                                                    .expect(
+                                                                        "Unexpected error adjusting clock",
+                                                                    ),
+                                                                Err(_) => {
+                                                                    log::error!(
                                                                 "could not retrieve time properties"
                                                             )
+                                                                }
+                                                            }
+                                                        }
+                                                        Err(_) => {
+                                                            log::error!("could not retrieve filter")
                                                         }
                                                     }
                                                 }
-                                                Err(_) => log::error!("could not retrieve filter"),
                                             }
+                                        }
+                                        Err(error) => {
+                                            log::warn!("failed to handle message: {:?}", error)
                                         }
                                     }
                                 }
@@ -264,7 +311,7 @@ impl<P: NetworkPort> Port<P> {
 
         let ebest = match announce_messages.try_borrow_mut() {
             Ok(mut announce_messages) => {
-                // TODO: lelijk >:(
+                // Uses assertion in PtpInstance constructor
                 let index = (self.port_ds.port_identity.port_number - 1) as usize;
                 announce_messages[index] = erbest;
                 Bmca::find_best_announce_message(announce_messages.into_iter().flatten())
@@ -284,6 +331,7 @@ impl<P: NetworkPort> Port<P> {
             .map(|(message, _, identity)| (message, identity));
 
         // Run the state decision
+        // TODO: Discuss if we should change the clock's own time properties, or keep the master's time properties separately
         match time_properties_ds.try_borrow_mut() {
             Ok(mut time_properties_ds) => {
                 self.perform_state_decision(
