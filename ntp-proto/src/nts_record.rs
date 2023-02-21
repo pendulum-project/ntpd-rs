@@ -4,8 +4,8 @@ use std::{
     sync::Arc,
 };
 
-use aead::KeySizeUser;
-use aes_siv::{Aes128SivAead, Aes256SivAead};
+use aead::{Key, KeySizeUser};
+use aes_siv::{siv::Aes256Siv, Aes128SivAead, Aes256SivAead};
 
 use crate::{
     cookiestash::{Cookie, CookieStash},
@@ -768,7 +768,7 @@ impl KeyExchangeClient {
                         ControlFlow::Break(Err(error)) => return ControlFlow::Break(Err(error)),
                     }
                 }
-                Err(e) => match e.kind() {
+                Err(e) => match dbg!(e.kind()) {
                     std::io::ErrorKind::WouldBlock => return ControlFlow::Continue(self),
                     _ => return ControlFlow::Break(Err(e.into())),
                 },
@@ -936,6 +936,60 @@ pub struct KeyExchangeServerResult {
     s2c: Vec<u8>,
 }
 
+impl KeyExchangeServerResult {
+    pub async fn send_help(self) -> std::io::Result<()> {
+        let identifier = 0;
+        let server_key = AesSivCmac512::new(Default::default());
+
+        self.send(&server_key, identifier).await
+    }
+    pub async fn send<C: crate::Cipher + ?Sized>(
+        mut self,
+        server_key: &C,
+        identifier: u32,
+    ) -> std::io::Result<()> {
+        let server_keys = NtsServerKeys {
+            c2s: self.c2s,
+            s2c: self.s2c,
+        };
+
+        let records = NtsRecord::server_key_exchange_records(
+            server_key,
+            identifier,
+            self.algorithm,
+            server_keys,
+        )?;
+
+        let mut buffer = Vec::with_capacity(1024);
+        for record in records {
+            record.write(&mut buffer)?;
+        }
+
+        std::thread::sleep_ms(3000);
+
+        dbg!(self.tls_connection.process_new_packets());
+
+        self.tls_connection.writer().write_all(&buffer).unwrap();
+
+        dbg!(self.tls_connection.process_new_packets());
+
+        self.tls_connection.writer().flush().unwrap();
+
+        //        self.tls_connection
+        //            .read_tls(&mut std::io::BufReader::new(buffer.as_slice()))
+        //            .unwrap();
+
+        self.tls_connection.send_close_notify();
+
+        dbg!(self.tls_connection.process_new_packets());
+
+        std::thread::sleep_ms(1000);
+
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
 pub struct KeyExchangeServer {
     tls_connection: rustls::ServerConnection,
     decoder: KeyExchangeServerDecoder,
@@ -1007,13 +1061,12 @@ impl KeyExchangeServer {
         }
     }
 
-    pub fn new(mut tls_config: rustls::ServerConfig) -> Result<Self, KeyExchangeError> {
+    pub fn new(tls_config: Arc<rustls::ServerConfig>) -> Result<Self, KeyExchangeError> {
         // Ensure we send only ntske/1 as alpn
-        tls_config.alpn_protocols.clear();
-        tls_config.alpn_protocols.push(b"ntske/1".to_vec());
+        debug_assert_eq!(tls_config.alpn_protocols, &[b"ntske/1".to_vec()]);
 
         // TLS only works when the server name is a DNS name; an IP address does not work
-        let tls_connection = rustls::ServerConnection::new(Arc::new(tls_config))?;
+        let tls_connection = rustls::ServerConnection::new(tls_config)?;
 
         Ok(Self {
             tls_connection,

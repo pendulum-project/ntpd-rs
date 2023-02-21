@@ -12,6 +12,7 @@ use std::{
 
 use std::task::ready;
 
+use ntp_proto::{KeyExchangeError, KeyExchangeServer, KeyExchangeServerResult};
 use rustls::{Certificate, ConnectionCommon, PrivateKey, ServerConfig, ServerConnection, SideData};
 use rustls_pemfile::{certs, rsa_private_keys};
 use tokio::{
@@ -79,29 +80,31 @@ async fn main() -> std::io::Result<()> {
     let certs = load_certs(Path::new("test-keys/signed.crt")).unwrap();
     let mut keys = load_keys(Path::new("test-keys/tls.key")).unwrap();
 
-    let config = rustls::ServerConfig::builder()
+    let mut config = rustls::ServerConfig::builder()
         .with_safe_defaults()
         .with_no_client_auth()
         .with_single_cert(certs, keys.remove(0))
         .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
 
-    let acceptor = TlsAcceptor::from(Arc::new(config));
+    config.alpn_protocols.clear();
+    config.alpn_protocols.push(b"ntske/1".to_vec());
+
+    let config = Arc::new(config);
 
     println!("listener running on {:?}", &addr);
     let listener = TcpListener::bind(&addr).await?;
 
     loop {
         let (stream, peer_addr) = listener.accept().await?;
-        let acceptor = acceptor.clone();
+        let config = config.clone();
 
         let fut = async move {
-            use tokio::io::AsyncWriteExt;
+            let server = BoundKeyExchangeServer::new(stream, config).unwrap();
 
-            let stream = acceptor.accept(stream).await?;
-            let (_reader, mut writer) = tokio::io::split(stream);
+            let result = server.await.unwrap();
 
-            writer.write_all(NTS_TIME_NL_RESPONSE).await?;
-            writer.flush().await?;
+            result.send_help().await.unwrap();
+
             println!("Responded to: {}", peer_addr);
 
             Ok(()) as io::Result<()>
@@ -135,611 +138,175 @@ fn load_keys(path: &Path) -> io::Result<Vec<PrivateKey>> {
     Ok(keys)
 }
 
-/// A wrapper around a `rustls::ServerConfig`, providing an async `accept` method.
-#[derive(Clone)]
-struct TlsAcceptor {
-    inner: Arc<ServerConfig>,
-}
-
-impl From<Arc<ServerConfig>> for TlsAcceptor {
-    fn from(inner: Arc<ServerConfig>) -> TlsAcceptor {
-        TlsAcceptor { inner }
-    }
-}
-
-impl TlsAcceptor {
-    #[inline]
-    pub fn accept<IO>(&self, stream: IO) -> Accept<IO>
-    where
-        IO: AsyncRead + AsyncWrite + Unpin,
-    {
-        self.accept_with(stream, |_| ())
-    }
-
-    pub fn accept_with<IO, F>(&self, stream: IO, f: F) -> Accept<IO>
-    where
-        IO: AsyncRead + AsyncWrite + Unpin,
-        F: FnOnce(&mut ServerConnection),
-    {
-        let mut session = match ServerConnection::new(self.inner.clone()) {
-            Ok(session) => session,
-            Err(error) => {
-                return Accept(MidHandshake::Error {
-                    io: stream,
-                    // TODO(eliza): should this really return an `io::Error`?
-                    // Probably not...
-                    error: io::Error::new(io::ErrorKind::Other, error),
-                });
-            }
-        };
-        f(&mut session);
-
-        Accept(MidHandshake::Handshaking(TlsStream {
-            session,
-            io: stream,
-            state: TlsState::Stream,
-        }))
-    }
-}
-
-/// Future returned from `TlsAcceptor::accept` which will resolve
-/// once the accept handshake has finished.
-pub struct Accept<IO>(MidHandshake<TlsStream<IO>>);
-
-impl<IO> Accept<IO> {
-    pub fn get_ref(&self) -> Option<&IO> {
-        match &self.0 {
-            MidHandshake::Handshaking(sess) => Some(sess.get_ref().0),
-            MidHandshake::Error { io, .. } => Some(io),
-            MidHandshake::End => None,
-        }
-    }
-
-    pub fn get_mut(&mut self) -> Option<&mut IO> {
-        match &mut self.0 {
-            MidHandshake::Handshaking(sess) => Some(sess.get_mut().0),
-            MidHandshake::Error { io, .. } => Some(io),
-            MidHandshake::End => None,
-        }
-    }
-}
-
-pub(crate) enum MidHandshake<IS: IoSession> {
-    Handshaking(IS),
-    End,
-    Error { io: IS::Io, error: io::Error },
-}
-
-impl<IS, SD> Future for MidHandshake<IS>
-where
-    IS: IoSession + Unpin,
-    IS::Io: AsyncRead + AsyncWrite + Unpin,
-    IS::Session: DerefMut + Deref<Target = ConnectionCommon<SD>> + Unpin,
-    SD: SideData,
-{
-    type Output = Result<IS, (io::Error, IS::Io)>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-
-        let mut stream = match std::mem::replace(this, MidHandshake::End) {
-            MidHandshake::Handshaking(stream) => stream,
-            // Starting the handshake returned an error; fail the future immediately.
-            MidHandshake::Error { io, error } => return Poll::Ready(Err((error, io))),
-            _ => panic!("unexpected polling after handshake"),
-        };
-
-        if !stream.skip_handshake() {
-            let (state, io, session) = stream.get_mut();
-            let mut tls_stream = Stream::new(io, session).set_eof(!state.readable());
-
-            macro_rules! try_poll {
-                ( $e:expr ) => {
-                    match $e {
-                        Poll::Ready(Ok(_)) => (),
-                        Poll::Ready(Err(err)) => return Poll::Ready(Err((err, stream.into_io()))),
-                        Poll::Pending => {
-                            *this = MidHandshake::Handshaking(stream);
-                            return Poll::Pending;
-                        }
-                    }
-                };
-            }
-
-            while tls_stream.session.is_handshaking() {
-                try_poll!(tls_stream.handshake(cx));
-            }
-
-            try_poll!(Pin::new(&mut tls_stream).poll_flush(cx));
-        }
-
-        Poll::Ready(Ok(stream))
-    }
-}
-
-impl<IO: AsyncRead + AsyncWrite + Unpin> Future for Accept<IO> {
-    type Output = io::Result<TlsStream<IO>>;
-
-    #[inline]
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.0).poll(cx).map_err(|(err, _)| err)
-    }
-}
-
-/// A wrapper around an underlying raw stream which implements the TLS or SSL
-/// protocol.
-#[derive(Debug)]
-pub struct TlsStream<IO> {
-    pub(crate) io: IO,
-    pub(crate) session: ServerConnection,
-    pub(crate) state: TlsState,
-}
-
-impl<IO> TlsStream<IO> {
-    #[inline]
-    pub fn get_ref(&self) -> (&IO, &ServerConnection) {
-        (&self.io, &self.session)
-    }
-
-    #[inline]
-    pub fn get_mut(&mut self) -> (&mut IO, &mut ServerConnection) {
-        (&mut self.io, &mut self.session)
-    }
-
-    #[inline]
-    pub fn into_inner(self) -> (IO, ServerConnection) {
-        (self.io, self.session)
-    }
-}
-
-pub(crate) trait IoSession {
-    type Io;
-    type Session;
-
-    fn skip_handshake(&self) -> bool;
-    fn get_mut(&mut self) -> (&mut TlsState, &mut Self::Io, &mut Self::Session);
-    fn into_io(self) -> Self::Io;
-}
-
-impl<IO> IoSession for TlsStream<IO> {
-    type Io = IO;
-    type Session = ServerConnection;
-
-    #[inline]
-    fn skip_handshake(&self) -> bool {
-        false
-    }
-
-    #[inline]
-    fn get_mut(&mut self) -> (&mut TlsState, &mut Self::Io, &mut Self::Session) {
-        (&mut self.state, &mut self.io, &mut self.session)
-    }
-
-    #[inline]
-    fn into_io(self) -> Self::Io {
-        self.io
-    }
-}
-
-impl<IO> AsyncRead for TlsStream<IO>
+pub(crate) struct BoundKeyExchangeServer<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin,
 {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        let this = self.get_mut();
-        let mut stream =
-            Stream::new(&mut this.io, &mut this.session).set_eof(!this.state.readable());
-
-        match &this.state {
-            TlsState::Stream | TlsState::WriteShutdown => {
-                let prev = buf.remaining();
-
-                match stream.as_mut_pin().poll_read(cx, buf) {
-                    Poll::Ready(Ok(())) => {
-                        if prev == buf.remaining() || stream.eof {
-                            this.state.shutdown_read();
-                        }
-
-                        Poll::Ready(Ok(()))
-                    }
-                    Poll::Ready(Err(err)) if err.kind() == io::ErrorKind::UnexpectedEof => {
-                        this.state.shutdown_read();
-                        Poll::Ready(Err(err))
-                    }
-                    output => output,
-                }
-            }
-            TlsState::ReadShutdown | TlsState::FullyShutdown => Poll::Ready(Ok(())),
-        }
-    }
+    inner: Option<BoundKeyExchangeServerData<IO>>,
 }
 
-impl<IO> AsyncWrite for TlsStream<IO>
+impl<IO> BoundKeyExchangeServer<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin,
 {
-    /// Note: that it does not guarantee the final data to be sent.
-    /// To be cautious, you must manually call `flush`.
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        let this = self.get_mut();
-        let mut stream =
-            Stream::new(&mut this.io, &mut this.session).set_eof(!this.state.readable());
-        stream.as_mut_pin().poll_write(cx, buf)
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let this = self.get_mut();
-        let mut stream =
-            Stream::new(&mut this.io, &mut this.session).set_eof(!this.state.readable());
-        stream.as_mut_pin().poll_flush(cx)
-    }
-
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        if self.state.writeable() {
-            self.session.send_close_notify();
-            self.state.shutdown_write();
-        }
-
-        let this = self.get_mut();
-        let mut stream =
-            Stream::new(&mut this.io, &mut this.session).set_eof(!this.state.readable());
-        stream.as_mut_pin().poll_shutdown(cx)
+    pub fn new(io: IO, config: Arc<rustls::ServerConfig>) -> Result<Self, KeyExchangeError> {
+        Ok(Self {
+            inner: Some(BoundKeyExchangeServerData {
+                io,
+                server: KeyExchangeServer::new(config)?,
+                need_flush: false,
+            }),
+        })
     }
 }
 
-#[derive(Debug)]
-pub enum TlsState {
-    Stream,
-    ReadShutdown,
-    WriteShutdown,
-    FullyShutdown,
+struct BoundKeyExchangeServerData<IO> {
+    io: IO,
+    server: KeyExchangeServer,
+    need_flush: bool,
 }
 
-impl TlsState {
-    #[inline]
-    pub fn shutdown_read(&mut self) {
-        match *self {
-            TlsState::WriteShutdown | TlsState::FullyShutdown => *self = TlsState::FullyShutdown,
-            _ => *self = TlsState::ReadShutdown,
-        }
-    }
-
-    #[inline]
-    pub fn shutdown_write(&mut self) {
-        match *self {
-            TlsState::ReadShutdown | TlsState::FullyShutdown => *self = TlsState::FullyShutdown,
-            _ => *self = TlsState::WriteShutdown,
-        }
-    }
-
-    #[inline]
-    pub fn writeable(&self) -> bool {
-        !matches!(*self, TlsState::WriteShutdown | TlsState::FullyShutdown)
-    }
-
-    #[inline]
-    pub fn readable(&self) -> bool {
-        !matches!(*self, TlsState::ReadShutdown | TlsState::FullyShutdown)
-    }
-
-    #[inline]
-    #[cfg(feature = "early-data")]
-    pub fn is_early_data(&self) -> bool {
-        matches!(self, TlsState::EarlyData(..))
-    }
-
-    #[inline]
-    #[cfg(not(feature = "early-data"))]
-    pub const fn is_early_data(&self) -> bool {
-        false
-    }
-}
-
-pub struct Stream<'a, IO, C> {
-    pub io: &'a mut IO,
-    pub session: &'a mut C,
-    pub eof: bool,
-}
-
-impl<'a, IO: AsyncRead + AsyncWrite + Unpin, C, SD> Stream<'a, IO, C>
+// IO approach taken from tokio
+impl<IO> BoundKeyExchangeServerData<IO>
 where
-    C: DerefMut + Deref<Target = ConnectionCommon<SD>>,
-    SD: SideData,
+    IO: AsyncRead + AsyncWrite + Unpin,
 {
-    pub fn new(io: &'a mut IO, session: &'a mut C) -> Self {
-        Stream {
-            io,
-            session,
-            // The state so far is only used to detect EOF, so either Stream
-            // or EarlyData state should both be all right.
-            eof: false,
-        }
-    }
-
-    pub fn set_eof(mut self, eof: bool) -> Self {
-        self.eof = eof;
-        self
-    }
-
-    pub fn as_mut_pin(&mut self) -> Pin<&mut Self> {
-        Pin::new(self)
-    }
-
-    pub fn read_io(&mut self, cx: &mut Context) -> Poll<io::Result<usize>> {
-        let mut reader = SyncReadAdapter { io: self.io, cx };
-
-        let n = match self.session.read_tls(&mut reader) {
-            Ok(n) => n,
-            Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => return Poll::Pending,
-            Err(err) => return Poll::Ready(Err(err)),
+    fn do_write(&mut self, cx: &mut Context<'_>) -> Poll<std::io::Result<usize>> {
+        let mut writer = WriterAdapter {
+            io: &mut self.io,
+            cx,
         };
 
-        let stats = self.session.process_new_packets().map_err(|err| {
-            // In case we have an alert to send describing this error,
-            // try a last-gasp write -- but don't predate the primary
-            // error.
-            let _ = self.write_io(cx);
-
-            io::Error::new(io::ErrorKind::InvalidData, err)
-        })?;
-
-        if stats.peer_has_closed() && self.session.is_handshaking() {
-            return Poll::Ready(Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "tls handshake alert",
-            )));
-        }
-
-        Poll::Ready(Ok(n))
-    }
-
-    pub fn write_io(&mut self, cx: &mut Context) -> Poll<io::Result<usize>> {
-        struct Writer<'a, 'b, T> {
-            io: &'a mut T,
-            cx: &'a mut Context<'b>,
-        }
-
-        impl<'a, 'b, T: Unpin> Writer<'a, 'b, T> {
-            #[inline]
-            fn poll_with<U>(
-                &mut self,
-                f: impl FnOnce(Pin<&mut T>, &mut Context<'_>) -> Poll<io::Result<U>>,
-            ) -> io::Result<U> {
-                match f(Pin::new(self.io), self.cx) {
-                    Poll::Ready(result) => result,
-                    Poll::Pending => Err(io::ErrorKind::WouldBlock.into()),
-                }
-            }
-        }
-
-        impl<'a, 'b, T: AsyncWrite + Unpin> Write for Writer<'a, 'b, T> {
-            #[inline]
-            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-                self.poll_with(|io, cx| io.poll_write(cx, buf))
-            }
-
-            #[inline]
-            fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> io::Result<usize> {
-                self.poll_with(|io, cx| io.poll_write_vectored(cx, bufs))
-            }
-
-            fn flush(&mut self) -> io::Result<()> {
-                self.poll_with(|io, cx| io.poll_flush(cx))
-            }
-        }
-
-        let mut writer = Writer { io: self.io, cx };
-
-        match self.session.write_tls(&mut writer) {
-            Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => Poll::Pending,
+        match self.server.write_socket(&mut writer) {
+            Err(ref err) if err.kind() == std::io::ErrorKind::WouldBlock => Poll::Pending,
             result => Poll::Ready(result),
         }
     }
 
-    pub fn handshake(&mut self, cx: &mut Context) -> Poll<io::Result<(usize, usize)>> {
-        let mut wrlen = 0;
-        let mut rdlen = 0;
+    fn do_read(&mut self, cx: &mut Context<'_>) -> Poll<std::io::Result<usize>> {
+        let mut reader = ReaderAdapter {
+            io: &mut self.io,
+            cx,
+        };
+        match self.server.read_socket(&mut reader) {
+            Err(ref err) if err.kind() == std::io::ErrorKind::WouldBlock => Poll::Pending,
+            result => Poll::Ready(result),
+        }
+    }
+}
+
+impl<IO> Future for BoundKeyExchangeServer<IO>
+where
+    IO: AsyncRead + AsyncWrite + Unpin,
+{
+    type Output = Result<KeyExchangeServerResult, KeyExchangeError>;
+
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        let outer = self.get_mut();
+        let mut this = outer.inner.take().unwrap();
+
+        let mut write_blocks = false;
+        let mut read_blocks = false;
 
         loop {
-            let mut write_would_block = false;
-            let mut read_would_block = false;
-            let mut need_flush = false;
-
-            while self.session.wants_write() {
-                match self.write_io(cx) {
-                    Poll::Ready(Ok(n)) => {
-                        wrlen += n;
-                        need_flush = true;
+            while !write_blocks && this.server.wants_write() {
+                match this.do_write(cx) {
+                    Poll::Ready(Ok(_)) => {
+                        this.need_flush = true;
                     }
+                    Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),
                     Poll::Pending => {
-                        write_would_block = true;
+                        write_blocks = true;
                         break;
                     }
-                    Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
                 }
             }
 
-            if need_flush {
-                match Pin::new(&mut self.io).poll_flush(cx) {
-                    Poll::Ready(Ok(())) => (),
-                    Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
-                    Poll::Pending => write_would_block = true,
-                }
-            }
-
-            while !self.eof && self.session.wants_read() {
-                match self.read_io(cx) {
-                    Poll::Ready(Ok(0)) => self.eof = true,
-                    Poll::Ready(Ok(n)) => rdlen += n,
+            if !write_blocks && this.need_flush {
+                match Pin::new(&mut this.io).poll_flush(cx) {
+                    Poll::Ready(Ok(())) => {
+                        this.need_flush = false;
+                    }
+                    Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),
                     Poll::Pending => {
-                        read_would_block = true;
+                        write_blocks = true;
+                    }
+                }
+            }
+
+            while !read_blocks && this.server.wants_read() {
+                match this.do_read(cx) {
+                    Poll::Ready(Ok(_)) => {
+                        this.server = match dbg!(this.server.progress()) {
+                            std::ops::ControlFlow::Continue(client) => client,
+                            std::ops::ControlFlow::Break(result) => return Poll::Ready(result),
+                        };
+                    }
+                    Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),
+                    Poll::Pending => {
+                        read_blocks = true;
                         break;
                     }
-                    Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
                 }
             }
 
-            return match (self.eof, self.session.is_handshaking()) {
-                (true, true) => {
-                    let err = io::Error::new(io::ErrorKind::UnexpectedEof, "tls handshake eof");
-                    Poll::Ready(Err(err))
-                }
-                (_, false) => Poll::Ready(Ok((rdlen, wrlen))),
-                (_, true) if write_would_block || read_would_block => {
-                    if rdlen != 0 || wrlen != 0 {
-                        Poll::Ready(Ok((rdlen, wrlen)))
-                    } else {
-                        Poll::Pending
-                    }
-                }
-                (..) => continue,
-            };
+            if (write_blocks || !this.server.wants_write())
+                && (read_blocks || !this.server.wants_read())
+            {
+                outer.inner = Some(this);
+                return Poll::Pending;
+            }
         }
     }
 }
 
-impl<'a, IO: AsyncRead + AsyncWrite + Unpin, C, SD> AsyncRead for Stream<'a, IO, C>
-where
-    C: DerefMut + Deref<Target = ConnectionCommon<SD>>,
-    SD: SideData,
-{
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        let mut io_pending = false;
-
-        // read a packet
-        while !self.eof && self.session.wants_read() {
-            match self.read_io(cx) {
-                Poll::Ready(Ok(0)) => {
-                    break;
-                }
-                Poll::Ready(Ok(_)) => (),
-                Poll::Pending => {
-                    io_pending = true;
-                    break;
-                }
-                Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
-            }
-        }
-
-        match self.session.reader().read(buf.initialize_unfilled()) {
-            // If Rustls returns `Ok(0)` (while `buf` is non-empty), the peer closed the
-            // connection with a `CloseNotify` message and no more data will be forthcoming.
-            //
-            // Rustls yielded more data: advance the buffer, then see if more data is coming.
-            //
-            // We don't need to modify `self.eof` here, because it is only a temporary mark.
-            // rustls will only return 0 if is has received `CloseNotify`,
-            // in which case no additional processing is required.
-            Ok(n) => {
-                buf.advance(n);
-                Poll::Ready(Ok(()))
-            }
-
-            // Rustls doesn't have more data to yield, but it believes the connection is open.
-            Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => {
-                if !io_pending {
-                    // If `wants_read()` is satisfied, rustls will not return `WouldBlock`.
-                    // but if it does, we can try again.
-                    //
-                    // If the rustls state is abnormal, it may cause a cyclic wakeup.
-                    // but tokio's cooperative budget will prevent infinite wakeup.
-                    cx.waker().wake_by_ref();
-                }
-
-                Poll::Pending
-            }
-
-            Err(err) => Poll::Ready(Err(err)),
-        }
-    }
+/// adapter between AsyncWrite and std::io::Write
+struct WriterAdapter<'a, 'b, T> {
+    io: &'a mut T,
+    cx: &'a mut Context<'b>,
 }
 
-impl<'a, IO: AsyncRead + AsyncWrite + Unpin, C, SD> AsyncWrite for Stream<'a, IO, C>
-where
-    C: DerefMut + Deref<Target = ConnectionCommon<SD>>,
-    SD: SideData,
-{
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        let mut pos = 0;
-
-        while pos != buf.len() {
-            let mut would_block = false;
-
-            match self.session.writer().write(&buf[pos..]) {
-                Ok(n) => pos += n,
-                Err(err) => return Poll::Ready(Err(err)),
-            };
-
-            while self.session.wants_write() {
-                match self.write_io(cx) {
-                    Poll::Ready(Ok(0)) | Poll::Pending => {
-                        would_block = true;
-                        break;
-                    }
-                    Poll::Ready(Ok(_)) => (),
-                    Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
-                }
-            }
-
-            return match (pos, would_block) {
-                (0, true) => Poll::Pending,
-                (n, true) => Poll::Ready(Ok(n)),
-                (_, false) => continue,
-            };
-        }
-
-        Poll::Ready(Ok(pos))
-    }
-
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        self.session.writer().flush()?;
-        while self.session.wants_write() {
-            ready!(self.write_io(cx))?;
-        }
-        Pin::new(&mut self.io).poll_flush(cx)
-    }
-
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        while self.session.wants_write() {
-            ready!(self.write_io(cx))?;
-        }
-        Pin::new(&mut self.io).poll_shutdown(cx)
-    }
-}
-
-/// An adapter that implements a [`Read`] interface for [`AsyncRead`] types and an
-/// associated [`Context`].
-///
-/// Turns `Poll::Pending` into `WouldBlock`.
-pub struct SyncReadAdapter<'a, 'b, T> {
-    pub io: &'a mut T,
-    pub cx: &'a mut Context<'b>,
-}
-
-impl<'a, 'b, T: AsyncRead + Unpin> Read for SyncReadAdapter<'a, 'b, T> {
+impl<'a, 'b, T: AsyncWrite + Unpin> Write for WriterAdapter<'a, 'b, T> {
     #[inline]
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match Pin::<&mut T>::new(self.io).poll_write(self.cx, buf) {
+            Poll::Ready(result) => result,
+            Poll::Pending => Err(std::io::ErrorKind::WouldBlock.into()),
+        }
+    }
+
+    #[inline]
+    fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> std::io::Result<usize> {
+        match Pin::<&mut T>::new(self.io).poll_write_vectored(self.cx, bufs) {
+            Poll::Ready(result) => result,
+            Poll::Pending => Err(std::io::ErrorKind::WouldBlock.into()),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match Pin::<&mut T>::new(self.io).poll_flush(self.cx) {
+            Poll::Ready(result) => result,
+            Poll::Pending => Err(std::io::ErrorKind::WouldBlock.into()),
+        }
+    }
+}
+
+/// adapter between AsyncRead and std::io::Read
+struct ReaderAdapter<'a, 'b, T> {
+    io: &'a mut T,
+    cx: &'a mut Context<'b>,
+}
+
+impl<'a, 'b, T: AsyncRead + Unpin> Read for ReaderAdapter<'a, 'b, T> {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {
         let mut buf = ReadBuf::new(buf);
-        match Pin::new(&mut self.io).poll_read(self.cx, &mut buf) {
+        match Pin::<&mut T>::new(self.io).poll_read(self.cx, &mut buf) {
             Poll::Ready(Ok(())) => Ok(buf.filled().len()),
-            Poll::Ready(Err(err)) => Err(err),
-            Poll::Pending => Err(io::ErrorKind::WouldBlock.into()),
+            Poll::Ready(Err(e)) => Err(e),
+            Poll::Pending => Err(std::io::ErrorKind::WouldBlock.into()),
         }
     }
 }

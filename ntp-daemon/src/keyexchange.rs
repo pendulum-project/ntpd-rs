@@ -3,6 +3,7 @@ use std::{
     io::{BufRead, BufReader, IoSlice, Read, Write},
     path::Path,
     pin::Pin,
+    sync::Arc,
     task::{Context, Poll},
 };
 
@@ -179,11 +180,11 @@ impl<IO> BoundKeyExchangeServer<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin,
 {
-    pub fn new(io: IO, config: rustls::ServerConfig) -> Result<Self, KeyExchangeError> {
+    pub fn new(io: IO, config: Arc<rustls::ServerConfig>) -> Result<Self, KeyExchangeError> {
         Ok(Self {
             inner: Some(BoundKeyExchangeServerData {
                 io,
-                client: KeyExchangeServer::new(config)?,
+                server: KeyExchangeServer::new(config)?,
                 need_flush: false,
             }),
         })
@@ -192,7 +193,7 @@ where
 
 struct BoundKeyExchangeServerData<IO> {
     io: IO,
-    client: KeyExchangeServer,
+    server: KeyExchangeServer,
     need_flush: bool,
 }
 
@@ -207,7 +208,7 @@ where
             cx,
         };
 
-        match self.client.write_socket(&mut writer) {
+        match self.server.write_socket(&mut writer) {
             Err(ref err) if err.kind() == std::io::ErrorKind::WouldBlock => Poll::Pending,
             result => Poll::Ready(result),
         }
@@ -218,7 +219,7 @@ where
             io: &mut self.io,
             cx,
         };
-        match self.client.read_socket(&mut reader) {
+        match self.server.read_socket(&mut reader) {
             Err(ref err) if err.kind() == std::io::ErrorKind::WouldBlock => Poll::Pending,
             result => Poll::Ready(result),
         }
@@ -242,7 +243,7 @@ where
         let mut read_blocks = false;
 
         loop {
-            while !write_blocks && this.client.wants_write() {
+            while !write_blocks && this.server.wants_write() {
                 match this.do_write(cx) {
                     Poll::Ready(Ok(_)) => {
                         this.need_flush = true;
@@ -267,10 +268,10 @@ where
                 }
             }
 
-            while !read_blocks && this.client.wants_read() {
+            while !read_blocks && this.server.wants_read() {
                 match this.do_read(cx) {
                     Poll::Ready(Ok(_)) => {
-                        this.client = match this.client.progress() {
+                        this.server = match this.server.progress() {
                             std::ops::ControlFlow::Continue(client) => client,
                             std::ops::ControlFlow::Break(result) => return Poll::Ready(result),
                         }
@@ -283,8 +284,8 @@ where
                 }
             }
 
-            if (write_blocks || !this.client.wants_write())
-                && (read_blocks || !this.client.wants_read())
+            if (write_blocks || !this.server.wants_write())
+                && (read_blocks || !this.server.wants_read())
             {
                 outer.inner = Some(this);
                 return Poll::Pending;
