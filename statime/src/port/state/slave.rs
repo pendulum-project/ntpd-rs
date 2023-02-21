@@ -12,7 +12,7 @@ type Result<T, E = SlaveError> = core::result::Result<T, E>;
 
 #[derive(Debug)]
 pub struct SlaveState {
-    pub(in crate::port) remote_master: PortIdentity,
+    remote_master: PortIdentity,
 
     handshake: Handshake,
     delay_handshake: DelayHandshake,
@@ -21,6 +21,12 @@ pub struct SlaveState {
 
     next_delay_measurement: Option<Instant>,
     pending_followup: Option<FollowUpMessage>,
+}
+
+impl SlaveState {
+    pub fn remote_master(&self) -> PortIdentity {
+        self.remote_master
+    }
 }
 
 #[derive(Debug)]

@@ -1,5 +1,6 @@
+use crate::bmc::bmca::RecommendedState;
 use crate::datastructures::common::PortIdentity;
-use crate::port::state::PortState;
+use crate::port::state::{MasterState, PortState, SlaveState};
 use crate::time::Duration;
 
 #[derive(Debug)]
@@ -79,6 +80,73 @@ impl PortDS {
         Duration::from_log_interval(
             self.announce_receipt_timeout as i8 * self.log_announce_interval,
         )
+    }
+
+    pub fn set_forced_port_state(&mut self, state: PortState) {
+        log::info!("new state for port: {} -> {}", self.port_state, state);
+        self.port_state = state;
+    }
+
+    pub fn set_recommended_port_state(&mut self, recommended_state: &RecommendedState) {
+        match recommended_state {
+            // TODO set things like steps_removed once they are added
+            // TODO make sure states are complete
+            RecommendedState::S1(announce_message) => match &self.port_state {
+                PortState::Listening => {
+                    self.port_state = PortState::Slave(SlaveState::new(
+                        announce_message.header().source_port_identity(),
+                    ));
+
+                    log::info!(
+                        "new state for port: Listening -> Slave. Remote master: {:?}",
+                        announce_message
+                            .header()
+                            .source_port_identity()
+                            .clock_identity
+                    );
+                }
+                PortState::Slave(slave_state) => {
+                    let remote_master = announce_message.header().source_port_identity();
+                    if slave_state.remote_master() != remote_master {
+                        // TODO: Changing the master should recalibrate the slave
+                        self.port_state = PortState::Slave(SlaveState::new(remote_master));
+                    }
+                }
+                PortState::Master(_) => {
+                    self.port_state = PortState::Slave(SlaveState::new(
+                        announce_message.header().source_port_identity(),
+                    ));
+
+                    log::info!("new state for port: Master -> Slave");
+                }
+                PortState::Initializing => unimplemented!(),
+                PortState::Faulty => unimplemented!(),
+                PortState::Disabled => unimplemented!(),
+                PortState::PreMaster => unimplemented!(),
+                PortState::Passive => unimplemented!(),
+                PortState::Uncalibrated => unimplemented!(),
+            },
+
+            // Recommended state is master
+            RecommendedState::M2(_) => match &self.port_state {
+                // Stay master
+                PortState::Master(_) => (),
+                // Otherwise become master
+                _ => {
+                    self.port_state = PortState::Master(MasterState::new());
+                }
+            },
+            // All other cases
+            _ => match &mut self.port_state {
+                PortState::Listening => {
+                    // Ignore
+                }
+                _ => {
+                    self.port_state = PortState::Listening;
+                    log::info!("new state for port: Listening");
+                }
+            },
+        }
     }
 }
 

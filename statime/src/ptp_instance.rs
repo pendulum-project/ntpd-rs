@@ -78,9 +78,9 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
                 timer,
                 &self.local_clock,
                 &self.filter,
+                &self.announce_messages,
                 &self.default_ds,
                 &self.time_properties_ds,
-                &self.announce_messages,
             )
         });
         let futures = [(); N].map(|_| run_ports.next().expect("not all ports were initialized"));
