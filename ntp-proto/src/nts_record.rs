@@ -186,20 +186,20 @@ impl NtsRecord {
         algorithm: AeadAlgorithm,
         keyset: &KeySet,
         keys: NtsKeys,
-    ) -> std::io::Result<[NtsRecord; 11]> {
+    ) -> [NtsRecord; 11] {
         let cookie = DecodedServerCookie {
             algorithm,
             s2c: keys.s2c,
             c2s: keys.c2s,
         };
 
-        let next_cookie = || -> std::io::Result<NtsRecord> {
-            Ok(NtsRecord::NewCookie {
+        let next_cookie = || -> NtsRecord {
+            NtsRecord::NewCookie {
                 cookie_data: keyset.encode_cookie(&cookie),
-            })
+            }
         };
 
-        Ok([
+        [
             NtsRecord::NextProtocol {
                 protocol_ids: vec![0],
             },
@@ -207,16 +207,16 @@ impl NtsRecord {
                 critical: false,
                 algorithm_ids: vec![algorithm as u16],
             },
-            next_cookie()?,
-            next_cookie()?,
-            next_cookie()?,
-            next_cookie()?,
-            next_cookie()?,
-            next_cookie()?,
-            next_cookie()?,
-            next_cookie()?,
+            next_cookie(),
+            next_cookie(),
+            next_cookie(),
+            next_cookie(),
+            next_cookie(),
+            next_cookie(),
+            next_cookie(),
+            next_cookie(),
             NtsRecord::EndOfMessage,
-        ])
+        ]
     }
 
     pub fn read<A: Read>(reader: &mut A) -> std::io::Result<NtsRecord> {
@@ -532,8 +532,8 @@ pub struct NtsKeys {
     s2c: Box<dyn Cipher>,
 }
 
-fn extract_nts_key<T: KeySizeUser, U>(
-    tls_connection: &rustls::ConnectionCommon<U>,
+fn extract_nts_key<T: KeySizeUser, ConnectionData>(
+    tls_connection: &rustls::ConnectionCommon<ConnectionData>,
     context: [u8; 5],
 ) -> Result<aead::Key<T>, rustls::Error> {
     let mut key: aead::Key<T> = Default::default();
@@ -921,7 +921,7 @@ impl KeyExchangeServer {
     }
 
     fn send_response(&mut self, algorithm: AeadAlgorithm, keys: NtsKeys) -> std::io::Result<()> {
-        let records = NtsRecord::server_key_exchange_records(algorithm, &self.keyset, keys)?;
+        let records = NtsRecord::server_key_exchange_records(algorithm, &self.keyset, keys);
 
         let mut buffer = Vec::with_capacity(1024);
         for record in records.into_iter() {
@@ -972,21 +972,22 @@ impl KeyExchangeServer {
                                 Err(e) => return ControlFlow::Break(Err(KeyExchangeError::Tls(e))),
                             };
 
-                            match self.send_response(algorithm, keys) {
-                                Err(e) => return ControlFlow::Break(Err(KeyExchangeError::Io(e))),
-                                Ok(()) => return ControlFlow::Continue(self),
-                            }
+                            return match self.send_response(algorithm, keys) {
+                                Err(e) => ControlFlow::Break(Err(KeyExchangeError::Io(e))),
+                                Ok(()) => ControlFlow::Continue(self),
+                            };
                         }
                         ControlFlow::Break(Err(error)) => return ControlFlow::Break(Err(error)),
                     },
                     None => {
-                        // error ?
-                        panic!()
+                        // client is sending more bytes, but we don't expect any more
+                        return ControlFlow::Break(Err(KeyExchangeError::InternalServerError));
                     }
                 },
                 Err(e) => match e.kind() {
                     std::io::ErrorKind::WouldBlock => return ControlFlow::Continue(self),
                     std::io::ErrorKind::UnexpectedEof if self.decoder.is_none() => {
+                        // something we need in practice. If we're already done, an EOF is fine
                         return ControlFlow::Break(Ok(self));
                     }
                     _ => return ControlFlow::Break(Err(e.into())),
@@ -1323,18 +1324,18 @@ mod test {
 
         let mut decoder = KeyExchangeServerDecoder::new();
 
-        let decode_output = 'b: {
+        let decode_output = || {
             for chunk in bytes.chunks(24) {
                 decoder = match decoder.step_with_slice(chunk) {
                     ControlFlow::Continue(d) => d,
-                    ControlFlow::Break(done) => break 'b done,
+                    ControlFlow::Break(done) => return done,
                 };
             }
 
             Err(KeyExchangeError::IncompleteResponse)
         };
 
-        let result = decode_output.unwrap();
+        let result = decode_output().unwrap();
 
         assert_eq!(result.algorithm, AeadAlgorithm::AeadAesSivCmac512);
     }
