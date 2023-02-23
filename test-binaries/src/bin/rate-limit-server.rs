@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         last_message = now;
 
         let parsed = match NtpPacket::deserialize(&buf, &NoCipher) {
-            Ok(packet) => packet,
+            Ok((packet, _)) => packet,
             Err(_) => continue,
         };
 
