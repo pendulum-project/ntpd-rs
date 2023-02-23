@@ -1,17 +1,13 @@
 use std::{
-    fs::File,
     future::Future,
     io::Write,
-    io::{self, BufReader, IoSlice, Read},
-    path::Path,
+    io::{self, IoSlice, Read},
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
 };
 
 use ntp_proto::{KeyExchangeError, KeyExchangeServer, KeySet, KeySetProvider};
-use rustls::{Certificate, PrivateKey};
-use rustls_pemfile::{certs, rsa_private_keys};
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
     net::TcpListener,
@@ -21,20 +17,27 @@ use tokio::{
 async fn main() -> std::io::Result<()> {
     let addr = ("localhost", 4460u16);
 
-    // geneted using openssl
-    // ```
-    // openssl req -nodes -x509 -days 3650 -subj "/C=NL/L=Nijmegen/O=TG/CN=localhost/" -newkey rsa:4096 -keyout rootCA.key -out rootCA.crt
-    // openssl req -nodes -new -newkey rsa:4096 -subj "/C=NL/L=Nijmegen/O=TG/CN=localhost/" -addext "subjectAltName = DNS:localhost" -keyout tls.key -out tls.crt
-    // openssl x509 -req -extfile <(printf "subjectAltName=DNS:example.com,DNS:www.example.com") -in tls.crt -days 3650 -CA rootCA.crt -CAkey rootCA.key -CAcreateserial -out signed.crt
-    // openssl x509 -in signed.crt -text -noout
-    // ```
-    let certs = load_certs(Path::new("test-keys/signed.crt")).unwrap();
-    let mut keys = load_keys(Path::new("test-keys/tls.key")).unwrap();
+    let cert_chain: Vec<rustls::Certificate> = rustls_pemfile::certs(&mut std::io::BufReader::new(
+        include_bytes!("../../../test-keys/end.fullchain.pem") as &[u8],
+    ))
+    .unwrap()
+    .into_iter()
+    .map(rustls::Certificate)
+    .collect();
+    let key_der = rustls::PrivateKey(
+        rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(include_bytes!(
+            "../../../test-keys/end.key"
+        ) as &[u8]))
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap(),
+    );
 
     let mut config = rustls::ServerConfig::builder()
         .with_safe_defaults()
         .with_no_client_auth()
-        .with_single_cert(certs, keys.remove(0))
+        .with_single_cert(cert_chain, key_der)
         .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
 
     config.alpn_protocols.clear();
@@ -68,26 +71,6 @@ async fn main() -> std::io::Result<()> {
             }
         });
     }
-}
-
-fn load_certs(path: &Path) -> io::Result<Vec<Certificate>> {
-    certs(&mut BufReader::new(File::open(path)?))
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid cert"))
-        .map(|mut certs| certs.drain(..).map(Certificate).collect())
-}
-
-fn load_keys(path: &Path) -> io::Result<Vec<PrivateKey>> {
-    let keys: Vec<PrivateKey> = rsa_private_keys(&mut BufReader::new(File::open(path)?))
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid key"))
-        .map(|mut keys| keys.drain(..).map(PrivateKey).collect())?;
-
-    // so instead of `rsa_private_keys`, maybe try `pkcs8_private_keys` or one of the other formats
-    assert!(
-        !keys.is_empty(),
-        r"could not parse any keys. the parser returns an empty vec when the format does not match"
-    );
-
-    Ok(keys)
 }
 
 pub(crate) struct BoundKeyExchangeServer<IO>
@@ -198,7 +181,9 @@ where
                     Poll::Ready(Ok(_)) => {
                         this.server = match this.server.progress() {
                             std::ops::ControlFlow::Continue(client) => client,
-                            std::ops::ControlFlow::Break(result) => return Poll::Ready(result),
+                            std::ops::ControlFlow::Break(result) => {
+                                return Poll::Ready(result.map(drop))
+                            }
                         };
                     }
                     Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),

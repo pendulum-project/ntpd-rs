@@ -1,7 +1,6 @@
 use std::{
-    fs::File,
     future::Future,
-    io::{BufReader, Cursor, IoSlice, Read, Write},
+    io::{Cursor, IoSlice, Read, Write},
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs},
     pin::Pin,
     task::{Context, Poll},
@@ -11,7 +10,6 @@ use ntp_proto::{
     KeyExchangeClient, KeyExchangeClientResult, KeyExchangeError, NtpPacket, PollInterval,
 };
 use ntp_udp::UdpSocket;
-use rustls::OwnedTrustAnchor;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 // unstable in std; check on https://github.com/rust-lang/rust/issues/88581 some time in the future
@@ -203,34 +201,27 @@ pub(crate) async fn perform_key_exchange(
         .await
         .unwrap();
 
-    let cafile: Option<std::path::PathBuf> =
-        (server_name == "localhost").then_some("test-keys/rootCA.crt".into());
-
-    let mut root_cert_store = rustls::RootCertStore::empty();
-    if let Some(cafile) = cafile {
-        let mut pem = BufReader::new(File::open(cafile).unwrap());
-        let certs = rustls_pemfile::certs(&mut pem).unwrap();
-        let trust_anchors = certs.iter().map(|cert| {
-            let ta = webpki::TrustAnchor::try_from_cert_der(&cert[..]).unwrap();
-            OwnedTrustAnchor::from_subject_spki_name_constraints(
-                ta.subject,
-                ta.spki,
-                ta.name_constraints,
-            )
-        });
-        root_cert_store.add_server_trust_anchors(trust_anchors);
+    let mut root_store = rustls::RootCertStore::empty();
+    if server_name == "localhost" {
+        // add the Certificate authority for local tests
+        root_store.add_parsable_certificates(
+            &rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
+                "../../../test-keys/testca.pem"
+            ) as &[u8]))
+            .unwrap(),
+        );
     } else {
         // NOTE: the example at https://github.com/tokio-rs/tls/blob/master/tokio-rustls/examples/client/src/main.rs#L59
         // seems to do something slightly more low-level.
         let it = rustls_native_certs::load_native_certs().expect("could not load platform certs");
         for cert in it {
-            root_cert_store.add(&rustls::Certificate(cert.0)).unwrap();
+            root_store.add(&rustls::Certificate(cert.0)).unwrap();
         }
     }
 
     let mut config = rustls::ClientConfig::builder()
         .with_safe_defaults()
-        .with_root_certificates(root_cert_store)
+        .with_root_certificates(root_store)
         .with_no_client_auth(); // i guess this was previously the default?
 
     config.alpn_protocols.clear();

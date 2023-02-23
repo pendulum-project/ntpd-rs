@@ -277,7 +277,9 @@ where
                     Poll::Ready(Ok(_)) => {
                         this.server = match this.server.progress() {
                             std::ops::ControlFlow::Continue(client) => client,
-                            std::ops::ControlFlow::Break(result) => return Poll::Ready(result),
+                            std::ops::ControlFlow::Break(result) => {
+                                return Poll::Ready(result.map(drop))
+                            }
                         }
                     }
                     Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),
