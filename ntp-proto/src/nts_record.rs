@@ -4,15 +4,12 @@ use std::{
     sync::Arc,
 };
 
-use aead::{Key, KeySizeUser};
-use aes_siv::{siv::Aes256Siv, Aes128SivAead, Aes256SivAead};
+use aead::KeySizeUser;
+use aes_siv::{Aes128SivAead, Aes256SivAead};
 
 use crate::{
-    cookiestash::{Cookie, CookieStash},
-    packet::AesSivCmac256,
-    packet::AesSivCmac512,
-    peer::PeerNtsData,
-    Cipher,
+    cookiestash::CookieStash, packet::AesSivCmac256, packet::AesSivCmac512, peer::PeerNtsData,
+    Cipher, DecodedServerCookie, KeySet,
 };
 
 #[derive(Debug)]
@@ -185,16 +182,20 @@ impl NtsRecord {
         ]
     }
 
-    pub fn server_key_exchange_records<C: crate::Cipher + ?Sized>(
-        server_key: &C,
-        identifier: u32,
+    pub fn server_key_exchange_records(
         algorithm: AeadAlgorithm,
-        keys: NtsServerKeys,
+        keyset: &KeySet,
+        keys: NtsKeys,
     ) -> std::io::Result<[NtsRecord; 11]> {
+        let cookie = DecodedServerCookie {
+            algorithm,
+            s2c: keys.s2c,
+            c2s: keys.c2s,
+        };
+
         let next_cookie = || -> std::io::Result<NtsRecord> {
             Ok(NtsRecord::NewCookie {
-                cookie_data: Cookie::new(server_key, identifier, algorithm, &keys.s2c, &keys.c2s)?
-                    .into_inner(),
+                cookie_data: keyset.encode_cookie(&cookie),
             })
         };
 
@@ -499,10 +500,10 @@ impl AeadAlgorithm {
         }
     }
 
-    fn extract_nts_client_keys<ConnectionData>(
+    fn extract_nts_keys<ConnectionData>(
         &self,
         tls_connection: &rustls::ConnectionCommon<ConnectionData>,
-    ) -> Result<NtsClientKeys, rustls::Error> {
+    ) -> Result<NtsKeys, rustls::Error> {
         match self {
             AeadAlgorithm::AeadAesSivCmac256 => {
                 let c2s = extract_nts_key::<Aes128SivAead, _>(tls_connection, self.c2s_context())?;
@@ -511,7 +512,7 @@ impl AeadAlgorithm {
                 let c2s = Box::new(AesSivCmac256::new(c2s));
                 let s2c = Box::new(AesSivCmac256::new(s2c));
 
-                Ok(NtsClientKeys { c2s, s2c })
+                Ok(NtsKeys { c2s, s2c })
             }
             AeadAlgorithm::AeadAesSivCmac512 => {
                 let c2s = extract_nts_key::<Aes256SivAead, _>(tls_connection, self.c2s_context())?;
@@ -520,45 +521,13 @@ impl AeadAlgorithm {
                 let c2s = Box::new(AesSivCmac512::new(c2s));
                 let s2c = Box::new(AesSivCmac512::new(s2c));
 
-                Ok(NtsClientKeys { c2s, s2c })
-            }
-        }
-    }
-
-    fn extract_nts_server_keys<ConnectionData>(
-        &self,
-        tls_connection: &rustls::ConnectionCommon<ConnectionData>,
-    ) -> Result<NtsServerKeys, rustls::Error> {
-        match self {
-            AeadAlgorithm::AeadAesSivCmac256 => {
-                let c2s = extract_nts_key::<Aes128SivAead, _>(tls_connection, self.c2s_context())?;
-                let s2c = extract_nts_key::<Aes128SivAead, _>(tls_connection, self.s2c_context())?;
-
-                let c2s = c2s.to_vec();
-                let s2c = s2c.to_vec();
-
-                Ok(NtsServerKeys { c2s, s2c })
-            }
-            AeadAlgorithm::AeadAesSivCmac512 => {
-                let c2s = extract_nts_key::<Aes256SivAead, _>(tls_connection, self.c2s_context())?;
-                let s2c = extract_nts_key::<Aes256SivAead, _>(tls_connection, self.s2c_context())?;
-
-                let c2s = c2s.to_vec();
-                let s2c = s2c.to_vec();
-
-                Ok(NtsServerKeys { c2s, s2c })
+                Ok(NtsKeys { c2s, s2c })
             }
         }
     }
 }
 
-// for the server, we must be able to get to the key's bytes
-pub struct NtsServerKeys {
-    c2s: Vec<u8>,
-    s2c: Vec<u8>,
-}
-
-struct NtsClientKeys {
+pub struct NtsKeys {
     c2s: Box<dyn Cipher>,
     s2c: Box<dyn Cipher>,
 }
@@ -747,8 +716,7 @@ impl KeyExchangeClient {
 
                             tracing::info!(?algorithm, "selected AEAD algorithm");
 
-                            let keys = match algorithm.extract_nts_client_keys(&self.tls_connection)
-                            {
+                            let keys = match algorithm.extract_nts_keys(&self.tls_connection) {
                                 Ok(keys) => keys,
                                 Err(e) => return ControlFlow::Break(Err(KeyExchangeError::Tls(e))),
                             };
@@ -929,75 +897,13 @@ impl KeyExchangeServerDecoder {
 }
 
 #[derive(Debug)]
-pub struct KeyExchangeServerResult {
-    tls_connection: rustls::ServerConnection,
-    algorithm: AeadAlgorithm,
-    c2s: Vec<u8>,
-    s2c: Vec<u8>,
-}
-
-impl KeyExchangeServerResult {
-    pub async fn send_help(self) -> std::io::Result<()> {
-        let identifier = 0;
-        let server_key = AesSivCmac512::new(Default::default());
-
-        self.send(&server_key, identifier).await
-    }
-    pub async fn send<C: crate::Cipher + ?Sized>(
-        mut self,
-        server_key: &C,
-        identifier: u32,
-    ) -> std::io::Result<()> {
-        let server_keys = NtsServerKeys {
-            c2s: self.c2s,
-            s2c: self.s2c,
-        };
-
-        let records = NtsRecord::server_key_exchange_records(
-            server_key,
-            identifier,
-            self.algorithm,
-            server_keys,
-        )?;
-
-        let mut buffer = Vec::with_capacity(1024);
-        for record in records {
-            record.write(&mut buffer)?;
-        }
-
-        std::thread::sleep_ms(3000);
-
-        dbg!(self.tls_connection.process_new_packets());
-
-        self.tls_connection.writer().write_all(&buffer).unwrap();
-
-        dbg!(self.tls_connection.process_new_packets());
-
-        self.tls_connection.writer().flush().unwrap();
-
-        //        self.tls_connection
-        //            .read_tls(&mut std::io::BufReader::new(buffer.as_slice()))
-        //            .unwrap();
-
-        self.tls_connection.send_close_notify();
-
-        dbg!(self.tls_connection.process_new_packets());
-
-        std::thread::sleep_ms(1000);
-
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
 pub struct KeyExchangeServer {
     tls_connection: rustls::ServerConnection,
-    decoder: KeyExchangeServerDecoder,
+    decoder: Option<KeyExchangeServerDecoder>,
+    keyset: Arc<KeySet>,
 }
 
 impl KeyExchangeServer {
-    const NTP_DEFAULT_PORT: u16 = 123;
-
     pub fn wants_read(&mut self) -> bool {
         self.tls_connection.wants_read()
     }
@@ -1014,9 +920,7 @@ impl KeyExchangeServer {
         self.tls_connection.write_tls(wr)
     }
 
-    pub fn progress(
-        mut self,
-    ) -> ControlFlow<Result<KeyExchangeServerResult, KeyExchangeError>, Self> {
+    pub fn progress(mut self) -> ControlFlow<Result<(), KeyExchangeError>, Self> {
         // Move any received data from tls to decoder
         let mut buf = [0; 128];
         loop {
@@ -1025,43 +929,74 @@ impl KeyExchangeServer {
             }
             let read_result = self.tls_connection.reader().read(&mut buf);
             match read_result {
-                Ok(0) => return ControlFlow::Break(Err(KeyExchangeError::IncompleteResponse)),
-                Ok(n) => {
-                    self.decoder = match self.decoder.step_with_slice(&buf[..n]) {
-                        ControlFlow::Continue(decoder) => decoder,
+                Ok(0) => {
+                    match self.decoder {
+                        Some(_) => {
+                            // there are no more client bytes, but decoding was not finished yet
+                            return ControlFlow::Break(Err(KeyExchangeError::IncompleteResponse));
+                        }
+                        None => {
+                            // we're all done
+                            return ControlFlow::Break(Ok(()));
+                        }
+                    }
+                }
+                Ok(n) => match self.decoder {
+                    Some(decoder) => match decoder.step_with_slice(&buf[..n]) {
+                        ControlFlow::Continue(decoder) => {
+                            self.decoder = Some(decoder);
+                            continue;
+                        }
                         ControlFlow::Break(Ok(result)) => {
+                            self.decoder = None;
                             let algorithm = result.algorithm;
 
                             tracing::info!(?algorithm, "selected AEAD algorithm");
 
-                            let NtsServerKeys { c2s, s2c } = match algorithm
-                                .extract_nts_server_keys(&self.tls_connection)
-                            {
+                            let keys = match algorithm.extract_nts_keys(&self.tls_connection) {
                                 Ok(keys) => keys,
                                 Err(e) => return ControlFlow::Break(Err(KeyExchangeError::Tls(e))),
                             };
 
-                            let result = KeyExchangeServerResult {
-                                tls_connection: self.tls_connection,
+                            let records = NtsRecord::server_key_exchange_records(
                                 algorithm,
-                                c2s,
-                                s2c,
-                            };
+                                &self.keyset,
+                                keys,
+                            )
+                            .unwrap();
 
-                            return ControlFlow::Break(Ok(result));
+                            let mut buffer = Vec::with_capacity(1024);
+                            for record in records.into_iter() {
+                                record.write(&mut buffer).unwrap();
+                            }
+
+                            self.tls_connection.writer().write_all(&buffer).unwrap();
+                            self.tls_connection.send_close_notify();
+
+                            return ControlFlow::Continue(self);
                         }
                         ControlFlow::Break(Err(error)) => return ControlFlow::Break(Err(error)),
+                    },
+                    None => {
+                        // error ?
+                        panic!()
                     }
-                }
+                },
                 Err(e) => match e.kind() {
                     std::io::ErrorKind::WouldBlock => return ControlFlow::Continue(self),
+                    std::io::ErrorKind::UnexpectedEof if self.decoder.is_none() => {
+                        return ControlFlow::Break(Ok(()));
+                    }
                     _ => return ControlFlow::Break(Err(e.into())),
                 },
             }
         }
     }
 
-    pub fn new(tls_config: Arc<rustls::ServerConfig>) -> Result<Self, KeyExchangeError> {
+    pub fn new(
+        tls_config: Arc<rustls::ServerConfig>,
+        keyset: Arc<KeySet>,
+    ) -> Result<Self, KeyExchangeError> {
         // Ensure we send only ntske/1 as alpn
         debug_assert_eq!(tls_config.alpn_protocols, &[b"ntske/1".to_vec()]);
 
@@ -1070,7 +1005,8 @@ impl KeyExchangeServer {
 
         Ok(Self {
             tls_connection,
-            decoder: KeyExchangeServerDecoder::new(),
+            decoder: Some(KeyExchangeServerDecoder::new()),
+            keyset,
         })
     }
 }
@@ -1495,11 +1431,15 @@ mod test {
             .next()
             .unwrap(),
         );
-        let serverconfig = rustls::ServerConfig::builder()
+        let mut serverconfig = rustls::ServerConfig::builder()
             .with_safe_defaults()
             .with_no_client_auth()
             .with_single_cert(cert_chain, key_der)
             .unwrap();
+
+        serverconfig.alpn_protocols.clear();
+        serverconfig.alpn_protocols.push(b"ntske/1".to_vec());
+
         let mut root_store = rustls::RootCertStore::empty();
         root_store.add_parsable_certificates(
             &rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
@@ -1518,7 +1458,97 @@ mod test {
             rustls::ServerName::try_from("localhost").unwrap(),
         )
         .unwrap();
-        let mut server = KeyExchangeServer::new(serverconfig).unwrap();
+
+        let mut server = KeyExchangeServer::new(Arc::new(serverconfig)).unwrap();
+
+        let mut bytes = Vec::with_capacity(1024);
+        for record in NtsRecord::client_key_exchange_records() {
+            record.write(&mut bytes).unwrap();
+        }
+
+        client.writer().write_all(&bytes).unwrap();
+
+        let mut buf = [0; 4096];
+        let result = 'result: loop {
+            while server.wants_write() {
+                let size = server.write_socket(&mut &mut buf[..]).unwrap();
+                let mut offset = 0;
+                while offset < size {
+                    let cur = client.read_tls(&mut &buf[offset..size]).unwrap();
+                    offset += cur;
+                    client.process_new_packets().unwrap();
+                }
+            }
+
+            while client.wants_write() {
+                let size = client.write_tls(&mut &mut buf[..]).unwrap();
+                let mut offset = 0;
+                while offset < size {
+                    let cur = server.read_socket(&mut &buf[offset..size]).unwrap();
+                    offset += cur;
+                    server = match server.progress() {
+                        ControlFlow::Continue(server) => server,
+                        ControlFlow::Break(result) => break 'result result,
+                    }
+                }
+            }
+        }
+        .unwrap();
+
+        assert_eq!(result.algorithm, AeadAlgorithm::AeadAesSivCmac512);
+        assert_eq!(result.c2s.len(), 64);
+        assert_eq!(result.s2c.len(), 64);
+    }
+
+    #[test]
+    fn test_keyexchange_roundtrip() {
+        let cert_chain: Vec<rustls::Certificate> =
+            rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
+                "../../test-keys/end.fullchain.pem"
+            ) as &[u8]))
+            .unwrap()
+            .into_iter()
+            .map(rustls::Certificate)
+            .collect();
+        let key_der = rustls::PrivateKey(
+            rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(include_bytes!(
+                "../../test-keys/end.key"
+            )
+                as &[u8]))
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap(),
+        );
+        let mut serverconfig = rustls::ServerConfig::builder()
+            .with_safe_defaults()
+            .with_no_client_auth()
+            .with_single_cert(cert_chain, key_der)
+            .unwrap();
+
+        serverconfig.alpn_protocols.clear();
+        serverconfig.alpn_protocols.push(b"ntske/1".to_vec());
+
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.add_parsable_certificates(
+            &rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
+                "../../test-keys/testca.pem"
+            ) as &[u8]))
+            .unwrap(),
+        );
+
+        let clientconfig = rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
+
+        let mut client = ClientConnection::new(
+            Arc::new(clientconfig),
+            rustls::ServerName::try_from("localhost").unwrap(),
+        )
+        .unwrap();
+
+        let mut server = KeyExchangeServer::new(Arc::new(serverconfig), keyset).unwrap();
 
         let mut bytes = Vec::with_capacity(1024);
         for record in NtsRecord::client_key_exchange_records() {

@@ -8,8 +8,7 @@ use std::{
 };
 
 use ntp_proto::{
-    KeyExchangeClient, KeyExchangeClientResult, KeyExchangeError, KeyExchangeServer,
-    KeyExchangeServerResult,
+    KeyExchangeClient, KeyExchangeClientResult, KeyExchangeError, KeyExchangeServer, KeySet,
 };
 use rustls::Certificate;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
@@ -180,11 +179,16 @@ impl<IO> BoundKeyExchangeServer<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin,
 {
-    pub fn new(io: IO, config: Arc<rustls::ServerConfig>) -> Result<Self, KeyExchangeError> {
+    #[allow(unused)]
+    pub fn new(
+        io: IO,
+        config: Arc<rustls::ServerConfig>,
+        keyset: Arc<KeySet>,
+    ) -> Result<Self, KeyExchangeError> {
         Ok(Self {
             inner: Some(BoundKeyExchangeServerData {
                 io,
-                server: KeyExchangeServer::new(config)?,
+                server: KeyExchangeServer::new(config, keyset)?,
                 need_flush: false,
             }),
         })
@@ -230,7 +234,7 @@ impl<IO> Future for BoundKeyExchangeServer<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin,
 {
-    type Output = Result<KeyExchangeServerResult, KeyExchangeError>;
+    type Output = Result<(), KeyExchangeError>;
 
     fn poll(
         self: std::pin::Pin<&mut Self>,

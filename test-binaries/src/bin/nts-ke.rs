@@ -253,6 +253,7 @@ async fn main() -> std::io::Result<()> {
         .unwrap();
 
     let cookie = key_exchange.nts.get_cookie().unwrap();
+    dbg!(&key_exchange.nts);
     let (c2s, _) = key_exchange.nts.get_keys();
 
     println!("cookie: {cookie:?}");
