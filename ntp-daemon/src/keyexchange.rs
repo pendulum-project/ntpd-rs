@@ -9,9 +9,13 @@ use std::{
 
 use ntp_proto::{
     KeyExchangeClient, KeyExchangeClientResult, KeyExchangeError, KeyExchangeServer, KeySet,
+    KeySetProvider,
 };
-use rustls::Certificate;
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use rustls::{Certificate, PrivateKey};
+use tokio::{
+    io::{AsyncRead, AsyncWrite, ReadBuf},
+    net::{TcpListener, ToSocketAddrs},
+};
 
 pub(crate) async fn key_exchange_client(
     server_name: String,
@@ -37,6 +41,51 @@ pub(crate) async fn key_exchange_client(
         .with_no_client_auth();
 
     BoundKeyExchangeClient::new(socket, server_name, config)?.await
+}
+
+pub async fn key_exchange_server(
+    address: impl ToSocketAddrs,
+    certificate_chain: Vec<Certificate>,
+    key_der: PrivateKey,
+) -> std::io::Result<()> {
+    use std::io;
+
+    let listener = TcpListener::bind(address).await?;
+
+    let provider = KeySetProvider::new(8);
+
+    let mut config = rustls::ServerConfig::builder()
+        .with_safe_defaults()
+        .with_no_client_auth()
+        .with_single_cert(certificate_chain, key_der)
+        .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
+
+    config.alpn_protocols.clear();
+    config.alpn_protocols.push(b"ntske/1".to_vec());
+
+    let config = Arc::new(config);
+
+    loop {
+        let (stream, peer_addr) = listener.accept().await?;
+        let config = config.clone();
+        let keyset = provider.get();
+
+        let fut = async move {
+            let server = BoundKeyExchangeServer::new(stream, config, keyset).unwrap();
+
+            server.await.unwrap();
+
+            println!("Responded to: {}", peer_addr);
+
+            Ok(()) as std::io::Result<()>
+        };
+
+        tokio::spawn(async move {
+            if let Err(err) = fut.await {
+                eprintln!("{:?}", err);
+            }
+        });
+    }
 }
 
 pub(crate) struct BoundKeyExchangeClient<IO>
@@ -179,7 +228,6 @@ impl<IO> BoundKeyExchangeServer<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin,
 {
-    #[allow(unused)]
     pub fn new(
         io: IO,
         config: Arc<rustls::ServerConfig>,

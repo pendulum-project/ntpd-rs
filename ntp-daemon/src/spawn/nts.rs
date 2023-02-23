@@ -2,7 +2,7 @@ use thiserror::Error;
 use tokio::sync::mpsc;
 use tracing::warn;
 
-use crate::{config::NtsPeerConfig, keyexchange::key_exchange};
+use crate::{config::NtsPeerConfig, keyexchange::key_exchange_client};
 
 use super::{BasicSpawner, PeerId, PeerRemovedEvent, SpawnAction, SpawnEvent, SpawnerId};
 
@@ -29,7 +29,7 @@ impl NtsSpawner {
 
     async fn spawn(&mut self, action_tx: &mpsc::Sender<SpawnEvent>) -> Result<(), NtsSpawnError> {
         let ke = loop {
-            match key_exchange(
+            match key_exchange_client(
                 self.config.ke_addr.server_name.clone(),
                 self.config.ke_addr.port,
                 &self.config.certificates,
