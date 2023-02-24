@@ -225,8 +225,8 @@ impl<'de> Deserialize<'de> for PeerConfig {
                 let mut addr = None;
                 let mut mode = None;
                 let mut max_peers = None;
-                while let Some(key) = map.next_key::<&str>()? {
-                    match key {
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
                         "addr" => {
                             if addr.is_some() {
                                 return Err(de::Error::duplicate_field("addr"));
@@ -239,7 +239,7 @@ impl<'de> Deserialize<'de> for PeerConfig {
 
                             addr = Some(parsed_addr);
                         }
-                        "ke_addr" => {
+                        "ke-addr" => {
                             if ke_addr.is_some() {
                                 return Err(de::Error::duplicate_field("ke_addr"));
                             }
@@ -265,7 +265,7 @@ impl<'de> Deserialize<'de> for PeerConfig {
                             }
                             mode = Some(map.next_value()?);
                         }
-                        "max_peers" => {
+                        "max-peers" => {
                             if max_peers.is_some() {
                                 return Err(de::Error::duplicate_field("max_peers"));
                             }
@@ -273,8 +273,8 @@ impl<'de> Deserialize<'de> for PeerConfig {
                         }
                         _ => {
                             return Err(de::Error::unknown_field(
-                                key,
-                                &["addr", "mode", "max_peers", "ke_addr"],
+                                key.as_str(),
+                                &["addr", "ke-addr", "certificate", "mode", "max-peers"],
                             ));
                         }
                     }
@@ -291,9 +291,9 @@ impl<'de> Deserialize<'de> for PeerConfig {
 
                         let valid_fields = &["addr", "mode"];
                         if max_peers.is_some() {
-                            unknown_field("max_peers", valid_fields)
+                            unknown_field("max-peers", valid_fields)
                         } else if ke_addr.is_some() {
-                            unknown_field("ke_addr", valid_fields)
+                            unknown_field("ke-addr", valid_fields)
                         } else if opt_certificate_path.is_some() {
                             unknown_field("certificate", valid_fields)
                         } else {
@@ -303,9 +303,9 @@ impl<'de> Deserialize<'de> for PeerConfig {
                     PeerHostMode::NtsServer => {
                         let ke_addr = ke_addr.ok_or_else(|| de::Error::missing_field("ke_addr"))?;
 
-                        let valid_fields = &["mode", "ke_addr", "certificate"];
+                        let valid_fields = &["mode", "ke-addr", "certificate"];
                         if max_peers.is_some() {
-                            unknown_field("max_peers", valid_fields)
+                            unknown_field("max-peers", valid_fields)
                         } else {
                             let certificates: Arc<[Certificate]> = if let Some(certificate_path) =
                                 opt_certificate_path
@@ -332,9 +332,9 @@ impl<'de> Deserialize<'de> for PeerConfig {
                     PeerHostMode::Pool => {
                         let addr = addr.ok_or_else(|| de::Error::missing_field("addr"))?;
 
-                        let valid_fields = &["addr", "mode", "max_peers"];
+                        let valid_fields = &["addr", "mode", "max-peers"];
                         if ke_addr.is_some() {
-                            unknown_field("ke_addr", valid_fields)
+                            unknown_field("ke-addr", valid_fields)
                         } else if opt_certificate_path.is_some() {
                             unknown_field("certificate", valid_fields)
                         } else {
@@ -416,7 +416,7 @@ mod tests {
             [peer]
             addr = "example.com"
             mode = "Pool"
-            max_peers = 42
+            max-peers = 42
             "#,
         )
         .unwrap();
@@ -429,7 +429,7 @@ mod tests {
         let test: TestConfig = toml::from_str(
             r#"
             [peer]
-            ke_addr = "example.com"
+            ke-addr = "example.com"
             mode = "NtsServer"
             "#,
         )
@@ -454,7 +454,7 @@ mod tests {
         let test: TestConfig = toml::from_str(&format!(
             r#"
                 [peer]
-                ke_addr = "example.com"
+                ke-addr = "example.com"
                 certificate = "{}"
                 mode = "NtsServer"
                 "#,

@@ -8,7 +8,7 @@ use tracing::{debug, instrument, trace, warn};
 
 use crate::raw_socket::{
     control_message_space, exceptional_condition_fd, receive_message, set_timestamping_options,
-    ControlMessage, MessageQueue, TimestampingConfig,
+    ControlMessage, MessageQueue, TimestampMethod, TimestampingConfig,
 };
 
 enum Timestamping {
@@ -24,6 +24,12 @@ pub struct UdpSocket {
     timestamping: TimestampingConfig,
 }
 
+#[cfg(target_os = "linux")]
+const DEFAULT_TIMESTAMP_METHOD: TimestampMethod = TimestampMethod::SoTimestamping;
+
+#[cfg(all(unix, not(target_os = "linux")))]
+const DEFAULT_TIMESTAMP_METHOD: TimestampMethod = TimestampMethod::SoTimestamp;
+
 impl UdpSocket {
     #[instrument(level = "debug", skip(peer_addr))]
     pub async fn client(listen_addr: SocketAddr, peer_addr: SocketAddr) -> io::Result<UdpSocket> {
@@ -36,6 +42,7 @@ impl UdpSocket {
         Self::client_with_timestamping(
             listen_addr,
             peer_addr,
+            DEFAULT_TIMESTAMP_METHOD,
             Timestamping::Configure(timestamping),
         )
         .await
@@ -44,6 +51,7 @@ impl UdpSocket {
     async fn client_with_timestamping(
         listen_addr: SocketAddr,
         peer_addr: SocketAddr,
+        method: TimestampMethod,
         timestamping: Timestamping,
     ) -> io::Result<UdpSocket> {
         let socket = tokio::net::UdpSocket::bind(listen_addr).await?;
@@ -66,7 +74,7 @@ impl UdpSocket {
             Timestamping::AllSupported => TimestampingConfig::all_supported(&socket)?,
         };
 
-        set_timestamping_options(&socket, timestamping)?;
+        set_timestamping_options(&socket, method, timestamping)?;
 
         Ok(UdpSocket {
             exceptional_condition: exceptional_condition_fd(&socket)?,
@@ -93,7 +101,7 @@ impl UdpSocket {
             tx_software: false,
         };
 
-        set_timestamping_options(&socket, timestamping)?;
+        set_timestamping_options(&socket, DEFAULT_TIMESTAMP_METHOD, timestamping)?;
 
         Ok(UdpSocket {
             exceptional_condition: exceptional_condition_fd(&socket)?,
@@ -259,10 +267,9 @@ fn recv(
     // Loops through the control messages, but we should only get a single message in practice
     for msg in control_messages {
         match msg {
-            ControlMessage::Timestamping(timespec) => {
-                let timestamp = read_ntp_timestamp(timespec);
-
-                return Ok((bytes_read as usize, sock_addr, Some(timestamp)));
+            ControlMessage::Timestamping(libc_timestamp) => {
+                let ntp_timestamp = libc_timestamp.into_ntp_timestamp();
+                return Ok((bytes_read as usize, sock_addr, Some(ntp_timestamp)));
             }
 
             ControlMessage::ReceiveError(_error) => {
@@ -305,8 +312,8 @@ fn fetch_send_timestamp_help(
     let mut send_ts = None;
     for msg in control_messages {
         match msg {
-            ControlMessage::Timestamping(timespec) => {
-                send_ts = Some(read_ntp_timestamp(timespec));
+            ControlMessage::Timestamping(timestamp) => {
+                send_ts = Some(timestamp);
             }
 
             ControlMessage::ReceiveError(error) => {
@@ -338,22 +345,7 @@ fn fetch_send_timestamp_help(
         }
     }
 
-    Ok(send_ts)
-}
-
-fn read_ntp_timestamp(timespec: libc::timespec) -> NtpTimestamp {
-    // Unix uses an epoch located at 1/1/1970-00:00h (UTC) and NTP uses 1/1/1900-00:00h.
-    // This leads to an offset equivalent to 70 years in seconds
-    // there are 17 leap years between the two dates so the offset is
-    const EPOCH_OFFSET: u32 = (70 * 365 + 17) * 86400;
-
-    // truncates the higher bits of the i64
-    let seconds = (timespec.tv_sec as u32).wrapping_add(EPOCH_OFFSET);
-
-    // tv_nsec is always within [0, 1e10)
-    let nanos = timespec.tv_nsec as u32;
-
-    NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, nanos)
+    Ok(send_ts.map(|ts| ts.into_ntp_timestamp()))
 }
 
 #[cfg(test)]
@@ -472,18 +464,18 @@ mod tests {
         assert_eq!(buf, [2; 48]);
     }
 
-    #[tokio::test]
-    async fn test_timestamping_reasonable() {
-        let mut a = UdpSocket::client_with_timestamping(
-            SocketAddr::from((Ipv4Addr::LOCALHOST, 8000)),
-            SocketAddr::from((Ipv4Addr::LOCALHOST, 8001)),
-            Timestamping::AllSupported,
+    async fn timestamping_reasonable(method: TimestampMethod, p1: u16, p2: u16) {
+        let mut a = UdpSocket::client(
+            SocketAddr::from((Ipv4Addr::LOCALHOST, p1)),
+            SocketAddr::from((Ipv4Addr::LOCALHOST, p2)),
         )
         .await
         .unwrap();
-        let b = UdpSocket::client(
-            SocketAddr::from((Ipv4Addr::LOCALHOST, 8001)),
-            SocketAddr::from((Ipv4Addr::LOCALHOST, 8000)),
+        let b = UdpSocket::client_with_timestamping(
+            SocketAddr::from((Ipv4Addr::LOCALHOST, p2)),
+            SocketAddr::from((Ipv4Addr::LOCALHOST, p1)),
+            method,
+            Timestamping::AllSupported,
         )
         .await
         .unwrap();
@@ -508,10 +500,29 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn timestamping_reasonable_so_timestamping() {
+        timestamping_reasonable(TimestampMethod::SoTimestamping, 8000, 8001).await
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn timestamping_reasonable_so_timestampns() {
+        timestamping_reasonable(TimestampMethod::SoTimestampns, 8002, 8003).await
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn timestamping_reasonable_so_timestamp() {
+        timestamping_reasonable(TimestampMethod::SoTimestamp, 8004, 8005).await
+    }
+
+    #[tokio::test]
     async fn test_send_timestamp() {
         let mut a = UdpSocket::client_with_timestamping(
             SocketAddr::from((Ipv4Addr::LOCALHOST, 8012)),
             SocketAddr::from((Ipv4Addr::LOCALHOST, 8013)),
+            DEFAULT_TIMESTAMP_METHOD,
             Timestamping::AllSupported,
         )
         .await

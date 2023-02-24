@@ -21,7 +21,7 @@ jobs:
           - stable
           - beta
           - nightly
-          - 1.62.0
+          - 1.64.0
         os: [ubuntu-latest]
         features:
           - ""
@@ -40,7 +40,7 @@ jobs:
           override: true
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@5737265abf9b36489a85b3f05f6a7c3481430d0e
+        uses: taiki-e/install-action@0c4592b32a73cba67018f7bd5ce394a6505d6f81
         with:
           tool: cargo-llvm-cov
 

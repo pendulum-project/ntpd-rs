@@ -29,7 +29,7 @@ fn deserialize_option_env_filter<'de, D>(deserializer: D) -> Result<Option<EnvFi
 where
     D: Deserializer<'de>,
 {
-    let data: Option<&str> = Deserialize::deserialize(deserializer)?;
+    let data: Option<String> = Deserialize::deserialize(deserializer)?;
 
     if let Some(dirs) = data {
         // allow us to recognise configs with an empty log filter directive
@@ -348,6 +348,7 @@ mod tests {
         let config: Config = toml::from_str(
             r#"
             log-filter = "info"
+            log-format = "full"
             [[peers]]
             addr = "example.com"
             [observe]

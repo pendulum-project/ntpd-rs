@@ -1,6 +1,7 @@
 use serde::Deserialize;
 
 #[derive(Debug, Copy, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct AlgorithmConfig {
     /// Probability bound below which we start moving towards decreasing
     /// our precision estimate. (probability, 0-1)
@@ -10,9 +11,9 @@ pub struct AlgorithmConfig {
     /// our precision estimate. (probability, 0-1)
     #[serde(default = "default_precision_high_probability")]
     pub precision_high_probability: f64,
-    /// Ammount of histeresis in changeing the precision estimate. (count, 1+)
-    #[serde(default = "default_precision_histeresis")]
-    pub precision_histeresis: i32,
+    /// Ammount of hysteresis in changeing the precision estimate. (count, 1+)
+    #[serde(default = "default_precision_hysteresis")]
+    pub precision_hysteresis: i32,
     /// Lower bound on the ammount of effect our precision estimate
     /// has on the total noise estimate before we allow decreasing
     /// of the precision estimate. (weight, 0-1)
@@ -27,9 +28,9 @@ pub struct AlgorithmConfig {
     /// which we start decreasing the poll interval. (weight, 0-1)
     #[serde(default = "default_poll_high_weight")]
     pub poll_high_weight: f64,
-    /// Ammount of histeresis in changeing the poll interval (count, 1+)
-    #[serde(default = "default_poll_histeresis")]
-    pub poll_histeresis: i32,
+    /// Ammount of hysteresis in changeing the poll interval (count, 1+)
+    #[serde(default = "default_poll_hysteresis")]
+    pub poll_hysteresis: i32,
     /// Probability threshold for when a measurement is considered a
     /// significant enough outlier that we decide something weird is
     /// going on and we need to do more measurements. (probability, 0-1)
@@ -92,6 +93,10 @@ pub struct AlgorithmConfig {
     #[serde(default = "default_slew_min_duration")]
     pub slew_min_duration: f64,
 
+    /// Absolute maximum frequency correction (s/s)
+    #[serde(default = "default_max_frequency_steer")]
+    pub max_frequency_steer: f64,
+
     /// Ignore a servers advertised dispersion when synchronizing.
     /// Can improve synchronization quality with servers reporting
     /// overly conservative root dispersion.
@@ -104,12 +109,12 @@ impl Default for AlgorithmConfig {
         Self {
             precision_low_probability: default_precision_low_probability(),
             precision_high_probability: default_precision_high_probability(),
-            precision_histeresis: default_precision_histeresis(),
+            precision_hysteresis: default_precision_hysteresis(),
             precision_min_weight: default_precision_min_weight(),
 
             poll_low_weight: default_poll_low_weight(),
             poll_high_weight: default_poll_high_weight(),
-            poll_histeresis: default_poll_histeresis(),
+            poll_hysteresis: default_poll_hysteresis(),
             poll_jump_threshold: default_poll_jump_threshold(),
 
             delay_outlier_threshold: default_delay_outlier_threshold(),
@@ -129,6 +134,8 @@ impl Default for AlgorithmConfig {
             slew_max_frequency_offset: default_slew_max_frequency_offset(),
             slew_min_duration: default_slew_min_duration(),
 
+            max_frequency_steer: default_max_frequency_steer(),
+
             ignore_server_dispersion: false,
         }
     }
@@ -142,7 +149,7 @@ fn default_precision_high_probability() -> f64 {
     2. / 3.
 }
 
-fn default_precision_histeresis() -> i32 {
+fn default_precision_hysteresis() -> i32 {
     16
 }
 
@@ -158,7 +165,7 @@ fn default_poll_high_weight() -> f64 {
     0.6
 }
 
-fn default_poll_histeresis() -> i32 {
+fn default_poll_hysteresis() -> i32 {
     16
 }
 
@@ -212,6 +219,10 @@ fn default_jump_threshold() -> f64 {
 
 fn default_slew_max_frequency_offset() -> f64 {
     200e-6
+}
+
+fn default_max_frequency_steer() -> f64 {
+    495e-6
 }
 
 fn default_slew_min_duration() -> f64 {

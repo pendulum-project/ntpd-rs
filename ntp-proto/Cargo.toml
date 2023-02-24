@@ -13,16 +13,16 @@ new-algorithm = []
 
 [dependencies]
 # Note: md5 is needed to calculate ReferenceIDs for IPv6 addresses per RFC5905
-md-5 = "0.10.5"
-rand = "0.8.5"
-tracing = "0.1.37"
-serde = { version = "1.0.152", features = ["derive"] }
-exitcode = "1.1.2"
-arbitrary = { version = "1.2.3", optional = true }
-rustls = "0.20.8"
-thiserror = "1.0.38"
-aead = "0.5.1"
-aes-siv = "0.7.0"
+md-5.workspace = true
+rand.workspace = true
+tracing.workspace = true
+serde.workspace = true
+exitcode.workspace = true
+arbitrary = { workspace = true, optional = true }
+rustls.workspace = true
+thiserror.workspace = true
+aead.workspace = true
+aes-siv.workspace = true
 
 [dev-dependencies]
-rustls-pemfile = "1.0.2"
+rustls-pemfile.workspace = true

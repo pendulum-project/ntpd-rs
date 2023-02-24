@@ -9,7 +9,6 @@ use std::{
 use ntp_proto::{KeyExchangeClient, KeyExchangeError, KeyExchangeResult, NtpPacket, PollInterval};
 use ntp_udp::UdpSocket;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio_rustls::rustls;
 
 // unstable in std; check on https://github.com/rust-lang/rust/issues/88581 some time in the future
 pub const fn next_multiple_of(lhs: usize, rhs: usize) -> usize {
@@ -215,7 +214,8 @@ pub(crate) async fn perform_key_exchange(
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    let domain = "time.cloudflare.com";
+    // let domain = "time.cloudflare.com";
+    let domain = "nts.time.nl"; // supports AesSivCmac512
     let port = 4460;
 
     let mut key_exchange = perform_key_exchange(domain.to_string(), port)

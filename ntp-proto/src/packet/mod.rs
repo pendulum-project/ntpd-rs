@@ -3,20 +3,24 @@ use std::io::Cursor;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 
-use crate::{NtpClock, NtpDuration, NtpTimestamp, PollInterval, ReferenceId, SystemSnapshot};
-
-use self::{
-    extensionfields::{ExtensionField, ExtensionFieldData},
-    mac::Mac,
+use crate::{
+    DecodedServerCookie, NtpClock, NtpDuration, NtpTimestamp, PollInterval, ReferenceId,
+    SystemSnapshot,
 };
+
+use self::{error::ParsingError, extensionfields::ExtensionFieldData, mac::Mac};
 
 mod crypto;
 mod error;
 mod extensionfields;
 mod mac;
 
-pub use crypto::{AesSivCmac256, Cipher, CipherProvider, EncryptionResult, NoCipher};
+pub use crypto::{
+    AesSivCmac256, AesSivCmac512, Cipher, CipherHolder, CipherProvider, DecryptError,
+    EncryptionResult, NoCipher,
+};
 pub use error::PacketParsingError;
+pub use extensionfields::ExtensionField;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NtpLeapIndicator {
@@ -159,9 +163,9 @@ impl NtpHeaderV3V4 {
         }
     }
 
-    fn deserialize(data: &[u8]) -> Result<(Self, usize), PacketParsingError> {
+    fn deserialize(data: &[u8]) -> Result<(Self, usize), ParsingError<std::convert::Infallible>> {
         if data.len() < Self::LENGTH {
-            return Err(PacketParsingError::IncorrectLength);
+            return Err(ParsingError::IncorrectLength);
         }
 
         Ok((
@@ -270,10 +274,11 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    #[allow(clippy::result_large_err)]
     pub fn deserialize(
         data: &'a [u8],
         cipher: &impl CipherProvider,
-    ) -> Result<Self, PacketParsingError> {
+    ) -> Result<(Self, Option<DecodedServerCookie>), PacketParsingError<'a>> {
         if data.is_empty() {
             return Err(PacketParsingError::IncorrectLength);
         }
@@ -282,34 +287,62 @@ impl<'a> NtpPacket<'a> {
 
         match version {
             3 => {
-                let (header, header_size) = NtpHeaderV3V4::deserialize(data)?;
+                let (header, header_size) =
+                    NtpHeaderV3V4::deserialize(data).map_err(|e| e.generalize())?;
                 let mac = if header_size != data.len() {
-                    Some(Mac::deserialize(&data[header_size..])?)
+                    Some(Mac::deserialize(&data[header_size..]).map_err(|e| e.generalize())?)
                 } else {
                     None
                 };
-                Ok(NtpPacket {
-                    header: NtpHeader::V3(header),
-                    efdata: ExtensionFieldData::default(),
-                    mac,
-                })
+                Ok((
+                    NtpPacket {
+                        header: NtpHeader::V3(header),
+                        efdata: ExtensionFieldData::default(),
+                        mac,
+                    },
+                    None,
+                ))
             }
             4 => {
-                let (header, header_size) = NtpHeaderV3V4::deserialize(data)?;
-                let (efdata, header_plus_fields_len) =
-                    ExtensionFieldData::deserialize(data, header_size, cipher)?;
+                let mut has_invalid_nts = false;
+
+                let (header, header_size) =
+                    NtpHeaderV3V4::deserialize(data).map_err(|e| e.generalize())?;
+                let (efdata, header_plus_fields_len, cookie) =
+                    match ExtensionFieldData::deserialize(data, header_size, cipher) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            let ret = e.get_decrypt_error()?;
+                            has_invalid_nts = true;
+                            (ret.0, ret.1, None)
+                        }
+                    };
 
                 let mac = if header_plus_fields_len != data.len() {
-                    Some(Mac::deserialize(&data[header_plus_fields_len..])?)
+                    Some(
+                        Mac::deserialize(&data[header_plus_fields_len..])
+                            .map_err(|e| e.generalize())?,
+                    )
                 } else {
                     None
                 };
 
-                Ok(NtpPacket {
-                    header: NtpHeader::V4(header),
-                    efdata,
-                    mac,
-                })
+                if has_invalid_nts {
+                    Err(ParsingError::DecryptError(NtpPacket {
+                        header: NtpHeader::V4(header),
+                        efdata,
+                        mac,
+                    }))
+                } else {
+                    Ok((
+                        NtpPacket {
+                            header: NtpHeader::V4(header),
+                            efdata,
+                            mac,
+                        },
+                        cookie,
+                    ))
+                }
             }
             _ => Err(PacketParsingError::InvalidVersion(version)),
         }
@@ -796,7 +829,7 @@ mod tests {
 
         assert_eq!(
             reference,
-            NtpPacket::deserialize(packet, &NoCipher).unwrap()
+            NtpPacket::deserialize(packet, &NoCipher).unwrap().0
         );
         match reference.serialize_without_encryption_vec() {
             Ok(buf) => assert_eq!(packet[..], buf[..]),
@@ -825,7 +858,7 @@ mod tests {
 
         assert_eq!(
             reference,
-            NtpPacket::deserialize(packet, &NoCipher).unwrap()
+            NtpPacket::deserialize(packet, &NoCipher).unwrap().0
         );
         match reference.serialize_without_encryption_vec() {
             Ok(buf) => assert_eq!(packet[..], buf[..]),
@@ -857,7 +890,7 @@ mod tests {
 
         assert_eq!(
             reference,
-            NtpPacket::deserialize(packet, &NoCipher).unwrap()
+            NtpPacket::deserialize(packet, &NoCipher).unwrap().0
         );
         match reference.serialize_without_encryption_vec() {
             Ok(buf) => assert_eq!(packet[..], buf[..]),
@@ -884,7 +917,7 @@ mod tests {
     #[test]
     fn test_packed_flags() {
         let base = b"\x24\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b".to_owned();
-        let base_structured = NtpPacket::deserialize(&base, &NoCipher).unwrap();
+        let base_structured = NtpPacket::deserialize(&base, &NoCipher).unwrap().0;
 
         for leap_type in 0..3 {
             for mode in 0..8 {
@@ -893,7 +926,7 @@ mod tests {
                 header.set_mode(NtpAssociationMode::from_bits(mode));
 
                 let data = header.serialize_without_encryption_vec().unwrap();
-                let copy = NtpPacket::deserialize(&data, &NoCipher).unwrap();
+                let copy = NtpPacket::deserialize(&data, &NoCipher).unwrap().0;
                 assert_eq!(header, copy);
             }
         }
@@ -902,7 +935,7 @@ mod tests {
             let mut packet = base;
             packet[0] = i;
 
-            if let Ok(a) = NtpPacket::deserialize(&packet, &NoCipher) {
+            if let Ok((a, _)) = NtpPacket::deserialize(&packet, &NoCipher) {
                 let b = a.serialize_without_encryption_vec().unwrap();
                 assert_eq!(packet[..], b[..]);
             }

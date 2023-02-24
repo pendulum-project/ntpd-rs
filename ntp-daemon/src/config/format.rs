@@ -37,8 +37,8 @@ impl<'de> Deserialize<'de> for LogFormat {
     where
         D: serde::Deserializer<'de>,
     {
-        let data: &str = Deserialize::deserialize(deserializer)?;
-        LogFormat::from_str(data).map_err(serde::de::Error::custom)
+        let data: String = Deserialize::deserialize(deserializer)?;
+        LogFormat::from_str(&data).map_err(serde::de::Error::custom)
     }
 }
 

@@ -361,7 +361,7 @@ impl Peer {
     ) -> Result<Update, IgnoreReason> {
         let message =
             match NtpPacket::deserialize(message, &self.nts.as_ref().map(|nts| nts.s2c.as_ref())) {
-                Ok(packet) => packet,
+                Ok((packet, _)) => packet,
                 Err(e) => {
                     warn!("received invalid packet: {}", e);
                     return Err(IgnoreReason::InvalidPacket);
@@ -667,7 +667,7 @@ mod test {
         let packetbuf = peer
             .generate_poll_message(&mut buf, system, &SystemConfig::default())
             .unwrap();
-        let packet = NtpPacket::deserialize(packetbuf, &NoCipher).unwrap();
+        let packet = NtpPacket::deserialize(packetbuf, &NoCipher).unwrap().0;
         assert!(peer.current_poll_interval(system) > prev);
         let mut response = NtpPacket::test();
         response.set_mode(NtpAssociationMode::Server);
@@ -689,7 +689,7 @@ mod test {
         let packetbuf = peer
             .generate_poll_message(&mut buf, system, &SystemConfig::default())
             .unwrap();
-        let packet = NtpPacket::deserialize(packetbuf, &NoCipher).unwrap();
+        let packet = NtpPacket::deserialize(packetbuf, &NoCipher).unwrap().0;
         assert!(peer.current_poll_interval(system) > prev);
         let mut response = NtpPacket::test();
         response.set_mode(NtpAssociationMode::Server);
@@ -719,7 +719,7 @@ mod test {
         let outgoingbuf = peer
             .generate_poll_message(&mut buf, system, &SystemConfig::default())
             .unwrap();
-        let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap();
+        let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_stratum(1);
@@ -759,7 +759,7 @@ mod test {
         let outgoingbuf = peer
             .generate_poll_message(&mut buf, system, &SystemConfig::default())
             .unwrap();
-        let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap();
+        let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_stratum(MAX_STRATUM + 1);
@@ -815,7 +815,7 @@ mod test {
         let outgoingbuf = peer
             .generate_poll_message(&mut buf, system, &SystemConfig::default())
             .unwrap();
-        let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap();
+        let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
         packet.set_reference_id(ReferenceId::KISS_RSTR);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
@@ -850,7 +850,7 @@ mod test {
         let outgoingbuf = peer
             .generate_poll_message(&mut buf, system, &SystemConfig::default())
             .unwrap();
-        let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap();
+        let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
         packet.set_reference_id(ReferenceId::KISS_DENY);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
@@ -891,7 +891,7 @@ mod test {
         let outgoingbuf = peer
             .generate_poll_message(&mut buf, system, &SystemConfig::default())
             .unwrap();
-        let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap();
+        let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
         packet.set_reference_id(ReferenceId::KISS_RATE);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
