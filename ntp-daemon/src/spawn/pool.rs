@@ -6,7 +6,7 @@ use tracing::warn;
 
 use crate::{config::PoolPeerConfig, spawn::SpawnAction};
 
-use super::{BasicSpawner, PeerId, SpawnEvent, SpawnerId, PeerRemovedEvent};
+use super::{BasicSpawner, PeerId, PeerRemovedEvent, SpawnEvent, SpawnerId};
 
 struct PoolPeer {
     id: PeerId,
@@ -126,10 +126,6 @@ impl BasicSpawner for PoolSpawner {
     }
 
     fn get_addr_description(&self) -> String {
-        format!(
-            "{} ({})",
-            self.config.addr,
-            self.config.max_peers
-        )
+        format!("{} ({})", self.config.addr, self.config.max_peers)
     }
 }

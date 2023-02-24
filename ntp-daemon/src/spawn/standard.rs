@@ -6,7 +6,7 @@ use tracing::warn;
 
 use crate::config::StandardPeerConfig;
 
-use super::{BasicSpawner, PeerId, SpawnAction, SpawnEvent, SpawnerId, PeerRemovedEvent};
+use super::{BasicSpawner, PeerId, PeerRemovedEvent, SpawnAction, SpawnEvent, SpawnerId};
 
 pub struct StandardSpawner {
     id: SpawnerId,

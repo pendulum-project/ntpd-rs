@@ -5,6 +5,8 @@ use tokio::sync::mpsc;
 
 use crate::config::NormalizedAddress;
 
+#[cfg(test)]
+pub mod dummy;
 pub mod nts;
 pub mod pool;
 pub mod standard;
@@ -56,18 +58,26 @@ pub struct SpawnEvent {
 pub enum SystemEvent {
     PeerRemoved(PeerRemovedEvent),
     PeerRegistered(PeerCreateParameters),
+    Shutdown,
 }
 
 impl SystemEvent {
     pub fn peer_removed(id: PeerId, reason: PeerRemovalReason) -> SystemEvent {
-        SystemEvent::PeerRemoved(PeerRemovedEvent {
-            id,
-            reason,
-        })
+        SystemEvent::PeerRemoved(PeerRemovedEvent { id, reason })
     }
 
-    pub fn peer_registered(id: PeerId, addr: SocketAddr, normalized_addr: NormalizedAddress, nts: Option<PeerNtsData>) -> SystemEvent {
-        SystemEvent::PeerRegistered(PeerCreateParameters { id, addr, normalized_addr, nts })
+    pub fn peer_registered(
+        id: PeerId,
+        addr: SocketAddr,
+        normalized_addr: NormalizedAddress,
+        nts: Option<PeerNtsData>,
+    ) -> SystemEvent {
+        SystemEvent::PeerRegistered(PeerCreateParameters {
+            id,
+            addr,
+            normalized_addr,
+            nts,
+        })
     }
 }
 
@@ -98,8 +108,18 @@ pub enum SpawnAction {
 }
 
 impl SpawnAction {
-    pub fn create(id: PeerId, addr: SocketAddr, normalized_addr: NormalizedAddress, nts: Option<PeerNtsData>) -> SpawnAction {
-        SpawnAction::Create(PeerCreateParameters { id, addr, normalized_addr, nts })
+    pub fn create(
+        id: PeerId,
+        addr: SocketAddr,
+        normalized_addr: NormalizedAddress,
+        nts: Option<PeerNtsData>,
+    ) -> SpawnAction {
+        SpawnAction::Create(PeerCreateParameters {
+            id,
+            addr,
+            normalized_addr,
+            nts,
+        })
     }
 }
 
@@ -111,12 +131,47 @@ pub struct PeerCreateParameters {
     pub nts: Option<PeerNtsData>,
 }
 
+#[cfg(test)]
+impl PeerCreateParameters {
+    pub fn from_addr(addr: SocketAddr) -> PeerCreateParameters {
+        PeerCreateParameters {
+            id: PeerId::new(),
+            addr,
+            normalized_addr: NormalizedAddress::from_string_ntp(format!(
+                "{}:{}",
+                addr.ip(),
+                addr.port()
+            ))
+            .unwrap(),
+            nts: None,
+        }
+    }
+
+    pub fn from_ip_and_port(ip: impl Into<String>, port: u16) -> PeerCreateParameters {
+        Self::from_addr(SocketAddr::new(
+            ip.into().parse().expect("Invalid ip address specified"),
+            port,
+        ))
+    }
+
+    pub async fn from_normalized(addr: NormalizedAddress) -> PeerCreateParameters {
+        let socket_addr = addr
+            .lookup_host()
+            .await
+            .expect("Lookup failed")
+            .next()
+            .expect("Lookup unexpectedly returned zero responses");
+        PeerCreateParameters {
+            id: PeerId::new(),
+            addr: socket_addr,
+            normalized_addr: addr,
+            nts: None,
+        }
+    }
+}
+
 pub trait Spawner {
-    fn run(
-        self,
-        action_tx: mpsc::Sender<SpawnEvent>,
-        system_notify: mpsc::Receiver<SystemEvent>,
-    );
+    fn run(self, action_tx: mpsc::Sender<SpawnEvent>, system_notify: mpsc::Receiver<SystemEvent>);
     fn get_id(&self) -> SpawnerId;
     fn get_addr_description(&self) -> String;
 }
@@ -145,8 +200,10 @@ pub trait BasicSpawner {
     fn get_addr_description(&self) -> String;
 }
 
-impl<E: std::error::Error + Send + 'static, T: BasicSpawner<Error = E> + Send + 'static> Spawner
-    for T
+impl<T, E> Spawner for T
+where
+    T: BasicSpawner<Error = E> + Send + 'static,
+    E: std::error::Error + Send + 'static,
 {
     fn run(
         mut self,
@@ -159,9 +216,12 @@ impl<E: std::error::Error + Send + 'static, T: BasicSpawner<Error = E> + Send + 
                 match event {
                     SystemEvent::PeerRegistered(peer_params) => {
                         self.handle_registered(peer_params, &action_tx).await?;
-                    },
+                    }
                     SystemEvent::PeerRemoved(removed_peer) => {
                         self.handle_peer_removed(removed_peer, &action_tx).await?;
+                    }
+                    SystemEvent::Shutdown => {
+                        break;
                     }
                 }
             }

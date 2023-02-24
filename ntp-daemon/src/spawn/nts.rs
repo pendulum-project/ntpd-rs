@@ -5,7 +5,7 @@ use tracing::warn;
 
 use crate::{config::NtsPeerConfig, keyexchange::key_exchange};
 
-use super::{BasicSpawner, PeerRemovedEvent, SpawnEvent, SpawnerId, SpawnAction, PeerId};
+use super::{BasicSpawner, PeerId, PeerRemovedEvent, SpawnAction, SpawnEvent, SpawnerId};
 
 pub struct NtsSpawner {
     config: NtsPeerConfig,
@@ -54,7 +54,12 @@ impl NtsSpawner {
             action_tx
                 .send(SpawnEvent::new(
                     self.id,
-                    SpawnAction::create(PeerId::new(), addr, self.config.ke_addr.clone(), Some(ke.nts)),
+                    SpawnAction::create(
+                        PeerId::new(),
+                        addr,
+                        self.config.ke_addr.clone(),
+                        Some(ke.nts),
+                    ),
                 ))
                 .await?;
         } else {
@@ -74,7 +79,13 @@ impl BasicSpawner for NtsSpawner {
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), NtsSpawnError> {
         let ke = loop {
-            match key_exchange(self.config.ke_addr.server_name.clone(), self.config.ke_addr.port, &self.config.certificates).await {
+            match key_exchange(
+                self.config.ke_addr.server_name.clone(),
+                self.config.ke_addr.port,
+                &self.config.certificates,
+            )
+            .await
+            {
                 Ok(res) => break res,
                 Err(e) => {
                     warn!(error = ?e, "error while attempting key exchange");
