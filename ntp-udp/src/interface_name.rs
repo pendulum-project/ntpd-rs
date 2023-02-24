@@ -217,6 +217,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(target_os = "macos", ignore = "gives a weird AF_FAMILY value")]
     fn decode_socket_addr_v6() {
         let raw = [
             0x20, 0x01, 0x08, 0x88, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
