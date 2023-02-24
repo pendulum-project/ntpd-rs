@@ -535,7 +535,7 @@ mod exceptional_condition_fd {
         AsyncFd::new(fd)
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
     pub(crate) fn exceptional_condition_fd(
         socket_of_interest: &std::net::UdpSocket,
     ) -> std::io::Result<AsyncFd<RawFd>> {

@@ -155,7 +155,7 @@ impl UdpSocket {
                 Ok(send_timestamp) => Ok((send_size, Some(send_timestamp?))),
             }
 
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "freebsd"))]
             Ok((send_size, None))
         } else {
             trace!("send timestamping not supported");
