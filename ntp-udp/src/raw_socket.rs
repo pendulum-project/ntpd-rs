@@ -414,11 +414,13 @@ mod recv_message {
     }
 }
 
-pub(crate) mod timestamping_config {
-    use std::os::unix::prelude::AsRawFd;
+mod timestamping_config {
 
-    use super::cerr;
-    use crate::{interface_name, EnableTimestamps};
+    #[derive(Debug, Clone, Copy, Default)]
+    pub(crate) struct TimestampingConfig {
+        pub(crate) rx_software: bool,
+        pub(crate) tx_software: bool,
+    }
 
     #[repr(C)]
     #[allow(non_camel_case_types)]
@@ -439,6 +441,10 @@ pub(crate) mod timestamping_config {
         #[cfg(target_os = "linux")]
         #[allow(dead_code)]
         pub(crate) fn all_supported(udp_socket: &std::net::UdpSocket) -> std::io::Result<Self> {
+            use super::cerr;
+            use crate::interface_name;
+            use std::os::unix::prelude::AsRawFd;
+
             // Get time stamping and PHC info
             const ETHTOOL_GET_TS_INFO: u32 = 0x00000041;
 
@@ -482,8 +488,8 @@ pub(crate) mod timestamping_config {
 
         #[cfg(any(target_os = "freebsd", target_os = "macos"))]
         #[allow(dead_code)]
-        pub(crate) fn all_supported(udp_socket: &std::net::UdpSocket) -> std::io::Result<Self> {
-            // just use the defaults
+        pub(crate) fn all_supported(_udp_socket: &std::net::UdpSocket) -> std::io::Result<Self> {
+            // these operating systems always support read timestamps, and never send timestamps
             Ok(Self {
                 rx_software: true,
                 tx_software: false,
@@ -493,11 +499,9 @@ pub(crate) mod timestamping_config {
 }
 
 mod exceptional_condition_fd {
-    use std::os::unix::prelude::{AsRawFd, RawFd};
+    use std::os::unix::prelude::RawFd;
 
     use tokio::io::unix::AsyncFd;
-
-    use super::cerr;
 
     // Tokio does not natively support polling for readiness of queues
     // other than the normal read queue (see also https://github.com/tokio-rs/tokio/issues/4885)
@@ -507,9 +511,11 @@ mod exceptional_condition_fd {
     pub(crate) fn exceptional_condition_fd(
         socket_of_interest: &std::net::UdpSocket,
     ) -> std::io::Result<AsyncFd<RawFd>> {
+        use std::os::unix::prelude::AsRawFd;
+
         // Safety:
         // epoll_create1 is safe to call without flags
-        let fd = cerr(unsafe { libc::epoll_create1(0) })?;
+        let fd = super::cerr(unsafe { libc::epoll_create1(0) })?;
 
         let mut event = libc::epoll_event {
             events: libc::EPOLLPRI as u32,
@@ -523,7 +529,7 @@ mod exceptional_condition_fd {
         // required for epoll (closing the fd later is safe!)
         // &mut event is a pointer to a memory region which we own for the duration
         // of the call, and thus ok to use.
-        cerr(unsafe {
+        super::cerr(unsafe {
             libc::epoll_ctl(
                 fd,
                 libc::EPOLL_CTL_ADD,
@@ -537,8 +543,9 @@ mod exceptional_condition_fd {
 
     #[cfg(any(target_os = "macos", target_os = "freebsd"))]
     pub(crate) fn exceptional_condition_fd(
-        socket_of_interest: &std::net::UdpSocket,
+        _socket_of_interest: &std::net::UdpSocket,
     ) -> std::io::Result<AsyncFd<RawFd>> {
+        // these operating systems do not support send timestamping
         let fd = 0;
 
         AsyncFd::new(fd)

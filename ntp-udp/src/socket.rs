@@ -16,6 +16,7 @@ use crate::{
 
 pub struct UdpSocket {
     io: AsyncFd<std::net::UdpSocket>,
+    #[cfg_attr(any(target_os = "freebsd", target_os = "macos"), allow(unused))]
     exceptional_condition: AsyncFd<RawFd>,
     send_counter: u32,
     timestamping: EnableTimestamps,
@@ -141,22 +142,28 @@ impl UdpSocket {
         let expected_counter = self.send_counter;
         self.send_counter = self.send_counter.wrapping_add(1);
 
-        if self.timestamping.tx_software || self.timestamping.tx_hardware {
-            // the send timestamp may never come set a very short timeout to prevent hanging forever.
-            // We automatically fall back to a less accurate timestamp when this function returns None
-            let timeout = std::time::Duration::from_millis(10);
-
+        if self.timestamping.tx_software {
             #[cfg(target_os = "linux")]
-            match tokio::time::timeout(timeout, self.fetch_send_timestamp(expected_counter)).await {
-                Err(_) => {
-                    warn!("Packet without timestamp (waiting for timestamp timed out)");
-                    Ok((send_size, None))
+            {
+                // the send timestamp may never come set a very short timeout to prevent hanging forever.
+                // We automatically fall back to a less accurate timestamp when this function returns None
+                let timeout = std::time::Duration::from_millis(10);
+                match tokio::time::timeout(timeout, self.fetch_send_timestamp(expected_counter))
+                    .await
+                {
+                    Err(_) => {
+                        warn!("Packet without timestamp");
+                        Ok((send_size, None))
+                    }
+                    Ok(send_timestamp) => Ok((send_size, Some(send_timestamp?))),
                 }
-                Ok(send_timestamp) => Ok((send_size, Some(send_timestamp?))),
             }
 
             #[cfg(any(target_os = "macos", target_os = "freebsd"))]
-            Ok((send_size, None))
+            {
+                let _ = expected_counter;
+                Ok((send_size, None))
+            }
         } else {
             trace!("send timestamping not supported");
             Ok((send_size, None))
@@ -563,7 +570,10 @@ mod tests {
     }
 
     #[tokio::test]
-    #[cfg_attr(target_os = "macos", ignore = "send timestamps are not supported")]
+    #[cfg_attr(
+        any(target_os = "macos", target_os = "freebsd"),
+        ignore = "send timestamps are not supported"
+    )]
     async fn test_send_timestamp() {
         let mut a = UdpSocket::client_with_timestamping(
             SocketAddr::from((Ipv4Addr::LOCALHOST, 8012)),
