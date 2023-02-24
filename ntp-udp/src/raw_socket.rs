@@ -299,7 +299,7 @@ mod recv_message {
 
             Some(match (current_msg.cmsg_level, current_msg.cmsg_type) {
                 #[cfg(target_os = "linux")]
-                (libc::SOL_SOCKET, libc::SO_TIMESTAMPING | libc::SO_TIMESTAMPNS) => {
+                (libc::SOL_SOCKET, libc::SCM_TIMESTAMPING | libc::SCM_TIMESTAMPNS) => {
                     // Safety:
                     // current_msg was constructed from a pointer that pointed to a valid control message.
                     // SO_TIMESTAMPING and SO_TIMESTAMPNS always have a timespec in the data
@@ -309,7 +309,7 @@ mod recv_message {
                     ControlMessage::Timestamping(LibcTimestamp::Timespec(timespec))
                 }
 
-                (libc::SOL_SOCKET, libc::SO_TIMESTAMP) => {
+                (libc::SOL_SOCKET, libc::SCM_TIMESTAMP) => {
                     // Safety:
                     // current_msg was constructed from a pointer that pointed to a valid control message.
                     // SO_TIMESTAMP always has a timeval in the data
