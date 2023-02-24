@@ -188,6 +188,8 @@ mod tests {
         let sockaddr = libc::sockaddr {
             sa_family: libc::AF_INET as libc::sa_family_t,
             sa_data: [0, 0, 127, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+            #[cfg(target_os = "macos")]
+            sa_len: 14u8,
         };
 
         let socket_addr = unsafe { sockaddr_to_socket_addr(&sockaddr) }.unwrap();
@@ -202,6 +204,8 @@ mod tests {
         let sockaddr = libc::sockaddr {
             sa_family: libc::AF_INET as libc::sa_family_t,
             sa_data: [0, 42, -84 as _, 23, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+            #[cfg(target_os = "macos")]
+            sa_len: 14u8,
         };
 
         let socket_addr = unsafe { sockaddr_to_socket_addr(&sockaddr) }.unwrap();
@@ -225,6 +229,8 @@ mod tests {
             sin6_flowinfo: 0,
             sin6_addr: libc::in6_addr { s6_addr: raw },
             sin6_scope_id: 0,
+            #[cfg(target_os = "macos")]
+            sin6_len: 14u8,
         };
 
         let socket_addr =

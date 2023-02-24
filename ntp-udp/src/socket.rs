@@ -146,6 +146,7 @@ impl UdpSocket {
             // We automatically fall back to a less accurate timestamp when this function returns None
             let timeout = std::time::Duration::from_millis(10);
 
+            #[cfg(target_os = "linux")]
             match tokio::time::timeout(timeout, self.fetch_send_timestamp(expected_counter)).await {
                 Err(_) => {
                     warn!("Packet without timestamp (waiting for timestamp timed out)");
@@ -153,6 +154,9 @@ impl UdpSocket {
                 }
                 Ok(send_timestamp) => Ok((send_size, Some(send_timestamp?))),
             }
+
+            #[cfg(target_os = "macos")]
+            Ok((send_size, None))
         } else {
             trace!("send timestamping not supported");
             Ok((send_size, None))
@@ -182,6 +186,7 @@ impl UdpSocket {
         }
     }
 
+    #[cfg(target_os = "linux")]
     async fn fetch_send_timestamp(&self, expected_counter: u32) -> io::Result<NtpTimestamp> {
         trace!("waiting for timestamp socket to become readable to fetch a send timestamp");
         loop {
@@ -292,15 +297,28 @@ fn recv(
                 return Ok((bytes_read as usize, sock_addr, Some(ntp_timestamp)));
             }
 
+            #[cfg(target_os = "linux")]
             ControlMessage::ReceiveError(_error) => {
                 warn!("unexpected error message on the MSG_ERRQUEUE");
             }
 
             ControlMessage::Other(msg) => {
-                warn!(
-                    msg.cmsg_level,
-                    msg.cmsg_type, "unexpected message on the MSG_ERRQUEUE",
+                eprintln!(
+                    "weird control message {:?} {:?}",
+                    msg.cmsg_level, msg.cmsg_type
                 );
+                match (msg.cmsg_level, msg.cmsg_type) {
+                    #[cfg(target_os = "macos")]
+                    (libc::SOL_SOCKET, libc::SO_ACCEPTCONN) => {
+                        // ignore
+                    }
+                    _ => {
+                        warn!(
+                            msg.cmsg_level,
+                            msg.cmsg_type, "unexpected message on the MSG_ERRQUEUE",
+                        );
+                    }
+                }
             }
         }
     }
@@ -308,6 +326,7 @@ fn recv(
     Ok((bytes_read as usize, sock_addr, None))
 }
 
+#[cfg(target_os = "linux")]
 fn fetch_send_timestamp_help(
     socket: &std::net::UdpSocket,
     expected_counter: u32,
