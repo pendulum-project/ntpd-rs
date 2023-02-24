@@ -1,6 +1,11 @@
-# Rust implementation of PTP
+# Statime
 
-This repository is work in progress for a rust implementation of PTP version 2.1 (IEEE 1588-2019). It is far from complete and not yet usable in any capacity.
+Statime is a work in progress Rust implementation of PTP version 2.1 (IEEE 1588-2019). 
+It is currently highly in flux and not yet usable.
+
+<p align="center">
+<img width="216px" alt="Statime - PTP in Rust" src="https://tweedegolf.nl/images/statime.jpg" />
+</p>
 
 The current state of the project is such that the main binary, when compiled, measures and outputs the time difference to any ptp master clock happening to be sending in the network it listens to.
 
