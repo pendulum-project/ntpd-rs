@@ -13,6 +13,7 @@ use ntp_proto::{DefaultTimeSyncController, SystemConfig, TimeSyncController};
 use serde::{de, Deserialize, Deserializer};
 use std::{
     io::ErrorKind,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -205,6 +206,13 @@ pub enum ConfigError {
 
 impl Config {
     async fn from_file(file: impl AsRef<Path>) -> Result<Config, ConfigError> {
+        let meta = std::fs::metadata(&file).unwrap();
+        let perm = meta.permissions();
+
+        if perm.mode() & libc::S_IWOTH == 0o002 {
+            warn!("Unrestricted config file permissions: Others can write.");
+        }
+
         let contents = read_to_string(file).await?;
         Ok(toml::de::from_str(&contents)?)
     }
