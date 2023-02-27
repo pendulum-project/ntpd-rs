@@ -183,6 +183,7 @@ impl NtsRecord {
     }
 
     pub fn server_key_exchange_records(
+        protocol: ProtocolId,
         algorithm: AeadAlgorithm,
         keyset: &KeySet,
         keys: NtsKeys,
@@ -201,7 +202,7 @@ impl NtsRecord {
 
         [
             NtsRecord::NextProtocol {
-                protocol_ids: vec![0],
+                protocol_ids: vec![protocol as u16],
             },
             NtsRecord::AeadAlgorithm {
                 critical: false,
@@ -459,6 +460,25 @@ pub enum KeyExchangeError {
     IncompleteResponse,
 }
 
+/// From https://www.rfc-editor.org/rfc/rfc8915.html#name-network-time-security-next-
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
+#[repr(u16)]
+pub enum ProtocolId {
+    #[default]
+    NtpV4 = 0,
+}
+
+impl ProtocolId {
+    const IN_ORDER_OF_PREFERENCE: &'static [Self] = &[Self::NtpV4];
+
+    pub const fn try_deserialize(number: u16) -> Option<Self> {
+        match number {
+            0 => Some(Self::NtpV4),
+            _ => None,
+        }
+    }
+}
+
 /// From https://www.iana.org/assignments/aead-parameters/aead-parameters.xhtml
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 #[repr(u16)]
@@ -552,6 +572,7 @@ struct KeyExchangeResultDecoder {
     remote: Option<String>,
     port: Option<u16>,
     algorithm: Option<AeadAlgorithm>,
+    protocol: Option<ProtocolId>,
     cookies: CookieStash,
 }
 
@@ -624,13 +645,15 @@ impl KeyExchangeResultDecoder {
                 Continue(state)
             }
             NextProtocol { protocol_ids } => {
-                // NTP4 has protocol id 0, it is the only protocol we support
-                const NTP4: u16 = 0;
+                let selected = ProtocolId::IN_ORDER_OF_PREFERENCE
+                    .iter()
+                    .find_map(|proto| protocol_ids.contains(&(*proto as u16)).then_some(*proto));
 
-                if !protocol_ids.contains(&NTP4) {
-                    Break(Err(NoValidProtocol))
-                } else {
-                    Continue(state)
+                state.protocol = selected;
+
+                match state.protocol {
+                    None => Break(Err(NoValidProtocol)),
+                    Some(_) => Continue(state),
                 }
             }
             AeadAlgorithm { algorithm_ids, .. } => {
@@ -638,12 +661,11 @@ impl KeyExchangeResultDecoder {
                     .iter()
                     .find_map(|algo| algorithm_ids.contains(&(*algo as u16)).then_some(*algo));
 
-                match selected {
+                state.algorithm = selected;
+
+                match state.algorithm {
                     None => Break(Err(NoValidAlgorithm)),
-                    Some(algorithm) => {
-                        state.algorithm = Some(algorithm);
-                        Continue(state)
-                    }
+                    Some(_) => Continue(state),
                 }
             }
 
@@ -772,12 +794,14 @@ struct KeyExchangeServerDecoder {
     /// it may be that the server and client supported algorithms have no
     /// intersection!
     algorithm: AeadAlgorithm,
-    // when NTPv5 is added we also need to store the protocol id here
+    /// Protocol (NTP version) that is supported by both client and server
+    protocol: ProtocolId,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 struct ServerKeyExchangeData {
     algorithm: AeadAlgorithm,
+    protocol: ProtocolId,
 }
 
 impl KeyExchangeServerDecoder {
@@ -812,6 +836,7 @@ impl KeyExchangeServerDecoder {
             EndOfMessage => {
                 let result = ServerKeyExchangeData {
                     algorithm: state.algorithm,
+                    protocol: state.protocol,
                 };
 
                 Break(Ok(result))
@@ -856,13 +881,17 @@ impl KeyExchangeServerDecoder {
                 Continue(state)
             }
             NextProtocol { protocol_ids } => {
-                // NTP4 has protocol id 0, it is the only protocol we support
-                const NTP4: u16 = 0;
+                let selected = protocol_ids
+                    .iter()
+                    .copied()
+                    .find_map(ProtocolId::try_deserialize);
 
-                if !protocol_ids.contains(&NTP4) {
-                    Break(Err(NoValidProtocol))
-                } else {
-                    Continue(state)
+                match selected {
+                    None => Break(Err(NoValidProtocol)),
+                    Some(protocol) => {
+                        state.protocol = protocol;
+                        Continue(state)
+                    }
                 }
             }
             AeadAlgorithm { algorithm_ids, .. } => {
@@ -913,8 +942,14 @@ impl KeyExchangeServer {
         self.tls_connection.write_tls(wr)
     }
 
-    fn send_response(&mut self, algorithm: AeadAlgorithm, keys: NtsKeys) -> std::io::Result<()> {
-        let records = NtsRecord::server_key_exchange_records(algorithm, &self.keyset, keys);
+    fn send_response(
+        &mut self,
+        protocol: ProtocolId,
+        algorithm: AeadAlgorithm,
+        keys: NtsKeys,
+    ) -> std::io::Result<()> {
+        let records =
+            NtsRecord::server_key_exchange_records(protocol, algorithm, &self.keyset, keys);
 
         let mut buffer = Vec::with_capacity(1024);
         for record in records.into_iter() {
@@ -964,6 +999,7 @@ impl KeyExchangeServer {
                         ControlFlow::Break(Ok(result)) => {
                             self.decoder = None;
                             let algorithm = result.algorithm;
+                            let protocol = result.protocol;
 
                             tracing::info!(?algorithm, "selected AEAD algorithm");
 
@@ -972,7 +1008,7 @@ impl KeyExchangeServer {
                                 Err(e) => return ControlFlow::Break(Err(KeyExchangeError::Tls(e))),
                             };
 
-                            return match self.send_response(algorithm, keys) {
+                            return match self.send_response(protocol, algorithm, keys) {
                                 Err(e) => ControlFlow::Break(Err(KeyExchangeError::Io(e))),
                                 Ok(()) => ControlFlow::Continue(self),
                             };
@@ -1025,6 +1061,15 @@ mod test {
         for i in 0..=u16::MAX {
             if let Some(alg) = AeadAlgorithm::try_deserialize(i) {
                 assert_eq!(alg as u16, i);
+            }
+        }
+    }
+
+    #[test]
+    fn test_protocol_decoding() {
+        for i in 0..=u16::MAX {
+            if let Some(proto) = ProtocolId::try_deserialize(i) {
+                assert_eq!(proto as u16, i);
             }
         }
     }
