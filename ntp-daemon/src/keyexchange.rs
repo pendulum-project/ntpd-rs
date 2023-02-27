@@ -1,6 +1,7 @@
 use std::{
     future::Future,
     io::{BufRead, BufReader, IoSlice, Read, Write},
+    ops::ControlFlow,
     path::Path,
     pin::Pin,
     sync::Arc,
@@ -8,7 +9,7 @@ use std::{
 };
 
 use ntp_proto::{
-    KeyExchangeClient, KeyExchangeClientResult, KeyExchangeError, KeyExchangeServer, KeySet,
+    KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, KeySet,
     KeySetProvider,
 };
 use rustls::{Certificate, PrivateKey};
@@ -21,7 +22,7 @@ pub(crate) async fn key_exchange_client(
     server_name: String,
     port: u16,
     extra_certificates: &[Certificate],
-) -> Result<KeyExchangeClientResult, KeyExchangeError> {
+) -> Result<KeyExchangeResult, KeyExchangeError> {
     let socket = tokio::net::TcpStream::connect((server_name.as_str(), port))
         .await
         .unwrap();
@@ -71,18 +72,15 @@ pub async fn key_exchange_server(
         let keyset = provider.get();
 
         let fut = async move {
-            let server = BoundKeyExchangeServer::new(stream, config, keyset).unwrap();
-
-            server.await.unwrap();
-
-            println!("Responded to: {}", peer_addr);
-
-            Ok(()) as std::io::Result<()>
+            BoundKeyExchangeServer::run(stream, config, keyset)
+                .await
+                .map_err(|ke_error| std::io::Error::new(std::io::ErrorKind::Other, ke_error))
         };
 
         tokio::spawn(async move {
-            if let Err(err) = fut.await {
-                eprintln!("{:?}", err);
+            match fut.await {
+                Err(err) => tracing::error!(?err, ?peer_addr, "NTS KE failed"),
+                Ok(()) => tracing::info!(?peer_addr, "NTS KE completed"),
             }
         });
     }
@@ -153,7 +151,7 @@ impl<IO> Future for BoundKeyExchangeClient<IO>
 where
     IO: AsyncRead + AsyncWrite + Unpin,
 {
-    type Output = Result<KeyExchangeClientResult, KeyExchangeError>;
+    type Output = Result<KeyExchangeResult, KeyExchangeError>;
 
     fn poll(
         self: std::pin::Pin<&mut Self>,
@@ -195,8 +193,8 @@ where
                 match this.do_read(cx) {
                     Poll::Ready(Ok(_)) => {
                         this.client = match this.client.progress() {
-                            std::ops::ControlFlow::Continue(client) => client,
-                            std::ops::ControlFlow::Break(result) => return Poll::Ready(result),
+                            ControlFlow::Continue(client) => client,
+                            ControlFlow::Break(result) => return Poll::Ready(result),
                         }
                     }
                     Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),
@@ -207,9 +205,9 @@ where
                 }
             }
 
-            if (write_blocks || !this.client.wants_write())
-                && (read_blocks || !this.client.wants_read())
-            {
+            let no_write = write_blocks || !this.client.wants_write();
+            let no_read = read_blocks || !this.client.wants_read();
+            if no_write && no_read {
                 outer.inner = Some(this);
                 return Poll::Pending;
             }
@@ -233,13 +231,23 @@ where
         config: Arc<rustls::ServerConfig>,
         keyset: Arc<KeySet>,
     ) -> Result<Self, KeyExchangeError> {
-        Ok(Self {
-            inner: Some(BoundKeyExchangeServerData {
-                io,
-                server: KeyExchangeServer::new(config, keyset)?,
-                need_flush: false,
-            }),
-        })
+        let data = BoundKeyExchangeServerData {
+            io,
+            server: KeyExchangeServer::new(config, keyset)?,
+            need_flush: false,
+        };
+
+        Ok(Self { inner: Some(data) })
+    }
+
+    pub async fn run(
+        io: IO,
+        config: Arc<rustls::ServerConfig>,
+        keyset: Arc<KeySet>,
+    ) -> Result<(), KeyExchangeError> {
+        let this = Self::new(io, config, keyset)?;
+
+        this.await
     }
 }
 
@@ -324,10 +332,8 @@ where
                 match this.do_read(cx) {
                     Poll::Ready(Ok(_)) => {
                         this.server = match this.server.progress() {
-                            std::ops::ControlFlow::Continue(client) => client,
-                            std::ops::ControlFlow::Break(result) => {
-                                return Poll::Ready(result.map(drop))
-                            }
+                            ControlFlow::Continue(client) => client,
+                            ControlFlow::Break(result) => return Poll::Ready(result),
                         }
                     }
                     Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),
@@ -338,9 +344,9 @@ where
                 }
             }
 
-            if (write_blocks || !this.server.wants_write())
-                && (read_blocks || !this.server.wants_read())
-            {
+            let no_write = write_blocks || !this.server.wants_write();
+            let no_read = read_blocks || !this.server.wants_read();
+            if no_write && no_read {
                 outer.inner = Some(this);
                 return Poll::Pending;
             }

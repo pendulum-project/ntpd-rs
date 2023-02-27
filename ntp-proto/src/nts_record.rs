@@ -481,7 +481,7 @@ impl AeadAlgorithm {
         [0, 0, (self as u16 >> 8) as u8, self as u8, 1]
     }
 
-    pub fn try_deserialize(number: u16) -> Option<AeadAlgorithm> {
+    pub const fn try_deserialize(number: u16) -> Option<AeadAlgorithm> {
         match number {
             15 => Some(AeadAlgorithm::AeadAesSivCmac256),
             17 => Some(AeadAlgorithm::AeadAesSivCmac512),
@@ -491,14 +491,6 @@ impl AeadAlgorithm {
 
     const IN_ORDER_OF_PREFERENCE: &'static [Self] =
         &[Self::AeadAesSivCmac512, Self::AeadAesSivCmac256];
-
-    pub(crate) const fn from_u16(value: u16) -> Option<Self> {
-        match value {
-            15 => Some(Self::AeadAesSivCmac256),
-            17 => Some(Self::AeadAesSivCmac512),
-            _ => None,
-        }
-    }
 
     fn extract_nts_keys<ConnectionData>(
         &self,
@@ -665,7 +657,7 @@ impl KeyExchangeResultDecoder {
 }
 
 #[derive(Debug)]
-pub struct KeyExchangeClientResult {
+pub struct KeyExchangeResult {
     pub remote: String,
     pub port: u16,
     pub nts: Box<PeerNtsData>,
@@ -696,9 +688,7 @@ impl KeyExchangeClient {
         self.tls_connection.write_tls(wr)
     }
 
-    pub fn progress(
-        mut self,
-    ) -> ControlFlow<Result<KeyExchangeClientResult, KeyExchangeError>, Self> {
+    pub fn progress(mut self) -> ControlFlow<Result<KeyExchangeResult, KeyExchangeError>, Self> {
         // Move any received data from tls to decoder
         let mut buf = [0; 128];
         loop {
@@ -727,7 +717,7 @@ impl KeyExchangeClient {
                                 s2c: keys.s2c,
                             });
 
-                            return ControlFlow::Break(Ok(KeyExchangeClientResult {
+                            return ControlFlow::Break(Ok(KeyExchangeResult {
                                 remote: result.remote.unwrap_or(self.server_name),
                                 port: result.port.unwrap_or(Self::NTP_DEFAULT_PORT),
                                 nts,
@@ -736,7 +726,7 @@ impl KeyExchangeClient {
                         ControlFlow::Break(Err(error)) => return ControlFlow::Break(Err(error)),
                     }
                 }
-                Err(e) => match dbg!(e.kind()) {
+                Err(e) => match e.kind() {
                     std::io::ErrorKind::WouldBlock => return ControlFlow::Continue(self),
                     _ => return ControlFlow::Break(Err(e.into())),
                 },
@@ -778,11 +768,11 @@ impl KeyExchangeClient {
 #[derive(Debug, Default)]
 struct KeyExchangeServerDecoder {
     decoder: NtsRecordDecoder,
-    // when NTPv5 is added we also need to store the protocol id here
     /// AEAD algorithm that the client is able to use and that we support
     /// it may be that the server and client supported algorithms have no
     /// intersection!
     algorithm: AeadAlgorithm,
+    // when NTPv5 is added we also need to store the protocol id here
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -876,7 +866,10 @@ impl KeyExchangeServerDecoder {
                 }
             }
             AeadAlgorithm { algorithm_ids, .. } => {
-                let selected = algorithm_ids.iter().copied().find_map(Algorithm::from_u16);
+                let selected = algorithm_ids
+                    .iter()
+                    .copied()
+                    .find_map(Algorithm::try_deserialize);
 
                 match selected {
                     None => Break(Err(NoValidAlgorithm)),
@@ -934,7 +927,14 @@ impl KeyExchangeServer {
         Ok(())
     }
 
-    pub fn progress(mut self) -> ControlFlow<Result<Self, KeyExchangeError>, Self> {
+    pub fn progress(self) -> ControlFlow<Result<(), KeyExchangeError>, Self> {
+        match self.progress_help() {
+            ControlFlow::Continue(c) => ControlFlow::Continue(c),
+            ControlFlow::Break(b) => ControlFlow::Break(b.map(drop)),
+        }
+    }
+
+    fn progress_help(mut self) -> ControlFlow<Result<Self, KeyExchangeError>, Self> {
         // Move any received data from tls to decoder
         let mut buf = [0; 128];
         loop {
@@ -1491,7 +1491,7 @@ mod test {
                 while offset < size {
                     let cur = server.read_socket(&mut &buf[offset..size]).unwrap();
                     offset += cur;
-                    match server.progress() {
+                    match server.progress_help() {
                         ControlFlow::Continue(new) => server = new,
                         ControlFlow::Break(result) => {
                             server = result.unwrap();
