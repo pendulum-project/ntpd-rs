@@ -25,9 +25,7 @@ pub struct LinuxClock {
 
 impl LinuxClock {
     pub fn new(clock: RawLinuxClock) -> Self {
-        Self {
-            clock: clock.clone(),
-        }
+        Self { clock }
     }
 }
 

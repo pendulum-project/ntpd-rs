@@ -10,7 +10,7 @@ pub struct PortDS {
     log_min_delay_req_interval: i8,
     mean_link_delay: Duration,
     log_announce_interval: i8,
-    pub(crate) announce_receipt_timeout: u8,
+    announce_receipt_timeout: u8,
     log_sync_interval: i8,
     delay_mechanism: DelayMechanism,
     log_min_p_delay_req_interval: i8,

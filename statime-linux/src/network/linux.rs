@@ -102,16 +102,14 @@ impl LinuxInterfaceDescriptor {
                     if self.mode == LinuxNetworkMode::Ipv6 {
                         if let Some(ip) = i
                             .address
-                            .map(|a| a.as_sockaddr_in6().map(|a| a.ip().into()))
-                            .flatten()
+                            .and_then(|a| a.as_sockaddr_in6().map(|a| a.ip().into()))
                             .flatten()
                         {
                             return Ok(ip.into());
                         }
                     } else if let Some(ip) = i
                         .address
-                        .map(|a| a.as_sockaddr_in().map(|a| a.ip().into()))
-                        .flatten()
+                        .and_then(|a| a.as_sockaddr_in().map(|a| a.ip().into()))
                         .flatten()
                     {
                         return Ok(Ipv4Addr::from(ip).into());
@@ -178,14 +176,8 @@ impl FromStr for LinuxInterfaceDescriptor {
 fn if_has_address(ifaddr: &InterfaceAddress, address: IpAddr) -> bool {
     match (
         address,
-        ifaddr
-            .address
-            .map(|a| a.as_sockaddr_in().cloned())
-            .flatten(),
-        ifaddr
-            .address
-            .map(|a| a.as_sockaddr_in6().cloned())
-            .flatten(),
+        ifaddr.address.and_then(|a| a.as_sockaddr_in().cloned()),
+        ifaddr.address.and_then(|a| a.as_sockaddr_in6().cloned()),
     ) {
         (_, None, None) => false,
 
@@ -502,8 +494,7 @@ pub fn get_clock_id() -> Option<[u8; 8]> {
     for candidate in candidates {
         if let Some(mac) = candidate
             .address
-            .map(|addr| addr.as_link_addr().map(|mac| mac.addr()))
-            .flatten()
+            .and_then(|addr| addr.as_link_addr().map(|mac| mac.addr()))
             .flatten()
         {
             // Ignore multicast and locally administered mac addresses

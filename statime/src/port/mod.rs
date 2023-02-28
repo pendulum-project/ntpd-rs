@@ -249,7 +249,7 @@ impl<P: NetworkPort> Port<P> {
         };
 
         let recommended_state =
-            Bmca::calculate_recommended_state(&default_ds, ebest, erbest, &self.port_ds.port_state);
+            Bmca::calculate_recommended_state(default_ds, ebest, erbest, &self.port_ds.port_state);
 
         if let Some(recommended_state) = recommended_state {
             self.port_ds.set_recommended_port_state(&recommended_state);
