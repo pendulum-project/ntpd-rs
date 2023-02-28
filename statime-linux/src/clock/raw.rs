@@ -274,7 +274,7 @@ impl Display for RawLinuxClock {
                 write!(f, "{:10}.{:03} (", time.tv_sec, time.tv_nsec / 1000000)?;
                 let days = time.tv_sec / SECS_IN_DAY;
                 if days > 0 {
-                    write!(f, "{} days + ", days)?;
+                    write!(f, "{days} days + ")?;
                 }
                 writeln!(
                     f,

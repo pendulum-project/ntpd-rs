@@ -1,11 +1,11 @@
 //! Implementation of the [Duration] type
 
 use crate::datastructures::common::TimeInterval;
-use fixed::{traits::ToFixed, types::I96F32};
-use std::{
+use core::{
     fmt::Display,
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, RemAssign, Sub, SubAssign},
 };
+use fixed::{traits::ToFixed, types::I96F32};
 
 /// A duration is a span of time that can also be negative.
 ///
@@ -18,6 +18,10 @@ pub struct Duration {
 }
 
 impl Duration {
+    pub const ZERO: Duration = Duration {
+        inner: I96F32::ZERO,
+    };
+
     /// Create an instance with the given amount of seconds
     pub fn from_secs(secs: i64) -> Self {
         let inner = secs.to_fixed::<I96F32>() * 1_000_000_000.to_fixed::<I96F32>();
@@ -72,6 +76,12 @@ impl Duration {
 impl From<TimeInterval> for Duration {
     fn from(interval: TimeInterval) -> Self {
         Self::from_fixed_nanos(interval.0)
+    }
+}
+
+impl From<Duration> for core::time::Duration {
+    fn from(value: Duration) -> Self {
+        core::time::Duration::from_nanos(value.nanos().saturating_to_num())
     }
 }
 
@@ -156,7 +166,7 @@ impl RemAssign for Duration {
 }
 
 impl Display for Duration {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.inner)
     }
 }

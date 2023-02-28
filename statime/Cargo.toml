@@ -1,7 +1,13 @@
 [package]
 name = "statime"
 version = "0.1.0"
-authors = ["Dion Dokter <dion@tweedegolf.com>", "Ruben Nijveld <ruben@tweedegolf.com>", "David Venhoek <david@tweedegolf.com>"]
+authors = [
+    "Dion Dokter <dion@tweedegolf.com>",
+    "Ruben Nijveld <ruben@tweedegolf.com>",
+    "David Venhoek <david@tweedegolf.com>",
+    "Bram Bruines <bram@tweedegolf.com>",
+    "Rick van der Wal <rick@tweedegolf.com>"
+]
 license = "MIT OR Apache-2.0"
 edition = "2021"
 description = "Pure rust implementation of a ptp ordinary clock"
@@ -10,12 +16,21 @@ repository = "https://github.com/tweedegolf/statime"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["std"]
+std = []
+
 [dependencies]
 arrayvec = { version = "0.7.2", default-features = false }
-fixed = "1.11.0"
+embassy-futures = "0.1.0"
+fixed = "1.11"
+futures = { version = "0.3", default-features = false, features = ["async-await"] }
 getset = "0.1.2"
-log = "0.4.14"
+libm = "0.1.2"
+log = { version = "0.4.14", default-features = false }
 num_enum = { version = "0.5.1", default-features = false }
+pin-project = "1.0"
+thiserror = "1.0"
 
 [dev-dependencies]
-thiserror = "1.0.30"
+tokio = { version = "1.25", features = ["test-util", "macros"] }

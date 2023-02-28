@@ -135,7 +135,7 @@ impl ClockAccuracy {
 }
 
 impl PartialOrd for ClockAccuracy {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         // The clock gets more inaccurate with the higher numbers for the normal accuracy values.
         self.to_primitive()
             .partial_cmp(&other.to_primitive())
@@ -144,7 +144,7 @@ impl PartialOrd for ClockAccuracy {
 }
 
 impl Ord for ClockAccuracy {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         self.partial_cmp(other).unwrap()
     }
 }

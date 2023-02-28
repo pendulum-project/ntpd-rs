@@ -1,15 +1,16 @@
 //! Implementation of chapter 9.3.4 Data set comparison algorithm
 
+use crate::datastructures::datasets::DefaultDS;
 use crate::datastructures::{
     common::{ClockIdentity, ClockQuality, PortIdentity},
     messages::AnnounceMessage,
 };
-use std::cmp::Ordering;
+use core::cmp::Ordering;
 
 /// A collection of data that is gathered from other sources (mainly announce messages and the DefaultDS).
 /// When gathered from two different sources, the [compare](crate::bmc::dataset_comparison::ComparisonDataset) method can be used to find out which source
 /// is better according to the dataset comparison algorithm.
-#[derive(Eq, PartialEq, Default)]
+#[derive(Eq, PartialEq, Default, Debug)]
 pub struct ComparisonDataset {
     gm_priority_1: u8,
     gm_identity: ClockIdentity,
@@ -18,15 +19,6 @@ pub struct ComparisonDataset {
     steps_removed: u16,
     identity_of_senders: ClockIdentity,
     identity_of_receiver: PortIdentity,
-}
-
-// TODO: replace with the proper implementation of our DefaultDS
-#[derive(Debug, Clone, Copy)]
-pub struct DefaultDS {
-    pub priority_1: u8,
-    pub clock_identity: ClockIdentity,
-    pub clock_quality: ClockQuality,
-    pub priority_2: u8,
 }
 
 impl ComparisonDataset {
@@ -46,7 +38,6 @@ impl ComparisonDataset {
         }
     }
 
-    // TODO: Use actual real data instead of the temporary struct
     pub fn from_own_data(data: &DefaultDS) -> Self {
         Self {
             gm_priority_1: data.priority_1,
@@ -106,6 +97,7 @@ impl ComparisonDataset {
                     Ordering::Greater => return DatasetOrdering::Worse,
                     Ordering::Less => return DatasetOrdering::Better,
                 }
+
                 match self.gm_identity.cmp(&other.gm_identity) {
                     Ordering::Equal => unreachable!(),
                     Ordering::Greater => DatasetOrdering::Worse,
@@ -116,6 +108,7 @@ impl ComparisonDataset {
             true => {
                 let steps_removed_difference =
                     self.steps_removed as i32 - other.steps_removed as i32;
+
                 match steps_removed_difference {
                     2..=i32::MAX => DatasetOrdering::Worse,
                     i32::MIN..=-2 => DatasetOrdering::Better,

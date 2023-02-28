@@ -3,6 +3,7 @@
 mod clock_accuracy;
 mod clock_identity;
 mod clock_quality;
+mod instance_type;
 mod network_protocol;
 mod port_address;
 mod port_identity;
@@ -13,6 +14,7 @@ mod timestamp;
 pub use clock_accuracy::*;
 pub use clock_identity::*;
 pub use clock_quality::*;
+pub use instance_type::*;
 pub use network_protocol::*;
 pub use port_address::*;
 pub use port_identity::*;

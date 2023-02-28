@@ -171,7 +171,7 @@ impl MessageBuilder {
     pub fn announce_message(
         self,
         origin_timestamp: Timestamp,
-        current_utc_offset: u16,
+        current_utc_offset: i16,
         grandmaster_priority_1: u8,
         grandmaster_clock_quality: ClockQuality,
         grandmaster_priority_2: u8,

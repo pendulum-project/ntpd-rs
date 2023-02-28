@@ -7,8 +7,9 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "3.1.6", features = ["derive"] }
-fern = "0.6.0"
+fern = { version = "0.6.0", features = ["colored"] }
 chrono = "0.4.19"
 log = "0.4.14"
 statime = { path = "../../statime" }
 statime-linux = { path = "../../statime-linux" }
+tokio = { version = "1.25", features = ["full"] }

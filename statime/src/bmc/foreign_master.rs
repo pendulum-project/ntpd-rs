@@ -8,24 +8,35 @@ use crate::{
     time::{Duration, Instant},
 };
 
+use arrayvec::ArrayVec;
+
 /// The time window in which announce messages are valid.
 /// To get the real window, multiply it with the announce interval of the port.
 const FOREIGN_MASTER_TIME_WINDOW: u16 = 4;
+
 /// This is the amount of announce messages that must have been received within the time window
 /// for a foreign master to be valid
 const FOREIGN_MASTER_THRESHOLD: usize = 2;
 
+/// The maximum amount of announce message to store within the time window
+const MAX_ANNOUNCE_MESSAGES: usize = 8;
+
+/// The maximum amount of foreign masters to store at the same time
+const MAX_FOREIGN_MASTERS: usize = 8;
+
 pub struct ForeignMaster {
     foreign_master_port_identity: PortIdentity,
     // Must have a capacity of at least 2
-    announce_messages: Vec<(AnnounceMessage, Timestamp)>,
+    announce_messages: ArrayVec<(AnnounceMessage, Timestamp), MAX_ANNOUNCE_MESSAGES>,
 }
 
 impl ForeignMaster {
     fn new(announce_message: AnnounceMessage, current_time: Timestamp) -> Self {
+        let mut messages = ArrayVec::<_, MAX_ANNOUNCE_MESSAGES>::new();
+        messages.push((announce_message, current_time));
         Self {
             foreign_master_port_identity: announce_message.header().source_port_identity(),
-            announce_messages: Vec::from([(announce_message, current_time)]),
+            announce_messages: messages,
         }
     }
 
@@ -56,14 +67,22 @@ impl ForeignMaster {
         announce_interval: TimeInterval,
     ) {
         self.purge_old_messages(current_time, announce_interval);
-        self.announce_messages
-            .push((announce_message, current_time));
+        // Try to add new message; otherwise remove the first message and then add
+        if self
+            .announce_messages
+            .try_push((announce_message, current_time))
+            .is_err()
+        {
+            self.announce_messages.remove(0);
+            self.announce_messages
+                .push((announce_message, current_time));
+        }
     }
 }
 
 pub struct ForeignMasterList {
     // Must have a capacity of at least 5
-    foreign_masters: Vec<ForeignMaster>,
+    foreign_masters: ArrayVec<ForeignMaster, MAX_FOREIGN_MASTERS>,
     own_port_announce_interval: TimeInterval,
     own_port_identity: PortIdentity,
 }
@@ -73,7 +92,7 @@ impl ForeignMasterList {
     /// - `port_identity`: The identity of the port for which this list is used
     pub fn new(own_port_announce_interval: TimeInterval, own_port_identity: PortIdentity) -> Self {
         Self {
-            foreign_masters: Vec::new(),
+            foreign_masters: ArrayVec::<ForeignMaster, MAX_FOREIGN_MASTERS>::new(),
             own_port_announce_interval,
             own_port_identity,
         }
@@ -84,7 +103,7 @@ impl ForeignMasterList {
         &mut self,
         current_time: Timestamp,
     ) -> impl Iterator<Item = (AnnounceMessage, Timestamp)> {
-        let mut qualified_foreign_masters = Vec::new();
+        let mut qualified_foreign_masters = ArrayVec::<_, MAX_FOREIGN_MASTERS>::new();
 
         for i in (0..self.foreign_masters.len()).rev() {
             // Purge the old timestamps so we can check the FOREIGN_MASTER_THRESHOLD
@@ -133,9 +152,11 @@ impl ForeignMasterList {
                 port_announce_interval,
             );
         } else {
-            // No, insert a new foreign master
-            self.foreign_masters
-                .push(ForeignMaster::new(*announce_message, current_time));
+            // No, insert a new foreign master, if there is room in the array
+            if self.foreign_masters.len() < MAX_FOREIGN_MASTERS {
+                self.foreign_masters
+                    .push(ForeignMaster::new(*announce_message, current_time));
+            }
         }
     }
 
