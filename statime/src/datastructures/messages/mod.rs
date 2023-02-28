@@ -133,7 +133,8 @@ impl Message {
     ///
     /// Returns a vector with the bytes of the message or an error.
     pub fn serialize_vec(&self) -> Result<ArrayVec<u8, MAX_DATA_LEN>, super::WireFormatError> {
-        let mut buffer = ArrayVec::new();
+        let mut buffer = ArrayVec::from([0; MAX_DATA_LEN]);
+        buffer.truncate(self.wire_size());
         self.serialize(&mut buffer)?;
         Ok(buffer)
     }
