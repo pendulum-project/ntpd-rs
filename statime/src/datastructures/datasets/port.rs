@@ -17,7 +17,7 @@ pub struct PortDS {
     version_number: u8,
     minor_version_number: u8,
     delay_asymmetry: Duration,
-    pub(crate) port_enable: bool,
+    port_enable: bool,
     master_only: bool,
 }
 
@@ -37,8 +37,7 @@ impl PortDS {
             DelayMechanism::E2E | DelayMechanism::NoMechanism | DelayMechanism::Special => {
                 Duration::ZERO
             }
-            DelayMechanism::P2P => todo!(),
-            DelayMechanism::CommonP2p => todo!(),
+            DelayMechanism::P2P | DelayMechanism::CommonP2p => unimplemented!(),
         };
 
         PortDS {
@@ -82,6 +81,18 @@ impl PortDS {
         )
     }
 
+    pub fn disable(&mut self) {
+        self.port_enable = false;
+        self.set_forced_port_state(PortState::Disabled);
+    }
+
+    pub fn enable(&mut self) {
+        self.port_enable = true;
+        if let PortState::Disabled = self.port_state {
+            self.port_state = PortState::Listening;
+        }
+    }
+
     pub fn set_forced_port_state(&mut self, state: PortState) {
         log::info!("new state for port: {} -> {}", self.port_state, state);
         self.port_state = state;
@@ -92,8 +103,8 @@ impl PortDS {
             // TODO set things like steps_removed once they are added
             // TODO make sure states are complete
             RecommendedState::S1(announce_message) => {
-                let slave = SlaveState::new(announce_message.header().source_port_identity());
-                let state = PortState::Slave(slave);
+                let remote_master = announce_message.header().source_port_identity();
+                let state = PortState::Slave(SlaveState::new(remote_master));
 
                 match &self.port_state {
                     PortState::Listening
@@ -101,12 +112,13 @@ impl PortDS {
                     | PortState::PreMaster
                     | PortState::Master(_)
                     | PortState::Passive => self.set_forced_port_state(state),
-                    PortState::Slave(slave_state) => {
-                        if slave_state.remote_master() != remote_master {
+                    PortState::Slave(old_state) => {
+                        if old_state.remote_master() != remote_master {
                             self.set_forced_port_state(state)
                         }
                     }
-                    PortState::Initializing | PortState::Faulty | PortState::Disabled => {
+                    PortState::Disabled => (),
+                    PortState::Initializing | PortState::Faulty => {
                         unimplemented!()
                     }
                 }
@@ -119,25 +131,23 @@ impl PortDS {
                     | PortState::Passive => {
                         self.set_forced_port_state(PortState::Master(MasterState::new()))
                     }
-                    PortState::PreMaster | PortState::Master(_) => (),
-                    PortState::Initializing | PortState::Faulty | PortState::Disabled => {
+                    PortState::PreMaster | PortState::Master(_) | PortState::Disabled => (),
+                    PortState::Initializing | PortState::Faulty => {
                         unimplemented!()
                     }
                 }
             }
-            RecommendedState::P1(announce_message) | RecommendedState::P2(_) => {
-                match self.port_state {
-                    PortState::Listening
-                    | PortState::Uncalibrated
-                    | PortState::Slave(_)
-                    | PortState::PreMaster
-                    | PortState::Master(_) => self.set_forced_port_state(PortState::Passive),
-                    PortState::Passive => (),
-                    PortState::Initializing | PortState::Faulty | PortState::Disabled => {
-                        unimplemented!()
-                    }
+            RecommendedState::P1(_) | RecommendedState::P2(_) => match self.port_state {
+                PortState::Listening
+                | PortState::Uncalibrated
+                | PortState::Slave(_)
+                | PortState::PreMaster
+                | PortState::Master(_) => self.set_forced_port_state(PortState::Passive),
+                PortState::Passive | PortState::Disabled => (),
+                PortState::Initializing | PortState::Faulty => {
+                    unimplemented!()
                 }
-            }
+            },
         }
     }
 }
