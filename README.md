@@ -55,11 +55,19 @@ Please note that the Rust project only supports the latest stable rust release. 
 
 ## Roadmap
 
-With the support of Prossimo we aim to build a complete NTP implementation that provides a modern alternative for ntpd and chrony. In the short term, there is one milestones on our roadmap:
+We aim to build a complete NTP implementation that provides a modern alternative for ntpd and chrony. In the short term, there is one milestones on our roadmap:
 
 **NTS support**
 
 Plain NTP is unencrypted and does not establish a trusted connection. NTS adds these features on top of NTP. NTS is important when using NTP servers on the public internet but is not widely deployed yet. We hope that supporting it will help with adoption.
 
-Check Prossimo's [project plan](https://www.memorysafety.org/initiative/ntp/ntp-work-plan/) for more details and for options to support their work.
+## History
+
+The project originates from ISRG's project [Prossimo](https://www.memorysafety.org), as part of their mission to achieve memory safety for the Internet's most critical infrastructure.
+
+<img alt="Prossimo" src="https://www.memorysafety.org/images/Prossimo%20Brand%20Assets/Prossimo%20Horizontal%20Full%20Color.svg" width="250px"/>
+
+Prossimo funded the initial development of the NTP client and server and NTS support. The [NTP initiative page](https://www.memorysafety.org/initiative/ntp) on Prossimo's website tells the story.
+
+
 
