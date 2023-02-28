@@ -3,7 +3,7 @@ use core::convert::Infallible;
 
 use embassy_futures::select;
 use embassy_futures::select::{Either, Either4};
-use futures::pin_mut;
+use futures::{pin_mut, StreamExt};
 
 pub use measurement::Measurement;
 
@@ -16,11 +16,13 @@ use crate::filters::Filter;
 use crate::network::{NetworkPort, NetworkRuntime};
 pub use crate::port::error::{PortError, Result};
 use crate::port::state::{MasterState, PortState};
+use crate::port::ticker::Ticker;
 
 mod error;
 mod measurement;
 mod sequence_id;
 pub mod state;
+mod ticker;
 
 pub struct Port<P> {
     port_ds: PortDS,
@@ -66,21 +68,33 @@ impl<P: NetworkPort> Port<P> {
         default_ds: &DefaultDS,
         time_properties_ds: &RefCell<TimePropertiesDS>,
     ) -> Infallible {
-        let bmca_timeout = timer.after(self.port_ds.announce_interval());
+        let bmca_timeout = Ticker::new(
+            |interval| timer.after(interval),
+            self.port_ds.announce_interval(),
+        );
         pin_mut!(bmca_timeout);
-        let announce_receipt_timeout = timer.after(self.port_ds.announce_receipt_interval());
+        let announce_receipt_timeout = Ticker::new(
+            |interval| timer.after(interval),
+            self.port_ds.announce_receipt_interval(),
+        );
         pin_mut!(announce_receipt_timeout);
-        let sync_timeout = timer.after(self.port_ds.sync_interval());
+        let sync_timeout = Ticker::new(
+            |interval| timer.after(interval),
+            self.port_ds.sync_interval(),
+        );
         pin_mut!(sync_timeout);
-        let announce_timeout = timer.after(self.port_ds.announce_interval());
+        let announce_timeout = Ticker::new(
+            |interval| timer.after(interval),
+            self.port_ds.announce_interval(),
+        );
         pin_mut!(announce_timeout);
 
         loop {
             let timeouts = select::select4(
-                &mut bmca_timeout,
-                &mut announce_receipt_timeout,
-                &mut sync_timeout,
-                &mut announce_timeout,
+                bmca_timeout.next(),
+                announce_receipt_timeout.next(),
+                sync_timeout.next(),
+                announce_timeout.next(),
             );
             let packet = self.network_port.recv();
             match select::select(timeouts, packet).await {
@@ -95,8 +109,6 @@ impl<P: NetworkPort> Port<P> {
                         ) {
                             log::error!("{:?}", error);
                         }
-                        // Reset timer
-                        bmca_timeout.set(timer.after(self.port_ds.announce_interval()));
                     }
                     Either4::Second(_) => {
                         // No announces received for a long time, become master
@@ -106,25 +118,18 @@ impl<P: NetworkPort> Port<P> {
                                 .port_ds
                                 .set_forced_port_state(PortState::Master(MasterState::new())),
                         }
-                        // Reset timer
-                        announce_receipt_timeout
-                            .set(timer.after(self.port_ds.announce_receipt_interval()));
                     }
                     Either4::Third(_) => {
                         // Send sync message
                         if let Err(error) = self.send_sync(local_clock).await {
                             log::error!("{:?}", error);
                         }
-                        // Reset timer
-                        sync_timeout.set(timer.after(self.port_ds.sync_interval()));
                     }
                     Either4::Fourth(_) => {
                         // Send announce message
                         if let Err(error) = self.send_announce(local_clock, default_ds).await {
                             log::error!("{:?}", error);
                         }
-                        // Reset timer
-                        announce_timeout.set(timer.after(self.port_ds.announce_interval()));
                     }
                 },
                 // TODO: Try to move to a separate function
@@ -155,9 +160,7 @@ impl<P: NetworkPort> Port<P> {
                     if let Message::Announce(announce) = &message {
                         self.bmca
                             .register_announce_message(announce, current_time.into());
-
-                        announce_receipt_timeout
-                            .set(timer.after(self.port_ds.announce_receipt_interval()));
+                        announce_receipt_timeout.reset();
                     } else {
                         if let Err(error) = self
                             .port_ds
