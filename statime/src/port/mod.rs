@@ -21,8 +21,6 @@ mod error;
 mod measurement;
 mod sequence_id;
 pub mod state;
-#[cfg(test)]
-mod test;
 
 pub struct Port<P> {
     port_ds: PortDS,

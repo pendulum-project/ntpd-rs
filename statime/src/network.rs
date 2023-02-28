@@ -5,9 +5,6 @@ use arrayvec::ArrayVec;
 use crate::datastructures::messages::MAX_DATA_LEN;
 use crate::time::Instant;
 
-#[cfg(test)]
-pub mod test;
-
 /// Abstraction for the network
 ///
 /// With it the network ports can be opened
