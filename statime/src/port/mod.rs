@@ -7,7 +7,10 @@ use embassy_futures::select;
 use embassy_futures::select::{Either, Either4};
 use futures::{pin_mut, StreamExt};
 
+pub use error::{PortError, Result};
 pub use measurement::Measurement;
+use state::{MasterState, PortState};
+pub use ticker::Ticker;
 
 use crate::bmc::bmca::{BestAnnounceMessage, Bmca, RecommendedState};
 use crate::clock::{Clock, Timer};
@@ -16,9 +19,6 @@ use crate::datastructures::datasets::{DefaultDS, PortDS, TimePropertiesDS};
 use crate::datastructures::messages::{Message, MessageBuilder};
 use crate::filters::Filter;
 use crate::network::{NetworkPacket, NetworkPort, NetworkRuntime};
-pub use crate::port::error::{PortError, Result};
-use crate::port::state::{MasterState, PortState};
-use crate::port::ticker::Ticker;
 use crate::time::Duration;
 
 mod error;
@@ -107,6 +107,7 @@ impl<P: NetworkPort> Port<P> {
                         if let Err(error) = self.run_bmca(
                             local_clock,
                             announce_messages,
+                            &mut announce_receipt_timeout,
                             default_ds,
                             time_properties_ds,
                         ) {
@@ -156,10 +157,11 @@ impl<P: NetworkPort> Port<P> {
         }
     }
 
-    fn run_bmca<const N: usize>(
+    fn run_bmca<T: Future, const N: usize>(
         &mut self,
         local_clock: &RefCell<impl Clock>,
         announce_messages: &RefCell<[Option<BestAnnounceMessage>; N]>,
+        announce_receipt_timeout: &mut Pin<&mut Ticker<T, impl FnMut(Duration) -> T>>,
         default_ds: &DefaultDS,
         time_properties_ds: &RefCell<TimePropertiesDS>,
     ) -> Result<()> {
@@ -190,7 +192,8 @@ impl<P: NetworkPort> Port<P> {
             Bmca::calculate_recommended_state(default_ds, ebest, erbest, &self.port_ds.port_state);
 
         if let Some(recommended_state) = recommended_state {
-            self.port_ds.set_recommended_port_state(&recommended_state);
+            self.port_ds
+                .set_recommended_port_state(&recommended_state, announce_receipt_timeout);
 
             // TODO: Discuss if we should change the clock's own time properties, or keep the master's time properties separately
             if let RecommendedState::S1(announce_message) = &recommended_state {

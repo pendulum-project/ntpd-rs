@@ -1,6 +1,10 @@
+use std::future::Future;
+use std::pin::Pin;
+
 use crate::bmc::bmca::RecommendedState;
 use crate::datastructures::common::PortIdentity;
 use crate::port::state::{MasterState, PortState, SlaveState};
+use crate::port::Ticker;
 use crate::time::Duration;
 
 #[derive(Debug)]
@@ -98,7 +102,11 @@ impl PortDS {
         self.port_state = state;
     }
 
-    pub fn set_recommended_port_state(&mut self, recommended_state: &RecommendedState) {
+    pub fn set_recommended_port_state<T: Future>(
+        &mut self,
+        recommended_state: &RecommendedState,
+        announce_receipt_timeout: &mut Pin<&mut Ticker<T, impl FnMut(Duration) -> T>>,
+    ) {
         match recommended_state {
             // TODO set things like steps_removed once they are added
             // TODO make sure states are complete
@@ -111,10 +119,14 @@ impl PortDS {
                     | PortState::Uncalibrated
                     | PortState::PreMaster
                     | PortState::Master(_)
-                    | PortState::Passive => self.set_forced_port_state(state),
+                    | PortState::Passive => {
+                        self.set_forced_port_state(state);
+                        announce_receipt_timeout.reset();
+                    }
                     PortState::Slave(old_state) => {
                         if old_state.remote_master() != remote_master {
-                            self.set_forced_port_state(state)
+                            self.set_forced_port_state(state);
+                            announce_receipt_timeout.reset();
                         }
                     }
                     PortState::Disabled => (),
