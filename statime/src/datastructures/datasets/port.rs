@@ -91,61 +91,53 @@ impl PortDS {
         match recommended_state {
             // TODO set things like steps_removed once they are added
             // TODO make sure states are complete
-            RecommendedState::S1(announce_message) => match &self.port_state {
-                PortState::Listening => {
-                    self.port_state = PortState::Slave(SlaveState::new(
-                        announce_message.header().source_port_identity(),
-                    ));
+            RecommendedState::S1(announce_message) => {
+                let slave = SlaveState::new(announce_message.header().source_port_identity());
+                let state = PortState::Slave(slave);
 
-                    log::info!(
-                        "new state for port: Listening -> Slave. Remote master: {:?}",
-                        announce_message
-                            .header()
-                            .source_port_identity()
-                            .clock_identity
-                    );
-                }
-                PortState::Slave(slave_state) => {
-                    let remote_master = announce_message.header().source_port_identity();
-                    if slave_state.remote_master() != remote_master {
-                        // TODO: Changing the master should recalibrate the slave
-                        self.port_state = PortState::Slave(SlaveState::new(remote_master));
+                match &self.port_state {
+                    PortState::Listening
+                    | PortState::Uncalibrated
+                    | PortState::PreMaster
+                    | PortState::Master(_)
+                    | PortState::Passive => self.set_forced_port_state(state),
+                    PortState::Slave(slave_state) => {
+                        if slave_state.remote_master() != remote_master {
+                            self.set_forced_port_state(state)
+                        }
+                    }
+                    PortState::Initializing | PortState::Faulty | PortState::Disabled => {
+                        unimplemented!()
                     }
                 }
-                PortState::Master(_) => {
-                    self.port_state = PortState::Slave(SlaveState::new(
-                        announce_message.header().source_port_identity(),
-                    ));
-
-                    log::info!("new state for port: Master -> Slave");
+            }
+            RecommendedState::M1(_) | RecommendedState::M2(_) | RecommendedState::M3(_) => {
+                match self.port_state {
+                    PortState::Listening
+                    | PortState::Uncalibrated
+                    | PortState::Slave(_)
+                    | PortState::Passive => {
+                        self.set_forced_port_state(PortState::Master(MasterState::new()))
+                    }
+                    PortState::PreMaster | PortState::Master(_) => (),
+                    PortState::Initializing | PortState::Faulty | PortState::Disabled => {
+                        unimplemented!()
+                    }
                 }
-                PortState::Initializing => unimplemented!(),
-                PortState::Faulty => unimplemented!(),
-                PortState::Disabled => unimplemented!(),
-                PortState::PreMaster => unimplemented!(),
-                PortState::Passive => unimplemented!(),
-                PortState::Uncalibrated => unimplemented!(),
-            },
-
-            // Recommended state is master
-            RecommendedState::M2(_) => match &self.port_state {
-                // Stay master
-                PortState::Master(_) => (),
-                // Otherwise become master
-                _ => {
-                    self.port_state = PortState::Master(MasterState::new());
+            }
+            RecommendedState::P1(announce_message) | RecommendedState::P2(_) => {
+                match self.port_state {
+                    PortState::Listening
+                    | PortState::Uncalibrated
+                    | PortState::Slave(_)
+                    | PortState::PreMaster
+                    | PortState::Master(_) => self.set_forced_port_state(PortState::Passive),
+                    PortState::Passive => (),
+                    PortState::Initializing | PortState::Faulty | PortState::Disabled => {
+                        unimplemented!()
+                    }
                 }
-            },
-            // All other cases
-            _ => match &mut self.port_state {
-                PortState::Listening => {
-                    // Ignore
-                }
-                _ => {
-                    self.port_state = PortState::Listening;
-                    log::info!("new state for port: Listening");
-                }
-            },
+            }
         }
     }
 }
