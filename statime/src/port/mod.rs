@@ -1,5 +1,7 @@
 use core::cell::RefCell;
 use core::convert::Infallible;
+use std::future::Future;
+use std::pin::Pin;
 
 use embassy_futures::select;
 use embassy_futures::select::{Either, Either4};
@@ -13,10 +15,11 @@ use crate::datastructures::common::{PortIdentity, TimeSource};
 use crate::datastructures::datasets::{DefaultDS, PortDS, TimePropertiesDS};
 use crate::datastructures::messages::{Message, MessageBuilder};
 use crate::filters::Filter;
-use crate::network::{NetworkPort, NetworkRuntime};
+use crate::network::{NetworkPacket, NetworkPort, NetworkRuntime};
 pub use crate::port::error::{PortError, Result};
 use crate::port::state::{MasterState, PortState};
 use crate::port::ticker::Ticker;
+use crate::time::Duration;
 
 mod error;
 mod measurement;
@@ -132,88 +135,20 @@ impl<P: NetworkPort> Port<P> {
                         }
                     }
                 },
-                // TODO: Try to move to a separate function
                 Either::Second(Ok(packet)) => {
-                    let message = match Message::deserialize(&packet.data) {
-                        Ok(message) => message,
-                        Err(error) => {
-                            log::error!("failed to deserialize message: {:?}", error);
-                            continue;
-                        }
-                    };
-
-                    // Only process messages from the same domain
-                    if message.header().sdo_id() != default_ds.sdo_id
-                        || message.header().domain_number() != default_ds.domain_number
+                    // Process packet
+                    if let Err(error) = self
+                        .handle_packet(
+                            packet,
+                            local_clock,
+                            filter,
+                            &mut announce_receipt_timeout,
+                            default_ds,
+                            time_properties_ds,
+                        )
+                        .await
                     {
-                        continue;
-                    }
-
-                    let current_time = match local_clock.try_borrow().map(|borrow| borrow.now()) {
-                        Ok(current_time) => current_time,
-                        Err(_) => {
-                            log::error!("failed to get current time");
-                            continue;
-                        }
-                    };
-
-                    if let Message::Announce(announce) = &message {
-                        self.bmca
-                            .register_announce_message(announce, current_time.into());
-                        announce_receipt_timeout.reset();
-                    } else {
-                        if let Err(error) = self
-                            .port_ds
-                            .port_state
-                            .handle_message(
-                                message,
-                                current_time,
-                                &mut self.network_port,
-                                self.port_ds.port_identity,
-                            )
-                            .await
-                        {
-                            log::error!("failed to handle message: {:?}", error);
-                            continue;
-                        }
-
-                        // If the received packet allowed the (slave) state to calculate its
-                        // offset from the master, update the local clock
-                        if let PortState::Slave(slave) = &mut self.port_ds.port_state {
-                            if let Some(measurement) = slave.extract_measurement() {
-                                let (offset, freq_corr) = match filter
-                                    .try_borrow_mut()
-                                    .map(|mut borrow| borrow.absorb(measurement))
-                                {
-                                    Ok(absorbed) => absorbed,
-                                    Err(_) => {
-                                        log::error!("failed to access filter");
-                                        continue;
-                                    }
-                                };
-
-                                let mut local_clock = match local_clock.try_borrow_mut() {
-                                    Ok(local_clock) => local_clock,
-                                    Err(_) => {
-                                        log::error!("failed to access local clock");
-                                        continue;
-                                    }
-                                };
-                                let time_properties_ds = match time_properties_ds.try_borrow() {
-                                    Ok(time_properties_ds) => time_properties_ds,
-                                    Err(_) => {
-                                        log::error!("failed to access time properties");
-                                        continue;
-                                    }
-                                };
-
-                                if let Err(error) =
-                                    local_clock.adjust(offset, freq_corr, &time_properties_ds)
-                                {
-                                    log::error!("failed to adjust clock: {:?}", error);
-                                }
-                            }
-                        }
+                        log::error!("{:?}", error);
                     }
                 }
                 Either::Second(Err(error)) => log::error!("failed to parse packet {:?}", error),
@@ -339,6 +274,70 @@ impl<P: NetworkPort> Port<P> {
 
             if let Err(error) = self.network_port.send(&announce_message).await {
                 log::error!("failed to send announce message: {:?}", error);
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn handle_packet<T: Future>(
+        &mut self,
+        packet: NetworkPacket,
+        local_clock: &RefCell<impl Clock>,
+        filter: &RefCell<impl Filter>,
+        announce_receipt_timeout: &mut Pin<&mut Ticker<T, impl FnMut(Duration) -> T>>,
+        default_ds: &DefaultDS,
+        time_properties_ds: &RefCell<TimePropertiesDS>,
+    ) -> Result<()> {
+        let message = Message::deserialize(&packet.data)?;
+
+        // Only process messages from the same domain
+        if message.header().sdo_id() != default_ds.sdo_id
+            || message.header().domain_number() != default_ds.domain_number
+        {
+            return Ok(());
+        }
+
+        let current_time = local_clock
+            .try_borrow()
+            .map(|borrow| borrow.now())
+            .map_err(|_| PortError::ClockBusy)?;
+
+        if let Message::Announce(announce) = &message {
+            self.bmca
+                .register_announce_message(announce, current_time.into());
+            announce_receipt_timeout.reset();
+        } else {
+            self.port_ds
+                .port_state
+                .handle_message(
+                    message,
+                    current_time,
+                    &mut self.network_port,
+                    self.port_ds.port_identity,
+                )
+                .await?;
+
+            // If the received message allowed the (slave) state to calculate its offset from the
+            // master, update the local clock
+            if let PortState::Slave(slave) = &mut self.port_ds.port_state {
+                if let Some(measurement) = slave.extract_measurement() {
+                    let (offset, freq_corr) = filter
+                        .try_borrow_mut()
+                        .map(|mut borrow| borrow.absorb(measurement))
+                        .map_err(|_| PortError::FilterBusy)?;
+
+                    let mut local_clock = local_clock
+                        .try_borrow_mut()
+                        .map_err(|_| PortError::ClockBusy)?;
+                    let time_properties_ds = time_properties_ds
+                        .try_borrow()
+                        .map_err(|_| PortError::TimePropertiesBusy)?;
+
+                    if let Err(error) = local_clock.adjust(offset, freq_corr, &time_properties_ds) {
+                        log::error!("failed to adjust clock: {:?}", error);
+                    }
+                }
             }
         }
 

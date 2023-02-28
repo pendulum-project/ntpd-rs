@@ -9,6 +9,8 @@ pub type Result<T, E = PortError> = core::result::Result<T, E>;
 pub enum PortError {
     #[error("failed to retrieve local clock")]
     ClockBusy,
+    #[error("failed to retrieve filter")]
+    FilterBusy,
     #[error("failed to retrieve time properties")]
     TimePropertiesBusy,
     #[error("something went wrong on the network")]
