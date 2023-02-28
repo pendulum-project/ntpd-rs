@@ -27,10 +27,6 @@ sudo ./target/release/ntp-daemon -p pool.ntp.org
 ```
 After a few minutes you should start to see messages indicating the offset of your machine from the server. A complete description of how the daemon can be configured can be found in the [configuration documentation](CONFIGURATION.md)
 
-## Naming
-
-We are currently looking for a better name for this project. Suggestions for this are welcome.
-
 ## Package substructure
 
 Currently, the code is split up into seven separate crates:
