@@ -34,7 +34,7 @@ thiserror = "1.0.38"
 libc = "0.2.139"
 tokio = "1.25.0"
 toml = "0.7.2"
-clap = { version = "4.1.7", features = ["derive", "env"] }
+clap = { version = "4.1.8", features = ["derive", "env"] }
 
 # sentry
 sentry = { version = "0.29.2", default-features = false, features = ["backtrace", "contexts", "panic", "reqwest", "rustls"] }
