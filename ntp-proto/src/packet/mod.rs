@@ -1,10 +1,10 @@
-use std::io::Cursor;
+use std::{borrow::Cow, io::Cursor};
 
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    DecodedServerCookie, NtpClock, NtpDuration, NtpTimestamp, PollInterval, ReferenceId,
+    DecodedServerCookie, KeySet, NtpClock, NtpDuration, NtpTimestamp, PollInterval, ReferenceId,
     SystemSnapshot,
 };
 
@@ -456,7 +456,87 @@ impl<'a> NtpPacket<'a> {
                     recv_timestamp,
                     clock,
                 )),
-                efdata: Default::default(),
+                efdata: ExtensionFieldData {
+                    authenticated: vec![],
+                    encrypted: vec![],
+                    // Ignore encrypted so as not to accidentaly leak anything
+                    untrusted: input
+                        .efdata
+                        .untrusted
+                        .iter()
+                        .chain(input.efdata.authenticated.iter())
+                        .filter_map(|f| {
+                            if matches!(f, ExtensionField::UniqueIdentifier(_)) {
+                                Some(f.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect(),
+                },
+                mac: None,
+            },
+        }
+    }
+
+    pub fn nts_timestamp_response<C: NtpClock>(
+        system: &SystemSnapshot,
+        input: Self,
+        recv_timestamp: NtpTimestamp,
+        clock: &C,
+        cookie: &DecodedServerCookie,
+        keyset: &KeySet,
+    ) -> Self {
+        match input.header {
+            NtpHeader::V3(_) => unreachable!("NTS shouldn't work with NTPv3"),
+            NtpHeader::V4(header) => NtpPacket {
+                header: NtpHeader::V4(NtpHeaderV3V4::timestamp_response(
+                    system,
+                    header,
+                    recv_timestamp,
+                    clock,
+                )),
+                efdata: ExtensionFieldData {
+                    authenticated: input
+                        .efdata
+                        .authenticated
+                        .iter()
+                        .filter_map(|f| {
+                            if matches!(f, ExtensionField::UniqueIdentifier(_)) {
+                                Some(f.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect(),
+                    encrypted: input
+                        .efdata
+                        .authenticated
+                        .iter()
+                        .chain(input.efdata.encrypted.iter())
+                        .filter_map(|f| {
+                            if let ExtensionField::NtsCookiePlaceholder { cookie_length } = f {
+                                let new_cookie = keyset.encode_cookie(cookie);
+                                if new_cookie.len() > *cookie_length as usize {
+                                    None
+                                } else {
+                                    Some(ExtensionField::NtsCookie(Cow::Owned(new_cookie)))
+                                }
+                            } else if let ExtensionField::NtsCookie(old_cookie) = f {
+                                let new_cookie = keyset.encode_cookie(cookie);
+                                if new_cookie.len() > old_cookie.len() {
+                                    None
+                                } else {
+                                    Some(ExtensionField::NtsCookie(Cow::Owned(new_cookie)))
+                                }
+                            } else {
+                                None
+                            }
+                        })
+                        .collect(),
+                    // Ignore encrypted so as not to accidentaly leak anything
+                    untrusted: vec![],
+                },
                 mac: None,
             },
         }
@@ -471,7 +551,50 @@ impl<'a> NtpPacket<'a> {
             },
             NtpHeader::V4(header) => NtpPacket {
                 header: NtpHeader::V4(NtpHeaderV3V4::rate_limit_response(header)),
-                efdata: Default::default(),
+                efdata: ExtensionFieldData {
+                    authenticated: vec![],
+                    encrypted: vec![],
+                    // Ignore encrypted so as not to accidentaly leak anything
+                    untrusted: packet_from_client
+                        .efdata
+                        .untrusted
+                        .iter()
+                        .chain(packet_from_client.efdata.authenticated.iter())
+                        .filter_map(|f| {
+                            if matches!(f, ExtensionField::UniqueIdentifier(_)) {
+                                Some(f.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect(),
+                },
+                mac: None,
+            },
+        }
+    }
+
+    pub fn nts_rate_limit_response(packet_from_client: Self) -> Self {
+        match packet_from_client.header {
+            NtpHeader::V3(_) => unreachable!("NTS shouldn't work with NTPv3"),
+            NtpHeader::V4(header) => NtpPacket {
+                header: NtpHeader::V4(NtpHeaderV3V4::rate_limit_response(header)),
+                efdata: ExtensionFieldData {
+                    authenticated: packet_from_client
+                        .efdata
+                        .authenticated
+                        .iter()
+                        .filter_map(|f| {
+                            if matches!(f, ExtensionField::UniqueIdentifier(_)) {
+                                Some(f.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect(),
+                    encrypted: vec![],
+                    untrusted: vec![],
+                },
                 mac: None,
             },
         }
@@ -486,7 +609,50 @@ impl<'a> NtpPacket<'a> {
             },
             NtpHeader::V4(header) => NtpPacket {
                 header: NtpHeader::V4(NtpHeaderV3V4::deny_response(header)),
-                efdata: Default::default(),
+                efdata: ExtensionFieldData {
+                    authenticated: vec![],
+                    encrypted: vec![],
+                    // Ignore encrypted so as not to accidentaly leak anything
+                    untrusted: packet_from_client
+                        .efdata
+                        .untrusted
+                        .iter()
+                        .chain(packet_from_client.efdata.authenticated.iter())
+                        .filter_map(|f| {
+                            if matches!(f, ExtensionField::UniqueIdentifier(_)) {
+                                Some(f.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect(),
+                },
+                mac: None,
+            },
+        }
+    }
+
+    pub fn nts_deny_response(packet_from_client: Self) -> Self {
+        match packet_from_client.header {
+            NtpHeader::V3(_) => unreachable!("NTS shouldn't work with NTPv3"),
+            NtpHeader::V4(header) => NtpPacket {
+                header: NtpHeader::V4(NtpHeaderV3V4::deny_response(header)),
+                efdata: ExtensionFieldData {
+                    authenticated: packet_from_client
+                        .efdata
+                        .authenticated
+                        .iter()
+                        .filter_map(|f| {
+                            if matches!(f, ExtensionField::UniqueIdentifier(_)) {
+                                Some(f.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect(),
+                    encrypted: vec![],
+                    untrusted: vec![],
+                },
                 mac: None,
             },
         }
@@ -730,7 +896,7 @@ impl<'a> Default for NtpPacket<'a> {
 mod tests {
     use std::borrow::Cow;
 
-    use crate::PollIntervalLimits;
+    use crate::{nts_record::AeadAlgorithm, KeySetProvider, PollIntervalLimits};
 
     use super::*;
 
@@ -1026,7 +1192,7 @@ mod tests {
             },
         );
 
-        assert!(!response.valid_server_response(id, false));
+        assert!(response.valid_server_response(id, false));
         assert!(!response.valid_server_response(id, true));
 
         response
@@ -1066,6 +1232,519 @@ mod tests {
 
         assert!(!response.valid_server_response(id, false));
         assert!(!response.valid_server_response(id, true));
+    }
+
+    #[test]
+    fn test_timestamp_response() {
+        let decoded = DecodedServerCookie {
+            algorithm: AeadAlgorithm::AeadAesSivCmac256,
+            s2c: Box::new(AesSivCmac256::new((0..32_u8).collect())),
+            c2s: Box::new(AesSivCmac256::new((32..64_u8).collect())),
+        };
+        let keysetprovider = KeySetProvider::new(1);
+        let cookie = keysetprovider.get().encode_cookie(&decoded);
+
+        let (packet, _) =
+            NtpPacket::nts_poll_message(&cookie, 0, PollIntervalLimits::default().min);
+        let packet_id = packet
+            .efdata
+            .authenticated
+            .iter()
+            .find_map(|f| {
+                if let ExtensionField::UniqueIdentifier(id) = f {
+                    Some(id.clone().into_owned())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let response = NtpPacket::timestamp_response(
+            &SystemSnapshot::default(),
+            packet,
+            NtpTimestamp::from_fixed_int(0),
+            &TestClock {
+                now: NtpTimestamp::from_fixed_int(1),
+            },
+        );
+        let response_id = response
+            .efdata
+            .untrusted
+            .iter()
+            .find_map(|f| {
+                if let ExtensionField::UniqueIdentifier(id) = f {
+                    Some(id.clone().into_owned())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        assert_eq!(packet_id, response_id);
+        assert_eq!(
+            response.receive_timestamp(),
+            NtpTimestamp::from_fixed_int(0)
+        );
+        assert_eq!(
+            response.transmit_timestamp(),
+            NtpTimestamp::from_fixed_int(1)
+        );
+
+        let (mut packet, _) =
+            NtpPacket::nts_poll_message(&cookie, 0, PollIntervalLimits::default().min);
+        std::mem::swap(
+            &mut packet.efdata.authenticated,
+            &mut packet.efdata.untrusted,
+        );
+        let packet_id = packet
+            .efdata
+            .untrusted
+            .iter()
+            .find_map(|f| {
+                if let ExtensionField::UniqueIdentifier(id) = f {
+                    Some(id.clone().into_owned())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let response = NtpPacket::timestamp_response(
+            &SystemSnapshot::default(),
+            packet,
+            NtpTimestamp::from_fixed_int(0),
+            &TestClock {
+                now: NtpTimestamp::from_fixed_int(1),
+            },
+        );
+        let response_id = response
+            .efdata
+            .untrusted
+            .iter()
+            .find_map(|f| {
+                if let ExtensionField::UniqueIdentifier(id) = f {
+                    Some(id.clone().into_owned())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        assert_eq!(packet_id, response_id);
+        assert_eq!(
+            response.receive_timestamp(),
+            NtpTimestamp::from_fixed_int(0)
+        );
+        assert_eq!(
+            response.transmit_timestamp(),
+            NtpTimestamp::from_fixed_int(1)
+        );
+
+        let (packet, _) =
+            NtpPacket::nts_poll_message(&cookie, 0, PollIntervalLimits::default().min);
+        let packet_id = packet
+            .efdata
+            .authenticated
+            .iter()
+            .find_map(|f| {
+                if let ExtensionField::UniqueIdentifier(id) = f {
+                    Some(id.clone().into_owned())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let response = NtpPacket::nts_timestamp_response(
+            &SystemSnapshot::default(),
+            packet,
+            NtpTimestamp::from_fixed_int(0),
+            &TestClock {
+                now: NtpTimestamp::from_fixed_int(1),
+            },
+            &decoded,
+            &keysetprovider.get(),
+        );
+        let response_id = response
+            .efdata
+            .authenticated
+            .iter()
+            .find_map(|f| {
+                if let ExtensionField::UniqueIdentifier(id) = f {
+                    Some(id.clone().into_owned())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        assert_eq!(packet_id, response_id);
+        assert_eq!(
+            response.receive_timestamp(),
+            NtpTimestamp::from_fixed_int(0)
+        );
+        assert_eq!(
+            response.transmit_timestamp(),
+            NtpTimestamp::from_fixed_int(1)
+        );
+
+        let (mut packet, _) =
+            NtpPacket::nts_poll_message(&cookie, 0, PollIntervalLimits::default().min);
+        std::mem::swap(
+            &mut packet.efdata.authenticated,
+            &mut packet.efdata.untrusted,
+        );
+        let response = NtpPacket::nts_timestamp_response(
+            &SystemSnapshot::default(),
+            packet,
+            NtpTimestamp::from_fixed_int(0),
+            &TestClock {
+                now: NtpTimestamp::from_fixed_int(1),
+            },
+            &decoded,
+            &keysetprovider.get(),
+        );
+        assert!(response
+            .efdata
+            .authenticated
+            .iter()
+            .find_map(|f| {
+                if let ExtensionField::UniqueIdentifier(id) = f {
+                    Some(id.clone().into_owned())
+                } else {
+                    None
+                }
+            })
+            .is_none());
+        assert_eq!(
+            response.receive_timestamp(),
+            NtpTimestamp::from_fixed_int(0)
+        );
+        assert_eq!(
+            response.transmit_timestamp(),
+            NtpTimestamp::from_fixed_int(1)
+        );
+    }
+
+    #[test]
+    fn test_timestamp_cookies() {
+        let decoded = DecodedServerCookie {
+            algorithm: AeadAlgorithm::AeadAesSivCmac256,
+            s2c: Box::new(AesSivCmac256::new((0..32_u8).collect())),
+            c2s: Box::new(AesSivCmac256::new((32..64_u8).collect())),
+        };
+        let keysetprovider = KeySetProvider::new(1);
+        let cookie = keysetprovider.get().encode_cookie(&decoded);
+
+        let (packet, _) =
+            NtpPacket::nts_poll_message(&cookie, 1, PollIntervalLimits::default().min);
+        let response = NtpPacket::nts_timestamp_response(
+            &SystemSnapshot::default(),
+            packet,
+            NtpTimestamp::from_fixed_int(0),
+            &TestClock {
+                now: NtpTimestamp::from_fixed_int(1),
+            },
+            &decoded,
+            &keysetprovider.get(),
+        );
+        assert_eq!(response.new_cookies().count(), 1);
+
+        let (packet, _) =
+            NtpPacket::nts_poll_message(&cookie, 2, PollIntervalLimits::default().min);
+        let response = NtpPacket::nts_timestamp_response(
+            &SystemSnapshot::default(),
+            packet,
+            NtpTimestamp::from_fixed_int(0),
+            &TestClock {
+                now: NtpTimestamp::from_fixed_int(1),
+            },
+            &decoded,
+            &keysetprovider.get(),
+        );
+        assert_eq!(response.new_cookies().count(), 2);
+
+        let (packet, _) =
+            NtpPacket::nts_poll_message(&cookie, 3, PollIntervalLimits::default().min);
+        let response = NtpPacket::nts_timestamp_response(
+            &SystemSnapshot::default(),
+            packet,
+            NtpTimestamp::from_fixed_int(0),
+            &TestClock {
+                now: NtpTimestamp::from_fixed_int(1),
+            },
+            &decoded,
+            &keysetprovider.get(),
+        );
+        assert_eq!(response.new_cookies().count(), 3);
+
+        let (packet, _) =
+            NtpPacket::nts_poll_message(&cookie, 4, PollIntervalLimits::default().min);
+        let response = NtpPacket::nts_timestamp_response(
+            &SystemSnapshot::default(),
+            packet,
+            NtpTimestamp::from_fixed_int(0),
+            &TestClock {
+                now: NtpTimestamp::from_fixed_int(1),
+            },
+            &decoded,
+            &keysetprovider.get(),
+        );
+        assert_eq!(response.new_cookies().count(), 4);
+    }
+
+    #[test]
+    fn test_deny_response() {
+        let decoded = DecodedServerCookie {
+            algorithm: AeadAlgorithm::AeadAesSivCmac256,
+            s2c: Box::new(AesSivCmac256::new((0..32_u8).collect())),
+            c2s: Box::new(AesSivCmac256::new((32..64_u8).collect())),
+        };
+        let keysetprovider = KeySetProvider::new(1);
+        let cookie = keysetprovider.get().encode_cookie(&decoded);
+
+        let (packet, _) =
+            NtpPacket::nts_poll_message(&cookie, 1, PollIntervalLimits::default().min);
+        let packet_id = packet
+            .efdata
+            .authenticated
+            .iter()
+            .find_map(|f| {
+                if let ExtensionField::UniqueIdentifier(id) = f {
+                    Some(id.clone().into_owned())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let response = NtpPacket::deny_response(packet);
+        let response_id = response
+            .efdata
+            .untrusted
+            .iter()
+            .find_map(|f| {
+                if let ExtensionField::UniqueIdentifier(id) = f {
+                    Some(id.clone().into_owned())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        assert_eq!(packet_id, response_id);
+        assert_eq!(response.new_cookies().count(), 0);
+        assert!(response.is_kiss_deny());
+
+        let (mut packet, _) =
+            NtpPacket::nts_poll_message(&cookie, 1, PollIntervalLimits::default().min);
+        let packet_id = packet
+            .efdata
+            .authenticated
+            .iter()
+            .find_map(|f| {
+                if let ExtensionField::UniqueIdentifier(id) = f {
+                    Some(id.clone().into_owned())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        std::mem::swap(
+            &mut packet.efdata.authenticated,
+            &mut packet.efdata.untrusted,
+        );
+        let response = NtpPacket::deny_response(packet);
+        let response_id = response
+            .efdata
+            .untrusted
+            .iter()
+            .find_map(|f| {
+                if let ExtensionField::UniqueIdentifier(id) = f {
+                    Some(id.clone().into_owned())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        assert_eq!(packet_id, response_id);
+        assert_eq!(response.new_cookies().count(), 0);
+        assert!(response.is_kiss_deny());
+
+        let (packet, _) =
+            NtpPacket::nts_poll_message(&cookie, 1, PollIntervalLimits::default().min);
+        let packet_id = packet
+            .efdata
+            .authenticated
+            .iter()
+            .find_map(|f| {
+                if let ExtensionField::UniqueIdentifier(id) = f {
+                    Some(id.clone().into_owned())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let response = NtpPacket::nts_deny_response(packet);
+        let response_id = response
+            .efdata
+            .authenticated
+            .iter()
+            .find_map(|f| {
+                if let ExtensionField::UniqueIdentifier(id) = f {
+                    Some(id.clone().into_owned())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        assert_eq!(packet_id, response_id);
+        assert_eq!(response.new_cookies().count(), 0);
+        assert!(response.is_kiss_deny());
+
+        let (mut packet, _) =
+            NtpPacket::nts_poll_message(&cookie, 1, PollIntervalLimits::default().min);
+        std::mem::swap(
+            &mut packet.efdata.authenticated,
+            &mut packet.efdata.untrusted,
+        );
+        let response = NtpPacket::nts_deny_response(packet);
+        assert!(response
+            .efdata
+            .authenticated
+            .iter()
+            .find_map(|f| {
+                if let ExtensionField::UniqueIdentifier(id) = f {
+                    Some(id.clone().into_owned())
+                } else {
+                    None
+                }
+            })
+            .is_none());
+        assert_eq!(response.new_cookies().count(), 0);
+        assert!(response.is_kiss_deny());
+    }
+
+    #[test]
+    fn test_rate_response() {
+        let decoded = DecodedServerCookie {
+            algorithm: AeadAlgorithm::AeadAesSivCmac256,
+            s2c: Box::new(AesSivCmac256::new((0..32_u8).collect())),
+            c2s: Box::new(AesSivCmac256::new((32..64_u8).collect())),
+        };
+        let keysetprovider = KeySetProvider::new(1);
+        let cookie = keysetprovider.get().encode_cookie(&decoded);
+
+        let (packet, _) =
+            NtpPacket::nts_poll_message(&cookie, 1, PollIntervalLimits::default().min);
+        let packet_id = packet
+            .efdata
+            .authenticated
+            .iter()
+            .find_map(|f| {
+                if let ExtensionField::UniqueIdentifier(id) = f {
+                    Some(id.clone().into_owned())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let response = NtpPacket::rate_limit_response(packet);
+        let response_id = response
+            .efdata
+            .untrusted
+            .iter()
+            .find_map(|f| {
+                if let ExtensionField::UniqueIdentifier(id) = f {
+                    Some(id.clone().into_owned())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        assert_eq!(packet_id, response_id);
+        assert_eq!(response.new_cookies().count(), 0);
+        assert!(response.is_kiss_rate());
+
+        let (mut packet, _) =
+            NtpPacket::nts_poll_message(&cookie, 1, PollIntervalLimits::default().min);
+        let packet_id = packet
+            .efdata
+            .authenticated
+            .iter()
+            .find_map(|f| {
+                if let ExtensionField::UniqueIdentifier(id) = f {
+                    Some(id.clone().into_owned())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        std::mem::swap(
+            &mut packet.efdata.authenticated,
+            &mut packet.efdata.untrusted,
+        );
+        let response = NtpPacket::rate_limit_response(packet);
+        let response_id = response
+            .efdata
+            .untrusted
+            .iter()
+            .find_map(|f| {
+                if let ExtensionField::UniqueIdentifier(id) = f {
+                    Some(id.clone().into_owned())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        assert_eq!(packet_id, response_id);
+        assert_eq!(response.new_cookies().count(), 0);
+        assert!(response.is_kiss_rate());
+
+        let (packet, _) =
+            NtpPacket::nts_poll_message(&cookie, 1, PollIntervalLimits::default().min);
+        let packet_id = packet
+            .efdata
+            .authenticated
+            .iter()
+            .find_map(|f| {
+                if let ExtensionField::UniqueIdentifier(id) = f {
+                    Some(id.clone().into_owned())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let response = NtpPacket::nts_rate_limit_response(packet);
+        let response_id = response
+            .efdata
+            .authenticated
+            .iter()
+            .find_map(|f| {
+                if let ExtensionField::UniqueIdentifier(id) = f {
+                    Some(id.clone().into_owned())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        assert_eq!(packet_id, response_id);
+        assert_eq!(response.new_cookies().count(), 0);
+        assert!(response.is_kiss_rate());
+
+        let (mut packet, _) =
+            NtpPacket::nts_poll_message(&cookie, 1, PollIntervalLimits::default().min);
+        std::mem::swap(
+            &mut packet.efdata.authenticated,
+            &mut packet.efdata.untrusted,
+        );
+        let response = NtpPacket::nts_rate_limit_response(packet);
+        assert!(response
+            .efdata
+            .authenticated
+            .iter()
+            .find_map(|f| {
+                if let ExtensionField::UniqueIdentifier(id) = f {
+                    Some(id.clone().into_owned())
+                } else {
+                    None
+                }
+            })
+            .is_none());
+        assert_eq!(response.new_cookies().count(), 0);
+        assert!(response.is_kiss_rate());
     }
 
     #[test]
