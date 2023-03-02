@@ -2,8 +2,8 @@
 
 pub mod config;
 mod ipfilter;
-mod keyexchange;
-mod nts_key_provider;
+pub mod keyexchange;
+pub mod nts_key_provider;
 pub mod observer;
 mod peer;
 mod server;

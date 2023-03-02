@@ -29,3 +29,9 @@ startup-panic-threshold = { forward = 0, backward = 1800 }
 
 [observe]
 path = "/run/ntpd-rs/observe"
+
+[nts-ke-server]
+addr = "0.0.0.0:4460"
+cert-chain-path = "test-keys/end.fullchain.pem"
+key-der-path = "test-keys/end.key"
+timeout-ms = 1000

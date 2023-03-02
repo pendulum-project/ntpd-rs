@@ -199,23 +199,42 @@ pub(crate) async fn perform_key_exchange(
         .await
         .unwrap();
 
-    let mut roots = rustls::RootCertStore::empty();
-    for cert in rustls_native_certs::load_native_certs().expect("could not load platform certs") {
-        roots.add(&rustls::Certificate(cert.0)).unwrap();
+    let mut root_store = rustls::RootCertStore::empty();
+    if server_name == "localhost" {
+        // add the Certificate authority for local tests
+        root_store.add_parsable_certificates(
+            &rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
+                "../../../test-keys/testca.pem"
+            ) as &[u8]))
+            .unwrap(),
+        );
+    } else {
+        // NOTE: the example at https://github.com/tokio-rs/tls/blob/master/tokio-rustls/examples/client/src/main.rs#L59
+        // seems to do something slightly more low-level.
+        let it = rustls_native_certs::load_native_certs().expect("could not load platform certs");
+        for cert in it {
+            root_store.add(&rustls::Certificate(cert.0)).unwrap();
+        }
     }
 
-    let config = rustls::ClientConfig::builder()
+    let mut config = rustls::ClientConfig::builder()
         .with_safe_defaults()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
+        .with_root_certificates(root_store)
+        .with_no_client_auth(); // i guess this was previously the default?
 
-    BoundKeyExchangeClient::new(socket, server_name, config)?.await
+    config.alpn_protocols.clear();
+    config.alpn_protocols.push(b"ntske/1".to_vec());
+
+    BoundKeyExchangeClient::new(socket, server_name, config)
+        .unwrap()
+        .await
 }
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    let domain = "localhost";
     // let domain = "time.cloudflare.com";
-    let domain = "nts.time.nl"; // supports AesSivCmac512
+    // let domain = "nts.time.nl"; // supports AesSivCmac512
     let port = 4460;
 
     let mut key_exchange = perform_key_exchange(domain.to_string(), port)
@@ -223,31 +242,34 @@ async fn main() -> std::io::Result<()> {
         .unwrap();
 
     let cookie = key_exchange.nts.get_cookie().unwrap();
+    dbg!(&key_exchange.nts);
     let (c2s, _) = key_exchange.nts.get_keys();
 
     println!("cookie: {cookie:?}");
 
-    let addr = (key_exchange.remote, key_exchange.port)
-        .to_socket_addrs()
-        .unwrap()
-        .next()
-        .unwrap();
+    if key_exchange.remote != "localhost" {
+        let addr = (key_exchange.remote, key_exchange.port)
+            .to_socket_addrs()
+            .unwrap()
+            .next()
+            .unwrap();
 
-    let mut socket = match addr {
-        SocketAddr::V4(_) => UdpSocket::client((Ipv4Addr::UNSPECIFIED, 0).into(), addr).await?,
-        SocketAddr::V6(_) => UdpSocket::client((Ipv6Addr::UNSPECIFIED, 0).into(), addr).await?,
-    };
+        let mut socket = match addr {
+            SocketAddr::V4(_) => UdpSocket::client((Ipv4Addr::UNSPECIFIED, 0).into(), addr).await?,
+            SocketAddr::V6(_) => UdpSocket::client((Ipv6Addr::UNSPECIFIED, 0).into(), addr).await?,
+        };
 
-    let (packet, _) = NtpPacket::nts_poll_message(&cookie, 1, PollInterval::default());
+        let (packet, _) = NtpPacket::nts_poll_message(&cookie, 1, PollInterval::default());
 
-    let mut raw = [0u8; 1024];
-    let mut w = Cursor::new(raw.as_mut_slice());
-    packet.serialize(&mut w, &c2s.as_ref())?;
-    socket.send(&w.get_ref()[..w.position() as usize]).await?;
+        let mut raw = [0u8; 1024];
+        let mut w = Cursor::new(raw.as_mut_slice());
+        packet.serialize(&mut w, &c2s.as_ref())?;
+        socket.send(&w.get_ref()[..w.position() as usize]).await?;
 
-    let mut buf = [0; 1024];
-    let (n, _remote, _timestamp) = socket.recv(&mut buf).await?;
-    println!("response: {:?}", &buf[0..n]);
+        let mut buf = [0; 1024];
+        let (n, _remote, _timestamp) = socket.recv(&mut buf).await?;
+        println!("response: {:?}", &buf[0..n]);
+    }
 
     Ok(())
 }

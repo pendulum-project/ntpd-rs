@@ -9,7 +9,7 @@ use aes_siv::{Aes128SivAead, Aes256SivAead};
 
 use crate::{
     cookiestash::CookieStash, packet::AesSivCmac256, packet::AesSivCmac512, peer::PeerNtsData,
-    Cipher,
+    Cipher, DecodedServerCookie, KeySet,
 };
 
 #[derive(Debug)]
@@ -178,6 +178,44 @@ impl NtsRecord {
                     .map(|algorithm| *algorithm as u16)
                     .collect(),
             },
+            NtsRecord::EndOfMessage,
+        ]
+    }
+
+    fn server_key_exchange_records(
+        protocol: ProtocolId,
+        algorithm: AeadAlgorithm,
+        keyset: &KeySet,
+        keys: NtsKeys,
+    ) -> [NtsRecord; 11] {
+        let cookie = DecodedServerCookie {
+            algorithm,
+            s2c: keys.s2c,
+            c2s: keys.c2s,
+        };
+
+        let next_cookie = || -> NtsRecord {
+            NtsRecord::NewCookie {
+                cookie_data: keyset.encode_cookie(&cookie),
+            }
+        };
+
+        [
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![protocol as u16],
+            },
+            NtsRecord::AeadAlgorithm {
+                critical: false,
+                algorithm_ids: vec![algorithm as u16],
+            },
+            next_cookie(),
+            next_cookie(),
+            next_cookie(),
+            next_cookie(),
+            next_cookie(),
+            next_cookie(),
+            next_cookie(),
+            next_cookie(),
             NtsRecord::EndOfMessage,
         ]
     }
@@ -422,10 +460,29 @@ pub enum KeyExchangeError {
     IncompleteResponse,
 }
 
+/// From https://www.rfc-editor.org/rfc/rfc8915.html#name-network-time-security-next-
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
+#[repr(u16)]
+pub enum ProtocolId {
+    #[default]
+    NtpV4 = 0,
+}
+
+impl ProtocolId {
+    const IN_ORDER_OF_PREFERENCE: &'static [Self] = &[Self::NtpV4];
+
+    pub const fn try_deserialize(number: u16) -> Option<Self> {
+        match number {
+            0 => Some(Self::NtpV4),
+            _ => None,
+        }
+    }
+}
+
 /// From https://www.iana.org/assignments/aead-parameters/aead-parameters.xhtml
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 #[repr(u16)]
-pub(crate) enum AeadAlgorithm {
+pub enum AeadAlgorithm {
     #[default]
     AeadAesSivCmac256 = 15,
     AeadAesSivCmac512 = 17,
@@ -444,7 +501,7 @@ impl AeadAlgorithm {
         [0, 0, (self as u16 >> 8) as u8, self as u8, 1]
     }
 
-    pub fn try_deserialize(number: u16) -> Option<AeadAlgorithm> {
+    pub const fn try_deserialize(number: u16) -> Option<AeadAlgorithm> {
         match number {
             15 => Some(AeadAlgorithm::AeadAesSivCmac256),
             17 => Some(AeadAlgorithm::AeadAesSivCmac512),
@@ -455,7 +512,7 @@ impl AeadAlgorithm {
     const IN_ORDER_OF_PREFERENCE: &'static [Self] =
         &[Self::AeadAesSivCmac512, Self::AeadAesSivCmac256];
 
-    pub(crate) fn extract_nts_keys<ConnectionData>(
+    fn extract_nts_keys<ConnectionData>(
         &self,
         tls_connection: &rustls::ConnectionCommon<ConnectionData>,
     ) -> Result<NtsKeys, rustls::Error> {
@@ -482,9 +539,9 @@ impl AeadAlgorithm {
     }
 }
 
-pub(crate) struct NtsKeys {
-    pub(crate) c2s: Box<dyn Cipher>,
-    pub(crate) s2c: Box<dyn Cipher>,
+pub struct NtsKeys {
+    c2s: Box<dyn Cipher>,
+    s2c: Box<dyn Cipher>,
 }
 
 fn extract_nts_key<T: KeySizeUser, ConnectionData>(
@@ -515,6 +572,7 @@ struct KeyExchangeResultDecoder {
     remote: Option<String>,
     port: Option<u16>,
     algorithm: Option<AeadAlgorithm>,
+    protocol: Option<ProtocolId>,
     cookies: CookieStash,
 }
 
@@ -587,13 +645,15 @@ impl KeyExchangeResultDecoder {
                 Continue(state)
             }
             NextProtocol { protocol_ids } => {
-                // NTP4 has protocol id 0, it is the only protocol we support
-                const NTP4: u16 = 0;
+                let selected = ProtocolId::IN_ORDER_OF_PREFERENCE
+                    .iter()
+                    .find_map(|proto| protocol_ids.contains(&(*proto as u16)).then_some(*proto));
 
-                if !protocol_ids.contains(&NTP4) {
-                    Break(Err(NoValidProtocol))
-                } else {
-                    Continue(state)
+                state.protocol = selected;
+
+                match state.protocol {
+                    None => Break(Err(NoValidProtocol)),
+                    Some(_) => Continue(state),
                 }
             }
             AeadAlgorithm { algorithm_ids, .. } => {
@@ -601,12 +661,11 @@ impl KeyExchangeResultDecoder {
                     .iter()
                     .find_map(|algo| algorithm_ids.contains(&(*algo as u16)).then_some(*algo));
 
-                match selected {
+                state.algorithm = selected;
+
+                match state.algorithm {
                     None => Break(Err(NoValidAlgorithm)),
-                    Some(algorithm) => {
-                        state.algorithm = Some(algorithm);
-                        Continue(state)
-                    }
+                    Some(_) => Continue(state),
                 }
             }
 
@@ -635,7 +694,7 @@ pub struct KeyExchangeClient {
 impl KeyExchangeClient {
     const NTP_DEFAULT_PORT: u16 = 123;
 
-    pub fn wants_read(&mut self) -> bool {
+    pub fn wants_read(&self) -> bool {
         self.tls_connection.wants_read()
     }
 
@@ -643,7 +702,7 @@ impl KeyExchangeClient {
         self.tls_connection.read_tls(rd)
     }
 
-    pub fn wants_write(&mut self) -> bool {
+    pub fn wants_write(&self) -> bool {
         self.tls_connection.wants_write()
     }
 
@@ -728,8 +787,273 @@ impl KeyExchangeClient {
     }
 }
 
+#[derive(Debug, Default)]
+struct KeyExchangeServerDecoder {
+    decoder: NtsRecordDecoder,
+    /// AEAD algorithm that the client is able to use and that we support
+    /// it may be that the server and client supported algorithms have no
+    /// intersection!
+    algorithm: AeadAlgorithm,
+    /// Protocol (NTP version) that is supported by both client and server
+    protocol: ProtocolId,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ServerKeyExchangeData {
+    algorithm: AeadAlgorithm,
+    protocol: ProtocolId,
+}
+
+impl KeyExchangeServerDecoder {
+    pub fn step_with_slice(
+        mut self,
+        bytes: &[u8],
+    ) -> ControlFlow<Result<ServerKeyExchangeData, KeyExchangeError>, Self> {
+        self.decoder.extend(bytes.iter().copied());
+
+        loop {
+            match self.decoder.step() {
+                Err(e) => return ControlFlow::Break(Err(e.into())),
+                Ok(Some(record)) => self = self.step_with_record(record)?,
+                Ok(None) => return ControlFlow::Continue(self),
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn step_with_record(
+        self,
+        record: NtsRecord,
+    ) -> ControlFlow<Result<ServerKeyExchangeData, KeyExchangeError>, Self> {
+        use self::AeadAlgorithm as Algorithm;
+        use ControlFlow::{Break, Continue};
+        use KeyExchangeError::*;
+        use NtsRecord::*;
+
+        let mut state = self;
+
+        match record {
+            EndOfMessage => {
+                let result = ServerKeyExchangeData {
+                    algorithm: state.algorithm,
+                    protocol: state.protocol,
+                };
+
+                Break(Ok(result))
+            }
+            NewCookie { .. } => {
+                // > Clients MUST NOT send records of this type
+                //
+                // TODO should we actively error when a client does?
+                Continue(state)
+            }
+            Server { name: _, .. } => {
+                // > When this record is sent by the client, it indicates that the client wishes to associate with the specified NTP
+                // > server. The NTS-KE server MAY incorporate this request when deciding which NTPv4 Server Negotiation
+                // > records to respond with, but honoring the client's preference is OPTIONAL. The client MUST NOT send more
+                // > than one record of this type.
+                //
+                // we ignore the client's preference
+                Continue(state)
+            }
+            Port { port: _, .. } => {
+                // > When this record is sent by the client in conjunction with a NTPv4 Server Negotiation record, it indicates that
+                // > the client wishes to associate with the NTP server at the specified port. The NTS-KE server MAY incorporate this
+                // > request when deciding what NTPv4 Server Negotiation and NTPv4 Port Negotiation records to respond with,
+                // > but honoring the client's preference is OPTIONAL
+                //
+                // we ignore the client's preference
+                Continue(state)
+            }
+            Error { errorcode } => {
+                let error = match errorcode {
+                    0 => UnrecognizedCriticalRecord,
+                    1 => BadRequest,
+                    2 => InternalServerError,
+                    _ => UnknownErrorCode(errorcode),
+                };
+
+                Break(Err(error))
+            }
+            Warning { warningcode } => {
+                tracing::warn!(warningcode, "Received key exchange warning code");
+
+                Continue(state)
+            }
+            NextProtocol { protocol_ids } => {
+                let selected = protocol_ids
+                    .iter()
+                    .copied()
+                    .find_map(ProtocolId::try_deserialize);
+
+                match selected {
+                    None => Break(Err(NoValidProtocol)),
+                    Some(protocol) => {
+                        state.protocol = protocol;
+                        Continue(state)
+                    }
+                }
+            }
+            AeadAlgorithm { algorithm_ids, .. } => {
+                let selected = algorithm_ids
+                    .iter()
+                    .copied()
+                    .find_map(Algorithm::try_deserialize);
+
+                match selected {
+                    None => Break(Err(NoValidAlgorithm)),
+                    Some(algorithm) => {
+                        state.algorithm = algorithm;
+                        Continue(state)
+                    }
+                }
+            }
+
+            Unknown { .. } => Continue(state),
+        }
+    }
+
+    fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[derive(Debug)]
+pub struct KeyExchangeServer {
+    tls_connection: rustls::ServerConnection,
+    decoder: Option<KeyExchangeServerDecoder>,
+    keyset: Arc<KeySet>,
+}
+
+impl KeyExchangeServer {
+    pub fn wants_read(&self) -> bool {
+        self.tls_connection.wants_read()
+    }
+
+    pub fn read_socket(&mut self, rd: &mut dyn Read) -> std::io::Result<usize> {
+        self.tls_connection.read_tls(rd)
+    }
+
+    pub fn wants_write(&self) -> bool {
+        self.tls_connection.wants_write()
+    }
+
+    pub fn write_socket(&mut self, wr: &mut dyn Write) -> std::io::Result<usize> {
+        self.tls_connection.write_tls(wr)
+    }
+
+    fn send_response(
+        &mut self,
+        protocol: ProtocolId,
+        algorithm: AeadAlgorithm,
+        keys: NtsKeys,
+    ) -> std::io::Result<()> {
+        let records =
+            NtsRecord::server_key_exchange_records(protocol, algorithm, &self.keyset, keys);
+
+        let mut buffer = Vec::with_capacity(1024);
+        for record in records.into_iter() {
+            record.write(&mut buffer)?;
+        }
+
+        self.tls_connection.writer().write_all(&buffer)?;
+        self.tls_connection.send_close_notify();
+
+        Ok(())
+    }
+
+    pub fn progress(self) -> ControlFlow<Result<(), KeyExchangeError>, Self> {
+        match self.progress_help() {
+            ControlFlow::Continue(c) => ControlFlow::Continue(c),
+            ControlFlow::Break(b) => ControlFlow::Break(b.map(drop)),
+        }
+    }
+
+    fn progress_help(mut self) -> ControlFlow<Result<Self, KeyExchangeError>, Self> {
+        // Move any received data from tls to decoder
+        let mut buf = [0; 128];
+        loop {
+            if let Err(e) = self.tls_connection.process_new_packets() {
+                return ControlFlow::Break(Err(e.into()));
+            }
+            let read_result = self.tls_connection.reader().read(&mut buf);
+            match read_result {
+                Ok(0) => {
+                    match self.decoder {
+                        Some(_) => {
+                            // there are no more client bytes, but decoding was not finished yet
+                            return ControlFlow::Break(Err(KeyExchangeError::IncompleteResponse));
+                        }
+                        None => {
+                            // we're all done
+                            return ControlFlow::Break(Ok(self));
+                        }
+                    }
+                }
+                Ok(n) => match self.decoder {
+                    Some(decoder) => match decoder.step_with_slice(&buf[..n]) {
+                        ControlFlow::Continue(decoder) => {
+                            self.decoder = Some(decoder);
+                            continue;
+                        }
+                        ControlFlow::Break(Ok(result)) => {
+                            self.decoder = None;
+                            let algorithm = result.algorithm;
+                            let protocol = result.protocol;
+
+                            tracing::info!(?algorithm, "selected AEAD algorithm");
+
+                            let keys = match algorithm.extract_nts_keys(&self.tls_connection) {
+                                Ok(keys) => keys,
+                                Err(e) => return ControlFlow::Break(Err(KeyExchangeError::Tls(e))),
+                            };
+
+                            return match self.send_response(protocol, algorithm, keys) {
+                                Err(e) => ControlFlow::Break(Err(KeyExchangeError::Io(e))),
+                                Ok(()) => ControlFlow::Continue(self),
+                            };
+                        }
+                        ControlFlow::Break(Err(error)) => return ControlFlow::Break(Err(error)),
+                    },
+                    None => {
+                        // client is sending more bytes, but we don't expect any more
+                        return ControlFlow::Break(Err(KeyExchangeError::InternalServerError));
+                    }
+                },
+                Err(e) => match e.kind() {
+                    std::io::ErrorKind::WouldBlock => return ControlFlow::Continue(self),
+                    std::io::ErrorKind::UnexpectedEof if self.decoder.is_none() => {
+                        // something we need in practice. If we're already done, an EOF is fine
+                        return ControlFlow::Break(Ok(self));
+                    }
+                    _ => return ControlFlow::Break(Err(e.into())),
+                },
+            }
+        }
+    }
+
+    pub fn new(
+        tls_config: Arc<rustls::ServerConfig>,
+        keyset: Arc<KeySet>,
+    ) -> Result<Self, KeyExchangeError> {
+        // Ensure we send only ntske/1 as alpn
+        debug_assert_eq!(tls_config.alpn_protocols, &[b"ntske/1".to_vec()]);
+
+        // TLS only works when the server name is a DNS name; an IP address does not work
+        let tls_connection = rustls::ServerConnection::new(tls_config)?;
+
+        Ok(Self {
+            tls_connection,
+            decoder: Some(KeyExchangeServerDecoder::new()),
+            keyset,
+        })
+    }
+}
+
 #[cfg(test)]
 mod test {
+    use crate::KeySetProvider;
+
     use super::*;
 
     #[test]
@@ -737,6 +1061,15 @@ mod test {
         for i in 0..=u16::MAX {
             if let Some(alg) = AeadAlgorithm::try_deserialize(i) {
                 assert_eq!(alg as u16, i);
+            }
+        }
+    }
+
+    #[test]
+    fn test_protocol_decoding() {
+        for i in 0..=u16::MAX {
+            if let Some(proto) = ProtocolId::try_deserialize(i) {
+                assert_eq!(proto as u16, i);
             }
         }
     }
@@ -1028,6 +1361,31 @@ mod test {
     }
 
     #[test]
+    fn server_decoder_finds_algorithm() {
+        let mut bytes = Vec::with_capacity(1024);
+        for record in NtsRecord::client_key_exchange_records() {
+            record.write(&mut bytes).unwrap();
+        }
+
+        let mut decoder = KeyExchangeServerDecoder::new();
+
+        let decode_output = || {
+            for chunk in bytes.chunks(24) {
+                decoder = match decoder.step_with_slice(chunk) {
+                    ControlFlow::Continue(d) => d,
+                    ControlFlow::Break(done) => return done,
+                };
+            }
+
+            Err(KeyExchangeError::IncompleteResponse)
+        };
+
+        let result = decode_output().unwrap();
+
+        assert_eq!(result.algorithm, AeadAlgorithm::AeadAesSivCmac512);
+    }
+
+    #[test]
     fn test_keyexchange_client() {
         let cert_chain: Vec<rustls::Certificate> =
             rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
@@ -1099,5 +1457,101 @@ mod test {
 
         assert_eq!(result.remote, "localhost");
         assert_eq!(result.port, 123);
+    }
+
+    #[test]
+    fn test_keyexchange_roundtrip() {
+        let cert_chain: Vec<rustls::Certificate> =
+            rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
+                "../../test-keys/end.fullchain.pem"
+            ) as &[u8]))
+            .unwrap()
+            .into_iter()
+            .map(rustls::Certificate)
+            .collect();
+        let key_der = rustls::PrivateKey(
+            rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(include_bytes!(
+                "../../test-keys/end.key"
+            )
+                as &[u8]))
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap(),
+        );
+        let mut serverconfig = rustls::ServerConfig::builder()
+            .with_safe_defaults()
+            .with_no_client_auth()
+            .with_single_cert(cert_chain, key_der)
+            .unwrap();
+
+        serverconfig.alpn_protocols.clear();
+        serverconfig.alpn_protocols.push(b"ntske/1".to_vec());
+
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.add_parsable_certificates(
+            &rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
+                "../../test-keys/testca.pem"
+            ) as &[u8]))
+            .unwrap(),
+        );
+
+        let clientconfig = rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
+
+        let keyset = KeySetProvider::new(8).get();
+        let mut server = KeyExchangeServer::new(Arc::new(serverconfig), keyset).unwrap();
+        let mut client = KeyExchangeClient::new("localhost".into(), clientconfig).unwrap();
+
+        let mut bytes = Vec::with_capacity(1024);
+        for record in NtsRecord::client_key_exchange_records() {
+            record.write(&mut bytes).unwrap();
+        }
+
+        client.tls_connection.writer().write_all(&bytes).unwrap();
+
+        let mut buf = [0; 4096];
+        let result = 'result: loop {
+            while server.wants_write() {
+                let size = server.write_socket(&mut &mut buf[..]).unwrap();
+                let mut offset = 0;
+                while offset < size {
+                    let cur = client
+                        .tls_connection
+                        .read_tls(&mut &buf[offset..size])
+                        .unwrap();
+                    offset += cur;
+                    client = match client.progress() {
+                        ControlFlow::Continue(client) => client,
+                        ControlFlow::Break(result) => break 'result result,
+                    }
+                }
+            }
+
+            'client_write: while client.wants_write() {
+                let size = client.tls_connection.write_tls(&mut &mut buf[..]).unwrap();
+                let mut offset = 0;
+                while offset < size {
+                    let cur = server.read_socket(&mut &buf[offset..size]).unwrap();
+                    offset += cur;
+                    match server.progress_help() {
+                        ControlFlow::Continue(new) => server = new,
+                        ControlFlow::Break(result) => {
+                            server = result.unwrap();
+
+                            break 'client_write;
+                        }
+                    }
+                }
+            }
+        }
+        .unwrap();
+
+        assert_eq!(&result.remote, "localhost");
+        assert_eq!(result.port, 123);
+
+        assert_eq!(result.nts.cookies.len(), 8);
     }
 }

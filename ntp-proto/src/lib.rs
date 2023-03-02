@@ -42,5 +42,6 @@ pub use time_types::{
 };
 
 pub use nts_record::{
-    KeyExchangeClient, KeyExchangeError, KeyExchangeResult, NtsRecord, NtsRecordDecoder, WriteError,
+    KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, NtsRecord,
+    NtsRecordDecoder, WriteError,
 };

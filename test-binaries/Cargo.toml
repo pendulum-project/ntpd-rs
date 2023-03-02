@@ -21,3 +21,5 @@ aes-siv.workspace = true
 
 rustls.workspace = true
 rustls-native-certs.workspace = true
+rustls-pemfile.workspace = true
+webpki.workspace = true
