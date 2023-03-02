@@ -13,7 +13,7 @@ pub mod standard;
 
 /// Unique identifier for a spawner
 /// This is used to identify which spawner was used to create a peer
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub struct SpawnerId(u64);
 
 impl SpawnerId {
@@ -32,7 +32,7 @@ impl Default for SpawnerId {
 /// Unique identifier for a peer created by a spawner
 /// This peer id makes sure that even if the network address is the same
 /// that we always know which specific spawned peer we are talking about.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub struct PeerId(u64);
 
 impl PeerId {
@@ -134,9 +134,13 @@ pub struct PeerCreateParameters {
 
 #[cfg(test)]
 impl PeerCreateParameters {
-    pub fn from_addr(addr: SocketAddr) -> PeerCreateParameters {
+    pub fn from_new_addr(addr: SocketAddr) -> PeerCreateParameters {
+        Self::from_addr(PeerId::new(), addr)
+    }
+
+    pub fn from_addr(id: PeerId, addr: SocketAddr) -> PeerCreateParameters {
         PeerCreateParameters {
-            id: PeerId::new(),
+            id,
             addr,
             normalized_addr: NormalizedAddress::from_string_ntp(format!(
                 "{}:{}",
@@ -148,14 +152,21 @@ impl PeerCreateParameters {
         }
     }
 
-    pub fn from_ip_and_port(ip: impl Into<String>, port: u16) -> PeerCreateParameters {
-        Self::from_addr(SocketAddr::new(
-            ip.into().parse().expect("Invalid ip address specified"),
-            port,
-        ))
+    pub fn from_ip_and_port(id: PeerId, ip: impl Into<String>, port: u16) -> PeerCreateParameters {
+        Self::from_addr(
+            id,
+            SocketAddr::new(
+                ip.into().parse().expect("Invalid ip address specified"),
+                port,
+            ),
+        )
     }
 
-    pub async fn from_normalized(addr: NormalizedAddress) -> PeerCreateParameters {
+    pub fn from_new_ip_and_port(ip: impl Into<String>, port: u16) -> PeerCreateParameters {
+        Self::from_ip_and_port(PeerId::new(), ip, port)
+    }
+
+    pub async fn from_normalized(id: PeerId, addr: NormalizedAddress) -> PeerCreateParameters {
         let socket_addr = addr
             .lookup_host()
             .await
@@ -163,7 +174,7 @@ impl PeerCreateParameters {
             .next()
             .expect("Lookup unexpectedly returned zero responses");
         PeerCreateParameters {
-            id: PeerId::new(),
+            id,
             addr: socket_addr,
             normalized_addr: addr,
             nts: None,

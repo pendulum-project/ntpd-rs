@@ -129,15 +129,14 @@ struct System<C: NtpClock, T: Wait> {
     spawn_tx: mpsc::Sender<SpawnEvent>,
     spawn_rx: mpsc::Receiver<SpawnEvent>,
 
-    peers: HashMap<PeerIndex, PeerState>,
+    peers: HashMap<PeerId, PeerState>,
     servers: Vec<ServerData>,
     spawners: Vec<SystemSpawnerData>,
-    peer_indexer: PeerIndexIssuer,
 
     peer_channels: PeerChannels,
 
     clock: C,
-    controller: DefaultTimeSyncController<C, PeerIndex>,
+    controller: DefaultTimeSyncController<C, PeerId>,
 }
 
 impl<C: NtpClock, T: Wait> System<C, T> {
@@ -179,7 +178,6 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                 peers: Default::default(),
                 servers: Default::default(),
                 spawners: Default::default(),
-                peer_indexer: Default::default(),
                 peer_channels: PeerChannels {
                     msg_for_system_sender,
                     system_snapshot_receiver: system_snapshot_receiver.clone(),
@@ -291,7 +289,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         Ok(())
     }
 
-    async fn handle_peer_network_issue(&mut self, index: PeerIndex) -> std::io::Result<()> {
+    async fn handle_peer_network_issue(&mut self, index: PeerId) -> std::io::Result<()> {
         self.controller.peer_remove(index);
 
         // Restart the peer reusing its configuration.
@@ -313,7 +311,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         Ok(())
     }
 
-    fn handle_peer_snapshot(&mut self, index: PeerIndex, snapshot: PeerSnapshot) {
+    fn handle_peer_snapshot(&mut self, index: PeerId, snapshot: PeerSnapshot) {
         self.controller.peer_update(
             index,
             snapshot
@@ -325,7 +323,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
 
     fn handle_peer_measurement(
         &mut self,
-        index: PeerIndex,
+        index: PeerId,
         snapshot: PeerSnapshot,
         measurement: ntp_proto::Measurement,
         packet: ntp_proto::NtpPacket<'static>,
@@ -339,7 +337,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
 
     fn handle_algorithm_state_update(
         &mut self,
-        update: ntp_proto::StateUpdate<PeerIndex>,
+        update: ntp_proto::StateUpdate<PeerId>,
         wait: &mut Pin<&mut SingleshotSleep<T>>,
     ) {
         if let Some(ref used_peers) = update.used_peers {
@@ -365,7 +363,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         }
     }
 
-    async fn handle_peer_demobilize(&mut self, index: PeerIndex) {
+    async fn handle_peer_demobilize(&mut self, index: PeerId) {
         self.controller.peer_remove(index);
         let state = self.peers.remove(&index).unwrap();
 
@@ -389,22 +387,22 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         &mut self,
         spawner_id: SpawnerId,
         mut params: PeerCreateParameters,
-    ) -> PeerIndex {
-        info!(peer_id=?params.id, addr=?params.addr, spawner=?spawner_id, "new peer");
-        let index = self.peer_indexer.get();
+    ) -> PeerId {
+        let peer_id = params.id;
+        info!(peer_id=?peer_id, addr=?params.addr, spawner=?spawner_id, "new peer");
         self.peers.insert(
-            index,
+            peer_id,
             PeerState {
                 snapshot: None,
                 peer_address: params.normalized_addr.clone(),
-                peer_id: params.id,
+                peer_id,
                 spawner_id,
             },
         );
-        self.controller.peer_add(index);
+        self.controller.peer_add(peer_id);
 
         PeerTask::spawn(
-            index,
+            peer_id,
             params.addr,
             self.clock.clone(),
             NETWORK_WAIT_PERIOD,
@@ -422,7 +420,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
             let _ = s.notify_tx.send(SystemEvent::PeerRegistered(params)).await;
         }
 
-        index
+        peer_id
     }
 
     async fn handle_spawn_event(&mut self, event: SpawnEvent) {
@@ -468,36 +466,6 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                 .unwrap_or(ObservablePeerState::Nothing)
         })
     }
-}
-
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub struct PeerIndex {
-    index: usize,
-}
-
-impl PeerIndex {
-    #[cfg(test)]
-    pub fn from_inner(index: usize) -> Self {
-        Self { index }
-    }
-}
-
-#[derive(Debug, Default)]
-struct PeerIndexIssuer {
-    next: usize,
-}
-
-impl PeerIndexIssuer {
-    fn get(&mut self) -> PeerIndex {
-        let index = self.next;
-        self.next += 1;
-        PeerIndex { index }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-struct PoolIndex {
-    index: usize,
 }
 
 #[derive(Debug)]
@@ -582,15 +550,17 @@ mod tests {
 
         let id = system.add_spawner(DummySpawner::empty());
 
-        let mut indices = [PeerIndex { index: 0 }; 4];
+        let mut indices = vec![];
 
-        for (i, item) in indices.iter_mut().enumerate() {
-            *item = system
-                .create_peer(
-                    id,
-                    PeerCreateParameters::from_ip_and_port(format!("127.0.0.{i}"), 123),
-                )
-                .await;
+        for i in 0..4 {
+            indices.push(
+                system
+                    .create_peer(
+                        id,
+                        PeerCreateParameters::from_new_ip_and_port(format!("127.0.0.{i}"), 123),
+                    )
+                    .await,
+            );
         }
 
         let base = NtpInstant::now();
@@ -725,7 +695,7 @@ mod tests {
     //     // our pool peer has a network issue
     //     system
     //         .handle_peer_update(
-    //             MsgForSystem::NetworkIssue(PeerIndex { index: 1 }),
+    //             MsgForSystem::NetworkIssue(PeerId::new()),
     //             &mut wait,
     //         )
     //         .await
@@ -771,7 +741,7 @@ mod tests {
     //     // our pool peer has a network issue
     //     system
     //         .handle_peer_update(
-    //             MsgForSystem::NetworkIssue(PeerIndex { index: 1 }),
+    //             MsgForSystem::NetworkIssue(PeerId::new()),
     //             &mut wait,
     //         )
     //         .await
@@ -820,7 +790,7 @@ mod tests {
     //     // simulate that a pool peer has a network issue
     //     system
     //         .handle_peer_update(
-    //             MsgForSystem::NetworkIssue(PeerIndex { index: 1 }),
+    //             MsgForSystem::NetworkIssue(PeerId::new()),
     //             &mut wait,
     //         )
     //         .await
