@@ -21,7 +21,7 @@ use tokio::{fs::read_to_string, io};
 use tracing::{info, warn};
 use tracing_subscriber::filter::EnvFilter;
 
-use crate::system::PeerIndex;
+use crate::spawn::PeerId;
 
 use self::format::LogFormat;
 
@@ -107,9 +107,9 @@ pub struct CombinedSystemConfig {
     #[serde(flatten)]
     pub system: SystemConfig,
     #[serde(flatten)]
-    pub algorithm: <DefaultTimeSyncController<UnixNtpClock, PeerIndex> as TimeSyncController<
+    pub algorithm: <DefaultTimeSyncController<UnixNtpClock, PeerId> as TimeSyncController<
         UnixNtpClock,
-        PeerIndex,
+        PeerId,
     >>::AlgorithmConfig,
 }
 

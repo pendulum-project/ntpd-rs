@@ -33,7 +33,7 @@ impl DummySpawner {
     pub fn simple(addr: Vec<SocketAddr>, keep_active: usize) -> DummySpawner {
         let to_spawn = addr
             .into_iter()
-            .map(PeerCreateParameters::from_addr)
+            .map(PeerCreateParameters::from_new_addr)
             .collect();
         Self::new(to_spawn, keep_active)
     }

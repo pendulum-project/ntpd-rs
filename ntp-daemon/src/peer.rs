@@ -15,7 +15,7 @@ use tracing::{debug, error, instrument, warn, Instrument, Span};
 
 use tokio::time::{Instant, Sleep};
 
-use crate::{config::CombinedSystemConfig, system::PeerIndex};
+use crate::{config::CombinedSystemConfig, spawn::PeerId};
 
 /// Trait needed to allow injecting of futures other than tokio::time::Sleep for testing
 pub trait Wait: Future<Output = ()> {
@@ -32,15 +32,15 @@ impl Wait for Sleep {
 #[allow(clippy::large_enum_variant)]
 pub enum MsgForSystem {
     /// Received a Kiss-o'-Death and must demobilize
-    MustDemobilize(PeerIndex),
+    MustDemobilize(PeerId),
     /// Experienced a network issue and must be restarted
-    NetworkIssue(PeerIndex),
+    NetworkIssue(PeerId),
     /// Received an acceptable packet and made a new peer snapshot
     /// A new measurement should try to trigger a clock select
-    NewMeasurement(PeerIndex, PeerSnapshot, Measurement, NtpPacket<'static>),
+    NewMeasurement(PeerId, PeerSnapshot, Measurement, NtpPacket<'static>),
     /// A snapshot may have been updated, but this should not
     /// trigger a clock select in System
-    UpdatedSnapshot(PeerIndex, PeerSnapshot),
+    UpdatedSnapshot(PeerId, PeerSnapshot),
 }
 
 #[derive(Debug, Clone)]
@@ -52,7 +52,7 @@ pub struct PeerChannels {
 
 pub(crate) struct PeerTask<C: 'static + NtpClock + Send, T: Wait> {
     _wait: PhantomData<T>,
-    index: PeerIndex,
+    index: PeerId,
     clock: C,
     socket: UdpSocket,
     channels: PeerChannels,
@@ -265,7 +265,7 @@ where
 {
     #[instrument(skip(clock, channels))]
     pub fn spawn(
-        index: PeerIndex,
+        index: PeerId,
         addr: SocketAddr,
         clock: C,
         network_wait_period: std::time::Duration,
@@ -551,7 +551,7 @@ mod tests {
 
         let process = PeerTask {
             _wait: PhantomData,
-            index: PeerIndex::from_inner(0),
+            index: PeerId::new(),
             clock: TestClock {},
             channels: PeerChannels {
                 msg_for_system_sender,
