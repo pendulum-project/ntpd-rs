@@ -1,5 +1,6 @@
 use crate::{
-    config::{CombinedSystemConfig, NormalizedAddress, PeerConfig, ServerConfig},
+    config::{CombinedSystemConfig, KeysetConfig, NormalizedAddress, PeerConfig, ServerConfig},
+    nts_key_provider,
     peer::{MsgForSystem, PeerChannels},
     peer::{PeerTask, Wait},
     server::{ServerStats, ServerTask},
@@ -10,11 +11,11 @@ use crate::{
     ObservablePeerState,
 };
 
-use std::{collections::HashMap, future::Future, marker::PhantomData, pin::Pin};
+use std::{collections::HashMap, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
 
 use ntp_os_clock::UnixNtpClock;
 use ntp_proto::{
-    DefaultTimeSyncController, NtpClock, NtpDuration, PeerSnapshot, SystemSnapshot,
+    DefaultTimeSyncController, KeySet, NtpClock, NtpDuration, PeerSnapshot, SystemSnapshot,
     TimeSyncController,
 };
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -71,6 +72,7 @@ pub struct DaemonChannels {
     pub peer_snapshots_receiver: tokio::sync::watch::Receiver<Vec<ObservablePeerState>>,
     pub server_data_receiver: tokio::sync::watch::Receiver<Vec<ServerData>>,
     pub system_snapshot_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
+    pub keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
 }
 
 /// Spawn the NTP daemon
@@ -78,9 +80,10 @@ pub async fn spawn(
     config: CombinedSystemConfig,
     peer_configs: &[PeerConfig],
     server_configs: &[ServerConfig],
+    keyset_config: KeysetConfig,
 ) -> std::io::Result<(JoinHandle<std::io::Result<()>>, DaemonChannels)> {
     let clock = UnixNtpClock::new();
-    let (mut system, channels) = System::new(clock, config);
+    let (mut system, channels) = System::new(clock, config, keyset_config);
 
     for peer_config in peer_configs {
         match peer_config {
@@ -124,6 +127,8 @@ struct System<C: NtpClock, T: Wait> {
     system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
     peer_snapshots_sender: tokio::sync::watch::Sender<Vec<ObservablePeerState>>,
     server_data_sender: tokio::sync::watch::Sender<Vec<ServerData>>,
+    #[allow(unused)]
+    keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
 
     msg_for_system_rx: mpsc::Receiver<MsgForSystem>,
     spawn_tx: mpsc::Sender<SpawnEvent>,
@@ -142,7 +147,11 @@ struct System<C: NtpClock, T: Wait> {
 impl<C: NtpClock, T: Wait> System<C, T> {
     const MESSAGE_BUFFER_SIZE: usize = 32;
 
-    fn new(clock: C, config: CombinedSystemConfig) -> (Self, DaemonChannels) {
+    fn new(
+        clock: C,
+        config: CombinedSystemConfig,
+        keyset_config: KeysetConfig,
+    ) -> (Self, DaemonChannels) {
         // Setup system snapshot
         let system = SystemSnapshot {
             stratum: config.system.local_stratum,
@@ -159,6 +168,8 @@ impl<C: NtpClock, T: Wait> System<C, T> {
             tokio::sync::mpsc::channel(Self::MESSAGE_BUFFER_SIZE);
         let (spawn_tx, spawn_rx) = mpsc::channel(Self::MESSAGE_BUFFER_SIZE);
 
+        let keyset = nts_key_provider::spawn(keyset_config);
+
         // Build System and its channels
         (
             System {
@@ -170,6 +181,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                 system_snapshot_sender,
                 peer_snapshots_sender,
                 server_data_sender,
+                keyset: keyset.clone(),
 
                 msg_for_system_rx: msg_for_system_receiver,
                 spawn_rx,
@@ -192,6 +204,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                 peer_snapshots_receiver,
                 server_data_receiver,
                 system_snapshot_receiver,
+                keyset,
             },
         )
     }
@@ -543,7 +556,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_peers() {
-        let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default());
+        let (mut system, _) = System::new(
+            TestClock {},
+            CombinedSystemConfig::default(),
+            KeysetConfig::default(),
+        );
         let wait =
             SingleshotSleep::new_disabled(tokio::time::sleep(std::time::Duration::from_secs(0)));
         tokio::pin!(wait);

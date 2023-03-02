@@ -133,6 +133,8 @@ pub struct Config {
     pub observe: ObserveConfig,
     #[serde(default)]
     pub configure: ConfigureConfig,
+    #[serde(default)]
+    pub keyset: KeysetConfig,
 }
 
 const fn default_observe_permissions() -> u32 {
