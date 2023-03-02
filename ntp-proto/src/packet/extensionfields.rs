@@ -369,7 +369,7 @@ impl<'a> ExtensionFieldData<'a> {
     pub(super) fn serialize(
         &self,
         w: &mut Cursor<&mut [u8]>,
-        cipher: &impl CipherProvider,
+        cipher: &(impl CipherProvider + ?Sized),
     ) -> std::io::Result<()> {
         if !self.authenticated.is_empty() || !self.encrypted.is_empty() {
             let cipher = match cipher.get(&self.authenticated) {

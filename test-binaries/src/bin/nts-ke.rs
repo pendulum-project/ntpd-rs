@@ -263,7 +263,7 @@ async fn main() -> std::io::Result<()> {
 
         let mut raw = [0u8; 1024];
         let mut w = Cursor::new(raw.as_mut_slice());
-        packet.serialize(&mut w, &c2s.as_ref())?;
+        packet.serialize(&mut w, c2s.as_ref())?;
         socket.send(&w.get_ref()[..w.position() as usize]).await?;
 
         let mut buf = [0; 1024];

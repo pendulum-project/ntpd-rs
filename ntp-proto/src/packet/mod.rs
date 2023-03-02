@@ -372,7 +372,7 @@ impl<'a> NtpPacket<'a> {
     pub fn serialize(
         &self,
         w: &mut Cursor<&mut [u8]>,
-        cipher: &impl CipherProvider,
+        cipher: &(impl CipherProvider + ?Sized),
     ) -> std::io::Result<()> {
         match self.header {
             NtpHeader::V3(header) => header.serialize(w, 3)?,

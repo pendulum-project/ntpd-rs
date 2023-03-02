@@ -1,10 +1,14 @@
 use std::{
     io::Cursor,
     net::{IpAddr, SocketAddr},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
-use ntp_proto::{NoCipher, NtpAssociationMode, NtpClock, NtpPacket, NtpTimestamp, SystemSnapshot};
+use ntp_proto::{
+    DecodedServerCookie, KeySet, NoCipher, NtpAssociationMode, NtpClock, NtpPacket, NtpTimestamp,
+    SystemSnapshot,
+};
 use ntp_udp::UdpSocket;
 use prometheus_client::metrics::counter::Counter;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -64,6 +68,7 @@ pub struct ServerTask<C: 'static + NtpClock + Send> {
     config: ServerConfig,
     network_wait_period: std::time::Duration,
     system_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
+    keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     system: SystemSnapshot,
     client_cache: TimestampedCache<SocketAddr>,
     clock: C,
@@ -75,6 +80,7 @@ enum AcceptResult<'a> {
     Accept {
         packet: NtpPacket<'a>,
         max_response_size: usize,
+        decoded_cookie: Option<DecodedServerCookie>,
         peer_addr: SocketAddr,
         recv_timestamp: NtpTimestamp,
     },
@@ -82,11 +88,13 @@ enum AcceptResult<'a> {
     Deny {
         packet: NtpPacket<'a>,
         max_response_size: usize,
+        decoded_cookie: Option<DecodedServerCookie>,
         peer_addr: SocketAddr,
     },
     RateLimit {
         packet: NtpPacket<'a>,
         max_response_size: usize,
+        decoded_cookie: Option<DecodedServerCookie>,
         peer_addr: SocketAddr,
     },
     NetworkGone,
@@ -97,6 +105,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         config: ServerConfig,
         stats: ServerStats,
         mut system_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
+        keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
         clock: C,
         network_wait_period: Duration,
     ) -> JoinHandle<()> {
@@ -110,6 +119,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 network_wait_period,
                 system,
                 system_receiver,
+                keyset,
                 clock,
                 client_cache: TimestampedCache::new(rate_limiting_cache_size),
                 stats,
@@ -183,22 +193,39 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             AcceptResult::Accept {
                 packet,
                 max_response_size,
+                decoded_cookie,
                 peer_addr,
                 recv_timestamp,
             } => {
                 self.stats.accepted_packets.inc();
 
-                let response = NtpPacket::timestamp_response(
-                    &self.system,
-                    packet,
-                    recv_timestamp,
-                    &self.clock,
-                );
-
+                let keyset = self.keyset.borrow().clone();
                 let mut buf = [0; MAX_PACKET_SIZE];
                 let mut cursor = Cursor::new(buf.as_mut_slice());
+                let serialize_result = match decoded_cookie {
+                    Some(decoded_cookie) => {
+                        let response = NtpPacket::nts_timestamp_response(
+                            &self.system,
+                            packet,
+                            recv_timestamp,
+                            &self.clock,
+                            &decoded_cookie,
+                            &keyset,
+                        );
+                        response.serialize(&mut cursor, decoded_cookie.s2c.as_ref())
+                    }
+                    None => {
+                        let response = NtpPacket::timestamp_response(
+                            &self.system,
+                            packet,
+                            recv_timestamp,
+                            &self.clock,
+                        );
+                        response.serialize(&mut cursor, &NoCipher)
+                    }
+                };
 
-                if let Err(serialize_err) = response.serialize(&mut cursor, &NoCipher) {
+                if let Err(serialize_err) = serialize_result {
                     error!(error=?serialize_err, "Could not serialize response");
                     return true;
                 }
@@ -219,15 +246,25 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             AcceptResult::Deny {
                 packet,
                 max_response_size,
+                decoded_cookie,
                 peer_addr,
             } => {
                 self.stats.denied_packets.inc();
-                let response = NtpPacket::deny_response(packet);
 
                 let mut buf = [0; 48];
                 let mut cursor = Cursor::new(buf.as_mut_slice());
+                let serialize_result = match decoded_cookie {
+                    Some(decoded_cookie) => {
+                        let response = NtpPacket::nts_deny_response(packet);
+                        response.serialize(&mut cursor, decoded_cookie.s2c.as_ref())
+                    }
+                    None => {
+                        let response = NtpPacket::deny_response(packet);
+                        response.serialize(&mut cursor, &NoCipher)
+                    }
+                };
 
-                if let Err(serialize_err) = response.serialize(&mut cursor, &NoCipher) {
+                if let Err(serialize_err) = serialize_result {
                     self.stats.response_send_errors.inc();
                     error!(error=?serialize_err, "Could not serialize response");
                     return true;
@@ -253,15 +290,25 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             AcceptResult::RateLimit {
                 packet,
                 max_response_size,
+                decoded_cookie,
                 peer_addr,
             } => {
                 self.stats.rate_limited_packets.inc();
-                let response = NtpPacket::rate_limit_response(packet);
 
                 let mut buf = [0; 48];
                 let mut cursor = Cursor::new(buf.as_mut_slice());
+                let serialize_result = match decoded_cookie {
+                    Some(decoded_cookie) => {
+                        let response = NtpPacket::nts_rate_limit_response(packet);
+                        response.serialize(&mut cursor, decoded_cookie.s2c.as_ref())
+                    }
+                    None => {
+                        let response = NtpPacket::rate_limit_response(packet);
+                        response.serialize(&mut cursor, &NoCipher)
+                    }
+                };
 
-                if let Err(serialize_err) = response.serialize(&mut cursor, &NoCipher) {
+                if let Err(serialize_err) = serialize_result {
                     self.stats.response_send_errors.inc();
                     error!(error=?serialize_err, "Could not serialize response");
                     return true;
@@ -308,11 +355,13 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                             AcceptResult::Accept {
                                 packet,
                                 max_response_size,
+                                decoded_cookie,
                                 peer_addr,
                                 ..
                             } => AcceptResult::Deny {
                                 packet,
                                 max_response_size,
+                                decoded_cookie,
                                 peer_addr,
                             },
                             v => v,
@@ -328,11 +377,13 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                             AcceptResult::Accept {
                                 packet,
                                 max_response_size,
+                                decoded_cookie,
                                 peer_addr,
                                 ..
                             } if too_soon => AcceptResult::RateLimit {
                                 packet,
                                 max_response_size,
+                                decoded_cookie,
                                 peer_addr,
                             },
                             accept_result => accept_result,
@@ -375,13 +426,15 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         peer_addr: SocketAddr,
         recv_timestamp: NtpTimestamp,
     ) -> AcceptResult<'a> {
-        match NtpPacket::deserialize(buf, &NoCipher) {
-            Ok((packet, _cookie)) => match packet.mode() {
+        let keyset = self.keyset.borrow().clone();
+        match NtpPacket::deserialize(buf, keyset.as_ref()) {
+            Ok((packet, decoded_cookie)) => match packet.mode() {
                 NtpAssociationMode::Client => {
                     trace!("NTP client request accepted from {}", peer_addr);
                     AcceptResult::Accept {
                         packet,
                         max_response_size: buf.len(),
+                        decoded_cookie,
                         peer_addr,
                         recv_timestamp,
                     }
@@ -473,7 +526,10 @@ impl<T: std::hash::Hash + Eq> TimestampedCache<T> {
 mod tests {
     use std::time::Duration;
 
-    use ntp_proto::{NtpDuration, NtpLeapIndicator, PollInterval, PollIntervalLimits, ReferenceId};
+    use ntp_proto::{
+        KeySetProvider, NtpDuration, NtpLeapIndicator, PollInterval, PollIntervalLimits,
+        ReferenceId,
+    };
 
     use crate::ipfilter::IpFilter;
 
@@ -557,11 +613,13 @@ mod tests {
         };
         let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
+        let (_, keyset) = tokio::sync::watch::channel(KeySetProvider::new(1).get());
 
         let server = ServerTask::spawn(
             config,
             Default::default(),
             system_snapshots,
+            keyset,
             clock,
             Duration::from_secs(1),
         );
@@ -602,11 +660,13 @@ mod tests {
         };
         let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
+        let (_, keyset) = tokio::sync::watch::channel(KeySetProvider::new(1).get());
 
         let server = ServerTask::spawn(
             config,
             Default::default(),
             system_snapshots,
+            keyset,
             clock,
             Duration::from_secs(1),
         );
@@ -648,11 +708,13 @@ mod tests {
         };
         let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
+        let (_, keyset) = tokio::sync::watch::channel(KeySetProvider::new(1).get());
 
         let server = ServerTask::spawn(
             config,
             Default::default(),
             system_snapshots,
+            keyset,
             clock,
             Duration::from_secs(1),
         );
@@ -688,11 +750,13 @@ mod tests {
         };
         let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
+        let (_, keyset) = tokio::sync::watch::channel(KeySetProvider::new(1).get());
 
         let server = ServerTask::spawn(
             config,
             Default::default(),
             system_snapshots,
+            keyset,
             clock,
             Duration::from_secs(1),
         );
@@ -733,11 +797,13 @@ mod tests {
         };
         let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
+        let (_, keyset) = tokio::sync::watch::channel(KeySetProvider::new(1).get());
 
         let server = ServerTask::spawn(
             config,
             Default::default(),
             system_snapshots,
+            keyset,
             clock,
             Duration::from_secs(1),
         );
@@ -779,11 +845,13 @@ mod tests {
         };
         let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
+        let (_, keyset) = tokio::sync::watch::channel(KeySetProvider::new(1).get());
 
         let server = ServerTask::spawn(
             config,
             Default::default(),
             system_snapshots,
+            keyset,
             clock,
             Duration::from_secs(1),
         );
@@ -819,11 +887,13 @@ mod tests {
         };
         let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
+        let (_, keyset) = tokio::sync::watch::channel(KeySetProvider::new(1).get());
 
         let server = ServerTask::spawn(
             config,
             Default::default(),
             system_snapshots,
+            keyset,
             clock,
             Duration::from_secs(1),
         );
@@ -896,11 +966,13 @@ mod tests {
         };
         let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
+        let (_, keyset) = tokio::sync::watch::channel(KeySetProvider::new(1).get());
 
         let server = ServerTask::spawn(
             config,
             Default::default(),
             system_snapshots,
+            keyset,
             clock,
             Duration::from_secs(1),
         );

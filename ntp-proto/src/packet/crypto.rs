@@ -59,9 +59,9 @@ impl CipherProvider for NoCipher {
     }
 }
 
-impl CipherProvider for &dyn Cipher {
+impl CipherProvider for dyn Cipher {
     fn get(&self, _context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
-        Some(CipherHolder::Other(*self))
+        Some(CipherHolder::Other(self))
     }
 }
 

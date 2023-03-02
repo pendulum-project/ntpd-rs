@@ -451,6 +451,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
             config,
             stats,
             self.peer_channels.system_snapshot_receiver.clone(),
+            self.keyset.clone(),
             self.clock.clone(),
             NETWORK_WAIT_PERIOD,
         );
