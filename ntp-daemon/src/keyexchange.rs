@@ -59,9 +59,23 @@ pub async fn spawn(nts_ke_config: NtsKeConfig) -> JoinHandle<std::io::Result<()>
     })
 }
 
+fn error(msg: &str) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::Other, msg)
+}
+
 async fn run_nts_ke(nts_ke_config: NtsKeConfig) -> std::io::Result<()> {
-    let cert_chain_file = std::fs::File::open(nts_ke_config.cert_chain_path)?;
-    let key_der_file = std::fs::File::open(nts_ke_config.key_der_path)?;
+    let cert_chain_file = std::fs::File::open(&nts_ke_config.cert_chain_path).map_err(|e| {
+        error(&format!(
+            "error reading cert_chain_path at `{:?}`: {:?}",
+            nts_ke_config.cert_chain_path, e
+        ))
+    })?;
+    let key_der_file = std::fs::File::open(&nts_ke_config.key_der_path).map_err(|e| {
+        error(&format!(
+            "error reading key_der_path at `{:?}`: {:?}",
+            nts_ke_config.key_der_path, e
+        ))
+    })?;
 
     let cert_chain: Vec<rustls::Certificate> =
         rustls_pemfile::certs(&mut std::io::BufReader::new(cert_chain_file))?
@@ -72,10 +86,7 @@ async fn run_nts_ke(nts_ke_config: NtsKeConfig) -> std::io::Result<()> {
     let key_der = rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(key_der_file))?;
 
     if key_der.is_empty() {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "could not parse private key",
-        ))
+        Err(error("could not parse private key"))
     } else {
         let key_der = rustls::PrivateKey(key_der.into_iter().next().unwrap());
 
