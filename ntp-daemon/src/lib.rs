@@ -3,7 +3,7 @@
 pub mod config;
 mod ipfilter;
 pub mod keyexchange;
-mod nts_key_provider;
+pub mod nts_key_provider;
 pub mod observer;
 mod peer;
 mod server;

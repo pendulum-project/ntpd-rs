@@ -48,12 +48,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // tracing setup to ensure logging is fully configured.
     config.check();
 
+    // we always generate the keyset (even if NTS is not used)
+    let keyset = ntp_daemon::nts_key_provider::spawn(config.keyset);
+
     debug!("Configuration loaded, spawning daemon jobs");
-    let (main_loop_handle, channels) =
-        ntp_daemon::spawn(config.system, &config.peers, &config.servers, config.keyset).await?;
+    let (main_loop_handle, channels) = ntp_daemon::spawn(
+        config.system,
+        &config.peers,
+        &config.servers,
+        keyset.clone(),
+    )
+    .await?;
 
     if let Some(nts_ke_config) = config.nts_ke {
-        ntp_daemon::keyexchange::spawn(nts_ke_config).await;
+        ntp_daemon::keyexchange::spawn(nts_ke_config, keyset).await;
     }
 
     ntp_daemon::observer::spawn(

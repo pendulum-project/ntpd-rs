@@ -10,7 +10,6 @@ use std::{
 
 use ntp_proto::{
     KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, KeySet,
-    KeySetProvider,
 };
 use rustls::{Certificate, PrivateKey};
 use tokio::{
@@ -47,9 +46,12 @@ pub(crate) async fn key_exchange_client(
     BoundKeyExchangeClient::new(socket, server_name, config)?.await
 }
 
-pub async fn spawn(nts_ke_config: NtsKeConfig) -> JoinHandle<std::io::Result<()>> {
+pub async fn spawn(
+    nts_ke_config: NtsKeConfig,
+    keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
+) -> JoinHandle<std::io::Result<()>> {
     tokio::spawn(async move {
-        let result = run_nts_ke(nts_ke_config).await;
+        let result = run_nts_ke(nts_ke_config, keyset).await;
 
         if let Err(ref e) = result {
             tracing::error!("Abnormal termination of NTS KE server: {}", e);
@@ -63,7 +65,10 @@ fn error(msg: &str) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::Other, msg)
 }
 
-async fn run_nts_ke(nts_ke_config: NtsKeConfig) -> std::io::Result<()> {
+async fn run_nts_ke(
+    nts_ke_config: NtsKeConfig,
+    keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
+) -> std::io::Result<()> {
     let cert_chain_file = std::fs::File::open(&nts_ke_config.cert_chain_path).map_err(|e| {
         error(&format!(
             "error reading cert_chain_path at `{:?}`: {:?}",
@@ -91,6 +96,7 @@ async fn run_nts_ke(nts_ke_config: NtsKeConfig) -> std::io::Result<()> {
         let key_der = rustls::PrivateKey(key_der.into_iter().next().unwrap());
 
         key_exchange_server(
+            keyset,
             nts_ke_config.addr,
             cert_chain,
             key_der,
@@ -101,6 +107,7 @@ async fn run_nts_ke(nts_ke_config: NtsKeConfig) -> std::io::Result<()> {
 }
 
 async fn key_exchange_server(
+    keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     address: impl ToSocketAddrs,
     certificate_chain: Vec<Certificate>,
     key_der: PrivateKey,
@@ -109,8 +116,6 @@ async fn key_exchange_server(
     use std::io;
 
     let listener = TcpListener::bind(address).await?;
-
-    let provider = KeySetProvider::new(8);
 
     let mut config = rustls::ServerConfig::builder()
         .with_safe_defaults()
@@ -126,7 +131,7 @@ async fn key_exchange_server(
     loop {
         let (stream, peer_addr) = listener.accept().await?;
         let config = config.clone();
-        let keyset = provider.get();
+        let keyset = keyset.borrow().clone();
 
         let fut = async move {
             BoundKeyExchangeServer::run(stream, config, keyset)

@@ -1,6 +1,5 @@
 use crate::{
-    config::{CombinedSystemConfig, KeysetConfig, NormalizedAddress, PeerConfig, ServerConfig},
-    nts_key_provider,
+    config::{CombinedSystemConfig, NormalizedAddress, PeerConfig, ServerConfig},
     peer::{MsgForSystem, PeerChannels},
     peer::{PeerTask, Wait},
     server::{ServerStats, ServerTask},
@@ -80,10 +79,10 @@ pub async fn spawn(
     config: CombinedSystemConfig,
     peer_configs: &[PeerConfig],
     server_configs: &[ServerConfig],
-    keyset_config: KeysetConfig,
+    keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
 ) -> std::io::Result<(JoinHandle<std::io::Result<()>>, DaemonChannels)> {
     let clock = UnixNtpClock::new();
-    let (mut system, channels) = System::new(clock, config, keyset_config);
+    let (mut system, channels) = System::new(clock, config, keyset);
 
     for peer_config in peer_configs {
         match peer_config {
@@ -150,7 +149,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
     fn new(
         clock: C,
         config: CombinedSystemConfig,
-        keyset_config: KeysetConfig,
+        keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     ) -> (Self, DaemonChannels) {
         // Setup system snapshot
         let system = SystemSnapshot {
@@ -167,8 +166,6 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         let (msg_for_system_sender, msg_for_system_receiver) =
             tokio::sync::mpsc::channel(Self::MESSAGE_BUFFER_SIZE);
         let (spawn_tx, spawn_rx) = mpsc::channel(Self::MESSAGE_BUFFER_SIZE);
-
-        let keyset = nts_key_provider::spawn(keyset_config);
 
         // Build System and its channels
         (
@@ -502,7 +499,7 @@ mod tests {
         NtpTimestamp, PollInterval,
     };
 
-    use crate::spawn::dummy::DummySpawner;
+    use crate::{config::KeysetConfig, spawn::dummy::DummySpawner};
 
     use super::*;
 
@@ -556,11 +553,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_peers() {
-        let (mut system, _) = System::new(
-            TestClock {},
-            CombinedSystemConfig::default(),
-            KeysetConfig::default(),
-        );
+        // we always generate the keyset (even if NTS is not used)
+        let keyset = crate::nts_key_provider::spawn(KeysetConfig::default());
+
+        let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default(), keyset);
         let wait =
             SingleshotSleep::new_disabled(tokio::time::sleep(std::time::Duration::from_secs(0)));
         tokio::pin!(wait);
