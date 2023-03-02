@@ -112,4 +112,8 @@ impl BasicSpawner for NtsSpawner {
     fn get_addr_description(&self) -> String {
         self.config.ke_addr.to_string()
     }
+
+    fn get_description(&self) -> &str {
+        "nts"
+    }
 }

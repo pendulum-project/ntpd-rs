@@ -175,6 +175,7 @@ pub trait Spawner {
     fn run(self, action_tx: mpsc::Sender<SpawnEvent>, system_notify: mpsc::Receiver<SystemEvent>);
     fn get_id(&self) -> SpawnerId;
     fn get_addr_description(&self) -> String;
+    fn get_description(&self) -> &str;
 }
 
 #[async_trait::async_trait]
@@ -199,6 +200,7 @@ pub trait BasicSpawner {
 
     fn get_id(&self) -> SpawnerId;
     fn get_addr_description(&self) -> String;
+    fn get_description(&self) -> &str;
 }
 
 impl<T, E> Spawner for T
@@ -237,5 +239,9 @@ where
 
     fn get_addr_description(&self) -> String {
         self.get_addr_description()
+    }
+
+    fn get_description(&self) -> &str {
+        self.get_description()
     }
 }

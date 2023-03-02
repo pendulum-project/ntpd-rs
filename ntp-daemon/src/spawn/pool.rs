@@ -42,7 +42,7 @@ impl PoolSpawner {
         let mut wait_period = self.network_wait_period;
 
         // early return if there is nothing to do
-        if self.current_peers.len() < self.config.max_peers {
+        if self.current_peers.len() >= self.config.max_peers {
             return Ok(());
         }
 
@@ -127,5 +127,9 @@ impl BasicSpawner for PoolSpawner {
 
     fn get_addr_description(&self) -> String {
         format!("{} ({})", self.config.addr, self.config.max_peers)
+    }
+
+    fn get_description(&self) -> &str {
+        "pool"
     }
 }

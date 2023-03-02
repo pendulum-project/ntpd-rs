@@ -5,7 +5,7 @@ log-filter = "info"
 log-format = "full"
 
 # Peers can be configured as a simple list (pool servers from ntppool.org)
-peers = ["0.pool.ntp.org"]
+# peers = ["0.pool.ntp.org", "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
 
 # Or by providing written out configuration
 # [[peers]]
@@ -14,6 +14,11 @@ peers = ["0.pool.ntp.org"]
 
 # [[peers]]
 # addr = "1.pool.ntp.org:123"
+
+[[peers]]
+mode = "pool"
+addr = "pool.ntp.org"
+max-peers = 4
 
 # System parameters used in filtering and steering the clock:
 [system]

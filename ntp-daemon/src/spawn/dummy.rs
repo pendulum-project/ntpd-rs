@@ -96,4 +96,8 @@ impl BasicSpawner for DummySpawner {
     fn get_addr_description(&self) -> String {
         "dummy".into()
     }
+
+    fn get_description(&self) -> &str {
+        "dummy"
+    }
 }

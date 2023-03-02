@@ -6,7 +6,9 @@ use tracing::warn;
 
 use crate::config::StandardPeerConfig;
 
-use super::{BasicSpawner, PeerId, PeerRemovedEvent, SpawnAction, SpawnEvent, SpawnerId, PeerRemovalReason};
+use super::{
+    BasicSpawner, PeerId, PeerRemovalReason, PeerRemovedEvent, SpawnAction, SpawnEvent, SpawnerId,
+};
 
 pub struct StandardSpawner {
     id: SpawnerId,
@@ -96,7 +98,6 @@ impl BasicSpawner for StandardSpawner {
         } else {
             Ok(())
         }
-
     }
 
     fn get_id(&self) -> SpawnerId {
@@ -105,5 +106,9 @@ impl BasicSpawner for StandardSpawner {
 
     fn get_addr_description(&self) -> String {
         self.config.addr.to_string()
+    }
+
+    fn get_description(&self) -> &str {
+        "standard"
     }
 }

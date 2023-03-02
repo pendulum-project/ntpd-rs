@@ -202,7 +202,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         let (notify_tx, notify_rx) = mpsc::channel(Self::MESSAGE_BUFFER_SIZE);
         let id = spawner.get_id();
         let spawner_data = SystemSpawnerData { id, notify_tx };
-        info!(id=?spawner_data.id, addr=spawner.get_addr_description(), "Running spawner");
+        info!(id=?spawner_data.id, ty=spawner.get_description(), addr=spawner.get_addr_description(), "Running spawner");
         self.spawners.push(spawner_data);
         spawner.run(self.spawn_tx.clone(), notify_rx);
         id
