@@ -48,7 +48,7 @@ impl std::fmt::Debug for PeerNtsData {
 
 #[derive(Debug)]
 pub struct Peer {
-    nts: Option<PeerNtsData>,
+    nts: Option<Box<PeerNtsData>>,
 
     // Poll interval dictated by unreachability backoff
     backoff_interval: PollInterval,
@@ -298,7 +298,7 @@ impl Peer {
         peer_id: ReferenceId,
         local_clock_time: NtpInstant,
         system_config: SystemConfig,
-        nts: PeerNtsData,
+        nts: Box<PeerNtsData>,
     ) -> Self {
         Self {
             nts: Some(nts),

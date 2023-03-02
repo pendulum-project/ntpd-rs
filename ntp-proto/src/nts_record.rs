@@ -623,7 +623,7 @@ impl KeyExchangeResultDecoder {
 pub struct KeyExchangeResult {
     pub remote: String,
     pub port: u16,
-    pub nts: PeerNtsData,
+    pub nts: Box<PeerNtsData>,
 }
 
 pub struct KeyExchangeClient {
@@ -674,11 +674,11 @@ impl KeyExchangeClient {
                                 Err(e) => return ControlFlow::Break(Err(KeyExchangeError::Tls(e))),
                             };
 
-                            let nts = PeerNtsData {
+                            let nts = Box::new(PeerNtsData {
                                 cookies: result.cookies,
                                 c2s: keys.c2s,
                                 s2c: keys.s2c,
-                            };
+                            });
 
                             return ControlFlow::Break(Ok(KeyExchangeResult {
                                 remote: result.remote.unwrap_or(self.server_name),
