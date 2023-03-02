@@ -22,6 +22,8 @@ use tracing::info;
 
 pub const NETWORK_WAIT_PERIOD: std::time::Duration = std::time::Duration::from_secs(1);
 
+pub const MESSAGE_BUFFER_SIZE: usize = 32;
+
 struct SingleshotSleep<T> {
     enabled: bool,
     sleep: Pin<Box<T>>,
@@ -144,8 +146,6 @@ struct System<C: NtpClock, T: Wait> {
 }
 
 impl<C: NtpClock, T: Wait> System<C, T> {
-    const MESSAGE_BUFFER_SIZE: usize = 32;
-
     fn new(
         clock: C,
         config: CombinedSystemConfig,
@@ -164,8 +164,8 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         let (peer_snapshots_sender, peer_snapshots_receiver) = tokio::sync::watch::channel(vec![]);
         let (server_data_sender, server_data_receiver) = tokio::sync::watch::channel(vec![]);
         let (msg_for_system_sender, msg_for_system_receiver) =
-            tokio::sync::mpsc::channel(Self::MESSAGE_BUFFER_SIZE);
-        let (spawn_tx, spawn_rx) = mpsc::channel(Self::MESSAGE_BUFFER_SIZE);
+            tokio::sync::mpsc::channel(MESSAGE_BUFFER_SIZE);
+        let (spawn_tx, spawn_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
         // Build System and its channels
         (
@@ -207,7 +207,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
     }
 
     fn add_spawner(&mut self, spawner: impl Spawner + Send + Sync + 'static) -> SpawnerId {
-        let (notify_tx, notify_rx) = mpsc::channel(Self::MESSAGE_BUFFER_SIZE);
+        let (notify_tx, notify_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
         let id = spawner.get_id();
         let spawner_data = SystemSpawnerData { id, notify_tx };
         info!(id=?spawner_data.id, ty=spawner.get_description(), addr=spawner.get_addr_description(), "Running spawner");
