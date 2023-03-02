@@ -10,8 +10,8 @@ use crate::{
 
 pub struct DecodedServerCookie {
     pub(crate) algorithm: AeadAlgorithm,
-    pub(crate) s2c: Box<dyn Cipher>,
-    pub(crate) c2s: Box<dyn Cipher>,
+    pub s2c: Box<dyn Cipher>,
+    pub c2s: Box<dyn Cipher>,
 }
 
 impl std::fmt::Debug for DecodedServerCookie {
