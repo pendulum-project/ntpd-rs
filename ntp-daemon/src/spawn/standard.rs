@@ -112,3 +112,99 @@ impl BasicSpawner for StandardSpawner {
         "standard"
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use tokio::sync::mpsc::{self, error::TryRecvError};
+
+    use crate::{
+        config::{NormalizedAddress, StandardPeerConfig},
+        spawn::{
+            standard::StandardSpawner, tests::get_create_params, PeerRemovalReason, Spawner,
+            SystemEvent,
+        },
+        system::{MESSAGE_BUFFER_SIZE, NETWORK_WAIT_PERIOD},
+    };
+
+    #[tokio::test]
+    async fn creates_a_peer() {
+        let spawner = StandardSpawner::new(
+            StandardPeerConfig {
+                addr: NormalizedAddress::with_hardcoded_dns(
+                    "example.com",
+                    123,
+                    vec!["127.0.0.1:123".parse().unwrap()],
+                ),
+            },
+            NETWORK_WAIT_PERIOD,
+        );
+        let spawner_id = spawner.get_id();
+        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+        let (_notify_tx, notify_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+
+        tokio::spawn(async move { spawner.run(action_tx, notify_rx).await });
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let res = action_rx.try_recv().unwrap();
+        assert_eq!(res.id, spawner_id);
+        let params = get_create_params(res);
+        assert_eq!(params.addr.to_string(), "127.0.0.1:123");
+
+        // and now we should no longer receive anything
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let res = action_rx.try_recv().unwrap_err();
+        assert_eq!(res, TryRecvError::Empty);
+    }
+
+    #[tokio::test]
+    async fn recreates_a_peer() {
+        let spawner = StandardSpawner::new(
+            StandardPeerConfig {
+                addr: NormalizedAddress::with_hardcoded_dns(
+                    "example.com",
+                    123,
+                    vec!["127.0.0.1:123".parse().unwrap()],
+                ),
+            },
+            NETWORK_WAIT_PERIOD,
+        );
+        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+        let (notify_tx, notify_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+
+        tokio::spawn(async move { spawner.run(action_tx, notify_rx).await });
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let res = action_rx.try_recv().unwrap();
+        let params = get_create_params(res);
+
+        notify_tx
+            .send(SystemEvent::peer_removed(
+                params.id,
+                PeerRemovalReason::NetworkIssue,
+            ))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let res = action_rx.try_recv().unwrap();
+        let params = get_create_params(res);
+        assert_eq!(params.addr.to_string(), "127.0.0.1:123");
+    }
+
+    #[tokio::test]
+    async fn works_if_address_does_not_resolve() {
+        let spawner = StandardSpawner::new(
+            StandardPeerConfig {
+                addr: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]),
+            },
+            NETWORK_WAIT_PERIOD,
+        );
+        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+        let (_notify_tx, notify_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+        tokio::spawn(async move { spawner.run(action_tx, notify_rx).await });
+
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+        let res = action_rx.try_recv().unwrap_err();
+        assert_eq!(res, TryRecvError::Empty);
+    }
+}

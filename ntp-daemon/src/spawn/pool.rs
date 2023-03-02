@@ -133,3 +133,114 @@ impl BasicSpawner for PoolSpawner {
         "pool"
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use tokio::sync::mpsc::{self, error::TryRecvError};
+
+    use crate::{
+        config::{NormalizedAddress, PoolPeerConfig},
+        spawn::{
+            pool::PoolSpawner, tests::get_create_params, PeerRemovalReason, Spawner, SystemEvent,
+        },
+        system::{MESSAGE_BUFFER_SIZE, NETWORK_WAIT_PERIOD},
+    };
+
+    #[tokio::test]
+    async fn creates_multiple_peers() {
+        let pool = PoolSpawner::new(
+            PoolPeerConfig {
+                addr: NormalizedAddress::with_hardcoded_dns(
+                    "example.com",
+                    123,
+                    vec![
+                        "127.0.0.1:123".parse().unwrap(),
+                        "127.0.0.2:123".parse().unwrap(),
+                        "127.0.0.3:123".parse().unwrap(),
+                    ],
+                ),
+                max_peers: 2,
+            },
+            NETWORK_WAIT_PERIOD,
+        );
+        let spawner_id = pool.get_id();
+        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+        let (_notify_tx, notify_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+        tokio::spawn(async move { pool.run(action_tx, notify_rx).await });
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let res = action_rx.try_recv().unwrap();
+        assert_eq!(spawner_id, res.id);
+        let params = get_create_params(res);
+        assert_eq!(params.addr.to_string(), "127.0.0.3:123");
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let res = action_rx.try_recv().unwrap();
+        assert_eq!(spawner_id, res.id);
+        let params = get_create_params(res);
+        assert_eq!(params.addr.to_string(), "127.0.0.2:123");
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let res = action_rx.try_recv().unwrap_err();
+        assert_eq!(res, TryRecvError::Empty);
+    }
+
+    #[tokio::test]
+    async fn refills_peers_upto_limit() {
+        let pool = PoolSpawner::new(
+            PoolPeerConfig {
+                addr: NormalizedAddress::with_hardcoded_dns(
+                    "example.com",
+                    123,
+                    vec![
+                        "127.0.0.1:123".parse().unwrap(),
+                        "127.0.0.2:123".parse().unwrap(),
+                        "127.0.0.3:123".parse().unwrap(),
+                    ],
+                ),
+                max_peers: 2,
+            },
+            NETWORK_WAIT_PERIOD,
+        );
+        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+        let (notify_tx, notify_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+        tokio::spawn(async move { pool.run(action_tx, notify_rx).await });
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let res = action_rx.try_recv().unwrap();
+        let params = get_create_params(res);
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        action_rx.try_recv().unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        notify_tx
+            .send(SystemEvent::peer_removed(
+                params.id,
+                PeerRemovalReason::NetworkIssue,
+            ))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let res = action_rx.try_recv().unwrap();
+        let params = get_create_params(res);
+        assert_eq!(params.addr.to_string(), "127.0.0.1:123");
+    }
+
+    #[tokio::test]
+    async fn works_if_address_does_not_resolve() {
+        let pool = PoolSpawner::new(
+            PoolPeerConfig {
+                addr: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]),
+                max_peers: 2,
+            },
+            NETWORK_WAIT_PERIOD,
+        );
+        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+        let (_notify_tx, notify_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+        tokio::spawn(async move { pool.run(action_tx, notify_rx).await });
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+        let res = action_rx.try_recv().unwrap_err();
+        assert_eq!(res, TryRecvError::Empty);
+    }
+}

@@ -295,3 +295,13 @@ where
         self.get_description()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{PeerCreateParameters, SpawnAction, SpawnEvent};
+
+    pub fn get_create_params(res: SpawnEvent) -> PeerCreateParameters {
+        let SpawnAction::Create(params) = res.action;
+        params
+    }
+}
