@@ -144,6 +144,7 @@ impl NormalizedAddress {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn with_hardcoded_dns(
         server_name: &str,
         port: u16,

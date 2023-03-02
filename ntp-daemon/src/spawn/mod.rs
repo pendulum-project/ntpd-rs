@@ -55,6 +55,7 @@ pub struct SpawnEvent {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum SystemEvent {
     PeerRemoved(PeerRemovedEvent),
     PeerRegistered(PeerCreateParameters),
@@ -87,7 +88,7 @@ pub struct PeerRemovedEvent {
     pub reason: PeerRemovalReason,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum PeerRemovalReason {
     Demobilized,
     NetworkIssue,
