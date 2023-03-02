@@ -212,7 +212,8 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         let spawner_data = SystemSpawnerData { id, notify_tx };
         info!(id=?spawner_data.id, ty=spawner.get_description(), addr=spawner.get_addr_description(), "Running spawner");
         self.spawners.push(spawner_data);
-        spawner.run(self.spawn_tx.clone(), notify_rx);
+        let spawn_tx = self.spawn_tx.clone();
+        tokio::spawn(async move { spawner.run(spawn_tx, notify_rx).await });
         id
     }
 
@@ -420,12 +421,14 @@ impl<C: NtpClock, T: Wait> System<C, T> {
             params.nts.take(),
         );
 
-        // Don't care if there is not receiver
+        // Don't care if there is no receiver
         let _ = self
             .peer_snapshots_sender
             .send(self.observe_peers().collect());
 
-        // Try and find a related spawner and notify that spawner
+        // Try and find a related spawner and notify that spawner.
+        // This makes sure that the spawner that initially sent the create event
+        // is now aware that the peer was added to the system.
         if let Some(s) = self.spawners.iter().find(|s| s.id == spawner_id) {
             let _ = s.notify_tx.send(SystemEvent::PeerRegistered(params)).await;
         }

@@ -11,7 +11,7 @@ pub mod nts;
 pub mod pool;
 pub mod standard;
 
-/// Unique identifier for a spawner
+/// Unique identifier for a spawner.
 /// This is used to identify which spawner was used to create a peer
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub struct SpawnerId(u64);
@@ -29,7 +29,7 @@ impl Default for SpawnerId {
     }
 }
 
-/// Unique identifier for a peer created by a spawner
+/// Unique identifier for a peer.
 /// This peer id makes sure that even if the network address is the same
 /// that we always know which specific spawned peer we are talking about.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
@@ -48,12 +48,24 @@ impl Default for PeerId {
     }
 }
 
+/// A SpawnEvent is an event created by the spawner for the system
+///
+/// The action that the system should execute is encoded in the `action` field.
+/// The spawner should make sure that it only ever sends events with its own
+/// spawner id.
 #[derive(Debug)]
 pub struct SpawnEvent {
     pub id: SpawnerId,
     pub action: SpawnAction,
 }
 
+impl SpawnEvent {
+    pub fn new(id: SpawnerId, action: SpawnAction) -> SpawnEvent {
+        SpawnEvent { id, action }
+    }
+}
+
+/// Events coming from the system are encoded in this enum
 #[derive(Debug)]
 pub enum SystemEvent {
     PeerRemoved(PeerRemovedEvent),
@@ -73,19 +85,14 @@ pub struct PeerRemovedEvent {
     pub reason: PeerRemovalReason,
 }
 
+/// This indicates what the reason was that a peer was removed.
 #[derive(Debug, PartialEq, Eq)]
 pub enum PeerRemovalReason {
     Demobilized,
     NetworkIssue,
 }
 
-impl SpawnEvent {
-    pub fn new(id: SpawnerId, action: SpawnAction) -> SpawnEvent {
-        SpawnEvent { id, action }
-    }
-}
-
-/// The kind of action that the spawner requests to the system
+/// The kind of action that the spawner requests to the system.
 /// Currently a spawner can only create peers
 #[derive(Debug)]
 pub enum SpawnAction {
@@ -167,25 +174,64 @@ impl PeerCreateParameters {
     }
 }
 
+#[async_trait::async_trait]
 pub trait Spawner {
-    fn run(self, action_tx: mpsc::Sender<SpawnEvent>, system_notify: mpsc::Receiver<SystemEvent>);
+    type Error: std::error::Error + Send;
+
+    /// Run a spawner
+    ///
+    /// Actions that the system has to execute can be sent through the
+    /// `action_tx` channel and event coming in from the system that the spawner
+    /// should know about will be sent through the `system_notify` channel.
+    async fn run(
+        self,
+        action_tx: mpsc::Sender<SpawnEvent>,
+        system_notify: mpsc::Receiver<SystemEvent>,
+    ) -> Result<(), Self::Error>;
+
+    /// Returns the id of this spawner
     fn get_id(&self) -> SpawnerId;
+
+    /// Get a description of the address that this spawner is connected to
     fn get_addr_description(&self) -> String;
+
+    /// Get a description of the type of spawner
     fn get_description(&self) -> &str;
 }
 
 #[async_trait::async_trait]
 pub trait BasicSpawner {
-    type Error: std::error::Error;
+    type Error: std::error::Error + Send;
+
+    /// Handle initial spawning.
+    ///
+    /// This is called on startup of the spawner and is meant to setup the
+    /// initial set of peers when nothing else would have been spawned by this
+    /// spawner. Once this function completes the system should be aware of at
+    /// least one peer for this spawner, otherwise no events will ever be sent
+    /// to the spawner and nothing will ever happen.
     async fn handle_init(
         &mut self,
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), Self::Error>;
+
+    /// Event handler for when a peer is removed.
+    ///
+    /// This is called each time the system notifies this spawner that one of
+    /// the spawned peers was removed from the system. The spawner can then add
+    /// additional peers or do nothing, depending on its configuration and
+    /// algorithm.
     async fn handle_peer_removed(
         &mut self,
         event: PeerRemovedEvent,
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), Self::Error>;
+
+    /// Event handler for when a peer is succesfully registered in the system
+    ///
+    /// Every time the spawner sends a peer to the system this handler will
+    /// eventually be called when the system has sucessfully registered the peer
+    /// and will start polling it for ntp packets.
     async fn handle_registered(
         &mut self,
         _event: PeerCreateParameters,
@@ -194,39 +240,47 @@ pub trait BasicSpawner {
         Ok(())
     }
 
+    /// Get the id of the spawner
     fn get_id(&self) -> SpawnerId;
+
+    /// Get a description of the address this spawner is connected to
     fn get_addr_description(&self) -> String;
+
+    /// Get a description of the type of spawner
     fn get_description(&self) -> &str;
 }
 
+#[async_trait::async_trait]
 impl<T, E> Spawner for T
 where
     T: BasicSpawner<Error = E> + Send + 'static,
     E: std::error::Error + Send + 'static,
 {
-    fn run(
+    type Error = E;
+
+    async fn run(
         mut self,
         action_tx: mpsc::Sender<SpawnEvent>,
         mut system_notify: mpsc::Receiver<SystemEvent>,
-    ) {
-        tokio::spawn(async move {
-            self.handle_init(&action_tx).await?;
-            while let Some(event) = system_notify.recv().await {
-                match event {
-                    SystemEvent::PeerRegistered(peer_params) => {
-                        self.handle_registered(peer_params, &action_tx).await?;
-                    }
-                    SystemEvent::PeerRemoved(removed_peer) => {
-                        self.handle_peer_removed(removed_peer, &action_tx).await?;
-                    }
-                    SystemEvent::Shutdown => {
-                        break;
-                    }
+    ) -> Result<(), E> {
+        // basic event loop where init is called on startup and then wait for
+        // events from the system before doing anything
+        self.handle_init(&action_tx).await?;
+        while let Some(event) = system_notify.recv().await {
+            match event {
+                SystemEvent::PeerRegistered(peer_params) => {
+                    self.handle_registered(peer_params, &action_tx).await?;
+                }
+                SystemEvent::PeerRemoved(removed_peer) => {
+                    self.handle_peer_removed(removed_peer, &action_tx).await?;
+                }
+                SystemEvent::Shutdown => {
+                    break;
                 }
             }
+        }
 
-            Ok::<(), E>(())
-        });
+        Ok(())
     }
 
     fn get_id(&self) -> SpawnerId {
