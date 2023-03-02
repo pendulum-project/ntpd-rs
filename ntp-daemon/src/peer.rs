@@ -270,7 +270,7 @@ where
         clock: C,
         network_wait_period: std::time::Duration,
         mut channels: PeerChannels,
-        nts: Option<PeerNtsData>,
+        nts: Option<Box<PeerNtsData>>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(
             (async move {

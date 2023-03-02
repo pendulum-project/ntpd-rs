@@ -55,7 +55,6 @@ pub struct SpawnEvent {
 }
 
 #[derive(Debug)]
-#[allow(clippy::large_enum_variant)]
 pub enum SystemEvent {
     PeerRemoved(PeerRemovedEvent),
     PeerRegistered(PeerCreateParameters),
@@ -65,20 +64,6 @@ pub enum SystemEvent {
 impl SystemEvent {
     pub fn peer_removed(id: PeerId, reason: PeerRemovalReason) -> SystemEvent {
         SystemEvent::PeerRemoved(PeerRemovedEvent { id, reason })
-    }
-
-    pub fn peer_registered(
-        id: PeerId,
-        addr: SocketAddr,
-        normalized_addr: NormalizedAddress,
-        nts: Option<PeerNtsData>,
-    ) -> SystemEvent {
-        SystemEvent::PeerRegistered(PeerCreateParameters {
-            id,
-            addr,
-            normalized_addr,
-            nts,
-        })
     }
 }
 
@@ -113,7 +98,7 @@ impl SpawnAction {
         id: PeerId,
         addr: SocketAddr,
         normalized_addr: NormalizedAddress,
-        nts: Option<PeerNtsData>,
+        nts: Option<Box<PeerNtsData>>,
     ) -> SpawnAction {
         SpawnAction::Create(PeerCreateParameters {
             id,
@@ -129,7 +114,7 @@ pub struct PeerCreateParameters {
     pub id: PeerId,
     pub addr: SocketAddr,
     pub normalized_addr: NormalizedAddress,
-    pub nts: Option<PeerNtsData>,
+    pub nts: Option<Box<PeerNtsData>>,
 }
 
 #[cfg(test)]
