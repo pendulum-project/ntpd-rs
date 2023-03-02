@@ -32,7 +32,7 @@ exitcode = "1.1.2"
 arbitrary = { version = "1.2.3" }
 thiserror = "1.0.38"
 libc = "0.2.139"
-tokio = "1.25.0"
+tokio = "1.26.0"
 toml = "0.7.2"
 clap = { version = "4.1.8", features = ["derive", "env"] }
 
