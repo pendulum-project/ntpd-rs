@@ -91,7 +91,7 @@ async fn run_nts_ke(nts_ke_config: NtsKeConfig) -> std::io::Result<()> {
         let key_der = rustls::PrivateKey(key_der.into_iter().next().unwrap());
 
         let address = "localhost:4460";
-        key_exchange_server(address, cert_chain, key_der).await
+        key_exchange_server(address, cert_chain, key_der, nts_ke_config.timeout_ms).await
     }
 }
 
@@ -99,6 +99,7 @@ async fn key_exchange_server(
     address: impl ToSocketAddrs,
     certificate_chain: Vec<Certificate>,
     key_der: PrivateKey,
+    timeout_ms: u64,
 ) -> std::io::Result<()> {
     use std::io;
 
@@ -129,9 +130,11 @@ async fn key_exchange_server(
         };
 
         tokio::spawn(async move {
-            match fut.await {
-                Err(err) => tracing::info!(?err, ?peer_addr, "NTS KE failed"),
-                Ok(()) => tracing::debug!(?peer_addr, "NTS KE completed"),
+            let timeout = std::time::Duration::from_millis(timeout_ms);
+            match tokio::time::timeout(timeout, fut).await {
+                Err(_) => tracing::debug!(?peer_addr, "NTS KE timed out"),
+                Ok(Err(err)) => tracing::debug!(?err, ?peer_addr, "NTS KE failed"),
+                Ok(Ok(())) => tracing::debug!(?peer_addr, "NTS KE completed"),
             }
         });
     }
