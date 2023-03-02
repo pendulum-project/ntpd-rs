@@ -219,6 +219,7 @@ pub struct NtsKeConfig {
     pub key_der_path: PathBuf,
     #[serde(default = "default_nts_ke_timeout")]
     pub timeout_ms: u64,
+    pub addr: SocketAddr,
 }
 
 fn default_nts_ke_timeout() -> u64 {
@@ -273,14 +274,17 @@ mod tests {
         let test: TestConfig = toml::from_str(
             r#"
             [nts-ke-server]
+            addr = "0.0.0.0:4460"
             cert-chain-path = "/foo/bar/baz.pem"
             key-der-path = "spam.der"
             "#,
         )
         .unwrap();
-        assert_eq!(
-            test.nts_ke_server.cert_chain_path,
-            PathBuf::from("/foo/bar/baz.pem")
-        );
+
+        let pem = PathBuf::from("/foo/bar/baz.pem");
+        assert_eq!(test.nts_ke_server.cert_chain_path, pem);
+        assert_eq!(test.nts_ke_server.key_der_path, PathBuf::from("spam.der"));
+        assert_eq!(test.nts_ke_server.timeout_ms, 1000,);
+        assert_eq!(test.nts_ke_server.addr, "0.0.0.0:4460".parse().unwrap(),);
     }
 }

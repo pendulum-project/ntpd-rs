@@ -90,8 +90,13 @@ async fn run_nts_ke(nts_ke_config: NtsKeConfig) -> std::io::Result<()> {
     } else {
         let key_der = rustls::PrivateKey(key_der.into_iter().next().unwrap());
 
-        let address = "localhost:4460";
-        key_exchange_server(address, cert_chain, key_der, nts_ke_config.timeout_ms).await
+        key_exchange_server(
+            nts_ke_config.addr,
+            cert_chain,
+            key_der,
+            nts_ke_config.timeout_ms,
+        )
+        .await
     }
 }
 
