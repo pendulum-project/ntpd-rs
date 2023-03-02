@@ -1,4 +1,3 @@
-use ntp_proto::KeyExchangeResult;
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tracing::warn;
@@ -11,7 +10,6 @@ pub struct NtsSpawner {
     config: NtsPeerConfig,
     network_wait_period: std::time::Duration,
     id: SpawnerId,
-    ke: Option<KeyExchangeResult>,
 }
 
 #[derive(Error, Debug)]
@@ -26,58 +24,10 @@ impl NtsSpawner {
             config,
             network_wait_period,
             id: Default::default(),
-            ke: None,
         }
     }
 
     async fn spawn(&mut self, action_tx: &mpsc::Sender<SpawnEvent>) -> Result<(), NtsSpawnError> {
-        if let Some(ke) = self.ke.take() {
-            let addr = loop {
-                let address = (ke.remote.as_str(), ke.port);
-                match tokio::net::lookup_host(address).await {
-                    Ok(mut addresses) => match addresses.next() {
-                        None => {
-                            warn!("Could not resolve peer address, retrying");
-                            tokio::time::sleep(self.network_wait_period).await
-                        }
-                        Some(first) => {
-                            break first;
-                        }
-                    },
-                    Err(e) => {
-                        warn!(error = ?e, "error while resolving peer address, retrying");
-                        tokio::time::sleep(self.network_wait_period).await
-                    }
-                }
-            };
-
-            action_tx
-                .send(SpawnEvent::new(
-                    self.id,
-                    SpawnAction::create(
-                        PeerId::new(),
-                        addr,
-                        self.config.ke_addr.clone(),
-                        Some(ke.nts),
-                    ),
-                ))
-                .await?;
-        } else {
-            tracing::warn!("Key exchange results unavailable, running key exchange");
-            self.handle_init(action_tx).await?;
-        }
-        Ok(())
-    }
-}
-
-#[async_trait::async_trait]
-impl BasicSpawner for NtsSpawner {
-    type Error = NtsSpawnError;
-
-    async fn handle_init(
-        &mut self,
-        action_tx: &mpsc::Sender<SpawnEvent>,
-    ) -> Result<(), NtsSpawnError> {
         let ke = loop {
             match key_exchange(
                 self.config.ke_addr.server_name.clone(),
@@ -93,7 +43,49 @@ impl BasicSpawner for NtsSpawner {
                 }
             };
         };
-        self.ke = Some(ke);
+
+        let addr = loop {
+            let address = (ke.remote.as_str(), ke.port);
+            match tokio::net::lookup_host(address).await {
+                Ok(mut addresses) => match addresses.next() {
+                    None => {
+                        warn!("Could not resolve peer address, retrying");
+                        tokio::time::sleep(self.network_wait_period).await
+                    }
+                    Some(first) => {
+                        break first;
+                    }
+                },
+                Err(e) => {
+                    warn!(error = ?e, "error while resolving peer address, retrying");
+                    tokio::time::sleep(self.network_wait_period).await
+                }
+            }
+        };
+
+        action_tx
+            .send(SpawnEvent::new(
+                self.id,
+                SpawnAction::create(
+                    PeerId::new(),
+                    addr,
+                    self.config.ke_addr.clone(),
+                    Some(ke.nts),
+                ),
+            ))
+            .await?;
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl BasicSpawner for NtsSpawner {
+    type Error = NtsSpawnError;
+
+    async fn handle_init(
+        &mut self,
+        action_tx: &mpsc::Sender<SpawnEvent>,
+    ) -> Result<(), NtsSpawnError> {
         self.spawn(action_tx).await
     }
 
