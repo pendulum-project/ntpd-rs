@@ -79,8 +79,8 @@ pub async fn key_exchange_server(
 
         tokio::spawn(async move {
             match fut.await {
-                Err(err) => tracing::error!(?err, ?peer_addr, "NTS KE failed"),
-                Ok(()) => tracing::info!(?peer_addr, "NTS KE completed"),
+                Err(err) => tracing::info!(?err, ?peer_addr, "NTS KE failed"),
+                Ok(()) => tracing::debug!(?peer_addr, "NTS KE completed"),
             }
         });
     }

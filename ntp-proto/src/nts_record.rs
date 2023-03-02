@@ -182,7 +182,7 @@ impl NtsRecord {
         ]
     }
 
-    pub fn server_key_exchange_records(
+    fn server_key_exchange_records(
         protocol: ProtocolId,
         algorithm: AeadAlgorithm,
         keyset: &KeySet,
