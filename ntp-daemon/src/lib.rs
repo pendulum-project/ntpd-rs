@@ -7,6 +7,7 @@ pub mod observer;
 mod peer;
 mod server;
 pub mod sockets;
+pub mod spawn;
 mod system;
 pub mod tracing;
 
