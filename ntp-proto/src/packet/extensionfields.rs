@@ -426,6 +426,7 @@ impl<'a> ExtensionFieldData<'a> {
                 ExtensionFieldTypeId::NtsEncryptedField => {
                     let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)
                         .map_err(|e| e.generalize())?;
+
                     let cipher = match cipher.get(&this.untrusted) {
                         Some(cipher) => cipher,
                         None => {
