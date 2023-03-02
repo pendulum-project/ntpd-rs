@@ -72,10 +72,23 @@ pub struct ServerTask<C: 'static + NtpClock + Send> {
 
 #[derive(Debug)]
 enum AcceptResult<'a> {
-    Accept(NtpPacket<'a>, usize, SocketAddr, NtpTimestamp),
+    Accept {
+        packet: NtpPacket<'a>,
+        max_response_size: usize,
+        peer_addr: SocketAddr,
+        recv_timestamp: NtpTimestamp,
+    },
     Ignore,
-    Deny(NtpPacket<'a>, usize, SocketAddr),
-    RateLimit(NtpPacket<'a>, usize, SocketAddr),
+    Deny {
+        packet: NtpPacket<'a>,
+        max_response_size: usize,
+        peer_addr: SocketAddr,
+    },
+    RateLimit {
+        packet: NtpPacket<'a>,
+        max_response_size: usize,
+        peer_addr: SocketAddr,
+    },
     NetworkGone,
 }
 
@@ -167,7 +180,12 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         let accept_result = self.accept_packet(rate_limiting_cutoff, recv_res, buf);
 
         match accept_result {
-            AcceptResult::Accept(packet, max_response_size, peer_addr, recv_timestamp) => {
+            AcceptResult::Accept {
+                packet,
+                max_response_size,
+                peer_addr,
+                recv_timestamp,
+            } => {
                 self.stats.accepted_packets.inc();
 
                 let response = NtpPacket::timestamp_response(
@@ -198,7 +216,11 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     warn!(error=?send_err, "Could not send response packet");
                 }
             }
-            AcceptResult::Deny(packet, max_response_size, peer_addr) => {
+            AcceptResult::Deny {
+                packet,
+                max_response_size,
+                peer_addr,
+            } => {
                 self.stats.denied_packets.inc();
                 let response = NtpPacket::deny_response(packet);
 
@@ -228,7 +250,11 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 error!("Server connection gone");
                 return false;
             }
-            AcceptResult::RateLimit(packet, max_response_size, peer_addr) => {
+            AcceptResult::RateLimit {
+                packet,
+                max_response_size,
+                peer_addr,
+            } => {
                 self.stats.rate_limited_packets.inc();
                 let response = NtpPacket::rate_limit_response(packet);
 
@@ -279,9 +305,16 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                             // We should send deny messages only to reasonable requests
                             // otherwise two servers could end up in a loop of sending
                             // deny's to each other.
-                            AcceptResult::Accept(packet, max_response_size, addr, _) => {
-                                AcceptResult::Deny(packet, max_response_size, addr)
-                            }
+                            AcceptResult::Accept {
+                                packet,
+                                max_response_size,
+                                peer_addr,
+                                ..
+                            } => AcceptResult::Deny {
+                                packet,
+                                max_response_size,
+                                peer_addr,
+                            },
                             v => v,
                         }
                     }
@@ -292,9 +325,16 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                         let too_soon = !self.client_cache.is_allowed(peer_addr, timestamp, cutoff);
 
                         match self.accept_data(&buf[..size], peer_addr, recv_timestamp) {
-                            AcceptResult::Accept(packet, max_response_size, _, _) if too_soon => {
-                                AcceptResult::RateLimit(packet, max_response_size, peer_addr)
-                            }
+                            AcceptResult::Accept {
+                                packet,
+                                max_response_size,
+                                peer_addr,
+                                ..
+                            } if too_soon => AcceptResult::RateLimit {
+                                packet,
+                                max_response_size,
+                                peer_addr,
+                            },
                             accept_result => accept_result,
                         }
                     }
@@ -339,7 +379,12 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             Ok((packet, _cookie)) => match packet.mode() {
                 NtpAssociationMode::Client => {
                     trace!("NTP client request accepted from {}", peer_addr);
-                    AcceptResult::Accept(packet, buf.len(), peer_addr, recv_timestamp)
+                    AcceptResult::Accept {
+                        packet,
+                        max_response_size: buf.len(),
+                        peer_addr,
+                        recv_timestamp,
+                    }
                 }
                 _ => {
                     trace!(
