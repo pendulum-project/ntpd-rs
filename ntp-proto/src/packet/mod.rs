@@ -265,6 +265,14 @@ impl NtpHeaderV3V4 {
     }
 }
 
+fn keep_id(f: ExtensionField) -> Option<ExtensionField> {
+    if matches!(f, ExtensionField::UniqueIdentifier(_)) {
+        Some(f)
+    } else {
+        None
+    }
+}
+
 impl<'a> NtpPacket<'a> {
     pub fn into_owned(self) -> NtpPacket<'static> {
         NtpPacket::<'static> {
@@ -463,15 +471,9 @@ impl<'a> NtpPacket<'a> {
                     untrusted: input
                         .efdata
                         .untrusted
-                        .iter()
-                        .chain(input.efdata.authenticated.iter())
-                        .filter_map(|f| {
-                            if matches!(f, ExtensionField::UniqueIdentifier(_)) {
-                                Some(f.clone())
-                            } else {
-                                None
-                            }
-                        })
+                        .into_iter()
+                        .chain(input.efdata.authenticated.into_iter())
+                        .filter_map(keep_id)
                         .collect(),
                 },
                 mac: None,
@@ -497,18 +499,6 @@ impl<'a> NtpPacket<'a> {
                     clock,
                 )),
                 efdata: ExtensionFieldData {
-                    authenticated: input
-                        .efdata
-                        .authenticated
-                        .iter()
-                        .filter_map(|f| {
-                            if matches!(f, ExtensionField::UniqueIdentifier(_)) {
-                                Some(f.clone())
-                            } else {
-                                None
-                            }
-                        })
-                        .collect(),
                     encrypted: input
                         .efdata
                         .authenticated
@@ -534,6 +524,12 @@ impl<'a> NtpPacket<'a> {
                             }
                         })
                         .collect(),
+                    authenticated: input
+                        .efdata
+                        .authenticated
+                        .into_iter()
+                        .filter_map(keep_id)
+                        .collect(),
                     // Ignore encrypted so as not to accidentaly leak anything
                     untrusted: vec![],
                 },
@@ -558,15 +554,9 @@ impl<'a> NtpPacket<'a> {
                     untrusted: packet_from_client
                         .efdata
                         .untrusted
-                        .iter()
-                        .chain(packet_from_client.efdata.authenticated.iter())
-                        .filter_map(|f| {
-                            if matches!(f, ExtensionField::UniqueIdentifier(_)) {
-                                Some(f.clone())
-                            } else {
-                                None
-                            }
-                        })
+                        .into_iter()
+                        .chain(packet_from_client.efdata.authenticated.into_iter())
+                        .filter_map(keep_id)
                         .collect(),
                 },
                 mac: None,
@@ -583,14 +573,8 @@ impl<'a> NtpPacket<'a> {
                     authenticated: packet_from_client
                         .efdata
                         .authenticated
-                        .iter()
-                        .filter_map(|f| {
-                            if matches!(f, ExtensionField::UniqueIdentifier(_)) {
-                                Some(f.clone())
-                            } else {
-                                None
-                            }
-                        })
+                        .into_iter()
+                        .filter_map(keep_id)
                         .collect(),
                     encrypted: vec![],
                     untrusted: vec![],
@@ -616,15 +600,9 @@ impl<'a> NtpPacket<'a> {
                     untrusted: packet_from_client
                         .efdata
                         .untrusted
-                        .iter()
-                        .chain(packet_from_client.efdata.authenticated.iter())
-                        .filter_map(|f| {
-                            if matches!(f, ExtensionField::UniqueIdentifier(_)) {
-                                Some(f.clone())
-                            } else {
-                                None
-                            }
-                        })
+                        .into_iter()
+                        .chain(packet_from_client.efdata.authenticated.into_iter())
+                        .filter_map(keep_id)
                         .collect(),
                 },
                 mac: None,
@@ -641,14 +619,8 @@ impl<'a> NtpPacket<'a> {
                     authenticated: packet_from_client
                         .efdata
                         .authenticated
-                        .iter()
-                        .filter_map(|f| {
-                            if matches!(f, ExtensionField::UniqueIdentifier(_)) {
-                                Some(f.clone())
-                            } else {
-                                None
-                            }
-                        })
+                        .into_iter()
+                        .filter_map(keep_id)
                         .collect(),
                     encrypted: vec![],
                     untrusted: vec![],
