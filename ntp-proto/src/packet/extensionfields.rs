@@ -73,7 +73,7 @@ impl<'a> std::fmt::Debug for ExtensionField<'a> {
 }
 
 impl<'a> ExtensionField<'a> {
-    fn into_owned(self) -> ExtensionField<'static> {
+    pub fn into_owned(self) -> ExtensionField<'static> {
         use ExtensionField::*;
 
         match self {
