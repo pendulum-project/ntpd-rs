@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     debug!("Configuration loaded, spawning daemon jobs");
     let (main_loop_handle, channels) =
-        ntp_daemon::spawn(config.system, &config.peers, &config.servers).await?;
+        ntp_daemon::spawn(config.system, &config.peers, &config.servers, config.keyset).await?;
 
     ntp_daemon::observer::spawn(
         &config.observe,

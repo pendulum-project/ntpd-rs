@@ -12,6 +12,36 @@ use serde::{
 
 use crate::{config::subnet::IpSubnet, ipfilter::IpFilter};
 
+#[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct KeysetConfig {
+    /// Number of old keys to keep around
+    #[serde(default = "default_old_keys")]
+    pub old_keys: usize,
+    /// How often to rotate keys (seconds between rotations)
+    #[serde(default = "default_rotation_interval")]
+    pub rotation_interval: usize,
+}
+
+impl Default for KeysetConfig {
+    fn default() -> Self {
+        Self {
+            old_keys: default_old_keys(),
+            rotation_interval: default_rotation_interval(),
+        }
+    }
+}
+
+fn default_rotation_interval() -> usize {
+    // 1 day in seconds
+    86400
+}
+
+fn default_old_keys() -> usize {
+    // 1 weeks worth at 1 key per day
+    7
+}
+
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Deserialize)]
 pub enum FilterAction {
     Ignore,
