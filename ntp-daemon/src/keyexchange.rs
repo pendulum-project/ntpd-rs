@@ -16,7 +16,10 @@ use rustls::{Certificate, PrivateKey};
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
     net::{TcpListener, ToSocketAddrs},
+    task::JoinHandle,
 };
+
+use crate::config::NtsKeConfig;
 
 pub(crate) async fn key_exchange_client(
     server_name: String,
@@ -44,7 +47,44 @@ pub(crate) async fn key_exchange_client(
     BoundKeyExchangeClient::new(socket, server_name, config)?.await
 }
 
-pub async fn key_exchange_server(
+pub async fn spawn(nts_ke_config: NtsKeConfig) -> JoinHandle<std::io::Result<()>> {
+    tokio::spawn(async move {
+        let result = run_nts_ke(nts_ke_config).await;
+
+        if let Err(ref e) = result {
+            tracing::error!("Abnormal termination of NTS KE server: {}", e);
+        }
+
+        result
+    })
+}
+
+async fn run_nts_ke(nts_ke_config: NtsKeConfig) -> std::io::Result<()> {
+    let cert_chain_file = std::fs::File::open(nts_ke_config.cert_chain_path)?;
+    let key_der_file = std::fs::File::open(nts_ke_config.key_der_path)?;
+
+    let cert_chain: Vec<rustls::Certificate> =
+        rustls_pemfile::certs(&mut std::io::BufReader::new(cert_chain_file))?
+            .into_iter()
+            .map(rustls::Certificate)
+            .collect();
+
+    let key_der = rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(key_der_file))?;
+
+    if key_der.is_empty() {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "could not parse private key",
+        ))
+    } else {
+        let key_der = rustls::PrivateKey(key_der.into_iter().next().unwrap());
+
+        let address = "localhost:4460";
+        key_exchange_server(address, cert_chain, key_der).await
+    }
+}
+
+async fn key_exchange_server(
     address: impl ToSocketAddrs,
     certificate_chain: Vec<Certificate>,
     key_der: PrivateKey,

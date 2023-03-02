@@ -1,6 +1,7 @@
 use std::{
     fmt,
     net::{AddrParseError, SocketAddr},
+    path::PathBuf,
     str::FromStr,
     time::Duration,
 };
@@ -211,6 +212,19 @@ impl<'de> Deserialize<'de> for ServerConfig {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct NtsKeConfig {
+    pub cert_chain_path: PathBuf,
+    pub key_der_path: PathBuf,
+    #[serde(default = "default_nts_ke_timeout")]
+    pub timeout_ms: u64,
+}
+
+fn default_nts_ke_timeout() -> u64 {
+    1000
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,6 +259,28 @@ mod tests {
         assert_eq!(
             test.server.rate_limiting_cutoff,
             Duration::from_millis(1000)
+        );
+    }
+
+    #[test]
+    fn test_deserialize_nts_ke() {
+        #[derive(Deserialize, Debug)]
+        #[serde(rename_all = "kebab-case")]
+        struct TestConfig {
+            nts_ke_server: NtsKeConfig,
+        }
+
+        let test: TestConfig = toml::from_str(
+            r#"
+            [nts-ke-server]
+            cert-chain-path = "/foo/bar/baz.pem"
+            key-der-path = "spam.der"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            test.nts_ke_server.cert_chain_path,
+            PathBuf::from("/foo/bar/baz.pem")
         );
     }
 }

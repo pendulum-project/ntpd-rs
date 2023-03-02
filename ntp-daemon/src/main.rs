@@ -52,29 +52,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (main_loop_handle, channels) =
         ntp_daemon::spawn(config.system, &config.peers, &config.servers, config.keyset).await?;
 
-    tokio::spawn(async move {
-        let cert_chain: Vec<rustls::Certificate> =
-            rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
-                "../../test-keys/end.fullchain.pem"
-            ) as &[u8]))
-            .unwrap()
-            .into_iter()
-            .map(rustls::Certificate)
-            .collect();
-        let key_der = rustls::PrivateKey(
-            rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(include_bytes!(
-                "../../test-keys/end.key"
-            )
-                as &[u8]))
-            .unwrap()
-            .into_iter()
-            .next()
-            .unwrap(),
-        );
-
-        let address = "localhost:4460";
-        ntp_daemon::keyexchange::key_exchange_server(address, cert_chain, key_der).await
-    });
+    if let Some(nts_ke_config) = config.nts_ke {
+        ntp_daemon::keyexchange::spawn(nts_ke_config).await;
+    }
 
     ntp_daemon::observer::spawn(
         &config.observe,

@@ -120,6 +120,8 @@ pub struct Config {
     pub peers: Vec<PeerConfig>,
     #[serde(alias = "server", default)]
     pub servers: Vec<ServerConfig>,
+    #[serde(alias = "nts-ke-server", default)]
+    pub nts_ke: Option<NtsKeConfig>,
     #[serde(default)]
     pub system: CombinedSystemConfig,
     #[serde(deserialize_with = "deserialize_option_env_filter", default)]
