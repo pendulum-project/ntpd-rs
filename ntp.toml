@@ -20,6 +20,12 @@ mode = "pool"
 addr = "pool.ntp.org"
 max-peers = 4
 
+# [[peers]]
+# mode = "NtsServer"
+# addr = "localhost:123"
+# ke-addr =  "localhost:4460"
+# certificate = "test-keys/testca.pem"
+
 # System parameters used in filtering and steering the clock:
 [system]
 min-intersection-survivors = 1

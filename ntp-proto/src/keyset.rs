@@ -97,6 +97,7 @@ impl KeySet {
 
         let mut output = Vec::with_capacity(4 + encrypted.nonce.len() + encrypted.ciphertext.len());
         output.extend((self.primary.wrapping_add(self.id_offset)).to_be_bytes());
+        output.extend((encrypted.ciphertext.len() as u16).to_be_bytes());
         output.extend(encrypted.nonce);
         output.extend(encrypted.ciphertext);
         output
@@ -114,7 +115,10 @@ impl KeySet {
             return Err(DecryptError);
         }
 
-        let plaintext = self.keys[id].decrypt(&cookie[4..20], &cookie[20..], &[])?;
+        let cipher_text_length = u16::from_be_bytes(cookie[4..6].try_into().unwrap()) as usize;
+
+        let plaintext =
+            self.keys[id].decrypt(&cookie[6..22], &cookie[22..][..cipher_text_length], &[])?;
 
         let algorithm =
             AeadAlgorithm::try_deserialize(u16::from_be_bytes(plaintext[0..2].try_into().unwrap()))
@@ -201,6 +205,29 @@ mod tests {
         };
 
         let encoded = keyset.encode_cookie(&decoded);
+        let round = keyset.decode_cookie(&encoded).unwrap();
+        assert_eq!(decoded.algorithm, round.algorithm);
+        assert_eq!(decoded.s2c.key_bytes(), round.s2c.key_bytes());
+        assert_eq!(decoded.c2s.key_bytes(), round.c2s.key_bytes());
+    }
+
+    #[test]
+    fn can_decode_cookie_with_padding() {
+        let decoded = DecodedServerCookie {
+            algorithm: AeadAlgorithm::AeadAesSivCmac512,
+            s2c: Box::new(AesSivCmac512::new((0..64_u8).collect())),
+            c2s: Box::new(AesSivCmac512::new((64..128_u8).collect())),
+        };
+
+        let keyset = KeySet {
+            keys: vec![AesSivCmac512::new(std::iter::repeat(0).take(64).collect())],
+            id_offset: 1,
+            primary: 0,
+        };
+
+        let mut encoded = keyset.encode_cookie(&decoded);
+        encoded.extend([0, 0]);
+
         let round = keyset.decode_cookie(&encoded).unwrap();
         assert_eq!(decoded.algorithm, round.algorithm);
         assert_eq!(decoded.s2c.key_bytes(), round.s2c.key_bytes());
