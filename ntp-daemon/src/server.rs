@@ -13,6 +13,9 @@ use tracing::{error, info, instrument, trace, warn};
 
 use crate::config::{FilterAction, ServerConfig};
 
+// Maximum size of udp packet we handle
+const MAX_PACKET_SIZE: usize = 1024;
+
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct ServerStats {
     pub received_packets: WrappedCounter,
@@ -69,10 +72,10 @@ pub struct ServerTask<C: 'static + NtpClock + Send> {
 
 #[derive(Debug)]
 enum AcceptResult<'a> {
-    Accept(NtpPacket<'a>, SocketAddr, NtpTimestamp),
+    Accept(NtpPacket<'a>, usize, SocketAddr, NtpTimestamp),
     Ignore,
-    Deny(NtpPacket<'a>, SocketAddr),
-    RateLimit(NtpPacket<'a>, SocketAddr),
+    Deny(NtpPacket<'a>, usize, SocketAddr),
+    RateLimit(NtpPacket<'a>, usize, SocketAddr),
     NetworkGone,
 }
 
@@ -139,7 +142,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 cur_socket.as_ref().unwrap()
             };
 
-            let mut buf = [0_u8; 48];
+            let mut buf = [0_u8; MAX_PACKET_SIZE];
             tokio::select! {
                 recv_res = socket.recv(&mut buf) => {
                     if !self.serve_packet(socket, &buf, recv_res, rate_limiting_cutoff).await {
@@ -156,7 +159,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
     async fn serve_packet(
         &mut self,
         socket: &UdpSocket,
-        buf: &[u8; 48],
+        buf: &[u8],
         recv_res: std::io::Result<(usize, SocketAddr, Option<NtpTimestamp>)>,
         rate_limiting_cutoff: Duration,
     ) -> bool {
@@ -164,7 +167,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         let accept_result = self.accept_packet(rate_limiting_cutoff, recv_res, buf);
 
         match accept_result {
-            AcceptResult::Accept(packet, peer_addr, recv_timestamp) => {
+            AcceptResult::Accept(packet, max_response_size, peer_addr, recv_timestamp) => {
                 self.stats.accepted_packets.inc();
 
                 let response = NtpPacket::timestamp_response(
@@ -174,11 +177,16 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     &self.clock,
                 );
 
-                let mut buf = [0; 48];
+                let mut buf = [0; MAX_PACKET_SIZE];
                 let mut cursor = Cursor::new(buf.as_mut_slice());
 
                 if let Err(serialize_err) = response.serialize(&mut cursor, &NoCipher) {
                     error!(error=?serialize_err, "Could not serialize response");
+                    return true;
+                }
+
+                if cursor.position() as usize > max_response_size {
+                    error!("Generated response that was larger than the request");
                     return true;
                 }
 
@@ -190,7 +198,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     warn!(error=?send_err, "Could not send response packet");
                 }
             }
-            AcceptResult::Deny(packet, peer_addr) => {
+            AcceptResult::Deny(packet, max_response_size, peer_addr) => {
                 self.stats.denied_packets.inc();
                 let response = NtpPacket::deny_response(packet);
 
@@ -202,6 +210,12 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     error!(error=?serialize_err, "Could not serialize response");
                     return true;
                 }
+
+                if cursor.position() as usize > max_response_size {
+                    error!("Generated response that was larger than the request");
+                    return true;
+                }
+
                 if let Err(send_err) = socket
                     .send_to(&cursor.get_ref()[0..cursor.position() as usize], peer_addr)
                     .await
@@ -214,7 +228,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 error!("Server connection gone");
                 return false;
             }
-            AcceptResult::RateLimit(packet, peer_addr) => {
+            AcceptResult::RateLimit(packet, max_response_size, peer_addr) => {
                 self.stats.rate_limited_packets.inc();
                 let response = NtpPacket::rate_limit_response(packet);
 
@@ -226,6 +240,12 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     error!(error=?serialize_err, "Could not serialize response");
                     return true;
                 }
+
+                if cursor.position() as usize > max_response_size {
+                    error!("Generated response that was larger than the request");
+                    return true;
+                }
+
                 if let Err(send_err) = socket
                     .send_to(&cursor.get_ref()[0..cursor.position() as usize], peer_addr)
                     .await
@@ -245,22 +265,22 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         &mut self,
         rate_limiting_cutoff: Duration,
         result: Result<(usize, SocketAddr, Option<NtpTimestamp>), std::io::Error>,
-        buf: &'a [u8; 48],
+        buf: &'a [u8],
     ) -> AcceptResult<'a> {
         match result {
             Ok((size, peer_addr, Some(recv_timestamp))) if size >= 48 => {
                 // Note: packets are allowed to be bigger when including extensions.
-                // we don't expect them, but the client may still send them. The
-                // extra bytes are guaranteed safe to ignore. `recv` truncates the messages.
+                // we don't expect many, but the client may still send them. We try
+                // to see if the message still makes sense with some bytes dropped.
                 // Messages of fewer than 48 bytes are skipped entirely
                 match self.filter(&peer_addr.ip()) {
                     Some(FilterAction::Deny) => {
-                        match self.accept_data(buf, peer_addr, recv_timestamp) {
+                        match self.accept_data(&buf[..size], peer_addr, recv_timestamp) {
                             // We should send deny messages only to reasonable requests
                             // otherwise two servers could end up in a loop of sending
                             // deny's to each other.
-                            AcceptResult::Accept(packet, addr, _) => {
-                                AcceptResult::Deny(packet, addr)
+                            AcceptResult::Accept(packet, max_response_size, addr, _) => {
+                                AcceptResult::Deny(packet, max_response_size, addr)
                             }
                             v => v,
                         }
@@ -271,9 +291,9 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                         let cutoff = rate_limiting_cutoff;
                         let too_soon = !self.client_cache.is_allowed(peer_addr, timestamp, cutoff);
 
-                        match self.accept_data(buf, peer_addr, recv_timestamp) {
-                            AcceptResult::Accept(packet, _, _) if too_soon => {
-                                AcceptResult::RateLimit(packet, peer_addr)
+                        match self.accept_data(&buf[..size], peer_addr, recv_timestamp) {
+                            AcceptResult::Accept(packet, max_response_size, _, _) if too_soon => {
+                                AcceptResult::RateLimit(packet, max_response_size, peer_addr)
                             }
                             accept_result => accept_result,
                         }
@@ -311,7 +331,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
 
     fn accept_data<'a>(
         &self,
-        buf: &'a [u8; 48],
+        buf: &'a [u8],
         peer_addr: SocketAddr,
         recv_timestamp: NtpTimestamp,
     ) -> AcceptResult<'a> {
@@ -319,7 +339,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             Ok((packet, _cookie)) => match packet.mode() {
                 NtpAssociationMode::Client => {
                     trace!("NTP client request accepted from {}", peer_addr);
-                    AcceptResult::Accept(packet, peer_addr, recv_timestamp)
+                    AcceptResult::Accept(packet, buf.len(), peer_addr, recv_timestamp)
                 }
                 _ => {
                     trace!(
