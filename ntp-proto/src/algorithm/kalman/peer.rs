@@ -335,7 +335,7 @@ impl PeerFilter {
         self.update_desired_poll(config, algo_config, chi, weight, measurement_period);
 
         debug!(
-            "peer offset {}+-{}ms, freq {}+-{}ppm",
+            "peer offset {}±{}ms, freq {}±{}ppm",
             self.state.entry(0) * 1000.,
             (self.uncertainty.entry(0, 0) + sqr(self.last_packet.root_dispersion().to_seconds()))
                 .sqrt()

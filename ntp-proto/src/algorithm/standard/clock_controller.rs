@@ -75,7 +75,7 @@ impl<C: NtpClock> ClockController<C> {
     const POLL_ADJUST: i32 = 30;
 
     #[allow(clippy::too_many_arguments)]
-    #[instrument(skip(self))]
+    #[instrument(level = "debug", skip(self))]
     pub fn update(
         &mut self,
         config: &SystemConfig,
@@ -342,6 +342,16 @@ impl<C: NtpClock> ClockController<C> {
             error!(error = %e, "Unable to adjust clock frequency, exiting");
             std::process::exit(exitcode::NOPERM);
         }
+    }
+
+    /// Are we still gathering initial samples?
+    pub fn is_startup(&self) -> bool {
+        matches!(self.state, ClockState::StartupBlank)
+    }
+
+    /// Are we still gathering frequency data?
+    pub fn is_measuring_frequency(&self) -> bool {
+        matches!(self.state, ClockState::MeasureFreq)
     }
 }
 

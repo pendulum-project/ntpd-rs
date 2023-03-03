@@ -91,13 +91,21 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> StandardClockController<C, P
         let clock_select = match result {
             Some(clock_select) => clock_select,
             None => {
-                info!("filter and combine did not produce a result");
+                if self.controller.is_startup() {
+                    info!("ntpd-rs is still starting up (collecting initial samples)");
+                } else if self.controller.is_measuring_frequency() {
+                    let minutes = self.algo_config.frequency_measurement_period.to_seconds() / 60.0;
+                    info!("ntpd-rs is still in the frequency measurement period (configured as {minutes:.2} min)");
+                } else {
+                    info!("filter and combine did not produce a result");
+                }
                 return StateUpdate::default();
             }
         };
         let offset_ms = clock_select.system_offset.to_seconds() * 1000.0;
         let jitter_ms = clock_select.system_jitter.to_seconds() * 1000.0;
-        info!(offset_ms, jitter_ms, "Measured offset and jitter");
+        info!("Measured offset: {}±{}ms", offset_ms, jitter_ms);
+
         let adjust_type = self.controller.update(
             &self.config,
             &self.algo_config,
@@ -110,7 +118,8 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> StandardClockController<C, P
         );
         let offset_ms = self.controller.offset().to_seconds() * 1000.0;
         let jitter_ms = self.controller.jitter().to_seconds() * 1000.0;
-        info!(offset_ms, jitter_ms, "Estimated clock offset and jitter");
+        info!("Estimated offset: {}±{}ms", offset_ms, jitter_ms);
+
         match adjust_type {
             ClockUpdateResult::Panic => {
                 error!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate.");
