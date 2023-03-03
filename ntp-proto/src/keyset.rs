@@ -6,6 +6,7 @@ use std::{
 use aead::{generic_array::GenericArray, KeyInit};
 
 use crate::{
+    membuffer::MemBuffer,
     nts_record::AeadAlgorithm,
     packet::{AesSivCmac256, AesSivCmac512, CipherHolder, DecryptError, ExtensionField},
     Cipher, CipherProvider,
@@ -131,16 +132,30 @@ pub struct KeySet {
 }
 
 impl KeySet {
+    const MAX_PLAINTEXT_BYTES: usize = 2 + 64 + 64;
+
+    const MAX_COOKIE_BYTES: usize =
+        4 /* id */ + 2 /* ciphertext length */ + 16 /* nonce */ + Self::MAX_PLAINTEXT_BYTES;
+
+    fn plaintext(cookie: &DecodedServerCookie) -> MemBuffer<{ Self::MAX_PLAINTEXT_BYTES }> {
+        use std::io::Write;
+
+        let mut plaintext = MemBuffer::default();
+
+        let actual_length = 2 + cookie.s2c.key_bytes().len() + cookie.c2s.key_bytes().len();
+        debug_assert!(actual_length <= plaintext.capacity());
+
+        let _ = plaintext.write(&(cookie.algorithm as u16).to_be_bytes());
+        let _ = plaintext.write(cookie.s2c.key_bytes());
+        let _ = plaintext.write(cookie.c2s.key_bytes());
+
+        plaintext
+    }
+
     pub(crate) fn encode_cookie(&self, cookie: &DecodedServerCookie) -> Vec<u8> {
-        let mut plaintext =
-            Vec::with_capacity(2 + cookie.s2c.key_bytes().len() + cookie.c2s.key_bytes().len());
-
-        plaintext.extend((cookie.algorithm as u16).to_be_bytes());
-        plaintext.extend(cookie.s2c.key_bytes());
-        plaintext.extend(cookie.c2s.key_bytes());
-
+        let plaintext = Self::plaintext(cookie);
         let encrypted = self.keys[self.primary as usize]
-            .encrypt(&plaintext, &[])
+            .encrypt(plaintext.as_slice(), &[])
             .expect("Failed to encrypt cookie");
 
         let mut output = Vec::with_capacity(4 + encrypted.nonce.len() + encrypted.ciphertext.len());

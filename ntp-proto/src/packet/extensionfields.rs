@@ -3,7 +3,7 @@ use std::{
     io::{Cursor, Write},
 };
 
-use crate::DecodedServerCookie;
+use crate::{membuffer::MemBuffer, DecodedServerCookie};
 
 use super::{error::ParsingError, Cipher, CipherProvider, Mac};
 
@@ -251,7 +251,8 @@ impl<'a> ExtensionField<'a> {
 
         let packet_so_far = &w.get_ref()[..current_position as usize];
 
-        let mut plaintext = Vec::new();
+        // 1024 is our maximum response size, and therefore a safe upper bound on the plaintext length
+        let mut plaintext = MemBuffer::<1024>::default();
         for field in fields_to_encrypt {
             // RFC 8915, section 5.5: contrary to the RFC 7822 requirement that fields have a minimum length of 16 or 28 octets,
             // encrypted extension fields MAY be arbitrarily short (but still MUST be a multiple of 4 octets in length)
@@ -259,7 +260,7 @@ impl<'a> ExtensionField<'a> {
             field.serialize(&mut plaintext, minimum_size)?;
         }
 
-        let encryptiondata = cipher.encrypt(&plaintext, packet_so_far).unwrap();
+        let encryptiondata = cipher.encrypt(plaintext.as_slice(), packet_so_far).unwrap();
 
         w.write_all(
             &ExtensionFieldTypeId::NtsEncryptedField
