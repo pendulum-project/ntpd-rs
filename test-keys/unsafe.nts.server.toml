@@ -1,0 +1,34 @@
+# Other values include trace, debug, warn and error
+log-filter = "info"
+
+# Allowed values: full, compact, pretty, json
+log-format = "full"
+
+# the server will get its time from the NTP pool
+[[peers]]
+mode = "pool"
+addr = "pool.ntp.org"
+max-peers = 4
+
+[[server]]
+addr = "0.0.0.0:123"
+
+# System parameters used in filtering and steering the clock:
+[system]
+min-intersection-survivors = 1
+min-cluster-survivors = 3
+frequency-tolerance = 15
+distance-threshold = 1
+panic-threshold = 10
+startup-panic-threshold = { forward = 0, backward = 1800 }
+
+[observe]
+path = "/run/ntpd-rs/observe"
+
+# to function as an NTS server, we must also provide key exchange
+# uses an unsecure certificate chain!
+[nts-ke-server]
+addr = "0.0.0.0:4460"
+cert-chain-path = "test-keys/end.fullchain.pem"
+key-der-path = "test-keys/end.key"
+timeout-ms = 1000
