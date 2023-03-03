@@ -82,7 +82,6 @@ pub struct KeySet {
 }
 
 impl KeySet {
-    #[allow(unused)]
     pub(crate) fn encode_cookie(&self, cookie: &DecodedServerCookie) -> Vec<u8> {
         let mut plaintext =
             Vec::with_capacity(2 + cookie.s2c.key_bytes().len() + cookie.c2s.key_bytes().len());
@@ -103,7 +102,6 @@ impl KeySet {
         output
     }
 
-    #[allow(unused)]
     pub(crate) fn decode_cookie(&self, cookie: &[u8]) -> Result<DecodedServerCookie, DecryptError> {
         if cookie.len() < 20 {
             return Err(DecryptError);
