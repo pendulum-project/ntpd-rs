@@ -33,7 +33,7 @@ We are currently looking for a better name for this project. Suggestions for thi
 
 ## Package substructure
 
-Currently, the code is split up into seven separate crates:
+Currently, the code is split up into several separate crates:
  - `ntp-proto` contains the packet parsing and the algorithms needed for clock selection, filtering and steering.
  - `ntp-daemon` contains the main NTP daemon, and deals with orchestrating the networking and configuration.
  - `ntp-ctl` contains a control interface for the NTP daemon, allowing readout of current synchronisation state and dynamic configuration changes.
@@ -41,6 +41,7 @@ Currently, the code is split up into seven separate crates:
  - `test-binaries` contains a number of simple NTP servers that can be used for testing (see below).
  - `ntp-os-clock` contains the unsafe code needed to interface with system clocks.
  - `ntp-udp` contains the unsafe code needed to deal with timestamping on the network layer.
+ - `ntpd` contains the entrypoints for all our binaries
 
 All unsafe code is contained within the `ntp-os-clock` and `ntp-udp` packages, which are kept as small as possible. All interfaces exposed by these crates should be safe. For a more detailed description of how ntpd-rs is structured, see the [development documentation](DEVELOPMENT.md).
 

@@ -1,0 +1,23 @@
+[package]
+name = "ntpd"
+version = "0.2.1"
+edition = "2021"
+license = "Apache-2.0 OR MIT"
+
+[dependencies]
+ntp-daemon = { path = "../ntp-daemon" }
+ntp-metrics-exporter = { path = "../ntp-metrics-exporter" }
+ntp-ctl = { path = "../ntp-ctl" }
+tokio.workspace = true
+
+[[bin]]
+name = "ntp-daemon"
+path = "src/bin/ntp-daemon.rs"
+
+[[bin]]
+name = "ntp-ctl"
+path = "src/bin/ntp-ctl.rs"
+
+[[bin]]
+name = "ntp-metrics-exporter"
+path = "src/bin/ntp-metrics-exporter.rs"
