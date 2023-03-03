@@ -283,7 +283,7 @@ impl<'a> NtpPacket<'a> {
             return Err(PacketParsingError::IncorrectLength);
         }
 
-        let version = (data[0] & 0x38) >> 3;
+        let version = (data[0] & 0b0011_1000) >> 3;
 
         match version {
             3 => {
@@ -334,14 +334,13 @@ impl<'a> NtpPacket<'a> {
                         mac,
                     }))
                 } else {
-                    Ok((
-                        NtpPacket {
-                            header: NtpHeader::V4(header),
-                            efdata,
-                            mac,
-                        },
-                        cookie,
-                    ))
+                    let packet = NtpPacket {
+                        header: NtpHeader::V4(header),
+                        efdata,
+                        mac,
+                    };
+
+                    Ok((packet, cookie))
                 }
             }
             _ => Err(PacketParsingError::InvalidVersion(version)),
