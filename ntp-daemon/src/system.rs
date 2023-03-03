@@ -498,11 +498,11 @@ pub struct ServerData {
 #[cfg(test)]
 mod tests {
     use ntp_proto::{
-        peer_snapshot, Measurement, NtpDuration, NtpInstant, NtpLeapIndicator, NtpPacket,
-        NtpTimestamp, PollInterval,
+        peer_snapshot, KeySetProvider, Measurement, NtpDuration, NtpInstant, NtpLeapIndicator,
+        NtpPacket, NtpTimestamp, PollInterval,
     };
 
-    use crate::{config::KeysetConfig, spawn::dummy::DummySpawner};
+    use crate::spawn::dummy::DummySpawner;
 
     use super::*;
 
@@ -557,7 +557,7 @@ mod tests {
     #[tokio::test]
     async fn test_peers() {
         // we always generate the keyset (even if NTS is not used)
-        let keyset = crate::nts_key_provider::spawn(KeysetConfig::default());
+        let (_, keyset) = tokio::sync::watch::channel(KeySetProvider::new(1).get());
 
         let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default(), keyset);
         let wait =

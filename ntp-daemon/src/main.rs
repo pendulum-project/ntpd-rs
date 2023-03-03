@@ -49,7 +49,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     config.check();
 
     // we always generate the keyset (even if NTS is not used)
-    let keyset = ntp_daemon::nts_key_provider::spawn(config.keyset);
+    let keyset = ntp_daemon::nts_key_provider::spawn(config.keyset).await;
 
     debug!("Configuration loaded, spawning daemon jobs");
     let (main_loop_handle, channels) = ntp_daemon::spawn(

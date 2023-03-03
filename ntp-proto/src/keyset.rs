@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    io::{Read, Write},
+    sync::Arc,
+};
 
 use aead::{generic_array::GenericArray, KeyInit};
 
@@ -67,6 +70,52 @@ impl KeySetProvider {
             primary: keys.len() as u32,
             keys,
         })
+    }
+
+    pub fn load(
+        reader: &mut impl Read,
+        history: usize,
+    ) -> std::io::Result<(Self, std::time::SystemTime)> {
+        let mut buf = [0; 64];
+        reader.read_exact(&mut buf[0..20])?;
+        let time = std::time::SystemTime::UNIX_EPOCH
+            + std::time::Duration::from_secs(u64::from_be_bytes(buf[0..8].try_into().unwrap()));
+        let id_offset = u32::from_be_bytes(buf[8..12].try_into().unwrap());
+        let primary = u32::from_be_bytes(buf[12..16].try_into().unwrap());
+        let len = u32::from_be_bytes(buf[16..20].try_into().unwrap());
+        if primary > len {
+            return Err(std::io::ErrorKind::Other.into());
+        }
+        let mut keys = vec![];
+        for _ in 0..len {
+            reader.read_exact(&mut buf[0..64])?;
+            keys.push(AesSivCmac512::new(buf.into()));
+        }
+        Ok((
+            KeySetProvider {
+                current: Arc::new(KeySet {
+                    keys,
+                    id_offset,
+                    primary,
+                }),
+                history,
+            },
+            time,
+        ))
+    }
+
+    pub fn store(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        let time = std::time::SystemTime::now()
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .expect("Could not get current time");
+        writer.write_all(&time.as_secs().to_be_bytes())?;
+        writer.write_all(&self.current.id_offset.to_be_bytes())?;
+        writer.write_all(&self.current.primary.to_be_bytes())?;
+        writer.write_all(&(self.current.keys.len() as u32).to_be_bytes())?;
+        for key in self.current.keys.iter() {
+            writer.write_all(key.key_bytes())?;
+        }
+        Ok(())
     }
 
     /// Get the current KeySet
@@ -186,6 +235,8 @@ impl std::fmt::Debug for KeySet {
 #[cfg(test)]
 mod tests {
 
+    use std::io::Cursor;
+
     use super::*;
 
     #[test]
@@ -251,6 +302,32 @@ mod tests {
         assert_eq!(decoded.algorithm, round.algorithm);
         assert_eq!(decoded.s2c.key_bytes(), round.s2c.key_bytes());
         assert_eq!(decoded.c2s.key_bytes(), round.c2s.key_bytes());
+    }
+
+    #[test]
+    fn test_save_restore() {
+        let mut provider = KeySetProvider::new(8);
+        provider.rotate();
+        provider.rotate();
+        let mut output = Cursor::new(vec![]);
+        provider.store(&mut output).unwrap();
+        let mut input = Cursor::new(output.into_inner());
+        let (copy, time) = KeySetProvider::load(&mut input, 8).unwrap();
+        assert!(
+            std::time::SystemTime::now()
+                .duration_since(time)
+                .unwrap()
+                .as_secs()
+                < 2
+        );
+        assert_eq!(provider.get().primary, copy.get().primary);
+        assert_eq!(provider.get().id_offset, copy.get().id_offset);
+        for i in 0..provider.get().keys.len() {
+            assert_eq!(
+                provider.get().keys[i].key_bytes(),
+                copy.get().keys[i].key_bytes()
+            );
+        }
     }
 
     #[test]
