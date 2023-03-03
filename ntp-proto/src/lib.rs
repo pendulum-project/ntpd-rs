@@ -6,6 +6,7 @@ mod config;
 mod cookiestash;
 mod identifiers;
 mod keyset;
+mod membuffer;
 mod nts_record;
 mod packet;
 mod peer;
