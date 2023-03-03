@@ -98,6 +98,12 @@ impl<C: NtpClock> ClockController<C> {
             return ClockUpdateResult::Panic;
         }
 
+        if self.last_update_time > last_peer_update {
+            // Ignore updates from past
+            debug!("Received udpates out of order, ignoring update from past");
+            return ClockUpdateResult::Ignore;
+        }
+
         // Main decision making
         //
         // Combined, this code is responsible for:
