@@ -17,7 +17,7 @@ pub(super) struct FilterAndCombine<PeerID: Hash + Eq + Copy + Debug> {
 }
 
 impl<PeerID: Hash + Eq + Copy + Debug> FilterAndCombine<PeerID> {
-    #[instrument(skip(peers), fields(peers = debug(peers.iter().map(|peer| peer.0).collect::<Vec<_>>())))]
+    #[instrument(level = "debug", skip(peers), fields(peers = debug(peers.iter().map(|peer| peer.0).collect::<Vec<_>>())))]
     pub fn run(
         config: &SystemConfig,
         algo_config: &AlgorithmConfig,
@@ -71,7 +71,10 @@ struct ClockSelect<'a, PeerID: Hash + Eq + Copy + Debug> {
     system_selection_jitter: NtpDuration,
 }
 
-#[instrument(skip(config, algo_config, local_clock_time, system_poll))]
+#[instrument(
+    level = "debug",
+    skip(config, algo_config, local_clock_time, system_poll)
+)]
 fn clock_select<'a, PeerID: Hash + Eq + Copy + Debug>(
     config: &SystemConfig,
     algo_config: &AlgorithmConfig,
