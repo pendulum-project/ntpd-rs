@@ -265,14 +265,6 @@ impl NtpHeaderV3V4 {
     }
 }
 
-fn keep_id(f: ExtensionField) -> Option<ExtensionField> {
-    if matches!(f, ExtensionField::UniqueIdentifier(_)) {
-        Some(f)
-    } else {
-        None
-    }
-}
-
 impl<'a> NtpPacket<'a> {
     pub fn into_owned(self) -> NtpPacket<'static> {
         NtpPacket::<'static> {
@@ -473,7 +465,7 @@ impl<'a> NtpPacket<'a> {
                         .untrusted
                         .into_iter()
                         .chain(input.efdata.authenticated.into_iter())
-                        .filter_map(keep_id)
+                        .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
                         .collect(),
                 },
                 mac: None,
@@ -504,31 +496,31 @@ impl<'a> NtpPacket<'a> {
                         .authenticated
                         .iter()
                         .chain(input.efdata.encrypted.iter())
-                        .filter_map(|f| {
-                            if let ExtensionField::NtsCookiePlaceholder { cookie_length } = f {
+                        .filter_map(|f| match f {
+                            ExtensionField::NtsCookiePlaceholder { cookie_length } => {
                                 let new_cookie = keyset.encode_cookie(cookie);
                                 if new_cookie.len() > *cookie_length as usize {
                                     None
                                 } else {
                                     Some(ExtensionField::NtsCookie(Cow::Owned(new_cookie)))
                                 }
-                            } else if let ExtensionField::NtsCookie(old_cookie) = f {
+                            }
+                            ExtensionField::NtsCookie(old_cookie) => {
                                 let new_cookie = keyset.encode_cookie(cookie);
                                 if new_cookie.len() > old_cookie.len() {
                                     None
                                 } else {
                                     Some(ExtensionField::NtsCookie(Cow::Owned(new_cookie)))
                                 }
-                            } else {
-                                None
                             }
+                            _ => None,
                         })
                         .collect(),
                     authenticated: input
                         .efdata
                         .authenticated
                         .into_iter()
-                        .filter_map(keep_id)
+                        .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
                         .collect(),
                     // Ignore encrypted so as not to accidentaly leak anything
                     untrusted: vec![],
@@ -556,7 +548,7 @@ impl<'a> NtpPacket<'a> {
                         .untrusted
                         .into_iter()
                         .chain(packet_from_client.efdata.authenticated.into_iter())
-                        .filter_map(keep_id)
+                        .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
                         .collect(),
                 },
                 mac: None,
@@ -574,7 +566,7 @@ impl<'a> NtpPacket<'a> {
                         .efdata
                         .authenticated
                         .into_iter()
-                        .filter_map(keep_id)
+                        .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
                         .collect(),
                     encrypted: vec![],
                     untrusted: vec![],
@@ -602,7 +594,7 @@ impl<'a> NtpPacket<'a> {
                         .untrusted
                         .into_iter()
                         .chain(packet_from_client.efdata.authenticated.into_iter())
-                        .filter_map(keep_id)
+                        .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
                         .collect(),
                 },
                 mac: None,
@@ -620,7 +612,7 @@ impl<'a> NtpPacket<'a> {
                         .efdata
                         .authenticated
                         .into_iter()
-                        .filter_map(keep_id)
+                        .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
                         .collect(),
                     encrypted: vec![],
                     untrusted: vec![],
