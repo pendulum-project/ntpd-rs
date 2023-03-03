@@ -1,0 +1,24 @@
+# Other values include trace, debug, warn and error
+log-filter = "info"
+
+# Allowed values: full, compact, pretty, json
+log-format = "full"
+
+# uses an unsecure certificate!
+[[peers]]
+mode = "NtsServer"
+addr = "localhost:123"
+ke-addr =  "localhost:4460"
+certificate = "test-keys/testca.pem"
+
+# System parameters used in filtering and steering the clock:
+[system]
+min-intersection-survivors = 1
+min-cluster-survivors = 3
+frequency-tolerance = 15
+distance-threshold = 1
+panic-threshold = 10
+startup-panic-threshold = { forward = "inf", backward = 1800 }
+
+[observe]
+path = "/run/ntpd-rs/observe"
