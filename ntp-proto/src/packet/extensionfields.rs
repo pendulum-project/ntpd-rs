@@ -3,7 +3,7 @@ use std::{
     io::{Cursor, Write},
 };
 
-use crate::{membuffer::MemBuffer, DecodedServerCookie};
+use crate::{arrayvec::ArrayVec, DecodedServerCookie};
 
 use super::{error::ParsingError, Cipher, CipherProvider, Mac};
 
@@ -252,7 +252,7 @@ impl<'a> ExtensionField<'a> {
         let packet_so_far = &w.get_ref()[..current_position as usize];
 
         // 1024 is our maximum response size, and therefore a safe upper bound on the plaintext length
-        let mut plaintext = MemBuffer::<1024>::default();
+        let mut plaintext = ArrayVec::<1024>::default();
         for field in fields_to_encrypt {
             // RFC 8915, section 5.5: contrary to the RFC 7822 requirement that fields have a minimum length of 16 or 28 octets,
             // encrypted extension fields MAY be arbitrarily short (but still MUST be a multiple of 4 octets in length)
@@ -260,7 +260,10 @@ impl<'a> ExtensionField<'a> {
             field.serialize(&mut plaintext, minimum_size)?;
         }
 
-        let encryptiondata = cipher.encrypt(plaintext.as_slice(), packet_so_far).unwrap();
+        let (siv_tag, nonce) = cipher
+            .encrypt_in_place_detached(plaintext.as_mut(), packet_so_far)
+            .unwrap();
+        let ciphertext = plaintext.as_slice();
 
         w.write_all(
             &ExtensionFieldTypeId::NtsEncryptedField
@@ -269,8 +272,8 @@ impl<'a> ExtensionField<'a> {
         )?;
 
         // NOTE: these are NOT rounded up to a number of words
-        let nonce_octet_count = encryptiondata.nonce.len();
-        let ct_octet_count = encryptiondata.ciphertext.len();
+        let nonce_octet_count = nonce.len();
+        let ct_octet_count = siv_tag.len() + ciphertext.len();
 
         // + 8 for the extension field header (4 bytes) and nonce/cypher text length (2 bytes each)
         let signature_octet_count =
@@ -280,14 +283,13 @@ impl<'a> ExtensionField<'a> {
         w.write_all(&(nonce_octet_count as u16).to_be_bytes())?;
         w.write_all(&(ct_octet_count as u16).to_be_bytes())?;
 
-        w.write_all(&encryptiondata.nonce)?;
-        let padding_bytes = next_multiple_of(encryptiondata.nonce.len() as u16, 4)
-            - encryptiondata.nonce.len() as u16;
+        w.write_all(&nonce)?;
+        let padding_bytes = next_multiple_of(nonce.len() as u16, 4) - nonce.len() as u16;
         w.write_all(&padding[..padding_bytes as usize])?;
 
-        w.write_all(&encryptiondata.ciphertext)?;
-        let padding_bytes = next_multiple_of(encryptiondata.ciphertext.len() as u16, 4)
-            - encryptiondata.ciphertext.len() as u16;
+        w.write_all(&siv_tag)?;
+        w.write_all(ciphertext)?;
+        let padding_bytes = next_multiple_of(ct_octet_count as u16, 4) - ct_octet_count as u16;
         w.write_all(&padding[..padding_bytes as usize])?;
 
         Ok(())
