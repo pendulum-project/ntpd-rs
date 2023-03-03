@@ -22,6 +22,8 @@ pub struct KeysetConfig {
     /// How often to rotate keys (seconds between rotations)
     #[serde(default = "default_rotation_interval")]
     pub rotation_interval: usize,
+    #[serde(default)]
+    pub storage_path: Option<String>,
 }
 
 impl Default for KeysetConfig {
@@ -29,6 +31,7 @@ impl Default for KeysetConfig {
         Self {
             old_keys: default_old_keys(),
             rotation_interval: default_rotation_interval(),
+            storage_path: None,
         }
     }
 }
