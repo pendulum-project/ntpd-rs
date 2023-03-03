@@ -6,7 +6,7 @@ use std::{
 use aead::{generic_array::GenericArray, KeyInit};
 
 use crate::{
-    membuffer::MemBuffer,
+    arrayvec::ArrayVec,
     nts_record::AeadAlgorithm,
     packet::{AesSivCmac256, AesSivCmac512, CipherHolder, DecryptError, ExtensionField},
     Cipher, CipherProvider,
@@ -134,35 +134,40 @@ pub struct KeySet {
 impl KeySet {
     const MAX_PLAINTEXT_BYTES: usize = 2 + 64 + 64;
 
-    const MAX_COOKIE_BYTES: usize =
-        4 /* id */ + 2 /* ciphertext length */ + 16 /* nonce */ + Self::MAX_PLAINTEXT_BYTES;
-
-    fn plaintext(cookie: &DecodedServerCookie) -> MemBuffer<{ Self::MAX_PLAINTEXT_BYTES }> {
-        use std::io::Write;
-
-        let mut plaintext = MemBuffer::default();
+    fn plaintext(cookie: &DecodedServerCookie) -> ArrayVec<{ Self::MAX_PLAINTEXT_BYTES }> {
+        let mut plaintext = ArrayVec::default();
 
         let actual_length = 2 + cookie.s2c.key_bytes().len() + cookie.c2s.key_bytes().len();
         debug_assert!(actual_length <= plaintext.capacity());
 
-        let _ = plaintext.write(&(cookie.algorithm as u16).to_be_bytes());
-        let _ = plaintext.write(cookie.s2c.key_bytes());
-        let _ = plaintext.write(cookie.c2s.key_bytes());
+        // we have just asserted that these will fit, so can ignore errors
+        let algorithm_bytes = (cookie.algorithm as u16).to_be_bytes();
+        plaintext.write_all(&algorithm_bytes).unwrap();
+        plaintext.write_all(cookie.s2c.key_bytes()).unwrap();
+        plaintext.write_all(cookie.c2s.key_bytes()).unwrap();
 
         plaintext
     }
 
     pub(crate) fn encode_cookie(&self, cookie: &DecodedServerCookie) -> Vec<u8> {
-        let plaintext = Self::plaintext(cookie);
-        let encrypted = self.keys[self.primary as usize]
-            .encrypt(plaintext.as_slice(), &[])
+        let mut plaintext = Self::plaintext(cookie);
+        let plaintext_len = plaintext.as_slice().len();
+
+        let (siv_tag, nonce) = self.keys[self.primary as usize]
+            .encrypt_in_place_detached(plaintext.as_mut(), &[])
             .expect("Failed to encrypt cookie");
 
-        let mut output = Vec::with_capacity(4 + encrypted.nonce.len() + encrypted.ciphertext.len());
+        let ciphertext = plaintext.as_slice();
+        let ciphertext_len = siv_tag.len() + ciphertext.len();
+
+        debug_assert_eq!(plaintext_len + 16, ciphertext_len);
+
+        let mut output = Vec::with_capacity(4 + nonce.len() + ciphertext_len);
         output.extend((self.primary.wrapping_add(self.id_offset)).to_be_bytes());
-        output.extend((encrypted.ciphertext.len() as u16).to_be_bytes());
-        output.extend(encrypted.nonce);
-        output.extend(encrypted.ciphertext);
+        output.extend((ciphertext_len as u16).to_be_bytes());
+        output.extend(nonce);
+        output.extend(siv_tag);
+        output.extend(ciphertext);
         output
     }
 
@@ -179,8 +184,9 @@ impl KeySet {
 
         let cipher_text_length = u16::from_be_bytes(cookie[4..6].try_into().unwrap()) as usize;
 
-        let plaintext =
-            self.keys[id].decrypt(&cookie[6..22], &cookie[22..][..cipher_text_length], &[])?;
+        let nonce = &cookie[6..22];
+        let ciphertext = &cookie[22..][..cipher_text_length];
+        let plaintext = self.keys[id].decrypt(nonce, ciphertext, &[])?;
 
         let algorithm =
             AeadAlgorithm::try_deserialize(u16::from_be_bytes(plaintext[0..2].try_into().unwrap()))

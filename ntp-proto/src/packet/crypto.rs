@@ -10,18 +10,12 @@ use super::extensionfields::ExtensionField;
 #[error("Could not decrypt ciphertext")]
 pub struct DecryptError;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EncryptionResult {
-    pub nonce: Vec<u8>,
-    pub ciphertext: Vec<u8>,
-}
-
 pub trait Cipher: Sync + Send + 'static {
-    fn encrypt(
+    fn encrypt_in_place_detached(
         &self,
-        plaintext: &[u8],
+        plaintext: &mut [u8],
         associated_data: &[u8],
-    ) -> std::io::Result<EncryptionResult>;
+    ) -> std::io::Result<(aes_siv::Tag, aes_siv::Nonce)>;
 
     fn decrypt(
         &self,
@@ -96,25 +90,24 @@ impl AesSivCmac256 {
 }
 
 impl Cipher for AesSivCmac256 {
-    fn encrypt(
+    fn encrypt_in_place_detached(
         &self,
-        plaintext: &[u8],
+        plaintext: &mut [u8],
         associated_data: &[u8],
-    ) -> std::io::Result<EncryptionResult> {
+    ) -> std::io::Result<(aes_siv::Tag, aes_siv::Nonce)> {
         let mut siv = Aes128Siv::new(&self.key);
         let nonce: [u8; 16] = rand::thread_rng().gen();
-        let ciphertext = match siv.encrypt([associated_data, &nonce], plaintext) {
-            Ok(v) => v,
+
+        let siv_tag = match siv.encrypt_in_place_detached([associated_data, &nonce], plaintext) {
+            Ok(tag) => tag,
             Err(e) => {
                 // This should probably never happen, so log as an error
                 error!(error = ?e, "Encryption failed");
                 return Err(std::io::Error::from(std::io::ErrorKind::Other));
             }
         };
-        Ok(EncryptionResult {
-            nonce: nonce.into(),
-            ciphertext,
-        })
+
+        Ok((siv_tag, nonce.into()))
     }
 
     fn decrypt(
@@ -153,25 +146,24 @@ impl AesSivCmac512 {
 }
 
 impl Cipher for AesSivCmac512 {
-    fn encrypt(
+    fn encrypt_in_place_detached(
         &self,
-        plaintext: &[u8],
+        plaintext: &mut [u8],
         associated_data: &[u8],
-    ) -> std::io::Result<EncryptionResult> {
+    ) -> std::io::Result<(aes_siv::Tag, aes_siv::Nonce)> {
         let mut siv = Aes256Siv::new(&self.key);
         let nonce: [u8; 16] = rand::thread_rng().gen();
-        let ciphertext = match siv.encrypt([associated_data, &nonce], plaintext) {
-            Ok(v) => v,
+
+        let siv_tag = match siv.encrypt_in_place_detached([associated_data, &nonce], plaintext) {
+            Ok(tag) => tag,
             Err(e) => {
                 // This should probably never happen, so log as an error
                 error!(error = ?e, "Encryption failed");
                 return Err(std::io::Error::from(std::io::ErrorKind::Other));
             }
         };
-        Ok(EncryptionResult {
-            nonce: nonce.into(),
-            ciphertext,
-        })
+
+        Ok((siv_tag, nonce.into()))
     }
 
     fn decrypt(
