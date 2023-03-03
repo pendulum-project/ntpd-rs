@@ -128,7 +128,6 @@ struct System<C: NtpClock, T: Wait> {
     system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
     peer_snapshots_sender: tokio::sync::watch::Sender<Vec<ObservablePeerState>>,
     server_data_sender: tokio::sync::watch::Sender<Vec<ServerData>>,
-    #[allow(unused)]
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
 
     msg_for_system_rx: mpsc::Receiver<MsgForSystem>,

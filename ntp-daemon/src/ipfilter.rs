@@ -39,7 +39,6 @@ const fn apply_mask(val: u128, len: u8) -> u128 {
 }
 
 impl BitTree {
-    #[allow(dead_code)]
     /// Lookup whether a given value is in the set encoded in this BitTree
     /// Complexity is O(log(l)), where l is the length of the longest
     /// prefix in the set.
@@ -67,7 +66,6 @@ impl BitTree {
         }
     }
 
-    #[allow(dead_code)]
     /// Create a BitTree from the given prefixes. Complexity is O(n*log(l)),
     /// where n is the number of prefixes, and l the length of the longest
     /// prefix.
