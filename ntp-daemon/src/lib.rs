@@ -38,8 +38,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
 
     // Setup some basic tracing now so we are able
     // to log errors when loading the full configuration.
-    let finish_tracing_init =
-        crate::tracing::init(log_filter, args.log_format.unwrap_or_default());
+    let finish_tracing_init = crate::tracing::init(log_filter, args.log_format.unwrap_or_default());
 
     let mut config = match Config::from_args(args.config, args.peers, args.servers).await {
         Ok(c) => c,
