@@ -524,25 +524,19 @@ impl<'a> RawEncryptedField<'a> {
             }
         };
 
-        let mut result = vec![];
-        for encrypted_field in RawExtensionField::deserialize_sequence(
-            &plaintext,
-            0,
-            RawExtensionField::BARE_MINIMUM_SIZE,
-        ) {
-            let encrypted_field = encrypted_field.map_err(|e| e.generalize())?.1;
-            if encrypted_field.type_id == ExtensionFieldTypeId::NtsEncryptedField {
-                // TODO: Discuss whether we want this check
-                return Err(ParsingError::MalformedNtsExtensionFields);
-            }
-            result.push(
-                ExtensionField::decode(encrypted_field)
-                    .map_err(|e| e.generalize())?
-                    .into_owned(),
-            );
-        }
-
-        Ok(result)
+        RawExtensionField::deserialize_sequence(&plaintext, 0, RawExtensionField::BARE_MINIMUM_SIZE)
+            .map(|encrypted_field| {
+                let encrypted_field = encrypted_field.map_err(|e| e.generalize())?.1;
+                if encrypted_field.type_id == ExtensionFieldTypeId::NtsEncryptedField {
+                    // TODO: Discuss whether we want this check
+                    Err(ParsingError::MalformedNtsExtensionFields)
+                } else {
+                    Ok(ExtensionField::decode(encrypted_field)
+                        .map_err(|e| e.generalize())?
+                        .into_owned())
+                }
+            })
+            .collect()
     }
 }
 
