@@ -40,8 +40,7 @@ enum Command {
     Config(ConfigUpdate),
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     let config = Config::from_args(cli.config, vec![], vec![]).await;
