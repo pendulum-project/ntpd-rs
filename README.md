@@ -1,6 +1,6 @@
 # Statime
 
-[![codecov](https://codecov.io/gh/pendulum-project/statime/branch/main/graph/badge.svg)](https://codecov.io/gh/pendulum-project/statime)
+[![codecov](https://codecov.io/gh/pendulum-project/statime/branch/main/graph/badge.svg?token=QCO6NKS64J)](https://codecov.io/gh/pendulum-project/statime)
 
 Statime is a work in progress Rust implementation of PTP version 2.1 (IEEE 1588-2019). 
 It is currently highly in flux and not yet usable.
