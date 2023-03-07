@@ -1,4 +1,4 @@
-name: Build and run tests
+name: Test and Check
 
 on:
   push:
@@ -6,24 +6,21 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   test:
     name: Test
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        toolchain:
-          - nightly
-        os:
-          - ubuntu-latest
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
 
-      - name: Install ${{ matrix.toolchain }} toolchain
+      - name: Install rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: ${{ matrix.toolchain }}
+          toolchain: nightly
           override: true
 
       - name: Install cargo-llvm-cov
@@ -42,14 +39,14 @@ jobs:
           files: lcov.info
           fail_ci_if_error: false
 
-  fmt:
+  check:
     name: Check style
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
 
-      - name: Install nightly toolchain
+      - name: Install rust
         uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
