@@ -10,7 +10,7 @@ Unlike the ntp reference implementation, ntpd-rs does not support either broadca
 
 Currently, ntpd-rs only supports Linux-based operating systems. Our current testing only targets Linux kernels after version 5.0.0, older kernels may work but this is not guaranteed.
 
-ntpd-rs is written in rust, and requires cargo 1.60.0 at a minimum to be built. Earlier versions may work but are currently not included in our testing regime. We strongly recommend using [rustup](https://rustup.rs) to install rust/cargo, as the version provided by system package managers tend to be out of date.
+ntpd-rs is written in rust, and requires cargo 1.64.0 at a minimum to be built. Earlier versions may work but are currently not included in our testing regime. We strongly recommend using [rustup](https://rustup.rs) to install rust/cargo, as the version provided by system package managers tend to be out of date.
 
 To build ntpd-rs run:
 
@@ -18,7 +18,24 @@ To build ntpd-rs run:
 cargo build --release
 ```
 
-This produces a binary `ntp-daemon` in the `target/release` folder, which is the main NTP daemon. The daemon requires elevated permissions in order to change the system clock. It can be tested against a server in the [NTP pool](https://ntppool.org) (please ensure no other NTP daemons are running):
+This produces a binary `ntp-daemon` in the `target/release` folder, which is the main NTP daemon.
+
+Before running the ntpd-rs daemon, make sure to disable any other NTP daemon (they would interfere). This command searches for chrony and ntp processes:
+
+```sh
+> ps aux | grep "chrony\|ntp"
+_chrony     1178  0.0  0.0  13016  2596 ?        S    09:12   0:00 /usr/sbin/chronyd -F -1
+_chrony     1181  0.0  0.0   5284  2520 ?        S    09:12   0:00 /usr/sbin/chronyd -F -1
+user+   17357  0.0  0.0   9040  2456 pts/1    S+   10:09   0:00 grep --color=auto chrony\|ntp
+```
+
+In this case, `chronyd` is currently active. It can be disabled with:
+
+```sh
+systemctl stop chronyd
+```
+
+The daemon requires elevated permissions to change the system clock. It can be tested against a server in the [NTP pool](https://ntppool.org) (please ensure no other NTP daemons are running):
 
 ```sh
 sudo ./target/release/ntp-daemon -p pool.ntp.org
@@ -30,7 +47,7 @@ After a few minutes you should start to see messages indicating the offset of yo
 
 NTPD-rs now also supports a new, better performing clock algorithm. This algorithm doesn't conform to the specification in RFC5905, but offers significantly better performance. Experience with both it and Chrony's non-standard algorithm indicates that a different clock algorithm does not impede interoperability.
 
-Currently, the new algorithm is opt-in, and must be selected at build time. To build it, add the additional flags `--features new-algorithm` to the build command. Please note that when using the new clock algorithm, a different set of configuration options needs to be used to tune it, as indicated below.
+Currently, the new algorithm is opt-in, and must be selected at build time. To build it, add the additional flag `--features new-algorithm` to the build command. Please note that when using the new clock algorithm, a different set of configuration options needs to be used to tune it, see below.
 
 ## Configuration
 
@@ -64,7 +81,7 @@ Peers are configured in the peers section, which should consist of a list of pee
 | --- | --- | --- |
 | mode | server | Type of peer connection to create. Can be any of `server`, `nts-server` or `pool` (for meaning of these, see below). |
 | addr | | Address of the server or pool. The default port (123) is automatically appended if not given. (not valid for nts connections) |
-| addr-ke | | Address of the nts server. The default port (4460) is automatically appended if not given. (only valid for nts connections) |
+| ke-addr | | Address of the nts server. The default port (4460) is automatically appended if not given. (only valid for nts connections) |
 | max-peers | 1 | Maximum number of peers to create from the pool. (only  valid for pools) |
 | certifcates | | Path to a pem file containing additional root certificates to accept for the TLS connection to the nts server. In addition to these certificates, the system certificates will also be accepted. (only valid for nts connections) |
 
@@ -86,26 +103,27 @@ addr = "1.pool.ntp.org:123"
 
 ##### Nts peers
 
-A peer in `server-nts` mode will use NTS (Network Times Security) to communicate with its server. The server must support NTS. The configuration requires the address of the Key Exchange server (the address of the actual NTP server that ends up being used may be different). For example:
+A peer in `nts-server` mode will use NTS (Network Time Security) to communicate with its server. The server must support NTS. The configuration requires the address of the Key Exchange server (the address of the actual NTP server that ends up being used may be different). For example:
 
 ```
 [[peers]]
-mode = "server-nts"
-ke_addr = "time.cloudflare.com:4460"
+mode = "nts-server"
+addr = "localhost:123"
+ke-addr =  "localhost:4460"
 certificate = "/path/to/certificates.pem"
 ```
 
 ##### Pool
 
-`Pool` mode is a convenient way to configure many NTP servers, without having to worry about individual servers' IP addresses.
+`pool` mode is a convenient way to configure many NTP servers, without having to worry about individual servers' IP addresses.
 
-A peer in `Pool` mode will try to acquire `max_peers` addresses of NTP servers from the pool. `ntpd-rs` will actively try to keep a pool filled up. For instance if a server cannot be reached, a different server will be picked from the pool.
+A peer in `pool` mode will try to acquire `max_peers` addresses of NTP servers from the pool. `ntpd-rs` will actively try to keep a pool filled up. For instance if a server cannot be reached, a different server will be picked from the pool.
 
 An example configuration for the ntppool.org ntp pool can look like
 ```
 [[peers]]
+mode = "pool"
 addr = "pool.ntp.org"
-mode = "Pool"
 max_peers = 4
 ```
 

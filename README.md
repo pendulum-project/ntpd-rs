@@ -8,7 +8,7 @@ ntpd-rs is an implementation of NTP completely written in Rust, with a focus on 
 
 Currently, ntpd-rs only supports Linux-based operating systems. Our current testing only targets Linux kernels after version 5.0.0, older kernels may work but this is not guaranteed.
 
-ntpd-rs is written in rust, and requires cargo 1.60.0 at a minimum to be built. We strongly recommend using [rustup](https://rustup.rs) to install a rust toolchain, because the version provided by system package managers tends to be out of date.
+ntpd-rs is written in rust, and requires cargo 1.64.0 at a minimum to be built. We strongly recommend using [rustup](https://rustup.rs) to install a rust toolchain, because the rust version provided by system package managers tends to be out of date.
 
 To build ntpd-rs run
 ```sh
@@ -25,32 +25,10 @@ The ntpd-rs daemon requires elevated permissions to change the system clock. It 
 ```sh
 sudo ./target/release/ntp-daemon -p pool.ntp.org
 ```
-After a few minutes you should start to see messages indicating the offset of your machine from the server. A complete description of how the daemon can be configured can be found in the [configuration documentation](CONFIGURATION.md)
+After a few minutes you should start to see messages indicating the offset of your machine from the server.
 
-## Naming
+A complete description of how the daemon can be configured can be found in the [configuration documentation](CONFIGURATION.md)
 
-We are currently looking for a better name for this project. Suggestions for this are welcome.
-
-## Package substructure
-
-Currently, the code is split up into several separate crates:
- - `ntp-proto` contains the packet parsing and the algorithms needed for clock selection, filtering and steering.
- - `ntp-daemon` contains the main NTP daemon, and deals with orchestrating the networking and configuration.
- - `ntp-ctl` contains a control interface for the NTP daemon, allowing readout of current synchronisation state and dynamic configuration changes.
- - `ntp-metrics-exporter` contains a HTTP interface for exporting the prometheus metrics.
- - `test-binaries` contains a number of simple NTP servers that can be used for testing (see below).
- - `ntp-os-clock` contains the unsafe code needed to interface with system clocks.
- - `ntp-udp` contains the unsafe code needed to deal with timestamping on the network layer.
- - `ntpd` contains the entrypoints for all our binaries
-
-All unsafe code is contained within the `ntp-os-clock` and `ntp-udp` packages, which are kept as small as possible. All interfaces exposed by these crates should be safe. For a more detailed description of how ntpd-rs is structured, see the [development documentation](DEVELOPMENT.md).
-
-## Test Binaries
-
-This crate contains extremely limited NTP servers for testing purposes
-
-* `demobilize-server` always sends the DENY kiss code, the client must demobilize this association
-* `rate-limit-server` forces an increase of the poll interval to 32 seconds
 
 ## Minimum supported rust version
 
@@ -68,3 +46,16 @@ Plain NTP is unencrypted and does not establish a trusted connection. NTS adds t
 
 Check Prossimo's [project plan](https://www.memorysafety.org/initiative/ntp/ntp-work-plan/) for more details and for options to support their work.
 
+## Package substructure
+
+Currently, the code is split up into several separate crates:
+ - `ntp-proto` contains the packet parsing and the algorithms needed for clock selection, filtering and steering.
+ - `ntp-daemon` contains the main NTP daemon, and deals with orchestrating the networking and configuration.
+ - `ntp-ctl` contains a control interface for the NTP daemon, allowing readout of current synchronisation state and dynamic configuration changes.
+ - `ntp-metrics-exporter` contains a HTTP interface for exporting the prometheus metrics.
+ - `test-binaries` contains a number of simple NTP servers that can be used for testing (see below).
+ - `ntp-os-clock` contains the unsafe code needed to interface with system clocks.
+ - `ntp-udp` contains the unsafe code needed to deal with timestamping on the network layer.
+ - `ntpd` contains the entrypoints for all our binaries
+
+All unsafe code is contained within the `ntp-os-clock` and `ntp-udp` packages, which are kept as small as possible. All interfaces exposed by these crates should be safe. For a more detailed description of how ntpd-rs is structured, see the [development documentation](DEVELOPMENT.md).

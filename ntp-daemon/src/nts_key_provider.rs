@@ -45,10 +45,7 @@ pub async fn spawn(config: KeysetConfig) -> watch::Receiver<Arc<KeySet>> {
         next_interval = std::time::Duration::from_secs(config.rotation_interval as _);
         provider.rotate();
         if let Some(path) = &config.storage_path {
-            if let Err(e) = (|| -> std::io::Result<()> {
-                let mut output = File::create(path)?;
-                provider.store(&mut output)
-            })() {
+            if let Err(e) = File::create(path).and_then(|mut output| provider.store(&mut output)) {
                 warn!(error = ?e, "Could not store nts server keys");
             }
         }
