@@ -7,6 +7,7 @@ Major Changes
 - Implemented (de)serialization of NTP extension fields
 - Implemented NTS Key Exchange
 - Implemented NTS client functionality and configuration
+- Implemented NTS server functionality and configuration
 
 Minor Changes
 -----

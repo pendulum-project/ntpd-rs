@@ -66,7 +66,7 @@ Peers are configured in the peers section, which should consist of a list of pee
 | addr | | Address of the server or pool. The default port (123) is automatically appended if not given. (not valid for nts connections) |
 | addr-ke | | Address of the nts server. The default port (4460) is automatically appended if not given. (only valid for nts connections) |
 | max-peers | 1 | Maximum number of peers to create from the pool. (only  valid for pools) |
-| certifcates | | Path to a pem file containing additional root certificates to accept for the TLS connection to the nts server. In addition to these certificates, the system certificates will also be accepted. (only valid for nts connections) |
+| certificates | | Path to a pem file containing additional root certificates to accept for the TLS connection to the nts server. In addition to these certificates, the system certificates will also be accepted. (only valid for nts connections) |
 
 ##### Server peers
 
@@ -126,6 +126,31 @@ For rate limiting, the server uses a hashtable to store when it has last seen a 
 
 In applying the three client filters (deny, allow and ratelimiting), the server first checks whether the clients IP is on the denylist, then it checks whether it is on the allowlist, and finally it checks whether the client needs to be rate-limited. At each of these stages, the appropriate action is taken when the client fails the check.
 
+#### NTS Server
+
+Servers configured via the `server` section can also support NTS. To enable this, the built-in NTS-KE server needs to be enabled (hosting the NTS-KE server separately is not yet supported). This can be configured through the `nts-ke` section:
+| Option | Default | Description |
+| --- | --- | --- |
+| cert-chain-path | | Path to the full chain TLS certificate for the server. Note that currently self-signed certificates are not supported. |
+| key-der-path | | Path to the TLS private key for the server. |
+| timeout-ms | 1000 | Timeout on NTS-KE sessions, after which the server decides to hang up. This is to prevent large resource utilization from old and or inactive sessions. Timeout duration is in milliseconds. |
+| addr | | Address of the interface to bind to for the NTS-KE server. |
+
+Our implementation of NTS follows the recommendations of section 6 in [RFC8915](https://www.rfc-editor.org/rfc/rfc8915.html). Currently, the master keys for encryption of the cookies are generated internally, and their generation can be controlled via the settings in the `keyset` section
+| Option | Default | Description |
+| --- | --- | --- |
+| old-keys | 7 | Number of old keys to keep valid for existing cookies. |
+| rotation-interval | 86400 | Time (in seconds) between generating new keys. |
+| storage-path | | If specified, server keys are saved and restored from this path. This enables reboots of the server without invalidating the cookies of existing clients. |
+
+##### A note on TLS keys and certificates
+
+Due to limitations in rustls, we currently do not support self-signed certificates on either the client or the server. For public NTS-enabled server this shouldn't be a problem, as those should have certificates signed by one of the big root CA's. For private servers, this means you will have to setup a private CA and use it to sign the certificate of the server. This additional CA can then be provided to the clients.
+
+Instructions for how to generate a CA certificate and use it to sign certificates can be found in many places on the internet, for example in this [github gist](https://gist.github.com/Soarez/9688998)
+
+#### Observability and dynamic configuration
+
 The daemon can expose an observation socket that can be read to obtain information on the current state of the peer connections and clock steering algorithm. This socket can be configured via the `observe` section:
 | Option | Default | Description |
 | --- | --- | --- |
@@ -139,6 +164,8 @@ The daemon can also expose a configuration socket that can be used to change som
 | mode | 0o770 | Permissions with which the socket should be created, given as (octal) integer. |
 
 The management and configuration sockets are used by the [management client](MANAGEMENT_CLIENT.md) to display the daemon's state and to allow for dynamic changing of some configuration parameters.
+
+#### Time synchronization
 
 There are a number of options available to influence how time differences to the various servers are used to synchronize the system clock. All of these are part of the `system` section of the configuration:
 | Option | Default | Description |
@@ -194,11 +221,11 @@ A second set of options control more internal details of how the algorithm estim
 | --- | --- | --- |
 | precision-low-probability | 0.333 | Probability bound below which we start moving towards decreasing our precision estimate. (probability, 0-1) |
 | precision-high-probability | 0.667 | Probability bound above which we start moving towards increasing our precision estimate. (probability, 0-1) |
-| precision-hysteresis | 16 | Ammount of hysteresis in changeing the precision estimate. (count, 1+) |
-| precision-min-weight | 0.1 | Lower bound on the ammount of effect our precision estimate has on the total noise estimate before we allow decreasing of the precision estimate. (weight, 0-1) |
-| poll-low-weight | 0.4 | Ammount which a measurement contributes to the state, below which we start increasing the poll interval. (weight, 0-1) |
-| poll-high-weight | 0.6 | Ammount which a measurement contributes to the state, above which we start decreasing the poll interval. (weight, 0-1) |
-| poll-hysteresis | 16 | Ammount of hysteresis in changeing the poll interval (count, 1+) |
+| precision-hysteresis | 16 | Amount of hysteresis in changing the precision estimate. (count, 1+) |
+| precision-min-weight | 0.1 | Lower bound on the amount of effect our precision estimate has on the total noise estimate before we allow decreasing of the precision estimate. (weight, 0-1) |
+| poll-low-weight | 0.4 | Amount which a measurement contributes to the state, below which we start increasing the poll interval. (weight, 0-1) |
+| poll-high-weight | 0.6 | Amount which a measurement contributes to the state, above which we start decreasing the poll interval. (weight, 0-1) |
+| poll-hysteresis | 16 | Amount of hysteresis in changing the poll interval (count, 1+) |
 | max-frequency-steer | 495e-6 | Maximum steering input to system clock. (s/s) |
 
 #### Example configuration file:
