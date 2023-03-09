@@ -26,7 +26,7 @@ jobs:
         features:
           - ""
           - "--features sentry"
-          - "--features new-algorithm"
+          - "--features rfc-algorithm"
     steps:
       - name: Checkout sources
         uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c

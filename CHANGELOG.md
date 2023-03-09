@@ -8,6 +8,7 @@ Major Changes
 - Implemented NTS Key Exchange
 - Implemented NTS client functionality and configuration
 - Implemented NTS server functionality and configuration
+- New and improved clock algorithm
 
 Minor Changes
 -----
