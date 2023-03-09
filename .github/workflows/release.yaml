@@ -59,7 +59,7 @@ jobs:
           mkdir "$dst"
           mv "${bins[@]}" "$dst/"
           mv README.md CONFIGURATION.md MANAGEMENT_CLIENT.md OPERATIONAL_CONSIDERATIONS.md CHANGELOG.md "$dst/"
-          mv LICENSE LICENSE-APACHE LICENSE-MIT "$dst/"
+          mv COPYRIGHT LICENSE-APACHE LICENSE-MIT "$dst/"
           mv ntp.toml "$dst/"
           mv ntpd-rs.service.example "$dst/"
       - name: Archive (tar)
