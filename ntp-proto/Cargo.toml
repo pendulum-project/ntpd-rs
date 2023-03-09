@@ -9,7 +9,7 @@ license = "Apache-2.0 OR MIT"
 [features]
 fuzz = ["arbitrary"]
 ext-test = []
-new-algorithm = []
+rfc-algorithm = []
 
 [dependencies]
 # Note: md5 is needed to calculate ReferenceIDs for IPv6 addresses per RFC5905

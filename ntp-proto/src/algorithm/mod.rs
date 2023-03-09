@@ -75,9 +75,9 @@ mod standard;
 
 pub use kalman::KalmanClockController;
 pub use standard::StandardClockController;
-#[cfg(not(feature = "new-algorithm"))]
+#[cfg(feature = "rfc-algorithm")]
 pub type DefaultTimeSyncController<C, PeerID> = standard::StandardClockController<C, PeerID>;
-#[cfg(feature = "new-algorithm")]
+#[cfg(not(feature = "rfc-algorithm"))]
 pub type DefaultTimeSyncController<C, PeerID> = kalman::KalmanClockController<C, PeerID>;
 
 #[cfg(feature = "fuzz")]
