@@ -46,7 +46,7 @@ pub(crate) async fn key_exchange_client(
     BoundKeyExchangeClient::new(socket, server_name, config)?.await
 }
 
-pub async fn spawn(
+pub fn spawn(
     nts_ke_config: NtsKeConfig,
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
 ) -> JoinHandle<std::io::Result<()>> {
@@ -115,7 +115,7 @@ async fn key_exchange_server(
 ) -> std::io::Result<()> {
     use std::io;
 
-    let listener = TcpListener::bind(address).await?;
+    let listener = TcpListener::bind(&address).await?;
 
     let mut config = rustls::ServerConfig::builder()
         .with_safe_defaults()
@@ -489,7 +489,11 @@ fn certificates_from_bufread(mut reader: impl BufRead) -> std::io::Result<Vec<Ce
 
 #[cfg(test)]
 mod tests {
-    use super::certificates_from_bufread;
+    use std::path::PathBuf;
+
+    use ntp_proto::KeySetProvider;
+
+    use super::*;
 
     #[test]
     fn nos_nl_pem() {
@@ -505,5 +509,38 @@ mod tests {
         let certificates = certificates_from_bufread(input.as_slice()).unwrap();
 
         assert_eq!(certificates.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn key_exchange_roundtrip() {
+        let provider = KeySetProvider::new(1);
+        let keyset = provider.get();
+
+        let (_sender, keyset) = tokio::sync::watch::channel(keyset);
+        let nts_ke_config = NtsKeConfig {
+            cert_chain_path: PathBuf::from("../test-keys/end.fullchain.pem"),
+            key_der_path: PathBuf::from("../test-keys/end.key"),
+            timeout_ms: 1000,
+            addr: "0.0.0.0:5432".parse().unwrap(),
+        };
+
+        let _join_handle = spawn(nts_ke_config, keyset);
+
+        // give the server some time to make the port available
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut ca_path = std::env::current_dir().unwrap();
+        ca_path.pop();
+        ca_path.push("test-keys/testca.pem");
+        let result = key_exchange_client(
+            "localhost".to_string(),
+            5432,
+            &certificates_from_file(&ca_path).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.remote, "localhost");
+        assert_eq!(result.port, 123);
     }
 }

@@ -78,7 +78,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     .await?;
 
     if let Some(nts_ke_config) = config.nts_ke {
-        crate::keyexchange::spawn(nts_ke_config, keyset).await;
+        let _join_handle = crate::keyexchange::spawn(nts_ke_config, keyset);
     }
 
     crate::observer::spawn(
