@@ -1,15 +1,20 @@
 [package]
 name = "ntp-daemon"
-version = "0.2.1"
-edition = "2021"
-license = "Apache-2.0 OR MIT"
+description = "ntpd-rs daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+publish.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ntp-proto = { path = "../ntp-proto" }
-ntp-os-clock = { path = "../ntp-os-clock" }
-ntp-udp = { path = "../ntp-udp" }
+ntp-proto.workspace = true
+ntp-os-clock.workspace = true
+ntp-udp.workspace = true
 
 sentry = { workspace = true, optional = true }
 sentry-tracing = { workspace = true, optional = true }
@@ -33,7 +38,7 @@ rustls-native-certs.workspace = true
 rustls-pemfile.workspace = true
 
 [dev-dependencies]
-ntp-proto = { path = "../ntp-proto", features=["ext-test"]}
+ntp-proto = { workspace = true, features=["ext-test"]}
 
 [features]
 sentry = ["dep:sentry", "dep:sentry-tracing"]

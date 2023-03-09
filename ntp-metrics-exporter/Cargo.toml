@@ -1,15 +1,20 @@
 [package]
 name = "ntp-metrics-exporter"
-version = "0.2.1"
-edition = "2021"
-license = "Apache-2.0 OR MIT"
+description = "ntpd-rs OpenMetrics exporter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+publish.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ntp-proto = { path = "../ntp-proto" }
-ntp-os-clock = { path = "../ntp-os-clock" }
-ntp-daemon = { path = "../ntp-daemon" }
+ntp-proto.workspace = true
+ntp-os-clock.workspace = true
+ntp-daemon.workspace = true
 
 axum.workspace = true
 tokio.workspace = true
