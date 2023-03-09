@@ -1,13 +1,19 @@
 [package]
 name = "ntpd"
-version = "0.2.1"
-edition = "2021"
-license = "Apache-2.0 OR MIT"
+description = "An NTP implementation in Rust"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+publish.workspace = true
 
 [dependencies]
-ntp-daemon = { path = "../ntp-daemon" }
-ntp-metrics-exporter = { path = "../ntp-metrics-exporter" }
-ntp-ctl = { path = "../ntp-ctl" }
+ntp-daemon.workspace = true
+ntp-metrics-exporter.workspace = true
+ntp-ctl.workspace = true
+
 tokio.workspace = true
 
 [[bin]]

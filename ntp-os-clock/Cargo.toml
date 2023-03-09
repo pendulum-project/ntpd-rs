@@ -1,12 +1,17 @@
 [package]
 name = "ntp-os-clock"
-version = "0.2.1"
-edition = "2021"
-license = "Apache-2.0 OR MIT"
+description = "ntpd-rs system clock interfaces"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+publish.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ntp-proto = { path = "../ntp-proto" }
+ntp-proto.workspace = true
 libc.workspace = true
 thiserror.workspace  = true
