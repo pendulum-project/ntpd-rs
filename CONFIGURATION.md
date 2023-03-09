@@ -26,11 +26,11 @@ sudo ./target/release/ntp-daemon -p pool.ntp.org
 
 After a few minutes you should start to see messages indicating the offset of your machine from the server.
 
-### New clock algorithm
+### RFC5905 compliant algorithm
 
-NTPD-rs now also supports a new, better performing clock algorithm. This algorithm doesn't conform to the specification in RFC5905, but offers significantly better performance. Experience with both it and Chrony's non-standard algorithm indicates that a different clock algorithm does not impede interoperability.
+By default, NTPD-rs uses a newer, better performing clock algorithm. This algorithm doesn't conform to the specification in RFC5905, but offers significantly better performance. Experience with both it and Chrony's non-standard algorithm indicates that a different clock algorithm does not impede interoperability.
 
-Currently, the new algorithm is opt-in, and must be selected at build time. To build it, add the additional flags `--features new-algorithm` to the build command. Please note that when using the new clock algorithm, a different set of configuration options needs to be used to tune it, as indicated below.
+However, should you desire to run an ntp instance that is to the largest extent possible RFC5905 compliant, it is possible to compile NTPD-rs with the clock algorithm from RFC5905. To do this, at build time the additional flags `--features rfc-algorithm` need to be added to the build command. Please note that when using the RFC's clock algorithm, a different set of configuration options needs to be used to tune it, as indicated below.
 
 ## Configuration
 
@@ -183,21 +183,12 @@ For panic thresholds, asymmetric thresholds can be configured, allowing a differ
 ##### Algorithm specific options
 
 NTPD-rs currently supports two choices for algorithms:
+ - A custom, high performance algorithm.
  - The algorithm specified in RFC5905
- - A custom, higher performance algorithm.
 
 Which algorithm is used is determined by a compile time flag (see above).
 
-The standard algorithm has the following additional configuration options. All of these have reasonable defaults and care should be taken when changing them.
-| Option | Default | Description |
-| --- | --- | --- |
-| min-cluster-survivors | 3 | Number of servers beyond which we do not try to exclude further servers for the purpose of improving measurement precision. Do not change unless familiar with the NTP algorithms. |
-| frequency-tolerance | 15 | Estimate of the short-time frequency precision of the local clock, in parts-per-million. The default is usually a good approximation. |
-| distance-threshold | 1 | Maximum delay to the clock representing ground truth via a peer for that peer to be considered acceptable, in seconds. |
-| frequency-measurement-period | 900 | Amount of time to spend on startup measuring the frequency offset of the system clock, in seconds. Lowering this means the clock is kept actively synchronized sooner, but reduces the precision of the initial frequency estimate, which could result in lower stability of the clock early on. |
-| spike-threshold | 900 | Amount of time before a clock difference larger than 125ms is considered real instead of a spike in the network. Lower values ensure large errors are corrected faster, but make the client more sensitive to network issues. Value provided is in seconds. |
-
-The new high performance clock algorithm has more options. Most of these are quite straightforward to understand and can be used to tune the style of time synchronization to the users liking (although the defaults are probably fine for most):
+The high performance clock algorithm has quite a few options. Most of these are quite straightforward to understand and can be used to tune the style of time synchronization to the users liking (although the defaults are probably fine for most):
 | Option | Default | Description |
 | --- | --- | --- |
 | steer-offset-threshold | 2.0 | How far from 0 (in multiples of the uncertainty) should the offset be before we correct. A higher value reduces the amount of steering, but at the cost of a slower synchronization. (standard deviations, 0+) |
@@ -227,6 +218,15 @@ A second set of options control more internal details of how the algorithm estim
 | poll-high-weight | 0.6 | Amount which a measurement contributes to the state, above which we start decreasing the poll interval. (weight, 0-1) |
 | poll-hysteresis | 16 | Amount of hysteresis in changing the poll interval (count, 1+) |
 | max-frequency-steer | 495e-6 | Maximum steering input to system clock. (s/s) |
+
+The RFC algorithm has different options for tuning. All of these have reasonable defaults and care should be taken when changing them.
+| Option | Default | Description |
+| --- | --- | --- |
+| min-cluster-survivors | 3 | Number of servers beyond which we do not try to exclude further servers for the purpose of improving measurement precision. Do not change unless familiar with the NTP algorithms. |
+| frequency-tolerance | 15 | Estimate of the short-time frequency precision of the local clock, in parts-per-million. The default is usually a good approximation. |
+| distance-threshold | 1 | Maximum delay to the clock representing ground truth via a peer for that peer to be considered acceptable, in seconds. |
+| frequency-measurement-period | 900 | Amount of time to spend on startup measuring the frequency offset of the system clock, in seconds. Lowering this means the clock is kept actively synchronized sooner, but reduces the precision of the initial frequency estimate, which could result in lower stability of the clock early on. |
+| spike-threshold | 900 | Amount of time before a clock difference larger than 125ms is considered real instead of a spike in the network. Lower values ensure large errors are corrected faster, but make the client more sensitive to network issues. Value provided is in seconds. |
 
 #### Example configuration file:
 
