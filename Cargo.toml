@@ -26,7 +26,7 @@ panic = "abort"
 [workspace.dependencies]
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter", "serde", "json"] }
-serde = { version = "1.0.153", features = ["derive"] }
+serde = { version = "1.0.154", features = ["derive"] }
 serde_json = "1.0.94"
 rand = "0.8.5"
 exitcode = "1.1.2"
