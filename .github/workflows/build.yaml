@@ -32,26 +32,21 @@ jobs:
         uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c
         with:
           persist-credentials: false
-
       - name: Install ${{ matrix.rust }} toolchain
         uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
         with:
           toolchain: ${{ matrix.rust }}
           override: true
-
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@bfecd3c66b3263d64e00b103372314e348dc73ad
         with:
           tool: cargo-llvm-cov
-
       - name: cargo build
         run: cargo build ${{ matrix.features }}
-
       - name: cargo test
         run: cargo llvm-cov ${{ matrix.features }} --lcov --output-path lcov.info
         env:
           RUST_BACKTRACE: 1
-
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@d9f34f8cd5cb3b3eb79b3e4b5dae3a16df499a70
         with:
@@ -71,38 +66,20 @@ jobs:
         uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c
         with:
           persist-credentials: false
-
       - name: Install nightly toolchain
         uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
         with:
           toolchain: nightly
           override: true
-
       - name: Install udeps
-        run: cargo install cargo-udeps --locked
-
-      - name: cargo udeps
-        run: cargo udeps --workspace --all-targets ${{ matrix.features }}
-
-  unused-fuzzers:
-    name: Unused dependencies (fuzzers)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c
+        uses: taiki-e/install-action@bfecd3c66b3263d64e00b103372314e348dc73ad
         with:
-          persist-credentials: false
-
-      - name: Install nightly toolchain
-        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
-        with:
-          toolchain: nightly
-          override: true
-
-      - name: Install udeps
-        run: cargo install cargo-udeps --locked
-
+          tool: cargo-udeps
       - name: cargo udeps
+        run: cargo udeps --workspace --all-targets
+      - name: cargo udeps (sentry)
+        run: cargo udeps --workspace --all-targets --features sentry
+      - name: cargo udeps (fuzzer)
         run: cargo udeps --manifest-path ./fuzz/Cargo.toml --all-targets
 
   format:
@@ -130,6 +107,7 @@ jobs:
         with:
           command: fmt
           args: --manifest-path ./fuzz/Cargo.toml --all --check
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
@@ -179,10 +157,9 @@ jobs:
         with:
           version: 0.9.0
       - name: Install cargo-zigbuild
-        uses: actions-rs/install@9da1d2adcfe5e7c16992e8242ca33a56b6d9b101
+        uses: taiki-e/install-action@bfecd3c66b3263d64e00b103372314e348dc73ad
         with:
-          crate: cargo-zigbuild
-          version: latest
+          tool: cargo-zigbuild
       - name: Run clippy
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
         env:
@@ -199,17 +176,16 @@ jobs:
         uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c
         with:
           persist-credentials: false
-
       - name: Install nightly toolchain
         uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
         with:
           toolchain: nightly
           override: true
           default: true
-
       - name: Install cargo fuzz
-        run: cargo install cargo-fuzz
-
+        uses: taiki-e/install-action@bfecd3c66b3263d64e00b103372314e348dc73ad
+        with:
+          tool: cargo-fuzz
       - name: Smoke-test fuzz targets
         run: |
           cargo fuzz build
