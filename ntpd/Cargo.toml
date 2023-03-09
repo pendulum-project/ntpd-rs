@@ -9,6 +9,10 @@ homepage.workspace = true
 readme.workspace = true
 publish.workspace = true
 
+[package.metadata.release]
+tag = true
+tag-name = "v{{version}}"
+
 [dependencies]
 ntp-daemon.workspace = true
 ntp-metrics-exporter.workspace = true
