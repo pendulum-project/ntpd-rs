@@ -8,20 +8,15 @@ use serde::{
 
 use crate::keyexchange::certificates_from_file;
 
-#[derive(Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone, Copy, Default)]
 pub enum PeerHostMode {
     #[serde(alias = "server")]
+    #[default]
     Server,
     #[serde(alias = "nts-server")]
     NtsServer,
     #[serde(alias = "pool")]
     Pool,
-}
-
-impl Default for PeerHostMode {
-    fn default() -> Self {
-        PeerHostMode::Server
-    }
 }
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
