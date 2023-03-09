@@ -551,4 +551,47 @@ mod tests {
 
         assert!(config.is_err());
     }
+
+    #[test]
+    fn system_config_accumulated_threshold() {
+        let config: Result<SystemConfig, _> = toml::from_str(
+            r#"
+            accumulated-threshold = 0
+            "#,
+        );
+
+        let config = config.unwrap();
+        assert!(config.accumulated_threshold.is_none());
+
+        let config: Result<SystemConfig, _> = toml::from_str(
+            r#"
+            accumulated-threshold = 1000
+            "#,
+        );
+
+        let config = config.unwrap();
+        assert_eq!(
+            config.accumulated_threshold,
+            Some(NtpDuration::from_seconds(1000.0))
+        );
+    }
+
+    #[test]
+    fn system_config_startup_panic_threshold() {
+        let config: Result<SystemConfig, _> = toml::from_str(
+            r#"
+            startup-panic-threshold = { forward = 10, backward = 20 }
+            "#,
+        );
+
+        let config = config.unwrap();
+        assert_eq!(
+            config.startup_panic_threshold.forward,
+            Some(NtpDuration::from_seconds(10.0))
+        );
+        assert_eq!(
+            config.startup_panic_threshold.backward,
+            Some(NtpDuration::from_seconds(20.0))
+        );
+    }
 }
