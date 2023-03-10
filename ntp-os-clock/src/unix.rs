@@ -69,33 +69,6 @@ pub(crate) const EMPTY_TIMEX: libc::timex = libc::timex {
     stbcnt: 0,
 };
 
-#[cfg(target_os = "linux")]
-pub(crate) const EMPTY_NTPTIMEVAL: libc::ntptimeval = libc::ntptimeval {
-    time: libc::timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    },
-    maxerror: 0,
-    esterror: 0,
-    tai: 0,
-    __glibc_reserved1: 0,
-    __glibc_reserved2: 0,
-    __glibc_reserved3: 0,
-    __glibc_reserved4: 0,
-};
-
-#[cfg(not(target_os = "linux"))]
-pub(crate) const EMPTY_NTPTIMEVAL: libc::ntptimeval = libc::ntptimeval {
-    time: libc::timespec {
-        tv_sec: 0,
-        tv_nsec: 0,
-    },
-    maxerror: 0,
-    esterror: 0,
-    tai: 0,
-    time_state: 0,
-};
-
 pub(crate) fn adjtime(timex: &mut libc::timex) -> Result<(), Error> {
     // We don't care about the time status, so the non-error
     // information in the return value of ntp_adjtime can be ignored.
@@ -109,23 +82,15 @@ pub(crate) fn adjtime(timex: &mut libc::timex) -> Result<(), Error> {
 }
 
 #[cfg_attr(target_os = "linux", allow(unused))]
-fn gettime() -> Result<libc::ntptimeval, Error> {
-    let mut timeval = EMPTY_NTPTIMEVAL;
+fn clock_gettime() -> Result<libc::timespec, Error> {
+    let mut timespec = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
 
-    if unsafe { libc::ntp_gettime(&mut timeval) } == -1 {
-        Err(convert_errno())
-    } else {
-        Ok(timeval)
-    }
-}
+    cerr(unsafe { libc::clock_gettime(libc::CLOCK_REALTIME, &mut timespec) })?;
 
-#[cfg_attr(target_os = "linux", allow(unused))]
-fn settimeofday(timeval: libc::timeval) -> Result<(), Error> {
-    if unsafe { libc::settimeofday(&timeval, std::ptr::null()) } == -1 {
-        Err(convert_errno())
-    } else {
-        Ok(())
-    }
+    Ok(timespec)
 }
 
 /// NTP Clock that uses the unix NTP KAPI clock functions to get/modify the
@@ -165,7 +130,18 @@ fn convert_errno() -> Error {
         libc::EPERM => Error::NoPermission,
         // No other errors should occur (EFAULT is not possible as we always
         // pass in a proper buffer)
-        _ => unreachable!(),
+        other => {
+            let error = std::io::Error::from_raw_os_error(other);
+            unreachable!("error code `{other}` ({error:?}) should not occur")
+        }
+    }
+}
+
+fn cerr(c_int: libc::c_int) -> Result<(), Error> {
+    if c_int == -1 {
+        Err(convert_errno())
+    } else {
+        Ok(())
     }
 }
 
@@ -205,23 +181,72 @@ pub(crate) fn current_time_timeval(timespec: libc::timeval, precision: Precision
     )
 }
 
-fn extract_current_time(timex: &libc::timex) -> Result<NtpTimestamp, Error> {
-    let ntp_timeval = gettime()?;
-
-    let precision = match timex.status & libc::STA_NANO {
-        0 => Precision::Micro,
-        _ => Precision::Nano,
-    };
-
+fn extract_current_time(_timex: &libc::timex) -> Result<NtpTimestamp, Error> {
     #[cfg(target_os = "linux")]
     {
-        Ok(current_time_timeval(ntp_timeval.time, precision))
+        // in a timex, the status flag determines precision
+        let precision = match _timex.status & libc::STA_NANO {
+            0 => Precision::Micro,
+            _ => Precision::Nano,
+        };
+
+        Ok(current_time_timeval(_timex.time, precision))
     }
 
     #[cfg(not(target_os = "linux"))]
     {
-        Ok(current_time_timespec(ntp_timeval.time, precision))
+        // clock_gettime always gives nanoseconds
+        let timespec = clock_gettime()?;
+        Ok(current_time_timespec(timespec, Precision::Nano))
     }
+}
+
+fn step_clock_timeofday(offset: ntp_proto::NtpDuration) -> Result<NtpTimestamp, Error> {
+    let (offset_secs, offset_nanos) = offset.as_seconds_nanos();
+
+    let mut timeval = libc::timeval {
+        tv_sec: 0,
+        tv_usec: 0,
+    };
+
+    unsafe { cerr(libc::gettimeofday(&mut timeval, std::ptr::null_mut()))? };
+
+    timeval.tv_sec += offset_secs as libc::time_t;
+    timeval.tv_usec += (offset_nanos / 1000) as libc::suseconds_t;
+
+    while timeval.tv_usec > 1_000_000 {
+        timeval.tv_sec += 1;
+        timeval.tv_usec -= 1_000_000;
+    }
+
+    unsafe { cerr(libc::settimeofday(&timeval, std::ptr::null()))? };
+
+    Ok(current_time_timeval(timeval, Precision::Micro))
+}
+
+fn step_clock_getsettime(offset: ntp_proto::NtpDuration) -> Result<NtpTimestamp, Error> {
+    let (offset_secs, offset_nanos) = offset.as_seconds_nanos();
+
+    let mut timespec = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+
+    let clock = libc::CLOCK_REALTIME;
+
+    unsafe { cerr(libc::clock_gettime(clock, &mut timespec))? };
+
+    timespec.tv_sec += offset_secs as libc::time_t;
+    timespec.tv_nsec += offset_nanos as libc::c_long;
+
+    while timespec.tv_nsec > 1_000_000_000 {
+        timespec.tv_sec += 1;
+        timespec.tv_nsec -= 1_000_000_000;
+    }
+
+    unsafe { cerr(libc::clock_settime(clock, &timespec))? };
+
+    Ok(current_time_timespec(timespec, Precision::Nano))
 }
 
 impl NtpClock for UnixNtpClock {
@@ -246,19 +271,11 @@ impl NtpClock for UnixNtpClock {
     }
 
     fn step_clock(&self, offset: ntp_proto::NtpDuration) -> Result<NtpTimestamp, Self::Error> {
-        let (secs, nanos) = offset.as_seconds_nanos();
-        let timeval = libc::timeval {
-            tv_sec: secs as libc::time_t,
-            tv_usec: nanos as libc::suseconds_t,
-        };
-
-        settimeofday(timeval)?;
-
-        let mut timex = EMPTY_TIMEX;
-        timex.modes = libc::MOD_NANO;
-        adjtime(&mut timex)?;
-
-        extract_current_time(&timex)
+        if true {
+            step_clock_getsettime(offset)
+        } else {
+            step_clock_timeofday(offset)
+        }
     }
 
     fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
@@ -337,5 +354,13 @@ mod tests {
             clock.now().unwrap(),
             NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 0)
         );
+    }
+
+    #[test]
+    #[ignore = "requires permissions, useful for testing permissions"]
+    fn step_clock() {
+        UnixNtpClock(())
+            .step_clock(NtpDuration::from_seconds(0.0))
+            .unwrap();
     }
 }
