@@ -25,6 +25,7 @@ pub(crate) async fn key_exchange_client(
     port: u16,
     extra_certificates: &[Certificate],
 ) -> Result<KeyExchangeResult, KeyExchangeError> {
+    dbg!("connecting");
     let socket = tokio::net::TcpStream::connect((server_name.as_str(), port))
         .await
         .unwrap();
@@ -115,6 +116,7 @@ async fn key_exchange_server(
 ) -> std::io::Result<()> {
     use std::io;
 
+    dbg!("listening");
     let listener = TcpListener::bind(&address).await?;
 
     let mut config = rustls::ServerConfig::builder()
@@ -489,7 +491,7 @@ fn certificates_from_bufread(mut reader: impl BufRead) -> std::io::Result<Vec<Ce
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::{io::Cursor, path::PathBuf};
 
     use ntp_proto::KeySetProvider;
 
@@ -521,21 +523,19 @@ mod tests {
             cert_chain_path: PathBuf::from("../test-keys/end.fullchain.pem"),
             key_der_path: PathBuf::from("../test-keys/end.key"),
             timeout_ms: 1000,
-            addr: "0.0.0.0:5432".parse().unwrap(),
+            addr: "0.0.0.0:5431".parse().unwrap(),
         };
 
         let _join_handle = spawn(nts_ke_config, keyset);
 
         // give the server some time to make the port available
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-        let mut ca_path = std::env::current_dir().unwrap();
-        ca_path.pop();
-        ca_path.push("test-keys/testca.pem");
+        let ca = include_bytes!("../../test-keys/testca.pem");
         let result = key_exchange_client(
             "localhost".to_string(),
-            5432,
-            &certificates_from_file(&ca_path).unwrap(),
+            5431,
+            &certificates_from_bufread(BufReader::new(Cursor::new(ca))).unwrap(),
         )
         .await
         .unwrap();
