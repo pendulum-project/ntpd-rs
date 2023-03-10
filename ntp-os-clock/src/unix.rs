@@ -201,29 +201,6 @@ fn extract_current_time(_timex: &libc::timex) -> Result<NtpTimestamp, Error> {
     }
 }
 
-fn step_clock_timeofday(offset: ntp_proto::NtpDuration) -> Result<NtpTimestamp, Error> {
-    let (offset_secs, offset_nanos) = offset.as_seconds_nanos();
-
-    let mut timeval = libc::timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
-
-    unsafe { cerr(libc::gettimeofday(&mut timeval, std::ptr::null_mut()))? };
-
-    timeval.tv_sec += offset_secs as libc::time_t;
-    timeval.tv_usec += (offset_nanos / 1000) as libc::suseconds_t;
-
-    while timeval.tv_usec > 1_000_000 {
-        timeval.tv_sec += 1;
-        timeval.tv_usec -= 1_000_000;
-    }
-
-    unsafe { cerr(libc::settimeofday(&timeval, std::ptr::null()))? };
-
-    Ok(current_time_timeval(timeval, Precision::Micro))
-}
-
 fn step_clock_getsettime(offset: ntp_proto::NtpDuration) -> Result<NtpTimestamp, Error> {
     let (offset_secs, offset_nanos) = offset.as_seconds_nanos();
 
@@ -271,11 +248,7 @@ impl NtpClock for UnixNtpClock {
     }
 
     fn step_clock(&self, offset: ntp_proto::NtpDuration) -> Result<NtpTimestamp, Self::Error> {
-        if true {
-            step_clock_getsettime(offset)
-        } else {
-            step_clock_timeofday(offset)
-        }
+        step_clock_getsettime(offset)
     }
 
     fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
