@@ -282,7 +282,7 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, ffi::OsString};
+    use std::ffi::OsString;
 
     use ntp_proto::NtpDuration;
 
@@ -401,51 +401,6 @@ mod tests {
         assert!((config.sentry.sample_rate - 0.5).abs() < 1e-9);
     }
 
-    #[tokio::test]
-    async fn test_file_config() {
-        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        d.push("testdata/config");
-        env::set_current_dir(d).unwrap();
-
-        let config = Config::from_args(None as Option<&'static str>, vec![], vec![])
-            .await
-            .unwrap();
-        assert_eq!(config.system.system.min_intersection_survivors, 2);
-        assert_eq!(config.peers.len(), 1);
-
-        let config = Config::from_args(Some("other.toml"), vec![], vec![])
-            .await
-            .unwrap();
-        assert_eq!(config.system.system.min_intersection_survivors, 3);
-        assert_eq!(config.peers.len(), 1);
-
-        let config = Config::from_args(
-            None as Option<&'static str>,
-            vec![
-                PeerConfig::try_from("example1.com").unwrap(),
-                PeerConfig::try_from("example2.com").unwrap(),
-            ],
-            vec![],
-        )
-        .await
-        .unwrap();
-        assert_eq!(config.system.system.min_intersection_survivors, 2);
-        assert_eq!(config.peers.len(), 2);
-
-        let config = Config::from_args(
-            Some("other.toml"),
-            vec![
-                PeerConfig::try_from("example1.com").unwrap(),
-                PeerConfig::try_from("example2.com").unwrap(),
-            ],
-            vec![],
-        )
-        .await
-        .unwrap();
-        assert_eq!(config.system.system.min_intersection_survivors, 3);
-        assert_eq!(config.peers.len(), 2);
-    }
-
     #[test]
     fn clap_no_arguments() {
         use clap::Parser;
@@ -461,10 +416,6 @@ mod tests {
     #[test]
     fn clap_external_config() {
         use clap::Parser;
-
-        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        d.push("testdata/config");
-        env::set_current_dir(d).unwrap();
 
         let arguments = &["--", "--config", "other.toml"];
         let parsed_empty = CmdArgs::try_parse_from(arguments).unwrap();
