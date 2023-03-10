@@ -103,3 +103,23 @@ for new configuration changes. The `ntp-ctl` executable is an example of how to 
 this socket.
 
 Because this task reads from its socket, it is advised to restrict the permissions on this socket.
+
+## Releasing
+
+New releases are created by using `cargo-release`. To create a new release make
+sure you have it installed and then run `cargo release [level]` with level being
+one of `alpha`, `beta`, `rc`, `patch`, `minor` or `major`. To make a new release
+make sure you have access to publish new releases and make sure that you are on
+the `main` branch and have access to push new commits to that branch. Make sure
+to pick the correct release level depending on the contents of the release. Also
+make sure that the changelog is up-to-date with the most recent changes. By
+default `cargo release` will run in dry-run mode and run some checks to make
+sure that things probably work as expected. You are required to sign the commit
+and tag you will make, so make sure that gpg is working as intended. Once ready,
+you can run `cargo release [level] --execute` to actually build and commit.
+
+Once this command completes, new releases should have been published to
+crates.io, but please verify manually that everything is where it is supposed to
+be. A new commit and tag will also have been pushed to the repository. This
+should also trigger a release build on github which will publish binaries on
+github under a new release.
