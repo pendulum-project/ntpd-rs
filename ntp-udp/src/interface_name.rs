@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn decode_socket_addr_v4() {
         let sockaddr = libc::sockaddr {
-            sa_family: 2,
+            sa_family: libc::AF_INET as libc::sa_family_t,
             sa_data: [0, 0, 127, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
         };
 
@@ -200,7 +200,7 @@ mod tests {
         //
 
         let sockaddr = libc::sockaddr {
-            sa_family: 2,
+            sa_family: libc::AF_INET as libc::sa_family_t,
             sa_data: [0, 42, -84 as _, 23, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
         };
 
@@ -220,7 +220,7 @@ mod tests {
         ];
 
         let sockaddr = libc::sockaddr_in6 {
-            sin6_family: 10,
+            sin6_family: libc::AF_INET6 as libc::sa_family_t,
             sin6_port: u16::from_ne_bytes([0, 32]),
             sin6_flowinfo: 0,
             sin6_addr: libc::in6_addr { s6_addr: raw },
