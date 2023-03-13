@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     io::{Read, Write},
     ops::ControlFlow,
     sync::Arc,
@@ -29,7 +30,7 @@ impl std::fmt::Display for WriteError {
 
 impl std::error::Error for WriteError {}
 
-impl NtsRecord {
+impl<'a> NtsRecord<'a> {
     fn record_type(&self) -> u16 {
         match self {
             NtsRecord::EndOfMessage => 0,
@@ -114,10 +115,10 @@ impl NtsRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NtsRecord {
+pub enum NtsRecord<'a> {
     EndOfMessage,
     NextProtocol {
-        protocol_ids: Vec<u16>,
+        protocol_ids: Cow<'a, [u16]>,
     },
     Error {
         errorcode: u16,
@@ -127,7 +128,7 @@ pub enum NtsRecord {
     },
     AeadAlgorithm {
         critical: bool,
-        algorithm_ids: Vec<u16>,
+        algorithm_ids: Cow<'a, [u16]>,
     },
     NewCookie {
         cookie_data: Vec<u8>,
@@ -165,18 +166,15 @@ fn read_bytes_exact(reader: &mut impl Read, length: usize) -> std::io::Result<Ve
     Ok(output)
 }
 
-impl NtsRecord {
-    pub fn client_key_exchange_records() -> [NtsRecord; 3] {
+impl<'a> NtsRecord<'a> {
+    pub const fn client_key_exchange_records() -> [NtsRecord<'a>; 3] {
         [
             NtsRecord::NextProtocol {
-                protocol_ids: vec![0],
+                protocol_ids: Cow::Borrowed(&[0]),
             },
             NtsRecord::AeadAlgorithm {
                 critical: false,
-                algorithm_ids: AeadAlgorithm::IN_ORDER_OF_PREFERENCE
-                    .iter()
-                    .map(|algorithm| *algorithm as u16)
-                    .collect(),
+                algorithm_ids: Cow::Borrowed(&AeadAlgorithm::IN_ORDER_OF_PREFERENCE_U16 as &[_]),
             },
             NtsRecord::EndOfMessage,
         ]
@@ -187,7 +185,7 @@ impl NtsRecord {
         algorithm: AeadAlgorithm,
         keyset: &KeySet,
         keys: NtsKeys,
-    ) -> [NtsRecord; 11] {
+    ) -> [NtsRecord<'a>; 11] {
         let cookie = DecodedServerCookie {
             algorithm,
             s2c: keys.s2c,
@@ -200,13 +198,22 @@ impl NtsRecord {
             }
         };
 
+        let protocol_id: &'static [u16] = match protocol {
+            ProtocolId::NtpV4 => &[ProtocolId::NtpV4 as u16],
+        };
+
+        let algorithm_id: &'static [u16] = match algorithm {
+            AeadAlgorithm::AeadAesSivCmac256 => &[AeadAlgorithm::AeadAesSivCmac512 as u16],
+            AeadAlgorithm::AeadAesSivCmac512 => &[AeadAlgorithm::AeadAesSivCmac256 as u16],
+        };
+
         [
             NtsRecord::NextProtocol {
-                protocol_ids: vec![protocol as u16],
+                protocol_ids: Cow::Borrowed(protocol_id),
             },
             NtsRecord::AeadAlgorithm {
                 critical: false,
-                algorithm_ids: vec![algorithm as u16],
+                algorithm_ids: Cow::Borrowed(algorithm_id),
             },
             next_cookie(),
             next_cookie(),
@@ -220,7 +227,7 @@ impl NtsRecord {
         ]
     }
 
-    pub fn read<A: Read>(reader: &mut A) -> std::io::Result<NtsRecord> {
+    pub fn read<'b, A: Read>(reader: &'b mut A) -> std::io::Result<NtsRecord<'a>> {
         let raw_record_type = read_u16_be(reader)?;
         let critical = raw_record_type & 0x8000 != 0;
         let record_type = raw_record_type & !0x8000;
@@ -230,7 +237,7 @@ impl NtsRecord {
             0 if record_len == 0 && critical => NtsRecord::EndOfMessage,
             1 if record_len % 2 == 0 && critical => {
                 let n_protocols = record_len / 2;
-                let protocol_ids = read_u16s_be(reader, n_protocols)?;
+                let protocol_ids = read_u16s_be(reader, n_protocols)?.into();
                 NtsRecord::NextProtocol { protocol_ids }
             }
             2 if record_len == 2 && critical => NtsRecord::Error {
@@ -241,7 +248,7 @@ impl NtsRecord {
             },
             4 if record_len % 2 == 0 => {
                 let n_algorithms = record_len / 2;
-                let algorithm_ids = read_u16s_be(reader, n_algorithms)?;
+                let algorithm_ids = read_u16s_be(reader, n_algorithms)?.into();
                 NtsRecord::AeadAlgorithm {
                     critical,
                     algorithm_ids,
@@ -296,7 +303,7 @@ impl NtsRecord {
                 let length = size_of_u16 * protocol_ids.len() as u16;
                 writer.write_all(&length.to_be_bytes())?;
 
-                for id in protocol_ids {
+                for id in protocol_ids.into_iter() {
                     writer.write_all(&id.to_be_bytes())?;
                 }
             }
@@ -312,7 +319,7 @@ impl NtsRecord {
                 let length = size_of_u16 * algorithm_ids.len() as u16;
                 writer.write_all(&length.to_be_bytes())?;
 
-                for id in algorithm_ids {
+                for id in algorithm_ids.into_iter() {
                     writer.write_all(&id.to_be_bytes())?;
                 }
             }
@@ -408,7 +415,7 @@ impl NtsRecordDecoder {
     const HEADER_BYTES: usize = 4;
 
     /// Try to decode the next record. Returns None when there are not enough bytes
-    pub fn step(&mut self) -> std::io::Result<Option<NtsRecord>> {
+    pub fn step(&mut self) -> std::io::Result<Option<NtsRecord<'static>>> {
         if self.bytes.len() < Self::HEADER_BYTES {
             return Ok(None);
         }
@@ -509,8 +516,19 @@ impl AeadAlgorithm {
         }
     }
 
-    const IN_ORDER_OF_PREFERENCE: &'static [Self] =
-        &[Self::AeadAesSivCmac512, Self::AeadAesSivCmac256];
+    const IN_ORDER_OF_PREFERENCE: [Self; 2] = [Self::AeadAesSivCmac512, Self::AeadAesSivCmac256];
+
+    const IN_ORDER_OF_PREFERENCE_U16: [u16; 2] = {
+        let mut algorithm_ids = [0; Self::IN_ORDER_OF_PREFERENCE.len()];
+
+        let mut i = 0;
+        while i < algorithm_ids.len() {
+            algorithm_ids[i] = AeadAlgorithm::IN_ORDER_OF_PREFERENCE[i] as u16;
+            i += 1;
+        }
+
+        algorithm_ids
+    };
 
     fn extract_nts_keys<ConnectionData>(
         &self,
@@ -1126,7 +1144,7 @@ mod test {
     fn no_valid_algorithm() {
         let algorithm = NtsRecord::AeadAlgorithm {
             critical: true,
-            algorithm_ids: vec![],
+            algorithm_ids: Cow::Borrowed(&[]),
         };
 
         assert!(matches!(
@@ -1136,7 +1154,7 @@ mod test {
 
         let algorithm = NtsRecord::AeadAlgorithm {
             critical: true,
-            algorithm_ids: vec![42],
+            algorithm_ids: Cow::Borrowed(&[42]),
         };
 
         assert!(matches!(
@@ -1225,14 +1243,14 @@ mod test {
         239, 84, 131, 9, 222, 225, 137, 73, 202, 40, 48, 57, 122, 198, 245, 40, 128, 0, 0, 0,
     ];
 
-    fn nts_time_nl_records() -> [NtsRecord; 11] {
+    fn nts_time_nl_records() -> [NtsRecord<'static>; 11] {
         [
             NtsRecord::NextProtocol {
-                protocol_ids: vec![0],
+                protocol_ids: Cow::Borrowed(&[0]),
             },
             NtsRecord::AeadAlgorithm {
                 critical: false,
-                algorithm_ids: vec![15],
+                algorithm_ids: Cow::Borrowed(&[15]),
             },
             NtsRecord::NewCookie {
                 cookie_data: vec![
