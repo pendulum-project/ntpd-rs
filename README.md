@@ -2,7 +2,9 @@
 
 # ntpd-rs
 
-ntpd-rs is an implementation of NTP completely written in Rust, with a focus on exposing a minimal attack surface. The project is currently at an early stage. Both client and server functionality are stable (see release v0.2.0), although features are still limited. NTS support is under active development. If a feature you need is missing please let us know.
+ntpd-rs is an implementation of NTP completely written in Rust, with a focus on exposing a minimal attack surface. Both client and server functionality are stable (see release v0.2.0). Work on NTS support is completed, and an alpha release is available (see release v0.3.0-alpha.4).
+
+If a feature you need is missing please let us know.
 
 ## Quick start
 
@@ -55,11 +57,13 @@ Please note that the Rust project only supports the latest stable rust release. 
 
 ## Roadmap
 
-We aim to build a complete NTP implementation that provides a modern alternative for ntpd and chrony. In the short term, there is one milestones on our roadmap:
+In Q1 2023 we completed our work on NTS. Our implementation is now full-featured, it supports NTP client and server with NTS.
 
-**NTS support**
+Our roadmap for 2023:
 
-Plain NTP is unencrypted and does not establish a trusted connection. NTS adds these features on top of NTP. NTS is important when using NTP servers on the public internet but is not widely deployed yet. We hope that supporting it will help with adoption.
+- Q1 2023: Audit by [ROS](https://www.radicallyopensecurity.com/) and resulting improvements
+- Q2 2023: Adoption work and improved packaging (pending funding). Stabilize configuration API (pending funding)
+- Q2-Q4 2023: Development work on experimental features, NTS pools, NTPv5 (pending funding)
 
 ## History
 
