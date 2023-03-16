@@ -11,8 +11,6 @@ pub enum PortError {
     ClockBusy,
     #[error("failed to retrieve filter")]
     FilterBusy,
-    #[error("failed to retrieve time properties")]
-    TimePropertiesBusy,
     #[error("something went wrong on the network")]
     Network,
     #[error("wire format error: {0}")]

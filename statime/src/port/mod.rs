@@ -4,7 +4,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use embassy_futures::select;
-use embassy_futures::select::{Either, Either4};
+use embassy_futures::select::{Either, Either3};
 use futures::{pin_mut, StreamExt};
 
 pub use error::{PortError, Result};
@@ -14,7 +14,7 @@ pub use ticker::Ticker;
 
 use crate::bmc::bmca::{BestAnnounceMessage, Bmca, RecommendedState};
 use crate::clock::{Clock, Timer};
-use crate::datastructures::common::{PortIdentity, TimeSource};
+use crate::datastructures::common::{PortIdentity, TimeSource, Timestamp};
 use crate::datastructures::datasets::{DefaultDS, PortDS, TimePropertiesDS};
 use crate::datastructures::messages::{Message, MessageBuilder};
 use crate::filters::Filter;
@@ -64,20 +64,14 @@ impl<P> Port<P> {
 }
 
 impl<P: NetworkPort> Port<P> {
-    pub async fn run_port<const N: usize>(
+    pub async fn run_port(
         &mut self,
         timer: &impl Timer,
         local_clock: &RefCell<impl Clock>,
         filter: &RefCell<impl Filter>,
-        announce_messages: &RefCell<[Option<BestAnnounceMessage>; N]>,
         default_ds: &DefaultDS,
-        time_properties_ds: &RefCell<TimePropertiesDS>,
+        time_properties_ds: &TimePropertiesDS,
     ) -> Infallible {
-        let bmca_timeout = Ticker::new(
-            |interval| timer.after(interval),
-            self.port_ds.announce_interval(),
-        );
-        pin_mut!(bmca_timeout);
         let announce_receipt_timeout = Ticker::new(
             |interval| timer.after(interval),
             self.port_ds.announce_receipt_interval(),
@@ -95,8 +89,7 @@ impl<P: NetworkPort> Port<P> {
         pin_mut!(announce_timeout);
 
         loop {
-            let timeouts = select::select4(
-                bmca_timeout.next(),
+            let timeouts = select::select3(
                 announce_receipt_timeout.next(),
                 sync_timeout.next(),
                 announce_timeout.next(),
@@ -104,19 +97,7 @@ impl<P: NetworkPort> Port<P> {
             let packet = self.network_port.recv();
             match select::select(timeouts, packet).await {
                 Either::First(timeout) => match timeout {
-                    Either4::First(_) => {
-                        // Run best master clock algorithm
-                        if let Err(error) = self.run_bmca(
-                            local_clock,
-                            announce_messages,
-                            &mut announce_receipt_timeout,
-                            default_ds,
-                            time_properties_ds,
-                        ) {
-                            log::error!("{:?}", error);
-                        }
-                    }
-                    Either4::Second(_) => {
+                    Either3::First(_) => {
                         // No announces received for a long time, become master
                         match self.port_ds.port_state {
                             PortState::Master(_) => (),
@@ -125,13 +106,13 @@ impl<P: NetworkPort> Port<P> {
                                 .set_forced_port_state(PortState::Master(MasterState::new())),
                         }
                     }
-                    Either4::Third(_) => {
+                    Either3::Second(_) => {
                         // Send sync message
                         if let Err(error) = self.send_sync(local_clock).await {
                             log::error!("{:?}", error);
                         }
                     }
-                    Either4::Fourth(_) => {
+                    Either3::Third(_) => {
                         // Send announce message
                         if let Err(error) = self.send_announce(local_clock, default_ds).await {
                             log::error!("{:?}", error);
@@ -159,52 +140,25 @@ impl<P: NetworkPort> Port<P> {
         }
     }
 
-    fn run_bmca<T: Future, const N: usize>(
+    pub fn best_local_announce_message(
         &mut self,
-        local_clock: &RefCell<impl Clock>,
-        announce_messages: &RefCell<[Option<BestAnnounceMessage>; N]>,
-        announce_receipt_timeout: &mut Pin<&mut Ticker<T, impl FnMut(Duration) -> T>>,
-        default_ds: &DefaultDS,
-        time_properties_ds: &RefCell<TimePropertiesDS>,
+        current_time: Timestamp,
+    ) -> Option<BestAnnounceMessage> {
+        self.bmca
+            .take_best_port_announce_message(current_time.into())
+    }
+
+    pub fn set_recommended_state(
+        &mut self,
+        recommended_state: RecommendedState,
+        time_properties_ds: &mut TimePropertiesDS,
     ) -> Result<()> {
-        log::trace!("running bmca");
+        self.port_ds.set_recommended_port_state(&recommended_state);
 
-        let current_time = local_clock
-            .try_borrow()
-            .map(|borrow| borrow.now())
-            .map_err(|_| PortError::ClockBusy)?;
-
-        let erbest = self
-            .bmca
-            .take_best_port_announce_message(current_time.into());
-        let ebest = match announce_messages.try_borrow_mut() {
-            Ok(mut announce_messages) => {
-                // Uses assertion in PtpInstance constructor
-                let index = (self.port_ds.port_identity.port_number - 1) as usize;
-                announce_messages[index] = erbest;
-                Bmca::find_best_announce_message(announce_messages.into_iter().flatten())
-            }
-            Err(_) => {
-                log::error!("could not access announce messages for BMCA");
-                erbest
-            }
-        };
-
-        let recommended_state =
-            Bmca::calculate_recommended_state(default_ds, ebest, erbest, &self.port_ds.port_state);
-
-        if let Some(recommended_state) = recommended_state {
-            self.port_ds
-                .set_recommended_port_state(&recommended_state, announce_receipt_timeout);
-
-            // TODO: Discuss if we should change the clock's own time properties, or keep the master's time properties separately
-            if let RecommendedState::S1(announce_message) = &recommended_state {
-                // Update time properties
-                let mut time_properties_ds = time_properties_ds
-                    .try_borrow_mut()
-                    .map_err(|_| PortError::TimePropertiesBusy)?;
-                *time_properties_ds = announce_message.time_properties();
-            }
+        // TODO: Discuss if we should change the clock's own time properties, or keep the master's time properties separately
+        if let RecommendedState::S1(announce_message) = &recommended_state {
+            // Update time properties
+            *time_properties_ds = announce_message.time_properties();
         }
 
         Ok(())
@@ -292,7 +246,7 @@ impl<P: NetworkPort> Port<P> {
         filter: &RefCell<impl Filter>,
         announce_receipt_timeout: &mut Pin<&mut Ticker<T, impl FnMut(Duration) -> T>>,
         default_ds: &DefaultDS,
-        time_properties_ds: &RefCell<TimePropertiesDS>,
+        time_properties_ds: &TimePropertiesDS,
     ) -> Result<()> {
         let message = Message::deserialize(&packet.data)?;
 
@@ -335,11 +289,8 @@ impl<P: NetworkPort> Port<P> {
                     let mut local_clock = local_clock
                         .try_borrow_mut()
                         .map_err(|_| PortError::ClockBusy)?;
-                    let time_properties_ds = time_properties_ds
-                        .try_borrow()
-                        .map_err(|_| PortError::TimePropertiesBusy)?;
 
-                    if let Err(error) = local_clock.adjust(offset, freq_corr, &time_properties_ds) {
+                    if let Err(error) = local_clock.adjust(offset, freq_corr, time_properties_ds) {
                         log::error!("failed to adjust clock: {:?}", error);
                     }
                 }
@@ -347,5 +298,13 @@ impl<P: NetworkPort> Port<P> {
         }
 
         Ok(())
+    }
+
+    pub fn announce_interval(&self) -> Duration {
+        self.port_ds.announce_interval()
+    }
+
+    pub fn state(&self) -> &PortState {
+        &self.port_ds.port_state
     }
 }
