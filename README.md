@@ -2,9 +2,9 @@
 
 # ntpd-rs
 
-ntpd-rs is an implementation of NTP completely written in Rust, with a focus on exposing a minimal attack surface. Both client and server functionality are stable (see release v0.2.0). Work on NTS support is completed, and an alpha release is available (see release v0.3.0-alpha.4).
+ntpd-rs is an implementation of NTP written entirely in Rust, with a focus on exposing a minimal attack surface. Both client and server functionality are stable (see release v0.2.0). Work on NTS support is completed, and an alpha release is available (see release v0.3.0-alpha.4).
 
-If a feature you need is missing please let us know.
+If a feature you need is missing please let us know by opening an issue.
 
 ## Quick start
 
@@ -71,7 +71,7 @@ The project originates from ISRG's project [Prossimo](https://www.memorysafety.o
 
 <img alt="Prossimo" src="https://www.memorysafety.org/images/Prossimo%20Brand%20Assets/Prossimo%20Horizontal%20Full%20Color.svg" width="250px"/>
 
-Prossimo funded the initial development of the NTP client and server and NTS support. The [NTP initiative page](https://www.memorysafety.org/initiative/ntp) on Prossimo's website tells the story.
+Prossimo funded the initial development of the NTP client and server, and NTS support. The [NTP initiative page](https://www.memorysafety.org/initiative/ntp) on Prossimo's website tells the story.
 
 
 
