@@ -2,7 +2,9 @@
 
 # ntpd-rs
 
-ntpd-rs is an implementation of NTP completely written in Rust, with a focus on exposing a minimal attack surface. The project is currently at an early stage. Both client and server functionality are stable (see release v0.2.0), although features are still limited. NTS support is under active development. If a feature you need is missing please let us know.
+ntpd-rs is an implementation of NTP written entirely in Rust, with a focus on exposing a minimal attack surface. Both client and server functionality are stable (see release v0.2.0). Work on NTS support is completed, and an alpha release is available (see release v0.3.0-alpha.4).
+
+If a feature you need is missing please let us know by opening an issue.
 
 ## Quick start
 
@@ -26,10 +28,6 @@ The ntpd-rs daemon requires elevated permissions to change the system clock. It 
 sudo ./target/release/ntp-daemon -p pool.ntp.org
 ```
 After a few minutes you should start to see messages indicating the offset of your machine from the server. A complete description of how the daemon can be configured can be found in the [configuration documentation](CONFIGURATION.md)
-
-## Naming
-
-We are currently looking for a better name for this project. Suggestions for this are welcome.
 
 ## Package substructure
 
@@ -60,11 +58,21 @@ Please note that the Rust project only supports the latest stable rust release. 
 
 ## Roadmap
 
-With the support of Prossimo we aim to build a complete NTP implementation that provides a modern alternative for ntpd and chrony. In the short term, there is one milestones on our roadmap:
+In Q1 2023 we completed our work on NTS. Our implementation is now full-featured, it supports NTP client and server with NTS.
 
-**NTS support**
+Our roadmap for 2023:
 
-Plain NTP is unencrypted and does not establish a trusted connection. NTS adds these features on top of NTP. NTS is important when using NTP servers on the public internet but is not widely deployed yet. We hope that supporting it will help with adoption.
+- Q1 2023: Audit by [ROS](https://www.radicallyopensecurity.com/) and resulting improvements
+- Q2 2023: Adoption work and improved packaging (pending funding). Stabilize configuration API (pending funding)
+- Q2-Q4 2023: Development work on experimental features, NTS pools, NTPv5 (pending funding)
 
-Check Prossimo's [project plan](https://www.memorysafety.org/initiative/ntp/ntp-work-plan/) for more details and for options to support their work.
+## History
+
+The project originates from ISRG's project [Prossimo](https://www.memorysafety.org), as part of their mission to achieve memory safety for the Internet's most critical infrastructure.
+
+<img alt="Prossimo" src="https://www.memorysafety.org/images/Prossimo%20Brand%20Assets/Prossimo%20Horizontal%20Full%20Color.svg" width="250px"/>
+
+Prossimo funded the initial development of the NTP client and server, and NTS support. The [NTP initiative page](https://www.memorysafety.org/initiative/ntp) on Prossimo's website tells the story.
+
+
 
