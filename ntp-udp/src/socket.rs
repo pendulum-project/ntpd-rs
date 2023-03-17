@@ -594,10 +594,15 @@ mod tests {
     #[tokio::test]
     async fn test_hardware_network_send_timestamp() {
         let mut a = UdpSocket::client_with_timestamping(
-            SocketAddr::from((Ipv4Addr::new(10, 0, 0, 24), 8012)),
-            SocketAddr::from((Ipv4Addr::new(10, 0, 0, 18), 8013)),
+            SocketAddr::from((Ipv4Addr::new(10, 0, 0, 24), 8014)),
+            SocketAddr::from((Ipv4Addr::new(10, 0, 0, 18), 8015)),
             DEFAULT_TIMESTAMP_METHOD,
-            Timestamping::AllSupported,
+            Timestamping::Configure(TimestampingConfig {
+                rx_software: false,
+                tx_software: false,
+                rx_hardware: true,
+                tx_hardware: true,
+            }),
         )
         .await
         .unwrap();

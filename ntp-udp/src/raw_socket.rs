@@ -143,7 +143,9 @@ mod set_timestamping_options {
                 }
 
                 if timestamping.tx_hardware {
-                    options |= libc::SOF_TIMESTAMPING_TX_HARDWARE;
+                    options |= libc::SOF_TIMESTAMPING_TX_HARDWARE
+                        | libc::SOF_TIMESTAMPING_OPT_TSONLY
+                        | libc::SOF_TIMESTAMPING_OPT_ID;
                 }
 
                 options
