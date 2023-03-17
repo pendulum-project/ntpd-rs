@@ -33,6 +33,7 @@ impl Default for EnableTimestamps {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum LibcTimestamp {
     Timespec(libc::timespec),
     Timeval(libc::timeval),

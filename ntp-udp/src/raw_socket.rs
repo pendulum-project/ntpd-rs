@@ -300,13 +300,35 @@ mod recv_message {
 
             Some(match (current_msg.cmsg_level, current_msg.cmsg_type) {
                 #[cfg(target_os = "linux")]
-                (libc::SOL_SOCKET, libc::SCM_TIMESTAMPING | libc::SCM_TIMESTAMPNS) => {
+                (libc::SOL_SOCKET, libc::SCM_TIMESTAMPING) => {
                     // Safety:
                     // current_msg was constructed from a pointer that pointed to a valid control message.
-                    // SO_TIMESTAMPING and SO_TIMESTAMPNS always have a timespec in the data
+                    // SO_TIMESTAMPING always has 3 timespecs in the data
+                    let cmsg_data =
+                        unsafe { libc::CMSG_DATA(current_msg) } as *const [libc::timespec; 3];
+
+                    let [software, _, hardware] = unsafe { std::ptr::read_unaligned(cmsg_data) };
+
+                    // if defined, we prefer the hardware over the software timestamp
+                    let timespec = if hardware.tv_sec != 0 && hardware.tv_nsec != 0 {
+                        hardware
+                    } else {
+                        software
+                    };
+
+                    ControlMessage::Timestamping(LibcTimestamp::Timespec(timespec))
+                }
+
+                #[cfg(target_os = "linux")]
+                (libc::SOL_SOCKET, libc::SCM_TIMESTAMPNS) => {
+                    // Safety:
+                    // current_msg was constructed from a pointer that pointed to a valid control message.
+                    // SO_TIMESTAMPNS always has a timespec in the data
                     let cmsg_data =
                         unsafe { libc::CMSG_DATA(current_msg) } as *const libc::timespec;
+
                     let timespec = unsafe { std::ptr::read_unaligned(cmsg_data) };
+
                     ControlMessage::Timestamping(LibcTimestamp::Timespec(timespec))
                 }
 
