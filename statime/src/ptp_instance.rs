@@ -1,5 +1,6 @@
+use embassy_futures::select::Either;
+use futures::StreamExt;
 use std::cell::RefCell;
-use std::convert::Infallible;
 use std::pin::{pin, Pin};
 
 use crate::bmc::bmca::Bmca;
@@ -69,7 +70,7 @@ impl<P, C, F, const N: usize> PtpInstance<P, C, F, N> {
 }
 
 impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N> {
-    pub async fn run(&mut self, timer: &impl Timer) -> [Infallible; N] {
+    pub async fn run(&mut self, timer: &impl Timer) -> ! {
         log::info!("Running!");
 
         let interval = self
@@ -122,11 +123,16 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
                 )
             },
         );
-        let mut run_ports = embassy_futures::join::join_array(
+        let mut run_ports = embassy_futures::select::select_array(
             [(); N].map(|_| run_ports.next().expect("not all ports were initialized")),
         );
 
-        run_ports.await
+        loop {
+            match embassy_futures::select::select(bmca_timeout.next(), &mut run_ports).await {
+                Either::First(_) => self.run_bmca(),
+                Either::Second(_) => unreachable!(),
+            }
+        }
     }
 
     fn run_bmca(&mut self) {

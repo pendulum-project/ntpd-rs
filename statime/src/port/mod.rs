@@ -1,5 +1,4 @@
 use core::cell::RefCell;
-use core::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -73,7 +72,7 @@ impl<P: NetworkPort> Port<P> {
         announce_timeout: &mut Pin<&mut Ticker<T, impl FnMut(Duration) -> T>>,
         default_ds: &DefaultDS,
         time_properties_ds: &TimePropertiesDS,
-    ) -> Infallible {
+    ) -> ! {
         loop {
             let timeouts = select::select3(
                 announce_receipt_timeout.next(),
