@@ -537,7 +537,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_send_timestamp() {
+    async fn test_software_send_timestamp() {
         let mut a = UdpSocket::client_with_timestamping(
             SocketAddr::from((Ipv4Addr::LOCALHOST, 8012)),
             SocketAddr::from((Ipv4Addr::LOCALHOST, 8013)),
@@ -567,5 +567,23 @@ mod tests {
         let trecv = trecv.unwrap();
         let delta = trecv - tsend;
         assert!(delta.to_seconds().abs() < 0.2);
+    }
+
+    #[tokio::test]
+    async fn test_hardware_send_timestamp() {
+        let mut a = UdpSocket::client_with_timestamping(
+            SocketAddr::from((Ipv4Addr::new(10, 0, 0, 24), 8012)),
+            SocketAddr::from((Ipv4Addr::new(10, 0, 0, 18), 8013)),
+            DEFAULT_TIMESTAMP_METHOD,
+            Timestamping::AllSupported,
+        )
+        .await
+        .unwrap();
+
+        let (ssend, tsend) = a.send(&[1; 48]).await.unwrap();
+
+        assert_eq!(ssend, 48);
+
+        let tsend = tsend.unwrap();
     }
 }
