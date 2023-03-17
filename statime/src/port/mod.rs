@@ -5,7 +5,7 @@ use std::pin::Pin;
 
 use embassy_futures::select;
 use embassy_futures::select::{Either, Either3};
-use futures::{pin_mut, StreamExt};
+use futures::StreamExt;
 
 pub use error::{PortError, Result};
 pub use measurement::Measurement;
@@ -13,7 +13,7 @@ use state::{MasterState, PortState};
 pub use ticker::Ticker;
 
 use crate::bmc::bmca::{BestAnnounceMessage, Bmca, RecommendedState};
-use crate::clock::{Clock, Timer};
+use crate::clock::Clock;
 use crate::datastructures::common::{PortIdentity, TimeSource, Timestamp};
 use crate::datastructures::datasets::{DefaultDS, PortDS, TimePropertiesDS};
 use crate::datastructures::messages::{Message, MessageBuilder};
@@ -64,30 +64,16 @@ impl<P> Port<P> {
 }
 
 impl<P: NetworkPort> Port<P> {
-    pub async fn run_port(
+    pub async fn run_port<T: Future>(
         &mut self,
-        timer: &impl Timer,
         local_clock: &RefCell<impl Clock>,
         filter: &RefCell<impl Filter>,
+        announce_receipt_timeout: &mut Pin<&mut Ticker<T, impl FnMut(Duration) -> T>>,
+        sync_timeout: &mut Pin<&mut Ticker<T, impl FnMut(Duration) -> T>>,
+        announce_timeout: &mut Pin<&mut Ticker<T, impl FnMut(Duration) -> T>>,
         default_ds: &DefaultDS,
         time_properties_ds: &TimePropertiesDS,
     ) -> Infallible {
-        let announce_receipt_timeout = Ticker::new(
-            |interval| timer.after(interval),
-            self.port_ds.announce_receipt_interval(),
-        );
-        pin_mut!(announce_receipt_timeout);
-        let sync_timeout = Ticker::new(
-            |interval| timer.after(interval),
-            self.port_ds.sync_interval(),
-        );
-        pin_mut!(sync_timeout);
-        let announce_timeout = Ticker::new(
-            |interval| timer.after(interval),
-            self.port_ds.announce_interval(),
-        );
-        pin_mut!(announce_timeout);
-
         loop {
             let timeouts = select::select3(
                 announce_receipt_timeout.next(),
@@ -126,7 +112,7 @@ impl<P: NetworkPort> Port<P> {
                             packet,
                             local_clock,
                             filter,
-                            &mut announce_receipt_timeout,
+                            announce_receipt_timeout,
                             default_ds,
                             time_properties_ds,
                         )
@@ -302,6 +288,14 @@ impl<P: NetworkPort> Port<P> {
 
     pub fn announce_interval(&self) -> Duration {
         self.port_ds.announce_interval()
+    }
+
+    pub fn sync_interval(&self) -> Duration {
+        self.port_ds.sync_interval()
+    }
+
+    pub fn announce_receipt_interval(&self) -> Duration {
+        self.port_ds.announce_receipt_interval()
     }
 
     pub fn state(&self) -> &PortState {

@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::convert::Infallible;
-
-use futures::pin_mut;
+use std::pin::{pin, Pin};
 
 use crate::bmc::bmca::Bmca;
 use crate::clock::{Clock, Timer};
@@ -79,23 +78,55 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
             .map(|port| port.announce_interval())
             .max()
             .expect("no ports");
+        let mut bmca_timeout = pin!(Ticker::new(|interval| timer.after(interval), interval));
 
-        let bmca_timeout = Ticker::new(|interval| timer.after(interval), interval);
-        pin_mut!(bmca_timeout);
+        let mut timeouts = self.ports.iter().map(|port| {
+            let announce_receipt_timeout = Ticker::new(
+                |interval| timer.after(interval),
+                port.announce_receipt_interval(),
+            );
+            let sync_timeout = Ticker::new(|interval| timer.after(interval), port.sync_interval());
+            let announce_timeout =
+                Ticker::new(|interval| timer.after(interval), port.announce_interval());
 
-        let mut run_ports = self.ports.iter_mut().map(|port| {
-            port.run_port(
-                timer,
-                &self.local_clock,
-                &self.filter,
-                &self.default_ds,
-                &self.time_properties_ds,
-            )
+            (announce_receipt_timeout, sync_timeout, announce_timeout)
+        });
+        let timeouts =
+            pin!([(); N].map(|_| timeouts.next().expect("not all ports were initialized")));
+
+        let mut pinned_timeouts = unsafe {
+            timeouts.get_unchecked_mut().iter_mut().map(|(a, b, c)| {
+                (
+                    Pin::new_unchecked(a),
+                    Pin::new_unchecked(b),
+                    Pin::new_unchecked(c),
+                )
+            })
+        };
+        let mut pinned_timeouts = [(); N].map(|_| {
+            pinned_timeouts
+                .next()
+                .expect("not all ports were initialized")
         });
 
-        let futures = [(); N].map(|_| run_ports.next().expect("not all ports were initialized"));
+        let mut run_ports = self.ports.iter_mut().zip(&mut pinned_timeouts).map(
+            |(port, (announce_receipt_timeout, sync_timeout, announce_timeout))| {
+                port.run_port(
+                    &self.local_clock,
+                    &self.filter,
+                    announce_receipt_timeout,
+                    sync_timeout,
+                    announce_timeout,
+                    &self.default_ds,
+                    &self.time_properties_ds,
+                )
+            },
+        );
+        let mut run_ports = embassy_futures::join::join_array(
+            [(); N].map(|_| run_ports.next().expect("not all ports were initialized")),
+        );
 
-        embassy_futures::join::join_array(futures).await
+        run_ports.await
     }
 
     fn run_bmca(&mut self) {
