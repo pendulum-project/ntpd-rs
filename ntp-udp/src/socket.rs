@@ -570,7 +570,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_hardware_send_timestamp() {
+    async fn test_software_network_send_timestamp() {
+        let mut a = UdpSocket::client_with_timestamping(
+            SocketAddr::from((Ipv4Addr::new(10, 0, 0, 24), 8012)),
+            SocketAddr::from((Ipv4Addr::new(10, 0, 0, 18), 8013)),
+            DEFAULT_TIMESTAMP_METHOD,
+            Timestamping::Configure(TimestampingConfig {
+                rx_software: true,
+                tx_software: true,
+                rx_hardware: false,
+                tx_hardware: false,
+            }),
+        )
+        .await
+        .unwrap();
+
+        let (ssend, tsend) = a.send(&[1; 48]).await.unwrap();
+
+        assert_eq!(ssend, 48);
+        assert!(tsend.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_hardware_network_send_timestamp() {
         let mut a = UdpSocket::client_with_timestamping(
             SocketAddr::from((Ipv4Addr::new(10, 0, 0, 24), 8012)),
             SocketAddr::from((Ipv4Addr::new(10, 0, 0, 18), 8013)),
@@ -583,7 +605,6 @@ mod tests {
         let (ssend, tsend) = a.send(&[1; 48]).await.unwrap();
 
         assert_eq!(ssend, 48);
-
-        let tsend = tsend.unwrap();
+        assert!(tsend.is_some());
     }
 }
