@@ -52,7 +52,7 @@ thiserror = "1.0.39"
 libc = "0.2.140"
 tokio = "1.26.0"
 toml = "0.7.3"
-clap = { version = "4.1.8", features = ["derive", "env"] }
+clap = { version = "4.1.9", features = ["derive", "env"] }
 async-trait = "0.1.66"
 
 # our own crates used as dependencies, same version as the workspace version
