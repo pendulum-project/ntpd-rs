@@ -10,7 +10,7 @@ If a feature you need is missing please let us know by opening an issue.
 
 Currently, ntpd-rs only supports Linux-based operating systems. Our current testing only targets Linux kernels after version 5.0.0, older kernels may work but this is not guaranteed.
 
-ntpd-rs is written in rust, and requires cargo 1.60.0 at a minimum to be built. We strongly recommend using [rustup](https://rustup.rs) to install a rust toolchain, because the version provided by system package managers tends to be out of date.
+ntpd-rs is written in rust, and requires cargo 1.65.0 at a minimum to be built. We strongly recommend using [rustup](https://rustup.rs) to install a rust toolchain, because the version provided by system package managers tends to be out of date.
 
 To build ntpd-rs run
 ```sh
