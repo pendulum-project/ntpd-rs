@@ -5,6 +5,8 @@
 // is constructed in such a way that use of the public functions is
 // safe regardless of given arguments.
 
+use std::{ffi::CStr, os::unix::prelude::RawFd};
+
 use crate::{Error, EPOCH_OFFSET};
 use ntp_proto::{NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, PollInterval};
 
@@ -69,40 +71,100 @@ pub(crate) const EMPTY_TIMEX: libc::timex = libc::timex {
     stbcnt: 0,
 };
 
-pub(crate) fn adjtime(timex: &mut libc::timex) -> Result<(), Error> {
-    // We don't care about the time status, so the non-error
-    // information in the return value of ntp_adjtime can be ignored.
-    // The ntp_adjtime call is safe because the reference always
-    // points to a valid libc::timex.
-    if unsafe { libc::ntp_adjtime(timex) } == -1 {
-        Err(convert_errno())
-    } else {
-        Ok(())
-    }
-}
-
-#[cfg_attr(target_os = "linux", allow(unused))]
-fn clock_gettime() -> Result<libc::timespec, Error> {
-    let mut timespec = libc::timespec {
-        tv_sec: 0,
-        tv_nsec: 0,
-    };
-
-    cerr(unsafe { libc::clock_gettime(libc::CLOCK_REALTIME, &mut timespec) })?;
-
-    Ok(timespec)
-}
-
 /// NTP Clock that uses the unix NTP KAPI clock functions to get/modify the
 /// current time.
 // Implementation note: this is intentionally a bare struct, the NTP Clock defined
 // in the NTP KAPI is unique and no state is needed to interact with it.
 #[derive(Debug, Default, Clone)]
-pub struct UnixNtpClock(());
+pub struct UnixNtpClock {
+    clock: libc::clockid_t,
+}
 
 impl UnixNtpClock {
-    pub fn new() -> Self {
-        Self(())
+    pub fn realtime() -> Self {
+        Self::custom(libc::CLOCK_REALTIME)
+    }
+
+    pub fn custom(id: libc::clockid_t) -> Self {
+        Self { clock: id }
+    }
+
+    #[cfg_attr(target_os = "linux", allow(unused))]
+    pub fn ptp0() -> Result<Self, Error> {
+        let path = CStr::from_bytes_with_nul(b"/dev/ptp0\0").unwrap();
+        // SAFETY
+        //
+        // we know this is a file descriptor of a clock
+        unsafe { Self::from_path(path) }
+    }
+
+    unsafe fn from_path(path: &CStr) -> Result<Self, Error> {
+        let fd = match unsafe { libc::open(path.as_ptr(), libc::O_RDWR) } {
+            -1 => return Err(convert_errno()),
+            valid => valid,
+        };
+
+        Ok(unsafe { Self::from_file_descriptor(fd as RawFd) })
+    }
+
+    unsafe fn from_file_descriptor(fd: RawFd) -> Self {
+        let id = ((!(fd as libc::clockid_t)) << 3) | 0b11;
+
+        Self::custom(id)
+    }
+
+    fn clock_gettime(&self) -> Result<libc::timespec, Error> {
+        let mut timespec = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+
+        cerr(unsafe { libc::clock_gettime(self.clock, &mut timespec) })?;
+
+        Ok(timespec)
+    }
+
+    fn clock_settime(&self, mut timespec: libc::timespec) -> Result<(), Error> {
+        while timespec.tv_nsec > 1_000_000_000 {
+            timespec.tv_sec += 1;
+            timespec.tv_nsec -= 1_000_000_000;
+        }
+
+        unsafe { cerr(libc::clock_settime(self.clock, &timespec))? };
+
+        Ok(())
+    }
+
+    fn clock_adjtime(&self, timex: &mut libc::timex) -> Result<(), Error> {
+        // We don't care about the time status, so the non-error
+        // information in the return value of ntp_adjtime can be ignored.
+        // The ntp_adjtime call is safe because the reference always
+        // points to a valid libc::timex.
+        if unsafe { libc::clock_adjtime(self.clock, timex) } == -1 {
+            Err(convert_errno())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn ntp_adjtime(timex: &mut libc::timex) -> Result<(), Error> {
+        // We don't care about the time status, so the non-error
+        // information in the return value of ntp_adjtime can be ignored.
+        // The ntp_adjtime call is safe because the reference always
+        // points to a valid libc::timex.
+        if unsafe { libc::ntp_adjtime(timex) } == -1 {
+            Err(convert_errno())
+        } else {
+            Ok(())
+        }
+    }
+
+    pub(crate) fn adjtime(&self, timex: &mut libc::timex) -> Result<(), Error> {
+        if self.clock == libc::CLOCK_REALTIME {
+            Self::ntp_adjtime(timex)
+        } else {
+            self.clock_adjtime(timex)
+        }
     }
 }
 
@@ -201,38 +263,13 @@ fn extract_current_time(_timex: &libc::timex) -> Result<NtpTimestamp, Error> {
     }
 }
 
-fn step_clock_getsettime(offset: ntp_proto::NtpDuration) -> Result<NtpTimestamp, Error> {
-    let (offset_secs, offset_nanos) = offset.as_seconds_nanos();
-
-    let mut timespec = libc::timespec {
-        tv_sec: 0,
-        tv_nsec: 0,
-    };
-
-    let clock = libc::CLOCK_REALTIME;
-
-    unsafe { cerr(libc::clock_gettime(clock, &mut timespec))? };
-
-    timespec.tv_sec += offset_secs as libc::time_t;
-    timespec.tv_nsec += offset_nanos as libc::c_long;
-
-    while timespec.tv_nsec > 1_000_000_000 {
-        timespec.tv_sec += 1;
-        timespec.tv_nsec -= 1_000_000_000;
-    }
-
-    unsafe { cerr(libc::clock_settime(clock, &timespec))? };
-
-    Ok(current_time_timespec(timespec, Precision::Nano))
-}
-
 impl NtpClock for UnixNtpClock {
     type Error = Error;
 
     fn now(&self) -> Result<ntp_proto::NtpTimestamp, Error> {
         let mut ntp_kapi_timex = EMPTY_TIMEX;
 
-        adjtime(&mut ntp_kapi_timex)?;
+        self.adjtime(&mut ntp_kapi_timex)?;
 
         extract_current_time(&ntp_kapi_timex)
     }
@@ -243,17 +280,26 @@ impl NtpClock for UnixNtpClock {
         // NTP Kapi expects frequency adjustment in units of 2^-16 ppm
         // but our input is in units of seconds drift per second, so convert.
         ntp_kapi_timex.freq = (freq * 65536e6) as libc::c_long;
-        adjtime(&mut ntp_kapi_timex)?;
+        self.adjtime(&mut ntp_kapi_timex)?;
         extract_current_time(&ntp_kapi_timex)
     }
 
     fn step_clock(&self, offset: ntp_proto::NtpDuration) -> Result<NtpTimestamp, Self::Error> {
-        step_clock_getsettime(offset)
+        let (offset_secs, offset_nanos) = offset.as_seconds_nanos();
+
+        let mut timespec = self.clock_gettime()?;
+
+        timespec.tv_sec += offset_secs as libc::time_t;
+        timespec.tv_nsec += offset_nanos as libc::c_long;
+
+        self.clock_settime(timespec)?;
+
+        Ok(current_time_timespec(timespec, Precision::Nano))
     }
 
     fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
         let mut timex = EMPTY_TIMEX;
-        adjtime(&mut timex)?;
+        self.adjtime(&mut timex)?;
         timex.modes = libc::MOD_STATUS;
         // Enable the kernel phase locked loop
         timex.status |= libc::STA_PLL;
@@ -261,18 +307,18 @@ impl NtpClock for UnixNtpClock {
         // pps input based time control, and pps
         // input based frequency control.
         timex.status &= !libc::STA_FLL & !libc::STA_PPSTIME & !libc::STA_PPSFREQ;
-        adjtime(&mut timex)
+        self.adjtime(&mut timex)
     }
 
     fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
         let mut timex = EMPTY_TIMEX;
-        adjtime(&mut timex)?;
+        self.adjtime(&mut timex)?;
         timex.modes = libc::MOD_STATUS;
         // Disable all kernel time control loops
         // (phase lock, frequency lock, pps time
         // and pps frequency).
         timex.status &= !libc::STA_PLL & !libc::STA_FLL & !libc::STA_PPSTIME & !libc::STA_PPSFREQ;
-        adjtime(&mut timex)
+        self.adjtime(&mut timex)
     }
 
     fn ntp_algorithm_update(
@@ -284,7 +330,7 @@ impl NtpClock for UnixNtpClock {
         timex.modes = libc::MOD_OFFSET | libc::MOD_TIMECONST;
         timex.offset = duration_in_nanos(offset);
         timex.constant = poll_interval.as_log() as libc::c_long;
-        adjtime(&mut timex)
+        self.adjtime(&mut timex)
     }
 
     fn error_estimate_update(
@@ -296,12 +342,12 @@ impl NtpClock for UnixNtpClock {
         timex.modes = libc::MOD_ESTERROR | libc::MOD_MAXERROR;
         timex.esterror = duration_in_nanos(est_error) / 1000;
         timex.maxerror = duration_in_nanos(max_error) / 1000;
-        adjtime(&mut timex)
+        self.adjtime(&mut timex)
     }
 
     fn status_update(&self, leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
         let mut timex = EMPTY_TIMEX;
-        adjtime(&mut timex)?;
+        self.adjtime(&mut timex)?;
         timex.modes = libc::MOD_STATUS;
         // Clear out the leap seconds and synchronization flags
         timex.status &= !libc::STA_INS & !libc::STA_DEL & !libc::STA_UNSYNC;
@@ -312,7 +358,7 @@ impl NtpClock for UnixNtpClock {
             NtpLeapIndicator::Leap59 => timex.status |= libc::STA_DEL,
             NtpLeapIndicator::Unknown => timex.status |= libc::STA_UNSYNC,
         }
-        adjtime(&mut timex)
+        self.adjtime(&mut timex)
     }
 }
 
@@ -322,7 +368,7 @@ mod tests {
 
     #[test]
     fn test_time_now_does_not_crash() {
-        let clock = UnixNtpClock::new();
+        let clock = UnixNtpClock::realtime();
         assert_ne!(
             clock.now().unwrap(),
             NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 0)
@@ -330,9 +376,26 @@ mod tests {
     }
 
     #[test]
+    fn realtime_gettime() {
+        let clock = UnixNtpClock::realtime();
+        let time = clock.clock_gettime().unwrap();
+
+        assert_ne!((time.tv_sec, time.tv_nsec), (0, 0))
+    }
+
+    #[test]
+    #[ignore = "requires permissions, useful for testing permissions"]
+    fn ptp0_gettime() {
+        let clock = UnixNtpClock::realtime();
+        let time = clock.clock_gettime().unwrap();
+
+        assert_ne!((time.tv_sec, time.tv_nsec), (0, 0))
+    }
+
+    #[test]
     #[ignore = "requires permissions, useful for testing permissions"]
     fn step_clock() {
-        UnixNtpClock(())
+        UnixNtpClock::realtime()
             .step_clock(NtpDuration::from_seconds(0.0))
             .unwrap();
     }

@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use crate::unix::{adjtime, current_time_timeval, Precision, UnixNtpClock, EMPTY_TIMEX};
+use crate::unix::{current_time_timeval, Precision, UnixNtpClock, EMPTY_TIMEX};
 use crate::Error;
 use ntp_proto::{NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, PollInterval};
 
@@ -34,7 +34,7 @@ impl NtpClock for LinuxNtpClock {
     fn now(&self) -> Result<ntp_proto::NtpTimestamp, Error> {
         let mut ntp_kapi_timex = EMPTY_TIMEX;
 
-        adjtime(&mut ntp_kapi_timex)?;
+        UnixNtpClock::realtime().adjtime(&mut ntp_kapi_timex)?;
 
         Ok(extract_current_time(&ntp_kapi_timex))
     }
@@ -45,7 +45,7 @@ impl NtpClock for LinuxNtpClock {
         // NTP Kapi expects frequency adjustment in units of 2^-16 ppm
         // but our input is in units of seconds drift per second, so convert.
         ntp_kapi_timex.freq = (freq * 65536e6) as libc::c_long;
-        adjtime(&mut ntp_kapi_timex)?;
+        UnixNtpClock::realtime().adjtime(&mut ntp_kapi_timex)?;
         Ok(extract_current_time(&ntp_kapi_timex))
     }
 
@@ -61,16 +61,16 @@ impl NtpClock for LinuxNtpClock {
             ..crate::unix::EMPTY_TIMEX
         };
 
-        adjtime(&mut timex)?;
+        UnixNtpClock::realtime().adjtime(&mut timex)?;
         Ok(extract_current_time(&timex))
     }
 
     fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-        UnixNtpClock::new().enable_ntp_algorithm()
+        UnixNtpClock::realtime().enable_ntp_algorithm()
     }
 
     fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-        UnixNtpClock::new().disable_ntp_algorithm()
+        UnixNtpClock::realtime().disable_ntp_algorithm()
     }
 
     fn ntp_algorithm_update(
@@ -78,7 +78,7 @@ impl NtpClock for LinuxNtpClock {
         offset: NtpDuration,
         poll_interval: PollInterval,
     ) -> Result<(), Self::Error> {
-        UnixNtpClock::new().ntp_algorithm_update(offset, poll_interval)
+        UnixNtpClock::realtime().ntp_algorithm_update(offset, poll_interval)
     }
 
     fn error_estimate_update(
@@ -86,11 +86,11 @@ impl NtpClock for LinuxNtpClock {
         est_error: NtpDuration,
         max_error: NtpDuration,
     ) -> Result<(), Self::Error> {
-        UnixNtpClock::new().error_estimate_update(est_error, max_error)
+        UnixNtpClock::realtime().error_estimate_update(est_error, max_error)
     }
 
     fn status_update(&self, leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
-        UnixNtpClock::new().status_update(leap_status)
+        UnixNtpClock::realtime().status_update(leap_status)
     }
 }
 
