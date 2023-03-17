@@ -1,5 +1,6 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 
+mod hwtimestamp;
 mod interface_name;
 mod raw_socket;
 mod socket;
@@ -22,6 +23,10 @@ pub struct EnableTimestamps {
     pub rx_software: bool,
     #[serde(default)] // defaults to `false`
     pub tx_software: bool,
+    #[serde(default)] // defaults to `false`
+    pub rx_hardware: bool,
+    #[serde(default)] // defaults to `false`
+    pub tx_hardware: bool,
 }
 
 impl Default for EnableTimestamps {
@@ -29,6 +34,8 @@ impl Default for EnableTimestamps {
         Self {
             rx_software: true,
             tx_software: false,
+            rx_hardware: false,
+            tx_hardware: false,
         }
     }
 }

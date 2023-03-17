@@ -54,6 +54,7 @@ pub(crate) enum TimestampMethod {
 mod set_timestamping_options {
     use std::os::unix::prelude::AsRawFd;
 
+    use crate::hwtimestamp::driver_enable_hardware_timestamping;
     use crate::EnableTimestamps;
 
     use super::{cerr, TimestampMethod};
@@ -128,6 +129,21 @@ mod set_timestamping_options {
                     options |= libc::SOF_TIMESTAMPING_TX_SOFTWARE
                         | libc::SOF_TIMESTAMPING_OPT_TSONLY
                         | libc::SOF_TIMESTAMPING_OPT_ID;
+                }
+
+                if timestamping.rx_hardware || timestamping.tx_hardware {
+                    // enable hardware timestamping
+                    options |= libc::SOF_TIMESTAMPING_RAW_HARDWARE;
+
+                    driver_enable_hardware_timestamping(udp_socket)?;
+                }
+
+                if timestamping.rx_hardware {
+                    options |= libc::SOF_TIMESTAMPING_RX_HARDWARE;
+                }
+
+                if timestamping.tx_hardware {
+                    options |= libc::SOF_TIMESTAMPING_TX_HARDWARE;
                 }
 
                 options
@@ -423,6 +439,8 @@ pub(crate) mod timestamping_config {
             let support = EnableTimestamps {
                 rx_software: tsi.so_timestamping & libc::SOF_TIMESTAMPING_RX_SOFTWARE != 0,
                 tx_software: tsi.so_timestamping & libc::SOF_TIMESTAMPING_TX_SOFTWARE != 0,
+                rx_hardware: tsi.so_timestamping & libc::SOF_TIMESTAMPING_RX_HARDWARE != 0,
+                tx_hardware: tsi.so_timestamping & libc::SOF_TIMESTAMPING_TX_HARDWARE != 0,
             };
 
             // per the documentation of `SOF_TIMESTAMPING_RX_SOFTWARE`:
@@ -430,7 +448,7 @@ pub(crate) mod timestamping_config {
             // > Request rx timestamps when data enters the kernel. These timestamps are generated
             // > just after a device driver hands a packet to the kernel receive stack.
             //
-            // the linux kernel should always support receive software timestamping
+            // the linux kernal should always support receive software timestamping
             assert!(support.rx_software);
 
             Ok(support)

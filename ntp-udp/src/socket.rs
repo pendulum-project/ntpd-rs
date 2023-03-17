@@ -112,6 +112,8 @@ impl UdpSocket {
         let timestamping = EnableTimestamps {
             rx_software: true,
             tx_software: false,
+            rx_hardware: false,
+            tx_hardware: false,
         };
 
         set_timestamping_options(&socket, DEFAULT_TIMESTAMP_METHOD, timestamping)?;
