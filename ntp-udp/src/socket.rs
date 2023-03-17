@@ -136,7 +136,7 @@ impl UdpSocket {
         let expected_counter = self.send_counter;
         self.send_counter = self.send_counter.wrapping_add(1);
 
-        if self.timestamping.tx_software {
+        if self.timestamping.tx_software || self.timestamping.tx_hardware {
             // the send timestamp may never come set a very short timeout to prevent hanging forever.
             // We automatically fall back to a less accurate timestamp when this function returns None
             let timeout = std::time::Duration::from_millis(10);
