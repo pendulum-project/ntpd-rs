@@ -327,6 +327,7 @@ mod recv_message {
 
                     // if defined, we prefer the hardware over the software timestamp
                     let timespec = if hardware.tv_sec != 0 && hardware.tv_nsec != 0 {
+                        dbg!(hardware.tv_sec, hardware.tv_nsec);
                         hardware
                     } else {
                         software
