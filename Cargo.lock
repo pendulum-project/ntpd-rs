@@ -866,6 +866,7 @@ dependencies = [
  "serde",
  "thiserror",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]

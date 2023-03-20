@@ -1,6 +1,7 @@
 use aes_siv::{siv::Aes128Siv, siv::Aes256Siv, Key, KeyInit};
 use rand::Rng;
 use tracing::error;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::DecodedServerCookie;
 
@@ -10,7 +11,7 @@ use super::extensionfields::ExtensionField;
 #[error("Could not decrypt ciphertext")]
 pub struct DecryptError;
 
-pub trait Cipher: Sync + Send + 'static {
+pub trait Cipher: Sync + Send + ZeroizeOnDrop + 'static {
     fn encrypt_in_place_detached(
         &self,
         plaintext: &mut [u8],
@@ -83,9 +84,17 @@ pub struct AesSivCmac256 {
     key: Key<Aes128Siv>,
 }
 
+impl ZeroizeOnDrop for AesSivCmac256 {}
+
 impl AesSivCmac256 {
     pub fn new(key: Key<Aes128Siv>) -> Self {
         AesSivCmac256 { key }
+    }
+}
+
+impl Drop for AesSivCmac256 {
+    fn drop(&mut self) {
+        self.key.zeroize()
     }
 }
 
@@ -142,6 +151,14 @@ pub struct AesSivCmac512 {
 impl AesSivCmac512 {
     pub fn new(key: Key<Aes256Siv>) -> Self {
         AesSivCmac512 { key }
+    }
+}
+
+impl ZeroizeOnDrop for AesSivCmac512 {}
+
+impl Drop for AesSivCmac512 {
+    fn drop(&mut self) {
+        self.key.zeroize()
     }
 }
 
