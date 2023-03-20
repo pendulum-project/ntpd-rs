@@ -81,3 +81,4 @@ aead = "0.5.1"
 aes-siv = "0.7.0"
 # Note: md5 is needed to calculate ReferenceIDs for IPv6 addresses per RFC5905
 md-5 = "0.10.5"
+zeroize = "1.5.7"
