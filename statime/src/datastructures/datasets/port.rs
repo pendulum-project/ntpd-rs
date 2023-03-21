@@ -1,7 +1,14 @@
-use crate::bmc::bmca::RecommendedState;
-use crate::datastructures::common::PortIdentity;
-use crate::port::state::{MasterState, PortState, SlaveState};
-use crate::time::Duration;
+use std::{future::Future, pin::Pin};
+
+use crate::{
+    bmc::bmca::RecommendedState,
+    datastructures::common::PortIdentity,
+    port::{
+        state::{MasterState, PortState, SlaveState},
+        Ticker,
+    },
+    time::Duration,
+};
 
 #[derive(Debug)]
 pub struct PortDS {
@@ -74,7 +81,8 @@ impl PortDS {
         Duration::from_log_interval(self.log_min_p_delay_req_interval)
     }
 
-    // TODO: Count the actual number of passed announce intervals, rather than this approximation
+    // TODO: Count the actual number of passed announce intervals, rather than this
+    // approximation
     pub fn announce_receipt_interval(&self) -> Duration {
         Duration::from_log_interval(
             self.announce_receipt_timeout as i8 * self.log_announce_interval,
@@ -98,7 +106,11 @@ impl PortDS {
         self.port_state = state;
     }
 
-    pub fn set_recommended_port_state(&mut self, recommended_state: &RecommendedState) {
+    pub fn set_recommended_port_state<F: Future>(
+        &mut self,
+        recommended_state: &RecommendedState,
+        announce_receipt_timeout: &mut Pin<&mut Ticker<F, impl FnMut(Duration) -> F>>,
+    ) {
         match recommended_state {
             // TODO set things like steps_removed once they are added
             // TODO make sure states are complete
@@ -109,12 +121,12 @@ impl PortDS {
                 match &self.port_state {
                     PortState::Listening | PortState::Master(_) | PortState::Passive => {
                         self.set_forced_port_state(state);
-                        // TODO: announce_receipt_timeout.reset();
+                        announce_receipt_timeout.reset();
                     }
                     PortState::Slave(old_state) => {
                         if old_state.remote_master() != remote_master {
                             self.set_forced_port_state(state);
-                            // TODO: announce_receipt_timeout.reset();
+                            announce_receipt_timeout.reset();
                         }
                     }
                     PortState::Disabled => (),
@@ -142,7 +154,7 @@ impl PortDS {
 pub enum DelayMechanism {
     E2E = 0x01,
     P2P = 0x02,
-    NoMechanism = 0xFE,
+    NoMechanism = 0xfe,
     CommonP2p = 0x03,
     Special = 0x04,
 }

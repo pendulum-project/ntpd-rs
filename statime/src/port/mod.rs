@@ -1,24 +1,28 @@
 use core::cell::RefCell;
-use std::future::Future;
-use std::pin::Pin;
+use std::{future::Future, pin::Pin};
 
-use embassy_futures::select;
-use embassy_futures::select::{Either, Either3};
-use futures::StreamExt;
-
+use embassy_futures::{
+    select,
+    select::{Either, Either3},
+};
 pub use error::{PortError, Result};
+use futures::StreamExt;
 pub use measurement::Measurement;
 use state::{MasterState, PortState};
 pub use ticker::Ticker;
 
-use crate::bmc::bmca::{BestAnnounceMessage, Bmca, RecommendedState};
-use crate::clock::Clock;
-use crate::datastructures::common::{PortIdentity, TimeSource, Timestamp};
-use crate::datastructures::datasets::{DefaultDS, PortDS, TimePropertiesDS};
-use crate::datastructures::messages::{Message, MessageBuilder};
-use crate::filters::Filter;
-use crate::network::{NetworkPacket, NetworkPort, NetworkRuntime};
-use crate::time::Duration;
+use crate::{
+    bmc::bmca::{BestAnnounceMessage, Bmca, RecommendedState},
+    clock::Clock,
+    datastructures::{
+        common::{PortIdentity, TimeSource, Timestamp},
+        datasets::{DefaultDS, PortDS, TimePropertiesDS},
+        messages::{Message, MessageBuilder},
+    },
+    filters::Filter,
+    network::{NetworkPacket, NetworkPort, NetworkRuntime},
+    time::Duration,
+};
 
 mod error;
 mod measurement;
@@ -63,13 +67,13 @@ impl<P> Port<P> {
 }
 
 impl<P: NetworkPort> Port<P> {
-    pub async fn run_port<T: Future>(
+    pub async fn run_port<F: Future>(
         &mut self,
         local_clock: &RefCell<impl Clock>,
         filter: &RefCell<impl Filter>,
-        announce_receipt_timeout: &mut Pin<&mut Ticker<T, impl FnMut(Duration) -> T>>,
-        sync_timeout: &mut Pin<&mut Ticker<T, impl FnMut(Duration) -> T>>,
-        announce_timeout: &mut Pin<&mut Ticker<T, impl FnMut(Duration) -> T>>,
+        announce_receipt_timeout: &mut Pin<&mut Ticker<F, impl FnMut(Duration) -> F>>,
+        sync_timeout: &mut Pin<&mut Ticker<F, impl FnMut(Duration) -> F>>,
+        announce_timeout: &mut Pin<&mut Ticker<F, impl FnMut(Duration) -> F>>,
         default_ds: &DefaultDS,
         time_properties_ds: &TimePropertiesDS,
     ) -> ! {
@@ -133,14 +137,17 @@ impl<P: NetworkPort> Port<P> {
             .take_best_port_announce_message(current_time.into())
     }
 
-    pub fn set_recommended_state(
+    pub fn set_recommended_state<F: Future>(
         &mut self,
         recommended_state: RecommendedState,
+        announce_receipt_timeout: &mut Pin<&mut Ticker<F, impl FnMut(Duration) -> F>>,
         time_properties_ds: &mut TimePropertiesDS,
     ) -> Result<()> {
-        self.port_ds.set_recommended_port_state(&recommended_state);
+        self.port_ds
+            .set_recommended_port_state(&recommended_state, announce_receipt_timeout);
 
-        // TODO: Discuss if we should change the clock's own time properties, or keep the master's time properties separately
+        // TODO: Discuss if we should change the clock's own time properties, or keep
+        // the master's time properties separately
         if let RecommendedState::S1(announce_message) = &recommended_state {
             // Update time properties
             *time_properties_ds = announce_message.time_properties();
@@ -224,12 +231,12 @@ impl<P: NetworkPort> Port<P> {
         Ok(())
     }
 
-    async fn handle_packet<T: Future>(
+    async fn handle_packet<F: Future>(
         &mut self,
         packet: NetworkPacket,
         local_clock: &RefCell<impl Clock>,
         filter: &RefCell<impl Filter>,
-        announce_receipt_timeout: &mut Pin<&mut Ticker<T, impl FnMut(Duration) -> T>>,
+        announce_receipt_timeout: &mut Pin<&mut Ticker<F, impl FnMut(Duration) -> F>>,
         default_ds: &DefaultDS,
         time_properties_ds: &TimePropertiesDS,
     ) -> Result<()> {
@@ -262,8 +269,8 @@ impl<P: NetworkPort> Port<P> {
                 )
                 .await?;
 
-            // If the received message allowed the (slave) state to calculate its offset from the
-            // master, update the local clock
+            // If the received message allowed the (slave) state to calculate its offset
+            // from the master, update the local clock
             if let PortState::Slave(slave) = &mut self.port_ds.port_state {
                 if let Some(measurement) = slave.extract_measurement() {
                     let (offset, freq_corr) = filter

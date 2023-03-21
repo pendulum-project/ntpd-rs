@@ -1,10 +1,13 @@
-use core::future::Future;
-use core::pin::Pin;
-use core::task::{Context, Poll};
+use core::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
+
 use futures::Stream;
+use pin_project::pin_project;
 
 use crate::time::Duration;
-use pin_project::pin_project;
 
 #[pin_project]
 pub struct Ticker<T, R> {
@@ -33,12 +36,12 @@ where
     }
 }
 
-impl<T, R> Stream for Ticker<T, R>
+impl<F, R> Stream for Ticker<F, R>
 where
-    T: Future,
-    R: FnMut(Duration) -> T,
+    F: Future,
+    R: FnMut(Duration) -> F,
 {
-    type Item = T::Output;
+    type Item = F::Output;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.as_mut().project();
