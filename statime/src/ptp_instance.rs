@@ -92,49 +92,63 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
             .expect("no ports");
         let mut bmca_timeout = pin!(Ticker::new(|interval| timer.after(interval), interval));
 
-        let mut timeouts = pin!(into_array::<_, N>(self.ports.iter().map(|port| {
-            let announce_receipt_timeout = Ticker::new(
+        let announce_receipt_timeouts = pin!(into_array::<_, N>(self.ports.iter().map(|port| {
+            Ticker::new(
                 |interval| timer.after(interval),
                 port.announce_receipt_interval(),
-            );
-            let sync_timeout = Ticker::new(|interval| timer.after(interval), port.sync_interval());
-            let announce_timeout =
-                Ticker::new(|interval| timer.after(interval), port.announce_interval());
-
-            (announce_receipt_timeout, sync_timeout, announce_timeout)
+            )
+        })));
+        let sync_timeouts = pin!(into_array::<_, N>(self.ports.iter().map(|port| {
+            Ticker::new(|interval| timer.after(interval), port.sync_interval())
+        })));
+        let announce_timeouts = pin!(into_array::<_, N>(self.ports.iter().map(|port| {
+            Ticker::new(|interval| timer.after(interval), port.announce_interval())
         })));
 
-        let mut pinned_timeouts = into_array::<_, N>(unsafe {
-            timeouts.as_mut().get_unchecked_mut().iter_mut().map(
-                |(announce_receipt_timeout, sync_timeout, announce_timeout)| {
-                    (
-                        Pin::new_unchecked(announce_receipt_timeout),
-                        Pin::new_unchecked(sync_timeout),
-                        Pin::new_unchecked(announce_timeout),
-                    )
-                },
-            )
+        let mut pinned_announce_receipt_timeouts = into_array::<_, N>(unsafe {
+            announce_receipt_timeouts
+                .get_unchecked_mut()
+                .iter_mut()
+                .map(|announce_receipt_timeout| Pin::new_unchecked(announce_receipt_timeout))
+        });
+        let mut pinned_sync_timeouts = into_array::<_, N>(unsafe {
+            sync_timeouts
+                .get_unchecked_mut()
+                .iter_mut()
+                .map(|sync_timeout| Pin::new_unchecked(sync_timeout))
+        });
+        let mut pinned_announce_timeouts = into_array::<_, N>(unsafe {
+            announce_timeouts
+                .get_unchecked_mut()
+                .iter_mut()
+                .map(|announce_timeout| Pin::new_unchecked(announce_timeout))
         });
 
         loop {
-            let mut run_ports = self.ports.iter_mut().zip(&mut pinned_timeouts).map(
-                |(port, (announce_receipt_timeout, sync_timeout, announce_timeout))| {
-                    port.run_port(
-                        &self.local_clock,
-                        &self.filter,
-                        announce_receipt_timeout,
-                        sync_timeout,
-                        announce_timeout,
-                        &self.default_ds,
-                        &self.time_properties_ds,
-                    )
-                },
-            );
+            let mut run_ports = self
+                .ports
+                .iter_mut()
+                .zip(&mut pinned_announce_receipt_timeouts)
+                .zip(&mut pinned_sync_timeouts)
+                .zip(&mut pinned_announce_timeouts)
+                .map(
+                    |(((port, announce_receipt_timeout), sync_timeout), announce_timeout)| {
+                        port.run_port(
+                            &self.local_clock,
+                            &self.filter,
+                            announce_receipt_timeout,
+                            sync_timeout,
+                            announce_timeout,
+                            &self.default_ds,
+                            &self.time_properties_ds,
+                        )
+                    },
+                );
             let run_ports =
                 embassy_futures::select::select_array([(); N].map(|_| run_ports.next().unwrap()));
 
             match embassy_futures::select::select(bmca_timeout.next(), run_ports).await {
-                Either::First(_) => self.run_bmca(&mut pinned_timeouts),
+                Either::First(_) => self.run_bmca(&mut pinned_announce_receipt_timeouts),
                 Either::Second(_) => unreachable!(),
             }
         }
@@ -142,11 +156,7 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
 
     fn run_bmca<Fut: Future>(
         &mut self,
-        pinned_timeouts: &mut [(
-            Pin<&mut Ticker<Fut, impl FnMut(Duration) -> Fut>>,
-            Pin<&mut Ticker<Fut, impl FnMut(Duration) -> Fut>>,
-            Pin<&mut Ticker<Fut, impl FnMut(Duration) -> Fut>>,
-        )],
+        pinned_timeouts: &mut [Pin<&mut Ticker<Fut, impl FnMut(Duration) -> Fut>>],
     ) {
         let mut erbests = [None; N];
 
@@ -176,7 +186,7 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
             if let Some(recommended_state) = recommended_state {
                 if let Err(error) = port.set_recommended_state(
                     recommended_state,
-                    &mut pinned_timeouts[index].0,
+                    &mut pinned_timeouts[index],
                     &mut self.time_properties_ds,
                 ) {
                     log::error!("{:?}", error)
