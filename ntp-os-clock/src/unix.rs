@@ -89,15 +89,6 @@ impl UnixNtpClock {
         Self { clock: id }
     }
 
-    #[cfg_attr(target_os = "linux", allow(unused))]
-    pub fn ptp0() -> Result<Self, Error> {
-        let path = CStr::from_bytes_with_nul(b"/dev/ptp0\0").unwrap();
-        // SAFETY
-        //
-        // we know this is a file descriptor of a clock
-        unsafe { Self::from_path(path) }
-    }
-
     unsafe fn from_path(path: &CStr) -> Result<Self, Error> {
         let fd = match unsafe { libc::open(path.as_ptr(), libc::O_RDWR) } {
             -1 => return Err(convert_errno()),
