@@ -107,12 +107,16 @@ where
 
     async fn handle_poll(&mut self, poll_wait: &mut Pin<&mut T>) -> PollResult {
         let system_snapshot = *self.channels.system_snapshot_receiver.borrow();
-        let config_snapshot = *self.channels.system_config_receiver.borrow_and_update();
+        let config_snapshot_system = self
+            .channels
+            .system_config_receiver
+            .borrow_and_update()
+            .system;
         let mut buf = [0; 1024];
         let packet = match self.peer.generate_poll_message(
             &mut buf,
             system_snapshot,
-            &config_snapshot.system,
+            &config_snapshot_system,
         ) {
             Ok(packet) => packet,
             Err(PollError::Io(e)) => {

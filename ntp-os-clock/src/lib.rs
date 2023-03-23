@@ -13,6 +13,8 @@ pub enum Error {
     NoDev,
     #[error("Clock operation requested is not supported by operating system.")]
     NotSupported,
+    #[error("Invalid clock path")]
+    InvalidClockPath,
 }
 
 // Unix uses an epoch located at 1/1/1970-00:00h (UTC) and NTP uses 1/1/1900-00:00h.

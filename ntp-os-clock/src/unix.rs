@@ -5,6 +5,12 @@
 // is constructed in such a way that use of the public functions is
 // safe regardless of given arguments.
 
+use std::{
+    ffi::CStr,
+    os::unix::prelude::{OsStrExt, RawFd},
+    path::Path,
+};
+
 use crate::{Error, EPOCH_OFFSET};
 use ntp_proto::{NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, PollInterval};
 
@@ -85,6 +91,24 @@ impl UnixNtpClock {
 
     pub fn custom(id: libc::clockid_t) -> Self {
         Self { clock: id }
+    }
+
+    pub fn from_path(path: &Path) -> Result<Self, Error> {
+        let bytes = path.as_os_str().as_bytes().to_vec();
+        let path = std::ffi::CString::new(bytes).map_err(|_| Error::InvalidClockPath)?;
+
+        match unsafe { libc::open(path.as_ptr(), libc::O_RDWR) } {
+            -1 => Err(convert_errno()),
+            fd => Ok(Self::from_file_descriptor(fd as RawFd)),
+        }
+    }
+
+    pub fn from_file_descriptor(fd: RawFd) -> Self {
+        // using an invalid clock id is safe. The function that take this value as an argument will
+        // return an EINVAL IO error when the clock id is invalid.
+
+        let id = ((!(fd as libc::clockid_t)) << 3) | 0b11;
+        Self::custom(id)
     }
 
     #[cfg_attr(target_os = "linux", allow(unused))]
