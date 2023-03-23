@@ -89,21 +89,6 @@ impl UnixNtpClock {
         Self { clock: id }
     }
 
-    unsafe fn from_path(path: &CStr) -> Result<Self, Error> {
-        let fd = match unsafe { libc::open(path.as_ptr(), libc::O_RDWR) } {
-            -1 => return Err(convert_errno()),
-            valid => valid,
-        };
-
-        Ok(unsafe { Self::from_file_descriptor(fd as RawFd) })
-    }
-
-    unsafe fn from_file_descriptor(fd: RawFd) -> Self {
-        let id = ((!(fd as libc::clockid_t)) << 3) | 0b11;
-
-        Self::custom(id)
-    }
-
     #[cfg_attr(target_os = "linux", allow(unused))]
     fn clock_gettime(&self) -> Result<libc::timespec, Error> {
         let mut timespec = libc::timespec {
