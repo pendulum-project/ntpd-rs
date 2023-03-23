@@ -27,6 +27,37 @@ use crate::spawn::PeerId;
 
 use self::format::LogFormat;
 
+fn deserialize_clock<'de, D>(deserializer: D) -> Result<DefaultNtpClock, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let data: Option<PathBuf> = Deserialize::deserialize(deserializer)?;
+
+    if let Some(path) = data {
+        DefaultNtpClock::from_path(&path).map_err(|e| serde::de::Error::custom(e.to_string()))
+    } else {
+        Ok(DefaultNtpClock::realtime())
+    }
+}
+
+fn default_ntp_clock() -> DefaultNtpClock {
+    DefaultNtpClock::realtime()
+}
+
+fn deserialize_option_interface_name<'de, D>(
+    deserializer: D,
+) -> Result<Option<[i8; libc::IFNAMSIZ]>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let data: Option<&str> = Deserialize::deserialize(deserializer)?;
+
+    Ok(data.map(|string| {
+        let mut it = string.bytes().map(|b| b as i8);
+        std::array::from_fn(|_| it.next().unwrap_or_default())
+    }))
+}
+
 fn deserialize_option_env_filter<'de, D>(deserializer: D) -> Result<Option<EnvFilter>, D::Error>
 where
     D: Deserializer<'de>,
@@ -131,6 +162,10 @@ pub struct ClockConfig {
 pub struct CombinedSystemConfig {
     #[serde(flatten)]
     pub system: SystemConfig,
+    #[serde(deserialize_with = "deserialize_clock", default = "default_ntp_clock")]
+    pub clock: DefaultNtpClock,
+    #[serde(deserialize_with = "deserialize_option_interface_name", default)]
+    pub interface: Option<[i8; libc::IFNAMSIZ]>,
     #[serde(flatten)]
     pub algorithm: <DefaultTimeSyncController<DefaultNtpClock, PeerId> as TimeSyncController<
         DefaultNtpClock,
