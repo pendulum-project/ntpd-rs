@@ -5,8 +5,6 @@
 // is constructed in such a way that use of the public functions is
 // safe regardless of given arguments.
 
-use std::{ffi::CStr, os::unix::prelude::RawFd};
-
 use crate::{Error, EPOCH_OFFSET};
 use ntp_proto::{NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, PollInterval};
 
