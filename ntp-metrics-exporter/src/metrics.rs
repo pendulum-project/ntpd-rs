@@ -44,7 +44,7 @@ pub struct Metrics {
 
 impl Metrics {
     pub fn fill(&self, data: &ObservableState) {
-        let clock = DefaultNtpClock::new();
+        let clock = DefaultNtpClock::realtime();
 
         self.system_poll_interval.set(
             data.system

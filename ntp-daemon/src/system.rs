@@ -83,7 +83,7 @@ pub async fn spawn(
     server_configs: &[ServerConfig],
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
 ) -> std::io::Result<(JoinHandle<std::io::Result<()>>, DaemonChannels)> {
-    let clock = DefaultNtpClock::new();
+    let clock = DefaultNtpClock::realtime();
     let (mut system, channels) = System::new(clock, config, keyset);
 
     for peer_config in peer_configs {

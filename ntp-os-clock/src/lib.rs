@@ -1,11 +1,6 @@
-#[cfg(target_os = "linux")]
-mod linux;
 mod unix;
 
-#[cfg(target_os = "linux")]
-pub type DefaultNtpClock = linux::LinuxNtpClock;
-
-#[cfg(any(target_os = "freebsd", target_os = "macos"))]
+#[cfg(unix)]
 pub type DefaultNtpClock = unix::UnixNtpClock;
 
 #[derive(Debug, Copy, Clone, thiserror::Error)]

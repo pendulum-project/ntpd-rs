@@ -104,6 +104,7 @@ impl UnixNtpClock {
         Self::custom(id)
     }
 
+    #[cfg_attr(target_os = "linux", allow(unused))]
     fn clock_gettime(&self) -> Result<libc::timespec, Error> {
         let mut timespec = libc::timespec {
             tv_sec: 0,
@@ -115,6 +116,7 @@ impl UnixNtpClock {
         Ok(timespec)
     }
 
+    #[cfg_attr(target_os = "linux", allow(unused))]
     fn clock_settime(&self, mut timespec: libc::timespec) -> Result<(), Error> {
         while timespec.tv_nsec > 1_000_000_000 {
             timespec.tv_sec += 1;
@@ -158,6 +160,7 @@ impl UnixNtpClock {
         }
     }
 
+    #[cfg_attr(target_os = "linux", allow(unused))]
     fn step_clock_timespec(&self, offset: ntp_proto::NtpDuration) -> Result<NtpTimestamp, Error> {
         let (offset_secs, offset_nanos) = offset.as_seconds_nanos();
 
@@ -171,6 +174,7 @@ impl UnixNtpClock {
         Ok(current_time_timespec(timespec, Precision::Nano))
     }
 
+    #[cfg(target_os = "linux")]
     fn step_clock_timex(&self, offset: ntp_proto::NtpDuration) -> Result<NtpTimestamp, Error> {
         let (secs, nanos) = offset.as_seconds_nanos();
 
