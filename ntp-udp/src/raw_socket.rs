@@ -146,6 +146,10 @@ mod set_timestamping_options {
                     options |= libc::SOF_TIMESTAMPING_TX_HARDWARE
                         | libc::SOF_TIMESTAMPING_OPT_TSONLY
                         | libc::SOF_TIMESTAMPING_OPT_ID;
+
+                    // in practice, this is needed to have `SOF_TIMESTAMPING_OPT_ID` work
+                    // without it, the reported id is always 0.
+                    options |= libc::SOF_TIMESTAMPING_TX_SOFTWARE;
                 }
 
                 options
@@ -329,10 +333,8 @@ mod recv_message {
 
                     // if defined, we prefer the hardware over the software timestamp
                     let timespec = if hardware.tv_sec != 0 && hardware.tv_nsec != 0 {
-                        dbg!(hardware.tv_sec, hardware.tv_nsec);
                         hardware
                     } else {
-                        dbg!(software.tv_sec, software.tv_nsec);
                         software
                     };
 
