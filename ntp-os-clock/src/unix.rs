@@ -96,6 +96,12 @@ impl UnixNtpClock {
             tv_nsec: 0,
         };
 
+        // # Safety
+        //
+        // using an invalid clock id is safe. `clock_adjtime` will return an EINVAL error
+        // https://linux.die.net/man/3/clock_gettime
+        //
+        // The timespec pointer is valid.
         cerr(unsafe { libc::clock_gettime(self.clock, &mut timespec) })?;
 
         Ok(timespec)
@@ -108,6 +114,12 @@ impl UnixNtpClock {
             timespec.tv_nsec -= 1_000_000_000;
         }
 
+        // # Safety
+        //
+        // using an invalid clock id is safe. `clock_adjtime` will return an EINVAL error
+        // https://linux.die.net/man/3/clock_settime
+        //
+        // The timespec pointer is valid.
         unsafe { cerr(libc::clock_settime(self.clock, &timespec))? };
 
         Ok(())
@@ -115,9 +127,15 @@ impl UnixNtpClock {
 
     fn clock_adjtime(&self, timex: &mut libc::timex) -> Result<(), Error> {
         // We don't care about the time status, so the non-error
-        // information in the return value of ntp_adjtime can be ignored.
-        // The ntp_adjtime call is safe because the reference always
+        // information in the return value of clock_adjtime can be ignored.
+        //
+        // # Safety
+        //
+        // The clock_adjtime call is safe because the reference always
         // points to a valid libc::timex.
+        //
+        // using an invalid clock id is safe. `clock_adjtime` will return an EINVAL error
+        // https://man.archlinux.org/man/clock_adjtime.2.en#EINVAL~4
         if unsafe { libc::clock_adjtime(self.clock, timex) } == -1 {
             Err(convert_errno())
         } else {
