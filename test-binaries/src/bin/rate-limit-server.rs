@@ -8,7 +8,7 @@ use tokio::net::UdpSocket;
 async fn main() -> Result<(), Box<dyn Error>> {
     let socket = UdpSocket::bind("0.0.0.0:8080").await?;
 
-    let clock = ntp_os_clock::DefaultNtpClock::new();
+    let clock = ntp_os_clock::DefaultNtpClock::realtime();
     let mut last_message = Instant::now();
 
     let system = SystemSnapshot::default();
