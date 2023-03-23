@@ -46,14 +46,14 @@ fn default_ntp_clock() -> DefaultNtpClock {
 
 fn deserialize_option_interface_name<'de, D>(
     deserializer: D,
-) -> Result<Option<[i8; libc::IFNAMSIZ]>, D::Error>
+) -> Result<Option<[u8; libc::IFNAMSIZ]>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let data: Option<&str> = Deserialize::deserialize(deserializer)?;
+    let data: Option<String> = Deserialize::deserialize(deserializer)?;
 
     Ok(data.map(|string| {
-        let mut it = string.bytes().map(|b| b as i8);
+        let mut it = string.bytes();
         std::array::from_fn(|_| it.next().unwrap_or_default())
     }))
 }
@@ -165,7 +165,7 @@ pub struct CombinedSystemConfig {
     #[serde(deserialize_with = "deserialize_clock", default = "default_ntp_clock")]
     pub clock: DefaultNtpClock,
     #[serde(deserialize_with = "deserialize_option_interface_name", default)]
-    pub interface: Option<[i8; libc::IFNAMSIZ]>,
+    pub interface: Option<[u8; libc::IFNAMSIZ]>,
     #[serde(flatten)]
     pub algorithm: <DefaultTimeSyncController<DefaultNtpClock, PeerId> as TimeSyncController<
         DefaultNtpClock,

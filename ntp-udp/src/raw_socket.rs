@@ -332,6 +332,7 @@ mod recv_message {
                         dbg!(hardware.tv_sec, hardware.tv_nsec);
                         hardware
                     } else {
+                        dbg!(software.tv_sec, software.tv_nsec);
                         software
                     };
 
