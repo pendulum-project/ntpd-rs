@@ -636,6 +636,7 @@ mod tests {
         let mut socket = UdpSocket::client(
             "127.0.0.1:9001".parse().unwrap(),
             "127.0.0.1:9000".parse().unwrap(),
+            None,
         )
         .await
         .unwrap();
@@ -684,6 +685,7 @@ mod tests {
         let mut socket = UdpSocket::client(
             "127.0.0.1:9003".parse().unwrap(),
             "127.0.0.1:9002".parse().unwrap(),
+            None,
         )
         .await
         .unwrap();
@@ -733,6 +735,7 @@ mod tests {
         let mut socket = UdpSocket::client(
             "127.0.0.1:9005".parse().unwrap(),
             "127.0.0.1:9004".parse().unwrap(),
+            None,
         )
         .await
         .unwrap();
@@ -776,6 +779,7 @@ mod tests {
         let mut socket = UdpSocket::client(
             "127.0.0.1:9007".parse().unwrap(),
             "127.0.0.1:9006".parse().unwrap(),
+            None,
         )
         .await
         .unwrap();
@@ -824,6 +828,7 @@ mod tests {
         let mut socket = UdpSocket::client(
             "127.0.0.1:9009".parse().unwrap(),
             "127.0.0.1:9008".parse().unwrap(),
+            None,
         )
         .await
         .unwrap();
@@ -873,6 +878,7 @@ mod tests {
         let mut socket = UdpSocket::client(
             "127.0.0.1:9011".parse().unwrap(),
             "127.0.0.1:9010".parse().unwrap(),
+            None,
         )
         .await
         .unwrap();
@@ -916,6 +922,7 @@ mod tests {
         let mut socket = UdpSocket::client(
             "127.0.0.1:9013".parse().unwrap(),
             "127.0.0.1:9012".parse().unwrap(),
+            None,
         )
         .await
         .unwrap();
@@ -996,6 +1003,7 @@ mod tests {
         let mut socket = UdpSocket::client(
             "127.0.0.1:9015".parse().unwrap(),
             "127.0.0.1:9014".parse().unwrap(),
+            None,
         )
         .await
         .unwrap();

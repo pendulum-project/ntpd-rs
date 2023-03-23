@@ -30,8 +30,13 @@ const DEFAULT_TIMESTAMP_METHOD: TimestampMethod = TimestampMethod::SoTimestamp;
 impl UdpSocket {
     #[instrument(level = "debug", skip(peer_addr))]
     pub async fn client(listen_addr: SocketAddr, peer_addr: SocketAddr) -> io::Result<UdpSocket> {
-        Self::client_with_timestamping(listen_addr, peer_addr, None, EnableTimestamps::default())
-            .await
+        Self::client_with_timestamping(
+            listen_addr,
+            peer_addr,
+            InterfaceName::DEFAULT,
+            EnableTimestamps::default(),
+        )
+        .await
     }
 
     pub async fn client_with_timestamping(
@@ -494,6 +499,8 @@ mod tests {
             EnableTimestamps {
                 rx_software: true,
                 tx_software: true,
+                rx_hardware: false,
+                tx_hardware: false,
             },
         )
         .await
@@ -545,6 +552,8 @@ mod tests {
             EnableTimestamps {
                 rx_software: true,
                 tx_software: true,
+                rx_hardware: false,
+                tx_hardware: false,
             },
         )
         .await
@@ -574,6 +583,7 @@ mod tests {
         let mut a = UdpSocket::client_with_timestamping(
             SocketAddr::from((Ipv4Addr::new(10, 0, 0, 24), 8012)),
             SocketAddr::from((Ipv4Addr::new(10, 0, 0, 18), 8013)),
+            None,
             DEFAULT_TIMESTAMP_METHOD,
             Timestamping::Configure(TimestampingConfig {
                 rx_software: true,
@@ -596,6 +606,7 @@ mod tests {
         let mut a = UdpSocket::client_with_timestamping(
             SocketAddr::from((Ipv4Addr::new(10, 0, 0, 24), 8014)),
             SocketAddr::from((Ipv4Addr::new(10, 0, 0, 18), 8015)),
+            None,
             DEFAULT_TIMESTAMP_METHOD,
             Timestamping::Configure(TimestampingConfig {
                 rx_software: false,

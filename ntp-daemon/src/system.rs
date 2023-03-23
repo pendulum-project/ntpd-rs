@@ -456,8 +456,8 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         PeerTask::spawn(
             peer_id,
             params.addr,
-            self.clock.clone(),
             self.interface,
+            self.clock.clone(),
             self.enable_timestamps,
             NETWORK_WAIT_PERIOD,
             self.peer_channels.clone(),
