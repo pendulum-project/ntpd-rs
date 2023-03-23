@@ -197,6 +197,14 @@ impl UnixNtpClock {
         }
     }
 
+    const fn status_mode(&self) -> libc::c_uint {
+        if self.clock == libc::CLOCK_REALTIME {
+            libc::MOD_STATUS
+        } else {
+            libc::ADJ_STATUS
+        }
+    }
+
     #[cfg_attr(target_os = "linux", allow(unused))]
     fn step_clock_timespec(&self, offset: ntp_proto::NtpDuration) -> Result<NtpTimestamp, Error> {
         let (offset_secs, offset_nanos) = offset.as_seconds_nanos();
@@ -338,7 +346,10 @@ impl NtpClock for UnixNtpClock {
 
     fn set_frequency(&self, freq: f64) -> Result<NtpTimestamp, Self::Error> {
         let mut ntp_kapi_timex = EMPTY_TIMEX;
-        ntp_kapi_timex.modes = libc::MOD_FREQUENCY;
+        ntp_kapi_timex.modes = match self.clock {
+            libc::CLOCK_REALTIME => libc::MOD_FREQUENCY,
+            _ => libc::ADJ_FREQUENCY,
+        };
         // NTP Kapi expects frequency adjustment in units of 2^-16 ppm
         // but our input is in units of seconds drift per second, so convert.
         ntp_kapi_timex.freq = (freq * 65536e6) as libc::c_long;
@@ -361,7 +372,8 @@ impl NtpClock for UnixNtpClock {
     fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
         let mut timex = EMPTY_TIMEX;
         self.adjtime(&mut timex)?;
-        timex.modes = libc::MOD_STATUS;
+        timex.modes = self.status_mode();
+
         // Enable the kernel phase locked loop
         timex.status |= libc::STA_PLL;
         // and disable the frequency locked loop,
@@ -374,10 +386,11 @@ impl NtpClock for UnixNtpClock {
     fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
         let mut timex = EMPTY_TIMEX;
         self.adjtime(&mut timex)?;
-        timex.modes = libc::MOD_STATUS;
+        timex.modes = self.status_mode();
         // Disable all kernel time control loops
         // (phase lock, frequency lock, pps time
         // and pps frequency).
+
         timex.status &= !libc::STA_PLL & !libc::STA_FLL & !libc::STA_PPSTIME & !libc::STA_PPSFREQ;
         self.adjtime(&mut timex)
     }
@@ -388,7 +401,10 @@ impl NtpClock for UnixNtpClock {
         poll_interval: PollInterval,
     ) -> Result<(), Self::Error> {
         let mut timex = EMPTY_TIMEX;
-        timex.modes = libc::MOD_OFFSET | libc::MOD_TIMECONST;
+        timex.modes = match self.clock {
+            libc::CLOCK_REALTIME => libc::MOD_OFFSET | libc::MOD_TIMECONST,
+            _ => libc::ADJ_OFFSET | libc::ADJ_TIMECONST,
+        };
         timex.offset = duration_in_nanos(offset);
         timex.constant = poll_interval.as_log() as libc::c_long;
         self.adjtime(&mut timex)
@@ -400,7 +416,10 @@ impl NtpClock for UnixNtpClock {
         max_error: NtpDuration,
     ) -> Result<(), Self::Error> {
         let mut timex = EMPTY_TIMEX;
-        timex.modes = libc::MOD_ESTERROR | libc::MOD_MAXERROR;
+        timex.modes = match self.clock {
+            libc::CLOCK_REALTIME => libc::MOD_ESTERROR | libc::MOD_MAXERROR,
+            _ => libc::ADJ_ESTERROR | libc::ADJ_MAXERROR,
+        };
         timex.esterror = duration_in_nanos(est_error) / 1000;
         timex.maxerror = duration_in_nanos(max_error) / 1000;
         self.adjtime(&mut timex)
@@ -409,7 +428,7 @@ impl NtpClock for UnixNtpClock {
     fn status_update(&self, leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
         let mut timex = EMPTY_TIMEX;
         self.adjtime(&mut timex)?;
-        timex.modes = libc::MOD_STATUS;
+        timex.modes = self.status_mode();
         // Clear out the leap seconds and synchronization flags
         timex.status &= !libc::STA_INS & !libc::STA_DEL & !libc::STA_UNSYNC;
         // and add back in what is needed.
