@@ -50,19 +50,7 @@ impl NtpClock for LinuxNtpClock {
     }
 
     fn step_clock(&self, offset: ntp_proto::NtpDuration) -> Result<NtpTimestamp, Self::Error> {
-        let (secs, nanos) = offset.as_seconds_nanos();
-
-        let mut timex = libc::timex {
-            modes: libc::ADJ_SETOFFSET | libc::MOD_NANO,
-            time: libc::timeval {
-                tv_sec: secs as libc::time_t,
-                tv_usec: nanos as libc::suseconds_t,
-            },
-            ..crate::unix::EMPTY_TIMEX
-        };
-
-        UnixNtpClock::realtime().adjtime(&mut timex)?;
-        Ok(extract_current_time(&timex))
+        UnixNtpClock::realtime().step_clock(offset)
     }
 
     fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {

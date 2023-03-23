@@ -166,6 +166,35 @@ impl UnixNtpClock {
             self.clock_adjtime(timex)
         }
     }
+
+    fn step_clock_timespec(&self, offset: ntp_proto::NtpDuration) -> Result<NtpTimestamp, Error> {
+        let (offset_secs, offset_nanos) = offset.as_seconds_nanos();
+
+        let mut timespec = self.clock_gettime()?;
+
+        timespec.tv_sec += offset_secs as libc::time_t;
+        timespec.tv_nsec += offset_nanos as libc::c_long;
+
+        self.clock_settime(timespec)?;
+
+        Ok(current_time_timespec(timespec, Precision::Nano))
+    }
+
+    fn step_clock_timex(&self, offset: ntp_proto::NtpDuration) -> Result<NtpTimestamp, Error> {
+        let (secs, nanos) = offset.as_seconds_nanos();
+
+        let mut timex = libc::timex {
+            modes: libc::ADJ_SETOFFSET | libc::MOD_NANO,
+            time: libc::timeval {
+                tv_sec: secs as libc::time_t,
+                tv_usec: nanos as libc::suseconds_t,
+            },
+            ..crate::unix::EMPTY_TIMEX
+        };
+
+        self.adjtime(&mut timex)?;
+        extract_current_time(&timex)
+    }
 }
 
 fn error_number() -> libc::c_int {
@@ -285,16 +314,15 @@ impl NtpClock for UnixNtpClock {
     }
 
     fn step_clock(&self, offset: ntp_proto::NtpDuration) -> Result<NtpTimestamp, Self::Error> {
-        let (offset_secs, offset_nanos) = offset.as_seconds_nanos();
+        #[cfg(target_os = "linux")]
+        {
+            self.step_clock_timex(offset)
+        }
 
-        let mut timespec = self.clock_gettime()?;
-
-        timespec.tv_sec += offset_secs as libc::time_t;
-        timespec.tv_nsec += offset_nanos as libc::c_long;
-
-        self.clock_settime(timespec)?;
-
-        Ok(current_time_timespec(timespec, Precision::Nano))
+        #[cfg(not(target_os = "linux"))]
+        {
+            self.step_clock_timespec(offset)
+        }
     }
 
     fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
