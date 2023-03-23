@@ -28,6 +28,23 @@ pub struct hwtimestamp_config {
     pub rx_filter: libc::c_int,
 }
 
+fn bind_socket(
+    udp_socket: &std::net::UdpSocket,
+    interface_name: [i8; libc::IFNAMSIZ],
+) -> std::io::Result<()> {
+    unsafe {
+        cerr(libc::setsockopt(
+            udp_socket.as_raw_fd(),
+            libc::SOL_SOCKET,
+            libc::SO_BINDTODEVICE,
+            interface_name.as_ptr().cast(),
+            interface_name.len() as u32,
+        ))?;
+    }
+
+    Ok(())
+}
+
 fn set_hardware_timestamp(
     udp_socket: &std::net::UdpSocket,
     mut config: hwtimestamp_config,
@@ -65,7 +82,9 @@ fn get_hardware_timestamp(udp_socket: &std::net::UdpSocket) -> std::io::Result<h
     Ok(tstamp_config)
 }
 
-fn socket_interface_name(udp_socket: &std::net::UdpSocket) -> std::io::Result<[i8; 16]> {
+fn socket_interface_name(
+    udp_socket: &std::net::UdpSocket,
+) -> std::io::Result<[i8; libc::IFNAMSIZ]> {
     use std::io::{Error, ErrorKind};
 
     match interface_name::interface_name(udp_socket.local_addr()?)? {
