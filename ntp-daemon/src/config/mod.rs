@@ -54,10 +54,25 @@ where
 {
     let data: Option<String> = Deserialize::deserialize(deserializer)?;
 
-    Ok(data.map(|string| {
-        let mut it = string.bytes();
-        std::array::from_fn(|_| it.next().unwrap_or_default())
-    }))
+    match data {
+        Some(string) => {
+            tracing::info!("using interface {string}");
+            let mut it = string.bytes();
+            Ok(Some(std::array::from_fn(|_| it.next().unwrap_or_default())))
+        }
+        None => {
+            tracing::info!("using default interface");
+            Ok(None)
+        }
+    }
+}
+
+fn bool_true() -> bool {
+    true
+}
+
+fn bool_false() -> bool {
+    false
 }
 
 fn deserialize_option_env_filter<'de, D>(deserializer: D) -> Result<Option<EnvFilter>, D::Error>
@@ -159,15 +174,30 @@ pub struct ClockConfig {
     pub enable_timestamps: EnableTimestamps,
 }
 
-#[derive(Deserialize, Debug, Default, Copy, Clone)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct CombinedSystemConfig {
-    #[serde(flatten)]
-    pub system: SystemConfig,
+#[derive(Deserialize, Debug, Default, Clone, Copy)]
+pub struct TimestampingConfig {
     #[serde(deserialize_with = "deserialize_clock", default = "default_ntp_clock")]
     pub clock: DefaultNtpClock,
     #[serde(deserialize_with = "deserialize_option_interface_name", default)]
     pub interface: Option<[u8; libc::IFNAMSIZ]>,
+
+    #[serde(default = "bool_true")]
+    pub rx_software: bool,
+    #[serde(default = "bool_true")]
+    pub tx_software: bool,
+    #[serde(default = "bool_false")]
+    pub rx_hardware: bool,
+    #[serde(default = "bool_false")]
+    pub tx_hardware: bool,
+}
+
+#[derive(Deserialize, Debug, Default, Clone, Copy)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct CombinedSystemConfig {
+    #[serde(flatten)]
+    pub system: SystemConfig,
+    #[serde(flatten)]
+    pub timestamping: TimestampingConfig,
     #[serde(flatten)]
     pub algorithm: <DefaultTimeSyncController<DefaultNtpClock, PeerId> as TimeSyncController<
         DefaultNtpClock,

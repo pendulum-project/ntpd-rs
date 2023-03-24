@@ -156,7 +156,11 @@ struct PeerFilter {
 impl PeerFilter {
     /// Move the filter forward to reflect the situation at a new, later timestamp
     fn progress_filtertime(&mut self, time: NtpTimestamp) {
-        debug_assert!(!time.is_before(self.filter_time));
+        debug_assert!(
+            !time.is_before(self.filter_time),
+            "time {time:?} is before filter_time {:?}",
+            self.filter_time
+        );
         if time < self.filter_time {
             return;
         }
