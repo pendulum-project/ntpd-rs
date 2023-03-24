@@ -545,7 +545,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_software_send_timestamp() {
-        let mut a = UdpSocket::client_with_timestamping(
+        let mut a = UdpSocket::client_with_timestamping_lowlevel(
             SocketAddr::from((Ipv4Addr::LOCALHOST, 8012)),
             SocketAddr::from((Ipv4Addr::LOCALHOST, 8013)),
             InterfaceName::DEFAULT,
@@ -580,12 +580,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_software_network_send_timestamp() {
-        let mut a = UdpSocket::client_with_timestamping(
+        let mut a = UdpSocket::client_with_timestamping_lowlevel(
             SocketAddr::from((Ipv4Addr::new(10, 0, 0, 24), 8012)),
             SocketAddr::from((Ipv4Addr::new(10, 0, 0, 18), 8013)),
             None,
             DEFAULT_TIMESTAMP_METHOD,
-            Timestamping::Configure(TimestampingConfig {
+            Timestamping::Configure(TimestampConfig {
                 rx_software: true,
                 tx_software: true,
                 rx_hardware: false,
@@ -603,12 +603,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_hardware_network_send_timestamp() {
-        let mut a = UdpSocket::client_with_timestamping(
+        let mut a = UdpSocket::client_with_timestamping_lowlevel(
             SocketAddr::from((Ipv4Addr::new(10, 0, 0, 24), 8014)),
             SocketAddr::from((Ipv4Addr::new(10, 0, 0, 18), 8015)),
             None,
             DEFAULT_TIMESTAMP_METHOD,
-            Timestamping::Configure(TimestampingConfig {
+            Timestamping::Configure(TimestampConfig {
                 rx_software: false,
                 tx_software: false,
                 rx_hardware: true,
