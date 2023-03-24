@@ -34,8 +34,10 @@ where
     let data: Option<PathBuf> = Deserialize::deserialize(deserializer)?;
 
     if let Some(path) = data {
+        tracing::info!("using custom clock {path:?}");
         DefaultNtpClock::from_path(&path).map_err(|e| serde::de::Error::custom(e.to_string()))
     } else {
+        tracing::info!("using REALTIME clock");
         Ok(DefaultNtpClock::realtime())
     }
 }

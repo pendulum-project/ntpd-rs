@@ -197,14 +197,6 @@ impl UnixNtpClock {
         }
     }
 
-    const fn status_mode(&self) -> libc::c_uint {
-        if self.clock == libc::CLOCK_REALTIME {
-            libc::MOD_STATUS
-        } else {
-            libc::ADJ_STATUS
-        }
-    }
-
     #[cfg_attr(target_os = "linux", allow(unused))]
     fn step_clock_timespec(&self, offset: ntp_proto::NtpDuration) -> Result<NtpTimestamp, Error> {
         let (offset_secs, offset_nanos) = offset.as_seconds_nanos();
@@ -239,13 +231,19 @@ impl UnixNtpClock {
     fn extract_current_time(&self, _timex: &libc::timex) -> Result<NtpTimestamp, Error> {
         #[cfg(target_os = "linux")]
         {
-            // in a timex, the status flag determines precision
-            let precision = match _timex.status & libc::STA_NANO {
-                0 => Precision::Micro,
-                _ => Precision::Nano,
-            };
+            // hardware clocks may not report the timestamp
+            if _timex.time.tv_sec != 0 && _timex.time.tv_usec != 0 {
+                // in a timex, the status flag determines precision
+                let precision = match _timex.status & libc::STA_NANO {
+                    0 => Precision::Micro,
+                    _ => Precision::Nano,
+                };
 
-            Ok(current_time_timeval(_timex.time, precision))
+                Ok(current_time_timeval(_timex.time, precision))
+            } else {
+                let timespec = self.clock_gettime()?;
+                Ok(current_time_timespec(timespec, Precision::Nano))
+            }
         }
 
         #[cfg(any(target_os = "freebsd", target_os = "macos"))]
@@ -333,6 +331,13 @@ pub(crate) fn current_time_timeval(timespec: libc::timeval, precision: Precision
     )
 }
 
+fn ignore_not_supported(res: Result<(), Error>) -> Result<(), Error> {
+    match res {
+        Err(Error::NotSupported) => Ok(()),
+        other => other,
+    }
+}
+
 impl NtpClock for UnixNtpClock {
     type Error = Error;
 
@@ -346,13 +351,16 @@ impl NtpClock for UnixNtpClock {
 
     fn set_frequency(&self, freq: f64) -> Result<NtpTimestamp, Self::Error> {
         let mut ntp_kapi_timex = EMPTY_TIMEX;
-        ntp_kapi_timex.modes = match self.clock {
-            libc::CLOCK_REALTIME => libc::MOD_FREQUENCY,
-            _ => libc::ADJ_FREQUENCY,
-        };
+        ntp_kapi_timex.modes = libc::MOD_FREQUENCY;
         // NTP Kapi expects frequency adjustment in units of 2^-16 ppm
         // but our input is in units of seconds drift per second, so convert.
         ntp_kapi_timex.freq = (freq * 65536e6) as libc::c_long;
+        ntp_kapi_timex.status |= libc::STA_FREQHOLD // We want no automatic frequency updates
+                & !libc::STA_PLL
+                & !libc::STA_PPSFREQ
+                & !libc::STA_FLL
+                & !libc::STA_PPSTIME;
+
         self.adjtime(&mut ntp_kapi_timex)?;
         self.extract_current_time(&ntp_kapi_timex)
     }
@@ -372,7 +380,7 @@ impl NtpClock for UnixNtpClock {
     fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
         let mut timex = EMPTY_TIMEX;
         self.adjtime(&mut timex)?;
-        timex.modes = self.status_mode();
+        timex.modes = libc::MOD_STATUS;
 
         // Enable the kernel phase locked loop
         timex.status |= libc::STA_PLL;
@@ -386,13 +394,13 @@ impl NtpClock for UnixNtpClock {
     fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
         let mut timex = EMPTY_TIMEX;
         self.adjtime(&mut timex)?;
-        timex.modes = self.status_mode();
-        // Disable all kernel time control loops
-        // (phase lock, frequency lock, pps time
-        // and pps frequency).
+        timex.modes = libc::MOD_STATUS;
 
+        // Disable all kernel time control loops (phase lock, frequency lock, pps time and pps frequency).
         timex.status &= !libc::STA_PLL & !libc::STA_FLL & !libc::STA_PPSTIME & !libc::STA_PPSFREQ;
-        self.adjtime(&mut timex)
+
+        // ignore if we cannot disable the kernel time control loops (e.g. external clocks)
+        ignore_not_supported(self.adjtime(&mut timex))
     }
 
     fn ntp_algorithm_update(
@@ -401,13 +409,10 @@ impl NtpClock for UnixNtpClock {
         poll_interval: PollInterval,
     ) -> Result<(), Self::Error> {
         let mut timex = EMPTY_TIMEX;
-        timex.modes = match self.clock {
-            libc::CLOCK_REALTIME => libc::MOD_OFFSET | libc::MOD_TIMECONST,
-            _ => libc::ADJ_OFFSET | libc::ADJ_TIMECONST,
-        };
+        timex.modes = libc::MOD_OFFSET | libc::MOD_TIMECONST;
         timex.offset = duration_in_nanos(offset);
         timex.constant = poll_interval.as_log() as libc::c_long;
-        self.adjtime(&mut timex)
+        ignore_not_supported(self.adjtime(&mut timex))
     }
 
     fn error_estimate_update(
@@ -416,19 +421,16 @@ impl NtpClock for UnixNtpClock {
         max_error: NtpDuration,
     ) -> Result<(), Self::Error> {
         let mut timex = EMPTY_TIMEX;
-        timex.modes = match self.clock {
-            libc::CLOCK_REALTIME => libc::MOD_ESTERROR | libc::MOD_MAXERROR,
-            _ => libc::ADJ_ESTERROR | libc::ADJ_MAXERROR,
-        };
+        timex.modes = libc::MOD_ESTERROR | libc::MOD_MAXERROR;
         timex.esterror = duration_in_nanos(est_error) / 1000;
         timex.maxerror = duration_in_nanos(max_error) / 1000;
-        self.adjtime(&mut timex)
+        ignore_not_supported(self.adjtime(&mut timex))
     }
 
     fn status_update(&self, leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
         let mut timex = EMPTY_TIMEX;
         self.adjtime(&mut timex)?;
-        timex.modes = self.status_mode();
+        timex.modes = libc::MOD_STATUS;
         // Clear out the leap seconds and synchronization flags
         timex.status &= !libc::STA_INS & !libc::STA_DEL & !libc::STA_UNSYNC;
         // and add back in what is needed.
@@ -438,7 +440,7 @@ impl NtpClock for UnixNtpClock {
             NtpLeapIndicator::Leap59 => timex.status |= libc::STA_DEL,
             NtpLeapIndicator::Unknown => timex.status |= libc::STA_UNSYNC,
         }
-        self.adjtime(&mut timex)
+        ignore_not_supported(self.adjtime(&mut timex))
     }
 }
 
