@@ -265,17 +265,9 @@ impl NtpHeaderV3V4 {
 }
 
 impl<'a> NtpPacket<'a> {
-    pub fn into_owned(self) -> NtpPacket<'static> {
-        NtpPacket::<'static> {
-            header: self.header,
-            efdata: self.efdata.into_owned(),
-            mac: self.mac.map(|v| v.into_owned()),
-        }
-    }
-
     #[allow(clippy::result_large_err)]
     pub fn deserialize(
-        data: &'a [u8],
+        data: &'a mut [u8],
         cipher: &impl CipherProvider,
     ) -> Result<(Self, Option<DecodedServerCookie>), PacketParsingError<'a>> {
         if data.is_empty() {
@@ -307,7 +299,7 @@ impl<'a> NtpPacket<'a> {
 
                 let (header, header_size) =
                     NtpHeaderV3V4::deserialize(data).map_err(|e| e.generalize())?;
-                let (efdata, header_plus_fields_len, cookie) =
+                let (efdata, trailer, cookie) =
                     match ExtensionFieldData::deserialize(data, header_size, cipher) {
                         Ok(v) => v,
                         Err(e) => {
@@ -317,11 +309,8 @@ impl<'a> NtpPacket<'a> {
                         }
                     };
 
-                let mac = if header_plus_fields_len != data.len() {
-                    Some(
-                        Mac::deserialize(&data[header_plus_fields_len..])
-                            .map_err(|e| e.generalize())?,
-                    )
+                let mac = if !trailer.is_empty() {
+                    Some(Mac::deserialize(trailer).map_err(|e| e.generalize())?)
                 } else {
                     None
                 };
@@ -460,9 +449,8 @@ impl<'a> NtpPacket<'a> {
                     // Ignore encrypted so as not to accidentaly leak anything
                     untrusted: input
                         .efdata
-                        .untrusted
-                        .into_iter()
-                        .chain(input.efdata.authenticated.into_iter())
+                        .untrusted()
+                        .chain(input.efdata.authenticated())
                         .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
                         .collect(),
                 },
@@ -935,7 +923,7 @@ mod tests {
 
     #[test]
     fn test_captured_client() {
-        let packet = b"\x23\x02\x06\xe8\x00\x00\x03\xff\x00\x00\x03\x7d\x5e\xc6\x9f\x0f\xe5\xf6\x62\x98\x7b\x61\xb9\xaf\xe5\xf6\x63\x66\x7b\x64\x99\x5d\xe5\xf6\x63\x66\x81\x40\x55\x90\xe5\xf6\x63\xa8\x76\x1d\xde\x48";
+        let mut packet = b"\x23\x02\x06\xe8\x00\x00\x03\xff\x00\x00\x03\x7d\x5e\xc6\x9f\x0f\xe5\xf6\x62\x98\x7b\x61\xb9\xaf\xe5\xf6\x63\x66\x7b\x64\x99\x5d\xe5\xf6\x63\x66\x81\x40\x55\x90\xe5\xf6\x63\xa8\x76\x1d\xde\x48".to_owned();
         let reference = NtpPacket {
             header: NtpHeader::V4(NtpHeaderV3V4 {
                 leap: NtpLeapIndicator::NoWarning,
@@ -957,14 +945,14 @@ mod tests {
 
         assert_eq!(
             reference,
-            NtpPacket::deserialize(packet, &NoCipher).unwrap().0
+            NtpPacket::deserialize(&mut packet, &NoCipher).unwrap().0
         );
         match reference.serialize_without_encryption_vec() {
             Ok(buf) => assert_eq!(packet[..], buf[..]),
             Err(e) => panic!("{e:?}"),
         }
 
-        let packet = b"\x1B\x02\x06\xe8\x00\x00\x03\xff\x00\x00\x03\x7d\x5e\xc6\x9f\x0f\xe5\xf6\x62\x98\x7b\x61\xb9\xaf\xe5\xf6\x63\x66\x7b\x64\x99\x5d\xe5\xf6\x63\x66\x81\x40\x55\x90\xe5\xf6\x63\xa8\x76\x1d\xde\x48";
+        let mut packet = b"\x1B\x02\x06\xe8\x00\x00\x03\xff\x00\x00\x03\x7d\x5e\xc6\x9f\x0f\xe5\xf6\x62\x98\x7b\x61\xb9\xaf\xe5\xf6\x63\x66\x7b\x64\x99\x5d\xe5\xf6\x63\x66\x81\x40\x55\x90\xe5\xf6\x63\xa8\x76\x1d\xde\x48".to_owned();
         let reference = NtpPacket {
             header: NtpHeader::V3(NtpHeaderV3V4 {
                 leap: NtpLeapIndicator::NoWarning,
@@ -986,7 +974,7 @@ mod tests {
 
         assert_eq!(
             reference,
-            NtpPacket::deserialize(packet, &NoCipher).unwrap().0
+            NtpPacket::deserialize(&mut packet, &NoCipher).unwrap().0
         );
         match reference.serialize_without_encryption_vec() {
             Ok(buf) => assert_eq!(packet[..], buf[..]),
@@ -996,7 +984,7 @@ mod tests {
 
     #[test]
     fn test_captured_server() {
-        let packet = b"\x24\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
+        let mut packet = b"\x24\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b".to_owned();
         let reference = NtpPacket {
             header: NtpHeader::V4(NtpHeaderV3V4 {
                 leap: NtpLeapIndicator::NoWarning,
@@ -1018,7 +1006,7 @@ mod tests {
 
         assert_eq!(
             reference,
-            NtpPacket::deserialize(packet, &NoCipher).unwrap().0
+            NtpPacket::deserialize(&mut packet, &NoCipher).unwrap().0
         );
         match reference.serialize_without_encryption_vec() {
             Ok(buf) => assert_eq!(packet[..], buf[..]),
@@ -1028,24 +1016,24 @@ mod tests {
 
     #[test]
     fn test_version() {
-        let packet = b"\x04\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet, &NoCipher).is_err());
-        let packet = b"\x0B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet, &NoCipher).is_err());
-        let packet = b"\x14\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet, &NoCipher).is_err());
-        let packet = b"\x2B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet, &NoCipher).is_err());
-        let packet = b"\x34\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet, &NoCipher).is_err());
-        let packet = b"\x3B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-        assert!(NtpPacket::deserialize(packet, &NoCipher).is_err());
+        let mut packet = b"\x04\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b".to_owned();
+        assert!(NtpPacket::deserialize(&mut packet, &NoCipher).is_err());
+        let mut packet = b"\x0B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b".to_owned();
+        assert!(NtpPacket::deserialize(&mut packet, &NoCipher).is_err());
+        let mut packet = b"\x14\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b".to_owned();
+        assert!(NtpPacket::deserialize(&mut packet, &NoCipher).is_err());
+        let mut packet = b"\x2B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b".to_owned();
+        assert!(NtpPacket::deserialize(&mut packet, &NoCipher).is_err());
+        let mut packet = b"\x34\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b".to_owned();
+        assert!(NtpPacket::deserialize(&mut packet, &NoCipher).is_err());
+        let mut packet = b"\x3B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b".to_owned();
+        assert!(NtpPacket::deserialize(&mut packet, &NoCipher).is_err());
     }
 
     #[test]
     fn test_packed_flags() {
-        let base = b"\x24\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b".to_owned();
-        let base_structured = NtpPacket::deserialize(&base, &NoCipher).unwrap().0;
+        let mut base = b"\x24\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b".to_owned();
+        let base_structured = NtpPacket::deserialize(&mut base, &NoCipher).unwrap().0;
 
         for leap_type in 0..3 {
             for mode in 0..8 {
@@ -1053,8 +1041,8 @@ mod tests {
                 header.set_leap(NtpLeapIndicator::from_bits(leap_type));
                 header.set_mode(NtpAssociationMode::from_bits(mode));
 
-                let data = header.serialize_without_encryption_vec().unwrap();
-                let copy = NtpPacket::deserialize(&data, &NoCipher).unwrap().0;
+                let mut data = header.serialize_without_encryption_vec().unwrap();
+                let copy = NtpPacket::deserialize(&mut data, &NoCipher).unwrap().0;
                 assert_eq!(header, copy);
             }
         }
@@ -1063,7 +1051,7 @@ mod tests {
             let mut packet = base;
             packet[0] = i;
 
-            if let Ok((a, _)) = NtpPacket::deserialize(&packet, &NoCipher) {
+            if let Ok((a, _)) = NtpPacket::deserialize(&mut packet, &NoCipher) {
                 let b = a.serialize_without_encryption_vec().unwrap();
                 assert_eq!(packet[..], b[..]);
             }
@@ -1732,7 +1720,7 @@ mod tests {
     #[test]
     fn test_undersized_ef_in_encrypted_data() {
         let cipher = AesSivCmac256::new([0_u8; 32].into());
-        let packet = [
+        let mut packet = [
             35, 2, 6, 232, 0, 0, 3, 255, 0, 0, 3, 125, 94, 198, 159, 15, 229, 246, 98, 152, 123,
             97, 185, 175, 229, 246, 99, 102, 123, 100, 153, 93, 229, 246, 99, 102, 129, 64, 85,
             144, 229, 246, 99, 168, 118, 29, 222, 72, 4, 4, 0, 44, 0, 16, 0, 18, 0, 0, 0, 0, 0, 0,
@@ -1740,40 +1728,40 @@ mod tests {
             152, 87, 142, 206, 254, 105, 0, 0,
         ];
         //should not crash
-        assert!(NtpPacket::deserialize(&packet, &cipher).is_err());
+        assert!(NtpPacket::deserialize(&mut packet, &cipher).is_err());
     }
 
     #[test]
     fn test_undersized_ef() {
-        let packet = [
+        let mut packet = [
             35, 2, 6, 232, 0, 0, 3, 255, 0, 0, 3, 125, 94, 198, 159, 15, 229, 246, 98, 152, 123,
             97, 185, 175, 229, 246, 99, 102, 123, 100, 153, 93, 229, 246, 99, 102, 129, 64, 85,
             144, 229, 246, 99, 168, 118, 29, 222, 72, 4, 4,
         ];
         //should not crash
-        assert!(NtpPacket::deserialize(&packet, &NoCipher).is_err());
+        assert!(NtpPacket::deserialize(&mut packet, &NoCipher).is_err());
     }
 
     #[test]
     fn test_undersized_nonce() {
-        let input = [
+        let mut input = [
             32, 206, 206, 206, 77, 206, 206, 255, 216, 216, 216, 127, 0, 0, 0, 0, 0, 0, 0, 216,
             216, 216, 216, 206, 217, 216, 216, 216, 216, 216, 216, 206, 206, 206, 1, 0, 0, 0, 206,
             206, 206, 4, 44, 4, 4, 4, 4, 4, 4, 4, 0, 4, 206, 206, 222, 206, 206, 206, 206, 0, 0, 0,
             206, 206, 206, 0, 0, 0, 206, 206, 206, 206, 206, 206, 131, 206, 206,
         ];
         //should not crash
-        assert!(NtpPacket::deserialize(&input, &NoCipher).is_err());
+        assert!(NtpPacket::deserialize(&mut input, &NoCipher).is_err());
     }
 
     #[test]
     fn test_undersized_encryption_ef() {
-        let input = [
+        let mut input = [
             32, 206, 206, 206, 77, 206, 216, 216, 127, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 216, 216, 216,
             216, 206, 217, 216, 216, 216, 216, 216, 216, 206, 206, 206, 1, 0, 0, 0, 206, 206, 206,
             4, 44, 4, 4, 4, 4, 4, 4, 4, 0, 4, 4, 0, 12, 206, 206, 222, 206, 206, 206, 206, 0, 0, 0,
             12, 206, 206, 222, 206, 206, 206, 206, 206, 206, 206, 206, 131, 206, 206,
         ];
-        assert!(NtpPacket::deserialize(&input, &NoCipher).is_err());
+        assert!(NtpPacket::deserialize(&mut input, &NoCipher).is_err());
     }
 }

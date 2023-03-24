@@ -226,7 +226,7 @@ impl KeySet {
 }
 
 impl CipherProvider for KeySet {
-    fn get(&self, context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
+    fn get<'a>(&self, context: impl Iterator<Item = ExtensionField<'a>>) -> Option<CipherHolder<'a>> {
         let mut decoded = None;
 
         for ef in context {
@@ -235,7 +235,7 @@ impl CipherProvider for KeySet {
                     // more than one cookie, abort
                     return None;
                 }
-                decoded = Some(self.decode_cookie(cookie).ok()?)
+                decoded = Some(self.decode_cookie(cookie.as_ref()).ok()?)
             }
         }
 

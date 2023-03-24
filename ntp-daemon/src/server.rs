@@ -168,7 +168,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             let mut buf = [0_u8; MAX_PACKET_SIZE];
             tokio::select! {
                 recv_res = socket.recv(&mut buf) => {
-                    if !self.serve_packet(socket, &buf, recv_res, rate_limiting_cutoff).await {
+                    if !self.serve_packet(socket, &mut buf, recv_res, rate_limiting_cutoff).await {
                         cur_socket = None;
                     }
                 },
@@ -182,7 +182,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
     async fn serve_packet(
         &mut self,
         socket: &UdpSocket,
-        buf: &[u8],
+        buf: &mut [u8],
         recv_res: std::io::Result<(usize, SocketAddr, Option<NtpTimestamp>)>,
         rate_limiting_cutoff: Duration,
     ) -> bool {
@@ -338,7 +338,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         &mut self,
         rate_limiting_cutoff: Duration,
         result: Result<(usize, SocketAddr, Option<NtpTimestamp>), std::io::Error>,
-        buf: &'a [u8],
+        buf: &'a mut [u8],
     ) -> AcceptResult<'a> {
         match result {
             Ok((size, peer_addr, Some(recv_timestamp))) if size >= 48 => {
@@ -348,7 +348,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 // Messages of fewer than 48 bytes are skipped entirely
                 match self.filter(&peer_addr.ip()) {
                     Some(FilterAction::Deny) => {
-                        match self.accept_data(&buf[..size], peer_addr, recv_timestamp) {
+                        match self.accept_data(&mut buf[..size], peer_addr, recv_timestamp) {
                             // We should send deny messages only to reasonable requests
                             // otherwise two servers could end up in a loop of sending
                             // deny's to each other.
@@ -373,7 +373,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                         let cutoff = rate_limiting_cutoff;
                         let too_soon = !self.client_cache.is_allowed(peer_addr, timestamp, cutoff);
 
-                        match self.accept_data(&buf[..size], peer_addr, recv_timestamp) {
+                        match self.accept_data(&mut buf[..size], peer_addr, recv_timestamp) {
                             AcceptResult::Accept {
                                 packet,
                                 max_response_size,
@@ -422,18 +422,19 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
 
     fn accept_data<'a>(
         &self,
-        buf: &'a [u8],
+        buf: &'a mut [u8],
         peer_addr: SocketAddr,
         recv_timestamp: NtpTimestamp,
     ) -> AcceptResult<'a> {
         let keyset = self.keyset.borrow().clone();
+        let buf_len = buf.len();
         match NtpPacket::deserialize(buf, keyset.as_ref()) {
             Ok((packet, decoded_cookie)) => match packet.mode() {
                 NtpAssociationMode::Client => {
                     trace!("NTP client request accepted from {}", peer_addr);
                     AcceptResult::Accept {
                         packet,
-                        max_response_size: buf.len(),
+                        max_response_size: buf_len,
                         decoded_cookie,
                         peer_addr,
                         recv_timestamp,
@@ -640,7 +641,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap().0;
+        let packet = NtpPacket::deserialize(&mut buf, &NoCipher).unwrap().0;
         assert_ne!(packet.stratum(), 0);
         assert!(packet.valid_server_response(id, false));
 
@@ -687,7 +688,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap().0;
+        let packet = NtpPacket::deserialize(&mut buf, &NoCipher).unwrap().0;
         assert_eq!(packet.stratum(), 0);
         assert_eq!(packet.reference_id(), ReferenceId::KISS_DENY);
         assert!(packet.valid_server_response(id, false));
@@ -777,7 +778,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap().0;
+        let packet = NtpPacket::deserialize(&mut buf, &NoCipher).unwrap().0;
         assert_ne!(packet.stratum(), 0);
         assert!(packet.valid_server_response(id, false));
 
@@ -824,7 +825,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap().0;
+        let packet = NtpPacket::deserialize(&mut buf, &NoCipher).unwrap().0;
         assert_eq!(packet.stratum(), 0);
         assert_eq!(packet.reference_id(), ReferenceId::KISS_DENY);
         assert!(packet.valid_server_response(id, false));
@@ -915,7 +916,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap().0;
+        let packet = NtpPacket::deserialize(&mut buf, &NoCipher).unwrap().0;
         assert_ne!(packet.stratum(), 0);
         assert!(packet.valid_server_response(id, false));
 
@@ -931,7 +932,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap().0;
+        let packet = NtpPacket::deserialize(&mut buf, &NoCipher).unwrap().0;
         assert_ne!(packet.stratum(), 0);
         assert!(packet.valid_server_response(id, false));
 
@@ -945,7 +946,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap().0;
+        let packet = NtpPacket::deserialize(&mut buf, &NoCipher).unwrap().0;
         assert_eq!(packet.stratum(), 0);
         assert_eq!(packet.reference_id(), ReferenceId::KISS_RATE);
         assert!(packet.valid_server_response(id, false));
@@ -994,7 +995,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap().0;
+        let packet = NtpPacket::deserialize(&mut buf, &NoCipher).unwrap().0;
         assert_ne!(packet.stratum(), 0);
         assert!(packet.valid_server_response(id, false));
 

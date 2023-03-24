@@ -323,7 +323,7 @@ impl Peer {
         buf: &'a mut [u8],
         system: SystemSnapshot,
         system_config: &SystemConfig,
-    ) -> Result<&'a [u8], std::io::Error> {
+    ) -> Result<&'a mut [u8], std::io::Error> {
         self.reach.poll();
 
         let poll_interval = self.current_poll_interval(system);
@@ -345,7 +345,7 @@ impl Peer {
         let mut cursor = Cursor::new(buf);
         packet.serialize(&mut cursor, &self.nts.as_ref().map(|nts| nts.c2s.as_ref()))?;
         let used = cursor.position();
-        let result = &cursor.into_inner()[..used as usize];
+        let result = &mut cursor.into_inner()[..used as usize];
 
         Ok(result)
     }
@@ -354,7 +354,7 @@ impl Peer {
     pub fn handle_incoming(
         &mut self,
         system: SystemSnapshot,
-        message: &[u8],
+        message: &mut [u8],
         local_clock_time: NtpInstant,
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
@@ -676,7 +676,7 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                &response.serialize_without_encryption_vec().unwrap(),
+                &mut response.serialize_without_encryption_vec().unwrap(),
                 base,
                 NtpTimestamp::default(),
                 NtpTimestamp::default()
@@ -699,7 +699,7 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                &response.serialize_without_encryption_vec().unwrap(),
+                &mut response.serialize_without_encryption_vec().unwrap(),
                 base,
                 NtpTimestamp::default(),
                 NtpTimestamp::default()
@@ -731,7 +731,7 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                &packet.serialize_without_encryption_vec().unwrap(),
+                &mut packet.serialize_without_encryption_vec().unwrap(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(400)
@@ -741,7 +741,7 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                &packet.serialize_without_encryption_vec().unwrap(),
+                &mut packet.serialize_without_encryption_vec().unwrap(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(500)
@@ -770,7 +770,7 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                &packet.serialize_without_encryption_vec().unwrap(),
+                &mut packet.serialize_without_encryption_vec().unwrap(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(500)
@@ -781,7 +781,7 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                &packet.serialize_without_encryption_vec().unwrap(),
+                &mut packet.serialize_without_encryption_vec().unwrap(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(500)
@@ -801,7 +801,7 @@ mod test {
         assert!(!matches!(
             peer.handle_incoming(
                 system,
-                &packet.serialize_without_encryption_vec().unwrap(),
+                &mut packet.serialize_without_encryption_vec().unwrap(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(100)
@@ -822,7 +822,7 @@ mod test {
         assert!(matches!(
             peer.handle_incoming(
                 system,
-                &packet.serialize_without_encryption_vec().unwrap(),
+                &mut packet.serialize_without_encryption_vec().unwrap(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(100)
@@ -837,7 +837,7 @@ mod test {
         assert!(!matches!(
             peer.handle_incoming(
                 system,
-                &packet.serialize_without_encryption_vec().unwrap(),
+                &mut packet.serialize_without_encryption_vec().unwrap(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(100)
@@ -857,7 +857,7 @@ mod test {
         assert!(matches!(
             peer.handle_incoming(
                 system,
-                &packet.serialize_without_encryption_vec().unwrap(),
+                &mut packet.serialize_without_encryption_vec().unwrap(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(100)
@@ -874,7 +874,7 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                &packet.serialize_without_encryption_vec().unwrap(),
+                &mut packet.serialize_without_encryption_vec().unwrap(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(100)
@@ -898,7 +898,7 @@ mod test {
         assert!(peer
             .handle_incoming(
                 system,
-                &packet.serialize_without_encryption_vec().unwrap(),
+                &mut packet.serialize_without_encryption_vec().unwrap(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(100)

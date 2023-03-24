@@ -165,7 +165,7 @@ where
     async fn handle_packet<'a>(
         &mut self,
         poll_wait: &mut Pin<&mut T>,
-        packet: &'a [u8],
+        packet: &'a mut [u8],
         send_timestamp: NtpTimestamp,
         recv_timestamp: NtpTimestamp,
     ) -> PacketResult {
@@ -229,7 +229,7 @@ where
                 },
                 result = self.socket.recv(&mut buf) => {
                     tracing::debug!("accept packet");
-                    match accept_packet(result, &buf) {
+                    match accept_packet(result, &mut buf) {
                         AcceptResult::Accept(packet, recv_timestamp) => {
                             let send_timestamp = match self.last_send_timestamp {
                                 Some(ts) => ts,
@@ -330,7 +330,7 @@ where
 
 #[derive(Debug)]
 enum AcceptResult<'a> {
-    Accept(&'a [u8], NtpTimestamp),
+    Accept(&'a mut [u8], NtpTimestamp),
     Ignore,
     NetworkGone,
 }
@@ -344,7 +344,7 @@ fn unspecified_for(addr: SocketAddr) -> SocketAddr {
 
 fn accept_packet(
     result: Result<(usize, SocketAddr, Option<NtpTimestamp>), std::io::Error>,
-    buf: &[u8],
+    buf: &mut [u8],
 ) -> AcceptResult {
     match result {
         Ok((size, _, Some(recv_timestamp))) => {
@@ -357,7 +357,7 @@ fn accept_packet(
 
                 AcceptResult::Ignore
             } else {
-                AcceptResult::Accept(&buf[0..size], recv_timestamp)
+                AcceptResult::Accept(&mut buf[0..size], recv_timestamp)
             }
         }
         Ok((size, _, None)) => {
@@ -632,7 +632,7 @@ mod tests {
         assert_eq!(size, 48);
         let timestamp = timestamp.unwrap();
 
-        let rec_packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap().0;
+        let rec_packet = NtpPacket::deserialize(&mut buf, &NoCipher).unwrap().0;
         let send_packet = NtpPacket::timestamp_response(&system, rec_packet, timestamp, &clock);
 
         let serialized = serialize_packet_unencryped(&send_packet);
@@ -666,7 +666,7 @@ mod tests {
         assert_eq!(size, 48);
         assert!(timestamp.is_some());
 
-        let rec_packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap().0;
+        let rec_packet = NtpPacket::deserialize(&mut buf, &NoCipher).unwrap().0;
         let send_packet = NtpPacket::deny_response(rec_packet);
 
         let serialized = serialize_packet_unencryped(&send_packet);

@@ -14,7 +14,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let (len, addr) = socket.recv_from(&mut buf).await?;
         println!("{len:?} bytes received from {addr:?}");
 
-        let parsed = match NtpPacket::deserialize(buf[0..48].try_into().unwrap(), &NoCipher) {
+        let parsed = match NtpPacket::deserialize(&mut buf[0..len], &NoCipher) {
             Ok((packet, _)) => packet,
             Err(_) => continue,
         };
