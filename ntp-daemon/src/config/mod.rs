@@ -321,12 +321,16 @@ impl Config {
         }
 
         // for the global file we also ignore it when there are permission errors
-        match Config::from_file("/etc/ntpd-rs/ntp.toml").await {
-            Err(ConfigError::Io(e))
-                if e.kind() == ErrorKind::NotFound || e.kind() == ErrorKind::PermissionDenied => {}
-            other => {
-                info!("using global config file at default location `/etc/ntpd-rs/ntp.toml`");
-                return other;
+        let global_path = Path::new("/etc/ntpd-rs/ntp.toml");
+        if global_path.exists() {
+            info!("using config file at default location `{:?}`", global_path);
+            match Config::from_file(global_path).await {
+                Err(ConfigError::Io(e)) if e.kind() == ErrorKind::PermissionDenied => {
+                    info!("permission denied on global config file! using default config ...");
+                }
+                other => {
+                    return other;
+                }
             }
         }
 
