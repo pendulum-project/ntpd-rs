@@ -27,54 +27,6 @@ use crate::spawn::PeerId;
 
 use self::format::LogFormat;
 
-fn deserialize_clock<'de, D>(deserializer: D) -> Result<DefaultNtpClock, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let data: Option<PathBuf> = Deserialize::deserialize(deserializer)?;
-
-    if let Some(path) = data {
-        tracing::info!("using custom clock {path:?}");
-        DefaultNtpClock::from_path(&path).map_err(|e| serde::de::Error::custom(e.to_string()))
-    } else {
-        tracing::info!("using REALTIME clock");
-        Ok(DefaultNtpClock::realtime())
-    }
-}
-
-fn default_ntp_clock() -> DefaultNtpClock {
-    DefaultNtpClock::realtime()
-}
-
-fn deserialize_option_interface_name<'de, D>(
-    deserializer: D,
-) -> Result<Option<[u8; libc::IFNAMSIZ]>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let data: Option<String> = Deserialize::deserialize(deserializer)?;
-
-    match data {
-        Some(string) => {
-            tracing::info!("using interface {string}");
-            let mut it = string.bytes();
-            Ok(Some(std::array::from_fn(|_| it.next().unwrap_or_default())))
-        }
-        None => {
-            tracing::info!("using default interface");
-            Ok(None)
-        }
-    }
-}
-
-fn bool_true() -> bool {
-    true
-}
-
-fn bool_false() -> bool {
-    false
-}
-
 fn deserialize_option_env_filter<'de, D>(deserializer: D) -> Result<Option<EnvFilter>, D::Error>
 where
     D: Deserializer<'de>,
@@ -158,10 +110,12 @@ where
 {
     let data: Option<PathBuf> = Deserialize::deserialize(deserializer)?;
 
-    if let Some(_path_buf) = data {
-        Err(serde::de::Error::custom("not yet supported"))
+    if let Some(path) = data {
+        tracing::info!("using custom clock {path:?}");
+        DefaultNtpClock::from_path(&path).map_err(|e| serde::de::Error::custom(e.to_string()))
     } else {
-        Ok(DefaultNtpClock::default())
+        tracing::info!("using REALTIME clock");
+        Ok(DefaultNtpClock::realtime())
     }
 }
 
@@ -175,29 +129,10 @@ pub struct ClockConfig {
 }
 
 #[derive(Deserialize, Debug, Default, Clone, Copy)]
-pub struct TimestampingConfig {
-    #[serde(deserialize_with = "deserialize_clock", default = "default_ntp_clock")]
-    pub clock: DefaultNtpClock,
-    #[serde(deserialize_with = "deserialize_option_interface_name", default)]
-    pub interface: Option<[u8; libc::IFNAMSIZ]>,
-
-    #[serde(default = "bool_true")]
-    pub rx_software: bool,
-    #[serde(default = "bool_true")]
-    pub tx_software: bool,
-    #[serde(default = "bool_false")]
-    pub rx_hardware: bool,
-    #[serde(default = "bool_false")]
-    pub tx_hardware: bool,
-}
-
-#[derive(Deserialize, Debug, Default, Clone, Copy)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct CombinedSystemConfig {
     #[serde(flatten)]
     pub system: SystemConfig,
-    #[serde(flatten)]
-    pub timestamping: TimestampingConfig,
     #[serde(flatten)]
     pub algorithm: <DefaultTimeSyncController<DefaultNtpClock, PeerId> as TimeSyncController<
         DefaultNtpClock,
