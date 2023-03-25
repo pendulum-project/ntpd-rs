@@ -12,7 +12,6 @@
 /// All unsafe blocks are preceded with a comment explaining why that
 /// specific unsafe code should be safe within the context in which it
 /// is used.
-pub(crate) use exceptional_condition_fd::exceptional_condition_fd;
 pub(crate) use recv_message::{
     control_message_space, receive_message, ControlMessage, MessageQueue,
 };
@@ -53,12 +52,12 @@ pub(crate) enum TimestampMethod {
 }
 
 mod set_timestamping_options {
-    use std::os::unix::prelude::AsRawFd;
+    use std::os::unix::prelude::RawFd;
 
     use super::{cerr, TimestampMethod, TimestampingConfig};
 
     fn configure_timestamping_socket(
-        udp_socket: &std::net::UdpSocket,
+        udp_socket: RawFd,
         method: TimestampMethod,
         options: u32,
     ) -> std::io::Result<libc::c_int> {
@@ -79,7 +78,7 @@ mod set_timestamping_options {
         // > Setting other bit returns EINVAL and does not change the current state.
         unsafe {
             cerr(libc::setsockopt(
-                udp_socket.as_raw_fd(),
+                udp_socket,
                 libc::SOL_SOCKET,
                 method as i32 as libc::c_int,
                 &options as *const _ as *const libc::c_void,
@@ -89,7 +88,7 @@ mod set_timestamping_options {
     }
 
     pub(crate) fn set_timestamping_options(
-        udp_socket: &std::net::UdpSocket,
+        udp_socket: RawFd,
         method: TimestampMethod,
         timestamping: TimestampingConfig,
     ) -> std::io::Result<()> {
@@ -140,7 +139,7 @@ mod set_timestamping_options {
 }
 
 mod recv_message {
-    use std::{io::IoSliceMut, marker::PhantomData, net::SocketAddr, os::unix::prelude::AsRawFd};
+    use std::{io::IoSliceMut, marker::PhantomData, net::SocketAddr, os::unix::prelude::RawFd};
 
     use tracing::warn;
 
@@ -155,7 +154,7 @@ mod recv_message {
     }
 
     pub(crate) fn receive_message<'a>(
-        socket: &std::net::UdpSocket,
+        socket: RawFd,
         packet_buf: &mut [u8],
         control_buf: &'a mut [u8],
         queue: MessageQueue,
@@ -190,8 +189,7 @@ mod recv_message {
         // msg_namelen is the size of sockaddr_storage
         // If one of the buffers is too small, recvmsg cuts off data at appropriate boundary
         let sent_bytes = loop {
-            match cerr(unsafe { libc::recvmsg(socket.as_raw_fd(), &mut mhdr, receive_flags) } as _)
-            {
+            match cerr(unsafe { libc::recvmsg(socket, &mut mhdr, receive_flags) } as _) {
                 Err(e) if std::io::ErrorKind::Interrupted == e.kind() => {
                     // retry when the recv was interrupted
                     continue;
@@ -352,7 +350,7 @@ mod recv_message {
 }
 
 mod timestamping_config {
-    use std::os::unix::prelude::AsRawFd;
+    use std::{net::SocketAddr, os::unix::prelude::RawFd};
 
     use super::cerr;
     use crate::interface_name;
@@ -380,7 +378,10 @@ mod timestamping_config {
         /// Enable all timestamping options that are supported by this crate and the hardware/software
         /// of the device we're running on
         #[allow(dead_code)]
-        pub(crate) fn all_supported(udp_socket: &std::net::UdpSocket) -> std::io::Result<Self> {
+        pub(crate) fn all_supported(
+            udp_socket: RawFd,
+            local_addr: SocketAddr,
+        ) -> std::io::Result<Self> {
             // Get time stamping and PHC info
             const ETHTOOL_GET_TS_INFO: u32 = 0x00000041;
 
@@ -389,9 +390,7 @@ mod timestamping_config {
                 ..Default::default()
             };
 
-            let fd = udp_socket.as_raw_fd();
-
-            if let Some(ifr_name) = interface_name::interface_name(udp_socket.local_addr()?)? {
+            if let Some(ifr_name) = interface_name::interface_name(local_addr)? {
                 let ifr: libc::ifreq = libc::ifreq {
                     ifr_name,
                     ifr_ifru: libc::__c_anonymous_ifr_ifru {
@@ -400,7 +399,8 @@ mod timestamping_config {
                 };
 
                 const SIOCETHTOOL: u64 = 0x8946;
-                cerr(unsafe { libc::ioctl(fd, SIOCETHTOOL as libc::c_ulong, &ifr) }).unwrap();
+                cerr(unsafe { libc::ioctl(udp_socket, SIOCETHTOOL as libc::c_ulong, &ifr) })
+                    .unwrap();
 
                 let support = Self {
                     rx_software: tsi.so_timestamping & libc::SOF_TIMESTAMPING_RX_SOFTWARE != 0,
@@ -420,48 +420,5 @@ mod timestamping_config {
                 Ok(Self::default())
             }
         }
-    }
-}
-
-mod exceptional_condition_fd {
-    use std::os::unix::prelude::{AsRawFd, RawFd};
-
-    use tokio::io::unix::AsyncFd;
-
-    use super::cerr;
-
-    // Tokio does not natively support polling for readiness of queues
-    // other than the normal read queue (see also https://github.com/tokio-rs/tokio/issues/4885)
-    // this works around that by creating a epoll fd that becomes
-    // ready to read when the underlying fd has an event on its error queue.
-    pub(crate) fn exceptional_condition_fd(
-        socket_of_interest: &std::net::UdpSocket,
-    ) -> std::io::Result<AsyncFd<RawFd>> {
-        // Safety:
-        // epoll_create1 is safe to call without flags
-        let fd = cerr(unsafe { libc::epoll_create1(0) })?;
-
-        let mut event = libc::epoll_event {
-            events: libc::EPOLLPRI as u32,
-            u64: 0u64,
-        };
-
-        // Safety:
-        // fd is a valid epoll fd from epoll_create1 in combination with the cerr check
-        // since we have a reference to the socket_of_interest, its raw fd
-        // is valid for the duration of this call, which is all that is
-        // required for epoll (closing the fd later is safe!)
-        // &mut event is a pointer to a memory region which we own for the duration
-        // of the call, and thus ok to use.
-        cerr(unsafe {
-            libc::epoll_ctl(
-                fd,
-                libc::EPOLL_CTL_ADD,
-                socket_of_interest.as_raw_fd(),
-                &mut event,
-            )
-        })?;
-
-        AsyncFd::new(fd)
     }
 }

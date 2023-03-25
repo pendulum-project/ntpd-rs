@@ -1,14 +1,14 @@
 #![forbid(unsafe_code)]
 
-use std::{io, net::SocketAddr, os::unix::prelude::RawFd};
+use std::{io, net::SocketAddr, os::fd::AsRawFd};
 
 use ntp_proto::NtpTimestamp;
-use tokio::io::unix::AsyncFd;
+use tokio::io::Interest;
 use tracing::{debug, instrument, trace, warn};
 
 use crate::raw_socket::{
-    control_message_space, exceptional_condition_fd, receive_message, set_timestamping_options,
-    ControlMessage, MessageQueue, TimestampMethod, TimestampingConfig,
+    control_message_space, receive_message, set_timestamping_options, ControlMessage, MessageQueue,
+    TimestampMethod, TimestampingConfig,
 };
 
 enum Timestamping {
@@ -18,8 +18,7 @@ enum Timestamping {
 }
 
 pub struct UdpSocket {
-    io: AsyncFd<std::net::UdpSocket>,
-    exceptional_condition: AsyncFd<RawFd>,
+    io: tokio::net::UdpSocket,
     send_counter: u32,
     timestamping: TimestampingConfig,
 }
@@ -67,18 +66,19 @@ impl UdpSocket {
             "client socket connected"
         );
 
-        let socket = socket.into_std()?;
+        let socket = socket;
 
         let timestamping = match timestamping {
             Timestamping::Configure(config) => config,
-            Timestamping::AllSupported => TimestampingConfig::all_supported(&socket)?,
+            Timestamping::AllSupported => {
+                TimestampingConfig::all_supported(socket.as_raw_fd(), socket.local_addr()?)?
+            }
         };
 
-        set_timestamping_options(&socket, method, timestamping)?;
+        set_timestamping_options(socket.as_raw_fd(), method, timestamping)?;
 
         Ok(UdpSocket {
-            exceptional_condition: exceptional_condition_fd(&socket)?,
-            io: AsyncFd::new(socket)?,
+            io: socket,
             send_counter: 0,
             timestamping,
         })
@@ -92,8 +92,6 @@ impl UdpSocket {
             "server socket bound"
         );
 
-        let socket = socket.into_std()?;
-
         // our supported kernel versions always have receive timestamping. Send timestamping for a
         // server connection is not relevant, so we don't even bother with checking if it is supported
         let timestamping = TimestampingConfig {
@@ -101,23 +99,24 @@ impl UdpSocket {
             tx_software: false,
         };
 
-        set_timestamping_options(&socket, DEFAULT_TIMESTAMP_METHOD, timestamping)?;
+        set_timestamping_options(socket.as_raw_fd(), DEFAULT_TIMESTAMP_METHOD, timestamping)?;
 
         Ok(UdpSocket {
-            exceptional_condition: exceptional_condition_fd(&socket)?,
-            io: AsyncFd::new(socket)?,
+            io: socket,
             send_counter: 0,
             timestamping,
         })
     }
 
     #[instrument(level = "trace", skip(self, buf), fields(
-        local_addr = debug(self.as_ref().local_addr().unwrap()),
-        peer_addr = debug(self.as_ref().peer_addr()),
+        local_addr = debug(self.local_addr().unwrap()),
+        peer_addr = debug(self.peer_addr()),
         buf_size = buf.len(),
     ))]
     pub async fn send(&mut self, buf: &[u8]) -> io::Result<(usize, Option<NtpTimestamp>)> {
-        let send_size = self.send_help(buf).await?;
+        trace!(size = buf.len(), "sending bytes");
+        let send_size = self.io.send(buf).await?;
+
         let expected_counter = self.send_counter;
         self.send_counter = self.send_counter.wrapping_add(1);
 
@@ -139,128 +138,104 @@ impl UdpSocket {
         }
     }
 
-    async fn send_help(&self, buf: &[u8]) -> io::Result<usize> {
-        trace!(size = buf.len(), "sending bytes");
-        loop {
-            let mut guard = self.io.writable().await?;
-            match guard.try_io(|inner| inner.get_ref().send(buf)) {
-                Ok(result) => match result {
-                    Err(e) => {
-                        debug!(error = debug(&e), "error sending data");
-                        return Err(e);
-                    }
-                    Ok(size) => {
-                        trace!(sent = size, "sent bytes");
-                        return Ok(size);
-                    }
-                },
-                Err(_would_block) => {
-                    trace!("blocked after becoming writable, retrying");
-                    continue;
-                }
-            }
-        }
-    }
-
     async fn fetch_send_timestamp(&self, expected_counter: u32) -> io::Result<NtpTimestamp> {
-        trace!("waiting for timestamp socket to become readable to fetch a send timestamp");
-        loop {
-            // Send timestamps are sent to the udp socket's error queue. Sadly, tokio does not
-            // currently support awaiting whether there is something in the error queue
-            // see https://github.com/tokio-rs/tokio/issues/4885.
-            //
-            // Therefore, we manually configure an extra file descriptor to listen for POLLPRI on
-            // the main udp socket. This `exceptional_condition` file descriptor becomes readable
-            // when there is something in the error queue.
-            let mut guard = self.exceptional_condition.readable().await?;
-            match guard.try_io(|_| fetch_send_timestamp_help(self.io.get_ref(), expected_counter)) {
-                Ok(Ok(Some(send_timestamp))) => {
-                    return Ok(send_timestamp);
-                }
-                Ok(Ok(None)) => {
-                    continue;
-                }
-                Ok(Err(e)) => {
-                    warn!(error = debug(&e), "Error fetching timestamp");
-                    return Err(e);
-                }
-                Err(_would_block) => {
-                    trace!("timestamp blocked after becoming readable, retrying");
-                    continue;
-                }
+        trace!("waiting for timestamp socket to become ready to fetch a send timestamp");
+        // Send timestamps appear in the udp socket's error queue. This does not do anything in
+        // and of itself. Before we can read from the error queue, we wait for the socket to
+        // become writable again. With `epoll`, we would see this event
+        //
+        // epoll_wait(3, [{EPOLLERR, {u32=0, u64=0}}], 1, -1) = 1
+        //
+        // In `mio`, a single EPOLLERR is reported as `Event::is_write_closed`. In tokio,
+        // awaiting `writable` waits for `WRITE_CLOSED` (and `WRITE`) readiness. So if the
+        // socket becomes writable again, that means the write is done.
+        self.io.writable().await?;
+
+        match fetch_send_timestamp_help(&self.io, expected_counter) {
+            Ok(Some(send_timestamp)) => Ok(send_timestamp),
+            Ok(None) => {
+                // We've had our chance, and the data was not there
+                let e = std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Control messages did not contain a timestamp",
+                );
+
+                warn!("Control messages did not contain a timestamp");
+                Err(e)
+            }
+            Err(e) => {
+                // NOTE: this also bubbles up ErrorKind::WouldBlock, because there is no good
+                // way to await someting appearing in the error queue itself. We've had our
+                // chance, and the data was not there
+                warn!(error = debug(&e), "Error fetching timestamp");
+                Err(e)
             }
         }
     }
 
     #[instrument(level = "trace", skip(self, buf), fields(
-        local_addr = debug(self.as_ref().local_addr().unwrap()),
+        local_addr = debug(self.local_addr().unwrap()),
         buf_size = buf.len(),
     ))]
     pub async fn send_to(&self, buf: &[u8], addr: SocketAddr) -> io::Result<usize> {
         trace!(size = buf.len(), ?addr, "sending bytes");
-        loop {
-            let mut guard = self.io.writable().await?;
-            match guard.try_io(|inner| inner.get_ref().send_to(buf, addr)) {
-                Ok(result) => {
-                    match &result {
-                        Ok(size) => trace!(sent = size, "sent bytes"),
-                        Err(e) => debug!(error = debug(e), "error sending data"),
-                    }
-                    return result;
-                }
-                Err(_would_block) => {
-                    trace!("blocked after becoming writable, retrying");
-                    continue;
-                }
-            }
-        }
+        self.io.send_to(buf, addr).await
     }
 
     #[instrument(level = "trace", skip(self, buf), fields(
-        local_addr = debug(self.as_ref().local_addr().unwrap()),
-        peer_addr = debug(self.as_ref().peer_addr().ok()),
+        local_addr = debug(self.local_addr().unwrap()),
+        peer_addr = debug(self.peer_addr().ok()),
         buf_size = buf.len(),
     ))]
     pub async fn recv(
         &self,
         buf: &mut [u8],
     ) -> io::Result<(usize, SocketAddr, Option<NtpTimestamp>)> {
-        loop {
+        let result = loop {
             trace!("waiting for socket to become readable");
-            let mut guard = self.io.readable().await?;
-            let result = match guard.try_io(|inner| recv(inner.get_ref(), buf)) {
-                Err(_would_block) => {
+            self.io.readable().await?;
+
+            match self.io.try_io(Interest::READABLE, || recv(&self.io, buf)) {
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     trace!("blocked after becoming readable, retrying");
                     continue;
                 }
-                Ok(result) => result,
-            };
-            match &result {
-                Ok((size, addr, ts)) => {
-                    trace!(size, ts = debug(ts), addr = debug(addr), "received message")
-                }
-                Err(e) => debug!(error = debug(e), "error receiving data"),
+                other => break other,
             }
-            return result;
-        }
-    }
-}
+        };
 
-impl AsRef<std::net::UdpSocket> for UdpSocket {
-    fn as_ref(&self) -> &std::net::UdpSocket {
-        self.io.get_ref()
+        match &result {
+            Ok((size, addr, ts)) => {
+                trace!(size, ts = debug(ts), addr = debug(addr), "received message")
+            }
+            Err(e) => debug!(error = debug(e), "error receiving data"),
+        }
+
+        result
+    }
+
+    pub fn local_addr(&self) -> std::io::Result<SocketAddr> {
+        self.io.local_addr()
+    }
+
+    pub fn peer_addr(&self) -> std::io::Result<SocketAddr> {
+        self.io.peer_addr()
     }
 }
 
 fn recv(
-    socket: &std::net::UdpSocket,
+    socket: &tokio::net::UdpSocket,
     buf: &mut [u8],
 ) -> io::Result<(usize, SocketAddr, Option<NtpTimestamp>)> {
     let mut control_buf = [0; control_message_space::<[libc::timespec; 3]>()];
 
     // loops for when we receive an interrupt during the recv
-    let (bytes_read, control_messages, sock_addr) =
-        receive_message(socket, buf, &mut control_buf, MessageQueue::Normal)?;
+    let (bytes_read, control_messages, sock_addr) = receive_message(
+        socket.as_raw_fd(),
+        buf,
+        &mut control_buf,
+        MessageQueue::Normal,
+    )?;
     let sock_addr =
         sock_addr.unwrap_or_else(|| unreachable!("We never constructed a non-ip socket"));
 
@@ -289,7 +264,7 @@ fn recv(
 }
 
 fn fetch_send_timestamp_help(
-    socket: &std::net::UdpSocket,
+    socket: &tokio::net::UdpSocket,
     expected_counter: u32,
 ) -> io::Result<Option<NtpTimestamp>> {
     // we get back two control messages: one with the timestamp (just like a receive timestamp),
@@ -306,8 +281,12 @@ fn fetch_send_timestamp_help(
 
     let mut control_buf = [0; CONTROL_SIZE];
 
-    let (_, control_messages, _) =
-        receive_message(socket, &mut [], &mut control_buf, MessageQueue::Error)?;
+    let (_, control_messages, _) = receive_message(
+        socket.as_raw_fd(),
+        &mut [],
+        &mut control_buf,
+        MessageQueue::Error,
+    )?;
 
     let mut send_ts = None;
     for msg in control_messages {

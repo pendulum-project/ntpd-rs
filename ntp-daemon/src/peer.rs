@@ -288,10 +288,10 @@ where
                     }
                 };
                 // Unwrap should be safe because we know the socket was bound to a local addres just before
-                let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
+                let our_id = ReferenceId::from_ip(socket.local_addr().unwrap().ip());
 
                 // Unwrap should be safe because we know the socket was connected to a remote peer just before
-                let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
+                let peer_id = ReferenceId::from_ip(socket.peer_addr().unwrap().ip());
 
                 let local_clock_time = NtpInstant::now();
                 let config_snapshot = *channels.system_config_receiver.borrow_and_update();
@@ -533,8 +533,8 @@ mod tests {
         )
         .await
         .unwrap();
-        let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
-        let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
+        let our_id = ReferenceId::from_ip(socket.local_addr().unwrap().ip());
+        let peer_id = ReferenceId::from_ip(socket.peer_addr().unwrap().ip());
 
         let (_, system_snapshot_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
         let (_, mut system_config_receiver) =
