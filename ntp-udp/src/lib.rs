@@ -8,6 +8,27 @@ use ntp_proto::NtpTimestamp;
 
 pub use socket::UdpSocket;
 
+#[derive(Debug, Clone, Copy)]
+pub struct TimestampingConfig {
+    pub rx_software: bool,
+    pub tx_software: bool,
+}
+
+impl Default for TimestampingConfig {
+    fn default() -> Self {
+        Self {
+            rx_software: true,
+            tx_software: false,
+        }
+    }
+}
+
+impl TimestampingConfig {
+    fn all_supported(udp_socket: &std::net::UdpSocket) -> std::io::Result<Self> {
+        crate::raw_socket::timestamping_config::all_supported(udp_socket)
+    }
+}
+
 pub(crate) enum LibcTimestamp {
     Timespec(libc::timespec),
     Timeval(libc::timeval),

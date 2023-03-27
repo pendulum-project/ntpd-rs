@@ -6,9 +6,12 @@ use ntp_proto::NtpTimestamp;
 use tokio::io::unix::AsyncFd;
 use tracing::{debug, instrument, trace, warn};
 
-use crate::raw_socket::{
-    control_message_space, exceptional_condition_fd, receive_message, set_timestamping_options,
-    ControlMessage, MessageQueue, TimestampMethod, TimestampingConfig,
+use crate::{
+    raw_socket::{
+        control_message_space, exceptional_condition_fd, receive_message, set_timestamping_options,
+        ControlMessage, MessageQueue, TimestampMethod,
+    },
+    TimestampingConfig,
 };
 
 enum Timestamping {
