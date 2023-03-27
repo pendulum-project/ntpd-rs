@@ -581,7 +581,7 @@ mod tests {
 
         let (mut system, _) = System::new(
             TestClock {},
-            InterfaceName::NONE,
+            InterfaceName::DEFAULT,
             EnableTimestamps::default(),
             CombinedSystemConfig::default(),
             keyset,

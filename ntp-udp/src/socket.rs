@@ -427,7 +427,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_server_basic_ipv4() {
-        let a = UdpSocket::server("127.0.0.1:10002".parse().unwrap(), InterfaceName::NONE)
+        let a = UdpSocket::server("127.0.0.1:10002".parse().unwrap(), InterfaceName::DEFAULT)
             .await
             .unwrap();
         let mut b = UdpSocket::client(
@@ -453,7 +453,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_server_basic_ipv6() {
-        let a = UdpSocket::server("[::1]:10002".parse().unwrap(), InterfaceName::NONE)
+        let a = UdpSocket::server("[::1]:10002".parse().unwrap(), InterfaceName::DEFAULT)
             .await
             .unwrap();
         let mut b = UdpSocket::client(
@@ -487,7 +487,7 @@ mod tests {
         let b = UdpSocket::client_with_timestamping_internal(
             SocketAddr::from((Ipv4Addr::LOCALHOST, p2)),
             SocketAddr::from((Ipv4Addr::LOCALHOST, p1)),
-            InterfaceName::NONE,
+            InterfaceName::DEFAULT,
             method,
             EnableTimestamps {
                 rx_software: true,
@@ -539,7 +539,7 @@ mod tests {
         let mut a = UdpSocket::client_with_timestamping(
             SocketAddr::from((Ipv4Addr::LOCALHOST, 8012)),
             SocketAddr::from((Ipv4Addr::LOCALHOST, 8013)),
-            InterfaceName::NONE,
+            InterfaceName::DEFAULT,
             EnableTimestamps {
                 rx_software: true,
                 tx_software: true,

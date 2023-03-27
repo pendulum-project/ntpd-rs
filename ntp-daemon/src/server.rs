@@ -629,7 +629,7 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
-            InterfaceName::NONE,
+            InterfaceName::DEFAULT,
             Duration::from_secs(1),
         );
 
@@ -677,7 +677,7 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
-            InterfaceName::NONE,
+            InterfaceName::DEFAULT,
             Duration::from_secs(1),
         );
 
@@ -726,7 +726,7 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
-            InterfaceName::NONE,
+            InterfaceName::DEFAULT,
             Duration::from_secs(1),
         );
 
@@ -769,7 +769,7 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
-            InterfaceName::NONE,
+            InterfaceName::DEFAULT,
             Duration::from_secs(1),
         );
 
@@ -817,7 +817,7 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
-            InterfaceName::NONE,
+            InterfaceName::DEFAULT,
             Duration::from_secs(1),
         );
 
@@ -866,7 +866,7 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
-            InterfaceName::NONE,
+            InterfaceName::DEFAULT,
             Duration::from_secs(1),
         );
 
@@ -909,7 +909,7 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
-            InterfaceName::NONE,
+            InterfaceName::DEFAULT,
             Duration::from_secs(1),
         );
 
@@ -989,7 +989,7 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
-            InterfaceName::NONE,
+            InterfaceName::DEFAULT,
             Duration::from_secs(1),
         );
 

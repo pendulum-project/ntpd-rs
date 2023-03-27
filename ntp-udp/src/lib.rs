@@ -127,7 +127,7 @@ impl FromStr for InterfaceName {
 }
 
 impl InterfaceName {
-    pub const NONE: Option<Self> = None;
+    pub const DEFAULT: Option<Self> = None;
 
     fn name(&self) -> &str {
         std::str::from_utf8(self.bytes.as_slice())
