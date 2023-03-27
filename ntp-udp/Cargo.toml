@@ -16,6 +16,7 @@ ntp-proto.workspace = true
 tokio = { workspace = true, features = ["net", "time"] }
 libc.workspace = true
 tracing.workspace = true
+serde.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }

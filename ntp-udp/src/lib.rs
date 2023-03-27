@@ -8,9 +8,11 @@ use ntp_proto::NtpTimestamp;
 
 pub use socket::UdpSocket;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
 pub struct TimestampingConfig {
+    #[serde(default = "bool_true")]
     pub rx_software: bool,
+    #[serde(default)] // defaults to `false`
     pub tx_software: bool,
 }
 
@@ -62,4 +64,8 @@ impl LibcTimestamp {
             }
         }
     }
+}
+
+fn bool_true() -> bool {
+    true
 }
