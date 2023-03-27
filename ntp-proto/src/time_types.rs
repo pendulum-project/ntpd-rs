@@ -2,7 +2,7 @@ use rand::{
     distributions::{Distribution, Standard},
     Rng,
 };
-use serde::{Deserialize, Serialize};
+use serde::{de::Unexpected, Deserialize, Serialize};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::time::{Duration, Instant};
 
@@ -255,6 +255,8 @@ impl NtpDuration {
     }
 
     pub fn from_seconds(seconds: f64) -> Self {
+        debug_assert!(!(seconds.is_nan() || seconds.is_infinite()));
+
         let i = seconds.floor();
         let f = seconds - i;
 
@@ -350,6 +352,14 @@ impl<'de> Deserialize<'de> for NtpDuration {
         D: serde::Deserializer<'de>,
     {
         let seconds: f64 = Deserialize::deserialize(deserializer)?;
+
+        if seconds.is_nan() || seconds.is_infinite() {
+            return Err(serde::de::Error::invalid_value(
+                Unexpected::Float(seconds),
+                &"a valid number",
+            ));
+        }
+
         Ok(NtpDuration::from_seconds(seconds))
     }
 }

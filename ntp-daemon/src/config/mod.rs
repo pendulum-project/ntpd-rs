@@ -284,7 +284,7 @@ impl Config {
 mod tests {
     use std::ffi::OsString;
 
-    use ntp_proto::NtpDuration;
+    use ntp_proto::{NtpDuration, StepThreshold};
 
     use super::*;
 
@@ -544,5 +544,41 @@ mod tests {
             config.startup_panic_threshold.backward,
             Some(NtpDuration::from_seconds(20.0))
         );
+    }
+
+    #[test]
+    fn duration_not_nan() {
+        #[derive(Debug, Deserialize)]
+        struct Helper {
+            #[allow(unused)]
+            duration: NtpDuration,
+        }
+
+        let result: Result<Helper, _> = toml::from_str(
+            r#"
+            duration = nan
+            "#,
+        );
+
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("expected a valid number"));
+    }
+
+    #[test]
+    fn step_threshold_not_nan() {
+        #[derive(Debug, Deserialize)]
+        struct Helper {
+            #[allow(unused)]
+            threshold: StepThreshold,
+        }
+
+        let result: Result<Helper, _> = toml::from_str(
+            r#"
+            threshold = nan
+            "#,
+        );
+
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("expected a positive number"));
     }
 }
