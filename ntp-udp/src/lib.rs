@@ -9,14 +9,14 @@ use ntp_proto::NtpTimestamp;
 pub use socket::UdpSocket;
 
 #[derive(Debug, Clone, Copy, serde::Deserialize)]
-pub struct TimestampingConfig {
+pub struct EnableTimestamps {
     #[serde(default = "bool_true")]
     pub rx_software: bool,
     #[serde(default)] // defaults to `false`
     pub tx_software: bool,
 }
 
-impl Default for TimestampingConfig {
+impl Default for EnableTimestamps {
     fn default() -> Self {
         Self {
             rx_software: true,
@@ -25,7 +25,7 @@ impl Default for TimestampingConfig {
     }
 }
 
-impl TimestampingConfig {
+impl EnableTimestamps {
     fn all_supported(udp_socket: &std::net::UdpSocket) -> std::io::Result<Self> {
         crate::raw_socket::timestamping_config::all_supported(udp_socket)
     }

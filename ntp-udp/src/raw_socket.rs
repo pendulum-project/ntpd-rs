@@ -54,7 +54,7 @@ pub(crate) enum TimestampMethod {
 mod set_timestamping_options {
     use std::os::unix::prelude::AsRawFd;
 
-    use crate::TimestampingConfig;
+    use crate::EnableTimestamps;
 
     use super::{cerr, TimestampMethod};
 
@@ -92,7 +92,7 @@ mod set_timestamping_options {
     pub(crate) fn set_timestamping_options(
         udp_socket: &std::net::UdpSocket,
         method: TimestampMethod,
-        timestamping: TimestampingConfig,
+        timestamping: EnableTimestamps,
     ) -> std::io::Result<()> {
         let options = match method {
             TimestampMethod::SoTimestamp => {
@@ -356,7 +356,7 @@ pub(crate) mod timestamping_config {
     use std::os::unix::prelude::AsRawFd;
 
     use super::cerr;
-    use crate::{interface_name, TimestampingConfig};
+    use crate::{interface_name, EnableTimestamps};
 
     #[repr(C)]
     #[allow(non_camel_case_types)]
@@ -376,7 +376,7 @@ pub(crate) mod timestamping_config {
     #[allow(dead_code)]
     pub(crate) fn all_supported(
         udp_socket: &std::net::UdpSocket,
-    ) -> std::io::Result<TimestampingConfig> {
+    ) -> std::io::Result<EnableTimestamps> {
         // Get time stamping and PHC info
         const ETHTOOL_GET_TS_INFO: u32 = 0x00000041;
 
@@ -398,7 +398,7 @@ pub(crate) mod timestamping_config {
             const SIOCETHTOOL: u64 = 0x8946;
             cerr(unsafe { libc::ioctl(fd, SIOCETHTOOL as libc::c_ulong, &ifr) }).unwrap();
 
-            let support = TimestampingConfig {
+            let support = EnableTimestamps {
                 rx_software: tsi.so_timestamping & libc::SOF_TIMESTAMPING_RX_SOFTWARE != 0,
                 tx_software: tsi.so_timestamping & libc::SOF_TIMESTAMPING_TX_SOFTWARE != 0,
             };
@@ -413,7 +413,7 @@ pub(crate) mod timestamping_config {
 
             Ok(support)
         } else {
-            Ok(TimestampingConfig::default())
+            Ok(EnableTimestamps::default())
         }
     }
 }

@@ -11,11 +11,11 @@ use crate::{
         control_message_space, exceptional_condition_fd, receive_message, set_timestamping_options,
         ControlMessage, MessageQueue, TimestampMethod,
     },
-    TimestampingConfig,
+    EnableTimestamps,
 };
 
 enum Timestamping {
-    Configure(TimestampingConfig),
+    Configure(EnableTimestamps),
     #[allow(dead_code)]
     AllSupported,
 }
@@ -24,7 +24,7 @@ pub struct UdpSocket {
     io: AsyncFd<std::net::UdpSocket>,
     exceptional_condition: AsyncFd<RawFd>,
     send_counter: u32,
-    timestamping: TimestampingConfig,
+    timestamping: EnableTimestamps,
 }
 
 #[cfg(target_os = "linux")]
@@ -37,7 +37,7 @@ impl UdpSocket {
     #[instrument(level = "debug", skip(peer_addr))]
     pub async fn client(listen_addr: SocketAddr, peer_addr: SocketAddr) -> io::Result<UdpSocket> {
         // disable tx timestamping for now (outside of tests)
-        let timestamping = TimestampingConfig {
+        let timestamping = EnableTimestamps {
             rx_software: true,
             tx_software: false,
         };
@@ -74,7 +74,7 @@ impl UdpSocket {
 
         let timestamping = match timestamping {
             Timestamping::Configure(config) => config,
-            Timestamping::AllSupported => TimestampingConfig::all_supported(&socket)?,
+            Timestamping::AllSupported => EnableTimestamps::all_supported(&socket)?,
         };
 
         set_timestamping_options(&socket, method, timestamping)?;
@@ -99,7 +99,7 @@ impl UdpSocket {
 
         // our supported kernel versions always have receive timestamping. Send timestamping for a
         // server connection is not relevant, so we don't even bother with checking if it is supported
-        let timestamping = TimestampingConfig {
+        let timestamping = EnableTimestamps {
             rx_software: true,
             tx_software: false,
         };
