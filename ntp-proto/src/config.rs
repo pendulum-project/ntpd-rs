@@ -1,7 +1,7 @@
 use std::fmt;
 
 use serde::{
-    de::{self, MapAccess, Visitor},
+    de::{self, MapAccess, Unexpected, Visitor},
     Deserialize, Deserializer,
 };
 
@@ -108,7 +108,15 @@ impl<'de> Deserialize<'de> for StepThreshold {
             where
                 E: de::Error,
             {
+                if v.is_nan() || v.is_infinite() || v < 0.0 {
+                    return Err(serde::de::Error::invalid_value(
+                        Unexpected::Float(v),
+                        &"a positive number",
+                    ));
+                }
+
                 let duration = NtpDuration::from_seconds(v);
+
                 Ok(StepThreshold {
                     forward: Some(duration),
                     backward: Some(duration),
