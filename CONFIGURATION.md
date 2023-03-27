@@ -173,8 +173,8 @@ What clock to update, and what timestamps to use.
 | ---                             | ---                   | ---                                                          |
 | clock                           | system realtime clock | Path to a file descriptor that is a clock (e.g. "/dev/ptp0") |
 | interface                       | system default        | Interface to use for packets.                                |
-| enable-timestamping.rx_software | true                  | Enable software receive timestamping                         |
-| enable-timestamping.tx_software | false                 | Enable software transmit timestamping                        |
+| enable-timestamping.rx-software | true                  | Enable software receive timestamping                         |
+| enable-timestamping.tx-software | false                 | Enable software transmit timestamping                        |
 
 - For correct hardware timestamping, the interface must agree with which clock is used. 
 - Enabled timestamps are a suggestion. Your OS or hardware may not support some options.
@@ -265,6 +265,12 @@ min-intersection-survivors = 1
 poll-interval-limits = { min = 6, max = 10 }
 panic-threshold = 10
 startup-panic-threshold = { forward = "inf", backward = 1800 }
+
+[clock]
+# clock = "/dev/ptp0"
+# interface = "enp0s31f6"
+enable-timestamps.rx-software = true
+enable-timestamps.tx-software = true
 ```
 
 ## Operational concerns

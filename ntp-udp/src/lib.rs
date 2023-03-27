@@ -16,6 +16,7 @@ pub use socket::UdpSocket;
 /// Your OS or hardware might not actually support some timestamping modes.
 /// Unsupported timestamping modes are ignored.
 #[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct EnableTimestamps {
     #[serde(default = "bool_true")]
     pub rx_software: bool,

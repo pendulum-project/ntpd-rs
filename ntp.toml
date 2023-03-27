@@ -38,8 +38,8 @@ startup-panic-threshold = { forward = "inf", backward = 1800 }
 [clock]
 # clock = "/dev/ptp0"
 # interface = "enp0s31f6"
-enable_timestamps.rx_software = true
-enable_timestamps.tx_software = true
+enable-timestamps.rx-software = true
+enable-timestamps.tx-software = true
 
 [observe]
 path = "/run/ntpd-rs/observe"

@@ -635,8 +635,8 @@ mod tests {
         let config: Result<ClockConfig, _> = toml::from_str(
             r#"
             interface = "enp0s31f6"
-            enable-timestamps.rx_hardware = true
-            enable-timestamps.tx_software = true
+            enable-timestamps.rx-hardware = true
+            enable-timestamps.tx-software = true
             "#,
         );
 
