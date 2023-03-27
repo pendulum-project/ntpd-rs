@@ -14,12 +14,6 @@ use crate::{
     EnableTimestamps,
 };
 
-enum Timestamping {
-    Configure(EnableTimestamps),
-    #[allow(dead_code)]
-    AllSupported,
-}
-
 pub struct UdpSocket {
     io: AsyncFd<std::net::UdpSocket>,
     exceptional_condition: AsyncFd<RawFd>,
@@ -36,17 +30,11 @@ const DEFAULT_TIMESTAMP_METHOD: TimestampMethod = TimestampMethod::SoTimestamp;
 impl UdpSocket {
     #[instrument(level = "debug", skip(peer_addr))]
     pub async fn client(listen_addr: SocketAddr, peer_addr: SocketAddr) -> io::Result<UdpSocket> {
-        // disable tx timestamping for now (outside of tests)
-        let timestamping = EnableTimestamps {
-            rx_software: true,
-            tx_software: false,
-        };
-
         Self::client_with_timestamping(
             listen_addr,
             peer_addr,
             DEFAULT_TIMESTAMP_METHOD,
-            Timestamping::Configure(timestamping),
+            EnableTimestamps::default(),
         )
         .await
     }
@@ -55,7 +43,7 @@ impl UdpSocket {
         listen_addr: SocketAddr,
         peer_addr: SocketAddr,
         method: TimestampMethod,
-        timestamping: Timestamping,
+        timestamping: EnableTimestamps,
     ) -> io::Result<UdpSocket> {
         let socket = tokio::net::UdpSocket::bind(listen_addr).await?;
         debug!(
@@ -71,11 +59,6 @@ impl UdpSocket {
         );
 
         let socket = socket.into_std()?;
-
-        let timestamping = match timestamping {
-            Timestamping::Configure(config) => config,
-            Timestamping::AllSupported => EnableTimestamps::all_supported(&socket)?,
-        };
 
         set_timestamping_options(&socket, method, timestamping)?;
 
@@ -478,7 +461,10 @@ mod tests {
             SocketAddr::from((Ipv4Addr::LOCALHOST, p2)),
             SocketAddr::from((Ipv4Addr::LOCALHOST, p1)),
             method,
-            Timestamping::AllSupported,
+            EnableTimestamps {
+                rx_software: true,
+                tx_software: true,
+            },
         )
         .await
         .unwrap();
@@ -526,7 +512,10 @@ mod tests {
             SocketAddr::from((Ipv4Addr::LOCALHOST, 8012)),
             SocketAddr::from((Ipv4Addr::LOCALHOST, 8013)),
             DEFAULT_TIMESTAMP_METHOD,
-            Timestamping::AllSupported,
+            EnableTimestamps {
+                rx_software: true,
+                tx_software: true,
+            },
         )
         .await
         .unwrap();

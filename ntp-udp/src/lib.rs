@@ -8,6 +8,10 @@ use ntp_proto::NtpTimestamp;
 
 pub use socket::UdpSocket;
 
+/// Enable the given timestamps. This is a hint!
+///
+/// Your OS or hardware might not actually support some timestamping modes.
+/// Unsupported timestamping modes are ignored.
 #[derive(Debug, Clone, Copy, serde::Deserialize)]
 pub struct EnableTimestamps {
     #[serde(default = "bool_true")]
