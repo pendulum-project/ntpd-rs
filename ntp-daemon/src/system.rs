@@ -1,5 +1,5 @@
 use crate::{
-    config::{CombinedSystemConfig, NormalizedAddress, PeerConfig, ServerConfig},
+    config::{ClockConfig, CombinedSystemConfig, NormalizedAddress, PeerConfig, ServerConfig},
     peer::{MsgForSystem, PeerChannels},
     peer::{PeerTask, Wait},
     server::{ServerStats, ServerTask},
@@ -12,11 +12,11 @@ use crate::{
 
 use std::{collections::HashMap, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
 
-use ntp_os_clock::DefaultNtpClock;
 use ntp_proto::{
     DefaultTimeSyncController, KeySet, NtpClock, NtpDuration, PeerSnapshot, SystemSnapshot,
     TimeSyncController,
 };
+use ntp_udp::{EnableTimestamps, InterfaceName};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::info;
 
@@ -78,13 +78,19 @@ pub struct DaemonChannels {
 
 /// Spawn the NTP daemon
 pub async fn spawn(
-    config: CombinedSystemConfig,
+    system_config: CombinedSystemConfig,
+    clock_config: ClockConfig,
     peer_configs: &[PeerConfig],
     server_configs: &[ServerConfig],
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
 ) -> std::io::Result<(JoinHandle<std::io::Result<()>>, DaemonChannels)> {
-    let clock = DefaultNtpClock::realtime();
-    let (mut system, channels) = System::new(clock, config, keyset);
+    let (mut system, channels) = System::new(
+        clock_config.clock,
+        clock_config.interface,
+        clock_config.enable_timestamps,
+        system_config,
+        keyset,
+    );
 
     for peer_config in peer_configs {
         match peer_config {
@@ -142,11 +148,20 @@ struct System<C: NtpClock, T: Wait> {
 
     clock: C,
     controller: DefaultTimeSyncController<C, PeerId>,
+
+    // which timestamps to use (this is a hint, OS or hardware may ignore)
+    enable_timestamps: EnableTimestamps,
+
+    // bind the socket to a specific interface. This is relevant for hardware timestamping,
+    // because the interface determines which clock is used to produce the timestamps.
+    interface: Option<InterfaceName>,
 }
 
 impl<C: NtpClock, T: Wait> System<C, T> {
     fn new(
         clock: C,
+        interface: Option<InterfaceName>,
+        enable_timestamps: EnableTimestamps,
         config: CombinedSystemConfig,
         keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     ) -> (Self, DaemonChannels) {
@@ -193,6 +208,8 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                 },
                 clock: clock.clone(),
                 controller: DefaultTimeSyncController::new(clock, config.system, config.algorithm),
+                enable_timestamps,
+                interface,
             },
             DaemonChannels {
                 config_receiver,
@@ -415,6 +432,8 @@ impl<C: NtpClock, T: Wait> System<C, T> {
             peer_id,
             params.addr,
             self.clock.clone(),
+            self.interface,
+            self.enable_timestamps,
             NETWORK_WAIT_PERIOD,
             self.peer_channels.clone(),
             params.nts.take(),
@@ -455,6 +474,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
             self.peer_channels.system_snapshot_receiver.clone(),
             self.keyset.clone(),
             self.clock.clone(),
+            self.interface,
             NETWORK_WAIT_PERIOD,
         );
         let _ = self.server_data_sender.send(self.servers.clone());
@@ -559,7 +579,13 @@ mod tests {
         // we always generate the keyset (even if NTS is not used)
         let (_, keyset) = tokio::sync::watch::channel(KeySetProvider::new(1).get());
 
-        let (mut system, _) = System::new(TestClock {}, CombinedSystemConfig::default(), keyset);
+        let (mut system, _) = System::new(
+            TestClock {},
+            InterfaceName::NONE,
+            EnableTimestamps::default(),
+            CombinedSystemConfig::default(),
+            keyset,
+        );
         let wait =
             SingleshotSleep::new_disabled(tokio::time::sleep(std::time::Duration::from_secs(0)));
         tokio::pin!(wait);

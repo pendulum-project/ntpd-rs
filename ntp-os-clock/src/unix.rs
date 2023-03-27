@@ -73,7 +73,7 @@ pub(crate) const EMPTY_TIMEX: libc::timex = libc::timex {
 /// current time.
 // Implementation note: this is intentionally a bare struct, the NTP Clock defined
 // in the NTP KAPI is unique and no state is needed to interact with it.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct UnixNtpClock {
     clock: libc::clockid_t,
 }

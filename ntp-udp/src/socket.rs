@@ -11,7 +11,7 @@ use crate::{
         control_message_space, exceptional_condition_fd, receive_message, set_timestamping_options,
         ControlMessage, MessageQueue, TimestampMethod,
     },
-    EnableTimestamps,
+    EnableTimestamps, InterfaceName,
 };
 
 pub struct UdpSocket {
@@ -30,18 +30,30 @@ const DEFAULT_TIMESTAMP_METHOD: TimestampMethod = TimestampMethod::SoTimestamp;
 impl UdpSocket {
     #[instrument(level = "debug", skip(peer_addr))]
     pub async fn client(listen_addr: SocketAddr, peer_addr: SocketAddr) -> io::Result<UdpSocket> {
-        Self::client_with_timestamping(
+        Self::client_with_timestamping(listen_addr, peer_addr, None, EnableTimestamps::default())
+            .await
+    }
+
+    pub async fn client_with_timestamping(
+        listen_addr: SocketAddr,
+        peer_addr: SocketAddr,
+        interface: Option<InterfaceName>,
+        timestamping: EnableTimestamps,
+    ) -> io::Result<UdpSocket> {
+        Self::client_with_timestamping_internal(
             listen_addr,
             peer_addr,
+            interface,
             DEFAULT_TIMESTAMP_METHOD,
-            EnableTimestamps::default(),
+            timestamping,
         )
         .await
     }
 
-    async fn client_with_timestamping(
+    async fn client_with_timestamping_internal(
         listen_addr: SocketAddr,
         peer_addr: SocketAddr,
+        interface: Option<InterfaceName>,
         method: TimestampMethod,
         timestamping: EnableTimestamps,
     ) -> io::Result<UdpSocket> {
@@ -50,6 +62,12 @@ impl UdpSocket {
             local_addr = debug(socket.local_addr().unwrap()),
             "client socket bound"
         );
+
+        // bind the socket to a specific interface. This is relevant for hardware timestamping,
+        // because the interface determines which clock is used to produce the timestamps.
+        if let Some(interface) = interface {
+            socket.bind_device(Some(&interface)).unwrap();
+        }
 
         socket.connect(peer_addr).await?;
         debug!(
@@ -71,12 +89,21 @@ impl UdpSocket {
     }
 
     #[instrument(level = "debug")]
-    pub async fn server(listen_addr: SocketAddr) -> io::Result<UdpSocket> {
+    pub async fn server(
+        listen_addr: SocketAddr,
+        interface: Option<InterfaceName>,
+    ) -> io::Result<UdpSocket> {
         let socket = tokio::net::UdpSocket::bind(listen_addr).await?;
         debug!(
             local_addr = debug(socket.local_addr().unwrap()),
             "server socket bound"
         );
+
+        // bind the socket to a specific interface. This is relevant for hardware timestamping,
+        // because the interface determines which clock is used to produce the timestamps.
+        if let Some(interface) = interface {
+            socket.bind_device(Some(&interface)).unwrap();
+        }
 
         let socket = socket.into_std()?;
 
@@ -400,7 +427,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_server_basic_ipv4() {
-        let a = UdpSocket::server("127.0.0.1:10002".parse().unwrap())
+        let a = UdpSocket::server("127.0.0.1:10002".parse().unwrap(), InterfaceName::NONE)
             .await
             .unwrap();
         let mut b = UdpSocket::client(
@@ -426,7 +453,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_server_basic_ipv6() {
-        let a = UdpSocket::server("[::1]:10002".parse().unwrap())
+        let a = UdpSocket::server("[::1]:10002".parse().unwrap(), InterfaceName::NONE)
             .await
             .unwrap();
         let mut b = UdpSocket::client(
@@ -457,9 +484,10 @@ mod tests {
         )
         .await
         .unwrap();
-        let b = UdpSocket::client_with_timestamping(
+        let b = UdpSocket::client_with_timestamping_internal(
             SocketAddr::from((Ipv4Addr::LOCALHOST, p2)),
             SocketAddr::from((Ipv4Addr::LOCALHOST, p1)),
+            InterfaceName::NONE,
             method,
             EnableTimestamps {
                 rx_software: true,
@@ -511,7 +539,7 @@ mod tests {
         let mut a = UdpSocket::client_with_timestamping(
             SocketAddr::from((Ipv4Addr::LOCALHOST, 8012)),
             SocketAddr::from((Ipv4Addr::LOCALHOST, 8013)),
-            DEFAULT_TIMESTAMP_METHOD,
+            InterfaceName::NONE,
             EnableTimestamps {
                 rx_software: true,
                 tx_software: true,

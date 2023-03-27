@@ -9,7 +9,7 @@ use ntp_proto::{
     IgnoreReason, Measurement, NtpClock, NtpInstant, NtpPacket, NtpTimestamp, Peer, PeerNtsData,
     PeerSnapshot, ReferenceId, SystemSnapshot, Update,
 };
-use ntp_udp::UdpSocket;
+use ntp_udp::{EnableTimestamps, InterfaceName, UdpSocket};
 use rand::{thread_rng, Rng};
 use tracing::{debug, error, instrument, warn, Instrument, Span};
 
@@ -263,18 +263,28 @@ impl<C> PeerTask<C, Sleep>
 where
     C: 'static + NtpClock + Send,
 {
+    #[allow(clippy::too_many_arguments)]
     #[instrument(skip(clock, channels))]
     pub fn spawn(
         index: PeerId,
         addr: SocketAddr,
         clock: C,
+        interface: Option<InterfaceName>,
+        enable_timestamps: EnableTimestamps,
         network_wait_period: std::time::Duration,
         mut channels: PeerChannels,
         nts: Option<Box<PeerNtsData>>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(
             (async move {
-                let socket = match UdpSocket::client(unspecified_for(addr), addr).await {
+                let socket_fut = UdpSocket::client_with_timestamping(
+                    unspecified_for(addr),
+                    addr,
+                    interface,
+                    enable_timestamps,
+                );
+
+                let socket = match socket_fut.await {
                     Ok(socket) => socket,
                     Err(error) => {
                         warn!(?error, "Could not open socket");

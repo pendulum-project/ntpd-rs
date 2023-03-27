@@ -165,6 +165,20 @@ The daemon can also expose a configuration socket that can be used to change som
 
 The management and configuration sockets are used by the [management client](MANAGEMENT_CLIENT.md) to display the daemon's state and to allow for dynamic changing of some configuration parameters.
 
+#### Clock configuration
+
+What clock to update, and what timestamps to use.
+
+| Option                          | Default               | Description                                                  |
+| ---                             | ---                   | ---                                                          |
+| clock                           | system realtime clock | Path to a file descriptor that is a clock (e.g. "/dev/ptp0") |
+| interface                       | system default        | Interface to use for packets.                                |
+| enable-timestamping.rx_software | true                  | Enable software receive timestamping                         |
+| enable-timestamping.tx_software | false                 | Enable software transmit timestamping                        |
+
+- For correct hardware timestamping, the interface must agree with which clock is used. 
+- Enabled timestamps are a suggestion. Your OS or hardware may not support some options.
+
 #### Time synchronization
 
 There are a number of options available to influence how time differences to the various servers are used to synchronize the system clock. All of these are part of the `system` section of the configuration:

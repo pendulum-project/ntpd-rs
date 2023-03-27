@@ -5,6 +5,7 @@ mod server;
 pub mod subnet;
 
 use ntp_os_clock::DefaultNtpClock;
+use ntp_udp::{EnableTimestamps, InterfaceName};
 pub use peer::*;
 pub use server::*;
 
@@ -103,6 +104,28 @@ pub struct CmdArgs {
     pub servers: Vec<ServerConfig>,
 }
 
+fn deserialize_ntp_clock<'de, D>(deserializer: D) -> Result<DefaultNtpClock, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let data: Option<PathBuf> = Deserialize::deserialize(deserializer)?;
+
+    if let Some(_path_buf) = data {
+        Err(serde::de::Error::custom("not yet supported"))
+    } else {
+        Ok(DefaultNtpClock::default())
+    }
+}
+
+#[derive(Deserialize, Debug, Copy, Clone, Default)]
+#[serde(rename_all = "kebab-case")]
+pub struct ClockConfig {
+    #[serde(deserialize_with = "deserialize_ntp_clock", default)]
+    pub clock: DefaultNtpClock,
+    pub interface: Option<InterfaceName>,
+    pub enable_timestamps: EnableTimestamps,
+}
+
 #[derive(Deserialize, Debug, Default, Copy, Clone)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct CombinedSystemConfig {
@@ -139,6 +162,8 @@ pub struct Config {
     pub configure: ConfigureConfig,
     #[serde(default)]
     pub keyset: KeysetConfig,
+    #[serde(default)]
+    pub clock: ClockConfig,
 }
 
 const fn default_observe_permissions() -> u32 {
@@ -293,7 +318,7 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsString;
+    use std::{ffi::OsString, str::FromStr};
 
     use ntp_proto::{NtpDuration, StepThreshold};
 
@@ -603,5 +628,24 @@ mod tests {
 
         let error = config.unwrap_err();
         assert!(error.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn clock_config() {
+        let config: Result<ClockConfig, _> = toml::from_str(
+            r#"
+            interface = "enp0s31f6"
+            enable-timestamps.rx_hardware = true
+            enable-timestamps.tx_software = true
+            "#,
+        );
+
+        let config = config.unwrap();
+
+        let expected = InterfaceName::from_str("enp0s31f6").unwrap();
+        assert_eq!(config.interface, Some(expected));
+
+        assert!(config.enable_timestamps.rx_software);
+        assert!(config.enable_timestamps.tx_software);
     }
 }

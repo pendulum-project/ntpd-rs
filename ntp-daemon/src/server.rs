@@ -11,7 +11,7 @@ use ntp_proto::{
     DecodedServerCookie, KeySet, NoCipher, NtpAssociationMode, NtpClock, NtpPacket, NtpTimestamp,
     SystemSnapshot,
 };
-use ntp_udp::UdpSocket;
+use ntp_udp::{InterfaceName, UdpSocket};
 use prometheus_client::metrics::counter::Counter;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tokio::task::JoinHandle;
@@ -74,6 +74,7 @@ pub struct ServerTask<C: 'static + NtpClock + Send> {
     system: SystemSnapshot,
     client_cache: TimestampedCache<IpAddr>,
     clock: C,
+    interface: Option<InterfaceName>,
     stats: ServerStats,
 }
 
@@ -109,6 +110,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         mut system_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
         keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
         clock: C,
+        interface: Option<InterfaceName>,
         network_wait_period: Duration,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
@@ -123,6 +125,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 system_receiver,
                 keyset,
                 clock,
+                interface,
                 client_cache: TimestampedCache::new(rate_limiting_cache_size),
                 stats,
             };
@@ -153,7 +156,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 socket
             } else {
                 cur_socket = Some(loop {
-                    match UdpSocket::server(self.config.addr).await {
+                    match UdpSocket::server(self.config.addr, self.interface).await {
                         Ok(socket) => break socket,
                         Err(error) => {
                             warn!(?error, "Could not open server socket");
@@ -626,6 +629,7 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
+            InterfaceName::NONE,
             Duration::from_secs(1),
         );
 
@@ -673,6 +677,7 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
+            InterfaceName::NONE,
             Duration::from_secs(1),
         );
 
@@ -721,6 +726,7 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
+            InterfaceName::NONE,
             Duration::from_secs(1),
         );
 
@@ -763,6 +769,7 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
+            InterfaceName::NONE,
             Duration::from_secs(1),
         );
 
@@ -810,6 +817,7 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
+            InterfaceName::NONE,
             Duration::from_secs(1),
         );
 
@@ -858,6 +866,7 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
+            InterfaceName::NONE,
             Duration::from_secs(1),
         );
 
@@ -900,6 +909,7 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
+            InterfaceName::NONE,
             Duration::from_secs(1),
         );
 
@@ -979,6 +989,7 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
+            InterfaceName::NONE,
             Duration::from_secs(1),
         );
 

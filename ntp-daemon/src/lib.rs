@@ -71,6 +71,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     ::tracing::debug!("Configuration loaded, spawning daemon jobs");
     let (main_loop_handle, channels) = crate::spawn(
         config.system,
+        config.clock,
         &config.peers,
         &config.servers,
         keyset.clone(),
