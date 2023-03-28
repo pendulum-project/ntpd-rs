@@ -5,7 +5,7 @@ use crate::{interface_name, raw_socket::cerr};
 pub fn driver_enable_hardware_timestamping(
     udp_socket: &std::net::UdpSocket,
 ) -> std::io::Result<()> {
-    let mut tstamp_config = hwtimestamp_config {
+    let tstamp_config = hwtimestamp_config {
         flags: 0,
         tx_type: HWTSTAMP_TX_ON,
         rx_filter: HWTSTAMP_FILTER_ALL,
@@ -28,23 +28,6 @@ pub struct hwtimestamp_config {
     pub rx_filter: libc::c_int,
 }
 
-fn bind_socket(
-    udp_socket: &std::net::UdpSocket,
-    interface_name: [i8; libc::IFNAMSIZ],
-) -> std::io::Result<()> {
-    unsafe {
-        cerr(libc::setsockopt(
-            udp_socket.as_raw_fd(),
-            libc::SOL_SOCKET,
-            libc::SO_BINDTODEVICE,
-            interface_name.as_ptr().cast(),
-            interface_name.len() as u32,
-        ))?;
-    }
-
-    Ok(())
-}
-
 fn set_hardware_timestamp(
     udp_socket: &std::net::UdpSocket,
     mut config: hwtimestamp_config,
@@ -62,6 +45,7 @@ fn set_hardware_timestamp(
     Ok(())
 }
 
+#[allow(unused)]
 fn get_hardware_timestamp(udp_socket: &std::net::UdpSocket) -> std::io::Result<hwtimestamp_config> {
     let mut tstamp_config = hwtimestamp_config {
         flags: 0,
