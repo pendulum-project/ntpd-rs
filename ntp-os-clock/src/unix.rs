@@ -6,8 +6,7 @@
 // safe regardless of given arguments.
 
 use std::{
-    ffi::CStr,
-    os::unix::prelude::{OsStrExt, RawFd},
+    os::{fd::AsRawFd, unix::prelude::RawFd},
     path::Path,
 };
 
@@ -94,12 +93,16 @@ impl UnixNtpClock {
     }
 
     pub fn from_path(path: &Path) -> Result<Self, Error> {
-        let bytes = path.as_os_str().as_bytes().to_vec();
-        let path = std::ffi::CString::new(bytes).map_err(|_| Error::InvalidClockPath)?;
+        match std::fs::File::options().read(true).write(true).open(path) {
+            Err(_) => Err(convert_errno()),
+            Ok(file) => {
+                let fd = file.as_raw_fd();
 
-        match unsafe { libc::open(path.as_ptr(), libc::O_RDWR) } {
-            -1 => Err(convert_errno()),
-            fd => Ok(Self::from_file_descriptor(fd as RawFd)),
+                // never close the file, keep it open so clock steering can use the file descriptor
+                std::mem::forget(file);
+
+                Ok(Self::from_file_descriptor(fd))
+            }
         }
     }
 
