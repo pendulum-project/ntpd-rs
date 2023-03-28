@@ -358,26 +358,21 @@ impl NtpClock for UnixNtpClock {
         // NTP Kapi expects frequency adjustment in units of 2^-16 ppm
         // but our input is in units of seconds drift per second, so convert.
         ntp_kapi_timex.freq = (freq * 65536e6) as libc::c_long;
-        ntp_kapi_timex.status |= libc::STA_FREQHOLD // We want no automatic frequency updates
-                & !libc::STA_PLL
-                & !libc::STA_PPSFREQ
-                & !libc::STA_FLL
-                & !libc::STA_PPSTIME;
+        ntp_kapi_timex.status =
+            !libc::STA_PLL & !libc::STA_PPSFREQ & !libc::STA_FLL & !libc::STA_PPSTIME;
 
         self.adjtime(&mut ntp_kapi_timex)?;
         self.extract_current_time(&ntp_kapi_timex)
     }
 
+    #[cfg(target_os = "linux")]
     fn step_clock(&self, offset: ntp_proto::NtpDuration) -> Result<NtpTimestamp, Self::Error> {
-        #[cfg(target_os = "linux")]
-        {
-            self.step_clock_timex(offset)
-        }
+        self.step_clock_timex(offset)
+    }
 
-        #[cfg(not(target_os = "linux"))]
-        {
-            self.step_clock_timespec(offset)
-        }
+    #[cfg(any(target_os = "freebsd", target_os = "macos"))]
+    fn step_clock(&self, offset: ntp_proto::NtpDuration) -> Result<NtpTimestamp, Self::Error> {
+        self.step_clock_timespec(offset)
     }
 
     fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
