@@ -148,7 +148,7 @@ impl UdpSocket {
 
             match tokio::time::timeout(timeout, self.fetch_send_timestamp(expected_counter)).await {
                 Err(_) => {
-                    warn!("Packet without timestamp");
+                    warn!("Packet without timestamp (waiting for timestamp timed out)");
                     Ok((send_size, None))
                 }
                 Ok(send_timestamp) => Ok((send_size, Some(send_timestamp?))),
