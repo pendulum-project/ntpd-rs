@@ -134,7 +134,19 @@ impl UnixNtpClock {
         //
         // using an invalid clock id is safe. `clock_adjtime` will return an EINVAL error
         // https://man.archlinux.org/man/clock_adjtime.2.en#EINVAL~4
-        if unsafe { libc::clock_adjtime(self.clock, timex) } == -1 {
+        #[cfg(target_os = "linux")]
+        use libc::clock_adjtime as adjtime;
+
+        #[cfg(any(target_os = "freebsd", target_os = "macos"))]
+        let adjtime = {
+            extern "C" {
+                fn clock_adjtime(clk_id: libc::clockid_t, buf: *mut libc::timex) -> libc::c_int;
+            }
+
+            clock_adjtime
+        };
+
+        if unsafe { adjtime(self.clock, timex) } == -1 {
             Err(convert_errno())
         } else {
             Ok(())
@@ -189,7 +201,27 @@ impl UnixNtpClock {
         };
 
         self.adjtime(&mut timex)?;
-        extract_current_time(&timex)
+        self.extract_current_time(&timex)
+    }
+
+    fn extract_current_time(&self, _timex: &libc::timex) -> Result<NtpTimestamp, Error> {
+        #[cfg(target_os = "linux")]
+        {
+            // in a timex, the status flag determines precision
+            let precision = match _timex.status & libc::STA_NANO {
+                0 => Precision::Micro,
+                _ => Precision::Nano,
+            };
+
+            Ok(current_time_timeval(_timex.time, precision))
+        }
+
+        #[cfg(any(target_os = "freebsd", target_os = "macos"))]
+        {
+            // clock_gettime always gives nanoseconds
+            let timespec = self.clock_gettime()?;
+            Ok(current_time_timespec(timespec, Precision::Nano))
+        }
     }
 }
 
@@ -239,6 +271,7 @@ fn duration_in_nanos(duration: NtpDuration) -> libc::c_long {
 
 pub(crate) enum Precision {
     Nano,
+    #[cfg_attr(any(target_os = "freebsd", target_os = "macos"), allow(unused))]
     Micro,
 }
 
@@ -268,26 +301,6 @@ pub(crate) fn current_time_timeval(timespec: libc::timeval, precision: Precision
     )
 }
 
-fn extract_current_time(_timex: &libc::timex) -> Result<NtpTimestamp, Error> {
-    #[cfg(target_os = "linux")]
-    {
-        // in a timex, the status flag determines precision
-        let precision = match _timex.status & libc::STA_NANO {
-            0 => Precision::Micro,
-            _ => Precision::Nano,
-        };
-
-        Ok(current_time_timeval(_timex.time, precision))
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    {
-        // clock_gettime always gives nanoseconds
-        let timespec = clock_gettime()?;
-        Ok(current_time_timespec(timespec, Precision::Nano))
-    }
-}
-
 impl NtpClock for UnixNtpClock {
     type Error = Error;
 
@@ -296,7 +309,7 @@ impl NtpClock for UnixNtpClock {
 
         self.adjtime(&mut ntp_kapi_timex)?;
 
-        extract_current_time(&ntp_kapi_timex)
+        self.extract_current_time(&ntp_kapi_timex)
     }
 
     fn set_frequency(&self, freq: f64) -> Result<NtpTimestamp, Self::Error> {
@@ -306,7 +319,7 @@ impl NtpClock for UnixNtpClock {
         // but our input is in units of seconds drift per second, so convert.
         ntp_kapi_timex.freq = (freq * 65536e6) as libc::c_long;
         self.adjtime(&mut ntp_kapi_timex)?;
-        extract_current_time(&ntp_kapi_timex)
+        self.extract_current_time(&ntp_kapi_timex)
     }
 
     fn step_clock(&self, offset: ntp_proto::NtpDuration) -> Result<NtpTimestamp, Self::Error> {
