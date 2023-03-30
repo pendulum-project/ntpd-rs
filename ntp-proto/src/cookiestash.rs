@@ -3,11 +3,21 @@
 ///   - Each cookie is yielded at most once
 ///   - The oldest cookie is always yielded first
 /// Note that as a consequence, this type is not Clone!
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Default, PartialEq, Eq)]
 pub(crate) struct CookieStash {
     cookies: [Vec<u8>; 8],
     read: usize,
     valid: usize,
+}
+
+impl std::fmt::Debug for CookieStash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CookieStash")
+            .field("cookies", &self.cookies.len())
+            .field("read", &self.read)
+            .field("valid", &self.valid)
+            .finish()
+    }
 }
 
 impl CookieStash {
