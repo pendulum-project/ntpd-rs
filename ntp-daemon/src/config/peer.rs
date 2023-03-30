@@ -20,6 +20,7 @@ pub enum PeerHostMode {
 }
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct StandardPeerConfig {
     pub addr: NormalizedAddress,
 }
@@ -31,6 +32,7 @@ pub struct NtsPeerConfig {
 }
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct PoolPeerConfig {
     pub addr: NormalizedAddress,
     pub max_peers: usize,
@@ -53,6 +55,7 @@ impl PeerConfig {
 /// A normalized address has a host and a port part. However, the host may be
 /// invalid, we didn't yet perform a DNS lookup.
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct NormalizedAddress {
     pub(crate) server_name: String,
     pub(crate) port: u16,

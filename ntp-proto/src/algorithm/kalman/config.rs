@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 #[derive(Debug, Copy, Clone, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct AlgorithmConfig {
     /// Probability bound below which we start moving towards decreasing
     /// our precision estimate. (probability, 0-1)
