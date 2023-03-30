@@ -25,10 +25,7 @@ pub(crate) async fn key_exchange_client(
     port: u16,
     extra_certificates: &[Certificate],
 ) -> Result<KeyExchangeResult, KeyExchangeError> {
-    dbg!("connecting");
-    let socket = tokio::net::TcpStream::connect((server_name.as_str(), port))
-        .await
-        .unwrap();
+    let socket = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
 
     let mut roots = rustls::RootCertStore::empty();
     for cert in rustls_native_certs::load_native_certs()? {
@@ -542,5 +539,19 @@ mod tests {
 
         assert_eq!(result.remote, "localhost");
         assert_eq!(result.port, 123);
+    }
+
+    #[tokio::test]
+    async fn client_connection_refused() {
+        let result = key_exchange_client("localhost".to_string(), 5433, &[]).await;
+
+        let error = result.unwrap_err();
+
+        match error {
+            KeyExchangeError::Io(error) => {
+                assert_eq!(error.kind(), std::io::ErrorKind::ConnectionRefused)
+            }
+            _ => panic!(),
+        }
     }
 }
