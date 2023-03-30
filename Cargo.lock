@@ -661,7 +661,7 @@ checksum = "59df7c4e19c950e6e0e868dcc0a300b09a9b88e9ec55bd879ca819087a77355d"
 dependencies = [
  "http",
  "hyper",
- "rustls",
+ "rustls 0.20.8",
  "tokio",
  "tokio-rustls",
 ]
@@ -867,7 +867,7 @@ dependencies = [
  "ntp-udp",
  "prometheus-client",
  "rand",
- "rustls",
+ "rustls 0.21.0",
  "rustls-native-certs",
  "rustls-pemfile",
  "sentry",
@@ -918,7 +918,7 @@ dependencies = [
  "exitcode",
  "md-5",
  "rand",
- "rustls",
+ "rustls 0.21.0",
  "rustls-pemfile",
  "serde",
  "thiserror",
@@ -1199,7 +1199,7 @@ dependencies = [
  "once_cell",
  "percent-encoding",
  "pin-project-lite",
- "rustls",
+ "rustls 0.20.8",
  "rustls-pemfile",
  "serde",
  "serde_json",
@@ -1272,6 +1272,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustls"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07180898a28ed6a7f7ba2311594308f595e3dd2e3c3812fa0a80a47b45f17e5d"
+dependencies = [
+ "log",
+ "ring",
+ "rustls-webpki",
+ "sct",
+]
+
+[[package]]
 name = "rustls-native-certs"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1290,6 +1302,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d194b56d58803a43635bdc398cd17e383d6f71f9182b9a192c127ca42494a59b"
 dependencies = [
  "base64 0.21.0",
+]
+
+[[package]]
+name = "rustls-webpki"
+version = "0.100.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6207cd5ed3d8dca7816f8f3725513a34609c0c765bf652b8c3cb4cfd87db46b"
+dependencies = [
+ "ring",
+ "untrusted",
 ]
 
 [[package]]
@@ -1367,7 +1389,7 @@ checksum = "c6f8ce69326daef9d845c3fd17149bd3dbd7caf5dc65dbbad9f5441a40ee407f"
 dependencies = [
  "httpdate",
  "reqwest",
- "rustls",
+ "rustls 0.20.8",
  "sentry-backtrace",
  "sentry-contexts",
  "sentry-core",
@@ -1614,7 +1636,7 @@ dependencies = [
  "ntp-os-clock",
  "ntp-proto",
  "ntp-udp",
- "rustls",
+ "rustls 0.21.0",
  "rustls-native-certs",
  "rustls-pemfile",
  "serde_json",
@@ -1730,7 +1752,7 @@ version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c43ee83903113e03984cb9e5cebe6c04a5116269e900e3ddba8f068a62adda59"
 dependencies = [
- "rustls",
+ "rustls 0.20.8",
  "tokio",
  "webpki",
 ]
@@ -1945,7 +1967,7 @@ dependencies = [
  "chunked_transfer",
  "log",
  "once_cell",
- "rustls",
+ "rustls 0.20.8",
  "url",
  "webpki",
  "webpki-roots",
