@@ -1,6 +1,6 @@
 [Unit]
 Description=Rust Network Time Service
-Documentation=https://github.com/memorysafety/ntpd-rs
+Documentation=https://github.com/pendulum-project/ntpd-rs
 After=network-online.target
 Wants=network-online.target
 Conflicts=systemd-timesyncd.service ntp.service chrony.service

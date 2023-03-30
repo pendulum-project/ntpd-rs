@@ -274,7 +274,7 @@ This service should not be used at the same time as other NTP services. It expli
 ```ini
 [Unit]
 Description=Rust Network Time Service
-Documentation=https://github.com/memorysafety/ntpd-rs
+Documentation=https://github.com/pendulum-project/ntpd-rs
 After=network-online.target
 Wants=network-online.target
 Conflicts=systemd-timesyncd.service ntp.service
