@@ -209,7 +209,7 @@ impl Config {
         let meta = std::fs::metadata(&file).unwrap();
         let perm = meta.permissions();
 
-        if perm.mode() & libc::S_IWOTH == 0o002 {
+        if perm.mode() & libc::S_IWOTH != 0 {
             warn!("Unrestricted config file permissions: Others can write.");
         }
 
