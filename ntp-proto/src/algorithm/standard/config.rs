@@ -3,7 +3,7 @@ use serde::Deserialize;
 use crate::{FrequencyTolerance, NtpDuration};
 
 #[derive(Deserialize, Debug, Clone, Copy)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct AlgorithmConfig {
     /// Number of survivors that the cluster_algorithm tries to keep.
     ///

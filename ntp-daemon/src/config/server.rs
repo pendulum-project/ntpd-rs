@@ -14,7 +14,7 @@ use serde::{
 use crate::{config::subnet::IpSubnet, ipfilter::IpFilter};
 
 #[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct KeysetConfig {
     /// Number of old keys to keep around
     #[serde(default = "default_old_keys")]
@@ -216,7 +216,7 @@ impl<'de> Deserialize<'de> for ServerConfig {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct NtsKeConfig {
     pub cert_chain_path: PathBuf,
     pub key_der_path: PathBuf,
@@ -269,7 +269,7 @@ mod tests {
     #[test]
     fn test_deserialize_nts_ke() {
         #[derive(Deserialize, Debug)]
-        #[serde(rename_all = "kebab-case")]
+        #[serde(rename_all = "kebab-case", deny_unknown_fields)]
         struct TestConfig {
             nts_ke_server: NtsKeConfig,
         }

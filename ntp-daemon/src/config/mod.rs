@@ -103,6 +103,7 @@ pub struct CmdArgs {
 }
 
 #[derive(Deserialize, Debug, Default, Copy, Clone)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct CombinedSystemConfig {
     #[serde(flatten)]
     pub system: SystemConfig,
@@ -114,7 +115,7 @@ pub struct CombinedSystemConfig {
 }
 
 #[derive(Deserialize, Debug, Default)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Config {
     #[serde(alias = "peer")]
     pub peers: Vec<PeerConfig>,
@@ -144,6 +145,7 @@ const fn default_observe_permissions() -> u32 {
 }
 
 #[derive(Clone, Deserialize, Debug)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ObserveConfig {
     #[serde(default)]
     pub path: Option<PathBuf>,
@@ -165,6 +167,7 @@ impl Default for ObserveConfig {
 }
 
 #[derive(Clone, Deserialize, Debug)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ConfigureConfig {
     #[serde(default)]
     pub path: Option<std::path::PathBuf>,
@@ -183,7 +186,7 @@ impl Default for ConfigureConfig {
 
 #[cfg(feature = "sentry")]
 #[derive(Deserialize, Debug, Default)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct SentryConfig {
     pub dsn: Option<String>,
     #[serde(default = "default_sample_rate")]
@@ -580,5 +583,17 @@ mod tests {
 
         let error = result.unwrap_err();
         assert!(error.to_string().contains("expected a positive number"));
+    }
+
+    #[test]
+    fn deny_unknown_fields() {
+        let config: Result<SystemConfig, _> = toml::from_str(
+            r#"
+            unknown-field = 42
+            "#,
+        );
+
+        let error = config.unwrap_err();
+        assert!(error.to_string().contains("unknown field"));
     }
 }
