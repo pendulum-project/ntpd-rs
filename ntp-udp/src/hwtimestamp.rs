@@ -1,4 +1,4 @@
-use std::os::fd::AsRawFd;
+use std::os::unix::io::AsRawFd;
 
 use crate::{interface_name, raw_socket::cerr};
 
