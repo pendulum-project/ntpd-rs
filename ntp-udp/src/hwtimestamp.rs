@@ -68,7 +68,7 @@ fn get_hardware_timestamp(udp_socket: &std::net::UdpSocket) -> std::io::Result<h
 
 fn socket_interface_name(
     udp_socket: &std::net::UdpSocket,
-) -> std::io::Result<[i8; libc::IFNAMSIZ]> {
+) -> std::io::Result<[libc::c_char; libc::IFNAMSIZ]> {
     use std::io::{Error, ErrorKind};
 
     match interface_name::interface_name(udp_socket.local_addr()?)? {
@@ -86,7 +86,9 @@ mod tests {
         let udp_socket = std::net::UdpSocket::bind(("0.0.0.0", 9000))?;
         udp_socket.connect(("10.0.0.18", 9001))?;
 
-        let _ = get_hardware_timestamp(&udp_socket)?;
+        if let Err(e) = get_hardware_timestamp(&udp_socket) {
+            assert!(e.to_string().contains("Operation not supported"))
+        }
 
         Ok(())
     }
