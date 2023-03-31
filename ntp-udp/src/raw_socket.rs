@@ -17,7 +17,6 @@ pub(crate) use recv_message::{
     control_message_space, receive_message, ControlMessage, MessageQueue,
 };
 pub(crate) use set_timestamping_options::set_timestamping_options;
-pub(crate) use timestamping_config::TimestampingConfig;
 
 /// Turn a C failure (-1 is returned) into a rust Result
 pub(crate) fn cerr(t: libc::c_int) -> std::io::Result<libc::c_int> {
@@ -55,7 +54,9 @@ pub(crate) enum TimestampMethod {
 mod set_timestamping_options {
     use std::os::unix::prelude::AsRawFd;
 
-    use super::{cerr, TimestampMethod, TimestampingConfig};
+    use crate::EnableTimestamps;
+
+    use super::{cerr, TimestampMethod};
 
     fn configure_timestamping_socket(
         udp_socket: &std::net::UdpSocket,
@@ -91,7 +92,7 @@ mod set_timestamping_options {
     pub(crate) fn set_timestamping_options(
         udp_socket: &std::net::UdpSocket,
         method: TimestampMethod,
-        timestamping: TimestampingConfig,
+        timestamping: EnableTimestamps,
     ) -> std::io::Result<()> {
         let options = match method {
             TimestampMethod::SoTimestamp => {
@@ -351,17 +352,11 @@ mod recv_message {
     }
 }
 
-mod timestamping_config {
+pub(crate) mod timestamping_config {
     use std::os::unix::prelude::AsRawFd;
 
     use super::cerr;
-    use crate::interface_name;
-
-    #[derive(Debug, Clone, Copy, Default)]
-    pub(crate) struct TimestampingConfig {
-        pub(crate) rx_software: bool,
-        pub(crate) tx_software: bool,
-    }
+    use crate::{interface_name, EnableTimestamps};
 
     #[repr(C)]
     #[allow(non_camel_case_types)]
@@ -376,49 +371,49 @@ mod timestamping_config {
         rx_reserved: [u32; 3],
     }
 
-    impl TimestampingConfig {
-        /// Enable all timestamping options that are supported by this crate and the hardware/software
-        /// of the device we're running on
-        #[allow(dead_code)]
-        pub(crate) fn all_supported(udp_socket: &std::net::UdpSocket) -> std::io::Result<Self> {
-            // Get time stamping and PHC info
-            const ETHTOOL_GET_TS_INFO: u32 = 0x00000041;
+    /// Enable all timestamping options that are supported by this crate and the hardware/software
+    /// of the device we're running on
+    #[allow(dead_code)]
+    pub(crate) fn all_supported(
+        udp_socket: &std::net::UdpSocket,
+    ) -> std::io::Result<EnableTimestamps> {
+        // Get time stamping and PHC info
+        const ETHTOOL_GET_TS_INFO: u32 = 0x00000041;
 
-            let mut tsi: ethtool_ts_info = ethtool_ts_info {
-                cmd: ETHTOOL_GET_TS_INFO,
-                ..Default::default()
+        let mut tsi: ethtool_ts_info = ethtool_ts_info {
+            cmd: ETHTOOL_GET_TS_INFO,
+            ..Default::default()
+        };
+
+        let fd = udp_socket.as_raw_fd();
+
+        if let Some(ifr_name) = interface_name::interface_name(udp_socket.local_addr()?)? {
+            let ifr: libc::ifreq = libc::ifreq {
+                ifr_name,
+                ifr_ifru: libc::__c_anonymous_ifr_ifru {
+                    ifru_data: (&mut tsi as *mut _) as *mut libc::c_char,
+                },
             };
 
-            let fd = udp_socket.as_raw_fd();
+            const SIOCETHTOOL: u64 = 0x8946;
+            cerr(unsafe { libc::ioctl(fd, SIOCETHTOOL as libc::c_ulong, &ifr) }).unwrap();
 
-            if let Some(ifr_name) = interface_name::interface_name(udp_socket.local_addr()?)? {
-                let ifr: libc::ifreq = libc::ifreq {
-                    ifr_name,
-                    ifr_ifru: libc::__c_anonymous_ifr_ifru {
-                        ifru_data: (&mut tsi as *mut _) as *mut libc::c_char,
-                    },
-                };
+            let support = EnableTimestamps {
+                rx_software: tsi.so_timestamping & libc::SOF_TIMESTAMPING_RX_SOFTWARE != 0,
+                tx_software: tsi.so_timestamping & libc::SOF_TIMESTAMPING_TX_SOFTWARE != 0,
+            };
 
-                const SIOCETHTOOL: u64 = 0x8946;
-                cerr(unsafe { libc::ioctl(fd, SIOCETHTOOL as libc::c_ulong, &ifr) }).unwrap();
+            // per the documentation of `SOF_TIMESTAMPING_RX_SOFTWARE`:
+            //
+            // > Request rx timestamps when data enters the kernel. These timestamps are generated
+            // > just after a device driver hands a packet to the kernel receive stack.
+            //
+            // the linux kernel should always support receive software timestamping
+            assert!(support.rx_software);
 
-                let support = Self {
-                    rx_software: tsi.so_timestamping & libc::SOF_TIMESTAMPING_RX_SOFTWARE != 0,
-                    tx_software: tsi.so_timestamping & libc::SOF_TIMESTAMPING_TX_SOFTWARE != 0,
-                };
-
-                // per the documentation of `SOF_TIMESTAMPING_RX_SOFTWARE`:
-                //
-                // > Request rx timestamps when data enters the kernel. These timestamps are generated
-                // > just after a device driver hands a packet to the kernel receive stack.
-                //
-                // the linux kernal should always support receive software timestamping
-                assert!(support.rx_software);
-
-                Ok(support)
-            } else {
-                Ok(Self::default())
-            }
+            Ok(support)
+        } else {
+            Ok(EnableTimestamps::default())
         }
     }
 }

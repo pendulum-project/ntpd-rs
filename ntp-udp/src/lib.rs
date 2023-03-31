@@ -4,9 +4,34 @@ mod interface_name;
 mod raw_socket;
 mod socket;
 
+use std::{ops::Deref, str::FromStr};
+
 use ntp_proto::NtpTimestamp;
 
+use serde::Deserialize;
 pub use socket::UdpSocket;
+
+/// Enable the given timestamps. This is a hint!
+///
+/// Your OS or hardware might not actually support some timestamping modes.
+/// Unsupported timestamping modes are ignored.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct EnableTimestamps {
+    #[serde(default = "bool_true")]
+    pub rx_software: bool,
+    #[serde(default)] // defaults to `false`
+    pub tx_software: bool,
+}
+
+impl Default for EnableTimestamps {
+    fn default() -> Self {
+        Self {
+            rx_software: true,
+            tx_software: false,
+        }
+    }
+}
 
 pub(crate) enum LibcTimestamp {
     Timespec(libc::timespec),
@@ -40,5 +65,80 @@ impl LibcTimestamp {
                 NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, nanos)
             }
         }
+    }
+}
+
+fn bool_true() -> bool {
+    true
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct InterfaceName {
+    bytes: [u8; libc::IFNAMSIZ],
+}
+
+impl Deref for InterfaceName {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.bytes.as_slice()
+    }
+}
+
+impl<'de> Deserialize<'de> for InterfaceName {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use InterfaceNameParseError::*;
+
+        let name: String = Deserialize::deserialize(deserializer)?;
+
+        match Self::from_str(&name) {
+            Ok(v) => Ok(v),
+            Err(Empty) => Err(serde::de::Error::custom("interface name empty")),
+            Err(TooLong) => Err(serde::de::Error::custom("interface name too long")),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum InterfaceNameParseError {
+    Empty,
+    TooLong,
+}
+
+impl FromStr for InterfaceName {
+    type Err = InterfaceNameParseError;
+
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        if name.is_empty() {
+            return Err(InterfaceNameParseError::Empty);
+        }
+
+        let mut it = name.bytes();
+        let bytes = std::array::from_fn(|_| it.next().unwrap_or_default());
+
+        if it.next().is_some() {
+            Err(InterfaceNameParseError::TooLong)
+        } else {
+            Ok(InterfaceName { bytes })
+        }
+    }
+}
+
+impl InterfaceName {
+    pub const DEFAULT: Option<Self> = None;
+
+    fn name(&self) -> &str {
+        std::str::from_utf8(self.bytes.as_slice())
+            .unwrap_or_default()
+            .trim_end_matches('\0')
+    }
+}
+
+impl std::fmt::Debug for InterfaceName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("InterfaceName").field(&self.name()).finish()
     }
 }

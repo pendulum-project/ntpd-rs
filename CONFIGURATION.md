@@ -167,6 +167,26 @@ The daemon can also expose a configuration socket that can be used to change som
 
 The management and configuration sockets are used by the [management client](MANAGEMENT_CLIENT.md) to display the daemon's state and to allow for dynamic changing of some configuration parameters.
 
+#### Clock configuration
+
+Configure advanced experimental clock features. **The default clock settings are adequate for most users!** These settings are exposed for experimentation only.
+
+This section servers two practical (advanced and experimental) use cases:
+
+- enable kernel software transmit (send) timestamps
+- enable hardware timestamping (linux only)
+
+| Option                          | Default               | Description                                                  |
+| ---                             | ---                   | ---                                                          |
+| clock                           | system realtime clock | Path to a file descriptor that is a clock (e.g. "/dev/ptp0") |
+| interface                       | system default        | Network interface to use for timestamped packets             |
+| enable-timestamping.rx-software | true                  | Enable software receive timestamping                         |
+| enable-timestamping.tx-software | false                 | Enable software transmit timestamping                        |
+
+Enabled timestamps are a suggestion. Your OS or hardware may not support some options.
+
+The default clock on unix systems is `CLOCK_REALTIME`. It is important to synchronize with the same clock that is used for timestamping. So if hardware timestamps are enabled, the corresponding clock and network interface must be configured. Mistakes in this configuration will likely cause a crash.
+
 #### Time synchronization
 
 There are a number of options available to influence how time differences to the various servers are used to synchronize the system clock. All of these are part of the `system` section of the configuration:
@@ -253,6 +273,12 @@ min-intersection-survivors = 1
 poll-interval-limits = { min = 6, max = 10 }
 panic-threshold = 10
 startup-panic-threshold = { forward = "inf", backward = 1800 }
+
+[clock]
+# clock = "/dev/ptp0"
+# interface = "enp0s31f6"
+enable-timestamps.rx-software = true
+enable-timestamps.tx-software = true
 ```
 
 ## Operational concerns

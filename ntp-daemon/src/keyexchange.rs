@@ -543,7 +543,7 @@ mod tests {
 
     #[tokio::test]
     async fn client_connection_refused() {
-        let result = key_exchange_client("localhost".to_string(), 5433, &[]).await;
+        let result = key_exchange_client("localhost".to_string(), 5434, &[]).await;
 
         let error = result.unwrap_err();
 
