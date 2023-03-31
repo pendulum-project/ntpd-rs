@@ -167,17 +167,23 @@ The management and configuration sockets are used by the [management client](MAN
 
 #### Clock configuration
 
-What clock to update, and what timestamps to use.
+Configure advanced experimental clock features. **The default clock settings are adequate for most users!** These settings are exposed for experimentation only.
+
+This section servers two practical (advanced and experimental) use cases:
+
+- enable kernel software transmit (send) timestamps
+- enable hardware timestamping (linux only)
 
 | Option                          | Default               | Description                                                  |
 | ---                             | ---                   | ---                                                          |
 | clock                           | system realtime clock | Path to a file descriptor that is a clock (e.g. "/dev/ptp0") |
-| interface                       | system default        | Interface to use for packets.                                |
+| interface                       | system default        | Network interface to use for timestamped packets             |
 | enable-timestamping.rx-software | true                  | Enable software receive timestamping                         |
 | enable-timestamping.tx-software | false                 | Enable software transmit timestamping                        |
 
-- For correct hardware timestamping, the interface must agree with which clock is used. 
-- Enabled timestamps are a suggestion. Your OS or hardware may not support some options.
+Enabled timestamps are a suggestion. Your OS or hardware may not support some options.
+
+The default clock on unix systems is `CLOCK_REALTIME`. It is important to synchronize with the same clock that is used for timestamping. So if hardware timestamps are enabled, the corresponding clock and network interface must be configured. Mistakes in this configuration will likely cause a crash.
 
 #### Time synchronization
 
