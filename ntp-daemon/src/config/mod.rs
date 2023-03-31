@@ -253,21 +253,12 @@ impl Config {
             return Config::from_file(f).await;
         }
 
-        // try ntp.toml in working directory or skip if file doesn't exist
-        match Config::from_file("./ntp.toml").await {
-            Err(ConfigError::Io(e)) if e.kind() == ErrorKind::NotFound => {}
-            other => {
-                info!("using local config file at default location `./ntp.toml`");
-                return other;
-            }
-        }
-
         // for the global file we also ignore it when there are permission errors
-        match Config::from_file("/etc/ntp.toml").await {
+        match Config::from_file("/etc/ntpd-rs/ntp.toml").await {
             Err(ConfigError::Io(e))
                 if e.kind() == ErrorKind::NotFound || e.kind() == ErrorKind::PermissionDenied => {}
             other => {
-                info!("using global config file at default location `/etc/ntp.toml`");
+                info!("using global config file at default location `/etc/ntpd-rs/ntp.toml`");
                 return other;
             }
         }
