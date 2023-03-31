@@ -1,4 +1,6 @@
 use std::{
+    collections::hash_map::RandomState,
+    hash::BuildHasher,
     io::Cursor,
     net::{IpAddr, SocketAddr},
     sync::Arc,
@@ -70,7 +72,7 @@ pub struct ServerTask<C: 'static + NtpClock + Send> {
     system_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     system: SystemSnapshot,
-    client_cache: TimestampedCache<SocketAddr>,
+    client_cache: TimestampedCache<IpAddr>,
     clock: C,
     stats: ServerStats,
 }
@@ -371,7 +373,10 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     None => {
                         let timestamp = Instant::now();
                         let cutoff = rate_limiting_cutoff;
-                        let too_soon = !self.client_cache.is_allowed(peer_addr, timestamp, cutoff);
+                        let too_soon =
+                            !self
+                                .client_cache
+                                .is_allowed(peer_addr.ip(), timestamp, cutoff);
 
                         match self.accept_data(&buf[..size], peer_addr, recv_timestamp) {
                             AcceptResult::Accept {
@@ -469,12 +474,11 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
 /// Hence, this data structure is a vector, and we use a simple hash function to turn the incomming
 /// address into an index. Lookups and inserts are therefore O(1).
 ///
-/// The likelyhood of hash collisions can be controlled by changing the size of the cache. Overall,
-/// hash collisions are not a big problem because problematic IPs will continue to show up, so if
-/// we don't deny them on the first attempt because the previous entry was evicted, we're very
-/// likely to succeed on the next request it makes.
+/// The likelyhood of hash collisions can be controlled by changing the size of the cache. Hash collisions
+/// will happen, so this cache should not be relied on if perfect alerting is deemed critical.
 #[derive(Debug)]
 struct TimestampedCache<T> {
+    randomstate: RandomState,
     elements: Vec<Option<(T, Instant)>>,
 }
 
@@ -483,13 +487,14 @@ impl<T: std::hash::Hash + Eq> TimestampedCache<T> {
         Self {
             // looks a bit odd, but prevents a `Clone` constraint
             elements: std::iter::repeat_with(|| None).take(length).collect(),
+            randomstate: RandomState::new(),
         }
     }
 
     fn index(&self, item: &T) -> usize {
         use std::hash::Hasher;
 
-        let mut hasher = std::collections::hash_map::DefaultHasher::default();
+        let mut hasher = self.randomstate.build_hasher();
 
         item.hash(&mut hasher);
 

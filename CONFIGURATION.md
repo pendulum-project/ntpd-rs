@@ -122,7 +122,7 @@ Interfaces on which to act as a server are configured in the `server` section. P
 | rate-limiting-cache-size | 0 | How many clients to remember for the purpose of rate limiting. Increasing this number also decreases the probability of two clients sharing an entry in the table. A size of 0 disables rate limiting. |
 | rate-limiting-cutoff-ms | 1000 | Minimum time between two client requests from the same IP address, in milliseconds. When a client send requests closer together than this it is sent a rate limit message instead of a normal time-providing response. |
 
-For rate limiting, the server uses a hashtable to store when it has last seen a client. On a hash collision, the previous entry at that position is evicted. At small table sizes, this might reduce the effectiveness of ratelimiting when combined with high overall server load.
+For rate limiting, the server uses a hashtable to store when it has last seen a client. On a hash collision, the previous entry at that position is evicted. At small table sizes, this might reduce the effectiveness of ratelimiting when combined with high overall server load. It is important to note that the rate limiting this provides is best effort, and only works on benign misconfigured clients. *IT WILL NOT STAND UP AGAINST A DETERMINED ATTACKER*
 
 In applying the three client filters (deny, allow and ratelimiting), the server first checks whether the clients IP is on the denylist, then it checks whether it is on the allowlist, and finally it checks whether the client needs to be rate-limited. At each of these stages, the appropriate action is taken when the client fails the check.
 
