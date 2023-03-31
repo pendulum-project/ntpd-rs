@@ -6,7 +6,7 @@
 // safe regardless of given arguments.
 
 use std::{
-    os::{fd::AsRawFd, unix::prelude::RawFd},
+    os::unix::io::{AsRawFd, RawFd},
     path::Path,
 };
 
