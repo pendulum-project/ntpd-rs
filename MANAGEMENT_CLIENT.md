@@ -1,6 +1,6 @@
 # Management Client
 
-**The managenent client interface is unstable! Do you have suggestion for additional values to expose? let us know in an issue!**
+**The management client interface is unstable! Do you have suggestion for additional values to expose? let us know in an issue!**
 
 ntpd-rs comes with a management client for the daemon. This client can show the current state of the daemon, as well as change the log level and panic thresholds of the daemon.
 
@@ -27,7 +27,7 @@ Currently, only the `log-level` and `panic-threshold` configuration parameters c
 
 ## Specifying socket locations
 
-By default, the management client looks for the daemons configuration either in `./ntp.toml` or `/etc/ntp.toml` in order to extract the paths of the socket. If neither of these are present, or when the socket paths are not configured in these, it defaults to `/run/ntpd-rs/observe` for the observation socket and `/run/ntpd-rs/configure` for the configuration sockets.
+By default, the management client looks for the daemon's configuration in `/etc/ntpd-rs/ntp.toml` in order to extract the paths of the socket. If this file is not present, or when the socket paths are not configured in these, it defaults to `/run/ntpd-rs/observe` for the observation socket and `/run/ntpd-rs/configure` for the configuration sockets.
 
 If the client fails to find the correct socket paths using the above process, it can be manually configured to look elsewhere. Most advisable is to point the management client to the configuration file of the server via the `--config` command line flag. If this is not an option in your setup, alternatively the `--observation-socket` and `--configuration-socket` command line options.
 

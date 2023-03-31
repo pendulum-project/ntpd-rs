@@ -42,14 +42,14 @@ The following command line options are available. When an option is not provided
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `-c <FILE>`, `--config <FILE>` | First existing of `./ntp.toml`, `/etc/ntp.toml` | Which configuration file to use. When provided, the fallback locations are not used. |
+| `-c <FILE>`, `--config <FILE>` | `/etc/ntpd-rs/ntp.toml` | Which configuration file to use. When provided, the fallback locations are not used. |
 | `-l <LEVEL>`, `--log-filter <LEVEL>` | From configuration file | Override for the configuration file `log-filter` parameter, see explanation there. |
 | `-p <ADDR>`, `--peer <ADDR>` | | Setup a connection to the given server, overrides the peers in the configuration file. Can be given multiple times to configure multiple servers as reference. |
 | `-s <ADDR>`, `--server <ADDR>` | | Respond as NTP server to packets arriving to the given address, overrides server configuration in the configuration file. Can be given multiple times to attach as NTP server to multiple network interfaces. |
 
 ### Configuration file
 
-The ntp-daemon's primary configuration method is through a TOML configuration file. By default, this is looked for first in the current working directory (e.g. under `./ntp.toml`), and next in the system-wide configuration directories under `/etc/ntp.toml`. A non-standard location can be provided via the `-c` or `--config` command line flags.
+The ntp-daemon's primary configuration method is through a TOML configuration file. By default, this is looked for in the system-wide configuration directories under `/etc/ntpd-rs/ntp.toml`. A non-standard location can be provided via the `-c` or `--config` command line flags.
 
 #### General options
 
@@ -151,7 +151,7 @@ Instructions for how to generate a CA certificate and use it to sign certificate
 
 #### Observability and dynamic configuration
 
-**The managenent client interface is unstable! Would you like to observe additional values? let us know in an issue!**
+**The management client interface is unstable! Would you like to observe additional values? let us know in an issue!**
 
 The daemon can expose an observation socket that can be read to obtain information on the current state of the peer connections and clock steering algorithm. This socket can be configured via the `observe` section:
 | Option | Default | Description |
@@ -293,7 +293,7 @@ More guidance on proper configuration for regular operation is given in the [ope
 
 ## Systemd configuration
 
-To run ntpd-rs as the system NTP service, the following systemd service definition can be used. Note that this service definition assumes that the ntp-daemon binary has been installed to `/usr/local/bin`, and that the configuration is stored in the default `/etc/ntp.toml` location. Furthermore, it assumes the existence of a low-privileged `ntpd-rs` group and user. Refer to your distribution's documentation for information on how to create such accounts.
+To run ntpd-rs as the system NTP service, the following systemd service definition can be used. Note that this service definition assumes that the ntp-daemon binary has been installed to `/usr/local/bin`, and that the configuration is stored in the default `/etc/ntpd-rs/ntp.toml` location. Furthermore, it assumes the existence of a low-privileged `ntpd-rs` group and user. Refer to your distribution's documentation for information on how to create such accounts.
 
 Note that because of the aforementioned limitations around peer configuration, this service file requires the network-online target. As a result, using this may increase boot times significantly, especially on machines that do not have permanent network connectivity.
 
