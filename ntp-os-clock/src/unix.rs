@@ -308,28 +308,37 @@ pub(crate) enum Precision {
     Micro,
 }
 
+fn micros_to_nanos(micros: u32) -> u32 {
+    let msg = "microseconds out of range (this can happen when initializing hardware clocks)";
+
+    match micros.checked_mul(1000) {
+        Some(v) => v,
+        None => {
+            tracing::warn!(msg);
+            0
+        }
+    }
+}
+
 #[cfg_attr(target_os = "linux", allow(unused))]
 fn current_time_timespec(timespec: libc::timespec, precision: Precision) -> NtpTimestamp {
-    // Negative eras are completely valid, so any wrapping is
-    // perfectly reasonable here.
+    // Negative eras are completely valid, so any wrapping is perfectly reasonable here.
     NtpTimestamp::from_seconds_nanos_since_ntp_era(
         (timespec.tv_sec as u32).wrapping_add(EPOCH_OFFSET),
         match precision {
             Precision::Nano => timespec.tv_nsec as u32,
-            Precision::Micro => (timespec.tv_nsec as u32) * 1000,
+            Precision::Micro => micros_to_nanos(timespec.tv_nsec as u32),
         },
     )
 }
 
-#[cfg_attr(not(target_os = "linux"), allow(unused))]
-pub(crate) fn current_time_timeval(timespec: libc::timeval, precision: Precision) -> NtpTimestamp {
-    // Negative eras are completely valid, so any wrapping is
-    // perfectly reasonable here.
+fn current_time_timeval(timespec: libc::timeval, precision: Precision) -> NtpTimestamp {
+    // Negative eras are completely valid, so any wrapping is perfectly reasonable here.
     NtpTimestamp::from_seconds_nanos_since_ntp_era(
         (timespec.tv_sec as u32).wrapping_add(EPOCH_OFFSET),
         match precision {
             Precision::Nano => timespec.tv_usec as u32,
-            Precision::Micro => (timespec.tv_usec as u32) * 1000,
+            Precision::Micro => micros_to_nanos(timespec.tv_usec as u32),
         },
     )
 }
