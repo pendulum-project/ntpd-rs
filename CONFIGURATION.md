@@ -49,7 +49,7 @@ The following command line options are available. When an option is not provided
 
 ### Configuration file
 
-The ntp-daemon's primary configuration method is through a TOML configuration file. By default, this is looked for in the system wide configuration directories under `/etc/ntpd-rs/ntp.toml`. A non-standard location can be provided via the `-c` or `--config` command line flags.
+The ntp-daemon's primary configuration method is through a TOML configuration file. By default, this is looked for in the system-wide configuration directories under `/etc/ntpd-rs/ntp.toml`. A non-standard location can be provided via the `-c` or `--config` command line flags.
 
 #### General options
 
@@ -151,7 +151,7 @@ Instructions for how to generate a CA certificate and use it to sign certificate
 
 #### Observability and dynamic configuration
 
-**The managenent client interface is unstable! Would you like to observe additional values? let us know in an issue!**
+**The management client interface is unstable! Would you like to observe additional values? let us know in an issue!**
 
 The daemon can expose an observation socket that can be read to obtain information on the current state of the peer connections and clock steering algorithm. This socket can be configured via the `observe` section:
 | Option | Default | Description |
