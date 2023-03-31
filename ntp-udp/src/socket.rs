@@ -577,28 +577,4 @@ mod tests {
         let delta = trecv - tsend;
         assert!(delta.to_seconds().abs() < 0.2);
     }
-
-    #[tokio::test]
-    #[ignore = "modifying a hardware clock requires permissions"]
-    async fn test_hardware_network_send_timestamp() {
-        let mut a = UdpSocket::client_with_timestamping_internal(
-            SocketAddr::from((Ipv4Addr::new(10, 0, 0, 24), 8014)),
-            SocketAddr::from((Ipv4Addr::new(10, 0, 0, 18), 8015)),
-            None,
-            DEFAULT_TIMESTAMP_METHOD,
-            EnableTimestamps {
-                rx_software: false,
-                tx_software: false,
-                rx_hardware: true,
-                tx_hardware: true,
-            },
-        )
-        .await
-        .unwrap();
-
-        let (ssend, tsend) = a.send(&[1; 48]).await.unwrap();
-
-        assert_eq!(ssend, 48);
-        assert!(tsend.is_some());
-    }
 }

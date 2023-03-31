@@ -182,6 +182,8 @@ This section servers two practical (advanced and experimental) use cases:
 | interface                       | system default        | Network interface to use for timestamped packets             |
 | enable-timestamping.rx-software | true                  | Enable software receive timestamping                         |
 | enable-timestamping.tx-software | false                 | Enable software transmit timestamping                        |
+| enable-timestamping.rx-hardware | false                 | Enable hardware receive timestamping                         |
+| enable-timestamping.tx-hardware | false                 | Enable hardware transmit timestamping                        |
 
 Enabled timestamps are a suggestion. Your OS or hardware may not support some options.
 

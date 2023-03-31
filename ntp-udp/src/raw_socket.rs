@@ -454,7 +454,7 @@ pub(crate) mod timestamping_config {
             // > Request rx timestamps when data enters the kernel. These timestamps are generated
             // > just after a device driver hands a packet to the kernel receive stack.
             //
-            // the linux kernal should always support receive software timestamping
+            // the linux kernel should always support receive software timestamping
             assert!(support.rx_software);
 
             Ok(support)
