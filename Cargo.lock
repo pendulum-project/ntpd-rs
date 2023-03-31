@@ -906,6 +906,7 @@ dependencies = [
  "libc",
  "ntp-proto",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
