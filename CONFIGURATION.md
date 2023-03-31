@@ -151,6 +151,8 @@ Instructions for how to generate a CA certificate and use it to sign certificate
 
 #### Observability and dynamic configuration
 
+**The managenent client interface is unstable! Would you like to observe additional values? let us know in an issue!**
+
 The daemon can expose an observation socket that can be read to obtain information on the current state of the peer connections and clock steering algorithm. This socket can be configured via the `observe` section:
 | Option | Default | Description |
 | --- | --- | --- |
