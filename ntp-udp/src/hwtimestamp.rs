@@ -99,7 +99,7 @@ mod tests {
 
         let old = get_hardware_timestamp(&udp_socket)?;
 
-        let mut custom = hwtimestamp_config {
+        let custom = hwtimestamp_config {
             flags: 0,
             tx_type: HWTSTAMP_TX_ON,
             rx_filter: HWTSTAMP_FILTER_ALL,
@@ -111,6 +111,8 @@ mod tests {
         assert_eq!(new.flags, 0);
         assert_eq!(new.tx_type, HWTSTAMP_TX_ON);
         assert_eq!(new.rx_filter, HWTSTAMP_FILTER_ALL);
+
+        set_hardware_timestamp(&udp_socket, old)?;
 
         Ok(())
     }

@@ -544,21 +544,17 @@ mod tests {
         UdpSocket,
         mpsc::Receiver<MsgForSystem>,
     ) {
-        let interface = None;
-
         // Note: Ports must be unique among tests to deal with parallelism, hence
         // port_base
         let socket = UdpSocket::client(
             SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
             SocketAddr::from((Ipv4Addr::LOCALHOST, port_base + 1)),
-            interface,
         )
         .await
         .unwrap();
         let test_socket = UdpSocket::client(
             SocketAddr::from((Ipv4Addr::LOCALHOST, port_base + 1)),
             SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
-            interface,
         )
         .await
         .unwrap();
