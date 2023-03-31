@@ -29,9 +29,6 @@ max-peers = 4
 # System parameters used in filtering and steering the clock:
 [system]
 min-intersection-survivors = 1
-min-cluster-survivors = 3
-frequency-tolerance = 15
-distance-threshold = 1
 panic-threshold = 10
 startup-panic-threshold = { forward = "inf", backward = 1800 }
 
