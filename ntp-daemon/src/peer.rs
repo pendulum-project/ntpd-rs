@@ -7,7 +7,7 @@ use std::{
 
 use ntp_proto::{
     IgnoreReason, Measurement, NtpClock, NtpInstant, NtpPacket, NtpTimestamp, Peer, PeerNtsData,
-    PeerSnapshot, ReferenceId, SystemSnapshot, Update,
+    PeerSnapshot, PollError, ReferenceId, SystemSnapshot, Update,
 };
 use ntp_udp::UdpSocket;
 use rand::{thread_rng, Rng};
@@ -35,6 +35,8 @@ pub enum MsgForSystem {
     MustDemobilize(PeerId),
     /// Experienced a network issue and must be restarted
     NetworkIssue(PeerId),
+    /// Peer is unreachable, and should be restarted with new resolved addr.
+    Unreachable(PeerId),
     /// Received an acceptable packet and made a new peer snapshot
     /// A new measurement should try to trigger a clock select
     NewMeasurement(PeerId, PeerSnapshot, Measurement, NtpPacket<'static>),
@@ -74,6 +76,7 @@ pub(crate) struct PeerTask<C: 'static + NtpClock + Send, T: Wait> {
 enum PollResult {
     Ok,
     NetworkGone,
+    Unreachable,
 }
 
 #[derive(Debug)]
@@ -112,10 +115,14 @@ where
             &config_snapshot.system,
         ) {
             Ok(packet) => packet,
-            Err(e) => {
+            Err(PollError::Io(e)) => {
                 error!(error = ?e, "Could not generate poll message");
                 // not exactly a network gone situation, but needs the same response
                 return PollResult::NetworkGone;
+            }
+            Err(PollError::Unreachable) => {
+                warn!("Peer is no longer reachable over network, restarting");
+                return PollResult::Unreachable;
             }
         };
 
@@ -223,6 +230,10 @@ where
                         PollResult::Ok => {},
                         PollResult::NetworkGone => {
                             self.channels.msg_for_system_sender.send(MsgForSystem::NetworkIssue(self.index)).await.ok();
+                            break;
+                        }
+                        PollResult::Unreachable => {
+                            self.channels.msg_for_system_sender.send(MsgForSystem::Unreachable(self.index)).await.ok();
                             break;
                         }
                     }

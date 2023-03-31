@@ -90,6 +90,7 @@ pub struct PeerRemovedEvent {
 pub enum PeerRemovalReason {
     Demobilized,
     NetworkIssue,
+    Unreachable,
 }
 
 /// The kind of action that the spawner requests to the system.

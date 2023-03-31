@@ -288,6 +288,9 @@ impl<C: NtpClock, T: Wait> System<C, T> {
             MsgForSystem::NetworkIssue(index) => {
                 self.handle_peer_network_issue(index).await?;
             }
+            MsgForSystem::Unreachable(index) => {
+                self.handle_peer_unreachable(index).await?;
+            }
         }
 
         // Don't care if there is no receiver for peer snapshots (which might happen if
@@ -313,6 +316,28 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                 .send(SystemEvent::peer_removed(
                     peer_id,
                     PeerRemovalReason::NetworkIssue,
+                ))
+                .await
+                .expect("Could not notify spawner");
+        }
+
+        Ok(())
+    }
+
+    async fn handle_peer_unreachable(&mut self, index: PeerId) -> std::io::Result<()> {
+        self.controller.peer_remove(index);
+
+        // Restart the peer reusing its configuration.
+        let state = self.peers.remove(&index).unwrap();
+        let spawner_id = state.spawner_id;
+        let peer_id = state.peer_id;
+        let opt_spawner = self.spawners.iter().find(|s| s.id == spawner_id);
+        if let Some(spawner) = opt_spawner {
+            spawner
+                .notify_tx
+                .send(SystemEvent::peer_removed(
+                    peer_id,
+                    PeerRemovalReason::Unreachable,
                 ))
                 .await
                 .expect("Could not notify spawner");
