@@ -138,7 +138,7 @@ impl FromStr for InterfaceName {
 impl InterfaceName {
     pub const DEFAULT: Option<Self> = None;
 
-    fn name(&self) -> &str {
+    fn as_str(&self) -> &str {
         std::str::from_utf8(self.bytes.as_slice())
             .unwrap_or_default()
             .trim_end_matches('\0')
@@ -147,6 +147,14 @@ impl InterfaceName {
 
 impl std::fmt::Debug for InterfaceName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("InterfaceName").field(&self.name()).finish()
+        f.debug_tuple("InterfaceName")
+            .field(&self.as_str())
+            .finish()
+    }
+}
+
+impl std::fmt::Display for InterfaceName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_str().fmt(f)
     }
 }
