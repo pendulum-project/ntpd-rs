@@ -119,11 +119,27 @@ where
     }
 }
 
+fn deserialize_interface<'de, D>(deserializer: D) -> Result<Option<InterfaceName>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt_interface_name: Option<InterfaceName> = Deserialize::deserialize(deserializer)?;
+
+    if let Some(interface_name) = opt_interface_name {
+        tracing::info!("using custom interface {}", interface_name);
+    } else {
+        tracing::info!("using default interface");
+    }
+
+    Ok(opt_interface_name)
+}
+
 #[derive(Deserialize, Debug, Copy, Clone, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct ClockConfig {
     #[serde(deserialize_with = "deserialize_ntp_clock", default)]
     pub clock: DefaultNtpClock,
+    #[serde(deserialize_with = "deserialize_interface", default)]
     pub interface: Option<InterfaceName>,
     pub enable_timestamps: EnableTimestamps,
 }
