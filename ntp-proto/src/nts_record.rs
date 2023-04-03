@@ -455,6 +455,8 @@ pub enum KeyExchangeError {
     #[error("{0}")]
     Tls(#[from] rustls::Error),
     #[error("{0}")]
+    Certificate(rustls::Error),
+    #[error("{0}")]
     DnsName(#[from] rustls::client::InvalidDnsNameError),
     #[error("Incomplete response")]
     IncompleteResponse,

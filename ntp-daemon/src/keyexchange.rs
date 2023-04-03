@@ -29,11 +29,12 @@ pub(crate) async fn key_exchange_client(
 
     let mut roots = rustls::RootCertStore::empty();
     for cert in rustls_native_certs::load_native_certs()? {
-        roots.add(&rustls::Certificate(cert.0)).unwrap();
+        let cert = rustls::Certificate(cert.0);
+        roots.add(&cert).map_err(KeyExchangeError::Certificate)?;
     }
 
     for cert in extra_certificates {
-        roots.add(cert).unwrap();
+        roots.add(cert).map_err(KeyExchangeError::Certificate)?;
     }
 
     let config = rustls::ClientConfig::builder()
@@ -86,22 +87,20 @@ async fn run_nts_ke(
             .map(rustls::Certificate)
             .collect();
 
-    let key_der = rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(key_der_file))?;
+    let mut key_der =
+        rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(key_der_file))?;
 
-    if key_der.is_empty() {
-        Err(error("could not parse private key"))
-    } else {
-        let key_der = rustls::PrivateKey(key_der.into_iter().next().unwrap());
+    let key = key_der.pop().ok_or(error("could not parse private key"))?;
+    let key_der = rustls::PrivateKey(key);
 
-        key_exchange_server(
-            keyset,
-            nts_ke_config.addr,
-            cert_chain,
-            key_der,
-            nts_ke_config.timeout_ms,
-        )
-        .await
-    }
+    key_exchange_server(
+        keyset,
+        nts_ke_config.addr,
+        cert_chain,
+        key_der,
+        nts_ke_config.timeout_ms,
+    )
+    .await
 }
 
 async fn key_exchange_server(
