@@ -11,6 +11,7 @@ use tracing::{debug, info, instrument, trace, warn};
 
 const MAX_STRATUM: u8 = 16;
 const POLL_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
+const STARTUP_TRIES_THRESHOLD: usize = 3;
 
 #[derive(Debug, thiserror::Error)]
 pub enum NtsError {
@@ -69,6 +70,7 @@ pub struct Peer {
     peer_id: ReferenceId,
     our_id: ReferenceId,
     reach: Reach,
+    tries: usize,
 
     system_config: SystemConfig,
 }
@@ -265,6 +267,14 @@ pub enum Update {
     NewMeasurement(PeerSnapshot, Measurement, NtpPacket<'static>),
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum PollError {
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
+    #[error("peer unreachable")]
+    Unreachable,
+}
+
 impl Peer {
     #[instrument]
     pub fn new(
@@ -284,6 +294,7 @@ impl Peer {
             our_id,
             peer_id,
             reach: Default::default(),
+            tries: 0,
 
             stratum: 16,
             reference_id: ReferenceId::NONE,
@@ -323,8 +334,13 @@ impl Peer {
         buf: &'a mut [u8],
         system: SystemSnapshot,
         system_config: &SystemConfig,
-    ) -> Result<&'a [u8], std::io::Error> {
+    ) -> Result<&'a [u8], PollError> {
+        if !self.reach.is_reachable() && self.tries >= STARTUP_TRIES_THRESHOLD {
+            return Err(PollError::Unreachable);
+        }
+
         self.reach.poll();
+        self.tries = self.tries.saturating_add(1);
 
         let poll_interval = self.current_poll_interval(system);
         let (packet, identifier) = match &mut self.nts {
@@ -496,6 +512,7 @@ impl Peer {
             peer_id: ReferenceId::from_int(0),
             our_id: ReferenceId::from_int(0),
             reach: Reach::default(),
+            tries: 0,
 
             stratum: 0,
             reference_id: ReferenceId::from_int(0),
@@ -747,6 +764,84 @@ mod test {
                 NtpTimestamp::from_fixed_int(500)
             )
             .is_err());
+    }
+
+    #[test]
+    fn test_startup_unreachable() {
+        let mut peer = Peer::test_peer();
+        let system = SystemSnapshot::default();
+        let mut buf = [0; 1024];
+        assert!(peer
+            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .is_ok());
+        assert!(peer
+            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .is_ok());
+        assert!(peer
+            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .is_ok());
+        assert!(matches!(
+            peer.generate_poll_message(&mut buf, system, &SystemConfig::default()),
+            Err(PollError::Unreachable)
+        ));
+    }
+
+    #[test]
+    fn test_running_unreachable() {
+        let base = NtpInstant::now();
+        let mut peer = Peer::test_peer();
+
+        let system = SystemSnapshot::default();
+        let mut buf = [0; 1024];
+        let outgoingbuf = peer
+            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .unwrap();
+        let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
+        let mut packet = NtpPacket::test();
+        let system = SystemSnapshot::default();
+        packet.set_stratum(1);
+        packet.set_mode(NtpAssociationMode::Server);
+        packet.set_origin_timestamp(outgoing.transmit_timestamp());
+        packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(100));
+        packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(200));
+        assert!(peer
+            .handle_incoming(
+                system,
+                &packet.serialize_without_encryption_vec().unwrap(),
+                base + Duration::from_secs(1),
+                NtpTimestamp::from_fixed_int(0),
+                NtpTimestamp::from_fixed_int(400)
+            )
+            .is_ok());
+
+        assert!(peer
+            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .is_ok());
+        assert!(peer
+            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .is_ok());
+        assert!(peer
+            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .is_ok());
+        assert!(peer
+            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .is_ok());
+        assert!(peer
+            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .is_ok());
+        assert!(peer
+            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .is_ok());
+        assert!(peer
+            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .is_ok());
+        assert!(peer
+            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .is_ok());
+        assert!(matches!(
+            peer.generate_poll_message(&mut buf, system, &SystemConfig::default()),
+            Err(PollError::Unreachable)
+        ));
     }
 
     #[test]

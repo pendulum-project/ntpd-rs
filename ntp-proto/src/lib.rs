@@ -32,8 +32,8 @@ pub use peer::fuzz_measurement_from_packet;
 #[cfg(feature = "ext-test")]
 pub use peer::peer_snapshot;
 pub use peer::{
-    AcceptSynchronizationError, IgnoreReason, Measurement, Peer, PeerNtsData, PeerSnapshot, Reach,
-    Update,
+    AcceptSynchronizationError, IgnoreReason, Measurement, Peer, PeerNtsData, PeerSnapshot,
+    PollError, Reach, Update,
 };
 pub use system::{SystemSnapshot, TimeSnapshot};
 #[cfg(feature = "fuzz")]

@@ -93,6 +93,10 @@ impl BasicSpawner for StandardSpawner {
         removed_peer: PeerRemovedEvent,
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), StandardSpawnError> {
+        if removed_peer.reason == PeerRemovalReason::Unreachable {
+            // force new resolution
+            self.resolved = None;
+        }
         if removed_peer.reason != PeerRemovalReason::Demobilized {
             self.spawn(action_tx).await
         } else {
@@ -189,6 +193,88 @@ mod tests {
         let res = action_rx.try_recv().unwrap();
         let params = get_create_params(res);
         assert_eq!(params.addr.to_string(), "127.0.0.1:123");
+    }
+
+    #[tokio::test]
+    async fn reresolves_on_unreachable() {
+        let spawner = StandardSpawner::new(
+            StandardPeerConfig {
+                addr: NormalizedAddress::with_hardcoded_dns("europe.pool.ntp.org", 123, vec![]),
+            },
+            NETWORK_WAIT_PERIOD,
+        );
+        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+        let (notify_tx, notify_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+
+        tokio::spawn(async move { spawner.run(action_tx, notify_rx).await });
+        let res = action_rx.recv().await.unwrap();
+        let params = get_create_params(res);
+        let orig_addr = params.addr.to_string();
+
+        // We repeat multiple times and check at least one is different to be less
+        // sensitive to dns resolver giving the same pool ip.
+        notify_tx
+            .send(SystemEvent::peer_removed(
+                params.id,
+                PeerRemovalReason::Unreachable,
+            ))
+            .await
+            .unwrap();
+        let res = action_rx.recv().await.unwrap();
+        let params = get_create_params(res);
+        let addr1 = params.addr.to_string();
+
+        notify_tx
+            .send(SystemEvent::peer_removed(
+                params.id,
+                PeerRemovalReason::Unreachable,
+            ))
+            .await
+            .unwrap();
+        let res = action_rx.recv().await.unwrap();
+        let params = get_create_params(res);
+        let addr2 = params.addr.to_string();
+
+        notify_tx
+            .send(SystemEvent::peer_removed(
+                params.id,
+                PeerRemovalReason::Unreachable,
+            ))
+            .await
+            .unwrap();
+        let res = action_rx.recv().await.unwrap();
+        let params = get_create_params(res);
+        let addr3 = params.addr.to_string();
+
+        notify_tx
+            .send(SystemEvent::peer_removed(
+                params.id,
+                PeerRemovalReason::Unreachable,
+            ))
+            .await
+            .unwrap();
+        let res = action_rx.recv().await.unwrap();
+        let params = get_create_params(res);
+        let addr4 = params.addr.to_string();
+
+        notify_tx
+            .send(SystemEvent::peer_removed(
+                params.id,
+                PeerRemovalReason::Unreachable,
+            ))
+            .await
+            .unwrap();
+        let res = action_rx.recv().await.unwrap();
+        let params = get_create_params(res);
+        let addr5 = params.addr.to_string();
+
+        assert!(
+            addr1 != orig_addr
+                || addr2 != orig_addr
+                || addr3 != orig_addr
+                || addr4 != orig_addr
+                || addr5 != orig_addr
+        );
     }
 
     #[tokio::test]
