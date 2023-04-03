@@ -37,7 +37,7 @@ jobs:
           toolchain: ${{ matrix.rust }}
           override: true
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@1c96e2750bff5748077b0c814e5bd290059c84a5
+        uses: taiki-e/install-action@02416c98444474f716a93d3ca406d23806df581f
         with:
           tool: cargo-llvm-cov
       - name: cargo build
@@ -71,7 +71,7 @@ jobs:
           toolchain: nightly
           override: true
       - name: Install udeps
-        uses: taiki-e/install-action@1c96e2750bff5748077b0c814e5bd290059c84a5
+        uses: taiki-e/install-action@02416c98444474f716a93d3ca406d23806df581f
         with:
           tool: cargo-udeps
       - name: cargo udeps
@@ -156,7 +156,7 @@ jobs:
         with:
           version: 0.9.0
       - name: Install cargo-zigbuild
-        uses: taiki-e/install-action@1c96e2750bff5748077b0c814e5bd290059c84a5
+        uses: taiki-e/install-action@02416c98444474f716a93d3ca406d23806df581f
         with:
           tool: cargo-zigbuild
       - name: Run clippy
@@ -182,7 +182,7 @@ jobs:
           override: true
           default: true
       - name: Install cargo fuzz
-        uses: taiki-e/install-action@1c96e2750bff5748077b0c814e5bd290059c84a5
+        uses: taiki-e/install-action@02416c98444474f716a93d3ca406d23806df581f
         with:
           tool: cargo-fuzz
       - name: Smoke-test fuzz targets
