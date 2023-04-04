@@ -2,35 +2,23 @@ use std::os::unix::io::AsRawFd;
 
 use crate::{interface_name, raw_socket::cerr};
 
+const fn standard_hwtstamp_config() -> libc::hwtstamp_config {
+    libc::hwtstamp_config {
+        flags: 0,
+        tx_type: libc::HWTSTAMP_TX_ON as _,
+        rx_filter: libc::HWTSTAMP_FILTER_ALL as _,
+    }
+}
+
 pub fn driver_enable_hardware_timestamping(
     udp_socket: &std::net::UdpSocket,
 ) -> std::io::Result<()> {
-    let tstamp_config = hwtimestamp_config {
-        flags: 0,
-        tx_type: HWTSTAMP_TX_ON,
-        rx_filter: HWTSTAMP_FILTER_ALL,
-    };
-
-    set_hardware_timestamp(udp_socket, tstamp_config)
-}
-
-const HWTSTAMP_TX_ON: libc::c_int = 1;
-const HWTSTAMP_FILTER_ALL: libc::c_int = 1;
-
-const SIOCSHWTSTAMP: u16 = 0x89b0;
-const SIOCGHWTSTAMP: u16 = 0x89b1;
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct hwtimestamp_config {
-    pub flags: libc::c_int,
-    pub tx_type: libc::c_int,
-    pub rx_filter: libc::c_int,
+    set_hardware_timestamp(udp_socket, standard_hwtstamp_config())
 }
 
 fn set_hardware_timestamp(
     udp_socket: &std::net::UdpSocket,
-    mut config: hwtimestamp_config,
+    mut config: libc::hwtstamp_config,
 ) -> std::io::Result<()> {
     let mut ifreq: libc::ifreq = libc::ifreq {
         ifr_name: socket_interface_name(udp_socket)?,
@@ -40,14 +28,16 @@ fn set_hardware_timestamp(
     };
 
     let fd = udp_socket.as_raw_fd();
-    cerr(unsafe { libc::ioctl(fd, SIOCSHWTSTAMP as libc::c_ulong, &mut ifreq) })?;
+    cerr(unsafe { libc::ioctl(fd, libc::SIOCSHWTSTAMP as libc::c_ulong, &mut ifreq) })?;
 
     Ok(())
 }
 
 #[allow(unused)]
-fn get_hardware_timestamp(udp_socket: &std::net::UdpSocket) -> std::io::Result<hwtimestamp_config> {
-    let mut tstamp_config = hwtimestamp_config {
+fn get_hardware_timestamp(
+    udp_socket: &std::net::UdpSocket,
+) -> std::io::Result<libc::hwtstamp_config> {
+    let mut tstamp_config = libc::hwtstamp_config {
         flags: 0,
         tx_type: 0,
         rx_filter: 0,
@@ -61,7 +51,7 @@ fn get_hardware_timestamp(udp_socket: &std::net::UdpSocket) -> std::io::Result<h
     };
 
     let fd = udp_socket.as_raw_fd();
-    cerr(unsafe { libc::ioctl(fd, SIOCGHWTSTAMP as libc::c_ulong, &mut ifreq) })?;
+    cerr(unsafe { libc::ioctl(fd, libc::SIOCGHWTSTAMP as libc::c_ulong, &mut ifreq) })?;
 
     Ok(tstamp_config)
 }
@@ -101,18 +91,15 @@ mod tests {
 
         let old = get_hardware_timestamp(&udp_socket)?;
 
-        let custom = hwtimestamp_config {
-            flags: 0,
-            tx_type: HWTSTAMP_TX_ON,
-            rx_filter: HWTSTAMP_FILTER_ALL,
-        };
+        let custom = standard_hwtstamp_config();
 
         set_hardware_timestamp(&udp_socket, custom)?;
         let new = get_hardware_timestamp(&udp_socket)?;
 
-        assert_eq!(new.flags, 0);
-        assert_eq!(new.tx_type, HWTSTAMP_TX_ON);
-        assert_eq!(new.rx_filter, HWTSTAMP_FILTER_ALL);
+        let custom = standard_hwtstamp_config();
+        assert_eq!(new.flags, custom.flags);
+        assert_eq!(new.tx_type, custom.tx_type);
+        assert_eq!(new.rx_filter, custom.rx_filter);
 
         set_hardware_timestamp(&udp_socket, old)?;
 
