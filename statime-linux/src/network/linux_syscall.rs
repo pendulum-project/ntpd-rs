@@ -2,26 +2,13 @@ use std::ffi::CString;
 
 use nix::ioctl_readwrite_bad;
 
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct HwtstampConfig {
-    pub flags: libc::c_int,
-    pub tx_type: libc::c_int,
-    pub rx_filter: libc::c_int,
-}
-
-const HWTSTAMP_TX_ON: libc::c_int = 1;
-const HWTSTAMP_FILTER_ALL: libc::c_int = 1;
-
-const SIOCSHWTSTAMP: u16 = 0x89b0;
-
-ioctl_readwrite_bad!(siocshwtstamp, SIOCSHWTSTAMP, libc::ifreq);
+ioctl_readwrite_bad!(siocshwtstamp, libc::SIOCSHWTSTAMP, libc::ifreq);
 
 pub fn driver_enable_hardware_timestamping(socket: i32, interface: &str) {
-    let mut tstamp_config = HwtstampConfig {
+    let mut tstamp_config = libc::hwtstamp_config {
         flags: 0,
-        tx_type: HWTSTAMP_TX_ON,
-        rx_filter: HWTSTAMP_FILTER_ALL,
+        tx_type: libc::HWTSTAMP_TX_ON as _,
+        rx_filter: libc::HWTSTAMP_FILTER_ALL as _,
     };
 
     let ifname = CString::new(interface).expect("Cannot convert interface name to C string");
