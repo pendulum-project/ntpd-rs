@@ -307,13 +307,14 @@ Description=Rust Network Time Service
 Documentation=https://github.com/pendulum-project/ntpd-rs
 After=network-online.target
 Wants=network-online.target
-Conflicts=systemd-timesyncd.service ntp.service
+Conflicts=systemd-timesyncd.service ntp.service chrony.service
 
 [Service]
 Type=simple
 Restart=no
 ExecStart=/usr/local/bin/ntp-daemon
 Environment="RUST_LOG=info"
+RuntimeDirectory=ntpd-rs
 User=ntpd-rs
 Group=ntpd-rs
 AmbientCapabilities=CAP_SYS_TIME
