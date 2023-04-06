@@ -20,23 +20,11 @@ mode = "pool"
 addr = "pool.ntp.org"
 max-peers = 4
 
-# [[peers]]
-# mode = "NtsServer"
-# addr = "localhost:123"
-# ke-addr =  "localhost:4460"
-# certificate = "test-keys/testca.pem"
-
 # System parameters used in filtering and steering the clock:
 [system]
 min-intersection-survivors = 1
 panic-threshold = 10
 startup-panic-threshold = { forward = "inf", backward = 1800 }
-
-[clock]
-# clock = "/dev/ptp0"
-# interface = "enp0s31f6"
-enable-timestamps.rx-software = true
-enable-timestamps.tx-software = true
 
 [observe]
 path = "/run/ntpd-rs/observe"
