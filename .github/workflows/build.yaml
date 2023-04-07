@@ -81,6 +81,24 @@ jobs:
       - name: cargo udeps (fuzzer)
         run: cargo udeps --manifest-path ./fuzz/Cargo.toml --all-targets
 
+  #note: can't validate config/nts.*.toml because of intentionally missing files
+  validate:
+    name: Validate configs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
+        with:
+          persist-credentials: false
+      - name: ./ntp.toml
+        run: cargo run --bin ntp-ctl -- -c ./ntp.toml validate
+      - name: ./ntp.server.toml
+        run: cargo run --bin ntp-ctl -- -c ./ntp.server.toml validate
+      - name: ./test-keys/unsafe.nts.client.toml
+        run: cargo run --bin ntp-ctl -- -c ./test-keys/unsafe.nts.client.toml validate
+      - name: ./test-keys/unsafe.nts.server.toml
+        run: cargo run --bin ntp-ctl -- -c ./test-keys/unsafe.nts.server.toml validate
+
   format:
     name: Format
     runs-on: ubuntu-latest
