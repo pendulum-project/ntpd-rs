@@ -42,7 +42,13 @@ enum Command {
     Validate,
 }
 
-async fn validate(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
+enum PrintState {
+    Peers,
+    System,
+    Prometheus,
+}
+
+async fn validate(cli: Cli) -> std::io::Result<ExitCode> {
     match Config::from_args(cli.config, vec![], vec![]).await {
         Ok(config) => {
             if config.check() {
@@ -59,7 +65,7 @@ async fn validate(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
     }
 }
 
-pub async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
+pub async fn main() -> std::io::Result<ExitCode> {
     let cli = Cli::parse();
 
     if matches!(cli.command, Command::Validate) {
@@ -84,94 +90,88 @@ pub async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
         .or(config.configure.path)
         .unwrap_or_else(|| PathBuf::from("/run/ntpd-rs/configure"));
 
-    let socket_path = match cli.command {
-        Command::Peers | Command::System | Command::Prometheus => observation,
-        Command::Config(_) => configuration,
+    match cli.command {
+        Command::Peers => print_state(PrintState::Peers, observation).await,
+        Command::System => print_state(PrintState::System, observation).await,
+        Command::Prometheus => print_state(PrintState::Prometheus, observation).await,
+        Command::Config(config_update) => update_config(configuration, config_update).await,
         Command::Validate => unreachable!(),
-    };
-
-    Ok(run(cli.command, socket_path).await?)
+    }
 }
 
-async fn run(command: Command, socket_path: PathBuf) -> Result<ExitCode, std::io::Error> {
-    let mut stream = match tokio::net::UnixStream::connect(&socket_path).await {
+async fn print_state(
+    print: PrintState,
+    observe_socket: PathBuf,
+) -> Result<ExitCode, std::io::Error> {
+    let mut stream = match tokio::net::UnixStream::connect(&observe_socket).await {
         Ok(stream) => stream,
         Err(e) => {
-            eprintln!("Could not open socket at {}: {}", socket_path.display(), e);
+            eprintln!("Could not open socket at {}: {e}", observe_socket.display(),);
             return Ok(ExitCode::FAILURE);
         }
     };
 
-    match command {
-        Command::Peers => {
-            let mut msg = Vec::with_capacity(16 * 1024);
-            match ntp_daemon::sockets::read_json::<ObservableState>(&mut stream, &mut msg).await {
-                Ok(output) => {
-                    // Unwrap here is fine as our serializer is infallible.
-                    println!("{}", serde_json::to_string_pretty(&output.peers).unwrap());
+    let mut msg = Vec::with_capacity(16 * 1024);
+    let output =
+        match ntp_daemon::sockets::read_json::<ObservableState>(&mut stream, &mut msg).await {
+            Ok(output) => output,
+            Err(e) => {
+                eprintln!("Failed to read state from observation socket: {e}");
 
-                    Ok(ExitCode::SUCCESS)
-                }
-                Err(e) => {
-                    eprintln!("Failed to read state from observation socket: {e}");
-
-                    Ok(ExitCode::FAILURE)
-                }
+                return Ok(ExitCode::FAILURE);
             }
+        };
+
+    match print {
+        PrintState::Peers => {
+            // Unwrap here is fine as our serializer is infallible.
+            println!("{}", serde_json::to_string_pretty(&output.peers).unwrap());
         }
-        Command::System => {
-            let mut msg = Vec::with_capacity(16 * 1024);
-            match ntp_daemon::sockets::read_json::<ObservableState>(&mut stream, &mut msg).await {
-                Ok(output) => {
-                    // Unwrap here is fine as our serializer is infallible.
-                    println!("{}", serde_json::to_string_pretty(&output.system).unwrap());
+        PrintState::System => {
+            // Unwrap here is fine as our serializer is infallible.
+            println!("{}", serde_json::to_string_pretty(&output.system).unwrap());
+        }
+        PrintState::Prometheus => {
+            let metrics = Metrics::default();
+            metrics.fill(&output);
+            let registry = metrics.registry();
+            let mut buf = String::new();
 
-                    Ok(ExitCode::SUCCESS)
-                }
-                Err(e) => {
-                    eprintln!("Failed to read state from observation socket: {e}");
+            if let Err(e) = prometheus_client::encoding::text::encode(&mut buf, &registry) {
+                eprintln!("Failed to encode prometheus data: {e}");
 
-                    Ok(ExitCode::FAILURE)
-                }
+                return Ok(ExitCode::FAILURE);
             }
+
+            println!("{buf}");
         }
-        Command::Prometheus => {
-            let mut msg = Vec::with_capacity(16 * 1024);
-            match ntp_daemon::sockets::read_json::<ObservableState>(&mut stream, &mut msg).await {
-                Ok(output) => {
-                    let metrics = Metrics::default();
-                    metrics.fill(&output);
-                    let registry = metrics.registry();
-                    let mut buf = String::new();
+    }
 
-                    if let Err(e) = prometheus_client::encoding::text::encode(&mut buf, &registry) {
-                        eprintln!("Failed to encode prometheus data: {e}");
+    Ok(ExitCode::SUCCESS)
+}
 
-                        return Ok(ExitCode::FAILURE);
-                    }
-
-                    println!("{buf}");
-
-                    Ok(ExitCode::SUCCESS)
-                }
-                Err(e) => {
-                    eprintln!("Failed to read state from observation socket: {e}");
-
-                    Ok(ExitCode::FAILURE)
-                }
-            }
+async fn update_config(
+    configuration_socket: PathBuf,
+    config_update: ConfigUpdate,
+) -> Result<ExitCode, std::io::Error> {
+    let mut stream = match tokio::net::UnixStream::connect(&configuration_socket).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            eprintln!(
+                "Could not open socket at {}: {e}",
+                configuration_socket.display(),
+            );
+            return Ok(ExitCode::FAILURE);
         }
-        Command::Config(config_update) => {
-            match ntp_daemon::sockets::write_json(&mut stream, &config_update).await {
-                Ok(_) => Ok(ExitCode::SUCCESS),
-                Err(e) => {
-                    eprintln!("Failed to update configuration: {e}");
+    };
 
-                    Ok(ExitCode::FAILURE)
-                }
-            }
+    match ntp_daemon::sockets::write_json(&mut stream, &config_update).await {
+        Ok(_) => Ok(ExitCode::SUCCESS),
+        Err(e) => {
+            eprintln!("Failed to update configuration: {e}");
+
+            Ok(ExitCode::FAILURE)
         }
-        Command::Validate => unreachable!(), //run should never be called for validate
     }
 }
 
@@ -187,7 +187,7 @@ mod tests {
     use super::*;
 
     async fn write_socket_helper(
-        command: Command,
+        command: PrintState,
         socket_name: &str,
     ) -> std::io::Result<Result<ExitCode, std::io::Error>> {
         let config: ObserveConfig = Default::default();
@@ -203,7 +203,7 @@ mod tests {
         let permissions: std::fs::Permissions = PermissionsExt::from_mode(config.mode);
         std::fs::set_permissions(&path, permissions)?;
 
-        let fut = super::run(command, path);
+        let fut = super::print_state(command, path);
         let handle = tokio::spawn(fut);
 
         let value = ObservableState {
@@ -223,7 +223,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_socket_peer() -> std::io::Result<()> {
         // be careful with copying: tests run concurrently and should use a unique socket name!
-        let result = write_socket_helper(Command::Peers, "ntp-test-stream-6").await?;
+        let result = write_socket_helper(PrintState::Peers, "ntp-test-stream-6").await?;
 
         assert_eq!(
             format!("{:?}", result.unwrap()),
@@ -236,7 +236,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_socket_system() -> std::io::Result<()> {
         // be careful with copying: tests run concurrently and should use a unique socket name!
-        let result = write_socket_helper(Command::System, "ntp-test-stream-7").await?;
+        let result = write_socket_helper(PrintState::System, "ntp-test-stream-7").await?;
 
         assert_eq!(
             format!("{:?}", result.unwrap()),
@@ -249,7 +249,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_socket_prometheus() -> std::io::Result<()> {
         // be careful with copying: tests run concurrently and should use a unique socket name!
-        let result = write_socket_helper(Command::Prometheus, "ntp-test-stream-8").await?;
+        let result = write_socket_helper(PrintState::Prometheus, "ntp-test-stream-8").await?;
 
         assert_eq!(
             format!("{:?}", result.unwrap()),
@@ -279,7 +279,7 @@ mod tests {
             panic_threshold: Some(0.123),
         };
 
-        let fut = super::run(Command::Config(update.clone()), path);
+        let fut = super::update_config(path, update.clone());
         let handle = tokio::spawn(fut);
 
         let (mut stream, _addr) = peers_listener.accept().await?;
@@ -313,7 +313,7 @@ mod tests {
         let permissions: std::fs::Permissions = PermissionsExt::from_mode(config.mode);
         std::fs::set_permissions(&path, permissions)?;
 
-        let fut = super::run(Command::Peers, path);
+        let fut = super::print_state(PrintState::Peers, path);
         let handle = tokio::spawn(fut);
 
         let value = 42u32;
