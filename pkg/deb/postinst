@@ -1,0 +1,2 @@
+#!/bin/bash -e
+cp /etc/ntpd-rs/ntp.toml.default /etc/ntpd-rs/ntp.toml

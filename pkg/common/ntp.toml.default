@@ -1,0 +1,46 @@
+# You can configure ntpd-rs with different output levels of logging information
+# Basic values for this are `trace`, `debug`, `info`, `warn`, `error` and `off`.
+# However it is possible to specify more advanced log filters using the
+log-filter = "info"
+
+# Allowed values: full, compact, pretty, json
+log-format = "full"
+
+## The peers section allows configuring peers, you may configure multiple of
+## these blocks to add more peers to your configuration
+## Our default configuration spawns a pool of peers (by default this attempts
+## to discover 4 distinct peers).
+[[peers]]
+mode = "pool"
+addr = "pool.ntp.org"
+max-peers = 4
+
+## If you have a NTS server, you can configure a peer that connects using NTS
+## by adding a configuration such as the one below
+# [[peers]]
+# mode = "NtsServer"
+# addr = "localhost:123"
+# ke-addr =  "localhost:4460"
+# certificate = "test-keys/testca.pem"
+
+## For a very simple basic peer you can also use a configuration such as the
+## one shown below
+# [[peers]]
+# mode = ""
+
+## The ntpd-rs system coordinates communication between the peers and the
+## filtering and clock steering algorithms, these settings are mainly related
+## to that part of the NTP daemon
+[system]
+min-intersection-survivors = 1
+panic-threshold = 10
+startup-panic-threshold = { forward = "inf", backward = 1800 }
+
+[clock]
+# clock = "/dev/ptp0"
+# interface = "enp0s31f6"
+enable-timestamps.rx-software = true
+enable-timestamps.tx-software = true
+
+[observe]
+path = "/run/ntpd-rs/observe"
