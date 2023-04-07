@@ -4,27 +4,26 @@ log-filter = "info"
 # Allowed values: full, compact, pretty, json
 log-format = "full"
 
-# Peers can be configured as a simple list (pool servers from ntppool.org)
-# peers = ["0.pool.ntp.org", "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
-
-# Or by providing written out configuration
-# [[peers]]
-# addr = "0.pool.ntp.org:123"
-#
-
-# [[peers]]
-# addr = "1.pool.ntp.org:123"
-
+# Pool servers from ntppool.org. See http://www.pool.ntp.org/join.html
+# for more information
 [[peers]]
 mode = "pool"
-addr = "pool.ntp.org"
+addr = "ntpd-rs.pool.ntp.org"
 max-peers = 4
 
-# System parameters used in filtering and steering the clock:
-[system]
-min-intersection-survivors = 1
-panic-threshold = 10
-startup-panic-threshold = { forward = "inf", backward = 1800 }
+# Alternative configuration for IPv6 only machines
+#[[peers]]
+#mode = "pool"
+#addr = "2.pool.ntp.org"
+#max-peers = 4
 
 [observe]
 path = "/run/ntpd-rs/observe"
+
+# Below are configured various thresholds beyond which ntpd-rs will not
+# change the system clock. CHANGE THESE TO MATCH YOUR SECURITY NEEDS!
+# For guidance, see OPERATIONAL_CONSIDERATIONS.md
+[system]
+panic-threshold = 1800
+startup-panic-threshold = { forward="inf", backward = 1800 }
+#accumulated-threshold = 1800
