@@ -84,7 +84,13 @@ async fn dynamic_configuration<H: LogReloader>(
     loop {
         let (mut stream, _addr) = peers_listener.accept().await?;
 
-        let operation: ConfigUpdate = crate::sockets::read_json(&mut stream, &mut msg).await?;
+        let operation: ConfigUpdate = match crate::sockets::read_json(&mut stream, &mut msg).await {
+            Ok(x) => x,
+            Err(e) => {
+                tracing::error!("could not parse data on socket: {:?}", e);
+                continue;
+            }
+        };
 
         tracing::info!(?operation, "dynamic config update");
 

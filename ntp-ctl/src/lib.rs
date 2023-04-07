@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use std::path::PathBuf;
+use std::{path::PathBuf, process::ExitCode};
 
 use clap::{Parser, Subcommand};
 use ntp_daemon::{Config, ConfigUpdate, ObservableState};
@@ -40,7 +40,7 @@ enum Command {
     Config(ConfigUpdate),
 }
 
-pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     let config = Config::from_args(cli.config, vec![], vec![]).await;
@@ -51,21 +51,15 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = config.unwrap_or_default();
 
-    let observation = match cli.observation_socket {
-        Some(path) => path,
-        None => match config.observe.path {
-            Some(path) => path,
-            None => "/run/ntpd-rs/observe".into(),
-        },
-    };
+    let observation = cli
+        .observation_socket
+        .or(config.observe.path)
+        .unwrap_or_else(|| PathBuf::from("/run/ntpd-rs/observe"));
 
-    let configuration = match cli.configuration_socket {
-        Some(path) => path,
-        None => match config.configure.path {
-            Some(path) => path,
-            None => "/run/ntpd-rs/configure".into(),
-        },
-    };
+    let configuration = cli
+        .configuration_socket
+        .or(config.configure.path)
+        .unwrap_or_else(|| PathBuf::from("/run/ntpd-rs/configure"));
 
     let socket_path = match cli.command {
         Command::Peers | Command::System | Command::Prometheus => &observation,
@@ -76,11 +70,11 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(stream) => stream,
         Err(e) => {
             eprintln!("Could not open socket at {}: {}", socket_path.display(), e);
-            std::process::exit(1);
+            return Ok(ExitCode::FAILURE);
         }
     };
 
-    let exit_code = match cli.command {
+    match cli.command {
         Command::Peers => {
             let mut msg = Vec::with_capacity(16 * 1024);
             match ntp_daemon::sockets::read_json::<ObservableState>(&mut stream, &mut msg).await {
@@ -88,12 +82,12 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Unwrap here is fine as our serializer is infallible.
                     println!("{}", serde_json::to_string_pretty(&output.peers).unwrap());
 
-                    0
+                    Ok(ExitCode::SUCCESS)
                 }
                 Err(e) => {
                     eprintln!("Failed to read state from observation socket: {e}");
 
-                    1
+                    Ok(ExitCode::FAILURE)
                 }
             }
         }
@@ -104,12 +98,12 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Unwrap here is fine as our serializer is infallible.
                     println!("{}", serde_json::to_string_pretty(&output.system).unwrap());
 
-                    0
+                    Ok(ExitCode::SUCCESS)
                 }
                 Err(e) => {
                     eprintln!("Failed to read state from observation socket: {e}");
 
-                    1
+                    Ok(ExitCode::FAILURE)
                 }
             }
         }
@@ -117,29 +111,33 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut stream = tokio::net::UnixStream::connect(observation).await?;
 
             let mut msg = Vec::with_capacity(16 * 1024);
-            let output: ObservableState =
-                ntp_daemon::sockets::read_json(&mut stream, &mut msg).await?;
+            match ntp_daemon::sockets::read_json::<ObservableState>(&mut stream, &mut msg).await {
+                Ok(output) => {
+                    let metrics = Metrics::default();
+                    metrics.fill(&output);
+                    let registry = metrics.registry();
+                    let mut buf = String::new();
+                    prometheus_client::encoding::text::encode(&mut buf, &registry)?;
+                    println!("{buf}");
 
-            let metrics = Metrics::default();
-            metrics.fill(&output);
-            let registry = metrics.registry();
-            let mut buf = String::new();
-            prometheus_client::encoding::text::encode(&mut buf, &registry)?;
-            println!("{buf}");
-
-            0
-        }
-        Command::Config(config_update) => {
-            match ntp_daemon::sockets::write_json(&mut stream, &config_update).await {
-                Ok(_) => 0,
+                    Ok(ExitCode::SUCCESS)
+                }
                 Err(e) => {
-                    eprintln!("Failed to update configuration: {e}");
+                    eprintln!("Failed to read state from observation socket: {e}");
 
-                    1
+                    Ok(ExitCode::FAILURE)
                 }
             }
         }
-    };
+        Command::Config(config_update) => {
+            match ntp_daemon::sockets::write_json(&mut stream, &config_update).await {
+                Ok(_) => Ok(ExitCode::SUCCESS),
+                Err(e) => {
+                    eprintln!("Failed to update configuration: {e}");
 
-    std::process::exit(exit_code);
+                    Ok(ExitCode::FAILURE)
+                }
+            }
+        }
+    }
 }

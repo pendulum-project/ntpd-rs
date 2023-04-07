@@ -24,7 +24,8 @@ where
     let n = stream.read_buf(buffer).await?;
     buffer.truncate(n);
 
-    Ok(serde_json::from_slice(buffer).unwrap())
+    serde_json::from_slice(buffer)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
 }
 
 pub fn create_unix_socket(path: &Path) -> std::io::Result<UnixListener> {
@@ -88,6 +89,33 @@ mod tests {
             .unwrap();
 
         assert_eq!(object, output);
+
+        // the logic will automatically grow the buffer to the required size
+        assert!(!buf.is_empty());
+    }
+
+    #[tokio::test]
+    async fn invalid_input_is_io_error() {
+        // be careful with copying: tests run concurrently and should use a unique socket name!
+        let path = std::env::temp_dir().join("ntp-test-stream-5");
+        if path.exists() {
+            std::fs::remove_file(&path).unwrap();
+        }
+        let listener = UnixListener::bind(&path).unwrap();
+        let mut writer = UnixStream::connect(&path).await.unwrap();
+
+        let (mut reader, _) = listener.accept().await.unwrap();
+
+        // write data that cannot be parsed
+        let data = [0; 24];
+        writer.write_all(&data).await.unwrap();
+
+        let mut buf = Vec::new();
+        let output = read_json::<Vec<usize>>(&mut reader, &mut buf)
+            .await
+            .unwrap_err();
+
+        assert_eq!(output.kind(), std::io::ErrorKind::InvalidInput);
 
         // the logic will automatically grow the buffer to the required size
         assert!(!buf.is_empty());
