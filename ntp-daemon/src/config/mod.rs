@@ -312,6 +312,19 @@ impl Config {
         Ok(config)
     }
 
+    /// Count potential number of peers in configuration
+    fn count_peers(&self) -> usize {
+        let mut count = 0;
+        for peer in &self.peers {
+            match peer {
+                PeerConfig::Standard(_) => count += 1,
+                PeerConfig::Nts(_) => count += 1,
+                PeerConfig::Pool(config) => count += config.max_peers,
+            }
+        }
+        count
+    }
+
     /// Check that the config is reasonable. This function may panic if the
     /// configuration is egregious, although it doesn't do so currently.
     pub fn check(&self) {
@@ -320,11 +333,11 @@ impl Config {
         // probably a good policy in general (config should always work
         // but we may panic here to protect the user from themselves)
         if self.peers.is_empty() {
-            warn!("No peers configured. Daemon will not do anything.");
+            warn!("No peers configured. Daemon will not change system time.");
         }
 
-        if self.peers.len() < self.system.system.min_intersection_survivors {
-            warn!("Fewer peers configured than are required to agree on the current time. Daemon will not do anything.");
+        if self.count_peers() < self.system.system.min_intersection_survivors {
+            warn!("Fewer peers configured than are required to agree on the current time. Daemon will not change system time.");
         }
     }
 }
