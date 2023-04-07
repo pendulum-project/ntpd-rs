@@ -15,7 +15,7 @@ use ntp_udp::{InterfaceName, UdpSocket};
 use prometheus_client::metrics::counter::Counter;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tokio::task::JoinHandle;
-use tracing::{error, info, instrument, trace, warn};
+use tracing::{debug, error, info, instrument, trace, warn};
 
 use crate::config::{FilterAction, ServerConfig};
 
@@ -245,7 +245,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     .await
                 {
                     self.stats.response_send_errors.inc();
-                    warn!(error=?send_err, "Could not send response packet");
+                    debug!(error=?send_err, "Could not send response packet");
                 }
             }
             AcceptResult::Deny {
@@ -329,7 +329,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     .await
                 {
                     self.stats.response_send_errors.inc();
-                    warn!(error=?send_err, "Could not send response packet");
+                    debug!(error=?send_err, "Could not send response packet");
                 }
             }
             AcceptResult::Ignore => {
