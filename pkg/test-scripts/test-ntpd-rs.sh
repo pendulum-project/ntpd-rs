@@ -5,8 +5,7 @@ set -x
 
 case $1 in
   post-install|post-upgrade)
-      echo -e "\nNTPD-RS SERVICE STATUS AFTER START:"
-      sleep 1s
-      systemctl status ntpd-rs
+      echo -e "\nNTPD-RS HELP OUTPUT:"
+      /usr/bin/ntp-daemon --help
     ;;
 esac
