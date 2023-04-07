@@ -13,18 +13,6 @@ max-peers = 4
 [[server]]
 addr = "0.0.0.0:123"
 
-# System parameters used in filtering and steering the clock:
-[system]
-min-intersection-survivors = 1
-min-cluster-survivors = 3
-frequency-tolerance = 15
-distance-threshold = 1
-panic-threshold = 10
-startup-panic-threshold = { forward = 0, backward = 1800 }
-
-[observe]
-path = "/run/ntpd-rs/observe"
-
 # to function as an NTS server, we must also provide key exchange
 [nts-ke-server]
 addr = "0.0.0.0:4460"

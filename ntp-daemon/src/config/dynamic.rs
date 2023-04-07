@@ -3,7 +3,7 @@ use crate::tracing::ReloadHandle;
 use ntp_proto::{NtpDuration, StepThreshold};
 use std::os::unix::fs::PermissionsExt;
 use tokio::task::JoinHandle;
-use tracing::error;
+use tracing::warn;
 use tracing_subscriber::EnvFilter;
 
 use clap::Args;
@@ -55,7 +55,8 @@ pub async fn spawn<H: LogReloader + Send + 'static>(
     tokio::spawn(async move {
         let result = dynamic_configuration(config, system_config_sender, log_reload_handle).await;
         if let Err(ref e) = result {
-            error!("Abnormal termination of dynamic configurator: {}", e);
+            warn!("Abnormal termination of dynamic configurator: {}", e);
+            warn!("The dynamic configurator will not be available");
         }
         result
     })

@@ -52,11 +52,13 @@ pub fn spawn(
     tokio::spawn(async move {
         let result = run_nts_ke(nts_ke_config, keyset).await;
 
-        if let Err(ref e) = result {
-            tracing::error!("Abnormal termination of NTS KE server: {}", e);
+        match result {
+            Ok(v) => Ok(v),
+            Err(e) => {
+                tracing::error!("Abnormal termination of NTS KE server: {e}");
+                std::process::exit(exitcode::SOFTWARE)
+            }
         }
-
-        result
     })
 }
 
