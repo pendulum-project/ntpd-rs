@@ -2,6 +2,7 @@
 
 set -e
 
+NTPDRS_CONF_SRC="/usr/share/doc/ntpd-rs/ntp.toml.default"
 NTPDRS_CONF="/etc/ntpd-rs/ntp.toml"
 NTPDRS_CONF_PERMS=640
 NTPDRS_HOME="/var/lib/ntpd-rs/"
@@ -14,7 +15,7 @@ create_user() {
 
 create_first_time_configuration() {
     if [ ! -f "${KRILL_CONF}" ]; then
-        cp "${NTPDRS_CONF}.default" "${NTPDRS_CONF}"
+        cp "${NTPDRS_CONF_SRC}" "${NTPDRS_CONF}"
         chown "${NTPDRS_USER}:${NTPDRS_USER}" "${NTPDRS_CONF}"
         chmod "${NTPDRS_CONF_PERMS}" "${NTPDRS_CONF}"
     fi

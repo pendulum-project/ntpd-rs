@@ -6,6 +6,7 @@ post_install_script = '''
 NTPDRS_USER=ntpd-rs
 NTPDRS_HOME_DIR="/var/lib/ntpd-rs"
 NTPDRS_HOME_DIR_PERMS=700
+NTPDRS_CONF_SRC="/usr/share/doc/ntpd-rs/ntp.toml.default"
 NTPDRS_CONF="/etc/ntpd-rs/ntp.toml"
 NTPDRS_CONF_PERMS=640
 if [ $EUID -ne 0 ]; then
@@ -29,7 +30,7 @@ init_systemd_service() {
 }
 create_first_time_configuration() {
     if [ ! -f "${NTPDRS_CONF}" ]; then
-        cp "${NTPDRS_CONF}.default" "${NTPDRS_CONF}"
+        cp "${NTPDRS_CONF_SRC}" "${NTPDRS_CONF}"
 
         # Ensure that the config file has the correct ownership
         chown ${NTPDRS_USER}:${NTPDRS_USER} ${NTPDRS_CONF}
