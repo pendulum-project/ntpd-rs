@@ -1,2 +1,31 @@
-#!/bin/bash -e
-cp /etc/ntpd-rs/ntp.toml.default /etc/ntpd-rs/ntp.toml
+#!/bin/sh
+
+set -e
+
+NTPDRS_CONF="/etc/ntpd-rs/ntp.toml"
+NTPDRS_CONF_PERMS=640
+NTPDRS_HOME="/var/lib/ntpd-rs/"
+NTPDRS_USER="ntpd-rs"
+
+create_user() {
+    if id ${NTPDRS_USER} > /dev/null 2>&1; then return; fi
+    adduser --system --home "${NTPDRS_HOME}" --group ${NTPDRS_USER}
+}
+
+create_first_time_configuration() {
+    if [ ! -f "${KRILL_CONF}" ]; then
+        cp "${NTPDRS_CONF}.default" "${NTPDRS_CONF}"
+        chown "${NTPDRS_USER}:${NTPDRS_USER}" "${NTPDRS_CONF}"
+        chmod "${NTPDRS_CONF_PERMS}" "${NTPDRS_CONF}"
+    fi
+}
+
+case "$1" in
+configure)
+    create_user
+    create_first_time_configuration
+    ;;
+esac
+
+
+#DEBHELPER#
