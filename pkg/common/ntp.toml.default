@@ -7,40 +7,44 @@ log-filter = "info"
 log-format = "full"
 
 ## The peers section allows configuring peers, you may configure multiple of
-## these blocks to add more peers to your configuration
+## these blocks to add more peers to your configuration.
 ## Our default configuration spawns a pool of peers (by default this attempts
 ## to discover 4 distinct peers).
 [[peers]]
 mode = "pool"
-addr = "pool.ntp.org"
+addr = "ntpd-rs.pool.ntp.org"
+#addr = "2.ntpd-rs.pool.ntp.org" # For IPv6 only networks
 max-peers = 4
 
-## If you have a NTS server, you can configure a peer that connects using NTS
+## If you have an NTS server, you can configure a peer that connects using NTS
 ## by adding a configuration such as the one below
-# [[peers]]
-# mode = "NtsServer"
-# addr = "localhost:123"
-# ke-addr =  "localhost:4460"
-# certificate = "test-keys/testca.pem"
+#[[peers]]
+#mode = "nts-server"
+#addr = "localhost:123"
+#ke-addr = "localhost:4460"
+#certificate = "/path/to/cert.pem"
 
-## For a very simple basic peer you can also use a configuration such as the
-## one shown below
-# [[peers]]
-# mode = ""
+## A peer in server mode will only create a single peer in contrast to the
+## multiple peers of a pool. This is the recommended peer mode if you only
+## have an IP address for your peer.
+#[[peers]]
+#mode = "server"
+#addr = "ntpd-rs.pool.ntp.org"
 
-## The ntpd-rs system coordinates communication between the peers and the
-## filtering and clock steering algorithms, these settings are mainly related
-## to that part of the NTP daemon
-[system]
-min-intersection-survivors = 1
-panic-threshold = 10
-startup-panic-threshold = { forward = "inf", backward = 1800 }
-
-[clock]
-# clock = "/dev/ptp0"
-# interface = "enp0s31f6"
-enable-timestamps.rx-software = true
-enable-timestamps.tx-software = true
-
+## Using the observe socket you can retrieve statistical information about the
+## daemon while it is running. You can use the `ntp-ctl` or prometheus based
+## `ntp-metrics-exporter` binaries for some default options to read from the
+## observe socket.
 [observe]
 path = "/run/ntpd-rs/observe"
+
+## Below are configured various thresholds beyond which ntpd-rs will not
+## change the system clock. CHANGE THESE TO MATCH YOUR SECURITY NEEDS!
+[system]
+# The maximum step size (in seconds) of a single step during normal operation
+panic-threshold = 1800
+# On startup a larger jump may occur, this sets limits for that initial jump
+startup-panic-threshold = { forward="inf", backward = 1800 }
+# If, during the lifetime of the ntp-daemon the combined time of time jumps
+# exceeds this value, then the NTP daemon will stop, this is disabled by default
+#accumulated-threshold = 1800
