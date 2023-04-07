@@ -843,6 +843,7 @@ name = "ntp-ctl"
 version = "0.3.0-alpha.4"
 dependencies = [
  "clap",
+ "exitcode",
  "ntp-daemon",
  "ntp-metrics-exporter",
  "ntp-proto",
