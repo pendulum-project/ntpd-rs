@@ -38,10 +38,33 @@ enum Command {
     Prometheus,
     #[command(about = "Adjust configuration (e.g. loglevel) of the daemon")]
     Config(ConfigUpdate),
+    #[command(about = "Validate configuration")]
+    Validate,
+}
+
+async fn validate(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
+    match Config::from_args(cli.config, vec![], vec![]).await {
+        Ok(config) => {
+            if config.check() {
+                eprintln!("Config looks good");
+                Ok(ExitCode::SUCCESS)
+            } else {
+                Ok(ExitCode::FAILURE)
+            }
+        }
+        Err(e) => {
+            eprintln!("Error: Could not load configuration: {e}");
+            Ok(ExitCode::FAILURE)
+        }
+    }
 }
 
 pub async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     let cli = Cli::parse();
+
+    if matches!(cli.command, Command::Validate) {
+        return validate(cli).await;
+    }
 
     let config = Config::from_args(cli.config, vec![], vec![]).await;
 
@@ -64,6 +87,7 @@ pub async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     let socket_path = match cli.command {
         Command::Peers | Command::System | Command::Prometheus => observation,
         Command::Config(_) => configuration,
+        Command::Validate => unreachable!(),
     };
 
     Ok(run(cli.command, socket_path).await?)
@@ -147,6 +171,7 @@ async fn run(command: Command, socket_path: PathBuf) -> Result<ExitCode, std::io
                 }
             }
         }
+        Command::Validate => unreachable!(), //run should never be called for validate
     }
 }
 

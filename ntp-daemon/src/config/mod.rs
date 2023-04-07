@@ -327,18 +327,24 @@ impl Config {
 
     /// Check that the config is reasonable. This function may panic if the
     /// configuration is egregious, although it doesn't do so currently.
-    pub fn check(&self) {
+    pub fn check(&self) -> bool {
+        let mut ok = true;
+
         // Note: since we only check once logging is fully configured,
         // using those fields should always work. This is also
         // probably a good policy in general (config should always work
         // but we may panic here to protect the user from themselves)
         if self.peers.is_empty() {
             warn!("No peers configured. Daemon will not change system time.");
+            ok = false;
         }
 
         if self.count_peers() < self.system.system.min_intersection_survivors {
             warn!("Fewer peers configured than are required to agree on the current time. Daemon will not change system time.");
+            ok = false;
         }
+
+        ok
     }
 }
 
