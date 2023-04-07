@@ -1,16 +1,18 @@
 #!/bin/sh
 set -e
 
-NTPDRS_CONF="/etc/ntpd-rs/ntp.toml"
+NTPDRS_CONF_DIR="/etc/ntpd-rs"
 
 case "$1" in
 purge)
     # Per https://www.debian.org/doc/debian-policy/ch-files.html#behavior
     # "configuration files must be preserved when the package is removed, and
     #  only deleted when the package is purged."
-    if [ -f ${NTPDRS_CONF} ]; then
-        rm ${NTPDRS_CONF}
+    if [ -d ${NTPDRS_CONF_DIR} ]; then
+        rm -r ${NTPDRS_CONF_DIR}
     fi
+
+
     ;;
 esac
 
