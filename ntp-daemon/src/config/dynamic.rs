@@ -19,7 +19,7 @@ fn parse_env_filter(input: &str) -> Result<String, tracing_subscriber::filter::P
     Ok(input.to_string())
 }
 
-#[derive(Debug, Args, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Args, Serialize, Deserialize)]
 pub struct ConfigUpdate {
     /// Change the log filter
     #[arg(long, value_parser = parse_env_filter)]
