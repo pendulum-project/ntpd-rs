@@ -157,13 +157,13 @@ The daemon can expose an observation socket that can be read to obtain informati
 | Option | Default | Description |
 | --- | --- | --- |
 | path | | Path on which the observation socket is exposed. If no path is given, the observation socket is disabled. |
-| mode | 0o777 | Permissions with which the socket should be created, given as (octal) integer. |
+| mode | 0o666 | Permissions with which the socket should be created, given as (octal) integer. |
 
 The daemon can also expose a configuration socket that can be used to change some configuration options dynamically. This socket can be configured via the `configure` section:
 | Option | Default | Description |
 | --- | --- | --- |
 | path | | Path on which the configuration socket is exposed. If no path is given, the configuration socket is disabled. |
-| mode | 0o770 | Permissions with which the socket should be created, given as (octal) integer. |
+| mode | 0o660 | Permissions with which the socket should be created, given as (octal) integer. |
 
 The management and configuration sockets are used by the [management client](MANAGEMENT_CLIENT.md) to display the daemon's state and to allow for dynamic changing of some configuration parameters.
 

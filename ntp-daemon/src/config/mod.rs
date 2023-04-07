@@ -185,7 +185,7 @@ pub struct Config {
 }
 
 const fn default_observe_permissions() -> u32 {
-    0o777
+    0o666
 }
 
 #[derive(Clone, Deserialize, Debug)]
@@ -198,7 +198,7 @@ pub struct ObserveConfig {
 }
 
 const fn default_configure_permissions() -> u32 {
-    0o770
+    0o660
 }
 
 impl Default for ObserveConfig {
