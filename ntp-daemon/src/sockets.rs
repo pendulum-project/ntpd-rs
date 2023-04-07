@@ -27,11 +27,21 @@ where
     Ok(serde_json::from_slice(buffer).unwrap())
 }
 
-pub fn create_unix_socket(path: &Path) -> std::io::Result<UnixListener> {
+fn other_error<T>(msg: String) -> std::io::Result<T> {
     use std::io::{Error, ErrorKind};
+    Err(Error::new(ErrorKind::Other, msg))
+}
 
+pub fn create_unix_socket(path: &Path) -> std::io::Result<UnixListener> {
     // must unlink path before the bind below (otherwise we get "address already in use")
     if path.exists() {
+        use std::os::unix::fs::FileTypeExt;
+
+        let meta = std::fs::metadata(path)?;
+        if !meta.file_type().is_socket() {
+            return other_error(format!("path {path:?} exists but is not a socket"));
+        }
+
         std::fs::remove_file(path)?;
     }
 
@@ -48,7 +58,7 @@ pub fn create_unix_socket(path: &Path) -> std::io::Result<UnixListener> {
                 r"Could not create observe socket at {:?} because its parent directory does not exist",
                 &path
             );
-            return Err(Error::new(ErrorKind::Other, msg));
+            return other_error(msg);
         }
     }
 
@@ -57,7 +67,8 @@ pub fn create_unix_socket(path: &Path) -> std::io::Result<UnixListener> {
         "Could not create observe socket at {:?}: {:?}",
         &path, error
     );
-    Err(Error::new(ErrorKind::Other, msg))
+
+    other_error(msg)
 }
 
 #[cfg(test)]
