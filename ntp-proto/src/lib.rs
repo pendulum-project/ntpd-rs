@@ -42,6 +42,10 @@ pub use time_types::{
     FrequencyTolerance, NtpDuration, NtpInstant, NtpTimestamp, PollInterval, PollIntervalLimits,
 };
 
+#[cfg(feature = "fuzz")]
+pub use nts_record::fuzz_key_exchange_result_decoder;
+#[cfg(feature = "fuzz")]
+pub use nts_record::fuzz_key_exchange_server_decoder;
 pub use nts_record::{
     KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, NtsRecord,
     NtsRecordDecoder, WriteError,
