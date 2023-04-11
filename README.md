@@ -2,57 +2,53 @@
 
 # ntpd-rs
 
-ntpd-rs is an implementation of NTP written entirely in Rust, with a focus on exposing a minimal attack surface. Both client and server functionality are stable (see release v0.2.0). Work on NTS support is completed, and an alpha release is available (see release v0.3.0-alpha.4).
+ntpd-rs is an NTP implementation written in Rust, with a focus on security and stability. Both client and server functionality are stable (see release v0.2.0). Work on NTS support is completed, and an alpha release is available (see release v0.3.0-alpha.4).
 
 If a feature you need is missing please let us know by opening an issue.
 
-## Quick start
+## Installation
+
+The recommended way of installing ntpd-rs is with the pre-built packages from the [releases](https://github.com/pendulum-project/ntpd-rs/releases) page. The installers automatically handle setting up users, permissions and configuration.
+
+Alternatively, you can use `cargo install ntpd` or build from source.
+
+### Build from source
 
 Currently, ntpd-rs only supports Linux-based operating systems. Our current testing only targets Linux kernels after version 5.0.0, older kernels may work but this is not guaranteed.
 
-ntpd-rs is written in rust, and requires cargo 1.60.0 at a minimum to be built. We strongly recommend using [rustup](https://rustup.rs) to install a rust toolchain, because the version provided by system package managers tends to be out of date.
+ntpd-rs is written in rust. We strongly recommend using [rustup](https://rustup.rs) to install a rust toolchain, because the version provided by system package managers tends to be out of date. Be sure to use a recent version of the rust compiler.
 
 To build ntpd-rs run
 ```sh
 cargo build --release
 ```
-This produces a binary `ntp-daemon` in the `target/release` folder, which is the main NTP daemon.
+This produces a `ntp-daemon` binary at `target/release/ntp-daemon`, which is the main NTP daemon.
 
 Before running the ntpd-rs daemon, make sure that no other NTP daemons are running. E.g. when chrony is running
 ```sh
 systemctl stop chronyd
 ```
 
-The ntpd-rs daemon requires elevated permissions to change the system clock. It can be tested against a server in the [NTP pool](https://ntppool.org)
+The ntpd-rs daemon requires elevated permissions to change the system clock. It can be tested against servers in the [NTP pool](https://ntppool.org):
 ```sh
-sudo ./target/release/ntp-daemon -p pool.ntp.org
+sudo ./target/release/ntp-daemon -p pool.ntp.org -p pool.ntp.org -p pool.ntp.org -p pool.ntp.org
 ```
-After a few minutes you should start to see messages indicating the offset of your machine from the server. A complete description of how the daemon can be configured can be found in the [configuration documentation](CONFIGURATION.md)
 
-## Package substructure
+By default, at least 3 peer servers are needed for the algorithm to change the time. After a few minutes you should start to see messages indicating the offset of your machine from the server.
 
-Currently, the code is split up into several separate crates:
- - `ntp-proto` contains the packet parsing and the algorithms needed for clock selection, filtering and steering.
- - `ntp-daemon` contains the main NTP daemon, and deals with orchestrating the networking and configuration.
- - `ntp-ctl` contains a control interface for the NTP daemon, allowing readout of current synchronisation state and dynamic configuration changes.
- - `ntp-metrics-exporter` contains a HTTP interface for exporting the prometheus metrics.
- - `test-binaries` contains a number of simple NTP servers that can be used for testing (see below).
- - `ntp-os-clock` contains the unsafe code needed to interface with system clocks.
- - `ntp-udp` contains the unsafe code needed to deal with timestamping on the network layer.
- - `ntpd` contains the entrypoints for all our binaries
+```
+2023-04-11T10:06:24.847375Z  INFO ntp_proto::algorithm::kalman: Offset: 1.7506740305607742+-12.951528666965439ms, frequency: 8.525844072881435+-5.089483351832892ppm
+2023-04-11T10:06:25.443852Z  INFO ntp_proto::algorithm::kalman: Offset: 1.8947020578044949+-12.981792974220694ms, frequency: 7.654657944152439+-3.3911904299378386ppm
+2023-04-11T10:06:25.443979Z  INFO ntp_proto::algorithm::kalman: Changed frequency, current steer 4.26346751414286ppm, desired freq 0ppm
+```
 
-All unsafe code is contained within the `ntp-os-clock` and `ntp-udp` packages, which are kept as small as possible. All interfaces exposed by these crates should be safe. For a more detailed description of how ntpd-rs is structured, see the [development documentation](DEVELOPMENT.md).
-
-## Test Binaries
-
-This crate contains extremely limited NTP servers for testing purposes
-
-* `demobilize-server` always sends the DENY kiss code, the client must demobilize this association
-* `rate-limit-server` forces an increase of the poll interval to 32 seconds
+A complete description of how the daemon can be configured can be found in the [configuration documentation](CONFIGURATION.md)
 
 ## Minimum supported rust version
 
-We try to keep ntpd-rs working on at least the latest stable, beta and nightly rust compiler. Beyond this, we keep track of the current minimum rust version needed to compile our code for purposes of documentation. However, right now we do not have a policy guaranteeing a minimum amount of time we will support a stable rust release beyond the 6 weeks during which it is the latest stable version.
+We make no guarantees about supporting older versions of rust. When building from source (either manually or with `cargo install`) use the latest rust version to prevent issues.
+
+We are committed to keep ntpd-rs working on at least the latest stable, beta and nightly rust compiler. Beyond this, we keep track of the current minimum rust version needed to compile our code for purposes of documentation. However, right now we do not have a policy guaranteeing a minimum amount of time we will support a stable rust release beyond the 6 weeks during which it is the latest stable version.
 
 Please note that the Rust project only supports the latest stable rust release. As this is the only release that will receive any security updates, we STRONGLY recommend using the latest stable rust version for compiling ntpd-rs for daily use.
 
@@ -74,5 +70,23 @@ The project originates from ISRG's project [Prossimo](https://www.memorysafety.o
 
 Prossimo funded the initial development of the NTP client and server, and NTS support. The [NTP initiative page](https://www.memorysafety.org/initiative/ntp) on Prossimo's website tells the story.
 
+## Package substructure
 
+Currently, the code is split up into several separate crates:
+ - `ntp-proto` contains the packet parsing and the algorithms needed for clock selection, filtering and steering.
+ - `ntp-daemon` contains the main NTP daemon, and deals with orchestrating the networking and configuration.
+ - `ntp-ctl` contains a control interface for the NTP daemon, allowing readout of current synchronisation state and dynamic configuration changes.
+ - `ntp-metrics-exporter` contains a HTTP interface for exporting the prometheus metrics.
+ - `test-binaries` contains a number of simple NTP servers that can be used for testing (see below).
+ - `ntp-os-clock` contains the unsafe code needed to interface with system clocks.
+ - `ntp-udp` contains the unsafe code needed to deal with timestamping on the network layer.
+ - `ntpd` contains the entrypoints for all our binaries
 
+All unsafe code is contained within the `ntp-os-clock` and `ntp-udp` packages, which are kept as small as possible. All interfaces exposed by these crates should be safe. For a more detailed description of how ntpd-rs is structured, see the [development documentation](DEVELOPMENT.md).
+
+## Test Binaries
+
+This crate contains extremely limited NTP servers for testing purposes
+
+* `demobilize-server` always sends the DENY kiss code, the client must demobilize this association
+* `rate-limit-server` forces an increase of the poll interval to 32 seconds
