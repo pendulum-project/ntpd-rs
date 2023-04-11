@@ -6,11 +6,17 @@ If you want to try out ntpd-rs, this guide provides the basic information needed
 
 Unlike the ntp reference implementation, ntpd-rs does not support either broadcast or symmetric modes, nor is there any plan to do so in the future. The decision to exclude these modes was taken because their design leaves them relatively vulnerable to security issues, and this is not easily mitigated. Furthermore, use of these modes can be replaced with client-server mode connections in almost all cases at a minimal cost in convenience and network traffic.
 
-## Building
+## Installation
+
+The recommended way of installing ntpd-rs is with the pre-built packages from the [releases](https://github.com/pendulum-project/ntpd-rs/releases) page. The installers automatically handle setting up users, permissions and configuration.
+
+Alternatively, you can use `cargo install ntpd` or build from source.
+
+### Build from source
 
 Currently, ntpd-rs only supports Linux-based operating systems. Our current testing only targets Linux kernels after version 5.0.0, older kernels may work but this is not guaranteed.
 
-ntpd-rs is written in rust, and requires cargo 1.60.0 at a minimum to be built. Earlier versions may work but are currently not included in our testing regime. We strongly recommend using [rustup](https://rustup.rs) to install rust/cargo, as the version provided by system package managers tend to be out of date.
+ntpd-rs is written in rust, and requires a recent version of the rust toolchain to be built. Earlier versions may work but are not included in our testing regime. We strongly recommend using [rustup](https://rustup.rs) to install the rust compiler and cargo, the rust package manager, as the version provided by system package managers tend to be out of date.
 
 To build ntpd-rs run:
 
@@ -18,19 +24,89 @@ To build ntpd-rs run:
 cargo build --release
 ```
 
-This produces a binary `ntp-daemon` in the `target/release` folder, which is the main NTP daemon. The daemon requires elevated permissions in order to change the system clock. It can be tested against a server in the [NTP pool](https://ntppool.org) (please ensure no other NTP daemons are running):
+This produces a `ntp-daemon` binary at `target/release/ntp-daemon`, which is the main NTP daemon.
 
+Before running the ntpd-rs daemon, make sure that no other NTP daemons are running. E.g. when chrony is running
 ```sh
-sudo ./target/release/ntp-daemon -p pool.ntp.org
+systemctl stop chronyd
 ```
 
-After a few minutes you should start to see messages indicating the offset of your machine from the server.
+The ntpd-rs daemon requires elevated permissions to change the system clock. It can be tested against servers in the [NTP pool](https://ntppool.org):
+```sh
+sudo ./target/release/ntp-daemon -p pool.ntp.org -p pool.ntp.org -p pool.ntp.org -p pool.ntp.org
+```
+
+By default, at least 3 peer servers are needed for the algorithm to change the time. After a few minutes you should start to see messages indicating the offset of your machine from the server.
+
+```
+2023-04-11T10:06:24.847375Z  INFO ntp_proto::algorithm::kalman: Offset: 1.7506740305607742+-12.951528666965439ms, frequency: 8.525844072881435+-5.089483351832892ppm
+2023-04-11T10:06:25.443852Z  INFO ntp_proto::algorithm::kalman: Offset: 1.8947020578044949+-12.981792974220694ms, frequency: 7.654657944152439+-3.3911904299378386ppm
+2023-04-11T10:06:25.443979Z  INFO ntp_proto::algorithm::kalman: Changed frequency, current steer 4.26346751414286ppm, desired freq 0ppm
+```
 
 ### RFC5905 compliant algorithm
 
-By default, NTPD-rs uses a newer, better performing clock algorithm. This algorithm doesn't conform to the specification in RFC5905, but offers significantly better performance. Experience with both it and Chrony's non-standard algorithm indicates that a different clock algorithm does not impede interoperability.
+The Network Time Protocol is defined in [RFC5905](https://www.rfc-editor.org/rfc/rfc5905), and ntpd-rs generally follows this specification.
+However, our default clock algorithm is not the one given by the specification. Instead, ntpd-rs uses an algorithm based on kalman filters that provides better accuracy and lower synchronization time. Based on our testing this is a safe default. It has no downsides compared to the rfc's algorithm, and performs much better in practice.
 
-However, should you desire to run an ntp instance that is to the largest extent possible RFC5905 compliant, it is possible to compile NTPD-rs with the clock algorithm from RFC5905. To do this, at build time the additional flags `--features rfc-algorithm` need to be added to the build command. Please note that when using the RFC's clock algorithm, a different set of configuration options needs to be used to tune it, as indicated below.
+Chrony, another common NTP implementation, also uses an algorithm that is not compliant with RFC5905. Experience with our kalman algorithm and Chrony's algorithm indicates that these custom clock algorithms can interoperate with systems that do run the clock algorithm described in the specification.
+
+Ntpd-rs can use the clock algorithm from RFC5905, but this requires a custom build:
+
+```sh
+cargo build --release --features rfc-algorithm
+```
+
+Please note that when using the RFC's clock algorithm, a different set of configuration options needs to be used to tune it, as indicated below.
+
+## Systemd configuration
+
+To use ntpd-rs as the system NTP service, create a systemd service definition as follows. Systemd will then take care of automatically starting up the daemon on boot.
+
+This installation script makes the following assumptions:
+
+- The `ntp-daemon` binary is located at `/usr/local/bin/ntp-daemon`. When using a build from source, it can be moved there manually using
+    ```
+    sudo cp ./target/release/ntp-daemon /usr/local/bin/ntp-daemon
+    ```
+- The configuration is located at `/ect/ntpd-rs/ntp.toml`
+- There exists a low-privileged `ntpd-rs` group and user. This snippet should work on most linux versions:
+    ```sh
+    useradd --home-dir "/var/lib/ntpd-rs" --system --create-home --user-group ntpd-rs
+    # Ensure that the home directory has the correct ownership
+    chown -R ntpd-rs:ntpd-rs "/var/lib/ntpd-rs"
+    # Ensure that the home directory has the correct permissions
+    chmod 700 "/var/lib/ntpd-rs"
+    ```
+    Refer to your distribution's documentation for information on how to create such accounts.
+
+Note that because of the aforementioned limitations around peer configuration, this service file requires the network-online target.
+As a result, using this may increase boot times significantly, especially on machines that do not have permanent network connectivity.
+
+This service should not be used at the same time as other NTP services, because they will interfere with each other. The configuration explicitly disables the systemd built-in timesyncd service, but be aware that your operating system may use another NTP service. Note also that the daemon SHOULD NOT be restarted when crashing without human intervention. See our [operational guidance](OPERATIONAL_CONSIDERATIONS.md) for more information.
+
+```ini
+[Unit]
+Description=Rust Network Time Service
+Documentation=https://github.com/pendulum-project/ntpd-rs
+After=network-online.target
+Wants=network-online.target
+# ntpd-rs would interfere with other NTP services
+Conflicts=systemd-timesyncd.service ntp.service chrony.service
+
+[Service]
+Type=simple
+Restart=no
+ExecStart=/usr/local/bin/ntp-daemon
+Environment="RUST_LOG=info"
+RuntimeDirectory=ntpd-rs
+User=ntpd-rs
+Group=ntpd-rs
+AmbientCapabilities=CAP_SYS_TIME
+
+[Install]
+WantedBy=multi-user.target
+```
 
 ## Configuration
 
@@ -151,7 +227,7 @@ Instructions for how to generate a CA certificate and use it to sign certificate
 
 #### Observability and dynamic configuration
 
-**The management client interface is unstable! Would you like to observe additional values? let us know in an issue!**
+**The management client interface format is unstable! Would you like to observe additional values? let us know in an issue!**
 
 The daemon can expose an observation socket that can be read to obtain information on the current state of the peer connections and clock steering algorithm. This socket can be configured via the `observe` section:
 | Option | Default | Description |
@@ -292,33 +368,3 @@ Should you still desire to automatically restart the NTP daemon, there are sever
 Furthermore, if at all possible, rebooting should be limited to only those exit codes which are known to be caused by situations where a reboot is safe. In particular, the process should not be rebooted when exiting with status code 101, as this status code is returned when the NTP daemon detects abnormally large changes in the time indicated by the remote servers used.
 
 More guidance on proper configuration for regular operation is given in the [operational considerations documentation](OPERATIONAL_CONSIDERATIONS.md)
-
-## Systemd configuration
-
-To run ntpd-rs as the system NTP service, the following systemd service definition can be used. Note that this service definition assumes that the ntp-daemon binary has been installed to `/usr/local/bin`, and that the configuration is stored in the default `/etc/ntpd-rs/ntp.toml` location. Furthermore, it assumes the existence of a low-privileged `ntpd-rs` group and user. Refer to your distribution's documentation for information on how to create such accounts.
-
-Note that because of the aforementioned limitations around peer configuration, this service file requires the network-online target. As a result, using this may increase boot times significantly, especially on machines that do not have permanent network connectivity.
-
-This service should not be used at the same time as other NTP services. It explicitly disables the systemd built-in timesyncd service, but be aware that your operating system may use another NTP service. Note also that the daemon SHOULD NOT be restarted when crashing without human intervention. See our [operational guidance](OPERATIONAL_CONSIDERATIONS.md) for more information on this.
-
-```ini
-[Unit]
-Description=Rust Network Time Service
-Documentation=https://github.com/pendulum-project/ntpd-rs
-After=network-online.target
-Wants=network-online.target
-Conflicts=systemd-timesyncd.service ntp.service chrony.service
-
-[Service]
-Type=simple
-Restart=no
-ExecStart=/usr/local/bin/ntp-daemon
-Environment="RUST_LOG=info"
-RuntimeDirectory=ntpd-rs
-User=ntpd-rs
-Group=ntpd-rs
-AmbientCapabilities=CAP_SYS_TIME
-
-[Install]
-WantedBy=multi-user.target
-```

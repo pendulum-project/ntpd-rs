@@ -1,6 +1,6 @@
 # Management Client
 
-**The management client interface is unstable! Do you have suggestion for additional values to expose? let us know in an issue!**
+**The management client interface format is unstable! Do you have suggestion for additional values to expose? let us know in an issue!**
 
 ntpd-rs comes with a management client for the daemon. This client can show the current state of the daemon, as well as change the log level and panic thresholds of the daemon.
 

@@ -1,14 +1,14 @@
-Master
+Main
 ======
 
 Major Changes
 -----
-- Changed format of timedata reported for peers to ensure compatibility with different algorithms.
+- Our new and improved clock algorithm is now the default
 - Implemented (de)serialization of NTP extension fields
 - Implemented NTS Key Exchange
 - Implemented NTS client functionality and configuration
 - Implemented NTS server functionality and configuration
-- New and improved clock algorithm
+- Changed format of timedata reported for peers to ensure compatibility with different algorithms.
 
 Minor Changes
 -----

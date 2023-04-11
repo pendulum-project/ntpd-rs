@@ -1,14 +1,15 @@
 # Operational considerations
 
-When configuring ntpd-rs as the system NTP client, there are a number of security and availability related topics that need to be carefully considered. Most of these are not specific to ntpd-rs, but will apply to the configuration of any NTP client. Here, we will give a basic overview of these topics and our current recommendations.
+In this document, we provide a basic overview of the operational considerations that need to be carefully considered when configuring ntpd-rs as the system NTP client, along with our current recommendations.
 
 ## Required number of available servers
 
 In its operation, NTP requires that a majority of the used servers agree (up to the precision of the measurements) on the current time. However, in this mechanism, any servers that are currently unavailable because of connection issues and the like are completely ignored. As a consequences, the required quorum of agreeing servers may be lower than expected.
 
-To combat this, ntpd-rs provides the `min-intersection-survivors` setting to set a minimum number of servers that need to agree on the best time. Incrementing this beyond the default value of `3` decreases the likelihood of a bad server adversely affecting the system time. However, larger values also require a larger number of servers to be available before actively starting to synchronize the clock, potentially reducing availability.
+To combat this, ntpd-rs provides the `min-intersection-survivors` setting to set a minimum number of servers that need to agree on the best time. The NTPv4 standard recommends using a value of at least `3` for `min-intersection-survivors`. When using this recommendation, it is important to configure enough remote servers to ensure the probability of dipping below `3` available servers is low enough.
 
-The NTPv4 standard recommends using a value of at least `3` for `min-intersection-survivors`. When using this recommendation, it is important to configure enough remote servers to ensure the probability of dipping below `3` available servers is low enough.
+Increasing the `min-intersection-survivors` value beyond the default of 3 can help reduce the risk of a bad server affecting the system time. However, keep in mind that larger values may require more servers to be available before the clock can be synchronized, which can reduce availability.
+
 
 ## Maximum clock adjustment boundaries
 
@@ -25,9 +26,10 @@ Both the `panic-threshold` and `startup-panic-threshold` should be adjusted to a
 When ntpd-rs detects abnormal conditions during operation, it will automatically shut down. This is done to avoid poorly steering the clock and potentially inducing large clock errors, as once synchronized, an unsteered clock will keep time better than an actively incorrectly steered clock.
 
 The abnormal conditions resulting in a shutdown include:
- - Detection of an abnormally large correction being required.
+
+ - Detection of an abnormally large (exceeds the panic thresholds) change in system time being required.
  - Detection of an inconsistent internal state.
- - Errors whilst trying to adjust the system clock.
+ - Errors whilst trying to adjust the system clock (e.g. insufficient permissions).
 
 We strongly recommend against automatically restarting the daemon when it exits, as doing so may cause additional incorrect steering of the system clock, resulting in a larger error against UTC than intended. Instead, a human operator should determine the root cause of the shutdown and decide on the proper corrective action to take.
 
