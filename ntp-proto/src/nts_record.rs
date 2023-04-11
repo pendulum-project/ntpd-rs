@@ -1052,6 +1052,37 @@ impl KeyExchangeServer {
     }
 }
 
+#[cfg(feature = "fuzz")]
+pub fn fuzz_key_exchange_server_decoder(data: &[u8]) {
+    // this fuzz harness is inspired by the server_decoder_finds_algorithm() test
+    let mut decoder = KeyExchangeServerDecoder::new();
+
+    let decode_output = || {
+        // chunk size 24 is taken from the original test function, this may
+        // benefit from additional changes
+        for chunk in data.chunks(24) {
+            decoder = match decoder.step_with_slice(chunk) {
+                ControlFlow::Continue(d) => d,
+                ControlFlow::Break(done) => return done,
+            };
+        }
+
+        Err(KeyExchangeError::IncompleteResponse)
+    };
+
+    let _result = decode_output();
+}
+
+#[cfg(feature = "fuzz")]
+pub fn fuzz_key_exchange_result_decoder(data: &[u8]) {
+    let decoder = KeyExchangeResultDecoder::new();
+
+    let _res = match decoder.step_with_slice(data) {
+        ControlFlow::Continue(decoder) => decoder,
+        ControlFlow::Break(_result) => return,
+    };
+}
+
 #[cfg(test)]
 mod test {
     use crate::KeySetProvider;

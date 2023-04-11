@@ -59,3 +59,21 @@ name = "record_encode_decode"
 path = "fuzz_targets/record_encode_decode.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "ntsrecord"
+path = "fuzz_targets/ntsrecord.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "key_exchange_result_decoder"
+path = "fuzz_targets/key_exchange_result_decoder.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "key_exchange_server_decoder"
+path = "fuzz_targets/key_exchange_server_decoder.rs"
+test = false
+doc = false
