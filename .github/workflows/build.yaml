@@ -47,7 +47,7 @@ jobs:
         env:
           RUST_BACKTRACE: 1
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@d9f34f8cd5cb3b3eb79b3e4b5dae3a16df499a70
+        uses: codecov/codecov-action@40a12dcee2df644d47232dde008099a3e9e4f865
         with:
           files: lcov.info
           fail_ci_if_error: false
