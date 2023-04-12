@@ -170,7 +170,7 @@ impl<P: NetworkPort> Port<P> {
                 .source_port_identity(self.port_ds.port_identity)
                 .sync_message(current_time.into())
                 .serialize_vec()?;
-            
+
             let current_time = match self.network_port.send_time_critical(&sync_message).await {
                 Ok(time) => time,
                 Err(error) => {
@@ -249,21 +249,16 @@ impl<P: NetworkPort> Port<P> {
             return Ok(());
         }
 
-        let current_time = local_clock
-            .try_borrow()
-            .map(|borrow| borrow.now())
-            .map_err(|_| PortError::ClockBusy)?;
-
         if let Message::Announce(announce) = &message {
             self.bmca
-                .register_announce_message(announce, current_time.into());
+                .register_announce_message(announce, packet.timestamp.into());
             announce_receipt_timeout.reset();
         } else {
             self.port_ds
                 .port_state
                 .handle_message(
                     message,
-                    current_time,
+                    packet.timestamp.into(),
                     &mut self.network_port,
                     self.port_ds.port_identity,
                 )
