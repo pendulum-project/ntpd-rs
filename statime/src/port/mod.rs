@@ -170,15 +170,14 @@ impl<P: NetworkPort> Port<P> {
                 .source_port_identity(self.port_ds.port_identity)
                 .sync_message(current_time.into())
                 .serialize_vec()?;
-
-            if let Err(error) = self.network_port.send(&sync_message).await {
-                log::error!("failed to send sync message: {:?}", error);
-            }
-
-            let current_time = local_clock
-                .try_borrow()
-                .map(|borrow| borrow.now())
-                .map_err(|_| PortError::ClockBusy)?;
+            
+            let current_time = match self.network_port.send_time_critical(&sync_message).await {
+                Ok(time) => time,
+                Err(error) => {
+                    log::error!("failed to send sync message: {:?}", error);
+                    return Err(PortError::Network);
+                }
+            };
 
             // TODO: Discuss whether follow up is a config?
             let follow_up_message = MessageBuilder::new()
@@ -189,6 +188,7 @@ impl<P: NetworkPort> Port<P> {
 
             if let Err(error) = self.network_port.send(&follow_up_message).await {
                 log::error!("failed to send follow-up message: {:?}", error);
+                return Err(PortError::Network);
             }
         }
 
