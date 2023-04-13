@@ -138,8 +138,6 @@ impl SlaveState {
                 delay_id,
                 delay_send_time,
             };
-        } else {
-            self.delay_state = DelayState::Initial;
         }
 
         if let Some(follow_up) = self.pending_followup {
