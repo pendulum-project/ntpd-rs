@@ -9,9 +9,9 @@ use super::Header;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
 #[getset(get_copy = "pub")]
 pub struct DelayRespMessage {
-    pub(super) header: Header,
-    pub(super) receive_timestamp: Timestamp,
-    pub(super) requesting_port_identity: PortIdentity,
+    pub(crate) header: Header,
+    pub(crate) receive_timestamp: Timestamp,
+    pub(crate) requesting_port_identity: PortIdentity,
 }
 
 impl DelayRespMessage {

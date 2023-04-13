@@ -6,8 +6,8 @@ use super::Header;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
 #[getset(get_copy = "pub")]
 pub struct DelayReqMessage {
-    pub(super) header: Header,
-    pub(super) origin_timestamp: Timestamp,
+    pub(crate) header: Header,
+    pub(crate) origin_timestamp: Timestamp,
 }
 
 impl DelayReqMessage {

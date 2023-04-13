@@ -6,8 +6,8 @@ use super::Header;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
 #[getset(get_copy = "pub")]
 pub struct FollowUpMessage {
-    pub(super) header: Header,
-    pub(super) precise_origin_timestamp: Timestamp,
+    pub(crate) header: Header,
+    pub(crate) precise_origin_timestamp: Timestamp,
 }
 
 impl FollowUpMessage {
