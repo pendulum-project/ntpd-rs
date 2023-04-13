@@ -26,7 +26,7 @@ embassy-futures = "0.1.0"
 fixed = "1.23"
 futures = { version = "0.3", default-features = false, features = ["async-await"] }
 getset = "0.1.2"
-libm = "0.1.2"
+libm = "0.2.6"
 log = { version = "0.4.14", default-features = false }
 num_enum = { version = "0.5.1", default-features = false }
 pin-project = "1.0"
