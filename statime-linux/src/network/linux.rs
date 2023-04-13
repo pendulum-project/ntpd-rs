@@ -342,7 +342,7 @@ impl NetworkPort for LinuxNetworkPort {
     type Error = std::io::Error;
 
     async fn send(&mut self, data: &[u8]) -> Result<(), <LinuxNetworkPort as NetworkPort>::Error> {
-        log::info!("Send NTC");
+        log::trace!("Send NTC");
 
         self.ntc_socket.send_to(data, self.ntc_address).await?;
         Ok(())
@@ -352,7 +352,7 @@ impl NetworkPort for LinuxNetworkPort {
         &mut self,
         data: &[u8],
     ) -> Result<statime::time::Instant, <LinuxNetworkPort as NetworkPort>::Error> {
-        log::info!("Send TC");
+        log::trace!("Send TC");
 
         self.tc_socket.send_to(data, self.tc_address).await?;
 
@@ -379,7 +379,10 @@ impl NetworkPort for LinuxNetworkPort {
                         self.hardware_timestamping,
                     )
                 }) {
-                    Ok(packet) => break Ok(packet),
+                    Ok(packet) => {
+                        log::trace!("Recv TC");
+                        break Ok(packet);
+                    }
                     Err(e) if e.kind() == ErrorKind::WouldBlock => continue,
                     Err(e) => break Err(e),
                 }
@@ -388,6 +391,7 @@ impl NetworkPort for LinuxNetworkPort {
         let non_time_critical_future = async {
             let mut buffer = [0; 2048];
             let (received_len, _) = self.ntc_socket.recv_from(&mut buffer).await?;
+            log::trace!("Recv NTC");
             Ok(NetworkPacket {
                 data: buffer[..received_len]
                     .try_into()

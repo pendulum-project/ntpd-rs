@@ -106,6 +106,7 @@ impl SlaveState {
         network_port: &mut P,
         port_identity: PortIdentity,
     ) -> Result<()> {
+        log::debug!("Received sync");
         self.sync_state = if message.header().two_step_flag() {
             SyncState::AfterSync {
                 sync_id: message.header().sequence_id(),
@@ -123,6 +124,7 @@ impl SlaveState {
         if !self.delay_state.finished()
             || self.next_delay_measurement.unwrap_or_default() < current_time
         {
+            log::debug!("Starting new delay measurement");
             let delay_id = self.delay_req_ids.generate();
             let delay_req = MessageBuilder::new()
                 .source_port_identity(port_identity)
@@ -141,6 +143,7 @@ impl SlaveState {
         }
 
         if let Some(follow_up) = self.pending_followup {
+            log::debug!("Trying previously received followup");
             self.handle_follow_up(follow_up)?;
         }
 
@@ -148,6 +151,7 @@ impl SlaveState {
     }
 
     fn handle_follow_up(&mut self, message: FollowUpMessage) -> Result<()> {
+        log::debug!("Received FollowUp");
         match self.sync_state {
             SyncState::AfterSync {
                 sync_id,
@@ -178,6 +182,7 @@ impl SlaveState {
             // Wrong state
             SyncState::Initial | SyncState::AfterFollowUp { .. } => {
                 // Store it for a potentially coming sync
+                log::debug!("FollowUp with no sync yet matching");
                 self.pending_followup = Some(message);
                 Ok(())
             }
@@ -185,6 +190,7 @@ impl SlaveState {
     }
 
     fn handle_delay_resp(&mut self, message: DelayRespMessage) -> Result<()> {
+        log::debug!("Received DelayResp");
         match self.sync_state {
             SyncState::AfterFollowUp {
                 sync_recv_time,
@@ -197,6 +203,7 @@ impl SlaveState {
                     } => {
                         // Ignore messages not belonging to currently processing sync
                         if delay_id != message.header().sequence_id() {
+                            log::warn!("Received delay response for different message");
                             return Ok(());
                         }
 
@@ -225,6 +232,7 @@ impl SlaveState {
                     }
                     // Wrong state
                     DelayState::Initial | DelayState::AfterDelayResp { .. } => {
+                        log::debug!("Unexpected DelayResponse");
                         Err(SlaveError::OutOfSequence)
                     }
                 }
@@ -249,6 +257,8 @@ impl SlaveState {
                         };
 
                         self.sync_state = SyncState::Initial;
+
+                        log::debug!("Extracted measurement {:?}", result);
 
                         Some(result)
                     }

@@ -54,6 +54,7 @@ impl MasterState {
         network_port: &mut P,
         port_identity: PortIdentity,
     ) -> Result<(), PortError> {
+        log::debug!("Received DelayReq");
         let delay_resp_message = MessageBuilder::new()
             .sequence_id(self.delay_resp_seq_ids.generate())
             .source_port_identity(port_identity)
