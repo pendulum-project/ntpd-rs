@@ -23,7 +23,7 @@ std = []
 [dependencies]
 arrayvec = { version = "0.7.2", default-features = false }
 embassy-futures = "0.1.0"
-fixed = "1.11"
+fixed = "1.23"
 futures = { version = "0.3", default-features = false, features = ["async-await"] }
 getset = "0.1.2"
 libm = "0.1.2"
