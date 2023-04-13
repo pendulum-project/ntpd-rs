@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "3.1.6", features = ["derive"] }
-fern = { version = "0.6.0", features = ["colored"] }
+fern = { version = "0.6.2", features = ["colored"] }
 chrono = "0.4.24"
 log = "0.4.14"
 statime = { path = "../../statime" }
