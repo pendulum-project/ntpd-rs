@@ -17,7 +17,7 @@ pub fn driver_enable_hardware_timestamping(socket: i32, interface: &str) {
     }
 
     let mut it = ifname.as_bytes_with_nul().iter();
-    let ifr_name = std::array::from_fn(|_| it.next().copied().unwrap_or_default() as i8);
+    let ifr_name = std::array::from_fn(|_| it.next().copied().unwrap_or_default() as _);
 
     let mut ifreq = libc::ifreq {
         ifr_name,
