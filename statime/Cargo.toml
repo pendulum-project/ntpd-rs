@@ -33,4 +33,4 @@ pin-project = "1.0"
 thiserror = "1.0"
 
 [dev-dependencies]
-tokio = { version = "1.25", features = ["test-util", "macros"] }
+tokio = { version = "1.27", features = ["test-util", "macros"] }
