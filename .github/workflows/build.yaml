@@ -28,7 +28,7 @@ jobs:
           - "--features rfc-algorithm"
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
+        uses: actions/checkout@83b7061638ee4956cf7545a6f7efe594e5ad0247
         with:
           persist-credentials: false
       - name: Install ${{ matrix.rust }} toolchain
@@ -62,7 +62,7 @@ jobs:
           - "--features sentry"
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
+        uses: actions/checkout@83b7061638ee4956cf7545a6f7efe594e5ad0247
         with:
           persist-credentials: false
       - name: Install nightly toolchain
@@ -87,7 +87,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
+        uses: actions/checkout@83b7061638ee4956cf7545a6f7efe594e5ad0247
         with:
           persist-credentials: false
       - name: ./ntp.toml
@@ -104,7 +104,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
+        uses: actions/checkout@83b7061638ee4956cf7545a6f7efe594e5ad0247
         with:
           persist-credentials: false
       - name: Install rust toolchain
@@ -130,7 +130,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
+        uses: actions/checkout@83b7061638ee4956cf7545a6f7efe594e5ad0247
         with:
           persist-credentials: false
       - name: Install rust toolchain
@@ -156,7 +156,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
+        uses: actions/checkout@83b7061638ee4956cf7545a6f7efe594e5ad0247
         with:
           persist-credentials: false
       - name: Install rust toolchain
@@ -190,7 +190,7 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
+        uses: actions/checkout@83b7061638ee4956cf7545a6f7efe594e5ad0247
         with:
           persist-credentials: false
       - name: Install nightly toolchain
@@ -213,7 +213,7 @@ jobs:
   audit-dependencies:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3
+    - uses: actions/checkout@83b7061638ee4956cf7545a6f7efe594e5ad0247
     - uses: EmbarkStudios/cargo-deny-action@3d26fd4e2adf837aee64b12f86d4dabb799fcfa2
       with:
         arguments: --workspace --all-features
