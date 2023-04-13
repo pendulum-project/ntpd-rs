@@ -32,6 +32,11 @@ impl MessageBuilder {
         }
     }
 
+    pub fn copy_header(mut self, message: Message) -> Self {
+        self.header = *message.header();
+        self
+    }
+
     pub fn sdo_id(mut self, sdo_id: u16) -> Result<Self, MessageBuilderError> {
         if sdo_id >= 0x1000 {
             return Err(MessageBuilderError::IllegalValue);
@@ -111,6 +116,11 @@ impl MessageBuilder {
 
     pub fn synchronization_uncertain(mut self, synchronization_uncertain: bool) -> Self {
         self.header.synchronization_uncertain = synchronization_uncertain;
+        self
+    }
+
+    pub fn add_to_correction(mut self, correction: TimeInterval) -> Self {
+        self.header.correction_field.0 += correction.0;
         self
     }
 

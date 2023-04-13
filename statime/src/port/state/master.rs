@@ -12,8 +12,6 @@ use crate::time::Instant;
 pub struct MasterState {
     pub(in crate::port) announce_seq_ids: SequenceIdGenerator,
     pub(in crate::port) sync_seq_ids: SequenceIdGenerator,
-    pub(in crate::port) follow_up_seq_ids: SequenceIdGenerator,
-    pub(in crate::port) delay_resp_seq_ids: SequenceIdGenerator,
 }
 
 impl MasterState {
@@ -21,8 +19,6 @@ impl MasterState {
         MasterState {
             announce_seq_ids: SequenceIdGenerator::new(),
             sync_seq_ids: SequenceIdGenerator::new(),
-            follow_up_seq_ids: SequenceIdGenerator::new(),
-            delay_resp_seq_ids: SequenceIdGenerator::new(),
         }
     }
 
@@ -56,8 +52,10 @@ impl MasterState {
     ) -> Result<(), PortError> {
         log::debug!("Received DelayReq");
         let delay_resp_message = MessageBuilder::new()
-            .sequence_id(self.delay_resp_seq_ids.generate())
+            .copy_header(Message::DelayReq(message))
+            .two_step_flag(false)
             .source_port_identity(port_identity)
+            .add_to_correction(current_time.subnano())
             .delay_resp_message(
                 Timestamp::from(current_time),
                 message.header().source_port_identity(),

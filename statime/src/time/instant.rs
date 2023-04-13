@@ -6,7 +6,10 @@ use core::{
     fmt::Display,
     ops::{Add, AddAssign, Sub, SubAssign},
 };
-use fixed::{traits::ToFixed, types::U96F32};
+use fixed::{
+    traits::{LosslessTryInto, LossyInto, ToFixed},
+    types::{U112F16, U96F32},
+};
 
 /// An instant is a specific moment in time. The starting 0 point is not defined and can be something arbitrary or something like unix time
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
@@ -55,6 +58,12 @@ impl Instant {
     /// Get the total amount of seconds since the origin
     pub fn secs(&self) -> u64 {
         (self.inner / 1_000_000_000.to_fixed::<U96F32>()).to_num()
+    }
+    // Get the subnanosecond amount
+    pub fn subnano(&self) -> crate::datastructures::common::TimeInterval {
+        let inter: U112F16 = self.inner.frac().lossy_into();
+        // unwrap is ok since always less than 1.
+        crate::datastructures::common::TimeInterval(inter.lossless_try_into().unwrap())
     }
 }
 

@@ -165,8 +165,9 @@ impl<P: NetworkPort> Port<P> {
                 .map(|borrow| borrow.now())
                 .map_err(|_| PortError::ClockBusy)?;
 
+            let seq_id = master.sync_seq_ids.generate();
             let sync_message = MessageBuilder::new()
-                .sequence_id(master.sync_seq_ids.generate())
+                .sequence_id(seq_id)
                 .source_port_identity(self.port_ds.port_identity)
                 .sync_message(current_time.into())
                 .serialize_vec()?;
@@ -181,8 +182,9 @@ impl<P: NetworkPort> Port<P> {
 
             // TODO: Discuss whether follow up is a config?
             let follow_up_message = MessageBuilder::new()
-                .sequence_id(master.sync_seq_ids.generate())
+                .sequence_id(seq_id)
                 .source_port_identity(self.port_ds.port_identity)
+                .correction_field(current_time.subnano())
                 .follow_up_message(current_time.into())
                 .serialize_vec()?;
 

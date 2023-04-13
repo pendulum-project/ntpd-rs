@@ -106,7 +106,7 @@ impl SlaveState {
         network_port: &mut P,
         port_identity: PortIdentity,
     ) -> Result<()> {
-        log::debug!("Received sync");
+        log::debug!("Received sync {:?}", message.header().sequence_id());
         self.sync_state = if message.header().two_step_flag() {
             SyncState::AfterSync {
                 sync_id: message.header().sequence_id(),
@@ -151,7 +151,7 @@ impl SlaveState {
     }
 
     fn handle_follow_up(&mut self, message: FollowUpMessage) -> Result<()> {
-        log::debug!("Received FollowUp");
+        log::debug!("Received FollowUp {:?}", message.header().sequence_id());
         match self.sync_state {
             SyncState::AfterSync {
                 sync_id,
