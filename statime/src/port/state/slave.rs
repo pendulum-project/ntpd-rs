@@ -106,27 +106,17 @@ impl SlaveState {
         network_port: &mut P,
         port_identity: PortIdentity,
     ) -> Result<()> {
-        let result = match self.handshake {
-            Handshake::Initial => {
-                self.handshake = if message.header().two_step_flag() {
-                    Handshake::AfterSync {
-                        sync_id: message.header().sequence_id(),
-                        sync_recv_time: current_time,
-                        sync_correction: Duration::from(message.header().correction_field()),
-                    }
-                } else {
-                    Handshake::AfterFollowUp {
-                        sync_recv_time: current_time,
-                        sync_send_time: Instant::from(message.origin_timestamp())
-                            + Duration::from(message.header().correction_field()),
-                    }
-                };
-
-                Ok(())
+        self.handshake = if message.header().two_step_flag() {
+            Handshake::AfterSync {
+                sync_id: message.header().sequence_id(),
+                sync_recv_time: current_time,
+                sync_correction: Duration::from(message.header().correction_field()),
             }
-            // Wrong state
-            Handshake::AfterSync { .. } | Handshake::AfterFollowUp { .. } => {
-                Err(SlaveError::OutOfSequence)
+        } else {
+            Handshake::AfterFollowUp {
+                sync_recv_time: current_time,
+                sync_send_time: Instant::from(message.origin_timestamp())
+                    + Duration::from(message.header().correction_field()),
             }
         };
 
@@ -156,7 +146,7 @@ impl SlaveState {
             self.handle_follow_up(follow_up)?;
         }
 
-        result
+        Ok(())
     }
 
     fn handle_follow_up(&mut self, message: FollowUpMessage) -> Result<()> {
