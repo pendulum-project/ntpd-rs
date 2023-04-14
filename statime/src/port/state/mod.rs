@@ -72,12 +72,19 @@ impl PortState {
         message: Message,
         current_time: Instant,
         network_port: &mut impl NetworkPort,
+        log_message_interval: i8,
         port_identity: PortIdentity,
     ) -> Result<()> {
         match self {
             PortState::Master(master) => {
                 master
-                    .handle_message(message, current_time, network_port, port_identity)
+                    .handle_message(
+                        message,
+                        current_time,
+                        network_port,
+                        log_message_interval,
+                        port_identity,
+                    )
                     .await?;
                 Ok(())
             }

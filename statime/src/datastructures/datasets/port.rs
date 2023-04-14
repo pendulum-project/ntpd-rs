@@ -37,8 +37,6 @@ impl PortDS {
         log_sync_interval: i8,
         delay_mechanism: DelayMechanism,
         log_min_p_delay_req_interval: i8,
-        version_number: u8,
-        minor_version_number: u8,
     ) -> Self {
         let mean_link_delay = match delay_mechanism {
             DelayMechanism::E2E | DelayMechanism::NoMechanism | DelayMechanism::Special => {
@@ -57,16 +55,16 @@ impl PortDS {
             log_sync_interval,
             delay_mechanism,
             log_min_p_delay_req_interval,
-            version_number,
-            minor_version_number,
+            version_number: 2,
+            minor_version_number: 1,
             delay_asymmetry: Duration::ZERO,
             port_enable: true,
             master_only: false,
         }
     }
 
-    pub fn min_delay_req_interval(&self) -> Duration {
-        Duration::from_log_interval(self.log_min_delay_req_interval)
+    pub fn min_delay_req_interval(&self) -> i8 {
+        self.log_min_delay_req_interval
     }
 
     pub fn announce_interval(&self) -> Duration {

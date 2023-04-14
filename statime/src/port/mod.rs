@@ -212,6 +212,7 @@ impl<P: NetworkPort> Port<P> {
                     message,
                     packet.timestamp.into(),
                     &mut self.network_port,
+                    self.port_ds.min_delay_req_interval(),
                     self.port_ds.port_identity,
                 )
                 .await?;

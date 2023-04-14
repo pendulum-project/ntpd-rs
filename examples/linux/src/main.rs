@@ -116,13 +116,11 @@ async fn main() {
             clock_identity,
             port_number: 1,
         },
-        37,
+        1,
         args.log_announce_interval,
         args.announce_receipt_timeout,
         args.log_sync_interval,
         DelayMechanism::E2E,
-        37,
-        0,
         1,
     );
     let port = Port::new(port_ds, &mut network_runtime, args.interface).await;

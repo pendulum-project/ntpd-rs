@@ -40,6 +40,7 @@ impl MasterState {
 
         let seq_id = self.sync_seq_ids.generate();
         let sync_message = MessageBuilder::new()
+            .two_step_flag(true)
             .sequence_id(seq_id)
             .source_port_identity(port_identity)
             .sync_message(current_time.into())
@@ -110,14 +111,21 @@ impl MasterState {
         message: Message,
         current_time: Instant,
         network_port: &mut P,
+        log_message_interval: i8,
         port_identity: PortIdentity,
     ) -> Result<()> {
         // Always ignore messages from own port
         if message.header().source_port_identity() != port_identity {
             match message {
                 Message::DelayReq(message) => {
-                    self.handle_delay_req(message, current_time, network_port, port_identity)
-                        .await
+                    self.handle_delay_req(
+                        message,
+                        current_time,
+                        network_port,
+                        log_message_interval,
+                        port_identity,
+                    )
+                    .await
                 }
                 _ => Err(MasterError::UnexpectedMessage.into()),
             }
@@ -131,6 +139,7 @@ impl MasterState {
         message: DelayReqMessage,
         current_time: Instant,
         network_port: &mut P,
+        log_message_interval: i8,
         port_identity: PortIdentity,
     ) -> Result<(), PortError> {
         log::debug!("Received DelayReq");
@@ -139,6 +148,7 @@ impl MasterState {
             .two_step_flag(false)
             .source_port_identity(port_identity)
             .add_to_correction(current_time.subnano())
+            .log_message_interval(log_message_interval)
             .delay_resp_message(
                 Timestamp::from(current_time),
                 message.header().source_port_identity(),
@@ -251,6 +261,7 @@ mod tests {
             }),
             Instant::from_fixed_nanos(U96F32::from_bits((200000 << 32) + (500 << 16))),
             &mut port,
+            2,
             PortIdentity::default(),
         ))
         .unwrap();
@@ -272,6 +283,7 @@ mod tests {
         );
         assert_eq!(msg.header.sequence_id, 5123);
         assert_eq!(msg.receive_timestamp, Instant::from_micros(200).into());
+        assert_eq!(msg.header.log_message_interval, 2);
         assert_eq!(
             msg.header.correction_field,
             TimeInterval(I48F16::from_bits(900))
@@ -292,6 +304,7 @@ mod tests {
             }),
             Instant::from_fixed_nanos(U96F32::from_bits((220000 << 32) + (300 << 16))),
             &mut port,
+            5,
             PortIdentity::default(),
         ))
         .unwrap();
@@ -313,6 +326,7 @@ mod tests {
         );
         assert_eq!(msg.header.sequence_id, 879);
         assert_eq!(msg.receive_timestamp, Instant::from_micros(220).into());
+        assert_eq!(msg.header.log_message_interval, 5);
         assert_eq!(
             msg.header.correction_field,
             TimeInterval(I48F16::from_bits(500))
