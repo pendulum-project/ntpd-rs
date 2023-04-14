@@ -840,7 +840,7 @@ dependencies = [
 
 [[package]]
 name = "ntp-ctl"
-version = "0.3.0-alpha.4"
+version = "0.3.0"
 dependencies = [
  "clap",
  "exitcode",
@@ -857,7 +857,7 @@ dependencies = [
 
 [[package]]
 name = "ntp-daemon"
-version = "0.3.0-alpha.4"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "clap",
@@ -884,7 +884,7 @@ dependencies = [
 
 [[package]]
 name = "ntp-metrics-exporter"
-version = "0.3.0-alpha.4"
+version = "0.3.0"
 dependencies = [
  "axum",
  "clap",
@@ -902,7 +902,7 @@ dependencies = [
 
 [[package]]
 name = "ntp-os-clock"
-version = "0.3.0-alpha.4"
+version = "0.3.0"
 dependencies = [
  "libc",
  "ntp-proto",
@@ -912,7 +912,7 @@ dependencies = [
 
 [[package]]
 name = "ntp-proto"
-version = "0.3.0-alpha.4"
+version = "0.3.0"
 dependencies = [
  "aead",
  "aes-siv",
@@ -930,7 +930,7 @@ dependencies = [
 
 [[package]]
 name = "ntp-udp"
-version = "0.3.0-alpha.4"
+version = "0.3.0"
 dependencies = [
  "libc",
  "ntp-proto",
@@ -941,7 +941,7 @@ dependencies = [
 
 [[package]]
 name = "ntpd"
-version = "0.3.0-alpha.4"
+version = "0.3.0"
 dependencies = [
  "ntp-ctl",
  "ntp-daemon",
@@ -1632,7 +1632,7 @@ checksum = "20518fe4a4c9acf048008599e464deb21beeae3d3578418951a189c235a7a9a8"
 
 [[package]]
 name = "test-binaries"
-version = "0.3.0-alpha.4"
+version = "0.3.0"
 dependencies = [
  "aes-siv",
  "clap",
