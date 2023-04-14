@@ -91,7 +91,7 @@ impl SlaveState {
                         .await
                 }
                 Message::FollowUp(message) => self.handle_follow_up(message),
-                Message::DelayResp(message) => self.handle_delay_resp(message),
+                Message::DelayResp(message) => self.handle_delay_resp(message, port_identity),
                 _ => Err(SlaveError::UnexpectedMessage),
             }
         } else {
@@ -189,7 +189,11 @@ impl SlaveState {
         }
     }
 
-    fn handle_delay_resp(&mut self, message: DelayRespMessage) -> Result<()> {
+    fn handle_delay_resp(
+        &mut self,
+        message: DelayRespMessage,
+        port_identity: PortIdentity,
+    ) -> Result<()> {
         log::debug!("Received DelayResp");
         match self.sync_state {
             SyncState::AfterFollowUp {
@@ -201,6 +205,11 @@ impl SlaveState {
                         delay_id,
                         delay_send_time,
                     } => {
+                        // Ignore responses not aimed at us
+                        if port_identity != message.requesting_port_identity() {
+                            return Ok(());
+                        }
+
                         // Ignore messages not belonging to currently processing sync
                         if delay_id != message.header().sequence_id() {
                             log::warn!("Received delay response for different message");
@@ -738,6 +747,113 @@ mod tests {
             Some(Measurement {
                 event_time: Instant::from_micros(1050),
                 master_offset: Duration::from_micros(-53)
+            })
+        );
+    }
+
+    #[test]
+    fn test_ignore_unrelated_delayresp() {
+        let mut port = TestNetworkPort::default();
+
+        let mut state = SlaveState::new(Default::default());
+
+        port.current_time = Instant::from_micros(100);
+        embassy_futures::block_on(state.handle_message(
+            Message::Sync(SyncMessage {
+                header: Header {
+                    two_step_flag: false,
+                    correction_field: TimeInterval(1000.into()),
+                    ..Default::default()
+                },
+                origin_timestamp: Instant::from_micros(0).into(),
+            }),
+            Instant::from_micros(50),
+            &mut port,
+            PortIdentity::default(),
+        ))
+        .unwrap();
+
+        assert_eq!(port.normal.len(), 0);
+        assert_eq!(port.time.len(), 1);
+        assert_eq!(state.extract_measurement(), None);
+
+        let req = match Message::deserialize(&port.time.pop().unwrap()).unwrap() {
+            Message::DelayReq(msg) => msg,
+            _ => panic!("Incorrect message type"),
+        };
+
+        embassy_futures::block_on(state.handle_message(
+            Message::DelayResp(DelayRespMessage {
+                header: Header {
+                    correction_field: TimeInterval(2000.into()),
+                    sequence_id: req.header.sequence_id,
+                    ..Default::default()
+                },
+                receive_timestamp: Instant::from_micros(353).into(),
+                requesting_port_identity: PortIdentity {
+                    port_number: 83,
+                    ..Default::default()
+                },
+            }),
+            Instant::from_micros(40),
+            &mut port,
+            PortIdentity::default(),
+        ))
+        .unwrap();
+
+        assert_eq!(port.normal.len(), 0);
+        assert_eq!(port.time.len(), 0);
+        assert_eq!(state.extract_measurement(), None);
+
+        embassy_futures::block_on(state.handle_message(
+            Message::DelayResp(DelayRespMessage {
+                header: Header {
+                    correction_field: TimeInterval(2000.into()),
+                    sequence_id: req.header.sequence_id.wrapping_sub(1),
+                    ..Default::default()
+                },
+                receive_timestamp: Instant::from_micros(353).into(),
+                requesting_port_identity: req.header.source_port_identity(),
+            }),
+            Instant::from_micros(40),
+            &mut port,
+            PortIdentity::default(),
+        ))
+        .unwrap();
+
+        assert_eq!(port.normal.len(), 0);
+        assert_eq!(port.time.len(), 0);
+        assert_eq!(state.extract_measurement(), None);
+
+        embassy_futures::block_on(state.handle_message(
+            Message::DelayResp(DelayRespMessage {
+                header: Header {
+                    correction_field: TimeInterval(2000.into()),
+                    sequence_id: req.header.sequence_id,
+                    ..Default::default()
+                },
+                receive_timestamp: Instant::from_micros(253).into(),
+                requesting_port_identity: req.header.source_port_identity(),
+            }),
+            Instant::from_micros(50),
+            &mut port,
+            PortIdentity::default(),
+        ))
+        .unwrap();
+
+        assert_eq!(port.normal.len(), 0);
+        assert_eq!(port.time.len(), 0);
+        assert_eq!(
+            state.delay_state,
+            DelayState::AfterDelayResp {
+                mean_delay: Duration::from_micros(100)
+            }
+        );
+        assert_eq!(
+            state.extract_measurement(),
+            Some(Measurement {
+                event_time: Instant::from_micros(50),
+                master_offset: Duration::from_micros(-51)
             })
         );
     }
