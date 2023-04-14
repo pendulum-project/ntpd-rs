@@ -160,3 +160,292 @@ pub enum MasterError {
     #[error("received a message that a port in the master state can never process")]
     UnexpectedMessage,
 }
+
+#[cfg(test)]
+mod tests {
+    use std::vec::Vec;
+
+    use fixed::types::{I48F16, U96F32};
+
+    use crate::datastructures::{
+        common::{ClockIdentity, TimeInterval},
+        messages::Header,
+    };
+
+    use super::*;
+
+    #[derive(Debug, Default)]
+    struct TestNetworkPort {
+        normal: Vec<Vec<u8>>,
+        time: Vec<Vec<u8>>,
+
+        current_time: Instant,
+    }
+
+    impl NetworkPort for TestNetworkPort {
+        type Error = std::convert::Infallible;
+
+        async fn send(&mut self, data: &[u8]) -> core::result::Result<(), Self::Error> {
+            self.normal.push(Vec::from(data));
+            Ok(())
+        }
+
+        async fn send_time_critical(
+            &mut self,
+            data: &[u8],
+        ) -> core::result::Result<Instant, Self::Error> {
+            self.time.push(Vec::from(data));
+            Ok(self.current_time)
+        }
+
+        async fn recv(
+            &mut self,
+        ) -> core::result::Result<crate::network::NetworkPacket, Self::Error> {
+            panic!("Recv shouldn't be called by state");
+        }
+    }
+
+    struct TestClock {
+        current_time: Instant,
+    }
+
+    impl Clock for TestClock {
+        type Error = std::convert::Infallible;
+
+        fn now(&self) -> Instant {
+            self.current_time
+        }
+
+        fn quality(&self) -> crate::datastructures::common::ClockQuality {
+            panic!("Shouldn't be called");
+        }
+
+        fn adjust(
+            &mut self,
+            _time_offset: crate::time::Duration,
+            _frequency_multiplier: f64,
+            _time_properties_ds: &crate::datastructures::datasets::TimePropertiesDS,
+        ) -> core::result::Result<(), Self::Error> {
+            panic!("Shouldn't be called");
+        }
+    }
+
+    #[test]
+    fn test_delay_response() {
+        let mut port = TestNetworkPort::default();
+
+        let mut state = MasterState::new();
+
+        embassy_futures::block_on(state.handle_message(
+            Message::DelayReq(DelayReqMessage {
+                header: Header {
+                    sequence_id: 5123,
+                    source_port_identity: PortIdentity {
+                        port_number: 83,
+                        ..Default::default()
+                    },
+                    correction_field: TimeInterval(I48F16::from_bits(400)),
+                    ..Default::default()
+                },
+                origin_timestamp: Instant::from_micros(0).into(),
+            }),
+            Instant::from_fixed_nanos(U96F32::from_bits((200000 << 32) + (500 << 16))),
+            &mut port,
+            PortIdentity::default(),
+        ))
+        .unwrap();
+
+        assert_eq!(port.normal.len(), 1);
+        assert_eq!(port.time.len(), 0);
+
+        let msg = match Message::deserialize(&port.normal.pop().unwrap()).unwrap() {
+            Message::DelayResp(msg) => msg,
+            _ => panic!("Unexpected message type"),
+        };
+
+        assert_eq!(
+            msg.requesting_port_identity,
+            PortIdentity {
+                port_number: 83,
+                ..Default::default()
+            }
+        );
+        assert_eq!(msg.header.sequence_id, 5123);
+        assert_eq!(msg.receive_timestamp, Instant::from_micros(200).into());
+        assert_eq!(
+            msg.header.correction_field,
+            TimeInterval(I48F16::from_bits(900))
+        );
+
+        embassy_futures::block_on(state.handle_message(
+            Message::DelayReq(DelayReqMessage {
+                header: Header {
+                    sequence_id: 879,
+                    source_port_identity: PortIdentity {
+                        port_number: 12,
+                        ..Default::default()
+                    },
+                    correction_field: TimeInterval(I48F16::from_bits(200)),
+                    ..Default::default()
+                },
+                origin_timestamp: Instant::from_micros(0).into(),
+            }),
+            Instant::from_fixed_nanos(U96F32::from_bits((220000 << 32) + (300 << 16))),
+            &mut port,
+            PortIdentity::default(),
+        ))
+        .unwrap();
+
+        assert_eq!(port.normal.len(), 1);
+        assert_eq!(port.time.len(), 0);
+
+        let msg = match Message::deserialize(&port.normal.pop().unwrap()).unwrap() {
+            Message::DelayResp(msg) => msg,
+            _ => panic!("Unexpected message type"),
+        };
+
+        assert_eq!(
+            msg.requesting_port_identity,
+            PortIdentity {
+                port_number: 12,
+                ..Default::default()
+            }
+        );
+        assert_eq!(msg.header.sequence_id, 879);
+        assert_eq!(msg.receive_timestamp, Instant::from_micros(220).into());
+        assert_eq!(
+            msg.header.correction_field,
+            TimeInterval(I48F16::from_bits(500))
+        );
+    }
+
+    #[test]
+    fn test_announce() {
+        let mut port = TestNetworkPort::default();
+        let clock = RefCell::new(TestClock {
+            current_time: Instant::from_micros(600),
+        });
+        let defaultds =
+            DefaultDS::new_ordinary_clock(ClockIdentity::default(), 15, 128, 0, false, 0);
+
+        let mut state = MasterState::new();
+
+        embassy_futures::block_on(state.send_announce(
+            &clock,
+            &defaultds,
+            &mut port,
+            PortIdentity::default(),
+        ))
+        .unwrap();
+
+        assert_eq!(port.normal.len(), 1);
+        assert_eq!(port.time.len(), 0);
+
+        let msg = match Message::deserialize(&port.normal.pop().unwrap()).unwrap() {
+            Message::Announce(msg) => msg,
+            _ => panic!("Unexpected message type"),
+        };
+
+        assert_eq!(msg.grandmaster_priority_1, 15);
+
+        embassy_futures::block_on(state.send_announce(
+            &clock,
+            &defaultds,
+            &mut port,
+            PortIdentity::default(),
+        ))
+        .unwrap();
+
+        assert_eq!(port.normal.len(), 1);
+        assert_eq!(port.time.len(), 0);
+
+        let msg2 = match Message::deserialize(&port.normal.pop().unwrap()).unwrap() {
+            Message::Announce(msg) => msg,
+            _ => panic!("Unexpected message type"),
+        };
+
+        assert_eq!(msg2.grandmaster_priority_1, 15);
+        assert_ne!(msg2.header.sequence_id, msg.header.sequence_id);
+    }
+
+    #[test]
+    fn test_sync() {
+        let mut port = TestNetworkPort::default();
+        let clock = RefCell::new(TestClock {
+            current_time: Instant::from_fixed_nanos(U96F32::from_bits(
+                (600000 << 32) + (248 << 16),
+            )),
+        });
+
+        let mut state = MasterState::new();
+
+        port.current_time =
+            Instant::from_fixed_nanos(U96F32::from_bits((601300 << 32) + (230 << 16)));
+        embassy_futures::block_on(state.send_sync(&clock, &mut port, PortIdentity::default()))
+            .unwrap();
+
+        assert_eq!(port.normal.len(), 1);
+        assert_eq!(port.time.len(), 1);
+
+        let sync = match Message::deserialize(&port.time.pop().unwrap()).unwrap() {
+            Message::Sync(msg) => msg,
+            _ => panic!("Unexpected message type"),
+        };
+
+        let follow = match Message::deserialize(&port.normal.pop().unwrap()).unwrap() {
+            Message::FollowUp(msg) => msg,
+            _ => panic!("Unexpected message type"),
+        };
+
+        assert_eq!(sync.header.sequence_id, follow.header.sequence_id);
+        assert_eq!(sync.origin_timestamp, Instant::from_micros(600).into());
+        assert_eq!(
+            sync.header.correction_field,
+            TimeInterval(I48F16::from_bits(0))
+        );
+        assert_eq!(
+            follow.precise_origin_timestamp,
+            Instant::from_fixed_nanos(601300).into()
+        );
+        assert_eq!(
+            follow.header.correction_field,
+            TimeInterval(I48F16::from_bits(230))
+        );
+
+        clock.borrow_mut().current_time =
+            Instant::from_fixed_nanos(U96F32::from_bits((1000600000 << 32) + (192 << 16)));
+        port.current_time =
+            Instant::from_fixed_nanos(U96F32::from_bits((1000601300 << 32) + (543 << 16)));
+        embassy_futures::block_on(state.send_sync(&clock, &mut port, PortIdentity::default()))
+            .unwrap();
+
+        assert_eq!(port.normal.len(), 1);
+        assert_eq!(port.time.len(), 1);
+
+        let sync2 = match Message::deserialize(&port.time.pop().unwrap()).unwrap() {
+            Message::Sync(msg) => msg,
+            _ => panic!("Unexpected message type"),
+        };
+
+        let follow2 = match Message::deserialize(&port.normal.pop().unwrap()).unwrap() {
+            Message::FollowUp(msg) => msg,
+            _ => panic!("Unexpected message type"),
+        };
+
+        assert_ne!(sync.header.sequence_id, sync2.header.sequence_id);
+        assert_eq!(sync2.header.sequence_id, follow2.header.sequence_id);
+        assert_eq!(sync2.origin_timestamp, Instant::from_micros(1000600).into());
+        assert_eq!(
+            sync2.header.correction_field,
+            TimeInterval(I48F16::from_bits(0))
+        );
+        assert_eq!(
+            follow2.precise_origin_timestamp,
+            Instant::from_fixed_nanos(1000601300).into()
+        );
+        assert_eq!(
+            follow2.header.correction_field,
+            TimeInterval(I48F16::from_bits(543))
+        );
+    }
+}

@@ -10,15 +10,15 @@ use super::Header;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
 #[getset(get_copy = "pub")]
 pub struct AnnounceMessage {
-    pub(super) header: Header,
-    pub(super) origin_timestamp: Timestamp,
-    pub(super) current_utc_offset: i16,
-    pub(super) grandmaster_priority_1: u8,
-    pub(super) grandmaster_clock_quality: ClockQuality,
-    pub(super) grandmaster_priority_2: u8,
-    pub(super) grandmaster_identity: ClockIdentity,
-    pub(super) steps_removed: u16,
-    pub(super) time_source: TimeSource,
+    pub(crate) header: Header,
+    pub(crate) origin_timestamp: Timestamp,
+    pub(crate) current_utc_offset: i16,
+    pub(crate) grandmaster_priority_1: u8,
+    pub(crate) grandmaster_clock_quality: ClockQuality,
+    pub(crate) grandmaster_priority_2: u8,
+    pub(crate) grandmaster_identity: ClockIdentity,
+    pub(crate) steps_removed: u16,
+    pub(crate) time_source: TimeSource,
 }
 
 impl AnnounceMessage {
