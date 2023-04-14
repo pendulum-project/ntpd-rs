@@ -1,13 +1,18 @@
+use core::cell::RefCell;
 use std::fmt::{Display, Formatter};
 
 pub use master::{MasterError, MasterState};
 pub use slave::{SlaveError, SlaveState};
 
+use crate::clock::Clock;
 use crate::datastructures::common::PortIdentity;
+use crate::datastructures::datasets::DefaultDS;
 use crate::datastructures::messages::Message;
 use crate::network::NetworkPort;
 use crate::port::error::Result;
 use crate::time::Instant;
+
+use super::Measurement;
 
 mod master;
 mod slave;
@@ -23,6 +28,45 @@ pub enum PortState {
 }
 
 impl PortState {
+    pub async fn send_sync<P: NetworkPort>(
+        &mut self,
+        local_clock: &RefCell<impl Clock>,
+        network_port: &mut P,
+        port_identity: PortIdentity,
+    ) -> Result<()> {
+        match self {
+            PortState::Master(master) => {
+                master
+                    .send_sync(local_clock, network_port, port_identity)
+                    .await
+            }
+            PortState::Slave(_)
+            | PortState::Listening
+            | PortState::Disabled
+            | PortState::Passive => Ok(()),
+        }
+    }
+
+    pub async fn send_announce<P: NetworkPort>(
+        &mut self,
+        local_clock: &RefCell<impl Clock>,
+        default_ds: &DefaultDS,
+        network_port: &mut P,
+        port_identity: PortIdentity,
+    ) -> Result<()> {
+        match self {
+            PortState::Master(master) => {
+                master
+                    .send_announce(local_clock, default_ds, network_port, port_identity)
+                    .await
+            }
+            PortState::Slave(_)
+            | PortState::Listening
+            | PortState::Disabled
+            | PortState::Passive => Ok(()),
+        }
+    }
+
     pub async fn handle_message(
         &mut self,
         message: Message,
@@ -44,6 +88,16 @@ impl PortState {
                 Ok(())
             }
             PortState::Listening | PortState::Disabled | PortState::Passive => Ok(()),
+        }
+    }
+
+    pub fn extract_measurement(&mut self) -> Option<Measurement> {
+        match self {
+            PortState::Slave(slave) => slave.extract_measurement(),
+            PortState::Master(_)
+            | PortState::Listening
+            | PortState::Disabled
+            | PortState::Passive => None,
         }
     }
 }

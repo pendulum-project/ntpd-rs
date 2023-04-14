@@ -15,9 +15,9 @@ use crate::{
     bmc::bmca::{BestAnnounceMessage, Bmca, RecommendedState},
     clock::Clock,
     datastructures::{
-        common::{PortIdentity, TimeSource, Timestamp},
+        common::{PortIdentity, Timestamp},
         datasets::{DefaultDS, PortDS, TimePropertiesDS},
-        messages::{Message, MessageBuilder},
+        messages::Message,
     },
     filters::Filter,
     network::{NetworkPacket, NetworkPort, NetworkRuntime},
@@ -157,44 +157,14 @@ impl<P: NetworkPort> Port<P> {
     }
 
     async fn send_sync(&mut self, local_clock: &RefCell<impl Clock>) -> Result<()> {
-        if let PortState::Master(master) = &mut self.port_ds.port_state {
-            log::trace!("sending sync message");
-
-            let current_time = local_clock
-                .try_borrow()
-                .map(|borrow| borrow.now())
-                .map_err(|_| PortError::ClockBusy)?;
-
-            let seq_id = master.sync_seq_ids.generate();
-            let sync_message = MessageBuilder::new()
-                .sequence_id(seq_id)
-                .source_port_identity(self.port_ds.port_identity)
-                .sync_message(current_time.into())
-                .serialize_vec()?;
-
-            let current_time = match self.network_port.send_time_critical(&sync_message).await {
-                Ok(time) => time,
-                Err(error) => {
-                    log::error!("failed to send sync message: {:?}", error);
-                    return Err(PortError::Network);
-                }
-            };
-
-            // TODO: Discuss whether follow up is a config?
-            let follow_up_message = MessageBuilder::new()
-                .sequence_id(seq_id)
-                .source_port_identity(self.port_ds.port_identity)
-                .correction_field(current_time.subnano())
-                .follow_up_message(current_time.into())
-                .serialize_vec()?;
-
-            if let Err(error) = self.network_port.send(&follow_up_message).await {
-                log::error!("failed to send follow-up message: {:?}", error);
-                return Err(PortError::Network);
-            }
-        }
-
-        Ok(())
+        self.port_ds
+            .port_state
+            .send_sync(
+                local_clock,
+                &mut self.network_port,
+                self.port_ds.port_identity,
+            )
+            .await
     }
 
     async fn send_announce(
@@ -202,35 +172,15 @@ impl<P: NetworkPort> Port<P> {
         local_clock: &RefCell<impl Clock>,
         default_ds: &DefaultDS,
     ) -> Result<()> {
-        if let PortState::Master(master) = &mut self.port_ds.port_state {
-            log::trace!("sending announce message");
-
-            let current_time = local_clock
-                .try_borrow()
-                .map(|borrow| borrow.now())
-                .map_err(|_| PortError::ClockBusy)?;
-
-            let announce_message = MessageBuilder::new()
-                .sequence_id(master.announce_seq_ids.generate())
-                .source_port_identity(self.port_ds.port_identity)
-                .announce_message(
-                    current_time.into(),              //origin_timestamp: Timestamp,
-                    0,                                // TODO implement current_utc_offset: u16,
-                    default_ds.priority_1,            //grandmaster_priority_1: u8,
-                    default_ds.clock_quality,         //grandmaster_clock_quality: ClockQuality,
-                    default_ds.priority_2,            //grandmaster_priority_2: u8,
-                    default_ds.clock_identity,        //grandmaster_identity: ClockIdentity,
-                    0,                                // TODO implement steps_removed: u16,
-                    TimeSource::from_primitive(0xa0), // TODO implement time_source: TimeSource,
-                )
-                .serialize_vec()?;
-
-            if let Err(error) = self.network_port.send(&announce_message).await {
-                log::error!("failed to send announce message: {:?}", error);
-            }
-        }
-
-        Ok(())
+        self.port_ds
+            .port_state
+            .send_announce(
+                local_clock,
+                default_ds,
+                &mut self.network_port,
+                self.port_ds.port_identity,
+            )
+            .await
     }
 
     async fn handle_packet<F: Future>(
@@ -268,20 +218,18 @@ impl<P: NetworkPort> Port<P> {
 
             // If the received message allowed the (slave) state to calculate its offset
             // from the master, update the local clock
-            if let PortState::Slave(slave) = &mut self.port_ds.port_state {
-                if let Some(measurement) = slave.extract_measurement() {
-                    let (offset, freq_corr) = filter
-                        .try_borrow_mut()
-                        .map(|mut borrow| borrow.absorb(measurement))
-                        .map_err(|_| PortError::FilterBusy)?;
+            if let Some(measurement) = self.port_ds.port_state.extract_measurement() {
+                let (offset, freq_corr) = filter
+                    .try_borrow_mut()
+                    .map(|mut borrow| borrow.absorb(measurement))
+                    .map_err(|_| PortError::FilterBusy)?;
 
-                    let mut local_clock = local_clock
-                        .try_borrow_mut()
-                        .map_err(|_| PortError::ClockBusy)?;
+                let mut local_clock = local_clock
+                    .try_borrow_mut()
+                    .map_err(|_| PortError::ClockBusy)?;
 
-                    if let Err(error) = local_clock.adjust(offset, freq_corr, time_properties_ds) {
-                        log::error!("failed to adjust clock: {:?}", error);
-                    }
+                if let Err(error) = local_clock.adjust(offset, freq_corr, time_properties_ds) {
+                    log::error!("failed to adjust clock: {:?}", error);
                 }
             }
         }
