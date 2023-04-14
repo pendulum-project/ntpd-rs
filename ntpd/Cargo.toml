@@ -1,6 +1,6 @@
 [package]
 name = "ntpd"
-description = "An NTP implementation in Rust"
+description.workspace = true
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -31,3 +31,31 @@ path = "src/bin/ntp-ctl.rs"
 [[bin]]
 name = "ntp-metrics-exporter"
 path = "src/bin/ntp-metrics-exporter.rs"
+
+[package.metadata.deb]
+name = "ntpd-rs"
+priority = "optional"
+section = "net"
+copyright = "Copyright (c) 2022-2023 Internet Security Research Group and Contributors"
+maintainer = "NTPD-rs Maintainers <ntpd-rs-maintainer@tweedegolf.com>"
+maintainer-scripts = "../pkg/deb/"
+assets = [
+  ["target/release/ntp-daemon", "/usr/bin/ntp-daemon", "755"],
+  ["target/release/ntp-ctl", "/usr/bin/ntp-ctl", "755"],
+  ["target/release/ntp-metrics-exporter", "/usr/bin/ntp-metrics-exporter", "755"],
+  ["../pkg/common/ntpd-rs.preset", "/lib/systemd/system-preset/50-ntpd-rs.preset", "644"],
+  ["../pkg/common/ntp.toml.default", "/usr/share/doc/ntpd-rs/ntp.toml.default", "644"],
+]
+systemd-units = { unit-name = "ntpd-rs", unit-scripts = "../pkg/common", enable = true }
+
+[package.metadata.generate-rpm]
+# See: https://fedoraproject.org/wiki/Licensing:Main?rd=Licensing#Good_Licenses
+license = "MIT or ASL 2.0"
+assets = [
+  { source = "target/release/ntp-daemon", dest = "/usr/bin/ntp-daemon", mode = "755" },
+  { source = "target/release/ntp-ctl", dest = "/usr/bin/ntp-ctl", mode = "755" },
+  { source = "target/release/ntp-metrics-exporter", dest = "/usr/bin/ntp-metrics-exporter", mode = "755" },
+  { source = "../pkg/common/ntp.toml.default", dest = "/usr/share/doc/ntpd-rs/ntp.toml.default", mode = "644", doc = true },
+  { source = "../pkg/common/ntpd-rs.service", dest = "/lib/systemd/system/ntpd-rs.service", mode = "644" },
+  { source = "../pkg/common/ntpd-rs.preset", dest = "/lib/systemd/system-preset/50-ntpd-rs.preset", mode = "644" },
+]

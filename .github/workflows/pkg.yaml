@@ -1,0 +1,19 @@
+on:
+  workflow_dispatch:
+
+jobs:
+  package:
+    uses: NLnetLabs/ploutos/.github/workflows/pkg-rust.yml@v7
+    with:
+      workspace_package: ntpd
+
+      package_build_rules: |
+        pkg: ntpd-rs
+        image:
+          - "rockylinux:8"
+          - "ubuntu:jammy"
+        target: x86_64
+
+      package_test_scripts_path: pkg/test-scripts/test-ntpd-rs.sh
+
+      rpm_scriptlets_path: pkg/rpm/scriptlets.toml

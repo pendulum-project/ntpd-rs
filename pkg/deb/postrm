@@ -1,0 +1,19 @@
+#!/bin/sh
+set -e
+
+NTPDRS_CONF_DIR="/etc/ntpd-rs"
+
+case "$1" in
+purge)
+    # Per https://www.debian.org/doc/debian-policy/ch-files.html#behavior
+    # "configuration files must be preserved when the package is removed, and
+    #  only deleted when the package is purged."
+    if [ -d ${NTPDRS_CONF_DIR} ]; then
+        rm -r ${NTPDRS_CONF_DIR}
+    fi
+
+
+    ;;
+esac
+
+#DEBHELPER#

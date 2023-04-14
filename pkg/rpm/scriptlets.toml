@@ -1,0 +1,62 @@
+post_install_script = '''
+#!/bin/bash -e
+# Script based on the RPM %systemd_post scriptlet. See:
+#   - https://docs.fedoraproject.org/en-US/packaging-guidelines/Scriptlets/#_systemd
+#   - https://cgit.freedesktop.org/systemd/systemd/tree/src/core/macros.systemd.in
+NTPDRS_USER=ntpd-rs
+NTPDRS_HOME_DIR="/var/lib/ntpd-rs"
+NTPDRS_HOME_DIR_PERMS=700
+NTPDRS_CONF_SRC="/usr/share/doc/ntpd-rs/ntp.toml.default"
+NTPDRS_CONF_DIR="/etc/ntpd-rs"
+NTPDRS_CONF="${NTPDRS_CONF_DIR}/ntp.toml"
+NTPDRS_CONF_PERMS=640
+if [ $EUID -ne 0 ]; then
+    echo >&2 "ERROR: RTRTR postinst script must be run as root"
+    exit 1
+fi
+create_user() {
+    if ! id ${NTPDRS_USER} > /dev/null 2>&1; then
+        # According to the CentOS 7 useradd man page:
+        # --user-group causes a group by the same name as the user to be created
+        # --create-home should force creation of a home dir even for a system account.
+        useradd --home-dir ${NTPDRS_HOME_DIR} --system --create-home --user-group ${NTPDRS_USER}
+    fi
+    # Ensure that the home directory has the correct ownership
+    chown -R ${NTPDRS_USER}:${NTPDRS_USER} ${NTPDRS_HOME_DIR}
+    # Ensure that the home directory has the correct permissions
+    chmod ${NTPDRS_HOME_DIR_PERMS} ${NTPDRS_HOME_DIR}
+}
+init_systemd_service() {
+    systemctl preset ntpd-rs.service 2>&1 || :
+}
+create_first_time_configuration() {
+    if [ ! -f "${NTPDRS_CONF}" ]; then
+        mkdir -p "${NTPDRS_CONF_DIR}"
+        cp "${NTPDRS_CONF_SRC}" "${NTPDRS_CONF}"
+
+        # Ensure that the config file has the correct ownership
+        chown ${NTPDRS_USER}:${NTPDRS_USER} ${NTPDRS_CONF}
+        chown ${NTPDRS_USER}:${NTPDRS_USER} ${NTPDRS_CONF_DIR}
+
+        # Ensure that the config file has the correct permissions
+        chmod ${NTPDRS_CONF_PERMS} ${NTPDRS_CONF}
+    fi
+}
+if [ $1 -eq 1 ] ; then
+    # Initial installation
+    create_user
+    init_systemd_service
+    create_first_time_configuration
+fi
+'''
+
+post_uninstall_script = '''
+#!/bin/bash -e
+# Script based on the RPM %systemd_postun scriptlet. See:
+#   - https://docs.fedoraproject.org/en-US/packaging-guidelines/Scriptlets/#_systemd
+#   - https://cgit.freedesktop.org/systemd/systemd/tree/src/core/macros.systemd.in
+systemctl daemon-reload >/dev/null 2>&1 || :
+if [ $1 -ge 1 ] ; then
+    systemctl try-restart ntpd-rs.service >/dev/null 2>&1 || :
+fi
+'''
