@@ -13,16 +13,14 @@ log-format = "full"
 [[peers]]
 mode = "pool"
 addr = "ntpd-rs.pool.ntp.org"
-#addr = "2.ntpd-rs.pool.ntp.org" # For IPv6 only networks
 max-peers = 4
 
 ## If you have an NTS server, you can configure a peer that connects using NTS
 ## by adding a configuration such as the one below
 #[[peers]]
 #mode = "nts-server"
-#addr = "localhost:123"
-#ke-addr = "localhost:4460"
-#certificate = "/path/to/cert.pem"
+# NTS service from NETNOD: https://www.netnod.se/nts/network-time-security
+#ke-addr = "nts.netnod.se"
 
 ## A peer in server mode will only create a single peer in contrast to the
 ## multiple peers of a pool. This is the recommended peer mode if you only
