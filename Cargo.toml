@@ -17,7 +17,7 @@ resolver = "2"
 
 # Global settings for our crates
 [workspace.package]
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/pendulum-project/ntpd-rs"
@@ -57,12 +57,12 @@ clap = { version = "4.2.2", features = ["derive", "env"] }
 async-trait = "0.1.68"
 
 # our own crates used as dependencies, same version as the workspace version
-ntp-ctl = { version = "0.3.1", path = "./ntp-ctl" }
-ntp-daemon = { version = "0.3.1", path = "./ntp-daemon" }
-ntp-metrics-exporter = { version = "0.3.1", path = "./ntp-metrics-exporter" }
-ntp-os-clock = { version = "0.3.1", path = "./ntp-os-clock" }
-ntp-proto = { version = "0.3.1", path = "./ntp-proto" }
-ntp-udp = { version = "0.3.1", path = "./ntp-udp" }
+ntp-ctl = { version = "0.3.2", path = "./ntp-ctl" }
+ntp-daemon = { version = "0.3.2", path = "./ntp-daemon" }
+ntp-metrics-exporter = { version = "0.3.2", path = "./ntp-metrics-exporter" }
+ntp-os-clock = { version = "0.3.2", path = "./ntp-os-clock" }
+ntp-proto = { version = "0.3.2", path = "./ntp-proto" }
+ntp-udp = { version = "0.3.2", path = "./ntp-udp" }
 
 # sentry
 sentry = { version = "0.29.3", default-features = false, features = ["backtrace", "contexts", "panic", "reqwest", "rustls"] }
