@@ -439,8 +439,8 @@ pub(crate) mod timestamping_config {
                 },
             };
 
-            const SIOCETHTOOL: u64 = 0x8946;
-            cerr(unsafe { libc::ioctl(fd, SIOCETHTOOL as libc::c_ulong, &ifr) }).unwrap();
+            // SIOCETHTOOL = 0x8946 (Ethtool interface) Linux ioctl request
+            cerr(unsafe { libc::ioctl(fd, 0x8946, &ifr) }).unwrap();
 
             let support = EnableTimestamps {
                 rx_software: tsi.so_timestamping & libc::SOF_TIMESTAMPING_RX_SOFTWARE != 0,

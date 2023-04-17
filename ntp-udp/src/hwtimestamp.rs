@@ -28,7 +28,7 @@ fn set_hardware_timestamp(
     };
 
     let fd = udp_socket.as_raw_fd();
-    cerr(unsafe { libc::ioctl(fd, libc::SIOCSHWTSTAMP as libc::c_ulong, &mut ifreq) })?;
+    cerr(unsafe { libc::ioctl(fd, libc::SIOCSHWTSTAMP as _, &mut ifreq) })?;
 
     Ok(())
 }
@@ -51,7 +51,7 @@ fn get_hardware_timestamp(
     };
 
     let fd = udp_socket.as_raw_fd();
-    cerr(unsafe { libc::ioctl(fd, libc::SIOCGHWTSTAMP as libc::c_ulong, &mut ifreq) })?;
+    cerr(unsafe { libc::ioctl(fd, libc::SIOCGHWTSTAMP as _, &mut ifreq) })?;
 
     Ok(tstamp_config)
 }
