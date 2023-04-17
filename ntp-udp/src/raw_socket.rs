@@ -163,7 +163,7 @@ mod set_timestamping_options {
 }
 
 mod recv_message {
-    use std::{io::IoSliceMut, marker::PhantomData, net::SocketAddr, os::unix::prelude::AsRawFd};
+    use std::{io::IoSliceMut, marker::PhantomData, mem::MaybeUninit, net::SocketAddr, os::unix::prelude::AsRawFd, ptr::addr_of_mut};
 
     use tracing::warn;
 
@@ -190,14 +190,31 @@ mod recv_message {
         let mut buf_slice = IoSliceMut::new(packet_buf);
         let mut addr = zeroed_sockaddr_storage();
 
-        let mut mhdr = libc::msghdr {
-            msg_control: control_buf.as_mut_ptr().cast::<libc::c_void>(),
-            msg_controllen: control_buf.len() as _,
-            msg_iov: (&mut buf_slice as *mut IoSliceMut).cast::<libc::iovec>(),
-            msg_iovlen: 1,
-            msg_flags: 0,
-            msg_name: (&mut addr as *mut libc::sockaddr_storage).cast::<libc::c_void>(),
-            msg_namelen: std::mem::size_of::<libc::sockaddr_storage>() as u32,
+        let msg_iov = (&mut buf_slice as *mut IoSliceMut).cast::<libc::iovec>();
+        let msg_name = (&mut addr as *mut libc::sockaddr_storage).cast::<libc::c_void>();
+        let msg_control = control_buf.as_mut_ptr().cast::<libc::c_void>();
+        let mut mhdr = {
+            // Safety:
+            // To initialize private padding fields (present on `target_env = "musl"`), we must use unsafe.
+            let mut mhdr = MaybeUninit::<libc::msghdr>::zeroed();
+            let msg_controllen = control_buf.len() as _;
+            let ptr_msg_control = unsafe { addr_of_mut!((*mhdr.as_mut_ptr()).msg_control) };
+            unsafe {ptr_msg_control.write(msg_control); }
+            let ptr_msg_controllen = unsafe { addr_of_mut!((*mhdr.as_mut_ptr()).msg_controllen) };
+            unsafe { ptr_msg_controllen.write(msg_controllen); }
+            let ptr_msg_iov = unsafe { addr_of_mut!((*mhdr.as_mut_ptr()).msg_iov) };
+            unsafe { ptr_msg_iov.write(msg_iov); }
+            let ptr_msg_iovlen = unsafe { addr_of_mut!((*mhdr.as_mut_ptr()).msg_iovlen) };
+            unsafe { ptr_msg_iovlen.write(1); }
+            let ptr_msg_flags = unsafe { addr_of_mut!((*mhdr.as_mut_ptr()).msg_flags) };
+            unsafe { ptr_msg_flags.write(0); }
+            let ptr_msg_name = unsafe { addr_of_mut!((*mhdr.as_mut_ptr()).msg_name) };
+            unsafe {  ptr_msg_name.write(msg_name); }
+            let ptr_msg_namelen = unsafe { addr_of_mut!((*mhdr.as_mut_ptr()).msg_namelen) };
+            unsafe {
+              ptr_msg_namelen.write(std::mem::size_of::<libc::sockaddr_storage>() as u32);
+              mhdr.assume_init()
+            }
         };
 
         let receive_flags = match queue {
