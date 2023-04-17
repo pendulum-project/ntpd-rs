@@ -23,7 +23,7 @@ license = "Apache-2.0 OR MIT"
 repository = "https://github.com/pendulum-project/ntpd-rs"
 homepage = "https://github.com/pendulum-project/ntpd-rs"
 readme = "./README.md"
-description = "A full-featured implementation of the Network Time Protocol, including NTS support."
+description = "Full-featured implementation of NTP with NTS support"
 publish = true
 
 [workspace.metadata.release]
