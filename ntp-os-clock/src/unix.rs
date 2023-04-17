@@ -213,7 +213,11 @@ impl UnixNtpClock {
         // information in the return value of ntp_adjtime can be ignored.
         // The ntp_adjtime call is safe because the reference always
         // points to a valid libc::timex.
-        if unsafe { libc::ntp_adjtime(timex) } == -1 {
+        #[cfg(any(target_os = "freebsd", target_os = "macos", target_env = "gnu"))]
+        let errno = unsafe { libc::ntp_adjtime(timex) };
+        #[cfg(all(target_os = "linux", target_env = "musl"))]
+        let errno = unsafe { libc::adjtimex(timex) };
+        if errno == -1 {
             Err(convert_errno())
         } else {
             Ok(())
