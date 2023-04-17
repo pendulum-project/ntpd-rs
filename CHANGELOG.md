@@ -1,4 +1,11 @@
-Main
+Version 0.3.2
+======
+
+Minor Changes
+------
+- Updated readme and documentation
+
+Version 0.3.1
 ======
 
 Major Changes
@@ -14,6 +21,10 @@ Minor Changes
 -----
 - Upgraded dependencies
 - Refactored internal structure of the code.
+
+Version 0.3.0
+======
+Unreleased
 
 Version 0.2.1
 ======

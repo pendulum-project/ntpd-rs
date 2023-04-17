@@ -23,7 +23,7 @@ license = "Apache-2.0 OR MIT"
 repository = "https://github.com/pendulum-project/ntpd-rs"
 homepage = "https://github.com/pendulum-project/ntpd-rs"
 readme = "./README.md"
-description = "An NTP implementation in Rust"
+description = "A full-featured implementation of the Network Time Protocol, including NTS support."
 publish = true
 
 [workspace.metadata.release]
