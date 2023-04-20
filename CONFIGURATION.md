@@ -69,7 +69,7 @@ This installation script makes the following assumptions:
     ```
     sudo cp ./target/release/ntp-daemon /usr/local/bin/ntp-daemon
     ```
-- The configuration is located at `/ect/ntpd-rs/ntp.toml`
+- The configuration is located at `/etc/ntpd-rs/ntp.toml`
 - There exists a low-privileged `ntpd-rs` group and user. This snippet should work on most linux versions:
     ```sh
     useradd --home-dir "/var/lib/ntpd-rs" --system --create-home --user-group ntpd-rs
@@ -348,7 +348,7 @@ peers = ["0.pool.ntp.org", "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
 # System parameters used in filtering and steering the clock:
 [system]
 min-intersection-survivors = 1
-poll-interval-limits = { min = 6, max = 10 }
+poll-limits = { min = 6, max = 10 }
 panic-threshold = 10
 startup-panic-threshold = { forward = "inf", backward = 1800 }
 
