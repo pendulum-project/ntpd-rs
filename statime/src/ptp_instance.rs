@@ -125,6 +125,7 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
         });
 
         loop {
+            let stop = RefCell::new(false);
             let mut run_ports = self
                 .ports
                 .iter_mut()
@@ -141,16 +142,23 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
                             announce_timeout,
                             &self.default_ds,
                             &self.time_properties_ds,
+                            &stop,
                         )
                     },
                 );
             let run_ports =
-                embassy_futures::select::select_array([(); N].map(|_| run_ports.next().unwrap()));
+                embassy_futures::join::join_array([(); N].map(|_| run_ports.next().unwrap()));
 
-            match embassy_futures::select::select(bmca_timeout.next(), run_ports).await {
-                Either::First(_) => self.run_bmca(&mut pinned_announce_receipt_timeouts),
-                Either::Second(_) => unreachable!(),
-            }
+            embassy_futures::join::join(
+                async {
+                    bmca_timeout.next().await;
+                    *stop.borrow_mut() = true;
+                },
+                run_ports,
+            )
+            .await;
+
+            self.run_bmca(&mut pinned_announce_receipt_timeouts);
         }
     }
 

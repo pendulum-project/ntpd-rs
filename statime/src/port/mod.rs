@@ -76,8 +76,11 @@ impl<P: NetworkPort> Port<P> {
         announce_timeout: &mut Pin<&mut Ticker<F, impl FnMut(Duration) -> F>>,
         default_ds: &DefaultDS,
         time_properties_ds: &TimePropertiesDS,
-    ) -> ! {
-        loop {
+        stop: &RefCell<bool>,
+    ) -> () {
+        // this lambda ensures we don't keep the borrow of stop alive over await points
+        let check = move || -> bool { *stop.borrow() };
+        while !check() {
             let timeouts = select::select3(
                 announce_receipt_timeout.next(),
                 sync_timeout.next(),
