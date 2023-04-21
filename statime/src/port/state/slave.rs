@@ -1,4 +1,5 @@
 use crate::datastructures::common::{PortIdentity, Timestamp};
+use crate::datastructures::datasets::DefaultDS;
 use crate::datastructures::messages::{
     DelayRespMessage, FollowUpMessage, Message, MessageBuilder, SyncMessage,
 };
@@ -82,13 +83,20 @@ impl SlaveState {
         current_time: Instant,
         network_port: &mut P,
         port_identity: PortIdentity,
+        default_ds: &DefaultDS,
     ) -> Result<()> {
         // Only listen to master
         if message.header().source_port_identity() == self.remote_master {
             match message {
                 Message::Sync(message) => {
-                    self.handle_sync(message, current_time, network_port, port_identity)
-                        .await
+                    self.handle_sync(
+                        message,
+                        current_time,
+                        network_port,
+                        port_identity,
+                        default_ds,
+                    )
+                    .await
                 }
                 Message::FollowUp(message) => self.handle_follow_up(message),
                 Message::DelayResp(message) => self.handle_delay_resp(message, port_identity),
@@ -105,6 +113,7 @@ impl SlaveState {
         current_time: Instant,
         network_port: &mut P,
         port_identity: PortIdentity,
+        default_ds: &DefaultDS,
     ) -> Result<()> {
         log::debug!("Received sync {:?}", message.header().sequence_id());
         self.sync_state = if message.header().two_step_flag() {
@@ -127,6 +136,8 @@ impl SlaveState {
             log::debug!("Starting new delay measurement");
             let delay_id = self.delay_req_ids.generate();
             let delay_req = MessageBuilder::new()
+                .sdo_id(default_ds.sdo_id)
+                .domain_number(default_ds.domain_number)
                 .source_port_identity(port_identity)
                 .sequence_id(delay_id)
                 .log_message_interval(0x7F)
@@ -293,7 +304,10 @@ pub enum SlaveError {
 mod tests {
     use std::vec::Vec;
 
-    use crate::datastructures::{common::TimeInterval, messages::Header};
+    use crate::datastructures::{
+        common::{ClockIdentity, TimeInterval},
+        messages::{Header, SdoId},
+    };
 
     use super::*;
 
@@ -338,6 +352,9 @@ mod tests {
         };
         state.next_delay_measurement = Some(Instant::from_secs(10));
 
+        let defaultds =
+            DefaultDS::new_ordinary_clock(ClockIdentity::default(), 15, 128, 0, false, SdoId::default());
+
         embassy_futures::block_on(state.handle_message(
             Message::Sync(SyncMessage {
                 header: Header {
@@ -350,6 +367,7 @@ mod tests {
             Instant::from_micros(50),
             &mut port,
             PortIdentity::default(),
+            &defaultds,
         ))
         .unwrap();
 
@@ -376,6 +394,7 @@ mod tests {
             Instant::from_micros(1050),
             &mut port,
             PortIdentity::default(),
+            &defaultds,
         ))
         .unwrap();
 
@@ -395,6 +414,7 @@ mod tests {
             Instant::from_micros(1100),
             &mut port,
             PortIdentity::default(),
+            &defaultds,
         ))
         .unwrap();
 
@@ -415,6 +435,9 @@ mod tests {
 
         let mut state = SlaveState::new(Default::default());
 
+        let defaultds =
+            DefaultDS::new_ordinary_clock(ClockIdentity::default(), 15, 128, 0, false, SdoId::default());
+
         port.current_time = Instant::from_micros(100);
         embassy_futures::block_on(state.handle_message(
             Message::Sync(SyncMessage {
@@ -428,6 +451,7 @@ mod tests {
             Instant::from_micros(50),
             &mut port,
             PortIdentity::default(),
+            &defaultds,
         ))
         .unwrap();
 
@@ -452,6 +476,7 @@ mod tests {
             Instant::from_micros(50),
             &mut port,
             PortIdentity::default(),
+            &defaultds,
         ))
         .unwrap();
 
@@ -486,6 +511,7 @@ mod tests {
             Instant::from_micros(1050),
             &mut port,
             PortIdentity::default(),
+            &defaultds,
         ))
         .unwrap();
 
@@ -504,6 +530,7 @@ mod tests {
             Instant::from_micros(1150),
             &mut port,
             PortIdentity::default(),
+            &defaultds,
         ))
         .unwrap();
 
@@ -524,6 +551,7 @@ mod tests {
             Instant::from_micros(50),
             &mut port,
             PortIdentity::default(),
+            &defaultds,
         ))
         .unwrap();
 
@@ -554,6 +582,9 @@ mod tests {
         };
         state.next_delay_measurement = Some(Instant::from_secs(10));
 
+        let defaultds =
+            DefaultDS::new_ordinary_clock(ClockIdentity::default(), 15, 128, 0, false, SdoId::default());
+
         embassy_futures::block_on(state.handle_message(
             Message::FollowUp(FollowUpMessage {
                 header: Header {
@@ -566,6 +597,7 @@ mod tests {
             Instant::from_micros(100),
             &mut port,
             PortIdentity::default(),
+            &defaultds,
         ))
         .unwrap();
 
@@ -586,6 +618,7 @@ mod tests {
             Instant::from_micros(50),
             &mut port,
             PortIdentity::default(),
+            &defaultds,
         ))
         .unwrap();
 
@@ -610,6 +643,9 @@ mod tests {
         };
         state.next_delay_measurement = Some(Instant::from_secs(10));
 
+        let defaultds =
+            DefaultDS::new_ordinary_clock(ClockIdentity::default(), 15, 128, 0, false, SdoId::default());
+
         embassy_futures::block_on(state.handle_message(
             Message::Sync(SyncMessage {
                 header: Header {
@@ -623,6 +659,7 @@ mod tests {
             Instant::from_micros(50),
             &mut port,
             PortIdentity::default(),
+            &defaultds,
         ))
         .unwrap();
 
@@ -642,6 +679,7 @@ mod tests {
             Instant::from_micros(100),
             &mut port,
             PortIdentity::default(),
+            &defaultds,
         ))
         .unwrap();
 
@@ -661,6 +699,7 @@ mod tests {
             Instant::from_micros(100),
             &mut port,
             PortIdentity::default(),
+            &defaultds,
         ))
         .unwrap();
 
@@ -685,6 +724,9 @@ mod tests {
         };
         state.next_delay_measurement = Some(Instant::from_secs(10));
 
+        let defaultds =
+            DefaultDS::new_ordinary_clock(ClockIdentity::default(), 15, 128, 0, false, SdoId::default());
+
         embassy_futures::block_on(state.handle_message(
             Message::Sync(SyncMessage {
                 header: Header {
@@ -698,6 +740,7 @@ mod tests {
             Instant::from_micros(50),
             &mut port,
             PortIdentity::default(),
+            &defaultds,
         ))
         .unwrap();
 
@@ -718,6 +761,7 @@ mod tests {
             Instant::from_micros(1050),
             &mut port,
             PortIdentity::default(),
+            &defaultds,
         ))
         .unwrap();
 
@@ -737,6 +781,7 @@ mod tests {
             Instant::from_micros(1100),
             &mut port,
             PortIdentity::default(),
+            &defaultds,
         ))
         .unwrap();
 
@@ -757,6 +802,9 @@ mod tests {
 
         let mut state = SlaveState::new(Default::default());
 
+        let defaultds =
+            DefaultDS::new_ordinary_clock(ClockIdentity::default(), 15, 128, 0, false, SdoId::default());
+
         port.current_time = Instant::from_micros(100);
         embassy_futures::block_on(state.handle_message(
             Message::Sync(SyncMessage {
@@ -770,6 +818,7 @@ mod tests {
             Instant::from_micros(50),
             &mut port,
             PortIdentity::default(),
+            &defaultds,
         ))
         .unwrap();
 
@@ -798,6 +847,7 @@ mod tests {
             Instant::from_micros(40),
             &mut port,
             PortIdentity::default(),
+            &defaultds,
         ))
         .unwrap();
 
@@ -818,6 +868,7 @@ mod tests {
             Instant::from_micros(40),
             &mut port,
             PortIdentity::default(),
+            &defaultds,
         ))
         .unwrap();
 
@@ -838,6 +889,7 @@ mod tests {
             Instant::from_micros(50),
             &mut port,
             PortIdentity::default(),
+            &defaultds,
         ))
         .unwrap();
 

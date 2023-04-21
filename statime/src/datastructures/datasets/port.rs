@@ -15,16 +15,22 @@ pub struct PortDS {
     pub(crate) port_identity: PortIdentity,
     pub(crate) port_state: PortState,
     log_min_delay_req_interval: i8,
+    #[allow(unused)]
     mean_link_delay: Duration,
     log_announce_interval: i8,
     announce_receipt_timeout: u8,
     log_sync_interval: i8,
+    #[allow(unused)]
     delay_mechanism: DelayMechanism,
     log_min_p_delay_req_interval: i8,
+    #[allow(unused)]
     version_number: u8,
+    #[allow(unused)]
     minor_version_number: u8,
+    #[allow(unused)]
     delay_asymmetry: Duration,
     port_enable: bool,
+    #[allow(unused)]
     master_only: bool,
 }
 

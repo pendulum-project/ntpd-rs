@@ -15,8 +15,8 @@ use crate::{
     bmc::bmca::{BestAnnounceMessage, Bmca, RecommendedState},
     clock::Clock,
     datastructures::{
-        common::{PortIdentity, Timestamp},
-        datasets::{DefaultDS, PortDS, TimePropertiesDS},
+        common::{PortIdentity, TimeSource, Timestamp},
+        datasets::{CurrentDS, DefaultDS, ParentDS, PortDS, TimePropertiesDS},
         messages::Message,
     },
     filters::Filter,
@@ -76,6 +76,8 @@ impl<P: NetworkPort> Port<P> {
         announce_timeout: &mut Pin<&mut Ticker<F, impl FnMut(Duration) -> F>>,
         default_ds: &DefaultDS,
         time_properties_ds: &TimePropertiesDS,
+        parent_ds: &ParentDS,
+        current_ds: &CurrentDS,
         stop: &RefCell<bool>,
     ) -> () {
         // this lambda ensures we don't keep the borrow of stop alive over await points
@@ -100,13 +102,22 @@ impl<P: NetworkPort> Port<P> {
                     }
                     Either3::Second(_) => {
                         // Send sync message
-                        if let Err(error) = self.send_sync(local_clock).await {
+                        if let Err(error) = self.send_sync(local_clock, default_ds).await {
                             log::error!("{:?}", error);
                         }
                     }
                     Either3::Third(_) => {
                         // Send announce message
-                        if let Err(error) = self.send_announce(local_clock, default_ds).await {
+                        if let Err(error) = self
+                            .send_announce(
+                                local_clock,
+                                default_ds,
+                                time_properties_ds,
+                                parent_ds,
+                                current_ds,
+                            )
+                            .await
+                        {
                             log::error!("{:?}", error);
                         }
                     }
@@ -145,9 +156,47 @@ impl<P: NetworkPort> Port<P> {
         recommended_state: RecommendedState,
         announce_receipt_timeout: &mut Pin<&mut Ticker<F, impl FnMut(Duration) -> F>>,
         time_properties_ds: &mut TimePropertiesDS,
+        current_ds: &mut CurrentDS,
+        parent_ds: &mut ParentDS,
     ) -> Result<()> {
         self.port_ds
             .set_recommended_port_state(&recommended_state, announce_receipt_timeout);
+
+        match recommended_state {
+            RecommendedState::M1(defaultds) | RecommendedState::M2(defaultds) => {
+                current_ds.steps_removed = 0;
+                current_ds.offset_from_master = Duration::ZERO;
+                current_ds.mean_delay = Duration::ZERO;
+
+                parent_ds.parent_port_identity.clock_identity = defaultds.clock_identity;
+                parent_ds.parent_port_identity.port_number = 0;
+                parent_ds.grandmaster_identity = defaultds.clock_identity;
+                parent_ds.grandmaster_clock_quality = defaultds.clock_quality;
+                parent_ds.grandmaster_priority_1 = defaultds.priority_1;
+                parent_ds.grandmaster_priority_2 = defaultds.priority_2;
+
+                time_properties_ds.leap59 = false;
+                time_properties_ds.leap61 = false;
+                time_properties_ds.current_utc_offset = 37;
+                time_properties_ds.current_utc_offset_valid = false;
+                time_properties_ds.ptp_timescale = true;
+                time_properties_ds.time_traceable = false;
+                time_properties_ds.frequency_traceable = false;
+                time_properties_ds.time_source = TimeSource::InternalOscillator;
+            }
+            RecommendedState::M3(_) | RecommendedState::P1(_) | RecommendedState::P2(_) => {}
+            RecommendedState::S1(announce_message) => {
+                current_ds.steps_removed = announce_message.steps_removed() + 1;
+
+                parent_ds.parent_port_identity = announce_message.header().source_port_identity();
+                parent_ds.grandmaster_identity = announce_message.grandmaster_identity();
+                parent_ds.grandmaster_clock_quality = announce_message.grandmaster_clock_quality();
+                parent_ds.grandmaster_priority_1 = announce_message.grandmaster_priority_1();
+                parent_ds.grandmaster_priority_2 = announce_message.grandmaster_priority_2();
+
+                *time_properties_ds = announce_message.time_properties();
+            }
+        }
 
         // TODO: Discuss if we should change the clock's own time properties, or keep
         // the master's time properties separately
@@ -159,13 +208,18 @@ impl<P: NetworkPort> Port<P> {
         Ok(())
     }
 
-    async fn send_sync(&mut self, local_clock: &RefCell<impl Clock>) -> Result<()> {
+    async fn send_sync(
+        &mut self,
+        local_clock: &RefCell<impl Clock>,
+        default_ds: &DefaultDS,
+    ) -> Result<()> {
         self.port_ds
             .port_state
             .send_sync(
                 local_clock,
                 &mut self.network_port,
                 self.port_ds.port_identity,
+                default_ds,
             )
             .await
     }
@@ -174,12 +228,18 @@ impl<P: NetworkPort> Port<P> {
         &mut self,
         local_clock: &RefCell<impl Clock>,
         default_ds: &DefaultDS,
+        time_properties: &TimePropertiesDS,
+        parent_ds: &ParentDS,
+        current_ds: &CurrentDS,
     ) -> Result<()> {
         self.port_ds
             .port_state
             .send_announce(
                 local_clock,
                 default_ds,
+                time_properties,
+                parent_ds,
+                current_ds,
                 &mut self.network_port,
                 self.port_ds.port_identity,
             )
@@ -217,6 +277,7 @@ impl<P: NetworkPort> Port<P> {
                     &mut self.network_port,
                     self.port_ds.min_delay_req_interval(),
                     self.port_ds.port_identity,
+                    default_ds,
                 )
                 .await?;
 

@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimeSource {
     AtomicClock,
     Gnss,
@@ -8,6 +8,7 @@ pub enum TimeSource {
     Ntp,
     HandSet,
     Other,
+    #[default]
     InternalOscillator,
     ProfileSpecific(u8),
     Reserved,

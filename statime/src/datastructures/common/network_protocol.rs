@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetworkProtocol {
     Reserved,
     UdpIPv4,
@@ -8,6 +8,7 @@ pub enum NetworkProtocol {
     ControlNet,
     Profinet,
     ProfileSpecific(u16),
+    #[default]
     Unknown,
 }
 

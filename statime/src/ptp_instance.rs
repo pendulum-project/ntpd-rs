@@ -4,7 +4,6 @@ use std::{
     pin::{pin, Pin},
 };
 
-use embassy_futures::select::Either;
 use futures::StreamExt;
 
 use crate::{
@@ -24,8 +23,8 @@ use crate::{
 /// `handle_*` methods whenever required.
 pub struct PtpInstance<P, C, F, const N: usize> {
     default_ds: DefaultDS,
-    current_ds: Option<CurrentDS>,
-    parent_ds: Option<ParentDS>,
+    current_ds: CurrentDS,
+    parent_ds: ParentDS,
     time_properties_ds: TimePropertiesDS,
     ports: [Port<P>; N],
     local_clock: RefCell<C>,
@@ -70,8 +69,8 @@ impl<P, C, F, const N: usize> PtpInstance<P, C, F, N> {
         }
         PtpInstance {
             default_ds,
-            current_ds: None,
-            parent_ds: None,
+            current_ds: Default::default(),
+            parent_ds: Default::default(),
             time_properties_ds,
             ports,
             local_clock: RefCell::new(local_clock),
@@ -142,6 +141,8 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
                             announce_timeout,
                             &self.default_ds,
                             &self.time_properties_ds,
+                            &self.parent_ds,
+                            &self.current_ds,
                             &stop,
                         )
                     },
@@ -196,6 +197,8 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
                     recommended_state,
                     &mut pinned_timeouts[index],
                     &mut self.time_properties_ds,
+                    &mut self.current_ds,
+                    &mut self.parent_ds,
                 ) {
                     log::error!("{:?}", error)
                 }

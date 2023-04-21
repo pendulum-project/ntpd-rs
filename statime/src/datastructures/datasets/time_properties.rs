@@ -1,6 +1,6 @@
 use crate::datastructures::common::TimeSource;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Default, Copy, Clone, Debug, Eq, PartialEq)]
 pub struct TimePropertiesDS {
     pub(crate) current_utc_offset: i16,
     pub(crate) current_utc_offset_valid: bool,

@@ -1,9 +1,8 @@
 use crate::time::Duration;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Default, Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct CurrentDS {
-    steps_removed: u16,
-    offset_from_master: Duration,
-    mean_delay: Duration,
-    synchronization_uncertain: bool,
+    pub(crate) steps_removed: u16,
+    pub(crate) offset_from_master: Duration,
+    pub(crate) mean_delay: Duration,
 }

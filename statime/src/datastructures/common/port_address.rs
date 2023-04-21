@@ -2,7 +2,7 @@ use super::network_protocol::NetworkProtocol;
 use crate::datastructures::{WireFormat, WireFormatError};
 use arrayvec::ArrayVec;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct PortAddress {
     pub network_protocol: NetworkProtocol,
     pub address: ArrayVec<u8, 16>,

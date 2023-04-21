@@ -3,8 +3,8 @@ use std::fmt::Debug;
 use thiserror::Error;
 
 use crate::clock::Clock;
-use crate::datastructures::common::{PortIdentity, TimeSource, Timestamp};
-use crate::datastructures::datasets::DefaultDS;
+use crate::datastructures::common::{PortIdentity, Timestamp};
+use crate::datastructures::datasets::{CurrentDS, DefaultDS, ParentDS, TimePropertiesDS};
 use crate::datastructures::messages::{DelayReqMessage, Message, MessageBuilder};
 use crate::network::NetworkPort;
 use crate::port::error::{PortError, Result};
@@ -30,6 +30,7 @@ impl MasterState {
         local_clock: &RefCell<impl Clock>,
         network_port: &mut P,
         port_identity: PortIdentity,
+        default_ds: &DefaultDS,
     ) -> Result<()> {
         log::trace!("sending sync message");
 
@@ -40,6 +41,8 @@ impl MasterState {
 
         let seq_id = self.sync_seq_ids.generate();
         let sync_message = MessageBuilder::new()
+            .sdo_id(default_ds.sdo_id)
+            .domain_number(default_ds.domain_number)
             .two_step_flag(true)
             .sequence_id(seq_id)
             .source_port_identity(port_identity)
@@ -56,6 +59,8 @@ impl MasterState {
 
         // TODO: Discuss whether follow up is a config?
         let follow_up_message = MessageBuilder::new()
+            .sdo_id(default_ds.sdo_id)
+            .domain_number(default_ds.domain_number)
             .sequence_id(seq_id)
             .source_port_identity(port_identity)
             .correction_field(current_time.subnano())
@@ -74,6 +79,9 @@ impl MasterState {
         &mut self,
         local_clock: &RefCell<impl Clock>,
         default_ds: &DefaultDS,
+        time_properties: &TimePropertiesDS,
+        parent_ds: &ParentDS,
+        current_ds: &CurrentDS,
         network_port: &mut P,
         port_identity: PortIdentity,
     ) -> Result<()> {
@@ -85,17 +93,25 @@ impl MasterState {
             .map_err(|_| PortError::ClockBusy)?;
 
         let announce_message = MessageBuilder::new()
+            .sdo_id(default_ds.sdo_id)
+            .domain_number(default_ds.domain_number)
+            .leap59(time_properties.leap59())
+            .leap61(time_properties.leap61())
+            .current_utc_offset_valid(time_properties.current_utc_offset_valid)
+            .ptp_timescale(time_properties.ptp_timescale)
+            .time_tracable(time_properties.time_traceable)
+            .frequency_tracable(time_properties.frequency_traceable)
             .sequence_id(self.announce_seq_ids.generate())
             .source_port_identity(port_identity)
             .announce_message(
-                current_time.into(),              //origin_timestamp: Timestamp,
-                0,                                // TODO implement current_utc_offset: u16,
-                default_ds.priority_1,            //grandmaster_priority_1: u8,
-                default_ds.clock_quality,         //grandmaster_clock_quality: ClockQuality,
-                default_ds.priority_2,            //grandmaster_priority_2: u8,
-                default_ds.clock_identity,        //grandmaster_identity: ClockIdentity,
-                0,                                // TODO implement steps_removed: u16,
-                TimeSource::from_primitive(0xa0), // TODO implement time_source: TimeSource,
+                current_time.into(), //origin_timestamp: Timestamp,
+                time_properties.current_utc_offset,
+                parent_ds.grandmaster_priority_1,
+                parent_ds.grandmaster_clock_quality,
+                parent_ds.grandmaster_priority_2,
+                parent_ds.grandmaster_identity,
+                current_ds.steps_removed,
+                time_properties.time_source,
             )
             .serialize_vec()?;
 
@@ -343,12 +359,19 @@ mod tests {
 
         let defaultds =
             DefaultDS::new_ordinary_clock(ClockIdentity::default(), 15, 128, 0, false, id);
+        let mut parent_ds = ParentDS::default();
+        parent_ds.grandmaster_priority_1 = 15;
+        let current_ds = CurrentDS::default();
+        let time_properties = TimePropertiesDS::default();
 
         let mut state = MasterState::new();
 
         embassy_futures::block_on(state.send_announce(
             &clock,
             &defaultds,
+            &time_properties,
+            &parent_ds,
+            &current_ds,
             &mut port,
             PortIdentity::default(),
         ))
@@ -367,6 +390,9 @@ mod tests {
         embassy_futures::block_on(state.send_announce(
             &clock,
             &defaultds,
+            &time_properties,
+            &parent_ds,
+            &current_ds,
             &mut port,
             PortIdentity::default(),
         ))
@@ -394,11 +420,18 @@ mod tests {
         });
 
         let mut state = MasterState::new();
+        let defaultds =
+            DefaultDS::new_ordinary_clock(ClockIdentity::default(), 15, 128, 0, false, SdoId::default());
 
         port.current_time =
             Instant::from_fixed_nanos(U96F32::from_bits((601300 << 32) + (230 << 16)));
-        embassy_futures::block_on(state.send_sync(&clock, &mut port, PortIdentity::default()))
-            .unwrap();
+        embassy_futures::block_on(state.send_sync(
+            &clock,
+            &mut port,
+            PortIdentity::default(),
+            &defaultds,
+        ))
+        .unwrap();
 
         assert_eq!(port.normal.len(), 1);
         assert_eq!(port.time.len(), 1);
@@ -432,8 +465,13 @@ mod tests {
             Instant::from_fixed_nanos(U96F32::from_bits((1000600000 << 32) + (192 << 16)));
         port.current_time =
             Instant::from_fixed_nanos(U96F32::from_bits((1000601300 << 32) + (543 << 16)));
-        embassy_futures::block_on(state.send_sync(&clock, &mut port, PortIdentity::default()))
-            .unwrap();
+        embassy_futures::block_on(state.send_sync(
+            &clock,
+            &mut port,
+            PortIdentity::default(),
+            &defaultds,
+        ))
+        .unwrap();
 
         assert_eq!(port.normal.len(), 1);
         assert_eq!(port.time.len(), 1);

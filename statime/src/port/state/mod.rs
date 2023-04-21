@@ -6,7 +6,7 @@ pub use slave::{SlaveError, SlaveState};
 
 use crate::clock::Clock;
 use crate::datastructures::common::PortIdentity;
-use crate::datastructures::datasets::DefaultDS;
+use crate::datastructures::datasets::{CurrentDS, DefaultDS, ParentDS, TimePropertiesDS};
 use crate::datastructures::messages::Message;
 use crate::network::NetworkPort;
 use crate::port::error::Result;
@@ -33,11 +33,12 @@ impl PortState {
         local_clock: &RefCell<impl Clock>,
         network_port: &mut P,
         port_identity: PortIdentity,
+        default_ds: &DefaultDS,
     ) -> Result<()> {
         match self {
             PortState::Master(master) => {
                 master
-                    .send_sync(local_clock, network_port, port_identity)
+                    .send_sync(local_clock, network_port, port_identity, &default_ds)
                     .await
             }
             PortState::Slave(_)
@@ -51,13 +52,24 @@ impl PortState {
         &mut self,
         local_clock: &RefCell<impl Clock>,
         default_ds: &DefaultDS,
+        time_properties: &TimePropertiesDS,
+        parent_ds: &ParentDS,
+        current_ds: &CurrentDS,
         network_port: &mut P,
         port_identity: PortIdentity,
     ) -> Result<()> {
         match self {
             PortState::Master(master) => {
                 master
-                    .send_announce(local_clock, default_ds, network_port, port_identity)
+                    .send_announce(
+                        local_clock,
+                        default_ds,
+                        time_properties,
+                        parent_ds,
+                        current_ds,
+                        network_port,
+                        port_identity,
+                    )
                     .await
             }
             PortState::Slave(_)
@@ -74,6 +86,7 @@ impl PortState {
         network_port: &mut impl NetworkPort,
         log_message_interval: i8,
         port_identity: PortIdentity,
+        default_ds: &DefaultDS,
     ) -> Result<()> {
         match self {
             PortState::Master(master) => {
@@ -90,7 +103,13 @@ impl PortState {
             }
             PortState::Slave(slave) => {
                 slave
-                    .handle_message(message, current_time, network_port, port_identity)
+                    .handle_message(
+                        message,
+                        current_time,
+                        network_port,
+                        port_identity,
+                        default_ds,
+                    )
                     .await?;
                 Ok(())
             }

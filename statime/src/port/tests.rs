@@ -4,6 +4,7 @@ use arrayvec::{ArrayVec, CapacityError};
 use fixed::traits::ToFixed;
 
 use crate::datastructures::common::{ClockIdentity, PortIdentity, TimeInterval, Timestamp};
+use crate::datastructures::datasets::DefaultDS;
 use crate::datastructures::messages::{MessageBuilder, SdoId, MAX_DATA_LEN};
 use crate::network::{NetworkPacket, NetworkPort, NetworkRuntime};
 use crate::port::state::SlaveState;
@@ -87,6 +88,8 @@ async fn test_measurement_flow() {
 
     let mut network_port = network_runtime.open(()).await.unwrap();
 
+    let defaultds = DefaultDS::new_ordinary_clock(ClockIdentity::default(), 15, 128, 0, false, SdoId::default());
+
     let port_identity = PortIdentity {
         clock_identity: ClockIdentity([1, 0, 0, 0, 0, 0, 0, 0]),
         port_number: 0,
@@ -113,6 +116,7 @@ async fn test_measurement_flow() {
             Instant::from_nanos(5),
             &mut network_port,
             port_identity,
+            &defaultds,
         )
         .await
         .unwrap();
@@ -137,6 +141,7 @@ async fn test_measurement_flow() {
             Instant::from_nanos(13),
             &mut network_port,
             port_identity,
+            &defaultds,
         )
         .await
         .unwrap();
