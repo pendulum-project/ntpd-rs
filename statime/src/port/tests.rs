@@ -4,7 +4,7 @@ use arrayvec::{ArrayVec, CapacityError};
 use fixed::traits::ToFixed;
 
 use crate::datastructures::common::{ClockIdentity, PortIdentity, TimeInterval, Timestamp};
-use crate::datastructures::messages::{MessageBuilder, MAX_DATA_LEN};
+use crate::datastructures::messages::{MessageBuilder, SdoId, MAX_DATA_LEN};
 use crate::network::{NetworkPacket, NetworkPort, NetworkRuntime};
 use crate::port::state::SlaveState;
 use crate::port::Measurement;
@@ -99,10 +99,9 @@ async fn test_measurement_flow() {
     assert_eq!(test_state.extract_measurement(), None);
 
     let sync_message = MessageBuilder::new()
-        .sdo_id(0)
-        .unwrap()
+        .sdo_id(SdoId::default())
         .domain_number(0)
-        .correction_field(TimeInterval((1 as i16).to_fixed()))
+        .correction_field(TimeInterval((1i16).to_fixed()))
         .sync_message(Timestamp {
             seconds: 0,
             nanos: 0,
@@ -121,10 +120,9 @@ async fn test_measurement_flow() {
     assert_eq!(test_state.extract_measurement(), None);
 
     let delay_resp_message = MessageBuilder::new()
-        .sdo_id(0)
-        .unwrap()
+        .sdo_id(SdoId::default())
         .domain_number(0)
-        .correction_field(TimeInterval((2 as i16).to_fixed()))
+        .correction_field(TimeInterval((2i16).to_fixed()))
         .delay_resp_message(
             Timestamp {
                 seconds: 0,

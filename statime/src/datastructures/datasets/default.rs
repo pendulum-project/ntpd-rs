@@ -1,6 +1,7 @@
 use crate::datastructures::common::ClockIdentity;
 use crate::datastructures::common::ClockQuality;
 use crate::datastructures::common::InstanceType;
+use crate::datastructures::messages::SdoId;
 use crate::time::Instant;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -12,7 +13,7 @@ pub struct DefaultDS {
     pub(crate) priority_2: u8,
     pub(crate) domain_number: u8,
     slave_only: bool,
-    pub(crate) sdo_id: u16,
+    pub(crate) sdo_id: SdoId,
     current_time: Instant,
     pub(crate) instance_enable: bool,
     external_port_configuration_enabled: bool,
@@ -27,7 +28,7 @@ impl DefaultDS {
         priority_2: u8,
         domain_number: u8,
         slave_only: bool,
-        sdo_id: u16,
+        sdo_id: SdoId,
     ) -> Self {
         DefaultDS {
             clock_identity,
@@ -52,7 +53,7 @@ impl DefaultDS {
         priority_1: u8,
         priority_2: u8,
         domain_number: u8,
-        sdo_id: u16,
+        sdo_id: SdoId,
     ) -> Self {
         DefaultDS {
             clock_identity,

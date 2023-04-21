@@ -8,9 +8,8 @@ use getset::CopyGetters;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
 #[getset(get_copy = "pub")]
 pub struct Header {
-    pub(crate) sdo_id: u16,
-    pub(crate) minor_version_ptp: u8,
-    pub(crate) version_ptp: u8,
+    pub(crate) sdo_id: SdoId,
+    pub(crate) version: PtpVersion,
     pub(crate) domain_number: u8,
     pub(crate) alternate_master_flag: bool,
     pub(crate) two_step_flag: bool,
@@ -40,9 +39,8 @@ pub struct DeserializedHeader {
 impl Header {
     pub(super) fn new() -> Self {
         Self {
-            sdo_id: 0,
-            minor_version_ptp: 1,
-            version_ptp: 2,
+            sdo_id: SdoId(0),
+            version: PtpVersion { major: 2, minor: 1 },
             domain_number: 0,
             alternate_master_flag: false,
             two_step_flag: false,
@@ -73,11 +71,11 @@ impl Header {
         content_length: usize,
         buffer: &mut [u8],
     ) -> Result<(), WireFormatError> {
-        buffer[0] = (((self.sdo_id & 0xF00) >> 4) as u8) | (u8::from(content_type) & 0x0F);
-        buffer[1] = ((self.minor_version_ptp & 0x0F) << 4) | (self.version_ptp & 0x0F);
+        buffer[0] = ((self.sdo_id.high_byte()) << 4) | (u8::from(content_type) & 0x0F);
+        buffer[1] = self.version.as_byte();
         buffer[2..4].copy_from_slice(&((content_length + self.wire_size()) as u16).to_be_bytes());
         buffer[4] = self.domain_number;
-        buffer[5] = (self.sdo_id & 0xFF) as u8;
+        buffer[5] = self.sdo_id.low_byte();
         buffer[6] = 0;
         buffer[7] = 0;
         buffer[6] |= self.alternate_master_flag as u8;
@@ -103,11 +101,13 @@ impl Header {
     }
 
     pub fn deserialize_header(buffer: &[u8]) -> Result<DeserializedHeader, WireFormatError> {
+        let version = PtpVersion::from_byte(buffer[1]);
+        let sdo_id = SdoId((((buffer[0] & 0xF0) as u16) << 4) | (buffer[5] as u16));
+
         Ok(DeserializedHeader {
             header: Self {
-                sdo_id: (((buffer[0] & 0xF0) as u16) << 4) | (buffer[5] as u16),
-                minor_version_ptp: (buffer[1] >> 4) & 0x0F,
-                version_ptp: buffer[1] & 0x0F,
+                sdo_id,
+                version,
                 domain_number: buffer[4],
                 alternate_master_flag: (buffer[6] & (1 << 0)) > 0,
                 two_step_flag: (buffer[6] & (1 << 1)) > 0,
@@ -135,6 +135,56 @@ impl Header {
 impl Default for Header {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SdoId(u16);
+
+impl core::fmt::Display for SdoId {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl SdoId {
+    pub fn new(sdo_id: u16) -> Option<Self> {
+        (0..=0x1000).contains(&sdo_id).then_some(Self(sdo_id))
+    }
+
+    const fn high_byte(self) -> u8 {
+        (self.0 >> 8) as u8
+    }
+
+    const fn low_byte(self) -> u8 {
+        self.0 as u8
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PtpVersion {
+    major: u8,
+    minor: u8,
+}
+
+impl PtpVersion {
+    pub fn new(major: u8, minor: u8) -> Option<Self> {
+        if major >= 0x10 || minor >= 0x10 {
+            None
+        } else {
+            Some(Self { major, minor })
+        }
+    }
+
+    fn as_byte(&self) -> u8 {
+        self.minor << 4 | self.major
+    }
+
+    fn from_byte(byte: u8) -> Self {
+        Self {
+            major: byte & 0x0F,
+            minor: byte >> 4,
+        }
     }
 }
 
@@ -233,9 +283,11 @@ mod tests {
             ],
             DeserializedHeader {
                 header: Header {
-                    sdo_id: 0x5BB,
-                    minor_version_ptp: 0xA,
-                    version_ptp: 0x1,
+                    sdo_id: SdoId(0x5BB),
+                    version: PtpVersion {
+                        major: 0x1,
+                        minor: 0xA,
+                    },
                     domain_number: 0xAA,
                     alternate_master_flag: true,
                     two_step_flag: false,

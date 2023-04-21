@@ -179,7 +179,7 @@ mod tests {
 
     use crate::datastructures::{
         common::{ClockIdentity, TimeInterval},
-        messages::Header,
+        messages::{Header, SdoId},
     };
 
     use super::*;
@@ -339,8 +339,10 @@ mod tests {
         let clock = RefCell::new(TestClock {
             current_time: Instant::from_micros(600),
         });
+        let id = SdoId::default();
+
         let defaultds =
-            DefaultDS::new_ordinary_clock(ClockIdentity::default(), 15, 128, 0, false, 0);
+            DefaultDS::new_ordinary_clock(ClockIdentity::default(), 15, 128, 0, false, id);
 
         let mut state = MasterState::new();
 

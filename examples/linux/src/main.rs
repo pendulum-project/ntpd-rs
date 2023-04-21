@@ -1,7 +1,8 @@
-use clap::{AppSettings, Parser};
+use clap::Parser;
 use fern::colors::Color;
 use statime::datastructures::common::{PortIdentity, TimeSource};
 use statime::datastructures::datasets::{DefaultDS, DelayMechanism, PortDS, TimePropertiesDS};
+use statime::datastructures::messages::SdoId;
 use statime::port::Port;
 use statime::{
     datastructures::common::ClockIdentity, filters::basic::BasicFilter, ptp_instance::PtpInstance,
@@ -11,8 +12,45 @@ use statime_linux::{
     network::linux::{get_clock_id, LinuxInterfaceDescriptor, LinuxRuntime},
 };
 
+#[derive(Clone, Copy)]
+struct SdoIdParser;
+
+impl clap::builder::TypedValueParser for SdoIdParser {
+    type Value = SdoId;
+
+    fn parse_ref(
+        &self,
+        cmd: &clap::Command,
+        arg: Option<&clap::Arg>,
+        value: &std::ffi::OsStr,
+    ) -> Result<Self::Value, clap::Error> {
+        use clap::error::{ContextKind, ContextValue, ErrorKind};
+
+        let inner = clap::value_parser!(u16);
+        let val = inner.parse_ref(cmd, arg, value)?;
+
+        match SdoId::new(val) {
+            None => {
+                let mut err = clap::Error::new(ErrorKind::ValueValidation).with_cmd(cmd);
+                if let Some(arg) = arg {
+                    err.insert(
+                        ContextKind::InvalidArg,
+                        ContextValue::String(arg.to_string()),
+                    );
+                }
+                err.insert(
+                    ContextKind::InvalidValue,
+                    ContextValue::String(val.to_string()),
+                );
+                Err(err)
+            }
+            Some(v) => Ok(v),
+        }
+    }
+}
+
 #[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None, setting = AppSettings::DeriveDisplayOrder)]
+#[clap(author, version, about, long_about = None)]
 struct Args {
     /// Set desired logging level
     #[clap(short, long, default_value_t = log::LevelFilter::Info)]
@@ -23,8 +61,8 @@ struct Args {
     interface: LinuxInterfaceDescriptor,
 
     /// The SDO id of the desired ptp domain
-    #[clap(long, default_value_t = 0)]
-    sdo: u16,
+    #[clap(long, default_value_t = SdoId::default(), value_parser = SdoIdParser)]
+    sdo: SdoId,
 
     /// The domain number of the desired ptp domain
     #[clap(long, default_value_t = 0)]
@@ -55,7 +93,7 @@ struct Args {
     announce_receipt_timeout: u8,
 
     /// Use hardware clock
-    #[clap(long, short)]
+    #[clap(long, short = 'c')]
     hardware_clock: Option<String>,
 }
 

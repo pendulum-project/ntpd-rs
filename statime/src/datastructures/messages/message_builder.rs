@@ -4,7 +4,7 @@ use crate::datastructures::common::{
 
 use super::{
     AnnounceMessage, DelayReqMessage, DelayRespMessage, FollowUpMessage, Header, Message,
-    SyncMessage,
+    PtpVersion, SdoId, SyncMessage,
 };
 
 #[derive(Debug, Clone)]
@@ -37,21 +37,14 @@ impl MessageBuilder {
         self
     }
 
-    pub fn sdo_id(mut self, sdo_id: u16) -> Result<Self, MessageBuilderError> {
-        if sdo_id >= 0x1000 {
-            return Err(MessageBuilderError::IllegalValue);
-        }
+    pub fn sdo_id(mut self, sdo_id: SdoId) -> Self {
         self.header.sdo_id = sdo_id;
-        Ok(self)
+        self
     }
 
-    pub fn version_ptp(mut self, major: u8, minor: u8) -> Result<Self, MessageBuilderError> {
-        if major >= 0x10 || minor >= 0x10 {
-            return Err(MessageBuilderError::IllegalValue);
-        }
-        self.header.version_ptp = major;
-        self.header.minor_version_ptp = minor;
-        Ok(self)
+    pub fn version_ptp(mut self, version: PtpVersion) -> Self {
+        self.header.version = version;
+        self
     }
 
     pub fn domain_number(mut self, domain_number: u8) -> Self {
