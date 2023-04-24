@@ -23,7 +23,6 @@ jobs:
           - 1.65.0
         target:
           - ""
-          - x86_64-unknown-linux-musl
         os: [ubuntu-latest]
         features:
           - ""
@@ -54,6 +53,39 @@ jobs:
         with:
           files: lcov.info
           fail_ci_if_error: false
+
+  build-musl:
+    name: Build+test-musl
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        rust:
+          - stable
+          - beta
+          - 1.65.0
+        target:
+          - "x86_64-unknown-linux-musl"
+        os: [ubuntu-latest]
+        features:
+          - ""
+          - "--features sentry"
+          - "--features rfc-algorithm"
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
+        with:
+          persist-credentials: false
+      - name: Install ${{ matrix.rust }} toolchain
+        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
+        with:
+          toolchain: ${{ matrix.rust }}
+          override: true
+      - name: cargo build
+        run: cargo build ${{ matrix.features }}
+      - name: cargo test
+        run: cargo test
+        env:
+          RUST_BACKTRACE: 1
 
   unused:
     name: Unused dependencies
@@ -187,6 +219,40 @@ jobs:
         with:
           command: clippy
           args: --target armv7-unknown-linux-gnueabihf --workspace --all-targets -- -D warnings
+
+  clippy-musl:
+    name: ClippyMusl
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
+        with:
+          persist-credentials: false
+      - name: Install rust toolchain
+        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
+        with:
+          toolchain: stable
+          override: true
+          default: true
+          components: clippy
+          target: x86_64-unknown-linux-musl
+      # Use zig as our C compiler for convenient cross-compilation. We run into rustls having a dependency on `ring`.
+      # This crate uses C and assembly code, and because of its build scripts, `cargo clippy` needs to be able to compile
+      # that code for our target.
+      - uses: goto-bus-stop/setup-zig@869a4299cf8ac7db4ebffaec36ad82a682f88acb
+        with:
+          version: 0.9.0
+      - name: Install cargo-zigbuild
+        uses: taiki-e/install-action@f0b89cda51dc27169e64a0dbc20182a1ec84d8ff
+        with:
+          tool: cargo-zigbuild
+      - name: Run clippy
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
+        env:
+          TARGET_CC: "/home/runner/.cargo/bin/cargo-zigbuild zig cc -- -target x86_64-linux-musl"
+        with:
+          command: clippy
+          args: --target x86_64-unknown-linux-musl --workspace --all-targets -- -D warnings
 
   fuzz:
     name: Smoke-test fuzzing targets
