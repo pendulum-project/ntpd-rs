@@ -273,7 +273,10 @@ mod tests {
                 || addr2 != orig_addr
                 || addr3 != orig_addr
                 || addr4 != orig_addr
-                || addr5 != orig_addr
+                || addr5 != orig_addr,
+            "{:?} should not be in {:?}",
+            orig_addr,
+            [addr1, addr2, addr3, addr4, addr5],
         );
     }
 
