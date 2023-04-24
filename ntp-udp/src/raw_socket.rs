@@ -163,7 +163,10 @@ mod set_timestamping_options {
 }
 
 mod recv_message {
-    use std::{io::IoSliceMut, marker::PhantomData, net::SocketAddr, os::unix::prelude::AsRawFd};
+    use std::{
+        io::IoSliceMut, marker::PhantomData, mem::MaybeUninit, net::SocketAddr,
+        os::unix::prelude::AsRawFd,
+    };
 
     use tracing::warn;
 
@@ -175,6 +178,17 @@ mod recv_message {
     pub(crate) enum MessageQueue {
         Normal,
         Error,
+    }
+
+    fn empty_msghdr() -> libc::msghdr {
+        // On `target_env = "musl"`, there are several private padding fields.
+        // the position of these padding fields depends on the system endianness,
+        // so keeping making them public does not really help.
+        //
+        // Safety:
+        //
+        // all fields are either integer or pointer types. For those types, 0 is a valid value
+        unsafe { MaybeUninit::<libc::msghdr>::zeroed().assume_init() }
     }
 
     pub(crate) fn receive_message<'a>(
@@ -190,15 +204,15 @@ mod recv_message {
         let mut buf_slice = IoSliceMut::new(packet_buf);
         let mut addr = zeroed_sockaddr_storage();
 
-        let mut mhdr = libc::msghdr {
-            msg_control: control_buf.as_mut_ptr().cast::<libc::c_void>(),
-            msg_controllen: control_buf.len() as _,
-            msg_iov: (&mut buf_slice as *mut IoSliceMut).cast::<libc::iovec>(),
-            msg_iovlen: 1,
-            msg_flags: 0,
-            msg_name: (&mut addr as *mut libc::sockaddr_storage).cast::<libc::c_void>(),
-            msg_namelen: std::mem::size_of::<libc::sockaddr_storage>() as u32,
-        };
+        let mut mhdr = empty_msghdr();
+
+        mhdr.msg_control = control_buf.as_mut_ptr().cast::<libc::c_void>();
+        mhdr.msg_controllen = control_buf.len() as _;
+        mhdr.msg_iov = (&mut buf_slice as *mut IoSliceMut).cast::<libc::iovec>();
+        mhdr.msg_iovlen = 1;
+        mhdr.msg_flags = 0;
+        mhdr.msg_name = (&mut addr as *mut libc::sockaddr_storage).cast::<libc::c_void>();
+        mhdr.msg_namelen = std::mem::size_of::<libc::sockaddr_storage>() as u32;
 
         let receive_flags = match queue {
             MessageQueue::Normal => 0,
@@ -439,8 +453,8 @@ pub(crate) mod timestamping_config {
                 },
             };
 
-            const SIOCETHTOOL: u64 = 0x8946;
-            cerr(unsafe { libc::ioctl(fd, SIOCETHTOOL as libc::c_ulong, &ifr) }).unwrap();
+            // SIOCETHTOOL = 0x8946 (Ethtool interface) Linux ioctl request
+            cerr(unsafe { libc::ioctl(fd, 0x8946, &ifr) }).unwrap();
 
             let support = EnableTimestamps {
                 rx_software: tsi.so_timestamping & libc::SOF_TIMESTAMPING_RX_SOFTWARE != 0,
