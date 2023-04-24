@@ -78,7 +78,7 @@ pub(crate) const EMPTY_TIMEX: libc::timex = libc::timex {
     errcnt: 0,
     stbcnt: 0,
     tai: 0,
-    __padding: [0; 11]
+    __padding: [0; 11],
 };
 
 #[cfg(any(target_os = "freebsd", target_os = "macos"))]
@@ -209,15 +209,20 @@ impl UnixNtpClock {
     }
 
     fn ntp_adjtime(timex: &mut libc::timex) -> Result<(), Error> {
+        #[cfg(any(target_os = "freebsd", target_os = "macos", target_env = "gnu"))]
+        use libc::ntp_adjtime as adjtime;
+
+        // ntp_adjtime is equivalent to adjtimex for our purposes
+        //
+        // https://man7.org/linux/man-pages/man2/adjtimex.2.html
+        #[cfg(all(target_os = "linux", target_env = "musl"))]
+        use libc::adjtimex as adjtime;
+
         // We don't care about the time status, so the non-error
         // information in the return value of ntp_adjtime can be ignored.
         // The ntp_adjtime call is safe because the reference always
         // points to a valid libc::timex.
-        #[cfg(any(target_os = "freebsd", target_os = "macos", target_env = "gnu"))]
-        let errno = unsafe { libc::ntp_adjtime(timex) };
-        #[cfg(all(target_os = "linux", target_env = "musl"))]
-        let errno = unsafe { libc::adjtimex(timex) };
-        if errno == -1 {
+        if unsafe { adjtime(timex) } == -1 {
             Err(convert_errno())
         } else {
             Ok(())
@@ -238,7 +243,15 @@ impl UnixNtpClock {
 
         let mut timespec = self.clock_gettime()?;
 
-        timespec.tv_sec += offset_secs as libc::time_t;
+        timespec.tv_sec += {
+            // this looks a little strange. it is to work around the `libc::time_t` type being
+            // deprectated for musl in rust's libc.
+            if true {
+                offset_secs as _
+            } else {
+                timespec.tv_sec
+            }
+        };
         timespec.tv_nsec += offset_nanos as libc::c_long;
 
         self.clock_settime(timespec)?;
@@ -253,7 +266,7 @@ impl UnixNtpClock {
         let mut timex = libc::timex {
             modes: libc::ADJ_SETOFFSET | libc::MOD_NANO,
             time: libc::timeval {
-                tv_sec: secs as libc::time_t,
+                tv_sec: secs as _,
                 tv_usec: nanos as libc::suseconds_t,
             },
             ..crate::unix::EMPTY_TIMEX
