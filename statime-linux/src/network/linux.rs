@@ -154,7 +154,7 @@ impl InterfaceName {
         std::ffi::CStr::from_bytes_until_nul(&self.bytes[..]).unwrap()
     }
 
-    pub(crate) fn to_ifr_name(&self) -> [i8; libc::IFNAMSIZ] {
+    pub(crate) fn to_ifr_name(self) -> [i8; libc::IFNAMSIZ] {
         let mut it = self.bytes.iter().copied();
         [0; libc::IFNAMSIZ].map(|_| it.next().unwrap_or(0) as i8)
     }
@@ -238,7 +238,7 @@ impl LinuxInterfaceDescriptor {
             }
             LinuxNetworkMode::Ipv6 => {
                 let a: Option<_> = i.address?.as_sockaddr_in6()?.ip().into();
-                Some(IpAddr::from(Ipv6Addr::from(a?)))
+                Some(IpAddr::from(a?))
             }
         }
     }
@@ -609,11 +609,85 @@ mod tests {
         let addr = SocketAddr::new(bind_ip, port);
 
         let socket = LinuxRuntime::bind_socket(interface.interface_name, addr).await?;
-        let address = LinuxRuntime::join_multicast(&interface, &socket, port)?;
+        let address = LinuxRuntime::join_multicast(&interface, &socket)?;
 
         assert_ne!(address.ip(), bind_ip);
         assert_eq!(address.port(), port);
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn interface_index_ipv4() -> std::io::Result<()> {
+        let interface = LinuxInterfaceDescriptor {
+            interface_name: Some(InterfaceName::LOOPBACK),
+            mode: LinuxNetworkMode::Ipv4,
+        };
+
+        assert!(interface.get_index().is_some());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn interface_index_ipv6() -> std::io::Result<()> {
+        let interface = LinuxInterfaceDescriptor {
+            interface_name: Some(InterfaceName::LOOPBACK),
+            mode: LinuxNetworkMode::Ipv6,
+        };
+
+        assert!(interface.get_index().is_some());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn get_address_ipv4_valid() -> Result<(), Box<dyn std::error::Error>> {
+        let interface = LinuxInterfaceDescriptor {
+            interface_name: Some(InterfaceName::LOOPBACK),
+            mode: LinuxNetworkMode::Ipv4,
+        };
+
+        assert_eq!(interface.get_address()?, Ipv4Addr::LOCALHOST);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn get_address_ipv6_valid() -> Result<(), Box<dyn std::error::Error>> {
+        let interface = LinuxInterfaceDescriptor {
+            interface_name: Some(InterfaceName::LOOPBACK),
+            mode: LinuxNetworkMode::Ipv6,
+        };
+
+        assert_eq!(interface.get_address()?, Ipv6Addr::LOCALHOST);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn get_address_ipv4_invalid() {
+        let interface = LinuxInterfaceDescriptor {
+            interface_name: Some(InterfaceName::from_str("invalid").unwrap()),
+            mode: LinuxNetworkMode::Ipv4,
+        };
+
+        assert!(matches!(
+            interface.get_address().unwrap_err(),
+            NetworkError::InterfaceDoesNotExist
+        ));
+    }
+
+    #[tokio::test]
+    async fn get_address_ipv6_invalid() {
+        let interface = LinuxInterfaceDescriptor {
+            interface_name: Some(InterfaceName::from_str("invalid").unwrap()),
+            mode: LinuxNetworkMode::Ipv6,
+        };
+
+        assert!(matches!(
+            interface.get_address().unwrap_err(),
+            NetworkError::InterfaceDoesNotExist
+        ));
     }
 }
