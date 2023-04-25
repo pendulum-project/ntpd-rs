@@ -79,24 +79,27 @@ impl LinuxRuntime {
         interface: &LinuxInterfaceDescriptor,
         socket: &UdpSocket,
     ) -> Result<SocketAddr, NetworkError> {
-        // TODO: multicast ttl limit for ipv4/multicast hops limit for ipv6
-
-        let local_addr = socket.local_addr()?;
+        let port = socket.local_addr()?.port();
 
         match interface.get_address()? {
             IpAddr::V4(ip) => {
+                // TODO: multicast ttl limit for ipv4
+
                 socket.join_multicast_v4(Self::IPV4_PRIMARY_MULTICAST, ip)?;
                 socket.join_multicast_v4(Self::IPV4_PDELAY_MULTICAST, ip)?;
 
-                Ok((Self::IPV4_PRIMARY_MULTICAST, local_addr.port()).into())
+                Ok((Self::IPV4_PRIMARY_MULTICAST, port).into())
             }
             IpAddr::V6(_ip) => {
+                // TODO: multicast hops limit for ipv6
+
+                // 0 indicates any interface, though it is likely this interface does not support multicast
                 let if_index = interface.get_index().unwrap_or(0);
 
                 socket.join_multicast_v6(&Self::IPV6_PRIMARY_MULTICAST, if_index)?;
                 socket.join_multicast_v6(&Self::IPV6_PDELAY_MULTICAST, if_index)?;
 
-                Ok((Self::IPV6_PRIMARY_MULTICAST, local_addr.port()).into())
+                Ok((Self::IPV6_PRIMARY_MULTICAST, port).into())
             }
         }
     }
@@ -126,14 +129,6 @@ impl LinuxNetworkMode {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct InterfaceName {
     bytes: [u8; libc::IFNAMSIZ],
-}
-
-impl core::ops::Deref for InterfaceName {
-    type Target = [u8];
-
-    fn deref(&self) -> &Self::Target {
-        self.bytes.as_slice()
-    }
 }
 
 impl InterfaceName {
@@ -596,7 +591,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn port_setup() -> Result<(), Box<dyn std::error::Error>> {
+    async fn port_setup_ipv4() -> Result<(), Box<dyn std::error::Error>> {
         let port = 8000;
 
         let interface = LinuxInterfaceDescriptor {
@@ -604,13 +599,33 @@ mod tests {
             mode: LinuxNetworkMode::Ipv4,
         };
 
-        let bind_ip = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
-        let addr = SocketAddr::new(bind_ip, port);
+        let addr = SocketAddr::new(interface.mode.unspecified_ip_addr(), port);
 
         let socket = LinuxRuntime::bind_socket(interface.interface_name, addr).await?;
         let address = LinuxRuntime::join_multicast(&interface, &socket)?;
 
-        assert_ne!(address.ip(), bind_ip);
+        assert_ne!(address.ip(), interface.mode.unspecified_ip_addr());
+        assert_eq!(address.port(), port);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore = "gives an `invalid argument` OS error"]
+    async fn port_setup_ipv6() -> Result<(), Box<dyn std::error::Error>> {
+        let port = 8001;
+
+        let interface = LinuxInterfaceDescriptor {
+            interface_name: None,
+            mode: LinuxNetworkMode::Ipv6,
+        };
+
+        let addr = SocketAddr::new(interface.mode.unspecified_ip_addr(), port);
+
+        let socket = LinuxRuntime::bind_socket(interface.interface_name, addr).await?;
+        let address = LinuxRuntime::join_multicast(&interface, &socket).unwrap();
+
+        assert_ne!(address.ip(), interface.mode.unspecified_ip_addr());
         assert_eq!(address.port(), port);
 
         Ok(())
@@ -636,6 +651,19 @@ mod tests {
         };
 
         assert!(interface.get_index().is_some());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn interface_index_invalid() -> std::io::Result<()> {
+        let bytes = *b"123412341234123\0";
+        let interface = LinuxInterfaceDescriptor {
+            interface_name: Some(InterfaceName { bytes }),
+            mode: LinuxNetworkMode::Ipv4,
+        };
+
+        assert!(interface.get_index().is_none());
 
         Ok(())
     }
@@ -688,5 +716,27 @@ mod tests {
             interface.get_address().unwrap_err(),
             NetworkError::InterfaceDoesNotExist
         ));
+    }
+
+    #[test]
+    fn test_interface_from_str() {
+        let interface = LinuxInterfaceDescriptor::from_str("0.0.0.0").unwrap();
+
+        assert!(matches!(interface.mode, LinuxNetworkMode::Ipv4));
+        assert!(interface.interface_name.is_none());
+
+        let interface = LinuxInterfaceDescriptor::from_str("::").unwrap();
+
+        assert!(matches!(interface.mode, LinuxNetworkMode::Ipv6));
+        assert!(interface.interface_name.is_none());
+
+        let interface = LinuxInterfaceDescriptor::from_str("lo").unwrap();
+
+        assert!(matches!(interface.mode, LinuxNetworkMode::Ipv4));
+        assert_eq!(interface.interface_name.unwrap(), InterfaceName::LOOPBACK);
+
+        let error = LinuxInterfaceDescriptor::from_str("xxx").unwrap_err();
+
+        assert!(matches!(error, NetworkError::InterfaceDoesNotExist));
     }
 }
