@@ -8,7 +8,6 @@ use nix::{
     cmsg_space,
     errno::Errno,
     ifaddrs::{getifaddrs, InterfaceAddress, InterfaceAddressIterator},
-    net::if_::if_nametoindex,
     sys::socket::{
         recvmsg, setsockopt,
         sockopt::{ReuseAddr, Timestamping},
@@ -139,10 +138,19 @@ impl core::ops::Deref for InterfaceName {
 impl InterfaceName {
     pub const DEFAULT: Option<Self> = None;
 
+    pub const LOOPBACK: Self = Self {
+        bytes: *b"lo\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
+    };
+
     fn as_str(&self) -> &str {
         std::str::from_utf8(self.bytes.as_slice())
             .unwrap_or_default()
             .trim_end_matches('\0')
+    }
+
+    fn as_cstr(&self) -> &std::ffi::CStr {
+        // it is an invariant of InterfaceName that the bytes are null-terminated
+        std::ffi::CStr::from_bytes_until_nul(&self.bytes[..]).unwrap()
     }
 
     pub(crate) fn to_ifr_name(&self) -> [i8; libc::IFNAMSIZ] {
@@ -171,7 +179,8 @@ impl FromStr for InterfaceName {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut bytes = [0; libc::IFNAMSIZ];
 
-        if s.len() > bytes.len() {
+        // >= so that we always retain a NUL byte at the end
+        if s.len() >= bytes.len() {
             return Err(());
         }
 
