@@ -53,6 +53,53 @@ impl LinuxRuntime {
 
     const IPV4_PRIMARY_MULTICAST: Ipv4Addr = Ipv4Addr::new(224, 0, 1, 129);
     const IPV4_PDELAY_MULTICAST: Ipv4Addr = Ipv4Addr::new(224, 0, 0, 107);
+
+    async fn bind_socket(
+        interface_name: Option<InterfaceName>,
+        addr: SocketAddr,
+    ) -> Result<UdpSocket, NetworkError> {
+        let socket = tokio::net::UdpSocket::bind(addr).await?;
+
+        // We want to allow multiple listening sockets, as we bind to a specific interface later
+        setsockopt(socket.as_raw_fd(), ReuseAddr, &true).map_err(|_| NetworkError::UnknownError)?;
+
+        // Bind device to specified interface
+        if let Some(interface_name) = interface_name.as_ref() {
+            let name = interface_name.as_str().as_bytes();
+
+            // empty string does not work, `bind_device` should be skipped instead
+            debug_assert!(!name.is_empty());
+
+            socket.bind_device(Some(name))?;
+        }
+
+        Ok(socket)
+    }
+
+    fn join_multicast(
+        interface: &LinuxInterfaceDescriptor,
+        socket: &UdpSocket,
+        port: u16,
+    ) -> Result<SocketAddr, NetworkError> {
+        // TODO: multicast ttl limit for ipv4/multicast hops limit for ipv6
+
+        match interface.get_address()? {
+            IpAddr::V4(ip) => {
+                socket.join_multicast_v4(Self::IPV4_PRIMARY_MULTICAST, ip)?;
+                socket.join_multicast_v4(Self::IPV4_PDELAY_MULTICAST, ip)?;
+
+                Ok((Self::IPV4_PRIMARY_MULTICAST, port).into())
+            }
+            IpAddr::V6(_ip) => {
+                let if_index = interface.get_index().unwrap_or(0);
+
+                socket.join_multicast_v6(&Self::IPV6_PRIMARY_MULTICAST, if_index)?;
+                socket.join_multicast_v6(&Self::IPV6_PDELAY_MULTICAST, if_index)?;
+
+                Ok((Self::IPV6_PRIMARY_MULTICAST, port).into())
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -285,8 +332,8 @@ impl NetworkRuntime for LinuxRuntime {
         );
 
         let bind_ip = match interface.mode {
-            LinuxNetworkMode::Ipv6 => IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
             LinuxNetworkMode::Ipv4 => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            LinuxNetworkMode::Ipv6 => IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
         };
 
         let tc_addr = SocketAddr::new(bind_ip, TC_PORT);
@@ -295,53 +342,11 @@ impl NetworkRuntime for LinuxRuntime {
         log::info!("Binding time critical socket on {tc_addr}");
         log::info!("Binding non time critical socket on {ntc_addr}");
 
-        let tc_socket = tokio::net::UdpSocket::bind(tc_addr).await?;
-        // We want to allow multiple listening sockets, as we bind to a specific interface later
-        setsockopt(tc_socket.as_raw_fd(), ReuseAddr, &true)
-            .map_err(|_| NetworkError::UnknownError)?;
-        let ntc_socket = tokio::net::UdpSocket::bind(ntc_addr).await?;
-        // We want to allow multiple listening sockets, as we bind to a specific interface later
-        setsockopt(ntc_socket.as_raw_fd(), ReuseAddr, &true)
-            .map_err(|_| NetworkError::UnknownError)?;
+        let tc_socket = Self::bind_socket(interface.interface_name, tc_addr).await?;
+        let ntc_socket = Self::bind_socket(interface.interface_name, ntc_addr).await?;
 
-        // Bind device to specified interface
-        let interface_name = interface.interface_name.as_ref().map(|string| {
-            // empty string does not work well with tokio. `None`should be used instead
-            debug_assert!(!string.as_str().is_empty());
-            string.as_str().as_bytes()
-        });
-
-        tc_socket.bind_device(interface_name)?;
-        ntc_socket.bind_device(interface_name)?;
-
-        // TODO: multicast ttl limit for ipv4/multicast hops limit for ipv6
-
-        let (tc_address, ntc_address) = match interface.get_address()? {
-            IpAddr::V4(ip) => {
-                tc_socket.join_multicast_v4(Self::IPV4_PRIMARY_MULTICAST, ip)?;
-                ntc_socket.join_multicast_v4(Self::IPV4_PRIMARY_MULTICAST, ip)?;
-                tc_socket.join_multicast_v4(Self::IPV4_PDELAY_MULTICAST, ip)?;
-                ntc_socket.join_multicast_v4(Self::IPV4_PDELAY_MULTICAST, ip)?;
-
-                (
-                    (Self::IPV4_PRIMARY_MULTICAST, TC_PORT).into(),
-                    (Self::IPV4_PRIMARY_MULTICAST, NTC_PORT).into(),
-                )
-            }
-            IpAddr::V6(_ip) => {
-                let if_index = interface.get_index().unwrap_or(0);
-
-                tc_socket.join_multicast_v6(&Self::IPV6_PRIMARY_MULTICAST, if_index)?;
-                ntc_socket.join_multicast_v6(&Self::IPV6_PRIMARY_MULTICAST, if_index)?;
-                tc_socket.join_multicast_v6(&Self::IPV6_PDELAY_MULTICAST, if_index)?;
-                ntc_socket.join_multicast_v6(&Self::IPV6_PDELAY_MULTICAST, if_index)?;
-
-                (
-                    (Self::IPV6_PRIMARY_MULTICAST, TC_PORT).into(),
-                    (Self::IPV6_PRIMARY_MULTICAST, NTC_PORT).into(),
-                )
-            }
-        };
+        let tc_address = Self::join_multicast(&interface, &tc_socket, TC_PORT)?;
+        let ntc_address = Self::join_multicast(&interface, &ntc_socket, NTC_PORT)?;
 
         // Setup timestamping
         let timestamping_flags = if self.hardware_timestamping {
@@ -578,5 +583,26 @@ mod tests {
             InterfaceName::from_str(input).unwrap().to_ifr_name(),
             ifr_name
         );
+    }
+
+    #[tokio::test]
+    async fn port_setup() -> Result<(), Box<dyn std::error::Error>> {
+        let port = 8000;
+
+        let interface = LinuxInterfaceDescriptor {
+            interface_name: None,
+            mode: LinuxNetworkMode::Ipv4,
+        };
+
+        let bind_ip = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
+        let addr = SocketAddr::new(bind_ip, port);
+
+        let socket = LinuxRuntime::bind_socket(interface.interface_name, addr).await?;
+        let address = LinuxRuntime::join_multicast(&interface, &socket, port)?;
+
+        assert_ne!(address.ip(), bind_ip);
+        assert_eq!(address.port(), port);
+
+        Ok(())
     }
 }
