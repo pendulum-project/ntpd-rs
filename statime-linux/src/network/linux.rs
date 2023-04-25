@@ -245,29 +245,20 @@ impl FromStr for LinuxInterfaceDescriptor {
 }
 
 fn if_has_address(ifaddr: &InterfaceAddress, address: IpAddr) -> bool {
-    match (
-        address,
-        ifaddr.address.and_then(|a| a.as_sockaddr_in().cloned()),
-        ifaddr.address.and_then(|a| a.as_sockaddr_in6().cloned()),
-    ) {
-        (_, None, None) => false,
-
-        (IpAddr::V4(_), None, _) => false,
-        (IpAddr::V4(addr1), Some(addr2), _) => addr1.octets() == addr2.ip().to_be_bytes(),
-
-        (IpAddr::V6(_), _, None) => false,
-        (IpAddr::V6(addr1), _, Some(addr2)) => addr1.octets() == addr2.ip().octets(),
+    match address {
+        IpAddr::V4(addr1) => match ifaddr.address.and_then(|a| a.as_sockaddr_in().copied()) {
+            None => false,
+            Some(addr2) => addr1.octets() == addr2.ip().to_be_bytes(),
+        },
+        IpAddr::V6(addr1) => match ifaddr.address.and_then(|a| a.as_sockaddr_in6().copied()) {
+            None => false,
+            Some(addr2) => addr1.octets() == addr2.ip().octets(),
+        },
     }
 }
 
 fn if_name_exists(interfaces: InterfaceAddressIterator, name: &str) -> bool {
-    for i in interfaces {
-        if i.interface_name == name {
-            return true;
-        }
-    }
-
-    false
+    interfaces.into_iter().any(|i| i.interface_name == name)
 }
 
 impl NetworkRuntime for LinuxRuntime {
@@ -288,10 +279,9 @@ impl NetworkRuntime for LinuxRuntime {
                 .unwrap_or("Unknown")
         );
 
-        let bind_ip = if interface.mode == LinuxNetworkMode::Ipv6 {
-            IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED)
-        } else {
-            IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+        let bind_ip = match interface.mode {
+            LinuxNetworkMode::Ipv6 => IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
+            LinuxNetworkMode::Ipv4 => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
         };
 
         let tc_addr = SocketAddr::new(bind_ip, 319);
@@ -359,31 +349,26 @@ impl NetworkRuntime for LinuxRuntime {
         };
 
         // Setup timestamping
-        if self.hardware_timestamping {
-            driver_enable_hardware_timestamping(
-                tc_socket.as_raw_fd(),
-                interface
-                    .interface_name
-                    .ok_or(NetworkError::InterfaceDoesNotExist)?,
-            );
-            setsockopt(
-                tc_socket.as_raw_fd(),
-                Timestamping,
-                &(TimestampingFlag::SOF_TIMESTAMPING_RAW_HARDWARE
-                    | TimestampingFlag::SOF_TIMESTAMPING_RX_HARDWARE
-                    | TimestampingFlag::SOF_TIMESTAMPING_TX_HARDWARE),
-            )
-            .map_err(|_| NetworkError::UnknownError)?;
+        let timestamping_flags = if self.hardware_timestamping {
+            // the interface name is only required when using hardware timestamping
+            let interface_name = interface
+                .interface_name
+                .ok_or(NetworkError::InterfaceDoesNotExist)?;
+
+            // must explicitly enable hardware timestamping
+            driver_enable_hardware_timestamping(tc_socket.as_raw_fd(), interface_name);
+
+            TimestampingFlag::SOF_TIMESTAMPING_RAW_HARDWARE
+                | TimestampingFlag::SOF_TIMESTAMPING_RX_HARDWARE
+                | TimestampingFlag::SOF_TIMESTAMPING_TX_HARDWARE
         } else {
-            setsockopt(
-                tc_socket.as_raw_fd(),
-                Timestamping,
-                &(TimestampingFlag::SOF_TIMESTAMPING_SOFTWARE
-                    | TimestampingFlag::SOF_TIMESTAMPING_RX_SOFTWARE
-                    | TimestampingFlag::SOF_TIMESTAMPING_TX_SOFTWARE),
-            )
+            TimestampingFlag::SOF_TIMESTAMPING_SOFTWARE
+                | TimestampingFlag::SOF_TIMESTAMPING_RX_SOFTWARE
+                | TimestampingFlag::SOF_TIMESTAMPING_TX_SOFTWARE
+        };
+
+        setsockopt(tc_socket.as_raw_fd(), Timestamping, &timestamping_flags)
             .map_err(|_| NetworkError::UnknownError)?;
-        }
 
         Ok(LinuxNetworkPort {
             tc_socket,
