@@ -78,16 +78,17 @@ impl LinuxRuntime {
     fn join_multicast(
         interface: &LinuxInterfaceDescriptor,
         socket: &UdpSocket,
-        port: u16,
     ) -> Result<SocketAddr, NetworkError> {
         // TODO: multicast ttl limit for ipv4/multicast hops limit for ipv6
+
+        let local_addr = socket.local_addr()?;
 
         match interface.get_address()? {
             IpAddr::V4(ip) => {
                 socket.join_multicast_v4(Self::IPV4_PRIMARY_MULTICAST, ip)?;
                 socket.join_multicast_v4(Self::IPV4_PDELAY_MULTICAST, ip)?;
 
-                Ok((Self::IPV4_PRIMARY_MULTICAST, port).into())
+                Ok((Self::IPV4_PRIMARY_MULTICAST, local_addr.port()).into())
             }
             IpAddr::V6(_ip) => {
                 let if_index = interface.get_index().unwrap_or(0);
@@ -95,7 +96,7 @@ impl LinuxRuntime {
                 socket.join_multicast_v6(&Self::IPV6_PRIMARY_MULTICAST, if_index)?;
                 socket.join_multicast_v6(&Self::IPV6_PDELAY_MULTICAST, if_index)?;
 
-                Ok((Self::IPV6_PRIMARY_MULTICAST, port).into())
+                Ok((Self::IPV6_PRIMARY_MULTICAST, local_addr.port()).into())
             }
         }
     }
@@ -358,8 +359,8 @@ impl NetworkRuntime for LinuxRuntime {
         let tc_socket = Self::bind_socket(interface.interface_name, tc_addr).await?;
         let ntc_socket = Self::bind_socket(interface.interface_name, ntc_addr).await?;
 
-        let tc_address = Self::join_multicast(&interface, &tc_socket, TC_PORT)?;
-        let ntc_address = Self::join_multicast(&interface, &ntc_socket, NTC_PORT)?;
+        let tc_address = Self::join_multicast(&interface, &tc_socket)?;
+        let ntc_address = Self::join_multicast(&interface, &ntc_socket)?;
 
         // Setup timestamping
         let timestamping_flags = if self.hardware_timestamping {
