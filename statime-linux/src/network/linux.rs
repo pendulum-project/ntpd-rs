@@ -137,9 +137,8 @@ impl core::ops::Deref for InterfaceName {
 }
 
 impl InterfaceName {
-    pub const DEFAULT: Option<Self> = None;
-
-    pub const LOOPBACK: Self = Self {
+    #[cfg(test)]
+    const LOOPBACK: Self = Self {
         bytes: *b"lo\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
     };
 
