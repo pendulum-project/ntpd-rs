@@ -219,41 +219,38 @@ pub enum NetworkError {
 
 impl LinuxInterfaceDescriptor {
     fn get_index(&self) -> Option<u32> {
-        if let Some(ref name) = self.interface_name {
-            if_nametoindex(&name[..]).ok()
-        } else {
-            None
+        let name = self.interface_name.as_ref()?;
+
+        // # SAFETY
+        //
+        // The pointer is valid and null-terminated
+        match unsafe { libc::if_nametoindex(name.as_cstr().as_ptr()) } {
+            0 => None,
+            n => Some(n),
+        }
+    }
+
+    fn convert_sockaddr_storage(mode: LinuxNetworkMode, i: InterfaceAddress) -> Option<IpAddr> {
+        match mode {
+            LinuxNetworkMode::Ipv4 => {
+                let a: Option<u32> = i.address?.as_sockaddr_in()?.ip().into();
+                Some(IpAddr::from(Ipv4Addr::from(a?)))
+            }
+            LinuxNetworkMode::Ipv6 => {
+                let a: Option<_> = i.address?.as_sockaddr_in6()?.ip().into();
+                Some(IpAddr::from(Ipv6Addr::from(a?)))
+            }
         }
     }
 
     fn get_address(&self) -> Result<IpAddr, NetworkError> {
         if let Some(ref name) = self.interface_name {
-            let interfaces = match getifaddrs() {
-                Ok(a) => a,
-                Err(_) => return Err(NetworkError::CannotIterateInterfaces),
-            };
-            for i in interfaces {
-                if name.as_str() == i.interface_name {
-                    if self.mode == LinuxNetworkMode::Ipv6 {
-                        if let Some(ip) = i
-                            .address
-                            .and_then(|a| a.as_sockaddr_in6().map(|a| a.ip().into()))
-                            .flatten()
-                        {
-                            return Ok(ip.into());
-                        }
-                    } else if let Some(ip) = i
-                        .address
-                        .and_then(|a| a.as_sockaddr_in().map(|a| a.ip().into()))
-                        .flatten()
-                    {
-                        return Ok(Ipv4Addr::from(ip).into());
-                    }
-                }
-            }
-            Err(NetworkError::InterfaceDoesNotExist)
-        } else if self.mode == LinuxNetworkMode::Ipv6 {
-            Ok(IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED))
+            let interfaces = getifaddrs().map_err(|_| NetworkError::CannotIterateInterfaces)?;
+
+            interfaces
+                .filter(|i| name.as_str() == i.interface_name)
+                .find_map(|i| Self::convert_sockaddr_storage(self.mode, i))
+                .ok_or(NetworkError::InterfaceDoesNotExist)
         } else {
             Ok(self.mode.unspecified_ip_addr())
         }
