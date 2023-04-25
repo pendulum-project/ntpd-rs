@@ -108,10 +108,19 @@ pub struct LinuxInterfaceDescriptor {
     mode: LinuxNetworkMode,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinuxNetworkMode {
     Ipv4,
     Ipv6,
+}
+
+impl LinuxNetworkMode {
+    fn unspecified_ip_addr(&self) -> IpAddr {
+        match self {
+            LinuxNetworkMode::Ipv4 => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            LinuxNetworkMode::Ipv6 => IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -236,7 +245,7 @@ impl LinuxInterfaceDescriptor {
         } else if self.mode == LinuxNetworkMode::Ipv6 {
             Ok(IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED))
         } else {
-            Ok(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
+            Ok(self.mode.unspecified_ip_addr())
         }
     }
 }
@@ -255,10 +264,9 @@ impl FromStr for LinuxInterfaceDescriptor {
                 if addr.is_unspecified() {
                     return Ok(LinuxInterfaceDescriptor {
                         interface_name: None,
-                        mode: if addr.is_ipv4() {
-                            LinuxNetworkMode::Ipv4
-                        } else {
-                            LinuxNetworkMode::Ipv6
+                        mode: match addr {
+                            IpAddr::V4(_) => LinuxNetworkMode::Ipv4,
+                            IpAddr::V6(_) => LinuxNetworkMode::Ipv6,
                         },
                     });
                 }
@@ -331,11 +339,7 @@ impl NetworkRuntime for LinuxRuntime {
                 .unwrap_or("Unknown")
         );
 
-        let bind_ip = match interface.mode {
-            LinuxNetworkMode::Ipv4 => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-            LinuxNetworkMode::Ipv6 => IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
-        };
-
+        let bind_ip = interface.mode.unspecified_ip_addr();
         let tc_addr = SocketAddr::new(bind_ip, TC_PORT);
         let ntc_addr = SocketAddr::new(bind_ip, NTC_PORT);
 
