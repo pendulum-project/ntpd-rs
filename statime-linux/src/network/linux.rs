@@ -52,7 +52,7 @@ impl LinuxRuntime {
 
 #[derive(Debug, Clone)]
 pub struct LinuxInterfaceDescriptor {
-    interface_name: Option<String>,
+    interface_name: Option<InterfaceName>,
     mode: LinuxNetworkMode,
 }
 
@@ -60,6 +60,70 @@ pub struct LinuxInterfaceDescriptor {
 pub enum LinuxNetworkMode {
     Ipv4,
     Ipv6,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct InterfaceName {
+    bytes: [u8; libc::IFNAMSIZ],
+}
+
+impl core::ops::Deref for InterfaceName {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.bytes.as_slice()
+    }
+}
+
+impl InterfaceName {
+    pub const DEFAULT: Option<Self> = None;
+
+    fn as_str(&self) -> &str {
+        std::str::from_utf8(self.bytes.as_slice())
+            .unwrap_or_default()
+            .trim_end_matches('\0')
+    }
+
+    pub(crate) fn to_ifr_name(&self) -> [i8; libc::IFNAMSIZ] {
+        let mut it = self.bytes.iter().copied();
+        [0; libc::IFNAMSIZ].map(|_| it.next().unwrap_or(0) as i8)
+    }
+}
+
+impl std::fmt::Debug for InterfaceName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("InterfaceName")
+            .field(&self.as_str())
+            .finish()
+    }
+}
+
+impl std::fmt::Display for InterfaceName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_str().fmt(f)
+    }
+}
+
+impl FromStr for InterfaceName {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut bytes = [0; libc::IFNAMSIZ];
+
+        if s.len() > bytes.len() {
+            return Err(());
+        }
+
+        if s.is_empty() {
+            // this causes problems down the line when giving the interface name to tokio
+            return Err(());
+        }
+
+        let mut it = s.bytes();
+        bytes = bytes.map(|_| it.next().unwrap_or_default());
+
+        Ok(Self { bytes })
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -98,7 +162,7 @@ impl LinuxInterfaceDescriptor {
                 Err(_) => return Err(NetworkError::CannotIterateInterfaces),
             };
             for i in interfaces {
-                if name == &i.interface_name {
+                if name.as_str() == i.interface_name {
                     if self.mode == LinuxNetworkMode::Ipv6 {
                         if let Some(ip) = i
                             .address
@@ -150,8 +214,12 @@ impl FromStr for LinuxInterfaceDescriptor {
                 let sock_addr = std::net::SocketAddr::new(addr, 0);
                 for ifaddr in interfaces {
                     if if_has_address(&ifaddr, sock_addr.ip()) {
+                        // the interface name came straight from the OS, so it must be valid
+                        let interface_name =
+                            InterfaceName::from_str(&ifaddr.interface_name).unwrap();
+
                         return Ok(LinuxInterfaceDescriptor {
-                            interface_name: Some(ifaddr.interface_name),
+                            interface_name: Some(interface_name),
                             mode: LinuxNetworkMode::Ipv4,
                         });
                     }
@@ -161,8 +229,11 @@ impl FromStr for LinuxInterfaceDescriptor {
             }
             Err(_) => {
                 if if_name_exists(interfaces, s) {
+                    // the interface name came straight from the OS, so it must be valid
+                    let interface_name = InterfaceName::from_str(s).unwrap();
+
                     Ok(LinuxInterfaceDescriptor {
-                        interface_name: Some(s.to_owned()),
+                        interface_name: Some(interface_name),
                         mode: LinuxNetworkMode::Ipv4,
                     })
                 } else {
@@ -213,7 +284,8 @@ impl NetworkRuntime for LinuxRuntime {
             interface
                 .interface_name
                 .as_ref()
-                .unwrap_or(&"Unknown".to_string())
+                .map(|if_name| if_name.as_str())
+                .unwrap_or("Unknown")
         );
 
         let bind_ip = if interface.mode == LinuxNetworkMode::Ipv6 {
@@ -238,18 +310,14 @@ impl NetworkRuntime for LinuxRuntime {
             .map_err(|_| NetworkError::UnknownError)?;
 
         // Bind device to specified interface
-        tc_socket.bind_device(
-            interface
-                .interface_name
-                .as_ref()
-                .map(|string| string.as_bytes()),
-        )?;
-        ntc_socket.bind_device(
-            interface
-                .interface_name
-                .as_ref()
-                .map(|string| string.as_bytes()),
-        )?;
+        let interface_name = interface.interface_name.as_ref().map(|string| {
+            // empty string does not work well with tokio. `None`should be used instead
+            debug_assert!(!string.as_str().is_empty());
+            string.as_str().as_bytes()
+        });
+
+        tc_socket.bind_device(interface_name)?;
+        ntc_socket.bind_device(interface_name)?;
 
         // TODO: multicast ttl limit for ipv4/multicast hops limit for ipv6
 
@@ -296,7 +364,6 @@ impl NetworkRuntime for LinuxRuntime {
                 tc_socket.as_raw_fd(),
                 interface
                     .interface_name
-                    .as_ref()
                     .ok_or(NetworkError::InterfaceDoesNotExist)?,
             );
             setsockopt(
@@ -512,4 +579,24 @@ pub fn get_clock_id() -> Option<[u8; 8]> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn interface_name_from_string() {
+        assert!(InterfaceName::from_str("").is_err());
+        assert!(InterfaceName::from_str("a string that is too long").is_err());
+
+        let input = "enp0s31f6";
+        assert_eq!(InterfaceName::from_str(input).unwrap().as_str(), input);
+
+        let ifr_name = (*b"enp0s31f6\0\0\0\0\0\0\0").map(|b| b as i8);
+        assert_eq!(
+            InterfaceName::from_str(input).unwrap().to_ifr_name(),
+            ifr_name
+        );
+    }
 }
