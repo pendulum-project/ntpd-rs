@@ -29,6 +29,11 @@ use std::{
 };
 use tokio::{io::Interest, net::UdpSocket};
 
+/// The time-critical port
+const TC_PORT: u16 = 319;
+/// The non-time-critical port
+const NTC_PORT: u16 = 320;
+
 #[derive(Clone)]
 pub struct LinuxRuntime {
     hardware_timestamping: bool,
@@ -284,8 +289,8 @@ impl NetworkRuntime for LinuxRuntime {
             LinuxNetworkMode::Ipv4 => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
         };
 
-        let tc_addr = SocketAddr::new(bind_ip, 319);
-        let ntc_addr = SocketAddr::new(bind_ip, 320);
+        let tc_addr = SocketAddr::new(bind_ip, TC_PORT);
+        let ntc_addr = SocketAddr::new(bind_ip, NTC_PORT);
 
         log::info!("Binding time critical socket on {tc_addr}");
         log::info!("Binding non time critical socket on {ntc_addr}");
@@ -319,31 +324,21 @@ impl NetworkRuntime for LinuxRuntime {
                 ntc_socket.join_multicast_v4(Self::IPV4_PDELAY_MULTICAST, ip)?;
 
                 (
-                    (Self::IPV4_PRIMARY_MULTICAST, 319).into(),
-                    (Self::IPV4_PRIMARY_MULTICAST, 320).into(),
+                    (Self::IPV4_PRIMARY_MULTICAST, TC_PORT).into(),
+                    (Self::IPV4_PRIMARY_MULTICAST, NTC_PORT).into(),
                 )
             }
             IpAddr::V6(_ip) => {
-                tc_socket.join_multicast_v6(
-                    &Self::IPV6_PRIMARY_MULTICAST,
-                    interface.get_index().unwrap_or(0),
-                )?;
-                ntc_socket.join_multicast_v6(
-                    &Self::IPV6_PRIMARY_MULTICAST,
-                    interface.get_index().unwrap_or(0),
-                )?;
-                tc_socket.join_multicast_v6(
-                    &Self::IPV6_PDELAY_MULTICAST,
-                    interface.get_index().unwrap_or(0),
-                )?;
-                ntc_socket.join_multicast_v6(
-                    &Self::IPV6_PDELAY_MULTICAST,
-                    interface.get_index().unwrap_or(0),
-                )?;
+                let if_index = interface.get_index().unwrap_or(0);
+
+                tc_socket.join_multicast_v6(&Self::IPV6_PRIMARY_MULTICAST, if_index)?;
+                ntc_socket.join_multicast_v6(&Self::IPV6_PRIMARY_MULTICAST, if_index)?;
+                tc_socket.join_multicast_v6(&Self::IPV6_PDELAY_MULTICAST, if_index)?;
+                ntc_socket.join_multicast_v6(&Self::IPV6_PDELAY_MULTICAST, if_index)?;
 
                 (
-                    (Self::IPV6_PRIMARY_MULTICAST, 319).into(),
-                    (Self::IPV6_PRIMARY_MULTICAST, 320).into(),
+                    (Self::IPV6_PRIMARY_MULTICAST, TC_PORT).into(),
+                    (Self::IPV6_PRIMARY_MULTICAST, NTC_PORT).into(),
                 )
             }
         };
