@@ -51,7 +51,7 @@ exitcode = "1.1.2"
 arbitrary = { version = "1.3.0" }
 thiserror = "1.0.40"
 libc = "0.2.141"
-tokio = "1.27.0"
+tokio = "1.28.0"
 toml = "0.7.3"
 clap = { version = "4.2.2", features = ["derive", "env"] }
 async-trait = "0.1.68"
