@@ -7,7 +7,6 @@ use crate::{
 use nix::{
     cmsg_space,
     errno::Errno,
-    ifaddrs::{getifaddrs, InterfaceAddress, InterfaceAddressIterator},
     sys::socket::{
         recvmsg, setsockopt,
         sockopt::{ReuseAddr, Timestamping},
@@ -224,26 +223,19 @@ impl LinuxInterfaceDescriptor {
         }
     }
 
-    fn convert_sockaddr_storage(mode: LinuxNetworkMode, i: InterfaceAddress) -> Option<IpAddr> {
-        match mode {
-            LinuxNetworkMode::Ipv4 => {
-                let a: Option<u32> = i.address?.as_sockaddr_in()?.ip().into();
-                Some(IpAddr::from(Ipv4Addr::from(a?)))
-            }
-            LinuxNetworkMode::Ipv6 => {
-                let a: Option<_> = i.address?.as_sockaddr_in6()?.ip().into();
-                Some(IpAddr::from(a?))
-            }
-        }
-    }
-
     fn get_address(&self) -> Result<IpAddr, NetworkError> {
-        if let Some(ref name) = self.interface_name {
-            let interfaces = getifaddrs().map_err(|_| NetworkError::CannotIterateInterfaces)?;
+        if let Some(name) = self.interface_name {
+            let interfaces =
+                InterfaceIterator::new().map_err(|_| NetworkError::CannotIterateInterfaces)?;
 
             interfaces
-                .filter(|i| name.as_str() == i.interface_name)
-                .find_map(|i| Self::convert_sockaddr_storage(self.mode, i))
+                .filter(|i| name == i.name)
+                .filter_map(|i| i.socket_addr)
+                .map(|socket_addr| socket_addr.ip())
+                .find(|ip| match self.mode {
+                    LinuxNetworkMode::Ipv4 => ip.is_ipv4(),
+                    LinuxNetworkMode::Ipv6 => ip.is_ipv6(),
+                })
                 .ok_or(NetworkError::InterfaceDoesNotExist)
         } else {
             Ok(self.mode.unspecified_ip_addr())
@@ -255,7 +247,7 @@ impl FromStr for LinuxInterfaceDescriptor {
     type Err = NetworkError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let interfaces = match getifaddrs() {
+        let interfaces = match InterfaceIterator::new() {
             Ok(a) => a,
             Err(_) => return Err(NetworkError::CannotIterateInterfaces),
         };
@@ -273,14 +265,10 @@ impl FromStr for LinuxInterfaceDescriptor {
                 }
 
                 let sock_addr = std::net::SocketAddr::new(addr, 0);
-                for ifaddr in interfaces {
-                    if if_has_address(&ifaddr, sock_addr.ip()) {
-                        // the interface name came straight from the OS, so it must be valid
-                        let interface_name =
-                            InterfaceName::from_str(&ifaddr.interface_name).unwrap();
-
+                for if_data in interfaces {
+                    if if_has_address(&if_data, sock_addr.ip()) {
                         return Ok(LinuxInterfaceDescriptor {
-                            interface_name: Some(interface_name),
+                            interface_name: Some(if_data.name),
                             mode: LinuxNetworkMode::Ipv4,
                         });
                     }
@@ -305,21 +293,15 @@ impl FromStr for LinuxInterfaceDescriptor {
     }
 }
 
-fn if_has_address(ifaddr: &InterfaceAddress, address: IpAddr) -> bool {
-    match address {
-        IpAddr::V4(addr1) => match ifaddr.address.and_then(|a| a.as_sockaddr_in().copied()) {
-            None => false,
-            Some(addr2) => addr1.octets() == addr2.ip().to_be_bytes(),
-        },
-        IpAddr::V6(addr1) => match ifaddr.address.and_then(|a| a.as_sockaddr_in6().copied()) {
-            None => false,
-            Some(addr2) => addr1.octets() == addr2.ip().octets(),
-        },
+fn if_has_address(if_data: &InterfaceData, address: IpAddr) -> bool {
+    match if_data.socket_addr {
+        None => false,
+        Some(socket_addr) => socket_addr.ip() == address,
     }
 }
 
-fn if_name_exists(interfaces: InterfaceAddressIterator, name: &str) -> bool {
-    interfaces.into_iter().any(|i| i.interface_name == name)
+fn if_name_exists(mut interfaces: InterfaceIterator, name: &str) -> bool {
+    interfaces.any(|if_data| if_data.name.as_str() == name)
 }
 
 impl NetworkRuntime for LinuxRuntime {
@@ -551,24 +533,148 @@ impl LinuxNetworkPort {
 }
 
 pub fn get_clock_id() -> Option<[u8; 8]> {
-    let candidates = getifaddrs().unwrap();
-    for candidate in candidates {
-        if let Some(mac) = candidate
-            .address
-            .and_then(|addr| addr.as_link_addr().map(|mac| mac.addr()))
-            .flatten()
-        {
-            // Ignore multicast and locally administered mac addresses
-            if mac[0] & 0x3 == 0 && mac.iter().any(|x| *x != 0) {
-                let mut result: [u8; 8] = [0; 8];
-                for (i, v) in mac.iter().enumerate() {
-                    result[i] = *v;
-                }
-                return Some(result);
-            }
+    let candidates = InterfaceIterator::new()
+        .unwrap()
+        .filter_map(|data| data.mac);
+
+    for mac in candidates {
+        // Ignore multicast and locally administered mac addresses
+        if mac[0] & 0x3 == 0 && mac.iter().any(|x| *x != 0) {
+            let f = |i| mac.get(i).copied().unwrap_or_default();
+            return Some(std::array::from_fn(f));
         }
     }
+
     None
+}
+
+/// Turn a C failure (-1 is returned) into a rust Result
+pub(crate) fn cerr(t: libc::c_int) -> std::io::Result<libc::c_int> {
+    match t {
+        -1 => Err(std::io::Error::last_os_error()),
+        _ => Ok(t),
+    }
+}
+
+/// Convert a libc::sockaddr to a rust std::net::SocketAddr
+///
+/// # Safety
+///
+/// According to the posix standard, `sockaddr` does not have a defined size: the size depends on
+/// the value of the `ss_family` field. We assume this to be correct.
+///
+/// In practice, types in rust/c need a statically-known stack size, so they pick some value. In
+/// practice it can be (and is) larger than the `sizeof<libc::sockaddr>` value.
+pub unsafe fn sockaddr_to_socket_addr(sockaddr: *const libc::sockaddr) -> Option<SocketAddr> {
+    // Most (but not all) of the fields in a socket addr are in network byte ordering.
+    // As such, when doing conversions here, we should start from the NATIVE
+    // byte representation, as this will actualy be the big-endian representation
+    // of the underlying value regardless of platform.
+    match unsafe { (*sockaddr).sa_family as libc::c_int } {
+        libc::AF_INET => {
+            let inaddr: libc::sockaddr_in = unsafe { *(sockaddr as *const libc::sockaddr_in) };
+
+            let socketaddr = std::net::SocketAddrV4::new(
+                std::net::Ipv4Addr::from(inaddr.sin_addr.s_addr.to_ne_bytes()),
+                u16::from_be_bytes(inaddr.sin_port.to_ne_bytes()),
+            );
+
+            Some(std::net::SocketAddr::V4(socketaddr))
+        }
+        libc::AF_INET6 => {
+            let inaddr: libc::sockaddr_in6 = unsafe { *(sockaddr as *const libc::sockaddr_in6) };
+
+            let sin_addr = inaddr.sin6_addr.s6_addr;
+            let segment_bytes: [u8; 16] =
+                unsafe { std::ptr::read_unaligned(&sin_addr as *const _ as *const _) };
+
+            let socketaddr = std::net::SocketAddrV6::new(
+                std::net::Ipv6Addr::from(segment_bytes),
+                u16::from_be_bytes(inaddr.sin6_port.to_ne_bytes()),
+                inaddr.sin6_flowinfo, // NOTE: Despite network byte order, no conversion is needed (see https://github.com/rust-lang/rust/issues/101605)
+                inaddr.sin6_scope_id,
+            );
+
+            Some(std::net::SocketAddr::V6(socketaddr))
+        }
+        _ => None,
+    }
+}
+
+struct InterfaceIterator {
+    base: *mut libc::ifaddrs,
+    next: *mut libc::ifaddrs,
+}
+
+impl InterfaceIterator {
+    fn new() -> std::io::Result<Self> {
+        let mut addrs = core::mem::MaybeUninit::<*mut libc::ifaddrs>::uninit();
+
+        unsafe {
+            cerr(libc::getifaddrs(addrs.as_mut_ptr()))?;
+
+            Ok(Self {
+                base: addrs.assume_init(),
+                next: addrs.assume_init(),
+            })
+        }
+    }
+}
+
+impl Drop for InterfaceIterator {
+    fn drop(&mut self) {
+        unsafe { libc::freeifaddrs(self.base) };
+    }
+}
+
+struct InterfaceData {
+    name: InterfaceName,
+    mac: Option<[u8; 6]>,
+    socket_addr: Option<SocketAddr>,
+}
+
+impl Iterator for InterfaceIterator {
+    type Item = InterfaceData;
+
+    fn next(&mut self) -> Option<<Self as Iterator>::Item> {
+        let ifaddr = unsafe { self.next.as_ref() }?;
+
+        self.next = ifaddr.ifa_next;
+
+        let ifname = unsafe { std::ffi::CStr::from_ptr(ifaddr.ifa_name) };
+        let name = match std::str::from_utf8(ifname.to_bytes()) {
+            Err(_) => unreachable!("interface names must be ascii"),
+            Ok(name) => InterfaceName::from_str(name).expect("name from os"),
+        };
+
+        let family = unsafe { (*ifaddr.ifa_addr).sa_family };
+
+        let mac = if family as i32 == libc::AF_PACKET {
+            let sockaddr_ll: libc::sockaddr_ll =
+                unsafe { std::ptr::read_unaligned(ifaddr.ifa_addr as *const _) };
+
+            Some([
+                sockaddr_ll.sll_addr[0],
+                sockaddr_ll.sll_addr[1],
+                sockaddr_ll.sll_addr[2],
+                sockaddr_ll.sll_addr[3],
+                sockaddr_ll.sll_addr[4],
+                sockaddr_ll.sll_addr[5],
+            ])
+        } else {
+            None
+        };
+
+        let socket_addr = unsafe { sockaddr_to_socket_addr(ifaddr.ifa_addr) };
+
+        let data = InterfaceData {
+            name,
+            mac,
+            socket_addr,
+        };
+
+        Some(data)
+    }
 }
 
 #[cfg(test)]
@@ -738,5 +844,34 @@ mod tests {
         let error = LinuxInterfaceDescriptor::from_str("xxx").unwrap_err();
 
         assert!(matches!(error, NetworkError::InterfaceDoesNotExist));
+    }
+
+    #[test]
+    fn test_mac_address_iterator() {
+        let v: Vec<_> = InterfaceIterator::new()
+            .unwrap()
+            .filter_map(|d| d.mac)
+            .collect();
+
+        assert!(!v.is_empty());
+    }
+
+    #[test]
+    fn test_interface_name_iterator() {
+        let v: Vec<_> = InterfaceIterator::new().unwrap().map(|d| d.name).collect();
+
+        assert!(v.contains(&InterfaceName::LOOPBACK));
+    }
+
+    #[test]
+    fn test_socket_addr_iterator() {
+        let v: Vec<_> = InterfaceIterator::new()
+            .unwrap()
+            .filter_map(|d| d.socket_addr)
+            .collect();
+
+        let localhost_0 = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
+
+        assert!(v.contains(&localhost_0));
     }
 }
