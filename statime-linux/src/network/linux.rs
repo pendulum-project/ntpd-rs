@@ -22,7 +22,7 @@ use std::{
     io,
     io::{ErrorKind, IoSliceMut},
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    os::fd::AsRawFd,
+    os::fd::{AsRawFd, FromRawFd},
     str::FromStr,
 };
 use tokio::{io::Interest, net::UdpSocket};
@@ -56,10 +56,62 @@ impl LinuxRuntime {
         interface_name: Option<InterfaceName>,
         addr: SocketAddr,
     ) -> Result<UdpSocket, NetworkError> {
-        let socket = tokio::net::UdpSocket::bind(addr).await?;
+        let socket = unsafe {
+            libc::socket(
+                match addr {
+                    SocketAddr::V4(_) => libc::AF_INET,
+                    SocketAddr::V6(_) => libc::AF_INET6,
+                },
+                libc::SOCK_DGRAM,
+                libc::IPPROTO_UDP,
+            )
+        };
+
+        if socket < 0 {
+            return Err(NetworkError::UnknownError);
+        }
 
         // We want to allow multiple listening sockets, as we bind to a specific interface later
         setsockopt(socket.as_raw_fd(), ReuseAddr, &true).map_err(|_| NetworkError::UnknownError)?;
+
+        let ret = match addr {
+            SocketAddr::V4(addr) => unsafe {
+                libc::bind(
+                    socket,
+                    std::mem::transmute(&libc::sockaddr_in {
+                        sin_family: libc::AF_INET as _,
+                        sin_port: u16::from_ne_bytes(addr.port().to_be_bytes()),
+                        sin_addr: libc::in_addr {
+                            s_addr: u32::from_ne_bytes(addr.ip().octets()),
+                        },
+                        sin_zero: [0; 8],
+                    } as *const _),
+                    std::mem::size_of::<libc::sockaddr_in>() as _,
+                )
+            },
+            SocketAddr::V6(addr) => unsafe {
+                libc::bind(
+                    socket,
+                    std::mem::transmute(&libc::sockaddr_in6 {
+                        sin6_family: libc::AF_INET6 as _,
+                        sin6_port: u16::from_ne_bytes(addr.port().to_be_bytes()),
+                        sin6_flowinfo: addr.flowinfo(),
+                        sin6_addr: libc::in6_addr {
+                            s6_addr: addr.ip().octets(),
+                        },
+                        sin6_scope_id: addr.scope_id(),
+                    } as *const _),
+                    std::mem::size_of::<libc::sockaddr_in6>() as _,
+                )
+            },
+        };
+
+        if ret < 0 {
+            return Err(NetworkError::UnknownError);
+        }
+
+        let socket =
+            tokio::net::UdpSocket::from_std(unsafe { std::net::UdpSocket::from_raw_fd(socket) })?;
 
         // Bind device to specified interface
         if let Some(interface_name) = interface_name.as_ref() {
