@@ -1,0 +1,10 @@
+unstable_features = true
+format_macro_matchers = true
+format_strings = true
+hex_literal_case = "Lower"
+imports_granularity = "Crate"
+normalize_comments = true
+normalize_doc_attributes = true
+group_imports = "StdExternalCrate"
+use_try_shorthand = true
+wrap_comments = true
