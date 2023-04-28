@@ -14,6 +14,7 @@ use crate::{
     network::NetworkPort,
     port::{Port, PortError, Ticker},
     time::Duration,
+    utils::SignalContext,
 };
 
 /// Object that acts as the central point of this library.
@@ -123,16 +124,27 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
                 .map(|announce_timeout| Pin::new_unchecked(announce_timeout))
         });
 
+        let mut stopcontexts = [(); N].map(|_| SignalContext::new());
+
         loop {
-            let stop = RefCell::new(false);
+            let mut iter = stopcontexts.iter_mut();
+            let stopperpairs =
+                core::array::from_fn::<_, N, _>(move |_| iter.next().unwrap().signal());
+            let signallers = core::array::from_fn::<_, N, _>(|i| stopperpairs[i].1.clone());
+            let signals = stopperpairs.map(|v| v.0);
+
             let mut run_ports = self
                 .ports
                 .iter_mut()
                 .zip(&mut pinned_announce_receipt_timeouts)
                 .zip(&mut pinned_sync_timeouts)
                 .zip(&mut pinned_announce_timeouts)
+                .zip(signals.into_iter())
                 .map(
-                    |(((port, announce_receipt_timeout), sync_timeout), announce_timeout)| {
+                    |(
+                        (((port, announce_receipt_timeout), sync_timeout), announce_timeout),
+                        stop,
+                    )| {
                         port.run_port(
                             &self.local_clock,
                             &self.filter,
@@ -143,7 +155,7 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
                             &self.time_properties_ds,
                             &self.parent_ds,
                             &self.current_ds,
-                            &stop,
+                            stop,
                         )
                     },
                 );
@@ -153,7 +165,7 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
             embassy_futures::join::join(
                 async {
                     bmca_timeout.next().await;
-                    *stop.borrow_mut() = true;
+                    signallers.map(|v| v.raise());
                 },
                 run_ports,
             )

@@ -1,10 +1,7 @@
 use core::cell::RefCell;
 use std::{future::Future, pin::Pin};
 
-use embassy_futures::{
-    select,
-    select::{Either, Either3},
-};
+use embassy_futures::{select, select::Either3};
 pub use error::{PortError, Result};
 use futures::StreamExt;
 pub use measurement::Measurement;
@@ -22,6 +19,7 @@ use crate::{
     filters::Filter,
     network::{NetworkPacket, NetworkPort, NetworkRuntime},
     time::Duration,
+    utils::Signal,
 };
 
 mod error;
@@ -78,19 +76,17 @@ impl<P: NetworkPort> Port<P> {
         time_properties_ds: &TimePropertiesDS,
         parent_ds: &ParentDS,
         current_ds: &CurrentDS,
-        stop: &RefCell<bool>,
+        mut stop: Signal<'_>,
     ) -> () {
-        // this lambda ensures we don't keep the borrow of stop alive over await points
-        let check = move || -> bool { *stop.borrow() };
-        while !check() {
+        loop {
             let timeouts = select::select3(
                 announce_receipt_timeout.next(),
                 sync_timeout.next(),
                 announce_timeout.next(),
             );
             let packet = self.network_port.recv();
-            match select::select(timeouts, packet).await {
-                Either::First(timeout) => match timeout {
+            match select::select3(timeouts, packet, stop.wait_for()).await {
+                Either3::First(timeout) => match timeout {
                     Either3::First(_) => {
                         // No announces received for a long time, become master
                         match self.port_ds.port_state {
@@ -122,7 +118,7 @@ impl<P: NetworkPort> Port<P> {
                         }
                     }
                 },
-                Either::Second(Ok(packet)) => {
+                Either3::Second(Ok(packet)) => {
                     // Process packet
                     if let Err(error) = self
                         .handle_packet(
@@ -138,7 +134,8 @@ impl<P: NetworkPort> Port<P> {
                         log::error!("{:?}", error);
                     }
                 }
-                Either::Second(Err(error)) => log::error!("failed to parse packet {:?}", error),
+                Either3::Second(Err(error)) => log::error!("failed to parse packet {:?}", error),
+                Either3::Third(_) => break,
             }
         }
     }
