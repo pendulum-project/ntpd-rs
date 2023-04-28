@@ -1,5 +1,4 @@
-use core::cell::RefCell;
-use std::{future::Future, pin::Pin};
+use core::{cell::RefCell, future::Future, pin::Pin};
 
 use embassy_futures::{select, select::Either3};
 pub use error::{PortError, Result};

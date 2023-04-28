@@ -1,18 +1,23 @@
-use core::cell::RefCell;
-use std::fmt::{Display, Formatter};
+use core::{
+    cell::RefCell,
+    fmt::{Display, Formatter},
+};
 
 pub use master::{MasterError, MasterState};
 pub use slave::{SlaveError, SlaveState};
 
-use crate::clock::Clock;
-use crate::datastructures::common::PortIdentity;
-use crate::datastructures::datasets::{CurrentDS, DefaultDS, ParentDS, TimePropertiesDS};
-use crate::datastructures::messages::Message;
-use crate::network::NetworkPort;
-use crate::port::error::Result;
-use crate::time::Instant;
-
 use super::Measurement;
+use crate::{
+    clock::Clock,
+    datastructures::{
+        common::PortIdentity,
+        datasets::{CurrentDS, DefaultDS, ParentDS, TimePropertiesDS},
+        messages::Message,
+    },
+    network::NetworkPort,
+    port::error::Result,
+    time::Instant,
+};
 
 mod master;
 mod slave;
@@ -130,7 +135,7 @@ impl PortState {
 }
 
 impl Display for PortState {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
             PortState::Disabled => write!(f, "Disabled"),
             PortState::Listening => write!(f, "Listening"),

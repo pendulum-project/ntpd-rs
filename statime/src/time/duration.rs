@@ -1,11 +1,13 @@
 //! Implementation of the [Duration] type
 
-use crate::datastructures::common::TimeInterval;
 use core::{
     fmt::Display,
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, RemAssign, Sub, SubAssign},
 };
+
 use fixed::{traits::ToFixed, types::I96F32};
+
+use crate::datastructures::common::TimeInterval;
 
 /// A duration is a span of time that can also be negative.
 ///
@@ -42,8 +44,8 @@ impl Duration {
         let inner = nanos.to_fixed::<I96F32>();
         Self { inner }
     }
-    /// Create an instance with the given amount of nanoseconds, using a fixed point number
-    /// so the subnanoseconds can be specified as well
+    /// Create an instance with the given amount of nanoseconds, using a fixed
+    /// point number so the subnanoseconds can be specified as well
     pub fn from_fixed_nanos<F: ToFixed>(nanos: F) -> Self {
         Self {
             inner: nanos.to_fixed(),
@@ -62,7 +64,7 @@ impl Duration {
 
     /// Converts a log interval (as defined by the PTP spec) to a duration
     pub fn from_log_interval(log_interval: i8) -> Self {
-        let seconds = 2.0f64.powi(log_interval as i32);
+        let seconds = libm::pow(2.0f64, log_interval as f64);
         let nanos = seconds * 1_000_000_000.0;
         Self::from_fixed_nanos(nanos)
     }

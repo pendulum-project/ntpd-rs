@@ -1,17 +1,17 @@
 //! General datastructures as defined by the ptp spec
 
 use core::fmt::Debug;
-use thiserror::Error;
 
 pub mod common;
 pub mod datasets;
 pub mod messages;
 
-#[derive(Clone, Debug, Error)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum WireFormatError {
-    #[error("enum conversion failed")]
+    #[cfg_attr(feature = "std", error("enum conversion failed"))]
     EnumConversionError,
-    #[error("buffer too short")]
+    #[cfg_attr(feature = "std", error("buffer too short"))]
     BufferTooShort,
 }
 
@@ -34,6 +34,7 @@ trait WireFormat: Debug + Clone + Eq {
 
     /// Deserializes the object from the PTP wire format.
     ///
-    /// Returns the object and the size in the buffer that it takes up or an error.
+    /// Returns the object and the size in the buffer that it takes up or an
+    /// error.
     fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError>;
 }

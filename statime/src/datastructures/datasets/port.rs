@@ -1,4 +1,4 @@
-use std::{future::Future, pin::Pin};
+use core::{future::Future, pin::Pin};
 
 use crate::{
     bmc::bmca::RecommendedState,

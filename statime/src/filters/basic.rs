@@ -1,8 +1,9 @@
 //! Implementation of [BasicFilter]
 
+use fixed::traits::LossyInto;
+
 use super::Filter;
 use crate::{port::Measurement, time::Duration};
-use fixed::traits::LossyInto;
 
 #[derive(Debug)]
 struct PrevStepData {
@@ -68,12 +69,12 @@ impl Filter for BasicFilter {
 
             // get relative frequency difference
             let mut freq_diff = interval_local / interval_master;
-            if (freq_diff - 1.0).abs() > self.freq_confidence {
+            if libm::fabs(freq_diff - 1.0) > self.freq_confidence {
                 freq_diff = freq_diff.clamp(1.0 - self.freq_confidence, 1.0 + self.freq_confidence);
                 self.freq_confidence *= 2.0;
             } else {
                 self.freq_confidence -=
-                    (self.freq_confidence - (freq_diff - 1.0).abs()) * self.gain;
+                    (self.freq_confidence - libm::fabs(freq_diff - 1.0)) * self.gain;
             }
 
             // and decide the correction

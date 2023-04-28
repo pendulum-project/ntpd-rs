@@ -1,4 +1,4 @@
-use std::{
+use core::{
     cell::RefCell,
     future::Future,
     pin::{pin, Pin},

@@ -1,13 +1,13 @@
-use crate::datastructures::common::{PortIdentity, Timestamp};
-use crate::datastructures::datasets::DefaultDS;
-use crate::datastructures::messages::{
-    DelayRespMessage, FollowUpMessage, Message, MessageBuilder, SyncMessage,
+use crate::{
+    datastructures::{
+        common::{PortIdentity, Timestamp},
+        datasets::DefaultDS,
+        messages::{DelayRespMessage, FollowUpMessage, Message, MessageBuilder, SyncMessage},
+    },
+    network::NetworkPort,
+    port::{sequence_id::SequenceIdGenerator, Measurement},
+    time::{Duration, Instant},
 };
-use crate::network::NetworkPort;
-use crate::port::sequence_id::SequenceIdGenerator;
-use crate::port::Measurement;
-use crate::time::{Duration, Instant};
-use thiserror::Error;
 
 type Result<T, E = SlaveError> = core::result::Result<T, E>;
 
@@ -140,7 +140,7 @@ impl SlaveState {
                 .domain_number(default_ds.domain_number)
                 .source_port_identity(port_identity)
                 .sequence_id(delay_id)
-                .log_message_interval(0x7F)
+                .log_message_interval(0x7f)
                 .delay_req_message(Timestamp::default());
             let delay_req_encode = delay_req.serialize_vec().unwrap();
             let delay_send_time = network_port
@@ -292,11 +292,18 @@ impl SlaveState {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum SlaveError {
-    #[error("received a message that a port in the slave state can never process")]
+    #[cfg_attr(
+        feature = "std",
+        error("received a message that a port in the slave state can never process")
+    )]
     UnexpectedMessage,
-    #[error("received a message that can usually be processed, but not right now")]
+    #[cfg_attr(
+        feature = "std",
+        error("received a message that can usually be processed, but not right now")
+    )]
     OutOfSequence,
 }
 
@@ -304,12 +311,11 @@ pub enum SlaveError {
 mod tests {
     use std::vec::Vec;
 
+    use super::*;
     use crate::datastructures::{
         common::{ClockIdentity, TimeInterval},
         messages::{Header, SdoId},
     };
-
-    use super::*;
 
     #[derive(Debug, Default)]
     struct TestNetworkPort {
