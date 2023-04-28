@@ -420,8 +420,14 @@ mod tests {
         });
 
         let mut state = MasterState::new();
-        let defaultds =
-            DefaultDS::new_ordinary_clock(ClockIdentity::default(), 15, 128, 0, false, SdoId::default());
+        let defaultds = DefaultDS::new_ordinary_clock(
+            ClockIdentity::default(),
+            15,
+            128,
+            0,
+            false,
+            SdoId::default(),
+        );
 
         port.current_time =
             Instant::from_fixed_nanos(U96F32::from_bits((601300 << 32) + (230 << 16)));

@@ -88,7 +88,14 @@ async fn test_measurement_flow() {
 
     let mut network_port = network_runtime.open(()).await.unwrap();
 
-    let defaultds = DefaultDS::new_ordinary_clock(ClockIdentity::default(), 15, 128, 0, false, SdoId::default());
+    let defaultds = DefaultDS::new_ordinary_clock(
+        ClockIdentity::default(),
+        15,
+        128,
+        0,
+        false,
+        SdoId::default(),
+    );
 
     let port_identity = PortIdentity {
         clock_identity: ClockIdentity([1, 0, 0, 0, 0, 0, 0, 0]),

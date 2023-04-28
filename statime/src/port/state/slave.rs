@@ -352,8 +352,14 @@ mod tests {
         };
         state.next_delay_measurement = Some(Instant::from_secs(10));
 
-        let defaultds =
-            DefaultDS::new_ordinary_clock(ClockIdentity::default(), 15, 128, 0, false, SdoId::default());
+        let defaultds = DefaultDS::new_ordinary_clock(
+            ClockIdentity::default(),
+            15,
+            128,
+            0,
+            false,
+            SdoId::default(),
+        );
 
         embassy_futures::block_on(state.handle_message(
             Message::Sync(SyncMessage {
@@ -435,8 +441,14 @@ mod tests {
 
         let mut state = SlaveState::new(Default::default());
 
-        let defaultds =
-            DefaultDS::new_ordinary_clock(ClockIdentity::default(), 15, 128, 0, false, SdoId::default());
+        let defaultds = DefaultDS::new_ordinary_clock(
+            ClockIdentity::default(),
+            15,
+            128,
+            0,
+            false,
+            SdoId::default(),
+        );
 
         port.current_time = Instant::from_micros(100);
         embassy_futures::block_on(state.handle_message(
@@ -582,8 +594,14 @@ mod tests {
         };
         state.next_delay_measurement = Some(Instant::from_secs(10));
 
-        let defaultds =
-            DefaultDS::new_ordinary_clock(ClockIdentity::default(), 15, 128, 0, false, SdoId::default());
+        let defaultds = DefaultDS::new_ordinary_clock(
+            ClockIdentity::default(),
+            15,
+            128,
+            0,
+            false,
+            SdoId::default(),
+        );
 
         embassy_futures::block_on(state.handle_message(
             Message::FollowUp(FollowUpMessage {
@@ -643,8 +661,14 @@ mod tests {
         };
         state.next_delay_measurement = Some(Instant::from_secs(10));
 
-        let defaultds =
-            DefaultDS::new_ordinary_clock(ClockIdentity::default(), 15, 128, 0, false, SdoId::default());
+        let defaultds = DefaultDS::new_ordinary_clock(
+            ClockIdentity::default(),
+            15,
+            128,
+            0,
+            false,
+            SdoId::default(),
+        );
 
         embassy_futures::block_on(state.handle_message(
             Message::Sync(SyncMessage {
@@ -724,8 +748,14 @@ mod tests {
         };
         state.next_delay_measurement = Some(Instant::from_secs(10));
 
-        let defaultds =
-            DefaultDS::new_ordinary_clock(ClockIdentity::default(), 15, 128, 0, false, SdoId::default());
+        let defaultds = DefaultDS::new_ordinary_clock(
+            ClockIdentity::default(),
+            15,
+            128,
+            0,
+            false,
+            SdoId::default(),
+        );
 
         embassy_futures::block_on(state.handle_message(
             Message::Sync(SyncMessage {
@@ -802,8 +832,14 @@ mod tests {
 
         let mut state = SlaveState::new(Default::default());
 
-        let defaultds =
-            DefaultDS::new_ordinary_clock(ClockIdentity::default(), 15, 128, 0, false, SdoId::default());
+        let defaultds = DefaultDS::new_ordinary_clock(
+            ClockIdentity::default(),
+            15,
+            128,
+            0,
+            false,
+            SdoId::default(),
+        );
 
         port.current_time = Instant::from_micros(100);
         embassy_futures::block_on(state.handle_message(
