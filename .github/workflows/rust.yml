@@ -10,6 +10,27 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      -   name: Checkout sources
+          uses: actions/checkout@v3
+
+      -   name: Install rust
+          uses: actions-rs/toolchain@v1
+          with:
+            toolchain: nightly
+
+      -   name: Build no-std
+          uses: actions-rs/cargo@v1
+          with:
+            command: build
+            toolchain: nightly
+            args: --no-default-features
+
+      # Build std is handled by test job
+
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -21,7 +42,6 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
-          override: true
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@v2
@@ -50,17 +70,18 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
-          override: true
           components: rustfmt, clippy
 
       - name: Run cargo fmt
         uses: actions-rs/cargo@v1
         with:
           command: fmt
+          toolchain: nightly
           args: --all --check
 
       - name: Run cargo clippy
         uses: actions-rs/cargo@v1
         with:
           command: clippy
+          toolchain: nightly
           args: --workspace --all-features -- -D warnings
