@@ -2,5 +2,4 @@
 members = [
     "statime",
     "statime-linux",
-    "examples/*"
 ]

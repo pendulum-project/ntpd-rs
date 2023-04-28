@@ -8,10 +8,13 @@ edition = "2021"
 [dependencies]
 arrayvec = { version = "0.7.2", default-features = false }
 bitflags = "2.2.1"
+chrono = "0.4.24"
+clap = { version = "4.2.4", features = ["derive"] }
+fern = { version = "0.6.2", features = ["colored"] }
 fixed = "1.23.1"
 libc = { version = "0.2.142", features = ["extra_traits"] }
 log = "0.4.14"
 nix = "0.26.1"
 statime = { path = "../statime" }
 thiserror = "1.0.40"
-tokio = { version = "1.28", features = ["time", "net", "macros"] }
+tokio = { version = "1.28", features = ["full"] }
