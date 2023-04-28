@@ -75,6 +75,7 @@ impl MasterState {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn send_announce<P: NetworkPort>(
         &mut self,
         local_clock: &RefCell<impl Clock>,

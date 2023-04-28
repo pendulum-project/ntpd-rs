@@ -38,7 +38,7 @@ impl PortState {
         match self {
             PortState::Master(master) => {
                 master
-                    .send_sync(local_clock, network_port, port_identity, &default_ds)
+                    .send_sync(local_clock, network_port, port_identity, default_ds)
                     .await
             }
             PortState::Slave(_)
@@ -48,6 +48,7 @@ impl PortState {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn send_announce<P: NetworkPort>(
         &mut self,
         local_clock: &RefCell<impl Clock>,

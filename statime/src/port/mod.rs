@@ -65,6 +65,7 @@ impl<P> Port<P> {
 }
 
 impl<P: NetworkPort> Port<P> {
+    #[allow(clippy::too_many_arguments)]
     pub async fn run_port<F: Future>(
         &mut self,
         local_clock: &RefCell<impl Clock>,
@@ -77,7 +78,7 @@ impl<P: NetworkPort> Port<P> {
         parent_ds: &ParentDS,
         current_ds: &CurrentDS,
         mut stop: Signal<'_>,
-    ) -> () {
+    ) {
         loop {
             let timeouts = select::select3(
                 announce_receipt_timeout.next(),
@@ -144,8 +145,7 @@ impl<P: NetworkPort> Port<P> {
         &mut self,
         current_time: Timestamp,
     ) -> Option<BestAnnounceMessage> {
-        self.bmca
-            .take_best_port_announce_message(current_time.into())
+        self.bmca.take_best_port_announce_message(current_time)
     }
 
     pub fn set_recommended_state<F: Future>(
@@ -270,7 +270,7 @@ impl<P: NetworkPort> Port<P> {
                 .port_state
                 .handle_message(
                     message,
-                    packet.timestamp.into(),
+                    packet.timestamp,
                     &mut self.network_port,
                     self.port_ds.min_delay_req_interval(),
                     self.port_ds.port_identity,
