@@ -21,6 +21,7 @@ jobs:
           uses: actions-rs/toolchain@v1
           with:
             toolchain: nightly
+            override: true
 
       -   name: Build no-std
           uses: actions-rs/cargo@v1
@@ -42,6 +43,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
+          override: true
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@v2
@@ -71,6 +73,7 @@ jobs:
         with:
           toolchain: nightly
           components: rustfmt, clippy
+          override: true
 
       - name: Run cargo fmt
         uses: actions-rs/cargo@v1
