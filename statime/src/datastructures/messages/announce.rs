@@ -1,11 +1,11 @@
-use crate::datastructures::datasets::TimePropertiesDS;
-use crate::datastructures::{
-    common::{ClockIdentity, ClockQuality, TimeSource, Timestamp},
-    WireFormat,
-};
 use getset::CopyGetters;
 
 use super::Header;
+use crate::datastructures::{
+    common::{ClockIdentity, ClockQuality, TimeSource, Timestamp},
+    datasets::TimePropertiesDS,
+    WireFormat,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
 #[getset(get_copy = "pub")]

@@ -1,15 +1,18 @@
 //! Implementation of chapter 9.3.4 Data set comparison algorithm
 
-use crate::datastructures::datasets::DefaultDS;
-use crate::datastructures::{
-    common::{ClockIdentity, ClockQuality, PortIdentity},
-    messages::AnnounceMessage,
-};
 use core::cmp::Ordering;
 
-/// A collection of data that is gathered from other sources (mainly announce messages and the DefaultDS).
-/// When gathered from two different sources, the [compare](crate::bmc::dataset_comparison::ComparisonDataset) method can be used to find out which source
-/// is better according to the dataset comparison algorithm.
+use crate::datastructures::{
+    common::{ClockIdentity, ClockQuality, PortIdentity},
+    datasets::DefaultDS,
+    messages::AnnounceMessage,
+};
+
+/// A collection of data that is gathered from other sources (mainly announce
+/// messages and the DefaultDS). When gathered from two different sources, the
+/// [compare](crate::bmc::dataset_comparison::ComparisonDataset) method can be
+/// used to find out which source is better according to the dataset comparison
+/// algorithm.
 #[derive(Eq, PartialEq, Default, Debug)]
 pub struct ComparisonDataset {
     gm_priority_1: u8,
@@ -22,7 +25,8 @@ pub struct ComparisonDataset {
 }
 
 impl ComparisonDataset {
-    /// Create a ComparisonDataset from the data in an announce message and the port identity of the port that received the announce message
+    /// Create a ComparisonDataset from the data in an announce message and the
+    /// port identity of the port that received the announce message
     pub fn from_announce_message(
         message: &AnnounceMessage,
         port_receiver_identity: &PortIdentity,
@@ -78,8 +82,9 @@ impl ComparisonDataset {
                     .cmp(&other.gm_clock_quality.clock_accuracy)
                 {
                     Ordering::Equal => {}
-                    // Ordering in reverse here because the cmp function of the ClockAccuracy does it semantically instead of numerically
-                    // The spec assumes numerical ordering which is the reverse of the semantical ordering
+                    // Ordering in reverse here because the cmp function of the ClockAccuracy does
+                    // it semantically instead of numerically The spec assumes
+                    // numerical ordering which is the reverse of the semantical ordering
                     Ordering::Less => return DatasetOrdering::Worse,
                     Ordering::Greater => return DatasetOrdering::Better,
                 }
@@ -154,15 +159,15 @@ impl ComparisonDataset {
 pub enum DatasetOrdering {
     /// The [ComparisonDataset] is better than the one being compared against
     Better,
-    /// The [ComparisonDataset] is of equal quality as the one being compared against,
-    /// but is preferred because of the network topology
+    /// The [ComparisonDataset] is of equal quality as the one being compared
+    /// against, but is preferred because of the network topology
     BetterByTopology,
     /// The [ComparisonDataset] is equal in quality and topology
     Error1,
     /// The [ComparisonDataset] is probably based on the same set of data
     Error2,
-    /// The [ComparisonDataset] is of equal quality as the one being compared against,
-    /// but is not preferred because of the network topology
+    /// The [ComparisonDataset] is of equal quality as the one being compared
+    /// against, but is not preferred because of the network topology
     WorseByTopology,
     /// The [ComparisonDataset] is worse than the one being compared against
     Worse,
@@ -200,7 +205,8 @@ mod tests {
         let (mut a, mut b) = get_default_test_pair();
 
         // Now we work bottom up to test everything
-        // Every time we we change which one is better or worse so we know that it's not still the previous result coming through
+        // Every time we we change which one is better or worse so we know that it's not
+        // still the previous result coming through
 
         a.gm_identity = IDENTITY_A;
         b.gm_identity = IDENTITY_B;

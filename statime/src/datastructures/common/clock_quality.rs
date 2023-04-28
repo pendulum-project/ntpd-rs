@@ -36,7 +36,7 @@ mod tests {
     #[test]
     fn timestamp_wireformat() {
         let representations = [(
-            [0x7A, 0x2A, 0x12, 0x34u8],
+            [0x7a, 0x2a, 0x12, 0x34u8],
             ClockQuality {
                 clock_class: 122,
                 clock_accuracy: ClockAccuracy::MS2_5,

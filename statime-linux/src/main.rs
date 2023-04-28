@@ -1,11 +1,14 @@
 use clap::Parser;
 use fern::colors::Color;
-use statime::datastructures::common::{PortIdentity, TimeSource};
-use statime::datastructures::datasets::{DefaultDS, DelayMechanism, PortDS, TimePropertiesDS};
-use statime::datastructures::messages::SdoId;
-use statime::port::Port;
 use statime::{
-    datastructures::common::ClockIdentity, filters::basic::BasicFilter, ptp_instance::PtpInstance,
+    datastructures::{
+        common::{ClockIdentity, PortIdentity, TimeSource},
+        datasets::{DefaultDS, DelayMechanism, PortDS, TimePropertiesDS},
+        messages::SdoId,
+    },
+    filters::basic::BasicFilter,
+    port::Port,
+    ptp_instance::PtpInstance,
 };
 use statime_linux::{
     clock::{LinuxClock, LinuxTimer, RawLinuxClock},

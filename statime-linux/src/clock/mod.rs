@@ -1,12 +1,10 @@
 //! Implementation of the abstract clock for the linux platform
 
 use fixed::traits::LossyInto;
-
 pub use raw::RawLinuxClock;
-use statime::datastructures::datasets::TimePropertiesDS;
 use statime::{
     clock::{Clock, Timer},
-    datastructures::common::ClockQuality,
+    datastructures::{common::ClockQuality, datasets::TimePropertiesDS},
     time::{Duration, Instant},
 };
 

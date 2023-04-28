@@ -1,9 +1,10 @@
+use getset::CopyGetters;
+
 use super::{control_field::ControlField, MessageType};
 use crate::datastructures::{
     common::{PortIdentity, TimeInterval},
     WireFormat, WireFormatError,
 };
-use getset::CopyGetters;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
 #[getset(get_copy = "pub")]
@@ -71,7 +72,7 @@ impl Header {
         content_length: usize,
         buffer: &mut [u8],
     ) -> Result<(), WireFormatError> {
-        buffer[0] = ((self.sdo_id.high_byte()) << 4) | (u8::from(content_type) & 0x0F);
+        buffer[0] = ((self.sdo_id.high_byte()) << 4) | (u8::from(content_type) & 0x0f);
         buffer[1] = self.version.as_byte();
         buffer[2..4].copy_from_slice(&((content_length + self.wire_size()) as u16).to_be_bytes());
         buffer[4] = self.domain_number;
@@ -102,7 +103,7 @@ impl Header {
 
     pub fn deserialize_header(buffer: &[u8]) -> Result<DeserializedHeader, WireFormatError> {
         let version = PtpVersion::from_byte(buffer[1]);
-        let sdo_id = SdoId((((buffer[0] & 0xF0) as u16) << 4) | (buffer[5] as u16));
+        let sdo_id = SdoId((((buffer[0] & 0xf0) as u16) << 4) | (buffer[5] as u16));
 
         Ok(DeserializedHeader {
             header: Self {
@@ -126,7 +127,7 @@ impl Header {
                 sequence_id: u16::from_be_bytes(buffer[30..32].try_into().unwrap()),
                 log_message_interval: buffer[33] as i8,
             },
-            message_type: (buffer[0] & 0x0F).try_into()?,
+            message_type: (buffer[0] & 0x0f).try_into()?,
             message_length: u16::from_be_bytes(buffer[2..4].try_into().unwrap()),
         })
     }
@@ -182,7 +183,7 @@ impl PtpVersion {
 
     fn from_byte(byte: u8) -> Self {
         Self {
-            major: byte & 0x0F,
+            major: byte & 0x0f,
             minor: byte >> 4,
         }
     }
@@ -190,10 +191,10 @@ impl PtpVersion {
 
 #[cfg(test)]
 mod tests {
-    use crate::datastructures::common::ClockIdentity;
+    use fixed::types::I48F16;
 
     use super::*;
-    use fixed::types::I48F16;
+    use crate::datastructures::common::ClockIdentity;
 
     #[test]
     fn flagfield_wireformat() {
@@ -247,11 +248,11 @@ mod tests {
         let representations = [(
             [
                 0x59,
-                0xA1,
+                0xa1,
                 0x12,
                 0x34,
-                0xAA,
-                0xBB,
+                0xaa,
+                0xbb,
                 0b0100_0101,
                 0b0010_1010,
                 0x00,
@@ -276,19 +277,19 @@ mod tests {
                 7,
                 0x55,
                 0x55,
-                0xDE,
-                0xAD,
+                0xde,
+                0xad,
                 0x03,
                 0x16,
             ],
             DeserializedHeader {
                 header: Header {
-                    sdo_id: SdoId(0x5BB),
+                    sdo_id: SdoId(0x5bb),
                     version: PtpVersion {
                         major: 0x1,
-                        minor: 0xA,
+                        minor: 0xa,
                     },
-                    domain_number: 0xAA,
+                    domain_number: 0xaa,
                     alternate_master_flag: true,
                     two_step_flag: false,
                     unicast_flag: true,
@@ -306,7 +307,7 @@ mod tests {
                         clock_identity: ClockIdentity([0, 1, 2, 3, 4, 5, 6, 7]),
                         port_number: 0x5555,
                     },
-                    sequence_id: 0xDEAD,
+                    sequence_id: 0xdead,
                     log_message_interval: 0x16,
                 },
                 message_type: MessageType::DelayResp,

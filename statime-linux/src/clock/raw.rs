@@ -1,7 +1,6 @@
 use std::{ffi::CString, fmt::Display, ops::DerefMut};
 
 use libc::{clockid_t, timespec};
-
 use statime::{
     datastructures::common::{ClockAccuracy, ClockQuality},
     time::{Duration, Instant},
@@ -67,11 +66,14 @@ impl RawLinuxClock {
     /// Adjusts the clock
     ///
     /// - The time_offset is given in seconds.
-    /// - The frequency_multiplier is the value that the *current* frequency should be multiplied with to get to the target frequency.
+    /// - The frequency_multiplier is the value that the *current* frequency
+    ///   should be multiplied with to get to the target frequency.
     ///
-    /// For example, if the clock is at 10.0 mhz, but should run at 10.1 mhz, then the frequency_multiplier should be 1.01.
+    /// For example, if the clock is at 10.0 mhz, but should run at 10.1 mhz,
+    /// then the frequency_multiplier should be 1.01.
     ///
-    /// If the time offset is higher than 0.5 seconds, then the clock will be set directly and no frequency change will be made.
+    /// If the time offset is higher than 0.5 seconds, then the clock will be
+    /// set directly and no frequency change will be made.
     pub fn adjust_clock(&mut self, time_offset: f64, frequency_multiplier: f64) -> Result<(), i32> {
         log::trace!("Adjusting clock: {time_offset}s, {frequency_multiplier}x");
 
@@ -93,14 +95,18 @@ impl RawLinuxClock {
             AdjustFlags::FREQUENCY, // We'll be setting the frequency as well
         );
 
-        // We need to change the ppm value to a speed factor so we can use multiplication to get the new frequency
+        // We need to change the ppm value to a speed factor so we can use
+        // multiplication to get the new frequency
         let current_ppm = current_timex.get_frequency();
-        // The ppm is an offset from the main frequency, so it's the base +- the ppm expressed as a percentage.
-        // Ppm is in the opposite direction from the speed factor. A postive ppm means the clock is running slower, so we use its negative.
+        // The ppm is an offset from the main frequency, so it's the base +- the ppm
+        // expressed as a percentage. Ppm is in the opposite direction from the
+        // speed factor. A postive ppm means the clock is running slower, so we use its
+        // negative.
         let current_frequency_multiplier = 1.0 + -current_ppm.to_num::<f64>() / 1_000_000.0;
         // Now multiply the frequencies
         let new_frequency_multiplier = current_frequency_multiplier * frequency_multiplier;
-        // Get back the new ppm value by subtracting the 1.0 base from it, changing the percentage to the ppm again and then taking the negative of that.
+        // Get back the new ppm value by subtracting the 1.0 base from it, changing the
+        // percentage to the ppm again and then taking the negative of that.
         let new_ppm = -Fixed::from_num((new_frequency_multiplier - 1.0) * 1_000_000.0);
 
         frequency_timex.set_frequency(new_ppm);
@@ -132,7 +138,8 @@ impl RawLinuxClock {
         offset_timex.time.tv_sec = time_offset as _;
         offset_timex.time.tv_usec = (time_offset.fract() * 1_000_000_000.0) as Int;
 
-        // The nanos must not be negative. In that case the timestamp must be delivered as a negative seconds with a postive nanos value
+        // The nanos must not be negative. In that case the timestamp must be delivered
+        // as a negative seconds with a postive nanos value
         while offset_timex.time.tv_usec < 0 {
             offset_timex.time.tv_sec -= 1;
             offset_timex.time.tv_usec += 1_000_000_000;
@@ -167,7 +174,7 @@ impl RawLinuxClock {
             quality: ClockQuality {
                 clock_class: 248,
                 clock_accuracy: ClockAccuracy::MS10,
-                offset_scaled_log_variance: 0xFFFF,
+                offset_scaled_log_variance: 0xffff,
             },
         })
     }
@@ -192,7 +199,7 @@ impl RawLinuxClock {
             quality: ClockQuality {
                 clock_class: 248,
                 clock_accuracy: ClockAccuracy::MS10,
-                offset_scaled_log_variance: 0xFFFF,
+                offset_scaled_log_variance: 0xffff,
             },
         })
     }

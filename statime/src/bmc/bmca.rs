@@ -4,13 +4,13 @@ use super::{
     dataset_comparison::{ComparisonDataset, DatasetOrdering},
     foreign_master::ForeignMasterList,
 };
-use crate::port::state::PortState;
 use crate::{
     datastructures::{
         common::{PortIdentity, TimeInterval, Timestamp},
         datasets::DefaultDS,
         messages::AnnounceMessage,
     },
+    port::state::PortState,
     time::Instant,
 };
 
@@ -19,10 +19,14 @@ use crate::{
 /// Usage:
 ///
 /// - Every port has its own instance.
-/// - When a port receives an announce message, it has to register it with the [Bmca::register_announce_message] method
-/// - When it is time to run the algorithm, the ptp runtime has to take all the best announce messages using [Bmca::take_best_port_announce_message]
-/// - Of the resulting set, the best global one needs to be determined. This can be done using [Bmca::find_best_announce_message]
-/// - Then to get the recommended state for each port, [Bmca::calculate_recommended_state] needs to be called
+/// - When a port receives an announce message, it has to register it with the
+///   [Bmca::register_announce_message] method
+/// - When it is time to run the algorithm, the ptp runtime has to take all the
+///   best announce messages using [Bmca::take_best_port_announce_message]
+/// - Of the resulting set, the best global one needs to be determined. This can
+///   be done using [Bmca::find_best_announce_message]
+/// - Then to get the recommended state for each port,
+///   [Bmca::calculate_recommended_state] needs to be called
 pub struct Bmca {
     foreign_master_list: ForeignMasterList,
     own_port_identity: PortIdentity,
@@ -57,7 +61,8 @@ impl Bmca {
         &mut self,
         current_time: Timestamp,
     ) -> Option<BestAnnounceMessage> {
-        // Find the announce message we want to use from each foreign master that has qualified messages
+        // Find the announce message we want to use from each foreign master that has
+        // qualified messages
         let announce_messages = self
             .foreign_master_list
             .take_qualified_announce_messages(current_time);
@@ -73,8 +78,9 @@ impl Bmca {
             }));
 
         if let Some(best) = &erbest {
-            // All messages that were considered have been removed from the foreignmasterlist.
-            // However, the one that has been selected as the Erbest must not be removed, so let's just reregister it.
+            // All messages that were considered have been removed from the
+            // foreignmasterlist. However, the one that has been selected as the
+            // Erbest must not be removed, so let's just reregister it.
             self.register_announce_message(&best.message, best.timestamp);
         }
 
@@ -82,7 +88,8 @@ impl Bmca {
     }
 
     /// Finds the best announce message in the given iterator.
-    /// The port identity in the tuple is the identity of the port that received the announce message.
+    /// The port identity in the tuple is the identity of the port that received
+    /// the announce message.
     pub fn find_best_announce_message(
         announce_messages: impl IntoIterator<Item = BestAnnounceMessage>,
     ) -> Option<BestAnnounceMessage> {
@@ -91,7 +98,8 @@ impl Bmca {
                 &ComparisonDataset::from_announce_message(&right.message, &right.identity),
             ) {
                 DatasetOrdering::Better | DatasetOrdering::BetterByTopology => left,
-                // We get errors if two announce messages are (functionally) the same, in that case we just pick the newer one
+                // We get errors if two announce messages are (functionally) the same, in that case
+                // we just pick the newer one
                 DatasetOrdering::Error1 | DatasetOrdering::Error2 => {
                     if Instant::from(left.timestamp) >= Instant::from(right.timestamp) {
                         left
@@ -104,17 +112,24 @@ impl Bmca {
         })
     }
 
-    /// Calculates the recommended port state. This has to be run for every port.
-    /// The PTP spec calls this the State Decision Algorithm.
+    /// Calculates the recommended port state. This has to be run for every
+    /// port. The PTP spec calls this the State Decision Algorithm.
     ///
-    /// - `own_data`: Called 'D0' by the PTP spec. The DefaultDS data of our own ptp instance.
-    /// - `best_global_announce_message`: Called 'Ebest' by the PTP spec. This is the best announce message and the
-    /// identity of the port that received it of all of the best port announce messages.
-    /// - `best_port_announce_message`: Called 'Erbest' by the PTP spec. This is the best announce message and the
-    /// identity of the port that received it of the port we are calculating the recommended state for.
-    /// - `port_state`: The current state of the port we are doing the calculation for.
+    /// - `own_data`: Called 'D0' by the PTP spec. The DefaultDS data of our own
+    ///   ptp instance.
+    /// - `best_global_announce_message`: Called 'Ebest' by the PTP spec. This
+    ///   is the best announce message and the
+    /// identity of the port that received it of all of the best port announce
+    /// messages.
+    /// - `best_port_announce_message`: Called 'Erbest' by the PTP spec. This is
+    ///   the best announce message and the
+    /// identity of the port that received it of the port we are calculating the
+    /// recommended state for.
+    /// - `port_state`: The current state of the port we are doing the
+    ///   calculation for.
     ///
-    /// If None is returned, then the port should remain in the same state as it is now.
+    /// If None is returned, then the port should remain in the same state as it
+    /// is now.
     pub fn calculate_recommended_state(
         own_data: &DefaultDS,
         best_global_announce_message: Option<BestAnnounceMessage>,

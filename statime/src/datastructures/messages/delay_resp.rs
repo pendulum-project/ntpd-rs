@@ -1,10 +1,10 @@
+use getset::CopyGetters;
+
+use super::Header;
 use crate::datastructures::{
     common::{PortIdentity, Timestamp},
     WireFormat,
 };
-use getset::CopyGetters;
-
-use super::Header;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
 #[getset(get_copy = "pub")]
@@ -52,7 +52,7 @@ mod tests {
         let representations = [(
             [
                 0x00, 0x00, 0x45, 0xb1, 0x11, 0x5a, 0x0a, 0x64, 0xfa, 0xb0, 0x01, 0x02, 0x03, 0x04,
-                0x05, 0x06, 0x07, 0x08, 0x09, 0x0A,
+                0x05, 0x06, 0x07, 0x08, 0x09, 0x0a,
             ],
             DelayRespMessage {
                 header: Header::default(),
@@ -62,7 +62,7 @@ mod tests {
                 },
                 requesting_port_identity: PortIdentity {
                     clock_identity: ClockIdentity([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]),
-                    port_number: 0x090A,
+                    port_number: 0x090a,
                 },
             },
         )];

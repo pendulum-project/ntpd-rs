@@ -69,12 +69,12 @@ impl ClockAccuracy {
             Self::PS1 => 0x17,
             Self::PS2_5 => 0x18,
             Self::PS10 => 0x19,
-            Self::PS25 => 0x1A,
-            Self::PS100 => 0x1B,
-            Self::PS250 => 0x1C,
-            Self::NS1 => 0x1D,
-            Self::NS2_5 => 0x1E,
-            Self::NS10 => 0x1F,
+            Self::PS25 => 0x1a,
+            Self::PS100 => 0x1b,
+            Self::PS250 => 0x1c,
+            Self::NS1 => 0x1d,
+            Self::NS2_5 => 0x1e,
+            Self::NS10 => 0x1f,
             Self::NS25 => 0x20,
             Self::NS100 => 0x21,
             Self::NS250 => 0x22,
@@ -85,31 +85,31 @@ impl ClockAccuracy {
             Self::US100 => 0x27,
             Self::US250 => 0x28,
             Self::MS1 => 0x29,
-            Self::MS2_5 => 0x2A,
-            Self::MS10 => 0x2B,
-            Self::MS25 => 0x2C,
-            Self::MS100 => 0x2D,
-            Self::MS250 => 0x2E,
-            Self::S1 => 0x2F,
+            Self::MS2_5 => 0x2a,
+            Self::MS10 => 0x2b,
+            Self::MS25 => 0x2c,
+            Self::MS100 => 0x2d,
+            Self::MS250 => 0x2e,
+            Self::S1 => 0x2f,
             Self::S10 => 0x30,
             Self::SGT10 => 0x31,
             Self::ProfileSpecific(value) => 0x80 + value,
-            Self::Unknown => 0xFE,
+            Self::Unknown => 0xfe,
         }
     }
 
     pub fn from_primitive(value: u8) -> Self {
         match value {
-            0x00..=0x16 | 0x32..=0x7F | 0xFF => Self::Reserved,
+            0x00..=0x16 | 0x32..=0x7f | 0xff => Self::Reserved,
             0x17 => Self::PS1,
             0x18 => Self::PS2_5,
             0x19 => Self::PS10,
-            0x1A => Self::PS25,
-            0x1B => Self::PS100,
-            0x1C => Self::PS250,
-            0x1D => Self::NS1,
-            0x1E => Self::NS2_5,
-            0x1F => Self::NS10,
+            0x1a => Self::PS25,
+            0x1b => Self::PS100,
+            0x1c => Self::PS250,
+            0x1d => Self::NS1,
+            0x1e => Self::NS2_5,
+            0x1f => Self::NS10,
             0x20 => Self::NS25,
             0x21 => Self::NS100,
             0x22 => Self::NS250,
@@ -120,23 +120,24 @@ impl ClockAccuracy {
             0x27 => Self::US100,
             0x28 => Self::US250,
             0x29 => Self::MS1,
-            0x2A => Self::MS2_5,
-            0x2B => Self::MS10,
-            0x2C => Self::MS25,
-            0x2D => Self::MS100,
-            0x2E => Self::MS250,
-            0x2F => Self::S1,
+            0x2a => Self::MS2_5,
+            0x2b => Self::MS10,
+            0x2c => Self::MS25,
+            0x2d => Self::MS100,
+            0x2e => Self::MS250,
+            0x2f => Self::S1,
             0x30 => Self::S10,
             0x31 => Self::SGT10,
-            0x80..=0xFD => Self::ProfileSpecific(value - 0x80),
-            0xFE => ClockAccuracy::Unknown,
+            0x80..=0xfd => Self::ProfileSpecific(value - 0x80),
+            0xfe => ClockAccuracy::Unknown,
         }
     }
 }
 
 impl PartialOrd for ClockAccuracy {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        // The clock gets more inaccurate with the higher numbers for the normal accuracy values.
+        // The clock gets more inaccurate with the higher numbers for the normal
+        // accuracy values.
         self.to_primitive()
             .partial_cmp(&other.to_primitive())
             .map(|r| r.reverse())

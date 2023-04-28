@@ -3,13 +3,16 @@ use std::convert::Infallible;
 use arrayvec::{ArrayVec, CapacityError};
 use fixed::traits::ToFixed;
 
-use crate::datastructures::common::{ClockIdentity, PortIdentity, TimeInterval, Timestamp};
-use crate::datastructures::datasets::DefaultDS;
-use crate::datastructures::messages::{MessageBuilder, SdoId, MAX_DATA_LEN};
-use crate::network::{NetworkPacket, NetworkPort, NetworkRuntime};
-use crate::port::state::SlaveState;
-use crate::port::Measurement;
-use crate::time::{Duration, Instant};
+use crate::{
+    datastructures::{
+        common::{ClockIdentity, PortIdentity, TimeInterval, Timestamp},
+        datasets::DefaultDS,
+        messages::{MessageBuilder, SdoId, MAX_DATA_LEN},
+    },
+    network::{NetworkPacket, NetworkPort, NetworkRuntime},
+    port::{state::SlaveState, Measurement},
+    time::{Duration, Instant},
+};
 
 #[derive(Debug)]
 pub struct TestRuntime {

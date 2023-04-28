@@ -1,8 +1,10 @@
-use crate::datastructures::common::ClockIdentity;
-use crate::datastructures::common::ClockQuality;
-use crate::datastructures::common::InstanceType;
-use crate::datastructures::messages::SdoId;
-use crate::time::Instant;
+use crate::{
+    datastructures::{
+        common::{ClockIdentity, ClockQuality, InstanceType},
+        messages::SdoId,
+    },
+    time::Instant,
+};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct DefaultDS {

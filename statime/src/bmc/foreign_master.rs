@@ -1,5 +1,7 @@
 //! Implementation of the [ForeignMasterList]
 
+use arrayvec::ArrayVec;
+
 use crate::{
     datastructures::{
         common::{PortIdentity, TimeInterval, Timestamp},
@@ -8,14 +10,12 @@ use crate::{
     time::{Duration, Instant},
 };
 
-use arrayvec::ArrayVec;
-
 /// The time window in which announce messages are valid.
 /// To get the real window, multiply it with the announce interval of the port.
 const FOREIGN_MASTER_TIME_WINDOW: u16 = 4;
 
-/// This is the amount of announce messages that must have been received within the time window
-/// for a foreign master to be valid
+/// This is the amount of announce messages that must have been received within
+/// the time window for a foreign master to be valid
 const FOREIGN_MASTER_THRESHOLD: usize = 2;
 
 /// The maximum amount of announce message to store within the time window
@@ -44,7 +44,8 @@ impl ForeignMaster {
         self.foreign_master_port_identity
     }
 
-    /// Removes all messages that fall outside of the [FOREIGN_MASTER_TIME_WINDOW].
+    /// Removes all messages that fall outside of the
+    /// [FOREIGN_MASTER_TIME_WINDOW].
     ///
     /// Returns true if this foreign master has no more announce messages left.
     fn purge_old_messages(
@@ -88,7 +89,8 @@ pub struct ForeignMasterList {
 }
 
 impl ForeignMasterList {
-    /// - `port_announce_interval`: The time interval derived from the PortDS.log_announce_interval
+    /// - `port_announce_interval`: The time interval derived from the
+    ///   PortDS.log_announce_interval
     /// - `port_identity`: The identity of the port for which this list is used
     pub fn new(own_port_announce_interval: TimeInterval, own_port_identity: PortIdentity) -> Self {
         Self {
@@ -98,7 +100,8 @@ impl ForeignMasterList {
         }
     }
 
-    /// Takes the qualified announce message of all foreign masters that have one
+    /// Takes the qualified announce message of all foreign masters that have
+    /// one
     pub fn take_qualified_announce_messages(
         &mut self,
         current_time: Timestamp,
@@ -115,10 +118,12 @@ impl ForeignMasterList {
                 continue;
             }
 
-            // A foreign master must have at least FOREIGN_MASTER_THRESHOLD messages in the last FOREIGN_MASTER_TIME_WINDOW
-            // to be qualified, so we filter out any that don't have that
+            // A foreign master must have at least FOREIGN_MASTER_THRESHOLD messages in the
+            // last FOREIGN_MASTER_TIME_WINDOW to be qualified, so we filter out
+            // any that don't have that
             if self.foreign_masters[i].announce_messages.len() > FOREIGN_MASTER_THRESHOLD {
-                // Only the most recent announce message is qualified, so we remove that one from the list
+                // Only the most recent announce message is qualified, so we remove that one
+                // from the list
                 let last_index = self.foreign_masters[i].announce_messages.len() - 1;
                 qualified_foreign_masters
                     .push(self.foreign_masters[i].announce_messages.remove(last_index));
@@ -178,8 +183,9 @@ impl ForeignMasterList {
     fn is_announce_message_qualified(&self, announce_message: &AnnounceMessage) -> bool {
         let source_identity = announce_message.header().source_port_identity();
 
-        // 1. The message must not come from our own ptp instance. Since every instance only has 1 clock,
-        // we can check the clock identity. That must be different.
+        // 1. The message must not come from our own ptp instance. Since every instance
+        // only has 1 clock, we can check the clock identity. That must be
+        // different.
         if source_identity.clock_identity == self.own_port_identity.clock_identity {
             return false;
         }
@@ -209,7 +215,8 @@ impl ForeignMasterList {
         }
 
         // 4. The announce message may not be from a foreign master with fewer messages
-        // than FOREIGN_MASTER_THRESHOLD, but that is handled in the `take_qualified_announce_messages` method.
+        // than FOREIGN_MASTER_THRESHOLD, but that is handled in the
+        // `take_qualified_announce_messages` method.
 
         // Otherwise, the announce message is qualified
         true

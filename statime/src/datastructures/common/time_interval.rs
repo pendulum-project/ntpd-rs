@@ -1,9 +1,11 @@
+use core::ops::{Deref, DerefMut};
+
+use fixed::types::I48F16;
+
 use crate::{
     datastructures::{WireFormat, WireFormatError},
     time::Duration,
 };
-use core::ops::{Deref, DerefMut};
-use fixed::types::I48F16;
 
 /// Represents time intervals in nanoseconds
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -63,7 +65,7 @@ mod tests {
                 TimeInterval(I48F16::from_num(1.0f64 / u16::MAX as f64)),
             ),
             (
-                [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00u8],
+                [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00u8],
                 TimeInterval(I48F16::from_num(-1.0f64)),
             ),
         ];

@@ -1,8 +1,7 @@
 //! Definitions and implementations of the abstract clock types
 
-use crate::datastructures::datasets::TimePropertiesDS;
 use crate::{
-    datastructures::common::ClockQuality,
+    datastructures::{common::ClockQuality, datasets::TimePropertiesDS},
     time::{Duration, Instant},
 };
 
@@ -19,9 +18,11 @@ pub trait Clock {
     /// Adjust the clock with the given time offset and frequency multiplier.
     /// The adjustment is based on the given time properties.
     ///
-    /// The adjustment that is actually being done to the clock doesn't have to be exactly what is being given.
-    /// The clock can (and should) do some filtering.
-    // TODO: Discuss whether both the PTP instance and the clock itself should do filtering?
+    /// The adjustment that is actually being done to the clock doesn't have to
+    /// be exactly what is being given. The clock can (and should) do some
+    /// filtering.
+    // TODO: Discuss whether both the PTP instance and the clock itself should do
+    // filtering?
     fn adjust(
         &mut self,
         time_offset: Duration,

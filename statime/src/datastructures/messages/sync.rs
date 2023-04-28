@@ -1,7 +1,7 @@
-use crate::datastructures::{common::Timestamp, WireFormat};
 use getset::CopyGetters;
 
 use super::Header;
+use crate::datastructures::{common::Timestamp, WireFormat};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
 #[getset(get_copy = "pub")]

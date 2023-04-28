@@ -1,10 +1,9 @@
-use crate::datastructures::common::{
-    ClockIdentity, ClockQuality, PortIdentity, TimeInterval, TimeSource, Timestamp,
-};
-
 use super::{
     AnnounceMessage, DelayReqMessage, DelayRespMessage, FollowUpMessage, Header, Message,
     PtpVersion, SdoId, SyncMessage,
+};
+use crate::datastructures::common::{
+    ClockIdentity, ClockQuality, PortIdentity, TimeInterval, TimeSource, Timestamp,
 };
 
 #[derive(Debug, Clone)]
@@ -14,12 +13,14 @@ pub enum MessageBuilderError {
 
 /// A builder to build messages with.
 ///
-/// This pattern is used because it is possible to construct messages that are invalid.
-/// The length field in the header has to match the length of the message (this might not be strictly necessary when using UDP, but there are other transports as well).
-/// The message type field in the header has to match the content type.
-/// These are the two major ones, but there are more.
+/// This pattern is used because it is possible to construct messages that are
+/// invalid. The length field in the header has to match the length of the
+/// message (this might not be strictly necessary when using UDP, but there are
+/// other transports as well). The message type field in the header has to match
+/// the content type. These are the two major ones, but there are more.
 ///
-/// By using a builder and then making the messages immutable, we guarantee that all messages are valid.
+/// By using a builder and then making the messages immutable, we guarantee that
+/// all messages are valid.
 pub struct MessageBuilder {
     header: Header,
 }

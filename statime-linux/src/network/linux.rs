@@ -1,9 +1,13 @@
 //! Implementation of the abstract network types for the linux platform
 
-use crate::{
-    clock::{timespec_into_instant, LinuxClock},
-    network::linux_syscall::driver_enable_hardware_timestamping,
+use std::{
+    io,
+    io::{ErrorKind, IoSliceMut},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    os::fd::{AsRawFd, FromRawFd},
+    str::FromStr,
 };
+
 use nix::{
     cmsg_space,
     errno::Errno,
@@ -18,14 +22,12 @@ use statime::{
     network::{NetworkPacket, NetworkPort, NetworkRuntime},
     time::Instant,
 };
-use std::{
-    io,
-    io::{ErrorKind, IoSliceMut},
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    os::fd::{AsRawFd, FromRawFd},
-    str::FromStr,
-};
 use tokio::{io::Interest, net::UdpSocket};
+
+use crate::{
+    clock::{timespec_into_instant, LinuxClock},
+    network::linux_syscall::driver_enable_hardware_timestamping,
+};
 
 /// The time-critical port
 const TC_PORT: u16 = 319;
@@ -46,8 +48,8 @@ impl LinuxRuntime {
         }
     }
 
-    const IPV6_PRIMARY_MULTICAST: Ipv6Addr = Ipv6Addr::new(0xFF, 0x0E, 0, 0, 0, 0, 0x01, 0x81);
-    const IPV6_PDELAY_MULTICAST: Ipv6Addr = Ipv6Addr::new(0xFF, 0x02, 0, 0, 0, 0, 0, 0x6B);
+    const IPV6_PRIMARY_MULTICAST: Ipv6Addr = Ipv6Addr::new(0xff, 0x0e, 0, 0, 0, 0, 0x01, 0x81);
+    const IPV6_PDELAY_MULTICAST: Ipv6Addr = Ipv6Addr::new(0xff, 0x02, 0, 0, 0, 0, 0, 0x6b);
 
     const IPV4_PRIMARY_MULTICAST: Ipv4Addr = Ipv4Addr::new(224, 0, 1, 129);
     const IPV4_PDELAY_MULTICAST: Ipv4Addr = Ipv4Addr::new(224, 0, 0, 107);
@@ -71,7 +73,8 @@ impl LinuxRuntime {
             return Err(NetworkError::UnknownError);
         }
 
-        // We want to allow multiple listening sockets, as we bind to a specific interface later
+        // We want to allow multiple listening sockets, as we bind to a specific
+        // interface later
         setsockopt(socket.as_raw_fd(), ReuseAddr, &true).map_err(|_| NetworkError::UnknownError)?;
 
         let ret = match addr {
@@ -144,7 +147,8 @@ impl LinuxRuntime {
             IpAddr::V6(_ip) => {
                 // TODO: multicast hops limit for ipv6
 
-                // 0 indicates any interface, though it is likely this interface does not support multicast
+                // 0 indicates any interface, though it is likely this interface does not
+                // support multicast
                 let if_index = interface.get_index().unwrap_or(0);
 
                 socket.join_multicast_v6(&Self::IPV6_PRIMARY_MULTICAST, if_index)?;
@@ -499,8 +503,9 @@ impl NetworkPort for LinuxNetworkPort {
 }
 
 impl LinuxNetworkPort {
-    /// Do a manual receive on the time critical socket so we can get the hardware timestamps.
-    /// Tokio doesn't have the capability to get the timestamp.
+    /// Do a manual receive on the time critical socket so we can get the
+    /// hardware timestamps. Tokio doesn't have the capability to get the
+    /// timestamp.
     ///
     /// This returns an option because there may not be a message
     fn try_recv_message_with_timestamp(
@@ -561,7 +566,8 @@ impl LinuxNetworkPort {
             tc_socket.as_raw_fd(),
             &mut io_vec,
             Some(&mut cmsg),
-            MsgFlags::MSG_ERRQUEUE, // We read from the error queue because that is where the tx timestamps are routed to
+            MsgFlags::MSG_ERRQUEUE, /* We read from the error queue because that is where the tx
+                                     * timestamps are routed to */
         ) {
             Ok(received) => received,
             Err(Errno::EWOULDBLOCK) => return Ok(None),
@@ -612,16 +618,18 @@ pub(crate) fn cerr(t: libc::c_int) -> std::io::Result<libc::c_int> {
 ///
 /// # Safety
 ///
-/// According to the posix standard, `sockaddr` does not have a defined size: the size depends on
-/// the value of the `ss_family` field. We assume this to be correct.
+/// According to the posix standard, `sockaddr` does not have a defined size:
+/// the size depends on the value of the `ss_family` field. We assume this to be
+/// correct.
 ///
-/// In practice, types in rust/c need a statically-known stack size, so they pick some value. In
-/// practice it can be (and is) larger than the `sizeof<libc::sockaddr>` value.
+/// In practice, types in rust/c need a statically-known stack size, so they
+/// pick some value. In practice it can be (and is) larger than the
+/// `sizeof<libc::sockaddr>` value.
 pub unsafe fn sockaddr_to_socket_addr(sockaddr: *const libc::sockaddr) -> Option<SocketAddr> {
-    // Most (but not all) of the fields in a socket addr are in network byte ordering.
-    // As such, when doing conversions here, we should start from the NATIVE
-    // byte representation, as this will actualy be the big-endian representation
-    // of the underlying value regardless of platform.
+    // Most (but not all) of the fields in a socket addr are in network byte
+    // ordering. As such, when doing conversions here, we should start from the
+    // NATIVE byte representation, as this will actualy be the big-endian
+    // representation of the underlying value regardless of platform.
     match unsafe { (*sockaddr).sa_family as libc::c_int } {
         libc::AF_INET => {
             let inaddr: libc::sockaddr_in = unsafe { *(sockaddr as *const libc::sockaddr_in) };
@@ -643,7 +651,7 @@ pub unsafe fn sockaddr_to_socket_addr(sockaddr: *const libc::sockaddr) -> Option
             let socketaddr = std::net::SocketAddrV6::new(
                 std::net::Ipv6Addr::from(segment_bytes),
                 u16::from_be_bytes(inaddr.sin6_port.to_ne_bytes()),
-                inaddr.sin6_flowinfo, // NOTE: Despite network byte order, no conversion is needed (see https://github.com/rust-lang/rust/issues/101605)
+                inaddr.sin6_flowinfo, /* NOTE: Despite network byte order, no conversion is needed (see https://github.com/rust-lang/rust/issues/101605) */
                 inaddr.sin6_scope_id,
             );
 

@@ -1,17 +1,20 @@
 //! Implementation of the [Instant] type
 
-use super::duration::Duration;
-use crate::datastructures::common::Timestamp;
 use core::{
     fmt::Display,
     ops::{Add, AddAssign, Sub, SubAssign},
 };
+
 use fixed::{
     traits::{LosslessTryInto, LossyInto, ToFixed},
     types::{U112F16, U96F32},
 };
 
-/// An instant is a specific moment in time. The starting 0 point is not defined and can be something arbitrary or something like unix time
+use super::duration::Duration;
+use crate::datastructures::common::Timestamp;
+
+/// An instant is a specific moment in time. The starting 0 point is not defined
+/// and can be something arbitrary or something like unix time
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Instant {
     /// Time in nanos
@@ -39,8 +42,9 @@ impl Instant {
         let inner = nanos.to_fixed::<U96F32>();
         Self { inner }
     }
-    /// Create an instance with the given amount of nanoseconds from the origin, using a fixed point number
-    /// so the subnanoseconds can be specified as well
+    /// Create an instance with the given amount of nanoseconds from the origin,
+    /// using a fixed point number so the subnanoseconds can be specified as
+    /// well
     pub fn from_fixed_nanos<F: ToFixed>(nanos: F) -> Self {
         Self {
             inner: nanos.to_fixed(),

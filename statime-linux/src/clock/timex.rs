@@ -1,8 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
-use libc::timex;
-
 use bitflags::bitflags;
+use libc::timex;
 use statime::time::{Duration, Instant};
 
 use crate::clock::raw::Fixed;

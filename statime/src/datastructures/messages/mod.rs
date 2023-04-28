@@ -1,14 +1,13 @@
 //! Ptp network messages
 
-use arrayvec::ArrayVec;
-use num_enum::{IntoPrimitive, TryFromPrimitive};
-
 pub use announce::*;
+use arrayvec::ArrayVec;
 pub use delay_req::*;
 pub use delay_resp::*;
 pub use follow_up::*;
 pub use header::*;
 pub use message_builder::*;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 pub use sync::*;
 
 mod announce;
@@ -31,10 +30,10 @@ pub enum MessageType {
     PDelayResp = 0x3,
     FollowUp = 0x8,
     DelayResp = 0x9,
-    PDelayRespFollowUp = 0xA,
-    Announce = 0xB,
-    Signaling = 0xC,
-    Management = 0xD,
+    PDelayRespFollowUp = 0xa,
+    Announce = 0xb,
+    Signaling = 0xc,
+    Management = 0xd,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
