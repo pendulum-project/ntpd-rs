@@ -261,6 +261,11 @@ impl<P: NetworkPort> Port<P> {
         }
 
         if let Message::Announce(announce) = &message {
+            log::debug!(
+                "Received announce message on port {}, {:?}.",
+                self.port_ds.port_identity.port_number,
+                message
+            );
             self.bmca
                 .register_announce_message(announce, packet.timestamp.into());
             announce_receipt_timeout.reset();

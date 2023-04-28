@@ -179,6 +179,7 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
         &mut self,
         pinned_timeouts: &mut [Pin<&mut Ticker<Fut, impl FnMut(Duration) -> Fut>>],
     ) {
+        log::debug!("Running BMCA");
         let mut erbests = [None; N];
 
         let current_time = self
@@ -203,6 +204,8 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
                 erbests[index],
                 port.state(),
             );
+
+            log::debug!("Recommended state port {}: {:?}", index, recommended_state);
 
             if let Some(recommended_state) = recommended_state {
                 if let Err(error) = port.set_recommended_state(

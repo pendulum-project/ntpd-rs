@@ -106,7 +106,12 @@ impl PortDS {
     }
 
     pub fn set_forced_port_state(&mut self, state: PortState) {
-        log::info!("new state for port: {} -> {}", self.port_state, state);
+        log::info!(
+            "new state for port {}: {} -> {}",
+            self.port_identity.port_number,
+            self.port_state,
+            state
+        );
         self.port_state = state;
     }
 
