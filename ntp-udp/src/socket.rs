@@ -6,16 +6,20 @@ use ntp_proto::NtpTimestamp;
 use tokio::io::unix::AsyncFd;
 use tracing::{debug, instrument, trace, warn};
 
+#[cfg(target_os = "linux")]
+use crate::raw_socket::exceptional_condition_fd;
+
 use crate::{
     raw_socket::{
-        control_message_space, exceptional_condition_fd, receive_message, set_timestamping_options,
-        ControlMessage, MessageQueue, TimestampMethod,
+        control_message_space, receive_message, set_timestamping_options, ControlMessage,
+        MessageQueue, TimestampMethod,
     },
     EnableTimestamps, InterfaceName,
 };
 
 pub struct UdpSocket {
     io: AsyncFd<std::net::UdpSocket>,
+    #[cfg(target_os = "linux")]
     exceptional_condition: AsyncFd<RawFd>,
     send_counter: u32,
     timestamping: EnableTimestamps,
@@ -70,6 +74,7 @@ impl UdpSocket {
 
         // bind the socket to a specific interface. This is relevant for hardware timestamping,
         // because the interface determines which clock is used to produce the timestamps.
+        #[cfg(target_os = "linux")]
         if let Some(interface) = interface {
             socket.bind_device(Some(&interface)).unwrap();
         }
@@ -86,6 +91,7 @@ impl UdpSocket {
         set_timestamping_options(&socket, method, timestamping)?;
 
         Ok(UdpSocket {
+            #[cfg(target_os = "linux")]
             exceptional_condition: exceptional_condition_fd(&socket)?,
             io: AsyncFd::new(socket)?,
             send_counter: 0,
@@ -106,6 +112,7 @@ impl UdpSocket {
 
         // bind the socket to a specific interface. This is relevant for hardware timestamping,
         // because the interface determines which clock is used to produce the timestamps.
+        #[cfg(target_os = "linux")]
         if let Some(interface) = interface {
             socket.bind_device(Some(&interface)).unwrap();
         }
@@ -124,6 +131,7 @@ impl UdpSocket {
         set_timestamping_options(&socket, DEFAULT_TIMESTAMP_METHOD, timestamping)?;
 
         Ok(UdpSocket {
+            #[cfg(target_os = "linux")]
             exceptional_condition: exceptional_condition_fd(&socket)?,
             io: AsyncFd::new(socket)?,
             send_counter: 0,
@@ -141,22 +149,25 @@ impl UdpSocket {
         let expected_counter = self.send_counter;
         self.send_counter = self.send_counter.wrapping_add(1);
 
+        #[cfg(target_os = "linux")]
         if self.timestamping.tx_software || self.timestamping.tx_hardware {
             // the send timestamp may never come set a very short timeout to prevent hanging forever.
             // We automatically fall back to a less accurate timestamp when this function returns None
             let timeout = std::time::Duration::from_millis(10);
 
-            match tokio::time::timeout(timeout, self.fetch_send_timestamp(expected_counter)).await {
+            return match tokio::time::timeout(timeout, self.fetch_send_timestamp(expected_counter))
+                .await
+            {
                 Err(_) => {
                     warn!("Packet without timestamp (waiting for timestamp timed out)");
                     Ok((send_size, None))
                 }
                 Ok(send_timestamp) => Ok((send_size, Some(send_timestamp?))),
-            }
-        } else {
-            trace!("send timestamping not supported");
-            Ok((send_size, None))
+            };
         }
+
+        trace!("send timestamping not supported");
+        Ok((send_size, None))
     }
 
     async fn send_help(&self, buf: &[u8]) -> io::Result<usize> {
@@ -182,6 +193,7 @@ impl UdpSocket {
         }
     }
 
+    #[cfg(target_os = "linux")]
     async fn fetch_send_timestamp(&self, expected_counter: u32) -> io::Result<NtpTimestamp> {
         trace!("waiting for timestamp socket to become readable to fetch a send timestamp");
         loop {
@@ -292,6 +304,7 @@ fn recv(
                 return Ok((bytes_read as usize, sock_addr, Some(ntp_timestamp)));
             }
 
+            #[cfg(target_os = "linux")]
             ControlMessage::ReceiveError(_error) => {
                 warn!("unexpected error message on the MSG_ERRQUEUE");
             }
@@ -308,6 +321,7 @@ fn recv(
     Ok((bytes_read as usize, sock_addr, None))
 }
 
+#[cfg(target_os = "linux")]
 fn fetch_send_timestamp_help(
     socket: &std::net::UdpSocket,
     expected_counter: u32,
@@ -336,6 +350,7 @@ fn fetch_send_timestamp_help(
                 send_ts = Some(timestamp);
             }
 
+            #[cfg(target_os = "linux")]
             ControlMessage::ReceiveError(error) => {
                 // the timestamping does not set a message; if there is a message, that means
                 // something else is wrong, and we want to know about it.
@@ -572,9 +587,16 @@ mod tests {
         assert_eq!(ssend, 48);
         assert_eq!(srecv, 48);
 
-        let tsend = tsend.unwrap();
-        let trecv = trecv.unwrap();
-        let delta = trecv - tsend;
-        assert!(delta.to_seconds().abs() < 0.2);
+        #[cfg(target_os = "linux")]
+        {
+            let tsend = tsend.unwrap();
+            let trecv = trecv.unwrap();
+            let delta = trecv - tsend;
+            assert!(delta.to_seconds().abs() < 0.2);
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            assert!(tsend.is_none());
+        }
     }
 }

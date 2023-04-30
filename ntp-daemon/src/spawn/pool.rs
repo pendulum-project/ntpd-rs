@@ -150,16 +150,13 @@ mod tests {
 
     #[tokio::test]
     async fn creates_multiple_peers() {
+        let addresses = vec!["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
         let pool = PoolSpawner::new(
             PoolPeerConfig {
                 addr: NormalizedAddress::with_hardcoded_dns(
                     "example.com",
                     123,
-                    vec![
-                        "127.0.0.1:123".parse().unwrap(),
-                        "127.0.0.2:123".parse().unwrap(),
-                        "127.0.0.3:123".parse().unwrap(),
-                    ],
+                    addresses.iter().map(|a| a.parse().unwrap()).collect(),
                 ),
                 max_peers: 2,
             },
@@ -173,13 +170,17 @@ mod tests {
         let res = action_rx.try_recv().unwrap();
         assert_eq!(spawner_id, res.id);
         let params = get_create_params(res);
-        assert_eq!(params.addr.to_string(), "127.0.0.3:123");
+        let first = params.addr.to_string();
 
         tokio::time::sleep(Duration::from_millis(10)).await;
         let res = action_rx.try_recv().unwrap();
         assert_eq!(spawner_id, res.id);
         let params = get_create_params(res);
-        assert_eq!(params.addr.to_string(), "127.0.0.2:123");
+        let second = params.addr.to_string();
+
+        assert_ne!(&first, &second);
+        assert!(addresses.iter().any(|&addr| addr == &first));
+        assert!(addresses.iter().any(|&addr| addr == &second));
 
         tokio::time::sleep(Duration::from_millis(10)).await;
         let res = action_rx.try_recv().unwrap_err();
@@ -188,16 +189,13 @@ mod tests {
 
     #[tokio::test]
     async fn refills_peers_upto_limit() {
+        let addresses = vec!["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
         let pool = PoolSpawner::new(
             PoolPeerConfig {
                 addr: NormalizedAddress::with_hardcoded_dns(
                     "example.com",
                     123,
-                    vec![
-                        "127.0.0.1:123".parse().unwrap(),
-                        "127.0.0.2:123".parse().unwrap(),
-                        "127.0.0.3:123".parse().unwrap(),
-                    ],
+                    addresses.iter().map(|a| a.parse().unwrap()).collect(),
                 ),
                 max_peers: 2,
             },
@@ -209,8 +207,11 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(10)).await;
         let res = action_rx.try_recv().unwrap();
         let params = get_create_params(res);
+        let first = params.addr.to_string();
         tokio::time::sleep(Duration::from_millis(10)).await;
-        action_rx.try_recv().unwrap();
+        let res = action_rx.try_recv().unwrap();
+        let params = get_create_params(res);
+        let second = params.addr.to_string();
         tokio::time::sleep(Duration::from_millis(10)).await;
 
         notify_tx
@@ -224,7 +225,10 @@ mod tests {
 
         let res = action_rx.try_recv().unwrap();
         let params = get_create_params(res);
-        assert_eq!(params.addr.to_string(), "127.0.0.1:123");
+        let third = params.addr.to_string();
+        assert_ne!(&first, &third);
+        assert_ne!(&second, &third);
+        assert!(addresses.iter().any(|&addr| addr == &third));
     }
 
     #[tokio::test]

@@ -14,7 +14,7 @@ Alternatively, you can use `cargo install ntpd` or build from source.
 
 ### Build from source
 
-Currently, ntpd-rs only supports Linux-based operating systems. Our current testing only targets Linux kernels after version 5.0.0, older kernels may work but this is not guaranteed.
+Currently, ntpd-rs only officially supports Linux-based operating systems. Our current testing only targets Linux kernels after version 5.0.0, older kernels may work but this is not guaranteed.
 
 ntpd-rs is written in rust. We strongly recommend using [rustup](https://rustup.rs) to install a rust toolchain, because the version provided by system package managers tends to be out of date. Be sure to use a recent version of the rust compiler.
 
@@ -23,6 +23,14 @@ To build ntpd-rs run
 cargo build --release
 ```
 This produces a `ntp-daemon` binary at `target/release/ntp-daemon`, which is the main NTP daemon.
+
+### macOS support
+
+ntpd-rs builds on macOS with hardware timestamping and other linux-specific features disabled.
+
+It appears to function when it builds, but is not officially supported or tested.  Importantly, PRs are not validated against macOS so support may be broken at any point.
+
+### Running ntpd-rs
 
 Before running the ntpd-rs daemon, make sure that no other NTP daemons are running. E.g. when chrony is running
 ```sh

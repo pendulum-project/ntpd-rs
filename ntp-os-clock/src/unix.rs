@@ -192,7 +192,7 @@ impl UnixNtpClock {
         #[cfg(target_os = "linux")]
         use libc::clock_adjtime as adjtime;
 
-        #[cfg(any(target_os = "freebsd", target_os = "macos"))]
+        #[cfg(target_os = "freebsd")]
         let adjtime = {
             extern "C" {
                 fn clock_adjtime(clk_id: libc::clockid_t, buf: *mut libc::timex) -> libc::c_int;
@@ -200,6 +200,11 @@ impl UnixNtpClock {
 
             clock_adjtime
         };
+
+        #[cfg(target_os = "macos")]
+        unsafe fn adjtime(_clk_id: libc::clockid_t, buf: *mut libc::timex) -> libc::c_int {
+            libc::ntp_adjtime(buf)
+        }
 
         if unsafe { adjtime(self.clock, timex) } == -1 {
             Err(convert_errno())
@@ -377,6 +382,7 @@ fn current_time_timespec(timespec: libc::timespec, precision: Precision) -> NtpT
     )
 }
 
+#[allow(dead_code)]
 fn current_time_timeval(timespec: libc::timeval, precision: Precision) -> NtpTimestamp {
     // Negative eras are completely valid, so any wrapping is perfectly reasonable here.
     NtpTimestamp::from_seconds_nanos_since_ntp_era(

@@ -136,6 +136,7 @@ The ntp-daemon's primary configuration method is through a TOML configuration fi
 #### Peer configuration
 
 Peers are configured in the peers section, which should consist of a list of peers. Per peer, the following options are available:
+
 | Option | Default | Description |
 | --- | --- | --- |
 | mode | server | Type of peer connection to create. Can be any of `server`, `nts-server` or `pool` (for meaning of these, see below). |
@@ -188,6 +189,7 @@ max_peers = 4
 #### Server
 
 Interfaces on which to act as a server are configured in the `server` section. Per interface configured, the following options are available:
+
 | Option | Default | Description |
 | --- | --- | --- |
 | addr | | Address of the interface to bind to. |
@@ -205,6 +207,7 @@ In applying the three client filters (deny, allow and ratelimiting), the server 
 #### NTS Server
 
 Servers configured via the `server` section can also support NTS. To enable this, the built-in NTS-KE server needs to be enabled (hosting the NTS-KE server separately is not yet supported). This can be configured through the `nts-ke` section:
+
 | Option | Default | Description |
 | --- | --- | --- |
 | cert-chain-path | | Path to the full chain TLS certificate for the server. Note that currently self-signed certificates are not supported. |
@@ -213,6 +216,7 @@ Servers configured via the `server` section can also support NTS. To enable this
 | addr | | Address of the interface to bind to for the NTS-KE server. |
 
 Our implementation of NTS follows the recommendations of section 6 in [RFC8915](https://www.rfc-editor.org/rfc/rfc8915.html). Currently, the master keys for encryption of the cookies are generated internally, and their generation can be controlled via the settings in the `keyset` section
+
 | Option | Default | Description |
 | --- | --- | --- |
 | old-keys | 7 | Number of old keys to keep valid for existing cookies. |
@@ -230,12 +234,14 @@ Instructions for how to generate a CA certificate and use it to sign certificate
 **The management client interface format is unstable! Would you like to observe additional values? let us know in an issue!**
 
 The daemon can expose an observation socket that can be read to obtain information on the current state of the peer connections and clock steering algorithm. This socket can be configured via the `observe` section:
+
 | Option | Default | Description |
 | --- | --- | --- |
 | path | | Path on which the observation socket is exposed. If no path is given, the observation socket is disabled. |
 | mode | 0o666 | Permissions with which the socket should be created, given as (octal) integer. |
 
 The daemon can also expose a configuration socket that can be used to change some configuration options dynamically. This socket can be configured via the `configure` section:
+
 | Option | Default | Description |
 | --- | --- | --- |
 | path | | Path on which the configuration socket is exposed. If no path is given, the configuration socket is disabled. |
@@ -268,6 +274,7 @@ The default clock on unix systems is `CLOCK_REALTIME`. It is important to synchr
 #### Time synchronization
 
 There are a number of options available to influence how time differences to the various servers are used to synchronize the system clock. All of these are part of the `system` section of the configuration:
+
 | Option | Default | Description |
 | --- | --- | --- |
 | min-intersection-survivors | 3 | Minimum number of servers that need to agree on the true time from our perspective for synchronization to start. |
@@ -289,6 +296,7 @@ NTPD-rs currently supports two choices for algorithms:
 Which algorithm is used is determined by a compile time flag (see above).
 
 The high performance clock algorithm has quite a few options. Most of these are quite straightforward to understand and can be used to tune the style of time synchronization to the users liking (although the defaults are probably fine for most):
+
 | Option | Default | Description |
 | --- | --- | --- |
 | steer-offset-threshold | 2.0 | How far from 0 (in multiples of the uncertainty) should the offset be before we correct. A higher value reduces the amount of steering, but at the cost of a slower synchronization. (standard deviations, 0+) |
@@ -308,6 +316,7 @@ The high performance clock algorithm has quite a few options. Most of these are 
 | initial-frequency-uncertainty | 100e-6 | Initial uncertainty of the frequency difference between our clock and that of the peer. Lower values increase the speed of frequency synchronization when correct, but decrease it when overly optimistic. (s/s) |
 
 A second set of options control more internal details of how the algorithm estimates its errors and regulates the poll interval. Care should be taken in choosing the values here, and they are primarily provided for easy access when developing the algorithm further:
+
 | Option | Default | Description |
 | --- | --- | --- |
 | precision-low-probability | 0.333 | Probability bound below which we start moving towards decreasing our precision estimate. (probability, 0-1) |
@@ -320,6 +329,7 @@ A second set of options control more internal details of how the algorithm estim
 | max-frequency-steer | 495e-6 | Maximum steering input to system clock. (s/s) |
 
 The RFC algorithm has different options for tuning. All of these have reasonable defaults and care should be taken when changing them.
+
 | Option | Default | Description |
 | --- | --- | --- |
 | min-cluster-survivors | 3 | Number of servers beyond which we do not try to exclude further servers for the purpose of improving measurement precision. Do not change unless familiar with the NTP algorithms. |

@@ -1,3 +1,5 @@
+#![cfg(target_os = "linux")]
+
 use std::os::unix::io::AsRawFd;
 
 use crate::{interface_name, raw_socket::cerr};

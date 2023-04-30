@@ -119,6 +119,7 @@ impl BasicSpawner for StandardSpawner {
 
 #[cfg(test)]
 mod tests {
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::time::Duration;
 
     use tokio::sync::mpsc::{self, error::TryRecvError};
@@ -197,9 +198,14 @@ mod tests {
 
     #[tokio::test]
     async fn reresolves_on_unreachable() {
+        let addresses = vec!["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
         let spawner = StandardSpawner::new(
             StandardPeerConfig {
-                addr: NormalizedAddress::with_hardcoded_dns("europe.pool.ntp.org", 123, vec![]),
+                addr: NormalizedAddress::with_hardcoded_dns(
+                    "europe.pool.ntp.org",
+                    123,
+                    addresses.iter().map(|addr| addr.parse().unwrap()).collect(),
+                ),
             },
             NETWORK_WAIT_PERIOD,
         );
@@ -213,70 +219,35 @@ mod tests {
 
         // We repeat multiple times and check at least one is different to be less
         // sensitive to dns resolver giving the same pool ip.
-        notify_tx
-            .send(SystemEvent::peer_removed(
-                params.id,
-                PeerRemovalReason::Unreachable,
-            ))
-            .await
-            .unwrap();
-        let res = action_rx.recv().await.unwrap();
-        let params = get_create_params(res);
-        let addr1 = params.addr.to_string();
+        let mut seen_addresses = vec![];
+        for _ in 0..5 {
+            notify_tx
+                .send(SystemEvent::peer_removed(
+                    params.id,
+                    PeerRemovalReason::Unreachable,
+                ))
+                .await
+                .unwrap();
+            let res = action_rx.recv().await.unwrap();
+            let params = get_create_params(res);
+            seen_addresses.push(params.addr.to_string());
+        }
+        let seen_addresses = seen_addresses;
 
-        notify_tx
-            .send(SystemEvent::peer_removed(
-                params.id,
-                PeerRemovalReason::Unreachable,
-            ))
-            .await
-            .unwrap();
-        let res = action_rx.recv().await.unwrap();
-        let params = get_create_params(res);
-        let addr2 = params.addr.to_string();
-
-        notify_tx
-            .send(SystemEvent::peer_removed(
-                params.id,
-                PeerRemovalReason::Unreachable,
-            ))
-            .await
-            .unwrap();
-        let res = action_rx.recv().await.unwrap();
-        let params = get_create_params(res);
-        let addr3 = params.addr.to_string();
-
-        notify_tx
-            .send(SystemEvent::peer_removed(
-                params.id,
-                PeerRemovalReason::Unreachable,
-            ))
-            .await
-            .unwrap();
-        let res = action_rx.recv().await.unwrap();
-        let params = get_create_params(res);
-        let addr4 = params.addr.to_string();
-
-        notify_tx
-            .send(SystemEvent::peer_removed(
-                params.id,
-                PeerRemovalReason::Unreachable,
-            ))
-            .await
-            .unwrap();
-        let res = action_rx.recv().await.unwrap();
-        let params = get_create_params(res);
-        let addr5 = params.addr.to_string();
+        for addr in seen_addresses.iter() {
+            assert!(
+                addresses.iter().any(|&orig| addr == orig),
+                "{:?} should have been drawn from {:?}",
+                addr,
+                addresses
+            );
+        }
 
         assert!(
-            addr1 != orig_addr
-                || addr2 != orig_addr
-                || addr3 != orig_addr
-                || addr4 != orig_addr
-                || addr5 != orig_addr,
-            "{:?} should not be in {:?}",
+            seen_addresses.iter().any(|seen| seen != &orig_addr),
+            "Re-resolved {:?} should contain at least one address that isn't the original {:?}",
+            seen_addresses,
             orig_addr,
-            [addr1, addr2, addr3, addr4, addr5],
         );
     }
 

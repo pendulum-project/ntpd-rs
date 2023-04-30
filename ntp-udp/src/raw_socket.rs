@@ -12,6 +12,8 @@
 /// All unsafe blocks are preceded with a comment explaining why that
 /// specific unsafe code should be safe within the context in which it
 /// is used.
+
+#[cfg(target_os = "linux")]
 pub(crate) use exceptional_condition_fd::exceptional_condition_fd;
 pub(crate) use recv_message::{
     control_message_space, receive_message, ControlMessage, MessageQueue,
@@ -54,6 +56,7 @@ pub(crate) enum TimestampMethod {
 mod set_timestamping_options {
     use std::os::unix::prelude::AsRawFd;
 
+    #[cfg(target_os = "linux")]
     use crate::hwtimestamp::driver_enable_hardware_timestamping;
     use crate::EnableTimestamps;
 
@@ -177,6 +180,7 @@ mod recv_message {
 
     pub(crate) enum MessageQueue {
         Normal,
+        #[cfg(target_os = "linux")]
         Error,
     }
 
@@ -216,6 +220,7 @@ mod recv_message {
 
         let receive_flags = match queue {
             MessageQueue::Normal => 0,
+            #[cfg(target_os = "linux")]
             MessageQueue::Error => libc::MSG_ERRQUEUE,
         };
 
@@ -310,6 +315,7 @@ mod recv_message {
 
     pub(crate) enum ControlMessage {
         Timestamping(crate::LibcTimestamp),
+        #[cfg(target_os = "linux")]
         ReceiveError(libc::sock_extended_err),
         Other(libc::cmsghdr),
     }
@@ -377,6 +383,7 @@ mod recv_message {
                     ControlMessage::Timestamping(LibcTimestamp::Timeval(timeval))
                 }
 
+                #[cfg(target_os = "linux")]
                 (libc::SOL_IP, libc::IP_RECVERR) | (libc::SOL_IPV6, libc::IPV6_RECVERR) => {
                     // this is part of how timestamps are reported.
                     // Safety:
@@ -445,6 +452,7 @@ pub(crate) mod timestamping_config {
 
         let fd = udp_socket.as_raw_fd();
 
+        #[cfg(target_os = "linux")]
         if let Some(ifr_name) = interface_name::interface_name(udp_socket.local_addr()?)? {
             let ifr: libc::ifreq = libc::ifreq {
                 ifr_name,
@@ -471,13 +479,14 @@ pub(crate) mod timestamping_config {
             // the linux kernel should always support receive software timestamping
             assert!(support.rx_software);
 
-            Ok(support)
-        } else {
-            Ok(EnableTimestamps::default())
+            return Ok(support);
         }
+
+        Ok(EnableTimestamps::default())
     }
 }
 
+#[cfg(target_os = "linux")]
 mod exceptional_condition_fd {
     use std::os::unix::prelude::{AsRawFd, RawFd};
 
