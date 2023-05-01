@@ -237,7 +237,7 @@ mod tests {
 
         for addr in seen_addresses.iter() {
             assert!(
-                addresses.contains(&addr),
+                addresses.contains(addr),
                 "{:?} should have been drawn from {:?}",
                 addr,
                 addresses
