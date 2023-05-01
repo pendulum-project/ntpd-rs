@@ -192,7 +192,18 @@ impl UnixNtpClock {
         #[cfg(target_os = "linux")]
         use libc::clock_adjtime as adjtime;
 
-        #[cfg(any(target_os = "freebsd", target_os = "macos"))]
+        #[cfg(target_os = "macos")]
+        unsafe fn adjtime(clk_id: libc::clockid_t, buf: *mut libc::timex) -> libc::c_int {
+            assert_eq!(
+                clk_id,
+                libc::CLOCK_REALTIME,
+                "only the REALTIME clock is supported"
+            );
+
+            libc::ntp_adjtime(buf)
+        }
+
+        #[cfg(target_os = "freebsd")]
         let adjtime = {
             extern "C" {
                 fn clock_adjtime(clk_id: libc::clockid_t, buf: *mut libc::timex) -> libc::c_int;
