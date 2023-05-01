@@ -161,13 +161,11 @@ impl NormalizedAddress {
 
     #[cfg(test)]
     pub async fn lookup_host(&self) -> std::io::Result<impl Iterator<Item = SocketAddr> + '_> {
-        let addresses = if !self.hardcoded_dns_resolve.is_empty() {
-            self.hardcoded_dns_resolve.to_vec()
-        } else {
-            tokio::net::lookup_host((self.server_name.as_str(), self.port))
-                .await?
-                .collect()
-        };
+        // We don't want to spam a real DNS server during testing
+        let mut addresses = self.hardcoded_dns_resolve.to_vec();
+
+        // Randomise the response, so we don't get the same address every time
+        addresses.sort_unstable_by_key(|_| rand::random::<u32>());
 
         Ok(addresses.into_iter())
     }
