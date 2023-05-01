@@ -3,7 +3,7 @@
 use std::{io, net::SocketAddr};
 
 use ntp_proto::NtpTimestamp;
-use tokio::io::unix::AsyncFd;
+use tokio::io::{unix::AsyncFd, Interest};
 use tracing::{debug, instrument, trace, warn};
 
 use crate::{
@@ -145,7 +145,26 @@ impl UdpSocket {
         buf_size = buf.len(),
     ))]
     pub async fn send(&mut self, buf: &[u8]) -> io::Result<(usize, Option<NtpTimestamp>)> {
-        let send_size = self.send_help(buf).await?;
+        trace!(size = buf.len(), "sending bytes");
+
+        let result = self
+            .io
+            .async_io(Interest::WRITABLE, |inner| inner.send(buf))
+            .await;
+
+        let send_size = match result {
+            Ok(size) => {
+                trace!(sent = size, "sent bytes");
+                size
+            }
+            Err(e) => {
+                debug!(error = debug(&e), "error sending data");
+                return Err(e);
+            }
+        };
+
+        debug_assert_eq!(buf.len(), send_size);
+
         let expected_counter = self.send_counter;
         self.send_counter = self.send_counter.wrapping_add(1);
 
@@ -177,32 +196,17 @@ impl UdpSocket {
         }
     }
 
-    async fn send_help(&self, buf: &[u8]) -> io::Result<usize> {
-        trace!(size = buf.len(), "sending bytes");
-        loop {
-            let mut guard = self.io.writable().await?;
-            match guard.try_io(|inner| inner.get_ref().send(buf)) {
-                Ok(result) => match result {
-                    Err(e) => {
-                        debug!(error = debug(&e), "error sending data");
-                        return Err(e);
-                    }
-                    Ok(size) => {
-                        trace!(sent = size, "sent bytes");
-                        return Ok(size);
-                    }
-                },
-                Err(_would_block) => {
-                    trace!("blocked after becoming writable, retrying");
-                    continue;
-                }
-            }
-        }
-    }
-
     #[cfg(target_os = "linux")]
     async fn fetch_send_timestamp(&self, expected_counter: u32) -> io::Result<NtpTimestamp> {
         trace!("waiting for timestamp socket to become readable to fetch a send timestamp");
+
+        // Send timestamps are sent to the udp socket's error queue. Sadly, tokio does not
+        // currently support awaiting whether there is something in the error queue
+        // see https://github.com/tokio-rs/tokio/issues/4885.
+        //
+        // Therefore, we manually configure an extra file descriptor to listen for POLLPRI on
+        // the main udp socket. This `exceptional_condition` file descriptor becomes readable
+        // when there is something in the error queue.
         loop {
             // Send timestamps are sent to the udp socket's error queue. Sadly, tokio does not
             // currently support awaiting whether there is something in the error queue
@@ -230,22 +234,18 @@ impl UdpSocket {
     ))]
     pub async fn send_to(&self, buf: &[u8], addr: SocketAddr) -> io::Result<usize> {
         trace!(size = buf.len(), ?addr, "sending bytes");
-        loop {
-            let mut guard = self.io.writable().await?;
-            match guard.try_io(|inner| inner.get_ref().send_to(buf, addr)) {
-                Ok(result) => {
-                    match &result {
-                        Ok(size) => trace!(sent = size, "sent bytes"),
-                        Err(e) => debug!(error = debug(e), "error sending data"),
-                    }
-                    return result;
-                }
-                Err(_would_block) => {
-                    trace!("blocked after becoming writable, retrying");
-                    continue;
-                }
-            }
+
+        let result = self
+            .io
+            .async_io(Interest::WRITABLE, |inner| inner.send_to(buf, addr))
+            .await;
+
+        match &result {
+            Ok(size) => trace!(sent = size, "sent bytes"),
+            Err(e) => debug!(error = debug(e), "error sending data"),
         }
+
+        result
     }
 
     #[instrument(level = "trace", skip(self, buf), fields(
@@ -257,24 +257,21 @@ impl UdpSocket {
         &self,
         buf: &mut [u8],
     ) -> io::Result<(usize, SocketAddr, Option<NtpTimestamp>)> {
-        loop {
-            trace!("waiting for socket to become readable");
-            let mut guard = self.io.readable().await?;
-            let result = match guard.try_io(|inner| recv(inner.get_ref(), buf)) {
-                Err(_would_block) => {
-                    trace!("blocked after becoming readable, retrying");
-                    continue;
-                }
-                Ok(result) => result,
-            };
-            match &result {
-                Ok((size, addr, ts)) => {
-                    trace!(size, ts = debug(ts), addr = debug(addr), "received message")
-                }
-                Err(e) => debug!(error = debug(e), "error receiving data"),
+        trace!("waiting for socket to become readable");
+
+        let result = self
+            .io
+            .async_io(Interest::READABLE, |inner| recv(inner, buf))
+            .await;
+
+        match &result {
+            Ok((size, addr, ts)) => {
+                trace!(size, ts = debug(ts), addr = debug(addr), "received message")
             }
-            return result;
+            Err(e) => debug!(error = debug(e), "error receiving data"),
         }
+
+        result
     }
 }
 
