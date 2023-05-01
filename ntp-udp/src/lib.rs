@@ -7,10 +7,12 @@
 //! for more information.
 #![forbid(unsafe_op_in_unsafe_fn)]
 
-mod hwtimestamp;
 mod interface_name;
 mod raw_socket;
 mod socket;
+
+#[cfg(target_os = "linux")]
+mod hwtimestamp;
 
 use std::{ops::Deref, str::FromStr};
 

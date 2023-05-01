@@ -54,7 +54,6 @@ pub(crate) enum TimestampMethod {
 mod set_timestamping_options {
     use std::os::unix::prelude::AsRawFd;
 
-    use crate::hwtimestamp::driver_enable_hardware_timestamping;
     use crate::EnableTimestamps;
 
     use super::{cerr, TimestampMethod};
@@ -135,7 +134,8 @@ mod set_timestamping_options {
                     // enable hardware timestamping
                     options |= libc::SOF_TIMESTAMPING_RAW_HARDWARE;
 
-                    driver_enable_hardware_timestamping(udp_socket)?;
+                    #[cfg(target_os = "linux")]
+                    crate::hwtimestamp::driver_enable_hardware_timestamping(udp_socket)?;
                 }
 
                 if timestamping.rx_hardware {
@@ -414,13 +414,7 @@ mod recv_message {
     }
 }
 
-mod timestamping_config {
-
-    #[derive(Debug, Clone, Copy, Default)]
-    pub(crate) struct TimestampingConfig {
-        pub(crate) rx_software: bool,
-        pub(crate) tx_software: bool,
-    }
+pub(crate) mod timestamping_config {
 
     #[repr(C)]
     #[allow(non_camel_case_types)]
@@ -435,18 +429,20 @@ mod timestamping_config {
         rx_reserved: [u32; 3],
     }
 
-    impl TimestampingConfig {
-        /// Enable all timestamping options that are supported by this crate and the hardware/software
-        /// of the device we're running on
-        #[cfg(target_os = "linux")]
-        #[allow(dead_code)]
-        pub(crate) fn all_supported(udp_socket: &std::net::UdpSocket) -> std::io::Result<Self> {
-            use super::cerr;
-            use crate::interface_name;
-            use std::os::unix::prelude::AsRawFd;
+    /// Enable all timestamping options that are supported by this crate and the hardware/software
+    /// of the device we're running on
+    #[allow(dead_code)]
+    #[cfg(target_os = "linux")]
+    pub(crate) fn all_supported(
+        udp_socket: &std::net::UdpSocket,
+    ) -> std::io::Result<crate::EnableTimestamps> {
+        use std::os::unix::prelude::AsRawFd;
 
-            // Get time stamping and PHC info
-            const ETHTOOL_GET_TS_INFO: u32 = 0x00000041;
+        use super::cerr;
+        use crate::{interface_name, EnableTimestamps};
+
+        // Get time stamping and PHC info
+        const ETHTOOL_GET_TS_INFO: u32 = 0x00000041;
 
         let mut tsi: ethtool_ts_info = ethtool_ts_info {
             cmd: ETHTOOL_GET_TS_INFO,
@@ -484,16 +480,6 @@ mod timestamping_config {
             Ok(support)
         } else {
             Ok(EnableTimestamps::default())
-        }
-
-        #[cfg(any(target_os = "freebsd", target_os = "macos"))]
-        #[allow(dead_code)]
-        pub(crate) fn all_supported(_udp_socket: &std::net::UdpSocket) -> std::io::Result<Self> {
-            // these operating systems always support read timestamps, and never send timestamps
-            Ok(Self {
-                rx_software: true,
-                tx_software: false,
-            })
         }
     }
 }

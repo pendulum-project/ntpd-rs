@@ -71,8 +71,9 @@ impl UdpSocket {
 
         // bind the socket to a specific interface. This is relevant for hardware timestamping,
         // because the interface determines which clock is used to produce the timestamps.
-        if let Some(interface) = interface {
-            socket.bind_device(Some(&interface)).unwrap();
+        if let Some(_interface) = interface {
+            #[cfg(target_os = "linux")]
+            socket.bind_device(Some(&_interface)).unwrap();
         }
 
         socket.connect(peer_addr).await?;
@@ -107,8 +108,9 @@ impl UdpSocket {
 
         // bind the socket to a specific interface. This is relevant for hardware timestamping,
         // because the interface determines which clock is used to produce the timestamps.
-        if let Some(interface) = interface {
-            socket.bind_device(Some(&interface)).unwrap();
+        if let Some(_interface) = interface {
+            #[cfg(target_os = "linux")]
+            socket.bind_device(Some(&_interface)).unwrap();
         }
 
         let socket = socket.into_std()?;
@@ -310,22 +312,10 @@ fn recv(
             }
 
             ControlMessage::Other(msg) => {
-                eprintln!(
+                warn!(
                     "weird control message {:?} {:?}",
                     msg.cmsg_level, msg.cmsg_type
                 );
-                match (msg.cmsg_level, msg.cmsg_type) {
-                    #[cfg(target_os = "macos")]
-                    (libc::SOL_SOCKET, libc::SO_ACCEPTCONN) => {
-                        // ignore
-                    }
-                    _ => {
-                        warn!(
-                            msg.cmsg_level,
-                            msg.cmsg_type, "unexpected message on the MSG_ERRQUEUE",
-                        );
-                    }
-                }
             }
         }
     }
