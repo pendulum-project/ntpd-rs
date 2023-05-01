@@ -1,6 +1,9 @@
 #![forbid(unsafe_code)]
 
-use std::{io, net::SocketAddr, os::unix::prelude::RawFd};
+use std::{io, net::SocketAddr};
+
+#[cfg(target_os = "linux")]
+use std::os::unix::prelude::RawFd;
 
 use ntp_proto::NtpTimestamp;
 use tokio::io::unix::AsyncFd;
@@ -8,15 +11,15 @@ use tracing::{debug, instrument, trace, warn};
 
 use crate::{
     raw_socket::{
-        control_message_space, exceptional_condition_fd, receive_message, set_timestamping_options,
-        ControlMessage, MessageQueue, TimestampMethod,
+        control_message_space, receive_message, set_timestamping_options, ControlMessage,
+        MessageQueue, TimestampMethod,
     },
     EnableTimestamps, InterfaceName,
 };
 
 pub struct UdpSocket {
     io: AsyncFd<std::net::UdpSocket>,
-    #[cfg_attr(any(target_os = "freebsd", target_os = "macos"), allow(unused))]
+    #[cfg(target_os = "linux")]
     exceptional_condition: AsyncFd<RawFd>,
     send_counter: u32,
     timestamping: EnableTimestamps,
@@ -88,7 +91,8 @@ impl UdpSocket {
         set_timestamping_options(&socket, method, timestamping)?;
 
         Ok(UdpSocket {
-            exceptional_condition: exceptional_condition_fd(&socket)?,
+            #[cfg(target_os = "linux")]
+            exceptional_condition: crate::raw_socket::exceptional_condition_fd(&socket)?,
             io: AsyncFd::new(socket)?,
             send_counter: 0,
             timestamping,
@@ -127,7 +131,8 @@ impl UdpSocket {
         set_timestamping_options(&socket, DEFAULT_TIMESTAMP_METHOD, timestamping)?;
 
         Ok(UdpSocket {
-            exceptional_condition: exceptional_condition_fd(&socket)?,
+            #[cfg(target_os = "linux")]
+            exceptional_condition: crate::raw_socket::exceptional_condition_fd(&socket)?,
             io: AsyncFd::new(socket)?,
             send_counter: 0,
             timestamping,

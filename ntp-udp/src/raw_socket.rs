@@ -12,6 +12,7 @@
 /// All unsafe blocks are preceded with a comment explaining why that
 /// specific unsafe code should be safe within the context in which it
 /// is used.
+#[cfg(target_os = "linux")]
 pub(crate) use exceptional_condition_fd::exceptional_condition_fd;
 pub(crate) use recv_message::{
     control_message_space, receive_message, ControlMessage, MessageQueue,
@@ -484,21 +485,18 @@ pub(crate) mod timestamping_config {
     }
 }
 
+#[cfg(target_os = "linux")]
 mod exceptional_condition_fd {
-    use std::os::unix::prelude::RawFd;
-
+    use std::os::unix::prelude::{AsRawFd, RawFd};
     use tokio::io::unix::AsyncFd;
 
     // Tokio does not natively support polling for readiness of queues
     // other than the normal read queue (see also https://github.com/tokio-rs/tokio/issues/4885)
     // this works around that by creating a epoll fd that becomes
     // ready to read when the underlying fd has an event on its error queue.
-    #[cfg(target_os = "linux")]
     pub(crate) fn exceptional_condition_fd(
         socket_of_interest: &std::net::UdpSocket,
     ) -> std::io::Result<AsyncFd<RawFd>> {
-        use std::os::unix::prelude::AsRawFd;
-
         // Safety:
         // epoll_create1 is safe to call without flags
         let fd = super::cerr(unsafe { libc::epoll_create1(0) })?;
@@ -523,16 +521,6 @@ mod exceptional_condition_fd {
                 &mut event,
             )
         })?;
-
-        AsyncFd::new(fd)
-    }
-
-    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
-    pub(crate) fn exceptional_condition_fd(
-        _socket_of_interest: &std::net::UdpSocket,
-    ) -> std::io::Result<AsyncFd<RawFd>> {
-        // these operating systems do not support send timestamping
-        let fd = 0;
 
         AsyncFd::new(fd)
     }
