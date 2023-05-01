@@ -243,16 +243,12 @@ impl UnixNtpClock {
 
         let mut timespec = self.clock_gettime()?;
 
-        timespec.tv_sec += {
-            // this looks a little strange. it is to work around the `libc::time_t` type being
-            // deprectated for musl in rust's libc.
-            if true {
-                offset_secs as _
-            } else {
-                timespec.tv_sec
-            }
-        };
-        timespec.tv_nsec += offset_nanos as libc::c_long;
+        // see https://github.com/rust-lang/libc/issues/1848
+        #[cfg_attr(target_env = "musl", allow(deprecated))]
+        {
+            timespec.tv_sec += offset_secs as libc::time_t;
+            timespec.tv_nsec += offset_nanos as libc::c_long;
+        }
 
         self.clock_settime(timespec)?;
 
