@@ -14,7 +14,6 @@ fern = { version = "0.6.2", features = ["colored"] }
 fixed = "1.23.1"
 libc = { version = "0.2.144", features = ["extra_traits"] }
 log = "0.4.14"
-nix = "0.26.1"
 statime = { path = "../statime" }
 thiserror = "1.0.40"
 tokio = { version = "1.28", features = ["full"] }

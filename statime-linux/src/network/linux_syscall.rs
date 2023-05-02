@@ -1,10 +1,11 @@
-use nix::ioctl_readwrite_bad;
+use std::os::fd::AsRawFd;
 
-use super::interface::InterfaceName;
+use super::{interface::InterfaceName, linux::cerr};
 
-ioctl_readwrite_bad!(siocshwtstamp, libc::SIOCSHWTSTAMP, libc::ifreq);
-
-pub fn driver_enable_hardware_timestamping(socket: i32, interface: InterfaceName) {
+pub fn driver_enable_hardware_timestamping(
+    udp_socket: &std::net::UdpSocket,
+    interface: InterfaceName,
+) {
     let mut tstamp_config = libc::hwtstamp_config {
         flags: 0,
         tx_type: libc::HWTSTAMP_TX_ON as _,
@@ -18,6 +19,7 @@ pub fn driver_enable_hardware_timestamping(socket: i32, interface: InterfaceName
         },
     };
 
-    unsafe { siocshwtstamp(socket, &mut ifreq as *mut _) }
+    let fd = udp_socket.as_raw_fd();
+    cerr(unsafe { libc::ioctl(fd, libc::SIOCGHWTSTAMP as _, &mut ifreq) })
         .expect("Failed to enable hardware timestamping in the driver");
 }

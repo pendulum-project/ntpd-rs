@@ -66,10 +66,6 @@ impl Timer for LinuxTimer {
     }
 }
 
-pub fn nix_timespec_into_instant(spec: nix::sys::time::TimeSpec) -> Instant {
-    Instant::from_fixed_nanos(spec.tv_sec() as i128 * 1_000_000_000i128 + spec.tv_nsec() as i128)
-}
-
 pub fn libc_timespec_into_instant(spec: libc::timespec) -> Instant {
     Instant::from_fixed_nanos(spec.tv_sec as i128 * 1_000_000_000i128 + spec.tv_nsec as i128)
 }

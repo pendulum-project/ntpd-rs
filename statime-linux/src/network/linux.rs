@@ -8,7 +8,6 @@ use std::{
     str::FromStr,
 };
 
-use nix::sys::socket::{setsockopt, sockopt::ReuseAddr};
 use set_timestamping_options::set_timestamping_options;
 use statime::{
     clock::Clock,
@@ -59,10 +58,6 @@ impl LinuxRuntime {
     ) -> Result<AsyncFd<std::net::UdpSocket>, NetworkError> {
         let socket = tokio::net::UdpSocket::bind(addr).await?;
 
-        // We want to allow multiple listening sockets, as we bind to a specific
-        // interface later
-        setsockopt(socket.as_raw_fd(), ReuseAddr, &true).map_err(|_| NetworkError::UnknownError)?;
-
         // Bind device to specified interface
         if let Some(interface_name) = interface_name.as_ref() {
             let name = interface_name.as_str().as_bytes();
@@ -73,7 +68,29 @@ impl LinuxRuntime {
             socket.bind_device(Some(name))?;
         }
 
-        Ok(AsyncFd::new(socket.into_std()?)?)
+        let socket = socket.into_std()?;
+
+        // We want to allow multiple listening sockets, as we bind to a specific
+        // interface later
+        Self::reuse_addr(&socket).map_err(|_| NetworkError::UnknownError)?;
+
+        Ok(AsyncFd::new(socket)?)
+    }
+
+    fn reuse_addr(udp_socket: &std::net::UdpSocket) -> std::io::Result<()> {
+        let options = 1u32;
+
+        unsafe {
+            cerr(libc::setsockopt(
+                udp_socket.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_REUSEADDR,
+                &options as *const _ as *const libc::c_void,
+                std::mem::size_of_val(&options) as libc::socklen_t,
+            ))?;
+        }
+
+        Ok(())
     }
 
     fn join_multicast(
@@ -319,7 +336,7 @@ mod set_timestamping_options {
         let options = match timestamping_mode {
             TimestampingMode::Hardware(interface_name) => {
                 // must explicitly enable hardware timestamping
-                driver_enable_hardware_timestamping(udp_socket.as_raw_fd(), interface_name);
+                driver_enable_hardware_timestamping(udp_socket, interface_name);
 
                 libc::SOF_TIMESTAMPING_RAW_HARDWARE
                     | libc::SOF_TIMESTAMPING_RX_HARDWARE
