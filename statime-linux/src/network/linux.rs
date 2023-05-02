@@ -2,23 +2,24 @@
 
 use std::{
     io,
-    io::{ErrorKind, IoSliceMut},
+    io::ErrorKind,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    os::fd::AsRawFd,
     str::FromStr,
 };
 
-use set_timestamping_options::set_timestamping_options;
 use statime::{
     clock::Clock,
     network::{NetworkPacket, NetworkPort, NetworkRuntime},
-    time::Instant,
 };
 use tokio::io::{unix::AsyncFd, Interest};
 
 use crate::{
-    clock::{libc_timespec_into_instant, LinuxClock},
-    network::control_message::control_message_space,
+    clock::LinuxClock,
+    network::{
+        interface::{InterfaceIterator, InterfaceName},
+        raw_udp_socket::RawUdpSocket,
+        timestamped_udp_socket::TimestampedUdpSocket,
+    },
 };
 
 /// The time-critical port
@@ -39,10 +40,10 @@ pub struct LinuxRuntime {
 }
 
 impl LinuxRuntime {
-    pub fn new(timestamping_mode: TimestampingMode, clock: &LinuxClock) -> Self {
+    pub fn new(timestamping_mode: TimestampingMode, clock: LinuxClock) -> Self {
         LinuxRuntime {
             timestamping_mode,
-            clock: clock.clone(),
+            clock,
         }
     }
 
@@ -51,47 +52,6 @@ impl LinuxRuntime {
 
     const IPV4_PRIMARY_MULTICAST: Ipv4Addr = Ipv4Addr::new(224, 0, 1, 129);
     const IPV4_PDELAY_MULTICAST: Ipv4Addr = Ipv4Addr::new(224, 0, 0, 107);
-
-    async fn bind_socket(
-        interface_name: Option<InterfaceName>,
-        addr: SocketAddr,
-    ) -> Result<AsyncFd<std::net::UdpSocket>, NetworkError> {
-        let socket = tokio::net::UdpSocket::bind(addr).await?;
-
-        // Bind device to specified interface
-        if let Some(interface_name) = interface_name.as_ref() {
-            let name = interface_name.as_str().as_bytes();
-
-            // empty string does not work, `bind_device` should be skipped instead
-            debug_assert!(!name.is_empty());
-
-            socket.bind_device(Some(name))?;
-        }
-
-        let socket = socket.into_std()?;
-
-        // We want to allow multiple listening sockets, as we bind to a specific
-        // interface later
-        Self::reuse_addr(&socket).map_err(|_| NetworkError::UnknownError)?;
-
-        Ok(AsyncFd::new(socket)?)
-    }
-
-    fn reuse_addr(udp_socket: &std::net::UdpSocket) -> std::io::Result<()> {
-        let options = 1u32;
-
-        unsafe {
-            cerr(libc::setsockopt(
-                udp_socket.as_raw_fd(),
-                libc::SOL_SOCKET,
-                libc::SO_REUSEADDR,
-                &options as *const _ as *const libc::c_void,
-                std::mem::size_of_val(&options) as libc::socklen_t,
-            ))?;
-        }
-
-        Ok(())
-    }
 
     fn join_multicast(
         interface: &LinuxInterfaceDescriptor,
@@ -269,17 +229,14 @@ impl NetworkRuntime for LinuxRuntime {
         log::info!("Binding time critical socket on {tc_addr}");
         log::info!("Binding non time critical socket on {ntc_addr}");
 
-        let tc_socket = Self::bind_socket(interface.interface_name, tc_addr).await?;
-        let ntc_socket = Self::bind_socket(interface.interface_name, ntc_addr).await?;
+        let tc_socket = RawUdpSocket::new_into_std(tc_addr, interface.interface_name)?;
+        let ntc_socket = RawUdpSocket::new_into_std(ntc_addr, interface.interface_name)?;
 
-        let tc_address = Self::join_multicast(&interface, tc_socket.get_ref())?;
-        let ntc_address = Self::join_multicast(&interface, ntc_socket.get_ref())?;
+        let tc_address = Self::join_multicast(&interface, &tc_socket)?;
+        let ntc_address = Self::join_multicast(&interface, &ntc_socket)?;
 
-        // Setup timestamping
-
-        set_timestamping_options(tc_socket.get_ref(), self.timestamping_mode)?;
-
-        let tc_socket = TcUdpSocket::from_async_udp_socket(tc_socket).await?;
+        let tc_socket = TimestampedUdpSocket::from_udp_socket(tc_socket, self.timestamping_mode)?;
+        let ntc_socket = AsyncFd::new(ntc_socket)?;
 
         Ok(LinuxNetworkPort {
             tc_socket,
@@ -291,277 +248,8 @@ impl NetworkRuntime for LinuxRuntime {
     }
 }
 
-mod set_timestamping_options {
-    use std::os::unix::prelude::AsRawFd;
-
-    use super::{cerr, TimestampingMode};
-    use crate::network::linux_syscall::driver_enable_hardware_timestamping;
-
-    fn configure_timestamping_socket(
-        udp_socket: &std::net::UdpSocket,
-        options: u32,
-    ) -> std::io::Result<libc::c_int> {
-        // Documentation on the timestamping calls:
-        //
-        // - linux: https://www.kernel.org/doc/Documentation/networking/timestamping.txt
-        // - freebsd: https://man.freebsd.org/cgi/man.cgi?setsockopt
-        //
-        // SAFETY:
-        //
-        // - the socket is provided by (safe) rust, and will outlive the call
-        // - method is guaranteed to be a valid "name" argument
-        // - the options pointer outlives the call
-        // - the `option_len` corresponds with the options pointer
-        //
-        // Only some bits are valid to set in `options`, but setting invalid bits is
-        // perfectly safe
-        //
-        // > Setting other bit returns EINVAL and does not change the current state.
-        unsafe {
-            cerr(libc::setsockopt(
-                udp_socket.as_raw_fd(),
-                libc::SOL_SOCKET,
-                libc::SO_TIMESTAMPING,
-                &options as *const _ as *const libc::c_void,
-                std::mem::size_of_val(&options) as libc::socklen_t,
-            ))
-        }
-    }
-
-    pub(crate) fn set_timestamping_options(
-        udp_socket: &std::net::UdpSocket,
-        timestamping_mode: TimestampingMode,
-    ) -> std::io::Result<()> {
-        // Setup timestamping
-        let options = match timestamping_mode {
-            TimestampingMode::Hardware(interface_name) => {
-                // must explicitly enable hardware timestamping
-                driver_enable_hardware_timestamping(udp_socket, interface_name);
-
-                libc::SOF_TIMESTAMPING_RAW_HARDWARE
-                    | libc::SOF_TIMESTAMPING_RX_HARDWARE
-                    | libc::SOF_TIMESTAMPING_TX_HARDWARE
-                    | libc::SOF_TIMESTAMPING_OPT_TSONLY
-                    | libc::SOF_TIMESTAMPING_OPT_ID
-            }
-            TimestampingMode::Software => {
-                libc::SOF_TIMESTAMPING_SOFTWARE
-                    | libc::SOF_TIMESTAMPING_RX_SOFTWARE
-                    | libc::SOF_TIMESTAMPING_TX_SOFTWARE
-                    | libc::SOF_TIMESTAMPING_OPT_TSONLY
-                    | libc::SOF_TIMESTAMPING_OPT_ID
-            }
-        };
-
-        configure_timestamping_socket(udp_socket, options)?;
-
-        Ok(())
-    }
-}
-
-mod exceptional_condition_fd {
-    use std::os::unix::prelude::{AsRawFd, RawFd};
-
-    use tokio::io::unix::AsyncFd;
-
-    use super::cerr;
-
-    // Tokio does not natively support polling for readiness of queues
-    // other than the normal read queue (see also https://github.com/tokio-rs/tokio/issues/4885)
-    // this works around that by creating a epoll fd that becomes
-    // ready to read when the underlying fd has an event on its error queue.
-    pub(crate) fn exceptional_condition_fd(
-        socket_of_interest: &std::net::UdpSocket,
-    ) -> std::io::Result<AsyncFd<RawFd>> {
-        // Safety:
-        // epoll_create1 is safe to call without flags
-        let fd = cerr(unsafe { libc::epoll_create1(0) })?;
-
-        let mut event = libc::epoll_event {
-            events: libc::EPOLLERR as u32,
-            u64: 0u64,
-        };
-
-        // Safety:
-        // fd is a valid epoll fd from epoll_create1 in combination with the cerr check
-        // since we have a reference to the socket_of_interest, its raw fd
-        // is valid for the duration of this call, which is all that is
-        // required for epoll (closing the fd later is safe!)
-        // &mut event is a pointer to a memory region which we own for the duration
-        // of the call, and thus ok to use.
-        cerr(unsafe {
-            libc::epoll_ctl(
-                fd,
-                libc::EPOLL_CTL_ADD,
-                socket_of_interest.as_raw_fd(),
-                &mut event,
-            )
-        })?;
-
-        AsyncFd::new(fd)
-    }
-}
-
-use std::os::unix::prelude::RawFd;
-
-use exceptional_condition_fd::exceptional_condition_fd;
-
-use super::{
-    control_message::{
-        empty_msghdr, zeroed_sockaddr_storage, ControlMessage, ControlMessageIterator, MessageQueue,
-    },
-    interface::{sockaddr_storage_to_socket_addr, InterfaceIterator, InterfaceName},
-};
-
-struct TcUdpSocket {
-    io: AsyncFd<std::net::UdpSocket>,
-    exceptional_condition: AsyncFd<RawFd>,
-    send_counter: u32,
-}
-
-impl TcUdpSocket {
-    async fn from_async_udp_socket(io: AsyncFd<std::net::UdpSocket>) -> std::io::Result<Self> {
-        Ok(Self {
-            exceptional_condition: exceptional_condition_fd(io.get_ref())?,
-            io,
-            send_counter: 0,
-        })
-    }
-
-    async fn send(&mut self, data: &[u8], address: SocketAddr) -> std::io::Result<Option<Instant>> {
-        self.send_to(data, address).await?;
-
-        let expected_counter = self.send_counter;
-        self.send_counter = self.send_counter.wrapping_add(1);
-
-        self.fetch_send_timestamp(expected_counter).await
-    }
-
-    async fn send_to(&self, data: &[u8], address: SocketAddr) -> std::io::Result<usize> {
-        let sender = |inner: &std::net::UdpSocket| inner.send_to(data, address);
-        self.io.async_io(Interest::WRITABLE, sender).await
-    }
-
-    async fn fetch_send_timestamp(
-        &self,
-        expected_counter: u32,
-    ) -> std::io::Result<Option<Instant>> {
-        // the send timestamp may never come set a very short timeout to prevent hanging
-        // forever. We automatically fall back to a less accurate timestamp when
-        // this function returns None
-        let timeout = std::time::Duration::from_millis(10);
-
-        let fetch = self.fetch_send_timestamp_help(expected_counter);
-        if let Ok(send_timestamp) = tokio::time::timeout(timeout, fetch).await {
-            Ok(Some(send_timestamp?))
-        } else {
-            log::warn!("Packet without timestamp (waiting for timestamp timed out)");
-            Ok(None)
-        }
-    }
-
-    async fn fetch_send_timestamp_help(&self, expected_counter: u32) -> std::io::Result<Instant> {
-        log::trace!("waiting for timestamp socket to become readable to fetch a send timestamp");
-
-        // Send timestamps are sent to the udp socket's error queue. Sadly, tokio does
-        // not currently support awaiting whether there is something in the
-        // error queue see https://github.com/tokio-rs/tokio/issues/4885.
-        //
-        // Therefore, we manually configure an extra file descriptor to listen for
-        // POLLPRI on the main udp socket. This `exceptional_condition` file
-        // descriptor becomes readable when there is something in the error
-        // queue.
-
-        loop {
-            let result = self
-                .exceptional_condition
-                .async_io(Interest::READABLE, |_| {
-                    fetch_send_timestamp_help(self.io.get_ref(), expected_counter)
-                })
-                .await;
-
-            match result {
-                Ok(Some(send_timestamp)) => {
-                    return Ok(send_timestamp);
-                }
-                Ok(None) => {
-                    continue;
-                }
-                Err(e) => {
-                    log::warn!("Error fetching timestamp: {e:?}");
-                    return Err(e);
-                }
-            }
-        }
-    }
-}
-
-fn fetch_send_timestamp_help(
-    socket: &std::net::UdpSocket,
-    expected_counter: u32,
-) -> io::Result<Option<Instant>> {
-    // we get back two control messages: one with the timestamp (just like a receive
-    // timestamp), and one error message with no error reason. The payload for
-    // this second message is kind of undocumented.
-    //
-    // section 2.1.1 of https://www.kernel.org/doc/Documentation/networking/timestamping.txt says that
-    // a `sock_extended_err` is returned, but in practice we also see a socket
-    // address. The linux kernel also has this https://github.com/torvalds/linux/blob/master/tools/testing/selftests/net/so_txtime.c#L153=
-    //
-    // sockaddr_storage is bigger than we need, but sockaddr is too small for ipv6
-    const CONTROL_SIZE: usize = control_message_space::<[libc::timespec; 3]>()
-        + control_message_space::<(libc::sock_extended_err, libc::sockaddr_storage)>();
-
-    let mut control_buf = [0; CONTROL_SIZE];
-
-    let (_, control_messages, _) =
-        receive_message(socket, &mut [], &mut control_buf, MessageQueue::Error)?;
-
-    let mut send_ts = None;
-    for msg in control_messages {
-        match msg {
-            ControlMessage::Timestamping(timestamp) => {
-                send_ts = Some(timestamp);
-            }
-
-            ControlMessage::ReceiveError(error) => {
-                // the timestamping does not set a message; if there is a message, that means
-                // something else is wrong, and we want to know about it.
-                if error.ee_errno as libc::c_int != libc::ENOMSG {
-                    log::warn!(
-                        "error message on the MSG_ERRQUEUE: expected message {}, it has error \
-                         code {}",
-                        expected_counter,
-                        error.ee_data,
-                    );
-                }
-
-                // Check that this message belongs to the send we are interested in
-                if error.ee_data != expected_counter {
-                    log::warn!(
-                        "Timestamp for unrelated packet (expected = {}, actual = {})",
-                        expected_counter,
-                        error.ee_data,
-                    );
-                    return Ok(None);
-                }
-            }
-
-            ControlMessage::Other(msg) => {
-                log::warn!(
-                    "unexpected message on the MSG_ERRQUEUE (level = {}, type = {})",
-                    msg.cmsg_level,
-                    msg.cmsg_type,
-                );
-            }
-        }
-    }
-
-    Ok(send_ts.map(|ts| libc_timespec_into_instant(ts)))
-}
-
 pub struct LinuxNetworkPort {
-    tc_socket: TcUdpSocket,
+    tc_socket: TimestampedUdpSocket,
     ntc_socket: AsyncFd<std::net::UdpSocket>,
     tc_address: SocketAddr,
     ntc_address: SocketAddr,
@@ -594,13 +282,13 @@ impl NetworkPort for LinuxNetworkPort {
     }
 
     async fn recv(&mut self) -> Result<NetworkPacket, <LinuxNetworkPort as NetworkPort>::Error> {
-        let time_critical_future = self.tc_socket.io.async_io(Interest::READABLE, |inner| {
-            let timestamp = Self::try_recv_message_with_timestamp(inner, &self.clock)?;
+        let time_critical_future = async {
+            let timestamp = self.tc_socket.recv(&self.clock).await?;
 
             log::trace!("Recv TC");
 
             Ok(timestamp)
-        });
+        };
 
         let non_time_critical_future = async {
             let mut buffer = [0; 2048];
@@ -623,134 +311,6 @@ impl NetworkPort for LinuxNetworkPort {
             packet = time_critical_future => { packet }
             packet = non_time_critical_future => { packet }
         }
-    }
-}
-
-pub(crate) fn receive_message<'a>(
-    socket: &std::net::UdpSocket,
-    packet_buf: &mut [u8],
-    control_buf: &'a mut [u8],
-    queue: MessageQueue,
-) -> std::io::Result<(
-    libc::c_int,
-    impl Iterator<Item = ControlMessage> + 'a,
-    Option<SocketAddr>,
-)> {
-    let mut buf_slice = IoSliceMut::new(packet_buf);
-    let mut addr = zeroed_sockaddr_storage();
-
-    let mut mhdr = empty_msghdr();
-
-    mhdr.msg_control = control_buf.as_mut_ptr().cast::<libc::c_void>();
-    mhdr.msg_controllen = control_buf.len() as _;
-    mhdr.msg_iov = (&mut buf_slice as *mut IoSliceMut).cast::<libc::iovec>();
-    mhdr.msg_iovlen = 1;
-    mhdr.msg_flags = 0;
-    mhdr.msg_name = (&mut addr as *mut libc::sockaddr_storage).cast::<libc::c_void>();
-    mhdr.msg_namelen = std::mem::size_of::<libc::sockaddr_storage>() as u32;
-
-    let receive_flags = match queue {
-        MessageQueue::Normal => 0,
-        MessageQueue::Error => libc::MSG_ERRQUEUE,
-    };
-
-    // Safety:
-    // We have a mutable reference to the control buffer for the duration of the
-    // call, and controllen is also set to it's length.
-    // IoSliceMut is ABI compatible with iovec, and we only have 1 which matches
-    // iovlen msg_name is initialized to point to an owned sockaddr_storage and
-    // msg_namelen is the size of sockaddr_storage
-    // If one of the buffers is too small, recvmsg cuts off data at appropriate
-    // boundary
-    let sent_bytes = loop {
-        match cerr(unsafe { libc::recvmsg(socket.as_raw_fd(), &mut mhdr, receive_flags) } as _) {
-            Err(e) if std::io::ErrorKind::Interrupted == e.kind() => {
-                // retry when the recv was interrupted
-                continue;
-            }
-            Err(e) => return Err(e),
-            Ok(sent) => break sent,
-        }
-    };
-
-    if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
-        log::warn!(
-            "truncated packet because it was larger than expected: {} bytes",
-            packet_buf.len(),
-        );
-    }
-
-    if mhdr.msg_flags & libc::MSG_CTRUNC > 0 {
-        log::warn!("truncated control messages");
-    }
-
-    // Clear out the fields for which we are giving up the reference
-    mhdr.msg_iov = std::ptr::null_mut();
-    mhdr.msg_iovlen = 0;
-    mhdr.msg_name = std::ptr::null_mut();
-    mhdr.msg_namelen = 0;
-
-    // Safety:
-    // recvmsg ensures that the control buffer contains
-    // a set of valid control messages and that controllen is
-    // the length these take up in the buffer.
-    Ok((
-        sent_bytes,
-        unsafe { ControlMessageIterator::new(mhdr) },
-        sockaddr_storage_to_socket_addr(&addr),
-    ))
-}
-
-impl LinuxNetworkPort {
-    /// Do a manual receive on the time critical socket so we can get the
-    /// hardware timestamps. Tokio doesn't have the capability to get the
-    /// timestamp.
-    ///
-    /// This returns an option because there may not be a message
-    fn try_recv_message_with_timestamp(
-        tc_socket: &std::net::UdpSocket,
-        clock: &LinuxClock,
-    ) -> std::io::Result<NetworkPacket> {
-        let mut read_buf = [0u8; 2048];
-        let mut control_buf = [0; control_message_space::<[libc::timespec; 3]>()];
-
-        // loops for when we receive an interrupt during the recv
-        let (bytes_read, control_messages, _) = receive_message(
-            tc_socket,
-            &mut read_buf,
-            &mut control_buf,
-            MessageQueue::Normal,
-        )?;
-
-        let mut timestamp = clock.now();
-
-        // Loops through the control messages, but we should only get a single message
-        // in practice
-        for msg in control_messages {
-            match msg {
-                ControlMessage::Timestamping(timespec) => {
-                    timestamp = libc_timespec_into_instant(timespec);
-                }
-
-                ControlMessage::ReceiveError(_error) => {
-                    log::warn!("unexpected error message on the MSG_ERRQUEUE");
-                }
-
-                ControlMessage::Other(msg) => {
-                    log::warn!(
-                        "unexpected message on the MSG_ERRQUEUE (level = {}, type = {})",
-                        msg.cmsg_level,
-                        msg.cmsg_type,
-                    );
-                }
-            }
-        }
-
-        let data = read_buf[..bytes_read as usize]
-            .try_into()
-            .map_err(|_| io::Error::new(ErrorKind::InvalidData, "too long"))?;
-
-        Ok(NetworkPacket { data, timestamp })
     }
 }
 
@@ -793,8 +353,8 @@ mod tests {
 
         let addr = SocketAddr::new(interface.mode.unspecified_ip_addr(), port);
 
-        let socket = LinuxRuntime::bind_socket(interface.interface_name, addr).await?;
-        let address = LinuxRuntime::join_multicast(&interface, socket.get_ref())?;
+        let socket = RawUdpSocket::new_into_std(addr, interface.interface_name)?;
+        let address = LinuxRuntime::join_multicast(&interface, &socket)?;
 
         assert_ne!(address.ip(), interface.mode.unspecified_ip_addr());
         assert_eq!(address.port(), port);
@@ -814,8 +374,8 @@ mod tests {
 
         let addr = SocketAddr::new(interface.mode.unspecified_ip_addr(), port);
 
-        let socket = LinuxRuntime::bind_socket(interface.interface_name, addr).await?;
-        let address = LinuxRuntime::join_multicast(&interface, socket.get_ref()).unwrap();
+        let socket = RawUdpSocket::new_into_std(addr, interface.interface_name)?;
+        let address = LinuxRuntime::join_multicast(&interface, &socket)?;
 
         assert_ne!(address.ip(), interface.mode.unspecified_ip_addr());
         assert_eq!(address.port(), port);

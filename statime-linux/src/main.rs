@@ -150,7 +150,7 @@ async fn main() {
         TimestampingMode::Software
     };
 
-    let mut network_runtime = LinuxRuntime::new(timestamping_mode, &local_clock);
+    let mut network_runtime = LinuxRuntime::new(timestamping_mode, local_clock.clone());
     let clock_identity = ClockIdentity(get_clock_id().expect("Could not get clock identity"));
 
     let default_ds = DefaultDS::new_ordinary_clock(
