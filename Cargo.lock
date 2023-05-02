@@ -863,7 +863,7 @@ dependencies = [
  "ntp-udp",
  "prometheus-client",
  "rand",
- "rustls 0.21.0",
+ "rustls 0.21.1",
  "rustls-native-certs",
  "rustls-pemfile",
  "sentry",
@@ -915,7 +915,7 @@ dependencies = [
  "exitcode",
  "md-5",
  "rand",
- "rustls 0.21.0",
+ "rustls 0.21.1",
  "rustls-pemfile",
  "serde",
  "thiserror",
@@ -1278,9 +1278,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.21.0"
+version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07180898a28ed6a7f7ba2311594308f595e3dd2e3c3812fa0a80a47b45f17e5d"
+checksum = "c911ba11bc8433e811ce56fde130ccf32f5127cab0e0194e9c68c5a5b671791e"
 dependencies = [
  "log",
  "ring",
@@ -1640,7 +1640,7 @@ dependencies = [
  "ntp-os-clock",
  "ntp-proto",
  "ntp-udp",
- "rustls 0.21.0",
+ "rustls 0.21.1",
  "rustls-native-certs",
  "rustls-pemfile",
  "serde_json",
