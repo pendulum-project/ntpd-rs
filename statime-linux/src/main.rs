@@ -10,6 +10,7 @@ use statime::{
     port::Port,
     ptp_instance::PtpInstance,
 };
+use statime_linux::network::linux::TimestampingMode;
 use statime_linux::{
     clock::{LinuxClock, LinuxTimer, RawLinuxClock},
     network::linux::{get_clock_id, LinuxInterfaceDescriptor, LinuxRuntime},
@@ -133,13 +134,23 @@ async fn main() {
     println!("Starting PTP");
 
     let local_clock = if let Some(hardware_clock) = &args.hardware_clock {
-        LinuxClock::new(
-            RawLinuxClock::get_from_file(hardware_clock).expect("Could not open hardware clock"),
-        )
+        let clock =
+            RawLinuxClock::get_from_file(hardware_clock).expect("Could not open hardware clock");
+        LinuxClock::new(clock)
     } else {
         LinuxClock::new(RawLinuxClock::get_realtime_clock())
     };
-    let mut network_runtime = LinuxRuntime::new(args.hardware_clock.is_some(), &local_clock);
+
+    let timestamping_mode = if args.hardware_clock.is_some() {
+        match args.interface.interface_name {
+            Some(interface_name) => TimestampingMode::Hardware(interface_name),
+            None => panic!("an interface name is required when using hardware timestamping"),
+        }
+    } else {
+        TimestampingMode::Software
+    };
+
+    let mut network_runtime = LinuxRuntime::new(timestamping_mode, &local_clock);
     let clock_identity = ClockIdentity(get_clock_id().expect("Could not get clock identity"));
 
     let default_ds = DefaultDS::new_ordinary_clock(

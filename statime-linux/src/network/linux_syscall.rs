@@ -1,6 +1,6 @@
 use nix::ioctl_readwrite_bad;
 
-use super::linux::InterfaceName;
+use super::interface::InterfaceName;
 
 ioctl_readwrite_bad!(siocshwtstamp, libc::SIOCSHWTSTAMP, libc::ifreq);
 
