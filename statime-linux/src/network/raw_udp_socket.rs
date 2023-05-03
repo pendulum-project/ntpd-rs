@@ -5,11 +5,12 @@ use std::{
 };
 
 use super::{
+    cerr,
     control_message::{
         empty_msghdr, zeroed_sockaddr_storage, ControlMessage, ControlMessageIterator, MessageQueue,
     },
     interface::{sockaddr_storage_to_socket_addr, InterfaceName},
-    linux::{cerr, TimestampingMode},
+    linux::TimestampingMode,
 };
 
 pub(crate) use exceptional_condition_fd::exceptional_condition_fd;
@@ -138,7 +139,7 @@ pub fn receive_message<'a>(
     control_buf: &'a mut [u8],
     queue: MessageQueue,
 ) -> std::io::Result<(
-    libc::c_int,
+    usize,
     impl Iterator<Item = ControlMessage> + 'a,
     Option<SocketAddr>,
 )> {
@@ -174,7 +175,7 @@ pub fn receive_message<'a>(
                 continue;
             }
             Err(e) => return Err(e),
-            Ok(sent) => break sent,
+            Ok(sent) => break sent as usize,
         }
     };
 
@@ -314,7 +315,7 @@ mod exceptional_condition_fd {
         let fd = cerr(unsafe { libc::epoll_create1(0) })?;
 
         let mut event = libc::epoll_event {
-            events: libc::EPOLLERR as u32,
+            events: libc::EPOLLPRI as u32,
             u64: 0u64,
         };
 

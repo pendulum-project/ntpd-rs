@@ -13,7 +13,7 @@ use statime::{
 use statime_linux::network::linux::TimestampingMode;
 use statime_linux::{
     clock::{LinuxClock, LinuxTimer, RawLinuxClock},
-    network::linux::{get_clock_id, LinuxInterfaceDescriptor, LinuxRuntime},
+    network::linux::{get_clock_id, InterfaceDescriptor, LinuxRuntime},
 };
 
 #[derive(Clone, Copy)]
@@ -62,7 +62,7 @@ struct Args {
 
     /// Set interface on which to listen to PTP messages
     #[clap(short, long)]
-    interface: LinuxInterfaceDescriptor,
+    interface: InterfaceDescriptor,
 
     /// The SDO id of the desired ptp domain
     #[clap(long, default_value_t = SdoId::default(), value_parser = SdoIdParser)]

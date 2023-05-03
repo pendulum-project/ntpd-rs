@@ -1,18 +1,21 @@
+#![forbid(unsafe_code)]
+
 //! Implementation of the abstract network types for the linux platform
 
 use std::{
     io,
     io::ErrorKind,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    str::FromStr,
 };
 
 use statime::{
     clock::Clock,
+    datastructures::messages::MAX_DATA_LEN,
     network::{NetworkPacket, NetworkPort, NetworkRuntime},
 };
 use tokio::io::{unix::AsyncFd, Interest};
 
+pub use super::interface::InterfaceDescriptor;
 use crate::{
     clock::LinuxClock,
     network::{
@@ -54,7 +57,7 @@ impl LinuxRuntime {
     const IPV4_PDELAY_MULTICAST: Ipv4Addr = Ipv4Addr::new(224, 0, 0, 107);
 
     fn join_multicast(
-        interface: &LinuxInterfaceDescriptor,
+        interface: &InterfaceDescriptor,
         socket: &std::net::UdpSocket,
     ) -> Result<SocketAddr, NetworkError> {
         let port = socket.local_addr()?.port();
@@ -84,27 +87,6 @@ impl LinuxRuntime {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct LinuxInterfaceDescriptor {
-    pub interface_name: Option<InterfaceName>,
-    mode: LinuxNetworkMode,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LinuxNetworkMode {
-    Ipv4,
-    Ipv6,
-}
-
-impl LinuxNetworkMode {
-    fn unspecified_ip_addr(&self) -> IpAddr {
-        match self {
-            LinuxNetworkMode::Ipv4 => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-            LinuxNetworkMode::Ipv6 => IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
-        }
-    }
-}
-
 #[derive(thiserror::Error, Debug)]
 pub enum NetworkError {
     #[error("Unknown error")]
@@ -125,87 +107,8 @@ pub enum NetworkError {
     IoError(#[from] std::io::Error),
 }
 
-impl LinuxInterfaceDescriptor {
-    fn get_index(&self) -> Option<u32> {
-        let name = self.interface_name.as_ref()?;
-
-        // # SAFETY
-        //
-        // The pointer is valid and null-terminated
-        match unsafe { libc::if_nametoindex(name.as_cstr().as_ptr()) } {
-            0 => None,
-            n => Some(n),
-        }
-    }
-
-    fn get_address(&self) -> Result<IpAddr, NetworkError> {
-        if let Some(name) = self.interface_name {
-            let interfaces =
-                InterfaceIterator::new().map_err(|_| NetworkError::CannotIterateInterfaces)?;
-
-            interfaces
-                .filter(|i| name == i.name)
-                .filter_map(|i| i.socket_addr)
-                .map(|socket_addr| socket_addr.ip())
-                .find(|ip| match self.mode {
-                    LinuxNetworkMode::Ipv4 => ip.is_ipv4(),
-                    LinuxNetworkMode::Ipv6 => ip.is_ipv6(),
-                })
-                .ok_or(NetworkError::InterfaceDoesNotExist)
-        } else {
-            Ok(self.mode.unspecified_ip_addr())
-        }
-    }
-}
-
-impl FromStr for LinuxInterfaceDescriptor {
-    type Err = NetworkError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut interfaces = match InterfaceIterator::new() {
-            Ok(a) => a,
-            Err(_) => return Err(NetworkError::CannotIterateInterfaces),
-        };
-
-        match std::net::IpAddr::from_str(s) {
-            Ok(addr) => {
-                if addr.is_unspecified() {
-                    return Ok(LinuxInterfaceDescriptor {
-                        interface_name: None,
-                        mode: match addr {
-                            IpAddr::V4(_) => LinuxNetworkMode::Ipv4,
-                            IpAddr::V6(_) => LinuxNetworkMode::Ipv6,
-                        },
-                    });
-                }
-
-                interfaces
-                    .find(|data| data.has_ip_addr(addr))
-                    .map(|data| LinuxInterfaceDescriptor {
-                        interface_name: Some(data.name),
-                        mode: LinuxNetworkMode::Ipv4,
-                    })
-                    .ok_or(NetworkError::InterfaceDoesNotExist)
-            }
-            Err(_) => {
-                if interfaces.any(|if_data| if_data.name.as_str() == s) {
-                    // the interface name came straight from the OS, so it must be valid
-                    let interface_name = InterfaceName::from_str(s).unwrap();
-
-                    Ok(LinuxInterfaceDescriptor {
-                        interface_name: Some(interface_name),
-                        mode: LinuxNetworkMode::Ipv4,
-                    })
-                } else {
-                    Err(NetworkError::InterfaceDoesNotExist)
-                }
-            }
-        }
-    }
-}
-
 impl NetworkRuntime for LinuxRuntime {
-    type InterfaceDescriptor = LinuxInterfaceDescriptor;
+    type InterfaceDescriptor = InterfaceDescriptor;
     type NetworkPort = LinuxNetworkPort;
     type Error = NetworkError;
 
@@ -283,11 +186,18 @@ impl NetworkPort for LinuxNetworkPort {
 
     async fn recv(&mut self) -> Result<NetworkPacket, <LinuxNetworkPort as NetworkPort>::Error> {
         let time_critical_future = async {
-            let timestamp = self.tc_socket.recv(&self.clock).await?;
+            let mut buf = [0; MAX_DATA_LEN];
+
+            let recv_result = self.tc_socket.recv(&self.clock, &mut buf).await?;
+
+            let packet = NetworkPacket {
+                data: buf.into(),
+                timestamp: recv_result.timestamp,
+            };
 
             log::trace!("Recv TC");
 
-            Ok(timestamp)
+            Ok(packet)
         };
 
         let non_time_critical_future = async {
@@ -330,23 +240,16 @@ pub fn get_clock_id() -> Option<[u8; 8]> {
     None
 }
 
-/// Turn a C failure (-1 is returned) into a rust Result
-pub(crate) fn cerr(t: libc::c_int) -> std::io::Result<libc::c_int> {
-    match t {
-        -1 => Err(std::io::Error::last_os_error()),
-        _ => Ok(t),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::network::interface::LinuxNetworkMode;
 
     #[tokio::test]
     async fn port_setup_ipv4() -> Result<(), Box<dyn std::error::Error>> {
-        let port = 8000;
+        let port = 9000;
 
-        let interface = LinuxInterfaceDescriptor {
+        let interface = InterfaceDescriptor {
             interface_name: None,
             mode: LinuxNetworkMode::Ipv4,
         };
@@ -365,9 +268,9 @@ mod tests {
     #[tokio::test]
     #[ignore = "gives an `invalid argument` OS error"]
     async fn port_setup_ipv6() -> Result<(), Box<dyn std::error::Error>> {
-        let port = 8001;
+        let port = 9001;
 
-        let interface = LinuxInterfaceDescriptor {
+        let interface = InterfaceDescriptor {
             interface_name: None,
             mode: LinuxNetworkMode::Ipv6,
         };
@@ -381,113 +284,5 @@ mod tests {
         assert_eq!(address.port(), port);
 
         Ok(())
-    }
-
-    #[tokio::test]
-    async fn interface_index_ipv4() -> std::io::Result<()> {
-        let interface = LinuxInterfaceDescriptor {
-            interface_name: Some(InterfaceName::LOOPBACK),
-            mode: LinuxNetworkMode::Ipv4,
-        };
-
-        assert!(interface.get_index().is_some());
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn interface_index_ipv6() -> std::io::Result<()> {
-        let interface = LinuxInterfaceDescriptor {
-            interface_name: Some(InterfaceName::LOOPBACK),
-            mode: LinuxNetworkMode::Ipv6,
-        };
-
-        assert!(interface.get_index().is_some());
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn interface_index_invalid() -> std::io::Result<()> {
-        let interface = LinuxInterfaceDescriptor {
-            interface_name: Some(InterfaceName::INVALID),
-            mode: LinuxNetworkMode::Ipv4,
-        };
-
-        assert!(interface.get_index().is_none());
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn get_address_ipv4_valid() -> Result<(), Box<dyn std::error::Error>> {
-        let interface = LinuxInterfaceDescriptor {
-            interface_name: Some(InterfaceName::LOOPBACK),
-            mode: LinuxNetworkMode::Ipv4,
-        };
-
-        assert_eq!(interface.get_address()?, Ipv4Addr::LOCALHOST);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn get_address_ipv6_valid() -> Result<(), Box<dyn std::error::Error>> {
-        let interface = LinuxInterfaceDescriptor {
-            interface_name: Some(InterfaceName::LOOPBACK),
-            mode: LinuxNetworkMode::Ipv6,
-        };
-
-        assert_eq!(interface.get_address()?, Ipv6Addr::LOCALHOST);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn get_address_ipv4_invalid() {
-        let interface = LinuxInterfaceDescriptor {
-            interface_name: Some(InterfaceName::from_str("invalid").unwrap()),
-            mode: LinuxNetworkMode::Ipv4,
-        };
-
-        assert!(matches!(
-            interface.get_address().unwrap_err(),
-            NetworkError::InterfaceDoesNotExist
-        ));
-    }
-
-    #[tokio::test]
-    async fn get_address_ipv6_invalid() {
-        let interface = LinuxInterfaceDescriptor {
-            interface_name: Some(InterfaceName::from_str("invalid").unwrap()),
-            mode: LinuxNetworkMode::Ipv6,
-        };
-
-        assert!(matches!(
-            interface.get_address().unwrap_err(),
-            NetworkError::InterfaceDoesNotExist
-        ));
-    }
-
-    #[test]
-    fn test_interface_from_str() {
-        let interface = LinuxInterfaceDescriptor::from_str("0.0.0.0").unwrap();
-
-        assert!(matches!(interface.mode, LinuxNetworkMode::Ipv4));
-        assert!(interface.interface_name.is_none());
-
-        let interface = LinuxInterfaceDescriptor::from_str("::").unwrap();
-
-        assert!(matches!(interface.mode, LinuxNetworkMode::Ipv6));
-        assert!(interface.interface_name.is_none());
-
-        let interface = LinuxInterfaceDescriptor::from_str("lo").unwrap();
-
-        assert!(matches!(interface.mode, LinuxNetworkMode::Ipv4));
-        assert_eq!(interface.interface_name.unwrap(), InterfaceName::LOOPBACK);
-
-        let error = LinuxInterfaceDescriptor::from_str("xxx").unwrap_err();
-
-        assert!(matches!(error, NetworkError::InterfaceDoesNotExist));
     }
 }
