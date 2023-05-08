@@ -43,13 +43,16 @@ impl RawUdpSocket {
     }
 
     fn new(socket_addr: SocketAddr) -> std::io::Result<Self> {
-        let address_family = match socket_addr {
-            SocketAddr::V4(_) => libc::AF_INET,
-            SocketAddr::V6(_) => libc::AF_INET6,
-        };
-
-        let fd =
-            cerr(unsafe { libc::socket(address_family, libc::SOCK_DGRAM, libc::IPPROTO_UDP) })?;
+        let fd = cerr(unsafe {
+            libc::socket(
+                match socket_addr {
+                    SocketAddr::V4(_) => libc::AF_INET,
+                    SocketAddr::V6(_) => libc::AF_INET6,
+                },
+                libc::SOCK_DGRAM,
+                libc::IPPROTO_UDP,
+            )
+        })?;
 
         Ok(Self(fd))
     }
@@ -57,6 +60,9 @@ impl RawUdpSocket {
     fn reuse_addr(&self) -> std::io::Result<()> {
         let options = 1u32;
 
+        // Safety:
+        //
+        // the pointer argument is valid, the size is accurate
         unsafe {
             cerr(libc::setsockopt(
                 self.0,
@@ -128,8 +134,8 @@ impl RawUdpSocket {
     }
 
     fn set_nonblocking(&self, nonblocking: bool) -> std::io::Result<()> {
-        let mut nonblocking = nonblocking as libc::c_int;
-        cerr(unsafe { libc::ioctl(self.0, libc::FIONBIO, &mut nonblocking) }).map(drop)
+        let nonblocking = nonblocking as libc::c_int;
+        cerr(unsafe { libc::ioctl(self.0, libc::FIONBIO, &nonblocking) }).map(drop)
     }
 }
 
