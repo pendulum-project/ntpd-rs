@@ -23,6 +23,8 @@ impl TimestampedUdpSocket {
         io: std::net::UdpSocket,
         timestamping_mode: TimestampingMode,
     ) -> std::io::Result<Self> {
+        io.set_nonblocking(true)?;
+
         set_timestamping_options(&io, timestamping_mode)?;
 
         Ok(Self {
@@ -241,7 +243,6 @@ mod tests {
 
         let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, p1)).unwrap();
         socket.connect((Ipv4Addr::LOCALHOST, p2)).unwrap();
-        socket.set_nonblocking(true).unwrap();
 
         TimestampedUdpSocket::from_udp_socket(socket, mode).unwrap()
     }
@@ -277,7 +278,7 @@ mod tests {
 
     #[tokio::test]
     async fn timestamping_reasonable_so_timestamping() {
-        timestamping_reasonable(8000, 8001).await
+        timestamping_reasonable(8004, 8005).await
     }
 
     #[tokio::test]
