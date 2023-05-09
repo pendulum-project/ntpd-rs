@@ -61,7 +61,7 @@ pub trait NetworkPort {
     /// and the TX timestamp must be reported to the instance using the
     /// [PtpInstance::handle_send_timestamp](crate::ptp_instance::PtpInstance::handle_send_timestamp)
     /// function using the same id that was returned.
-    async fn send_time_critical(&mut self, data: &[u8]) -> Result<Instant, Self::Error>;
+    async fn send_time_critical(&mut self, data: &[u8]) -> Result<Option<Instant>, Self::Error>;
 
     /// Wait until a message is received
     ///

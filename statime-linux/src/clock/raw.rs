@@ -234,21 +234,24 @@ impl RawLinuxClock {
         }
     }
 
-    pub fn get_time(&self) -> Result<Instant, i32> {
+    pub fn get_timespec(&self) -> std::io::Result<libc::timespec> {
         let mut time = timespec {
             tv_sec: 0,
             tv_nsec: 0,
         };
-        let error = unsafe { libc::clock_gettime(self.id, &mut time as *mut _) };
-        match error {
-            -1 => Err(unsafe { *libc::__errno_location() }),
-            _ => {
-                let secs = Instant::from_secs(time.tv_sec.unsigned_abs() as _);
-                let nanos = Duration::from_nanos(time.tv_nsec as _);
 
-                Ok(secs + nanos)
-            }
-        }
+        cerr(unsafe { libc::clock_gettime(self.id, &mut time as *mut _) })?;
+
+        Ok(time)
+    }
+
+    pub fn get_time(&self) -> std::io::Result<Instant> {
+        let timespec = self.get_timespec()?;
+
+        let secs = Instant::from_secs(timespec.tv_sec.unsigned_abs() as _);
+        let nanos = Duration::from_nanos(timespec.tv_nsec as _);
+
+        Ok(secs + nanos)
     }
 }
 
@@ -316,4 +319,12 @@ pub enum ClockState {
     Oop,
     Wait,
     Error,
+}
+
+/// Turn a C failure (-1 is returned) into a rust Result
+pub(crate) fn cerr(t: libc::c_int) -> std::io::Result<libc::c_int> {
+    match t {
+        -1 => Err(std::io::Error::last_os_error()),
+        _ => Ok(t),
+    }
 }

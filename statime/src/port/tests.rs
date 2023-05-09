@@ -62,14 +62,14 @@ impl NetworkPort for TestNetworkPort {
         Ok(())
     }
 
-    async fn send_time_critical(&mut self, data: &[u8]) -> Result<Instant, Self::Error> {
+    async fn send_time_critical(&mut self, data: &[u8]) -> Result<Option<Instant>, Self::Error> {
         self.data_sender
             .send(TestNetworkPacket {
                 data: data.try_into()?,
             })
             .unwrap();
 
-        Ok(Instant::from_nanos(7))
+        Ok(Some(Instant::from_nanos(7)))
     }
 
     async fn recv(&mut self) -> Result<NetworkPacket, Self::Error> {

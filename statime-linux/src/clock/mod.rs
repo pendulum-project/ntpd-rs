@@ -25,6 +25,10 @@ impl LinuxClock {
     pub fn new(clock: RawLinuxClock) -> Self {
         Self { clock }
     }
+
+    pub fn timespec(&self) -> std::io::Result<libc::timespec> {
+        self.clock.get_timespec()
+    }
 }
 
 impl Clock for LinuxClock {

@@ -54,7 +54,7 @@ impl MasterState {
             .serialize_vec()?;
 
         let current_time = match network_port.send_time_critical(&sync_message).await {
-            Ok(time) => time,
+            Ok(opt_time) => opt_time.unwrap_or(current_time),
             Err(error) => {
                 log::error!("failed to send sync message: {:?}", error);
                 return Err(PortError::Network);
@@ -227,9 +227,9 @@ mod tests {
         async fn send_time_critical(
             &mut self,
             data: &[u8],
-        ) -> core::result::Result<Instant, Self::Error> {
+        ) -> core::result::Result<Option<Instant>, Self::Error> {
             self.time.push(Vec::from(data));
-            Ok(self.current_time)
+            Ok(Some(self.current_time))
         }
 
         async fn recv(

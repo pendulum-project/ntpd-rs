@@ -12,6 +12,7 @@ use statime::{
     clock::Clock,
     datastructures::messages::MAX_DATA_LEN,
     network::{NetworkPacket, NetworkPort, NetworkRuntime},
+    time::Instant,
 };
 use tokio::io::{unix::AsyncFd, Interest};
 
@@ -21,7 +22,7 @@ use crate::{
     network::{
         interface::{InterfaceIterator, InterfaceName},
         raw_udp_socket::RawUdpSocket,
-        timestamped_udp_socket::TimestampedUdpSocket,
+        timestamped_udp_socket::{LibcTimestamp, TimestampedUdpSocket},
     },
 };
 
@@ -159,6 +160,17 @@ pub struct LinuxNetworkPort {
     clock: LinuxClock,
 }
 
+fn libc_timestamp_to_instant(ts: LibcTimestamp) -> Instant {
+    match ts {
+        LibcTimestamp::TimeSpec { seconds, nanos } => {
+            Instant::from_fixed_nanos(seconds as i128 * 1_000_000_000i128 + nanos as i128)
+        }
+        LibcTimestamp::TimeVal { seconds, micros } => {
+            Instant::from_fixed_nanos(seconds as i128 * 1_000_000_000i128 + micros as i128 * 1_000)
+        }
+    }
+}
+
 impl NetworkPort for LinuxNetworkPort {
     type Error = std::io::Error;
 
@@ -174,14 +186,12 @@ impl NetworkPort for LinuxNetworkPort {
     async fn send_time_critical(
         &mut self,
         data: &[u8],
-    ) -> Result<statime::time::Instant, <LinuxNetworkPort as NetworkPort>::Error> {
+    ) -> Result<Option<statime::time::Instant>, std::io::Error> {
         log::trace!("Send TC");
 
-        let opt_instant = self.tc_socket.send(data, self.tc_address).await?;
+        let opt_libc_ts = self.tc_socket.send(data, self.tc_address).await?;
 
-        // TODO get a backup send timestamp from somewhere (it must be the same clock
-        // used for timestamps!)
-        Ok(opt_instant.unwrap())
+        Ok(opt_libc_ts.map(libc_timestamp_to_instant))
     }
 
     async fn recv(&mut self) -> Result<NetworkPacket, <LinuxNetworkPort as NetworkPort>::Error> {
@@ -192,7 +202,7 @@ impl NetworkPort for LinuxNetworkPort {
 
             let packet = NetworkPacket {
                 data: buf.into(),
-                timestamp: recv_result.timestamp,
+                timestamp: libc_timestamp_to_instant(recv_result.timestamp),
             };
 
             log::trace!("Recv TC");

@@ -146,7 +146,8 @@ impl SlaveState {
             let delay_send_time = network_port
                 .send_time_critical(&delay_req_encode)
                 .await
-                .expect("Program error: missing timestamp id");
+                .expect("Program error: missing timestamp id")
+                .unwrap_or(current_time);
             self.delay_state = DelayState::AfterSync {
                 delay_id,
                 delay_send_time,
@@ -336,9 +337,9 @@ mod tests {
         async fn send_time_critical(
             &mut self,
             data: &[u8],
-        ) -> core::result::Result<Instant, Self::Error> {
+        ) -> core::result::Result<Option<Instant>, Self::Error> {
             self.time.push(Vec::from(data));
-            Ok(self.current_time)
+            Ok(Some(self.current_time))
         }
 
         async fn recv(
