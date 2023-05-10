@@ -24,6 +24,7 @@ use statime::{
 };
 use tokio::{io::Interest, net::UdpSocket};
 
+use super::epoll::ErrqueWaiter;
 use crate::{
     clock::{timespec_into_instant, LinuxClock},
     network::linux_syscall::driver_enable_hardware_timestamping,
@@ -414,6 +415,8 @@ impl NetworkRuntime for LinuxRuntime {
             .map_err(|_| NetworkError::UnknownError)?;
 
         Ok(LinuxNetworkPort {
+            tc_socket_errstatus: ErrqueWaiter::new(&tc_socket)
+                .map_err(|_| NetworkError::UnknownError)?,
             tc_socket,
             ntc_socket,
             tc_address,
@@ -426,6 +429,7 @@ impl NetworkRuntime for LinuxRuntime {
 
 pub struct LinuxNetworkPort {
     tc_socket: UdpSocket,
+    tc_socket_errstatus: ErrqueWaiter,
     ntc_socket: UdpSocket,
     tc_address: SocketAddr,
     ntc_address: SocketAddr,
@@ -452,7 +456,7 @@ impl NetworkPort for LinuxNetworkPort {
         self.tc_socket.send_to(data, self.tc_address).await?;
 
         loop {
-            self.tc_socket.readable().await?;
+            self.tc_socket_errstatus.wait().await;
 
             if let Some(ts) =
                 Self::try_recv_tx_timestamp(&mut self.tc_socket, self.hardware_timestamping)?
