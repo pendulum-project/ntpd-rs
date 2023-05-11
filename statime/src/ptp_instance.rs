@@ -165,6 +165,7 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
             embassy_futures::join::join(
                 async {
                     bmca_timeout.next().await;
+                    log::trace!("Signalling bmca");
                     signallers.map(|v| v.raise());
                 },
                 run_ports,
