@@ -102,6 +102,10 @@ impl Header {
     }
 
     pub fn deserialize_header(buffer: &[u8]) -> Result<DeserializedHeader, WireFormatError> {
+        if buffer.len() < 34 {
+            return Err(WireFormatError::BufferTooShort);
+        }
+
         let version = PtpVersion::from_byte(buffer[1]);
         let sdo_id = SdoId((((buffer[0] & 0xf0) as u16) << 4) | (buffer[5] as u16));
 

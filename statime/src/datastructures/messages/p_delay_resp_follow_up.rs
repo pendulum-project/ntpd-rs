@@ -8,39 +8,45 @@ use crate::datastructures::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
 #[getset(get_copy = "pub")]
-pub struct DelayRespMessage {
-    pub(crate) header: Header,
-    pub(crate) receive_timestamp: Timestamp,
-    pub(crate) requesting_port_identity: PortIdentity,
+pub struct PDelayRespFollowUpMessage {
+    pub(super) header: Header,
+    pub(super) response_origin_timestamp: Timestamp,
+    pub(super) requesting_port_identity: PortIdentity,
 }
 
-impl DelayRespMessage {
+impl PDelayRespFollowUpMessage {
     pub fn content_size(&self) -> usize {
         20
     }
 
-    pub fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
-        self.receive_timestamp.serialize(&mut buffer[0..10])?;
+    pub fn serialize_content(
+        &self,
+        buffer: &mut [u8],
+    ) -> Result<(), crate::datastructures::WireFormatError> {
+        if buffer.len() < 20 {
+            return Err(WireFormatError::BufferTooShort);
+        }
+
+        self.response_origin_timestamp
+            .serialize(&mut buffer[0..10])?;
         self.requesting_port_identity
             .serialize(&mut buffer[10..20])?;
 
         Ok(())
     }
 
-    pub fn deserialize_content(header: Header, buffer: &[u8]) -> Result<Self, WireFormatError> {
-        match buffer.get(0..20) {
-            None => return Err(WireFormatError::BufferTooShort),
-            Some(slice) => {
-                let receive_timestamp = Timestamp::deserialize(&slice[0..10])?;
-                let requesting_port_identity = PortIdentity::deserialize(&slice[10..20])?;
-
-                Ok(Self {
-                    header,
-                    receive_timestamp,
-                    requesting_port_identity,
-                })
-            }
+    pub fn deserialize_content(
+        header: Header,
+        buffer: &[u8],
+    ) -> Result<Self, crate::datastructures::WireFormatError> {
+        if buffer.len() < 20 {
+            return Err(WireFormatError::BufferTooShort);
         }
+        Ok(Self {
+            header,
+            response_origin_timestamp: Timestamp::deserialize(&buffer[0..10])?,
+            requesting_port_identity: PortIdentity::deserialize(&buffer[10..20])?,
+        })
     }
 }
 
@@ -56,9 +62,9 @@ mod tests {
                 0x00, 0x00, 0x45, 0xb1, 0x11, 0x5a, 0x0a, 0x64, 0xfa, 0xb0, 0x01, 0x02, 0x03, 0x04,
                 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a,
             ],
-            DelayRespMessage {
+            PDelayRespFollowUpMessage {
                 header: Header::default(),
-                receive_timestamp: Timestamp {
+                response_origin_timestamp: Timestamp {
                     seconds: 1169232218,
                     nanos: 174389936,
                 },
@@ -78,9 +84,11 @@ mod tests {
             assert_eq!(serialization_buffer, byte_representation);
 
             // Test the deserialization output
-            let deserialized_data =
-                DelayRespMessage::deserialize_content(Header::default(), &byte_representation)
-                    .unwrap();
+            let deserialized_data = PDelayRespFollowUpMessage::deserialize_content(
+                Header::default(),
+                &byte_representation,
+            )
+            .unwrap();
             assert_eq!(deserialized_data, object_representation);
         }
     }

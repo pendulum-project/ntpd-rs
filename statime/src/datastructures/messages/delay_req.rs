@@ -1,7 +1,7 @@
 use getset::CopyGetters;
 
 use super::Header;
-use crate::datastructures::{common::Timestamp, WireFormat};
+use crate::datastructures::{common::Timestamp, WireFormat, WireFormatError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
 #[getset(get_copy = "pub")]
@@ -15,23 +15,24 @@ impl DelayReqMessage {
         10
     }
 
-    pub fn serialize_content(
-        &self,
-        buffer: &mut [u8],
-    ) -> Result<(), crate::datastructures::WireFormatError> {
+    pub fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
         self.origin_timestamp.serialize(&mut buffer[0..10])?;
 
         Ok(())
     }
 
-    pub fn deserialize_content(
-        header: Header,
-        buffer: &[u8],
-    ) -> Result<Self, crate::datastructures::WireFormatError> {
-        Ok(Self {
-            header,
-            origin_timestamp: Timestamp::deserialize(&buffer[0..10])?,
-        })
+    pub fn deserialize_content(header: Header, buffer: &[u8]) -> Result<Self, WireFormatError> {
+        match buffer.get(0..10) {
+            None => return Err(WireFormatError::BufferTooShort),
+            Some(slice) => {
+                let origin_timestamp = Timestamp::deserialize(slice)?;
+
+                Ok(Self {
+                    header,
+                    origin_timestamp,
+                })
+            }
+        }
     }
 }
 

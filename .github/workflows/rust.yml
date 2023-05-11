@@ -88,3 +88,34 @@ jobs:
           command: clippy
           toolchain: nightly
           args: --workspace --all-features -- -D warnings
+
+      - name: Run clippy (fuzzers)
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
+        with:
+          command: clippy
+          args: --manifest-path ./fuzz/Cargo.toml --all-targets -- -D warnings
+
+  fuzz:
+    name: Smoke-test fuzzing targets
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
+        with:
+          persist-credentials: false
+      - name: Install nightly toolchain
+        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
+        with:
+          toolchain: nightly
+          override: true
+          default: true
+      - name: Install cargo fuzz
+        uses: taiki-e/install-action@70233fe3d27d863712ee34eede2087e36bde6b5e
+        with:
+          tool: cargo-fuzz
+      - name: Smoke-test fuzz targets
+        run: |
+          cargo fuzz build
+          for target in $(cargo fuzz list) ; do
+            cargo fuzz run $target -- -max_total_time=10
+          done

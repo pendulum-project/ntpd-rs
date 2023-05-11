@@ -5,29 +5,41 @@ use crate::datastructures::{common::Timestamp, WireFormat, WireFormatError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
 #[getset(get_copy = "pub")]
-pub struct SyncMessage {
-    pub(crate) header: Header,
-    pub(crate) origin_timestamp: Timestamp,
+pub struct PDelayReqMessage {
+    pub(super) header: Header,
+    pub(super) origin_timestamp: Timestamp,
 }
 
-impl SyncMessage {
+impl PDelayReqMessage {
     pub fn content_size(&self) -> usize {
         10
     }
 
-    pub fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
+    pub fn serialize_content(
+        &self,
+        buffer: &mut [u8],
+    ) -> Result<(), crate::datastructures::WireFormatError> {
+        if buffer.len() < 10 {
+            return Err(WireFormatError::BufferTooShort);
+        }
+
         self.origin_timestamp.serialize(&mut buffer[0..10])?;
+
         Ok(())
     }
 
-    pub fn deserialize_content(header: Header, buffer: &[u8]) -> Result<Self, WireFormatError> {
-        match buffer.get(0..10) {
-            None => Err(WireFormatError::BufferTooShort),
-            Some(slice) => Ok(Self {
-                header,
-                origin_timestamp: Timestamp::deserialize(slice)?,
-            }),
+    pub fn deserialize_content(
+        header: Header,
+        buffer: &[u8],
+    ) -> Result<Self, crate::datastructures::WireFormatError> {
+        if buffer.len() < 10 {
+            return Err(WireFormatError::BufferTooShort);
         }
+
+        Ok(Self {
+            header,
+            origin_timestamp: Timestamp::deserialize(&buffer[0..10])?,
+        })
     }
 }
 
@@ -39,7 +51,7 @@ mod tests {
     fn timestamp_wireformat() {
         let representations = [(
             [0x00, 0x00, 0x45, 0xb1, 0x11, 0x5a, 0x0a, 0x64, 0xfa, 0xb0],
-            SyncMessage {
+            PDelayReqMessage {
                 header: Header::default(),
                 origin_timestamp: Timestamp {
                     seconds: 1169232218,
@@ -58,7 +70,8 @@ mod tests {
 
             // Test the deserialization output
             let deserialized_data =
-                SyncMessage::deserialize_content(Header::default(), &byte_representation).unwrap();
+                PDelayReqMessage::deserialize_content(Header::default(), &byte_representation)
+                    .unwrap();
             assert_eq!(deserialized_data, object_representation);
         }
     }

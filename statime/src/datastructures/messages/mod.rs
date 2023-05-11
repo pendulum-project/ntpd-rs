@@ -10,13 +10,23 @@ pub use message_builder::*;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 pub use sync::*;
 
+use self::{
+    management::ManagementMessage, p_delay_req::PDelayReqMessage, p_delay_resp::PDelayRespMessage,
+    p_delay_resp_follow_up::PDelayRespFollowUpMessage, signalling::SignalingMessage,
+};
+
 mod announce;
 mod control_field;
 mod delay_req;
 mod delay_resp;
 mod follow_up;
 mod header;
+mod management;
 mod message_builder;
+mod p_delay_req;
+mod p_delay_resp;
+mod p_delay_resp_follow_up;
+mod signalling;
 mod sync;
 
 pub const MAX_DATA_LEN: usize = 255;
@@ -36,18 +46,18 @@ pub enum MessageType {
     Management = 0xd,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Message {
     Sync(SyncMessage),
     DelayReq(DelayReqMessage),
-    PDelayReq(Header),  // TODO
-    PDelayResp(Header), // TODO
+    PDelayReq(PDelayReqMessage),
+    PDelayResp(PDelayRespMessage),
     FollowUp(FollowUpMessage),
     DelayResp(DelayRespMessage),
-    PDelayRespFollowUp(Header), // TODO
+    PDelayRespFollowUp(PDelayRespFollowUpMessage),
     Announce(AnnounceMessage),
-    Signaling(Header),  // TODO
-    Management(Header), // TODO
+    Signaling(SignalingMessage),
+    Management(ManagementMessage), // TODO
 }
 
 impl Message {
@@ -59,14 +69,14 @@ impl Message {
         match self {
             Message::Sync(m) => &m.header,
             Message::DelayReq(m) => &m.header,
-            Message::PDelayReq(h) => h,
-            Message::PDelayResp(h) => h,
+            Message::PDelayReq(m) => &m.header,
+            Message::PDelayResp(m) => &m.header,
             Message::FollowUp(m) => &m.header,
             Message::DelayResp(m) => &m.header,
-            Message::PDelayRespFollowUp(h) => h,
+            Message::PDelayRespFollowUp(m) => &m.header,
             Message::Announce(m) => &m.header,
-            Message::Signaling(h) => h,
-            Message::Management(h) => h,
+            Message::Signaling(m) => &m.header,
+            Message::Management(m) => &m.header,
         }
     }
 
@@ -79,14 +89,14 @@ impl Message {
         match self {
             Message::Sync(m) => m.content_size(),
             Message::DelayReq(m) => m.content_size(),
-            Message::PDelayReq(_) => todo!(),
-            Message::PDelayResp(_) => todo!(),
+            Message::PDelayReq(m) => m.content_size(),
+            Message::PDelayResp(m) => m.content_size(),
             Message::FollowUp(m) => m.content_size(),
             Message::DelayResp(m) => m.content_size(),
-            Message::PDelayRespFollowUp(_) => todo!(),
+            Message::PDelayRespFollowUp(m) => m.content_size(),
             Message::Announce(m) => m.content_size(),
-            Message::Signaling(_) => todo!(),
-            Message::Management(_) => todo!(),
+            Message::Signaling(m) => m.content_size(),
+            Message::Management(m) => m.content_size(),
         }
     }
 
@@ -109,22 +119,22 @@ impl Message {
     ///
     /// Returns the used buffer size that contains the message or an error.
     pub fn serialize(&self, buffer: &mut [u8]) -> Result<(), super::WireFormatError> {
-        self.header().serialize_header(
-            self.content_type(),
-            self.content_size(),
-            &mut buffer[0..34],
-        )?;
+        let (header, rest) = buffer.split_at_mut(34);
+
+        self.header()
+            .serialize_header(self.content_type(), self.content_size(), header)?;
+
         match self {
-            Message::Sync(m) => m.serialize_content(&mut buffer[34..]),
-            Message::DelayReq(m) => m.serialize_content(&mut buffer[34..]),
-            Message::PDelayReq(_) => todo!(),
-            Message::PDelayResp(_) => todo!(),
-            Message::FollowUp(m) => m.serialize_content(&mut buffer[34..]),
-            Message::DelayResp(m) => m.serialize_content(&mut buffer[34..]),
-            Message::PDelayRespFollowUp(_) => todo!(),
-            Message::Announce(m) => m.serialize_content(&mut buffer[34..]),
-            Message::Signaling(_) => todo!(),
-            Message::Management(_) => todo!(),
+            Message::Sync(m) => m.serialize_content(rest),
+            Message::DelayReq(m) => m.serialize_content(rest),
+            Message::PDelayReq(m) => m.serialize_content(rest),
+            Message::PDelayResp(m) => m.serialize_content(rest),
+            Message::FollowUp(m) => m.serialize_content(rest),
+            Message::DelayResp(m) => m.serialize_content(rest),
+            Message::PDelayRespFollowUp(m) => m.serialize_content(rest),
+            Message::Announce(m) => m.serialize_content(rest),
+            Message::Signaling(m) => m.serialize_content(rest),
+            Message::Management(m) => m.serialize_content(rest),
         }
     }
 
@@ -156,8 +166,14 @@ impl Message {
                 header_data.header,
                 content_buffer,
             )?),
-            MessageType::PDelayReq => Message::PDelayReq(header_data.header),
-            MessageType::PDelayResp => Message::PDelayResp(header_data.header),
+            MessageType::PDelayReq => Message::PDelayReq(PDelayReqMessage::deserialize_content(
+                header_data.header,
+                content_buffer,
+            )?),
+            MessageType::PDelayResp => Message::PDelayResp(PDelayRespMessage::deserialize_content(
+                header_data.header,
+                content_buffer,
+            )?),
             MessageType::FollowUp => Message::FollowUp(FollowUpMessage::deserialize_content(
                 header_data.header,
                 content_buffer,
@@ -166,13 +182,21 @@ impl Message {
                 header_data.header,
                 content_buffer,
             )?),
-            MessageType::PDelayRespFollowUp => Message::PDelayRespFollowUp(header_data.header),
+            MessageType::PDelayRespFollowUp => Message::PDelayRespFollowUp(
+                PDelayRespFollowUpMessage::deserialize_content(header_data.header, content_buffer)?,
+            ),
             MessageType::Announce => Message::Announce(AnnounceMessage::deserialize_content(
                 header_data.header,
                 content_buffer,
             )?),
-            MessageType::Signaling => Message::Signaling(header_data.header),
-            MessageType::Management => Message::Management(header_data.header),
+            MessageType::Signaling => Message::Signaling(SignalingMessage::deserialize_content(
+                header_data.header,
+                content_buffer,
+            )?),
+            MessageType::Management => Message::Management(ManagementMessage::deserialize_content(
+                header_data.header,
+                content_buffer,
+            )?),
         })
     }
 }

@@ -11,8 +11,10 @@ pub mod messages;
 pub enum WireFormatError {
     #[cfg_attr(feature = "std", error("enum conversion failed"))]
     EnumConversionError,
-    #[cfg_attr(feature = "std", error("buffer too short"))]
+    #[cfg_attr(feature = "std", error("a buffer is too short"))]
     BufferTooShort,
+    #[cfg_attr(feature = "std", error("a container has insufficient capacity"))]
+    CapacityError,
 }
 
 impl<Enum: num_enum::TryFromPrimitive> From<num_enum::TryFromPrimitiveError<Enum>>

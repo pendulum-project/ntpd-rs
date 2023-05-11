@@ -4,7 +4,7 @@ use super::Header;
 use crate::datastructures::{
     common::{ClockIdentity, ClockQuality, TimeSource, Timestamp},
     datasets::TimePropertiesDS,
-    WireFormat,
+    WireFormat, WireFormatError,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
@@ -26,10 +26,11 @@ impl AnnounceMessage {
         30
     }
 
-    pub fn serialize_content(
-        &self,
-        buffer: &mut [u8],
-    ) -> Result<(), crate::datastructures::WireFormatError> {
+    pub fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
+        if buffer.len() < 30 {
+            return Err(WireFormatError::BufferTooShort);
+        }
+
         self.origin_timestamp.serialize(&mut buffer[0..10])?;
         buffer[10..12].copy_from_slice(&self.current_utc_offset.to_be_bytes());
         buffer[13] = self.grandmaster_priority_1;
@@ -43,10 +44,11 @@ impl AnnounceMessage {
         Ok(())
     }
 
-    pub fn deserialize_content(
-        header: Header,
-        buffer: &[u8],
-    ) -> Result<Self, crate::datastructures::WireFormatError> {
+    pub fn deserialize_content(header: Header, buffer: &[u8]) -> Result<Self, WireFormatError> {
+        if buffer.len() < 30 {
+            return Err(WireFormatError::BufferTooShort);
+        }
+
         Ok(Self {
             header,
             origin_timestamp: Timestamp::deserialize(&buffer[0..10])?,
