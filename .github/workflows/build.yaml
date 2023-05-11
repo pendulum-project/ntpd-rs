@@ -12,12 +12,12 @@ on:
     - cron: '0 4 * * *'
 
 jobs:
-  build:
-    name: Build+test
+  build-ubuntu:
+    name: Build+test ubuntu
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest]
         rust:
           - stable
           - beta
@@ -28,16 +28,6 @@ jobs:
           - ""
           - "--features sentry"
           - "--features rfc-algorithm"
-        exclude:
-          - os: macos-latest
-            rust:
-              - beta
-              - 1.65.0
-          - os: macos-latest
-            features:
-              - "--features sentry"
-              - "--features rfc-algorithm"
-
     steps:
       - name: Checkout sources
         uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
@@ -93,6 +83,35 @@ jobs:
         env:
           RUST_BACKTRACE: 1
 
+  build-macos:
+    name: Build+test macos
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest]
+        rust:
+          - stable
+        target:
+          - ""
+        features:
+          - ""
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
+        with:
+          persist-credentials: false
+      - name: Install ${{ matrix.rust }} toolchain
+        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
+        with:
+          toolchain: ${{ matrix.rust }}
+          override: true
+      - name: cargo build
+        run: cargo build ${{ matrix.features }}
+      - name: cargo test
+        run: cargo test
+        env:
+          RUST_BACKTRACE: 1
+
   test-freebsd:
   # see https://github.com/actions/runner/issues/385
   # use https://github.com/vmactions/freebsd-vm for now
@@ -109,12 +128,12 @@ jobs:
           prepare: |
             pkg install -y curl
             curl https://sh.rustup.rs -sSf --output rustup.sh
-            sh rustup.sh -y --profile minimal --default-toolchain stable
+            sh rustup.sh -y --profile default --default-toolchain stable # cannot use `--profile minimal` because of clippy
             echo "~~~~ rustc --version ~~~~"
             $HOME/.cargo/bin/rustc --version
             echo "~~~~ freebsd-version ~~~~"
             freebsd-version
-          run: $HOME/.cargo/bin/cargo/clippy --workspace --all-targets -- -D warnings && $HOME/.cargo/bin/cargo build --all-targets && $HOME/.cargo/bin/cargo test
+          run: $HOME/.cargo/bin/cargo clippy --workspace --all-targets -- -D warnings && $HOME/.cargo/bin/cargo build --all-targets && $HOME/.cargo/bin/cargo test
 
   unused:
     name: Unused dependencies
