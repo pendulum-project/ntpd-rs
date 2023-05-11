@@ -2,9 +2,6 @@
 
 use std::{io, net::SocketAddr};
 
-#[cfg(target_os = "linux")]
-use std::os::unix::prelude::RawFd;
-
 use ntp_proto::NtpTimestamp;
 use tokio::io::unix::AsyncFd;
 use tracing::{debug, instrument, trace, warn};
@@ -17,10 +14,13 @@ use crate::{
     EnableTimestamps, InterfaceName,
 };
 
+#[cfg(target_os = "linux")]
+use crate::raw_socket::err_queue_waiter::ErrQueueWaiter;
+
 pub struct UdpSocket {
     io: AsyncFd<std::net::UdpSocket>,
     #[cfg(target_os = "linux")]
-    exceptional_condition: AsyncFd<RawFd>,
+    err_queue_waiter: ErrQueueWaiter,
     send_counter: u32,
     timestamping: EnableTimestamps,
 }
@@ -92,7 +92,7 @@ impl UdpSocket {
 
         Ok(UdpSocket {
             #[cfg(target_os = "linux")]
-            exceptional_condition: crate::raw_socket::exceptional_condition_fd(&socket)?,
+            err_queue_waiter: ErrQueueWaiter::new(&socket)?,
             io: AsyncFd::new(socket)?,
             send_counter: 0,
             timestamping,
@@ -132,7 +132,7 @@ impl UdpSocket {
 
         Ok(UdpSocket {
             #[cfg(target_os = "linux")]
-            exceptional_condition: crate::raw_socket::exceptional_condition_fd(&socket)?,
+            err_queue_waiter: ErrQueueWaiter::new(&socket)?,
             io: AsyncFd::new(socket)?,
             send_counter: 0,
             timestamping,
@@ -207,25 +207,18 @@ impl UdpSocket {
             // Send timestamps are sent to the udp socket's error queue. Sadly, tokio does not
             // currently support awaiting whether there is something in the error queue
             // see https://github.com/tokio-rs/tokio/issues/4885.
-            //
-            // Therefore, we manually configure an extra file descriptor to listen for POLLPRI on
-            // the main udp socket. This `exceptional_condition` file descriptor becomes readable
-            // when there is something in the error queue.
-            let mut guard = self.exceptional_condition.readable().await?;
-            match guard.try_io(|_| fetch_send_timestamp_help(self.io.get_ref(), expected_counter)) {
-                Ok(Ok(Some(send_timestamp))) => {
+            self.err_queue_waiter.wait().await?;
+
+            match fetch_send_timestamp_help(self.io.get_ref(), expected_counter) {
+                Ok(Some(send_timestamp)) => {
                     return Ok(send_timestamp);
                 }
-                Ok(Ok(None)) => {
+                Ok(None) => {
                     continue;
                 }
-                Ok(Err(e)) => {
+                Err(e) => {
                     warn!(error = debug(&e), "Error fetching timestamp");
                     return Err(e);
-                }
-                Err(_would_block) => {
-                    trace!("timestamp blocked after becoming readable, retrying");
-                    continue;
                 }
             }
         }

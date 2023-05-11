@@ -12,8 +12,6 @@
 /// All unsafe blocks are preceded with a comment explaining why that
 /// specific unsafe code should be safe within the context in which it
 /// is used.
-#[cfg(target_os = "linux")]
-pub(crate) use exceptional_condition_fd::exceptional_condition_fd;
 pub(crate) use recv_message::{
     control_message_space, receive_message, ControlMessage, MessageQueue,
 };
@@ -504,42 +502,61 @@ pub(crate) mod timestamping_config {
 }
 
 #[cfg(target_os = "linux")]
-mod exceptional_condition_fd {
+pub(crate) mod err_queue_waiter {
+
     use std::os::unix::prelude::{AsRawFd, RawFd};
-    use tokio::io::unix::AsyncFd;
 
-    // Tokio does not natively support polling for readiness of queues
-    // other than the normal read queue (see also https://github.com/tokio-rs/tokio/issues/4885)
-    // this works around that by creating a epoll fd that becomes
-    // ready to read when the underlying fd has an event on its error queue.
-    pub(crate) fn exceptional_condition_fd(
-        socket_of_interest: &std::net::UdpSocket,
-    ) -> std::io::Result<AsyncFd<RawFd>> {
-        // Safety:
-        // epoll_create1 is safe to call without flags
-        let fd = super::cerr(unsafe { libc::epoll_create1(0) })?;
+    use tokio::io::{unix::AsyncFd, Interest};
 
-        let mut event = libc::epoll_event {
-            events: libc::EPOLLPRI as u32,
-            u64: 0u64,
-        };
+    use crate::raw_socket::cerr;
 
-        // Safety:
-        // fd is a valid epoll fd from epoll_create1 in combination with the cerr check
-        // since we have a reference to the socket_of_interest, its raw fd
-        // is valid for the duration of this call, which is all that is
-        // required for epoll (closing the fd later is safe!)
-        // &mut event is a pointer to a memory region which we own for the duration
-        // of the call, and thus ok to use.
-        super::cerr(unsafe {
-            libc::epoll_ctl(
-                fd,
-                libc::EPOLL_CTL_ADD,
-                socket_of_interest.as_raw_fd(),
-                &mut event,
-            )
-        })?;
+    pub struct ErrQueueWaiter {
+        epoll_fd: AsyncFd<RawFd>,
+    }
 
-        AsyncFd::new(fd)
+    fn create_error(inner: std::io::Error) -> std::io::Error {
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("could not create error queue waiter epoll socket: {inner:?}"),
+        )
+    }
+
+    impl ErrQueueWaiter {
+        pub fn new(source: &impl AsRawFd) -> std::io::Result<Self> {
+            // Safety: safe to call with
+            let epoll = cerr(unsafe { libc::epoll_create(1) }).map_err(create_error)?;
+
+            let mut ev = libc::epoll_event {
+                events: libc::EPOLLERR as _,
+                u64: 0,
+            };
+
+            cerr(unsafe {
+                libc::epoll_ctl(
+                    epoll,
+                    libc::EPOLL_CTL_ADD,
+                    source.as_raw_fd(),
+                    &mut ev as *mut _,
+                )
+            })
+            .map_err(create_error)?;
+
+            Ok(Self {
+                epoll_fd: AsyncFd::new(epoll)?,
+            })
+        }
+
+        pub async fn wait(&self) -> std::io::Result<()> {
+            self.epoll_fd
+                .async_io(Interest::READABLE, |fd| {
+                    let mut ev = libc::epoll_event { events: 0, u64: 0 };
+
+                    match unsafe { libc::epoll_wait(*fd, &mut ev as *mut _, 1, 0) } {
+                        0 => Err(std::io::ErrorKind::WouldBlock.into()),
+                        _ => Ok(()),
+                    }
+                })
+                .await
+        }
     }
 }
