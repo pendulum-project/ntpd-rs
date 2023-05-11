@@ -114,8 +114,9 @@ impl LinuxRuntime {
             return Err(NetworkError::UnknownError);
         }
 
-        let socket =
-            tokio::net::UdpSocket::from_std(unsafe { std::net::UdpSocket::from_raw_fd(socket) })?;
+        let socket = unsafe { std::net::UdpSocket::from_raw_fd(socket) };
+        socket.set_nonblocking(true)?;
+        let socket = tokio::net::UdpSocket::from_std(socket)?;
 
         // Bind device to specified interface
         if let Some(interface_name) = interface_name.as_ref() {
