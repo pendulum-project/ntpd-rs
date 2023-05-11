@@ -1,0 +1,6 @@
+[book]
+authors = ["Rick van der Wal"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Statime Reference Manual"
