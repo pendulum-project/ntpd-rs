@@ -89,7 +89,10 @@ impl<P: NetworkPort> Port<P> {
             match select::select3(timeouts, packet, stop.wait_for()).await {
                 Either3::First(timeout) => match timeout {
                     Either3::First(_) => {
-                        log::trace!("Port {} force master timeout", self.port_ds.port_identity.port_number);
+                        log::trace!(
+                            "Port {} force master timeout",
+                            self.port_ds.port_identity.port_number
+                        );
                         // No announces received for a long time, become master
                         match self.port_ds.port_state {
                             PortState::Master(_) => (),
@@ -99,14 +102,20 @@ impl<P: NetworkPort> Port<P> {
                         }
                     }
                     Either3::Second(_) => {
-                        log::trace!("Port {} sync timeout", self.port_ds.port_identity.port_number);
+                        log::trace!(
+                            "Port {} sync timeout",
+                            self.port_ds.port_identity.port_number
+                        );
                         // Send sync message
                         if let Err(error) = self.send_sync(local_clock, default_ds).await {
                             log::error!("{:?}", error);
                         }
                     }
                     Either3::Third(_) => {
-                        log::trace!("Port {} announce timeout", self.port_ds.port_identity.port_number);
+                        log::trace!(
+                            "Port {} announce timeout",
+                            self.port_ds.port_identity.port_number
+                        );
                         // Send announce message
                         if let Err(error) = self
                             .send_announce(
@@ -123,7 +132,11 @@ impl<P: NetworkPort> Port<P> {
                     }
                 },
                 Either3::Second(Ok(packet)) => {
-                    log::trace!("Port {} message received: {:?}", self.port_ds.port_identity.port_number, packet);
+                    log::trace!(
+                        "Port {} message received: {:?}",
+                        self.port_ds.port_identity.port_number,
+                        packet
+                    );
                     // Process packet
                     if let Err(error) = self
                         .handle_packet(
@@ -141,7 +154,10 @@ impl<P: NetworkPort> Port<P> {
                 }
                 Either3::Second(Err(error)) => log::error!("failed to parse packet {:?}", error),
                 Either3::Third(_) => {
-                    log::trace!("Port {} bmca trigger", self.port_ds.port_identity.port_number);
+                    log::trace!(
+                        "Port {} bmca trigger",
+                        self.port_ds.port_identity.port_number
+                    );
                     break;
                 }
             }

@@ -33,6 +33,7 @@ where
         let interval = self.interval;
         let mut this = self.as_mut().project();
         this.timer.set((this.reset)(interval));
+        log::trace!("Timer reset");
     }
 }
 
@@ -44,13 +45,18 @@ where
     type Item = F::Output;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        log::trace!("Ticker polled");
         let this = self.as_mut().project();
         match this.timer.poll(cx) {
             Poll::Ready(output) => {
+                log::trace!("Timer expired");
                 self.reset();
                 Poll::Ready(Some(output))
             }
-            Poll::Pending => Poll::Pending,
+            Poll::Pending => {
+                log::trace!("Timer pending");
+                Poll::Pending
+            }
         }
     }
 }
