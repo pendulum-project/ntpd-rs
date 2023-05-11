@@ -204,9 +204,9 @@ impl InterfaceName {
         std::ffi::CStr::from_bytes_until_nul(&self.bytes[..]).unwrap()
     }
 
-    pub(crate) fn to_ifr_name(self) -> [i8; libc::IFNAMSIZ] {
+    pub(crate) fn to_ifr_name(self) -> [libc::c_char; libc::IFNAMSIZ] {
         let mut it = self.bytes.iter().copied();
-        [0; libc::IFNAMSIZ].map(|_| it.next().unwrap_or(0) as i8)
+        [0; libc::IFNAMSIZ].map(|_| it.next().unwrap_or(0) as _)
     }
 }
 
