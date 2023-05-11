@@ -1,0 +1,27 @@
+[package]
+name = "ntp-proto-fuzz"
+version = "0.0.0"
+authors = ["Automatically generated"]
+edition = "2018"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies.libfuzzer-sys]
+version = "0.4"
+features = ["arbitrary-derive"]
+
+[dependencies.statime]
+path = "../statime"
+
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "message_sound"
+path = "fuzz_targets/message_sound.rs"
+test = false
+doc = false
