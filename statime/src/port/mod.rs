@@ -89,7 +89,7 @@ impl<P: NetworkPort> Port<P> {
             match select::select3(timeouts, packet, stop.wait_for()).await {
                 Either3::First(timeout) => match timeout {
                     Either3::First(_) => {
-                        log::trace!("Port {} force master timeout", self.port_ds.port_identity.port_number)
+                        log::trace!("Port {} force master timeout", self.port_ds.port_identity.port_number);
                         // No announces received for a long time, become master
                         match self.port_ds.port_state {
                             PortState::Master(_) => (),
