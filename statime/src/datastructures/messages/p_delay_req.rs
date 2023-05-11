@@ -32,13 +32,11 @@ impl PDelayReqMessage {
         header: Header,
         buffer: &[u8],
     ) -> Result<Self, crate::datastructures::WireFormatError> {
-        if buffer.len() < 10 {
-            return Err(WireFormatError::BufferTooShort);
-        }
+        let slice = buffer.get(0..10).ok_or(WireFormatError::BufferTooShort)?;
 
         Ok(Self {
             header,
-            origin_timestamp: Timestamp::deserialize(&buffer[0..10])?,
+            origin_timestamp: Timestamp::deserialize(slice)?,
         })
     }
 }

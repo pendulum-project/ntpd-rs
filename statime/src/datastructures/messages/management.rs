@@ -52,6 +52,7 @@ impl ManagementMessage {
 
 /// See: 15.4.1.6
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum ManagementAction {
     Reserved,
     GET,
@@ -62,7 +63,7 @@ pub enum ManagementAction {
 }
 
 impl ManagementAction {
-    pub fn to_primitive(&self) -> u8 {
+    pub fn to_primitive(self) -> u8 {
         match self {
             Self::GET => 0x0,
             Self::SET => 0x1,

@@ -11,11 +11,13 @@ pub struct SignalingMessage {
     pub(super) header: Header,
     pub(super) target_port_identity: PortIdentity,
 
-    // TODO: determine the best max length value
-    pub(super) value: ArrayVec<TLV, 256>,
+    pub(super) value: ArrayVec<TLV, { Self::CAPACITY }>,
 }
 
 impl SignalingMessage {
+    // TODO: determine the best max length value
+    const CAPACITY: usize = 4;
+
     pub fn content_size(&self) -> usize {
         10
     }
@@ -44,7 +46,7 @@ impl SignalingMessage {
         }
 
         let mut index = 11;
-        let mut tlvs = ArrayVec::<TLV, 256>::new();
+        let mut tlvs = ArrayVec::<TLV, { Self::CAPACITY }>::new();
         while buffer.len() > index + 4 {
             // Parse length
             let length_bytes: Result<[u8; 2], _> = buffer[(index + 2)..(index + 4)].try_into();

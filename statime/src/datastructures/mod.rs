@@ -17,6 +17,12 @@ pub enum WireFormatError {
     CapacityError,
 }
 
+impl From<arrayvec::CapacityError> for WireFormatError {
+    fn from(_: arrayvec::CapacityError) -> Self {
+        WireFormatError::CapacityError
+    }
+}
+
 impl<Enum: num_enum::TryFromPrimitive> From<num_enum::TryFromPrimitiveError<Enum>>
     for WireFormatError
 {

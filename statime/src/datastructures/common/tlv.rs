@@ -7,8 +7,12 @@ pub struct TLV {
     pub tlv_type: TlvType,
     pub length: u16,
 
+    pub value: ArrayVec<u8, { Self::CAPACITY }>,
+}
+
+impl TLV {
     // TODO: Determine the best max value
-    pub value: ArrayVec<u8, 128>,
+    const CAPACITY: usize = 4;
 }
 
 impl WireFormat for TLV {
@@ -17,9 +21,9 @@ impl WireFormat for TLV {
     }
 
     fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
-        buffer[0..1].copy_from_slice(&self.tlv_type.to_primitive().to_be_bytes());
-        buffer[2..3].copy_from_slice(&self.length.to_be_bytes());
-        buffer[4..(4 + self.length).into()].copy_from_slice(&self.value.as_slice());
+        buffer[0..][..2].copy_from_slice(&self.tlv_type.to_primitive().to_be_bytes());
+        buffer[2..][..2].copy_from_slice(&self.length.to_be_bytes());
+        buffer[4..][..self.length as usize].copy_from_slice(&self.value);
 
         Ok(())
     }
@@ -29,41 +33,28 @@ impl WireFormat for TLV {
             return Err(WireFormatError::BufferTooShort);
         }
 
-        // Parse length
-        let length_bytes: Result<[u8; 2], _> = buffer[2..3].try_into();
-        if length_bytes.is_err() {
-            return Err(WireFormatError::BufferTooShort);
-        }
-        let length = u16::from_be_bytes(length_bytes.unwrap());
+        let tlv_type = TlvType::from_primitive(u16::from_be_bytes([buffer[0], buffer[1]]));
+        let length = u16::from_be_bytes([buffer[2], buffer[3]]);
 
         // Parse TLV content / value
-        if buffer.len() < (5 + length) as usize {
+        if buffer.len() < 5 + length as usize {
             return Err(WireFormatError::BufferTooShort);
         }
 
-        let mut vec = ArrayVec::<u8, 128>::new();
-        for byte in &buffer[4..(4 + length).into()] {
-            if !vec.try_push(*byte).is_ok() {
-                return Err(WireFormatError::CapacityError);
-            }
-        }
-
-        // Parse TLV type
-        let type_bytes = buffer[0..1].try_into();
-        if type_bytes.is_err() {
-            return Err(WireFormatError::BufferTooShort);
-        }
+        let mut value = ArrayVec::<u8, { Self::CAPACITY }>::new();
+        value.try_extend_from_slice(&buffer[4..][..length as usize])?;
 
         Ok(Self {
-            tlv_type: TlvType::from_primitive(u16::from_be_bytes(type_bytes.unwrap())),
+            tlv_type,
             length,
-            value: vec,
+            value,
         })
     }
 }
 
 /// See 14.1.1 / Table 52
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(u8)]
 pub enum TlvType {
     Reserved,
     #[default]

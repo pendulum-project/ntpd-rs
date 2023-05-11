@@ -28,19 +28,15 @@ impl DelayRespMessage {
     }
 
     pub fn deserialize_content(header: Header, buffer: &[u8]) -> Result<Self, WireFormatError> {
-        match buffer.get(0..20) {
-            None => return Err(WireFormatError::BufferTooShort),
-            Some(slice) => {
-                let receive_timestamp = Timestamp::deserialize(&slice[0..10])?;
-                let requesting_port_identity = PortIdentity::deserialize(&slice[10..20])?;
+        let slice = buffer.get(0..20).ok_or(WireFormatError::BufferTooShort)?;
+        let receive_timestamp = Timestamp::deserialize(&slice[0..10])?;
+        let requesting_port_identity = PortIdentity::deserialize(&slice[10..20])?;
 
-                Ok(Self {
-                    header,
-                    receive_timestamp,
-                    requesting_port_identity,
-                })
-            }
-        }
+        Ok(Self {
+            header,
+            receive_timestamp,
+            requesting_port_identity,
+        })
     }
 }
 
