@@ -7,10 +7,12 @@
 //! for more information.
 #![forbid(unsafe_op_in_unsafe_fn)]
 
-mod hwtimestamp;
 mod interface_name;
 mod raw_socket;
 mod socket;
+
+#[cfg(target_os = "linux")]
+mod hwtimestamp;
 
 use std::{ops::Deref, str::FromStr};
 
@@ -49,6 +51,7 @@ impl Default for EnableTimestamps {
 
 #[derive(Clone, Copy)]
 pub(crate) enum LibcTimestamp {
+    #[cfg_attr(any(target_os = "macos", target_os = "freebsd"), allow(unused))]
     Timespec(libc::timespec),
     Timeval(libc::timeval),
 }

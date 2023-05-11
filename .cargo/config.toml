@@ -1,2 +1,13 @@
 [target.'cfg(all())']
 rustflags = ["-C", "force-unwind-tables"]
+
+# runs tests under sudo, useful for certain (hardware) clock manipulation in tests
+# [target.x86_64-unknown-linux-gnu]
+# runner = 'sudo -E'
+
+# make `cargo clippy --target ...` just work when cross-compiling
+# [target.x86_64-apple-darwin]
+# linker = "~/.cargo/bin/cargo-zigbuild zig cc -- -target x86_64-macos-gnu -g"
+#
+# [target.x86_64-unknown-freebsd]
+# linker = "~/.cargo/bin/cargo-zigbuild zig cc -- -target freebsd -g"

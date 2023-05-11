@@ -192,7 +192,18 @@ impl UnixNtpClock {
         #[cfg(target_os = "linux")]
         use libc::clock_adjtime as adjtime;
 
-        #[cfg(any(target_os = "freebsd", target_os = "macos"))]
+        #[cfg(target_os = "macos")]
+        unsafe fn adjtime(clk_id: libc::clockid_t, buf: *mut libc::timex) -> libc::c_int {
+            assert_eq!(
+                clk_id,
+                libc::CLOCK_REALTIME,
+                "only the REALTIME clock is supported"
+            );
+
+            libc::ntp_adjtime(buf)
+        }
+
+        #[cfg(target_os = "freebsd")]
         let adjtime = {
             extern "C" {
                 fn clock_adjtime(clk_id: libc::clockid_t, buf: *mut libc::timex) -> libc::c_int;
@@ -363,16 +374,24 @@ fn micros_to_nanos(micros: u32) -> u32 {
 
 #[cfg_attr(target_os = "linux", allow(unused))]
 fn current_time_timespec(timespec: libc::timespec, precision: Precision) -> NtpTimestamp {
+    let mut seconds = timespec.tv_sec as u32;
+
+    let mut nanos = match precision {
+        Precision::Nano => timespec.tv_nsec as u32,
+        Precision::Micro => micros_to_nanos(timespec.tv_nsec as u32),
+    };
+
+    // on macOS (at least) we've observed higher nanosecond counts that appear valid
+    while nanos > 1_000_000_000 {
+        seconds = seconds.wrapping_add(1);
+        nanos -= 1_000_000_000;
+    }
+
     // Negative eras are completely valid, so any wrapping is perfectly reasonable here.
-    NtpTimestamp::from_seconds_nanos_since_ntp_era(
-        (timespec.tv_sec as u32).wrapping_add(EPOCH_OFFSET),
-        match precision {
-            Precision::Nano => timespec.tv_nsec as u32,
-            Precision::Micro => micros_to_nanos(timespec.tv_nsec as u32),
-        },
-    )
+    NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds.wrapping_add(EPOCH_OFFSET), nanos)
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(unused))]
 fn current_time_timeval(timespec: libc::timeval, precision: Precision) -> NtpTimestamp {
     // Negative eras are completely valid, so any wrapping is perfectly reasonable here.
     NtpTimestamp::from_seconds_nanos_since_ntp_era(

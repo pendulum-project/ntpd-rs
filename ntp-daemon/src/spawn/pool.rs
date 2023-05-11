@@ -150,17 +150,12 @@ mod tests {
 
     #[tokio::test]
     async fn creates_multiple_peers() {
+        let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
+        let addresses = address_strings.map(|addr| addr.parse().unwrap());
+
         let pool = PoolSpawner::new(
             PoolPeerConfig {
-                addr: NormalizedAddress::with_hardcoded_dns(
-                    "example.com",
-                    123,
-                    vec![
-                        "127.0.0.1:123".parse().unwrap(),
-                        "127.0.0.2:123".parse().unwrap(),
-                        "127.0.0.3:123".parse().unwrap(),
-                    ],
-                ),
+                addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec()),
                 max_peers: 2,
             },
             NETWORK_WAIT_PERIOD,
@@ -173,13 +168,17 @@ mod tests {
         let res = action_rx.try_recv().unwrap();
         assert_eq!(spawner_id, res.id);
         let params = get_create_params(res);
-        assert_eq!(params.addr.to_string(), "127.0.0.3:123");
+        let addr1 = params.addr;
 
         tokio::time::sleep(Duration::from_millis(10)).await;
         let res = action_rx.try_recv().unwrap();
         assert_eq!(spawner_id, res.id);
         let params = get_create_params(res);
-        assert_eq!(params.addr.to_string(), "127.0.0.2:123");
+        let addr2 = params.addr;
+
+        assert_ne!(addr1, addr2);
+        assert!(addresses.contains(&addr1));
+        assert!(addresses.contains(&addr2));
 
         tokio::time::sleep(Duration::from_millis(10)).await;
         let res = action_rx.try_recv().unwrap_err();
@@ -188,17 +187,12 @@ mod tests {
 
     #[tokio::test]
     async fn refills_peers_upto_limit() {
+        let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
+        let addresses = address_strings.map(|addr| addr.parse().unwrap());
+
         let pool = PoolSpawner::new(
             PoolPeerConfig {
-                addr: NormalizedAddress::with_hardcoded_dns(
-                    "example.com",
-                    123,
-                    vec![
-                        "127.0.0.1:123".parse().unwrap(),
-                        "127.0.0.2:123".parse().unwrap(),
-                        "127.0.0.3:123".parse().unwrap(),
-                    ],
-                ),
+                addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec()),
                 max_peers: 2,
             },
             NETWORK_WAIT_PERIOD,
@@ -209,8 +203,11 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(10)).await;
         let res = action_rx.try_recv().unwrap();
         let params = get_create_params(res);
+        let addr1 = params.addr;
         tokio::time::sleep(Duration::from_millis(10)).await;
-        action_rx.try_recv().unwrap();
+        let res = action_rx.try_recv().unwrap();
+        let params = get_create_params(res);
+        let addr2 = params.addr;
         tokio::time::sleep(Duration::from_millis(10)).await;
 
         notify_tx
@@ -224,7 +221,14 @@ mod tests {
 
         let res = action_rx.try_recv().unwrap();
         let params = get_create_params(res);
-        assert_eq!(params.addr.to_string(), "127.0.0.1:123");
+        let addr3 = params.addr;
+
+        // no duplicates!
+        assert_ne!(addr1, addr2);
+        assert_ne!(addr2, addr3);
+        assert_ne!(addr3, addr1);
+
+        assert!(addresses.contains(&addr3));
     }
 
     #[tokio::test]

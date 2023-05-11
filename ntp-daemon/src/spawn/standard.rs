@@ -197,9 +197,16 @@ mod tests {
 
     #[tokio::test]
     async fn reresolves_on_unreachable() {
+        let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
+        let addresses = address_strings.map(|addr| addr.parse().unwrap());
+
         let spawner = StandardSpawner::new(
             StandardPeerConfig {
-                addr: NormalizedAddress::with_hardcoded_dns("europe.pool.ntp.org", 123, vec![]),
+                addr: NormalizedAddress::with_hardcoded_dns(
+                    "europe.pool.ntp.org",
+                    123,
+                    addresses.to_vec(),
+                ),
             },
             NETWORK_WAIT_PERIOD,
         );
@@ -209,74 +216,39 @@ mod tests {
         tokio::spawn(async move { spawner.run(action_tx, notify_rx).await });
         let res = action_rx.recv().await.unwrap();
         let params = get_create_params(res);
-        let orig_addr = params.addr.to_string();
+        let initial_addr = params.addr;
 
         // We repeat multiple times and check at least one is different to be less
         // sensitive to dns resolver giving the same pool ip.
-        notify_tx
-            .send(SystemEvent::peer_removed(
-                params.id,
-                PeerRemovalReason::Unreachable,
-            ))
-            .await
-            .unwrap();
-        let res = action_rx.recv().await.unwrap();
-        let params = get_create_params(res);
-        let addr1 = params.addr.to_string();
+        let mut seen_addresses = vec![];
+        for _ in 0..5 {
+            notify_tx
+                .send(SystemEvent::peer_removed(
+                    params.id,
+                    PeerRemovalReason::Unreachable,
+                ))
+                .await
+                .unwrap();
+            let res = action_rx.recv().await.unwrap();
+            let params = get_create_params(res);
+            seen_addresses.push(params.addr);
+        }
+        let seen_addresses = seen_addresses;
 
-        notify_tx
-            .send(SystemEvent::peer_removed(
-                params.id,
-                PeerRemovalReason::Unreachable,
-            ))
-            .await
-            .unwrap();
-        let res = action_rx.recv().await.unwrap();
-        let params = get_create_params(res);
-        let addr2 = params.addr.to_string();
-
-        notify_tx
-            .send(SystemEvent::peer_removed(
-                params.id,
-                PeerRemovalReason::Unreachable,
-            ))
-            .await
-            .unwrap();
-        let res = action_rx.recv().await.unwrap();
-        let params = get_create_params(res);
-        let addr3 = params.addr.to_string();
-
-        notify_tx
-            .send(SystemEvent::peer_removed(
-                params.id,
-                PeerRemovalReason::Unreachable,
-            ))
-            .await
-            .unwrap();
-        let res = action_rx.recv().await.unwrap();
-        let params = get_create_params(res);
-        let addr4 = params.addr.to_string();
-
-        notify_tx
-            .send(SystemEvent::peer_removed(
-                params.id,
-                PeerRemovalReason::Unreachable,
-            ))
-            .await
-            .unwrap();
-        let res = action_rx.recv().await.unwrap();
-        let params = get_create_params(res);
-        let addr5 = params.addr.to_string();
+        for addr in seen_addresses.iter() {
+            assert!(
+                addresses.contains(addr),
+                "{:?} should have been drawn from {:?}",
+                addr,
+                addresses
+            );
+        }
 
         assert!(
-            addr1 != orig_addr
-                || addr2 != orig_addr
-                || addr3 != orig_addr
-                || addr4 != orig_addr
-                || addr5 != orig_addr,
-            "{:?} should not be in {:?}",
-            orig_addr,
-            [addr1, addr2, addr3, addr4, addr5],
+            seen_addresses.iter().any(|seen| seen != &initial_addr),
+            "Re-resolved\n\n\t{:?}\n\n should contain at least one address that isn't the original\n\n\t{:?}",
+            seen_addresses,
+            initial_addr,
         );
     }
 

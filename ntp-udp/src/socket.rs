@@ -1,6 +1,9 @@
 #![forbid(unsafe_code)]
 
-use std::{io, net::SocketAddr, os::unix::prelude::RawFd};
+use std::{io, net::SocketAddr};
+
+#[cfg(target_os = "linux")]
+use std::os::unix::prelude::RawFd;
 
 use ntp_proto::NtpTimestamp;
 use tokio::io::unix::AsyncFd;
@@ -8,14 +11,15 @@ use tracing::{debug, instrument, trace, warn};
 
 use crate::{
     raw_socket::{
-        control_message_space, exceptional_condition_fd, receive_message, set_timestamping_options,
-        ControlMessage, MessageQueue, TimestampMethod,
+        control_message_space, receive_message, set_timestamping_options, ControlMessage,
+        MessageQueue, TimestampMethod,
     },
     EnableTimestamps, InterfaceName,
 };
 
 pub struct UdpSocket {
     io: AsyncFd<std::net::UdpSocket>,
+    #[cfg(target_os = "linux")]
     exceptional_condition: AsyncFd<RawFd>,
     send_counter: u32,
     timestamping: EnableTimestamps,
@@ -70,8 +74,9 @@ impl UdpSocket {
 
         // bind the socket to a specific interface. This is relevant for hardware timestamping,
         // because the interface determines which clock is used to produce the timestamps.
-        if let Some(interface) = interface {
-            socket.bind_device(Some(&interface)).unwrap();
+        if let Some(_interface) = interface {
+            #[cfg(target_os = "linux")]
+            socket.bind_device(Some(&_interface)).unwrap();
         }
 
         socket.connect(peer_addr).await?;
@@ -86,7 +91,8 @@ impl UdpSocket {
         set_timestamping_options(&socket, method, timestamping)?;
 
         Ok(UdpSocket {
-            exceptional_condition: exceptional_condition_fd(&socket)?,
+            #[cfg(target_os = "linux")]
+            exceptional_condition: crate::raw_socket::exceptional_condition_fd(&socket)?,
             io: AsyncFd::new(socket)?,
             send_counter: 0,
             timestamping,
@@ -106,8 +112,9 @@ impl UdpSocket {
 
         // bind the socket to a specific interface. This is relevant for hardware timestamping,
         // because the interface determines which clock is used to produce the timestamps.
-        if let Some(interface) = interface {
-            socket.bind_device(Some(&interface)).unwrap();
+        if let Some(_interface) = interface {
+            #[cfg(target_os = "linux")]
+            socket.bind_device(Some(&_interface)).unwrap();
         }
 
         let socket = socket.into_std()?;
@@ -124,7 +131,8 @@ impl UdpSocket {
         set_timestamping_options(&socket, DEFAULT_TIMESTAMP_METHOD, timestamping)?;
 
         Ok(UdpSocket {
-            exceptional_condition: exceptional_condition_fd(&socket)?,
+            #[cfg(target_os = "linux")]
+            exceptional_condition: crate::raw_socket::exceptional_condition_fd(&socket)?,
             io: AsyncFd::new(socket)?,
             send_counter: 0,
             timestamping,
@@ -141,17 +149,27 @@ impl UdpSocket {
         let expected_counter = self.send_counter;
         self.send_counter = self.send_counter.wrapping_add(1);
 
-        if self.timestamping.tx_software || self.timestamping.tx_hardware {
-            // the send timestamp may never come set a very short timeout to prevent hanging forever.
-            // We automatically fall back to a less accurate timestamp when this function returns None
-            let timeout = std::time::Duration::from_millis(10);
-
-            match tokio::time::timeout(timeout, self.fetch_send_timestamp(expected_counter)).await {
-                Err(_) => {
-                    warn!("Packet without timestamp (waiting for timestamp timed out)");
-                    Ok((send_size, None))
+        if self.timestamping.tx_software {
+            #[cfg(target_os = "linux")]
+            {
+                // the send timestamp may never come set a very short timeout to prevent hanging forever.
+                // We automatically fall back to a less accurate timestamp when this function returns None
+                let timeout = std::time::Duration::from_millis(10);
+                match tokio::time::timeout(timeout, self.fetch_send_timestamp(expected_counter))
+                    .await
+                {
+                    Err(_) => {
+                        warn!("Packet without timestamp");
+                        Ok((send_size, None))
+                    }
+                    Ok(send_timestamp) => Ok((send_size, Some(send_timestamp?))),
                 }
-                Ok(send_timestamp) => Ok((send_size, Some(send_timestamp?))),
+            }
+
+            #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+            {
+                let _ = expected_counter;
+                Ok((send_size, None))
             }
         } else {
             trace!("send timestamping not supported");
@@ -182,6 +200,7 @@ impl UdpSocket {
         }
     }
 
+    #[cfg(target_os = "linux")]
     async fn fetch_send_timestamp(&self, expected_counter: u32) -> io::Result<NtpTimestamp> {
         trace!("waiting for timestamp socket to become readable to fetch a send timestamp");
         loop {
@@ -292,14 +311,15 @@ fn recv(
                 return Ok((bytes_read as usize, sock_addr, Some(ntp_timestamp)));
             }
 
+            #[cfg(target_os = "linux")]
             ControlMessage::ReceiveError(_error) => {
                 warn!("unexpected error message on the MSG_ERRQUEUE");
             }
 
             ControlMessage::Other(msg) => {
                 warn!(
-                    msg.cmsg_level,
-                    msg.cmsg_type, "unexpected message on the MSG_ERRQUEUE",
+                    "weird control message {:?} {:?}",
+                    msg.cmsg_level, msg.cmsg_type
                 );
             }
         }
@@ -308,6 +328,7 @@ fn recv(
     Ok((bytes_read as usize, sock_addr, None))
 }
 
+#[cfg(target_os = "linux")]
 fn fetch_send_timestamp_help(
     socket: &std::net::UdpSocket,
     expected_counter: u32,
@@ -544,7 +565,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_software_send_timestamp() {
+    #[cfg_attr(
+        any(target_os = "macos", target_os = "freebsd"),
+        ignore = "send timestamps are not supported"
+    )]
+    async fn test_send_timestamp() {
         let mut a = UdpSocket::client_with_timestamping(
             SocketAddr::from((Ipv4Addr::LOCALHOST, 8012)),
             SocketAddr::from((Ipv4Addr::LOCALHOST, 8013)),
