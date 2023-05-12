@@ -159,7 +159,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     match UdpSocket::server(self.config.addr, self.interface).await {
                         Ok(socket) => break socket,
                         Err(error) => {
-                            warn!(?error, "Could not open server socket");
+                            warn!(?error, ?self.config.addr, ?self.interface, "Could not open server socket");
                             tokio::time::sleep(self.network_wait_period).await;
                         }
                     }

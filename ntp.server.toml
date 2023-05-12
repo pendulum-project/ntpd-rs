@@ -22,7 +22,7 @@ path = "/run/ntpd-rs/observe"
 
 # Serve NTP on any interface (requires permissions to use udp port 123)
 [[server]]
-addr = "0.0.0.0:123"
+addr = "[::]:123"
 
 # Below are configured various thresholds beyond which ntpd-rs will not
 # change the system clock. CHANGE THESE TO MATCH YOUR SECURITY NEEDS!
