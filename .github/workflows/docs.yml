@@ -9,6 +9,7 @@ on:
 
 jobs:
     doc:
+        name: Document
         runs-on: ubuntu-latest
         permissions:
             contents: write  # To push a branch
@@ -27,11 +28,11 @@ jobs:
             -   name: Install rust
                 uses: actions-rs/toolchain@v1
                 with:
-                    toolchain: stable
+                    toolchain: nightly
             -   name: Generate reference manual
                 run: mdbook build docs
             -   name: Generate API documentation
-                run: cargo doc --workspace --target-dir docs/api
+                run: cargo doc --workspace --no-deps --all-features --target-dir docs/api
             -   name: Deploy GitHub Pages
                 run: |
                     cd docs
