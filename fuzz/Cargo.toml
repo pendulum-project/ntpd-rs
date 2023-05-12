@@ -1,5 +1,5 @@
 [package]
-name = "ntp-proto-fuzz"
+name = "statime-fuzz"
 version = "0.0.0"
 authors = ["Automatically generated"]
 edition = "2018"
