@@ -23,6 +23,8 @@ jobs:
                     echo `pwd`/mdbook >> $GITHUB_PATH
             -   name: Install rust
                 uses: actions-rs/toolchain@v1
+                with:
+                    toolchain: stable
             -   name: Generate reference manual
                 run: mdbook build docs
             -   name: Generate API documentation
