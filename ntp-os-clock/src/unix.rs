@@ -192,7 +192,7 @@ impl UnixNtpClock {
         #[cfg(target_os = "linux")]
         use libc::clock_adjtime as adjtime;
 
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "freebsd", target_os = "macos"))]
         unsafe fn adjtime(clk_id: libc::clockid_t, buf: *mut libc::timex) -> libc::c_int {
             assert_eq!(
                 clk_id,
@@ -202,15 +202,6 @@ impl UnixNtpClock {
 
             libc::ntp_adjtime(buf)
         }
-
-        #[cfg(target_os = "freebsd")]
-        let adjtime = {
-            extern "C" {
-                fn clock_adjtime(clk_id: libc::clockid_t, buf: *mut libc::timex) -> libc::c_int;
-            }
-
-            clock_adjtime
-        };
 
         if unsafe { adjtime(self.clock, timex) } == -1 {
             Err(convert_errno())
@@ -285,28 +276,20 @@ impl UnixNtpClock {
 
     fn extract_current_time(&self, _timex: &libc::timex) -> Result<NtpTimestamp, Error> {
         #[cfg(target_os = "linux")]
-        {
-            // hardware clocks may not report the timestamp
-            if _timex.time.tv_sec != 0 && _timex.time.tv_usec != 0 {
-                // in a timex, the status flag determines precision
-                let precision = match _timex.status & libc::STA_NANO {
-                    0 => Precision::Micro,
-                    _ => Precision::Nano,
-                };
+        // hardware clocks may not report the timestamp
+        if _timex.time.tv_sec != 0 && _timex.time.tv_usec != 0 {
+            // in a timex, the status flag determines precision
+            let precision = match _timex.status & libc::STA_NANO {
+                0 => Precision::Micro,
+                _ => Precision::Nano,
+            };
 
-                Ok(current_time_timeval(_timex.time, precision))
-            } else {
-                let timespec = self.clock_gettime()?;
-                Ok(current_time_timespec(timespec, Precision::Nano))
-            }
+            return Ok(current_time_timeval(_timex.time, precision));
         }
 
-        #[cfg(any(target_os = "freebsd", target_os = "macos"))]
-        {
-            // clock_gettime always gives nanoseconds
-            let timespec = self.clock_gettime()?;
-            Ok(current_time_timespec(timespec, Precision::Nano))
-        }
+        // clock_gettime always gives nanoseconds
+        let timespec = self.clock_gettime()?;
+        Ok(current_time_timespec(timespec, Precision::Nano))
     }
 }
 

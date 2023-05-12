@@ -39,7 +39,7 @@ pub(crate) enum TimestampMethod {
     SoTimestamping = libc::SO_TIMESTAMPING,
     /// Original timestamping for unix (linux, freebsd, macos)
     ///
-    /// - microsecond precision
+    /// - microsecond precision (configurable on freebsd, we set nanoseconds)
     /// - only receive timestamps
     #[allow(dead_code)]
     SoTimestamp = libc::SO_TIMESTAMP,
@@ -59,10 +59,16 @@ mod set_timestamping_options {
 
     use super::{cerr, TimestampMethod};
 
+    enum SockOpt {
+        Method(TimestampMethod),
+        #[cfg(target_os = "freebsd")]
+        Clock,
+    }
+
     fn configure_timestamping_socket(
         udp_socket: &std::net::UdpSocket,
-        method: TimestampMethod,
-        options: u32,
+        option: SockOpt,
+        value: u32,
     ) -> std::io::Result<libc::c_int> {
         // Documentation on the timestamping calls:
         //
@@ -83,9 +89,13 @@ mod set_timestamping_options {
             cerr(libc::setsockopt(
                 udp_socket.as_raw_fd(),
                 libc::SOL_SOCKET,
-                method as i32 as libc::c_int,
-                &options as *const _ as *const libc::c_void,
-                std::mem::size_of_val(&options) as libc::socklen_t,
+                match option {
+                    SockOpt::Method(m) => m as i32 as libc::c_int,
+                    #[cfg(target_os = "freebsd")]
+                    SockOpt::Clock => libc::SO_TS_CLOCK,
+                },
+                &value as *const _ as *const libc::c_void,
+                std::mem::size_of_val(&value) as libc::socklen_t,
             ))
         }
     }
@@ -157,7 +167,10 @@ mod set_timestamping_options {
             }
         };
 
-        configure_timestamping_socket(udp_socket, method, options)?;
+        configure_timestamping_socket(udp_socket, SockOpt::Method(method), options)?;
+
+        #[cfg(target_os = "freebsd")]
+        configure_timestamping_socket(udp_socket, SockOpt::Clock, libc::SO_TS_REALTIME as u32)?;
 
         Ok(())
     }
@@ -318,6 +331,11 @@ mod recv_message {
         Other(libc::cmsghdr),
     }
 
+    #[cfg(target_os = "linux")]
+    const SCM_TIMESTAMP_NS: libc::c_int = libc::SCM_TIMESTAMPNS;
+    #[cfg(target_os = "freebsd")]
+    const SCM_TIMESTAMP_NS: libc::c_int = libc::SCM_REALTIME;
+
     impl<'a> Iterator for ControlMessageIterator<'a> {
         type Item = ControlMessage;
 
@@ -359,8 +377,8 @@ mod recv_message {
                     ControlMessage::Timestamping(LibcTimestamp::Timespec(timespec))
                 }
 
-                #[cfg(target_os = "linux")]
-                (libc::SOL_SOCKET, libc::SCM_TIMESTAMPNS) => {
+                #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+                (libc::SOL_SOCKET, SCM_TIMESTAMP_NS) => {
                     // Safety:
                     // current_msg was constructed from a pointer that pointed to a valid control message.
                     // SO_TIMESTAMPNS always has a timespec in the data
