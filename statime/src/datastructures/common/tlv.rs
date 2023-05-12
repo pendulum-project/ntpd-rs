@@ -50,7 +50,7 @@ impl WireFormat for TLV {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum TlvType {
-    Reserved,
+    Reserved(u16),
     Management,
     ManagementErrorStatus,
     OrganizationExtension,
@@ -60,8 +60,8 @@ pub enum TlvType {
     AcknowledgeCancelUnicastTransmission,
     PathTrace,
     AlternateTimeOffsetIndicator,
-    Legacy,
-    Experimental,
+    Legacy(u16),
+    Experimental(u16),
     OrganizationExtensionPropagate,
     EnhancedAccuracyMetrics,
     OrganizationExtensionDoNotPropagate,
@@ -79,7 +79,7 @@ pub enum TlvType {
 impl TlvType {
     pub fn to_primitive(&self) -> u16 {
         match self {
-            Self::Reserved => 0x0000,
+            Self::Reserved(value) => *value,
             Self::Management => 0x0001,
             Self::ManagementErrorStatus => 0x0002,
             Self::OrganizationExtension => 0x0003,
@@ -89,8 +89,8 @@ impl TlvType {
             Self::AcknowledgeCancelUnicastTransmission => 0x0007,
             Self::PathTrace => 0x0008,
             Self::AlternateTimeOffsetIndicator => 0x0009,
-            Self::Legacy => 0x2000,
-            Self::Experimental => 0x2004,
+            Self::Legacy(value) => *value,
+            Self::Experimental(value) => *value,
             Self::OrganizationExtensionPropagate => 0x4000,
             Self::EnhancedAccuracyMetrics => 0x4001,
             Self::OrganizationExtensionDoNotPropagate => 0x8000,
@@ -113,9 +113,9 @@ impl TlvType {
             | 0x2030..=0x3fff
             | 0x4002..=0x7eff
             | 0x800a..=0xffef
-            | 0xfff0..=0xffff => Self::Reserved,
-            0x2000..=0x2003 => Self::Legacy,
-            0x2004..=0x202f | 0x7f00..=0x7fff => Self::Experimental,
+            | 0xfff0..=0xffff => Self::Reserved(value),
+            0x2000..=0x2003 => Self::Legacy(value),
+            0x2004..=0x202f | 0x7f00..=0x7fff => Self::Experimental(value),
             0x0001 => Self::Management,
             0x0002 => Self::ManagementErrorStatus,
             0x0003 => Self::OrganizationExtension,
