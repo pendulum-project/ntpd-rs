@@ -5,8 +5,6 @@ use crate::datastructures::{WireFormat, WireFormatError};
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TLV {
     pub tlv_type: TlvType,
-    pub length: u16,
-
     pub value: ArrayVec<u8, { Self::CAPACITY }>,
 }
 
@@ -17,13 +15,13 @@ impl TLV {
 
 impl WireFormat for TLV {
     fn wire_size(&self) -> usize {
-        (4 + self.length).into()
+        (4 + self.value.len()).into()
     }
 
     fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
         buffer[0..][..2].copy_from_slice(&self.tlv_type.to_primitive().to_be_bytes());
-        buffer[2..][..2].copy_from_slice(&self.length.to_be_bytes());
-        buffer[4..][..self.length as usize].copy_from_slice(&self.value);
+        buffer[2..][..2].copy_from_slice(&(self.value.len() as u16).to_be_bytes());
+        buffer[4..][..self.value.len()].copy_from_slice(&self.value);
 
         Ok(())
     }
@@ -44,11 +42,7 @@ impl WireFormat for TLV {
         let mut value = ArrayVec::<u8, { Self::CAPACITY }>::new();
         value.try_extend_from_slice(&buffer[4..][..length as usize])?;
 
-        Ok(Self {
-            tlv_type,
-            length,
-            value,
-        })
+        Ok(Self { tlv_type, value })
     }
 }
 
