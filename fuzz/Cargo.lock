@@ -215,14 +215,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ntp-proto-fuzz"
-version = "0.0.0"
-dependencies = [
- "libfuzzer-sys",
- "statime",
-]
-
-[[package]]
 name = "num_enum"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -336,6 +328,14 @@ dependencies = [
  "num_enum",
  "pin-project",
  "thiserror",
+]
+
+[[package]]
+name = "statime-fuzz"
+version = "0.0.0"
+dependencies = [
+ "libfuzzer-sys",
+ "statime",
 ]
 
 [[package]]

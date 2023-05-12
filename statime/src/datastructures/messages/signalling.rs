@@ -22,56 +22,45 @@ impl SignalingMessage {
         10
     }
 
-    pub fn serialize_content(
-        &self,
-        buffer: &mut [u8],
-    ) -> Result<(), crate::datastructures::WireFormatError> {
+    pub fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
         if buffer.len() < 11 {
             return Err(WireFormatError::BufferTooShort);
         }
 
-        self.target_port_identity.serialize(&mut buffer[0..10])?;
+        let (left, mut buffer) = buffer.split_at_mut(10);
 
-        // TODO: value
+        self.target_port_identity.serialize(left)?;
+
+        for tlv in &self.value {
+            let width = tlv.wire_size();
+
+            tlv.serialize(buffer)?;
+
+            buffer = &mut buffer[width..];
+        }
 
         Ok(())
     }
 
-    pub fn deserialize_content(
-        header: Header,
-        buffer: &[u8],
-    ) -> Result<Self, crate::datastructures::WireFormatError> {
-        if buffer.len() < 11 {
-            return Err(WireFormatError::BufferTooShort);
-        }
+    pub fn deserialize_content(header: Header, buffer: &[u8]) -> Result<Self, WireFormatError> {
+        let identity_bytes = buffer.get(0..10).ok_or(WireFormatError::BufferTooShort)?;
+        let target_port_identity = PortIdentity::deserialize(identity_bytes)?;
 
-        let mut index = 11;
+        let mut buffer = &buffer[10..];
+
         let mut tlvs = ArrayVec::<TLV, { Self::CAPACITY }>::new();
-        while buffer.len() > index + 4 {
-            // Parse length
-            let length_bytes: Result<[u8; 2], _> = buffer[(index + 2)..(index + 4)].try_into();
-            if length_bytes.is_err() {
-                return Err(WireFormatError::BufferTooShort);
-            }
-            let length = u16::from_be_bytes(length_bytes.unwrap()) as usize;
+        while buffer.len() > 4 {
+            let tlv = TLV::deserialize(buffer)?;
 
-            if buffer.len() < index + 4 + length {
-                return Err(WireFormatError::BufferTooShort);
-            }
+            buffer = &buffer[tlv.wire_size()..];
 
-            // Parse TLV
-            let tlv = TLV::deserialize(&buffer[index..(index + 4 + length)]);
-            if tlv.is_err() {
-                return Err(WireFormatError::BufferTooShort);
-            }
-
-            tlvs.push(tlv.unwrap());
-            index = index + 4 + length;
+            tlvs.try_push(tlv)
+                .map_err(|_| WireFormatError::CapacityError)?;
         }
 
         Ok(Self {
             header,
-            target_port_identity: PortIdentity::deserialize(&buffer[0..10])?,
+            target_port_identity,
             value: tlvs,
         })
     }

@@ -2,7 +2,7 @@ use arrayvec::ArrayVec;
 
 use crate::datastructures::{WireFormat, WireFormatError};
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TLV {
     pub tlv_type: TlvType,
     pub value: ArrayVec<u8, { Self::CAPACITY }>,
@@ -15,7 +15,7 @@ impl TLV {
 
 impl WireFormat for TLV {
     fn wire_size(&self) -> usize {
-        (4 + self.value.len()).into()
+        4 + self.value.len()
     }
 
     fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
@@ -27,7 +27,7 @@ impl WireFormat for TLV {
     }
 
     fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
-        if buffer.len() < 5 {
+        if buffer.len() < 4 {
             return Err(WireFormatError::BufferTooShort);
         }
 
@@ -35,7 +35,7 @@ impl WireFormat for TLV {
         let length = u16::from_be_bytes([buffer[2], buffer[3]]);
 
         // Parse TLV content / value
-        if buffer.len() < 5 + length as usize {
+        if buffer.len() < 4 + length as usize {
             return Err(WireFormatError::BufferTooShort);
         }
 
@@ -47,11 +47,10 @@ impl WireFormat for TLV {
 }
 
 /// See 14.1.1 / Table 52
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum TlvType {
     Reserved,
-    #[default]
     Management,
     ManagementErrorStatus,
     OrganizationExtension,
