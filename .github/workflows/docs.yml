@@ -32,7 +32,7 @@ jobs:
             -   name: Generate reference manual
                 run: mdbook build docs
             -   name: Generate API documentation
-                run: cargo doc --workspace --no-deps --all-features --target-dir docs/api
+                run: cargo +nightly doc --workspace --no-deps --all-features --target-dir docs/api
             -   name: Deploy GitHub Pages
                 run: |
                     cd docs
