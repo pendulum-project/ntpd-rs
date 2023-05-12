@@ -57,7 +57,7 @@ pub enum Message {
     PDelayRespFollowUp(PDelayRespFollowUpMessage),
     Announce(AnnounceMessage),
     Signaling(SignalingMessage),
-    Management(ManagementMessage), // TODO
+    Management(ManagementMessage),
 }
 
 impl Message {
