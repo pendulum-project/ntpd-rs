@@ -1,4 +1,9 @@
-use std::{fmt, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{
+    fmt,
+    net::SocketAddr,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use rustls::Certificate;
 use serde::{
@@ -54,7 +59,7 @@ impl PeerConfig {
 
 /// A normalized address has a host and a port part. However, the host may be
 /// invalid, we didn't yet perform a DNS lookup.
-#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct NormalizedAddress {
     pub(crate) server_name: String,
@@ -62,7 +67,30 @@ pub struct NormalizedAddress {
 
     /// Used to inject socket addrs into the DNS lookup result
     #[cfg(test)]
-    hardcoded_dns_resolve: Vec<SocketAddr>,
+    hardcoded_dns_resolve: HardcodedDnsResolve,
+}
+
+impl Eq for NormalizedAddress {}
+
+impl PartialEq for NormalizedAddress {
+    fn eq(&self, other: &Self) -> bool {
+        self.server_name == other.server_name && self.port == other.port
+    }
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+struct HardcodedDnsResolve {
+    #[cfg_attr(not(test), allow(unused))]
+    #[serde(skip)]
+    addresses: Arc<Mutex<Vec<SocketAddr>>>,
+}
+
+impl From<Vec<SocketAddr>> for HardcodedDnsResolve {
+    fn from(value: Vec<SocketAddr>) -> Self {
+        Self {
+            addresses: Arc::new(Mutex::new(value)),
+        }
+    }
 }
 
 impl NormalizedAddress {
@@ -78,7 +106,7 @@ impl NormalizedAddress {
             port,
 
             #[cfg(test)]
-            hardcoded_dns_resolve: vec![],
+            hardcoded_dns_resolve: HardcodedDnsResolve::default(),
         })
     }
 
@@ -91,7 +119,7 @@ impl NormalizedAddress {
             port,
 
             #[cfg(test)]
-            hardcoded_dns_resolve: vec![],
+            hardcoded_dns_resolve: HardcodedDnsResolve::default(),
         })
     }
 
@@ -137,7 +165,7 @@ impl NormalizedAddress {
             port,
 
             #[cfg(test)]
-            hardcoded_dns_resolve: vec![],
+            hardcoded_dns_resolve: HardcodedDnsResolve::default(),
         }
     }
 
@@ -150,7 +178,7 @@ impl NormalizedAddress {
         Self {
             server_name: server_name.to_string(),
             port,
-            hardcoded_dns_resolve,
+            hardcoded_dns_resolve: HardcodedDnsResolve::from(hardcoded_dns_resolve),
         }
     }
 
@@ -161,11 +189,15 @@ impl NormalizedAddress {
 
     #[cfg(test)]
     pub async fn lookup_host(&self) -> std::io::Result<impl Iterator<Item = SocketAddr> + '_> {
-        // We don't want to spam a real DNS server during testing
-        let mut addresses = self.hardcoded_dns_resolve.to_vec();
+        // We don't want to spam a real DNS server during testing. This is an attempt to randomize
+        // the returned addresses somewhat.
+        let mut addresses = self.hardcoded_dns_resolve.addresses.lock().unwrap();
 
-        // Randomise the response, so we don't get the same address every time
-        addresses.sort_unstable_by_key(|_| rand::random::<u32>());
+        if let Some(last) = addresses.pop() {
+            addresses.insert(0, last);
+        }
+
+        let addresses = addresses.to_vec();
 
         Ok(addresses.into_iter())
     }
