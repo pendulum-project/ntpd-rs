@@ -39,6 +39,7 @@ rustls-pemfile.workspace = true
 
 [dev-dependencies]
 ntp-proto = { workspace = true, features=["ext-test"]}
+rcgen = { workspace = true }
 
 [features]
 sentry = ["dep:sentry", "dep:sentry-tracing"]

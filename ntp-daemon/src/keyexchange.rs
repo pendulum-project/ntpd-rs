@@ -1,6 +1,7 @@
 use std::{
     future::Future,
     io::{BufRead, BufReader, IoSlice, Read, Write},
+    net::SocketAddr,
     ops::ControlFlow,
     path::Path,
     pin::Pin,
@@ -83,26 +84,34 @@ async fn run_nts_ke(
         ))
     })?;
 
-    let cert_chain: Vec<rustls::Certificate> =
-        rustls_pemfile::certs(&mut std::io::BufReader::new(cert_chain_file))?
-            .into_iter()
-            .map(rustls::Certificate)
-            .collect();
+    run_nts_ke_help(
+        keyset,
+        &mut std::io::BufReader::new(cert_chain_file),
+        &mut std::io::BufReader::new(key_der_file),
+        nts_ke_config.addr,
+        nts_ke_config.timeout_ms,
+    )
+    .await
+}
 
-    let mut key_der =
-        rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(key_der_file))?;
+async fn run_nts_ke_help(
+    keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
+    cert_chain_file: &mut impl BufRead,
+    key_der_file: &mut impl BufRead,
+    addr: SocketAddr,
+    timeout_ms: u64,
+) -> std::io::Result<()> {
+    let cert_chain: Vec<rustls::Certificate> = rustls_pemfile::certs(cert_chain_file)?
+        .into_iter()
+        .map(rustls::Certificate)
+        .collect();
+
+    let mut key_der = rustls_pemfile::pkcs8_private_keys(key_der_file)?;
 
     let key = key_der.pop().ok_or(error("could not parse private key"))?;
     let key_der = rustls::PrivateKey(key);
 
-    key_exchange_server(
-        keyset,
-        nts_ke_config.addr,
-        cert_chain,
-        key_der,
-        nts_ke_config.timeout_ms,
-    )
-    .await
+    key_exchange_server(keyset, addr, cert_chain, key_der, timeout_ms).await
 }
 
 async fn key_exchange_server(
@@ -554,5 +563,85 @@ mod tests {
             }
             _ => panic!(),
         }
+    }
+
+    #[tokio::test]
+    async fn manual_key_exchange_roundtrip_pem() {
+        use rcgen::{BasicConstraints, Certificate, CertificateParams, IsCa};
+
+        // Generate a CA certificate
+        let mut params = CertificateParams::new([String::from("localhost")]);
+        params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        let ca_cert = Certificate::from_params(params).unwrap();
+
+        // Generate a server certificate
+        let server_cert_params = CertificateParams::new([String::from("localhost")]);
+        let server_cert = Certificate::from_params(server_cert_params).unwrap();
+
+        // construct a certificate chain ca -> server
+        let server_cert_pem = server_cert.serialize_pem_with_signer(&ca_cert).unwrap();
+        let ca_cert_pem = ca_cert.serialize_pem().unwrap();
+        let certificate_chain = format!("{}{}", server_cert_pem, ca_cert_pem);
+
+        // Save the server private key to a file
+        let server_private_key_pem = server_cert.serialize_private_key_pem();
+
+        manual_key_exchange_roundtrip(
+            certificate_chain.into(),
+            server_private_key_pem.into(),
+            ca_cert_pem.into(),
+        )
+        .await
+    }
+
+    async fn manual_key_exchange_roundtrip(
+        certificate_chain: Vec<u8>,
+        server_private_key: Vec<u8>,
+        ca_cert_pem: Vec<u8>,
+    ) {
+        let provider = KeySetProvider::new(1);
+        let keyset = provider.get();
+
+        let (_sender, keyset) = tokio::sync::watch::channel(keyset);
+
+        let timeout_ms = 1000;
+        let addr: SocketAddr = "0.0.0.0:5432".parse().unwrap();
+
+        let _join_handle = tokio::spawn(async move {
+            let mut certificate_chain = std::io::BufReader::new(certificate_chain.as_slice());
+            let mut server_private_key = std::io::BufReader::new(server_private_key.as_slice());
+
+            let result = run_nts_ke_help(
+                keyset,
+                &mut certificate_chain,
+                &mut server_private_key,
+                addr,
+                timeout_ms,
+            )
+            .await;
+
+            match result {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::error!("Abnormal termination of NTS KE server: {e}");
+                    std::process::exit(exitcode::SOFTWARE)
+                }
+            }
+        });
+
+        // give the server some time to make the port available
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        let ca_cert_pem = std::io::BufReader::new(ca_cert_pem.as_slice());
+        let result = key_exchange_client(
+            "localhost".to_string(),
+            5432,
+            &certificates_from_bufread(ca_cert_pem).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.remote, "localhost");
+        assert_eq!(result.port, 123);
     }
 }
