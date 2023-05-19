@@ -253,7 +253,7 @@ jobs:
       # Use zig as our C compiler for convenient cross-compilation. We run into rustls having a dependency on `ring`.
       # This crate uses C and assembly code, and because of its build scripts, `cargo clippy` needs to be able to compile
       # that code for our target.
-      - uses: goto-bus-stop/setup-zig@869a4299cf8ac7db4ebffaec36ad82a682f88acb
+      - uses: goto-bus-stop/setup-zig@e24fd328aafb4ef918860ddf2c3ba97547246c60
         with:
           version: 0.9.0
       - name: Install cargo-zigbuild
@@ -287,7 +287,7 @@ jobs:
       # Use zig as our C compiler for convenient cross-compilation. We run into rustls having a dependency on `ring`.
       # This crate uses C and assembly code, and because of its build scripts, `cargo clippy` needs to be able to compile
       # that code for our target.
-      - uses: goto-bus-stop/setup-zig@869a4299cf8ac7db4ebffaec36ad82a682f88acb
+      - uses: goto-bus-stop/setup-zig@e24fd328aafb4ef918860ddf2c3ba97547246c60
         with:
           version: 0.9.0
       - name: Install cargo-zigbuild
@@ -321,7 +321,7 @@ jobs:
       # Use zig as our C compiler for convenient cross-compilation. We run into rustls having a dependency on `ring`.
       # This crate uses C and assembly code, and because of its build scripts, `cargo clippy` needs to be able to compile
       # that code for our target.
-      - uses: goto-bus-stop/setup-zig@869a4299cf8ac7db4ebffaec36ad82a682f88acb
+      - uses: goto-bus-stop/setup-zig@e24fd328aafb4ef918860ddf2c3ba97547246c60
         with:
           version: 0.9.0
       - name: Install cargo-zigbuild
