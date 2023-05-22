@@ -4,15 +4,26 @@ use arrayvec::ArrayVec;
 
 use crate::{datastructures::messages::MAX_DATA_LEN, time::Instant};
 
-/// Abstraction for the network
+/// Abstract interface for interacting with the network.
 ///
-/// With it the network ports can be opened
+/// Statime makes little assumption on how the network runs, and this trait is
+/// the primary way it interacts with the network. Users of the library need to
+/// provide this to enable the ptp stack to talk to the network. For linux,
+/// statime-linux provides an implementation of this trait.
 pub trait NetworkRuntime {
     /// A descriptor type for the interface to be used.
     /// Can be useful to select between e.g. ethernet and wifi if both are
     /// present on the machine or to select between IPv4 and IPv6.
     type InterfaceDescriptor: Clone;
+
+    /// An individual network interface connection. Note that this manages both
+    /// the time critical and non-time critical parts of the network
+    /// connection for ptp. For a typical setup, these will be bound to udp
+    /// ports 319 and 320 of the ip address of the network interface requested
+    /// by [open](NetworkRuntime::open).
     type NetworkPort: NetworkPort;
+
+    /// Error type for the [open function](NetworkRuntime::open)
     type Error: core::fmt::Debug;
 
     /// Open a port on the given network interface.
@@ -29,7 +40,10 @@ pub trait NetworkRuntime {
     ) -> Result<Self::NetworkPort, Self::Error>;
 }
 
-/// The representation of a network packet
+/// A single packet as received from the network.
+///
+/// The PTP stack uses this to track both the data and the time it was received
+/// throughout processing.
 #[derive(Debug, Clone)]
 pub struct NetworkPacket {
     /// The received data of a network port
@@ -43,12 +57,13 @@ pub struct NetworkPacket {
     pub timestamp: Instant,
 }
 
-/// Abstraction for a port or socket
+/// Abstract representation of a single port's network connection
 ///
-/// This object only has to be able to send a message because if a message is
-/// received, it must be reported to the instance using the
-/// [PtpInstance::handle_network](crate::ptp_instance::PtpInstance::handle_network)
-/// function.
+/// Network ports are obtained by the PTP stack from the [NetworkRuntime]. They
+/// provide for the actual sending and receiving of data from the network. For
+/// PTP run over UDP, all time critical data should be sent over port 319, and
+/// non time critical data over port 320. Only port 319 needs accurate
+/// timestamps. Receives are for both network ports simultaneously.
 pub trait NetworkPort {
     type Error: core::fmt::Debug;
 
@@ -57,13 +72,18 @@ pub trait NetworkPort {
 
     /// Send the given time-critical data.
     ///
-    /// If this is on a time-critical port, then the function must return an id
-    /// and the TX timestamp must be reported to the instance using the
-    /// [PtpInstance::handle_send_timestamp](crate::ptp_instance::PtpInstance::handle_send_timestamp)
-    /// function using the same id that was returned.
+    /// This function should send the given packet data out over the time
+    /// critical part of the network connection. The returned instant should be
+    /// it's best estimate of when the data was actually sent out over the
+    /// network. Note that the precision of this timestamp is one of the main
+    /// limiting factors for synchronization precision, the other being
+    /// stability of the system clock.
     async fn send_time_critical(&mut self, data: &[u8]) -> Result<Option<Instant>, Self::Error>;
 
     /// Wait until a message is received
+    ///
+    /// This future should wait until a network packet is received from either
+    /// of the two network channels managed by this port.
     ///
     /// # Cancel safety
     ///

@@ -5,7 +5,17 @@ use crate::{
     time::{Duration, Instant},
 };
 
-/// Clock type for use in the PTP stack
+/// Clock manipulation and querying interface
+///
+/// The clock trait is the primary way the PTP stack interfaces with the
+/// system's clock. It's implementation should be provided by the user of the
+/// Statime crate, and should provide information on and ways to manipulate the
+/// system's clock. An implementation of this trait for linux is provided in the
+/// statime-linux crate.
+///
+/// Note that the clock implementation is responsible for handling leap seconds.
+/// On most operating systems, this will be provided for by the OS, but on some
+/// platforms this may require extra logic.
 pub trait Clock {
     type Error: core::fmt::Debug;
 
@@ -31,8 +41,15 @@ pub trait Clock {
     ) -> Result<(), Self::Error>;
 }
 
-/// A timer let's you get the current time and wait for durations
+/// Async timer trait for waiting an interval
+///
+/// The Timer trait is the primary way the ptp futures wait for time to pass.
+/// The after future should provide waiting for multpile timers.
+///
+/// Note: the timer need not use a high precision time source. The only
+/// requirement is that the underlying definition of a second is the same
+/// between the [Clock] and timers.
 pub trait Timer {
-    /// Wait for the given amount of time
+    /// Wait for a given amount of time
     async fn after(&self, duration: Duration);
 }
