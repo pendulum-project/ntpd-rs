@@ -2,11 +2,7 @@
 
 use fixed::traits::LossyInto;
 pub use raw::RawLinuxClock;
-use statime::{
-    clock::{Clock, Timer},
-    datastructures::{common::ClockQuality, datasets::TimePropertiesDS},
-    time::{Duration, Instant},
-};
+use statime::{Clock, ClockQuality, Duration, Instant, TimePropertiesDS, Timer};
 
 mod raw;
 mod timex;

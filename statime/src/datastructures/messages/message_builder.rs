@@ -8,6 +8,7 @@ use crate::datastructures::common::{
 
 #[derive(Debug, Clone)]
 pub enum MessageBuilderError {
+    #[allow(unused)]
     IllegalValue,
 }
 

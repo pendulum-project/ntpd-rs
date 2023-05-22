@@ -2,7 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use bitflags::bitflags;
 use libc::timex;
-use statime::time::{Duration, Instant};
+use statime::{Duration, Instant};
 
 use crate::clock::raw::Fixed;
 

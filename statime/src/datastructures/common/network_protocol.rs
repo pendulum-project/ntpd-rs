@@ -13,7 +13,7 @@ pub enum NetworkProtocol {
 }
 
 impl NetworkProtocol {
-    pub fn to_primitive(&self) -> u16 {
+    pub fn to_primitive(self) -> u16 {
         match self {
             NetworkProtocol::Reserved => 0x0000,
             NetworkProtocol::UdpIPv4 => 0x0001,

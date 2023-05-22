@@ -1,6 +1,6 @@
 use super::Header;
 use crate::datastructures::{
-    common::{PortIdentity, TLV},
+    common::{PortIdentity, Tlv},
     WireFormat, WireFormatError,
 };
 
@@ -11,7 +11,7 @@ pub struct ManagementMessage {
     pub(super) starting_boundary_hops: u8,
     pub(super) boundary_hops: u8,
     pub(super) action: ManagementAction,
-    pub(super) management_tlv: TLV,
+    pub(super) management_tlv: Tlv,
 }
 
 impl ManagementMessage {
@@ -27,7 +27,7 @@ impl ManagementMessage {
         buffer[11] = self.starting_boundary_hops;
         buffer[12] = self.boundary_hops;
         buffer[13] = self.action.to_primitive();
-        TLV::serialize(&self.management_tlv, &mut buffer[14..])?;
+        Tlv::serialize(&self.management_tlv, &mut buffer[14..])?;
 
         Ok(())
     }
@@ -45,7 +45,7 @@ impl ManagementMessage {
             starting_boundary_hops: buffer[11],
             boundary_hops: buffer[12],
             action: ManagementAction::from_primitive(buffer[13]),
-            management_tlv: TLV::deserialize(&buffer[13..])?,
+            management_tlv: Tlv::deserialize(&buffer[13..])?,
         })
     }
 }

@@ -2,7 +2,7 @@ use arrayvec::ArrayVec;
 
 use super::Header;
 use crate::datastructures::{
-    common::{PortIdentity, TLV},
+    common::{PortIdentity, Tlv},
     WireFormat, WireFormatError,
 };
 
@@ -11,7 +11,7 @@ pub struct SignalingMessage {
     pub(super) header: Header,
     pub(super) target_port_identity: PortIdentity,
 
-    pub(super) value: ArrayVec<TLV, { Self::CAPACITY }>,
+    pub(super) value: ArrayVec<Tlv, { Self::CAPACITY }>,
 }
 
 impl SignalingMessage {
@@ -48,9 +48,9 @@ impl SignalingMessage {
 
         let mut buffer = &buffer[10..];
 
-        let mut tlvs = ArrayVec::<TLV, { Self::CAPACITY }>::new();
+        let mut tlvs = ArrayVec::<Tlv, { Self::CAPACITY }>::new();
         while buffer.len() > 4 {
-            let tlv = TLV::deserialize(buffer)?;
+            let tlv = Tlv::deserialize(buffer)?;
 
             buffer = &buffer[tlv.wire_size()..];
 

@@ -8,12 +8,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
 };
 
-use statime::{
-    clock::Clock,
-    datastructures::messages::MAX_DATA_LEN,
-    network::{NetworkPacket, NetworkPort, NetworkRuntime},
-    time::Instant,
-};
+use statime::{Clock, Instant, NetworkPacket, NetworkPort, NetworkRuntime, MAX_DATA_LEN};
 use tokio::io::{unix::AsyncFd, Interest};
 
 pub use super::interface::InterfaceDescriptor;
@@ -186,7 +181,7 @@ impl NetworkPort for LinuxNetworkPort {
     async fn send_time_critical(
         &mut self,
         data: &[u8],
-    ) -> Result<Option<statime::time::Instant>, std::io::Error> {
+    ) -> Result<Option<statime::Instant>, std::io::Error> {
         log::trace!("Send TC");
 
         let opt_libc_ts = self.tc_socket.send(data, self.tc_address).await?;

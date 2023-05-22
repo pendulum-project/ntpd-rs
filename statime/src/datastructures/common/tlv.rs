@@ -3,17 +3,17 @@ use arrayvec::ArrayVec;
 use crate::datastructures::{WireFormat, WireFormatError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TLV {
+pub struct Tlv {
     pub tlv_type: TlvType,
     pub value: ArrayVec<u8, { Self::CAPACITY }>,
 }
 
-impl TLV {
+impl Tlv {
     // TODO: Determine the best max value
     const CAPACITY: usize = 4;
 }
 
-impl WireFormat for TLV {
+impl WireFormat for Tlv {
     fn wire_size(&self) -> usize {
         4 + self.value.len()
     }
@@ -77,9 +77,9 @@ pub enum TlvType {
 }
 
 impl TlvType {
-    pub fn to_primitive(&self) -> u16 {
+    pub fn to_primitive(self) -> u16 {
         match self {
-            Self::Reserved(value) => *value,
+            Self::Reserved(value) => value,
             Self::Management => 0x0001,
             Self::ManagementErrorStatus => 0x0002,
             Self::OrganizationExtension => 0x0003,
@@ -89,8 +89,8 @@ impl TlvType {
             Self::AcknowledgeCancelUnicastTransmission => 0x0007,
             Self::PathTrace => 0x0008,
             Self::AlternateTimeOffsetIndicator => 0x0009,
-            Self::Legacy(value) => *value,
-            Self::Experimental(value) => *value,
+            Self::Legacy(value) => value,
+            Self::Experimental(value) => value,
             Self::OrganizationExtensionPropagate => 0x4000,
             Self::EnhancedAccuracyMetrics => 0x4001,
             Self::OrganizationExtensionDoNotPropagate => 0x8000,
