@@ -61,6 +61,7 @@ pub enum Message {
 }
 
 impl Message {
+    #[allow(unused)]
     pub fn builder() -> MessageBuilder {
         MessageBuilder::new()
     }

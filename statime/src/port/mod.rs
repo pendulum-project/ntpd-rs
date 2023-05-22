@@ -29,6 +29,9 @@ pub mod state;
 mod tests;
 mod ticker;
 
+/// A single port of the PTP instance
+///
+/// One of these needs to be created per port of the PTP instance.
 pub struct Port<P> {
     port_ds: PortDS,
     network_port: P,
@@ -36,6 +39,26 @@ pub struct Port<P> {
 }
 
 impl<P> Port<P> {
+    /// Create a new port from a port dataset on a given interface.
+    ///
+    /// For example, when using the `statime-linux` network runtime, a port on
+    /// `eth0` for an ordinary clock can be created with
+    ///
+    /// ```ignore
+    /// let port_ds = PortDS::new(
+    ///     PortIdentity {
+    ///         clock_identity,
+    ///         port_number: 1,
+    ///     },
+    ///     1,
+    ///     1,
+    ///     3,
+    ///     0,
+    ///     DelayMechanism::E2E,
+    ///     1,
+    /// );
+    /// let port = Port::new(port_ds, &mut network_runtime, "eth0".parse().unwrap());
+    /// ```
     pub async fn new<NR>(
         port_ds: PortDS,
         runtime: &mut NR,
@@ -58,14 +81,14 @@ impl<P> Port<P> {
         }
     }
 
-    pub fn identity(&self) -> PortIdentity {
+    pub(crate) fn identity(&self) -> PortIdentity {
         self.port_ds.port_identity
     }
 }
 
 impl<P: NetworkPort> Port<P> {
     #[allow(clippy::too_many_arguments)]
-    pub async fn run_port<F: Future>(
+    pub(crate) async fn run_port<F: Future>(
         &mut self,
         local_clock: &RefCell<impl Clock>,
         filter: &RefCell<impl Filter>,
@@ -164,14 +187,14 @@ impl<P: NetworkPort> Port<P> {
         }
     }
 
-    pub fn best_local_announce_message(
+    pub(crate) fn best_local_announce_message(
         &mut self,
         current_time: Timestamp,
     ) -> Option<BestAnnounceMessage> {
         self.bmca.take_best_port_announce_message(current_time)
     }
 
-    pub fn set_recommended_state<F: Future>(
+    pub(crate) fn set_recommended_state<F: Future>(
         &mut self,
         recommended_state: RecommendedState,
         announce_receipt_timeout: &mut Pin<&mut Ticker<F, impl FnMut(Duration) -> F>>,
@@ -327,19 +350,19 @@ impl<P: NetworkPort> Port<P> {
         Ok(())
     }
 
-    pub fn announce_interval(&self) -> Duration {
+    pub(crate) fn announce_interval(&self) -> Duration {
         self.port_ds.announce_interval()
     }
 
-    pub fn sync_interval(&self) -> Duration {
+    pub(crate) fn sync_interval(&self) -> Duration {
         self.port_ds.sync_interval()
     }
 
-    pub fn announce_receipt_interval(&self) -> Duration {
+    pub(crate) fn announce_receipt_interval(&self) -> Duration {
         self.port_ds.announce_receipt_interval()
     }
 
-    pub fn state(&self) -> &PortState {
+    pub(crate) fn state(&self) -> &PortState {
         &self.port_ds.port_state
     }
 }

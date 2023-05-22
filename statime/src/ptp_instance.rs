@@ -17,11 +17,50 @@ use crate::{
     utils::SignalContext,
 };
 
-/// Object that acts as the central point of this library.
-/// It is the main instance of the running protocol.
+/// A PTP node.
 ///
-/// The instance doesn't run on its own, but requires the user to invoke the
-/// `handle_*` methods whenever required.
+/// This object handles the complete running of the PTP protocol once created.
+/// It provides all the logic for both ordinary and boundary clock mode.
+///
+/// # Example
+/// Assuming we already have a network runtime and clock runtime, an ordinary
+/// clock can be run by first creating all the datasets, then creating the port,
+/// then finally setting up the instance and starting it:
+///
+/// ```ignore
+/// let default_ds = DefaultDS::new_ordinary_clock(
+///     clock_identity,
+///     128,
+///     128,
+///     0,
+///     false,
+///     SdoId::new(0).unwrap(),
+/// );
+/// let time_properties_ds =
+/// TimePropertiesDS::new_arbitrary_time(false, false, TimeSource::InternalOscillator);
+/// let port_ds = PortDS::new(
+///     PortIdentity {
+///         clock_identity,
+///         port_number: 1,
+///     },
+///     1,
+///     1,
+///     3,
+///     0,
+///     DelayMechanism::E2E,
+///     1,
+/// );
+/// let port = Port::new(port_ds, &mut network_runtime, interface_name).await;
+/// let mut instance = PtpInstance::new_ordinary_clock(
+///     default_ds,
+///     time_properties_ds,
+///     port,
+///     local_clock,
+///     BasicFilter::new(0.25),
+/// );
+///
+/// instance.run(&LinuxTimer).await;
+/// ```
 pub struct PtpInstance<P, C, F, const N: usize> {
     default_ds: DefaultDS,
     current_ds: CurrentDS,
@@ -33,13 +72,10 @@ pub struct PtpInstance<P, C, F, const N: usize> {
 }
 
 impl<P, C, F> PtpInstance<P, C, F, 1> {
-    /// Create a new instance
+    /// Create a new ordinary clock instance.
     ///
-    /// - `local_clock`: The clock that will be adjusted and provides the
-    ///   watches
-    /// - `filter`: A filter for time measurements because those are always a
-    ///   bit wrong and need some processing
-    /// - `runtime`: The network runtime with which sockets can be opened
+    /// This creates a PTP ordinary clock with a single port. Note that the port
+    /// identity of the provided port needs to have a port number of 1.
     pub fn new_ordinary_clock(
         default_ds: DefaultDS,
         time_properties_ds: TimePropertiesDS,
@@ -52,12 +88,11 @@ impl<P, C, F> PtpInstance<P, C, F, 1> {
 }
 
 impl<P, C, F, const N: usize> PtpInstance<P, C, F, N> {
-    /// Create a new instance
+    /// Create a new boundary clock instance.
     ///
-    /// - `config`: The configuration of the ptp instance
-    /// - `clock`: The clock that will be adjusted and provides the watches
-    /// - `filter`: A filter for time measurements because those are always a
-    ///   bit wrong and need some processing
+    /// This creates a PTP boundary clock. Multiple ports can be provided to
+    /// handle multiple network interfaces. For each provided port, the port
+    /// number needs to equal the index of the port in the array plus 1.
     pub fn new_boundary_clock(
         default_ds: DefaultDS,
         time_properties_ds: TimePropertiesDS,
@@ -81,6 +116,10 @@ impl<P, C, F, const N: usize> PtpInstance<P, C, F, N> {
 }
 
 impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N> {
+    /// Run the PTP stack.
+    ///
+    /// This future needs to be awaited for the PTP protocol to be handled and
+    /// the clock to be synchronized.
     pub async fn run(&mut self, timer: &impl Timer) -> ! {
         log::info!("Running!");
 

@@ -44,6 +44,7 @@ impl MessageBuilder {
         self
     }
 
+    #[allow(unused)]
     pub fn version_ptp(mut self, version: PtpVersion) -> Self {
         self.header.version = version;
         self
@@ -54,6 +55,7 @@ impl MessageBuilder {
         self
     }
 
+    #[allow(unused)]
     pub fn alternate_master_flag(mut self, alternate_master_flag: bool) -> Self {
         self.header.alternate_master_flag = alternate_master_flag;
         self
@@ -64,16 +66,19 @@ impl MessageBuilder {
         self
     }
 
+    #[allow(unused)]
     pub fn unicast_flag(mut self, unicast_flag: bool) -> Self {
         self.header.unicast_flag = unicast_flag;
         self
     }
 
+    #[allow(unused)]
     pub fn ptp_profile_specific_1(mut self, ptp_profile_specific_1: bool) -> Self {
         self.header.ptp_profile_specific_1 = ptp_profile_specific_1;
         self
     }
 
+    #[allow(unused)]
     pub fn ptp_profile_specific_2(mut self, ptp_profile_specific_2: bool) -> Self {
         self.header.ptp_profile_specific_2 = ptp_profile_specific_2;
         self
@@ -109,6 +114,7 @@ impl MessageBuilder {
         self
     }
 
+    #[allow(unused)]
     pub fn synchronization_uncertain(mut self, synchronization_uncertain: bool) -> Self {
         self.header.synchronization_uncertain = synchronization_uncertain;
         self

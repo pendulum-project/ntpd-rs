@@ -180,6 +180,7 @@ pub struct PtpVersion {
 }
 
 impl PtpVersion {
+    #[allow(unused)]
     pub fn new(major: u8, minor: u8) -> Option<Self> {
         if major >= 0x10 || minor >= 0x10 {
             None
