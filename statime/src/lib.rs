@@ -2,6 +2,9 @@
 //! (IEEE1588-2019). It provides all the building blocks to setup PTP ordinary
 //! and boundary clocks.
 //!
+//! Note: We are currently planning a major overhaul of the library. This will
+//! also result in significant changes to the public API.
+//!
 //! # Device interfaces
 //! Statime is designed to be able to work with many different underlying
 //! platforms, including embedded targets. This does mean that it cannot use the
