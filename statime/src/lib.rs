@@ -21,8 +21,8 @@ pub use datastructures::{
     datasets::{DefaultDS, DelayMechanism, PortDS, TimePropertiesDS},
     messages::{SdoId, MAX_DATA_LEN},
 };
-pub use filters::basic::BasicFilter;
+pub use filters::{basic::BasicFilter, Filter};
 pub use network::{NetworkPacket, NetworkPort, NetworkRuntime};
-pub use port::Port;
+pub use port::{Measurement, Port};
 pub use ptp_instance::PtpInstance;
 pub use time::{Duration, Instant};

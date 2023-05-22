@@ -11,7 +11,10 @@ struct PrevStepData {
     correction: Duration,
 }
 
-/// A basic filter implementation that should work in most circumstances
+/// A simple averaging filter
+///
+/// This filter uses simple averaging to determine what the clock control
+/// outputs should be.
 #[derive(Debug)]
 pub struct BasicFilter {
     last_step: Option<PrevStepData>,

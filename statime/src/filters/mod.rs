@@ -4,9 +4,14 @@ pub mod basic;
 
 use crate::{port::Measurement, time::Duration};
 
-/// A filter abstraction with which time measurements are post-processed.
-/// This allows for the development of multiple filter kinds that work better or
-/// worse depending on the rest of the setup.
+/// A filter for post-processing time measurements.
+///
+/// Filters are responsible for dealing with the network noise, and should
+/// average out the input a bit so minor network variations are not immediately
+/// reflected in the synchronization of the clock.
+///
+/// This crate provides a simple [BasicFilter](basic::BasicFilter) which is
+/// suitable for most needs, but users can implement their own if desired.
 pub trait Filter {
     /// Put a new measurement in the filter.
     /// The filter can then do some processing and return what it thinks should
@@ -15,6 +20,6 @@ pub trait Filter {
     ///
     /// *Note*: The returned values aren't necessarily the 'real' offset from
     /// the master time. To prevent overshooting, oscillating, etc, the
-    /// filter will apply some algorithms to prevent that.
+    /// filter is allowed to apply some algorithms to prevent that.
     fn absorb(&mut self, m: Measurement) -> (Duration, f64);
 }
