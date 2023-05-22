@@ -4,6 +4,9 @@ use std::{
     os::fd::{AsRawFd, FromRawFd, RawFd},
 };
 
+pub(crate) use exceptional_condition_fd::exceptional_condition_fd;
+pub(crate) use set_timestamping_options::set_timestamping_options;
+
 use super::{
     cerr,
     control_message::{
@@ -12,9 +15,6 @@ use super::{
     interface::{sockaddr_storage_to_socket_addr, InterfaceName},
     linux::TimestampingMode,
 };
-
-pub(crate) use exceptional_condition_fd::exceptional_condition_fd;
-pub(crate) use set_timestamping_options::set_timestamping_options;
 
 pub struct RawUdpSocket(RawFd);
 
@@ -170,10 +170,11 @@ pub fn receive_message<'a>(
     // Safety:
     // We have a mutable reference to the control buffer for the duration of the
     // call, and controllen is also set to it's length.
-    // IoSliceMut is ABI compatible with iovec, and we only have 1 which matches iovlen
-    // msg_name is initialized to point to an owned sockaddr_storage and
+    // IoSliceMut is ABI compatible with iovec, and we only have 1 which matches
+    // iovlen msg_name is initialized to point to an owned sockaddr_storage and
     // msg_namelen is the size of sockaddr_storage
-    // If one of the buffers is too small, recvmsg cuts off data at appropriate boundary
+    // If one of the buffers is too small, recvmsg cuts off data at appropriate
+    // boundary
     let sent_bytes = loop {
         match cerr(unsafe { libc::recvmsg(socket.as_raw_fd(), &mut mhdr, receive_flags) } as _) {
             Err(e) if std::io::ErrorKind::Interrupted == e.kind() => {
@@ -235,7 +236,8 @@ mod set_timestamping_options {
         // - the options pointer outlives the call
         // - the `option_len` corresponds with the options pointer
         //
-        // Only some bits are valid to set in `options`, but setting invalid bits is perfectly safe
+        // Only some bits are valid to set in `options`, but setting invalid bits is
+        // perfectly safe
         //
         // > Setting other bit returns EINVAL and does not change the current state.
         unsafe {

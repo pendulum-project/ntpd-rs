@@ -1,5 +1,7 @@
-use std::net::{IpAddr, SocketAddr};
-use std::str::FromStr;
+use std::{
+    net::{IpAddr, SocketAddr},
+    str::FromStr,
+};
 
 use super::cerr;
 
@@ -283,16 +285,18 @@ impl FromStr for InterfaceDescriptor {
 ///
 /// # Safety
 ///
-/// According to the posix standard, `sockaddr` does not have a defined size: the size depends on
-/// the value of the `ss_family` field. We assume this to be correct.
+/// According to the posix standard, `sockaddr` does not have a defined size:
+/// the size depends on the value of the `ss_family` field. We assume this to be
+/// correct.
 ///
-/// In practice, types in rust/c need a statically-known stack size, so they pick some value. In
-/// practice it can be (and is) larger than the `sizeof<libc::sockaddr>` value.
+/// In practice, types in rust/c need a statically-known stack size, so they
+/// pick some value. In practice it can be (and is) larger than the
+/// `sizeof<libc::sockaddr>` value.
 unsafe fn sockaddr_to_socket_addr(sockaddr: *const libc::sockaddr) -> Option<SocketAddr> {
-    // Most (but not all) of the fields in a socket addr are in network byte ordering.
-    // As such, when doing conversions here, we should start from the NATIVE
-    // byte representation, as this will actualy be the big-endian representation
-    // of the underlying value regardless of platform.
+    // Most (but not all) of the fields in a socket addr are in network byte
+    // ordering. As such, when doing conversions here, we should start from the
+    // NATIVE byte representation, as this will actualy be the big-endian
+    // representation of the underlying value regardless of platform.
     match unsafe { (*sockaddr).sa_family as libc::c_int } {
         libc::AF_INET => {
             let inaddr: libc::sockaddr_in = unsafe { *(sockaddr as *const libc::sockaddr_in) };
@@ -314,7 +318,7 @@ unsafe fn sockaddr_to_socket_addr(sockaddr: *const libc::sockaddr) -> Option<Soc
             let socketaddr = std::net::SocketAddrV6::new(
                 std::net::Ipv6Addr::from(segment_bytes),
                 u16::from_be_bytes(inaddr.sin6_port.to_ne_bytes()),
-                inaddr.sin6_flowinfo, // NOTE: Despite network byte order, no conversion is needed (see https://github.com/rust-lang/rust/issues/101605)
+                inaddr.sin6_flowinfo, /* NOTE: Despite network byte order, no conversion is needed (see https://github.com/rust-lang/rust/issues/101605) */
                 inaddr.sin6_scope_id,
             );
 
@@ -329,7 +333,8 @@ pub fn sockaddr_storage_to_socket_addr(
 ) -> Option<SocketAddr> {
     // Safety:
     //
-    // sockaddr_storage always has enough space to store either a sockaddr_in or sockaddr_in6
+    // sockaddr_storage always has enough space to store either a sockaddr_in or
+    // sockaddr_in6
     unsafe { sockaddr_to_socket_addr(sockaddr_storage as *const _ as *const libc::sockaddr) }
 }
 

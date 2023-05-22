@@ -60,22 +60,22 @@ impl<'a> Iterator for ControlMessageIterator<'a> {
         let current_msg = unsafe { self.next_msg.as_ref() }?;
 
         // Safety:
-        // Invariants ensure that self.mhdr points to a valid libc::msghdr with a valid control
-        // message region, and that self.next_msg either points to a valid control message
-        // or is NULL.
-        // The previous statement would have returned if self.next_msg were NULL, therefore both passed
-        // pointers are valid for use with CMSG_NXTHDR
+        // Invariants ensure that self.mhdr points to a valid libc::msghdr with a valid
+        // control message region, and that self.next_msg either points to a
+        // valid control message or is NULL.
+        // The previous statement would have returned if self.next_msg were NULL,
+        // therefore both passed pointers are valid for use with CMSG_NXTHDR
         // Invariant preservation:
-        // CMSG_NXTHDR returns either a pointer to the next valid control message in the control
-        // message region described by self.mhdr, or NULL
+        // CMSG_NXTHDR returns either a pointer to the next valid control message in the
+        // control message region described by self.mhdr, or NULL
         self.next_msg = unsafe { libc::CMSG_NXTHDR(&self.mhdr, self.next_msg) };
 
         Some(match (current_msg.cmsg_level, current_msg.cmsg_type) {
             #[cfg(target_os = "linux")]
             (libc::SOL_SOCKET, libc::SCM_TIMESTAMPING) => {
                 // Safety:
-                // current_msg was constructed from a pointer that pointed to a valid control message.
-                // SO_TIMESTAMPING always has 3 timespecs in the data
+                // current_msg was constructed from a pointer that pointed to a valid control
+                // message. SO_TIMESTAMPING always has 3 timespecs in the data
                 let cmsg_data =
                     unsafe { libc::CMSG_DATA(current_msg) } as *const [libc::timespec; 3];
 
@@ -110,9 +110,9 @@ impl<'a> Iterator for ControlMessageIterator<'a> {
 }
 
 pub fn zeroed_sockaddr_storage() -> libc::sockaddr_storage {
-    // a zeroed-out sockaddr storage is semantically valid, because a ss_family with value 0 is
-    // libc::AF_UNSPEC. Hence the rest of the data does not come with any constraints
-    // Safety:
+    // a zeroed-out sockaddr storage is semantically valid, because a ss_family with
+    // value 0 is libc::AF_UNSPEC. Hence the rest of the data does not come with
+    // any constraints Safety:
     // the MaybeUninit is zeroed before assumed to be initialized
     unsafe { std::mem::MaybeUninit::zeroed().assume_init() }
 }
@@ -124,6 +124,7 @@ pub fn empty_msghdr() -> libc::msghdr {
     //
     // Safety:
     //
-    // all fields are either integer or pointer types. For those types, 0 is a valid value
+    // all fields are either integer or pointer types. For those types, 0 is a valid
+    // value
     unsafe { std::mem::MaybeUninit::<libc::msghdr>::zeroed().assume_init() }
 }

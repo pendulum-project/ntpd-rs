@@ -10,10 +10,9 @@ use statime::{
     port::Port,
     ptp_instance::PtpInstance,
 };
-use statime_linux::network::linux::TimestampingMode;
 use statime_linux::{
     clock::{LinuxClock, LinuxTimer, RawLinuxClock},
-    network::linux::{get_clock_id, InterfaceDescriptor, LinuxRuntime},
+    network::linux::{get_clock_id, InterfaceDescriptor, LinuxRuntime, TimestampingMode},
 };
 
 #[derive(Clone, Copy)]
