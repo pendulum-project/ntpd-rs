@@ -31,6 +31,12 @@ test = false
 doc = false
 
 [[bin]]
+name = "cookie_parsing_sound"
+path = "fuzz_targets/cookie_parsing_sound.rs"
+test = false
+doc = false
+
+[[bin]]
 name = "interval_finding"
 path = "fuzz_targets/interval_finding.rs"
 test = false

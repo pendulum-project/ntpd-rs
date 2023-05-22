@@ -149,6 +149,11 @@ impl KeySet {
         plaintext
     }
 
+    #[cfg(feature = "fuzz")]
+    pub fn encode_cookie_pub(&self, cookie: &DecodedServerCookie) -> Vec<u8> {
+        self.encode_cookie(cookie)
+    }
+
     pub(crate) fn encode_cookie(&self, cookie: &DecodedServerCookie) -> Vec<u8> {
         let mut plaintext = Self::plaintext(cookie);
         let plaintext_len = plaintext.as_slice().len();
@@ -169,6 +174,11 @@ impl KeySet {
         output.extend(siv_tag);
         output.extend(ciphertext);
         output
+    }
+
+    #[cfg(feature = "fuzz")]
+    pub fn decode_cookie_pub(&self, cookie: &[u8]) -> Result<DecodedServerCookie, DecryptError> {
+        self.decode_cookie(cookie)
     }
 
     pub(crate) fn decode_cookie(&self, cookie: &[u8]) -> Result<DecodedServerCookie, DecryptError> {
