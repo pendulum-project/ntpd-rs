@@ -59,7 +59,7 @@ use crate::{
 ///     BasicFilter::new(0.25),
 /// );
 ///
-/// instance.run(&LinuxTimer).await;
+/// instance.run(&TimerImpl).await;
 /// ```
 pub struct PtpInstance<P, C, F, const N: usize> {
     default_ds: DefaultDS,
