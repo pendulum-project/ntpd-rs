@@ -172,7 +172,7 @@ impl KeySet {
     }
 
     pub(crate) fn decode_cookie(&self, cookie: &[u8]) -> Result<DecodedServerCookie, DecryptError> {
-        if cookie.len() < 20 {
+        if cookie.len() < 22 {
             return Err(DecryptError);
         }
 
@@ -182,10 +182,10 @@ impl KeySet {
             return Err(DecryptError);
         }
 
-        let cipher_text_length = u16::from_be_bytes(cookie[4..6].try_into().unwrap()) as usize;
+        let cipher_text_length = u16::from_be_bytes([cookie[4], cookie[5]]) as usize;
 
         let nonce = &cookie[6..22];
-        let ciphertext = &cookie[22..][..cipher_text_length];
+        let ciphertext = cookie[22..].get(..cipher_text_length).ok_or(DecryptError)?;
         let plaintext = self.keys[id].decrypt(nonce, ciphertext, &[])?;
 
         let algorithm =
@@ -377,5 +377,16 @@ mod tests {
         provider.rotate();
 
         assert!(provider.get().decode_cookie(&encoded).is_err());
+    }
+
+    #[test]
+    fn invalid_cookie_length() {
+        let input = b"\x23\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x04\x00\x24\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x04\x00\x18\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x04\x04\x00\x28\x00\x10\x00\x10\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00";
+
+        let provider = KeySetProvider::new(1);
+
+        let output = provider.get().decode_cookie(input);
+
+        assert!(output.is_err());
     }
 }
