@@ -3,7 +3,10 @@ use std::{
     hash::BuildHasher,
     io::Cursor,
     net::{IpAddr, SocketAddr},
-    sync::Arc,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
     time::{Duration, Instant},
 };
 
@@ -12,7 +15,6 @@ use ntp_proto::{
     SystemSnapshot,
 };
 use ntp_udp::{InterfaceName, UdpSocket};
-use prometheus_client::metrics::counter::Counter;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, instrument, trace, warn};
@@ -24,45 +26,45 @@ const MAX_PACKET_SIZE: usize = 1024;
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct ServerStats {
-    pub received_packets: WrappedCounter,
-    pub accepted_packets: WrappedCounter,
-    pub denied_packets: WrappedCounter,
-    pub ignored_packets: WrappedCounter,
-    pub rate_limited_packets: WrappedCounter,
-    pub response_send_errors: WrappedCounter,
+    pub received_packets: Counter,
+    pub accepted_packets: Counter,
+    pub denied_packets: Counter,
+    pub ignored_packets: Counter,
+    pub rate_limited_packets: Counter,
+    pub response_send_errors: Counter,
 }
 
-#[derive(Default, Debug, Clone)]
-pub struct WrappedCounter(Counter);
+#[derive(Debug, Clone, Default)]
+pub struct Counter {
+    value: Arc<AtomicU64>,
+}
 
-impl Serialize for WrappedCounter {
+impl Counter {
+    fn inc(&self) -> u64 {
+        self.value.fetch_add(1, Ordering::Relaxed)
+    }
+
+    pub fn get(&self) -> u64 {
+        self.value.as_ref().load(Ordering::Relaxed)
+    }
+}
+
+impl Serialize for Counter {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        serializer.serialize_u64(self.0.get())
+        serializer.serialize_u64(self.get())
     }
 }
 
-impl<'de> Deserialize<'de> for WrappedCounter {
-    fn deserialize<D>(deserializer: D) -> Result<WrappedCounter, D::Error>
+impl<'de> Deserialize<'de> for Counter {
+    fn deserialize<D>(deserializer: D) -> Result<Counter, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let d: u64 = Deserialize::deserialize(deserializer)?;
-        let counter: Counter = Default::default();
-        counter
-            .inner()
-            .store(d, std::sync::atomic::Ordering::Relaxed);
-        Ok(WrappedCounter(counter))
-    }
-}
-
-impl std::ops::Deref for WrappedCounter {
-    type Target = Counter;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+        let value = Arc::new(Deserialize::deserialize(deserializer)?);
+        Ok(Counter { value })
     }
 }
 

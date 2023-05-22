@@ -1,13 +1,17 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::{
+    net::SocketAddr,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
-use ntp_daemon::{observer::WrappedSocketAddr, ObservablePeerState, ObservableState};
+use ntp_daemon::{ObservablePeerState, ObservableState};
 use ntp_os_clock::DefaultNtpClock;
 use ntp_proto::NtpClock;
 use prometheus_client::{
-    encoding::EncodeLabelSet,
+    encoding::{EncodeLabelSet, EncodeLabelValue},
     metrics::{counter::Counter, family::Family, gauge::Gauge},
     registry::{Registry, Unit},
 };
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EncodeLabelSet)]
 struct PeerLabels {
@@ -17,6 +21,26 @@ struct PeerLabels {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EncodeLabelSet)]
 struct ServerLabels {
     listen_address: WrappedSocketAddr,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct WrappedSocketAddr(SocketAddr);
+
+impl From<SocketAddr> for WrappedSocketAddr {
+    fn from(s: SocketAddr) -> Self {
+        WrappedSocketAddr(s)
+    }
+}
+
+impl EncodeLabelValue for WrappedSocketAddr {
+    fn encode(
+        &self,
+        encoder: &mut prometheus_client::encoding::LabelValueEncoder,
+    ) -> Result<(), std::fmt::Error> {
+        use std::fmt::Write;
+
+        encoder.write_fmt(format_args!("{}", &self.0))
+    }
 }
 
 #[derive(Default)]
@@ -108,7 +132,7 @@ impl Metrics {
 
         for server in &data.servers {
             let labels = ServerLabels {
-                listen_address: server.address,
+                listen_address: WrappedSocketAddr(server.address),
             };
 
             self.server_received_packets
