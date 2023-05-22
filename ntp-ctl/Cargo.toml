@@ -15,7 +15,6 @@ publish.workspace = true
 ntp-proto.workspace = true
 ntp-daemon.workspace = true
 ntp-metrics-exporter.workspace = true
-exitcode.workspace = true
 
 tokio.workspace = true
 tracing.workspace = true

@@ -15,7 +15,7 @@ use tracing::{debug, error, instrument, warn, Instrument, Span};
 
 use tokio::time::{Instant, Sleep};
 
-use crate::{config::CombinedSystemConfig, spawn::PeerId};
+use crate::{config::CombinedSystemConfig, exitcode, spawn::PeerId};
 
 /// Trait needed to allow injecting of futures other than tokio::time::Sleep for testing
 pub trait Wait: Future<Output = ()> {

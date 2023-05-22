@@ -17,7 +17,7 @@ use filter::LastMeasurements;
 use peer::{PeerTimeSnapshot, PeerTimeState};
 
 use crate::{
-    Measurement, NtpClock, NtpDuration, NtpInstant, ObservablePeerTimedata, SystemConfig,
+    exitcode, Measurement, NtpClock, NtpDuration, NtpInstant, ObservablePeerTimedata, SystemConfig,
     TimeSnapshot,
 };
 

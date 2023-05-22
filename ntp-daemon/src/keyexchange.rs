@@ -19,6 +19,7 @@ use tokio::{
 };
 
 use crate::config::NtsKeConfig;
+use crate::exitcode;
 
 pub(crate) async fn key_exchange_client(
     server_name: String,
