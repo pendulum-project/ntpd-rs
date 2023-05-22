@@ -1,10 +1,24 @@
 use super::clock_accuracy::ClockAccuracy;
 use crate::datastructures::{WireFormat, WireFormatError};
 
+/// A description of the accuracy and type of a clock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ClockQuality {
+    /// The PTP clock class.
+    ///
+    /// Per the standard, 248 is the default, and a good option for most use
+    /// cases. For grandmaster clocks, this should be below 128 to ensure the
+    /// clock never takes time from another source. A value of 6 is a good
+    /// option for a node with an external time source.
+    ///
+    /// For other potential values, see IEEE1588-2019 section 7.6.2.5
     pub clock_class: u8,
+
+    /// The accuracy of the clock
     pub clock_accuracy: ClockAccuracy,
+
+    /// 2-log of the variance (in seconds^2) of the clock when not synchronized.
+    /// See IEEE1588-2019 section 7.6.3.5 for more details.
     pub offset_scaled_log_variance: u16,
 }
 

@@ -10,6 +10,12 @@ use crate::{
     time::Duration,
 };
 
+/// A concrete implementation of the PTP port dataset (IEEE1588-2019 section
+/// 8.2.15)
+///
+/// The port dataset describes the properties of a single port of the PTP
+/// instance. It contains both the ports configuration, as well as a variety of
+/// runtime data about the ports current operation.
 #[derive(Debug)]
 pub struct PortDS {
     pub(crate) port_identity: PortIdentity,
@@ -35,6 +41,16 @@ pub struct PortDS {
 }
 
 impl PortDS {
+    /// Create a new Port dataset
+    ///
+    /// All `log_*_interval` parameters are the 2-log of the number of seconds
+    /// that specific interval should be. The `announce_receipt_timeout` is the
+    /// number of announce intervals the port will wait for announce messages
+    /// from ptp nodes to show up until automatically becoming master.
+    ///
+    /// The `log_min_delay_req_interval` and `log_min_p_delay_req_interval`
+    /// parameters are used only when their respective delay mechanism is used,
+    /// and are ignored otherwise.
     pub fn new(
         port_identity: PortIdentity,
         log_min_delay_req_interval: i8,
@@ -69,43 +85,46 @@ impl PortDS {
         }
     }
 
-    pub fn min_delay_req_interval(&self) -> i8 {
+    pub(crate) fn min_delay_req_interval(&self) -> i8 {
         self.log_min_delay_req_interval
     }
 
-    pub fn announce_interval(&self) -> Duration {
+    pub(crate) fn announce_interval(&self) -> Duration {
         Duration::from_log_interval(self.log_announce_interval)
     }
 
-    pub fn sync_interval(&self) -> Duration {
+    pub(crate) fn sync_interval(&self) -> Duration {
         Duration::from_log_interval(self.log_sync_interval)
     }
 
-    pub fn min_p_delay_req_interval(&self) -> Duration {
+    #[allow(unused)]
+    pub(crate) fn min_p_delay_req_interval(&self) -> Duration {
         Duration::from_log_interval(self.log_min_p_delay_req_interval)
     }
 
     // TODO: Count the actual number of passed announce intervals, rather than this
     // approximation
-    pub fn announce_receipt_interval(&self) -> Duration {
+    pub(crate) fn announce_receipt_interval(&self) -> Duration {
         Duration::from_log_interval(
             self.announce_receipt_timeout as i8 * self.log_announce_interval,
         )
     }
 
-    pub fn disable(&mut self) {
+    #[allow(unused)]
+    pub(crate) fn disable(&mut self) {
         self.port_enable = false;
         self.set_forced_port_state(PortState::Disabled);
     }
 
-    pub fn enable(&mut self) {
+    #[allow(unused)]
+    pub(crate) fn enable(&mut self) {
         self.port_enable = true;
         if let PortState::Disabled = self.port_state {
             self.port_state = PortState::Listening;
         }
     }
 
-    pub fn set_forced_port_state(&mut self, state: PortState) {
+    pub(crate) fn set_forced_port_state(&mut self, state: PortState) {
         log::info!(
             "new state for port {}: {} -> {}",
             self.port_identity.port_number,
@@ -115,7 +134,7 @@ impl PortDS {
         self.port_state = state;
     }
 
-    pub fn set_recommended_port_state<F: Future>(
+    pub(crate) fn set_recommended_port_state<F: Future>(
         &mut self,
         recommended_state: &RecommendedState,
         announce_receipt_timeout: &mut Pin<&mut Ticker<F, impl FnMut(Duration) -> F>>,
@@ -159,11 +178,20 @@ impl PortDS {
     }
 }
 
+/// Which delay mechanism a port is using.
+///
+/// Currently, statime only supports the end to end (E2E) delay mechanism.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum DelayMechanism {
+    /// End to end delay mechanism. Delay measurement is done directly to the
+    /// chosen master, across potential transparent nodes in between.
     E2E = 0x01,
+    /// Not supported, needed for parsing
     P2P = 0x02,
+    /// Not supported, needed for parsing
     NoMechanism = 0xfe,
+    /// Not supported, needed for parsing
     CommonP2p = 0x03,
+    /// Not supported, needed for parsing
     Special = 0x04,
 }

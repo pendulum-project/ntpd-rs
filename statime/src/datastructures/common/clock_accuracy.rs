@@ -1,4 +1,6 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// How accurate the underlying clock device is expected to be when not
+/// synchronized.
 pub enum ClockAccuracy {
     /// Reserved
     Reserved,

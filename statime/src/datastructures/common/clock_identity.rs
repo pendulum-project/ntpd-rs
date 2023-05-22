@@ -1,5 +1,9 @@
 use crate::datastructures::{WireFormat, WireFormatError};
 
+/// The identity of a PTP node.
+///
+/// Must have a unique value for each node in a ptp network. For notes on
+/// generating these, see IEEE1588-2019 section 7.5.2.2
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
 pub struct ClockIdentity(pub [u8; 8]);
 

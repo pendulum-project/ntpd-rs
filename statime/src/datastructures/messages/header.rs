@@ -143,6 +143,9 @@ impl Default for Header {
     }
 }
 
+/// A wrapper type for PTP Sdo Identifiers.
+///
+/// This is a separate type as sdo identifiers should be in the range 0-4095
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SdoId(u16);
 
@@ -153,6 +156,10 @@ impl core::fmt::Display for SdoId {
 }
 
 impl SdoId {
+    /// Create a new sdo id
+    ///
+    /// This function only returns an `SdoId` instance if the given identifier
+    /// is actually between 0 and 4095. Otherwise, `None` is returned.
     pub fn new(sdo_id: u16) -> Option<Self> {
         (0..=0x1000).contains(&sdo_id).then_some(Self(sdo_id))
     }

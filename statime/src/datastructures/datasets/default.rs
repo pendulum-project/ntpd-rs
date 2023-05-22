@@ -6,6 +6,13 @@ use crate::{
     time::Instant,
 };
 
+/// A concrete implementation of the PTP Default dataset (IEEE1588-2019 section
+/// 8.2.1)
+///
+/// This dataset describes the properties of the PTP instance. Most
+/// instance-wide configuration options are found here, with the exception of
+/// those related to timebase, which is contained in the
+/// [TimePropertiesDS](crate::TimePropertiesDS) dataset.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct DefaultDS {
     pub(crate) clock_identity: ClockIdentity,
@@ -24,6 +31,24 @@ pub struct DefaultDS {
 }
 
 impl DefaultDS {
+    /// Create a Default dataset for an ordinary clock
+    ///
+    /// The `domain_number` and `sdo_id` together control which time network the
+    /// clock connects to. SDO id's are assigned through the PTP standard, and
+    /// allowed values for domain numbers are specified in the assignment. A PTP
+    /// instance will only communicate with instances with matching domain and
+    /// sdo id.
+    ///
+    /// The priority values are used in selecting the primary time source within
+    /// a ptp network. A clock with a higher `priority_1` is always preferred.
+    /// The `priority_2` field is only used as a tiebreaker among nodes in the
+    /// PTP network that have both identical `priority_1` values and advertise
+    /// clock/time precision that are identical.
+    ///
+    /// `clock_identity` should be the identifier for this clock. It should
+    /// typically be derived from the mac address of one of the interfaces of
+    /// the device running the PTP instance, as described in IEEE1588-2019
+    /// section 7.5.2.2.
     pub fn new_ordinary_clock(
         clock_identity: ClockIdentity,
         priority_1: u8,
@@ -49,6 +74,24 @@ impl DefaultDS {
         }
     }
 
+    /// Create a Default dataset for an boundary clock
+    ///
+    /// The `domain_number` and `sdo_id` together control which time network the
+    /// clock connects to. SDO id's are assigned through the PTP standard, and
+    /// allowed values for domain numbers are specified in the assignment. A PTP
+    /// instance will only communicate with instances with matching domain and
+    /// sdo id.
+    ///
+    /// The priority values are used in selecting the primary time source within
+    /// a ptp network. A clock with a higher `priority_1` is always preferred.
+    /// The `priority_2` field is only used as a tiebreaker among nodes in the
+    /// PTP network that have both identical `priority_1` values and advertise
+    /// clock/time precision that are identical.
+    ///
+    /// `clock_identity` should be the identifier for this clock. It should
+    /// typically be derived from the mac address of one of the interfaces of
+    /// the device running the PTP instance, as described in IEEE1588-2019
+    /// section 7.5.2.2.
     pub fn new_boundary_clock(
         clock_identity: ClockIdentity,
         number_ports: u16,
