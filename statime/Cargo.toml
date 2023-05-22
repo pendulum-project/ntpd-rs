@@ -19,6 +19,7 @@ repository = "https://github.com/tweedegolf/statime"
 [features]
 default = ["std"]
 std = ["dep:thiserror"]
+fuzz = []
 
 [dependencies]
 arrayvec = { version = "0.7.2", default-features = false }

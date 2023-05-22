@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use statime::datastructures::messages::Message;
+use statime::Message;
 
 fuzz_target!(|data: Vec<u8>| {
     let mut buf1 = [0u8; 1024];

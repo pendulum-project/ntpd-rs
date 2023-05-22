@@ -142,6 +142,8 @@ mod time;
 mod utils;
 
 pub use clock::{Clock, Timer};
+#[cfg(feature = "fuzz")]
+pub use datastructures::messages::Message;
 pub use datastructures::{
     common::{ClockAccuracy, ClockIdentity, ClockQuality, PortIdentity, TimeSource},
     datasets::{DefaultDS, DelayMechanism, PortDS, TimePropertiesDS},
