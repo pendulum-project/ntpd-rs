@@ -1,6 +1,6 @@
 use crate::{
-    packet::NtpLeapIndicator, time_types::PollInterval, NtpClock, NtpDuration, NtpInstant,
-    SystemConfig, TimeSnapshot,
+    exitcode, packet::NtpLeapIndicator, time_types::PollInterval, NtpClock, NtpDuration,
+    NtpInstant, SystemConfig, TimeSnapshot,
 };
 use tracing::{debug, error, info, instrument, trace};
 
