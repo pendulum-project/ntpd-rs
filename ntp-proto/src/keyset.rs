@@ -188,19 +188,19 @@ impl KeySet {
 
         let id = u32::from_be_bytes(cookie[0..4].try_into().unwrap());
         let id = id.wrapping_sub(self.id_offset) as usize;
-        if id >= self.keys.len() {
-            return Err(DecryptError);
-        }
+        let key = self.keys.get(id).ok_or(DecryptError)?;
 
         let cipher_text_length = u16::from_be_bytes([cookie[4], cookie[5]]) as usize;
 
         let nonce = &cookie[6..22];
         let ciphertext = cookie[22..].get(..cipher_text_length).ok_or(DecryptError)?;
-        let plaintext = self.keys[id].decrypt(nonce, ciphertext, &[])?;
+        let plaintext = key.decrypt(nonce, ciphertext, &[])?;
 
-        let algorithm =
-            AeadAlgorithm::try_deserialize(u16::from_be_bytes(plaintext[0..2].try_into().unwrap()))
-                .ok_or(DecryptError)?;
+        let algorithm = if let [b0, b1, ..] = plaintext[..] {
+            AeadAlgorithm::try_deserialize(u16::from_be_bytes([b0, b1])).ok_or(DecryptError)?
+        } else {
+            return Err(DecryptError);
+        };
 
         Ok(match algorithm {
             AeadAlgorithm::AeadAesSivCmac256 => {
@@ -210,10 +210,10 @@ impl KeySet {
                 DecodedServerCookie {
                     algorithm,
                     s2c: Box::new(AesSivCmac256::new(GenericArray::clone_from_slice(
-                        &plaintext[2..34],
+                        &plaintext[2..][..32],
                     ))),
                     c2s: Box::new(AesSivCmac256::new(GenericArray::clone_from_slice(
-                        &plaintext[34..66],
+                        &plaintext[2 + 32..][..32],
                     ))),
                 }
             }
@@ -224,10 +224,10 @@ impl KeySet {
                 DecodedServerCookie {
                     algorithm,
                     s2c: Box::new(AesSivCmac512::new(GenericArray::clone_from_slice(
-                        &plaintext[2..66],
+                        &plaintext[2..][..64],
                     ))),
                     c2s: Box::new(AesSivCmac512::new(GenericArray::clone_from_slice(
-                        &plaintext[66..130],
+                        &plaintext[2 + 64..][..64],
                     ))),
                 }
             }
