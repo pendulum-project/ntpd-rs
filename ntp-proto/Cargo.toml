@@ -22,7 +22,6 @@ md-5.workspace = true
 rand.workspace = true
 tracing.workspace = true
 serde.workspace = true
-# exitcode.workspace = true
 arbitrary = { workspace = true, optional = true }
 rustls.workspace = true
 thiserror.workspace = true
