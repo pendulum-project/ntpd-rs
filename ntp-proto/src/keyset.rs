@@ -132,6 +132,7 @@ pub struct KeySet {
 }
 
 impl KeySet {
+    // AesSivCmac512 is currently the algorithm with the biggest key width: 64 bytes
     const MAX_PLAINTEXT_BYTES: usize = 2 + 64 + 64;
 
     fn plaintext(cookie: &DecodedServerCookie) -> ArrayVec<{ Self::MAX_PLAINTEXT_BYTES }> {
@@ -182,7 +183,8 @@ impl KeySet {
     }
 
     pub(crate) fn decode_cookie(&self, cookie: &[u8]) -> Result<DecodedServerCookie, DecryptError> {
-        if cookie.len() < 22 {
+        // we need at least an id, cipher text length and nonce for this message to be valid
+        if cookie.len() < 4 + 2 + 16 {
             return Err(DecryptError);
         }
 
@@ -196,39 +198,42 @@ impl KeySet {
         let ciphertext = cookie[22..].get(..cipher_text_length).ok_or(DecryptError)?;
         let plaintext = key.decrypt(nonce, ciphertext, &[])?;
 
-        let algorithm = if let [b0, b1, ..] = plaintext[..] {
-            AeadAlgorithm::try_deserialize(u16::from_be_bytes([b0, b1])).ok_or(DecryptError)?
-        } else {
+        let [b0, b1, ref key_bytes @ ..] = plaintext[..] else {
             return Err(DecryptError);
         };
 
+        let algorithm =
+            AeadAlgorithm::try_deserialize(u16::from_be_bytes([b0, b1])).ok_or(DecryptError)?;
+
         Ok(match algorithm {
             AeadAlgorithm::AeadAesSivCmac256 => {
-                if plaintext.len() != 2 + 32 + 32 {
+                const KEY_WIDTH: usize = 32;
+
+                if key_bytes.len() != 2 * KEY_WIDTH {
                     return Err(DecryptError);
                 }
+
+                let (s2c, c2s) = key_bytes.split_at(KEY_WIDTH);
+
                 DecodedServerCookie {
                     algorithm,
-                    s2c: Box::new(AesSivCmac256::new(GenericArray::clone_from_slice(
-                        &plaintext[2..][..32],
-                    ))),
-                    c2s: Box::new(AesSivCmac256::new(GenericArray::clone_from_slice(
-                        &plaintext[2 + 32..][..32],
-                    ))),
+                    s2c: Box::new(AesSivCmac256::new(GenericArray::clone_from_slice(s2c))),
+                    c2s: Box::new(AesSivCmac256::new(GenericArray::clone_from_slice(c2s))),
                 }
             }
             AeadAlgorithm::AeadAesSivCmac512 => {
-                if plaintext.len() != 2 + 64 + 64 {
+                const KEY_WIDTH: usize = 64;
+
+                if key_bytes.len() != 2 * KEY_WIDTH {
                     return Err(DecryptError);
                 }
+
+                let (s2c, c2s) = key_bytes.split_at(KEY_WIDTH);
+
                 DecodedServerCookie {
                     algorithm,
-                    s2c: Box::new(AesSivCmac512::new(GenericArray::clone_from_slice(
-                        &plaintext[2..][..64],
-                    ))),
-                    c2s: Box::new(AesSivCmac512::new(GenericArray::clone_from_slice(
-                        &plaintext[2 + 64..][..64],
-                    ))),
+                    s2c: Box::new(AesSivCmac512::new(GenericArray::clone_from_slice(s2c))),
+                    c2s: Box::new(AesSivCmac512::new(GenericArray::clone_from_slice(c2s))),
                 }
             }
         })
