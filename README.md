@@ -52,24 +52,6 @@ We are committed to keep ntpd-rs working on at least the latest stable, beta and
 
 Please note that the Rust project only supports the latest stable rust release. As this is the only release that will receive any security updates, we STRONGLY recommend using the latest stable rust version for compiling ntpd-rs for daily use.
 
-## Roadmap
-
-In Q1 2023 we completed our work on NTS. Our implementation is now full-featured, it supports NTP client and server with NTS.
-
-Our roadmap for 2023:
-
-- Q1 2023: Audit by [ROS](https://www.radicallyopensecurity.com/) and resulting improvements
-- Q2 2023: Adoption work and improved packaging (pending funding). Stabilize configuration API (pending funding)
-- Q2-Q4 2023: Development work on experimental features, NTS pools, NTPv5 (pending funding)
-
-## History
-
-The project originates from ISRG's project [Prossimo](https://www.memorysafety.org), as part of their mission to achieve memory safety for the Internet's most critical infrastructure.
-
-<img alt="Prossimo" src="https://www.memorysafety.org/images/Prossimo%20Brand%20Assets/Prossimo%20Horizontal%20Full%20Color.svg" width="250px"/>
-
-Prossimo funded the initial development of the NTP client and server, and NTS support. The [NTP initiative page](https://www.memorysafety.org/initiative/ntp) on Prossimo's website tells the story.
-
 ## Package substructure
 
 Currently, the code is split up into several separate crates:
@@ -90,3 +72,31 @@ This crate contains extremely limited NTP servers for testing purposes
 
 * `demobilize-server` always sends the DENY kiss code, the client must demobilize this association
 * `rate-limit-server` forces an increase of the poll interval to 32 seconds
+
+## Roadmap
+
+In Q1 2023 we completed our work on NTS. Our implementation is now full-featured, it supports NTP client and server with NTS.
+
+Our roadmap for 2023:
+
+- Q2 2023: Adoption work, improved packaging, FreeBSD support
+- Q3 2023: Stable release (pending funding)
+- Q4 2023: Development work on experimental features, NTS pool, NTPv5 (pending funding)
+
+We seek sponsorship for features and maintenance to continue our work. Contact us via pendulum@tweedegolf.com if you are interested!
+
+## History
+
+### 2022
+
+The project originates from ISRG's project [Prossimo](https://www.memorysafety.org), as part of their mission to achieve memory safety for the Internet's most critical infrastructure.
+
+<img alt="Prossimo" src="https://www.memorysafety.org/images/Prossimo%20Brand%20Assets/Prossimo%20Horizontal%20Full%20Color.svg" width="250px"/>
+
+Prossimo funded the initial development of the NTP client and server, and NTS support. The [NTP initiative page](https://www.memorysafety.org/initiative/ntp) on Prossimo's website tells the story.
+
+### 2023
+
+After completion of the initial development, the project's ownership moved from Prossimo to Tweede golf in April 2023. See the announcement [here](https://www.memorysafety.org/blog/ntp-and-nts-have-arrived/).
+
+Tweede golf is the long-term maintainer of ntpd-rs, that is now part of Tweede golf's [Project Pendulum](https://github.com/pendulum-project). Pendulum is building modern, open-source implementations of the Network Time Protocol and the Precision Time Protocol. 
