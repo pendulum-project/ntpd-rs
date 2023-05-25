@@ -1,3 +1,21 @@
+Version 0.3.3
+======
+
+Major Changes
+-----
+- Compilation with musl libc on linux (thanks @sanmai-NL)
+- Compilation support for macos (thanks @andrewaylett)
+- Compilation support for freebsd (thanks @valpackett)
+
+Minor Changes
+------
+- Fix for invalid NTS cookie decoding that could cause a server panic
+- Improved mechanism for waiting on timestamps arriving the error queue
+- Added security policy
+- Upgraded dependencies
+- Remove exitcode dependency
+- Remove direct prometheus dependency from ntp-daemon
+
 Version 0.3.2
 ======
 
