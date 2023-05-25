@@ -51,10 +51,16 @@ ptpd -V -n -M -i <INTERFACE>
 ```
 where `<INTERFACE>` is the netwerk interface you want ptpd to use. Here `-n` disables clock adjustment by ptpd, and `-M` ensures that it runs in master mode only.
 
+# Roadmap
+
+- Q2 2023: PTP master, boundary clock + support for embedded device
+- Q3 2023: NTP/PTP clock device + development of PTP for Linux
+- Q4 2023: Completion of PTP for Linux
+
 # Support our work
 
 The development of Statime is kindly supported by the [NLnet Foundation](https://nlnet.nl).
 
-[SIDN Fonds](https://www.sidnfonds.nl/excerpt) is supporting us with a grant to develop clock devices running Statime and ntpd-rs, in collaboration with SIDN Labs' [TimeNL](https://www.sidnlabs.nl/en/news-and-blogs/timenl-comes-of-age).
+[SIDN Fonds](https://www.sidnfonds.nl/excerpt) is supporting us with a grant to develop clock devices running Statime and ntpd-rs, in collaboration with SIDN Labs' [TimeNL](https://www.sidnlabs.nl/en/news-and-blogs/an-open-infrastructure-for-sub-millisecond-internet-time).
 
-We seek involvement and/or sponsoring of interested parties, see the announcement [here](https://twitter.com/tweedegolfbv/status/1504439532971827208).
+We seek involvement of interested parties and funding for future work, see [Project Pendulum](https://github.com/pendulum-project).
