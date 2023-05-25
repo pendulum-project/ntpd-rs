@@ -57,3 +57,16 @@ pub use nts_record::{
     KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, NtsRecord,
     NtsRecordDecoder, WriteError,
 };
+
+pub(crate) mod exitcode {
+    /// An internal software error has been detected.  This
+    /// should be limited to non-operating system related
+    /// errors as possible.
+    pub const SOFTWARE: i32 = 70;
+
+    /// You did not have sufficient permission to perform
+    /// the operation.  This is not intended for file system
+    /// problems, which should use `NOINPUT` or `CANTCREAT`,
+    /// but rather for higher level permissions.
+    pub const NOPERM: i32 = 77;
+}

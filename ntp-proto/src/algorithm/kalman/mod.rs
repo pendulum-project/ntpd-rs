@@ -202,7 +202,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
             if !self.config.startup_panic_threshold.is_within(change) {
                 error!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate.");
                 #[cfg(not(test))]
-                std::process::exit(exitcode::SOFTWARE);
+                std::process::exit(crate::exitcode::SOFTWARE);
                 #[cfg(test)]
                 panic!("Threshold exceeded");
             }
@@ -217,7 +217,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
             {
                 error!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate.");
                 #[cfg(not(test))]
-                std::process::exit(exitcode::SOFTWARE);
+                std::process::exit(crate::exitcode::SOFTWARE);
                 #[cfg(test)]
                 panic!("Threshold exceeded");
             }

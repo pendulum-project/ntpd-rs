@@ -149,6 +149,11 @@ impl KeySet {
         plaintext
     }
 
+    #[cfg(feature = "fuzz")]
+    pub fn encode_cookie_pub(&self, cookie: &DecodedServerCookie) -> Vec<u8> {
+        self.encode_cookie(cookie)
+    }
+
     pub(crate) fn encode_cookie(&self, cookie: &DecodedServerCookie) -> Vec<u8> {
         let mut plaintext = Self::plaintext(cookie);
         let plaintext_len = plaintext.as_slice().len();
@@ -171,26 +176,31 @@ impl KeySet {
         output
     }
 
+    #[cfg(feature = "fuzz")]
+    pub fn decode_cookie_pub(&self, cookie: &[u8]) -> Result<DecodedServerCookie, DecryptError> {
+        self.decode_cookie(cookie)
+    }
+
     pub(crate) fn decode_cookie(&self, cookie: &[u8]) -> Result<DecodedServerCookie, DecryptError> {
-        if cookie.len() < 20 {
+        if cookie.len() < 22 {
             return Err(DecryptError);
         }
 
         let id = u32::from_be_bytes(cookie[0..4].try_into().unwrap());
         let id = id.wrapping_sub(self.id_offset) as usize;
-        if id >= self.keys.len() {
-            return Err(DecryptError);
-        }
+        let key = self.keys.get(id).ok_or(DecryptError)?;
 
-        let cipher_text_length = u16::from_be_bytes(cookie[4..6].try_into().unwrap()) as usize;
+        let cipher_text_length = u16::from_be_bytes([cookie[4], cookie[5]]) as usize;
 
         let nonce = &cookie[6..22];
-        let ciphertext = &cookie[22..][..cipher_text_length];
-        let plaintext = self.keys[id].decrypt(nonce, ciphertext, &[])?;
+        let ciphertext = cookie[22..].get(..cipher_text_length).ok_or(DecryptError)?;
+        let plaintext = key.decrypt(nonce, ciphertext, &[])?;
 
-        let algorithm =
-            AeadAlgorithm::try_deserialize(u16::from_be_bytes(plaintext[0..2].try_into().unwrap()))
-                .ok_or(DecryptError)?;
+        let algorithm = if let [b0, b1, ..] = plaintext[..] {
+            AeadAlgorithm::try_deserialize(u16::from_be_bytes([b0, b1])).ok_or(DecryptError)?
+        } else {
+            return Err(DecryptError);
+        };
 
         Ok(match algorithm {
             AeadAlgorithm::AeadAesSivCmac256 => {
@@ -200,10 +210,10 @@ impl KeySet {
                 DecodedServerCookie {
                     algorithm,
                     s2c: Box::new(AesSivCmac256::new(GenericArray::clone_from_slice(
-                        &plaintext[2..34],
+                        &plaintext[2..][..32],
                     ))),
                     c2s: Box::new(AesSivCmac256::new(GenericArray::clone_from_slice(
-                        &plaintext[34..66],
+                        &plaintext[2 + 32..][..32],
                     ))),
                 }
             }
@@ -214,10 +224,10 @@ impl KeySet {
                 DecodedServerCookie {
                     algorithm,
                     s2c: Box::new(AesSivCmac512::new(GenericArray::clone_from_slice(
-                        &plaintext[2..66],
+                        &plaintext[2..][..64],
                     ))),
                     c2s: Box::new(AesSivCmac512::new(GenericArray::clone_from_slice(
-                        &plaintext[66..130],
+                        &plaintext[2 + 64..][..64],
                     ))),
                 }
             }
@@ -377,5 +387,17 @@ mod tests {
         provider.rotate();
 
         assert!(provider.get().decode_cookie(&encoded).is_err());
+    }
+
+    #[test]
+    fn invalid_cookie_length() {
+        // this cookie data lies about its length, pretending to be longer than it actually is.
+        let input = b"\x23\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x04\x00\x24\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x04\x00\x18\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x04\x04\x00\x28\x00\x10\x00\x10\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00";
+
+        let provider = KeySetProvider::new(1);
+
+        let output = provider.get().decode_cookie(input);
+
+        assert!(output.is_err());
     }
 }
