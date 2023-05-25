@@ -106,6 +106,9 @@ Because this task reads from its socket, it is advised to restrict the permissio
 
 ## Releasing
 
+Before creating a release make sure that the changelog is up to date and that
+any changes in the readme and other documentation were made.
+
 New releases are created by using `cargo-release`. To create a new release make
 sure you have it installed and then run `cargo release [level]` with level being
 one of `alpha`, `beta`, `rc`, `patch`, `minor` or `major`. To make a new release
@@ -121,5 +124,12 @@ you can run `cargo release [level] --execute` to actually build and commit.
 Once this command completes, new releases should have been published to
 crates.io, but please verify manually that everything is where it is supposed to
 be. A new commit and tag will also have been pushed to the repository. This
-should also trigger a release build on github which will publish binaries on
-github under a new release.
+should also trigger a release build on github.
+
+Once a release build finished, go to the `Actions` tab in GitHub and find the
+run of the pkg workflow for the release commit. At the bottom of the page you
+can download the release artifacts to upload them to a new release.
+
+Next, go to the releases page on GitHub and create a new release from the tag
+previously uploaded by `cargo release`. Make sure to include the release notes
+and the binaries you previously downloaded from the `Actions` page.
