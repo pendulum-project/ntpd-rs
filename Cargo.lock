@@ -853,7 +853,6 @@ dependencies = [
  "ntp-os-clock",
  "ntp-proto",
  "ntp-udp",
- "prometheus-client",
  "rand",
  "rustls 0.21.1",
  "rustls-native-certs",

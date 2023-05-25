@@ -1,8 +1,6 @@
 use crate::server::ServerStats;
 use crate::{sockets::create_unix_socket, system::ServerData};
 use ntp_proto::{ObservablePeerTimedata, PollInterval, Reach, ReferenceId, SystemSnapshot};
-use prometheus_client::encoding::EncodeLabelValue;
-use std::fmt::Write;
 use std::net::SocketAddr;
 use std::os::unix::fs::PermissionsExt;
 use tokio::task::JoinHandle;
@@ -19,34 +17,16 @@ pub struct ObservableState {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ObservableServerState {
-    pub address: WrappedSocketAddr,
+    pub address: SocketAddr,
     pub stats: ServerStats,
 }
 
 impl From<&ServerData> for ObservableServerState {
     fn from(data: &ServerData) -> Self {
         ObservableServerState {
-            address: data.config.addr.into(),
+            address: data.config.addr,
             stats: data.stats.clone(),
         }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct WrappedSocketAddr(SocketAddr);
-
-impl From<SocketAddr> for WrappedSocketAddr {
-    fn from(s: SocketAddr) -> Self {
-        WrappedSocketAddr(s)
-    }
-}
-
-impl EncodeLabelValue for WrappedSocketAddr {
-    fn encode(
-        &self,
-        encoder: &mut prometheus_client::encoding::LabelValueEncoder,
-    ) -> Result<(), std::fmt::Error> {
-        encoder.write_str(&self.0.to_string())
     }
 }
 

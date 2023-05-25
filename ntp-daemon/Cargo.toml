@@ -26,7 +26,6 @@ toml.workspace = true
 thiserror.workspace = true
 rand.workspace = true
 libc.workspace = true
-prometheus-client.workspace = true
 async-trait.workspace = true
 
 serde.workspace = true
