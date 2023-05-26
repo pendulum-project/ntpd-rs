@@ -494,28 +494,23 @@ impl<'a> RawEncryptedField<'a> {
     ) -> Result<Self, ParsingError<std::convert::Infallible>> {
         use ParsingError::*;
 
-        if message_bytes.len() < 4 {
+        let [ b0, b1, b2, b3, ref rest @ .. ] = message_bytes[..] else {
             return Err(IncorrectLength);
-        }
+        };
 
-        let value = message_bytes;
-
-        if message_bytes.len() < 4 {
-            return Err(IncorrectLength);
-        }
-
-        let nonce_length = u16::from_be_bytes(value[0..2].try_into().unwrap()) as usize;
-        let ciphertext_length = u16::from_be_bytes(value[2..4].try_into().unwrap()) as usize;
+        let nonce_length = u16::from_be_bytes([b0, b1]) as usize;
+        let ciphertext_length = u16::from_be_bytes([b2, b3]) as usize;
 
         if nonce_length != 16 {
             return Err(IncorrectLength);
         }
 
+        let nonce = rest.get(..nonce_length).ok_or(IncorrectLength)?;
+
+        // skip the lengths and the nonce. pad to a multiple of 4
         let ciphertext_start = 4 + next_multiple_of(nonce_length as u16, 4) as usize;
 
-        let nonce = value.get(4..4 + nonce_length).ok_or(IncorrectLength)?;
-
-        let ciphertext = value
+        let ciphertext = message_bytes
             .get(ciphertext_start..ciphertext_start + ciphertext_length)
             .ok_or(IncorrectLength)?;
 
