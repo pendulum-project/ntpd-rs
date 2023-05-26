@@ -569,21 +569,26 @@ impl<'a> RawExtensionField<'a> {
     ) -> Result<Self, ParsingError<std::convert::Infallible>> {
         use ParsingError::IncorrectLength;
 
-        if data.len() < 4 {
+        let [ b0, b1, b2, b3, .. ] = data[..] else {
             return Err(IncorrectLength);
-        }
+        };
 
-        let type_id = u16::from_be_bytes(data[0..2].try_into().unwrap());
-        let field_length = u16::from_be_bytes(data[2..4].try_into().unwrap()) as usize;
+        let type_id = u16::from_be_bytes([b0, b1]);
+
+        // The Length field is a 16-bit unsigned integer that indicates the length of
+        // the entire extension field in octets, including the Padding field.
+        let field_length = u16::from_be_bytes([b2, b3]) as usize;
+
         if field_length < minimum_size || field_length % 4 != 0 {
             return Err(ParsingError::IncorrectLength);
         }
 
-        let value = data.get(4..field_length).ok_or(IncorrectLength)?;
+        // so the message bytes will include padding, and therefore may not exactly match the input
+        let message_bytes = data.get(4..field_length).ok_or(IncorrectLength)?;
 
         Ok(Self {
             type_id: ExtensionFieldTypeId::from_type_id(type_id),
-            message_bytes: value,
+            message_bytes,
         })
     }
 
