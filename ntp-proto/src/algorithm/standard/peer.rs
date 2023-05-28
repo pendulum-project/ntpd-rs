@@ -1,13 +1,10 @@
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
-use super::{
-    config::AlgorithmConfig,
-    filter::{FilterTuple, LastMeasurements},
-};
+use super::{config::AlgorithmConfig, filter::LastMeasurements};
 use crate::{
     AcceptSynchronizationError, FrequencyTolerance, Measurement, NtpDuration, NtpInstant,
-    NtpLeapIndicator, NtpPacket, PollInterval, TimeSnapshot,
+    NtpLeapIndicator, PollInterval, TimeSnapshot,
 };
 
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
@@ -23,7 +20,6 @@ pub(super) struct PeerStatistics {
 pub(super) struct PeerTimeState {
     pub statistics: PeerStatistics,
     pub last_measurements: LastMeasurements,
-    pub last_packet: NtpPacket<'static>,
     pub time: NtpInstant,
 }
 
@@ -31,21 +27,11 @@ impl PeerTimeState {
     pub fn update(
         &mut self,
         measurement: Measurement,
-        packet: NtpPacket,
         system: TimeSnapshot,
         config: &AlgorithmConfig,
     ) -> Option<()> {
-        let filter_input = FilterTuple::from_measurement(
-            measurement,
-            &packet,
-            system.precision,
-            config.frequency_tolerance,
-        );
-
-        self.last_packet = packet.into_owned();
-
         let updated = self.last_measurements.step(
-            filter_input,
+            measurement,
             self.time,
             system.leap_indicator,
             system.precision,
@@ -64,9 +50,10 @@ impl PeerTimeState {
 
     /// Root distance without the `(local_clock_time - self.time) * PHI` term
     fn root_distance_without_time(&self) -> NtpDuration {
-        NtpDuration::MIN_DISPERSION.max(self.last_packet.root_delay() + self.statistics.delay)
+        NtpDuration::MIN_DISPERSION
+            .max(self.last_measurements.last_root_delay() + self.statistics.delay)
             / 2i64
-            + self.last_packet.root_dispersion()
+            + self.last_measurements.last_root_dispersion()
             + self.statistics.dispersion
             + NtpDuration::from_seconds(self.statistics.jitter)
     }
@@ -89,7 +76,6 @@ impl PeerTimeState {
     pub fn reset_measurements(&mut self) {
         self.statistics = Default::default();
         self.last_measurements = LastMeasurements::new(self.time);
-        self.last_packet = Default::default();
     }
 
     #[cfg(test)]
@@ -97,7 +83,6 @@ impl PeerTimeState {
         PeerTimeState {
             statistics: Default::default(),
             last_measurements: LastMeasurements::new(instant),
-            last_packet: Default::default(),
             time: instant,
         }
     }
@@ -131,10 +116,10 @@ impl PeerTimeSnapshot {
             root_distance_without_time: timestate.root_distance_without_time(),
             statistics: timestate.statistics,
             time: timestate.time,
-            stratum: timestate.last_packet.stratum(),
-            leap_indicator: timestate.last_packet.leap(),
-            root_delay: timestate.last_packet.root_delay(),
-            root_dispersion: timestate.last_packet.root_dispersion(),
+            stratum: timestate.last_measurements.last_stratum(),
+            leap_indicator: timestate.last_measurements.last_leap(),
+            root_delay: timestate.last_measurements.last_root_delay(),
+            root_dispersion: timestate.last_measurements.last_root_dispersion(),
         }
     }
 
@@ -195,91 +180,96 @@ mod test {
 
         let ft = FrequencyTolerance::ppm(15);
 
-        let mut packet = NtpPacket::test();
-        packet.set_root_delay(duration_1s);
-        packet.set_root_dispersion(duration_1s);
-        let reference = PeerTimeState {
+        let mut reference = PeerTimeState {
             statistics: PeerStatistics {
                 delay: duration_1s,
                 dispersion: duration_1s,
                 ..Default::default()
             },
-            last_packet: packet.clone(),
             ..PeerTimeState::test_timestate(timestamp_1s)
         };
+        reference.last_measurements.set_root_delay(duration_1s);
+        reference.last_measurements.set_root_dispersion(duration_1s);
 
         assert!(
             reference.root_distance(timestamp_1s, ft) < reference.root_distance(timestamp_2s, ft)
         );
 
-        let sample = PeerTimeState {
+        let mut sample = PeerTimeState {
             statistics: PeerStatistics {
                 delay: duration_2s,
                 dispersion: duration_1s,
                 ..Default::default()
             },
-            last_packet: packet.clone(),
             ..PeerTimeState::test_timestate(timestamp_1s)
         };
+        sample.last_measurements.set_root_delay(duration_1s);
+        sample.last_measurements.set_root_dispersion(duration_1s);
+
         assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
 
-        let sample = PeerTimeState {
+        let mut sample = PeerTimeState {
             statistics: PeerStatistics {
                 delay: duration_1s,
                 dispersion: duration_2s,
                 ..Default::default()
             },
-            last_packet: packet.clone(),
             ..PeerTimeState::test_timestate(timestamp_1s)
         };
+        sample.last_measurements.set_root_delay(duration_1s);
+        sample.last_measurements.set_root_dispersion(duration_1s);
+
         assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
 
-        let sample = PeerTimeState {
+        let mut sample = PeerTimeState {
             statistics: PeerStatistics {
                 delay: duration_1s,
                 dispersion: duration_1s,
                 ..Default::default()
             },
-            last_packet: packet.clone(),
             ..PeerTimeState::test_timestate(timestamp_0s)
         };
+        sample.last_measurements.set_root_delay(duration_1s);
+        sample.last_measurements.set_root_dispersion(duration_1s);
+
         assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
 
-        packet.set_root_delay(duration_2s);
-        let sample = PeerTimeState {
+        let mut sample = PeerTimeState {
             statistics: PeerStatistics {
                 delay: duration_1s,
                 dispersion: duration_1s,
                 ..Default::default()
             },
-            last_packet: packet.clone(),
             ..PeerTimeState::test_timestate(timestamp_1s)
         };
-        packet.set_root_delay(duration_1s);
+        sample.last_measurements.set_root_delay(duration_2s);
+        sample.last_measurements.set_root_dispersion(duration_1s);
+
         assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
 
-        packet.set_root_dispersion(duration_2s);
-        let sample = PeerTimeState {
+        let mut sample = PeerTimeState {
             statistics: PeerStatistics {
                 delay: duration_1s,
                 dispersion: duration_1s,
                 ..Default::default()
             },
-            last_packet: packet.clone(),
             ..PeerTimeState::test_timestate(timestamp_1s)
         };
-        packet.set_root_dispersion(duration_1s);
+        sample.last_measurements.set_root_delay(duration_1s);
+        sample.last_measurements.set_root_dispersion(duration_2s);
+
         assert!(reference.root_distance(timestamp_1s, ft) < sample.root_distance(timestamp_1s, ft));
 
-        let sample = PeerTimeState {
+        let mut sample = PeerTimeState {
             statistics: PeerStatistics {
                 delay: duration_1s,
                 dispersion: duration_1s,
                 ..Default::default()
             },
-            last_packet: packet.clone(),
             ..PeerTimeState::test_timestate(timestamp_1s)
         };
+        sample.last_measurements.set_root_delay(duration_1s);
+        sample.last_measurements.set_root_dispersion(duration_1s);
 
         assert_eq!(
             reference.root_distance(timestamp_1s, ft),
@@ -304,12 +294,16 @@ mod test {
             }};
         }
 
-        timestate.last_packet.set_leap(NtpLeapIndicator::Unknown);
+        timestate
+            .last_measurements
+            .set_leap(NtpLeapIndicator::Unknown);
         assert_eq!(accept!(), Err(Stratum));
 
-        timestate.last_packet.set_leap(NtpLeapIndicator::NoWarning);
+        timestate
+            .last_measurements
+            .set_leap(NtpLeapIndicator::NoWarning);
 
-        timestate.last_packet.set_root_dispersion(dt * 2);
+        timestate.last_measurements.set_root_dispersion(dt * 2);
         assert_eq!(accept!(), Err(Distance));
     }
 }

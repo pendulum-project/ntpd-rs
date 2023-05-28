@@ -75,8 +75,7 @@
 use tracing::{debug, info, trace};
 
 use crate::{
-    Measurement, NtpDuration, NtpPacket, NtpTimestamp, PollInterval, PollIntervalLimits,
-    SystemConfig,
+    Measurement, NtpDuration, NtpTimestamp, PollInterval, PollIntervalLimits, SystemConfig,
 };
 
 use super::{
@@ -144,7 +143,6 @@ struct PeerFilter {
     desired_poll_interval: PollInterval,
 
     last_measurement: Measurement,
-    last_packet: NtpPacket<'static>,
     prev_was_outlier: bool,
 
     // Last time a packet was processed
@@ -307,11 +305,12 @@ impl PeerFilter {
         config: &SystemConfig,
         algo_config: &AlgorithmConfig,
         measurement: Measurement,
-        packet: NtpPacket<'static>,
     ) -> bool {
-        // Always keep the packet as last packet, since it reflects the most up-to-date
-        // information on the synchronization quality of the remote and any upcoming leap seconds.
-        self.last_packet = packet;
+        // Always update the root_delay, root_dispersion, leap second status and stratum, as they always represent the most accurate state.
+        self.last_measurement.root_delay = measurement.root_delay;
+        self.last_measurement.root_dispersion = measurement.root_dispersion;
+        self.last_measurement.stratum = measurement.stratum;
+        self.last_measurement.leap = measurement.leap;
 
         if measurement.localtime.is_before(self.filter_time) {
             // Ignore the past
@@ -341,8 +340,9 @@ impl PeerFilter {
         debug!(
             "peer offset {}±{}ms, freq {}±{}ppm",
             self.state.entry(0) * 1000.,
-            (self.uncertainty.entry(0, 0) + sqr(self.last_packet.root_dispersion().to_seconds()))
-                .sqrt()
+            (self.uncertainty.entry(0, 0)
+                + sqr(self.last_measurement.root_dispersion.to_seconds()))
+            .sqrt()
                 * 1000.,
             self.state.entry(1) * 1e6,
             self.uncertainty.entry(1, 1).sqrt() * 1e6
@@ -392,7 +392,6 @@ impl PeerState {
         config: &SystemConfig,
         algo_config: &AlgorithmConfig,
         measurement: Measurement,
-        packet: NtpPacket<'static>,
     ) -> bool {
         match &mut self.0 {
             PeerStateInner::Initial(filter) => {
@@ -412,7 +411,6 @@ impl PeerState {
                         poll_score: 0,
                         desired_poll_interval: config.initial_poll,
                         last_measurement: measurement,
-                        last_packet: packet,
                         prev_was_outlier: false,
                         last_iter: measurement.localtime,
                         filter_time: measurement.localtime,
@@ -423,9 +421,7 @@ impl PeerState {
                     false
                 }
             }
-            PeerStateInner::Stable(filter) => {
-                filter.update(config, algo_config, measurement, packet)
-            }
+            PeerStateInner::Stable(filter) => filter.update(config, algo_config, measurement),
         }
     }
 
@@ -437,9 +433,9 @@ impl PeerState {
                 state: filter.state,
                 uncertainty: filter.uncertainty,
                 delay: filter.roundtriptime_stats.mean(),
-                peer_uncertainty: filter.last_packet.root_dispersion(),
-                peer_delay: filter.last_packet.root_delay(),
-                leap_indicator: filter.last_packet.leap(),
+                peer_uncertainty: filter.last_measurement.root_dispersion,
+                peer_delay: filter.last_measurement.root_delay,
+                leap_indicator: filter.last_measurement.leap,
                 last_update: filter.last_iter,
             }),
         }
@@ -485,7 +481,7 @@ impl PeerState {
 mod tests {
     use std::panic::catch_unwind;
 
-    use crate::{Measurement, NtpInstant, NtpPacket, PollIntervalLimits};
+    use crate::{Measurement, NtpInstant, NtpLeapIndicator, PollIntervalLimits};
 
     use super::*;
 
@@ -507,10 +503,17 @@ mod tests {
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base,
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            last_packet: NtpPacket::poll_message(PollIntervalLimits::default().min).0,
             prev_was_outlier: false,
             last_iter: base,
             filter_time: base,
@@ -538,10 +541,17 @@ mod tests {
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base,
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            last_packet: NtpPacket::poll_message(PollIntervalLimits::default().min).0,
             prev_was_outlier: false,
             last_iter: base,
             filter_time: base,
@@ -556,10 +566,17 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
 
         assert!(dbg!((peer.snapshot(0_usize).unwrap().state.entry(0) - 20e-3).abs()) < 1e-7);
@@ -579,10 +596,17 @@ mod tests {
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(-20e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base,
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            last_packet: NtpPacket::poll_message(PollIntervalLimits::default().min).0,
             prev_was_outlier: false,
             last_iter: base,
             filter_time: base,
@@ -599,10 +623,17 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(-20e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
 
         assert!(dbg!((peer.snapshot(0_usize).unwrap().state.entry(0) - -20e-3).abs()) < 1e-7);
@@ -627,10 +658,17 @@ mod tests {
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0.0),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base,
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            last_packet: NtpPacket::poll_message(PollIntervalLimits::default().min).0,
             prev_was_outlier: false,
             last_iter: base,
             filter_time: base,
@@ -659,10 +697,17 @@ mod tests {
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0.0),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base,
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            last_packet: NtpPacket::poll_message(PollIntervalLimits::default().min).0,
             prev_was_outlier: false,
             last_iter: base,
             filter_time: base,
@@ -688,10 +733,17 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
         peer.update_self_using_measurement(
@@ -700,10 +752,17 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(1e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
         peer.update_self_using_measurement(
@@ -712,10 +771,17 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(2e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
         peer.update_self_using_measurement(
@@ -724,10 +790,17 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(3e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
         peer.update_self_using_measurement(
@@ -736,10 +809,17 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(4e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
         peer.update_self_using_measurement(
@@ -748,10 +828,17 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(5e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
         peer.update_self_using_measurement(
@@ -760,10 +847,17 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(6e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
         peer.update_self_using_measurement(
@@ -772,10 +866,17 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(7e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_some());
         assert!((peer.snapshot(0_usize).unwrap().state.entry(0) - 3.5e-3).abs() < 1e-7);
@@ -794,10 +895,17 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(4e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
         peer.update_self_using_measurement(
@@ -806,10 +914,17 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(5e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
         peer.update_self_using_measurement(
@@ -818,10 +933,17 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(6e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
         peer.update_self_using_measurement(
@@ -830,10 +952,17 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(7e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         peer.process_offset_steering(4e-3);
         assert!(peer.snapshot(0_usize).is_none());
@@ -843,10 +972,17 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(4e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
         peer.update_self_using_measurement(
@@ -855,10 +991,17 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(5e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
         peer.update_self_using_measurement(
@@ -867,10 +1010,17 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(6e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_none());
         peer.update_self_using_measurement(
@@ -879,10 +1029,17 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(7e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            NtpPacket::poll_message(PollIntervalLimits::default().min).0,
         );
         assert!(peer.snapshot(0_usize).is_some());
         assert!((peer.snapshot(0_usize).unwrap().state.entry(0) - 3.5e-3).abs() < 1e-7);
@@ -913,10 +1070,17 @@ mod tests {
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0.0),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base,
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            last_packet: NtpPacket::poll_message(PollIntervalLimits::default().min).0,
             prev_was_outlier: false,
             last_iter: base,
             filter_time: base,
@@ -1032,10 +1196,17 @@ mod tests {
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0.0),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
                 localtime: base,
                 monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
             },
-            last_packet: NtpPacket::poll_message(PollIntervalLimits::default().min).0,
             prev_was_outlier: false,
             last_iter: base,
             filter_time: base,

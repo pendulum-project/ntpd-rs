@@ -296,8 +296,8 @@ impl<C: NtpClock, T: Wait> System<C, T> {
             MsgForSystem::MustDemobilize(index) => {
                 self.handle_peer_demobilize(index).await;
             }
-            MsgForSystem::NewMeasurement(index, snapshot, measurement, packet) => {
-                self.handle_peer_measurement(index, snapshot, measurement, packet, wait);
+            MsgForSystem::NewMeasurement(index, snapshot, measurement) => {
+                self.handle_peer_measurement(index, snapshot, measurement, wait);
             }
             MsgForSystem::UpdatedSnapshot(index, snapshot) => {
                 self.handle_peer_snapshot(index, snapshot);
@@ -378,12 +378,11 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         index: PeerId,
         snapshot: PeerSnapshot,
         measurement: ntp_proto::Measurement,
-        packet: ntp_proto::NtpPacket<'static>,
         wait: &mut Pin<&mut SingleshotSleep<T>>,
     ) {
         self.handle_peer_snapshot(index, snapshot);
         // note: local needed for borrow checker
-        let update = self.controller.peer_measurement(index, measurement, packet);
+        let update = self.controller.peer_measurement(index, measurement);
         self.handle_algorithm_state_update(update, wait);
     }
 
@@ -544,7 +543,7 @@ pub struct ServerData {
 mod tests {
     use ntp_proto::{
         peer_snapshot, KeySetProvider, Measurement, NtpDuration, NtpInstant, NtpLeapIndicator,
-        NtpPacket, NtpTimestamp, PollInterval,
+        NtpTimestamp, PollInterval,
     };
 
     use crate::spawn::dummy::DummySpawner;
@@ -651,10 +650,17 @@ mod tests {
                     Measurement {
                         delay: NtpDuration::from_seconds(0.1),
                         offset: NtpDuration::from_seconds(0.),
+                        transmit_timestamp: NtpTimestamp::default(),
+                        receive_timestamp: NtpTimestamp::default(),
                         localtime: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 0),
                         monotime: base,
+
+                        stratum: 0,
+                        root_delay: NtpDuration::default(),
+                        root_dispersion: NtpDuration::default(),
+                        leap: NtpLeapIndicator::NoWarning,
+                        precision: 0,
                     },
-                    NtpPacket::test(),
                 ),
                 &mut wait,
             )
@@ -680,10 +686,17 @@ mod tests {
                     Measurement {
                         delay: NtpDuration::from_seconds(0.1),
                         offset: NtpDuration::from_seconds(0.),
+                        transmit_timestamp: NtpTimestamp::default(),
+                        receive_timestamp: NtpTimestamp::default(),
                         localtime: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 0),
                         monotime: base,
+
+                        stratum: 0,
+                        root_delay: NtpDuration::default(),
+                        root_dispersion: NtpDuration::default(),
+                        leap: NtpLeapIndicator::NoWarning,
+                        precision: 0,
                     },
-                    NtpPacket::test(),
                 ),
                 &mut wait,
             )

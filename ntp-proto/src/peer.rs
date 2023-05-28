@@ -4,7 +4,8 @@ use crate::{
     cookiestash::CookieStash,
     packet::{Cipher, NtpAssociationMode, RequestIdentifier},
     time_types::NtpInstant,
-    NtpDuration, NtpPacket, NtpTimestamp, PollInterval, ReferenceId, SystemConfig, SystemSnapshot,
+    NtpDuration, NtpLeapIndicator, NtpPacket, NtpTimestamp, PollInterval, ReferenceId,
+    SystemConfig, SystemSnapshot,
 };
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument, trace, warn};
@@ -79,8 +80,16 @@ pub struct Peer {
 pub struct Measurement {
     pub delay: NtpDuration,
     pub offset: NtpDuration,
+    pub transmit_timestamp: NtpTimestamp,
+    pub receive_timestamp: NtpTimestamp,
     pub localtime: NtpTimestamp,
     pub monotime: NtpInstant,
+
+    pub stratum: u8,
+    pub root_delay: NtpDuration,
+    pub root_dispersion: NtpDuration,
+    pub leap: NtpLeapIndicator,
+    pub precision: i8,
 }
 
 impl Measurement {
@@ -98,8 +107,16 @@ impl Measurement {
             offset: ((packet.receive_timestamp() - send_timestamp)
                 + (packet.transmit_timestamp() - recv_timestamp))
                 / 2,
+            transmit_timestamp: packet.transmit_timestamp(),
+            receive_timestamp: packet.receive_timestamp(),
             localtime: send_timestamp + (recv_timestamp - send_timestamp) / 2,
             monotime: local_clock_time,
+
+            stratum: packet.stratum(),
+            root_delay: packet.root_delay(),
+            root_dispersion: packet.root_dispersion(),
+            leap: packet.leap(),
+            precision: packet.precision(),
         }
     }
 }
@@ -264,7 +281,7 @@ pub enum AcceptSynchronizationError {
 #[allow(clippy::large_enum_variant)]
 pub enum Update {
     BareUpdate(PeerSnapshot),
-    NewMeasurement(PeerSnapshot, Measurement, NtpPacket<'static>),
+    NewMeasurement(PeerSnapshot, Measurement),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -483,11 +500,7 @@ impl Peer {
             }
         }
 
-        Update::NewMeasurement(
-            PeerSnapshot::from_peer(self),
-            measurement,
-            message.into_owned(),
-        )
+        Update::NewMeasurement(PeerSnapshot::from_peer(self), measurement)
     }
 
     #[instrument(level="trace", skip(self), fields(peer = debug(self.peer_id)))]

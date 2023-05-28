@@ -43,23 +43,15 @@ struct ControllerPeerState {
 }
 
 impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> StandardClockController<C, PeerID> {
-    fn run_peer_update(
-        &mut self,
-        now: NtpInstant,
-        id: PeerID,
-        measurement: Measurement,
-        packet: crate::NtpPacket<'static>,
-    ) -> bool {
+    fn run_peer_update(&mut self, now: NtpInstant, id: PeerID, measurement: Measurement) -> bool {
         let current_peerstate = match self.peerstate.get_mut(&id) {
             Some(v) => v,
             None => return false,
         };
-        let update_result = current_peerstate.timestate.update(
-            measurement,
-            packet.clone().into_owned(),
-            self.timestate,
-            &self.algo_config,
-        );
+        let update_result =
+            current_peerstate
+                .timestate
+                .update(measurement, self.timestate, &self.algo_config);
         update_result.is_none()
             || !current_peerstate.usable
             || PeerTimeSnapshot::from_timestate(&current_peerstate.timestate)
@@ -182,7 +174,6 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
                 timestate: PeerTimeState {
                     statistics: Default::default(),
                     last_measurements: LastMeasurements::new(time),
-                    last_packet: Default::default(),
                     time,
                 },
                 usable: false,
@@ -204,7 +195,6 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
         &mut self,
         id: PeerID,
         measurement: crate::peer::Measurement,
-        packet: crate::NtpPacket<'static>,
     ) -> StateUpdate<PeerID> {
         let now = NtpInstant::now();
 
@@ -216,7 +206,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
         }
 
         // Update peer's state and check if the clock needs recalculation
-        if !self.run_peer_update(now, id, measurement, packet) {
+        if !self.run_peer_update(now, id, measurement) {
             return StateUpdate::default();
         }
 
