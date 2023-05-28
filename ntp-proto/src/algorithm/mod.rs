@@ -2,9 +2,7 @@ use std::{fmt::Debug, hash::Hash};
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use crate::{
-    peer::Measurement, NtpClock, NtpDuration, NtpPacket, NtpTimestamp, SystemConfig, TimeSnapshot,
-};
+use crate::{peer::Measurement, NtpClock, NtpDuration, NtpTimestamp, SystemConfig, TimeSnapshot};
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct ObservablePeerTimedata {
@@ -58,12 +56,7 @@ pub trait TimeSyncController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> {
     /// Notify the controller of a new measurement from a peer.
     /// The list of peerIDs is used for loop detection, with the
     /// first peerID given considered the primary peer used.
-    fn peer_measurement(
-        &mut self,
-        id: PeerID,
-        measurement: Measurement,
-        packet: NtpPacket<'static>,
-    ) -> StateUpdate<PeerID>;
+    fn peer_measurement(&mut self, id: PeerID, measurement: Measurement) -> StateUpdate<PeerID>;
     /// Non-measurement driven update (queued via next_update)
     fn time_update(&mut self) -> StateUpdate<PeerID>;
     /// Get a snapshot of the timekeeping state of a peer.

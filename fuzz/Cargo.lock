@@ -308,12 +308,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dtoa"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8a6eee2d5d0d113f015688310da018bd1d864d86bd567c8fca9c266889e1bfa"
-
-[[package]]
 name = "errno"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -333,12 +327,6 @@ dependencies = [
  "cc",
  "libc",
 ]
-
-[[package]]
-name = "exitcode"
-version = "1.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de853764b47027c2e862a995c34978ffa63c1501f2e15f987ba11bd4f9bba193"
 
 [[package]]
 name = "generic-array"
@@ -540,16 +528,14 @@ dependencies = [
 
 [[package]]
 name = "ntp-daemon"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "async-trait",
  "clap",
- "exitcode",
  "libc",
  "ntp-os-clock",
  "ntp-proto",
  "ntp-udp",
- "prometheus-client",
  "rand",
  "rustls",
  "rustls-native-certs",
@@ -565,7 +551,7 @@ dependencies = [
 
 [[package]]
 name = "ntp-os-clock"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "libc",
  "ntp-proto",
@@ -575,12 +561,11 @@ dependencies = [
 
 [[package]]
 name = "ntp-proto"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "aead",
  "aes-siv",
  "arbitrary",
- "exitcode",
  "md-5",
  "rand",
  "rustls",
@@ -601,7 +586,7 @@ dependencies = [
 
 [[package]]
 name = "ntp-udp"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "libc",
  "ntp-proto",
@@ -690,29 +675,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b63bdb0cd06f1f4dedf69b254734f9b45af66e4a031e42a7480257d9898b435"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "prometheus-client"
-version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d6fa99d535dd930d1249e6c79cb3c2915f9172a540fe2b02a4c8f9ca954721e"
-dependencies = [
- "dtoa",
- "itoa",
- "parking_lot",
- "prometheus-client-derive-encode",
-]
-
-[[package]]
-name = "prometheus-client-derive-encode"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72b6a5217beb0ad503ee7fa752d451c905113d70721b937126158f3106a48cc1"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.105",
 ]
 
 [[package]]

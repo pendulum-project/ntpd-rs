@@ -3,8 +3,8 @@ use std::{collections::HashMap, fmt::Debug, hash::Hash};
 use tracing::{error, info, instrument};
 
 use crate::{
-    Measurement, NtpClock, NtpDuration, NtpLeapIndicator, NtpPacket, NtpTimestamp,
-    ObservablePeerTimedata, StateUpdate, SystemConfig, TimeSnapshot, TimeSyncController,
+    Measurement, NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, ObservablePeerTimedata,
+    StateUpdate, SystemConfig, TimeSnapshot, TimeSyncController,
 };
 
 use self::{
@@ -73,19 +73,12 @@ pub struct KalmanClockController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> 
 
 impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, PeerID> {
     #[instrument(skip(self))]
-    fn update_peer(
-        &mut self,
-        id: PeerID,
-        measurement: Measurement,
-        packet: NtpPacket<'static>,
-    ) -> bool {
+    fn update_peer(&mut self, id: PeerID, measurement: Measurement) -> bool {
         self.peers.get_mut(&id).map(|state| {
-            state.0.update_self_using_measurement(
-                &self.config,
-                &self.algo_config,
-                measurement,
-                packet,
-            ) && state.1
+            state
+                .0
+                .update_self_using_measurement(&self.config, &self.algo_config, measurement)
+                && state.1
         }) == Some(true)
     }
 
@@ -338,13 +331,8 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
         }
     }
 
-    fn peer_measurement(
-        &mut self,
-        id: PeerID,
-        measurement: Measurement,
-        packet: NtpPacket<'static>,
-    ) -> StateUpdate<PeerID> {
-        let should_update_clock = self.update_peer(id, measurement, packet);
+    fn peer_measurement(&mut self, id: PeerID, measurement: Measurement) -> StateUpdate<PeerID> {
+        let should_update_clock = self.update_peer(id, measurement);
         self.update_desired_poll();
         if should_update_clock {
             self.update_clock(measurement.localtime)
@@ -467,10 +455,17 @@ mod tests {
                 Measurement {
                     delay: NtpDuration::from_seconds(0.001 + noise),
                     offset: NtpDuration::from_seconds(1700.0 + noise),
+                    transmit_timestamp: Default::default(),
+                    receive_timestamp: Default::default(),
                     localtime: algo.clock.current_time,
                     monotime: cur_instant,
+
+                    stratum: 0,
+                    root_delay: NtpDuration::default(),
+                    root_dispersion: NtpDuration::default(),
+                    leap: NtpLeapIndicator::NoWarning,
+                    precision: 0,
                 },
-                NtpPacket::test(),
             );
         }
 
@@ -512,10 +507,17 @@ mod tests {
                 Measurement {
                     delay: NtpDuration::from_seconds(0.001 + noise),
                     offset: NtpDuration::from_seconds(1700.0 + noise),
+                    transmit_timestamp: Default::default(),
+                    receive_timestamp: Default::default(),
                     localtime: algo.clock.current_time,
                     monotime: cur_instant,
+
+                    stratum: 0,
+                    root_delay: NtpDuration::default(),
+                    root_dispersion: NtpDuration::default(),
+                    leap: NtpLeapIndicator::NoWarning,
+                    precision: 0,
                 },
-                NtpPacket::test(),
             );
         }
     }
@@ -555,10 +557,17 @@ mod tests {
                 Measurement {
                     delay: NtpDuration::from_seconds(0.001 + noise),
                     offset: NtpDuration::from_seconds(-3600.0 + noise),
+                    transmit_timestamp: Default::default(),
+                    receive_timestamp: Default::default(),
                     localtime: algo.clock.current_time,
                     monotime: cur_instant,
+
+                    stratum: 0,
+                    root_delay: NtpDuration::default(),
+                    root_dispersion: NtpDuration::default(),
+                    leap: NtpLeapIndicator::NoWarning,
+                    precision: 0,
                 },
-                NtpPacket::test(),
             );
         }
     }

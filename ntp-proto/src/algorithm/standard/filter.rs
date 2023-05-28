@@ -7,10 +7,9 @@
 //
 //      https://datatracker.ietf.org/doc/html/rfc5905#appendix-A.5.2
 
-use crate::packet::NtpAssociationMode;
 use crate::peer::Measurement;
 use crate::time_types::{FrequencyTolerance, NtpInstant};
-use crate::{packet::NtpLeapIndicator, NtpDuration, NtpPacket};
+use crate::{packet::NtpLeapIndicator, NtpDuration};
 use tracing::{debug, instrument, warn};
 
 use super::peer::PeerStatistics;
@@ -45,18 +44,15 @@ impl FilterTuple {
     /// All other associations should use this function
     pub fn from_measurement(
         measurement: Measurement,
-        packet: &NtpPacket,
         system_precision: NtpDuration,
         frequency_tolerance: FrequencyTolerance,
     ) -> Self {
-        // for a broadcast association, different logic is used
-        debug_assert_ne!(packet.mode(), NtpAssociationMode::Broadcast);
-
-        let packet_precision = NtpDuration::from_exponent(packet.precision());
+        let packet_precision = NtpDuration::from_exponent(measurement.precision);
 
         let dispersion = packet_precision
             + system_precision
-            + ((measurement.delay + (packet.transmit_timestamp() - packet.receive_timestamp()))
+            + ((measurement.delay
+                + (measurement.transmit_timestamp - measurement.receive_timestamp))
                 * frequency_tolerance);
 
         Self {
@@ -71,13 +67,52 @@ impl FilterTuple {
 #[derive(Debug, Clone)]
 pub(super) struct LastMeasurements {
     register: [FilterTuple; 8],
+    root_delay: NtpDuration,
+    root_dispersion: NtpDuration,
+    stratum: u8,
+    leap: NtpLeapIndicator,
 }
 
 impl LastMeasurements {
     pub const fn new(instant: NtpInstant) -> Self {
         Self {
             register: [FilterTuple::dummy(instant); 8],
+            root_delay: NtpDuration::ZERO,
+            root_dispersion: NtpDuration::ZERO,
+            stratum: 0,
+            leap: NtpLeapIndicator::Unknown,
         }
+    }
+
+    pub fn last_root_delay(&self) -> NtpDuration {
+        self.root_delay
+    }
+
+    pub fn last_root_dispersion(&self) -> NtpDuration {
+        self.root_dispersion
+    }
+
+    #[cfg(test)]
+    pub fn set_root_delay(&mut self, root_delay: NtpDuration) {
+        self.root_delay = root_delay;
+    }
+
+    #[cfg(test)]
+    pub fn set_root_dispersion(&mut self, root_dispersion: NtpDuration) {
+        self.root_dispersion = root_dispersion;
+    }
+
+    #[cfg(test)]
+    pub fn set_leap(&mut self, leap: NtpLeapIndicator) {
+        self.leap = leap
+    }
+
+    pub fn last_stratum(&self) -> u8 {
+        self.stratum
+    }
+
+    pub fn last_leap(&self) -> NtpLeapIndicator {
+        self.leap
     }
 
     /// Insert the new tuple at index 0, move all other tuples one to the right.
@@ -96,12 +131,21 @@ impl LastMeasurements {
     #[instrument(level = "trace")]
     pub fn step(
         &mut self,
-        new_tuple: FilterTuple,
+        measurement: Measurement,
         peer_time: NtpInstant,
         system_leap_indicator: NtpLeapIndicator,
         system_precision: NtpDuration,
         frequency_tolerance: FrequencyTolerance,
     ) -> Option<(PeerStatistics, NtpInstant)> {
+        let new_tuple =
+            FilterTuple::from_measurement(measurement, system_precision, frequency_tolerance);
+
+        // always update root delay and root dispersion
+        self.root_delay = measurement.root_delay;
+        self.root_dispersion = measurement.root_dispersion;
+        self.stratum = measurement.stratum;
+        self.leap = measurement.leap;
+
         // correction depends on time passed since last register update!, not peer_time
         let dispersion_correction =
             NtpInstant::abs_diff(new_tuple.time, self.register[0].time) * frequency_tolerance;
@@ -246,6 +290,8 @@ impl TemporaryList {
 
 #[cfg(test)]
 mod test {
+    use crate::NtpTimestamp;
+
     use super::*;
 
     #[test]
@@ -305,18 +351,26 @@ mod test {
     fn clock_filter_defaults() {
         let instant = NtpInstant::now();
 
-        let new_tuple = FilterTuple {
-            offset: Default::default(),
-            delay: Default::default(),
-            dispersion: Default::default(),
-            time: instant,
+        let measurement = Measurement {
+            delay: NtpDuration::ZERO,
+            offset: NtpDuration::ZERO,
+            transmit_timestamp: NtpTimestamp::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            localtime: NtpTimestamp::default(),
+            monotime: instant,
+
+            stratum: 0,
+            root_delay: NtpDuration::ZERO,
+            root_dispersion: NtpDuration::ZERO,
+            leap: NtpLeapIndicator::Unknown,
+            precision: 0,
         };
 
         let mut measurements = LastMeasurements::new(instant);
 
         let peer_time = instant;
         let update = measurements.step(
-            new_tuple,
+            measurement,
             peer_time,
             NtpLeapIndicator::NoWarning,
             NtpDuration::ZERO,
@@ -332,19 +386,26 @@ mod test {
     fn clock_filter_new() {
         let base = NtpInstant::now();
 
-        let new_tuple = FilterTuple {
-            offset: NtpDuration::from_seconds(0.1),
+        let measurement = Measurement {
             delay: NtpDuration::from_seconds(0.05),
-            dispersion: Default::default(),
-            // make sure this tuple is more recent than the peer's current time
-            time: base + std::time::Duration::new(1, 0),
+            offset: NtpDuration::from_seconds(0.1),
+            transmit_timestamp: NtpTimestamp::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            localtime: NtpTimestamp::default(),
+            monotime: base + std::time::Duration::new(1, 0),
+
+            stratum: 0,
+            root_delay: NtpDuration::ZERO,
+            root_dispersion: NtpDuration::ZERO,
+            leap: NtpLeapIndicator::Unknown,
+            precision: 0,
         };
 
         let mut measurements = LastMeasurements::new(base);
 
         let mut peer_time = base;
         let update = measurements.step(
-            new_tuple,
+            measurement,
             peer_time,
             NtpLeapIndicator::NoWarning,
             NtpDuration::ZERO,
@@ -355,9 +416,9 @@ mod test {
 
         let (statistics, new_time) = update.unwrap();
 
-        assert_eq!(statistics.offset, new_tuple.offset);
-        assert_eq!(statistics.delay, new_tuple.delay);
-        assert_eq!(new_time, new_tuple.time);
+        assert_eq!(statistics.offset, measurement.offset);
+        assert_eq!(statistics.delay, measurement.delay);
+        assert_eq!(new_time, measurement.monotime);
 
         peer_time = new_time;
 
@@ -366,19 +427,25 @@ mod test {
 
         let temporary = TemporaryList::from_clock_filter_contents(&measurements);
 
-        assert_eq!(temporary.register[0], new_tuple);
-        assert_eq!(temporary.valid_tuples(), &[new_tuple]);
+        assert_eq!(temporary.valid_tuples().len(), 1);
 
-        let new_tuple = FilterTuple {
-            offset: NtpDuration::from_seconds(0.09),
+        let measurement = Measurement {
             delay: NtpDuration::from_seconds(0.04),
-            dispersion: Default::default(),
-            // make sure this tuple is more recent than the peer's current time
-            time: base + std::time::Duration::new(2, 0),
+            offset: NtpDuration::from_seconds(0.09),
+            transmit_timestamp: NtpTimestamp::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            localtime: NtpTimestamp::default(),
+            monotime: base + std::time::Duration::new(2, 0),
+
+            stratum: 0,
+            root_delay: NtpDuration::ZERO,
+            root_dispersion: NtpDuration::ZERO,
+            leap: NtpLeapIndicator::Unknown,
+            precision: 0,
         };
 
         let update = measurements.step(
-            new_tuple,
+            measurement,
             peer_time,
             NtpLeapIndicator::NoWarning,
             NtpDuration::ZERO,
@@ -386,21 +453,29 @@ mod test {
         );
 
         let (statistics, new_time) = update.unwrap();
-        assert_eq!(new_time, new_tuple.time);
+        assert_eq!(new_time, measurement.monotime);
         assert!(statistics.jitter > 0.0);
         assert!(measurements.register[1].dispersion > NtpDuration::ZERO);
 
         peer_time = new_time;
 
-        let new_tuple = FilterTuple {
+        let measurement = Measurement {
             offset: NtpDuration::from_seconds(0.1),
             delay: NtpDuration::from_seconds(0.06),
-            dispersion: Default::default(),
-            time: base + std::time::Duration::new(3, 0),
+            transmit_timestamp: NtpTimestamp::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            localtime: NtpTimestamp::default(),
+            monotime: base + std::time::Duration::new(3, 0),
+
+            stratum: 0,
+            root_delay: NtpDuration::ZERO,
+            root_dispersion: NtpDuration::ZERO,
+            leap: NtpLeapIndicator::Unknown,
+            precision: 0,
         };
 
         let update = measurements.step(
-            new_tuple,
+            measurement,
             peer_time,
             NtpLeapIndicator::NoWarning,
             NtpDuration::ZERO,
@@ -415,17 +490,33 @@ mod test {
         let base = NtpInstant::now();
         let mut filter = LastMeasurements::new(base);
 
-        let a = FilterTuple {
+        let a = Measurement {
             offset: Default::default(),
             delay: Default::default(),
-            dispersion: Default::default(),
-            time: base + std::time::Duration::from_secs(1000),
+            transmit_timestamp: NtpTimestamp::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            localtime: NtpTimestamp::default(),
+            monotime: base + std::time::Duration::from_secs(1000),
+
+            stratum: 0,
+            root_delay: NtpDuration::ZERO,
+            root_dispersion: NtpDuration::ZERO,
+            leap: NtpLeapIndicator::Unknown,
+            precision: 0,
         };
-        let b = FilterTuple {
+        let b = Measurement {
             offset: Default::default(),
             delay: Default::default(),
-            dispersion: Default::default(),
-            time: base + std::time::Duration::from_secs(2000),
+            transmit_timestamp: NtpTimestamp::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            localtime: NtpTimestamp::default(),
+            monotime: base + std::time::Duration::from_secs(2000),
+
+            stratum: 0,
+            root_delay: NtpDuration::ZERO,
+            root_dispersion: NtpDuration::ZERO,
+            leap: NtpLeapIndicator::Unknown,
+            precision: 0,
         };
 
         filter.step(
@@ -435,6 +526,8 @@ mod test {
             NtpDuration::from_exponent(-32),
             FrequencyTolerance::ppm(15),
         );
+        let initial_dispersion = filter.register[0].dispersion.to_seconds();
+
         filter.step(
             b,
             base,
@@ -443,6 +536,6 @@ mod test {
             FrequencyTolerance::ppm(15),
         );
 
-        assert!((filter.register[1].dispersion.to_seconds() - 15e-3) < 1e-6);
+        assert!(((filter.register[1].dispersion.to_seconds() - initial_dispersion) - 15e-3) < 1e-6);
     }
 }

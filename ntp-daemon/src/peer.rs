@@ -6,8 +6,8 @@ use std::{
 };
 
 use ntp_proto::{
-    IgnoreReason, Measurement, NtpClock, NtpInstant, NtpPacket, NtpTimestamp, Peer, PeerNtsData,
-    PeerSnapshot, PollError, ReferenceId, SystemSnapshot, Update,
+    IgnoreReason, Measurement, NtpClock, NtpInstant, NtpTimestamp, Peer, PeerNtsData, PeerSnapshot,
+    PollError, ReferenceId, SystemSnapshot, Update,
 };
 use ntp_udp::{EnableTimestamps, InterfaceName, UdpSocket};
 use rand::{thread_rng, Rng};
@@ -39,7 +39,7 @@ pub enum MsgForSystem {
     Unreachable(PeerId),
     /// Received an acceptable packet and made a new peer snapshot
     /// A new measurement should try to trigger a clock select
-    NewMeasurement(PeerId, PeerSnapshot, Measurement, NtpPacket<'static>),
+    NewMeasurement(PeerId, PeerSnapshot, Measurement),
     /// A snapshot may have been updated, but this should not
     /// trigger a clock select in System
     UpdatedSnapshot(PeerId, PeerSnapshot),
@@ -202,8 +202,8 @@ where
 
                 let msg = match update {
                     Update::BareUpdate(update) => MsgForSystem::UpdatedSnapshot(self.index, update),
-                    Update::NewMeasurement(update, measurement, packet) => {
-                        MsgForSystem::NewMeasurement(self.index, update, measurement, packet)
+                    Update::NewMeasurement(update, measurement) => {
+                        MsgForSystem::NewMeasurement(self.index, update, measurement)
                     }
                 };
                 self.channels.msg_for_system_sender.send(msg).await.ok();
@@ -408,7 +408,9 @@ fn accept_packet(
 mod tests {
     use std::{io::Cursor, sync::Arc, time::Duration};
 
-    use ntp_proto::{NoCipher, NtpDuration, NtpLeapIndicator, PollInterval, TimeSnapshot};
+    use ntp_proto::{
+        NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket, PollInterval, TimeSnapshot,
+    };
     use tokio::sync::mpsc;
 
     use super::*;
@@ -664,7 +666,7 @@ mod tests {
         socket.send(&serialized).await.unwrap();
 
         let msg = msg_recv.recv().await.unwrap();
-        assert!(matches!(msg, MsgForSystem::NewMeasurement(_, _, _, _)));
+        assert!(matches!(msg, MsgForSystem::NewMeasurement(_, _, _)));
 
         handle.abort();
     }
