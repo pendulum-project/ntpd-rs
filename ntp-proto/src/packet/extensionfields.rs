@@ -422,8 +422,7 @@ impl<'a> ExtensionFieldData<'a> {
 
     #[allow(clippy::type_complexity)]
     pub(super) fn deserialize(
-        data: &'a [u8],
-        header_size: usize,
+        extension_field_bytes: &'a [u8],
         cipher: &impl CipherProvider,
     ) -> Result<DeserializedExtensionField<'a>, ParsingError<std::convert::Infallible>> {
         let mut this = Self::default();
@@ -431,12 +430,12 @@ impl<'a> ExtensionFieldData<'a> {
         let mut has_invalid_nts = false;
         let mut cookie = None;
         for field in RawExtensionField::deserialize_sequence(
-            &data[header_size..],
+            &extension_field_bytes,
             Mac::MAXIMUM_SIZE,
             RawExtensionField::V4_UNENCRYPTED_MINIMUM_SIZE,
         ) {
-            let (offset, field) = field.map_err(|e| e.generalize())?;
-            size = offset + field.wire_length();
+            let field = field.map_err(|e| e.generalize())?;
+            size += field.wire_length();
             match field.type_id {
                 ExtensionFieldTypeId::NtsEncryptedField => {
                     let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)
@@ -453,7 +452,7 @@ impl<'a> ExtensionFieldData<'a> {
                     };
 
                     let encrypted_fields =
-                        match encrypted.decrypt(cipher.as_ref(), &data[..header_size + offset]) {
+                        match encrypted.decrypt(cipher.as_ref(), field.message_bytes) {
                             Ok(encrypted_fields) => encrypted_fields,
                             Err(e) => {
                                 e.get_decrypt_error()?;
@@ -481,7 +480,7 @@ impl<'a> ExtensionFieldData<'a> {
 
         let result = DeserializedExtensionField {
             efdata: this,
-            remaining_bytes: &data[header_size + size..],
+            remaining_bytes: &extension_field_bytes[size..],
             opt_cookie: (!has_invalid_nts).then_some(cookie),
         };
 
@@ -539,7 +538,7 @@ impl<'a> RawEncryptedField<'a> {
 
         RawExtensionField::deserialize_sequence(&plaintext, 0, RawExtensionField::BARE_MINIMUM_SIZE)
             .map(|encrypted_field| {
-                let encrypted_field = encrypted_field.map_err(|e| e.generalize())?.1;
+                let encrypted_field = encrypted_field.map_err(|e| e.generalize())?;
                 if encrypted_field.type_id == ExtensionFieldTypeId::NtsEncryptedField {
                     // TODO: Discuss whether we want this check
                     Err(ParsingError::MalformedNtsExtensionFields)
@@ -602,9 +601,8 @@ impl<'a> RawExtensionField<'a> {
         buffer: &'a [u8],
         cutoff: usize,
         minimum_size: usize,
-    ) -> impl Iterator<
-        Item = Result<(usize, RawExtensionField<'a>), ParsingError<std::convert::Infallible>>,
-    > + 'a {
+    ) -> impl Iterator<Item = Result<RawExtensionField<'a>, ParsingError<std::convert::Infallible>>> + 'a
+    {
         ExtensionFieldStreamer {
             buffer,
             cutoff,
@@ -621,7 +619,7 @@ struct ExtensionFieldStreamer<'a> {
 }
 
 impl<'a> Iterator for ExtensionFieldStreamer<'a> {
-    type Item = Result<(usize, RawExtensionField<'a>), ParsingError<std::convert::Infallible>>;
+    type Item = Result<RawExtensionField<'a>, ParsingError<std::convert::Infallible>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.buffer.len() - self.offset <= self.cutoff {
@@ -630,9 +628,8 @@ impl<'a> Iterator for ExtensionFieldStreamer<'a> {
 
         match RawExtensionField::deserialize(&self.buffer[self.offset..], self.minimum_size) {
             Ok(field) => {
-                let offset = self.offset;
                 self.offset += field.wire_length();
-                Some(Ok((offset, field)))
+                Some(Ok(field))
             }
             Err(error) => {
                 self.offset = self.buffer.len();

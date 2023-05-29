@@ -306,7 +306,7 @@ impl<'a> NtpPacket<'a> {
                 let (header, header_size) =
                     NtpHeaderV3V4::deserialize(data).map_err(|e| e.generalize())?;
 
-                let decoded = ExtensionFieldData::deserialize(data, header_size, cipher)
+                let decoded = ExtensionFieldData::deserialize(&data[header_size..], cipher)
                     .map_err(|e| e.generalize())?;
 
                 let mac = if !decoded.remaining_bytes.is_empty() {
