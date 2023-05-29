@@ -72,7 +72,7 @@
 /// If they are often too small, v is quartered, and if they are often too
 /// large, v is quadrupled (note, this corresponds with doubling/halving
 /// the more intuitive standard deviation).
-use tracing::{debug, info, trace};
+use tracing::{debug, error, info, trace};
 
 use crate::{
     Measurement, NtpDuration, NtpTimestamp, PollInterval, PollIntervalLimits, SystemConfig,
@@ -421,7 +421,31 @@ impl PeerState {
                     false
                 }
             }
-            PeerStateInner::Stable(filter) => filter.update(config, algo_config, measurement),
+            PeerStateInner::Stable(filter) => {
+                // We check that the difference between the localtime and monotonic
+                // times of the measurement is in line with what would be expected
+                // from recent steering. This check needs to be done here since we
+                // need to revert back to the initial state.
+                let localtime_difference =
+                    measurement.localtime - filter.last_measurement.localtime;
+                let monotime_difference = measurement
+                    .monotime
+                    .abs_diff(filter.last_measurement.monotime);
+
+                if (localtime_difference - monotime_difference).abs()
+                    > algo_config.meddling_threshold
+                {
+                    error!("Detected clock meddling");
+                    *self = PeerState(PeerStateInner::Initial(InitialPeerFilter {
+                        roundtriptime_stats: AveragingBuffer::default(),
+                        init_offset: AveragingBuffer::default(),
+                        samples: 0,
+                    }));
+                    false
+                } else {
+                    filter.update(config, algo_config, measurement)
+                }
+            }
         }
     }
 
@@ -484,6 +508,161 @@ mod tests {
     use crate::{Measurement, NtpInstant, NtpLeapIndicator, PollIntervalLimits};
 
     use super::*;
+
+    #[test]
+    fn test_meddling_detection() {
+        let base = NtpTimestamp::from_fixed_int(0);
+        let basei = NtpInstant::now();
+
+        let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
+            state: Vector::new(20e-3, 0.),
+            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            clock_wander: 1e-8,
+            roundtriptime_stats: AveragingBuffer {
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                next_idx: 0,
+            },
+            precision_score: 0,
+            poll_score: 0,
+            desired_poll_interval: PollIntervalLimits::default().min,
+            last_measurement: Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(20e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
+                localtime: base,
+                monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
+            },
+            prev_was_outlier: false,
+            last_iter: base,
+            filter_time: base,
+        }));
+        peer.update_self_using_measurement(
+            &SystemConfig::default(),
+            &AlgorithmConfig::default(),
+            Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(20e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
+                localtime: base + NtpDuration::from_seconds(1000.0),
+                monotime: basei + std::time::Duration::from_secs(2800),
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
+            },
+        );
+        assert!(matches!(peer, PeerState(PeerStateInner::Initial(_))));
+
+        let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
+            state: Vector::new(20e-3, 0.),
+            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            clock_wander: 1e-8,
+            roundtriptime_stats: AveragingBuffer {
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                next_idx: 0,
+            },
+            precision_score: 0,
+            poll_score: 0,
+            desired_poll_interval: PollIntervalLimits::default().min,
+            last_measurement: Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(20e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
+                localtime: base,
+                monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
+            },
+            prev_was_outlier: false,
+            last_iter: base,
+            filter_time: base,
+        }));
+        peer.process_offset_steering(-1800.0);
+        peer.update_self_using_measurement(
+            &SystemConfig::default(),
+            &AlgorithmConfig::default(),
+            Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(20e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
+                localtime: base + NtpDuration::from_seconds(1000.0),
+                monotime: basei + std::time::Duration::from_secs(2800),
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
+            },
+        );
+        assert!(matches!(peer, PeerState(PeerStateInner::Stable(_))));
+
+        let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
+            state: Vector::new(20e-3, 0.),
+            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            clock_wander: 1e-8,
+            roundtriptime_stats: AveragingBuffer {
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                next_idx: 0,
+            },
+            precision_score: 0,
+            poll_score: 0,
+            desired_poll_interval: PollIntervalLimits::default().min,
+            last_measurement: Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(20e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
+                localtime: base,
+                monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
+            },
+            prev_was_outlier: false,
+            last_iter: base,
+            filter_time: base,
+        }));
+        peer.process_offset_steering(1800.0);
+        peer.update_self_using_measurement(
+            &SystemConfig::default(),
+            &AlgorithmConfig::default(),
+            Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(20e-3),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
+                localtime: base + NtpDuration::from_seconds(2800.0),
+                monotime: basei + std::time::Duration::from_secs(1000),
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
+            },
+        );
+        assert!(matches!(peer, PeerState(PeerStateInner::Stable(_))));
+    }
 
     #[test]
     fn test_offset_steering_and_measurements() {
@@ -569,7 +748,7 @@ mod tests {
                 transmit_timestamp: Default::default(),
                 receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei,
+                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -626,7 +805,7 @@ mod tests {
                 transmit_timestamp: Default::default(),
                 receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei,
+                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -736,7 +915,7 @@ mod tests {
                 transmit_timestamp: Default::default(),
                 receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei,
+                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -755,7 +934,7 @@ mod tests {
                 transmit_timestamp: Default::default(),
                 receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei,
+                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -774,7 +953,7 @@ mod tests {
                 transmit_timestamp: Default::default(),
                 receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei,
+                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -793,7 +972,7 @@ mod tests {
                 transmit_timestamp: Default::default(),
                 receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei,
+                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -812,7 +991,7 @@ mod tests {
                 transmit_timestamp: Default::default(),
                 receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei,
+                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -831,7 +1010,7 @@ mod tests {
                 transmit_timestamp: Default::default(),
                 receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei,
+                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -850,7 +1029,7 @@ mod tests {
                 transmit_timestamp: Default::default(),
                 receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei,
+                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -869,7 +1048,7 @@ mod tests {
                 transmit_timestamp: Default::default(),
                 receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei,
+                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -898,7 +1077,7 @@ mod tests {
                 transmit_timestamp: Default::default(),
                 receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei,
+                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -917,7 +1096,7 @@ mod tests {
                 transmit_timestamp: Default::default(),
                 receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei,
+                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -936,7 +1115,7 @@ mod tests {
                 transmit_timestamp: Default::default(),
                 receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei,
+                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -955,7 +1134,7 @@ mod tests {
                 transmit_timestamp: Default::default(),
                 receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei,
+                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -975,7 +1154,7 @@ mod tests {
                 transmit_timestamp: Default::default(),
                 receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei,
+                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -994,7 +1173,7 @@ mod tests {
                 transmit_timestamp: Default::default(),
                 receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei,
+                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1013,7 +1192,7 @@ mod tests {
                 transmit_timestamp: Default::default(),
                 receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei,
+                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1032,7 +1211,7 @@ mod tests {
                 transmit_timestamp: Default::default(),
                 receive_timestamp: Default::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei,
+                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
