@@ -366,6 +366,12 @@ pub(super) struct ExtensionFieldData<'a> {
     pub(super) untrusted: Vec<ExtensionField<'a>>,
 }
 
+pub(super) struct DeserializedExtensionField<'a> {
+    pub(super) efdata: ExtensionFieldData<'a>,
+    pub(super) remaining_bytes: &'a [u8],
+    pub(super) opt_cookie: Option<Option<DecodedServerCookie>>,
+}
+
 impl<'a> ExtensionFieldData<'a> {
     pub(super) fn into_owned(self) -> ExtensionFieldData<'static> {
         let map_into_owned =
@@ -419,10 +425,7 @@ impl<'a> ExtensionFieldData<'a> {
         data: &'a [u8],
         header_size: usize,
         cipher: &impl CipherProvider,
-    ) -> Result<
-        (Self, usize, Option<DecodedServerCookie>),
-        ParsingError<(ExtensionFieldData<'a>, usize)>,
-    > {
+    ) -> Result<DeserializedExtensionField<'a>, ParsingError<std::convert::Infallible>> {
         let mut this = Self::default();
         let mut size = 0;
         let mut has_invalid_nts = false;
@@ -475,11 +478,14 @@ impl<'a> ExtensionFieldData<'a> {
                     .push(ExtensionField::decode(field).map_err(|e| e.generalize())?),
             }
         }
-        if has_invalid_nts {
-            Err(ParsingError::DecryptError((this, size + header_size)))
-        } else {
-            Ok((this, size + header_size, cookie))
-        }
+
+        let result = DeserializedExtensionField {
+            efdata: this,
+            remaining_bytes: &data[header_size + size..],
+            opt_cookie: (!has_invalid_nts).then_some(cookie),
+        };
+
+        Ok(result)
     }
 }
 
