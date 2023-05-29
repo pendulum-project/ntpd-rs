@@ -303,43 +303,27 @@ impl<'a> NtpPacket<'a> {
                 ))
             }
             4 => {
-                let mut has_invalid_nts = false;
-
                 let (header, header_size) =
                     NtpHeaderV3V4::deserialize(data).map_err(|e| e.generalize())?;
-                let (efdata, header_plus_fields_len, cookie) =
-                    match ExtensionFieldData::deserialize(data, header_size, cipher) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            let ret = e.get_decrypt_error()?;
-                            has_invalid_nts = true;
-                            (ret.0, ret.1, None)
-                        }
-                    };
 
-                let mac = if header_plus_fields_len != data.len() {
-                    Some(
-                        Mac::deserialize(&data[header_plus_fields_len..])
-                            .map_err(|e| e.generalize())?,
-                    )
+                let decoded = ExtensionFieldData::deserialize(data, header_size, cipher)
+                    .map_err(|e| e.generalize())?;
+
+                let mac = if !decoded.remaining_bytes.is_empty() {
+                    Some(Mac::deserialize(decoded.remaining_bytes).map_err(|e| e.generalize())?)
                 } else {
                     None
                 };
 
-                if has_invalid_nts {
-                    Err(ParsingError::DecryptError(NtpPacket {
-                        header: NtpHeader::V4(header),
-                        efdata,
-                        mac,
-                    }))
-                } else {
-                    let packet = NtpPacket {
-                        header: NtpHeader::V4(header),
-                        efdata,
-                        mac,
-                    };
+                let packet = NtpPacket {
+                    header: NtpHeader::V4(header),
+                    efdata: decoded.efdata,
+                    mac,
+                };
 
-                    Ok((packet, cookie))
+                match decoded.opt_cookie {
+                    Some(cookie) => Ok((packet, cookie)),
+                    None => Err(ParsingError::DecryptError(packet)),
                 }
             }
             _ => Err(PacketParsingError::InvalidVersion(version)),
