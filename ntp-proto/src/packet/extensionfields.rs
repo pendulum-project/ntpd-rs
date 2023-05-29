@@ -427,26 +427,25 @@ impl<'a> ExtensionFieldData<'a> {
     ) -> Result<DeserializedExtensionField<'a>, ParsingError<std::convert::Infallible>> {
         let mut this = Self::default();
         let mut size = 0;
-        let mut has_invalid_nts = false;
+        let mut is_valid_nts = true;
         let mut cookie = None;
         for field in RawExtensionField::deserialize_sequence(
             &extension_field_bytes,
             Mac::MAXIMUM_SIZE,
             RawExtensionField::V4_UNENCRYPTED_MINIMUM_SIZE,
         ) {
-            let field = field.map_err(|e| e.generalize())?;
+            let field = field?;
             size += field.wire_length();
             match field.type_id {
                 ExtensionFieldTypeId::NtsEncryptedField => {
-                    let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)
-                        .map_err(|e| e.generalize())?;
+                    let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)?;
 
                     let cipher = match cipher.get(&this.untrusted) {
                         Some(cipher) => cipher,
                         None => {
                             this.untrusted
                                 .push(ExtensionField::InvalidNtsEncryptedField);
-                            has_invalid_nts = true;
+                            is_valid_nts = false;
                             continue;
                         }
                     };
@@ -458,7 +457,7 @@ impl<'a> ExtensionFieldData<'a> {
                                 e.get_decrypt_error()?;
                                 this.untrusted
                                     .push(ExtensionField::InvalidNtsEncryptedField);
-                                has_invalid_nts = true;
+                                is_valid_nts = false;
                                 continue;
                             }
                         };
@@ -472,16 +471,14 @@ impl<'a> ExtensionFieldData<'a> {
                     // All previous untrusted fields are now validated
                     this.authenticated.append(&mut this.untrusted);
                 }
-                _ => this
-                    .untrusted
-                    .push(ExtensionField::decode(field).map_err(|e| e.generalize())?),
+                _ => this.untrusted.push(ExtensionField::decode(field)?),
             }
         }
 
         let result = DeserializedExtensionField {
             efdata: this,
             remaining_bytes: &extension_field_bytes[size..],
-            opt_cookie: (!has_invalid_nts).then_some(cookie),
+            opt_cookie: is_valid_nts.then_some(cookie),
         };
 
         Ok(result)
