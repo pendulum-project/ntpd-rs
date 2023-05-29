@@ -137,7 +137,7 @@ impl<'a> ExtensionField<'a> {
         let header_width = 4;
 
         let actual_length =
-            next_multiple_of((data_length as u16 + header_width).max(minimum_size), 4);
+            next_multiple_of_u16((data_length as u16 + header_width).max(minimum_size), 4);
         w.write_all(&ef_id.to_type_id().to_be_bytes())?;
         w.write_all(&actual_length.to_be_bytes())
     }
@@ -158,7 +158,7 @@ impl<'a> ExtensionField<'a> {
         let header_width = 4;
 
         let actual_length =
-            next_multiple_of((data_length as u16 + header_width).max(minimum_size), 4);
+            next_multiple_of_u16((data_length as u16 + header_width).max(minimum_size), 4);
 
         Self::write_zeros(w, actual_length - (data_length as u16) - 4)
     }
@@ -286,19 +286,19 @@ impl<'a> ExtensionField<'a> {
 
         // + 8 for the extension field header (4 bytes) and nonce/cypher text length (2 bytes each)
         let signature_octet_count =
-            8 + next_multiple_of((nonce_octet_count + ct_octet_count) as u16, 4);
+            8 + next_multiple_of_u16((nonce_octet_count + ct_octet_count) as u16, 4);
 
         w.write_all(&signature_octet_count.to_be_bytes())?;
         w.write_all(&(nonce_octet_count as u16).to_be_bytes())?;
         w.write_all(&(ct_octet_count as u16).to_be_bytes())?;
 
         w.write_all(&nonce)?;
-        let padding_bytes = next_multiple_of(nonce.len() as u16, 4) - nonce.len() as u16;
+        let padding_bytes = next_multiple_of_u16(nonce.len() as u16, 4) - nonce.len() as u16;
         w.write_all(&padding[..padding_bytes as usize])?;
 
         w.write_all(&siv_tag)?;
         w.write_all(ciphertext)?;
-        let padding_bytes = next_multiple_of(ct_octet_count as u16, 4) - ct_octet_count as u16;
+        let padding_bytes = next_multiple_of_u16(ct_octet_count as u16, 4) - ct_octet_count as u16;
         w.write_all(&padding[..padding_bytes as usize])?;
 
         Ok(())
@@ -514,7 +514,7 @@ impl<'a> RawEncryptedField<'a> {
         let nonce = rest.get(..nonce_length).ok_or(IncorrectLength)?;
 
         // skip the lengths and the nonce. pad to a multiple of 4
-        let ciphertext_start = 4 + next_multiple_of(nonce_length as u16, 4) as usize;
+        let ciphertext_start = 4 + next_multiple_of_u16(nonce_length as u16, 4) as usize;
 
         let ciphertext = message_bytes
             .get(ciphertext_start..ciphertext_start + ciphertext_length)
@@ -566,7 +566,7 @@ impl<'a> RawExtensionField<'a> {
 
     fn wire_length(&self) -> usize {
         // type_id and extension_field_length + data + padding
-        4 + self.message_bytes.len()
+        4 + next_multiple_of_usize(self.message_bytes.len(), 4)
     }
 
     fn deserialize(
@@ -642,7 +642,14 @@ impl<'a> Iterator for ExtensionFieldStreamer<'a> {
     }
 }
 
-const fn next_multiple_of(lhs: u16, rhs: u16) -> u16 {
+const fn next_multiple_of_u16(lhs: u16, rhs: u16) -> u16 {
+    match lhs % rhs {
+        0 => lhs,
+        r => lhs + (rhs - r),
+    }
+}
+
+const fn next_multiple_of_usize(lhs: usize, rhs: usize) -> usize {
     match lhs % rhs {
         0 => lhs,
         r => lhs + (rhs - r),
