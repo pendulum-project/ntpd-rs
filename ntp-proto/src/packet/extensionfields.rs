@@ -430,7 +430,7 @@ impl<'a> ExtensionFieldData<'a> {
         let mut is_valid_nts = true;
         let mut cookie = None;
         for field in RawExtensionField::deserialize_sequence(
-            &extension_field_bytes,
+            extension_field_bytes,
             Mac::MAXIMUM_SIZE,
             RawExtensionField::V4_UNENCRYPTED_MINIMUM_SIZE,
         ) {
@@ -552,7 +552,8 @@ impl<'a> RawEncryptedField<'a> {
 #[derive(Debug)]
 struct RawExtensionField<'a> {
     type_id: ExtensionFieldTypeId,
-    // bytes of just the message: does not include the header or padding
+    // bytes of the value and any padding. Does not include the header (field type and length)
+    // https://www.rfc-editor.org/rfc/rfc5905.html#section-7.5
     message_bytes: &'a [u8],
 }
 
@@ -561,8 +562,15 @@ impl<'a> RawExtensionField<'a> {
     const V4_UNENCRYPTED_MINIMUM_SIZE: usize = 4;
 
     fn wire_length(&self) -> usize {
-        // type_id and extension_field_length + data + padding
-        4 + next_multiple_of_usize(self.message_bytes.len(), 4)
+        // field type + length + value + padding
+        let length = 2 + 2 + self.message_bytes.len();
+
+        // All extension fields are zero-padded to a word (four octets) boundary.
+        //
+        // message_bytes should include this padding, so this should already be true
+        debug_assert_eq!(length % 4, 0);
+
+        next_multiple_of_usize(length, 4)
     }
 
     fn deserialize(
@@ -581,11 +589,12 @@ impl<'a> RawExtensionField<'a> {
         // the entire extension field in octets, including the Padding field.
         let field_length = u16::from_be_bytes([b2, b3]) as usize;
 
+        // padding is up to a multiple of 4 bytes, so a valid field length is divisible by 4
         if field_length < minimum_size || field_length % 4 != 0 {
             return Err(ParsingError::IncorrectLength);
         }
 
-        // so the message bytes will include padding, and therefore may not exactly match the input
+        // because the field length includes padding, the message bytes may not exactly match the input
         let message_bytes = data.get(4..field_length).ok_or(IncorrectLength)?;
 
         Ok(Self {
