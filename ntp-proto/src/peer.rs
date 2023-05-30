@@ -278,7 +278,6 @@ pub enum AcceptSynchronizationError {
 }
 
 #[derive(Debug)]
-#[allow(clippy::large_enum_variant)]
 pub enum Update {
     BareUpdate(PeerSnapshot),
     NewMeasurement(PeerSnapshot, Measurement),
