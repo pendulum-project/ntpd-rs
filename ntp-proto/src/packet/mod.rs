@@ -306,24 +306,38 @@ impl<'a> NtpPacket<'a> {
                 let (header, header_size) =
                     NtpHeaderV3V4::deserialize(data).map_err(|e| e.generalize())?;
 
-                let decoded = ExtensionFieldData::deserialize(&data[header_size..], cipher)
-                    .map_err(|e| e.generalize())?;
+                let contruct_packet = |remaining_bytes: &'a [u8], efdata| {
+                    let mac = if !remaining_bytes.is_empty() {
+                        Some(Mac::deserialize(remaining_bytes)?)
+                    } else {
+                        None
+                    };
 
-                let mac = if !decoded.remaining_bytes.is_empty() {
-                    Some(Mac::deserialize(decoded.remaining_bytes).map_err(|e| e.generalize())?)
-                } else {
-                    None
+                    let packet = NtpPacket {
+                        header: NtpHeader::V4(header),
+                        efdata,
+                        mac,
+                    };
+
+                    Ok::<_, ParsingError<std::convert::Infallible>>(packet)
                 };
 
-                let packet = NtpPacket {
-                    header: NtpHeader::V4(header),
-                    efdata: decoded.efdata,
-                    mac,
-                };
+                match ExtensionFieldData::deserialize(&data[header_size..], cipher) {
+                    Ok(decoded) => {
+                        let packet = contruct_packet(decoded.remaining_bytes, decoded.efdata)
+                            .map_err(|e| e.generalize())?;
 
-                match decoded.opt_cookie {
-                    Some(cookie) => Ok((packet, cookie)),
-                    None => Err(ParsingError::DecryptError(packet)),
+                        Ok((packet, decoded.cookie))
+                    }
+                    Err(e) => {
+                        // return early if it is anything but a decrypt error
+                        let invalid = e.get_decrypt_error()?;
+
+                        let packet = contruct_packet(invalid.remaining_bytes, invalid.efdata)
+                            .map_err(|e| e.generalize())?;
+
+                        Err(ParsingError::DecryptError(packet))
+                    }
                 }
             }
             _ => Err(PacketParsingError::InvalidVersion(version)),
