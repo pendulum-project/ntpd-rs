@@ -29,7 +29,6 @@ impl Wait for Sleep {
 }
 
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)]
 pub enum MsgForSystem {
     /// Received a Kiss-o'-Death and must demobilize
     MustDemobilize(PeerId),
