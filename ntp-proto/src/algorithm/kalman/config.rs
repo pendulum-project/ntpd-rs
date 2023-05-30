@@ -1,5 +1,7 @@
 use serde::Deserialize;
 
+use crate::NtpDuration;
+
 #[derive(Debug, Copy, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct AlgorithmConfig {
@@ -102,6 +104,10 @@ pub struct AlgorithmConfig {
     /// overly conservative root dispersion.
     #[serde(default)]
     pub ignore_server_dispersion: bool,
+
+    /// Threshold for detecting external clock meddling
+    #[serde(default = "default_meddling_threshold")]
+    pub meddling_threshold: NtpDuration,
 }
 
 impl Default for AlgorithmConfig {
@@ -137,6 +143,8 @@ impl Default for AlgorithmConfig {
             max_frequency_steer: default_max_frequency_steer(),
 
             ignore_server_dispersion: false,
+
+            meddling_threshold: default_meddling_threshold(),
         }
     }
 }
@@ -227,4 +235,8 @@ fn default_max_frequency_steer() -> f64 {
 
 fn default_slew_min_duration() -> f64 {
     8.0
+}
+
+fn default_meddling_threshold() -> NtpDuration {
+    NtpDuration::from_seconds(5.)
 }
