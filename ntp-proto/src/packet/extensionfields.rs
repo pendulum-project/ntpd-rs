@@ -369,7 +369,12 @@ pub(super) struct ExtensionFieldData<'a> {
 pub(super) struct DeserializedExtensionField<'a> {
     pub(super) efdata: ExtensionFieldData<'a>,
     pub(super) remaining_bytes: &'a [u8],
-    pub(super) opt_cookie: Option<Option<DecodedServerCookie>>,
+    pub(super) cookie: Option<DecodedServerCookie>,
+}
+
+pub(super) struct InvalidNtsExtensionField<'a> {
+    pub(super) efdata: ExtensionFieldData<'a>,
+    pub(super) remaining_bytes: &'a [u8],
 }
 
 impl<'a> ExtensionFieldData<'a> {
@@ -424,27 +429,31 @@ impl<'a> ExtensionFieldData<'a> {
     pub(super) fn deserialize(
         extension_field_bytes: &'a [u8],
         cipher: &impl CipherProvider,
-    ) -> Result<DeserializedExtensionField<'a>, ParsingError<std::convert::Infallible>> {
-        let mut this = Self::default();
+    ) -> Result<DeserializedExtensionField<'a>, ParsingError<InvalidNtsExtensionField<'a>>> {
+        use ExtensionField::InvalidNtsEncryptedField;
+
+        let mut efdata = Self::default();
         let mut size = 0;
         let mut is_valid_nts = true;
         let mut cookie = None;
+
         for field in RawExtensionField::deserialize_sequence(
             extension_field_bytes,
             Mac::MAXIMUM_SIZE,
             RawExtensionField::V4_UNENCRYPTED_MINIMUM_SIZE,
         ) {
-            let field = field?;
+            let field = field.map_err(|e| e.generalize())?;
             size += field.wire_length();
+
             match field.type_id {
                 ExtensionFieldTypeId::NtsEncryptedField => {
-                    let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)?;
+                    let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)
+                        .map_err(|e| e.generalize())?;
 
-                    let cipher = match cipher.get(&this.untrusted) {
+                    let cipher = match cipher.get(&efdata.untrusted) {
                         Some(cipher) => cipher,
                         None => {
-                            this.untrusted
-                                .push(ExtensionField::InvalidNtsEncryptedField);
+                            efdata.untrusted.push(InvalidNtsEncryptedField);
                             is_valid_nts = false;
                             continue;
                         }
@@ -454,34 +463,49 @@ impl<'a> ExtensionFieldData<'a> {
                         match encrypted.decrypt(cipher.as_ref(), field.message_bytes) {
                             Ok(encrypted_fields) => encrypted_fields,
                             Err(e) => {
+                                // early return if it's anything but a decrypt error
                                 e.get_decrypt_error()?;
-                                this.untrusted
-                                    .push(ExtensionField::InvalidNtsEncryptedField);
+
+                                efdata.untrusted.push(InvalidNtsEncryptedField);
                                 is_valid_nts = false;
                                 continue;
                             }
                         };
 
-                    this.encrypted.extend(encrypted_fields.into_iter());
+                    efdata.encrypted.extend(encrypted_fields.into_iter());
                     cookie = match cipher {
                         super::crypto::CipherHolder::DecodedServerCookie(cookie) => Some(cookie),
                         super::crypto::CipherHolder::Other(_) => None,
                     };
 
                     // All previous untrusted fields are now validated
-                    this.authenticated.append(&mut this.untrusted);
+                    efdata.authenticated.append(&mut efdata.untrusted);
                 }
-                _ => this.untrusted.push(ExtensionField::decode(field)?),
+                _ => {
+                    let field = ExtensionField::decode(field).map_err(|e| e.generalize())?;
+                    efdata.untrusted.push(field)
+                }
             }
         }
 
-        let result = DeserializedExtensionField {
-            efdata: this,
-            remaining_bytes: &extension_field_bytes[size..],
-            opt_cookie: is_valid_nts.then_some(cookie),
-        };
+        let remaining_bytes = &extension_field_bytes[size..];
 
-        Ok(result)
+        if is_valid_nts {
+            let result = DeserializedExtensionField {
+                efdata,
+                remaining_bytes,
+                cookie,
+            };
+
+            Ok(result)
+        } else {
+            let result = InvalidNtsExtensionField {
+                efdata,
+                remaining_bytes,
+            };
+
+            Err(ParsingError::DecryptError(result))
+        }
     }
 }
 
