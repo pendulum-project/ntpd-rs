@@ -37,6 +37,18 @@ test = false
 doc = false
 
 [[bin]]
+name = "packet_keyset"
+path = "fuzz_targets/packet_keyset.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "encrypted_server_parsing"
+path = "fuzz_targets/encrypted_server_parsing.rs"
+test = false
+doc = false
+
+[[bin]]
 name = "interval_finding"
 path = "fuzz_targets/interval_finding.rs"
 test = false
@@ -81,5 +93,11 @@ doc = false
 [[bin]]
 name = "key_exchange_server_decoder"
 path = "fuzz_targets/key_exchange_server_decoder.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "encrypted_client_parsing"
+path = "fuzz_targets/encrypted_client_parsing.rs"
 test = false
 doc = false

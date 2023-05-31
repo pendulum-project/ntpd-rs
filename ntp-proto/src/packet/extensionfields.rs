@@ -111,6 +111,15 @@ impl<'a> ExtensionField<'a> {
         }
     }
 
+    #[cfg(feature = "fuzz")]
+    pub fn serialize_pub<W: std::io::Write>(
+        &self,
+        w: &mut W,
+        minimum_size: u16,
+    ) -> std::io::Result<()> {
+        self.serialize(w, minimum_size)
+    }
+
     fn encode_framing<W: std::io::Write>(
         w: &mut W,
         ef_id: ExtensionFieldTypeId,

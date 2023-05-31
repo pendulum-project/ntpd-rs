@@ -49,6 +49,20 @@ impl KeySetProvider {
         }
     }
 
+    #[cfg(feature = "fuzz")]
+    pub fn dangerous_new_deterministic(history: usize) -> Self {
+        KeySetProvider {
+            current: Arc::new(KeySet {
+                keys: vec![AesSivCmac512::new(
+                    std::array::from_fn(|i| (i as u8)).into(),
+                )],
+                id_offset: 0,
+                primary: 0,
+            }),
+            history,
+        }
+    }
+
     /// Rotate a new key in as primary, forgetting an old one if needed
     pub fn rotate(&mut self) {
         let next_key = AesSivCmac512::new(aes_siv::Aes256SivAead::generate_key(rand::thread_rng()));
@@ -265,6 +279,15 @@ impl std::fmt::Debug for KeySet {
             .field("id_offset", &self.id_offset)
             .field("primary", &self.primary)
             .finish()
+    }
+}
+
+#[cfg(feature = "fuzz")]
+pub fn test_cookie() -> DecodedServerCookie {
+    DecodedServerCookie {
+        algorithm: AeadAlgorithm::AeadAesSivCmac256,
+        s2c: Box::new(AesSivCmac256::new((0..32_u8).collect())),
+        c2s: Box::new(AesSivCmac256::new((32..64_u8).collect())),
     }
 }
 

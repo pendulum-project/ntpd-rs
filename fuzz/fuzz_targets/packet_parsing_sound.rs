@@ -9,6 +9,7 @@ fuzz_target!(|data: Vec<u8>| {
     // packets expand by a factor of at most 4 on re-encode
     let mut buf = [0u8; 4096 * 4];
     let mut buf2 = [0u8; 4096 * 4];
+    // We test here without ciphers, as that is required to make reencoding work.
     if let Ok((a, _)) = NtpPacket::deserialize(&data, &NoCipher) {
         let mut cursor = Cursor::new(buf.as_mut_slice());
         a.serialize(&mut cursor, &NoCipher).unwrap();
