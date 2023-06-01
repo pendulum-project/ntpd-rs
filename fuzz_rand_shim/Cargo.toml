@@ -1,0 +1,11 @@
+[package]
+name = "rand"
+version = "0.8.5"
+edition = "2021"
+publish = false
+
+[workspace]
+members = ["."]
+
+[dependencies]
+real_rand = { git = "https://github.com/rust-random/rand.git", tag="0.8.5", package="rand" }

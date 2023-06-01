@@ -207,6 +207,11 @@ jobs:
         with:
           command: fmt
           args: --manifest-path ./fuzz/Cargo.toml --all --check
+      - name: Check formatting (fuzz_rand_shim)
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
+        with:
+          command: fmt
+          args: --manifest-path ./fuzz_rand_shim/Cargo.toml --all --check
 
   clippy:
     name: Clippy
@@ -233,6 +238,11 @@ jobs:
         with:
           command: clippy
           args: --manifest-path ./fuzz/Cargo.toml --all-targets -- -D warnings
+      - name: Run clippy (fuzz_rand_shim)
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
+        with:
+          command: clippy
+          args: --manifest-path ./fuzz_rand_shim/Cargo.toml --all-targets -- -D warnings
 
   clippy-raspberry-pi:
     name: ClippyRaspberryPi

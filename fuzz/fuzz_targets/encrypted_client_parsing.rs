@@ -4,6 +4,7 @@ use std::io::{Cursor, Write};
 
 use libfuzzer_sys::fuzz_target;
 use ntp_proto::{test_cookie, NtpPacket};
+use rand::{rngs::StdRng, set_thread_rng, SeedableRng};
 
 const fn next_multiple_of(lhs: u16, rhs: u16) -> u16 {
     match lhs % rhs {
@@ -12,13 +13,15 @@ const fn next_multiple_of(lhs: u16, rhs: u16) -> u16 {
     }
 }
 
-fuzz_target!(|parts: (Vec<u8>, Vec<u8>, Vec<u8>)| {
+fuzz_target!(|parts: (u64, Vec<u8>, Vec<u8>, Vec<u8>)| {
+    set_thread_rng(StdRng::seed_from_u64(parts.0));
+
     // Build packet
     let mut cursor = Cursor::new([0u8; 8192]);
-    let _ = cursor.write_all(&parts.0);
+    let _ = cursor.write_all(&parts.1);
     let cookie = test_cookie();
 
-    let mut ciphertext = parts.1.clone();
+    let mut ciphertext = parts.2.clone();
     let (tag, nonce) = cookie
         .s2c
         .encrypt_in_place_detached(
@@ -36,7 +39,7 @@ fuzz_target!(|parts: (Vec<u8>, Vec<u8>, Vec<u8>)| {
     let _ = cursor.write_all(&nonce);
     let _ = cursor.write_all(&tag);
     let _ = cursor.write_all(&ciphertext);
-    let _ = cursor.write_all(&parts.2);
+    let _ = cursor.write_all(&parts.3);
 
     let _ = NtpPacket::deserialize(cursor.get_ref(), &Some(cookie.s2c.as_ref()));
 });
