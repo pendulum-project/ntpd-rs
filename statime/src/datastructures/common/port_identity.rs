@@ -1,7 +1,7 @@
 use super::clock_identity::ClockIdentity;
 use crate::datastructures::{WireFormat, WireFormatError};
 
-/// Identity of a single port of an PTP instance
+/// Identity of a single port of a PTP instance
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
 pub struct PortIdentity {
     /// Identity of the clock this port is part of

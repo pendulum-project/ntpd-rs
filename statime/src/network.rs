@@ -9,7 +9,7 @@ use crate::{datastructures::messages::MAX_DATA_LEN, time::Instant};
 /// Statime makes little assumption on how the network runs, and this trait is
 /// the primary way it interacts with the network. Users of the library need to
 /// provide this to enable the ptp stack to talk to the network. For linux,
-/// statime-linux provides an implementation of this trait.
+/// the `statime-linux` crate provides an implementation of this trait.
 pub trait NetworkRuntime {
     /// A descriptor type for the interface to be used.
     /// Can be useful to select between e.g. ethernet and wifi if both are
@@ -59,7 +59,7 @@ pub struct NetworkPacket {
 
 /// Abstract representation of a single port's network connection
 ///
-/// Network ports are obtained by the PTP stack from the [NetworkRuntime]. They
+/// Network ports are obtained by the PTP stack from the [`NetworkRuntime`]. They
 /// provide for the actual sending and receiving of data from the network. For
 /// PTP run over UDP, all time critical data should be sent over port 319, and
 /// non time critical data over port 320. Only port 319 needs accurate
@@ -74,7 +74,7 @@ pub trait NetworkPort {
     ///
     /// This function should send the given packet data out over the time
     /// critical part of the network connection. The returned instant should be
-    /// it's best estimate of when the data was actually sent out over the
+    /// its best estimate of when the data was actually sent out over the
     /// network. Note that the precision of this timestamp is one of the main
     /// limiting factors for synchronization precision, the other being
     /// stability of the system clock.

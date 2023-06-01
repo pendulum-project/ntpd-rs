@@ -10,7 +10,7 @@ use crate::{port::Measurement, time::Duration};
 /// average out the input a bit so minor network variations are not immediately
 /// reflected in the synchronization of the clock.
 ///
-/// This crate provides a simple [BasicFilter](basic::BasicFilter) which is
+/// This crate provides a simple [`BasicFilter`](basic::BasicFilter) which is
 /// suitable for most needs, but users can implement their own if desired.
 pub trait Filter {
     /// Put a new measurement in the filter.

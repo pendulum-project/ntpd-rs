@@ -46,7 +46,8 @@ impl PortDS {
     /// All `log_*_interval` parameters are the 2-log of the number of seconds
     /// that specific interval should be. The `announce_receipt_timeout` is the
     /// number of announce intervals the port will wait for announce messages
-    /// from ptp nodes to show up until automatically becoming master.
+    /// from other PTP nodes to show up until automatically becoming master
+    /// itself.
     ///
     /// The `log_min_delay_req_interval` and `log_min_p_delay_req_interval`
     /// parameters are used only when their respective delay mechanism is used,

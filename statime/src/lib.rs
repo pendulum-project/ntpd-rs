@@ -6,15 +6,15 @@
 //! also result in significant changes to the public API.
 //!
 //! # Device interfaces
-//! Statime is designed to be able to work with many different underlying
+//! `statime` is designed to be able to work with many different underlying
 //! platforms, including embedded targets. This does mean that it cannot use the
 //! standard library and platform specific libraries to interact with the system
 //! clock and to access the network. That needs to be provided by the user of
 //! the library.
 //!
-//! For this purpose, statime defines two sets of interfaces. [Clock] and
-//! [Timer] provide access to the system clock, and allow statime to wait for
-//! various time intervals. The [NetworkRuntime] and [NetworkPort] abstractions
+//! For this purpose, `statime` defines two sets of interfaces. [`Clock`] and
+//! [Timer] provide access to the system clock, and allow `statime` to wait for
+//! various time intervals. The [`NetworkRuntime`] and [`NetworkPort`] abstractions
 //! provide the needed glue to access the network.
 //!
 //! On modern linux kernels, the `statime-linux` crate provides ready to use

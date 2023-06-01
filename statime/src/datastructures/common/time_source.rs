@@ -1,6 +1,6 @@
 /// What the time values for a system are derived from
 ///
-/// This enum encodes the root source of a systems time values. For most use
+/// This enum encodes the root source of a system's time values. For most use
 /// cases, the default `InternalOscillator` will suffice.
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimeSource {
