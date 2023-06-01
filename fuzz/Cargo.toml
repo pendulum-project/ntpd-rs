@@ -8,6 +8,9 @@ publish = false
 [package.metadata]
 cargo-fuzz = true
 
+[dependencies]
+rand = "0.8.5"
+
 [dependencies.libfuzzer-sys]
 version = "0.4"
 features = ["arbitrary-derive"]
@@ -101,3 +104,7 @@ name = "encrypted_client_parsing"
 path = "fuzz_targets/encrypted_client_parsing.rs"
 test = false
 doc = false
+
+[patch.crates-io]
+rand = { path="../fuzz_rand_shim" }
+rand_core = { git="https://github.com/rust-random/rand.git", tag="0.8.5" }

@@ -7,6 +7,7 @@ use std::{
 
 use libfuzzer_sys::fuzz_target;
 use ntp_proto::{test_cookie, ExtensionField, KeySetProvider, NtpPacket};
+use rand::{rngs::StdRng, set_thread_rng, SeedableRng};
 
 const fn next_multiple_of(lhs: u16, rhs: u16) -> u16 {
     match lhs % rhs {
@@ -15,7 +16,9 @@ const fn next_multiple_of(lhs: u16, rhs: u16) -> u16 {
     }
 }
 
-fuzz_target!(|parts: (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)| {
+fuzz_target!(|parts: (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, u64)| {
+    set_thread_rng(StdRng::seed_from_u64(parts.4));
+
     // Can't test reencoding because of the keyset
     let provider = KeySetProvider::dangerous_new_deterministic(1);
 
