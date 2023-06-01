@@ -31,6 +31,10 @@ pub use config::{StepThreshold, SystemConfig};
 pub use identifiers::ReferenceId;
 pub use keyset::{DecodedServerCookie, KeySet, KeySetProvider};
 
+#[cfg(feature = "fuzz")]
+pub use keyset::test_cookie;
+#[cfg(feature = "fuzz")]
+pub use packet::ExtensionField;
 pub use packet::{
     Cipher, CipherProvider, NoCipher, NtpAssociationMode, NtpLeapIndicator, NtpPacket,
 };

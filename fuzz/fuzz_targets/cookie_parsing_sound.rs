@@ -4,7 +4,7 @@ use libfuzzer_sys::fuzz_target;
 use ntp_proto::KeySetProvider;
 
 fuzz_target!(|data: Vec<u8>| {
-    let provider = KeySetProvider::new(1);
+    let provider = KeySetProvider::dangerous_new_deterministic(1);
 
     let keyset = provider.get();
 
