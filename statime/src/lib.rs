@@ -14,8 +14,8 @@
 //!
 //! For this purpose, `statime` defines two sets of interfaces. [`Clock`] and
 //! [Timer] provide access to the system clock, and allow `statime` to wait for
-//! various time intervals. The [`NetworkRuntime`] and [`NetworkPort`] abstractions
-//! provide the needed glue to access the network.
+//! various time intervals. The [`NetworkRuntime`] and [`NetworkPort`]
+//! abstractions provide the needed glue to access the network.
 //!
 //! On modern linux kernels, the `statime-linux` crate provides ready to use
 //! implementations of these interfaces. For other platforms the user will need

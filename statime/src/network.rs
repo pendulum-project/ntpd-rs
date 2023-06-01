@@ -59,10 +59,10 @@ pub struct NetworkPacket {
 
 /// Abstract representation of a single port's network connection
 ///
-/// Network ports are obtained by the PTP stack from the [`NetworkRuntime`]. They
-/// provide for the actual sending and receiving of data from the network. For
-/// PTP run over UDP, all time critical data should be sent over port 319, and
-/// non time critical data over port 320. Only port 319 needs accurate
+/// Network ports are obtained by the PTP stack from the [`NetworkRuntime`].
+/// They provide for the actual sending and receiving of data from the network.
+/// For PTP run over UDP, all time critical data should be sent over port 319,
+/// and non time critical data over port 320. Only port 319 needs accurate
 /// timestamps. Receives are for both network ports simultaneously.
 pub trait NetworkPort {
     type Error: core::fmt::Debug;
