@@ -159,7 +159,7 @@ impl PeerFilter {
             "time {time:?} is before filter_time {:?}",
             self.filter_time
         );
-        if time < self.filter_time {
+        if time.is_before(self.filter_time) {
             return;
         }
 
@@ -192,15 +192,9 @@ impl PeerFilter {
         let m_delta_t = (measurement.localtime - self.last_measurement.localtime).to_seconds();
 
         // Kalman filter update
-        let measurement_vec = Vector::new_vector([
-            measurement.offset.to_seconds(),
-            (measurement.offset - self.last_measurement.offset).to_seconds(),
-        ]);
-        let measurement_transform = Matrix::new([[1., 0.], [0., m_delta_t]]);
-        let measurement_noise = Matrix::new([
-            [delay_variance / 4., delay_variance / 4.],
-            [delay_variance / 4., delay_variance / 2.],
-        ]);
+        let measurement_vec = Vector::new_vector([measurement.offset.to_seconds()]);
+        let measurement_transform = Matrix::new([[1., 0.]]);
+        let measurement_noise = Matrix::new([[delay_variance / 4.]]);
         let difference = measurement_vec - measurement_transform * self.state;
         let difference_covariance =
             measurement_transform * self.uncertainty * measurement_transform.transpose()
@@ -709,7 +703,7 @@ mod tests {
         let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
             state: Vector::new_vector([20e-3, 0.]),
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
-            clock_wander: 1e-8,
+            clock_wander: 0e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
@@ -764,7 +758,7 @@ mod tests {
         let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
             state: Vector::new_vector([-20e-3, 0.]),
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
-            clock_wander: 1e-8,
+            clock_wander: 0e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
