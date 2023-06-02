@@ -132,8 +132,8 @@ impl InitialPeerFilter {
 
 #[derive(Debug, Clone)]
 struct PeerFilter {
-    state: Vector,
-    uncertainty: Matrix,
+    state: Vector<2>,
+    uncertainty: Matrix<2, 2>,
     clock_wander: f64,
 
     roundtriptime_stats: AveragingBuffer,
@@ -165,13 +165,17 @@ impl PeerFilter {
 
         // Time step paremeters
         let delta_t = (time - self.filter_time).to_seconds();
-        let update = Matrix::new(1.0, delta_t, 0.0, 1.0);
-        let process_noise = Matrix::new(
-            self.clock_wander * delta_t * delta_t * delta_t / 3.,
-            self.clock_wander * delta_t * delta_t / 2.,
-            self.clock_wander * delta_t * delta_t / 2.,
-            self.clock_wander * delta_t,
-        );
+        let update = Matrix::new([[1.0, delta_t], [0.0, 1.0]]);
+        let process_noise = Matrix::new([
+            [
+                self.clock_wander * delta_t * delta_t * delta_t / 3.,
+                self.clock_wander * delta_t * delta_t / 2.,
+            ],
+            [
+                self.clock_wander * delta_t * delta_t / 2.,
+                self.clock_wander * delta_t,
+            ],
+        ]);
 
         // Kalman filter update
         self.state = update * self.state;
@@ -188,17 +192,15 @@ impl PeerFilter {
         let m_delta_t = (measurement.localtime - self.last_measurement.localtime).to_seconds();
 
         // Kalman filter update
-        let measurement_vec = Vector::new(
+        let measurement_vec = Vector::new_vector([
             measurement.offset.to_seconds(),
             (measurement.offset - self.last_measurement.offset).to_seconds(),
-        );
-        let measurement_transform = Matrix::new(1., 0., 0., m_delta_t);
-        let measurement_noise = Matrix::new(
-            delay_variance / 4.,
-            delay_variance / 4.,
-            delay_variance / 4.,
-            delay_variance / 2.,
-        );
+        ]);
+        let measurement_transform = Matrix::new([[1., 0.], [0., m_delta_t]]);
+        let measurement_noise = Matrix::new([
+            [delay_variance / 4., delay_variance / 4.],
+            [delay_variance / 4., delay_variance / 2.],
+        ]);
         let difference = measurement_vec - measurement_transform * self.state;
         let difference_covariance =
             measurement_transform * self.uncertainty * measurement_transform.transpose()
@@ -206,7 +208,7 @@ impl PeerFilter {
         let update_strength =
             self.uncertainty * measurement_transform.transpose() * difference_covariance.inverse();
         self.state = self.state + update_strength * difference;
-        self.uncertainty = ((Matrix::UNIT - update_strength * measurement_transform)
+        self.uncertainty = ((Matrix::unit() - update_strength * measurement_transform)
             * self.uncertainty)
             .symmetrize();
 
@@ -339,12 +341,12 @@ impl PeerFilter {
 
         debug!(
             "peer offset {}±{}ms, freq {}±{}ppm",
-            self.state.entry(0) * 1000.,
+            self.state.ventry(0) * 1000.,
             (self.uncertainty.entry(0, 0)
                 + sqr(self.last_measurement.root_dispersion.to_seconds()))
             .sqrt()
                 * 1000.,
-            self.state.entry(1) * 1e6,
+            self.state.ventry(1) * 1e6,
             self.uncertainty.entry(1, 1).sqrt() * 1e6
         );
 
@@ -352,7 +354,7 @@ impl PeerFilter {
     }
 
     fn process_offset_steering(&mut self, steer: f64) {
-        self.state = self.state - Vector::new(steer, 0.0);
+        self.state = self.state - Vector::new_vector([steer, 0.0]);
         self.last_measurement.offset -= NtpDuration::from_seconds(steer);
         self.last_measurement.localtime += NtpDuration::from_seconds(steer);
         self.filter_time += NtpDuration::from_seconds(steer);
@@ -360,7 +362,7 @@ impl PeerFilter {
 
     fn process_frequency_steering(&mut self, time: NtpTimestamp, steer: f64) {
         self.progress_filtertime(time);
-        self.state = self.state - Vector::new(0.0, steer);
+        self.state = self.state - Vector::new_vector([0.0, steer]);
         self.last_measurement.offset += NtpDuration::from_seconds(
             steer * (time - self.last_measurement.localtime).to_seconds(),
         );
@@ -398,13 +400,11 @@ impl PeerState {
                 filter.update(measurement);
                 if filter.samples == 8 {
                     *self = PeerState(PeerStateInner::Stable(PeerFilter {
-                        state: Vector::new(filter.init_offset.mean(), 0.),
-                        uncertainty: Matrix::new(
-                            filter.init_offset.variance(),
-                            0.,
-                            0.,
-                            sqr(algo_config.initial_frequency_uncertainty),
-                        ),
+                        state: Vector::new_vector([filter.init_offset.mean(), 0.]),
+                        uncertainty: Matrix::new([
+                            [filter.init_offset.variance(), 0.],
+                            [0., sqr(algo_config.initial_frequency_uncertainty)],
+                        ]),
                         clock_wander: sqr(algo_config.initial_wander),
                         roundtriptime_stats: filter.roundtriptime_stats,
                         precision_score: 0,
@@ -515,8 +515,8 @@ mod tests {
         let basei = NtpInstant::now();
 
         let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
-            state: Vector::new(20e-3, 0.),
-            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            state: Vector::new_vector([20e-3, 0.]),
+            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -564,8 +564,8 @@ mod tests {
         assert!(matches!(peer, PeerState(PeerStateInner::Initial(_))));
 
         let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
-            state: Vector::new(20e-3, 0.),
-            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            state: Vector::new_vector([20e-3, 0.]),
+            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -614,8 +614,8 @@ mod tests {
         assert!(matches!(peer, PeerState(PeerStateInner::Stable(_))));
 
         let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
-            state: Vector::new(20e-3, 0.),
-            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            state: Vector::new_vector([20e-3, 0.]),
+            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -669,8 +669,8 @@ mod tests {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
         let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
-            state: Vector::new(20e-3, 0.),
-            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            state: Vector::new_vector([20e-3, 0.]),
+            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -699,7 +699,7 @@ mod tests {
         }));
 
         peer.process_offset_steering(20e-3);
-        assert!(peer.snapshot(0_usize).unwrap().state.entry(0).abs() < 1e-7);
+        assert!(peer.snapshot(0_usize).unwrap().state.ventry(0).abs() < 1e-7);
 
         assert!(catch_unwind(
             move || peer.progress_filtertime(base + NtpDuration::from_seconds(10e-3))
@@ -707,8 +707,8 @@ mod tests {
         .is_err());
 
         let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
-            state: Vector::new(20e-3, 0.),
-            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            state: Vector::new_vector([20e-3, 0.]),
+            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -737,7 +737,7 @@ mod tests {
         }));
 
         peer.process_offset_steering(20e-3);
-        assert!(peer.snapshot(0_usize).unwrap().state.entry(0).abs() < 1e-7);
+        assert!(peer.snapshot(0_usize).unwrap().state.ventry(0).abs() < 1e-7);
 
         peer.update_self_using_measurement(
             &SystemConfig::default(),
@@ -758,12 +758,12 @@ mod tests {
             },
         );
 
-        assert!(dbg!((peer.snapshot(0_usize).unwrap().state.entry(0) - 20e-3).abs()) < 1e-7);
-        assert!((peer.snapshot(0_usize).unwrap().state.entry(1) - 20e-6).abs() < 1e-7);
+        assert!(dbg!((peer.snapshot(0_usize).unwrap().state.ventry(0) - 20e-3).abs()) < 1e-7);
+        assert!((peer.snapshot(0_usize).unwrap().state.ventry(1) - 20e-6).abs() < 1e-7);
 
         let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
-            state: Vector::new(-20e-3, 0.),
-            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            state: Vector::new_vector([-20e-3, 0.]),
+            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -792,7 +792,7 @@ mod tests {
         }));
 
         peer.process_offset_steering(-20e-3);
-        assert!(peer.snapshot(0_usize).unwrap().state.entry(0).abs() < 1e-7);
+        assert!(peer.snapshot(0_usize).unwrap().state.ventry(0).abs() < 1e-7);
 
         peer.progress_filtertime(base - NtpDuration::from_seconds(10e-3)); // should succeed
 
@@ -815,8 +815,8 @@ mod tests {
             },
         );
 
-        assert!(dbg!((peer.snapshot(0_usize).unwrap().state.entry(0) - -20e-3).abs()) < 1e-7);
-        assert!((peer.snapshot(0_usize).unwrap().state.entry(1) - -20e-6).abs() < 1e-7);
+        assert!(dbg!((peer.snapshot(0_usize).unwrap().state.ventry(0) - -20e-3).abs()) < 1e-7);
+        assert!((peer.snapshot(0_usize).unwrap().state.ventry(1) - -20e-6).abs() < 1e-7);
     }
 
     #[test]
@@ -824,8 +824,8 @@ mod tests {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
         let mut peer = PeerFilter {
-            state: Vector::new(0.0, 0.),
-            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            state: Vector::new_vector([0.0, 0.]),
+            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -854,17 +854,17 @@ mod tests {
         };
 
         peer.process_frequency_steering(base + NtpDuration::from_seconds(5.0), 200e-6);
-        assert!((peer.state.entry(1) - -200e-6).abs() < 1e-10);
-        assert!(peer.state.entry(0).abs() < 1e-8);
+        assert!((peer.state.ventry(1) - -200e-6).abs() < 1e-10);
+        assert!(peer.state.ventry(0).abs() < 1e-8);
         assert!((peer.last_measurement.offset.to_seconds() - 1e-3).abs() < 1e-8);
         peer.process_frequency_steering(base + NtpDuration::from_seconds(10.0), -200e-6);
-        assert!(peer.state.entry(1).abs() < 1e-10);
-        assert!((peer.state.entry(0) - -1e-3).abs() < 1e-8);
+        assert!(peer.state.ventry(1).abs() < 1e-10);
+        assert!((peer.state.ventry(0) - -1e-3).abs() < 1e-8);
         assert!((peer.last_measurement.offset.to_seconds() - -1e-3).abs() < 1e-8);
 
         let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
-            state: Vector::new(0.0, 0.),
-            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            state: Vector::new_vector([0.0, 0.]),
+            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -893,11 +893,11 @@ mod tests {
         }));
 
         peer.process_frequency_steering(base + NtpDuration::from_seconds(5.0), 200e-6);
-        assert!((peer.snapshot(0_usize).unwrap().state.entry(1) - -200e-6).abs() < 1e-10);
-        assert!(peer.snapshot(0_usize).unwrap().state.entry(0).abs() < 1e-8);
+        assert!((peer.snapshot(0_usize).unwrap().state.ventry(1) - -200e-6).abs() < 1e-10);
+        assert!(peer.snapshot(0_usize).unwrap().state.ventry(0).abs() < 1e-8);
         peer.process_frequency_steering(base + NtpDuration::from_seconds(10.0), -200e-6);
-        assert!(peer.snapshot(0_usize).unwrap().state.entry(1).abs() < 1e-10);
-        assert!((peer.snapshot(0_usize).unwrap().state.entry(0) - -1e-3).abs() < 1e-8);
+        assert!(peer.snapshot(0_usize).unwrap().state.ventry(1).abs() < 1e-10);
+        assert!((peer.snapshot(0_usize).unwrap().state.ventry(0) - -1e-3).abs() < 1e-8);
     }
 
     #[test]
@@ -1058,7 +1058,7 @@ mod tests {
             },
         );
         assert!(peer.snapshot(0_usize).is_some());
-        assert!((peer.snapshot(0_usize).unwrap().state.entry(0) - 3.5e-3).abs() < 1e-7);
+        assert!((peer.snapshot(0_usize).unwrap().state.ventry(0) - 3.5e-3).abs() < 1e-7);
         assert!((peer.snapshot(0_usize).unwrap().uncertainty.entry(0, 0) - 1e-6) > 0.);
     }
 
@@ -1221,7 +1221,7 @@ mod tests {
             },
         );
         assert!(peer.snapshot(0_usize).is_some());
-        assert!((peer.snapshot(0_usize).unwrap().state.entry(0) - 3.5e-3).abs() < 1e-7);
+        assert!((peer.snapshot(0_usize).unwrap().state.ventry(0) - 3.5e-3).abs() < 1e-7);
         assert!((peer.snapshot(0_usize).unwrap().uncertainty.entry(0, 0) - 1e-6) > 0.);
     }
 
@@ -1236,8 +1236,8 @@ mod tests {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
         let mut peer = PeerFilter {
-            state: Vector::new(0.0, 0.),
-            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            state: Vector::new_vector([0.0, 0.]),
+            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -1362,8 +1362,8 @@ mod tests {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
         let mut peer = PeerFilter {
-            state: Vector::new(0.0, 0.),
-            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            state: Vector::new_vector([0.0, 0.]),
+            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],

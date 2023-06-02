@@ -70,12 +70,11 @@ pub(super) fn select<Index: Copy>(
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        algorithm::kalman::{
-            matrix::{Matrix, Vector},
-            sqr,
-        },
-        NtpDuration, NtpTimestamp,
+    use crate::{NtpDuration, NtpTimestamp};
+
+    use super::super::{
+        matrix::{Matrix, Vector},
+        sqr,
     };
 
     use super::*;
@@ -83,8 +82,8 @@ mod tests {
     fn snapshot_for_range(center: f64, uncertainty: f64, delay: f64) -> PeerSnapshot<usize> {
         PeerSnapshot {
             index: 0,
-            state: Vector::new(center, 0.0),
-            uncertainty: Matrix::new(sqr(uncertainty), 0.0, 0.0, 10e-12),
+            state: Vector::new_vector([center, 0.0]),
+            uncertainty: Matrix::new([[sqr(uncertainty), 0.0], [0.0, 10e-12]]),
             delay,
             peer_uncertainty: NtpDuration::from_seconds(0.01),
             peer_delay: NtpDuration::from_seconds(0.01),
