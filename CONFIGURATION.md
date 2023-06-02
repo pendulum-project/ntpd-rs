@@ -167,7 +167,7 @@ A peer in `server-nts` mode will use NTS (Network Times Security) to communicate
 ```
 [[peers]]
 mode = "server-nts"
-ke_addr = "time.cloudflare.com:4460"
+ke-addr = "time.cloudflare.com:4460"
 certificate = "/path/to/certificates.pem"
 ```
 
@@ -182,7 +182,7 @@ An example configuration for the ntppool.org ntp pool can look like
 [[peers]]
 addr = "pool.ntp.org"
 mode = "Pool"
-max_peers = 4
+max-peers = 4
 ```
 
 #### Server
@@ -306,7 +306,7 @@ The high performance clock algorithm has quite a few options. Most of these are 
 | delay-outlier-threshold | 5.0 | Threshold (in number of standard deviations) above which measurements with a significantly larger network delay are rejected. (standard deviations, 0+) |
 | initial-wander | 1e-8 | Initial estimate of the clock wander between our local clock and that of the peer. Increasing this results in better synchronization if the hardware matches it, but at the cost of slower synchronization when overly optimistic. (s/s^2) |
 | initial-frequency-uncertainty | 100e-6 | Initial uncertainty of the frequency difference between our clock and that of the peer. Lower values increase the speed of frequency synchronization when correct, but decrease it when overly optimistic. (s/s) |
-| meddling_threshold | 5.0 | Threshold (in seconds) above which unexpected time differences between the monotonic and system clocks trigger a restart of the synchronization process. |
+| meddling-threshold | 5.0 | Threshold (in seconds) above which unexpected time differences between the monotonic and system clocks trigger a restart of the synchronization process. |
 
 A second set of options control more internal details of how the algorithm estimates its errors and regulates the poll interval. Care should be taken in choosing the values here, and they are primarily provided for easy access when developing the algorithm further:
 | Option | Default | Description |
