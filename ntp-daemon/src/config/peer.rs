@@ -269,7 +269,7 @@ impl<'de> Deserialize<'de> for PeerConfig {
                         }
                         "ke-addr" => {
                             if ke_addr.is_some() {
-                                return Err(de::Error::duplicate_field("ke_addr"));
+                                return Err(de::Error::duplicate_field("ke-addr"));
                             }
                             let raw: String = map.next_value()?;
 
@@ -295,7 +295,7 @@ impl<'de> Deserialize<'de> for PeerConfig {
                         }
                         "max-peers" => {
                             if max_peers.is_some() {
-                                return Err(de::Error::duplicate_field("max_peers"));
+                                return Err(de::Error::duplicate_field("max-peers"));
                             }
                             max_peers = Some(map.next_value()?);
                         }
@@ -329,7 +329,7 @@ impl<'de> Deserialize<'de> for PeerConfig {
                         }
                     }
                     PeerHostMode::NtsServer => {
-                        let ke_addr = ke_addr.ok_or_else(|| de::Error::missing_field("ke_addr"))?;
+                        let ke_addr = ke_addr.ok_or_else(|| de::Error::missing_field("ke-addr"))?;
 
                         let valid_fields = &["mode", "ke-addr", "certificate"];
                         if max_peers.is_some() {
