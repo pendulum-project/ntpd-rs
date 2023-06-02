@@ -130,16 +130,16 @@ pub enum LibcTimestamp {
 impl LibcTimestamp {
     fn from_timespec(timespec: libc::timespec) -> Self {
         Self::TimeSpec {
-            seconds: timespec.tv_sec,
-            nanos: timespec.tv_nsec,
+            seconds: timespec.tv_sec as _,
+            nanos: timespec.tv_nsec as _,
         }
     }
 
     #[allow(unused)]
     fn from_timeval(timespec: libc::timeval) -> Self {
         Self::TimeVal {
-            seconds: timespec.tv_sec,
-            micros: timespec.tv_usec,
+            seconds: timespec.tv_sec as _,
+            micros: timespec.tv_usec as _,
         }
     }
 
