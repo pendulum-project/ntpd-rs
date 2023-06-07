@@ -5,24 +5,21 @@
 [![book](https://shields.io/badge/docs.rs-statime-green)](https://pendulum-project.github.io/statime/docs/statime)
 [![book](https://shields.io/badge/docs.rs-statime_linux-green)](https://pendulum-project.github.io/statime/docs/statime_linux)
 
-Statime is a work in progress Rust implementation of PTP version 2.1 (IEEE 1588-2019). 
-It is currently highly in flux and not yet usable.
+Statime is a work in progress Rust implementation of PTP version 2.1 (IEEE 1588-2019). It currently implements support for acting as a master and an ordinary or a boundary clock. Note that we are planning a refactor of the codebase, and that the public interface is likely to change.
 
 <p align="center">
 <img width="216px" alt="Statime - PTP in Rust" src="https://tweedegolf.nl/images/statime.jpg" />
 </p>
 
-The current state of the project is such that the main binary, when compiled, measures and outputs the time difference to any ptp master clock happening to be sending in the network it listens to.
+The statime-linux crate also provides a binary for linux implementing an ordinary clock. It will need sufficient permissions to change the system clock to use. The easiest way to start it is through sudo: `sudo ./target/debug/statime-linux -i <network_interface>`.
 
 ## Structure
 
-The library has been built in a way to try and be platform-agnostic. To do that, the network and clock have been abstracted.
-
-Many things are event-based where the user needs to call a function on the ptp instance object to let it handle e.g. an incoming network packet.
+The library has been built in a way to try and be platform-agnostic. To do that, the network and clock have been abstracted. The `statime-linux` library provides implementations of these abstractions for linux-based platforms. For other platforms, this needs to be provided by the user. For more details, see [the documentation](https://pendulum-project.github.io/statime/docs/statime)
 
 ## Rust version
 
-For compiling this software we advise using the latest version of cargo/rustc as available through rustup. At time of writing this is `1.58.1`.
+Statime requires a nigthly version of cargo/rust. The easiest way to obtain these is through [rustup](https://rustup.rs)
 
 ## Running with elevated privileges
 
@@ -32,7 +29,7 @@ cargo +nightly build
 ```
 and then run it as root with
 ```
-sudo ./target/debug/linux -i <ETHERNET INTERFACE NAME>
+sudo ./target/debug/statime-linux -i <ETHERNET INTERFACE NAME>
 ```
 
 ## PTPd setup for testing
@@ -53,13 +50,16 @@ where `<INTERFACE>` is the netwerk interface you want ptpd to use. Here `-n` dis
 
 # Roadmap
 
-- Q2 2023: PTP master, boundary clock + support for embedded device
-- Q3 2023: NTP/PTP clock device + development of PTP for Linux
-- Q4 2023: Completion of PTP for Linux
+- Q2 2023: PTP master, boundary clock
+- Q3 2023: NTP/PTP clock device + development of PTP for Linux (pending funding)
+- Q4 2023: Completion of PTP for Linux (pending funding)
 
 # Support our work
 
-The development of Statime is kindly supported by the [NLnet Foundation](https://nlnet.nl).
+The development of Statime is kindly supported by the NGI Assure Fund of the [NLnet Foundation](https://nlnet.nl).
+
+<img style="margin: 1rem 5% 1rem 5%;" src="https://nlnet.nl/logo/banner.svg" alt="Logo NLnet"  width="150px" />
+<img style="margin: 1rem 5% 1rem 5%;" src="https://nlnet.nl/image/logos/NGIAssure_tag.svg" alt="Logo NGI Assure" width="150px" />
 
 [SIDN Fonds](https://www.sidnfonds.nl/excerpt) is supporting us with a grant to develop clock devices running Statime and ntpd-rs, in collaboration with SIDN Labs' [TimeNL](https://www.sidnlabs.nl/en/news-and-blogs/an-open-infrastructure-for-sub-millisecond-internet-time).
 
