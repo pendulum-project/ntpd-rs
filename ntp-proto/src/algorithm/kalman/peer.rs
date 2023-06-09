@@ -280,9 +280,11 @@ impl PeerFilter {
     fn update_wander_estimate(&mut self, algo_config: &AlgorithmConfig, p: f64, weight: f64) {
         // Note that chi is exponentially distributed with mean 2
         // Also, we do not steer towards a smaller precision estimate when measurement noise dominates.
-        if 1.-p < algo_config.precision_low_probability && weight > algo_config.precision_min_weight {
+        if 1. - p < algo_config.precision_low_probability
+            && weight > algo_config.precision_min_weight
+        {
             self.precision_score -= 1;
-        } else if 1.-p > algo_config.precision_high_probability {
+        } else if 1. - p > algo_config.precision_high_probability {
             self.precision_score += 1;
         } else {
             self.precision_score -= self.precision_score.signum()
@@ -717,7 +719,7 @@ mod tests {
         let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
             state: Vector::new_vector([20e-3, 0.]),
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
-            clock_wander: 0e-8,
+            clock_wander: 0.0,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
@@ -772,7 +774,7 @@ mod tests {
         let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
             state: Vector::new_vector([-20e-3, 0.]),
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
-            clock_wander: 0e-8,
+            clock_wander: 0.0,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
