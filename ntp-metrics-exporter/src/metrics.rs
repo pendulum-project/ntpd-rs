@@ -11,7 +11,6 @@ use prometheus_client::{
     metrics::{counter::Counter, family::Family, gauge::Gauge},
     registry::{Registry, Unit},
 };
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EncodeLabelSet)]
 struct PeerLabels {
@@ -23,7 +22,7 @@ struct ServerLabels {
     listen_address: WrappedSocketAddr,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct WrappedSocketAddr(SocketAddr);
 
 impl From<SocketAddr> for WrappedSocketAddr {
