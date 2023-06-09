@@ -90,6 +90,22 @@ struct AveragingBuffer {
     next_idx: usize,
 }
 
+/// Approximation of 1 - the chi-squared cdf with 1 degree of freedom
+/// source: https://en.wikipedia.org/wiki/Error_function
+fn chi_1(chi: f64) -> f64 {
+    const P: f64 = 0.3275911;
+    const A1: f64 = 0.254829592;
+    const A2: f64 = -0.284496736;
+    const A3: f64 = 1.421413741;
+    const A4: f64 = -1.453152027;
+    const A5: f64 = 1.061405429;
+
+    let x = (chi / 2.).sqrt();
+    let t = 1. / (1. + P * x);
+    (A1 * t + A2 * t * t + A3 * t * t * t + A4 * t * t * t * t + A5 * t * t * t * t * t)
+        * (-(x * x)).exp()
+}
+
 impl AveragingBuffer {
     fn mean(&self) -> f64 {
         self.data.iter().sum::<f64>() / (self.data.len() as f64)
@@ -207,7 +223,7 @@ impl PeerFilter {
             .symmetrize();
 
         // Statistics
-        let chi = difference.inner(difference_covariance.inverse() * difference);
+        let p = chi_1(difference.inner(difference_covariance.inverse() * difference));
         // Calculate an indicator of how much of the measurement was incorporated
         // into the state. 1.0 - is needed here as this should become lower as
         // measurement noise's contribution to difference uncertainty increases.
@@ -215,9 +231,9 @@ impl PeerFilter {
 
         self.last_measurement = measurement;
 
-        trace!(chi, weight, "Measurement absorbed");
+        trace!(p, weight, "Measurement absorbed");
 
-        (chi, weight, m_delta_t)
+        (p, weight, m_delta_t)
     }
 
     /// Ensure we poll often enough to keep the filter well-fed with information, but
@@ -226,7 +242,7 @@ impl PeerFilter {
         &mut self,
         config: &SystemConfig,
         algo_config: &AlgorithmConfig,
-        chi: f64,
+        p: f64,
         weight: f64,
         measurement_period: f64,
     ) {
@@ -244,7 +260,7 @@ impl PeerFilter {
             self.poll_score -= self.poll_score.signum();
         }
         trace!(poll_score = self.poll_score, ?weight, "Poll desire update");
-        if chi >= -2. * algo_config.poll_jump_threshold.ln() {
+        if p <= algo_config.poll_jump_threshold {
             self.desired_poll_interval = config.poll_limits.min;
             self.poll_score = 0;
         } else if self.poll_score <= -algo_config.poll_hysteresis {
@@ -261,21 +277,19 @@ impl PeerFilter {
     // Our estimate for the clock stability might be completely wrong. The code here
     // correlates the estimation for errors to what we actually observe, so we can
     // update our estimate should it turn out to be significantly off.
-    fn update_wander_estimate(&mut self, algo_config: &AlgorithmConfig, chi: f64, weight: f64) {
+    fn update_wander_estimate(&mut self, algo_config: &AlgorithmConfig, p: f64, weight: f64) {
         // Note that chi is exponentially distributed with mean 2
         // Also, we do not steer towards a smaller precision estimate when measurement noise dominates.
-        if chi < -2. * (1. - algo_config.precision_low_probability).ln()
-            && weight > algo_config.precision_min_weight
-        {
+        if 1.-p < algo_config.precision_low_probability && weight > algo_config.precision_min_weight {
             self.precision_score -= 1;
-        } else if chi > -2. * (1. - algo_config.precision_high_probability).ln() {
+        } else if 1.-p > algo_config.precision_high_probability {
             self.precision_score += 1;
         } else {
             self.precision_score -= self.precision_score.signum()
         }
         trace!(
             precision_score = self.precision_score,
-            chi,
+            p,
             "Wander estimate update"
         );
         if self.precision_score <= -algo_config.precision_hysteresis {
@@ -328,10 +342,10 @@ impl PeerFilter {
         self.roundtriptime_stats
             .update(measurement.delay.to_seconds());
 
-        let (chi, weight, measurement_period) = self.absorb_measurement(measurement);
+        let (p, weight, measurement_period) = self.absorb_measurement(measurement);
 
-        self.update_wander_estimate(algo_config, chi, weight);
-        self.update_desired_poll(config, algo_config, chi, weight, measurement_period);
+        self.update_wander_estimate(algo_config, p, weight);
+        self.update_desired_poll(config, algo_config, p, weight, measurement_period);
 
         debug!(
             "peer offset {}±{}ms, freq {}±{}ppm",
@@ -1263,52 +1277,52 @@ mod tests {
         let pollup = peer
             .desired_poll_interval
             .inc(PollIntervalLimits::default());
-        peer.update_desired_poll(&config, &algo_config, 0.0, 1.0, baseinterval * 2.);
+        peer.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval * 2.);
         assert_eq!(peer.poll_score, 0);
         assert_eq!(
             peer.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        peer.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval * 2.);
+        peer.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval * 2.);
         assert_eq!(peer.poll_score, -1);
         assert_eq!(
             peer.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        peer.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval * 2.);
+        peer.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval * 2.);
         assert_eq!(peer.poll_score, 0);
         assert_eq!(peer.desired_poll_interval, pollup);
-        peer.update_desired_poll(&config, &algo_config, 0.0, 1.0, baseinterval * 3.);
+        peer.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval * 3.);
         assert_eq!(peer.poll_score, 0);
         assert_eq!(peer.desired_poll_interval, pollup);
-        peer.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval);
+        peer.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval);
         assert_eq!(peer.poll_score, 0);
         assert_eq!(peer.desired_poll_interval, pollup);
-        peer.update_desired_poll(&config, &algo_config, 100.0, 0.0, baseinterval * 3.);
+        peer.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval * 3.);
         assert_eq!(peer.poll_score, 0);
         assert_eq!(
             peer.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        peer.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval * 2.);
+        peer.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval * 2.);
         assert_eq!(peer.poll_score, -1);
         assert_eq!(
             peer.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        peer.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval * 2.);
+        peer.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval * 2.);
         assert_eq!(peer.poll_score, 0);
         assert_eq!(peer.desired_poll_interval, pollup);
-        peer.update_desired_poll(&config, &algo_config, 0.0, 1.0, baseinterval);
+        peer.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval);
         assert_eq!(peer.poll_score, 1);
         assert_eq!(peer.desired_poll_interval, pollup);
-        peer.update_desired_poll(&config, &algo_config, 0.0, 1.0, baseinterval);
+        peer.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval);
         assert_eq!(peer.poll_score, 0);
         assert_eq!(
             peer.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        peer.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval);
+        peer.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval);
         assert_eq!(peer.poll_score, -1);
         assert_eq!(
             peer.desired_poll_interval,
@@ -1317,7 +1331,7 @@ mod tests {
         peer.update_desired_poll(
             &config,
             &algo_config,
-            0.0,
+            1.0,
             (algo_config.poll_high_weight + algo_config.poll_low_weight) / 2.,
             baseinterval,
         );
@@ -1326,7 +1340,7 @@ mod tests {
             peer.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        peer.update_desired_poll(&config, &algo_config, 0.0, 1.0, baseinterval);
+        peer.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval);
         assert_eq!(peer.poll_score, 1);
         assert_eq!(
             peer.desired_poll_interval,
@@ -1335,7 +1349,7 @@ mod tests {
         peer.update_desired_poll(
             &config,
             &algo_config,
-            0.0,
+            1.0,
             (algo_config.poll_high_weight + algo_config.poll_low_weight) / 2.,
             baseinterval,
         );
@@ -1385,43 +1399,37 @@ mod tests {
             filter_time: base,
         };
 
-        peer.update_wander_estimate(&algo_config, 0.0, 0.0);
+        peer.update_wander_estimate(&algo_config, 1.0, 0.0);
         assert_eq!(peer.precision_score, 0);
         assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
-        peer.update_wander_estimate(&algo_config, 0.0, 1.0);
+        peer.update_wander_estimate(&algo_config, 1.0, 1.0);
         assert_eq!(peer.precision_score, -1);
         assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
-        peer.update_wander_estimate(&algo_config, 0.0, 1.0);
+        peer.update_wander_estimate(&algo_config, 1.0, 1.0);
         assert_eq!(peer.precision_score, 0);
         assert!(dbg!((peer.clock_wander - 0.25e-8).abs()) < 1e-12);
-        peer.update_wander_estimate(&algo_config, 100.0, 0.0);
+        peer.update_wander_estimate(&algo_config, 0.0, 0.0);
         assert_eq!(peer.precision_score, 1);
         assert!(dbg!((peer.clock_wander - 0.25e-8).abs()) < 1e-12);
-        peer.update_wander_estimate(&algo_config, 100.0, 1.0);
+        peer.update_wander_estimate(&algo_config, 0.0, 1.0);
         assert_eq!(peer.precision_score, 0);
         assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
-        peer.update_wander_estimate(&algo_config, 100.0, 0.0);
+        peer.update_wander_estimate(&algo_config, 0.0, 0.0);
         assert_eq!(peer.precision_score, 1);
         assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
         peer.update_wander_estimate(
             &algo_config,
-            -2.0 * (1.0
-                - (algo_config.precision_high_probability + algo_config.precision_low_probability)
-                    / 2.0)
-                .ln(),
+            (algo_config.precision_high_probability + algo_config.precision_low_probability) / 2.0,
             0.0,
         );
         assert_eq!(peer.precision_score, 0);
         assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
-        peer.update_wander_estimate(&algo_config, 0.0, 1.0);
+        peer.update_wander_estimate(&algo_config, 1.0, 1.0);
         assert_eq!(peer.precision_score, -1);
         assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
         peer.update_wander_estimate(
             &algo_config,
-            -2.0 * (1.0
-                - (algo_config.precision_high_probability + algo_config.precision_low_probability)
-                    / 2.0)
-                .ln(),
+            (algo_config.precision_high_probability + algo_config.precision_low_probability) / 2.0,
             0.0,
         );
         assert_eq!(peer.precision_score, 0);
