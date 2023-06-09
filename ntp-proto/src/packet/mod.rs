@@ -16,7 +16,8 @@ mod extensionfields;
 mod mac;
 
 pub use crypto::{
-    AesSivCmac256, AesSivCmac512, Cipher, CipherHolder, CipherProvider, DecryptError, NoCipher,
+    AesSivCmac256, AesSivCmac512, Cipher, CipherHolder, CipherProvider, DecryptError,
+    EncryptResult, NoCipher,
 };
 pub use error::PacketParsingError;
 pub use extensionfields::ExtensionField;

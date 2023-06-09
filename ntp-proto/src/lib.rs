@@ -8,7 +8,6 @@
 #![forbid(unsafe_code)]
 
 mod algorithm;
-mod arrayvec;
 mod clock;
 mod config;
 mod cookiestash;
@@ -33,7 +32,8 @@ pub use keyset::test_cookie;
 #[cfg(feature = "fuzz")]
 pub use packet::ExtensionField;
 pub use packet::{
-    Cipher, CipherProvider, NoCipher, NtpAssociationMode, NtpLeapIndicator, NtpPacket,
+    Cipher, CipherProvider, EncryptResult, NoCipher, NtpAssociationMode, NtpLeapIndicator,
+    NtpPacket,
 };
 #[cfg(feature = "fuzz")]
 pub use peer::fuzz_measurement_from_packet;
