@@ -6,9 +6,10 @@ use std::{
 use aead::{generic_array::GenericArray, KeyInit};
 
 use crate::{
-    arrayvec::ArrayVec,
     nts_record::AeadAlgorithm,
-    packet::{AesSivCmac256, AesSivCmac512, CipherHolder, DecryptError, ExtensionField},
+    packet::{
+        AesSivCmac256, AesSivCmac512, CipherHolder, DecryptError, EncryptResult, ExtensionField,
+    },
     Cipher, CipherProvider,
 };
 
@@ -146,20 +147,13 @@ pub struct KeySet {
 }
 
 impl KeySet {
-    // AesSivCmac512 is currently the algorithm with the biggest key width: 64 bytes
-    const MAX_PLAINTEXT_BYTES: usize = 2 + 64 + 64;
+    fn plaintext(cookie: &DecodedServerCookie) -> Vec<u8> {
+        let mut plaintext = Vec::new();
 
-    fn plaintext(cookie: &DecodedServerCookie) -> ArrayVec<{ Self::MAX_PLAINTEXT_BYTES }> {
-        let mut plaintext = ArrayVec::default();
-
-        let actual_length = 2 + cookie.s2c.key_bytes().len() + cookie.c2s.key_bytes().len();
-        debug_assert!(actual_length <= plaintext.capacity());
-
-        // we have just asserted that these will fit, so can ignore errors
         let algorithm_bytes = (cookie.algorithm as u16).to_be_bytes();
-        plaintext.write_all(&algorithm_bytes).unwrap();
-        plaintext.write_all(cookie.s2c.key_bytes()).unwrap();
-        plaintext.write_all(cookie.c2s.key_bytes()).unwrap();
+        plaintext.extend_from_slice(&algorithm_bytes);
+        plaintext.extend_from_slice(cookie.s2c.key_bytes());
+        plaintext.extend_from_slice(cookie.c2s.key_bytes());
 
         plaintext
     }
@@ -170,24 +164,27 @@ impl KeySet {
     }
 
     pub(crate) fn encode_cookie(&self, cookie: &DecodedServerCookie) -> Vec<u8> {
-        let mut plaintext = Self::plaintext(cookie);
-        let plaintext_len = plaintext.as_slice().len();
+        let mut output = Self::plaintext(cookie);
+        let plaintext_length = output.as_slice().len();
 
-        let (siv_tag, nonce) = self.keys[self.primary as usize]
-            .encrypt_in_place_detached(plaintext.as_mut(), &[])
+        // Add space for header (4 + 2 bytes), tag (16 bytes) and nonce (16 bytes) plus some margin (16 bytes)
+        output.resize(output.len() + 2 + 4 + 16 + 16 + 16, 0);
+
+        // And move plaintext to make space for header
+        output.copy_within(0..plaintext_length, 6);
+        let EncryptResult {
+            nonce_length,
+            ciphertext_length,
+        } = self.keys[self.primary as usize]
+            .encrypt(&mut output[6..], plaintext_length, &[])
             .expect("Failed to encrypt cookie");
 
-        let ciphertext = plaintext.as_slice();
-        let ciphertext_len = siv_tag.len() + ciphertext.len();
+        debug_assert_eq!(nonce_length, 16);
+        debug_assert_eq!(plaintext_length + 16, ciphertext_length);
 
-        debug_assert_eq!(plaintext_len + 16, ciphertext_len);
-
-        let mut output = Vec::with_capacity(4 + nonce.len() + ciphertext_len);
-        output.extend((self.primary.wrapping_add(self.id_offset)).to_be_bytes());
-        output.extend((ciphertext_len as u16).to_be_bytes());
-        output.extend(nonce);
-        output.extend(siv_tag);
-        output.extend(ciphertext);
+        output[0..4].copy_from_slice(&(self.primary.wrapping_add(self.id_offset)).to_be_bytes());
+        output[4..6].copy_from_slice(&(ciphertext_length as u16).to_be_bytes());
+        output.truncate(6 + nonce_length + ciphertext_length);
         output
     }
 

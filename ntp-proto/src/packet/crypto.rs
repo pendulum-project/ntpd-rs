@@ -11,13 +11,64 @@ use super::extensionfields::ExtensionField;
 #[error("Could not decrypt ciphertext")]
 pub struct DecryptError;
 
-pub trait Cipher: Sync + Send + ZeroizeOnDrop + 'static {
-    fn encrypt_in_place_detached(
-        &self,
-        plaintext: &mut [u8],
-        associated_data: &[u8],
-    ) -> std::io::Result<(aes_siv::Tag, aes_siv::Nonce)>;
+struct Buffer<'a> {
+    buffer: &'a mut [u8],
+    valid: usize,
+}
 
+impl<'a> Buffer<'a> {
+    fn new(buffer: &'a mut [u8], valid: usize) -> Self {
+        Self { buffer, valid }
+    }
+
+    fn valid(&self) -> usize {
+        self.valid
+    }
+}
+
+impl<'a> AsMut<[u8]> for Buffer<'a> {
+    fn as_mut(&mut self) -> &mut [u8] {
+        &mut self.buffer[..self.valid]
+    }
+}
+
+impl<'a> AsRef<[u8]> for Buffer<'a> {
+    fn as_ref(&self) -> &[u8] {
+        &self.buffer[..self.valid]
+    }
+}
+
+impl<'a> aead::Buffer for Buffer<'a> {
+    fn extend_from_slice(&mut self, other: &[u8]) -> aead::Result<()> {
+        self.buffer
+            .get_mut(self.valid..(self.valid + other.len()))
+            .ok_or(aead::Error)?
+            .copy_from_slice(other);
+        self.valid += other.len();
+        Ok(())
+    }
+
+    fn truncate(&mut self, len: usize) {
+        self.valid = std::cmp::min(self.valid, len);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EncryptResult {
+    // Nonce length MUST be a multiple of 4 when encrypting
+    pub nonce_length: usize,
+    pub ciphertext_length: usize,
+}
+
+pub trait Cipher: Sync + Send + ZeroizeOnDrop + 'static {
+    fn encrypt(
+        &self,
+        buffer: &mut [u8],
+        plaintext_length: usize,
+        associated_data: &[u8],
+    ) -> std::io::Result<EncryptResult>;
+
+    // MUST support arbitrary length nonces
     fn decrypt(
         &self,
         nonce: &[u8],
@@ -99,24 +150,27 @@ impl Drop for AesSivCmac256 {
 }
 
 impl Cipher for AesSivCmac256 {
-    fn encrypt_in_place_detached(
+    fn encrypt(
         &self,
-        plaintext: &mut [u8],
+        buffer: &mut [u8],
+        plaintext_length: usize,
         associated_data: &[u8],
-    ) -> std::io::Result<(aes_siv::Tag, aes_siv::Nonce)> {
+    ) -> std::io::Result<EncryptResult> {
         let mut siv = Aes128Siv::new(&self.key);
         let nonce: [u8; 16] = rand::thread_rng().gen();
 
-        let siv_tag = match siv.encrypt_in_place_detached([associated_data, &nonce], plaintext) {
-            Ok(tag) => tag,
-            Err(e) => {
-                // This should probably never happen, so log as an error
-                error!(error = ?e, "Encryption failed");
-                return Err(std::io::Error::from(std::io::ErrorKind::Other));
-            }
-        };
+        buffer.copy_within(..plaintext_length, nonce.len());
+        buffer[..nonce.len()].copy_from_slice(&nonce);
 
-        Ok((siv_tag, nonce.into()))
+        let mut buffer_wrap = Buffer::new(&mut buffer[nonce.len()..], plaintext_length);
+
+        siv.encrypt_in_place([associated_data, &nonce], &mut buffer_wrap)
+            .map_err(|_| std::io::ErrorKind::Other)?;
+
+        Ok(EncryptResult {
+            nonce_length: nonce.len(),
+            ciphertext_length: buffer_wrap.valid(),
+        })
     }
 
     fn decrypt(
@@ -163,24 +217,27 @@ impl Drop for AesSivCmac512 {
 }
 
 impl Cipher for AesSivCmac512 {
-    fn encrypt_in_place_detached(
+    fn encrypt(
         &self,
-        plaintext: &mut [u8],
+        buffer: &mut [u8],
+        plaintext_length: usize,
         associated_data: &[u8],
-    ) -> std::io::Result<(aes_siv::Tag, aes_siv::Nonce)> {
+    ) -> std::io::Result<EncryptResult> {
         let mut siv = Aes256Siv::new(&self.key);
         let nonce: [u8; 16] = rand::thread_rng().gen();
 
-        let siv_tag = match siv.encrypt_in_place_detached([associated_data, &nonce], plaintext) {
-            Ok(tag) => tag,
-            Err(e) => {
-                // This should probably never happen, so log as an error
-                error!(error = ?e, "Encryption failed");
-                return Err(std::io::Error::from(std::io::ErrorKind::Other));
-            }
-        };
+        buffer.copy_within(..plaintext_length, nonce.len());
+        buffer[..nonce.len()].copy_from_slice(&nonce);
 
-        Ok((siv_tag, nonce.into()))
+        let mut buffer_wrap = Buffer::new(&mut buffer[nonce.len()..], plaintext_length);
+
+        siv.encrypt_in_place([associated_data, &nonce], &mut buffer_wrap)
+            .map_err(|_| std::io::ErrorKind::Other)?;
+
+        Ok(EncryptResult {
+            nonce_length: nonce.len(),
+            ciphertext_length: buffer_wrap.valid(),
+        })
     }
 
     fn decrypt(
@@ -203,5 +260,48 @@ impl Cipher for AesSivCmac512 {
 impl std::fmt::Debug for AesSivCmac512 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AesSivCmac512").finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_aes_siv_cmac_256() {
+        let mut testvec: Vec<u8> = (0..16).collect();
+        testvec.resize(testvec.len() + 32, 0);
+        let key = AesSivCmac256::new([0u8; 32].into());
+        let EncryptResult {
+            nonce_length,
+            ciphertext_length,
+        } = key.encrypt(&mut testvec, 16, &[]).unwrap();
+        let result = key
+            .decrypt(
+                &testvec[..nonce_length],
+                &testvec[nonce_length..(nonce_length + ciphertext_length)],
+                &[],
+            )
+            .unwrap();
+        assert_eq!(result, (0..16).collect::<Vec<u8>>());
+    }
+
+    #[test]
+    fn test_aes_siv_cmac_512() {
+        let mut testvec: Vec<u8> = (0..16).collect();
+        testvec.resize(testvec.len() + 32, 0);
+        let key = AesSivCmac512::new([0u8; 64].into());
+        let EncryptResult {
+            nonce_length,
+            ciphertext_length,
+        } = key.encrypt(&mut testvec, 16, &[]).unwrap();
+        let result = key
+            .decrypt(
+                &testvec[..nonce_length],
+                &testvec[nonce_length..(nonce_length + ciphertext_length)],
+                &[],
+            )
+            .unwrap();
+        assert_eq!(result, (0..16).collect::<Vec<u8>>());
     }
 }

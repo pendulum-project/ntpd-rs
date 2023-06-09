@@ -3,9 +3,9 @@ use std::{
     io::{Cursor, Write},
 };
 
-use crate::{arrayvec::ArrayVec, DecodedServerCookie};
+use crate::DecodedServerCookie;
 
-use super::{error::ParsingError, Cipher, CipherProvider, Mac};
+use super::{crypto::EncryptResult, error::ParsingError, Cipher, CipherProvider, Mac};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum ExtensionFieldTypeId {
@@ -256,49 +256,53 @@ impl<'a> ExtensionField<'a> {
     ) -> std::io::Result<()> {
         let padding = [0; 4];
 
-        let current_position = w.position();
+        let header_start = w.position();
 
-        let packet_so_far = &w.get_ref()[..current_position as usize];
-
-        // 1024 is our maximum response size, and therefore a safe upper bound on the plaintext length
-        let mut plaintext = ArrayVec::<1024>::default();
-        for field in fields_to_encrypt {
-            // RFC 8915, section 5.5: contrary to the RFC 7822 requirement that fields have a minimum length of 16 or 28 octets,
-            // encrypted extension fields MAY be arbitrarily short (but still MUST be a multiple of 4 octets in length)
-            let minimum_size = 0;
-            field.serialize(&mut plaintext, minimum_size)?;
-        }
-
-        let (siv_tag, nonce) = cipher
-            .encrypt_in_place_detached(plaintext.as_mut(), packet_so_far)
-            .unwrap();
-        let ciphertext = plaintext.as_slice();
-
+        // Temporary header
         w.write_all(
             &ExtensionFieldTypeId::NtsEncryptedField
                 .to_type_id()
                 .to_be_bytes(),
         )?;
+        w.write_all(&0u16.to_be_bytes())?;
+        w.write_all(&0u16.to_be_bytes())?;
+        w.write_all(&0u16.to_be_bytes())?;
 
-        // NOTE: these are NOT rounded up to a number of words
-        let nonce_octet_count = nonce.len();
-        let ct_octet_count = siv_tag.len() + ciphertext.len();
+        // Write plaintext for the fields
+        let plaintext_start = w.position();
+        for field in fields_to_encrypt {
+            // RFC 8915, section 5.5: contrary to the RFC 7822 requirement that fields have a minimum length of 16 or 28 octets,
+            // encrypted extension fields MAY be arbitrarily short (but still MUST be a multiple of 4 octets in length)
+            let minimum_size = 0;
+            field.serialize(w, minimum_size)?;
+        }
 
-        // + 8 for the extension field header (4 bytes) and nonce/cypher text length (2 bytes each)
-        let signature_octet_count =
-            8 + next_multiple_of_u16((nonce_octet_count + ct_octet_count) as u16, 4);
+        let plaintext_length = w.position() - plaintext_start;
+        let (packet_so_far, cur_extension_field) = w.get_mut().split_at_mut(header_start as usize);
+        let EncryptResult {
+            nonce_length,
+            ciphertext_length,
+        } = cipher.encrypt(
+            &mut cur_extension_field[(plaintext_start - header_start) as usize..],
+            plaintext_length as usize,
+            packet_so_far,
+        )?;
 
-        w.write_all(&signature_octet_count.to_be_bytes())?;
-        w.write_all(&(nonce_octet_count as u16).to_be_bytes())?;
-        w.write_all(&(ct_octet_count as u16).to_be_bytes())?;
-
-        w.write_all(&nonce)?;
-        let padding_bytes = next_multiple_of_u16(nonce.len() as u16, 4) - nonce.len() as u16;
-        w.write_all(&padding[..padding_bytes as usize])?;
-
-        w.write_all(&siv_tag)?;
-        w.write_all(ciphertext)?;
-        let padding_bytes = next_multiple_of_u16(ct_octet_count as u16, 4) - ct_octet_count as u16;
+        // Final header
+        let signature_length =
+            8 + next_multiple_of_u16((nonce_length + ciphertext_length) as u16, 4);
+        w.set_position(header_start);
+        w.write_all(
+            &ExtensionFieldTypeId::NtsEncryptedField
+                .to_type_id()
+                .to_be_bytes(),
+        )?;
+        w.write_all(&signature_length.to_be_bytes())?;
+        w.write_all(&nonce_length.to_be_bytes())?;
+        w.write_all(&ciphertext_length.to_be_bytes())?;
+        w.set_position(header_start + 8 + (nonce_length as u64) + (ciphertext_length as u64));
+        let padding_bytes =
+            next_multiple_of_u16(ciphertext_length as u16, 4) - ciphertext_length as u16;
         w.write_all(&padding[..padding_bytes as usize])?;
 
         Ok(())
