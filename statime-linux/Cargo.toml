@@ -9,7 +9,7 @@ edition = "2021"
 arrayvec = { version = "0.7.2", default-features = false }
 bitflags = "2.3.1"
 chrono = "0.4.26"
-clap = { version = "4.3.2", features = ["derive"] }
+clap = { version = "4.3.3", features = ["derive"] }
 fern = { version = "0.6.2", features = ["colored"] }
 fixed = "1.23.1"
 libc = { version = "0.2.146", features = ["extra_traits"] }
