@@ -30,7 +30,7 @@ jobs:
           - "--features rfc-algorithm"
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
+        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9
         with:
           persist-credentials: false
       - name: Install ${{ matrix.rust }} toolchain
@@ -68,7 +68,7 @@ jobs:
           - ""
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
+        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9
         with:
           persist-credentials: false
       - name: Install ${{ matrix.rust }} toolchain
@@ -97,7 +97,7 @@ jobs:
           - ""
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
+        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9
         with:
           persist-credentials: false
       - name: Install ${{ matrix.rust }} toolchain
@@ -118,7 +118,7 @@ jobs:
     name: test on freebsd
     runs-on: macos-12
     steps:
-      - uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
+      - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9
       - name: test on freebsd
         uses: vmactions/freebsd-vm@v0
         with:
@@ -145,7 +145,7 @@ jobs:
           - "--features sentry"
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
+        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9
         with:
           persist-credentials: false
       - name: Install nightly toolchain
@@ -170,7 +170,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
+        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9
         with:
           persist-credentials: false
       - name: ./ntp.toml
@@ -187,7 +187,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
+        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9
         with:
           persist-credentials: false
       - name: Install rust toolchain
@@ -218,7 +218,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
+        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9
         with:
           persist-credentials: false
       - name: Install rust toolchain
@@ -249,7 +249,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
+        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9
         with:
           persist-credentials: false
       - name: Install rust toolchain
@@ -283,7 +283,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
+        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9
         with:
           persist-credentials: false
       - name: Install rust toolchain
@@ -317,7 +317,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
+        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9
         with:
           persist-credentials: false
       - name: Install rust toolchain
@@ -351,7 +351,7 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
+        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9
         with:
           persist-credentials: false
       - name: Install nightly toolchain
@@ -374,7 +374,7 @@ jobs:
   audit-dependencies:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
+    - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9
     - uses: EmbarkStudios/cargo-deny-action@e0a440755b184aa50374330fa75cca0f84fcb59a
       with:
         arguments: --workspace --all-features
