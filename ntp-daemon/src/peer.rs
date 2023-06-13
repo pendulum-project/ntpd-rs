@@ -133,10 +133,17 @@ where
         self.last_poll_sent = Instant::now();
         self.update_poll_wait(poll_wait, system_snapshot);
 
-        // NOTE: fitness check is not performed here, but by System
-        let snapshot = PeerSnapshot::from_peer(&self.peer);
-        let msg = MsgForSystem::UpdatedSnapshot(self.index, snapshot);
-        self.channels.msg_for_system_sender.send(msg).await.ok();
+        // the last_send_timestamp is only None at startup
+        let is_first_snapshot = self.last_send_timestamp.is_none();
+
+        // The first snapshot does not contain useful data (stratum is invalid)
+        // Skipping the message prevents confusing log messages from being emitted.
+        if !is_first_snapshot {
+            // NOTE: fitness check is not performed here, but by System
+            let snapshot = PeerSnapshot::from_peer(&self.peer);
+            let msg = MsgForSystem::UpdatedSnapshot(self.index, snapshot);
+            self.channels.msg_for_system_sender.send(msg).await.ok();
+        }
 
         match self.clock.now() {
             Err(e) => {
@@ -596,7 +603,7 @@ mod tests {
     #[tokio::test]
     async fn test_poll_sends_state_update_and_packet() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, socket, mut msg_recv) = test_startup(8004).await;
+        let (mut process, socket, _) = test_startup(8004).await;
 
         let (poll_wait, poll_send) = TestWait::new();
 
@@ -606,9 +613,6 @@ mod tests {
         });
 
         poll_send.notify();
-
-        let msg = msg_recv.recv().await.unwrap();
-        assert!(matches!(msg, MsgForSystem::UpdatedSnapshot(_, _)));
 
         let mut buf = [0; 48];
         let network = socket.recv(&mut buf).await.unwrap();
@@ -650,9 +654,6 @@ mod tests {
 
         poll_send.notify();
 
-        let msg = msg_recv.recv().await.unwrap();
-        assert!(matches!(msg, MsgForSystem::UpdatedSnapshot(_, _)));
-
         let mut buf = [0; 48];
         let (size, _, timestamp) = socket.recv(&mut buf).await.unwrap();
         assert_eq!(size, 48);
@@ -684,9 +685,6 @@ mod tests {
 
         poll_send.notify();
 
-        let msg = msg_recv.recv().await.unwrap();
-        assert!(matches!(msg, MsgForSystem::UpdatedSnapshot(_, _)));
-
         let mut buf = [0; 48];
         let (size, _, timestamp) = socket.recv(&mut buf).await.unwrap();
         assert_eq!(size, 48);
@@ -696,8 +694,10 @@ mod tests {
         let send_packet = NtpPacket::deny_response(rec_packet);
 
         let serialized = serialize_packet_unencryped(&send_packet);
+        dbg!("got here");
         socket.send(&serialized).await.unwrap();
 
+        dbg!("got here");
         let msg = msg_recv.recv().await.unwrap();
         assert!(matches!(msg, MsgForSystem::MustDemobilize(_)));
 
