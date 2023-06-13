@@ -102,7 +102,11 @@ impl RawLinuxClock {
         time_offset: f64,
         frequency_multiplier: f64,
     ) -> Result<(), Error> {
-        log::trace!("Adjusting clock: {time_offset}s, {frequency_multiplier}x");
+        log::trace!(
+            "Adjusting clock: {}ns, {}x",
+            time_offset * 1e9,
+            frequency_multiplier
+        );
 
         self.adjust_frequency(frequency_multiplier)?;
         self.adjust_offset(time_offset)

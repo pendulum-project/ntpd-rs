@@ -88,9 +88,9 @@ impl Filter for BasicFilter {
         };
 
         log::info!(
-            "Offset to master: {}, corrected with phase change {} and freq change {}",
-            measurement.master_offset,
-            correction,
+            "Offset to master: {}ns, corrected with phase change {}ns and freq change {}x",
+            measurement.master_offset.nanos(),
+            correction.nanos(),
             freq_corr
         );
 
