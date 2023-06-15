@@ -74,7 +74,7 @@ prometheus-client = "0.19.0"
 # TLS
 rustls = "0.21.0"
 rustls-pemfile = "1.0.2"
-rustls-native-certs = "0.6.2"
+rustls-native-certs = "0.6.3"
 
 # crypto
 aead = "0.5.2"
