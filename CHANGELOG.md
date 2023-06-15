@@ -1,3 +1,11 @@
+Master
+======
+
+Version 0.3.5
+======
+
+No changes compared with 0.3.4, needed due to technical difficulties in release process.
+
 Version 0.3.4
 ======
 
