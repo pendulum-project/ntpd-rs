@@ -82,7 +82,7 @@ impl KeySetProvider {
                 .current
                 .id_offset
                 .wrapping_add(self.current.keys.len().saturating_sub(self.history) as u32),
-            primary: keys.len() as u32,
+            primary: keys.len() as u32 - 1,
             keys,
         })
     }
@@ -311,6 +311,25 @@ mod tests {
             id_offset: 1,
             primary: 0,
         };
+
+        let encoded = keyset.encode_cookie(&decoded);
+        let round = keyset.decode_cookie(&encoded).unwrap();
+        assert_eq!(decoded.algorithm, round.algorithm);
+        assert_eq!(decoded.s2c.key_bytes(), round.s2c.key_bytes());
+        assert_eq!(decoded.c2s.key_bytes(), round.c2s.key_bytes());
+    }
+
+    #[test]
+    fn test_encode_after_rotate() {
+        let decoded = DecodedServerCookie {
+            algorithm: AeadAlgorithm::AeadAesSivCmac256,
+            s2c: Box::new(AesSivCmac256::new((0..32_u8).collect())),
+            c2s: Box::new(AesSivCmac256::new((32..64_u8).collect())),
+        };
+
+        let mut provider = KeySetProvider::new(1);
+        provider.rotate();
+        let keyset = provider.get();
 
         let encoded = keyset.encode_cookie(&decoded);
         let round = keyset.decode_cookie(&encoded).unwrap();
