@@ -90,6 +90,9 @@ struct AveragingBuffer {
     next_idx: usize,
 }
 
+// Large frequency uncertainty as early time essentially gives no reasonable info on frequency.
+const INITIALIZATION_FREQ_UNCERTAINTY: f64 = 100.0;
+
 /// Approximation of 1 - the chi-squared cdf with 1 degree of freedom
 /// source: https://en.wikipedia.org/wiki/Error_function
 fn chi_1(chi: f64) -> f64 {
@@ -126,6 +129,7 @@ impl AveragingBuffer {
 struct InitialPeerFilter {
     roundtriptime_stats: AveragingBuffer,
     init_offset: AveragingBuffer,
+    last_measurement: Option<Measurement>,
 
     samples: i32,
 }
@@ -136,6 +140,7 @@ impl InitialPeerFilter {
             .update(measurement.delay.to_seconds());
         self.init_offset.update(measurement.offset.to_seconds());
         self.samples += 1;
+        self.last_measurement = Some(measurement);
         debug!(samples = self.samples, "Initial peer update");
     }
 
@@ -394,6 +399,7 @@ impl PeerState {
         PeerState(PeerStateInner::Initial(InitialPeerFilter {
             roundtriptime_stats: AveragingBuffer::default(),
             init_offset: AveragingBuffer::default(),
+            last_measurement: None,
             samples: 0,
         }))
     }
@@ -426,10 +432,8 @@ impl PeerState {
                         filter_time: measurement.localtime,
                     }));
                     debug!("Initial peer measurements complete");
-                    true
-                } else {
-                    false
                 }
+                true
             }
             PeerStateInner::Stable(filter) => {
                 // We check that the difference between the localtime and monotonic
@@ -449,6 +453,7 @@ impl PeerState {
                     *self = PeerState(PeerStateInner::Initial(InitialPeerFilter {
                         roundtriptime_stats: AveragingBuffer::default(),
                         init_offset: AveragingBuffer::default(),
+                        last_measurement: None,
                         samples: 0,
                     }));
                     false
@@ -461,7 +466,45 @@ impl PeerState {
 
     pub fn snapshot<Index: Copy>(&self, index: Index) -> Option<PeerSnapshot<Index>> {
         match &self.0 {
-            PeerStateInner::Initial(_) => None,
+            PeerStateInner::Initial(InitialPeerFilter {
+                roundtriptime_stats,
+                init_offset,
+                last_measurement: Some(last_measurement),
+                samples,
+            }) if *samples > 0 => {
+                let max_roundtrip = roundtriptime_stats.data[..*samples as usize]
+                    .iter()
+                    .copied()
+                    .fold(None, |v1, v2| {
+                        if v2.is_nan() {
+                            v1
+                        } else if let Some(v1) = v1 {
+                            Some(v2.max(v1))
+                        } else {
+                            Some(v2)
+                        }
+                    })?;
+                Some(PeerSnapshot {
+                    index,
+                    peer_uncertainty: last_measurement.root_dispersion,
+                    peer_delay: last_measurement.root_delay,
+                    leap_indicator: last_measurement.leap,
+                    last_update: last_measurement.localtime,
+                    delay: max_roundtrip,
+                    state: Vector::new_vector([
+                        init_offset.data[..*samples as usize]
+                            .iter()
+                            .copied()
+                            .sum::<f64>()
+                            / (*samples as f64),
+                        0.0,
+                    ]),
+                    uncertainty: Matrix::new([
+                        [max_roundtrip, 0.0],
+                        [0.0, INITIALIZATION_FREQ_UNCERTAINTY],
+                    ]),
+                })
+            }
             PeerStateInner::Stable(filter) => Some(PeerSnapshot {
                 index,
                 state: filter.state,
@@ -472,6 +515,7 @@ impl PeerState {
                 leap_indicator: filter.last_measurement.leap,
                 last_update: filter.last_iter,
             }),
+            _ => None,
         }
     }
 
@@ -934,7 +978,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).is_none());
+        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
@@ -953,7 +997,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).is_none());
+        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
@@ -972,7 +1016,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).is_none());
+        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
@@ -991,7 +1035,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).is_none());
+        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
@@ -1010,7 +1054,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).is_none());
+        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
@@ -1029,7 +1073,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).is_none());
+        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
@@ -1048,7 +1092,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).is_none());
+        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
@@ -1067,7 +1111,6 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).is_some());
         assert!((peer.snapshot(0_usize).unwrap().state.ventry(0) - 3.5e-3).abs() < 1e-7);
         assert!((peer.snapshot(0_usize).unwrap().uncertainty.entry(0, 0) - 1e-6) > 0.);
     }
@@ -1096,7 +1139,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).is_none());
+        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
@@ -1115,7 +1158,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).is_none());
+        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
@@ -1134,7 +1177,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).is_none());
+        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
@@ -1154,7 +1197,7 @@ mod tests {
             },
         );
         peer.process_offset_steering(4e-3);
-        assert!(peer.snapshot(0_usize).is_none());
+        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
@@ -1173,7 +1216,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).is_none());
+        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
@@ -1192,7 +1235,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).is_none());
+        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
@@ -1211,7 +1254,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).is_none());
+        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
             &SystemConfig::default(),
             &AlgorithmConfig::default(),
@@ -1230,7 +1273,6 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).is_some());
         assert!((peer.snapshot(0_usize).unwrap().state.ventry(0) - 3.5e-3).abs() < 1e-7);
         assert!((peer.snapshot(0_usize).unwrap().uncertainty.entry(0, 0) - 1e-6) > 0.);
     }
