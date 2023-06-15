@@ -10,17 +10,11 @@
 mod metrics;
 
 pub use metrics::Metrics;
-use serde_json::json;
-use thiserror::Error;
+use tokio::io::AsyncWriteExt;
+use tokio::net::TcpListener;
 
-use std::{net::SocketAddr, path::PathBuf};
+use std::{fmt::Write, net::SocketAddr, path::PathBuf};
 
-use axum::{
-    http::{HeaderMap, HeaderValue, StatusCode},
-    response::{AppendHeaders, IntoResponse},
-    routing::get,
-    Json, Router,
-};
 use clap::Parser;
 use ntp_daemon::{Config, ObservableState};
 
@@ -37,26 +31,6 @@ struct Cli {
 
     #[arg(short = 'l', long = "listen", default_value = "127.0.0.1:9975")]
     listen_socket: SocketAddr,
-}
-
-#[derive(Debug, Error)]
-enum ServeError {
-    #[error("io error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("fmt error: {0}")]
-    Fmt(#[from] std::fmt::Error),
-}
-
-impl IntoResponse for ServeError {
-    fn into_response(self) -> axum::response::Response {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "error": 500,
-            })),
-        )
-            .into_response()
-    }
 }
 
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -78,50 +52,33 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     };
 
-    let app = Router::new()
-        .route(
-            "/metrics",
-            get(|| async {
-                let mut stream = tokio::net::UnixStream::connect(observation_socket_path).await?;
-                let mut msg = Vec::with_capacity(16 * 1024);
-                let output: ObservableState =
-                    ntp_daemon::sockets::read_json(&mut stream, &mut msg).await?;
-                let metrics = Metrics::default();
-                metrics.fill(&output);
-                let registry = metrics.registry();
-                let mut buf = String::new();
-                prometheus_client::encoding::text::encode(&mut buf, &registry)?;
-                Ok::<_, ServeError>((
-                    HeaderMap::from_iter([(
-                        axum::http::header::CONTENT_TYPE,
-                        HeaderValue::from_static("text/plain"),
-                    )]),
-                    buf,
-                ))
-            }),
-        )
-        .route(
-            "/",
-            get(|| async {
-                (
-                    StatusCode::FOUND,
-                    AppendHeaders([(axum::http::header::LOCATION, "/metrics")]),
-                )
-            }),
-        )
-        .fallback(|| async {
-            (
-                StatusCode::NOT_FOUND,
-                Json(json!({
-                    "error": 404,
-                })),
-            )
-        });
+    println!("starting ntp-metrics-exporter on {}", &cli.listen_socket);
 
-    axum::Server::bind(&cli.listen_socket)
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
+    let listener = TcpListener::bind(cli.listen_socket).await?;
 
-    Ok(())
+    loop {
+        let (mut tcp_stream, _) = listener.accept().await?;
+
+        let mut stream = tokio::net::UnixStream::connect(&observation_socket_path).await?;
+        let mut msg = Vec::with_capacity(16 * 1024);
+        let output: ObservableState = ntp_daemon::sockets::read_json(&mut stream, &mut msg).await?;
+        let metrics = Metrics::default();
+        metrics.fill(&output);
+        let registry = metrics.registry();
+
+        let mut content = String::with_capacity(4 * 1024);
+        prometheus_client::encoding::text::encode(&mut content, &registry)?;
+
+        let mut buf = String::with_capacity(4 * 1024);
+
+        // headers
+        buf.push_str("HTTP/1.1 200 OK\r\n");
+        buf.push_str("content-type: text/plain\r\n");
+        write!(buf, "content-length: {}\r\n\r\n", content.len()).unwrap();
+
+        // actual content
+        buf.push_str(&content);
+
+        tcp_stream.write_all(buf.as_bytes()).await.unwrap();
+    }
 }
