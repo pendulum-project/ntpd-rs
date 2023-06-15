@@ -1,3 +1,15 @@
+Master
+======
+
+Minor Changes
+-----
+- Fixed bug that caused nts-providing servers to fail after key rotation (which by default happens daily).
+- Upgraded dependencies.
+- Fix bug in package installers that caused us to overwrite configuration on update.
+- Removed dependency on Axum in prometheus exporter.
+- Improved measurement code to deal better with external programs changing the clock.
+- Removed some spurious warnings around server strata.
+
 Version 0.3.3
 ======
 
