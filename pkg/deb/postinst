@@ -15,7 +15,7 @@ create_user() {
 }
 
 create_first_time_configuration() {
-    if [ ! -f "${KRILL_CONF}" ]; then
+    if [ ! -f "${NTPDRS_CONF}" ]; then
         mkdir -p "${NTPDRS_CONF_DIR}"
         cp "${NTPDRS_CONF_SRC}" "${NTPDRS_CONF}"
         chown "${NTPDRS_USER}:${NTPDRS_USER}" "${NTPDRS_CONF_DIR}"
