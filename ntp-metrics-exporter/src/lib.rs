@@ -72,9 +72,9 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut buf = String::with_capacity(4 * 1024);
 
         // headers
-        buf.push_str("HTTP/1.1 200 OK\n");
-        buf.push_str("content-type: text/plain\n");
-        write!(buf, "content-length: {}\n\n", content.len()).unwrap();
+        buf.push_str("HTTP/1.1 200 OK\r\n");
+        buf.push_str("content-type: text/plain\r\n");
+        write!(buf, "content-length: {}\r\n\r\n", content.len()).unwrap();
 
         // actual content
         buf.push_str(&content);
