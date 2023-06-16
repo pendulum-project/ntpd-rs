@@ -27,8 +27,8 @@ fn sqr(x: f64) -> f64 {
 #[derive(Debug, Clone)]
 struct PeerSnapshot<Index: Copy> {
     index: Index,
-    state: Vector,
-    uncertainty: Matrix,
+    state: Vector<2>,
+    uncertainty: Matrix<2, 2>,
     delay: f64,
 
     peer_uncertainty: NtpDuration,
@@ -40,7 +40,7 @@ struct PeerSnapshot<Index: Copy> {
 
 impl<Index: Copy> PeerSnapshot<Index> {
     fn offset(&self) -> f64 {
-        self.state.entry(0)
+        self.state.ventry(0)
     }
 
     fn offset_uncertainty(&self) -> f64 {
@@ -118,15 +118,15 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
         if let Some(combined) = combine(&selection, &self.algo_config) {
             info!(
                 "Offset: {}+-{}ms, frequency: {}+-{}ppm",
-                combined.estimate.entry(0) * 1e3,
+                combined.estimate.ventry(0) * 1e3,
                 combined.uncertainty.entry(0, 0).sqrt() * 1e3,
-                combined.estimate.entry(1) * 1e6,
+                combined.estimate.ventry(1) * 1e6,
                 combined.uncertainty.entry(1, 1).sqrt() * 1e6
             );
 
-            let freq_delta = combined.estimate.entry(1) - self.desired_freq;
+            let freq_delta = combined.estimate.ventry(1) - self.desired_freq;
             let freq_uncertainty = combined.uncertainty.entry(1, 1).sqrt();
-            let offset_delta = combined.estimate.entry(0);
+            let offset_delta = combined.estimate.ventry(0);
             let offset_uncertainty = combined.uncertainty.entry(0, 0).sqrt();
             let next_update = if self.desired_freq == 0.0
                 && offset_delta.abs() > offset_uncertainty * self.algo_config.steer_offset_threshold

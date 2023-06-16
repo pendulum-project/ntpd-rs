@@ -90,6 +90,22 @@ struct AveragingBuffer {
     next_idx: usize,
 }
 
+/// Approximation of 1 - the chi-squared cdf with 1 degree of freedom
+/// source: https://en.wikipedia.org/wiki/Error_function
+fn chi_1(chi: f64) -> f64 {
+    const P: f64 = 0.3275911;
+    const A1: f64 = 0.254829592;
+    const A2: f64 = -0.284496736;
+    const A3: f64 = 1.421413741;
+    const A4: f64 = -1.453152027;
+    const A5: f64 = 1.061405429;
+
+    let x = (chi / 2.).sqrt();
+    let t = 1. / (1. + P * x);
+    (A1 * t + A2 * t * t + A3 * t * t * t + A4 * t * t * t * t + A5 * t * t * t * t * t)
+        * (-(x * x)).exp()
+}
+
 impl AveragingBuffer {
     fn mean(&self) -> f64 {
         self.data.iter().sum::<f64>() / (self.data.len() as f64)
@@ -132,8 +148,8 @@ impl InitialPeerFilter {
 
 #[derive(Debug, Clone)]
 struct PeerFilter {
-    state: Vector,
-    uncertainty: Matrix,
+    state: Vector<2>,
+    uncertainty: Matrix<2, 2>,
     clock_wander: f64,
 
     roundtriptime_stats: AveragingBuffer,
@@ -159,19 +175,23 @@ impl PeerFilter {
             "time {time:?} is before filter_time {:?}",
             self.filter_time
         );
-        if time < self.filter_time {
+        if time.is_before(self.filter_time) {
             return;
         }
 
         // Time step paremeters
         let delta_t = (time - self.filter_time).to_seconds();
-        let update = Matrix::new(1.0, delta_t, 0.0, 1.0);
-        let process_noise = Matrix::new(
-            self.clock_wander * delta_t * delta_t * delta_t / 3.,
-            self.clock_wander * delta_t * delta_t / 2.,
-            self.clock_wander * delta_t * delta_t / 2.,
-            self.clock_wander * delta_t,
-        );
+        let update = Matrix::new([[1.0, delta_t], [0.0, 1.0]]);
+        let process_noise = Matrix::new([
+            [
+                self.clock_wander * delta_t * delta_t * delta_t / 3.,
+                self.clock_wander * delta_t * delta_t / 2.,
+            ],
+            [
+                self.clock_wander * delta_t * delta_t / 2.,
+                self.clock_wander * delta_t,
+            ],
+        ]);
 
         // Kalman filter update
         self.state = update * self.state;
@@ -188,17 +208,9 @@ impl PeerFilter {
         let m_delta_t = (measurement.localtime - self.last_measurement.localtime).to_seconds();
 
         // Kalman filter update
-        let measurement_vec = Vector::new(
-            measurement.offset.to_seconds(),
-            (measurement.offset - self.last_measurement.offset).to_seconds(),
-        );
-        let measurement_transform = Matrix::new(1., 0., 0., m_delta_t);
-        let measurement_noise = Matrix::new(
-            delay_variance / 4.,
-            delay_variance / 4.,
-            delay_variance / 4.,
-            delay_variance / 2.,
-        );
+        let measurement_vec = Vector::new_vector([measurement.offset.to_seconds()]);
+        let measurement_transform = Matrix::new([[1., 0.]]);
+        let measurement_noise = Matrix::new([[delay_variance / 4.]]);
         let difference = measurement_vec - measurement_transform * self.state;
         let difference_covariance =
             measurement_transform * self.uncertainty * measurement_transform.transpose()
@@ -206,12 +218,12 @@ impl PeerFilter {
         let update_strength =
             self.uncertainty * measurement_transform.transpose() * difference_covariance.inverse();
         self.state = self.state + update_strength * difference;
-        self.uncertainty = ((Matrix::UNIT - update_strength * measurement_transform)
+        self.uncertainty = ((Matrix::unit() - update_strength * measurement_transform)
             * self.uncertainty)
             .symmetrize();
 
         // Statistics
-        let chi = difference.inner(difference_covariance.inverse() * difference);
+        let p = chi_1(difference.inner(difference_covariance.inverse() * difference));
         // Calculate an indicator of how much of the measurement was incorporated
         // into the state. 1.0 - is needed here as this should become lower as
         // measurement noise's contribution to difference uncertainty increases.
@@ -219,9 +231,9 @@ impl PeerFilter {
 
         self.last_measurement = measurement;
 
-        trace!(chi, weight, "Measurement absorbed");
+        trace!(p, weight, "Measurement absorbed");
 
-        (chi, weight, m_delta_t)
+        (p, weight, m_delta_t)
     }
 
     /// Ensure we poll often enough to keep the filter well-fed with information, but
@@ -230,7 +242,7 @@ impl PeerFilter {
         &mut self,
         config: &SystemConfig,
         algo_config: &AlgorithmConfig,
-        chi: f64,
+        p: f64,
         weight: f64,
         measurement_period: f64,
     ) {
@@ -248,7 +260,7 @@ impl PeerFilter {
             self.poll_score -= self.poll_score.signum();
         }
         trace!(poll_score = self.poll_score, ?weight, "Poll desire update");
-        if chi >= -2. * algo_config.poll_jump_threshold.ln() {
+        if p <= algo_config.poll_jump_threshold {
             self.desired_poll_interval = config.poll_limits.min;
             self.poll_score = 0;
         } else if self.poll_score <= -algo_config.poll_hysteresis {
@@ -265,21 +277,21 @@ impl PeerFilter {
     // Our estimate for the clock stability might be completely wrong. The code here
     // correlates the estimation for errors to what we actually observe, so we can
     // update our estimate should it turn out to be significantly off.
-    fn update_wander_estimate(&mut self, algo_config: &AlgorithmConfig, chi: f64, weight: f64) {
+    fn update_wander_estimate(&mut self, algo_config: &AlgorithmConfig, p: f64, weight: f64) {
         // Note that chi is exponentially distributed with mean 2
         // Also, we do not steer towards a smaller precision estimate when measurement noise dominates.
-        if chi < -2. * (1. - algo_config.precision_low_probability).ln()
+        if 1. - p < algo_config.precision_low_probability
             && weight > algo_config.precision_min_weight
         {
             self.precision_score -= 1;
-        } else if chi > -2. * (1. - algo_config.precision_high_probability).ln() {
+        } else if 1. - p > algo_config.precision_high_probability {
             self.precision_score += 1;
         } else {
             self.precision_score -= self.precision_score.signum()
         }
         trace!(
             precision_score = self.precision_score,
-            chi,
+            p,
             "Wander estimate update"
         );
         if self.precision_score <= -algo_config.precision_hysteresis {
@@ -332,19 +344,19 @@ impl PeerFilter {
         self.roundtriptime_stats
             .update(measurement.delay.to_seconds());
 
-        let (chi, weight, measurement_period) = self.absorb_measurement(measurement);
+        let (p, weight, measurement_period) = self.absorb_measurement(measurement);
 
-        self.update_wander_estimate(algo_config, chi, weight);
-        self.update_desired_poll(config, algo_config, chi, weight, measurement_period);
+        self.update_wander_estimate(algo_config, p, weight);
+        self.update_desired_poll(config, algo_config, p, weight, measurement_period);
 
         debug!(
             "peer offset {}±{}ms, freq {}±{}ppm",
-            self.state.entry(0) * 1000.,
+            self.state.ventry(0) * 1000.,
             (self.uncertainty.entry(0, 0)
                 + sqr(self.last_measurement.root_dispersion.to_seconds()))
             .sqrt()
                 * 1000.,
-            self.state.entry(1) * 1e6,
+            self.state.ventry(1) * 1e6,
             self.uncertainty.entry(1, 1).sqrt() * 1e6
         );
 
@@ -352,7 +364,7 @@ impl PeerFilter {
     }
 
     fn process_offset_steering(&mut self, steer: f64) {
-        self.state = self.state - Vector::new(steer, 0.0);
+        self.state = self.state - Vector::new_vector([steer, 0.0]);
         self.last_measurement.offset -= NtpDuration::from_seconds(steer);
         self.last_measurement.localtime += NtpDuration::from_seconds(steer);
         self.filter_time += NtpDuration::from_seconds(steer);
@@ -360,7 +372,7 @@ impl PeerFilter {
 
     fn process_frequency_steering(&mut self, time: NtpTimestamp, steer: f64) {
         self.progress_filtertime(time);
-        self.state = self.state - Vector::new(0.0, steer);
+        self.state = self.state - Vector::new_vector([0.0, steer]);
         self.last_measurement.offset += NtpDuration::from_seconds(
             steer * (time - self.last_measurement.localtime).to_seconds(),
         );
@@ -398,13 +410,11 @@ impl PeerState {
                 filter.update(measurement);
                 if filter.samples == 8 {
                     *self = PeerState(PeerStateInner::Stable(PeerFilter {
-                        state: Vector::new(filter.init_offset.mean(), 0.),
-                        uncertainty: Matrix::new(
-                            filter.init_offset.variance(),
-                            0.,
-                            0.,
-                            sqr(algo_config.initial_frequency_uncertainty),
-                        ),
+                        state: Vector::new_vector([filter.init_offset.mean(), 0.]),
+                        uncertainty: Matrix::new([
+                            [filter.init_offset.variance(), 0.],
+                            [0., sqr(algo_config.initial_frequency_uncertainty)],
+                        ]),
                         clock_wander: sqr(algo_config.initial_wander),
                         roundtriptime_stats: filter.roundtriptime_stats,
                         precision_score: 0,
@@ -515,8 +525,8 @@ mod tests {
         let basei = NtpInstant::now();
 
         let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
-            state: Vector::new(20e-3, 0.),
-            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            state: Vector::new_vector([20e-3, 0.]),
+            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -564,8 +574,8 @@ mod tests {
         assert!(matches!(peer, PeerState(PeerStateInner::Initial(_))));
 
         let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
-            state: Vector::new(20e-3, 0.),
-            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            state: Vector::new_vector([20e-3, 0.]),
+            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -614,8 +624,8 @@ mod tests {
         assert!(matches!(peer, PeerState(PeerStateInner::Stable(_))));
 
         let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
-            state: Vector::new(20e-3, 0.),
-            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            state: Vector::new_vector([20e-3, 0.]),
+            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -669,8 +679,8 @@ mod tests {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
         let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
-            state: Vector::new(20e-3, 0.),
-            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            state: Vector::new_vector([20e-3, 0.]),
+            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -699,7 +709,7 @@ mod tests {
         }));
 
         peer.process_offset_steering(20e-3);
-        assert!(peer.snapshot(0_usize).unwrap().state.entry(0).abs() < 1e-7);
+        assert!(peer.snapshot(0_usize).unwrap().state.ventry(0).abs() < 1e-7);
 
         assert!(catch_unwind(
             move || peer.progress_filtertime(base + NtpDuration::from_seconds(10e-3))
@@ -707,9 +717,9 @@ mod tests {
         .is_err());
 
         let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
-            state: Vector::new(20e-3, 0.),
-            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
-            clock_wander: 1e-8,
+            state: Vector::new_vector([20e-3, 0.]),
+            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+            clock_wander: 0.0,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
@@ -737,7 +747,7 @@ mod tests {
         }));
 
         peer.process_offset_steering(20e-3);
-        assert!(peer.snapshot(0_usize).unwrap().state.entry(0).abs() < 1e-7);
+        assert!(peer.snapshot(0_usize).unwrap().state.ventry(0).abs() < 1e-7);
 
         peer.update_self_using_measurement(
             &SystemConfig::default(),
@@ -758,13 +768,13 @@ mod tests {
             },
         );
 
-        assert!(dbg!((peer.snapshot(0_usize).unwrap().state.entry(0) - 20e-3).abs()) < 1e-7);
-        assert!((peer.snapshot(0_usize).unwrap().state.entry(1) - 20e-6).abs() < 1e-7);
+        assert!(dbg!((peer.snapshot(0_usize).unwrap().state.ventry(0) - 20e-3).abs()) < 1e-7);
+        assert!((peer.snapshot(0_usize).unwrap().state.ventry(1) - 20e-6).abs() < 1e-7);
 
         let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
-            state: Vector::new(-20e-3, 0.),
-            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
-            clock_wander: 1e-8,
+            state: Vector::new_vector([-20e-3, 0.]),
+            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+            clock_wander: 0.0,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
@@ -792,7 +802,7 @@ mod tests {
         }));
 
         peer.process_offset_steering(-20e-3);
-        assert!(peer.snapshot(0_usize).unwrap().state.entry(0).abs() < 1e-7);
+        assert!(peer.snapshot(0_usize).unwrap().state.ventry(0).abs() < 1e-7);
 
         peer.progress_filtertime(base - NtpDuration::from_seconds(10e-3)); // should succeed
 
@@ -815,8 +825,8 @@ mod tests {
             },
         );
 
-        assert!(dbg!((peer.snapshot(0_usize).unwrap().state.entry(0) - -20e-3).abs()) < 1e-7);
-        assert!((peer.snapshot(0_usize).unwrap().state.entry(1) - -20e-6).abs() < 1e-7);
+        assert!(dbg!((peer.snapshot(0_usize).unwrap().state.ventry(0) - -20e-3).abs()) < 1e-7);
+        assert!((peer.snapshot(0_usize).unwrap().state.ventry(1) - -20e-6).abs() < 1e-7);
     }
 
     #[test]
@@ -824,8 +834,8 @@ mod tests {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
         let mut peer = PeerFilter {
-            state: Vector::new(0.0, 0.),
-            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            state: Vector::new_vector([0.0, 0.]),
+            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -854,17 +864,17 @@ mod tests {
         };
 
         peer.process_frequency_steering(base + NtpDuration::from_seconds(5.0), 200e-6);
-        assert!((peer.state.entry(1) - -200e-6).abs() < 1e-10);
-        assert!(peer.state.entry(0).abs() < 1e-8);
+        assert!((peer.state.ventry(1) - -200e-6).abs() < 1e-10);
+        assert!(peer.state.ventry(0).abs() < 1e-8);
         assert!((peer.last_measurement.offset.to_seconds() - 1e-3).abs() < 1e-8);
         peer.process_frequency_steering(base + NtpDuration::from_seconds(10.0), -200e-6);
-        assert!(peer.state.entry(1).abs() < 1e-10);
-        assert!((peer.state.entry(0) - -1e-3).abs() < 1e-8);
+        assert!(peer.state.ventry(1).abs() < 1e-10);
+        assert!((peer.state.ventry(0) - -1e-3).abs() < 1e-8);
         assert!((peer.last_measurement.offset.to_seconds() - -1e-3).abs() < 1e-8);
 
         let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
-            state: Vector::new(0.0, 0.),
-            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            state: Vector::new_vector([0.0, 0.]),
+            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -893,11 +903,11 @@ mod tests {
         }));
 
         peer.process_frequency_steering(base + NtpDuration::from_seconds(5.0), 200e-6);
-        assert!((peer.snapshot(0_usize).unwrap().state.entry(1) - -200e-6).abs() < 1e-10);
-        assert!(peer.snapshot(0_usize).unwrap().state.entry(0).abs() < 1e-8);
+        assert!((peer.snapshot(0_usize).unwrap().state.ventry(1) - -200e-6).abs() < 1e-10);
+        assert!(peer.snapshot(0_usize).unwrap().state.ventry(0).abs() < 1e-8);
         peer.process_frequency_steering(base + NtpDuration::from_seconds(10.0), -200e-6);
-        assert!(peer.snapshot(0_usize).unwrap().state.entry(1).abs() < 1e-10);
-        assert!((peer.snapshot(0_usize).unwrap().state.entry(0) - -1e-3).abs() < 1e-8);
+        assert!(peer.snapshot(0_usize).unwrap().state.ventry(1).abs() < 1e-10);
+        assert!((peer.snapshot(0_usize).unwrap().state.ventry(0) - -1e-3).abs() < 1e-8);
     }
 
     #[test]
@@ -1058,7 +1068,7 @@ mod tests {
             },
         );
         assert!(peer.snapshot(0_usize).is_some());
-        assert!((peer.snapshot(0_usize).unwrap().state.entry(0) - 3.5e-3).abs() < 1e-7);
+        assert!((peer.snapshot(0_usize).unwrap().state.ventry(0) - 3.5e-3).abs() < 1e-7);
         assert!((peer.snapshot(0_usize).unwrap().uncertainty.entry(0, 0) - 1e-6) > 0.);
     }
 
@@ -1221,7 +1231,7 @@ mod tests {
             },
         );
         assert!(peer.snapshot(0_usize).is_some());
-        assert!((peer.snapshot(0_usize).unwrap().state.entry(0) - 3.5e-3).abs() < 1e-7);
+        assert!((peer.snapshot(0_usize).unwrap().state.ventry(0) - 3.5e-3).abs() < 1e-7);
         assert!((peer.snapshot(0_usize).unwrap().uncertainty.entry(0, 0) - 1e-6) > 0.);
     }
 
@@ -1236,8 +1246,8 @@ mod tests {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
         let mut peer = PeerFilter {
-            state: Vector::new(0.0, 0.),
-            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            state: Vector::new_vector([0.0, 0.]),
+            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -1269,52 +1279,52 @@ mod tests {
         let pollup = peer
             .desired_poll_interval
             .inc(PollIntervalLimits::default());
-        peer.update_desired_poll(&config, &algo_config, 0.0, 1.0, baseinterval * 2.);
+        peer.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval * 2.);
         assert_eq!(peer.poll_score, 0);
         assert_eq!(
             peer.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        peer.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval * 2.);
+        peer.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval * 2.);
         assert_eq!(peer.poll_score, -1);
         assert_eq!(
             peer.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        peer.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval * 2.);
+        peer.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval * 2.);
         assert_eq!(peer.poll_score, 0);
         assert_eq!(peer.desired_poll_interval, pollup);
-        peer.update_desired_poll(&config, &algo_config, 0.0, 1.0, baseinterval * 3.);
+        peer.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval * 3.);
         assert_eq!(peer.poll_score, 0);
         assert_eq!(peer.desired_poll_interval, pollup);
-        peer.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval);
+        peer.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval);
         assert_eq!(peer.poll_score, 0);
         assert_eq!(peer.desired_poll_interval, pollup);
-        peer.update_desired_poll(&config, &algo_config, 100.0, 0.0, baseinterval * 3.);
+        peer.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval * 3.);
         assert_eq!(peer.poll_score, 0);
         assert_eq!(
             peer.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        peer.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval * 2.);
+        peer.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval * 2.);
         assert_eq!(peer.poll_score, -1);
         assert_eq!(
             peer.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        peer.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval * 2.);
+        peer.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval * 2.);
         assert_eq!(peer.poll_score, 0);
         assert_eq!(peer.desired_poll_interval, pollup);
-        peer.update_desired_poll(&config, &algo_config, 0.0, 1.0, baseinterval);
+        peer.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval);
         assert_eq!(peer.poll_score, 1);
         assert_eq!(peer.desired_poll_interval, pollup);
-        peer.update_desired_poll(&config, &algo_config, 0.0, 1.0, baseinterval);
+        peer.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval);
         assert_eq!(peer.poll_score, 0);
         assert_eq!(
             peer.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        peer.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval);
+        peer.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval);
         assert_eq!(peer.poll_score, -1);
         assert_eq!(
             peer.desired_poll_interval,
@@ -1323,7 +1333,7 @@ mod tests {
         peer.update_desired_poll(
             &config,
             &algo_config,
-            0.0,
+            1.0,
             (algo_config.poll_high_weight + algo_config.poll_low_weight) / 2.,
             baseinterval,
         );
@@ -1332,7 +1342,7 @@ mod tests {
             peer.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        peer.update_desired_poll(&config, &algo_config, 0.0, 1.0, baseinterval);
+        peer.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval);
         assert_eq!(peer.poll_score, 1);
         assert_eq!(
             peer.desired_poll_interval,
@@ -1341,7 +1351,7 @@ mod tests {
         peer.update_desired_poll(
             &config,
             &algo_config,
-            0.0,
+            1.0,
             (algo_config.poll_high_weight + algo_config.poll_low_weight) / 2.,
             baseinterval,
         );
@@ -1362,8 +1372,8 @@ mod tests {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
         let mut peer = PeerFilter {
-            state: Vector::new(0.0, 0.),
-            uncertainty: Matrix::new(1e-6, 0., 0., 1e-8),
+            state: Vector::new_vector([0.0, 0.]),
+            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -1391,43 +1401,37 @@ mod tests {
             filter_time: base,
         };
 
-        peer.update_wander_estimate(&algo_config, 0.0, 0.0);
+        peer.update_wander_estimate(&algo_config, 1.0, 0.0);
         assert_eq!(peer.precision_score, 0);
         assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
-        peer.update_wander_estimate(&algo_config, 0.0, 1.0);
+        peer.update_wander_estimate(&algo_config, 1.0, 1.0);
         assert_eq!(peer.precision_score, -1);
         assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
-        peer.update_wander_estimate(&algo_config, 0.0, 1.0);
+        peer.update_wander_estimate(&algo_config, 1.0, 1.0);
         assert_eq!(peer.precision_score, 0);
         assert!(dbg!((peer.clock_wander - 0.25e-8).abs()) < 1e-12);
-        peer.update_wander_estimate(&algo_config, 100.0, 0.0);
+        peer.update_wander_estimate(&algo_config, 0.0, 0.0);
         assert_eq!(peer.precision_score, 1);
         assert!(dbg!((peer.clock_wander - 0.25e-8).abs()) < 1e-12);
-        peer.update_wander_estimate(&algo_config, 100.0, 1.0);
+        peer.update_wander_estimate(&algo_config, 0.0, 1.0);
         assert_eq!(peer.precision_score, 0);
         assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
-        peer.update_wander_estimate(&algo_config, 100.0, 0.0);
+        peer.update_wander_estimate(&algo_config, 0.0, 0.0);
         assert_eq!(peer.precision_score, 1);
         assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
         peer.update_wander_estimate(
             &algo_config,
-            -2.0 * (1.0
-                - (algo_config.precision_high_probability + algo_config.precision_low_probability)
-                    / 2.0)
-                .ln(),
+            (algo_config.precision_high_probability + algo_config.precision_low_probability) / 2.0,
             0.0,
         );
         assert_eq!(peer.precision_score, 0);
         assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
-        peer.update_wander_estimate(&algo_config, 0.0, 1.0);
+        peer.update_wander_estimate(&algo_config, 1.0, 1.0);
         assert_eq!(peer.precision_score, -1);
         assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
         peer.update_wander_estimate(
             &algo_config,
-            -2.0 * (1.0
-                - (algo_config.precision_high_probability + algo_config.precision_low_probability)
-                    / 2.0)
-                .ln(),
+            (algo_config.precision_high_probability + algo_config.precision_low_probability) / 2.0,
             0.0,
         );
         assert_eq!(peer.precision_score, 0);

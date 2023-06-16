@@ -7,8 +7,8 @@ use super::{
 };
 
 pub(super) struct Combine<Index: Copy> {
-    pub estimate: Vector,
-    pub uncertainty: Matrix,
+    pub estimate: Vector<2>,
+    pub uncertainty: Matrix<2, 2>,
     pub peers: Vec<Index>,
     pub delay: NtpDuration,
     pub leap_indicator: Option<NtpLeapIndicator>,
@@ -48,7 +48,8 @@ pub(super) fn combine<Index: Copy>(
         let mut uncertainty = if algo_config.ignore_server_dispersion {
             first.uncertainty
         } else {
-            first.uncertainty + Matrix::new(sqr(first.peer_uncertainty.to_seconds()), 0., 0., 0.)
+            first.uncertainty
+                + Matrix::new([[sqr(first.peer_uncertainty.to_seconds()), 0.], [0., 0.]])
         };
 
         let mut used_peers = vec![(first.index, uncertainty.determinant())];
@@ -59,7 +60,7 @@ pub(super) fn combine<Index: Copy>(
                 snapshot.uncertainty
             } else {
                 snapshot.uncertainty
-                    + Matrix::new(sqr(snapshot.peer_uncertainty.to_seconds()), 0., 0., 0.)
+                    + Matrix::new([[sqr(snapshot.peer_uncertainty.to_seconds()), 0.], [0., 0.]])
             };
 
             used_peers.push((snapshot.index, peer_uncertainty.determinant()));
@@ -93,8 +94,8 @@ mod tests {
     use super::*;
 
     fn snapshot_for_state(
-        state: Vector,
-        uncertainty: Matrix,
+        state: Vector<2>,
+        uncertainty: Matrix<2, 2>,
         peer_uncertainty: f64,
     ) -> PeerSnapshot<usize> {
         PeerSnapshot {
@@ -119,8 +120,8 @@ mod tests {
     #[test]
     fn test_single() {
         let selected = vec![snapshot_for_state(
-            Vector::new(0.0, 0.0),
-            Matrix::new(1e-6, 0.0, 0.0, 1e-12),
+            Vector::new_vector([0.0, 0.0]),
+            Matrix::new([[1e-6, 0.0], [0.0, 1e-12]]),
             1e-3,
         )];
 
@@ -143,13 +144,13 @@ mod tests {
     fn test_multiple() {
         let selected = vec![
             snapshot_for_state(
-                Vector::new(0.0, 0.0),
-                Matrix::new(1e-6, 0.0, 0.0, 1e-12),
+                Vector::new_vector([0.0, 0.0]),
+                Matrix::new([[1e-6, 0.0], [0.0, 1e-12]]),
                 1e-3,
             ),
             snapshot_for_state(
-                Vector::new(1e-3, 0.0),
-                Matrix::new(1e-6, 0.0, 0.0, 1e-12),
+                Vector::new_vector([1e-3, 0.0]),
+                Matrix::new([[1e-6, 0.0], [0.0, 1e-12]]),
                 1e-3,
             ),
         ];
@@ -158,8 +159,8 @@ mod tests {
             ..Default::default()
         };
         let result = combine(&selected, &algconfig).unwrap();
-        assert!((result.estimate.entry(0) - 5e-4).abs() < 1e-8);
-        assert!(result.estimate.entry(1).abs() < 1e-8);
+        assert!((result.estimate.ventry(0) - 5e-4).abs() < 1e-8);
+        assert!(result.estimate.ventry(1).abs() < 1e-8);
         assert!((result.uncertainty.entry(0, 0) - 1e-6).abs() < 1e-12);
         assert!((result.uncertainty.entry(1, 1) - 5e-13).abs() < 1e-16);
 
@@ -168,8 +169,8 @@ mod tests {
             ..Default::default()
         };
         let result = combine(&selected, &algconfig).unwrap();
-        assert!((result.estimate.entry(0) - 5e-4).abs() < 1e-8);
-        assert!(result.estimate.entry(1).abs() < 1e-8);
+        assert!((result.estimate.ventry(0) - 5e-4).abs() < 1e-8);
+        assert!(result.estimate.ventry(1).abs() < 1e-8);
         assert!((result.uncertainty.entry(0, 0) - 5e-7).abs() < 1e-12);
         assert!((result.uncertainty.entry(1, 1) - 5e-13).abs() < 1e-16);
     }
@@ -178,13 +179,13 @@ mod tests {
     fn test_sort_order() {
         let mut selected = vec![
             snapshot_for_state(
-                Vector::new(0.0, 0.0),
-                Matrix::new(1e-6, 0.0, 0.0, 1e-12),
+                Vector::new_vector([0.0, 0.0]),
+                Matrix::new([[1e-6, 0.0], [0.0, 1e-12]]),
                 1e-3,
             ),
             snapshot_for_state(
-                Vector::new(1e-3, 0.0),
-                Matrix::new(2e-6, 0.0, 0.0, 2e-12),
+                Vector::new_vector([1e-3, 0.0]),
+                Matrix::new([[2e-6, 0.0], [0.0, 2e-12]]),
                 1e-3,
             ),
         ];
@@ -199,13 +200,13 @@ mod tests {
 
         let mut selected = vec![
             snapshot_for_state(
-                Vector::new(1e-3, 0.0),
-                Matrix::new(2e-6, 0.0, 0.0, 2e-12),
+                Vector::new_vector([1e-3, 0.0]),
+                Matrix::new([[2e-6, 0.0], [0.0, 2e-12]]),
                 1e-3,
             ),
             snapshot_for_state(
-                Vector::new(0.0, 0.0),
-                Matrix::new(1e-6, 0.0, 0.0, 1e-12),
+                Vector::new_vector([0.0, 0.0]),
+                Matrix::new([[1e-6, 0.0], [0.0, 1e-12]]),
                 1e-3,
             ),
         ];
@@ -222,8 +223,8 @@ mod tests {
     fn snapshot_for_leap(leap: NtpLeapIndicator) -> PeerSnapshot<usize> {
         PeerSnapshot {
             index: 0,
-            state: Vector::new(0.0, 0.0),
-            uncertainty: Matrix::new(1e-6, 0.0, 0.0, 1e-12),
+            state: Vector::new_vector([0.0, 0.0]),
+            uncertainty: Matrix::new([[1e-6, 0.0], [0.0, 1e-12]]),
             delay: 0.0,
             peer_uncertainty: NtpDuration::from_seconds(0.0),
             peer_delay: NtpDuration::from_seconds(0.0),
