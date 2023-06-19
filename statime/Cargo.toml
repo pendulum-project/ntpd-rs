@@ -22,7 +22,7 @@ std = ["dep:thiserror"]
 fuzz = []
 
 [dependencies]
-arrayvec = { version = "0.7.3", default-features = false }
+arrayvec = { version = "0.7.4", default-features = false }
 embassy-futures = "0.1.0"
 fixed = "1.23"
 futures = { version = "0.3", default-features = false, features = ["async-await"] }
