@@ -1,35 +1,23 @@
-#!/bin/sh 
+#!/bin/sh
 
-. /etc/rc.subr 
+. /etc/rc.subr
 
+# PROVIDE: ntp_daemon
 # REQUIRE: DAEMON FILESYSTEMS devfs
 # BEFORE:  LOGIN
 # KEYWORD: nojail resume shutdown
 
-name="ntp_daemon" 
+name="ntp_daemon"
 rcvar="ntp_daemon_enable"
 
+: ${ntp_daemon_enable:="NO"}
 
-# start_cmd="${name}_start" 
-stop_cmd=":" 
 start_precmd="${name}_precmd"
 
-command="/usr/local/bin/ntp-daemon"
-pidfile="/var/run/ntpd-rs.pid"
-required_files="$command"
+command="/usr/sbin/daemon"
+procname="daemon"
+pidfile="/var/run/${name}.pid"
+command_args=" -f -o /var/log/ntp_daemon.log -H -P ${pidfile} /usr/local/bin/ntp-daemon --"
 
-: ${ntp_daemon_enable:="NO"} 
-# : ${ntp_daemon_user:="ntpd-rs"}
-# : ${ntp_daemon_group:="ntpd-rs"}
-
-
-ntp_daemon_precmd()
-{
-    export RUST_LOG="info"
-    if [ ! -d /var/run/ntpd-rs ]; then
-        install -d -o $ntp_daemon_user -g $ntp_daemon_group -m 0755 /var/run/ntpd-rs
-    fi
-}
-
-load_rc_config $name 
+load_rc_config $name
 run_rc_command "$1"
