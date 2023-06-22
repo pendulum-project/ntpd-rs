@@ -7,17 +7,16 @@
 //! for more information.
 #![forbid(unsafe_op_in_unsafe_fn)]
 
-mod interface_name;
+mod interface;
 mod raw_socket;
 mod socket;
 
 #[cfg(target_os = "linux")]
 mod hwtimestamp;
 
-use std::{ops::Deref, str::FromStr};
-
 use ntp_proto::NtpTimestamp;
 
+pub use interface::InterfaceName;
 use serde::Deserialize;
 pub use socket::UdpSocket;
 
@@ -52,8 +51,31 @@ impl Default for EnableTimestamps {
 #[derive(Clone, Copy)]
 pub(crate) enum LibcTimestamp {
     #[cfg_attr(any(target_os = "macos", target_os = "freebsd"), allow(unused))]
-    Timespec(libc::timespec),
-    Timeval(libc::timeval),
+    TimeSpec {
+        seconds: i64,
+        nanos: i64,
+    },
+    TimeVal {
+        seconds: i64,
+        micros: i64,
+    },
+}
+
+impl LibcTimestamp {
+    fn from_timespec(timespec: libc::timespec) -> Self {
+        Self::TimeSpec {
+            seconds: timespec.tv_sec as _,
+            nanos: timespec.tv_nsec as _,
+        }
+    }
+
+    #[allow(unused)]
+    fn from_timeval(timespec: libc::timeval) -> Self {
+        Self::TimeVal {
+            seconds: timespec.tv_sec as _,
+            micros: timespec.tv_usec as _,
+        }
+    }
 }
 
 impl LibcTimestamp {
@@ -64,21 +86,19 @@ impl LibcTimestamp {
         const EPOCH_OFFSET: u32 = (70 * 365 + 17) * 86400;
 
         match self {
-            LibcTimestamp::Timespec(timespec) => {
+            LibcTimestamp::TimeSpec { seconds, nanos } => {
                 // truncates the higher bits of the i64
-                let seconds = (timespec.tv_sec as u32).wrapping_add(EPOCH_OFFSET);
+                let seconds = (seconds as u32).wrapping_add(EPOCH_OFFSET);
 
                 // tv_nsec is always within [0, 1e10)
-                let nanos = timespec.tv_nsec as u32;
+                let nanos = nanos as u32;
 
                 NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, nanos)
             }
-            LibcTimestamp::Timeval(timeval) => {
+            LibcTimestamp::TimeVal { seconds, micros } => {
                 // truncates the higher bits of the i64
-                let seconds = (timeval.tv_sec as u32).wrapping_add(EPOCH_OFFSET);
-
-                let micros = timeval.tv_usec as u32;
-                let nanos = micros * 1000;
+                let seconds = (seconds as u32).wrapping_add(EPOCH_OFFSET);
+                let nanos = micros as u32 * 1000;
 
                 NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, nanos)
             }
@@ -88,83 +108,4 @@ impl LibcTimestamp {
 
 fn bool_true() -> bool {
     true
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct InterfaceName {
-    bytes: [u8; libc::IFNAMSIZ],
-}
-
-impl Deref for InterfaceName {
-    type Target = [u8];
-
-    fn deref(&self) -> &Self::Target {
-        self.bytes.as_slice()
-    }
-}
-
-impl<'de> Deserialize<'de> for InterfaceName {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        use InterfaceNameParseError::*;
-
-        let name: String = Deserialize::deserialize(deserializer)?;
-
-        match Self::from_str(&name) {
-            Ok(v) => Ok(v),
-            Err(Empty) => Err(serde::de::Error::custom("interface name empty")),
-            Err(TooLong) => Err(serde::de::Error::custom("interface name too long")),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum InterfaceNameParseError {
-    Empty,
-    TooLong,
-}
-
-impl FromStr for InterfaceName {
-    type Err = InterfaceNameParseError;
-
-    fn from_str(name: &str) -> Result<Self, Self::Err> {
-        if name.is_empty() {
-            return Err(InterfaceNameParseError::Empty);
-        }
-
-        let mut it = name.bytes();
-        let bytes = std::array::from_fn(|_| it.next().unwrap_or_default());
-
-        if it.next().is_some() {
-            Err(InterfaceNameParseError::TooLong)
-        } else {
-            Ok(InterfaceName { bytes })
-        }
-    }
-}
-
-impl InterfaceName {
-    pub const DEFAULT: Option<Self> = None;
-
-    fn as_str(&self) -> &str {
-        std::str::from_utf8(self.bytes.as_slice())
-            .unwrap_or_default()
-            .trim_end_matches('\0')
-    }
-}
-
-impl std::fmt::Debug for InterfaceName {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("InterfaceName")
-            .field(&self.as_str())
-            .finish()
-    }
-}
-
-impl std::fmt::Display for InterfaceName {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.as_str().fmt(f)
-    }
 }
