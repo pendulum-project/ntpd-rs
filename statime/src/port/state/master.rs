@@ -367,7 +367,7 @@ mod tests {
 
         let defaultds =
             DefaultDS::new_ordinary_clock(ClockIdentity::default(), 15, 128, 0, false, id);
-        let mut parent_ds = ParentDS::default();
+        let mut parent_ds = ParentDS::new(defaultds);
         parent_ds.grandmaster_priority_1 = 15;
         let current_ds = CurrentDS::default();
         let time_properties = TimePropertiesDS::default();

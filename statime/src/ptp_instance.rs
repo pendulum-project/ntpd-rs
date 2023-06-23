@@ -106,7 +106,7 @@ impl<P, C, F, const N: usize> PtpInstance<P, C, F, N> {
         PtpInstance {
             default_ds,
             current_ds: Default::default(),
-            parent_ds: Default::default(),
+            parent_ds: ParentDS::new(default_ds),
             time_properties_ds,
             ports,
             local_clock: RefCell::new(local_clock),
