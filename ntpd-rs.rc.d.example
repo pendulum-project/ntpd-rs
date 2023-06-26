@@ -15,7 +15,7 @@ rcvar="ntp_daemon_enable"
 start_precmd="${name}_precmd"
 
 command="/usr/sbin/daemon"
-procname="daemon"
+procname="ntp-daemon"
 pidfile="/var/run/${name}.pid"
 command_args=" -f -o /var/log/ntp_daemon.log -H -P ${pidfile} /usr/local/bin/ntp-daemon --"
 
