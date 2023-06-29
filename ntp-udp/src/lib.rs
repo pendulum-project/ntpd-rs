@@ -62,6 +62,7 @@ pub(crate) enum LibcTimestamp {
 }
 
 impl LibcTimestamp {
+    #[cfg_attr(any(target_os = "macos", target_os = "freebsd"), allow(unused))]
     fn from_timespec(timespec: libc::timespec) -> Self {
         Self::TimeSpec {
             seconds: timespec.tv_sec as _,
@@ -69,7 +70,7 @@ impl LibcTimestamp {
         }
     }
 
-    #[allow(unused)]
+    #[cfg_attr(target_os = "linux", allow(unused))]
     fn from_timeval(timespec: libc::timeval) -> Self {
         Self::TimeVal {
             seconds: timespec.tv_sec as _,

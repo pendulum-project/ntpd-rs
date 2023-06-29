@@ -434,7 +434,7 @@ mod recv_message {
 #[allow(unused)]
 #[cfg(target_os = "linux")]
 pub(crate) mod timestamping_config {
-    use std::os::fd::RawFd;
+    use std::os::unix::prelude::RawFd;
 
     use crate::interface::InterfaceName;
 

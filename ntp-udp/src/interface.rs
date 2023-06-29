@@ -88,8 +88,12 @@ impl InterfaceName {
     }
 
     pub fn as_cstr(&self) -> &std::ffi::CStr {
+        // TODO: in rust 1.69.0, use
+        // std::ffi::CStr::from_bytes_until_nul(&self.bytes[..]).unwrap()
+
         // it is an invariant of InterfaceName that the bytes are null-terminated
-        std::ffi::CStr::from_bytes_until_nul(&self.bytes[..]).unwrap()
+        let first_null = self.bytes.iter().position(|b| *b == 0).unwrap();
+        std::ffi::CStr::from_bytes_with_nul(&self.bytes[..=first_null]).unwrap()
     }
 
     pub fn to_ifr_name(self) -> [libc::c_char; libc::IFNAMSIZ] {
