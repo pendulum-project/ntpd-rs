@@ -431,6 +431,8 @@ mod recv_message {
     }
 }
 
+#[allow(unused)]
+#[cfg(target_os = "linux")]
 pub(crate) mod timestamping_config {
     use std::os::fd::RawFd;
 
@@ -460,7 +462,6 @@ pub(crate) mod timestamping_config {
     }
 
     impl TimestampSupport {
-        #[cfg(test)]
         fn for_interface(interface_name: InterfaceName) -> std::io::Result<Self> {
             let socket = super::cerr(unsafe { libc::socket(libc::AF_INET, libc::SOCK_STREAM, 0) })?;
 
@@ -480,6 +481,7 @@ pub(crate) mod timestamping_config {
             Self::for_socket(socket, interface_name)
         }
 
+        #[cfg(target_os = "linux")]
         fn for_socket(socket: RawFd, interface_name: InterfaceName) -> std::io::Result<Self> {
             // Get time stamping and PHC info
             const ETHTOOL_GET_TS_INFO: u32 = 0x00000041;
@@ -521,53 +523,20 @@ pub(crate) mod timestamping_config {
     }
 
     #[cfg(test)]
-    #[test]
-    fn loopback_timestamping_support() {
-        let support = TimestampSupport::for_interface(InterfaceName::LOOPBACK).unwrap();
+    mod tests {
+        use super::*;
 
-        assert!(support.rx_software);
-        assert!(support.tx_software);
+        #[test]
+        fn loopback_timestamping_support() {
+            let support = TimestampSupport::for_interface(InterfaceName::LOOPBACK).unwrap();
 
-        assert!(!support.rx_hardware);
-        assert!(!support.tx_hardware);
-
-        assert!(support.phc_clock_pathbuf().is_none());
-    }
-
-    /// Enable all timestamping options that are supported by this crate and the hardware/software
-    /// of the device we're running on
-    #[allow(dead_code)]
-    #[cfg(target_os = "linux")]
-    pub(crate) fn all_supported(
-        udp_socket: &std::net::UdpSocket,
-    ) -> std::io::Result<crate::EnableTimestamps> {
-        use std::os::unix::prelude::AsRawFd;
-
-        use crate::EnableTimestamps;
-
-        let fd = udp_socket.as_raw_fd();
-
-        if let Some(ifr_name) = InterfaceName::from_socket_addr(udp_socket.local_addr()?)? {
-            let supported = TimestampSupport::for_socket(fd, ifr_name)?;
-
-            let support = EnableTimestamps {
-                rx_software: supported.rx_software,
-                tx_software: supported.tx_software,
-                rx_hardware: supported.rx_hardware,
-                tx_hardware: supported.tx_hardware,
-            };
-
-            // per the documentation of `SOF_TIMESTAMPING_RX_SOFTWARE`:
-            //
-            // > Request rx timestamps when data enters the kernel. These timestamps are generated
-            // > just after a device driver hands a packet to the kernel receive stack.
-            //
-            // the linux kernel should always support receive software timestamping
             assert!(support.rx_software);
+            assert!(support.tx_software);
 
-            Ok(support)
-        } else {
-            Ok(EnableTimestamps::default())
+            assert!(!support.rx_hardware);
+            assert!(!support.tx_hardware);
+
+            assert!(support.phc_clock_pathbuf().is_none());
         }
     }
 }
