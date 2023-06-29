@@ -1,4 +1,4 @@
-![checks](https://github.com/pendulum-project/ntpd-rs/actions/workflows/build.yaml/badge.svg)[![codecov](https://codecov.io/gh/pendulum-project/ntpd-rs/branch/main/graph/badge.svg?token=WES1JIYUJH)](https://codecov.io/gh/pendulum-project/ntpd-rs)
+![checks](https://github.com/pendulum-project/ntpd-rs/actions/workflows/build.yaml/badge.svg?branch=main)[![codecov](https://codecov.io/gh/pendulum-project/ntpd-rs/branch/main/graph/badge.svg?token=WES1JIYUJH)](https://codecov.io/gh/pendulum-project/ntpd-rs)
 
 # ntpd-rs
 
