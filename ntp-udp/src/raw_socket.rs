@@ -623,6 +623,32 @@ pub(crate) mod interface_iterator {
                 })
             }
         }
+
+        #[cfg(target_os = "linux")]
+        fn mac(ifaddr: &libc::ifaddrs) -> Option<[u8; 6]> {
+            let family = unsafe { (*ifaddr.ifa_addr).sa_family };
+
+            if family as i32 == libc::AF_PACKET {
+                let sockaddr_ll: libc::sockaddr_ll =
+                    unsafe { std::ptr::read_unaligned(ifaddr.ifa_addr as *const _) };
+
+                Some([
+                    sockaddr_ll.sll_addr[0],
+                    sockaddr_ll.sll_addr[1],
+                    sockaddr_ll.sll_addr[2],
+                    sockaddr_ll.sll_addr[3],
+                    sockaddr_ll.sll_addr[4],
+                    sockaddr_ll.sll_addr[5],
+                ])
+            } else {
+                None
+            }
+        }
+
+        #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+        fn mac(_ifaddr: &libc::ifaddrs) -> Option<[u8; 6]> {
+            None
+        }
     }
 
     impl Drop for InterfaceIterator {
@@ -645,23 +671,7 @@ pub(crate) mod interface_iterator {
                 Ok(name) => InterfaceName::from_str(name).expect("name from os"),
             };
 
-            let family = unsafe { (*ifaddr.ifa_addr).sa_family };
-
-            let mac = if family as i32 == libc::AF_PACKET {
-                let sockaddr_ll: libc::sockaddr_ll =
-                    unsafe { std::ptr::read_unaligned(ifaddr.ifa_addr as *const _) };
-
-                Some([
-                    sockaddr_ll.sll_addr[0],
-                    sockaddr_ll.sll_addr[1],
-                    sockaddr_ll.sll_addr[2],
-                    sockaddr_ll.sll_addr[3],
-                    sockaddr_ll.sll_addr[4],
-                    sockaddr_ll.sll_addr[5],
-                ])
-            } else {
-                None
-            };
+            let mac = Self::mac(ifaddr);
 
             let socket_addr = unsafe { sockaddr_to_socket_addr(ifaddr.ifa_addr) };
 
