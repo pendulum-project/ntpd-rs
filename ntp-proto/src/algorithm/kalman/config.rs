@@ -214,11 +214,11 @@ fn default_steer_offset_leftover() -> f64 {
 }
 
 fn default_steer_frequency_threshold() -> f64 {
-    2.0
+    0.0
 }
 
 fn default_steer_frequency_leftover() -> f64 {
-    1.0
+    0.0
 }
 
 fn default_jump_threshold() -> f64 {
