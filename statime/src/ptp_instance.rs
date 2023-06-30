@@ -12,7 +12,7 @@ use crate::{
     datastructures::datasets::{CurrentDS, DefaultDS, ParentDS, TimePropertiesDS},
     filters::Filter,
     network::NetworkPort,
-    port::{Port, PortError, Ticker},
+    port::{Port, PortError, PortInBMCA, Ticker},
     time::Duration,
     utils::SignalContext,
 };
@@ -70,6 +70,18 @@ pub struct PtpInstance<P, C, F, const N: usize> {
     local_clock: RefCell<C>,
     filter: RefCell<F>,
 }
+
+// START NEW INTERFACE
+impl<P, C, F, const N: usize> PtpInstance<P, C, F, N> {
+    pub fn bmca(&mut self, ports: &[&mut PortInBMCA]) {
+        todo!()
+    }
+
+    pub fn bmca_interval(&self) -> std::time::Duration {
+        todo!()
+    }
+}
+// END NEW INTERFACE
 
 impl<P, C, F> PtpInstance<P, C, F, 1> {
     /// Create a new ordinary clock instance.

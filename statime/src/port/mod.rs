@@ -18,7 +18,7 @@ use crate::{
     filters::Filter,
     network::{NetworkPacket, NetworkPort, NetworkRuntime},
     time::Duration,
-    utils::Signal,
+    utils::Signal, Instant,
 };
 
 mod error;
@@ -37,6 +37,76 @@ pub struct Port<P> {
     network_port: P,
     bmca: Bmca,
 }
+
+// START NEW INTERFACE
+
+// Making this non-copy and non-clone ensures a single handle_send_timestamp
+// per SendTimeCritical
+pub struct TimestampContext;
+
+pub enum PortAction<'a> {
+    SendTimeCritical { context: TimestampContext, data: &'a [u8] },
+    SendGeneral { data: &'a [u8] },
+    ResetAnnounceTimer { duration: std::time::Duration },
+    ResetSyncTimer { duration: std::time::Duration },
+    ResetAnnounceReceiptTimer { duration: std::time::Duration },
+}
+
+pub struct PortInBMCA;
+
+impl<P> Port<P> {
+    // Send timestamp for last timecritical message became available
+    pub fn handle_send_timestamp(&mut self, context: TimestampContext, timestamp: Instant) -> PortAction<'_> {
+        todo!()
+    }
+
+    // Handle the announce timer going of
+    pub fn handle_announce_timer(&mut self) -> PortAction<'_> {
+        todo!()
+    }
+
+    // Handle the sync timer going of
+    pub fn handle_sync_timer(&mut self) -> PortAction<'_> {
+        todo!()
+    }
+
+    // Handle the announce receipt timer going of
+    pub fn handle_announce_receipt_timer(&mut self) -> PortAction<'_> {
+        todo!()
+    }
+
+    // Handle a message over the timecritical channel
+    pub fn handle_timecritical_receive(
+        &mut self,
+        data: &[u8],
+        timestamp: Instant,
+    ) -> PortAction<'_> {
+        todo!()
+    }
+
+    // Handle a general ptp message
+    pub fn handle_general_receive(&mut self, data: &[u8]) -> PortAction<'_> {
+        todo!()
+    }
+
+    // Start a BMCA cycle and ensure this happens instantly from the perspective of
+    // the port
+    pub fn start_bmca(self) -> PortInBMCA {
+        todo!()
+    }
+}
+
+// Placeholder for type parameters that should be gone by the end of the
+// refactor
+pub struct REMOVE;
+
+impl PortInBMCA {
+    // End a BMCA cycle and make the port available again
+    pub fn end_bmca(self) -> (Port<REMOVE>, PortAction<'static>) {
+        todo!()
+    }
+}
+// END NEW INTERFACE
 
 impl<P> Port<P> {
     /// Create a new port from a port dataset on a given interface.
