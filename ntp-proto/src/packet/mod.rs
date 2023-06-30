@@ -322,7 +322,7 @@ impl<'a> NtpPacket<'a> {
                     Ok::<_, ParsingError<std::convert::Infallible>>(packet)
                 };
 
-                match ExtensionFieldData::deserialize(&data[header_size..], cipher) {
+                match ExtensionFieldData::deserialize(data, header_size, cipher) {
                     Ok(decoded) => {
                         let packet = contruct_packet(decoded.remaining_bytes, decoded.efdata)
                             .map_err(|e| e.generalize())?;
