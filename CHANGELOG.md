@@ -1,9 +1,17 @@
-Master
+Version 0.3.6
 ======
+
+Minor Changes
+-----
+- Additional example configuration for freeBSD.
+- Slight improvements to clock algorithm.
+- Upgraded dependencies.
+- Clock now synchronizes faster on startup.
 
 Bug fixes
 -----
 - Fixed bug that caused ntp-ctl validate to not print warnings on the configuration, only parsing errors.
+- Fixed bug in nts parsing that caused NTS to be entirely inoperable.
 
 Version 0.3.5
 ======
