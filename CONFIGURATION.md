@@ -162,13 +162,12 @@ addr = "1.pool.ntp.org:123"
 
 ##### Nts peers
 
-A peer in `server-nts` mode will use NTS (Network Times Security) to communicate with its server. The server must support NTS. The configuration requires the address of the Key Exchange server (the address of the actual NTP server that ends up being used may be different). For example:
+A peer in `nts-server` mode will use NTS (Network Times Security) to communicate with its server. The server must support NTS. The configuration requires the address of the Key Exchange server (the address of the actual NTP server that ends up being used may be different). For example:
 
 ```
 [[peers]]
-mode = "server-nts"
+mode = "nts-server"
 ke-addr = "time.cloudflare.com:4460"
-certificate = "/path/to/certificates.pem"
 ```
 
 ##### Pool
