@@ -1,6 +1,10 @@
 Master
 ======
 
+Bug fixes
+-----
+- Fixed bug that caused ntp-ctl validate to not print warnings on the configuration, only parsing errors.
+
 Version 0.3.5
 ======
 
