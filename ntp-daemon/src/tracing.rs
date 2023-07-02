@@ -25,7 +25,7 @@ pub struct TracingState {
 }
 
 /// Setup tracing. Since we know the settings of some subscribers only once
-/// the full configuration has been loaded, this returns an FnOnce to complete
+/// the full configuration has been loaded, this returns an `FnOnce` to complete
 /// setup when the config is available.
 pub fn init(
     filter: EnvFilter,

@@ -48,7 +48,7 @@ impl Default for PeerId {
     }
 }
 
-/// A SpawnEvent is an event created by the spawner for the system
+/// A `SpawnEvent` is an event created by the spawner for the system
 ///
 /// The action that the system should execute is encoded in the `action` field.
 /// The spawner should make sure that it only ever sends events with its own
