@@ -419,7 +419,7 @@ where
     }
 }
 
-/// adapter between AsyncWrite and std::io::Write
+/// adapter between `AsyncWrite` and `std::io::Write`
 struct WriterAdapter<'a, 'b, T> {
     io: &'a mut T,
     cx: &'a mut Context<'b>,
@@ -450,7 +450,7 @@ impl<'a, 'b, T: AsyncWrite + Unpin> Write for WriterAdapter<'a, 'b, T> {
     }
 }
 
-/// adapter between AsyncRead and std::io::Read
+/// adapter between `AsyncRead` and `std::io::Read`
 struct ReaderAdapter<'a, 'b, T> {
     io: &'a mut T,
     cx: &'a mut Context<'b>,
