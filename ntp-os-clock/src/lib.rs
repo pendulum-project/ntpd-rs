@@ -18,7 +18,7 @@ pub enum Error {
     #[error("Invalid operation requested")]
     Invalid,
     #[error("Clock device has gone away")]
-    NoDev,
+    NoDevice,
     #[error("Clock operation requested is not supported by operating system.")]
     NotSupported,
     #[error("Invalid clock path")]
