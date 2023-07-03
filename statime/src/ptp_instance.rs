@@ -178,7 +178,7 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
                 .zip(&mut pinned_announce_receipt_timeouts)
                 .zip(&mut pinned_sync_timeouts)
                 .zip(&mut pinned_announce_timeouts)
-                .zip(signals.into_iter())
+                .zip(signals)
                 .map(
                     |(
                         (((port, announce_receipt_timeout), sync_timeout), announce_timeout),
