@@ -680,10 +680,8 @@ dependencies = [
 name = "statime-linux"
 version = "0.1.0"
 dependencies = [
- "bitflags 2.3.3",
  "clap",
  "fern",
- "fixed",
  "libc",
  "log",
  "statime",

@@ -5,7 +5,10 @@ use core::{
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, RemAssign, Sub, SubAssign},
 };
 
-use fixed::{traits::ToFixed, types::I96F32};
+use fixed::{
+    traits::{LossyInto, ToFixed},
+    types::I96F32,
+};
 
 use crate::datastructures::common::TimeInterval;
 
@@ -29,6 +32,7 @@ impl Duration {
         let inner = secs.to_fixed::<I96F32>() * 1_000_000_000.to_fixed::<I96F32>();
         Self { inner }
     }
+
     /// Create an instance with the given amount of milliseconds
     pub fn from_millis(millis: i64) -> Self {
         let inner = millis.to_fixed::<I96F32>() * 1_000_000.to_fixed::<I96F32>();
@@ -44,6 +48,7 @@ impl Duration {
         let inner = nanos.to_fixed::<I96F32>();
         Self { inner }
     }
+
     /// Create an instance with the given amount of nanoseconds, using a fixed
     /// point number so the subnanoseconds can be specified as well
     pub fn from_fixed_nanos<F: ToFixed>(nanos: F) -> Self {
@@ -55,6 +60,11 @@ impl Duration {
     /// Get the total amount of nanoseconds
     pub fn nanos(&self) -> I96F32 {
         self.inner
+    }
+
+    /// Get the total amount of nanoseconds, losing some precision
+    pub fn nanos_lossy(&self) -> f64 {
+        self.nanos().lossy_into()
     }
 
     /// Get the total amount of seconds

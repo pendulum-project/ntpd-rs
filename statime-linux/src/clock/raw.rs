@@ -24,12 +24,8 @@ pub enum LeapIndicator {
 /// ```no_run
 /// use statime_linux::clock::RawLinuxClock;
 ///
-/// println!("Available clocks:");
-/// for clock in RawLinuxClock::get_clocks() {
-///     println!("{}", clock);
-/// }
-///
 /// let mut test_clock = RawLinuxClock::get_realtime_clock();
+/// println!("{}", test_clock);
 /// test_clock.adjust_clock(0.000_001, 1.000_000_001).unwrap();
 /// ```
 #[derive(Debug, Clone)]

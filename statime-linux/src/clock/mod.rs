@@ -1,6 +1,5 @@
 //! Implementation of the abstract clock for the linux platform
 
-use fixed::traits::LossyInto;
 pub use raw::RawLinuxClock;
 use statime::{Clock, ClockQuality, Duration, Instant, TimePropertiesDS, Timer};
 
@@ -49,7 +48,7 @@ impl Clock for LinuxClock {
                 .map_err(Error::LinuxError)?;
         }
 
-        let time_offset_float: f64 = time_offset.nanos().lossy_into();
+        let time_offset_float: f64 = time_offset.nanos_lossy();
 
         self.clock
             .adjust_clock(time_offset_float / 1e9, frequency_multiplier)
