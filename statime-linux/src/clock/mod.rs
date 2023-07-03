@@ -5,11 +5,10 @@ pub use raw::RawLinuxClock;
 use statime::{Clock, ClockQuality, Duration, Instant, TimePropertiesDS, Timer};
 
 mod raw;
-mod timex;
 
 #[derive(Debug, Clone)]
 pub enum Error {
-    LinuxError(i32),
+    LinuxError(raw::Error),
 }
 
 #[derive(Debug, Clone)]
