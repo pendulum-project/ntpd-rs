@@ -1,6 +1,6 @@
 use std::os::unix::io::AsRawFd;
 
-use crate::{interface_name, raw_socket::cerr};
+use crate::{interface::InterfaceName, raw_socket::cerr};
 
 const fn standard_hwtstamp_config() -> libc::hwtstamp_config {
     libc::hwtstamp_config {
@@ -61,8 +61,8 @@ fn socket_interface_name(
 ) -> std::io::Result<[libc::c_char; libc::IFNAMSIZ]> {
     use std::io::{Error, ErrorKind};
 
-    match interface_name::interface_name(udp_socket.local_addr()?)? {
-        Some(ifr_name) => Ok(ifr_name),
+    match InterfaceName::from_socket_addr(udp_socket.local_addr()?)? {
+        Some(interface_name) => Ok(interface_name.to_ifr_name()),
         None => Err(Error::new(ErrorKind::Other, "socket has no interface name")),
     }
 }

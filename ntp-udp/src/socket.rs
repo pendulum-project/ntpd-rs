@@ -7,11 +7,12 @@ use tokio::io::{unix::AsyncFd, Interest};
 use tracing::{debug, instrument, trace, warn};
 
 use crate::{
+    interface::InterfaceName,
     raw_socket::{
         control_message_space, receive_message, set_timestamping_options, ControlMessage,
         MessageQueue, TimestampMethod,
     },
-    EnableTimestamps, InterfaceName,
+    EnableTimestamps,
 };
 
 #[cfg(target_os = "linux")]

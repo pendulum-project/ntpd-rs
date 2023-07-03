@@ -6,61 +6,125 @@
 //! Uses the Linux and/or BSD specific function `getifaddrs` to query the list
 //! of interfaces and their associated addresses.
 
-use std::ffi;
 use std::iter::Iterator;
-use std::mem;
 use std::net::SocketAddr;
 use std::option::Option;
 
-#[allow(dead_code)]
-pub fn interface_name(local_addr: SocketAddr) -> std::io::Result<Option<[libc::c_char; 16]>> {
-    let matches_inferface = |interface: &InterfaceAddress| match interface.address {
-        None => false,
-        Some(address) => address.ip() == local_addr.ip(),
-    };
+use crate::raw_socket::interface_iterator::InterfaceIterator;
 
-    if let Some(interface) = getifaddrs()?.find(matches_inferface) {
-        let mut ifrn_name = [0; 16];
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct InterfaceName {
+    bytes: [u8; libc::IFNAMSIZ],
+}
 
-        let name = interface.interface_name;
+impl std::ops::Deref for InterfaceName {
+    type Target = [u8];
 
-        for (source, target) in name.as_bytes().iter().zip(ifrn_name.iter_mut()) {
-            *target = *source as libc::c_char;
-        }
-
-        Ok(Some(ifrn_name))
-    } else {
-        Ok(None)
+    fn deref(&self) -> &Self::Target {
+        self.bytes.as_slice()
     }
 }
 
-/// Describes a single address for an interface as returned by `getifaddrs`.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-struct InterfaceAddress {
-    /// Name of the network interface
-    interface_name: String,
-    /// Network address of this interface
-    address: Option<SocketAddr>,
+impl<'de> serde::Deserialize<'de> for InterfaceName {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use std::str::FromStr;
+        use InterfaceNameParseError::*;
+
+        let name: String = serde::Deserialize::deserialize(deserializer)?;
+
+        match Self::from_str(&name) {
+            Ok(v) => Ok(v),
+            Err(Empty) => Err(serde::de::Error::custom("interface name empty")),
+            Err(TooLong) => Err(serde::de::Error::custom("interface name too long")),
+        }
+    }
 }
 
-impl InterfaceAddress {
-    /// Create an `InterfaceAddress` from the libc struct.
-    ///
-    /// # Safety
-    ///
-    /// assumes a valid `libc::ifaddrs`
-    unsafe fn from_libc_ifaddrs(info: &libc::ifaddrs) -> InterfaceAddress {
-        let ifname = unsafe { ffi::CStr::from_ptr(info.ifa_name) };
+#[derive(Debug)]
+pub enum InterfaceNameParseError {
+    Empty,
+    TooLong,
+}
 
-        let sockaddr: *mut libc::sockaddr = info.ifa_addr;
-        let address = unsafe { sockaddr_to_socket_addr(sockaddr) };
+impl std::str::FromStr for InterfaceName {
+    type Err = InterfaceNameParseError;
 
-        let addr = InterfaceAddress {
-            interface_name: ifname.to_string_lossy().to_string(),
-            address,
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        if name.is_empty() {
+            return Err(InterfaceNameParseError::Empty);
+        }
+
+        let mut it = name.bytes();
+        let bytes = std::array::from_fn(|_| it.next().unwrap_or_default());
+
+        if it.next().is_some() {
+            Err(InterfaceNameParseError::TooLong)
+        } else {
+            Ok(InterfaceName { bytes })
+        }
+    }
+}
+
+impl InterfaceName {
+    pub const DEFAULT: Option<Self> = None;
+
+    #[cfg(test)]
+    pub const LOOPBACK: Self = Self {
+        bytes: *b"lo\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
+    };
+
+    #[cfg(test)]
+    pub const INVALID: Self = Self {
+        bytes: *b"123412341234123\0",
+    };
+
+    pub fn as_str(&self) -> &str {
+        std::str::from_utf8(self.bytes.as_slice())
+            .unwrap_or_default()
+            .trim_end_matches('\0')
+    }
+
+    pub fn as_cstr(&self) -> &std::ffi::CStr {
+        // TODO: in rust 1.69.0, use
+        // std::ffi::CStr::from_bytes_until_nul(&self.bytes[..]).unwrap()
+
+        // it is an invariant of InterfaceName that the bytes are null-terminated
+        let first_null = self.bytes.iter().position(|b| *b == 0).unwrap();
+        std::ffi::CStr::from_bytes_with_nul(&self.bytes[..=first_null]).unwrap()
+    }
+
+    pub fn to_ifr_name(self) -> [libc::c_char; libc::IFNAMSIZ] {
+        let mut it = self.bytes.iter().copied();
+        [0; libc::IFNAMSIZ].map(|_| it.next().unwrap_or(0) as libc::c_char)
+    }
+
+    pub fn from_socket_addr(local_addr: SocketAddr) -> std::io::Result<Option<Self>> {
+        let matches_inferface = |interface: &InterfaceData| match interface.socket_addr {
+            None => false,
+            Some(address) => address.ip() == local_addr.ip(),
         };
 
-        addr
+        match InterfaceIterator::new()?.find(matches_inferface) {
+            Some(interface) => Ok(Some(interface.name)),
+            None => Ok(None),
+        }
+    }
+}
+
+impl std::fmt::Debug for InterfaceName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("InterfaceName")
+            .field(&self.as_str())
+            .finish()
+    }
+}
+
+impl std::fmt::Display for InterfaceName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_str().fmt(f)
     }
 }
 
@@ -118,47 +182,10 @@ pub unsafe fn sockaddr_to_socket_addr(sockaddr: *const libc::sockaddr) -> Option
     }
 }
 
-/// Holds the results of `getifaddrs`.
-///
-/// Use the function `getifaddrs` to create this Iterator. Note that the
-/// actual list of interfaces can be iterated once and will be freed as
-/// soon as the Iterator goes out of scope.
-#[derive(Debug, Eq, Hash, PartialEq)]
-struct InterfaceAddressIterator {
-    base: *mut libc::ifaddrs,
-    next: *mut libc::ifaddrs,
-}
-
-impl Drop for InterfaceAddressIterator {
-    fn drop(&mut self) {
-        unsafe { libc::freeifaddrs(self.base) };
-    }
-}
-
-impl Iterator for InterfaceAddressIterator {
-    type Item = InterfaceAddress;
-    fn next(&mut self) -> Option<<Self as Iterator>::Item> {
-        match unsafe { self.next.as_ref() } {
-            Some(ifaddr) => {
-                self.next = ifaddr.ifa_next;
-                // SAFETY: assumes the ifaddr is valid
-                Some(unsafe { InterfaceAddress::from_libc_ifaddrs(ifaddr) })
-            }
-            None => None,
-        }
-    }
-}
-
-/// Get interface addresses using libc's `getifaddrs`
-fn getifaddrs() -> std::io::Result<InterfaceAddressIterator> {
-    let mut addrs = mem::MaybeUninit::<*mut libc::ifaddrs>::uninit();
-
-    crate::raw_socket::cerr(unsafe { libc::getifaddrs(addrs.as_mut_ptr()) })?;
-
-    Ok(InterfaceAddressIterator {
-        base: unsafe { addrs.assume_init() },
-        next: unsafe { addrs.assume_init() },
-    })
+pub struct InterfaceData {
+    pub name: InterfaceName,
+    pub mac: Option<[u8; 6]>,
+    pub socket_addr: Option<SocketAddr>,
 }
 
 #[cfg(test)]
@@ -170,7 +197,7 @@ mod tests {
     #[test]
     fn find_interface() {
         let socket = std::net::UdpSocket::bind("127.0.0.1:8014").unwrap();
-        let name = interface_name(socket.local_addr().unwrap()).unwrap();
+        let name = InterfaceName::from_socket_addr(socket.local_addr().unwrap()).unwrap();
 
         assert!(name.is_some());
     }
@@ -178,7 +205,7 @@ mod tests {
     #[test]
     fn find_interface_ipv6() {
         let socket = std::net::UdpSocket::bind("::1:8015").unwrap();
-        let name = interface_name(socket.local_addr().unwrap()).unwrap();
+        let name = InterfaceName::from_socket_addr(socket.local_addr().unwrap()).unwrap();
 
         assert!(name.is_some());
     }

@@ -29,18 +29,18 @@ pub(crate) fn cerr(t: libc::c_int) -> std::io::Result<libc::c_int> {
 #[repr(i32)]
 #[allow(clippy::enum_variant_names)]
 pub(crate) enum TimestampMethod {
+    /// Original timestamping for unix (linux, freebsd, macos)
+    ///
+    /// - microsecond precision (on freebsd, can be configured to get nanoseconds)
+    /// - only receive timestamps
+    #[allow(dead_code)]
+    SoTimestamp = libc::SO_TIMESTAMP,
     /// Standard timestamping on linux. It gives us
     ///
     /// - nanosecond precision
     /// - send & receive timestamps
     #[cfg(target_os = "linux")]
     SoTimestamping = libc::SO_TIMESTAMPING,
-    /// Original timestamping for unix (linux, freebsd, macos)
-    ///
-    /// - microsecond precision (configurable on freebsd, we set nanoseconds)
-    /// - only receive timestamps
-    #[allow(dead_code)]
-    SoTimestamp = libc::SO_TIMESTAMP,
     /// Legacy timestamping for linux
     ///
     /// - nanosecond precision
@@ -182,7 +182,7 @@ mod recv_message {
 
     use tracing::warn;
 
-    use crate::interface_name::sockaddr_storage_to_socket_addr;
+    use crate::interface::sockaddr_storage_to_socket_addr;
     use crate::LibcTimestamp;
 
     use super::cerr;
@@ -372,7 +372,7 @@ mod recv_message {
                         software
                     };
 
-                    ControlMessage::Timestamping(LibcTimestamp::Timespec(timespec))
+                    ControlMessage::Timestamping(LibcTimestamp::from_timespec(timespec))
                 }
 
                 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
@@ -385,7 +385,7 @@ mod recv_message {
 
                     let timespec = unsafe { std::ptr::read_unaligned(cmsg_data) };
 
-                    ControlMessage::Timestamping(LibcTimestamp::Timespec(timespec))
+                    ControlMessage::Timestamping(LibcTimestamp::from_timespec(timespec))
                 }
 
                 (libc::SOL_SOCKET, libc::SCM_TIMESTAMP) => {
@@ -394,7 +394,7 @@ mod recv_message {
                     // SO_TIMESTAMP always has a timeval in the data
                     let cmsg_data = unsafe { libc::CMSG_DATA(current_msg) } as *const libc::timeval;
                     let timeval = unsafe { std::ptr::read_unaligned(cmsg_data) };
-                    ControlMessage::Timestamping(LibcTimestamp::Timeval(timeval))
+                    ControlMessage::Timestamping(LibcTimestamp::from_timeval(timeval))
                 }
 
                 #[cfg(target_os = "linux")]
@@ -431,7 +431,12 @@ mod recv_message {
     }
 }
 
+#[allow(unused)]
+#[cfg(target_os = "linux")]
 pub(crate) mod timestamping_config {
+    use std::os::unix::prelude::RawFd;
+
+    use crate::interface::InterfaceName;
 
     #[repr(C)]
     #[allow(non_camel_case_types)]
@@ -439,64 +444,99 @@ pub(crate) mod timestamping_config {
     struct ethtool_ts_info {
         cmd: u32,
         so_timestamping: u32,
-        phc_index: u32,
+        phc_index: i32,
         tx_types: u32,
         tx_reserved: [u32; 3],
         rx_filters: u32,
         rx_reserved: [u32; 3],
     }
 
-    /// Enable all timestamping options that are supported by this crate and the hardware/software
-    /// of the device we're running on
-    #[allow(dead_code)]
-    #[cfg(target_os = "linux")]
-    pub(crate) fn all_supported(
-        udp_socket: &std::net::UdpSocket,
-    ) -> std::io::Result<crate::EnableTimestamps> {
-        use std::os::unix::prelude::AsRawFd;
+    #[derive(Debug, Clone, Copy)]
+    struct TimestampSupport {
+        rx_software: bool,
+        tx_software: bool,
+        rx_hardware: bool,
+        tx_hardware: bool,
+        #[cfg(test)]
+        phc_index: Option<u32>,
+    }
 
-        use super::cerr;
-        use crate::{interface_name, EnableTimestamps};
+    impl TimestampSupport {
+        fn for_interface(interface_name: InterfaceName) -> std::io::Result<Self> {
+            let socket = super::cerr(unsafe { libc::socket(libc::AF_INET, libc::SOCK_STREAM, 0) })?;
 
-        // Get time stamping and PHC info
-        const ETHTOOL_GET_TS_INFO: u32 = 0x00000041;
+            let value = interface_name.as_str().as_bytes();
+            let len = value.len();
 
-        let mut tsi: ethtool_ts_info = ethtool_ts_info {
-            cmd: ETHTOOL_GET_TS_INFO,
-            ..Default::default()
-        };
+            unsafe {
+                super::cerr(libc::setsockopt(
+                    socket,
+                    libc::SOL_SOCKET,
+                    libc::SO_BINDTODEVICE,
+                    value.as_ptr().cast(),
+                    len as libc::socklen_t,
+                ))?;
+            }
 
-        let fd = udp_socket.as_raw_fd();
+            Self::for_socket(socket, interface_name)
+        }
 
-        if let Some(ifr_name) = interface_name::interface_name(udp_socket.local_addr()?)? {
+        #[cfg(target_os = "linux")]
+        fn for_socket(socket: RawFd, interface_name: InterfaceName) -> std::io::Result<Self> {
+            // Get time stamping and PHC info
+            const ETHTOOL_GET_TS_INFO: u32 = 0x00000041;
+
+            let mut tsi: ethtool_ts_info = ethtool_ts_info {
+                cmd: ETHTOOL_GET_TS_INFO,
+                ..Default::default()
+            };
+
             let ifr: libc::ifreq = libc::ifreq {
-                ifr_name,
+                ifr_name: interface_name.to_ifr_name(),
                 ifr_ifru: libc::__c_anonymous_ifr_ifru {
                     ifru_data: (&mut tsi as *mut _) as *mut libc::c_char,
                 },
             };
 
             // SIOCETHTOOL = 0x8946 (Ethtool interface) Linux ioctl request
-            cerr(unsafe { libc::ioctl(fd, 0x8946, &ifr) }).unwrap();
+            super::cerr(unsafe { libc::ioctl(socket, 0x8946, &ifr) })?;
 
-            let support = EnableTimestamps {
+            let support = Self {
                 rx_software: tsi.so_timestamping & libc::SOF_TIMESTAMPING_RX_SOFTWARE != 0,
                 tx_software: tsi.so_timestamping & libc::SOF_TIMESTAMPING_TX_SOFTWARE != 0,
                 rx_hardware: tsi.so_timestamping & libc::SOF_TIMESTAMPING_RX_HARDWARE != 0,
                 tx_hardware: tsi.so_timestamping & libc::SOF_TIMESTAMPING_TX_HARDWARE != 0,
+                #[cfg(test)]
+                phc_index: u32::try_from(tsi.phc_index).ok(),
             };
 
-            // per the documentation of `SOF_TIMESTAMPING_RX_SOFTWARE`:
-            //
-            // > Request rx timestamps when data enters the kernel. These timestamps are generated
-            // > just after a device driver hands a packet to the kernel receive stack.
-            //
-            // the linux kernel should always support receive software timestamping
-            assert!(support.rx_software);
-
             Ok(support)
-        } else {
-            Ok(EnableTimestamps::default())
+        }
+
+        #[cfg(test)]
+        fn phc_clock_pathbuf(&self) -> Option<std::path::PathBuf> {
+            use std::path::PathBuf;
+
+            self.phc_index
+                .map(|index| PathBuf::from(format!("/dev/ptp{index}")))
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn loopback_timestamping_support() {
+            let support = TimestampSupport::for_interface(InterfaceName::LOOPBACK).unwrap();
+
+            assert!(support.rx_software);
+            assert!(support.tx_software);
+
+            assert!(!support.rx_hardware);
+            assert!(!support.tx_hardware);
+
+            assert!(support.phc_clock_pathbuf().is_none());
         }
     }
 }
@@ -557,6 +597,91 @@ pub(crate) mod err_queue_waiter {
                     }
                 })
                 .await
+        }
+    }
+}
+
+pub(crate) mod interface_iterator {
+    use crate::interface::{sockaddr_to_socket_addr, InterfaceData, InterfaceName};
+    use std::str::FromStr;
+
+    pub struct InterfaceIterator {
+        base: *mut libc::ifaddrs,
+        next: *mut libc::ifaddrs,
+    }
+
+    impl InterfaceIterator {
+        pub fn new() -> std::io::Result<Self> {
+            let mut addrs = core::mem::MaybeUninit::<*mut libc::ifaddrs>::uninit();
+
+            unsafe {
+                super::cerr(libc::getifaddrs(addrs.as_mut_ptr()))?;
+
+                Ok(Self {
+                    base: addrs.assume_init(),
+                    next: addrs.assume_init(),
+                })
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        fn mac(ifaddr: &libc::ifaddrs) -> Option<[u8; 6]> {
+            let family = unsafe { (*ifaddr.ifa_addr).sa_family };
+
+            if family as i32 == libc::AF_PACKET {
+                let sockaddr_ll: libc::sockaddr_ll =
+                    unsafe { std::ptr::read_unaligned(ifaddr.ifa_addr as *const _) };
+
+                Some([
+                    sockaddr_ll.sll_addr[0],
+                    sockaddr_ll.sll_addr[1],
+                    sockaddr_ll.sll_addr[2],
+                    sockaddr_ll.sll_addr[3],
+                    sockaddr_ll.sll_addr[4],
+                    sockaddr_ll.sll_addr[5],
+                ])
+            } else {
+                None
+            }
+        }
+
+        #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+        fn mac(_ifaddr: &libc::ifaddrs) -> Option<[u8; 6]> {
+            None
+        }
+    }
+
+    impl Drop for InterfaceIterator {
+        fn drop(&mut self) {
+            unsafe { libc::freeifaddrs(self.base) };
+        }
+    }
+
+    impl Iterator for InterfaceIterator {
+        type Item = InterfaceData;
+
+        fn next(&mut self) -> Option<<Self as Iterator>::Item> {
+            let ifaddr = unsafe { self.next.as_ref() }?;
+
+            self.next = ifaddr.ifa_next;
+
+            let ifname = unsafe { std::ffi::CStr::from_ptr(ifaddr.ifa_name) };
+            let name = match std::str::from_utf8(ifname.to_bytes()) {
+                Err(_) => unreachable!("interface names must be ascii"),
+                Ok(name) => InterfaceName::from_str(name).expect("name from os"),
+            };
+
+            let mac = Self::mac(ifaddr);
+
+            let socket_addr = unsafe { sockaddr_to_socket_addr(ifaddr.ifa_addr) };
+
+            let data = InterfaceData {
+                name,
+                mac,
+                socket_addr,
+            };
+
+            Some(data)
         }
     }
 }
