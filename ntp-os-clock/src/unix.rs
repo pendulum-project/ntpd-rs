@@ -406,12 +406,23 @@ impl NtpClock for UnixNtpClock {
 
     fn set_frequency(&self, freq: f64) -> Result<NtpTimestamp, Self::Error> {
         let mut ntp_kapi_timex = EMPTY_TIMEX;
-        ntp_kapi_timex.modes = libc::MOD_FREQUENCY;
+
+        // set the frequency and status (because ADJ_FREQHOLD)
+        ntp_kapi_timex.modes = libc::MOD_FREQUENCY | libc::MOD_STATUS;
+
         // NTP Kapi expects frequency adjustment in units of 2^-16 ppm
         // but our input is in units of seconds drift per second, so convert.
         ntp_kapi_timex.freq = (freq * 65536e6) as libc::c_long;
-        ntp_kapi_timex.status =
-            !libc::STA_PLL & !libc::STA_PPSFREQ & !libc::STA_FLL & !libc::STA_PPSTIME;
+
+        // Hold frequency. Normally adjustments made via ADJ_OFFSET result in dampened
+        // frequency adjustments also being made. So a single call corrects the
+        // current offset, but as offsets in the same direction
+        // are made repeatedly, the small frequency adjustments will accumulate to fix
+        // the long-term skew.
+        //
+        // This flag prevents the small frequency adjustment from being made when
+        // correcting for an ADJ_OFFSET value.
+        ntp_kapi_timex.status |= libc::STA_FREQHOLD;
 
         self.adjtime(&mut ntp_kapi_timex)?;
         self.extract_current_time(&ntp_kapi_timex)
@@ -430,24 +441,28 @@ impl NtpClock for UnixNtpClock {
     fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
         let mut timex = EMPTY_TIMEX;
         self.adjtime(&mut timex)?;
+
+        // We are setting the status bits
         timex.modes = libc::MOD_STATUS;
 
         // Enable the kernel phase locked loop
         timex.status |= libc::STA_PLL;
-        // and disable the frequency locked loop,
-        // pps input based time control, and pps
-        // input based frequency control.
-        timex.status &= !libc::STA_FLL & !libc::STA_PPSTIME & !libc::STA_PPSFREQ;
+
+        // Disable the frequency locked loop; disable pps input based time and frequency control
+        timex.status &= !(libc::STA_FLL | libc::STA_PPSTIME | libc::STA_PPSFREQ);
+
         self.adjtime(&mut timex)
     }
 
     fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
         let mut timex = EMPTY_TIMEX;
         self.adjtime(&mut timex)?;
+
+        // We are setting the status bits
         timex.modes = libc::MOD_STATUS;
 
         // Disable all kernel time control loops (phase lock, frequency lock, pps time and pps frequency).
-        timex.status &= !libc::STA_PLL & !libc::STA_FLL & !libc::STA_PPSTIME & !libc::STA_PPSFREQ;
+        timex.status &= !(libc::STA_PLL | libc::STA_FLL | libc::STA_PPSTIME | libc::STA_PPSFREQ);
 
         // ignore if we cannot disable the kernel time control loops (e.g. external clocks)
         ignore_not_supported(self.adjtime(&mut timex))
