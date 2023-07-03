@@ -104,9 +104,18 @@ fn setup_logger(level: log::LevelFilter) -> Result<(), fern::InitError> {
 
     fern::Dispatch::new()
         .format(move |out, message, record| {
+            use std::time::{SystemTime, UNIX_EPOCH};
+
+            let delta = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+
+            let h = delta.as_secs() % (24 * 60 * 60) / (60 * 60);
+            let m = delta.as_secs() % (60 * 60) / 60;
+            let s = delta.as_secs() % 60;
+            let f = delta.as_millis() % (24 * 60 * 60 * 1000);
+
             out.finish(format_args!(
                 "{}[{}][{}] {}",
-                chrono::Local::now().format("[%H:%M:%S.%f]"),
+                format_args!("[{h:02}:{m:02}:{s:02}.{f:07}]"),
                 record.target(),
                 colors.color(record.level()),
                 message

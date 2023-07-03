@@ -6,9 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-arrayvec = { version = "0.7.4", default-features = false }
 bitflags = "2.3.3"
-chrono = "0.4.26"
 clap = { version = "4.3.8", features = ["derive"] }
 fern = { version = "0.6.2", features = ["colored"] }
 fixed = "1.23.1"

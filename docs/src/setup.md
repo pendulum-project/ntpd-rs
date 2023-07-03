@@ -47,7 +47,6 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "3.1.6", features = ["derive"] }
-chrono = "0.4.24"
 log = "0.4.14"
 env_logger = "0.10.0"
 statime = { git = "https://github.com/pendulum-project/statime.git", rev = "52b17e3" }
