@@ -53,7 +53,7 @@ libc = "0.2.147"
 tokio = "1.29.1"
 toml = "0.7.5"
 clap = { version = "4.3.10", features = ["derive", "env"] }
-async-trait = "0.1.68"
+async-trait = "0.1.69"
 
 # our own crates used as dependencies, same version as the workspace version
 ntp-ctl = { version = "0.3.6", path = "./ntp-ctl" }
