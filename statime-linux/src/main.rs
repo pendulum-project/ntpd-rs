@@ -111,7 +111,7 @@ fn setup_logger(level: log::LevelFilter) -> Result<(), fern::InitError> {
             let h = delta.as_secs() % (24 * 60 * 60) / (60 * 60);
             let m = delta.as_secs() % (60 * 60) / 60;
             let s = delta.as_secs() % 60;
-            let f = delta.as_millis() % (24 * 60 * 60 * 1000);
+            let f = delta.as_secs_f64().fract() * 1e7;
 
             out.finish(format_args!(
                 "{}[{}][{}] {}",
