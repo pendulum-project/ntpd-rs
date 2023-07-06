@@ -71,7 +71,7 @@ sentry-tracing = { version = "0.29.3" }
 prometheus-client = "0.21.1"
 
 # TLS
-rustls = "0.21.2"
+rustls = "0.21.3"
 rustls-pemfile = "1.0.3"
 rustls-native-certs = "0.6.3"
 
