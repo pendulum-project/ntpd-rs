@@ -6,12 +6,12 @@ use super::{
 };
 use crate::{
     datastructures::{
-        common::{PortIdentity, TimeInterval, Timestamp},
+        common::{PortIdentity, TimeInterval, WireTimestamp},
         datasets::DefaultDS,
         messages::AnnounceMessage,
     },
     port::state::PortState,
-    time::Instant,
+    time::Time,
 };
 
 /// Object implementing the Best Master Clock Algorithm
@@ -47,7 +47,7 @@ impl Bmca {
     pub fn register_announce_message(
         &mut self,
         announce_message: &AnnounceMessage,
-        current_time: Timestamp,
+        current_time: WireTimestamp,
     ) {
         // Ignore messages comming from the same port
         if announce_message.header().source_port_identity() != self.own_port_identity {
@@ -59,7 +59,7 @@ impl Bmca {
     /// Takes the Erbest from this port
     pub fn take_best_port_announce_message(
         &mut self,
-        current_time: Timestamp,
+        current_time: WireTimestamp,
     ) -> Option<BestAnnounceMessage> {
         // Find the announce message we want to use from each foreign master that has
         // qualified messages
@@ -101,7 +101,7 @@ impl Bmca {
                 // We get errors if two announce messages are (functionally) the same, in that case
                 // we just pick the newer one
                 DatasetOrdering::Error1 | DatasetOrdering::Error2 => {
-                    if Instant::from(left.timestamp) >= Instant::from(right.timestamp) {
+                    if Time::from(left.timestamp) >= Time::from(right.timestamp) {
                         left
                     } else {
                         right
@@ -194,7 +194,7 @@ impl Bmca {
 #[derive(Copy, Clone, Debug)]
 pub struct BestAnnounceMessage {
     message: AnnounceMessage,
-    timestamp: Timestamp,
+    timestamp: WireTimestamp,
     identity: PortIdentity,
 }
 

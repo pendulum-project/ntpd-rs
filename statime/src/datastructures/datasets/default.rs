@@ -3,7 +3,7 @@ use crate::{
         common::{ClockIdentity, ClockQuality, InstanceType},
         messages::SdoId,
     },
-    time::Instant,
+    time::Time,
 };
 
 /// A concrete implementation of the PTP Default dataset (IEEE1588-2019 section
@@ -23,7 +23,7 @@ pub struct DefaultDS {
     pub(crate) domain_number: u8,
     slave_only: bool,
     pub(crate) sdo_id: SdoId,
-    current_time: Instant,
+    current_time: Time,
     pub(crate) instance_enable: bool,
     external_port_configuration_enabled: bool,
     max_steps_removed: u8,

@@ -1,12 +1,12 @@
 use crate::{
     datastructures::{
-        common::{PortIdentity, Timestamp},
+        common::{PortIdentity, WireTimestamp},
         datasets::DefaultDS,
         messages::{DelayRespMessage, FollowUpMessage, Message, MessageBuilder, SyncMessage},
     },
     network::NetworkPort,
     port::{sequence_id::SequenceIdGenerator, Measurement},
-    time::{Duration, Instant},
+    time::{Duration, Time},
 };
 
 type Result<T, E = SlaveError> = core::result::Result<T, E>;
@@ -20,7 +20,7 @@ pub struct SlaveState {
 
     delay_req_ids: SequenceIdGenerator,
 
-    next_delay_measurement: Option<Instant>,
+    next_delay_measurement: Option<Time>,
     pending_followup: Option<FollowUpMessage>,
 }
 
@@ -35,12 +35,12 @@ enum SyncState {
     Initial,
     AfterSync {
         sync_id: u16,
-        sync_recv_time: Instant,
+        sync_recv_time: Time,
         sync_correction: Duration,
     },
     AfterFollowUp {
-        sync_recv_time: Instant,
-        sync_send_time: Instant,
+        sync_recv_time: Time,
+        sync_send_time: Time,
     },
 }
 
@@ -49,7 +49,7 @@ enum DelayState {
     Initial,
     AfterSync {
         delay_id: u16,
-        delay_send_time: Instant,
+        delay_send_time: Time,
     },
     AfterDelayResp {
         mean_delay: Duration,
@@ -80,7 +80,7 @@ impl SlaveState {
     pub(crate) async fn handle_message<P: NetworkPort>(
         &mut self,
         message: Message,
-        current_time: Instant,
+        current_time: Time,
         network_port: &mut P,
         port_identity: PortIdentity,
         default_ds: &DefaultDS,
@@ -110,7 +110,7 @@ impl SlaveState {
     async fn handle_sync<P: NetworkPort>(
         &mut self,
         message: SyncMessage,
-        current_time: Instant,
+        current_time: Time,
         network_port: &mut P,
         port_identity: PortIdentity,
         default_ds: &DefaultDS,
@@ -125,7 +125,7 @@ impl SlaveState {
         } else {
             SyncState::AfterFollowUp {
                 sync_recv_time: current_time,
-                sync_send_time: Instant::from(message.origin_timestamp())
+                sync_send_time: Time::from(message.origin_timestamp())
                     + Duration::from(message.header().correction_field()),
             }
         };
@@ -141,7 +141,7 @@ impl SlaveState {
                 .source_port_identity(port_identity)
                 .sequence_id(delay_id)
                 .log_message_interval(0x7f)
-                .delay_req_message(Timestamp::default());
+                .delay_req_message(WireTimestamp::default());
             let delay_req_encode = delay_req.serialize_vec().unwrap();
             let delay_send_time = network_port
                 .send_time_critical(&delay_req_encode)
@@ -176,7 +176,7 @@ impl SlaveState {
                     self.pending_followup = None;
 
                     // Absorb into state
-                    let sync_send_time = Instant::from(message.precise_origin_timestamp())
+                    let sync_send_time = Time::from(message.precise_origin_timestamp())
                         + Duration::from(message.header().correction_field())
                         + sync_correction;
                     self.sync_state = SyncState::AfterFollowUp {
@@ -229,7 +229,7 @@ impl SlaveState {
                         }
 
                         // Absorb into state
-                        let delay_recv_time = Instant::from(message.receive_timestamp())
+                        let delay_recv_time = Time::from(message.receive_timestamp())
                             - Duration::from(message.header().correction_field());
 
                         // Calculate when we should next measure delay
@@ -323,7 +323,7 @@ mod tests {
         normal: Vec<Vec<u8>>,
         time: Vec<Vec<u8>>,
 
-        current_time: Instant,
+        current_time: Time,
     }
 
     impl NetworkPort for TestNetworkPort {
@@ -337,7 +337,7 @@ mod tests {
         async fn send_time_critical(
             &mut self,
             data: &[u8],
-        ) -> core::result::Result<Option<Instant>, Self::Error> {
+        ) -> core::result::Result<Option<Time>, Self::Error> {
             self.time.push(Vec::from(data));
             Ok(Some(self.current_time))
         }
@@ -357,7 +357,7 @@ mod tests {
         state.delay_state = DelayState::AfterDelayResp {
             mean_delay: Duration::from_micros(100),
         };
-        state.next_delay_measurement = Some(Instant::from_secs(10));
+        state.next_delay_measurement = Some(Time::from_secs(10));
 
         let defaultds = DefaultDS::new_ordinary_clock(
             ClockIdentity::default(),
@@ -375,9 +375,9 @@ mod tests {
                     correction_field: TimeInterval(1000.into()),
                     ..Default::default()
                 },
-                origin_timestamp: Instant::from_micros(0).into(),
+                origin_timestamp: Time::from_micros(0).into(),
             }),
-            Instant::from_micros(50),
+            Time::from_micros(50),
             &mut port,
             PortIdentity::default(),
             &defaultds,
@@ -389,7 +389,7 @@ mod tests {
         assert_eq!(
             state.extract_measurement(),
             Some(Measurement {
-                event_time: Instant::from_micros(50),
+                event_time: Time::from_micros(50),
                 master_offset: Duration::from_micros(-51)
             })
         );
@@ -402,9 +402,9 @@ mod tests {
                     correction_field: TimeInterval(1000.into()),
                     ..Default::default()
                 },
-                origin_timestamp: Instant::from_micros(0).into(),
+                origin_timestamp: Time::from_micros(0).into(),
             }),
-            Instant::from_micros(1050),
+            Time::from_micros(1050),
             &mut port,
             PortIdentity::default(),
             &defaultds,
@@ -422,9 +422,9 @@ mod tests {
                     correction_field: TimeInterval(2000.into()),
                     ..Default::default()
                 },
-                precise_origin_timestamp: Instant::from_micros(1000).into(),
+                precise_origin_timestamp: Time::from_micros(1000).into(),
             }),
-            Instant::from_micros(1100),
+            Time::from_micros(1100),
             &mut port,
             PortIdentity::default(),
             &defaultds,
@@ -436,7 +436,7 @@ mod tests {
         assert_eq!(
             state.extract_measurement(),
             Some(Measurement {
-                event_time: Instant::from_micros(1050),
+                event_time: Time::from_micros(1050),
                 master_offset: Duration::from_micros(-53)
             })
         );
@@ -457,7 +457,7 @@ mod tests {
             SdoId::default(),
         );
 
-        port.current_time = Instant::from_micros(100);
+        port.current_time = Time::from_micros(100);
         embassy_futures::block_on(state.handle_message(
             Message::Sync(SyncMessage {
                 header: Header {
@@ -465,9 +465,9 @@ mod tests {
                     correction_field: TimeInterval(1000.into()),
                     ..Default::default()
                 },
-                origin_timestamp: Instant::from_micros(0).into(),
+                origin_timestamp: Time::from_micros(0).into(),
             }),
-            Instant::from_micros(50),
+            Time::from_micros(50),
             &mut port,
             PortIdentity::default(),
             &defaultds,
@@ -489,10 +489,10 @@ mod tests {
                     sequence_id: req.header.sequence_id,
                     ..Default::default()
                 },
-                receive_timestamp: Instant::from_micros(253).into(),
+                receive_timestamp: Time::from_micros(253).into(),
                 requesting_port_identity: req.header.source_port_identity(),
             }),
-            Instant::from_micros(50),
+            Time::from_micros(50),
             &mut port,
             PortIdentity::default(),
             &defaultds,
@@ -510,14 +510,14 @@ mod tests {
         assert_eq!(
             state.extract_measurement(),
             Some(Measurement {
-                event_time: Instant::from_micros(50),
+                event_time: Time::from_micros(50),
                 master_offset: Duration::from_micros(-51)
             })
         );
 
         state.delay_state = DelayState::Initial;
 
-        port.current_time = Instant::from_micros(1100);
+        port.current_time = Time::from_micros(1100);
         embassy_futures::block_on(state.handle_message(
             Message::Sync(SyncMessage {
                 header: Header {
@@ -525,9 +525,9 @@ mod tests {
                     correction_field: TimeInterval(1000.into()),
                     ..Default::default()
                 },
-                origin_timestamp: Instant::from_micros(0).into(),
+                origin_timestamp: Time::from_micros(0).into(),
             }),
-            Instant::from_micros(1050),
+            Time::from_micros(1050),
             &mut port,
             PortIdentity::default(),
             &defaultds,
@@ -544,9 +544,9 @@ mod tests {
                     correction_field: TimeInterval(2000.into()),
                     ..Default::default()
                 },
-                precise_origin_timestamp: Instant::from_micros(1000).into(),
+                precise_origin_timestamp: Time::from_micros(1000).into(),
             }),
-            Instant::from_micros(1150),
+            Time::from_micros(1150),
             &mut port,
             PortIdentity::default(),
             &defaultds,
@@ -564,10 +564,10 @@ mod tests {
                     sequence_id: req.header.sequence_id,
                     ..Default::default()
                 },
-                receive_timestamp: Instant::from_micros(1255).into(),
+                receive_timestamp: Time::from_micros(1255).into(),
                 requesting_port_identity: req.header.source_port_identity(),
             }),
-            Instant::from_micros(50),
+            Time::from_micros(50),
             &mut port,
             PortIdentity::default(),
             &defaultds,
@@ -585,7 +585,7 @@ mod tests {
         assert_eq!(
             state.extract_measurement(),
             Some(Measurement {
-                event_time: Instant::from_micros(1050),
+                event_time: Time::from_micros(1050),
                 master_offset: Duration::from_micros(-53)
             })
         );
@@ -599,7 +599,7 @@ mod tests {
         state.delay_state = DelayState::AfterDelayResp {
             mean_delay: Duration::from_micros(100),
         };
-        state.next_delay_measurement = Some(Instant::from_secs(10));
+        state.next_delay_measurement = Some(Time::from_secs(10));
 
         let defaultds = DefaultDS::new_ordinary_clock(
             ClockIdentity::default(),
@@ -617,9 +617,9 @@ mod tests {
                     correction_field: TimeInterval(2000.into()),
                     ..Default::default()
                 },
-                precise_origin_timestamp: Instant::from_micros(10).into(),
+                precise_origin_timestamp: Time::from_micros(10).into(),
             }),
-            Instant::from_micros(100),
+            Time::from_micros(100),
             &mut port,
             PortIdentity::default(),
             &defaultds,
@@ -638,9 +638,9 @@ mod tests {
                     correction_field: TimeInterval(1000.into()),
                     ..Default::default()
                 },
-                origin_timestamp: Instant::from_micros(0).into(),
+                origin_timestamp: Time::from_micros(0).into(),
             }),
-            Instant::from_micros(50),
+            Time::from_micros(50),
             &mut port,
             PortIdentity::default(),
             &defaultds,
@@ -652,7 +652,7 @@ mod tests {
         assert_eq!(
             state.extract_measurement(),
             Some(Measurement {
-                event_time: Instant::from_micros(50),
+                event_time: Time::from_micros(50),
                 master_offset: Duration::from_micros(-63)
             })
         );
@@ -666,7 +666,7 @@ mod tests {
         state.delay_state = DelayState::AfterDelayResp {
             mean_delay: Duration::from_micros(100),
         };
-        state.next_delay_measurement = Some(Instant::from_secs(10));
+        state.next_delay_measurement = Some(Time::from_secs(10));
 
         let defaultds = DefaultDS::new_ordinary_clock(
             ClockIdentity::default(),
@@ -685,9 +685,9 @@ mod tests {
                     correction_field: TimeInterval(1000.into()),
                     ..Default::default()
                 },
-                origin_timestamp: Instant::from_micros(0).into(),
+                origin_timestamp: Time::from_micros(0).into(),
             }),
-            Instant::from_micros(50),
+            Time::from_micros(50),
             &mut port,
             PortIdentity::default(),
             &defaultds,
@@ -705,9 +705,9 @@ mod tests {
                     correction_field: TimeInterval(2000.into()),
                     ..Default::default()
                 },
-                precise_origin_timestamp: Instant::from_micros(10).into(),
+                precise_origin_timestamp: Time::from_micros(10).into(),
             }),
-            Instant::from_micros(100),
+            Time::from_micros(100),
             &mut port,
             PortIdentity::default(),
             &defaultds,
@@ -725,9 +725,9 @@ mod tests {
                     correction_field: TimeInterval(2000.into()),
                     ..Default::default()
                 },
-                precise_origin_timestamp: Instant::from_micros(10).into(),
+                precise_origin_timestamp: Time::from_micros(10).into(),
             }),
-            Instant::from_micros(100),
+            Time::from_micros(100),
             &mut port,
             PortIdentity::default(),
             &defaultds,
@@ -739,7 +739,7 @@ mod tests {
         assert_eq!(
             state.extract_measurement(),
             Some(Measurement {
-                event_time: Instant::from_micros(50),
+                event_time: Time::from_micros(50),
                 master_offset: Duration::from_micros(-63)
             })
         );
@@ -753,7 +753,7 @@ mod tests {
         state.delay_state = DelayState::AfterDelayResp {
             mean_delay: Duration::from_micros(100),
         };
-        state.next_delay_measurement = Some(Instant::from_secs(10));
+        state.next_delay_measurement = Some(Time::from_secs(10));
 
         let defaultds = DefaultDS::new_ordinary_clock(
             ClockIdentity::default(),
@@ -772,9 +772,9 @@ mod tests {
                     correction_field: TimeInterval(1000.into()),
                     ..Default::default()
                 },
-                origin_timestamp: Instant::from_micros(0).into(),
+                origin_timestamp: Time::from_micros(0).into(),
             }),
-            Instant::from_micros(50),
+            Time::from_micros(50),
             &mut port,
             PortIdentity::default(),
             &defaultds,
@@ -793,9 +793,9 @@ mod tests {
                     correction_field: TimeInterval(1000.into()),
                     ..Default::default()
                 },
-                origin_timestamp: Instant::from_micros(0).into(),
+                origin_timestamp: Time::from_micros(0).into(),
             }),
-            Instant::from_micros(1050),
+            Time::from_micros(1050),
             &mut port,
             PortIdentity::default(),
             &defaultds,
@@ -813,9 +813,9 @@ mod tests {
                     correction_field: TimeInterval(2000.into()),
                     ..Default::default()
                 },
-                precise_origin_timestamp: Instant::from_micros(1000).into(),
+                precise_origin_timestamp: Time::from_micros(1000).into(),
             }),
-            Instant::from_micros(1100),
+            Time::from_micros(1100),
             &mut port,
             PortIdentity::default(),
             &defaultds,
@@ -827,7 +827,7 @@ mod tests {
         assert_eq!(
             state.extract_measurement(),
             Some(Measurement {
-                event_time: Instant::from_micros(1050),
+                event_time: Time::from_micros(1050),
                 master_offset: Duration::from_micros(-53)
             })
         );
@@ -848,7 +848,7 @@ mod tests {
             SdoId::default(),
         );
 
-        port.current_time = Instant::from_micros(100);
+        port.current_time = Time::from_micros(100);
         embassy_futures::block_on(state.handle_message(
             Message::Sync(SyncMessage {
                 header: Header {
@@ -856,9 +856,9 @@ mod tests {
                     correction_field: TimeInterval(1000.into()),
                     ..Default::default()
                 },
-                origin_timestamp: Instant::from_micros(0).into(),
+                origin_timestamp: Time::from_micros(0).into(),
             }),
-            Instant::from_micros(50),
+            Time::from_micros(50),
             &mut port,
             PortIdentity::default(),
             &defaultds,
@@ -881,13 +881,13 @@ mod tests {
                     sequence_id: req.header.sequence_id,
                     ..Default::default()
                 },
-                receive_timestamp: Instant::from_micros(353).into(),
+                receive_timestamp: Time::from_micros(353).into(),
                 requesting_port_identity: PortIdentity {
                     port_number: 83,
                     ..Default::default()
                 },
             }),
-            Instant::from_micros(40),
+            Time::from_micros(40),
             &mut port,
             PortIdentity::default(),
             &defaultds,
@@ -905,10 +905,10 @@ mod tests {
                     sequence_id: req.header.sequence_id.wrapping_sub(1),
                     ..Default::default()
                 },
-                receive_timestamp: Instant::from_micros(353).into(),
+                receive_timestamp: Time::from_micros(353).into(),
                 requesting_port_identity: req.header.source_port_identity(),
             }),
-            Instant::from_micros(40),
+            Time::from_micros(40),
             &mut port,
             PortIdentity::default(),
             &defaultds,
@@ -926,10 +926,10 @@ mod tests {
                     sequence_id: req.header.sequence_id,
                     ..Default::default()
                 },
-                receive_timestamp: Instant::from_micros(253).into(),
+                receive_timestamp: Time::from_micros(253).into(),
                 requesting_port_identity: req.header.source_port_identity(),
             }),
-            Instant::from_micros(50),
+            Time::from_micros(50),
             &mut port,
             PortIdentity::default(),
             &defaultds,
@@ -947,7 +947,7 @@ mod tests {
         assert_eq!(
             state.extract_measurement(),
             Some(Measurement {
-                event_time: Instant::from_micros(50),
+                event_time: Time::from_micros(50),
                 master_offset: Duration::from_micros(-51)
             })
         );

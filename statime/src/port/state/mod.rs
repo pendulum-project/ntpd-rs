@@ -16,7 +16,7 @@ use crate::{
     },
     network::NetworkPort,
     port::error::Result,
-    time::Instant,
+    time::Time,
 };
 
 mod master;
@@ -88,7 +88,7 @@ impl PortState {
     pub async fn handle_message(
         &mut self,
         message: Message,
-        current_time: Instant,
+        current_time: Time,
         network_port: &mut impl NetworkPort,
         log_message_interval: i8,
         port_identity: PortIdentity,

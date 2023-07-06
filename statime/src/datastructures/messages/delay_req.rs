@@ -1,13 +1,13 @@
 use getset::CopyGetters;
 
 use super::Header;
-use crate::datastructures::{common::Timestamp, WireFormat, WireFormatError};
+use crate::datastructures::{common::WireTimestamp, WireFormat, WireFormatError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
 #[getset(get_copy = "pub")]
 pub struct DelayReqMessage {
     pub(crate) header: Header,
-    pub(crate) origin_timestamp: Timestamp,
+    pub(crate) origin_timestamp: WireTimestamp,
 }
 
 impl DelayReqMessage {
@@ -23,7 +23,7 @@ impl DelayReqMessage {
 
     pub fn deserialize_content(header: Header, buffer: &[u8]) -> Result<Self, WireFormatError> {
         let slice = buffer.get(0..10).ok_or(WireFormatError::BufferTooShort)?;
-        let origin_timestamp = Timestamp::deserialize(slice)?;
+        let origin_timestamp = WireTimestamp::deserialize(slice)?;
 
         Ok(Self {
             header,
@@ -42,7 +42,7 @@ mod tests {
             [0x00, 0x00, 0x45, 0xb1, 0x11, 0x5a, 0x0a, 0x64, 0xfa, 0xb0],
             DelayReqMessage {
                 header: Header::default(),
-                origin_timestamp: Timestamp {
+                origin_timestamp: WireTimestamp {
                     seconds: 1169232218,
                     nanos: 174389936,
                 },

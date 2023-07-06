@@ -1,10 +1,10 @@
 use crate::{
     datastructures::{WireFormat, WireFormatError},
-    time::Instant,
+    time::Time,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Timestamp {
+pub struct WireTimestamp {
     /// The seconds field of the timestamp.
     /// 48-bit, must be less than 281474976710656
     pub seconds: u64,
@@ -13,7 +13,7 @@ pub struct Timestamp {
     pub nanos: u32,
 }
 
-impl WireFormat for Timestamp {
+impl WireFormat for WireTimestamp {
     fn wire_size(&self) -> usize {
         10
     }
@@ -35,9 +35,9 @@ impl WireFormat for Timestamp {
     }
 }
 
-impl From<Instant> for Timestamp {
-    fn from(instant: Instant) -> Self {
-        Timestamp {
+impl From<Time> for WireTimestamp {
+    fn from(instant: Time) -> Self {
+        WireTimestamp {
             seconds: instant.secs(),
             nanos: instant.subsec_nanos(),
         }
@@ -53,14 +53,14 @@ mod tests {
         let representations = [
             (
                 [0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01u8],
-                Timestamp {
+                WireTimestamp {
                     seconds: 0x0000_0000_0002,
                     nanos: 0x0000_0001,
                 },
             ),
             (
                 [0x10, 0x00, 0x00, 0x00, 0x00, 0x02, 0x10, 0x00, 0x00, 0x01u8],
-                Timestamp {
+                WireTimestamp {
                     seconds: 0x1000_0000_0002,
                     nanos: 0x1000_0001,
                 },
@@ -76,7 +76,7 @@ mod tests {
             assert_eq!(serialization_buffer, byte_representation);
 
             // Test the deserialization output
-            let deserialized_data = Timestamp::deserialize(&byte_representation).unwrap();
+            let deserialized_data = WireTimestamp::deserialize(&byte_representation).unwrap();
             assert_eq!(deserialized_data, object_representation);
         }
     }

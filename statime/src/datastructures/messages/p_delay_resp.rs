@@ -2,7 +2,7 @@ use getset::CopyGetters;
 
 use super::Header;
 use crate::datastructures::{
-    common::{PortIdentity, Timestamp},
+    common::{PortIdentity, WireTimestamp},
     WireFormat, WireFormatError,
 };
 
@@ -10,7 +10,7 @@ use crate::datastructures::{
 #[getset(get_copy = "pub")]
 pub struct PDelayRespMessage {
     pub(super) header: Header,
-    pub(super) request_receive_timestamp: Timestamp,
+    pub(super) request_receive_timestamp: WireTimestamp,
     pub(super) requesting_port_identity: PortIdentity,
 }
 
@@ -43,7 +43,7 @@ impl PDelayRespMessage {
         }
         Ok(Self {
             header,
-            request_receive_timestamp: Timestamp::deserialize(&buffer[0..10])?,
+            request_receive_timestamp: WireTimestamp::deserialize(&buffer[0..10])?,
             requesting_port_identity: PortIdentity::deserialize(&buffer[10..20])?,
         })
     }
@@ -63,7 +63,7 @@ mod tests {
             ],
             PDelayRespMessage {
                 header: Header::default(),
-                request_receive_timestamp: Timestamp {
+                request_receive_timestamp: WireTimestamp {
                     seconds: 1169232218,
                     nanos: 174389936,
                 },

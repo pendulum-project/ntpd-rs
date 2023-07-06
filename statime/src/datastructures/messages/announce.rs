@@ -2,7 +2,7 @@ use getset::CopyGetters;
 
 use super::Header;
 use crate::datastructures::{
-    common::{ClockIdentity, ClockQuality, TimeSource, Timestamp},
+    common::{ClockIdentity, ClockQuality, TimeSource, WireTimestamp},
     datasets::TimePropertiesDS,
     WireFormat, WireFormatError,
 };
@@ -11,7 +11,7 @@ use crate::datastructures::{
 #[getset(get_copy = "pub")]
 pub struct AnnounceMessage {
     pub(crate) header: Header,
-    pub(crate) origin_timestamp: Timestamp,
+    pub(crate) origin_timestamp: WireTimestamp,
     pub(crate) current_utc_offset: i16,
     pub(crate) grandmaster_priority_1: u8,
     pub(crate) grandmaster_clock_quality: ClockQuality,
@@ -51,7 +51,7 @@ impl AnnounceMessage {
 
         Ok(Self {
             header,
-            origin_timestamp: Timestamp::deserialize(&buffer[0..10])?,
+            origin_timestamp: WireTimestamp::deserialize(&buffer[0..10])?,
             current_utc_offset: i16::from_be_bytes(buffer[10..12].try_into().unwrap()),
             grandmaster_priority_1: buffer[13],
             grandmaster_clock_quality: ClockQuality::deserialize(&buffer[14..18])?,
@@ -91,7 +91,7 @@ mod tests {
             ],
             AnnounceMessage {
                 header: Header::default(),
-                origin_timestamp: Timestamp {
+                origin_timestamp: WireTimestamp {
                     seconds: 1169232218,
                     nanos: 175326816,
                 },

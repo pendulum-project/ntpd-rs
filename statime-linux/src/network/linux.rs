@@ -8,7 +8,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
 };
 
-use statime::{Clock, Instant, NetworkPacket, NetworkPort, NetworkRuntime, MAX_DATA_LEN};
+use statime::{Clock, Time, NetworkPacket, NetworkPort, NetworkRuntime, MAX_DATA_LEN};
 use tokio::io::{unix::AsyncFd, Interest};
 
 pub use super::interface::InterfaceDescriptor;
@@ -155,13 +155,13 @@ pub struct LinuxNetworkPort {
     clock: LinuxClock,
 }
 
-fn libc_timestamp_to_instant(ts: LibcTimestamp) -> Instant {
+fn libc_timestamp_to_instant(ts: LibcTimestamp) -> Time {
     match ts {
         LibcTimestamp::TimeSpec { seconds, nanos } => {
-            Instant::from_fixed_nanos(seconds as i128 * 1_000_000_000i128 + nanos as i128)
+            Time::from_fixed_nanos(seconds as i128 * 1_000_000_000i128 + nanos as i128)
         }
         LibcTimestamp::TimeVal { seconds, micros } => {
-            Instant::from_fixed_nanos(seconds as i128 * 1_000_000_000i128 + micros as i128 * 1_000)
+            Time::from_fixed_nanos(seconds as i128 * 1_000_000_000i128 + micros as i128 * 1_000)
         }
     }
 }
@@ -181,7 +181,7 @@ impl NetworkPort for LinuxNetworkPort {
     async fn send_time_critical(
         &mut self,
         data: &[u8],
-    ) -> Result<Option<statime::Instant>, std::io::Error> {
+    ) -> Result<Option<statime::Time>, std::io::Error> {
         log::trace!("Send TC");
 
         let opt_libc_ts = self.tc_socket.send(data, self.tc_address).await?;

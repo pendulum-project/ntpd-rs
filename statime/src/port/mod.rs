@@ -11,14 +11,14 @@ use crate::{
     bmc::bmca::{BestAnnounceMessage, Bmca, RecommendedState},
     clock::Clock,
     datastructures::{
-        common::{PortIdentity, TimeSource, Timestamp},
+        common::{PortIdentity, TimeSource, WireTimestamp},
         datasets::{CurrentDS, DefaultDS, ParentDS, PortDS, TimePropertiesDS},
         messages::Message,
     },
     filters::Filter,
     network::{NetworkPacket, NetworkPort, NetworkRuntime},
     time::Duration,
-    utils::Signal, Instant,
+    utils::Signal, Time,
 };
 
 mod error;
@@ -56,7 +56,7 @@ pub struct PortInBMCA;
 
 impl<P> Port<P> {
     // Send timestamp for last timecritical message became available
-    pub fn handle_send_timestamp(&mut self, context: TimestampContext, timestamp: Instant) -> PortAction<'_> {
+    pub fn handle_send_timestamp(&mut self, context: TimestampContext, timestamp: Time) -> PortAction<'_> {
         todo!()
     }
 
@@ -79,7 +79,7 @@ impl<P> Port<P> {
     pub fn handle_timecritical_receive(
         &mut self,
         data: &[u8],
-        timestamp: Instant,
+        timestamp: Time,
     ) -> PortAction<'_> {
         todo!()
     }
@@ -259,7 +259,7 @@ impl<P: NetworkPort> Port<P> {
 
     pub(crate) fn best_local_announce_message(
         &mut self,
-        current_time: Timestamp,
+        current_time: WireTimestamp,
     ) -> Option<BestAnnounceMessage> {
         self.bmca.take_best_port_announce_message(current_time)
     }

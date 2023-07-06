@@ -2,7 +2,7 @@
 
 use crate::{
     datastructures::{common::ClockQuality, datasets::TimePropertiesDS},
-    time::{Duration, Instant},
+    time::{Duration, Time},
 };
 
 /// Clock manipulation and querying interface
@@ -20,7 +20,7 @@ pub trait Clock {
     type Error: core::fmt::Debug;
 
     /// Get the current time of the clock
-    fn now(&self) -> Instant;
+    fn now(&self) -> Time;
 
     /// Get the quality of the clock
     fn quality(&self) -> ClockQuality;

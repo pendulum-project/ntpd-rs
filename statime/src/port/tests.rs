@@ -5,13 +5,13 @@ use fixed::traits::ToFixed;
 
 use crate::{
     datastructures::{
-        common::{ClockIdentity, PortIdentity, TimeInterval, Timestamp},
+        common::{ClockIdentity, PortIdentity, TimeInterval, WireTimestamp},
         datasets::DefaultDS,
         messages::{MessageBuilder, SdoId, MAX_DATA_LEN},
     },
     network::{NetworkPacket, NetworkPort, NetworkRuntime},
     port::{state::SlaveState, Measurement},
-    time::{Duration, Instant},
+    time::{Duration, Time},
 };
 
 #[derive(Debug)]
@@ -62,20 +62,20 @@ impl NetworkPort for TestNetworkPort {
         Ok(())
     }
 
-    async fn send_time_critical(&mut self, data: &[u8]) -> Result<Option<Instant>, Self::Error> {
+    async fn send_time_critical(&mut self, data: &[u8]) -> Result<Option<Time>, Self::Error> {
         self.data_sender
             .send(TestNetworkPacket {
                 data: data.try_into()?,
             })
             .unwrap();
 
-        Ok(Some(Instant::from_nanos(7)))
+        Ok(Some(Time::from_nanos(7)))
     }
 
     async fn recv(&mut self) -> Result<NetworkPacket, Self::Error> {
         Ok(NetworkPacket {
             data: self.data_receiver.recv().await.unwrap().data,
-            timestamp: Instant::from_secs(0),
+            timestamp: Time::from_secs(0),
         })
     }
 }
@@ -115,7 +115,7 @@ async fn test_measurement_flow() {
         .sdo_id(SdoId::default())
         .domain_number(0)
         .correction_field(TimeInterval((1i16).to_fixed()))
-        .sync_message(Timestamp {
+        .sync_message(WireTimestamp {
             seconds: 0,
             nanos: 0,
         });
@@ -123,7 +123,7 @@ async fn test_measurement_flow() {
     test_state
         .handle_message(
             sync_message,
-            Instant::from_nanos(5),
+            Time::from_nanos(5),
             &mut network_port,
             port_identity,
             &defaultds,
@@ -138,7 +138,7 @@ async fn test_measurement_flow() {
         .domain_number(0)
         .correction_field(TimeInterval((2i16).to_fixed()))
         .delay_resp_message(
-            Timestamp {
+            WireTimestamp {
                 seconds: 0,
                 nanos: 11,
             },
@@ -148,7 +148,7 @@ async fn test_measurement_flow() {
     test_state
         .handle_message(
             delay_resp_message,
-            Instant::from_nanos(13),
+            Time::from_nanos(13),
             &mut network_port,
             port_identity,
             &defaultds,
@@ -160,7 +160,7 @@ async fn test_measurement_flow() {
         test_state.extract_measurement(),
         Some(Measurement {
             master_offset: Duration::from_nanos(1),
-            event_time: Instant::from_nanos(5),
+            event_time: Time::from_nanos(5),
         })
     );
 }

@@ -4,10 +4,10 @@ use arrayvec::ArrayVec;
 
 use crate::{
     datastructures::{
-        common::{PortIdentity, TimeInterval, Timestamp},
+        common::{PortIdentity, TimeInterval, WireTimestamp},
         messages::AnnounceMessage,
     },
-    time::{Duration, Instant},
+    time::{Duration, Time},
 };
 
 /// The time window in which announce messages are valid.
@@ -27,11 +27,11 @@ const MAX_FOREIGN_MASTERS: usize = 8;
 pub struct ForeignMaster {
     foreign_master_port_identity: PortIdentity,
     // Must have a capacity of at least 2
-    announce_messages: ArrayVec<(AnnounceMessage, Timestamp), MAX_ANNOUNCE_MESSAGES>,
+    announce_messages: ArrayVec<(AnnounceMessage, WireTimestamp), MAX_ANNOUNCE_MESSAGES>,
 }
 
 impl ForeignMaster {
-    fn new(announce_message: AnnounceMessage, current_time: Timestamp) -> Self {
+    fn new(announce_message: AnnounceMessage, current_time: WireTimestamp) -> Self {
         let mut messages = ArrayVec::<_, MAX_ANNOUNCE_MESSAGES>::new();
         messages.push((announce_message, current_time));
         Self {
@@ -50,13 +50,13 @@ impl ForeignMaster {
     /// Returns true if this foreign master has no more announce messages left.
     fn purge_old_messages(
         &mut self,
-        current_time: Timestamp,
+        current_time: WireTimestamp,
         announce_interval: TimeInterval,
     ) -> bool {
-        let cutoff_time = Instant::from(current_time)
+        let cutoff_time = Time::from(current_time)
             - Duration::from(announce_interval) * FOREIGN_MASTER_TIME_WINDOW;
         self.announce_messages
-            .retain(|(_, ts)| Instant::from(*ts) > cutoff_time);
+            .retain(|(_, ts)| Time::from(*ts) > cutoff_time);
 
         self.announce_messages.is_empty()
     }
@@ -64,7 +64,7 @@ impl ForeignMaster {
     fn register_announce_message(
         &mut self,
         announce_message: AnnounceMessage,
-        current_time: Timestamp,
+        current_time: WireTimestamp,
         announce_interval: TimeInterval,
     ) {
         self.purge_old_messages(current_time, announce_interval);
@@ -104,8 +104,8 @@ impl ForeignMasterList {
     /// one
     pub fn take_qualified_announce_messages(
         &mut self,
-        current_time: Timestamp,
-    ) -> impl Iterator<Item = (AnnounceMessage, Timestamp)> {
+        current_time: WireTimestamp,
+    ) -> impl Iterator<Item = (AnnounceMessage, WireTimestamp)> {
         let mut qualified_foreign_masters = ArrayVec::<_, MAX_FOREIGN_MASTERS>::new();
 
         for i in (0..self.foreign_masters.len()).rev() {
@@ -137,7 +137,7 @@ impl ForeignMasterList {
     pub fn register_announce_message(
         &mut self,
         announce_message: &AnnounceMessage,
-        current_time: Timestamp,
+        current_time: WireTimestamp,
     ) {
         if !self.is_announce_message_qualified(announce_message) {
             // We don't want to store unqualified messages

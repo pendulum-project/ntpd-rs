@@ -3,7 +3,7 @@ use super::{
     PtpVersion, SdoId, SyncMessage,
 };
 use crate::datastructures::common::{
-    ClockIdentity, ClockQuality, PortIdentity, TimeInterval, TimeSource, Timestamp,
+    ClockIdentity, ClockQuality, PortIdentity, TimeInterval, TimeSource, WireTimestamp,
 };
 
 #[derive(Debug, Clone)]
@@ -145,21 +145,21 @@ impl MessageBuilder {
         self
     }
 
-    pub fn sync_message(self, origin_timestamp: Timestamp) -> Message {
+    pub fn sync_message(self, origin_timestamp: WireTimestamp) -> Message {
         Message::Sync(SyncMessage {
             header: self.header,
             origin_timestamp,
         })
     }
 
-    pub fn delay_req_message(self, origin_timestamp: Timestamp) -> Message {
+    pub fn delay_req_message(self, origin_timestamp: WireTimestamp) -> Message {
         Message::DelayReq(DelayReqMessage {
             header: self.header,
             origin_timestamp,
         })
     }
 
-    pub fn follow_up_message(self, precise_origin_timestamp: Timestamp) -> Message {
+    pub fn follow_up_message(self, precise_origin_timestamp: WireTimestamp) -> Message {
         Message::FollowUp(FollowUpMessage {
             header: self.header,
             precise_origin_timestamp,
@@ -168,7 +168,7 @@ impl MessageBuilder {
 
     pub fn delay_resp_message(
         self,
-        receive_timestamp: Timestamp,
+        receive_timestamp: WireTimestamp,
         requesting_port_identity: PortIdentity,
     ) -> Message {
         Message::DelayResp(DelayRespMessage {
@@ -181,7 +181,7 @@ impl MessageBuilder {
     #[allow(clippy::too_many_arguments)]
     pub fn announce_message(
         self,
-        origin_timestamp: Timestamp,
+        origin_timestamp: WireTimestamp,
         current_utc_offset: i16,
         grandmaster_priority_1: u8,
         grandmaster_clock_quality: ClockQuality,
@@ -216,7 +216,7 @@ mod tests {
 
     #[test]
     fn build_sync_message() {
-        let built_message = Message::builder().sync_message(Timestamp::default());
+        let built_message = Message::builder().sync_message(WireTimestamp::default());
 
         assert!(matches!(built_message, Message::Sync(_)));
     }

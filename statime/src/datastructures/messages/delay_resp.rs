@@ -2,7 +2,7 @@ use getset::CopyGetters;
 
 use super::Header;
 use crate::datastructures::{
-    common::{PortIdentity, Timestamp},
+    common::{PortIdentity, WireTimestamp},
     WireFormat, WireFormatError,
 };
 
@@ -10,7 +10,7 @@ use crate::datastructures::{
 #[getset(get_copy = "pub")]
 pub struct DelayRespMessage {
     pub(crate) header: Header,
-    pub(crate) receive_timestamp: Timestamp,
+    pub(crate) receive_timestamp: WireTimestamp,
     pub(crate) requesting_port_identity: PortIdentity,
 }
 
@@ -29,7 +29,7 @@ impl DelayRespMessage {
 
     pub fn deserialize_content(header: Header, buffer: &[u8]) -> Result<Self, WireFormatError> {
         let slice = buffer.get(0..20).ok_or(WireFormatError::BufferTooShort)?;
-        let receive_timestamp = Timestamp::deserialize(&slice[0..10])?;
+        let receive_timestamp = WireTimestamp::deserialize(&slice[0..10])?;
         let requesting_port_identity = PortIdentity::deserialize(&slice[10..20])?;
 
         Ok(Self {
@@ -54,7 +54,7 @@ mod tests {
             ],
             DelayRespMessage {
                 header: Header::default(),
-                receive_timestamp: Timestamp {
+                receive_timestamp: WireTimestamp {
                     seconds: 1169232218,
                     nanos: 174389936,
                 },

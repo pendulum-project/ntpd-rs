@@ -1,4 +1,4 @@
-//! Implementation of the [Instant] type
+//! Implementation of the [Time] type
 
 use core::{
     fmt::Display,
@@ -11,19 +11,19 @@ use fixed::{
 };
 
 use super::duration::Duration;
-use crate::datastructures::common::Timestamp;
+use crate::datastructures::common::WireTimestamp;
 
-/// An instant is a specific moment in time.
+/// Time represents a specific moment in time.
 ///
-/// The starting 0 point is not defined
-/// and can be something arbitrary or something like unix time
+/// The starting 0 point depends on the timescale being used by PTP, but
+/// for most uses will be the unix epoch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
-pub struct Instant {
-    /// Time in nanos
+pub struct Time {
+    /// Time in nanos since start of timescale
     inner: U96F32,
 }
 
-impl Instant {
+impl Time {
     /// Create an instance with the given amount of seconds from the origin
     pub fn from_secs(secs: u64) -> Self {
         let inner = secs.to_fixed::<U96F32>() * 1_000_000_000.to_fixed::<U96F32>();
@@ -73,57 +73,57 @@ impl Instant {
     }
 }
 
-impl From<Timestamp> for Instant {
-    fn from(ts: Timestamp) -> Self {
+impl From<WireTimestamp> for Time {
+    fn from(ts: WireTimestamp) -> Self {
         Self::from_fixed_nanos(ts.seconds as i128 * 1_000_000_000i128 + ts.nanos as i128)
     }
 }
 
-impl Add<Duration> for Instant {
-    type Output = Instant;
+impl Add<Duration> for Time {
+    type Output = Time;
 
     fn add(self, rhs: Duration) -> Self::Output {
         if rhs.nanos().is_negative() {
-            Instant {
+            Time {
                 inner: self.nanos() - rhs.nanos().unsigned_abs(),
             }
         } else {
-            Instant {
+            Time {
                 inner: self.nanos() + rhs.nanos().unsigned_abs(),
             }
         }
     }
 }
 
-impl AddAssign<Duration> for Instant {
+impl AddAssign<Duration> for Time {
     fn add_assign(&mut self, rhs: Duration) {
         *self = *self + rhs;
     }
 }
 
-impl Sub<Duration> for Instant {
-    type Output = Instant;
+impl Sub<Duration> for Time {
+    type Output = Time;
 
     fn sub(self, rhs: Duration) -> Self::Output {
         self + -rhs
     }
 }
 
-impl SubAssign<Duration> for Instant {
+impl SubAssign<Duration> for Time {
     fn sub_assign(&mut self, rhs: Duration) {
         *self = *self - rhs;
     }
 }
 
-impl Sub<Instant> for Instant {
+impl Sub<Time> for Time {
     type Output = Duration;
 
-    fn sub(self, rhs: Instant) -> Self::Output {
+    fn sub(self, rhs: Time) -> Self::Output {
         Duration::from_fixed_nanos(self.inner) - Duration::from_fixed_nanos(rhs.inner)
     }
 }
 
-impl Display for Instant {
+impl Display for Time {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.inner)
     }
@@ -136,24 +136,24 @@ mod tests {
     #[test]
     fn values() {
         assert_eq!(
-            Instant::from_secs(10).nanos(),
+            Time::from_secs(10).nanos(),
             10_000_000_000u64.to_fixed::<U96F32>()
         );
         assert_eq!(
-            Instant::from_millis(10).nanos(),
+            Time::from_millis(10).nanos(),
             10_000_000u64.to_fixed::<U96F32>()
         );
         assert_eq!(
-            Instant::from_micros(10).nanos(),
+            Time::from_micros(10).nanos(),
             10_000u64.to_fixed::<U96F32>()
         );
-        assert_eq!(Instant::from_nanos(10).nanos(), 10u64.to_fixed::<U96F32>());
+        assert_eq!(Time::from_nanos(10).nanos(), 10u64.to_fixed::<U96F32>());
         assert_eq!(
-            Instant::from_fixed_nanos(10.123f64).nanos(),
+            Time::from_fixed_nanos(10.123f64).nanos(),
             10.123f64.to_fixed::<U96F32>()
         );
-        assert_eq!(Instant::from_secs(10).secs(), 10);
-        assert_eq!(Instant::from_millis(10).secs(), 0);
-        assert_eq!(Instant::from_millis(1001).secs(), 1);
+        assert_eq!(Time::from_secs(10).secs(), 10);
+        assert_eq!(Time::from_millis(10).secs(), 0);
+        assert_eq!(Time::from_millis(1001).secs(), 1);
     }
 }

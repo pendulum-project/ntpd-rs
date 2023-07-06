@@ -2,7 +2,7 @@
 
 use arrayvec::ArrayVec;
 
-use crate::{datastructures::messages::MAX_DATA_LEN, time::Instant};
+use crate::{datastructures::messages::MAX_DATA_LEN, time::Time};
 
 /// Abstract interface for interacting with the network.
 ///
@@ -54,7 +54,7 @@ pub struct NetworkPacket {
     /// If the packet was received by a non-time-critical port, then this
     /// instant doesn't have to be very precise. Just requesting the
     /// timestamp in software is good enough.
-    pub timestamp: Instant,
+    pub timestamp: Time,
 }
 
 /// Abstract representation of a single port's network connection
@@ -78,7 +78,7 @@ pub trait NetworkPort {
     /// network. Note that the precision of this timestamp is one of the main
     /// limiting factors for synchronization precision, the other being
     /// stability of the system clock.
-    async fn send_time_critical(&mut self, data: &[u8]) -> Result<Option<Instant>, Self::Error>;
+    async fn send_time_critical(&mut self, data: &[u8]) -> Result<Option<Time>, Self::Error>;
 
     /// Wait until a message is received
     ///

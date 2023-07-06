@@ -3,7 +3,7 @@ use core::{cell::RefCell, fmt::Debug};
 use crate::{
     clock::Clock,
     datastructures::{
-        common::{PortIdentity, Timestamp},
+        common::{PortIdentity, WireTimestamp},
         datasets::{CurrentDS, DefaultDS, ParentDS, TimePropertiesDS},
         messages::{DelayReqMessage, Message, MessageBuilder},
     },
@@ -12,7 +12,7 @@ use crate::{
         error::{PortError, Result},
         sequence_id::SequenceIdGenerator,
     },
-    time::Instant,
+    time::Time,
 };
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -130,7 +130,7 @@ impl MasterState {
     pub(crate) async fn handle_message<P: NetworkPort>(
         &mut self,
         message: Message,
-        current_time: Instant,
+        current_time: Time,
         network_port: &mut P,
         log_message_interval: i8,
         port_identity: PortIdentity,
@@ -158,7 +158,7 @@ impl MasterState {
     async fn handle_delay_req<P: NetworkPort>(
         &mut self,
         message: DelayReqMessage,
-        current_time: Instant,
+        current_time: Time,
         network_port: &mut P,
         log_message_interval: i8,
         port_identity: PortIdentity,
@@ -171,7 +171,7 @@ impl MasterState {
             .add_to_correction(current_time.subnano())
             .log_message_interval(log_message_interval)
             .delay_resp_message(
-                Timestamp::from(current_time),
+                WireTimestamp::from(current_time),
                 message.header().source_port_identity(),
             );
 
@@ -213,7 +213,7 @@ mod tests {
         normal: Vec<Vec<u8>>,
         time: Vec<Vec<u8>>,
 
-        current_time: Instant,
+        current_time: Time,
     }
 
     impl NetworkPort for TestNetworkPort {
@@ -227,7 +227,7 @@ mod tests {
         async fn send_time_critical(
             &mut self,
             data: &[u8],
-        ) -> core::result::Result<Option<Instant>, Self::Error> {
+        ) -> core::result::Result<Option<Time>, Self::Error> {
             self.time.push(Vec::from(data));
             Ok(Some(self.current_time))
         }
@@ -240,13 +240,13 @@ mod tests {
     }
 
     struct TestClock {
-        current_time: Instant,
+        current_time: Time,
     }
 
     impl Clock for TestClock {
         type Error = std::convert::Infallible;
 
-        fn now(&self) -> Instant {
+        fn now(&self) -> Time {
             self.current_time
         }
 
@@ -281,9 +281,9 @@ mod tests {
                     correction_field: TimeInterval(I48F16::from_bits(400)),
                     ..Default::default()
                 },
-                origin_timestamp: Instant::from_micros(0).into(),
+                origin_timestamp: Time::from_micros(0).into(),
             }),
-            Instant::from_fixed_nanos(U96F32::from_bits((200000 << 32) + (500 << 16))),
+            Time::from_fixed_nanos(U96F32::from_bits((200000 << 32) + (500 << 16))),
             &mut port,
             2,
             PortIdentity::default(),
@@ -306,7 +306,7 @@ mod tests {
             }
         );
         assert_eq!(msg.header.sequence_id, 5123);
-        assert_eq!(msg.receive_timestamp, Instant::from_micros(200).into());
+        assert_eq!(msg.receive_timestamp, Time::from_micros(200).into());
         assert_eq!(msg.header.log_message_interval, 2);
         assert_eq!(
             msg.header.correction_field,
@@ -324,9 +324,9 @@ mod tests {
                     correction_field: TimeInterval(I48F16::from_bits(200)),
                     ..Default::default()
                 },
-                origin_timestamp: Instant::from_micros(0).into(),
+                origin_timestamp: Time::from_micros(0).into(),
             }),
-            Instant::from_fixed_nanos(U96F32::from_bits((220000 << 32) + (300 << 16))),
+            Time::from_fixed_nanos(U96F32::from_bits((220000 << 32) + (300 << 16))),
             &mut port,
             5,
             PortIdentity::default(),
@@ -349,7 +349,7 @@ mod tests {
             }
         );
         assert_eq!(msg.header.sequence_id, 879);
-        assert_eq!(msg.receive_timestamp, Instant::from_micros(220).into());
+        assert_eq!(msg.receive_timestamp, Time::from_micros(220).into());
         assert_eq!(msg.header.log_message_interval, 5);
         assert_eq!(
             msg.header.correction_field,
@@ -361,7 +361,7 @@ mod tests {
     fn test_announce() {
         let mut port = TestNetworkPort::default();
         let clock = RefCell::new(TestClock {
-            current_time: Instant::from_micros(600),
+            current_time: Time::from_micros(600),
         });
         let id = SdoId::default();
 
@@ -422,7 +422,7 @@ mod tests {
     fn test_sync() {
         let mut port = TestNetworkPort::default();
         let clock = RefCell::new(TestClock {
-            current_time: Instant::from_fixed_nanos(U96F32::from_bits(
+            current_time: Time::from_fixed_nanos(U96F32::from_bits(
                 (600000 << 32) + (248 << 16),
             )),
         });
@@ -438,7 +438,7 @@ mod tests {
         );
 
         port.current_time =
-            Instant::from_fixed_nanos(U96F32::from_bits((601300 << 32) + (230 << 16)));
+            Time::from_fixed_nanos(U96F32::from_bits((601300 << 32) + (230 << 16)));
         embassy_futures::block_on(state.send_sync(
             &clock,
             &mut port,
@@ -461,14 +461,14 @@ mod tests {
         };
 
         assert_eq!(sync.header.sequence_id, follow.header.sequence_id);
-        assert_eq!(sync.origin_timestamp, Instant::from_micros(600).into());
+        assert_eq!(sync.origin_timestamp, Time::from_micros(600).into());
         assert_eq!(
             sync.header.correction_field,
             TimeInterval(I48F16::from_bits(0))
         );
         assert_eq!(
             follow.precise_origin_timestamp,
-            Instant::from_fixed_nanos(601300).into()
+            Time::from_fixed_nanos(601300).into()
         );
         assert_eq!(
             follow.header.correction_field,
@@ -476,9 +476,9 @@ mod tests {
         );
 
         clock.borrow_mut().current_time =
-            Instant::from_fixed_nanos(U96F32::from_bits((1000600000 << 32) + (192 << 16)));
+            Time::from_fixed_nanos(U96F32::from_bits((1000600000 << 32) + (192 << 16)));
         port.current_time =
-            Instant::from_fixed_nanos(U96F32::from_bits((1000601300 << 32) + (543 << 16)));
+            Time::from_fixed_nanos(U96F32::from_bits((1000601300 << 32) + (543 << 16)));
         embassy_futures::block_on(state.send_sync(
             &clock,
             &mut port,
@@ -502,14 +502,14 @@ mod tests {
 
         assert_ne!(sync.header.sequence_id, sync2.header.sequence_id);
         assert_eq!(sync2.header.sequence_id, follow2.header.sequence_id);
-        assert_eq!(sync2.origin_timestamp, Instant::from_micros(1000600).into());
+        assert_eq!(sync2.origin_timestamp, Time::from_micros(1000600).into());
         assert_eq!(
             sync2.header.correction_field,
             TimeInterval(I48F16::from_bits(0))
         );
         assert_eq!(
             follow2.precise_origin_timestamp,
-            Instant::from_fixed_nanos(1000601300).into()
+            Time::from_fixed_nanos(1000601300).into()
         );
         assert_eq!(
             follow2.header.correction_field,
