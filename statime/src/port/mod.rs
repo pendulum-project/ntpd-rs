@@ -7,18 +7,21 @@ pub use measurement::Measurement;
 use state::{MasterState, PortState};
 pub use ticker::Ticker;
 
+use self::state::SlaveState;
 use crate::{
     bmc::bmca::{BestAnnounceMessage, Bmca, RecommendedState},
     clock::Clock,
+    config::PortConfig,
     datastructures::{
         common::{PortIdentity, TimeSource, WireTimestamp},
-        datasets::{CurrentDS, DefaultDS, ParentDS, PortDS, TimePropertiesDS},
+        datasets::{CurrentDS, DefaultDS, ParentDS, TimePropertiesDS},
         messages::Message,
     },
     filters::Filter,
     network::{NetworkPacket, NetworkPort, NetworkRuntime},
     time::Duration,
-    utils::Signal, Time,
+    utils::Signal,
+    Time,
 };
 
 mod error;
@@ -33,7 +36,9 @@ mod ticker;
 ///
 /// One of these needs to be created per port of the PTP instance.
 pub struct Port<P> {
-    port_ds: PortDS,
+    config: PortConfig,
+    // Corresponds with PortDS port_state and enabled
+    port_state: PortState,
     network_port: P,
     bmca: Bmca,
 }
@@ -45,18 +50,33 @@ pub struct Port<P> {
 pub struct TimestampContext;
 
 pub enum PortAction<'a> {
-    SendTimeCritical { context: TimestampContext, data: &'a [u8] },
-    SendGeneral { data: &'a [u8] },
-    ResetAnnounceTimer { duration: std::time::Duration },
-    ResetSyncTimer { duration: std::time::Duration },
-    ResetAnnounceReceiptTimer { duration: std::time::Duration },
+    SendTimeCritical {
+        context: TimestampContext,
+        data: &'a [u8],
+    },
+    SendGeneral {
+        data: &'a [u8],
+    },
+    ResetAnnounceTimer {
+        duration: std::time::Duration,
+    },
+    ResetSyncTimer {
+        duration: std::time::Duration,
+    },
+    ResetAnnounceReceiptTimer {
+        duration: std::time::Duration,
+    },
 }
 
 pub struct PortInBMCA;
 
 impl<P> Port<P> {
     // Send timestamp for last timecritical message became available
-    pub fn handle_send_timestamp(&mut self, context: TimestampContext, timestamp: Time) -> PortAction<'_> {
+    pub fn handle_send_timestamp(
+        &mut self,
+        context: TimestampContext,
+        timestamp: Time,
+    ) -> PortAction<'_> {
         todo!()
     }
 
@@ -76,11 +96,7 @@ impl<P> Port<P> {
     }
 
     // Handle a message over the timecritical channel
-    pub fn handle_timecritical_receive(
-        &mut self,
-        data: &[u8],
-        timestamp: Time,
-    ) -> PortAction<'_> {
+    pub fn handle_timecritical_receive(&mut self, data: &[u8], timestamp: Time) -> PortAction<'_> {
         todo!()
     }
 
@@ -130,7 +146,7 @@ impl<P> Port<P> {
     /// let port = Port::new(port_ds, &mut network_runtime, "eth0".parse().unwrap());
     /// ```
     pub async fn new<NR>(
-        port_ds: PortDS,
+        config: PortConfig,
         runtime: &mut NR,
         interface: NR::InterfaceDescriptor,
     ) -> Self
@@ -142,17 +158,73 @@ impl<P> Port<P> {
             .await
             .expect("Could not create network port");
 
-        let bmca = Bmca::new(port_ds.announce_interval().into(), port_ds.port_identity);
+        let bmca = Bmca::new(
+            Duration::from_log_interval(config.log_announce_interval).into(),
+            config.port_identity,
+        );
 
         Port {
-            port_ds,
+            config,
+            port_state: PortState::Listening,
             network_port,
             bmca,
         }
     }
 
+    fn set_forced_port_state(&mut self, state: PortState) {
+        log::info!(
+            "new state for port {}: {} -> {}",
+            self.config.port_identity.port_number,
+            self.port_state,
+            state
+        );
+        self.port_state = state;
+    }
+
+    fn set_recommended_port_state<F: Future>(
+        &mut self,
+        recommended_state: &RecommendedState,
+        announce_receipt_timeout: &mut Pin<&mut Ticker<F, impl FnMut(Duration) -> F>>,
+    ) {
+        match recommended_state {
+            // TODO set things like steps_removed once they are added
+            // TODO make sure states are complete
+            RecommendedState::S1(announce_message) => {
+                let remote_master = announce_message.header().source_port_identity();
+                let state = PortState::Slave(SlaveState::new(remote_master));
+
+                match &self.port_state {
+                    PortState::Listening | PortState::Master(_) | PortState::Passive => {
+                        self.set_forced_port_state(state);
+                        announce_receipt_timeout.reset();
+                    }
+                    PortState::Slave(old_state) => {
+                        if old_state.remote_master() != remote_master {
+                            self.set_forced_port_state(state);
+                            announce_receipt_timeout.reset();
+                        }
+                    }
+                }
+            }
+            RecommendedState::M1(_) | RecommendedState::M2(_) | RecommendedState::M3(_) => {
+                match self.port_state {
+                    PortState::Listening | PortState::Slave(_) | PortState::Passive => {
+                        self.set_forced_port_state(PortState::Master(MasterState::new()))
+                    }
+                    PortState::Master(_) => (),
+                }
+            }
+            RecommendedState::P1(_) | RecommendedState::P2(_) => match self.port_state {
+                PortState::Listening | PortState::Slave(_) | PortState::Master(_) => {
+                    self.set_forced_port_state(PortState::Passive)
+                }
+                PortState::Passive => (),
+            },
+        }
+    }
+
     pub(crate) fn identity(&self) -> PortIdentity {
-        self.port_ds.port_identity
+        self.config.port_identity
     }
 }
 
@@ -172,7 +244,7 @@ impl<P: NetworkPort> Port<P> {
         mut stop: Signal<'_>,
     ) {
         loop {
-            log::trace!("Loop iter port {}", self.port_ds.port_identity.port_number);
+            log::trace!("Loop iter port {}", self.config.port_identity.port_number);
             let timeouts = select::select3(
                 announce_receipt_timeout.next(),
                 sync_timeout.next(),
@@ -184,20 +256,18 @@ impl<P: NetworkPort> Port<P> {
                     Either3::First(_) => {
                         log::trace!(
                             "Port {} force master timeout",
-                            self.port_ds.port_identity.port_number
+                            self.config.port_identity.port_number
                         );
                         // No announces received for a long time, become master
-                        match self.port_ds.port_state {
+                        match self.port_state {
                             PortState::Master(_) => (),
-                            _ => self
-                                .port_ds
-                                .set_forced_port_state(PortState::Master(MasterState::new())),
+                            _ => self.set_forced_port_state(PortState::Master(MasterState::new())),
                         }
                     }
                     Either3::Second(_) => {
                         log::trace!(
                             "Port {} sync timeout",
-                            self.port_ds.port_identity.port_number
+                            self.config.port_identity.port_number
                         );
                         // Send sync message
                         if let Err(error) = self.send_sync(local_clock, default_ds).await {
@@ -207,7 +277,7 @@ impl<P: NetworkPort> Port<P> {
                     Either3::Third(_) => {
                         log::trace!(
                             "Port {} announce timeout",
-                            self.port_ds.port_identity.port_number
+                            self.config.port_identity.port_number
                         );
                         // Send announce message
                         if let Err(error) = self
@@ -227,7 +297,7 @@ impl<P: NetworkPort> Port<P> {
                 Either3::Second(Ok(packet)) => {
                     log::trace!(
                         "Port {} message received: {:?}",
-                        self.port_ds.port_identity.port_number,
+                        self.config.port_identity.port_number,
                         packet
                     );
                     // Process packet
@@ -249,7 +319,7 @@ impl<P: NetworkPort> Port<P> {
                 Either3::Third(_) => {
                     log::trace!(
                         "Port {} bmca trigger",
-                        self.port_ds.port_identity.port_number
+                        self.config.port_identity.port_number
                     );
                     break;
                 }
@@ -272,8 +342,7 @@ impl<P: NetworkPort> Port<P> {
         current_ds: &mut CurrentDS,
         parent_ds: &mut ParentDS,
     ) -> Result<()> {
-        self.port_ds
-            .set_recommended_port_state(&recommended_state, announce_receipt_timeout);
+        self.set_recommended_port_state(&recommended_state, announce_receipt_timeout);
 
         match recommended_state {
             RecommendedState::M1(defaultds) | RecommendedState::M2(defaultds) => {
@@ -326,12 +395,11 @@ impl<P: NetworkPort> Port<P> {
         local_clock: &RefCell<impl Clock>,
         default_ds: &DefaultDS,
     ) -> Result<()> {
-        self.port_ds
-            .port_state
+        self.port_state
             .send_sync(
                 local_clock,
                 &mut self.network_port,
-                self.port_ds.port_identity,
+                self.config.port_identity,
                 default_ds,
             )
             .await
@@ -345,8 +413,7 @@ impl<P: NetworkPort> Port<P> {
         parent_ds: &ParentDS,
         current_ds: &CurrentDS,
     ) -> Result<()> {
-        self.port_ds
-            .port_state
+        self.port_state
             .send_announce(
                 local_clock,
                 default_ds,
@@ -354,7 +421,7 @@ impl<P: NetworkPort> Port<P> {
                 parent_ds,
                 current_ds,
                 &mut self.network_port,
-                self.port_ds.port_identity,
+                self.config.port_identity,
             )
             .await
     }
@@ -380,28 +447,27 @@ impl<P: NetworkPort> Port<P> {
         if let Message::Announce(announce) = &message {
             log::debug!(
                 "Received announce message on port {}, {:?}.",
-                self.port_ds.port_identity.port_number,
+                self.config.port_identity.port_number,
                 message
             );
             self.bmca
                 .register_announce_message(announce, packet.timestamp.into());
             announce_receipt_timeout.reset();
         } else {
-            self.port_ds
-                .port_state
+            self.port_state
                 .handle_message(
                     message,
                     packet.timestamp,
                     &mut self.network_port,
-                    self.port_ds.min_delay_req_interval(),
-                    self.port_ds.port_identity,
+                    self.config.min_delay_req_interval(),
+                    self.config.port_identity,
                     default_ds,
                 )
                 .await?;
 
             // If the received message allowed the (slave) state to calculate its offset
             // from the master, update the local clock
-            if let Some(measurement) = self.port_ds.port_state.extract_measurement() {
+            if let Some(measurement) = self.port_state.extract_measurement() {
                 let (offset, freq_corr) = filter
                     .try_borrow_mut()
                     .map(|mut borrow| borrow.absorb(measurement))
@@ -421,18 +487,19 @@ impl<P: NetworkPort> Port<P> {
     }
 
     pub(crate) fn announce_interval(&self) -> Duration {
-        self.port_ds.announce_interval()
+        Duration::from_log_interval(self.config.log_announce_interval)
     }
 
     pub(crate) fn sync_interval(&self) -> Duration {
-        self.port_ds.sync_interval()
+        Duration::from_log_interval(self.config.log_sync_interval)
     }
 
     pub(crate) fn announce_receipt_interval(&self) -> Duration {
-        self.port_ds.announce_receipt_interval()
+        Duration::from_log_interval(self.config.log_announce_interval)
+            * self.config.announce_receipt_timeout
     }
 
     pub(crate) fn state(&self) -> &PortState {
-        &self.port_ds.port_state
+        &self.port_state
     }
 }

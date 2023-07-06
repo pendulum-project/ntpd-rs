@@ -1,8 +1,8 @@
 use clap::Parser;
 use fern::colors::Color;
 use statime::{
-    BasicFilter, ClockIdentity, DefaultDS, DelayMechanism, Port, PortDS, PortIdentity, PtpInstance,
-    SdoId, TimePropertiesDS, TimeSource,
+    BasicFilter, ClockIdentity, DefaultDS, DelayMechanism, Duration, Port, PortConfig,
+    PortIdentity, PtpInstance, SdoId, TimePropertiesDS, TimeSource,
 };
 use statime_linux::{
     clock::{LinuxClock, LinuxTimer, RawLinuxClock},
@@ -165,19 +165,19 @@ async fn main() {
     );
     let time_properties_ds =
         TimePropertiesDS::new_arbitrary_time(false, false, TimeSource::InternalOscillator);
-    let port_ds = PortDS::new(
-        PortIdentity {
+    let port_config = PortConfig {
+        port_identity: PortIdentity {
             clock_identity,
             port_number: 1,
         },
-        1,
-        args.log_announce_interval,
-        args.announce_receipt_timeout,
-        args.log_sync_interval,
-        DelayMechanism::E2E,
-        1,
-    );
-    let port = Port::new(port_ds, &mut network_runtime, args.interface).await;
+        delay_mechanism: DelayMechanism::E2E { log_interval: 1 },
+        log_announce_interval: args.log_announce_interval,
+        announce_receipt_timeout: args.announce_receipt_timeout,
+        log_sync_interval: args.log_sync_interval,
+        master_only: false,
+        delay_asymmetry: Duration::ZERO,
+    };
+    let port = Port::new(port_config, &mut network_runtime, args.interface).await;
     let mut instance = PtpInstance::new_ordinary_clock(
         default_ds,
         time_properties_ds,

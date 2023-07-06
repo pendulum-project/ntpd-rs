@@ -8,7 +8,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
 };
 
-use statime::{Clock, Time, NetworkPacket, NetworkPort, NetworkRuntime, MAX_DATA_LEN};
+use statime::{Clock, NetworkPacket, NetworkPort, NetworkRuntime, Time, MAX_DATA_LEN};
 use tokio::io::{unix::AsyncFd, Interest};
 
 pub use super::interface::InterfaceDescriptor;

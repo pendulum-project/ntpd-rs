@@ -133,6 +133,7 @@ extern crate std;
 
 mod bmc;
 mod clock;
+mod config;
 mod datastructures;
 mod filters;
 mod network;
@@ -142,11 +143,12 @@ mod time;
 mod utils;
 
 pub use clock::{Clock, Timer};
+pub use config::{DelayMechanism, PortConfig};
 #[cfg(feature = "fuzz")]
 pub use datastructures::messages::Message;
 pub use datastructures::{
     common::{ClockAccuracy, ClockIdentity, ClockQuality, PortIdentity, TimeSource},
-    datasets::{DefaultDS, DelayMechanism, PortDS, TimePropertiesDS},
+    datasets::{DefaultDS, TimePropertiesDS},
     messages::{SdoId, MAX_DATA_LEN},
 };
 pub use filters::{basic::BasicFilter, Filter};

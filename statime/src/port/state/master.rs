@@ -422,9 +422,7 @@ mod tests {
     fn test_sync() {
         let mut port = TestNetworkPort::default();
         let clock = RefCell::new(TestClock {
-            current_time: Time::from_fixed_nanos(U96F32::from_bits(
-                (600000 << 32) + (248 << 16),
-            )),
+            current_time: Time::from_fixed_nanos(U96F32::from_bits((600000 << 32) + (248 << 16))),
         });
 
         let mut state = MasterState::new();
@@ -437,8 +435,7 @@ mod tests {
             SdoId::default(),
         );
 
-        port.current_time =
-            Time::from_fixed_nanos(U96F32::from_bits((601300 << 32) + (230 << 16)));
+        port.current_time = Time::from_fixed_nanos(U96F32::from_bits((601300 << 32) + (230 << 16)));
         embassy_futures::block_on(state.send_sync(
             &clock,
             &mut port,

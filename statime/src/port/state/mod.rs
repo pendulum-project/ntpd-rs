@@ -24,7 +24,6 @@ mod slave;
 
 #[derive(Debug, Default)]
 pub enum PortState {
-    Disabled,
     #[default]
     Listening,
     Master(MasterState),
@@ -46,10 +45,7 @@ impl PortState {
                     .send_sync(local_clock, network_port, port_identity, default_ds)
                     .await
             }
-            PortState::Slave(_)
-            | PortState::Listening
-            | PortState::Disabled
-            | PortState::Passive => Ok(()),
+            PortState::Slave(_) | PortState::Listening | PortState::Passive => Ok(()),
         }
     }
 
@@ -78,10 +74,7 @@ impl PortState {
                     )
                     .await
             }
-            PortState::Slave(_)
-            | PortState::Listening
-            | PortState::Disabled
-            | PortState::Passive => Ok(()),
+            PortState::Slave(_) | PortState::Listening | PortState::Passive => Ok(()),
         }
     }
 
@@ -119,17 +112,14 @@ impl PortState {
                     .await?;
                 Ok(())
             }
-            PortState::Listening | PortState::Disabled | PortState::Passive => Ok(()),
+            PortState::Listening | PortState::Passive => Ok(()),
         }
     }
 
     pub fn extract_measurement(&mut self) -> Option<Measurement> {
         match self {
             PortState::Slave(slave) => slave.extract_measurement(),
-            PortState::Master(_)
-            | PortState::Listening
-            | PortState::Disabled
-            | PortState::Passive => None,
+            PortState::Master(_) | PortState::Listening | PortState::Passive => None,
         }
     }
 }
@@ -137,7 +127,6 @@ impl PortState {
 impl Display for PortState {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
-            PortState::Disabled => write!(f, "Disabled"),
             PortState::Listening => write!(f, "Listening"),
             PortState::Master(_) => write!(f, "Master"),
             PortState::Passive => write!(f, "Passive"),
