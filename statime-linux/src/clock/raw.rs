@@ -122,20 +122,25 @@ impl RawLinuxClock {
         let mut timex = EMPTY_TIMEX;
         self.adjtime(&mut timex)?;
 
+        let mut timex = Self::adjust_frequency_timex(timex.freq, frequency_multiplier);
+        self.adjtime(&mut timex)
+    }
+
+    fn adjust_frequency_timex(frequency: libc::c_long, frequency_multiplier: f64) -> libc::timex {
         const M: f64 = 1_000_000.0;
 
         // In struct timex, freq, ppsfreq, and stabil are ppm (parts per million) with a
         // 16-bit fractional part, which means that a value of 1 in one of those fields
         // actually means 2^-16 ppm, and 2^16=65536 is 1 ppm.  This is the case for both
         // input values (in the case of freq) and output values.
-        let current_ppm = (timex.freq >> 16) as f64 + ((timex.freq & 0xffff) as f64 / 65536.0);
+        let current_ppm = frequency as f64 / 65536.0;
 
         // we need to recover the current frequency multiplier from the PPM value.
         // The ppm is an offset from the main frequency, so it's the base +- the ppm
-        // expressed as a percentage. Ppm is in the opposite direction from the
+        // expressed as a percentage. PPM is in the opposite direction from the
         // speed factor. A postive ppm means the clock is running slower, so we use its
         // negative.
-        let current_frequency_multiplier = 1.0 - (current_ppm / M);
+        let current_frequency_multiplier = 1.0 + (-current_ppm / M);
 
         // Now multiply the frequencies
         let new_frequency_multiplier = current_frequency_multiplier * frequency_multiplier;
@@ -144,36 +149,26 @@ impl RawLinuxClock {
         // percentage to the ppm again and then negating it.
         let new_ppm = -((new_frequency_multiplier - 1.0) * M);
 
-        self.set_frequency(new_ppm)
+        Self::set_frequency_timex(new_ppm)
     }
 
-    fn set_frequency(&mut self, ppm: f64) -> Result<(), Error> {
+    fn set_frequency_timex(ppm: f64) -> libc::timex {
         // We do an offset with precision
         let mut timex = EMPTY_TIMEX;
 
-        // Hold frequency. Normally adjustments made via ADJ_OFFSET result in dampened
-        // frequency adjustments also being made. So a single call corrects the
-        // current offset, but as offsets in the same direction
-        // are made repeatedly, the small frequency adjustments will accumulate to fix
-        // the long-term skew.
-        //
-        // This flag prevents the small frequency adjustment from being made when
-        // correcting for an ADJ_OFFSET value.
-        timex.status |= libc::STA_FREQHOLD;
-
         // set the frequency and the status (for STA_FREQHOLD)
-        timex.modes |= libc::ADJ_FREQUENCY | libc::ADJ_STATUS;
+        timex.modes = libc::ADJ_FREQUENCY;
 
         // NTP Kapi expects frequency adjustment in units of 2^-16 ppm
         // but our input is in units of seconds drift per second, so convert.
-        let frequency = (ppm * 65536e6).round() as libc::c_long;
+        let frequency = (ppm * 65536.0).round() as libc::c_long;
 
         // Since Linux 2.6.26, the supplied value is clamped to the range (-32768000,
         // +32768000). In older kernels, an EINVAL error occurs if the supplied value is
-        // out of range.
-        timex.freq = frequency.clamp(-32_768_000 + 1, 32_768_000 - 1);
+        // out of range. (32768000 is 500 << 16)
+        timex.freq = frequency; // frequency.clamp(-32_768_000 + 1, 32_768_000 - 1);
 
-        self.adjtime(&mut timex)
+        timex
     }
 
     fn adjust_offset(&mut self, time_offset: f64) -> Result<(), Error> {
@@ -493,3 +488,31 @@ pub(crate) const EMPTY_TIMEX: libc::timex = libc::timex {
     errcnt: 0,
     stbcnt: 0,
 };
+
+#[cfg(test)]
+mod tests {
+    use super::RawLinuxClock;
+
+    #[test]
+    fn test_adjust_frequency_timex_identity() {
+        let frequency = 1;
+        let frequency_multiplier = 1.0;
+
+        let timex = RawLinuxClock::adjust_frequency_timex(frequency, frequency_multiplier);
+
+        assert_eq!(timex.freq, frequency);
+
+        assert_eq!(timex.modes, libc::ADJ_FREQUENCY);
+    }
+
+    #[test]
+    fn test_adjust_frequency_timex_one_percent() {
+        let frequency = 20 << 16;
+        let frequency_multiplier = 1.0 + 5e-6;
+
+        let new_frequency =
+            RawLinuxClock::adjust_frequency_timex(frequency, frequency_multiplier).freq;
+
+        assert_eq!(new_frequency, 983047);
+    }
+}
