@@ -180,7 +180,7 @@ impl RawLinuxClock {
         let mut timex = EMPTY_TIMEX;
 
         // set set an offset, it is in nanoseconds
-        timex.modes = libc::ADJ_OFFSET | libc::ADJ_NANO;
+        timex.modes = libc::ADJ_SETOFFSET | libc::ADJ_NANO;
 
         // Start with a seconds value of 0 and express the full time offset in nanos
         timex.time.tv_sec = time_offset as _;
