@@ -18,10 +18,12 @@ pub struct SlaveState {
     sync_state: SyncState,
     delay_state: DelayState,
 
+    mean_delay: Option<Duration>,
+    last_raw_offset: Option<Duration>,
+
     delay_req_ids: SequenceIdGenerator,
 
     next_delay_measurement: Option<Time>,
-    pending_followup: Option<FollowUpMessage>,
 }
 
 impl SlaveState {
@@ -32,48 +34,34 @@ impl SlaveState {
 
 #[derive(Debug, PartialEq, Eq)]
 enum SyncState {
-    Initial,
-    AfterSync {
-        sync_id: u16,
-        sync_recv_time: Time,
-        sync_correction: Duration,
-    },
-    AfterFollowUp {
-        sync_recv_time: Time,
-        sync_send_time: Time,
+    Empty,
+    Measuring {
+        id: u16,
+        send_time: Option<Time>,
+        recv_time: Option<Time>,
     },
 }
 
 #[derive(Debug, PartialEq, Eq)]
 enum DelayState {
-    Initial,
-    AfterSync {
-        delay_id: u16,
-        delay_send_time: Time,
+    Empty,
+    Measuring {
+        id: u16,
+        send_time: Option<Time>,
+        recv_time: Option<Time>,
     },
-    AfterDelayResp {
-        mean_delay: Duration,
-    },
-}
-
-impl DelayState {
-    pub fn finished(&self) -> bool {
-        match self {
-            DelayState::Initial | DelayState::AfterSync { .. } => false,
-            DelayState::AfterDelayResp { .. } => true,
-        }
-    }
 }
 
 impl SlaveState {
     pub fn new(remote_master: PortIdentity) -> Self {
         SlaveState {
             remote_master,
-            sync_state: SyncState::Initial,
-            delay_state: DelayState::Initial,
+            sync_state: SyncState::Empty,
+            delay_state: DelayState::Empty,
+            mean_delay: None,
+            last_raw_offset: None,
             delay_req_ids: SequenceIdGenerator::new(),
             next_delay_measurement: None,
-            pending_followup: None,
         }
     }
 
@@ -98,8 +86,14 @@ impl SlaveState {
                     )
                     .await
                 }
-                Message::FollowUp(message) => self.handle_follow_up(message),
-                Message::DelayResp(message) => self.handle_delay_resp(message, port_identity),
+                Message::FollowUp(message) => {
+                    self.handle_follow_up(message);
+                    Ok(())
+                }
+                Message::DelayResp(message) => {
+                    self.handle_delay_resp(message, port_identity);
+                    Ok(())
+                }
                 _ => Err(SlaveError::UnexpectedMessage),
             }
         } else {
@@ -107,31 +101,74 @@ impl SlaveState {
         }
     }
 
+    fn update_last_raw_offset(&mut self) {
+        if let SyncState::Measuring {
+            send_time: Some(send_time),
+            recv_time: Some(recv_time),
+            ..
+        } = self.sync_state
+        {
+            self.last_raw_offset = Some(recv_time - send_time);
+            self.try_finish_delay_measurement();
+        }
+    }
+
     async fn handle_sync<P: NetworkPort>(
         &mut self,
         message: SyncMessage,
-        current_time: Time,
+        recv_time: Time,
         network_port: &mut P,
         port_identity: PortIdentity,
         default_ds: &DefaultDS,
     ) -> Result<()> {
         log::debug!("Received sync {:?}", message.header().sequence_id());
-        self.sync_state = if message.header().two_step_flag() {
-            SyncState::AfterSync {
-                sync_id: message.header().sequence_id(),
-                sync_recv_time: current_time,
-                sync_correction: Duration::from(message.header().correction_field()),
+
+        // substracting correction from recv time is equivalent to adding it to send
+        // time
+        let corrected_recv_time = recv_time - Duration::from(message.header().correction_field());
+
+        if message.header().two_step_flag() {
+            match self.sync_state {
+                SyncState::Measuring {
+                    id,
+                    recv_time: Some(_),
+                    ..
+                } if id == message.header().sequence_id() => {
+                    log::warn!("Duplicate sync message");
+                    // Ignore the sync message
+                }
+                SyncState::Measuring {
+                    id,
+                    ref mut recv_time,
+                    ..
+                } if id == message.header().sequence_id() => *recv_time = Some(corrected_recv_time),
+                _ => {
+                    self.sync_state = SyncState::Measuring {
+                        id: message.header().sequence_id(),
+                        send_time: None,
+                        recv_time: Some(corrected_recv_time),
+                    }
+                }
             }
         } else {
-            SyncState::AfterFollowUp {
-                sync_recv_time: current_time,
-                sync_send_time: Time::from(message.origin_timestamp())
-                    + Duration::from(message.header().correction_field()),
+            match self.sync_state {
+                SyncState::Measuring { id, .. } if id == message.header().sequence_id() => {
+                    log::warn!("Duplicate sync message");
+                    // Ignore the sync message
+                }
+                _ => {
+                    self.sync_state = SyncState::Measuring {
+                        id: message.header().sequence_id(),
+                        send_time: Some(Time::from(message.origin_timestamp)),
+                        recv_time: Some(corrected_recv_time),
+                    };
+                }
             }
-        };
+        }
 
-        if !self.delay_state.finished()
-            || self.next_delay_measurement.unwrap_or_default() < current_time
+        self.update_last_raw_offset();
+
+        if self.mean_delay.is_none() || self.next_delay_measurement.unwrap_or_default() < recv_time
         {
             log::debug!("Starting new delay measurement");
             let delay_id = self.delay_req_ids.generate();
@@ -147,148 +184,125 @@ impl SlaveState {
                 .send_time_critical(&delay_req_encode)
                 .await
                 .expect("Program error: missing timestamp id")
-                .unwrap_or(current_time);
-            self.delay_state = DelayState::AfterSync {
-                delay_id,
-                delay_send_time,
-            };
-        }
-
-        if let Some(follow_up) = self.pending_followup {
-            log::debug!("Trying previously received followup");
-            self.handle_follow_up(follow_up)?;
+                .unwrap_or(recv_time);
+            self.delay_state = DelayState::Measuring {
+                id: delay_id,
+                send_time: Some(delay_send_time),
+                recv_time: None,
+            }
         }
 
         Ok(())
     }
 
-    fn handle_follow_up(&mut self, message: FollowUpMessage) -> Result<()> {
+    fn handle_follow_up(&mut self, message: FollowUpMessage) {
         log::debug!("Received FollowUp {:?}", message.header().sequence_id());
+
+        let packet_send_time = Time::from(message.precise_origin_timestamp())
+            + Duration::from(message.header().correction_field());
+
         match self.sync_state {
-            SyncState::AfterSync {
-                sync_id,
-                sync_recv_time,
-                sync_correction,
-            } => {
-                // Ignore messages not belonging to currently processing sync
-                if sync_id == message.header().sequence_id() {
-                    // Remove any previous pending messages, they are no longer current
-                    self.pending_followup = None;
-
-                    // Absorb into state
-                    let sync_send_time = Time::from(message.precise_origin_timestamp())
-                        + Duration::from(message.header().correction_field())
-                        + sync_correction;
-                    self.sync_state = SyncState::AfterFollowUp {
-                        sync_recv_time,
-                        sync_send_time,
-                    };
-
-                    Ok(())
-                } else {
-                    // Store it for a potentially coming sync
-                    self.pending_followup = Some(message);
-                    Ok(())
+            SyncState::Measuring {
+                id,
+                send_time: Some(_),
+                ..
+            } if id == message.header().sequence_id() => {
+                log::warn!("Duplicate FollowUp message");
+                // Ignore the followup
+            }
+            SyncState::Measuring {
+                id,
+                ref mut send_time,
+                ..
+            } if id == message.header().sequence_id() => *send_time = Some(packet_send_time),
+            _ => {
+                self.sync_state = SyncState::Measuring {
+                    id: message.header().sequence_id(),
+                    send_time: Some(packet_send_time),
+                    recv_time: None,
                 }
             }
-            // Wrong state
-            SyncState::Initial | SyncState::AfterFollowUp { .. } => {
-                // Store it for a potentially coming sync
-                log::debug!("FollowUp with no sync yet matching");
-                self.pending_followup = Some(message);
-                Ok(())
-            }
+        }
+
+        self.update_last_raw_offset();
+    }
+
+    fn try_finish_delay_measurement(&mut self) {
+        if let (
+            DelayState::Measuring {
+                send_time: Some(send_time),
+                recv_time: Some(recv_time),
+                ..
+            },
+            Some(last_raw_offset),
+        ) = (&self.delay_state, self.last_raw_offset)
+        {
+            self.mean_delay = Some(((*recv_time - *send_time) + last_raw_offset) / 2);
+            self.delay_state = DelayState::Empty;
         }
     }
 
-    fn handle_delay_resp(
-        &mut self,
-        message: DelayRespMessage,
-        port_identity: PortIdentity,
-    ) -> Result<()> {
+    fn handle_delay_resp(&mut self, message: DelayRespMessage, port_identity: PortIdentity) {
         log::debug!("Received DelayResp");
-        match self.sync_state {
-            SyncState::AfterFollowUp {
-                sync_recv_time,
-                sync_send_time,
-            } => {
-                match self.delay_state {
-                    DelayState::AfterSync {
-                        delay_id,
-                        delay_send_time,
-                    } => {
-                        // Ignore responses not aimed at us
-                        if port_identity != message.requesting_port_identity() {
-                            return Ok(());
-                        }
-
-                        // Ignore messages not belonging to currently processing sync
-                        if delay_id != message.header().sequence_id() {
-                            log::warn!("Received delay response for different message");
-                            return Ok(());
-                        }
-
-                        // Absorb into state
-                        let delay_recv_time = Time::from(message.receive_timestamp())
-                            - Duration::from(message.header().correction_field());
-
-                        // Calculate when we should next measure delay
-                        //  note that sync_recv_time should always be set here, but if it isn't,
-                        //  taking the default (0) is safe for recovery.
-                        self.next_delay_measurement = Some(
-                            sync_recv_time
-                                + Duration::from_log_interval(
-                                    message.header().log_message_interval(),
-                                )
-                                - Duration::from_fixed_nanos(0.1f64),
-                        );
-
-                        let mean_delay = (sync_recv_time - sync_send_time
-                            + (delay_recv_time - delay_send_time))
-                            / 2;
-
-                        self.delay_state = DelayState::AfterDelayResp { mean_delay };
-
-                        Ok(())
-                    }
-                    // Wrong state
-                    DelayState::Initial | DelayState::AfterDelayResp { .. } => {
-                        log::debug!("Unexpected DelayResponse");
-                        Err(SlaveError::OutOfSequence)
-                    }
-                }
-            }
-            // Wrong state
-            SyncState::Initial | SyncState::AfterSync { .. } => Err(SlaveError::OutOfSequence),
+        if port_identity != message.requesting_port_identity() {
+            return;
         }
+
+        match self.delay_state {
+            DelayState::Measuring {
+                id,
+                recv_time: Some(_),
+                ..
+            } if id == message.header().sequence_id() => {
+                log::warn!("Duplicate DelayResp message");
+                // Ignore the Delay response
+            }
+            DelayState::Measuring {
+                id,
+                ref mut recv_time,
+                ..
+            } if id == message.header().sequence_id() => {
+                *recv_time = Some(
+                    Time::from(message.receive_timestamp())
+                        - Duration::from(message.header().correction_field()),
+                );
+                self.next_delay_measurement = Some(
+                    *recv_time.as_ref().unwrap()
+                        + Duration::from_log_interval(message.header().log_message_interval())
+                        - Duration::from_fixed_nanos(0.1f64),
+                );
+            }
+            _ => {
+                log::warn!("Unexpected DelayResp message");
+                // Ignore the Delay response
+            }
+        }
+
+        self.try_finish_delay_measurement();
     }
 
     pub(crate) fn extract_measurement(&mut self) -> Option<Measurement> {
-        match self.sync_state {
-            SyncState::AfterFollowUp {
-                sync_recv_time,
-                sync_send_time,
-                ..
-            } => {
-                match self.delay_state {
-                    DelayState::AfterDelayResp { mean_delay } => {
-                        let result = Measurement {
-                            master_offset: sync_recv_time - sync_send_time - mean_delay,
-                            event_time: sync_recv_time,
-                        };
+        match (&self.sync_state, self.mean_delay) {
+            (
+                SyncState::Measuring {
+                    send_time: Some(send_time),
+                    recv_time: Some(recv_time),
+                    ..
+                },
+                Some(mean_delay),
+            ) => {
+                let result = Measurement {
+                    master_offset: *recv_time - *send_time - mean_delay,
+                    event_time: *recv_time,
+                };
 
-                        self.sync_state = SyncState::Initial;
+                self.sync_state = SyncState::Empty;
 
-                        log::debug!("Extracted measurement {:?}", result);
+                log::debug!("Extracted measurement {:?}", result);
 
-                        Some(result)
-                    }
-                    // Wrong state
-                    DelayState::Initial | DelayState::AfterSync { .. } => None,
-                }
+                Some(result)
             }
-            // Wrong state
-            SyncState::Initial | SyncState::AfterSync { .. } => None,
+            _ => None,
         }
     }
 }
@@ -301,11 +315,6 @@ pub enum SlaveError {
         error("received a message that a port in the slave state can never process")
     )]
     UnexpectedMessage,
-    #[cfg_attr(
-        feature = "std",
-        error("received a message that can usually be processed, but not right now")
-    )]
-    OutOfSequence,
 }
 
 #[cfg(test)]
@@ -354,9 +363,7 @@ mod tests {
         let mut port = TestNetworkPort::default();
 
         let mut state = SlaveState::new(Default::default());
-        state.delay_state = DelayState::AfterDelayResp {
-            mean_delay: Duration::from_micros(100),
-        };
+        state.mean_delay = Some(Duration::from_micros(100));
         state.next_delay_measurement = Some(Time::from_secs(10));
 
         let defaultds = DefaultDS::new_ordinary_clock(
@@ -389,7 +396,7 @@ mod tests {
         assert_eq!(
             state.extract_measurement(),
             Some(Measurement {
-                event_time: Time::from_micros(50),
+                event_time: Time::from_micros(49),
                 master_offset: Duration::from_micros(-51)
             })
         );
@@ -436,7 +443,7 @@ mod tests {
         assert_eq!(
             state.extract_measurement(),
             Some(Measurement {
-                event_time: Time::from_micros(1050),
+                event_time: Time::from_micros(1049),
                 master_offset: Duration::from_micros(-53)
             })
         );
@@ -501,21 +508,16 @@ mod tests {
 
         assert_eq!(port.normal.len(), 0);
         assert_eq!(port.time.len(), 0);
-        assert_eq!(
-            state.delay_state,
-            DelayState::AfterDelayResp {
-                mean_delay: Duration::from_micros(100)
-            }
-        );
+        assert_eq!(state.mean_delay, Some(Duration::from_micros(100)));
         assert_eq!(
             state.extract_measurement(),
             Some(Measurement {
-                event_time: Time::from_micros(50),
+                event_time: Time::from_micros(49),
                 master_offset: Duration::from_micros(-51)
             })
         );
 
-        state.delay_state = DelayState::Initial;
+        state.mean_delay = None;
 
         port.current_time = Time::from_micros(1100);
         embassy_futures::block_on(state.handle_message(
@@ -576,16 +578,11 @@ mod tests {
 
         assert_eq!(port.normal.len(), 0);
         assert_eq!(port.time.len(), 0);
-        assert_eq!(
-            state.delay_state,
-            DelayState::AfterDelayResp {
-                mean_delay: Duration::from_micros(100)
-            }
-        );
+        assert_eq!(state.mean_delay, Some(Duration::from_micros(100)));
         assert_eq!(
             state.extract_measurement(),
             Some(Measurement {
-                event_time: Time::from_micros(1050),
+                event_time: Time::from_micros(1049),
                 master_offset: Duration::from_micros(-53)
             })
         );
@@ -596,9 +593,7 @@ mod tests {
         let mut port = TestNetworkPort::default();
 
         let mut state = SlaveState::new(Default::default());
-        state.delay_state = DelayState::AfterDelayResp {
-            mean_delay: Duration::from_micros(100),
-        };
+        state.mean_delay = Some(Duration::from_micros(100));
         state.next_delay_measurement = Some(Time::from_secs(10));
 
         let defaultds = DefaultDS::new_ordinary_clock(
@@ -652,7 +647,7 @@ mod tests {
         assert_eq!(
             state.extract_measurement(),
             Some(Measurement {
-                event_time: Time::from_micros(50),
+                event_time: Time::from_micros(49),
                 master_offset: Duration::from_micros(-63)
             })
         );
@@ -663,9 +658,7 @@ mod tests {
         let mut port = TestNetworkPort::default();
 
         let mut state = SlaveState::new(Default::default());
-        state.delay_state = DelayState::AfterDelayResp {
-            mean_delay: Duration::from_micros(100),
-        };
+        state.mean_delay = Some(Duration::from_micros(100));
         state.next_delay_measurement = Some(Time::from_secs(10));
 
         let defaultds = DefaultDS::new_ordinary_clock(
@@ -736,13 +729,7 @@ mod tests {
 
         assert_eq!(port.normal.len(), 0);
         assert_eq!(port.time.len(), 0);
-        assert_eq!(
-            state.extract_measurement(),
-            Some(Measurement {
-                event_time: Time::from_micros(50),
-                master_offset: Duration::from_micros(-63)
-            })
-        );
+        assert_eq!(state.extract_measurement(), None);
     }
 
     #[test]
@@ -750,9 +737,7 @@ mod tests {
         let mut port = TestNetworkPort::default();
 
         let mut state = SlaveState::new(Default::default());
-        state.delay_state = DelayState::AfterDelayResp {
-            mean_delay: Duration::from_micros(100),
-        };
+        state.mean_delay = Some(Duration::from_micros(100));
         state.next_delay_measurement = Some(Time::from_secs(10));
 
         let defaultds = DefaultDS::new_ordinary_clock(
@@ -827,7 +812,7 @@ mod tests {
         assert_eq!(
             state.extract_measurement(),
             Some(Measurement {
-                event_time: Time::from_micros(1050),
+                event_time: Time::from_micros(1049),
                 master_offset: Duration::from_micros(-53)
             })
         );
@@ -938,16 +923,11 @@ mod tests {
 
         assert_eq!(port.normal.len(), 0);
         assert_eq!(port.time.len(), 0);
-        assert_eq!(
-            state.delay_state,
-            DelayState::AfterDelayResp {
-                mean_delay: Duration::from_micros(100)
-            }
-        );
+        assert_eq!(state.mean_delay, Some(Duration::from_micros(100)));
         assert_eq!(
             state.extract_measurement(),
             Some(Measurement {
-                event_time: Time::from_micros(50),
+                event_time: Time::from_micros(49),
                 master_offset: Duration::from_micros(-51)
             })
         );

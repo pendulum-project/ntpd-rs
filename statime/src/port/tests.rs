@@ -160,7 +160,7 @@ async fn test_measurement_flow() {
         test_state.extract_measurement(),
         Some(Measurement {
             master_offset: Duration::from_nanos(1),
-            event_time: Time::from_nanos(5),
+            event_time: Time::from_nanos(4),
         })
     );
 }
