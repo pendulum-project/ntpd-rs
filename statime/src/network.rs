@@ -51,10 +51,9 @@ pub struct NetworkPacket {
     /// The timestamp at which the packet was received. This is preferrably a
     /// timestamp that has been reported by the network hardware.
     ///
-    /// If the packet was received by a non-time-critical port, then this
-    /// instant doesn't have to be very precise. Just requesting the
-    /// timestamp in software is good enough.
-    pub timestamp: Time,
+    /// Required for packets from the event socket. Should not be present
+    /// for packets from general socket.
+    pub timestamp: Option<Time>,
 }
 
 /// Abstract representation of a single port's network connection

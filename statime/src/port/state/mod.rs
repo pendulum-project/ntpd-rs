@@ -3,10 +3,10 @@ use core::{
     fmt::{Display, Formatter},
 };
 
-pub use master::{MasterError, MasterState};
-pub use slave::{SlaveError, SlaveState};
+pub use master::MasterState;
+pub use slave::SlaveState;
 
-use super::Measurement;
+use super::{Measurement, PortAction, TimestampContext};
 use crate::{
     clock::Clock,
     datastructures::{
@@ -32,6 +32,51 @@ pub enum PortState {
 }
 
 impl PortState {
+    pub(crate) fn handle_timestamp(
+        &mut self,
+        context: TimestampContext,
+        timestamp: Time,
+    ) -> Option<PortAction<'_>> {
+        match self {
+            PortState::Slave(slave) => slave.handle_timestamp(context, timestamp),
+            PortState::Master(_) | PortState::Listening | PortState::Passive => None,
+        }
+    }
+
+    pub(crate) fn handle_event_receive<'a>(
+        &mut self,
+        message: Message,
+        timestamp: Time,
+        min_delay_req_interval: i8,
+        port_identity: PortIdentity,
+        default_ds: &DefaultDS,
+        buffer: &'a mut [u8],
+    ) -> Option<PortAction<'a>> {
+        match self {
+            PortState::Master(master) => master.handle_event_receive(
+                message,
+                timestamp,
+                min_delay_req_interval,
+                port_identity,
+                buffer,
+            ),
+            PortState::Slave(slave) => {
+                slave.handle_event_receive(message, timestamp, port_identity, default_ds, buffer)
+            }
+            PortState::Listening | PortState::Passive => None,
+        }
+    }
+
+    pub(crate) fn handle_general_receive(&mut self, message: Message, port_identity: PortIdentity) {
+        match self {
+            PortState::Master(_) => {
+                log::warn!("Unexpected message {:?}", message);
+            }
+            PortState::Slave(slave) => slave.handle_general_receive(message, port_identity),
+            PortState::Listening | PortState::Passive => {}
+        }
+    }
+
     pub async fn send_sync<P: NetworkPort>(
         &mut self,
         local_clock: &RefCell<impl Clock>,
@@ -75,44 +120,6 @@ impl PortState {
                     .await
             }
             PortState::Slave(_) | PortState::Listening | PortState::Passive => Ok(()),
-        }
-    }
-
-    pub async fn handle_message(
-        &mut self,
-        message: Message,
-        current_time: Time,
-        network_port: &mut impl NetworkPort,
-        log_message_interval: i8,
-        port_identity: PortIdentity,
-        default_ds: &DefaultDS,
-    ) -> Result<()> {
-        match self {
-            PortState::Master(master) => {
-                master
-                    .handle_message(
-                        message,
-                        current_time,
-                        network_port,
-                        log_message_interval,
-                        port_identity,
-                    )
-                    .await?;
-                Ok(())
-            }
-            PortState::Slave(slave) => {
-                slave
-                    .handle_message(
-                        message,
-                        current_time,
-                        network_port,
-                        port_identity,
-                        default_ds,
-                    )
-                    .await?;
-                Ok(())
-            }
-            PortState::Listening | PortState::Passive => Ok(()),
         }
     }
 

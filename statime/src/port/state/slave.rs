@@ -4,12 +4,12 @@ use crate::{
         datasets::DefaultDS,
         messages::{DelayRespMessage, FollowUpMessage, Message, MessageBuilder, SyncMessage},
     },
-    network::NetworkPort,
-    port::{sequence_id::SequenceIdGenerator, Measurement},
+    port::{
+        sequence_id::SequenceIdGenerator, Measurement, PortAction, TimestampContext,
+        TimestampContextInner,
+    },
     time::{Duration, Time},
 };
-
-type Result<T, E = SlaveError> = core::result::Result<T, E>;
 
 #[derive(Debug)]
 pub struct SlaveState {
@@ -65,39 +65,78 @@ impl SlaveState {
         }
     }
 
-    pub(crate) async fn handle_message<P: NetworkPort>(
+    pub(crate) fn handle_timestamp(
+        &mut self,
+        context: TimestampContext,
+        timestamp: Time,
+    ) -> Option<PortAction<'_>> {
+        match context.inner {
+            crate::port::TimestampContextInner::DelayReq { id } => {
+                self.handle_delay_timestamp(id, timestamp)
+            }
+        }
+    }
+
+    fn handle_delay_timestamp(
+        &mut self,
+        timestamp_id: u16,
+        timestamp: Time,
+    ) -> Option<PortAction<'_>> {
+        match self.delay_state {
+            DelayState::Measuring {
+                id,
+                send_time: Some(_),
+                ..
+            } if id == timestamp_id => {
+                log::error!("Double send timestamp for delay request");
+            }
+            DelayState::Measuring {
+                id,
+                ref mut send_time,
+                ..
+            } if id == timestamp_id => *send_time = Some(timestamp),
+            _ => {
+                log::warn!("Late timestamp for delay request ignored");
+            }
+        }
+
+        None
+    }
+
+    pub(crate) fn handle_event_receive<'a>(
         &mut self,
         message: Message,
-        current_time: Time,
-        network_port: &mut P,
+        timestamp: Time,
         port_identity: PortIdentity,
         default_ds: &DefaultDS,
-    ) -> Result<()> {
-        // Only listen to master
-        if message.header().source_port_identity() == self.remote_master {
-            match message {
-                Message::Sync(message) => {
-                    self.handle_sync(
-                        message,
-                        current_time,
-                        network_port,
-                        port_identity,
-                        default_ds,
-                    )
-                    .await
-                }
-                Message::FollowUp(message) => {
-                    self.handle_follow_up(message);
-                    Ok(())
-                }
-                Message::DelayResp(message) => {
-                    self.handle_delay_resp(message, port_identity);
-                    Ok(())
-                }
-                _ => Err(SlaveError::UnexpectedMessage),
+        buffer: &'a mut [u8],
+    ) -> Option<PortAction<'a>> {
+        // Ignore everything not from master
+        if message.header().source_port_identity() != self.remote_master {
+            return None;
+        }
+
+        match message {
+            Message::Sync(message) => {
+                self.handle_sync(message, timestamp, port_identity, default_ds, buffer)
             }
-        } else {
-            Ok(())
+            _ => {
+                log::warn!("Unexpected message {:?}", message);
+                None
+            }
+        }
+    }
+
+    pub(crate) fn handle_general_receive(&mut self, message: Message, port_identity: PortIdentity) {
+        // Ignore everything not from master
+        if message.header().source_port_identity() != self.remote_master {
+            return;
+        }
+
+        match message {
+            Message::FollowUp(message) => self.handle_follow_up(message),
+            Message::DelayResp(message) => self.handle_delay_resp(message, port_identity),
+            _ => log::warn!("Unexpected message {:?}", message),
         }
     }
 
@@ -113,14 +152,14 @@ impl SlaveState {
         }
     }
 
-    async fn handle_sync<P: NetworkPort>(
+    fn handle_sync<'a>(
         &mut self,
         message: SyncMessage,
         recv_time: Time,
-        network_port: &mut P,
         port_identity: PortIdentity,
         default_ds: &DefaultDS,
-    ) -> Result<()> {
+        buffer: &'a mut [u8],
+    ) -> Option<PortAction<'a>> {
         log::debug!("Received sync {:?}", message.header().sequence_id());
 
         // substracting correction from recv time is equivalent to adding it to send
@@ -179,20 +218,27 @@ impl SlaveState {
                 .sequence_id(delay_id)
                 .log_message_interval(0x7f)
                 .delay_req_message(WireTimestamp::default());
-            let delay_req_encode = delay_req.serialize_vec().unwrap();
-            let delay_send_time = network_port
-                .send_time_critical(&delay_req_encode)
-                .await
-                .expect("Program error: missing timestamp id")
-                .unwrap_or(recv_time);
+            let message_length = delay_req
+                .serialize(buffer)
+                .map_err(|error| {
+                    log::error!("Could not serialize delay request: {:?}", error);
+                    error
+                })
+                .ok()?;
             self.delay_state = DelayState::Measuring {
                 id: delay_id,
-                send_time: Some(delay_send_time),
+                send_time: None,
                 recv_time: None,
-            }
+            };
+            Some(PortAction::SendTimeCritical {
+                context: TimestampContext {
+                    inner: TimestampContextInner::DelayReq { id: delay_id },
+                },
+                data: &buffer[..message_length],
+            })
+        } else {
+            None
         }
-
-        Ok(())
     }
 
     fn handle_follow_up(&mut self, message: FollowUpMessage) {
@@ -307,24 +353,17 @@ impl SlaveState {
     }
 }
 
-#[derive(Debug)]
-#[cfg_attr(feature = "std", derive(thiserror::Error))]
-pub enum SlaveError {
-    #[cfg_attr(
-        feature = "std",
-        error("received a message that a port in the slave state can never process")
-    )]
-    UnexpectedMessage,
-}
-
 #[cfg(test)]
 mod tests {
     use std::vec::Vec;
 
     use super::*;
-    use crate::datastructures::{
-        common::{ClockIdentity, TimeInterval},
-        messages::{Header, SdoId},
+    use crate::{
+        datastructures::{
+            common::{ClockIdentity, TimeInterval},
+            messages::{Header, SdoId},
+        },
+        NetworkPort, MAX_DATA_LEN,
     };
 
     #[derive(Debug, Default)]
@@ -360,7 +399,7 @@ mod tests {
 
     #[test]
     fn test_sync_without_delay_msg() {
-        let mut port = TestNetworkPort::default();
+        let mut buffer = [0u8; MAX_DATA_LEN];
 
         let mut state = SlaveState::new(Default::default());
         state.mean_delay = Some(Duration::from_micros(100));
@@ -375,7 +414,7 @@ mod tests {
             SdoId::default(),
         );
 
-        embassy_futures::block_on(state.handle_message(
+        let action = state.handle_event_receive(
             Message::Sync(SyncMessage {
                 header: Header {
                     two_step_flag: false,
@@ -385,14 +424,12 @@ mod tests {
                 origin_timestamp: Time::from_micros(0).into(),
             }),
             Time::from_micros(50),
-            &mut port,
             PortIdentity::default(),
             &defaultds,
-        ))
-        .unwrap();
+            &mut buffer,
+        );
 
-        assert_eq!(port.normal.len(), 0);
-        assert_eq!(port.time.len(), 0);
+        assert!(action.is_none());
         assert_eq!(
             state.extract_measurement(),
             Some(Measurement {
@@ -401,7 +438,7 @@ mod tests {
             })
         );
 
-        embassy_futures::block_on(state.handle_message(
+        let action = state.handle_event_receive(
             Message::Sync(SyncMessage {
                 header: Header {
                     two_step_flag: true,
@@ -412,17 +449,15 @@ mod tests {
                 origin_timestamp: Time::from_micros(0).into(),
             }),
             Time::from_micros(1050),
-            &mut port,
             PortIdentity::default(),
             &defaultds,
-        ))
-        .unwrap();
+            &mut buffer,
+        );
 
-        assert_eq!(port.normal.len(), 0);
-        assert_eq!(port.time.len(), 0);
+        assert!(action.is_none());
         assert_eq!(state.extract_measurement(), None);
 
-        embassy_futures::block_on(state.handle_message(
+        state.handle_general_receive(
             Message::FollowUp(FollowUpMessage {
                 header: Header {
                     sequence_id: 15,
@@ -431,15 +466,9 @@ mod tests {
                 },
                 precise_origin_timestamp: Time::from_micros(1000).into(),
             }),
-            Time::from_micros(1100),
-            &mut port,
             PortIdentity::default(),
-            &defaultds,
-        ))
-        .unwrap();
+        );
 
-        assert_eq!(port.normal.len(), 0);
-        assert_eq!(port.time.len(), 0);
         assert_eq!(
             state.extract_measurement(),
             Some(Measurement {
@@ -451,7 +480,7 @@ mod tests {
 
     #[test]
     fn test_sync_with_delay() {
-        let mut port = TestNetworkPort::default();
+        let mut buffer = [0u8; MAX_DATA_LEN];
 
         let mut state = SlaveState::new(Default::default());
 
@@ -464,8 +493,7 @@ mod tests {
             SdoId::default(),
         );
 
-        port.current_time = Time::from_micros(100);
-        embassy_futures::block_on(state.handle_message(
+        let action = state.handle_event_receive(
             Message::Sync(SyncMessage {
                 header: Header {
                     two_step_flag: false,
@@ -475,21 +503,25 @@ mod tests {
                 origin_timestamp: Time::from_micros(0).into(),
             }),
             Time::from_micros(50),
-            &mut port,
             PortIdentity::default(),
             &defaultds,
-        ))
-        .unwrap();
+            &mut buffer,
+        );
 
-        assert_eq!(port.normal.len(), 0);
-        assert_eq!(port.time.len(), 1);
+        let Some(PortAction::SendTimeCritical { context, data }) = action else {
+            panic!("Unexpected action {:?}", action);
+        };
         assert_eq!(state.extract_measurement(), None);
 
-        let req = match Message::deserialize(&port.time.pop().unwrap()).unwrap() {
+        let req = match Message::deserialize(data).unwrap() {
             Message::DelayReq(msg) => msg,
             _ => panic!("Incorrect message type"),
         };
-        embassy_futures::block_on(state.handle_message(
+
+        let action = state.handle_timestamp(context, Time::from_micros(100));
+        assert!(action.is_none());
+
+        state.handle_general_receive(
             Message::DelayResp(DelayRespMessage {
                 header: Header {
                     correction_field: TimeInterval(2000.into()),
@@ -499,15 +531,9 @@ mod tests {
                 receive_timestamp: Time::from_micros(253).into(),
                 requesting_port_identity: req.header.source_port_identity(),
             }),
-            Time::from_micros(50),
-            &mut port,
             PortIdentity::default(),
-            &defaultds,
-        ))
-        .unwrap();
+        );
 
-        assert_eq!(port.normal.len(), 0);
-        assert_eq!(port.time.len(), 0);
         assert_eq!(state.mean_delay, Some(Duration::from_micros(100)));
         assert_eq!(
             state.extract_measurement(),
@@ -519,8 +545,7 @@ mod tests {
 
         state.mean_delay = None;
 
-        port.current_time = Time::from_micros(1100);
-        embassy_futures::block_on(state.handle_message(
+        let action = state.handle_event_receive(
             Message::Sync(SyncMessage {
                 header: Header {
                     two_step_flag: true,
@@ -530,17 +555,26 @@ mod tests {
                 origin_timestamp: Time::from_micros(0).into(),
             }),
             Time::from_micros(1050),
-            &mut port,
             PortIdentity::default(),
             &defaultds,
-        ))
-        .unwrap();
+            &mut buffer,
+        );
 
-        assert_eq!(port.normal.len(), 0);
-        assert_eq!(port.time.len(), 1);
+        let Some(PortAction::SendTimeCritical { context, data }) = action else {
+            panic!("Unexpected action {:?}", action);
+        };
+
+        let req = match Message::deserialize(data).unwrap() {
+            Message::DelayReq(msg) => msg,
+            _ => panic!("Incorrect message type"),
+        };
+
+        let action = state.handle_timestamp(context, Time::from_micros(1100));
+        assert!(action.is_none());
+
         assert_eq!(state.extract_measurement(), None);
 
-        embassy_futures::block_on(state.handle_message(
+        state.handle_general_receive(
             Message::FollowUp(FollowUpMessage {
                 header: Header {
                     correction_field: TimeInterval(2000.into()),
@@ -548,18 +582,10 @@ mod tests {
                 },
                 precise_origin_timestamp: Time::from_micros(1000).into(),
             }),
-            Time::from_micros(1150),
-            &mut port,
             PortIdentity::default(),
-            &defaultds,
-        ))
-        .unwrap();
+        );
 
-        let req = match Message::deserialize(&port.time.pop().unwrap()).unwrap() {
-            Message::DelayReq(msg) => msg,
-            _ => panic!("Incorrect message type"),
-        };
-        embassy_futures::block_on(state.handle_message(
+        state.handle_general_receive(
             Message::DelayResp(DelayRespMessage {
                 header: Header {
                     correction_field: TimeInterval(2000.into()),
@@ -569,15 +595,9 @@ mod tests {
                 receive_timestamp: Time::from_micros(1255).into(),
                 requesting_port_identity: req.header.source_port_identity(),
             }),
-            Time::from_micros(50),
-            &mut port,
             PortIdentity::default(),
-            &defaultds,
-        ))
-        .unwrap();
+        );
 
-        assert_eq!(port.normal.len(), 0);
-        assert_eq!(port.time.len(), 0);
         assert_eq!(state.mean_delay, Some(Duration::from_micros(100)));
         assert_eq!(
             state.extract_measurement(),
@@ -590,7 +610,7 @@ mod tests {
 
     #[test]
     fn test_follow_up_before_sync() {
-        let mut port = TestNetworkPort::default();
+        let mut buffer = [0u8; MAX_DATA_LEN];
 
         let mut state = SlaveState::new(Default::default());
         state.mean_delay = Some(Duration::from_micros(100));
@@ -605,7 +625,7 @@ mod tests {
             SdoId::default(),
         );
 
-        embassy_futures::block_on(state.handle_message(
+        state.handle_general_receive(
             Message::FollowUp(FollowUpMessage {
                 header: Header {
                     sequence_id: 15,
@@ -614,18 +634,12 @@ mod tests {
                 },
                 precise_origin_timestamp: Time::from_micros(10).into(),
             }),
-            Time::from_micros(100),
-            &mut port,
             PortIdentity::default(),
-            &defaultds,
-        ))
-        .unwrap();
+        );
 
-        assert_eq!(port.normal.len(), 0);
-        assert_eq!(port.time.len(), 0);
         assert_eq!(state.extract_measurement(), None);
 
-        embassy_futures::block_on(state.handle_message(
+        let action = state.handle_event_receive(
             Message::Sync(SyncMessage {
                 header: Header {
                     two_step_flag: true,
@@ -636,14 +650,12 @@ mod tests {
                 origin_timestamp: Time::from_micros(0).into(),
             }),
             Time::from_micros(50),
-            &mut port,
             PortIdentity::default(),
             &defaultds,
-        ))
-        .unwrap();
+            &mut buffer,
+        );
 
-        assert_eq!(port.normal.len(), 0);
-        assert_eq!(port.time.len(), 0);
+        assert!(action.is_none());
         assert_eq!(
             state.extract_measurement(),
             Some(Measurement {
@@ -655,7 +667,7 @@ mod tests {
 
     #[test]
     fn test_old_followup_during() {
-        let mut port = TestNetworkPort::default();
+        let mut buffer = [0u8; MAX_DATA_LEN];
 
         let mut state = SlaveState::new(Default::default());
         state.mean_delay = Some(Duration::from_micros(100));
@@ -670,7 +682,7 @@ mod tests {
             SdoId::default(),
         );
 
-        embassy_futures::block_on(state.handle_message(
+        let action = state.handle_event_receive(
             Message::Sync(SyncMessage {
                 header: Header {
                     two_step_flag: true,
@@ -681,17 +693,15 @@ mod tests {
                 origin_timestamp: Time::from_micros(0).into(),
             }),
             Time::from_micros(50),
-            &mut port,
             PortIdentity::default(),
             &defaultds,
-        ))
-        .unwrap();
+            &mut buffer,
+        );
 
-        assert_eq!(port.normal.len(), 0);
-        assert_eq!(port.time.len(), 0);
+        assert!(action.is_none());
         assert_eq!(state.extract_measurement(), None);
 
-        embassy_futures::block_on(state.handle_message(
+        state.handle_general_receive(
             Message::FollowUp(FollowUpMessage {
                 header: Header {
                     sequence_id: 14,
@@ -700,18 +710,12 @@ mod tests {
                 },
                 precise_origin_timestamp: Time::from_micros(10).into(),
             }),
-            Time::from_micros(100),
-            &mut port,
             PortIdentity::default(),
-            &defaultds,
-        ))
-        .unwrap();
+        );
 
-        assert_eq!(port.normal.len(), 0);
-        assert_eq!(port.time.len(), 0);
         assert_eq!(state.extract_measurement(), None);
 
-        embassy_futures::block_on(state.handle_message(
+        state.handle_general_receive(
             Message::FollowUp(FollowUpMessage {
                 header: Header {
                     sequence_id: 15,
@@ -720,21 +724,15 @@ mod tests {
                 },
                 precise_origin_timestamp: Time::from_micros(10).into(),
             }),
-            Time::from_micros(100),
-            &mut port,
             PortIdentity::default(),
-            &defaultds,
-        ))
-        .unwrap();
+        );
 
-        assert_eq!(port.normal.len(), 0);
-        assert_eq!(port.time.len(), 0);
         assert_eq!(state.extract_measurement(), None);
     }
 
     #[test]
     fn test_reset_after_missing_followup() {
-        let mut port = TestNetworkPort::default();
+        let mut buffer = [0u8; MAX_DATA_LEN];
 
         let mut state = SlaveState::new(Default::default());
         state.mean_delay = Some(Duration::from_micros(100));
@@ -749,7 +747,7 @@ mod tests {
             SdoId::default(),
         );
 
-        embassy_futures::block_on(state.handle_message(
+        let action = state.handle_event_receive(
             Message::Sync(SyncMessage {
                 header: Header {
                     two_step_flag: true,
@@ -760,17 +758,15 @@ mod tests {
                 origin_timestamp: Time::from_micros(0).into(),
             }),
             Time::from_micros(50),
-            &mut port,
             PortIdentity::default(),
             &defaultds,
-        ))
-        .unwrap();
+            &mut buffer,
+        );
 
-        assert_eq!(port.normal.len(), 0);
-        assert_eq!(port.time.len(), 0);
+        assert!(action.is_none());
         assert_eq!(state.extract_measurement(), None);
 
-        embassy_futures::block_on(state.handle_message(
+        let action = state.handle_event_receive(
             Message::Sync(SyncMessage {
                 header: Header {
                     two_step_flag: true,
@@ -781,17 +777,15 @@ mod tests {
                 origin_timestamp: Time::from_micros(0).into(),
             }),
             Time::from_micros(1050),
-            &mut port,
             PortIdentity::default(),
             &defaultds,
-        ))
-        .unwrap();
+            &mut buffer,
+        );
 
-        assert_eq!(port.normal.len(), 0);
-        assert_eq!(port.time.len(), 0);
+        assert!(action.is_none());
         assert_eq!(state.extract_measurement(), None);
 
-        embassy_futures::block_on(state.handle_message(
+        state.handle_general_receive(
             Message::FollowUp(FollowUpMessage {
                 header: Header {
                     sequence_id: 15,
@@ -800,15 +794,9 @@ mod tests {
                 },
                 precise_origin_timestamp: Time::from_micros(1000).into(),
             }),
-            Time::from_micros(1100),
-            &mut port,
             PortIdentity::default(),
-            &defaultds,
-        ))
-        .unwrap();
+        );
 
-        assert_eq!(port.normal.len(), 0);
-        assert_eq!(port.time.len(), 0);
         assert_eq!(
             state.extract_measurement(),
             Some(Measurement {
@@ -820,7 +808,7 @@ mod tests {
 
     #[test]
     fn test_ignore_unrelated_delayresp() {
-        let mut port = TestNetworkPort::default();
+        let mut buffer = [0u8; MAX_DATA_LEN];
 
         let mut state = SlaveState::new(Default::default());
 
@@ -833,8 +821,7 @@ mod tests {
             SdoId::default(),
         );
 
-        port.current_time = Time::from_micros(100);
-        embassy_futures::block_on(state.handle_message(
+        let action = state.handle_event_receive(
             Message::Sync(SyncMessage {
                 header: Header {
                     two_step_flag: false,
@@ -844,22 +831,26 @@ mod tests {
                 origin_timestamp: Time::from_micros(0).into(),
             }),
             Time::from_micros(50),
-            &mut port,
             PortIdentity::default(),
             &defaultds,
-        ))
-        .unwrap();
+            &mut buffer,
+        );
 
-        assert_eq!(port.normal.len(), 0);
-        assert_eq!(port.time.len(), 1);
+        let Some(PortAction::SendTimeCritical { context, data }) = action else {
+            panic!("Unexpected action {:?}", action);
+        };
+
+        let action = state.handle_timestamp(context, Time::from_micros(100));
+        assert!(action.is_none());
+
         assert_eq!(state.extract_measurement(), None);
 
-        let req = match Message::deserialize(&port.time.pop().unwrap()).unwrap() {
+        let req = match Message::deserialize(&data).unwrap() {
             Message::DelayReq(msg) => msg,
             _ => panic!("Incorrect message type"),
         };
 
-        embassy_futures::block_on(state.handle_message(
+        state.handle_general_receive(
             Message::DelayResp(DelayRespMessage {
                 header: Header {
                     correction_field: TimeInterval(2000.into()),
@@ -872,18 +863,12 @@ mod tests {
                     ..Default::default()
                 },
             }),
-            Time::from_micros(40),
-            &mut port,
             PortIdentity::default(),
-            &defaultds,
-        ))
-        .unwrap();
+        );
 
-        assert_eq!(port.normal.len(), 0);
-        assert_eq!(port.time.len(), 0);
         assert_eq!(state.extract_measurement(), None);
 
-        embassy_futures::block_on(state.handle_message(
+        state.handle_general_receive(
             Message::DelayResp(DelayRespMessage {
                 header: Header {
                     correction_field: TimeInterval(2000.into()),
@@ -893,18 +878,12 @@ mod tests {
                 receive_timestamp: Time::from_micros(353).into(),
                 requesting_port_identity: req.header.source_port_identity(),
             }),
-            Time::from_micros(40),
-            &mut port,
             PortIdentity::default(),
-            &defaultds,
-        ))
-        .unwrap();
+        );
 
-        assert_eq!(port.normal.len(), 0);
-        assert_eq!(port.time.len(), 0);
         assert_eq!(state.extract_measurement(), None);
 
-        embassy_futures::block_on(state.handle_message(
+        state.handle_general_receive(
             Message::DelayResp(DelayRespMessage {
                 header: Header {
                     correction_field: TimeInterval(2000.into()),
@@ -914,15 +893,9 @@ mod tests {
                 receive_timestamp: Time::from_micros(253).into(),
                 requesting_port_identity: req.header.source_port_identity(),
             }),
-            Time::from_micros(50),
-            &mut port,
             PortIdentity::default(),
-            &defaultds,
-        ))
-        .unwrap();
+        );
 
-        assert_eq!(port.normal.len(), 0);
-        assert_eq!(port.time.len(), 0);
         assert_eq!(state.mean_delay, Some(Duration::from_micros(100)));
         assert_eq!(
             state.extract_measurement(),

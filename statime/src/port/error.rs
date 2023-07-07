@@ -1,7 +1,4 @@
-use crate::{
-    datastructures::WireFormatError,
-    port::state::{MasterError, SlaveError},
-};
+use crate::datastructures::WireFormatError;
 
 pub type Result<T, E = PortError> = core::result::Result<T, E>;
 
@@ -16,26 +13,10 @@ pub enum PortError {
     Network,
     #[cfg_attr(feature = "std", error("wire format error: {0}"))]
     WireFormat(WireFormatError),
-    #[cfg_attr(feature = "std", error("slave error: {0}"))]
-    Slave(SlaveError),
-    #[cfg_attr(feature = "std", error("master error: {0}"))]
-    Master(MasterError),
 }
 
 impl From<WireFormatError> for PortError {
     fn from(v: WireFormatError) -> Self {
         Self::WireFormat(v)
-    }
-}
-
-impl From<SlaveError> for PortError {
-    fn from(v: SlaveError) -> Self {
-        Self::Slave(v)
-    }
-}
-
-impl From<MasterError> for PortError {
-    fn from(v: MasterError) -> Self {
-        Self::Master(v)
     }
 }

@@ -8,7 +8,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
 };
 
-use statime::{Clock, NetworkPacket, NetworkPort, NetworkRuntime, Time, MAX_DATA_LEN};
+use statime::{NetworkPacket, NetworkPort, NetworkRuntime, Time, MAX_DATA_LEN};
 use tokio::io::{unix::AsyncFd, Interest};
 
 pub use super::interface::InterfaceDescriptor;
@@ -197,7 +197,7 @@ impl NetworkPort for LinuxNetworkPort {
 
             let packet = NetworkPacket {
                 data: buf.into(),
-                timestamp: libc_timestamp_to_instant(recv_result.timestamp),
+                timestamp: Some(libc_timestamp_to_instant(recv_result.timestamp)),
             };
 
             log::trace!("Recv TC");
@@ -218,7 +218,7 @@ impl NetworkPort for LinuxNetworkPort {
 
             Ok(NetworkPacket {
                 data,
-                timestamp: self.clock.now(),
+                timestamp: None,
             })
         };
 

@@ -119,24 +119,26 @@ impl Message {
     /// Serializes the object into the PTP wire format.
     ///
     /// Returns the used buffer size that contains the message or an error.
-    pub fn serialize(&self, buffer: &mut [u8]) -> Result<(), super::WireFormatError> {
+    pub fn serialize(&self, buffer: &mut [u8]) -> Result<usize, super::WireFormatError> {
         let (header, rest) = buffer.split_at_mut(34);
 
         self.header()
             .serialize_header(self.content_type(), self.content_size(), header)?;
 
         match self {
-            Message::Sync(m) => m.serialize_content(rest),
-            Message::DelayReq(m) => m.serialize_content(rest),
-            Message::PDelayReq(m) => m.serialize_content(rest),
-            Message::PDelayResp(m) => m.serialize_content(rest),
-            Message::FollowUp(m) => m.serialize_content(rest),
-            Message::DelayResp(m) => m.serialize_content(rest),
-            Message::PDelayRespFollowUp(m) => m.serialize_content(rest),
-            Message::Announce(m) => m.serialize_content(rest),
-            Message::Signaling(m) => m.serialize_content(rest),
-            Message::Management(m) => m.serialize_content(rest),
+            Message::Sync(m) => m.serialize_content(rest)?,
+            Message::DelayReq(m) => m.serialize_content(rest)?,
+            Message::PDelayReq(m) => m.serialize_content(rest)?,
+            Message::PDelayResp(m) => m.serialize_content(rest)?,
+            Message::FollowUp(m) => m.serialize_content(rest)?,
+            Message::DelayResp(m) => m.serialize_content(rest)?,
+            Message::PDelayRespFollowUp(m) => m.serialize_content(rest)?,
+            Message::Announce(m) => m.serialize_content(rest)?,
+            Message::Signaling(m) => m.serialize_content(rest)?,
+            Message::Management(m) => m.serialize_content(rest)?,
         }
+
+        Ok(self.wire_size())
     }
 
     /// Serializes the message into the PTP wire format.

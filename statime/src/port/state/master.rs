@@ -11,6 +11,7 @@ use crate::{
     port::{
         error::{PortError, Result},
         sequence_id::SequenceIdGenerator,
+        PortAction,
     },
     time::Time,
 };
@@ -127,73 +128,65 @@ impl MasterState {
         Ok(())
     }
 
-    pub(crate) async fn handle_message<P: NetworkPort>(
+    pub(crate) fn handle_event_receive<'a>(
         &mut self,
         message: Message,
-        current_time: Time,
-        network_port: &mut P,
-        log_message_interval: i8,
+        timestamp: Time,
+        min_delay_req_interval: i8,
         port_identity: PortIdentity,
-    ) -> Result<()> {
-        // Always ignore messages from own port
-        if message.header().source_port_identity() != port_identity {
-            match message {
-                Message::DelayReq(message) => {
-                    self.handle_delay_req(
-                        message,
-                        current_time,
-                        network_port,
-                        log_message_interval,
-                        port_identity,
-                    )
-                    .await
-                }
-                _ => Err(MasterError::UnexpectedMessage.into()),
+        buffer: &'a mut [u8],
+    ) -> Option<PortAction<'a>> {
+        if message.header().source_port_identity() == port_identity {
+            return None;
+        }
+
+        match message {
+            Message::DelayReq(message) => self.handle_delay_req(
+                message,
+                timestamp,
+                min_delay_req_interval,
+                port_identity,
+                buffer,
+            ),
+            _ => {
+                log::warn!("Unexpected message {:?}", message);
+                None
             }
-        } else {
-            Ok(())
         }
     }
 
-    async fn handle_delay_req<P: NetworkPort>(
+    fn handle_delay_req<'a>(
         &mut self,
         message: DelayReqMessage,
-        current_time: Time,
-        network_port: &mut P,
-        log_message_interval: i8,
+        timestamp: Time,
+        min_delay_req_interval: i8,
         port_identity: PortIdentity,
-    ) -> Result<(), PortError> {
+        buffer: &'a mut [u8],
+    ) -> Option<PortAction<'a>> {
         log::debug!("Received DelayReq");
         let delay_resp_message = MessageBuilder::new()
             .copy_header(Message::DelayReq(message))
             .two_step_flag(false)
             .source_port_identity(port_identity)
-            .add_to_correction(current_time.subnano())
-            .log_message_interval(log_message_interval)
+            .add_to_correction(timestamp.subnano())
+            .log_message_interval(min_delay_req_interval)
             .delay_resp_message(
-                WireTimestamp::from(current_time),
+                WireTimestamp::from(timestamp),
                 message.header().source_port_identity(),
             );
 
-        let delay_resp_encode = delay_resp_message.serialize_vec()?;
+        let packet_length = delay_resp_message
+            .serialize(buffer)
+            .map_err(|error| {
+                log::error!("Could not serialize delay response: {:?}", error);
+                error
+            })
+            .ok()?;
 
-        network_port
-            .send(&delay_resp_encode)
-            .await
-            .map_err(|_| PortError::Network)?;
-
-        Ok(())
+        Some(PortAction::SendGeneral {
+            data: &buffer[..packet_length],
+        })
     }
-}
-
-#[derive(Debug)]
-#[cfg_attr(feature = "std", derive(thiserror::Error))]
-pub enum MasterError {
-    #[cfg_attr(
-        feature = "std",
-        error("received a message that a port in the master state can never process")
-    )]
-    UnexpectedMessage,
 }
 
 #[cfg(test)]
@@ -203,9 +196,12 @@ mod tests {
     use fixed::types::{I48F16, U96F32};
 
     use super::*;
-    use crate::datastructures::{
-        common::{ClockIdentity, TimeInterval},
-        messages::{Header, SdoId},
+    use crate::{
+        datastructures::{
+            common::{ClockIdentity, TimeInterval},
+            messages::{Header, SdoId},
+        },
+        MAX_DATA_LEN,
     };
 
     #[derive(Debug, Default)]
@@ -266,11 +262,11 @@ mod tests {
 
     #[test]
     fn test_delay_response() {
-        let mut port = TestNetworkPort::default();
-
         let mut state = MasterState::new();
 
-        embassy_futures::block_on(state.handle_message(
+        let mut buffer = [0u8; MAX_DATA_LEN];
+
+        let action = state.handle_event_receive(
             Message::DelayReq(DelayReqMessage {
                 header: Header {
                     sequence_id: 5123,
@@ -284,16 +280,16 @@ mod tests {
                 origin_timestamp: Time::from_micros(0).into(),
             }),
             Time::from_fixed_nanos(U96F32::from_bits((200000 << 32) + (500 << 16))),
-            &mut port,
             2,
             PortIdentity::default(),
-        ))
-        .unwrap();
+            &mut buffer,
+        );
 
-        assert_eq!(port.normal.len(), 1);
-        assert_eq!(port.time.len(), 0);
+        let Some(PortAction::SendGeneral { data }) = action else {
+            panic!("Unexpected resulting action {:?}", action);
+        };
 
-        let msg = match Message::deserialize(&port.normal.pop().unwrap()).unwrap() {
+        let msg = match Message::deserialize(data).unwrap() {
             Message::DelayResp(msg) => msg,
             _ => panic!("Unexpected message type"),
         };
@@ -313,7 +309,7 @@ mod tests {
             TimeInterval(I48F16::from_bits(900))
         );
 
-        embassy_futures::block_on(state.handle_message(
+        let action = state.handle_event_receive(
             Message::DelayReq(DelayReqMessage {
                 header: Header {
                     sequence_id: 879,
@@ -327,16 +323,16 @@ mod tests {
                 origin_timestamp: Time::from_micros(0).into(),
             }),
             Time::from_fixed_nanos(U96F32::from_bits((220000 << 32) + (300 << 16))),
-            &mut port,
             5,
             PortIdentity::default(),
-        ))
-        .unwrap();
+            &mut buffer,
+        );
 
-        assert_eq!(port.normal.len(), 1);
-        assert_eq!(port.time.len(), 0);
+        let Some(PortAction::SendGeneral { data }) = action else {
+            panic!("Unexpected resulting action {:?}", action);
+        };
 
-        let msg = match Message::deserialize(&port.normal.pop().unwrap()).unwrap() {
+        let msg = match Message::deserialize(data).unwrap() {
             Message::DelayResp(msg) => msg,
             _ => panic!("Unexpected message type"),
         };
