@@ -166,7 +166,7 @@ impl RawLinuxClock {
         // Since Linux 2.6.26, the supplied value is clamped to the range (-32768000,
         // +32768000). In older kernels, an EINVAL error occurs if the supplied value is
         // out of range. (32768000 is 500 << 16)
-        timex.freq = frequency; // frequency.clamp(-32_768_000 + 1, 32_768_000 - 1);
+        timex.freq = frequency.clamp(-32_768_000 + 1, 32_768_000 - 1);
 
         timex
     }
@@ -514,5 +514,27 @@ mod tests {
             RawLinuxClock::adjust_frequency_timex(frequency, frequency_multiplier).freq;
 
         assert_eq!(new_frequency, 983047);
+    }
+
+    #[test]
+    fn test_adjust_frequency_timex_clamp_low() {
+        let frequency = 20 << 16;
+        let frequency_multiplier = 0.5;
+
+        let new_frequency =
+            RawLinuxClock::adjust_frequency_timex(frequency, frequency_multiplier).freq;
+
+        assert_eq!(new_frequency, (500 << 16) - 1);
+    }
+
+    #[test]
+    fn test_adjust_frequency_timex_clamp_high() {
+        let frequency = 20 << 16;
+        let frequency_multiplier = 1.5;
+
+        let new_frequency =
+            RawLinuxClock::adjust_frequency_timex(frequency, frequency_multiplier).freq;
+
+        assert_eq!(new_frequency, -((500 << 16) - 1));
     }
 }
