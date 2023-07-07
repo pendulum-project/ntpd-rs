@@ -58,13 +58,13 @@ pub enum PortAction<'a> {
         data: &'a [u8],
     },
     ResetAnnounceTimer {
-        duration: std::time::Duration,
+        duration: core::time::Duration,
     },
     ResetSyncTimer {
-        duration: std::time::Duration,
+        duration: core::time::Duration,
     },
     ResetAnnounceReceiptTimer {
-        duration: std::time::Duration,
+        duration: core::time::Duration,
     },
 }
 
@@ -76,33 +76,46 @@ impl<P> Port<P> {
         &mut self,
         context: TimestampContext,
         timestamp: Time,
-    ) -> PortAction<'_> {
-        todo!()
+    ) -> impl Iterator<Item = PortAction<'_>> + '_ {
+        todo!();
+        core::iter::empty()
     }
 
     // Handle the announce timer going of
-    pub fn handle_announce_timer(&mut self) -> PortAction<'_> {
-        todo!()
+    pub fn handle_announce_timer(&mut self) -> impl Iterator<Item = PortAction<'_>> + '_ {
+        todo!();
+        core::iter::empty()
     }
 
     // Handle the sync timer going of
-    pub fn handle_sync_timer(&mut self) -> PortAction<'_> {
-        todo!()
+    pub fn handle_sync_timer(&mut self) -> impl Iterator<Item = PortAction<'_>> + '_ {
+        todo!();
+        core::iter::empty()
     }
 
     // Handle the announce receipt timer going of
-    pub fn handle_announce_receipt_timer(&mut self) -> PortAction<'_> {
-        todo!()
+    pub fn handle_announce_receipt_timer(&mut self) -> impl Iterator<Item = PortAction<'_>> + '_ {
+        todo!();
+        core::iter::empty()
     }
 
     // Handle a message over the timecritical channel
-    pub fn handle_timecritical_receive(&mut self, data: &[u8], timestamp: Time) -> PortAction<'_> {
-        todo!()
+    pub fn handle_timecritical_receive(
+        &mut self,
+        data: &[u8],
+        timestamp: Time,
+    ) -> impl Iterator<Item = PortAction<'_>> + '_ {
+        todo!();
+        core::iter::empty()
     }
 
     // Handle a general ptp message
-    pub fn handle_general_receive(&mut self, data: &[u8]) -> PortAction<'_> {
-        todo!()
+    pub fn handle_general_receive(
+        &mut self,
+        data: &[u8],
+    ) -> impl Iterator<Item = PortAction<'_>> + '_ {
+        todo!();
+        core::iter::empty()
     }
 
     // Start a BMCA cycle and ensure this happens instantly from the perspective of
@@ -118,8 +131,8 @@ pub struct REMOVE;
 
 impl PortInBMCA {
     // End a BMCA cycle and make the port available again
-    pub fn end_bmca(self) -> (Port<REMOVE>, PortAction<'static>) {
-        todo!()
+    pub fn end_bmca(self) -> (Port<REMOVE>, impl Iterator<Item = PortAction<'static>>) {
+        (todo!(), core::iter::empty())
     }
 }
 // END NEW INTERFACE
