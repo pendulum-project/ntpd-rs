@@ -72,49 +72,58 @@ pub struct PortInBMCA;
 
 impl<P> Port<P> {
     // Send timestamp for last timecritical message became available
+    #[allow(unused)]
     pub fn handle_send_timestamp(
         &mut self,
         context: TimestampContext,
         timestamp: Time,
     ) -> impl Iterator<Item = PortAction<'_>> + '_ {
         todo!();
+        #[allow(unreachable_code)]
         core::iter::empty()
     }
 
     // Handle the announce timer going of
     pub fn handle_announce_timer(&mut self) -> impl Iterator<Item = PortAction<'_>> + '_ {
         todo!();
+        #[allow(unreachable_code)]
         core::iter::empty()
     }
 
     // Handle the sync timer going of
     pub fn handle_sync_timer(&mut self) -> impl Iterator<Item = PortAction<'_>> + '_ {
         todo!();
+        #[allow(unreachable_code)]
         core::iter::empty()
     }
 
     // Handle the announce receipt timer going of
     pub fn handle_announce_receipt_timer(&mut self) -> impl Iterator<Item = PortAction<'_>> + '_ {
         todo!();
+        #[allow(unreachable_code)]
         core::iter::empty()
     }
 
     // Handle a message over the timecritical channel
+    #[allow(unused)]
     pub fn handle_timecritical_receive(
         &mut self,
         data: &[u8],
         timestamp: Time,
     ) -> impl Iterator<Item = PortAction<'_>> + '_ {
         todo!();
+        #[allow(unreachable_code)]
         core::iter::empty()
     }
 
     // Handle a general ptp message
+    #[allow(unused)]
     pub fn handle_general_receive(
         &mut self,
         data: &[u8],
     ) -> impl Iterator<Item = PortAction<'_>> + '_ {
         todo!();
+        #[allow(unreachable_code)]
         core::iter::empty()
     }
 
@@ -127,11 +136,13 @@ impl<P> Port<P> {
 
 // Placeholder for type parameters that should be gone by the end of the
 // refactor
+#[allow(clippy::upper_case_acronyms)]
 pub struct REMOVE;
 
 impl PortInBMCA {
     // End a BMCA cycle and make the port available again
     pub fn end_bmca(self) -> (Port<REMOVE>, impl Iterator<Item = PortAction<'static>>) {
+        #[allow(unreachable_code)]
         (todo!(), core::iter::empty())
     }
 }

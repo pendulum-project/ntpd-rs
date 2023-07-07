@@ -73,6 +73,7 @@ pub struct PtpInstance<P, C, F, const N: usize> {
 
 // START NEW INTERFACE
 impl<P, C, F, const N: usize> PtpInstance<P, C, F, N> {
+    #[allow(unused)]
     pub fn bmca(&mut self, ports: &[&mut PortInBMCA]) {
         todo!()
     }
