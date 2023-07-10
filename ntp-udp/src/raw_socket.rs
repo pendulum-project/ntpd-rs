@@ -440,7 +440,7 @@ pub(crate) mod timestamping_config {
 
     #[repr(C)]
     #[allow(non_camel_case_types)]
-    #[derive(Default)]
+    #[derive(Debug, Default)]
     struct ethtool_ts_info {
         cmd: u32,
         so_timestamping: u32,
@@ -463,20 +463,9 @@ pub(crate) mod timestamping_config {
 
     impl TimestampSupport {
         fn for_interface(interface_name: InterfaceName) -> std::io::Result<Self> {
-            let socket = super::cerr(unsafe { libc::socket(libc::AF_INET, libc::SOCK_STREAM, 0) })?;
+            use libc::{AF_INET, IPPROTO_IP, SOCK_DGRAM};
 
-            let value = interface_name.as_str().as_bytes();
-            let len = value.len();
-
-            unsafe {
-                super::cerr(libc::setsockopt(
-                    socket,
-                    libc::SOL_SOCKET,
-                    libc::SO_BINDTODEVICE,
-                    value.as_ptr().cast(),
-                    len as libc::socklen_t,
-                ))?;
-            }
+            let socket = super::cerr(unsafe { libc::socket(AF_INET, SOCK_DGRAM, IPPROTO_IP) })?;
 
             Self::for_socket(socket, interface_name)
         }
