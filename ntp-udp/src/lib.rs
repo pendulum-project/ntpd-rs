@@ -29,7 +29,7 @@ pub use socket::UdpSocket;
 pub struct EnableTimestamps {
     #[serde(default = "bool_true")]
     pub rx_software: bool,
-    #[serde(default)] // defaults to `false`
+    #[serde(default = "bool_true")]
     pub tx_software: bool,
     #[serde(default)] // defaults to `false`
     pub rx_hardware: bool,

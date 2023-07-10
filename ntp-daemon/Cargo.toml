@@ -41,4 +41,5 @@ ntp-proto = { workspace = true, features=["ext-test"]}
 [features]
 sentry = ["dep:sentry", "dep:sentry-tracing"]
 rfc-algorithm = ["ntp-proto/rfc-algorithm"]
+hardware-timestamping = []
 fuzz = []
