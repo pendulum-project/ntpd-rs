@@ -1,3 +1,14 @@
+Version 0.3.7
+======
+
+Minor Changes
+-----
+- Send software timestamping is now enabled by default
+- Hardware timestamping can now only be configured if ntpd-rs is built with the `hardware-timestamping` feature (off by default).
+
+Bug fixes
+-----
+
 Version 0.3.6
 ======
 

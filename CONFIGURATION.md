@@ -244,6 +244,8 @@ The management and configuration sockets are used by the [management client](MAN
 
 #### Clock configuration
 
+*Note: these configuration options are only available if ntpd-rs is built with the `hardware-timestamping` feature flag (off by default).*
+
 Configure advanced experimental clock features. **The default clock settings are adequate for most users!** These settings are exposed for experimentation only.
 
 This section servers two practical (advanced and experimental) use cases:
@@ -256,7 +258,7 @@ This section servers two practical (advanced and experimental) use cases:
 | clock                           | system realtime clock | Path to a file descriptor that is a clock (e.g. "/dev/ptp0") |
 | interface                       | system default        | Network interface to use for timestamped packets             |
 | enable-timestamping.rx-software | true                  | Enable software receive timestamping                         |
-| enable-timestamping.tx-software | false                 | Enable software transmit timestamping                        |
+| enable-timestamping.tx-software | true                  | Enable software transmit timestamping                        |
 | enable-timestamping.rx-hardware | false                 | Enable hardware receive timestamping                         |
 | enable-timestamping.tx-hardware | false                 | Enable hardware transmit timestamping                        |
 

@@ -23,6 +23,7 @@ use std::{error::Error, sync::Arc};
 
 use clap::Parser;
 pub use config::dynamic::ConfigUpdate;
+use config::ClockConfig;
 pub use config::Config;
 pub use observer::{ObservablePeerState, ObservableState};
 pub use system::spawn;
@@ -75,10 +76,16 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     // we always generate the keyset (even if NTS is not used)
     let keyset = crate::nts_key_provider::spawn(config.keyset).await;
 
+    #[cfg(feature = "hardware-timestamping")]
+    let clock_config = config.clock;
+
+    #[cfg(not(feature = "hardware-timestamping"))]
+    let clock_config = ClockConfig::default();
+
     ::tracing::debug!("Configuration loaded, spawning daemon jobs");
     let (main_loop_handle, channels) = crate::spawn(
         config.system,
-        config.clock,
+        clock_config,
         &config.peers,
         &config.servers,
         keyset.clone(),

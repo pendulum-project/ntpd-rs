@@ -171,8 +171,8 @@ pub struct Config {
     pub log_filter: Option<EnvFilter>,
     #[serde(default)]
     pub log_format: LogFormat,
-    #[cfg(feature = "sentry")]
     #[serde(default)]
+    #[cfg(feature = "sentry")]
     pub sentry: SentryConfig,
     #[serde(default)]
     pub observe: ObserveConfig,
@@ -181,6 +181,7 @@ pub struct Config {
     #[serde(default)]
     pub keyset: KeysetConfig,
     #[serde(default)]
+    #[cfg(feature = "hardware-timestamping")]
     pub clock: ClockConfig,
 }
 
