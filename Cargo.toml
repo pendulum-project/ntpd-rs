@@ -68,7 +68,7 @@ sentry = { version = "0.29.3", default-features = false, features = ["backtrace"
 sentry-tracing = { version = "0.29.3" }
 
 # prometheus support
-prometheus-client = "0.21.1"
+prometheus-client = "0.21.2"
 
 # TLS
 rustls = "0.21.2"
