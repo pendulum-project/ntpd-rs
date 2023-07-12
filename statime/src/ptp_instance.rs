@@ -12,7 +12,7 @@ use crate::{
     datastructures::datasets::{CurrentDS, DefaultDS, ParentDS, TimePropertiesDS},
     filters::Filter,
     network::NetworkPort,
-    port::{Port, PortError, PortInBMCA, Ticker},
+    port::{InBmca, Port, PortError, Running, Startup, Ticker},
     time::Duration,
     utils::SignalContext,
 };
@@ -66,7 +66,8 @@ pub struct PtpInstance<P, C, F, const N: usize> {
     current_ds: CurrentDS,
     parent_ds: ParentDS,
     time_properties_ds: TimePropertiesDS,
-    ports: [Port<P>; N],
+    ports: [Port<Running>; N],
+    network_ports: [P; N],
     local_clock: RefCell<C>,
     filter: RefCell<F>,
 }
@@ -74,7 +75,7 @@ pub struct PtpInstance<P, C, F, const N: usize> {
 // START NEW INTERFACE
 impl<P, C, F, const N: usize> PtpInstance<P, C, F, N> {
     #[allow(unused)]
-    pub fn bmca(&mut self, ports: &[&mut PortInBMCA]) {
+    pub fn bmca(&mut self, ports: &[&mut Port<InBmca>]) {
         todo!()
     }
 
@@ -92,7 +93,7 @@ impl<P, C, F> PtpInstance<P, C, F, 1> {
     pub fn new_ordinary_clock(
         default_ds: DefaultDS,
         time_properties_ds: TimePropertiesDS,
-        port: Port<P>,
+        port: Port<Startup<P>>,
         local_clock: C,
         filter: F,
     ) -> Self {
@@ -109,10 +110,17 @@ impl<P, C, F, const N: usize> PtpInstance<P, C, F, N> {
     pub fn new_boundary_clock(
         default_ds: DefaultDS,
         time_properties_ds: TimePropertiesDS,
-        ports: [Port<P>; N],
+        ports: [Port<Startup<P>>; N],
         local_clock: C,
         filter: F,
     ) -> Self {
+        let mut ports_split = ports.map(|port| {
+            let (port, network_port) = port.into_running();
+            (port, Some(network_port))
+        });
+        let network_ports = core::array::from_fn::<_, N, _>(|i| ports_split[i].1.take().unwrap());
+        let ports = ports_split.map(|(port, _)| port);
+
         for (index, port) in ports.iter().enumerate() {
             assert_eq!(port.identity().port_number - 1, index as u16);
         }
@@ -122,6 +130,7 @@ impl<P, C, F, const N: usize> PtpInstance<P, C, F, N> {
             parent_ds: ParentDS::new(default_ds),
             time_properties_ds,
             ports,
+            network_ports,
             local_clock: RefCell::new(local_clock),
             filter: RefCell::new(filter),
         }
@@ -192,14 +201,19 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
                 .zip(&mut pinned_sync_timeouts)
                 .zip(&mut pinned_announce_timeouts)
                 .zip(signals)
+                .zip(&mut self.network_ports)
                 .map(
                     |(
-                        (((port, announce_receipt_timeout), sync_timeout), announce_timeout),
-                        stop,
+                        (
+                            (((port, announce_receipt_timeout), sync_timeout), announce_timeout),
+                            stop,
+                        ),
+                        network_port,
                     )| {
                         port.run_port(
                             &self.local_clock,
                             &self.filter,
+                            network_port,
                             announce_receipt_timeout,
                             sync_timeout,
                             announce_timeout,

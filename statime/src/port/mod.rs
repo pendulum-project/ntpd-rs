@@ -33,13 +33,22 @@ mod ticker;
 /// A single port of the PTP instance
 ///
 /// One of these needs to be created per port of the PTP instance.
-pub struct Port<P> {
+pub struct Port<L> {
     config: PortConfig,
     // Corresponds with PortDS port_state and enabled
     port_state: PortState,
-    network_port: P,
     bmca: Bmca,
+    lifecycle: L,
 }
+
+// Temporary, hopefully gone after refactor
+pub struct Startup<P> {
+    network_port: P,
+}
+
+pub struct Running;
+
+pub struct InBmca;
 
 // START NEW INTERFACE
 
@@ -75,8 +84,6 @@ pub enum PortAction<'a> {
     },
 }
 
-pub struct PortInBMCA;
-
 pub struct PortActionIterator<'a> {
     internal: <Option<PortAction<'a>> as IntoIterator>::IntoIter,
 }
@@ -97,7 +104,7 @@ impl<'a> Iterator for PortActionIterator<'a> {
     }
 }
 
-impl<P> Port<P> {
+impl Port<Running> {
     // Send timestamp for last timecritical message became available
     pub fn handle_send_timestamp(
         &mut self,
@@ -228,52 +235,21 @@ impl<P> Port<P> {
 
     // Start a BMCA cycle and ensure this happens instantly from the perspective of
     // the port
-    pub fn start_bmca(self) -> PortInBMCA {
+    pub fn start_bmca(self) -> Port<InBmca> {
         todo!()
     }
 }
 
-// Placeholder for type parameters that should be gone by the end of the
-// refactor
-#[allow(clippy::upper_case_acronyms)]
-pub struct REMOVE;
-
-impl PortInBMCA {
+impl Port<InBmca> {
     // End a BMCA cycle and make the port available again
-    pub fn end_bmca(self) -> (Port<REMOVE>, impl Iterator<Item = PortAction<'static>>) {
+    pub fn end_bmca(self) -> (Port<Running>, impl Iterator<Item = PortAction<'static>>) {
         #[allow(unreachable_code)]
         (todo!(), core::iter::empty())
     }
 }
 // END NEW INTERFACE
 
-impl<P> Port<P> {
-    fn temp_handle_time_measurement(
-        &mut self,
-        local_clock: &RefCell<impl Clock>,
-        filter: &RefCell<impl Filter>,
-        time_properties_ds: &TimePropertiesDS,
-    ) -> Result<()> {
-        // If the received message allowed the (slave) state to calculate its offset
-        // from the master, update the local clock
-        if let Some(measurement) = self.port_state.extract_measurement() {
-            let (offset, freq_corr) = filter
-                .try_borrow_mut()
-                .map(|mut borrow| borrow.absorb(measurement))
-                .map_err(|_| PortError::FilterBusy)?;
-
-            let mut local_clock = local_clock
-                .try_borrow_mut()
-                .map_err(|_| PortError::ClockBusy)?;
-
-            if let Err(error) = local_clock.adjust(offset, freq_corr, time_properties_ds) {
-                log::error!("failed to adjust clock: {:?}", error);
-            }
-        }
-
-        Ok(())
-    }
-
+impl<P> Port<Startup<P>> {
     /// Create a new port from a port dataset on a given interface.
     ///
     /// For example, when using the `statime-linux` network runtime, a port on
@@ -315,9 +291,49 @@ impl<P> Port<P> {
         Port {
             config,
             port_state: PortState::Listening,
-            network_port,
             bmca,
+            lifecycle: Startup { network_port },
         }
+    }
+
+    pub(crate) fn into_running(self) -> (Port<Running>, P) {
+        (
+            Port {
+                config: self.config,
+                port_state: self.port_state,
+                bmca: self.bmca,
+                lifecycle: Running,
+            },
+            self.lifecycle.network_port,
+        )
+    }
+}
+
+impl Port<Running> {
+    fn temp_handle_time_measurement(
+        &mut self,
+        local_clock: &RefCell<impl Clock>,
+        filter: &RefCell<impl Filter>,
+        time_properties_ds: &TimePropertiesDS,
+    ) -> Result<()> {
+        // If the received message allowed the (slave) state to calculate its offset
+        // from the master, update the local clock
+        if let Some(measurement) = self.port_state.extract_measurement() {
+            let (offset, freq_corr) = filter
+                .try_borrow_mut()
+                .map(|mut borrow| borrow.absorb(measurement))
+                .map_err(|_| PortError::FilterBusy)?;
+
+            let mut local_clock = local_clock
+                .try_borrow_mut()
+                .map_err(|_| PortError::ClockBusy)?;
+
+            if let Err(error) = local_clock.adjust(offset, freq_corr, time_properties_ds) {
+                log::error!("failed to adjust clock: {:?}", error);
+            }
+        }
+
+        Ok(())
     }
 
     fn set_forced_port_state(&mut self, state: PortState) {
@@ -377,12 +393,13 @@ impl<P> Port<P> {
     }
 }
 
-impl<P: NetworkPort> Port<P> {
+impl Port<Running> {
     #[allow(clippy::too_many_arguments)]
-    pub(crate) async fn run_port<F: Future>(
+    pub(crate) async fn run_port<F: Future, P: NetworkPort>(
         &mut self,
         local_clock: &RefCell<impl Clock>,
         filter: &RefCell<impl Filter>,
+        network_port: &mut P,
         announce_receipt_timeout: &mut Pin<&mut Ticker<F, impl FnMut(Duration) -> F>>,
         sync_timeout: &mut Pin<&mut Ticker<F, impl FnMut(Duration) -> F>>,
         announce_timeout: &mut Pin<&mut Ticker<F, impl FnMut(Duration) -> F>>,
@@ -399,7 +416,7 @@ impl<P: NetworkPort> Port<P> {
                 sync_timeout.next(),
                 announce_timeout.next(),
             );
-            let packet = self.network_port.recv();
+            let packet = network_port.recv();
             match select::select3(timeouts, packet, stop.wait_for()).await {
                 Either3::First(timeout) => match timeout {
                     Either3::First(_) => {
@@ -419,7 +436,9 @@ impl<P: NetworkPort> Port<P> {
                             self.config.port_identity.port_number
                         );
                         // Send sync message
-                        if let Err(error) = self.send_sync(local_clock, default_ds).await {
+                        if let Err(error) =
+                            self.send_sync(local_clock, network_port, default_ds).await
+                        {
                             log::error!("{:?}", error);
                         }
                     }
@@ -432,6 +451,7 @@ impl<P: NetworkPort> Port<P> {
                         if let Err(error) = self
                             .send_announce(
                                 local_clock,
+                                network_port,
                                 default_ds,
                                 time_properties_ds,
                                 parent_ds,
@@ -468,29 +488,8 @@ impl<P: NetworkPort> Port<P> {
                             time_properties_ds,
                         ),
                     };
-                    for action in actions {
-                        match action {
-                            PortAction::SendTimeCritical { context, data } => {
-                                match self.network_port.send_time_critical(data).await {
-                                    Ok(Some(timestamp)) => {
-                                        let mut followup =
-                                            self.handle_send_timestamp(context, timestamp);
-                                        assert!(followup.next().is_none());
-                                    }
-                                    Ok(None) => {
-                                        log::error!("Missing timestamp for packet");
-                                    }
-                                    Err(error) => {
-                                        log::error!("Could not send message: {:?}", error)
-                                    }
-                                }
-                            }
-                            PortAction::ResetAnnounceReceiptTimer { .. } => {
-                                announce_receipt_timeout.reset()
-                            }
-                            _ => panic!("Unexpected action here"),
-                        }
-                    }
+                    self.temp_handle_actions(actions, network_port, announce_receipt_timeout)
+                        .await;
                 }
                 Either3::Second(Err(error)) => log::error!("failed to parse packet {:?}", error),
                 Either3::Third(_) => {
@@ -500,6 +499,34 @@ impl<P: NetworkPort> Port<P> {
                     );
                     break;
                 }
+            }
+        }
+    }
+
+    async fn temp_handle_actions<F: Future, P: NetworkPort>(
+        &mut self,
+        actions: PortActionIterator<'_>,
+        network_port: &mut P,
+        announce_receipt_timeout: &mut Pin<&mut Ticker<F, impl FnMut(Duration) -> F>>,
+    ) {
+        for action in actions {
+            match action {
+                PortAction::SendTimeCritical { context, data } => {
+                    match network_port.send_time_critical(data).await {
+                        Ok(Some(timestamp)) => {
+                            let mut followup = self.handle_send_timestamp(context, timestamp);
+                            assert!(followup.next().is_none());
+                        }
+                        Ok(None) => {
+                            log::error!("Missing timestamp for packet");
+                        }
+                        Err(error) => {
+                            log::error!("Could not send message: {:?}", error)
+                        }
+                    }
+                }
+                PortAction::ResetAnnounceReceiptTimer { .. } => announce_receipt_timeout.reset(),
+                _ => panic!("Unexpected action here"),
             }
         }
     }
@@ -567,24 +594,26 @@ impl<P: NetworkPort> Port<P> {
         Ok(())
     }
 
-    async fn send_sync(
+    async fn send_sync<P: NetworkPort>(
         &mut self,
         local_clock: &RefCell<impl Clock>,
+        network_port: &mut P,
         default_ds: &DefaultDS,
     ) -> Result<()> {
         self.port_state
             .send_sync(
                 local_clock,
-                &mut self.network_port,
+                network_port,
                 self.config.port_identity,
                 default_ds,
             )
             .await
     }
 
-    async fn send_announce(
+    async fn send_announce<P: NetworkPort>(
         &mut self,
         local_clock: &RefCell<impl Clock>,
+        network_port: &mut P,
         default_ds: &DefaultDS,
         time_properties: &TimePropertiesDS,
         parent_ds: &ParentDS,
@@ -597,7 +626,7 @@ impl<P: NetworkPort> Port<P> {
                 time_properties,
                 parent_ds,
                 current_ds,
-                &mut self.network_port,
+                network_port,
                 self.config.port_identity,
             )
             .await
