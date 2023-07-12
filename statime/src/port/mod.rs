@@ -48,7 +48,10 @@ pub struct Startup<P> {
 
 pub struct Running;
 
-pub struct InBmca;
+pub struct InBmca {
+    pending_action: Option<PortAction<'static>>,
+    local_best: Option<BestAnnounceMessage>,
+}
 
 // START NEW INTERFACE
 
@@ -236,15 +239,143 @@ impl Port<Running> {
     // Start a BMCA cycle and ensure this happens instantly from the perspective of
     // the port
     pub fn start_bmca(self) -> Port<InBmca> {
-        todo!()
+        Port {
+            port_state: self.port_state,
+            config: self.config,
+            bmca: self.bmca,
+            lifecycle: InBmca {
+                pending_action: None,
+                local_best: None,
+            },
+        }
     }
 }
 
 impl Port<InBmca> {
     // End a BMCA cycle and make the port available again
     pub fn end_bmca(self) -> (Port<Running>, impl Iterator<Item = PortAction<'static>>) {
-        #[allow(unreachable_code)]
-        (todo!(), core::iter::empty())
+        (
+            Port {
+                port_state: self.port_state,
+                config: self.config,
+                bmca: self.bmca,
+                lifecycle: Running,
+            },
+            PortActionIterator::from(self.lifecycle.pending_action),
+        )
+    }
+
+    pub(crate) fn calculate_best_local_announce_message(&mut self, current_time: WireTimestamp) {
+        self.lifecycle.local_best = self.bmca.take_best_port_announce_message(current_time)
+    }
+
+    pub(crate) fn best_local_announce_message(&self) -> Option<BestAnnounceMessage> {
+        self.lifecycle.local_best
+    }
+
+    pub(crate) fn set_recommended_state(
+        &mut self,
+        recommended_state: RecommendedState,
+        time_properties_ds: &mut TimePropertiesDS,
+        current_ds: &mut CurrentDS,
+        parent_ds: &mut ParentDS,
+    ) -> Result<()> {
+        self.set_recommended_port_state(&recommended_state);
+
+        match recommended_state {
+            RecommendedState::M1(defaultds) | RecommendedState::M2(defaultds) => {
+                current_ds.steps_removed = 0;
+                current_ds.offset_from_master = Duration::ZERO;
+                current_ds.mean_delay = Duration::ZERO;
+
+                parent_ds.parent_port_identity.clock_identity = defaultds.clock_identity;
+                parent_ds.parent_port_identity.port_number = 0;
+                parent_ds.grandmaster_identity = defaultds.clock_identity;
+                parent_ds.grandmaster_clock_quality = defaultds.clock_quality;
+                parent_ds.grandmaster_priority_1 = defaultds.priority_1;
+                parent_ds.grandmaster_priority_2 = defaultds.priority_2;
+
+                time_properties_ds.leap59 = false;
+                time_properties_ds.leap61 = false;
+                time_properties_ds.current_utc_offset = 37;
+                time_properties_ds.current_utc_offset_valid = false;
+                time_properties_ds.ptp_timescale = true;
+                time_properties_ds.time_traceable = false;
+                time_properties_ds.frequency_traceable = false;
+                time_properties_ds.time_source = TimeSource::InternalOscillator;
+            }
+            RecommendedState::M3(_) | RecommendedState::P1(_) | RecommendedState::P2(_) => {}
+            RecommendedState::S1(announce_message) => {
+                current_ds.steps_removed = announce_message.steps_removed() + 1;
+
+                parent_ds.parent_port_identity = announce_message.header().source_port_identity();
+                parent_ds.grandmaster_identity = announce_message.grandmaster_identity();
+                parent_ds.grandmaster_clock_quality = announce_message.grandmaster_clock_quality();
+                parent_ds.grandmaster_priority_1 = announce_message.grandmaster_priority_1();
+                parent_ds.grandmaster_priority_2 = announce_message.grandmaster_priority_2();
+
+                *time_properties_ds = announce_message.time_properties();
+            }
+        }
+
+        // TODO: Discuss if we should change the clock's own time properties, or keep
+        // the master's time properties separately
+        if let RecommendedState::S1(announce_message) = &recommended_state {
+            // Update time properties
+            *time_properties_ds = announce_message.time_properties();
+        }
+
+        Ok(())
+    }
+
+    fn set_recommended_port_state(&mut self, recommended_state: &RecommendedState) {
+        match recommended_state {
+            // TODO set things like steps_removed once they are added
+            // TODO make sure states are complete
+            RecommendedState::S1(announce_message) => {
+                let remote_master = announce_message.header().source_port_identity();
+                let state = PortState::Slave(SlaveState::new(remote_master));
+
+                match &self.port_state {
+                    PortState::Listening | PortState::Master(_) | PortState::Passive => {
+                        self.set_forced_port_state(state);
+                        self.lifecycle.pending_action =
+                            Some(PortAction::ResetAnnounceReceiptTimer {
+                                duration: core::time::Duration::from_secs_f64(
+                                    2f64.powi(self.config.log_announce_interval as i32)
+                                        * (self.config.announce_receipt_timeout as f64),
+                                ),
+                            });
+                    }
+                    PortState::Slave(old_state) => {
+                        if old_state.remote_master() != remote_master {
+                            self.set_forced_port_state(state);
+                            self.lifecycle.pending_action =
+                                Some(PortAction::ResetAnnounceReceiptTimer {
+                                    duration: core::time::Duration::from_secs_f64(
+                                        2f64.powi(self.config.log_announce_interval as i32)
+                                            * (self.config.announce_receipt_timeout as f64),
+                                    ),
+                                });
+                        }
+                    }
+                }
+            }
+            RecommendedState::M1(_) | RecommendedState::M2(_) | RecommendedState::M3(_) => {
+                match self.port_state {
+                    PortState::Listening | PortState::Slave(_) | PortState::Passive => {
+                        self.set_forced_port_state(PortState::Master(MasterState::new()))
+                    }
+                    PortState::Master(_) => (),
+                }
+            }
+            RecommendedState::P1(_) | RecommendedState::P2(_) => match self.port_state {
+                PortState::Listening | PortState::Slave(_) | PortState::Master(_) => {
+                    self.set_forced_port_state(PortState::Passive)
+                }
+                PortState::Passive => (),
+            },
+        }
     }
 }
 // END NEW INTERFACE
@@ -309,6 +440,26 @@ impl<P> Port<Startup<P>> {
     }
 }
 
+impl<L> Port<L> {
+    fn set_forced_port_state(&mut self, state: PortState) {
+        log::info!(
+            "new state for port {}: {} -> {}",
+            self.config.port_identity.port_number,
+            self.port_state,
+            state
+        );
+        self.port_state = state;
+    }
+
+    pub(crate) fn state(&self) -> &PortState {
+        &self.port_state
+    }
+
+    pub(crate) fn number(&self) -> u16 {
+        self.config.port_identity.port_number
+    }
+}
+
 impl Port<Running> {
     fn temp_handle_time_measurement(
         &mut self,
@@ -334,58 +485,6 @@ impl Port<Running> {
         }
 
         Ok(())
-    }
-
-    fn set_forced_port_state(&mut self, state: PortState) {
-        log::info!(
-            "new state for port {}: {} -> {}",
-            self.config.port_identity.port_number,
-            self.port_state,
-            state
-        );
-        self.port_state = state;
-    }
-
-    fn set_recommended_port_state<F: Future>(
-        &mut self,
-        recommended_state: &RecommendedState,
-        announce_receipt_timeout: &mut Pin<&mut Ticker<F, impl FnMut(Duration) -> F>>,
-    ) {
-        match recommended_state {
-            // TODO set things like steps_removed once they are added
-            // TODO make sure states are complete
-            RecommendedState::S1(announce_message) => {
-                let remote_master = announce_message.header().source_port_identity();
-                let state = PortState::Slave(SlaveState::new(remote_master));
-
-                match &self.port_state {
-                    PortState::Listening | PortState::Master(_) | PortState::Passive => {
-                        self.set_forced_port_state(state);
-                        announce_receipt_timeout.reset();
-                    }
-                    PortState::Slave(old_state) => {
-                        if old_state.remote_master() != remote_master {
-                            self.set_forced_port_state(state);
-                            announce_receipt_timeout.reset();
-                        }
-                    }
-                }
-            }
-            RecommendedState::M1(_) | RecommendedState::M2(_) | RecommendedState::M3(_) => {
-                match self.port_state {
-                    PortState::Listening | PortState::Slave(_) | PortState::Passive => {
-                        self.set_forced_port_state(PortState::Master(MasterState::new()))
-                    }
-                    PortState::Master(_) => (),
-                }
-            }
-            RecommendedState::P1(_) | RecommendedState::P2(_) => match self.port_state {
-                PortState::Listening | PortState::Slave(_) | PortState::Master(_) => {
-                    self.set_forced_port_state(PortState::Passive)
-                }
-                PortState::Passive => (),
-            },
-        }
     }
 
     pub(crate) fn identity(&self) -> PortIdentity {
@@ -531,69 +630,6 @@ impl Port<Running> {
         }
     }
 
-    pub(crate) fn best_local_announce_message(
-        &mut self,
-        current_time: WireTimestamp,
-    ) -> Option<BestAnnounceMessage> {
-        self.bmca.take_best_port_announce_message(current_time)
-    }
-
-    pub(crate) fn set_recommended_state<F: Future>(
-        &mut self,
-        recommended_state: RecommendedState,
-        announce_receipt_timeout: &mut Pin<&mut Ticker<F, impl FnMut(Duration) -> F>>,
-        time_properties_ds: &mut TimePropertiesDS,
-        current_ds: &mut CurrentDS,
-        parent_ds: &mut ParentDS,
-    ) -> Result<()> {
-        self.set_recommended_port_state(&recommended_state, announce_receipt_timeout);
-
-        match recommended_state {
-            RecommendedState::M1(defaultds) | RecommendedState::M2(defaultds) => {
-                current_ds.steps_removed = 0;
-                current_ds.offset_from_master = Duration::ZERO;
-                current_ds.mean_delay = Duration::ZERO;
-
-                parent_ds.parent_port_identity.clock_identity = defaultds.clock_identity;
-                parent_ds.parent_port_identity.port_number = 0;
-                parent_ds.grandmaster_identity = defaultds.clock_identity;
-                parent_ds.grandmaster_clock_quality = defaultds.clock_quality;
-                parent_ds.grandmaster_priority_1 = defaultds.priority_1;
-                parent_ds.grandmaster_priority_2 = defaultds.priority_2;
-
-                time_properties_ds.leap59 = false;
-                time_properties_ds.leap61 = false;
-                time_properties_ds.current_utc_offset = 37;
-                time_properties_ds.current_utc_offset_valid = false;
-                time_properties_ds.ptp_timescale = true;
-                time_properties_ds.time_traceable = false;
-                time_properties_ds.frequency_traceable = false;
-                time_properties_ds.time_source = TimeSource::InternalOscillator;
-            }
-            RecommendedState::M3(_) | RecommendedState::P1(_) | RecommendedState::P2(_) => {}
-            RecommendedState::S1(announce_message) => {
-                current_ds.steps_removed = announce_message.steps_removed() + 1;
-
-                parent_ds.parent_port_identity = announce_message.header().source_port_identity();
-                parent_ds.grandmaster_identity = announce_message.grandmaster_identity();
-                parent_ds.grandmaster_clock_quality = announce_message.grandmaster_clock_quality();
-                parent_ds.grandmaster_priority_1 = announce_message.grandmaster_priority_1();
-                parent_ds.grandmaster_priority_2 = announce_message.grandmaster_priority_2();
-
-                *time_properties_ds = announce_message.time_properties();
-            }
-        }
-
-        // TODO: Discuss if we should change the clock's own time properties, or keep
-        // the master's time properties separately
-        if let RecommendedState::S1(announce_message) = &recommended_state {
-            // Update time properties
-            *time_properties_ds = announce_message.time_properties();
-        }
-
-        Ok(())
-    }
-
     async fn send_sync<P: NetworkPort>(
         &mut self,
         local_clock: &RefCell<impl Clock>,
@@ -643,9 +679,5 @@ impl Port<Running> {
     pub(crate) fn announce_receipt_interval(&self) -> Duration {
         Duration::from_log_interval(self.config.log_announce_interval)
             * self.config.announce_receipt_timeout
-    }
-
-    pub(crate) fn state(&self) -> &PortState {
-        &self.port_state
     }
 }

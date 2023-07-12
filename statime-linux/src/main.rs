@@ -178,7 +178,7 @@ async fn main() {
         delay_asymmetry: Duration::ZERO,
     };
     let port = Port::new(port_config, &mut network_runtime, args.interface).await;
-    let mut instance = PtpInstance::new_ordinary_clock(
+    let instance = PtpInstance::new_ordinary_clock(
         default_ds,
         time_properties_ds,
         port,

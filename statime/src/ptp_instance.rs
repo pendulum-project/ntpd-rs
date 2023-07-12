@@ -1,6 +1,5 @@
 use core::{
     cell::RefCell,
-    future::Future,
     pin::{pin, Pin},
 };
 
@@ -12,8 +11,7 @@ use crate::{
     datastructures::datasets::{CurrentDS, DefaultDS, ParentDS, TimePropertiesDS},
     filters::Filter,
     network::NetworkPort,
-    port::{InBmca, Port, PortError, Running, Startup, Ticker},
-    time::Duration,
+    port::{InBmca, Port, Running, Startup, Ticker},
     utils::SignalContext,
 };
 
@@ -62,23 +60,69 @@ use crate::{
 /// instance.run(&TimerImpl).await;
 /// ```
 pub struct PtpInstance<P, C, F, const N: usize> {
+    ports: [Port<Running>; N],
+    network_ports: [P; N],
+    state: RefCell<PtpInstanceState<C, F>>,
+}
+
+struct PtpInstanceState<C, F> {
     default_ds: DefaultDS,
     current_ds: CurrentDS,
     parent_ds: ParentDS,
     time_properties_ds: TimePropertiesDS,
-    ports: [Port<Running>; N],
-    network_ports: [P; N],
     local_clock: RefCell<C>,
     filter: RefCell<F>,
 }
 
 // START NEW INTERFACE
-impl<P, C, F, const N: usize> PtpInstance<P, C, F, N> {
-    #[allow(unused)]
-    pub fn bmca(&mut self, ports: &[&mut Port<InBmca>]) {
-        todo!()
+impl<C: Clock, F> PtpInstanceState<C, F> {
+    pub fn bmca(&mut self, ports: &mut [&mut Port<InBmca>]) {
+        let current_time = self.local_clock.get_mut().now().into();
+
+        for port in ports.iter_mut() {
+            port.calculate_best_local_announce_message(current_time)
+        }
+
+        let ebest = Bmca::find_best_announce_message(
+            ports
+                .iter()
+                .filter_map(|port| port.best_local_announce_message()),
+        );
+
+        for port in ports.iter_mut() {
+            let recommended_state = Bmca::calculate_recommended_state(
+                &self.default_ds,
+                ebest,
+                port.best_local_announce_message(),
+                port.state(),
+            );
+
+            log::debug!(
+                "Recommended state port {}: {:?}",
+                port.number(),
+                recommended_state
+            );
+
+            if let Some(recommended_state) = recommended_state {
+                let PtpInstanceState {
+                    ref mut time_properties_ds,
+                    ref mut current_ds,
+                    ref mut parent_ds,
+                    ..
+                } = *self;
+                if let Err(error) = port.set_recommended_state(
+                    recommended_state,
+                    time_properties_ds,
+                    current_ds,
+                    parent_ds,
+                ) {
+                    log::error!("{:?}", error)
+                }
+            }
+        }
     }
 
+    #[allow(unused)]
     pub fn bmca_interval(&self) -> std::time::Duration {
         todo!()
     }
@@ -125,14 +169,16 @@ impl<P, C, F, const N: usize> PtpInstance<P, C, F, N> {
             assert_eq!(port.identity().port_number - 1, index as u16);
         }
         PtpInstance {
-            default_ds,
-            current_ds: Default::default(),
-            parent_ds: ParentDS::new(default_ds),
-            time_properties_ds,
             ports,
             network_ports,
-            local_clock: RefCell::new(local_clock),
-            filter: RefCell::new(filter),
+            state: RefCell::new(PtpInstanceState {
+                default_ds,
+                current_ds: Default::default(),
+                parent_ds: ParentDS::new(default_ds),
+                time_properties_ds,
+                local_clock: RefCell::new(local_clock),
+                filter: RefCell::new(filter),
+            }),
         }
     }
 }
@@ -142,7 +188,8 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
     ///
     /// This future needs to be awaited for the PTP protocol to be handled and
     /// the clock to be synchronized.
-    pub async fn run(&mut self, timer: &impl Timer) -> ! {
+    #[allow(clippy::await_holding_refcell_ref)]
+    pub async fn run(self, timer: &impl Timer) -> ! {
         log::info!("Running!");
 
         let interval = self
@@ -187,21 +234,27 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
 
         let mut stopcontexts = [(); N].map(|_| SignalContext::new());
 
+        let PtpInstance {
+            mut ports,
+            state,
+            mut network_ports,
+        } = self;
+
         loop {
+            let stateref = state.borrow();
             let mut iter = stopcontexts.iter_mut();
             let stopperpairs =
                 core::array::from_fn::<_, N, _>(move |_| iter.next().unwrap().signal());
             let signallers = core::array::from_fn::<_, N, _>(|i| stopperpairs[i].1.clone());
             let signals = stopperpairs.map(|v| v.0);
 
-            let mut run_ports = self
-                .ports
+            let mut run_ports = ports
                 .iter_mut()
                 .zip(&mut pinned_announce_receipt_timeouts)
                 .zip(&mut pinned_sync_timeouts)
                 .zip(&mut pinned_announce_timeouts)
                 .zip(signals)
-                .zip(&mut self.network_ports)
+                .zip(&mut network_ports)
                 .map(
                     |(
                         (
@@ -211,16 +264,16 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
                         network_port,
                     )| {
                         port.run_port(
-                            &self.local_clock,
-                            &self.filter,
+                            &stateref.local_clock,
+                            &stateref.filter,
                             network_port,
                             announce_receipt_timeout,
                             sync_timeout,
                             announce_timeout,
-                            &self.default_ds,
-                            &self.time_properties_ds,
-                            &self.parent_ds,
-                            &self.current_ds,
+                            &stateref.default_ds,
+                            &stateref.time_properties_ds,
+                            &stateref.parent_ds,
+                            &stateref.current_ds,
                             stop,
                         )
                     },
@@ -238,53 +291,19 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
             )
             .await;
 
-            self.run_bmca(&mut pinned_announce_receipt_timeouts);
-        }
-    }
+            drop(stateref);
 
-    fn run_bmca<Fut: Future>(
-        &mut self,
-        pinned_timeouts: &mut [Pin<&mut Ticker<Fut, impl FnMut(Duration) -> Fut>>],
-    ) {
-        log::debug!("Running BMCA");
-        let mut erbests = [None; N];
+            let mut bmca_ports = ports.map(|port| port.start_bmca());
 
-        let current_time = self
-            .local_clock
-            .try_borrow()
-            .map(|borrow| borrow.now())
-            .map_err(|_| PortError::ClockBusy)
-            .unwrap()
-            .into();
+            // this can be simplified once array::each_mut stabilizes (https://github.com/rust-lang/rust/issues/76118)
+            let mut bmca_ports_iter = bmca_ports.iter_mut();
+            state
+                .borrow_mut()
+                .bmca(&mut core::array::from_fn::<_, N, _>(|_| {
+                    bmca_ports_iter.next().unwrap()
+                }));
 
-        for (index, port) in self.ports.iter_mut().enumerate() {
-            erbests[index] = port.best_local_announce_message(current_time);
-        }
-
-        // TODO: What to do with `None`s?
-        let ebest = Bmca::find_best_announce_message(erbests.iter().flatten().cloned());
-
-        for (index, port) in self.ports.iter_mut().enumerate() {
-            let recommended_state = Bmca::calculate_recommended_state(
-                &self.default_ds,
-                ebest,
-                erbests[index],
-                port.state(),
-            );
-
-            log::debug!("Recommended state port {}: {:?}", index, recommended_state);
-
-            if let Some(recommended_state) = recommended_state {
-                if let Err(error) = port.set_recommended_state(
-                    recommended_state,
-                    &mut pinned_timeouts[index],
-                    &mut self.time_properties_ds,
-                    &mut self.current_ds,
-                    &mut self.parent_ds,
-                ) {
-                    log::error!("{:?}", error)
-                }
-            }
+            ports = bmca_ports.map(|port| port.end_bmca().0);
         }
     }
 }
