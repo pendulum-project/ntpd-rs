@@ -289,6 +289,9 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
                     bmca_ports_iter.next().unwrap()
                 }));
 
+            // Ignoring the actions here isn't great but won't fundamentally break the
+            // futures since they still use periodic timers that don't require
+            // manual resetting.
             ports = bmca_ports.map(|port| port.end_bmca().0);
         }
     }

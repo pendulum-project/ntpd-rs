@@ -195,7 +195,20 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
     // Handle the announce receipt timer going of
     #[allow(unreachable_code)]
     pub fn handle_announce_receipt_timer(&mut self) -> PortActionIterator<'_> {
-        todo!()
+        match self.port_state {
+            PortState::Master(_) => (),
+            _ => self.set_forced_port_state(PortState::Master(MasterState::new())),
+        }
+
+        // Immediately start sending syncs and announces
+        actions![
+            PortAction::ResetAnnounceTimer {
+                duration: core::time::Duration::from_secs(0)
+            },
+            PortAction::ResetSyncTimer {
+                duration: core::time::Duration::from_secs(0)
+            }
+        ]
     }
 
     // Handle a message over the timecritical channel
@@ -465,7 +478,16 @@ impl<'a, C, F> Port<InBmca<'a, C, F>> {
             RecommendedState::M1(_) | RecommendedState::M2(_) | RecommendedState::M3(_) => {
                 match self.port_state {
                     PortState::Listening | PortState::Slave(_) | PortState::Passive => {
-                        self.set_forced_port_state(PortState::Master(MasterState::new()))
+                        self.set_forced_port_state(PortState::Master(MasterState::new()));
+                        // Immediately start sending announces and syncs
+                        self.lifecycle.pending_action = actions![
+                            PortAction::ResetAnnounceTimer {
+                                duration: core::time::Duration::from_secs(0)
+                            },
+                            PortAction::ResetSyncTimer {
+                                duration: core::time::Duration::from_secs(0)
+                            }
+                        ];
                     }
                     PortState::Master(_) => (),
                 }
@@ -558,13 +580,7 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
                                 "Port {} force master timeout",
                                 self.config.port_identity.port_number
                             );
-                            // No announces received for a long time, become master
-                            match self.port_state {
-                                PortState::Master(_) => (),
-                                _ => self
-                                    .set_forced_port_state(PortState::Master(MasterState::new())),
-                            }
-                            actions![]
+                            self.handle_announce_receipt_timer()
                         }
                         Either3::Second(_) => {
                             log::trace!(
