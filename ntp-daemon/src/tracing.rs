@@ -5,11 +5,6 @@ use crate::config::{
 use tracing::info;
 use tracing_subscriber::{filter::Filtered, EnvFilter, Registry};
 
-#[cfg(feature = "sentry")]
-type GuardType = Option<sentry::ClientInitGuard>;
-#[cfg(not(feature = "sentry"))]
-type GuardType = ();
-
 pub type ReloadHandle = tracing_subscriber::reload::Handle<
     Filtered<
         tracing_subscriber::fmt::Layer<Registry, LogFormatFields, LogFormat>,
@@ -20,7 +15,6 @@ pub type ReloadHandle = tracing_subscriber::reload::Handle<
 >;
 
 pub struct TracingState {
-    pub guard: GuardType,
     pub reload_handle: ReloadHandle,
 }
 
@@ -42,39 +36,11 @@ pub fn init(
     let (fmt_layer, fmt_handle) = tracing_subscriber::reload::Layer::new(layer);
 
     let registry = tracing_subscriber::registry().with(fmt_layer);
-
-    #[cfg(feature = "sentry")]
-    let (sentry_handle, registry) = {
-        let (sentry_layer, sentry_handle) = tracing_subscriber::reload::Layer::new(None);
-        (sentry_handle, registry.with(sentry_layer))
-    };
-
     registry.init();
 
     // Final setup needs the full configuration
-    // We use a let binding to deal with optional inclusion of a sentry guard.
     #[allow(clippy::let_unit_value)]
     move |config, has_log_override, has_format_override| -> _ {
-        #[cfg(not(feature = "sentry"))]
-        let guard = ();
-
-        #[cfg(feature = "sentry")]
-        let guard = if let Some(dsn) = config.sentry.dsn.take() {
-            let guard = sentry::init((
-                dsn,
-                sentry::ClientOptions {
-                    traces_sample_rate: config.sentry.sample_rate,
-                    ..sentry::ClientOptions::default()
-                },
-            ));
-
-            sentry_handle.modify(|l| *l = Some(sentry_tracing::layer()))?;
-
-            Some(guard)
-        } else {
-            None
-        };
-
         if has_format_override {
             info!("Log format override from command line arguments is active");
         } else {
@@ -94,7 +60,6 @@ pub fn init(
         }
 
         let state = TracingState {
-            guard,
             reload_handle: fmt_handle,
         };
 
