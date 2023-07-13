@@ -158,9 +158,6 @@ pub struct Config {
     #[serde(deserialize_with = "deserialize_option_env_filter", default)]
     pub log_filter: Option<EnvFilter>,
     #[serde(default)]
-    #[cfg(feature = "sentry")]
-    pub sentry: SentryConfig,
-    #[serde(default)]
     pub observe: ObserveConfig,
     #[serde(default)]
     pub configure: ConfigureConfig,
@@ -213,20 +210,6 @@ impl Default for ConfigureConfig {
             mode: default_configure_permissions(),
         }
     }
-}
-
-#[cfg(feature = "sentry")]
-#[derive(Deserialize, Debug, Default)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct SentryConfig {
-    pub dsn: Option<String>,
-    #[serde(default = "default_sample_rate")]
-    pub sample_rate: f32,
-}
-
-#[cfg(feature = "sentry")]
-fn default_sample_rate() -> f32 {
-    0.0
 }
 
 #[derive(Error, Debug)]
@@ -435,24 +418,6 @@ mod tests {
                 addr: NormalizedAddress::new_unchecked("example.com", 123),
             })]
         );
-    }
-
-    #[cfg(feature = "sentry")]
-    #[test]
-    fn test_sentry_config() {
-        let config: Config = toml::from_str("[[peers]]\naddr = \"example.com\"").unwrap();
-        assert!(config.sentry.dsn.is_none());
-
-        let config: Config =
-            toml::from_str("[[peers]]\naddr = \"example.com\"\n[sentry]\ndsn = \"abc\"").unwrap();
-        assert_eq!(config.sentry.dsn, Some("abc".into()));
-
-        let config: Config = toml::from_str(
-            "[[peers]]\naddr = \"example.com\"\n[sentry]\ndsn = \"abc\"\nsample-rate = 0.5",
-        )
-        .unwrap();
-        assert_eq!(config.sentry.dsn, Some("abc".into()));
-        assert!((config.sentry.sample_rate - 0.5).abs() < 1e-9);
     }
 
     #[test]

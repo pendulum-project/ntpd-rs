@@ -26,7 +26,6 @@ jobs:
           - ""
         features:
           - ""
-          - "--features sentry"
           - "--features rfc-algorithm"
     steps:
       - name: Checkout sources
@@ -138,11 +137,6 @@ jobs:
   unused:
     name: Unused dependencies
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        features:
-          - ""
-          - "--features sentry"
     steps:
       - name: Checkout sources
         uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9
@@ -159,8 +153,6 @@ jobs:
           tool: cargo-udeps
       - name: cargo udeps
         run: cargo udeps --workspace --all-targets
-      - name: cargo udeps (sentry)
-        run: cargo udeps --workspace --all-targets --features sentry
       - name: cargo udeps (fuzzer)
         run: cargo udeps --manifest-path ./fuzz/Cargo.toml --all-targets
 
