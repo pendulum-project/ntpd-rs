@@ -4,15 +4,14 @@ use crate::{
     clock::Clock,
     datastructures::{
         common::{PortIdentity, WireTimestamp},
-        datasets::{CurrentDS, DefaultDS, ParentDS, TimePropertiesDS},
+        datasets::DefaultDS,
         messages::{DelayReqMessage, Message, MessageBuilder},
     },
-    network::NetworkPort,
     port::{
-        error::{PortError, Result},
-        sequence_id::SequenceIdGenerator,
-        PortAction, PortActionIterator, TimestampContext, TimestampContextInner,
+        sequence_id::SequenceIdGenerator, PortAction, PortActionIterator, TimestampContext,
+        TimestampContextInner,
     },
+    ptp_instance::PtpInstanceState,
     time::Time,
     PortConfig,
 };
@@ -131,52 +130,65 @@ impl MasterState {
         ]
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) async fn send_announce<P: NetworkPort>(
+    pub(crate) fn send_announce<'a, C: Clock, F>(
         &mut self,
-        local_clock: &RefCell<impl Clock>,
-        default_ds: &DefaultDS,
-        time_properties: &TimePropertiesDS,
-        parent_ds: &ParentDS,
-        current_ds: &CurrentDS,
-        network_port: &mut P,
-        port_identity: PortIdentity,
-    ) -> Result<()> {
+        global: &PtpInstanceState<C, F>,
+        config: &PortConfig,
+        buffer: &'a mut [u8],
+    ) -> PortActionIterator<'a> {
         log::trace!("sending announce message");
 
-        let current_time = local_clock
-            .try_borrow()
-            .map(|borrow| borrow.now())
-            .map_err(|_| PortError::ClockBusy)?;
+        let current_time = match global.local_clock.try_borrow().map(|borrow| borrow.now()) {
+            Ok(time) => time,
+            Err(error) => {
+                log::error!("Statime bug: clock busy {:?}", error);
+                return actions![];
+            }
+        };
 
-        let announce_message = MessageBuilder::new()
-            .sdo_id(default_ds.sdo_id)
-            .domain_number(default_ds.domain_number)
-            .leap59(time_properties.leap59())
-            .leap61(time_properties.leap61())
-            .current_utc_offset_valid(time_properties.current_utc_offset_valid)
-            .ptp_timescale(time_properties.ptp_timescale)
-            .time_tracable(time_properties.time_traceable)
-            .frequency_tracable(time_properties.frequency_traceable)
+        let packet_length = match MessageBuilder::new()
+            .sdo_id(global.default_ds.sdo_id)
+            .domain_number(global.default_ds.domain_number)
+            .leap59(global.time_properties_ds.leap59())
+            .leap61(global.time_properties_ds.leap61())
+            .current_utc_offset_valid(global.time_properties_ds.current_utc_offset_valid)
+            .ptp_timescale(global.time_properties_ds.ptp_timescale)
+            .time_tracable(global.time_properties_ds.time_traceable)
+            .frequency_tracable(global.time_properties_ds.frequency_traceable)
             .sequence_id(self.announce_seq_ids.generate())
-            .source_port_identity(port_identity)
+            .source_port_identity(config.port_identity)
             .announce_message(
                 current_time.into(), // origin_timestamp: Timestamp,
-                time_properties.current_utc_offset,
-                parent_ds.grandmaster_priority_1,
-                parent_ds.grandmaster_clock_quality,
-                parent_ds.grandmaster_priority_2,
-                parent_ds.grandmaster_identity,
-                current_ds.steps_removed,
-                time_properties.time_source,
+                global.time_properties_ds.current_utc_offset,
+                global.parent_ds.grandmaster_priority_1,
+                global.parent_ds.grandmaster_clock_quality,
+                global.parent_ds.grandmaster_priority_2,
+                global.parent_ds.grandmaster_identity,
+                global.current_ds.steps_removed,
+                global.time_properties_ds.time_source,
             )
-            .serialize_vec()?;
+            .serialize(buffer)
+        {
+            Ok(length) => length,
+            Err(error) => {
+                log::error!(
+                    "Statime bug: Could not serialize announce message {:?}",
+                    error
+                );
+                return actions![];
+            }
+        };
 
-        if let Err(error) = network_port.send(&announce_message).await {
-            log::error!("failed to send announce message: {:?}", error);
-        }
-
-        Ok(())
+        actions![
+            PortAction::ResetAnnounceTimer {
+                duration: core::time::Duration::from_secs_f64(
+                    2f64.powi(config.log_announce_interval as i32)
+                )
+            },
+            PortAction::SendGeneral {
+                data: &buffer[..packet_length]
+            }
+        ]
     }
 
     pub(crate) fn handle_event_receive<'a>(
@@ -250,9 +262,10 @@ mod tests {
     use crate::{
         datastructures::{
             common::{ClockIdentity, TimeInterval},
+            datasets::{CurrentDS, ParentDS},
             messages::{Header, SdoId},
         },
-        MAX_DATA_LEN,
+        Duration, NetworkPort, TimePropertiesDS, MAX_DATA_LEN,
     };
 
     #[derive(Debug, Default)]
@@ -409,57 +422,73 @@ mod tests {
 
     #[test]
     fn test_announce() {
-        let mut port = TestNetworkPort::default();
-        let clock = RefCell::new(TestClock {
-            current_time: Time::from_micros(600),
-        });
-        let id = SdoId::default();
+        let mut buffer = [0u8; MAX_DATA_LEN];
 
-        let defaultds =
-            DefaultDS::new_ordinary_clock(ClockIdentity::default(), 15, 128, 0, false, id);
-        let mut parent_ds = ParentDS::new(defaultds);
+        let default_ds = DefaultDS::new_ordinary_clock(
+            ClockIdentity::default(),
+            15,
+            128,
+            0,
+            false,
+            SdoId::default(),
+        );
+        let mut parent_ds = ParentDS::new(default_ds);
         parent_ds.grandmaster_priority_1 = 15;
         let current_ds = CurrentDS::default();
-        let time_properties = TimePropertiesDS::default();
+        let time_properties_ds = TimePropertiesDS::default();
+        let global = PtpInstanceState {
+            default_ds,
+            current_ds,
+            parent_ds,
+            time_properties_ds,
+            local_clock: RefCell::new(TestClock {
+                current_time: Time::from_micros(600),
+            }),
+            filter: RefCell::new(()),
+        };
 
+        let config = PortConfig {
+            port_identity: PortIdentity::default(),
+            delay_mechanism: crate::DelayMechanism::E2E { log_interval: 1 },
+            log_announce_interval: 1,
+            announce_receipt_timeout: 2,
+            log_sync_interval: 0,
+            master_only: false,
+            delay_asymmetry: Duration::ZERO,
+        };
         let mut state = MasterState::new();
 
-        embassy_futures::block_on(state.send_announce(
-            &clock,
-            &defaultds,
-            &time_properties,
-            &parent_ds,
-            &current_ds,
-            &mut port,
-            PortIdentity::default(),
-        ))
-        .unwrap();
+        let mut actions = state.send_announce(&global, &config, &mut buffer);
 
-        assert_eq!(port.normal.len(), 1);
-        assert_eq!(port.time.len(), 0);
+        assert!(matches!(
+            actions.next(),
+            Some(PortAction::ResetAnnounceTimer { .. })
+        ));
+        let Some(PortAction::SendGeneral { data }) = actions.next() else {
+            panic!("Unexpected action");
+        };
+        assert!(actions.next().is_none());
+        drop(actions);
 
-        let msg = match Message::deserialize(&port.normal.pop().unwrap()).unwrap() {
+        let msg = match Message::deserialize(data).unwrap() {
             Message::Announce(msg) => msg,
             _ => panic!("Unexpected message type"),
         };
 
         assert_eq!(msg.grandmaster_priority_1, 15);
 
-        embassy_futures::block_on(state.send_announce(
-            &clock,
-            &defaultds,
-            &time_properties,
-            &parent_ds,
-            &current_ds,
-            &mut port,
-            PortIdentity::default(),
-        ))
-        .unwrap();
+        let mut actions = state.send_announce(&global, &config, &mut buffer);
 
-        assert_eq!(port.normal.len(), 1);
-        assert_eq!(port.time.len(), 0);
+        assert!(matches!(
+            actions.next(),
+            Some(PortAction::ResetAnnounceTimer { .. })
+        ));
+        let Some(PortAction::SendGeneral { data }) = actions.next() else {
+            panic!("Unexpected action");
+        };
+        assert!(actions.next().is_none());
 
-        let msg2 = match Message::deserialize(&port.normal.pop().unwrap()).unwrap() {
+        let msg2 = match Message::deserialize(data).unwrap() {
             Message::Announce(msg) => msg,
             _ => panic!("Unexpected message type"),
         };

@@ -1,7 +1,6 @@
 //! Ptp network messages
 
 pub use announce::*;
-use arrayvec::ArrayVec;
 pub use delay_req::*;
 pub use delay_resp::*;
 pub use follow_up::*;
@@ -139,16 +138,6 @@ impl Message {
         }
 
         Ok(self.wire_size())
-    }
-
-    /// Serializes the message into the PTP wire format.
-    ///
-    /// Returns a vector with the bytes of the message or an error.
-    pub fn serialize_vec(&self) -> Result<ArrayVec<u8, MAX_DATA_LEN>, super::WireFormatError> {
-        let mut buffer = ArrayVec::from([0; MAX_DATA_LEN]);
-        buffer.truncate(self.wire_size());
-        self.serialize(&mut buffer)?;
-        Ok(buffer)
     }
 
     /// Deserializes a message from the PTP wire format.

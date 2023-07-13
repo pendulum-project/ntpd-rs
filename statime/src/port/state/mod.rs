@@ -9,13 +9,8 @@ pub use slave::SlaveState;
 use super::{Measurement, PortActionIterator, TimestampContext};
 use crate::{
     clock::Clock,
-    datastructures::{
-        common::PortIdentity,
-        datasets::{CurrentDS, DefaultDS, ParentDS, TimePropertiesDS},
-        messages::Message,
-    },
-    network::NetworkPort,
-    port::error::Result,
+    datastructures::{common::PortIdentity, datasets::DefaultDS, messages::Message},
+    ptp_instance::PtpInstanceState,
     time::Time,
     PortConfig,
 };
@@ -99,32 +94,15 @@ impl PortState {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub async fn send_announce<P: NetworkPort>(
+    pub(crate) fn send_announce<'a, C: Clock, F>(
         &mut self,
-        local_clock: &RefCell<impl Clock>,
-        default_ds: &DefaultDS,
-        time_properties: &TimePropertiesDS,
-        parent_ds: &ParentDS,
-        current_ds: &CurrentDS,
-        network_port: &mut P,
-        port_identity: PortIdentity,
-    ) -> Result<()> {
+        global: &PtpInstanceState<C, F>,
+        config: &PortConfig,
+        buffer: &'a mut [u8],
+    ) -> PortActionIterator<'a> {
         match self {
-            PortState::Master(master) => {
-                master
-                    .send_announce(
-                        local_clock,
-                        default_ds,
-                        time_properties,
-                        parent_ds,
-                        current_ds,
-                        network_port,
-                        port_identity,
-                    )
-                    .await
-            }
-            PortState::Slave(_) | PortState::Listening | PortState::Passive => Ok(()),
+            PortState::Master(master) => master.send_announce(global, config, buffer),
+            PortState::Slave(_) | PortState::Listening | PortState::Passive => actions![],
         }
     }
 

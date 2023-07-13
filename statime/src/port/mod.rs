@@ -1,6 +1,7 @@
 use core::{
     cell::{Ref, RefCell},
     future::Future,
+    ops::Deref,
     pin::Pin,
 };
 
@@ -174,7 +175,11 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
 
     // Handle the announce timer going of
     pub fn handle_announce_timer(&mut self) -> PortActionIterator<'_> {
-        todo!()
+        self.port_state.send_announce(
+            self.lifecycle.state.deref(),
+            &self.config,
+            &mut self.packet_buffer,
+        )
     }
 
     // Handle the sync timer going of
@@ -573,11 +578,7 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
                                 "Port {} announce timeout",
                                 self.config.port_identity.port_number
                             );
-                            // Send announce message
-                            if let Err(error) = self.send_announce(network_port).await {
-                                log::error!("{:?}", error);
-                            }
-                            actions![]
+                            self.handle_announce_timer()
                         }
                     },
                     Either3::Second(Ok(packet)) => {
@@ -616,21 +617,6 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
             )
             .await;
         }
-    }
-
-    #[allow(clippy::await_holding_refcell_ref)]
-    async fn send_announce<P: NetworkPort>(&mut self, network_port: &mut P) -> Result<()> {
-        self.port_state
-            .send_announce(
-                &self.lifecycle.state.local_clock,
-                &self.lifecycle.state.default_ds,
-                &self.lifecycle.state.time_properties_ds,
-                &self.lifecycle.state.parent_ds,
-                &self.lifecycle.state.current_ds,
-                network_port,
-                self.config.port_identity,
-            )
-            .await
     }
 }
 
