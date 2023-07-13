@@ -52,12 +52,6 @@ test = false
 doc = false
 
 [[bin]]
-name = "interval_finding"
-path = "fuzz_targets/interval_finding.rs"
-test = false
-doc = false
-
-[[bin]]
 name = "tuple_from_packet"
 path = "fuzz_targets/tuple_from_packet.rs"
 test = false
