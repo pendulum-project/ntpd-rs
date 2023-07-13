@@ -5,8 +5,8 @@ use crate::{
         messages::{DelayRespMessage, FollowUpMessage, Message, MessageBuilder, SyncMessage},
     },
     port::{
-        sequence_id::SequenceIdGenerator, Measurement, PortAction, TimestampContext,
-        TimestampContextInner,
+        sequence_id::SequenceIdGenerator, Measurement, PortAction, PortActionIterator,
+        TimestampContext, TimestampContextInner,
     },
     time::{Duration, Time},
 };
@@ -65,23 +65,27 @@ impl SlaveState {
         }
     }
 
-    pub(crate) fn handle_timestamp(
+    pub(crate) fn handle_timestamp<'a>(
         &mut self,
         context: TimestampContext,
         timestamp: Time,
-    ) -> Option<PortAction<'static>> {
+    ) -> PortActionIterator<'a> {
         match context.inner {
             crate::port::TimestampContextInner::DelayReq { id } => {
                 self.handle_delay_timestamp(id, timestamp)
             }
+            _ => {
+                log::error!("Unexpected timestamp");
+                actions![]
+            }
         }
     }
 
-    fn handle_delay_timestamp(
+    fn handle_delay_timestamp<'a>(
         &mut self,
         timestamp_id: u16,
         timestamp: Time,
-    ) -> Option<PortAction<'static>> {
+    ) -> PortActionIterator<'a> {
         match self.delay_state {
             DelayState::Measuring {
                 id,
@@ -100,7 +104,7 @@ impl SlaveState {
             }
         }
 
-        None
+        actions![]
     }
 
     pub(crate) fn handle_event_receive<'a>(
@@ -110,10 +114,10 @@ impl SlaveState {
         port_identity: PortIdentity,
         default_ds: &DefaultDS,
         buffer: &'a mut [u8],
-    ) -> Option<PortAction<'a>> {
+    ) -> PortActionIterator<'a> {
         // Ignore everything not from master
         if message.header().source_port_identity() != self.remote_master {
-            return None;
+            return actions![];
         }
 
         match message {
@@ -122,7 +126,7 @@ impl SlaveState {
             }
             _ => {
                 log::warn!("Unexpected message {:?}", message);
-                None
+                actions![]
             }
         }
     }
@@ -159,7 +163,7 @@ impl SlaveState {
         port_identity: PortIdentity,
         default_ds: &DefaultDS,
         buffer: &'a mut [u8],
-    ) -> Option<PortAction<'a>> {
+    ) -> PortActionIterator<'a> {
         log::debug!("Received sync {:?}", message.header().sequence_id());
 
         // substracting correction from recv time is equivalent to adding it to send
@@ -218,26 +222,26 @@ impl SlaveState {
                 .sequence_id(delay_id)
                 .log_message_interval(0x7f)
                 .delay_req_message(WireTimestamp::default());
-            let message_length = delay_req
-                .serialize(buffer)
-                .map_err(|error| {
+            let message_length = match delay_req.serialize(buffer) {
+                Ok(length) => length,
+                Err(error) => {
                     log::error!("Could not serialize delay request: {:?}", error);
-                    error
-                })
-                .ok()?;
+                    return actions![];
+                }
+            };
             self.delay_state = DelayState::Measuring {
                 id: delay_id,
                 send_time: None,
                 recv_time: None,
             };
-            Some(PortAction::SendTimeCritical {
+            actions![PortAction::SendTimeCritical {
                 context: TimestampContext {
                     inner: TimestampContextInner::DelayReq { id: delay_id },
                 },
                 data: &buffer[..message_length],
-            })
+            }]
         } else {
-            None
+            actions![]
         }
     }
 
@@ -414,7 +418,7 @@ mod tests {
             SdoId::default(),
         );
 
-        let action = state.handle_event_receive(
+        let mut action = state.handle_event_receive(
             Message::Sync(SyncMessage {
                 header: Header {
                     two_step_flag: false,
@@ -429,7 +433,8 @@ mod tests {
             &mut buffer,
         );
 
-        assert!(action.is_none());
+        assert!(action.next().is_none());
+        drop(action);
         assert_eq!(
             state.extract_measurement(),
             Some(Measurement {
@@ -438,7 +443,7 @@ mod tests {
             })
         );
 
-        let action = state.handle_event_receive(
+        let mut action = state.handle_event_receive(
             Message::Sync(SyncMessage {
                 header: Header {
                     two_step_flag: true,
@@ -454,7 +459,7 @@ mod tests {
             &mut buffer,
         );
 
-        assert!(action.is_none());
+        assert!(action.next().is_none());
         assert_eq!(state.extract_measurement(), None);
 
         state.handle_general_receive(
@@ -493,7 +498,7 @@ mod tests {
             SdoId::default(),
         );
 
-        let action = state.handle_event_receive(
+        let mut action = state.handle_event_receive(
             Message::Sync(SyncMessage {
                 header: Header {
                     two_step_flag: false,
@@ -508,9 +513,11 @@ mod tests {
             &mut buffer,
         );
 
-        let Some(PortAction::SendTimeCritical { context, data }) = action else {
-            panic!("Unexpected action {:?}", action);
+        let Some(PortAction::SendTimeCritical { context, data }) = action.next() else {
+            panic!("Unexpected action");
         };
+        assert!(action.next().is_none());
+        drop(action);
         assert_eq!(state.extract_measurement(), None);
 
         let req = match Message::deserialize(data).unwrap() {
@@ -518,8 +525,9 @@ mod tests {
             _ => panic!("Incorrect message type"),
         };
 
-        let action = state.handle_timestamp(context, Time::from_micros(100));
-        assert!(action.is_none());
+        let mut action = state.handle_timestamp(context, Time::from_micros(100));
+        assert!(action.next().is_none());
+        drop(action);
 
         state.handle_general_receive(
             Message::DelayResp(DelayRespMessage {
@@ -545,7 +553,7 @@ mod tests {
 
         state.mean_delay = None;
 
-        let action = state.handle_event_receive(
+        let mut action = state.handle_event_receive(
             Message::Sync(SyncMessage {
                 header: Header {
                     two_step_flag: true,
@@ -560,17 +568,19 @@ mod tests {
             &mut buffer,
         );
 
-        let Some(PortAction::SendTimeCritical { context, data }) = action else {
-            panic!("Unexpected action {:?}", action);
+        let Some(PortAction::SendTimeCritical { context, data }) = action.next() else {
+            panic!("Unexpected action");
         };
+        assert!(action.next().is_none());
+        drop(action);
 
         let req = match Message::deserialize(data).unwrap() {
             Message::DelayReq(msg) => msg,
             _ => panic!("Incorrect message type"),
         };
 
-        let action = state.handle_timestamp(context, Time::from_micros(1100));
-        assert!(action.is_none());
+        let mut action = state.handle_timestamp(context, Time::from_micros(1100));
+        assert!(action.next().is_none());
 
         assert_eq!(state.extract_measurement(), None);
 
@@ -639,7 +649,7 @@ mod tests {
 
         assert_eq!(state.extract_measurement(), None);
 
-        let action = state.handle_event_receive(
+        let mut action = state.handle_event_receive(
             Message::Sync(SyncMessage {
                 header: Header {
                     two_step_flag: true,
@@ -655,7 +665,7 @@ mod tests {
             &mut buffer,
         );
 
-        assert!(action.is_none());
+        assert!(action.next().is_none());
         assert_eq!(
             state.extract_measurement(),
             Some(Measurement {
@@ -682,7 +692,7 @@ mod tests {
             SdoId::default(),
         );
 
-        let action = state.handle_event_receive(
+        let mut action = state.handle_event_receive(
             Message::Sync(SyncMessage {
                 header: Header {
                     two_step_flag: true,
@@ -698,7 +708,7 @@ mod tests {
             &mut buffer,
         );
 
-        assert!(action.is_none());
+        assert!(action.next().is_none());
         assert_eq!(state.extract_measurement(), None);
 
         state.handle_general_receive(
@@ -747,7 +757,7 @@ mod tests {
             SdoId::default(),
         );
 
-        let action = state.handle_event_receive(
+        let mut action = state.handle_event_receive(
             Message::Sync(SyncMessage {
                 header: Header {
                     two_step_flag: true,
@@ -763,10 +773,11 @@ mod tests {
             &mut buffer,
         );
 
-        assert!(action.is_none());
+        assert!(action.next().is_none());
+        drop(action);
         assert_eq!(state.extract_measurement(), None);
 
-        let action = state.handle_event_receive(
+        let mut action = state.handle_event_receive(
             Message::Sync(SyncMessage {
                 header: Header {
                     two_step_flag: true,
@@ -782,7 +793,7 @@ mod tests {
             &mut buffer,
         );
 
-        assert!(action.is_none());
+        assert!(action.next().is_none());
         assert_eq!(state.extract_measurement(), None);
 
         state.handle_general_receive(
@@ -821,7 +832,7 @@ mod tests {
             SdoId::default(),
         );
 
-        let action = state.handle_event_receive(
+        let mut action = state.handle_event_receive(
             Message::Sync(SyncMessage {
                 header: Header {
                     two_step_flag: false,
@@ -836,12 +847,13 @@ mod tests {
             &mut buffer,
         );
 
-        let Some(PortAction::SendTimeCritical { context, data }) = action else {
-            panic!("Unexpected action {:?}", action);
+        let Some(PortAction::SendTimeCritical { context, data }) = action.next() else {
+            panic!("Unexpected action");
         };
+        assert!(action.next().is_none());
 
-        let action = state.handle_timestamp(context, Time::from_micros(100));
-        assert!(action.is_none());
+        let mut action = state.handle_timestamp(context, Time::from_micros(100));
+        assert!(action.next().is_none());
 
         assert_eq!(state.extract_measurement(), None);
 

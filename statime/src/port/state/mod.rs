@@ -6,7 +6,7 @@ use core::{
 pub use master::MasterState;
 pub use slave::SlaveState;
 
-use super::{Measurement, PortAction, TimestampContext};
+use super::{Measurement, PortActionIterator, TimestampContext};
 use crate::{
     clock::Clock,
     datastructures::{
@@ -17,6 +17,7 @@ use crate::{
     network::NetworkPort,
     port::error::Result,
     time::Time,
+    PortConfig,
 };
 
 mod master;
@@ -32,14 +33,20 @@ pub enum PortState {
 }
 
 impl PortState {
-    pub(crate) fn handle_timestamp(
+    pub(crate) fn handle_timestamp<'a>(
         &mut self,
         context: TimestampContext,
         timestamp: Time,
-    ) -> Option<PortAction<'static>> {
+        port_identity: PortIdentity,
+        default_ds: &DefaultDS,
+        buffer: &'a mut [u8],
+    ) -> PortActionIterator<'a> {
         match self {
             PortState::Slave(slave) => slave.handle_timestamp(context, timestamp),
-            PortState::Master(_) | PortState::Listening | PortState::Passive => None,
+            PortState::Master(master) => {
+                master.handle_timestamp(context, timestamp, port_identity, default_ds, buffer)
+            }
+            PortState::Listening | PortState::Passive => actions![],
         }
     }
 
@@ -51,7 +58,7 @@ impl PortState {
         port_identity: PortIdentity,
         default_ds: &DefaultDS,
         buffer: &'a mut [u8],
-    ) -> Option<PortAction<'a>> {
+    ) -> PortActionIterator<'a> {
         match self {
             PortState::Master(master) => master.handle_event_receive(
                 message,
@@ -63,7 +70,7 @@ impl PortState {
             PortState::Slave(slave) => {
                 slave.handle_event_receive(message, timestamp, port_identity, default_ds, buffer)
             }
-            PortState::Listening | PortState::Passive => None,
+            PortState::Listening | PortState::Passive => actions![],
         }
     }
 
@@ -77,20 +84,18 @@ impl PortState {
         }
     }
 
-    pub async fn send_sync<P: NetworkPort>(
+    pub fn send_sync<'a>(
         &mut self,
         local_clock: &RefCell<impl Clock>,
-        network_port: &mut P,
-        port_identity: PortIdentity,
+        config: &PortConfig,
         default_ds: &DefaultDS,
-    ) -> Result<()> {
+        buffer: &'a mut [u8],
+    ) -> PortActionIterator<'a> {
         match self {
-            PortState::Master(master) => {
-                master
-                    .send_sync(local_clock, network_port, port_identity, default_ds)
-                    .await
+            PortState::Master(master) => master.send_sync(local_clock, config, default_ds, buffer),
+            PortState::Slave(_) | PortState::Listening | PortState::Passive => {
+                actions![]
             }
-            PortState::Slave(_) | PortState::Listening | PortState::Passive => Ok(()),
         }
     }
 

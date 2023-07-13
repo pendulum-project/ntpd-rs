@@ -11,9 +11,10 @@ use crate::{
     port::{
         error::{PortError, Result},
         sequence_id::SequenceIdGenerator,
-        PortAction,
+        PortAction, PortActionIterator, TimestampContext, TimestampContextInner,
     },
     time::Time,
+    PortConfig,
 };
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -30,54 +31,104 @@ impl MasterState {
         }
     }
 
-    pub(crate) async fn send_sync<P: NetworkPort>(
+    pub(crate) fn handle_timestamp<'a>(
         &mut self,
-        local_clock: &RefCell<impl Clock>,
-        network_port: &mut P,
+        context: TimestampContext,
+        timestamp: Time,
         port_identity: PortIdentity,
         default_ds: &DefaultDS,
-    ) -> Result<()> {
+        buffer: &'a mut [u8],
+    ) -> PortActionIterator<'a> {
+        match context.inner {
+            TimestampContextInner::Sync { id } => {
+                self.handle_sync_timestamp(id, timestamp, port_identity, default_ds, buffer)
+            }
+            _ => {
+                log::error!("Unexpected send timestamp");
+                actions![]
+            }
+        }
+    }
+
+    pub(crate) fn handle_sync_timestamp<'a>(
+        &mut self,
+        id: u16,
+        timestamp: Time,
+        port_identity: PortIdentity,
+        default_ds: &DefaultDS,
+        buffer: &'a mut [u8],
+    ) -> PortActionIterator<'a> {
+        let packet_length = match MessageBuilder::new()
+            .sdo_id(default_ds.sdo_id)
+            .domain_number(default_ds.domain_number)
+            .sequence_id(id)
+            .source_port_identity(port_identity)
+            .correction_field(timestamp.subnano())
+            .follow_up_message(timestamp.into())
+            .serialize(buffer)
+        {
+            Ok(length) => length,
+            Err(error) => {
+                log::error!(
+                    "Statime bug: Could not serialize sync follow up {:?}",
+                    error
+                );
+                return actions![];
+            }
+        };
+
+        actions![PortAction::SendGeneral {
+            data: &buffer[..packet_length],
+        }]
+    }
+
+    pub(crate) fn send_sync<'a>(
+        &mut self,
+        local_clock: &RefCell<impl Clock>,
+        config: &PortConfig,
+        default_ds: &DefaultDS,
+        buffer: &'a mut [u8],
+    ) -> PortActionIterator<'a> {
         log::trace!("sending sync message");
 
-        let current_time = local_clock
-            .try_borrow()
-            .map(|borrow| borrow.now())
-            .map_err(|_| PortError::ClockBusy)?;
+        let current_time = match local_clock.try_borrow().map(|borrow| borrow.now()) {
+            Ok(time) => time,
+            Err(error) => {
+                log::error!("Statime bug: Clock busy {:?}", error);
+                return actions![];
+            }
+        };
 
         let seq_id = self.sync_seq_ids.generate();
-        let sync_message = MessageBuilder::new()
+        let packet_length = match MessageBuilder::new()
             .sdo_id(default_ds.sdo_id)
             .domain_number(default_ds.domain_number)
             .two_step_flag(true)
             .sequence_id(seq_id)
-            .source_port_identity(port_identity)
+            .source_port_identity(config.port_identity)
             .sync_message(current_time.into())
-            .serialize_vec()?;
-
-        let current_time = match network_port.send_time_critical(&sync_message).await {
-            Ok(opt_time) => opt_time.unwrap_or(current_time),
+            .serialize(buffer)
+        {
+            Ok(message) => message,
             Err(error) => {
-                log::error!("failed to send sync message: {:?}", error);
-                return Err(PortError::Network);
+                log::error!("Statime bug: Could not serialize sync: {:?}", error);
+                return actions![];
             }
         };
 
-        // TODO: Discuss whether follow up is a config?
-        let follow_up_message = MessageBuilder::new()
-            .sdo_id(default_ds.sdo_id)
-            .domain_number(default_ds.domain_number)
-            .sequence_id(seq_id)
-            .source_port_identity(port_identity)
-            .correction_field(current_time.subnano())
-            .follow_up_message(current_time.into())
-            .serialize_vec()?;
-
-        if let Err(error) = network_port.send(&follow_up_message).await {
-            log::error!("failed to send follow-up message: {:?}", error);
-            return Err(PortError::Network);
-        }
-
-        Ok(())
+        actions![
+            PortAction::ResetSyncTimer {
+                duration: core::time::Duration::from_secs_f64(
+                    2f64.powi(config.log_sync_interval as i32),
+                ),
+            },
+            PortAction::SendTimeCritical {
+                context: TimestampContext {
+                    inner: TimestampContextInner::Sync { id: seq_id },
+                },
+                data: &buffer[..packet_length],
+            }
+        ]
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -135,9 +186,9 @@ impl MasterState {
         min_delay_req_interval: i8,
         port_identity: PortIdentity,
         buffer: &'a mut [u8],
-    ) -> Option<PortAction<'a>> {
+    ) -> PortActionIterator<'a> {
         if message.header().source_port_identity() == port_identity {
-            return None;
+            return actions![];
         }
 
         match message {
@@ -150,7 +201,7 @@ impl MasterState {
             ),
             _ => {
                 log::warn!("Unexpected message {:?}", message);
-                None
+                actions![]
             }
         }
     }
@@ -162,7 +213,7 @@ impl MasterState {
         min_delay_req_interval: i8,
         port_identity: PortIdentity,
         buffer: &'a mut [u8],
-    ) -> Option<PortAction<'a>> {
+    ) -> PortActionIterator<'a> {
         log::debug!("Received DelayReq");
         let delay_resp_message = MessageBuilder::new()
             .copy_header(Message::DelayReq(message))
@@ -175,17 +226,17 @@ impl MasterState {
                 message.header().source_port_identity(),
             );
 
-        let packet_length = delay_resp_message
-            .serialize(buffer)
-            .map_err(|error| {
+        let packet_length = match delay_resp_message.serialize(buffer) {
+            Ok(length) => length,
+            Err(error) => {
                 log::error!("Could not serialize delay response: {:?}", error);
-                error
-            })
-            .ok()?;
+                return actions![];
+            }
+        };
 
-        Some(PortAction::SendGeneral {
+        actions![PortAction::SendGeneral {
             data: &buffer[..packet_length],
-        })
+        }]
     }
 }
 
@@ -266,7 +317,7 @@ mod tests {
 
         let mut buffer = [0u8; MAX_DATA_LEN];
 
-        let action = state.handle_event_receive(
+        let mut action = state.handle_event_receive(
             Message::DelayReq(DelayReqMessage {
                 header: Header {
                     sequence_id: 5123,
@@ -285,9 +336,11 @@ mod tests {
             &mut buffer,
         );
 
-        let Some(PortAction::SendGeneral { data }) = action else {
-            panic!("Unexpected resulting action {:?}", action);
+        let Some(PortAction::SendGeneral { data }) = action.next() else {
+            panic!("Unexpected resulting action");
         };
+        assert!(action.next().is_none());
+        drop(action);
 
         let msg = match Message::deserialize(data).unwrap() {
             Message::DelayResp(msg) => msg,
@@ -309,7 +362,7 @@ mod tests {
             TimeInterval(I48F16::from_bits(900))
         );
 
-        let action = state.handle_event_receive(
+        let mut action = state.handle_event_receive(
             Message::DelayReq(DelayReqMessage {
                 header: Header {
                     sequence_id: 879,
@@ -328,9 +381,10 @@ mod tests {
             &mut buffer,
         );
 
-        let Some(PortAction::SendGeneral { data }) = action else {
-            panic!("Unexpected resulting action {:?}", action);
+        let Some(PortAction::SendGeneral { data }) = action.next() else {
+            panic!("Unexpected resulting action");
         };
+        assert!(action.next().is_none());
 
         let msg = match Message::deserialize(data).unwrap() {
             Message::DelayResp(msg) => msg,
@@ -416,7 +470,17 @@ mod tests {
 
     #[test]
     fn test_sync() {
-        let mut port = TestNetworkPort::default();
+        let mut buffer = [0u8; MAX_DATA_LEN];
+        let config = PortConfig {
+            port_identity: PortIdentity::default(),
+            delay_mechanism: crate::DelayMechanism::E2E { log_interval: 1 },
+            log_announce_interval: 1,
+            announce_receipt_timeout: 2,
+            log_sync_interval: 0,
+            master_only: false,
+            delay_asymmetry: crate::Duration::ZERO,
+        };
+
         let clock = RefCell::new(TestClock {
             current_time: Time::from_fixed_nanos(U96F32::from_bits((600000 << 32) + (248 << 16))),
         });
@@ -431,24 +495,38 @@ mod tests {
             SdoId::default(),
         );
 
-        port.current_time = Time::from_fixed_nanos(U96F32::from_bits((601300 << 32) + (230 << 16)));
-        embassy_futures::block_on(state.send_sync(
-            &clock,
-            &mut port,
-            PortIdentity::default(),
-            &defaultds,
-        ))
-        .unwrap();
+        let mut actions = state.send_sync(&clock, &config, &defaultds, &mut buffer);
 
-        assert_eq!(port.normal.len(), 1);
-        assert_eq!(port.time.len(), 1);
+        assert!(matches!(
+            actions.next(),
+            Some(PortAction::ResetSyncTimer { .. })
+        ));
+        let Some(PortAction::SendTimeCritical { context, data }) = actions.next() else {
+            panic!("Unexpected action");
+        };
+        assert!(actions.next().is_none());
+        drop(actions);
 
-        let sync = match Message::deserialize(&port.time.pop().unwrap()).unwrap() {
+        let sync = match Message::deserialize(&data).unwrap() {
             Message::Sync(msg) => msg,
             _ => panic!("Unexpected message type"),
         };
 
-        let follow = match Message::deserialize(&port.normal.pop().unwrap()).unwrap() {
+        let mut actions = state.handle_timestamp(
+            context,
+            Time::from_fixed_nanos(U96F32::from_bits((601300 << 32) + (230 << 16))),
+            config.port_identity,
+            &defaultds,
+            &mut buffer,
+        );
+
+        let Some(PortAction::SendGeneral { data }) = actions.next() else {
+            panic!("Unexpected action");
+        };
+        assert!(actions.next().is_none());
+        drop(actions);
+
+        let follow = match Message::deserialize(&data).unwrap() {
             Message::FollowUp(msg) => msg,
             _ => panic!("Unexpected message type"),
         };
@@ -470,25 +548,37 @@ mod tests {
 
         clock.borrow_mut().current_time =
             Time::from_fixed_nanos(U96F32::from_bits((1000600000 << 32) + (192 << 16)));
-        port.current_time =
-            Time::from_fixed_nanos(U96F32::from_bits((1000601300 << 32) + (543 << 16)));
-        embassy_futures::block_on(state.send_sync(
-            &clock,
-            &mut port,
-            PortIdentity::default(),
-            &defaultds,
-        ))
-        .unwrap();
+        let mut actions = state.send_sync(&clock, &config, &defaultds, &mut buffer);
 
-        assert_eq!(port.normal.len(), 1);
-        assert_eq!(port.time.len(), 1);
+        assert!(matches!(
+            actions.next(),
+            Some(PortAction::ResetSyncTimer { .. })
+        ));
+        let Some(PortAction::SendTimeCritical { context, data }) = actions.next() else {
+            panic!("Unexpected action");
+        };
+        assert!(actions.next().is_none());
+        drop(actions);
 
-        let sync2 = match Message::deserialize(&port.time.pop().unwrap()).unwrap() {
+        let sync2 = match Message::deserialize(&data).unwrap() {
             Message::Sync(msg) => msg,
             _ => panic!("Unexpected message type"),
         };
 
-        let follow2 = match Message::deserialize(&port.normal.pop().unwrap()).unwrap() {
+        let mut actions = state.handle_timestamp(
+            context,
+            Time::from_fixed_nanos(U96F32::from_bits((1000601300 << 32) + (543 << 16))),
+            config.port_identity,
+            &defaultds,
+            &mut buffer,
+        );
+
+        let Some(PortAction::SendGeneral { data }) = actions.next() else {
+            panic!("Unexpected action");
+        };
+        assert!(actions.next().is_none());
+
+        let follow2 = match Message::deserialize(&data).unwrap() {
             Message::FollowUp(msg) => msg,
             _ => panic!("Unexpected message type"),
         };

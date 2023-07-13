@@ -4,6 +4,7 @@ use core::{
     pin::Pin,
 };
 
+use arrayvec::ArrayVec;
 use embassy_futures::{select, select::Either3};
 pub use error::{PortError, Result};
 use futures::StreamExt;
@@ -28,6 +29,30 @@ use crate::{
     utils::Signal,
     Time, MAX_DATA_LEN,
 };
+
+// Needs to be here because of use rules
+macro_rules! actions {
+    [] => {
+        {
+            crate::port::PortActionIterator::from(::arrayvec::ArrayVec::new())
+        }
+    };
+    [$action:expr] => {
+        {
+            let mut list = ::arrayvec::ArrayVec::new();
+            list.push($action);
+            PortActionIterator::from(list)
+        }
+    };
+    [$action1:expr, $action2:expr] => {
+        {
+            let mut list = ::arrayvec::ArrayVec::new();
+            list.push($action1);
+            list.push($action2);
+            PortActionIterator::from(list)
+        }
+    };
+}
 
 mod error;
 mod measurement;
@@ -58,7 +83,7 @@ pub struct Running<'a, C, F> {
 }
 
 pub struct InBmca<'a, C, F> {
-    pending_action: Option<PortAction<'static>>,
+    pending_action: PortActionIterator<'static>,
     local_best: Option<BestAnnounceMessage>,
     state_refcell: &'a RefCell<PtpInstanceState<C, F>>,
 }
@@ -74,6 +99,7 @@ pub struct TimestampContext {
 
 #[derive(Debug)]
 enum TimestampContextInner {
+    Sync { id: u16 },
     DelayReq { id: u16 },
 }
 
@@ -97,16 +123,18 @@ pub enum PortAction<'a> {
     },
 }
 
+const MAX_ACTIONS: usize = 2;
+
 /// Guarantees to end user: Any set of actions will only ever contain a single
 /// time critical send
 pub struct PortActionIterator<'a> {
-    internal: <Option<PortAction<'a>> as IntoIterator>::IntoIter,
+    internal: <ArrayVec<PortAction<'a>, MAX_ACTIONS> as IntoIterator>::IntoIter,
 }
 
 impl<'a> PortActionIterator<'a> {
-    fn from(option: Option<PortAction<'a>>) -> Self {
+    fn from(list: ArrayVec<PortAction<'a>, MAX_ACTIONS>) -> Self {
         Self {
-            internal: option.into_iter(),
+            internal: list.into_iter(),
         }
     }
 }
@@ -126,8 +154,13 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
         context: TimestampContext,
         timestamp: Time,
     ) -> PortActionIterator<'_> {
-        let actions =
-            PortActionIterator::from(self.port_state.handle_timestamp(context, timestamp));
+        let actions = self.port_state.handle_timestamp(
+            context,
+            timestamp,
+            self.config.port_identity,
+            &self.lifecycle.state.default_ds,
+            &mut self.packet_buffer,
+        );
 
         handle_time_measurement(
             &mut self.port_state,
@@ -141,23 +174,23 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
 
     // Handle the announce timer going of
     pub fn handle_announce_timer(&mut self) -> PortActionIterator<'_> {
-        todo!();
-        #[allow(unreachable_code)]
-        PortActionIterator::from(None)
+        todo!()
     }
 
     // Handle the sync timer going of
     pub fn handle_sync_timer(&mut self) -> PortActionIterator<'_> {
-        todo!();
-        #[allow(unreachable_code)]
-        PortActionIterator::from(None)
+        self.port_state.send_sync(
+            &self.lifecycle.state.local_clock,
+            &self.config,
+            &self.lifecycle.state.default_ds,
+            &mut self.packet_buffer,
+        )
     }
 
     // Handle the announce receipt timer going of
+    #[allow(unreachable_code)]
     pub fn handle_announce_receipt_timer(&mut self) -> PortActionIterator<'_> {
-        todo!();
-        #[allow(unreachable_code)]
-        PortActionIterator::from(None)
+        todo!()
     }
 
     // Handle a message over the timecritical channel
@@ -170,7 +203,7 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
             Ok(message) => message,
             Err(error) => {
                 log::warn!("Could not parse packet: {:?}", error);
-                return PortActionIterator::from(None);
+                return actions![];
             }
         };
 
@@ -178,17 +211,17 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
         if message.header().sdo_id() != self.lifecycle.state.default_ds.sdo_id
             || message.header().domain_number() != self.lifecycle.state.default_ds.domain_number
         {
-            return PortActionIterator::from(None);
+            return actions![];
         }
 
-        let actions = PortActionIterator::from(self.port_state.handle_event_receive(
+        let actions = self.port_state.handle_event_receive(
             message,
             timestamp,
             self.config.min_delay_req_interval(),
             self.config.port_identity,
             &self.lifecycle.state.default_ds,
             &mut self.packet_buffer,
-        ));
+        );
 
         handle_time_measurement(
             &mut self.port_state,
@@ -206,7 +239,7 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
             Ok(message) => message,
             Err(error) => {
                 log::warn!("Could not parse packet: {:?}", error);
-                return PortActionIterator::from(None);
+                return actions![];
             }
         };
 
@@ -214,7 +247,7 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
         if message.header().sdo_id() != self.lifecycle.state.default_ds.sdo_id
             || message.header().domain_number() != self.lifecycle.state.default_ds.domain_number
         {
-            return PortActionIterator::from(None);
+            return actions![];
         }
 
         let action = match message {
@@ -223,17 +256,17 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
                     &announce,
                     self.lifecycle.state.local_clock.borrow().now().into(),
                 );
-                Some(PortAction::ResetAnnounceReceiptTimer {
+                actions![PortAction::ResetAnnounceReceiptTimer {
                     duration: core::time::Duration::from_secs_f64(
                         2f64.powi(self.config.log_announce_interval as i32)
                             * (self.config.announce_receipt_timeout as f64),
                     ),
-                })
+                }]
             }
             _ => {
                 self.port_state
                     .handle_general_receive(message, self.config.port_identity);
-                None
+                actions![]
             }
         };
 
@@ -244,7 +277,7 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
             &self.lifecycle.state.time_properties_ds,
         );
 
-        PortActionIterator::from(action)
+        action
     }
 
     // Start a BMCA cycle and ensure this happens instantly from the perspective of
@@ -256,7 +289,7 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
             bmca: self.bmca,
             packet_buffer: [0; MAX_DATA_LEN],
             lifecycle: InBmca {
-                pending_action: None,
+                pending_action: actions![],
                 local_best: None,
                 state_refcell: self.lifecycle.state_refcell,
             },
@@ -283,7 +316,7 @@ impl<'a, C, F> Port<InBmca<'a, C, F>> {
                     state: self.lifecycle.state_refcell.borrow(),
                 },
             },
-            PortActionIterator::from(self.lifecycle.pending_action),
+            self.lifecycle.pending_action,
         )
     }
 }
@@ -403,23 +436,23 @@ impl<'a, C, F> Port<InBmca<'a, C, F>> {
                     PortState::Listening | PortState::Master(_) | PortState::Passive => {
                         self.set_forced_port_state(state);
                         self.lifecycle.pending_action =
-                            Some(PortAction::ResetAnnounceReceiptTimer {
+                            actions![PortAction::ResetAnnounceReceiptTimer {
                                 duration: core::time::Duration::from_secs_f64(
                                     2f64.powi(self.config.log_announce_interval as i32)
                                         * (self.config.announce_receipt_timeout as f64),
                                 ),
-                            });
+                            }];
                     }
                     PortState::Slave(old_state) => {
                         if old_state.remote_master() != remote_master {
                             self.set_forced_port_state(state);
                             self.lifecycle.pending_action =
-                                Some(PortAction::ResetAnnounceReceiptTimer {
+                                actions![PortAction::ResetAnnounceReceiptTimer {
                                     duration: core::time::Duration::from_secs_f64(
                                         2f64.powi(self.config.log_announce_interval as i32)
                                             * (self.config.announce_receipt_timeout as f64),
                                     ),
-                                });
+                                }];
                         }
                     }
                 }
@@ -545,18 +578,14 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
                                 _ => self
                                     .set_forced_port_state(PortState::Master(MasterState::new())),
                             }
-                            PortActionIterator::from(None)
+                            actions![]
                         }
                         Either3::Second(_) => {
                             log::trace!(
                                 "Port {} sync timeout",
                                 self.config.port_identity.port_number
                             );
-                            // Send sync message
-                            if let Err(error) = self.send_sync(network_port).await {
-                                log::error!("{:?}", error);
-                            }
-                            PortActionIterator::from(None)
+                            self.handle_sync_timer()
                         }
                         Either3::Third(_) => {
                             log::trace!(
@@ -567,7 +596,7 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
                             if let Err(error) = self.send_announce(network_port).await {
                                 log::error!("{:?}", error);
                             }
-                            PortActionIterator::from(None)
+                            actions![]
                         }
                     },
                     Either3::Second(Ok(packet)) => {
@@ -585,7 +614,7 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
                     }
                     Either3::Second(Err(error)) => {
                         log::error!("failed to parse packet {:?}", error);
-                        PortActionIterator::from(None)
+                        actions![]
                     }
                     Either3::Third(_) => {
                         log::trace!(
@@ -597,21 +626,15 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
                 }
             };
 
-            pending_timestamp =
-                temp_handle_actions(actions, network_port, announce_receipt_timeout).await;
-        }
-    }
-
-    #[allow(clippy::await_holding_refcell_ref)]
-    async fn send_sync<P: NetworkPort>(&mut self, network_port: &mut P) -> Result<()> {
-        self.port_state
-            .send_sync(
-                &self.lifecycle.state.local_clock,
+            pending_timestamp = temp_handle_actions(
+                actions,
                 network_port,
-                self.config.port_identity,
-                &self.lifecycle.state.default_ds,
+                announce_receipt_timeout,
+                sync_timeout,
+                announce_timeout,
             )
-            .await
+            .await;
+        }
     }
 
     #[allow(clippy::await_holding_refcell_ref)]
@@ -667,6 +690,8 @@ async fn temp_handle_actions<FT: Future, P: NetworkPort>(
     actions: PortActionIterator<'_>,
     network_port: &mut P,
     announce_receipt_timeout: &mut Pin<&mut Ticker<FT, impl FnMut(Duration) -> FT>>,
+    sync_timeout: &mut Pin<&mut Ticker<FT, impl FnMut(Duration) -> FT>>,
+    announce_timeout: &mut Pin<&mut Ticker<FT, impl FnMut(Duration) -> FT>>,
 ) -> Option<(TimestampContext, Time)> {
     let mut pending_timestamp = None;
     for action in actions {
@@ -684,8 +709,14 @@ async fn temp_handle_actions<FT: Future, P: NetworkPort>(
                     }
                 }
             }
+            PortAction::SendGeneral { data } => {
+                if let Err(error) = network_port.send(data).await {
+                    log::error!("Could not send message: {:?}", error);
+                }
+            }
             PortAction::ResetAnnounceReceiptTimer { .. } => announce_receipt_timeout.reset(),
-            _ => panic!("Unexpected action here"),
+            PortAction::ResetSyncTimer { .. } => sync_timeout.reset(),
+            PortAction::ResetAnnounceTimer { .. } => announce_timeout.reset(),
         }
     }
     pending_timestamp
