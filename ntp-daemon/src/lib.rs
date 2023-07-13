@@ -36,7 +36,6 @@ use crate::config::CmdArgs;
 pub async fn main() -> Result<(), Box<dyn Error>> {
     let args = CmdArgs::parse();
     let has_log_override = args.log_filter.is_some();
-    let has_format_override = args.log_format.is_some();
     let log_filter = args
         .log_filter
         // asserts that the arc is not shared. There is no reason it would be,
@@ -46,7 +45,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
 
     // Setup some basic tracing now so we are able
     // to log errors when loading the full configuration.
-    let finish_tracing_init = crate::tracing::init(log_filter, args.log_format.unwrap_or_default());
+    let finish_tracing_init = crate::tracing::init(log_filter);
 
     let mut config = match Config::from_args(args.config, args.peers, args.servers).await {
         Ok(c) => c,
@@ -59,15 +58,14 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
 
     // Sentry has a guard we need to keep alive, so store it.
     // The compiler will optimize this away when not using sentry.
-    let tracing_state =
-        match finish_tracing_init(&mut config, has_log_override, has_format_override) {
-            Ok(s) => s,
-            Err(e) => {
-                // print to stderr because tracing was not correctly initialized
-                eprintln!("Failed to complete logging setup: {e}");
-                std::process::exit(exitcode::CONFIG);
-            }
-        };
+    let tracing_state = match finish_tracing_init(&mut config, has_log_override) {
+        Ok(s) => s,
+        Err(e) => {
+            // print to stderr because tracing was not correctly initialized
+            eprintln!("Failed to complete logging setup: {e}");
+            std::process::exit(exitcode::CONFIG);
+        }
+    };
 
     // Warn/error if the config is unreasonable. We do this after finishing
     // tracing setup to ensure logging is fully configured.

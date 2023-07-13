@@ -1,5 +1,4 @@
 pub mod dynamic;
-pub mod format;
 mod peer;
 mod server;
 pub mod subnet;
@@ -24,8 +23,6 @@ use tracing::{info, warn};
 use tracing_subscriber::filter::EnvFilter;
 
 use crate::spawn::PeerId;
-
-use self::format::LogFormat;
 
 fn deserialize_option_env_filter<'de, D>(deserializer: D) -> Result<Option<EnvFilter>, D::Error>
 where
@@ -83,15 +80,6 @@ pub struct CmdArgs {
         help = "Filter to apply to log messages"
     )]
     pub log_filter: Option<Arc<EnvFilter>>,
-
-    #[arg(
-        long,
-        global = true,
-        value_name = "FORMAT",
-        env = "NTP_LOG_FORMAT",
-        help = "Output format for logs (full, compact, pretty, json)"
-    )]
-    pub log_format: Option<LogFormat>,
 
     #[arg(
         short,
@@ -169,8 +157,6 @@ pub struct Config {
     pub system: CombinedSystemConfig,
     #[serde(deserialize_with = "deserialize_option_env_filter", default)]
     pub log_filter: Option<EnvFilter>,
-    #[serde(default)]
-    pub log_format: LogFormat,
     #[serde(default)]
     #[cfg(feature = "sentry")]
     pub sentry: SentryConfig,
@@ -421,7 +407,6 @@ mod tests {
         let config: Config = toml::from_str(
             r#"
             log-filter = "info"
-            log-format = "full"
             [[peers]]
             addr = "example.com"
             [observe]
