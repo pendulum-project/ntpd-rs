@@ -21,7 +21,8 @@ mod system;
 mod time_types;
 
 pub use algorithm::{
-    DefaultTimeSyncController, ObservablePeerTimedata, StateUpdate, TimeSyncController,
+    DefaultTimeSyncController, ObservablePeerTimedata, StateUpdate,
+    TimeSyncController,
 };
 pub use clock::NtpClock;
 pub use config::{StepThreshold, SystemConfig};
