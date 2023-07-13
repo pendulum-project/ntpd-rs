@@ -37,6 +37,5 @@ rustls-pemfile.workspace = true
 ntp-proto = { workspace = true, features=["ext-test"]}
 
 [features]
-rfc-algorithm = ["ntp-proto/rfc-algorithm"]
 hardware-timestamping = []
 fuzz = []
