@@ -36,7 +36,7 @@ impl PortState {
         &mut self,
         context: TimestampContext,
         timestamp: Time,
-    ) -> Option<PortAction<'_>> {
+    ) -> Option<PortAction<'static>> {
         match self {
             PortState::Slave(slave) => slave.handle_timestamp(context, timestamp),
             PortState::Master(_) | PortState::Listening | PortState::Passive => None,

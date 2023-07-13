@@ -69,7 +69,7 @@ impl SlaveState {
         &mut self,
         context: TimestampContext,
         timestamp: Time,
-    ) -> Option<PortAction<'_>> {
+    ) -> Option<PortAction<'static>> {
         match context.inner {
             crate::port::TimestampContextInner::DelayReq { id } => {
                 self.handle_delay_timestamp(id, timestamp)
@@ -81,7 +81,7 @@ impl SlaveState {
         &mut self,
         timestamp_id: u16,
         timestamp: Time,
-    ) -> Option<PortAction<'_>> {
+    ) -> Option<PortAction<'static>> {
         match self.delay_state {
             DelayState::Measuring {
                 id,
