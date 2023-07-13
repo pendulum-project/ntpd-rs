@@ -11,7 +11,7 @@ use crate::{
     datastructures::datasets::{CurrentDS, DefaultDS, ParentDS, TimePropertiesDS},
     filters::Filter,
     network::NetworkPort,
-    port::{InBmca, Port, Running, Startup, Ticker},
+    port::{InBmca, Port, Startup, Ticker},
     utils::SignalContext,
 };
 
@@ -60,23 +60,22 @@ use crate::{
 /// instance.run(&TimerImpl).await;
 /// ```
 pub struct PtpInstance<P, C, F, const N: usize> {
-    ports: [Port<Running>; N],
-    network_ports: [P; N],
+    ports: [Port<Startup<P>>; N],
     state: RefCell<PtpInstanceState<C, F>>,
 }
 
-struct PtpInstanceState<C, F> {
-    default_ds: DefaultDS,
-    current_ds: CurrentDS,
-    parent_ds: ParentDS,
-    time_properties_ds: TimePropertiesDS,
-    local_clock: RefCell<C>,
-    filter: RefCell<F>,
+pub(crate) struct PtpInstanceState<C, F> {
+    pub(crate) default_ds: DefaultDS,
+    pub(crate) current_ds: CurrentDS,
+    pub(crate) parent_ds: ParentDS,
+    pub(crate) time_properties_ds: TimePropertiesDS,
+    pub(crate) local_clock: RefCell<C>,
+    pub(crate) filter: RefCell<F>,
 }
 
 // START NEW INTERFACE
 impl<C: Clock, F> PtpInstanceState<C, F> {
-    pub fn bmca(&mut self, ports: &mut [&mut Port<InBmca>]) {
+    pub fn bmca(&mut self, ports: &mut [&mut Port<InBmca<'_, C, F>>]) {
         let current_time = self.local_clock.get_mut().now().into();
 
         for port in ports.iter_mut() {
@@ -158,19 +157,11 @@ impl<P, C, F, const N: usize> PtpInstance<P, C, F, N> {
         local_clock: C,
         filter: F,
     ) -> Self {
-        let mut ports_split = ports.map(|port| {
-            let (port, network_port) = port.into_running();
-            (port, Some(network_port))
-        });
-        let network_ports = core::array::from_fn::<_, N, _>(|i| ports_split[i].1.take().unwrap());
-        let ports = ports_split.map(|(port, _)| port);
-
         for (index, port) in ports.iter().enumerate() {
             assert_eq!(port.identity().port_number - 1, index as u16);
         }
         PtpInstance {
             ports,
-            network_ports,
             state: RefCell::new(PtpInstanceState {
                 default_ds,
                 current_ds: Default::default(),
@@ -234,14 +225,17 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
 
         let mut stopcontexts = [(); N].map(|_| SignalContext::new());
 
-        let PtpInstance {
-            mut ports,
-            state,
-            mut network_ports,
-        } = self;
+        let PtpInstance { ports, state } = self;
+
+        let mut ports_split = ports.map(|port| {
+            let (port, network_port) = port.into_running(&state);
+            (port, Some(network_port))
+        });
+        let mut network_ports =
+            core::array::from_fn::<_, N, _>(|i| ports_split[i].1.take().unwrap());
+        let mut ports = ports_split.map(|(port, _)| port);
 
         loop {
-            let stateref = state.borrow();
             let mut iter = stopcontexts.iter_mut();
             let stopperpairs =
                 core::array::from_fn::<_, N, _>(move |_| iter.next().unwrap().signal());
@@ -264,16 +258,10 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
                         network_port,
                     )| {
                         port.run_port(
-                            &stateref.local_clock,
-                            &stateref.filter,
                             network_port,
                             announce_receipt_timeout,
                             sync_timeout,
                             announce_timeout,
-                            &stateref.default_ds,
-                            &stateref.time_properties_ds,
-                            &stateref.parent_ds,
-                            &stateref.current_ds,
                             stop,
                         )
                     },
@@ -290,8 +278,6 @@ impl<P: NetworkPort, C: Clock, F: Filter, const N: usize> PtpInstance<P, C, F, N
                 run_ports,
             )
             .await;
-
-            drop(stateref);
 
             let mut bmca_ports = ports.map(|port| port.start_bmca());
 
