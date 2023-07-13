@@ -3,9 +3,6 @@
 # However it is possible to specify more advanced log filters using the
 log-filter = "info"
 
-# Allowed values: full, compact, pretty, json
-log-format = "full"
-
 ## The peers section allows configuring peers, you may configure multiple of
 ## these blocks to add more peers to your configuration.
 ## Our default configuration spawns a pool of peers (by default this attempts

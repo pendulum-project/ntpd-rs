@@ -57,10 +57,7 @@ enum PrintState {
 
 async fn validate(cli: Cli) -> std::io::Result<ExitCode> {
     // Late completion not needed, so ignore result.
-    let _ = ntp_daemon::tracing::init(
-        tracing_subscriber::EnvFilter::new("info"),
-        Default::default(),
-    );
+    let _ = ntp_daemon::tracing::init(tracing_subscriber::EnvFilter::new("info"));
     match Config::from_args(cli.config, vec![], vec![]).await {
         Ok(config) => {
             if config.check() {

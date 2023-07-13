@@ -1,9 +1,6 @@
 # Other values include trace, debug, warn and error
 log-filter = "info"
 
-# Allowed values: full, compact, pretty, json
-log-format = "full"
-
 # See CONFIGURATION.md for how to set up certificates
 [[peers]]
 mode = "NtsServer"

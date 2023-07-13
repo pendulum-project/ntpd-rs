@@ -1,9 +1,6 @@
 # Other values include trace, debug, warn and error
 log-filter = "info"
 
-# Allowed values: full, compact, pretty, json
-log-format = "full"
-
 # Pool servers from ntppool.org. See http://www.pool.ntp.org/join.html
 # for more information
 [[peers]]
