@@ -14,7 +14,6 @@ publish.workspace = true
 [features]
 fuzz = ["arbitrary"]
 ext-test = []
-rfc-algorithm = []
 
 [dependencies]
 # Note: md5 is needed to calculate ReferenceIDs for IPv6 addresses per RFC5905
