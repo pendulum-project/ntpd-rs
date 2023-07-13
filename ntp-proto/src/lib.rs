@@ -20,10 +20,8 @@ mod peer;
 mod system;
 mod time_types;
 
-#[cfg(feature = "fuzz")]
-pub use algorithm::fuzz_find_interval;
 pub use algorithm::{
-    DefaultTimeSyncController, ObservablePeerTimedata, StandardClockController, StateUpdate,
+    DefaultTimeSyncController, ObservablePeerTimedata, StateUpdate,
     TimeSyncController,
 };
 pub use clock::NtpClock;
@@ -66,11 +64,6 @@ pub(crate) mod exitcode {
     /// An internal software error has been detected.  This
     /// should be limited to non-operating system related
     /// errors as possible.
+    #[cfg(not(test))]
     pub const SOFTWARE: i32 = 70;
-
-    /// You did not have sufficient permission to perform
-    /// the operation.  This is not intended for file system
-    /// problems, which should use `NOINPUT` or `CANTCREAT`,
-    /// but rather for higher level permissions.
-    pub const NOPERM: i32 = 77;
 }

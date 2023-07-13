@@ -64,14 +64,6 @@ pub trait TimeSyncController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> {
 }
 
 mod kalman;
-mod standard;
 
 pub use kalman::KalmanClockController;
-pub use standard::StandardClockController;
-#[cfg(feature = "rfc-algorithm")]
-pub type DefaultTimeSyncController<C, PeerID> = standard::StandardClockController<C, PeerID>;
-#[cfg(not(feature = "rfc-algorithm"))]
 pub type DefaultTimeSyncController<C, PeerID> = kalman::KalmanClockController<C, PeerID>;
-
-#[cfg(feature = "fuzz")]
-pub use standard::fuzz_find_interval;

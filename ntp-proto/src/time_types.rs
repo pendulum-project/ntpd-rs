@@ -203,18 +203,6 @@ impl std::fmt::Debug for NtpDuration {
 
 impl NtpDuration {
     pub const ZERO: Self = Self { duration: 0 };
-    pub(crate) const ONE: Self = Self { duration: 1 << 32 };
-
-    /// NtpDuration::from_seconds(0.125)
-    pub(crate) const STEP_THRESHOLD: Self = Self { duration: 1 << 29 };
-
-    /// NtpDuration::from_seconds(16.0)
-    pub(crate) const MAX_DISPERSION: Self = Self {
-        duration: 68719476736,
-    };
-
-    /// NtpDuration::from_seconds(0.005)
-    pub(crate) const MIN_DISPERSION: Self = Self { duration: 21474836 };
 
     pub(crate) const fn from_bits(bits: [u8; 8]) -> Self {
         Self {
