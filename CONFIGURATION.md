@@ -44,21 +44,6 @@ By default, at least 3 peer servers are needed for the algorithm to change the t
 2023-04-11T10:06:25.443979Z  INFO ntp_proto::algorithm::kalman: Changed frequency, current steer 4.26346751414286ppm, desired freq 0ppm
 ```
 
-### RFC5905 compliant algorithm
-
-The Network Time Protocol is defined in [RFC5905](https://www.rfc-editor.org/rfc/rfc5905), and ntpd-rs generally follows this specification.
-However, our default clock algorithm is not the one given by the specification. Instead, ntpd-rs uses an algorithm based on kalman filters that provides better accuracy and lower synchronization time. Based on our testing this is a safe default. It has no downsides compared to the rfc's algorithm, and performs much better in practice.
-
-Chrony, another common NTP implementation, also uses an algorithm that is not compliant with RFC5905. Experience with our kalman algorithm and Chrony's algorithm indicates that these custom clock algorithms can interoperate with systems that do run the clock algorithm described in the specification.
-
-Ntpd-rs can use the clock algorithm from RFC5905, but this requires a custom build:
-
-```sh
-cargo build --release --features rfc-algorithm
-```
-
-Please note that when using the RFC's clock algorithm, a different set of configuration options needs to be used to tune it, as indicated below.
-
 ## Systemd configuration
 
 To use ntpd-rs as the system NTP service, create a systemd service definition as follows. Systemd will then take care of automatically starting up the daemon on boot.
@@ -283,12 +268,7 @@ For panic thresholds, asymmetric thresholds can be configured, allowing a differ
 
 ##### Algorithm specific options
 
-NTPD-rs currently supports two choices for algorithms:
- - A custom, high performance algorithm.
- - The algorithm specified in RFC5905
-
-Which algorithm is used is determined by a compile time flag (see above).
-
+NTPD-rs currently supports a custom, high performance algorithm
 The high performance clock algorithm has quite a few options. Most of these are quite straightforward to understand and can be used to tune the style of time synchronization to the users liking (although the defaults are probably fine for most):
 | Option | Default | Description |
 | --- | --- | --- |
@@ -308,27 +288,6 @@ The high performance clock algorithm has quite a few options. Most of these are 
 | initial-wander | 1e-8 | Initial estimate of the clock wander between our local clock and that of the peer. Increasing this results in better synchronization if the hardware matches it, but at the cost of slower synchronization when overly optimistic. (s/s^2) |
 | initial-frequency-uncertainty | 100e-6 | Initial uncertainty of the frequency difference between our clock and that of the peer. Lower values increase the speed of frequency synchronization when correct, but decrease it when overly optimistic. (s/s) |
 | meddling-threshold | 5.0 | Threshold (in seconds) above which unexpected time differences between the monotonic and system clocks trigger a restart of the synchronization process. |
-
-A second set of options control more internal details of how the algorithm estimates its errors and regulates the poll interval. Care should be taken in choosing the values here, and they are primarily provided for easy access when developing the algorithm further:
-| Option | Default | Description |
-| --- | --- | --- |
-| precision-low-probability | 0.333 | Probability bound below which we start moving towards decreasing our precision estimate. (probability, 0-1) |
-| precision-high-probability | 0.667 | Probability bound above which we start moving towards increasing our precision estimate. (probability, 0-1) |
-| precision-hysteresis | 16 | Amount of hysteresis in changing the precision estimate. (count, 1+) |
-| precision-min-weight | 0.1 | Lower bound on the amount of effect our precision estimate has on the total noise estimate before we allow decreasing of the precision estimate. (weight, 0-1) |
-| poll-low-weight | 0.4 | Amount which a measurement contributes to the state, below which we start increasing the poll interval. (weight, 0-1) |
-| poll-high-weight | 0.6 | Amount which a measurement contributes to the state, above which we start decreasing the poll interval. (weight, 0-1) |
-| poll-hysteresis | 16 | Amount of hysteresis in changing the poll interval (count, 1+) |
-| max-frequency-steer | 495e-6 | Maximum steering input to system clock. (s/s) |
-
-The RFC algorithm has different options for tuning. All of these have reasonable defaults and care should be taken when changing them.
-| Option | Default | Description |
-| --- | --- | --- |
-| min-cluster-survivors | 3 | Number of servers beyond which we do not try to exclude further servers for the purpose of improving measurement precision. Do not change unless familiar with the NTP algorithms. |
-| frequency-tolerance | 15 | Estimate of the short-time frequency precision of the local clock, in parts-per-million. The default is usually a good approximation. |
-| distance-threshold | 1 | Maximum delay to the clock representing ground truth via a peer for that peer to be considered acceptable, in seconds. |
-| frequency-measurement-period | 900 | Amount of time to spend on startup measuring the frequency offset of the system clock, in seconds. Lowering this means the clock is kept actively synchronized sooner, but reduces the precision of the initial frequency estimate, which could result in lower stability of the clock early on. |
-| spike-threshold | 900 | Amount of time before a clock difference larger than 125ms is considered real instead of a spike in the network. Lower values ensure large errors are corrected faster, but make the client more sensitive to network issues. Value provided is in seconds. |
 
 #### Example configuration file:
 
