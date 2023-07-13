@@ -53,16 +53,6 @@ fn parse_env_filter(input: &str) -> Result<Arc<EnvFilter>, tracing_subscriber::f
 pub struct CmdArgs {
     #[arg(
         short,
-        long = "peer",
-        global = true,
-        value_name = "SERVER",
-        value_parser = PeerConfig::try_from_str,
-        help = "Override the peers in the configuration file"
-    )]
-    pub peers: Vec<PeerConfig>,
-
-    #[arg(
-        short,
         long,
         global = true,
         value_name = "FILE",
@@ -80,16 +70,174 @@ pub struct CmdArgs {
         help = "Filter to apply to log messages"
     )]
     pub log_filter: Option<Arc<EnvFilter>>,
+}
 
-    #[arg(
-        short,
-        long = "server",
-        global = true,
-        value_name = "ADDR",
-        value_parser = ServerConfig::try_from_str,
-        help = "Override the servers to run from the configuration file"
-    )]
-    pub servers: Vec<ServerConfig>,
+#[derive(Debug, Default)]
+pub struct CliArgs {}
+
+const USAGE_MSG: &str = "\
+usage: ntp-daemon [-c path] [-l log-level]
+       ntp-daemon -h";
+
+const DESCRIPTOR: &str = "ntp-daemon - synchronize system time";
+
+const HELP_MSG: &str = "Options:
+  -c, --config=path             change the config .toml file
+  -l, --log-level=string        change the log level";
+
+pub fn long_help_message() -> String {
+    format!("{DESCRIPTOR}\n{USAGE_MSG}\n{HELP_MSG}")
+}
+
+#[derive(Debug, Default)]
+struct NtpDaemonOptions {
+    /// Path of the configuration file
+    pub config: Option<PathBuf>,
+    /// Filter to apply to log messages
+    pub log_filter: Option<Arc<EnvFilter>>,
+    help: bool,
+    version: bool,
+}
+
+enum NtpDaemonArg {
+    Flag(String),
+    Argument(String, String),
+    Rest(Vec<String>),
+}
+
+#[derive(Debug, Default)]
+enum NtpDaemonAction {
+    #[default]
+    Help,
+    Version,
+    Run,
+}
+
+impl NtpDaemonOptions {
+    const TAKES_ARGUMENT: &[&'static str] = &["--config", "--log-level"];
+    const TAKES_ARGUMENT_SHORT: &[char] = &['c', 'l'];
+
+    /// parse an iterator over command line arguments
+    pub fn try_parse_from<I, T>(iter: I) -> Result<Self, String>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<String> + Clone,
+    {
+        let mut options = NtpDaemonOptions::default();
+        let arg_iter = Self::normalize_arguments(iter.into_iter().map(Into::into))?
+            .into_iter()
+            .peekable();
+
+        for arg in arg_iter {
+            match arg {
+                NtpDaemonArg::Flag(flag) => match flag.as_str() {
+                    "-h" | "--help" => {
+                        options.help = true;
+                    }
+                    "-v" | "--version" => {
+                        options.version = true;
+                    }
+                    _option => {
+                        Err("invalid option provided")?;
+                    }
+                },
+                NtpDaemonArg::Argument(option, value) => match option.as_str() {
+                    "-c" | "--config" => {
+                        options.config = Some(PathBuf::from(value));
+                    }
+                    "-l" | "--log-level" => {
+                        let deserializer =
+                            serde::de::value::StrDeserializer::<SerdeError>::new(&value);
+
+                        match deserialize_option_env_filter(deserializer) {
+                            Ok(filter) => options.log_filter = filter.map(|f| Arc::new(f)),
+                            Err(e) => Err(format!("invalid log level: {e}"))?,
+                        }
+                    }
+                    _option => {
+                        Err("invalid option provided")?;
+                    }
+                },
+                NtpDaemonArg::Rest(_rest) => { /* do nothing, drop remaining arguments */ }
+            }
+        }
+
+        Ok(options)
+    }
+
+    fn normalize_arguments<I>(iter: I) -> Result<Vec<NtpDaemonArg>, String>
+    where
+        I: IntoIterator<Item = String>,
+    {
+        // the first argument is the sudo command - so we can skip it
+        let mut arg_iter = iter.into_iter().skip(1);
+        let mut processed = vec![];
+
+        while let Some(arg) = arg_iter.next() {
+            match arg.as_str() {
+                "--" => {
+                    processed.push(NtpDaemonArg::Rest(arg_iter.collect()));
+                    break;
+                }
+                long_arg if long_arg.starts_with("--") => {
+                    // --config=/path/to/config.toml
+                    let invalid = Err(format!("invalid option: '{long_arg}'"));
+
+                    if let Some((key, value)) = long_arg.split_once('=') {
+                        if Self::TAKES_ARGUMENT.contains(&key) {
+                            processed
+                                .push(NtpDaemonArg::Argument(key.to_string(), value.to_string()))
+                        } else {
+                            invalid?
+                        }
+                    } else if Self::TAKES_ARGUMENT.contains(&long_arg) {
+                        if let Some(next) = arg_iter.next() {
+                            processed.push(NtpDaemonArg::Argument(long_arg[2..].to_string(), next))
+                        } else {
+                            Err(format!("'{}' expects an argument", &long_arg))?;
+                        }
+                    } else {
+                        processed.push(NtpDaemonArg::Flag(arg));
+                    }
+                }
+                short_arg if short_arg.starts_with('-') => {
+                    // split combined shorthand options
+                    for (n, char) in short_arg.trim_start_matches('-').chars().enumerate() {
+                        let flag = format!("-{char}");
+                        // convert option argument to seperate segment
+                        if Self::TAKES_ARGUMENT_SHORT.contains(&char) {
+                            let rest = short_arg[(n + 2)..].trim().to_string();
+                            // assignment syntax is not accepted for shorthand arguments
+                            if rest.starts_with('=') {
+                                Err("invalid option '='")?;
+                            }
+                            if !rest.is_empty() {
+                                processed.push(NtpDaemonArg::Argument(flag, rest));
+                            } else if let Some(next) = arg_iter.next() {
+                                processed.push(NtpDaemonArg::Argument(flag, next));
+                            } else if char == 'h' {
+                                // short version of --help has no arguments
+                                processed.push(NtpDaemonArg::Flag(flag));
+                            } else {
+                                Err(format!("'-{}' expects an argument", char))?;
+                            }
+                            break;
+                        } else {
+                            processed.push(NtpDaemonArg::Flag(flag));
+                        }
+                    }
+                }
+                _argument => {
+                    let mut rest = vec![arg];
+                    rest.extend(arg_iter);
+                    processed.push(NtpDaemonArg::Rest(rest));
+                    break;
+                }
+            }
+        }
+
+        Ok(processed)
+    }
 }
 
 fn deserialize_ntp_clock<'de, D>(deserializer: D) -> Result<DefaultNtpClock, D::Error>
@@ -315,6 +463,31 @@ impl Config {
         }
 
         ok
+    }
+}
+
+struct SerdeError(String);
+
+impl std::fmt::Debug for SerdeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl std::fmt::Display for SerdeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl std::error::Error for SerdeError {}
+
+impl serde::de::Error for SerdeError {
+    fn custom<T>(msg: T) -> Self
+    where
+        T: std::fmt::Display,
+    {
+        Self(msg.to_string())
     }
 }
 
