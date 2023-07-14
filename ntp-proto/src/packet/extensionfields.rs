@@ -279,18 +279,39 @@ impl<'a> ExtensionField<'a> {
 
         let plaintext_length = w.position() - plaintext_start;
         let (packet_so_far, cur_extension_field) = w.get_mut().split_at_mut(header_start as usize);
+        let header_size = (plaintext_start - header_start) as usize;
         let EncryptResult {
             nonce_length,
             ciphertext_length,
         } = cipher.encrypt(
-            &mut cur_extension_field[(plaintext_start - header_start) as usize..],
+            &mut cur_extension_field[header_size..],
             plaintext_length as usize,
             packet_so_far,
         )?;
 
+        // Nonce and ciphertext lengths may not be a multiple of 4, so add padding to them
+        // to make their lengths multiples of 4.
+        let padded_nonce_length = next_multiple_of_usize(nonce_length, 4);
+        let padded_ciphertext_length = next_multiple_of_usize(ciphertext_length, 4);
+        if cur_extension_field.len()
+            < (plaintext_start - header_start) as usize
+                + padded_ciphertext_length
+                + padded_nonce_length
+        {
+            return Err(std::io::ErrorKind::WriteZero.into());
+        }
+        cur_extension_field.copy_within(
+            header_size + nonce_length..header_size + nonce_length + ciphertext_length,
+            header_size + padded_nonce_length,
+        );
+        cur_extension_field[header_size + nonce_length..header_size + padded_nonce_length]
+            .copy_from_slice(&padding[..padded_nonce_length - nonce_length]);
+        cur_extension_field[header_size + padded_nonce_length + ciphertext_length
+            ..header_size + padded_nonce_length + padded_ciphertext_length]
+            .copy_from_slice(&padding[..padded_nonce_length - nonce_length]);
+
         // Final header
-        let signature_length =
-            8 + next_multiple_of_u16((nonce_length + ciphertext_length) as u16, 4);
+        let signature_length = header_size + padded_nonce_length + padded_ciphertext_length;
         w.set_position(header_start);
         w.write_all(
             &ExtensionFieldTypeId::NtsEncryptedField
@@ -300,10 +321,7 @@ impl<'a> ExtensionField<'a> {
         w.write_all(&signature_length.to_be_bytes())?;
         w.write_all(&nonce_length.to_be_bytes())?;
         w.write_all(&ciphertext_length.to_be_bytes())?;
-        w.set_position(header_start + 8 + (nonce_length as u64) + (ciphertext_length as u64));
-        let padding_bytes =
-            next_multiple_of_u16(ciphertext_length as u16, 4) - ciphertext_length as u16;
-        w.write_all(&padding[..padding_bytes as usize])?;
+        w.set_position(header_start + signature_length as u64);
 
         Ok(())
     }
