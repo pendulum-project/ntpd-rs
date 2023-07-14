@@ -10,7 +10,7 @@
 use std::{path::PathBuf, process::ExitCode};
 
 use clap::{Parser, Subcommand};
-use ntp_daemon::{Config, ConfigUpdate, ObservableState};
+use ntp_daemon::{Config, ObservableState};
 use ntp_metrics_exporter::Metrics;
 
 #[derive(Parser)]
@@ -43,8 +43,6 @@ enum Command {
         about = "Information about the state of the daemon and peers in the prometheus export format"
     )]
     Prometheus,
-    #[command(about = "Adjust configuration (e.g. loglevel) of the daemon")]
-    Config(ConfigUpdate),
     #[command(about = "Validate configuration")]
     Validate,
 }
@@ -94,16 +92,10 @@ pub async fn main() -> std::io::Result<ExitCode> {
         .or(config.observe.path)
         .unwrap_or_else(|| PathBuf::from("/run/ntpd-rs/observe"));
 
-    let configuration = cli
-        .configuration_socket
-        .or(config.configure.path)
-        .unwrap_or_else(|| PathBuf::from("/run/ntpd-rs/configure"));
-
     match cli.command {
         Command::Peers => print_state(PrintState::Peers, observation).await,
         Command::System => print_state(PrintState::System, observation).await,
         Command::Prometheus => print_state(PrintState::Prometheus, observation).await,
-        Command::Config(config_update) => update_config(configuration, config_update).await,
         Command::Validate => unreachable!(),
     }
 }
@@ -159,38 +151,13 @@ async fn print_state(
     Ok(ExitCode::SUCCESS)
 }
 
-async fn update_config(
-    configuration_socket: PathBuf,
-    config_update: ConfigUpdate,
-) -> Result<ExitCode, std::io::Error> {
-    let mut stream = match tokio::net::UnixStream::connect(&configuration_socket).await {
-        Ok(stream) => stream,
-        Err(e) => {
-            eprintln!(
-                "Could not open socket at {}: {e}",
-                configuration_socket.display(),
-            );
-            return Ok(ExitCode::FAILURE);
-        }
-    };
-
-    match ntp_daemon::sockets::write_json(&mut stream, &config_update).await {
-        Ok(_) => Ok(ExitCode::SUCCESS),
-        Err(e) => {
-            eprintln!("Failed to update configuration: {e}");
-
-            Ok(ExitCode::FAILURE)
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::os::unix::prelude::PermissionsExt;
 
     use ntp_daemon::{
         config::ObserveConfig,
-        sockets::{create_unix_socket, read_json, write_json},
+        sockets::{create_unix_socket, write_json},
     };
 
     use super::*;
@@ -264,45 +231,6 @@ mod tests {
             format!("{:?}", result.unwrap()),
             format!("{:?}", ExitCode::SUCCESS)
         );
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_control_socket_config() -> std::io::Result<()> {
-        let config: ObserveConfig = Default::default();
-
-        // be careful with copying: tests run concurrently and should use a unique socket name!
-        let path = std::env::temp_dir().join("ntp-test-stream-9");
-        if path.exists() {
-            std::fs::remove_file(&path).unwrap();
-        }
-
-        let peers_listener = create_unix_socket(&path)?;
-
-        let permissions: std::fs::Permissions = PermissionsExt::from_mode(config.mode);
-        std::fs::set_permissions(&path, permissions)?;
-
-        let update = ConfigUpdate {
-            log_filter: Some("foo".to_string()),
-            panic_threshold: Some(0.123),
-        };
-
-        let fut = super::update_config(path, update.clone());
-        let handle = tokio::spawn(fut);
-
-        let (mut stream, _addr) = peers_listener.accept().await?;
-        let mut msg = Vec::with_capacity(16 * 1024);
-        let actual_update = read_json::<ConfigUpdate>(&mut stream, &mut msg).await?;
-
-        let result = handle.await.unwrap();
-
-        assert_eq!(
-            format!("{:?}", result.unwrap()),
-            format!("{:?}", ExitCode::SUCCESS)
-        );
-
-        assert_eq!(update, actual_update);
 
         Ok(())
     }

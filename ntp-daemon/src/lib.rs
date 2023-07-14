@@ -21,7 +21,6 @@ pub mod tracing;
 
 use std::{error::Error, sync::Arc};
 
-pub use config::dynamic::ConfigUpdate;
 use config::ClockConfig;
 pub use config::Config;
 pub use observer::{ObservablePeerState, ObservableState};
@@ -72,9 +71,8 @@ async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
         }
     };
 
-    // Sentry has a guard we need to keep alive, so store it.
-    // The compiler will optimize this away when not using sentry.
-    let tracing_state = match finish_tracing_init(&mut config, has_log_override) {
+    // make sure to only drop at the end of this scope
+    let _tracing_state = match finish_tracing_init(&mut config, has_log_override) {
         Ok(s) => s,
         Err(e) => {
             // print to stderr because tracing was not correctly initialized
@@ -115,13 +113,6 @@ async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
         channels.peer_snapshots_receiver,
         channels.server_data_receiver,
         channels.system_snapshot_receiver,
-    )
-    .await;
-
-    crate::config::dynamic::spawn(
-        config.configure,
-        channels.config_sender,
-        tracing_state.reload_handle,
     )
     .await;
 

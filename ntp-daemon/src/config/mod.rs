@@ -1,4 +1,3 @@
-pub mod dynamic;
 mod peer;
 mod server;
 pub mod subnet;
