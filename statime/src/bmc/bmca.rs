@@ -1,5 +1,7 @@
 //! Implementation of the best master clock algorithm [Bmca]
 
+use core::cmp::Ordering;
+
 use super::{
     dataset_comparison::{ComparisonDataset, DatasetOrdering},
     foreign_master::ForeignMasterList,
@@ -11,7 +13,6 @@ use crate::{
         messages::AnnounceMessage,
     },
     port::state::PortState,
-    time::Time,
 };
 
 /// Object implementing the Best Master Clock Algorithm
@@ -93,23 +94,9 @@ impl Bmca {
     pub fn find_best_announce_message(
         announce_messages: impl IntoIterator<Item = BestAnnounceMessage>,
     ) -> Option<BestAnnounceMessage> {
-        announce_messages.into_iter().reduce(|left, right| {
-            match ComparisonDataset::from_announce_message(&left.message, &left.identity).compare(
-                &ComparisonDataset::from_announce_message(&right.message, &right.identity),
-            ) {
-                DatasetOrdering::Better | DatasetOrdering::BetterByTopology => left,
-                // We get errors if two announce messages are (functionally) the same, in that case
-                // we just pick the newer one
-                DatasetOrdering::Error1 | DatasetOrdering::Error2 => {
-                    if Time::from(left.timestamp) >= Time::from(right.timestamp) {
-                        left
-                    } else {
-                        right
-                    }
-                }
-                DatasetOrdering::WorseByTopology | DatasetOrdering::Worse => right,
-            }
-        })
+        announce_messages
+            .into_iter()
+            .max_by(BestAnnounceMessage::compare)
     }
 
     /// Calculates the recommended port state. This has to be run for every
@@ -198,6 +185,21 @@ pub struct BestAnnounceMessage {
     identity: PortIdentity,
 }
 
+impl BestAnnounceMessage {
+    fn compare(&self, other: &Self) -> Ordering {
+        // use the timestamp as a tie-break if needed (prefer newer messages)
+        let tie_break = self.timestamp.cmp(&other.timestamp);
+        self.compare_dataset(other).as_ordering().then(tie_break)
+    }
+
+    fn compare_dataset(&self, other: &Self) -> DatasetOrdering {
+        let data1 = ComparisonDataset::from_announce_message(&self.message, &self.identity);
+        let data2 = ComparisonDataset::from_announce_message(&other.message, &other.identity);
+
+        data1.compare(&data2)
+    }
+}
+
 #[derive(Debug)]
 pub enum RecommendedState {
     M1(DefaultDS),
@@ -206,4 +208,120 @@ pub enum RecommendedState {
     P1(AnnounceMessage),
     P2(AnnounceMessage),
     S1(AnnounceMessage),
+}
+
+#[cfg(test)]
+
+mod tests {
+    use super::*;
+    use crate::{
+        datastructures::messages::{Header, PtpVersion},
+        ClockIdentity,
+    };
+
+    fn default_best_announce_message() -> BestAnnounceMessage {
+        let header = Header {
+            sdo_id: Default::default(),
+            version: PtpVersion::new(2, 1).unwrap(),
+            domain_number: Default::default(),
+            alternate_master_flag: false,
+            two_step_flag: false,
+            unicast_flag: false,
+            ptp_profile_specific_1: false,
+            ptp_profile_specific_2: false,
+            leap61: false,
+            leap59: false,
+            current_utc_offset_valid: false,
+            ptp_timescale: false,
+            time_tracable: false,
+            frequency_tracable: false,
+            synchronization_uncertain: false,
+            correction_field: Default::default(),
+            source_port_identity: Default::default(),
+            sequence_id: Default::default(),
+            log_message_interval: Default::default(),
+        };
+
+        let message = AnnounceMessage {
+            header,
+            origin_timestamp: Default::default(),
+            current_utc_offset: Default::default(),
+            grandmaster_priority_1: Default::default(),
+            grandmaster_clock_quality: Default::default(),
+            grandmaster_priority_2: Default::default(),
+            grandmaster_identity: Default::default(),
+            steps_removed: Default::default(),
+            time_source: Default::default(),
+        };
+
+        let timestamp = WireTimestamp {
+            seconds: 0,
+            nanos: 0,
+        };
+
+        let identity = PortIdentity {
+            clock_identity: ClockIdentity([0; 8]),
+            port_number: 1,
+        };
+
+        BestAnnounceMessage {
+            message,
+            timestamp,
+            identity,
+        }
+    }
+
+    #[test]
+    fn best_announce_message_compare_equal() {
+        let message1 = default_best_announce_message();
+        let message2 = default_best_announce_message();
+
+        let ordering = message1.compare_dataset(&message2).as_ordering();
+        assert_eq!(ordering, Ordering::Equal);
+    }
+
+    #[test]
+    fn best_announce_message_compare() {
+        let mut message1 = default_best_announce_message();
+        let mut message2 = default_best_announce_message();
+
+        // identities are different
+        message1.message.grandmaster_identity = ClockIdentity([0; 8]);
+        message2.message.grandmaster_identity = ClockIdentity([1; 8]);
+
+        // higher priority is worse in this ordering
+        message1.message.grandmaster_priority_1 = 0;
+        message2.message.grandmaster_priority_1 = 1;
+
+        // hence we expect message1 to be better than message2
+        assert_eq!(message1.compare_dataset(&message2), DatasetOrdering::Better);
+        assert_eq!(message2.compare_dataset(&message1), DatasetOrdering::Worse);
+
+        assert_eq!(message1.compare(&message2), Ordering::Greater);
+        assert_eq!(message2.compare(&message1), Ordering::Less);
+    }
+
+    #[test]
+    fn best_announce_message_max_tie_break() {
+        let mut message1 = default_best_announce_message();
+        let mut message2 = default_best_announce_message();
+
+        message1.timestamp = WireTimestamp {
+            seconds: 1_000_000,
+            nanos: 1001,
+        };
+        message2.timestamp = WireTimestamp {
+            seconds: 1_000_001,
+            nanos: 1000,
+        };
+
+        // the newest message should be preferred
+        assert!(message2.timestamp > message1.timestamp);
+
+        let ordering = message1.compare_dataset(&message2).as_ordering();
+        assert_eq!(ordering, Ordering::Equal);
+
+        // so message1 is lower in the ordering than message2
+        assert_eq!(message1.compare(&message2), Ordering::Less)
+    }
 }

@@ -3,7 +3,7 @@ use crate::{
     time::Time,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
 pub struct WireTimestamp {
     /// The seconds field of the timestamp.
     /// 48-bit, must be less than 281474976710656

@@ -174,14 +174,17 @@ pub enum DatasetOrdering {
 }
 
 impl DatasetOrdering {
-    pub fn is_better(&self) -> bool {
+    pub const fn is_better(self) -> bool {
+        matches!(self.as_ordering(), Ordering::Greater | Ordering::Equal)
+    }
+
+    pub const fn as_ordering(self) -> Ordering {
+        // We get errors if two announce messages are (functionally) the same
+        // in that case either option is a valid choice
         match self {
-            DatasetOrdering::Better
-            | DatasetOrdering::BetterByTopology
-            // We get errors if two announce messages are (functionally) the same, in that case we can just pick either one
-            | DatasetOrdering::Error1
-            | DatasetOrdering::Error2 => true,
-            DatasetOrdering::WorseByTopology | DatasetOrdering::Worse => false,
+            DatasetOrdering::Better | DatasetOrdering::BetterByTopology => Ordering::Greater,
+            DatasetOrdering::Error1 | DatasetOrdering::Error2 => Ordering::Equal,
+            DatasetOrdering::WorseByTopology | DatasetOrdering::Worse => Ordering::Less,
         }
     }
 }
