@@ -477,25 +477,6 @@ impl<'a, C, F> Port<InBmca<'a, C, F>> {
 
 impl<P> Port<Startup<P>> {
     /// Create a new port from a port dataset on a given interface.
-    ///
-    /// For example, when using the `statime-linux` network runtime, a port on
-    /// `eth0` for an ordinary clock can be created with
-    ///
-    /// ```ignore
-    /// let port_ds = PortDS::new(
-    ///     PortIdentity {
-    ///         clock_identity,
-    ///         port_number: 1,
-    ///     },
-    ///     1,
-    ///     1,
-    ///     3,
-    ///     0,
-    ///     DelayMechanism::E2E,
-    ///     1,
-    /// );
-    /// let port = Port::new(port_ds, &mut network_runtime, "eth0".parse().unwrap());
-    /// ```
     pub async fn new<NR>(
         config: PortConfig,
         runtime: &mut NR,

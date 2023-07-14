@@ -72,6 +72,7 @@ impl SlaveState {
     ) -> PortActionIterator<'a> {
         match context.inner {
             crate::port::TimestampContextInner::DelayReq { id } => {
+                // handle our send timestamp on a delay request message
                 self.handle_delay_timestamp(id, timestamp)
             }
             _ => {
