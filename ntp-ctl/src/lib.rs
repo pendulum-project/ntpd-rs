@@ -9,54 +9,143 @@
 
 use std::{path::PathBuf, process::ExitCode};
 
-use clap::{Parser, Subcommand};
-use ntp_daemon::{Config, ObservableState};
+use ntp_daemon::{config::CliArg, Config, ObservableState};
 use ntp_metrics_exporter::Metrics;
 
-#[derive(Parser)]
-#[command(version = "0.2.0", about = "Query and configure the ntpd-rs daemon")]
-#[command(arg_required_else_help(true))]
-struct Cli {
-    #[command(subcommand)]
-    command: Command,
+const USAGE_MSG: &str = "\
+usage: ntp-ctl validate [-c PATH]
+       ntp-ctl status [-f FORMAT] [-c PATH] [-o PATH]
+       ntp-ctl -h | ntp-ctl -v";
 
-    /// Which configuration file to read the socket paths from
-    #[arg(short, long)]
-    config: Option<PathBuf>,
+const DESCRIPTOR: &str = "ntp-ctl - ntp-daemon monitoring";
 
-    /// Path of the observation socket
-    #[arg(short, long)]
-    observation_socket: Option<PathBuf>,
+const HELP_MSG: &str = "Options:
+  -f, --format=FORMAT                  which format to use for printing statistics [plain, prometheus]
+  -c, --config=CONFIG                  which configuration file to read the socket paths from
+  -o, --observation-socket=SOCKET      path of the observation socket";
 
-    /// Path of the configuration socket
-    #[arg(short = 's', long)]
-    configuration_socket: Option<PathBuf>,
+pub fn long_help_message() -> String {
+    format!("{DESCRIPTOR}\n\n{USAGE_MSG}\n\n{HELP_MSG}")
 }
 
-#[derive(Subcommand)]
-enum Command {
-    #[command(about = "Information about the peers the daemon is currently connected with")]
-    Peers,
-    #[command(about = "Information about the state of the daemon itself")]
-    System,
-    #[command(
-        about = "Information about the state of the daemon and peers in the prometheus export format"
-    )]
+#[derive(Debug, Default, PartialEq, Eq)]
+enum Format {
+    #[default]
+    Plain,
     Prometheus,
-    #[command(about = "Validate configuration")]
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub enum NtpCtlAction {
+    #[default]
+    Help,
+    Version,
     Validate,
+    Status,
 }
 
-enum PrintState {
-    Peers,
-    System,
-    Prometheus,
+#[derive(Debug, Default)]
+pub(crate) struct NtpDaemonOptions {
+    config: Option<PathBuf>,
+    observation_socket: Option<PathBuf>,
+    format: Format,
+    help: bool,
+    version: bool,
+    validate: bool,
+    status: bool,
+    action: NtpCtlAction,
 }
 
-async fn validate(cli: Cli) -> std::io::Result<ExitCode> {
+impl NtpDaemonOptions {
+    const TAKES_ARGUMENT: &[&'static str] = &["--config", "--format", "--observation-socket"];
+    const TAKES_ARGUMENT_SHORT: &[char] = &['o', 'c', 'f'];
+
+    /// parse an iterator over command line arguments
+    pub fn try_parse_from<I, T>(iter: I) -> Result<Self, String>
+    where
+        I: IntoIterator<Item = T>,
+        T: AsRef<str> + Clone,
+    {
+        let mut options = NtpDaemonOptions::default();
+
+        let mut it = iter.into_iter().map(|x| x.as_ref().to_string()).peekable();
+
+        match it.peek().map(|x| x.as_str()) {
+            Some("validate") => {
+                let _ = it.next();
+                options.validate = true;
+            }
+            Some("status") => {
+                let _ = it.next();
+                options.status = true;
+            }
+            _ => { /* do nothing */ }
+        };
+
+        let arg_iter =
+            CliArg::normalize_arguments(Self::TAKES_ARGUMENT, Self::TAKES_ARGUMENT_SHORT, it)?
+                .into_iter()
+                .peekable();
+
+        for arg in arg_iter {
+            match arg {
+                CliArg::Flag(flag) => match flag.as_str() {
+                    "-h" | "--help" => {
+                        options.help = true;
+                    }
+                    "-v" | "--version" => {
+                        options.version = true;
+                    }
+                    option => {
+                        Err(format!("invalid option provided: {option}"))?;
+                    }
+                },
+                CliArg::Argument(option, value) => match option.as_str() {
+                    "-c" | "--config" => {
+                        options.config = Some(PathBuf::from(value));
+                    }
+                    "-f" | "--format" => match value.as_str() {
+                        "plain" => options.format = Format::Plain,
+                        "prometheus" => options.format = Format::Prometheus,
+                        _ => Err(format!("invalid format option provided: {value}"))?,
+                    },
+                    "-o" | "--observation-socket" => {
+                        options.observation_socket = Some(PathBuf::from(value));
+                    }
+                    option => {
+                        Err(format!("invalid option provided: {option}"))?;
+                    }
+                },
+                CliArg::Rest(_rest) => { /* do nothing, drop remaining arguments */ }
+            }
+        }
+
+        options.resolve_action();
+        // nothing to validate at the moment
+
+        Ok(options)
+    }
+
+    /// from the arguments resolve which action should be performed
+    fn resolve_action(&mut self) {
+        if self.help {
+            self.action = NtpCtlAction::Help;
+        } else if self.version {
+            self.action = NtpCtlAction::Version;
+        } else if self.validate {
+            self.action = NtpCtlAction::Validate;
+        } else if self.status {
+            self.action = NtpCtlAction::Status;
+        } else {
+            self.action = NtpCtlAction::Help;
+        }
+    }
+}
+
+async fn validate(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
     // Late completion not needed, so ignore result.
     let _ = ntp_daemon::tracing::init(tracing_subscriber::EnvFilter::new("info"));
-    match Config::from_args(cli.config, vec![], vec![]).await {
+    match Config::from_args(config, vec![], vec![]).await {
         Ok(config) => {
             if config.check() {
                 eprintln!("Config looks good");
@@ -72,38 +161,47 @@ async fn validate(cli: Cli) -> std::io::Result<ExitCode> {
     }
 }
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub async fn main() -> std::io::Result<ExitCode> {
-    let cli = Cli::parse();
+    let options = match NtpDaemonOptions::try_parse_from(std::env::args()) {
+        Ok(options) => options,
+        Err(msg) => return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, msg)),
+    };
 
-    if matches!(cli.command, Command::Validate) {
-        return validate(cli).await;
-    }
+    match options.action {
+        NtpCtlAction::Help => {
+            println!("{}", long_help_message());
+            Ok(ExitCode::SUCCESS)
+        }
+        NtpCtlAction::Version => {
+            eprintln!("ntp-ctl {VERSION}");
+            Ok(ExitCode::SUCCESS)
+        }
+        NtpCtlAction::Validate => validate(options.config).await,
+        NtpCtlAction::Status => {
+            let config = Config::from_args(options.config, vec![], vec![]).await;
 
-    let config = Config::from_args(cli.config, vec![], vec![]).await;
+            if let Err(ref e) = config {
+                println!("Warning: Unable to load configuration file: {e}");
+            }
 
-    if let Err(ref e) = config {
-        println!("Warning: Unable to load configuration file: {e}");
-    }
+            let config = config.unwrap_or_default();
 
-    let config = config.unwrap_or_default();
+            let observation = options
+                .observation_socket
+                .or(config.observe.path)
+                .unwrap_or_else(|| PathBuf::from("/run/ntpd-rs/observe"));
 
-    let observation = cli
-        .observation_socket
-        .or(config.observe.path)
-        .unwrap_or_else(|| PathBuf::from("/run/ntpd-rs/observe"));
-
-    match cli.command {
-        Command::Peers => print_state(PrintState::Peers, observation).await,
-        Command::System => print_state(PrintState::System, observation).await,
-        Command::Prometheus => print_state(PrintState::Prometheus, observation).await,
-        Command::Validate => unreachable!(),
+            match options.format {
+                Format::Plain => print_state(Format::Plain, observation).await,
+                Format::Prometheus => print_state(Format::Prometheus, observation).await,
+            }
+        }
     }
 }
 
-async fn print_state(
-    print: PrintState,
-    observe_socket: PathBuf,
-) -> Result<ExitCode, std::io::Error> {
+async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode, std::io::Error> {
     let mut stream = match tokio::net::UnixStream::connect(&observe_socket).await {
         Ok(stream) => stream,
         Err(e) => {
@@ -124,15 +222,11 @@ async fn print_state(
         };
 
     match print {
-        PrintState::Peers => {
+        Format::Plain => {
             // Unwrap here is fine as our serializer is infallible.
-            println!("{}", serde_json::to_string_pretty(&output.peers).unwrap());
+            println!("{}", serde_json::to_string_pretty(&output).unwrap());
         }
-        PrintState::System => {
-            // Unwrap here is fine as our serializer is infallible.
-            println!("{}", serde_json::to_string_pretty(&output.system).unwrap());
-        }
-        PrintState::Prometheus => {
+        Format::Prometheus => {
             let metrics = Metrics::default();
             metrics.fill(&output);
             let registry = metrics.registry();
@@ -163,7 +257,7 @@ mod tests {
     use super::*;
 
     async fn write_socket_helper(
-        command: PrintState,
+        command: Format,
         socket_name: &str,
     ) -> std::io::Result<Result<ExitCode, std::io::Error>> {
         let config: ObserveConfig = Default::default();
@@ -199,20 +293,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_socket_peer() -> std::io::Result<()> {
         // be careful with copying: tests run concurrently and should use a unique socket name!
-        let result = write_socket_helper(PrintState::Peers, "ntp-test-stream-6").await?;
-
-        assert_eq!(
-            format!("{:?}", result.unwrap()),
-            format!("{:?}", ExitCode::SUCCESS)
-        );
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_control_socket_system() -> std::io::Result<()> {
-        // be careful with copying: tests run concurrently and should use a unique socket name!
-        let result = write_socket_helper(PrintState::System, "ntp-test-stream-7").await?;
+        let result = write_socket_helper(Format::Plain, "ntp-test-stream-6").await?;
 
         assert_eq!(
             format!("{:?}", result.unwrap()),
@@ -225,7 +306,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_socket_prometheus() -> std::io::Result<()> {
         // be careful with copying: tests run concurrently and should use a unique socket name!
-        let result = write_socket_helper(PrintState::Prometheus, "ntp-test-stream-8").await?;
+        let result = write_socket_helper(Format::Prometheus, "ntp-test-stream-8").await?;
 
         assert_eq!(
             format!("{:?}", result.unwrap()),
@@ -250,7 +331,7 @@ mod tests {
         let permissions: std::fs::Permissions = PermissionsExt::from_mode(config.mode);
         std::fs::set_permissions(&path, permissions)?;
 
-        let fut = super::print_state(PrintState::Peers, path);
+        let fut = super::print_state(Format::Plain, path);
         let handle = tokio::spawn(fut);
 
         let value = 42u32;

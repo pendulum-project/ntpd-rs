@@ -15,7 +15,5 @@ publish.workspace = true
 ntp-proto.workspace = true
 ntp-os-clock.workspace = true
 ntp-daemon.workspace = true
-
-tokio.workspace = true
-clap.workspace = true
 prometheus-client.workspace = true
+tokio.workspace = true

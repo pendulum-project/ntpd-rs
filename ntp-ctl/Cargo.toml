@@ -19,7 +19,6 @@ ntp-metrics-exporter.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 prometheus-client.workspace = true
