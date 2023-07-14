@@ -63,12 +63,6 @@ pub struct ServerConfig {
     pub rate_limiting_cutoff: Duration,
 }
 
-impl ServerConfig {
-    pub(crate) fn try_from_str(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
-        Self::try_from(value)
-    }
-}
-
 impl TryFrom<&str> for ServerConfig {
     type Error = AddrParseError;
 
