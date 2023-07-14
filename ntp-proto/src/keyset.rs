@@ -19,6 +19,19 @@ pub struct DecodedServerCookie {
     pub c2s: Box<dyn Cipher>,
 }
 
+impl DecodedServerCookie {
+    fn plaintext(&self) -> Vec<u8> {
+        let mut plaintext = Vec::new();
+
+        let algorithm_bytes = (self.algorithm as u16).to_be_bytes();
+        plaintext.extend_from_slice(&algorithm_bytes);
+        plaintext.extend_from_slice(self.s2c.key_bytes());
+        plaintext.extend_from_slice(self.c2s.key_bytes());
+
+        plaintext
+    }
+}
+
 impl std::fmt::Debug for DecodedServerCookie {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DecodedServerCookie")
@@ -147,28 +160,18 @@ pub struct KeySet {
 }
 
 impl KeySet {
-    fn plaintext(cookie: &DecodedServerCookie) -> Vec<u8> {
-        let mut plaintext = Vec::new();
-
-        let algorithm_bytes = (cookie.algorithm as u16).to_be_bytes();
-        plaintext.extend_from_slice(&algorithm_bytes);
-        plaintext.extend_from_slice(cookie.s2c.key_bytes());
-        plaintext.extend_from_slice(cookie.c2s.key_bytes());
-
-        plaintext
-    }
-
     #[cfg(feature = "fuzz")]
     pub fn encode_cookie_pub(&self, cookie: &DecodedServerCookie) -> Vec<u8> {
         self.encode_cookie(cookie)
     }
 
     pub(crate) fn encode_cookie(&self, cookie: &DecodedServerCookie) -> Vec<u8> {
-        let mut output = Self::plaintext(cookie);
+        let mut output = cookie.plaintext();
         let plaintext_length = output.as_slice().len();
 
-        // Add space for header (4 + 2 bytes), tag (16 bytes) and nonce (16 bytes) plus some margin (16 bytes)
-        output.resize(output.len() + 2 + 4 + 16 + 16 + 16, 0);
+        // Add space for header (4 + 2 bytes), additional ciphertext
+        // data from the cmac (16 bytes) and nonce (16 bytes).
+        output.resize(output.len() + 2 + 4 + 16 + 16, 0);
 
         // And move plaintext to make space for header
         output.copy_within(0..plaintext_length, 6);
@@ -184,7 +187,7 @@ impl KeySet {
 
         output[0..4].copy_from_slice(&(self.primary.wrapping_add(self.id_offset)).to_be_bytes());
         output[4..6].copy_from_slice(&(ciphertext_length as u16).to_be_bytes());
-        output.truncate(6 + nonce_length + ciphertext_length);
+        debug_assert_eq!(output.len(), 6 + nonce_length + ciphertext_length);
         output
     }
 

@@ -55,12 +55,14 @@ impl<'a> aead::Buffer for Buffer<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EncryptResult {
-    // Nonce length MUST be a multiple of 4 when encrypting
     pub nonce_length: usize,
     pub ciphertext_length: usize,
 }
 
 pub trait Cipher: Sync + Send + ZeroizeOnDrop + 'static {
+    /// encrypt should encrypt the plaintext present in the buffer
+    /// and in replace it with the nonce followed by the cyphertext
+    /// returning the sizes of both.
     fn encrypt(
         &self,
         buffer: &mut [u8],
@@ -159,11 +161,18 @@ impl Cipher for AesSivCmac256 {
         let mut siv = Aes128Siv::new(&self.key);
         let nonce: [u8; 16] = rand::thread_rng().gen();
 
+        // Prepare the buffer for in place encryption by moving the plaintext
+        // back, creating space for the nonce.
+        if buffer.len() < nonce.len() + plaintext_length {
+            return Err(std::io::ErrorKind::WriteZero.into());
+        }
         buffer.copy_within(..plaintext_length, nonce.len());
+        // And place the nonce where the caller expects it
         buffer[..nonce.len()].copy_from_slice(&nonce);
 
+        // Create a wrapper around the plaintext portion of the buffer that has
+        // the methods aes_siv needs to do encryption in-place.
         let mut buffer_wrap = Buffer::new(&mut buffer[nonce.len()..], plaintext_length);
-
         siv.encrypt_in_place([associated_data, &nonce], &mut buffer_wrap)
             .map_err(|_| std::io::ErrorKind::Other)?;
 
@@ -226,11 +235,18 @@ impl Cipher for AesSivCmac512 {
         let mut siv = Aes256Siv::new(&self.key);
         let nonce: [u8; 16] = rand::thread_rng().gen();
 
+        // Prepare the buffer for in place encryption by moving the plaintext
+        // back, creating space for the nonce.
+        if buffer.len() < nonce.len() + plaintext_length {
+            return Err(std::io::ErrorKind::WriteZero.into());
+        }
         buffer.copy_within(..plaintext_length, nonce.len());
+        // And place the nonce where the caller expects it
         buffer[..nonce.len()].copy_from_slice(&nonce);
 
+        // Create a wrapper around the plaintext portion of the buffer that has
+        // the methods aes_siv needs to do encryption in-place.
         let mut buffer_wrap = Buffer::new(&mut buffer[nonce.len()..], plaintext_length);
-
         siv.encrypt_in_place([associated_data, &nonce], &mut buffer_wrap)
             .map_err(|_| std::io::ErrorKind::Other)?;
 
@@ -287,6 +303,32 @@ mod tests {
     }
 
     #[test]
+    fn test_aes_siv_cmac_256_with_assoc_data() {
+        let mut testvec: Vec<u8> = (0..16).collect();
+        testvec.resize(testvec.len() + 32, 0);
+        let key = AesSivCmac256::new([0u8; 32].into());
+        let EncryptResult {
+            nonce_length,
+            ciphertext_length,
+        } = key.encrypt(&mut testvec, 16, &[1]).unwrap();
+        assert!(key
+            .decrypt(
+                &testvec[..nonce_length],
+                &testvec[nonce_length..(nonce_length + ciphertext_length)],
+                &[2]
+            )
+            .is_err());
+        let result = key
+            .decrypt(
+                &testvec[..nonce_length],
+                &testvec[nonce_length..(nonce_length + ciphertext_length)],
+                &[1],
+            )
+            .unwrap();
+        assert_eq!(result, (0..16).collect::<Vec<u8>>());
+    }
+
+    #[test]
     fn test_aes_siv_cmac_512() {
         let mut testvec: Vec<u8> = (0..16).collect();
         testvec.resize(testvec.len() + 32, 0);
@@ -300,6 +342,32 @@ mod tests {
                 &testvec[..nonce_length],
                 &testvec[nonce_length..(nonce_length + ciphertext_length)],
                 &[],
+            )
+            .unwrap();
+        assert_eq!(result, (0..16).collect::<Vec<u8>>());
+    }
+
+    #[test]
+    fn test_aes_siv_cmac_512_with_assoc_data() {
+        let mut testvec: Vec<u8> = (0..16).collect();
+        testvec.resize(testvec.len() + 32, 0);
+        let key = AesSivCmac512::new([0u8; 64].into());
+        let EncryptResult {
+            nonce_length,
+            ciphertext_length,
+        } = key.encrypt(&mut testvec, 16, &[1]).unwrap();
+        assert!(key
+            .decrypt(
+                &testvec[..nonce_length],
+                &testvec[nonce_length..(nonce_length + ciphertext_length)],
+                &[2]
+            )
+            .is_err());
+        let result = key
+            .decrypt(
+                &testvec[..nonce_length],
+                &testvec[nonce_length..(nonce_length + ciphertext_length)],
+                &[1],
             )
             .unwrap();
         assert_eq!(result, (0..16).collect::<Vec<u8>>());
