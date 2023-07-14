@@ -21,7 +21,6 @@ pub mod tracing;
 
 use std::{error::Error, sync::Arc};
 
-use clap::Parser;
 pub use config::dynamic::ConfigUpdate;
 use config::ClockConfig;
 pub use config::Config;
@@ -31,12 +30,29 @@ pub use system::spawn;
 pub use ipfilter::fuzz::fuzz_ipfilter;
 use tracing_subscriber::EnvFilter;
 
-use crate::config::CmdArgs;
+use crate::config::NtpDaemonOptions;
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub async fn main() -> Result<(), Box<dyn Error>> {
-    let args = CmdArgs::parse();
-    let has_log_override = args.log_filter.is_some();
-    let log_filter = args
+    let options = NtpDaemonOptions::try_parse_from(std::env::args())?;
+
+    match options.action {
+        config::NtpDaemonAction::Help => {
+            println!("{}", config::long_help_message());
+        }
+        config::NtpDaemonAction::Version => {
+            eprintln!("ntp-daemon {VERSION}");
+        }
+        config::NtpDaemonAction::Run => run(options).await?,
+    }
+
+    Ok(())
+}
+
+async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
+    let has_log_override = options.log_filter.is_some();
+    let log_filter = options
         .log_filter
         // asserts that the arc is not shared. There is no reason it would be,
         // we just use Arc to work around EnvFilter not implementing Clone
@@ -47,7 +63,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     // to log errors when loading the full configuration.
     let finish_tracing_init = crate::tracing::init(log_filter);
 
-    let mut config = match Config::from_args(args.config, args.peers, args.servers).await {
+    let mut config = match Config::from_args(options.config, vec![], vec![]).await {
         Ok(c) => c,
         Err(e) => {
             // print to stderr because tracing is not yet setup

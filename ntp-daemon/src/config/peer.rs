@@ -51,12 +51,6 @@ pub enum PeerConfig {
     // Consul(ConsulPeerConfig),
 }
 
-impl PeerConfig {
-    pub(crate) fn try_from_str(value: &str) -> Result<Self, std::io::Error> {
-        Self::try_from(value)
-    }
-}
-
 /// A normalized address has a host and a port part. However, the host may be
 /// invalid, we didn't yet perform a DNS lookup.
 #[derive(Deserialize, Debug, Clone)]

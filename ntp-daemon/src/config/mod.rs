@@ -4,13 +4,11 @@ mod server;
 pub mod subnet;
 
 use ntp_os_clock::DefaultNtpClock;
+use ntp_proto::{DefaultTimeSyncController, SystemConfig, TimeSyncController};
 use ntp_udp::{EnableTimestamps, InterfaceName};
 pub use peer::*;
-pub use server::*;
-
-use clap::Parser;
-use ntp_proto::{DefaultTimeSyncController, SystemConfig, TimeSyncController};
 use serde::{de, Deserialize, Deserializer};
+pub use server::*;
 use std::{
     io::ErrorKind,
     os::unix::fs::PermissionsExt,
@@ -49,54 +47,29 @@ fn parse_env_filter(input: &str) -> Result<Arc<EnvFilter>, tracing_subscriber::f
         .map(Arc::new)
 }
 
-#[derive(Parser, Debug)]
-pub struct CmdArgs {
-    #[arg(
-        short,
-        long,
-        global = true,
-        value_name = "FILE",
-        help = "Path of the configuration file"
-    )]
-    pub config: Option<PathBuf>,
-
-    #[arg(
-        long,
-        short,
-        global = true,
-        value_name = "FILTER",
-        value_parser = parse_env_filter,
-        env = "NTP_LOG",
-        help = "Filter to apply to log messages"
-    )]
-    pub log_filter: Option<Arc<EnvFilter>>,
-}
-
-#[derive(Debug, Default)]
-pub struct CliArgs {}
-
 const USAGE_MSG: &str = "\
-usage: ntp-daemon [-c path] [-l log-level]
+usage: ntp-daemon [-c PATH] [-l LOG_LEVEL]
        ntp-daemon -h";
 
 const DESCRIPTOR: &str = "ntp-daemon - synchronize system time";
 
 const HELP_MSG: &str = "Options:
-  -c, --config=path             change the config .toml file
-  -l, --log-level=string        change the log level";
+  -c, --config=PATH             change the config .toml file
+  -l, --log-filter=LOG_FILTER   change the log filter";
 
 pub fn long_help_message() -> String {
-    format!("{DESCRIPTOR}\n{USAGE_MSG}\n{HELP_MSG}")
+    format!("{DESCRIPTOR}\n\n{USAGE_MSG}\n\n{HELP_MSG}")
 }
 
 #[derive(Debug, Default)]
-struct NtpDaemonOptions {
+pub(crate) struct NtpDaemonOptions {
     /// Path of the configuration file
     pub config: Option<PathBuf>,
     /// Filter to apply to log messages
     pub log_filter: Option<Arc<EnvFilter>>,
     help: bool,
     version: bool,
+    pub action: NtpDaemonAction,
 }
 
 enum NtpDaemonArg {
@@ -105,8 +78,8 @@ enum NtpDaemonArg {
     Rest(Vec<String>),
 }
 
-#[derive(Debug, Default)]
-enum NtpDaemonAction {
+#[derive(Debug, Default, PartialEq, Eq)]
+pub enum NtpDaemonAction {
     #[default]
     Help,
     Version,
@@ -114,17 +87,17 @@ enum NtpDaemonAction {
 }
 
 impl NtpDaemonOptions {
-    const TAKES_ARGUMENT: &[&'static str] = &["--config", "--log-level"];
+    const TAKES_ARGUMENT: &[&'static str] = &["--config", "--log-filter"];
     const TAKES_ARGUMENT_SHORT: &[char] = &['c', 'l'];
 
     /// parse an iterator over command line arguments
     pub fn try_parse_from<I, T>(iter: I) -> Result<Self, String>
     where
         I: IntoIterator<Item = T>,
-        T: Into<String> + Clone,
+        T: AsRef<str> + Clone,
     {
         let mut options = NtpDaemonOptions::default();
-        let arg_iter = Self::normalize_arguments(iter.into_iter().map(Into::into))?
+        let arg_iter = Self::normalize_arguments(iter.into_iter().map(|x| x.as_ref().to_string()))?
             .into_iter()
             .peekable();
 
@@ -137,32 +110,41 @@ impl NtpDaemonOptions {
                     "-v" | "--version" => {
                         options.version = true;
                     }
-                    _option => {
-                        Err("invalid option provided")?;
+                    option => {
+                        Err(format!("invalid option provided: {option}"))?;
                     }
                 },
                 NtpDaemonArg::Argument(option, value) => match option.as_str() {
                     "-c" | "--config" => {
                         options.config = Some(PathBuf::from(value));
                     }
-                    "-l" | "--log-level" => {
-                        let deserializer =
-                            serde::de::value::StrDeserializer::<SerdeError>::new(&value);
-
-                        match deserialize_option_env_filter(deserializer) {
-                            Ok(filter) => options.log_filter = filter.map(|f| Arc::new(f)),
-                            Err(e) => Err(format!("invalid log level: {e}"))?,
-                        }
-                    }
-                    _option => {
-                        Err("invalid option provided")?;
+                    "-l" | "--log-filter" => match parse_env_filter(&value) {
+                        Ok(filter) => options.log_filter = Some(filter),
+                        Err(e) => Err(format!("invalid log level: {e}"))?,
+                    },
+                    option => {
+                        Err(format!("invalid option provided: {option}"))?;
                     }
                 },
                 NtpDaemonArg::Rest(_rest) => { /* do nothing, drop remaining arguments */ }
             }
         }
 
+        options.resolve_action();
+        // nothing to validate at the moment
+
         Ok(options)
+    }
+
+    /// from the arguments resolve which action should be performed
+    fn resolve_action(&mut self) {
+        if self.help {
+            self.action = NtpDaemonAction::Help;
+        } else if self.version {
+            self.action = NtpDaemonAction::Version;
+        } else {
+            self.action = NtpDaemonAction::Run;
+        }
     }
 
     fn normalize_arguments<I>(iter: I) -> Result<Vec<NtpDaemonArg>, String>
@@ -192,7 +174,7 @@ impl NtpDaemonOptions {
                         }
                     } else if Self::TAKES_ARGUMENT.contains(&long_arg) {
                         if let Some(next) = arg_iter.next() {
-                            processed.push(NtpDaemonArg::Argument(long_arg[2..].to_string(), next))
+                            processed.push(NtpDaemonArg::Argument(long_arg.to_string(), next))
                         } else {
                             Err(format!("'{}' expects an argument", &long_arg))?;
                         }
@@ -466,34 +448,9 @@ impl Config {
     }
 }
 
-struct SerdeError(String);
-
-impl std::fmt::Debug for SerdeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl std::fmt::Display for SerdeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl std::error::Error for SerdeError {}
-
-impl serde::de::Error for SerdeError {
-    fn custom<T>(msg: T) -> Self
-    where
-        T: std::fmt::Display,
-    {
-        Self(msg.to_string())
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use std::{ffi::OsString, str::FromStr};
+    use std::str::FromStr;
 
     use ntp_proto::{NtpDuration, StepThreshold};
 
@@ -595,92 +552,44 @@ mod tests {
 
     #[test]
     fn clap_no_arguments() {
-        use clap::Parser;
+        let arguments: [String; 0] = [];
+        let parsed_empty = NtpDaemonOptions::try_parse_from(arguments).unwrap();
 
-        let arguments: [OsString; 0] = [];
-        let parsed_empty = CmdArgs::try_parse_from(arguments).unwrap();
-
-        assert!(parsed_empty.peers.is_empty());
         assert!(parsed_empty.config.is_none());
         assert!(parsed_empty.log_filter.is_none());
+        assert_eq!(parsed_empty.action, NtpDaemonAction::Run);
     }
 
     #[test]
     fn clap_external_config() {
-        use clap::Parser;
+        let arguments = &["/usr/bin/ntp-daemon", "--config", "other.toml"];
+        let parsed_empty = NtpDaemonOptions::try_parse_from(arguments).unwrap();
 
-        let arguments = &["--", "--config", "other.toml"];
-        let parsed_empty = CmdArgs::try_parse_from(arguments).unwrap();
-
-        assert!(parsed_empty.peers.is_empty());
         assert_eq!(parsed_empty.config, Some("other.toml".into()));
         assert!(parsed_empty.log_filter.is_none());
+        assert_eq!(parsed_empty.action, NtpDaemonAction::Run);
 
-        let arguments = &["--", "-c", "other.toml"];
-        let parsed_empty = CmdArgs::try_parse_from(arguments).unwrap();
+        let arguments = &["/usr/bin/ntp-daemon", "-c", "other.toml"];
+        let parsed_empty = NtpDaemonOptions::try_parse_from(arguments).unwrap();
 
-        assert!(parsed_empty.peers.is_empty());
         assert_eq!(parsed_empty.config, Some("other.toml".into()));
         assert!(parsed_empty.log_filter.is_none());
+        assert_eq!(parsed_empty.action, NtpDaemonAction::Run);
     }
 
     #[test]
     fn clap_log_filter() {
-        use clap::Parser;
+        let arguments = &["/usr/bin/ntp-daemon", "--log-filter", "debug"];
+        let parsed_empty = NtpDaemonOptions::try_parse_from(arguments).unwrap();
 
-        let arguments = &["--", "--log-filter", "debug"];
-        let parsed_empty = CmdArgs::try_parse_from(arguments).unwrap();
-
-        assert!(parsed_empty.peers.is_empty());
         assert!(parsed_empty.config.is_none());
         assert_eq!(parsed_empty.log_filter.unwrap().to_string(), "debug");
 
-        let arguments = &["--", "-l", "debug"];
-        let parsed_empty = CmdArgs::try_parse_from(arguments).unwrap();
+        let arguments = &["/usr/bin/ntp-daemon", "-l", "debug"];
+        let parsed_empty = NtpDaemonOptions::try_parse_from(arguments).unwrap();
 
-        assert!(parsed_empty.peers.is_empty());
         assert!(parsed_empty.config.is_none());
         assert_eq!(parsed_empty.log_filter.unwrap().to_string(), "debug");
-    }
-
-    #[test]
-    fn clap_peers() {
-        use clap::Parser;
-
-        let arguments = &["--", "--peer", "foo.nl"];
-        let parsed_empty = CmdArgs::try_parse_from(arguments).unwrap();
-
-        assert_eq!(
-            parsed_empty.peers,
-            vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("foo.nl", 123),
-            })]
-        );
-        assert!(parsed_empty.config.is_none());
-        assert!(parsed_empty.log_filter.is_none());
-
-        let arguments = &["--", "--peer", "foo.rs", "-p", "spam.nl:123"];
-        let parsed_empty = CmdArgs::try_parse_from(arguments).unwrap();
-
-        assert_eq!(
-            parsed_empty.peers,
-            vec![
-                PeerConfig::Standard(StandardPeerConfig {
-                    addr: NormalizedAddress::new_unchecked("foo.rs", 123),
-                }),
-                PeerConfig::Standard(StandardPeerConfig {
-                    addr: NormalizedAddress::new_unchecked("spam.nl", 123),
-                }),
-            ]
-        );
-        assert!(parsed_empty.config.is_none());
-        assert!(parsed_empty.log_filter.is_none());
-    }
-
-    #[test]
-    fn clap_peers_invalid() {
-        let arguments = &["--", "--peer", ":invalid:ipv6:123"];
-        assert!(CmdArgs::try_parse_from(arguments).is_err());
     }
 
     #[test]
