@@ -250,8 +250,6 @@ impl MasterState {
 
 #[cfg(test)]
 mod tests {
-    use std::vec::Vec;
-
     use fixed::types::{I48F16, U96F32};
 
     use super::*;
@@ -262,39 +260,8 @@ mod tests {
             messages::{Header, SdoId},
         },
         time::Interval,
-        Duration, NetworkPort, TimePropertiesDS, MAX_DATA_LEN,
+        Duration, TimePropertiesDS, MAX_DATA_LEN,
     };
-
-    #[derive(Debug, Default)]
-    struct TestNetworkPort {
-        normal: Vec<Vec<u8>>,
-        time: Vec<Vec<u8>>,
-
-        current_time: Time,
-    }
-
-    impl NetworkPort for TestNetworkPort {
-        type Error = std::convert::Infallible;
-
-        async fn send(&mut self, data: &[u8]) -> core::result::Result<(), Self::Error> {
-            self.normal.push(Vec::from(data));
-            Ok(())
-        }
-
-        async fn send_time_critical(
-            &mut self,
-            data: &[u8],
-        ) -> core::result::Result<Option<Time>, Self::Error> {
-            self.time.push(Vec::from(data));
-            Ok(Some(self.current_time))
-        }
-
-        async fn recv(
-            &mut self,
-        ) -> core::result::Result<crate::network::NetworkPacket, Self::Error> {
-            panic!("Recv shouldn't be called by state");
-        }
-    }
 
     struct TestClock {
         current_time: Time,

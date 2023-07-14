@@ -360,47 +360,14 @@ impl SlaveState {
 
 #[cfg(test)]
 mod tests {
-    use std::vec::Vec;
-
     use super::*;
     use crate::{
         datastructures::{
             common::{ClockIdentity, TimeInterval},
             messages::{Header, SdoId},
         },
-        NetworkPort, MAX_DATA_LEN,
+        MAX_DATA_LEN,
     };
-
-    #[derive(Debug, Default)]
-    struct TestNetworkPort {
-        normal: Vec<Vec<u8>>,
-        time: Vec<Vec<u8>>,
-
-        current_time: Time,
-    }
-
-    impl NetworkPort for TestNetworkPort {
-        type Error = std::convert::Infallible;
-
-        async fn send(&mut self, data: &[u8]) -> core::result::Result<(), Self::Error> {
-            self.normal.push(Vec::from(data));
-            Ok(())
-        }
-
-        async fn send_time_critical(
-            &mut self,
-            data: &[u8],
-        ) -> core::result::Result<Option<Time>, Self::Error> {
-            self.time.push(Vec::from(data));
-            Ok(Some(self.current_time))
-        }
-
-        async fn recv(
-            &mut self,
-        ) -> core::result::Result<crate::network::NetworkPacket, Self::Error> {
-            panic!("Recv shouldn't be called by state");
-        }
-    }
 
     #[test]
     fn test_sync_without_delay_msg() {

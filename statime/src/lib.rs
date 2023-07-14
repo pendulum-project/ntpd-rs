@@ -136,11 +136,10 @@ mod clock;
 mod config;
 mod datastructures;
 mod filters;
-mod network;
+// mod network;
 mod port;
 mod ptp_instance;
 mod time;
-mod utils;
 
 pub use clock::{Clock, Timer};
 pub use config::{DelayMechanism, PortConfig};
@@ -152,7 +151,7 @@ pub use datastructures::{
     messages::{SdoId, MAX_DATA_LEN},
 };
 pub use filters::{basic::BasicFilter, Filter};
-pub use network::{NetworkPacket, NetworkPort, NetworkRuntime};
-pub use port::{Measurement, Port};
+// pub use network::{NetworkPacket, NetworkPort, NetworkRuntime};
+pub use port::{Measurement, Port, PortAction, PortActionIterator, TimestampContext};
 pub use ptp_instance::PtpInstance;
 pub use time::{Duration, Interval, Time};

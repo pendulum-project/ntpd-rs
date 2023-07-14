@@ -1,17 +1,12 @@
 use core::{
     cell::{Ref, RefCell},
-    future::Future,
     ops::Deref,
-    pin::Pin,
 };
 
 use arrayvec::ArrayVec;
-use embassy_futures::{select, select::Either3};
 pub use error::{PortError, Result};
-use futures::StreamExt;
 pub use measurement::Measurement;
 use state::{MasterState, PortState};
-pub use ticker::Ticker;
 
 use self::state::SlaveState;
 use crate::{
@@ -19,16 +14,16 @@ use crate::{
     clock::Clock,
     config::PortConfig,
     datastructures::{
-        common::{PortIdentity, TimeSource, WireTimestamp},
+        common::{TimeSource, WireTimestamp},
         datasets::{CurrentDS, ParentDS, TimePropertiesDS},
         messages::Message,
     },
     filters::Filter,
-    network::{NetworkPort, NetworkRuntime},
+    // network::{NetworkPort, NetworkRuntime},
     ptp_instance::PtpInstanceState,
     time::Duration,
-    utils::Signal,
-    Time, MAX_DATA_LEN,
+    Time,
+    MAX_DATA_LEN,
 };
 
 // Needs to be here because of use rules
@@ -59,7 +54,6 @@ mod error;
 mod measurement;
 mod sequence_id;
 pub mod state;
-mod ticker;
 
 /// A single port of the PTP instance
 ///
@@ -73,11 +67,6 @@ pub struct Port<L> {
     lifecycle: L,
 }
 
-// Temporary, hopefully gone after refactor
-pub struct Startup<P> {
-    network_port: P,
-}
-
 pub struct Running<'a, C, F> {
     state_refcell: &'a RefCell<PtpInstanceState<C, F>>,
     state: Ref<'a, PtpInstanceState<C, F>>,
@@ -88,8 +77,6 @@ pub struct InBmca<'a, C, F> {
     local_best: Option<BestAnnounceMessage>,
     state_refcell: &'a RefCell<PtpInstanceState<C, F>>,
 }
-
-// START NEW INTERFACE
 
 // Making this non-copy and non-clone ensures a single handle_send_timestamp
 // per SendTimeCritical
@@ -128,6 +115,7 @@ const MAX_ACTIONS: usize = 2;
 
 /// Guarantees to end user: Any set of actions will only ever contain a single
 /// time critical send
+#[derive(Debug)]
 pub struct PortActionIterator<'a> {
     internal: <ArrayVec<PortAction<'a>, MAX_ACTIONS> as IntoIterator>::IntoIter,
 }
@@ -315,12 +303,7 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
 
 impl<'a, C, F> Port<InBmca<'a, C, F>> {
     // End a BMCA cycle and make the port available again
-    pub fn end_bmca(
-        self,
-    ) -> (
-        Port<Running<'a, C, F>>,
-        impl Iterator<Item = PortAction<'static>>,
-    ) {
+    pub fn end_bmca(self) -> (Port<Running<'a, C, F>>, PortActionIterator<'static>) {
         (
             Port {
                 port_state: self.port_state,
@@ -336,7 +319,6 @@ impl<'a, C, F> Port<InBmca<'a, C, F>> {
         )
     }
 }
-// END NEW INTERFACE
 
 impl<L> Port<L> {
     fn set_forced_port_state(&mut self, state: PortState) {
@@ -355,23 +337,6 @@ impl<L> Port<L> {
 
     pub(crate) fn number(&self) -> u16 {
         self.config.port_identity.port_number
-    }
-
-    // From here, functions are kept temporarily to make conversion easier
-    pub(crate) fn announce_interval(&self) -> Duration {
-        self.config.announce_interval.as_duration()
-    }
-
-    pub(crate) fn sync_interval(&self) -> Duration {
-        self.config.sync_interval.as_duration()
-    }
-
-    pub(crate) fn announce_receipt_interval(&self) -> Duration {
-        self.config.announce_interval.as_duration() * self.config.announce_receipt_timeout
-    }
-
-    pub(crate) fn identity(&self) -> PortIdentity {
-        self.config.port_identity
     }
 }
 
@@ -484,136 +449,29 @@ impl<'a, C, F> Port<InBmca<'a, C, F>> {
     }
 }
 
-impl<P> Port<Startup<P>> {
+impl<'a, C, F> Port<InBmca<'a, C, F>> {
     /// Create a new port from a port dataset on a given interface.
-    pub async fn new<NR>(
+    pub(crate) fn new(
+        state_refcell: &'a RefCell<PtpInstanceState<C, F>>,
         config: PortConfig,
-        runtime: &mut NR,
-        interface: NR::InterfaceDescriptor,
-    ) -> Self
-    where
-        NR: NetworkRuntime<NetworkPort = P>,
-    {
-        let network_port = runtime
-            .open(interface)
-            .await
-            .expect("Could not create network port");
-
+    ) -> Self {
         let bmca = Bmca::new(
             config.announce_interval.as_duration().into(),
             config.port_identity,
         );
+
+        let duration = config.announce_duration();
 
         Port {
             config,
             port_state: PortState::Listening,
             bmca,
             packet_buffer: [0; MAX_DATA_LEN],
-            lifecycle: Startup { network_port },
-        }
-    }
-
-    pub(crate) fn into_running<C, F>(
-        self,
-        state_refcell: &RefCell<PtpInstanceState<C, F>>,
-    ) -> (Port<Running<'_, C, F>>, P) {
-        (
-            Port {
-                config: self.config,
-                port_state: self.port_state,
-                bmca: self.bmca,
-                packet_buffer: [0; MAX_DATA_LEN],
-                lifecycle: Running {
-                    state_refcell,
-                    state: state_refcell.borrow(),
-                },
+            lifecycle: InBmca {
+                pending_action: actions![PortAction::ResetAnnounceReceiptTimer { duration }],
+                local_best: None,
+                state_refcell,
             },
-            self.lifecycle.network_port,
-        )
-    }
-}
-
-impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) async fn run_port<FT: Future, P: NetworkPort>(
-        &mut self,
-        network_port: &mut P,
-        announce_receipt_timeout: &mut Pin<&mut Ticker<FT, impl FnMut(Duration) -> FT>>,
-        sync_timeout: &mut Pin<&mut Ticker<FT, impl FnMut(Duration) -> FT>>,
-        announce_timeout: &mut Pin<&mut Ticker<FT, impl FnMut(Duration) -> FT>>,
-        mut stop: Signal<'_>,
-    ) {
-        let mut pending_timestamp = None;
-        loop {
-            log::trace!("Loop iter port {}", self.config.port_identity.port_number);
-            let actions = if let Some((context, timestamp)) = pending_timestamp.take() {
-                self.handle_send_timestamp(context, timestamp)
-            } else {
-                let timeouts = select::select3(
-                    announce_receipt_timeout.next(),
-                    sync_timeout.next(),
-                    announce_timeout.next(),
-                );
-                let packet = network_port.recv();
-                match select::select3(timeouts, packet, stop.wait_for()).await {
-                    Either3::First(timeout) => match timeout {
-                        Either3::First(_) => {
-                            log::trace!(
-                                "Port {} force master timeout",
-                                self.config.port_identity.port_number
-                            );
-                            self.handle_announce_receipt_timer()
-                        }
-                        Either3::Second(_) => {
-                            log::trace!(
-                                "Port {} sync timeout",
-                                self.config.port_identity.port_number
-                            );
-                            self.handle_sync_timer()
-                        }
-                        Either3::Third(_) => {
-                            log::trace!(
-                                "Port {} announce timeout",
-                                self.config.port_identity.port_number
-                            );
-                            self.handle_announce_timer()
-                        }
-                    },
-                    Either3::Second(Ok(packet)) => {
-                        log::trace!(
-                            "Port {} message received: {:?}",
-                            self.config.port_identity.port_number,
-                            packet
-                        );
-                        match packet.timestamp {
-                            Some(timestamp) => {
-                                self.handle_timecritical_receive(&packet.data, timestamp)
-                            }
-                            None => self.handle_general_receive(&packet.data),
-                        }
-                    }
-                    Either3::Second(Err(error)) => {
-                        log::error!("failed to parse packet {:?}", error);
-                        actions![]
-                    }
-                    Either3::Third(_) => {
-                        log::trace!(
-                            "Port {} bmca trigger",
-                            self.config.port_identity.port_number
-                        );
-                        break;
-                    }
-                }
-            };
-
-            pending_timestamp = temp_handle_actions(
-                actions,
-                network_port,
-                announce_receipt_timeout,
-                sync_timeout,
-                announce_timeout,
-            )
-            .await;
         }
     }
 }
@@ -649,40 +507,4 @@ fn handle_time_measurement<C: Clock, F: Filter>(
             log::error!("failed to adjust clock: {:?}", error);
         }
     }
-}
-
-async fn temp_handle_actions<FT: Future, P: NetworkPort>(
-    actions: PortActionIterator<'_>,
-    network_port: &mut P,
-    announce_receipt_timeout: &mut Pin<&mut Ticker<FT, impl FnMut(Duration) -> FT>>,
-    sync_timeout: &mut Pin<&mut Ticker<FT, impl FnMut(Duration) -> FT>>,
-    announce_timeout: &mut Pin<&mut Ticker<FT, impl FnMut(Duration) -> FT>>,
-) -> Option<(TimestampContext, Time)> {
-    let mut pending_timestamp = None;
-    for action in actions {
-        match action {
-            PortAction::SendTimeCritical { context, data } => {
-                match network_port.send_time_critical(data).await {
-                    Ok(Some(timestamp)) => {
-                        pending_timestamp = Some((context, timestamp));
-                    }
-                    Ok(None) => {
-                        log::error!("Missing timestamp for packet");
-                    }
-                    Err(error) => {
-                        log::error!("Could not send message: {:?}", error)
-                    }
-                }
-            }
-            PortAction::SendGeneral { data } => {
-                if let Err(error) = network_port.send(data).await {
-                    log::error!("Could not send message: {:?}", error);
-                }
-            }
-            PortAction::ResetAnnounceReceiptTimer { .. } => announce_receipt_timeout.reset(),
-            PortAction::ResetSyncTimer { .. } => sync_timeout.reset(),
-            PortAction::ResetAnnounceTimer { .. } => announce_timeout.reset(),
-        }
-    }
-    pending_timestamp
 }

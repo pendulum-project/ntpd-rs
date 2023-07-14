@@ -8,7 +8,8 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
 };
 
-use statime::{NetworkPacket, NetworkPort, NetworkRuntime, Time, MAX_DATA_LEN};
+use arrayvec::ArrayVec;
+use statime::{Time, MAX_DATA_LEN};
 use tokio::io::{unix::AsyncFd, Interest};
 
 pub use super::interface::InterfaceDescriptor;
@@ -103,15 +104,11 @@ pub enum NetworkError {
     IoError(#[from] std::io::Error),
 }
 
-impl NetworkRuntime for LinuxRuntime {
-    type InterfaceDescriptor = InterfaceDescriptor;
-    type NetworkPort = LinuxNetworkPort;
-    type Error = NetworkError;
-
-    async fn open(
+impl LinuxRuntime {
+    pub async fn open(
         &mut self,
-        interface: Self::InterfaceDescriptor,
-    ) -> Result<<LinuxRuntime as NetworkRuntime>::NetworkPort, NetworkError> {
+        interface: InterfaceDescriptor,
+    ) -> Result<LinuxNetworkPort, NetworkError> {
         log::info!(
             "Opening network port on '{}'",
             interface
@@ -166,10 +163,20 @@ fn libc_timestamp_to_instant(ts: LibcTimestamp) -> Time {
     }
 }
 
-impl NetworkPort for LinuxNetworkPort {
-    type Error = std::io::Error;
+#[derive(Debug, Clone)]
+pub struct NetworkPacket {
+    /// The received data of a network port
+    pub data: ArrayVec<u8, MAX_DATA_LEN>,
+    /// The timestamp at which the packet was received. This is preferrably a
+    /// timestamp that has been reported by the network hardware.
+    ///
+    /// Required for packets from the event socket. Should not be present
+    /// for packets from general socket.
+    pub timestamp: Option<Time>,
+}
 
-    async fn send(&mut self, data: &[u8]) -> Result<(), <LinuxNetworkPort as NetworkPort>::Error> {
+impl LinuxNetworkPort {
+    pub async fn send(&mut self, data: &[u8]) -> Result<(), std::io::Error> {
         log::trace!("Send NTC");
 
         let sender = |inner: &std::net::UdpSocket| inner.send_to(data, self.ntc_address);
@@ -178,7 +185,7 @@ impl NetworkPort for LinuxNetworkPort {
         Ok(())
     }
 
-    async fn send_time_critical(
+    pub async fn send_time_critical(
         &mut self,
         data: &[u8],
     ) -> Result<Option<statime::Time>, std::io::Error> {
@@ -189,7 +196,7 @@ impl NetworkPort for LinuxNetworkPort {
         Ok(opt_libc_ts.map(libc_timestamp_to_instant))
     }
 
-    async fn recv(&mut self) -> Result<NetworkPacket, <LinuxNetworkPort as NetworkPort>::Error> {
+    pub async fn recv(&mut self) -> Result<NetworkPacket, std::io::Error> {
         let time_critical_future = async {
             let mut buf = [0; MAX_DATA_LEN];
 
