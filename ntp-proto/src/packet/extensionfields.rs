@@ -318,9 +318,9 @@ impl<'a> ExtensionField<'a> {
                 .to_type_id()
                 .to_be_bytes(),
         )?;
-        w.write_all(&signature_length.to_be_bytes())?;
-        w.write_all(&nonce_length.to_be_bytes())?;
-        w.write_all(&ciphertext_length.to_be_bytes())?;
+        w.write_all(&(signature_length as u16).to_be_bytes())?;
+        w.write_all(&(nonce_length as u16).to_be_bytes())?;
+        w.write_all(&(ciphertext_length as u16).to_be_bytes())?;
         w.set_position(header_start + signature_length as u64);
 
         Ok(())
