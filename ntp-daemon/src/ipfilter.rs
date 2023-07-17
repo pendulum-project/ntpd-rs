@@ -115,7 +115,7 @@ impl BitTree {
                 Some((_, len)) if len <= 4 => {
                     // mark ALL parts of node covered by the segment as in the set.
                     for j in 0..(1 << (4 - len)) {
-                        node.inset |= 1 << (i + j as usize)
+                        node.inset |= 1 << (i + j as usize);
                     }
                 }
                 // May be covered by a the union of all its parts, we need to check
@@ -187,7 +187,7 @@ impl IpFilter {
                     subnet.mask,
                 )),
                 IpAddr::V6(addr) => {
-                    ipv6list.push((u128::from_be_bytes(addr.octets()), subnet.mask))
+                    ipv6list.push((u128::from_be_bytes(addr.octets()), subnet.mask));
                 }
             }
         }

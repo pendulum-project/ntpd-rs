@@ -45,7 +45,7 @@ impl StandardSpawner {
                     Ok(mut addresses) => match addresses.next() {
                         None => {
                             warn!("Could not resolve peer address, retrying");
-                            tokio::time::sleep(self.network_wait_period).await
+                            tokio::time::sleep(self.network_wait_period).await;
                         }
                         Some(first) => {
                             break first;
@@ -53,7 +53,7 @@ impl StandardSpawner {
                     },
                     Err(e) => {
                         warn!(error = ?e, "error while resolving peer address, retrying");
-                        tokio::time::sleep(self.network_wait_period).await
+                        tokio::time::sleep(self.network_wait_period).await;
                     }
                 }
             };

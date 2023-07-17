@@ -132,7 +132,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 stats,
             };
 
-            process.serve(rate_limiting_cutoff).await
+            process.serve(rate_limiting_cutoff).await;
         })
     }
 

@@ -122,12 +122,12 @@ mod set_timestamping_options {
 
                 if timestamping.rx_software || timestamping.tx_software {
                     // enable software timestamping
-                    options |= libc::SOF_TIMESTAMPING_SOFTWARE
+                    options |= libc::SOF_TIMESTAMPING_SOFTWARE;
                 }
 
                 if timestamping.rx_software {
                     // we want receive timestamps
-                    options |= libc::SOF_TIMESTAMPING_RX_SOFTWARE
+                    options |= libc::SOF_TIMESTAMPING_RX_SOFTWARE;
                 }
 
                 if timestamping.tx_software {

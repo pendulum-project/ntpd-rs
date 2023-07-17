@@ -352,7 +352,7 @@ where
                     last_poll_sent: Instant::now(),
                 };
 
-                process.run(poll_wait).await
+                process.run(poll_wait).await;
             })
             .instrument(Span::current()),
         )

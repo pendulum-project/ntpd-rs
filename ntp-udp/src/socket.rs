@@ -267,7 +267,7 @@ impl UdpSocket {
 
         match &result {
             Ok((size, addr, ts)) => {
-                trace!(size, ts = debug(ts), addr = debug(addr), "received message")
+                trace!(size, ts = debug(ts), addr = debug(addr), "received message");
             }
             Err(e) => debug!(error = debug(e), "error receiving data"),
         }
@@ -540,19 +540,19 @@ mod tests {
     #[tokio::test]
     #[cfg(target_os = "linux")]
     async fn timestamping_reasonable_so_timestamping() {
-        timestamping_reasonable(TimestampMethod::SoTimestamping, 8000, 8001).await
+        timestamping_reasonable(TimestampMethod::SoTimestamping, 8000, 8001).await;
     }
 
     #[tokio::test]
     #[cfg(target_os = "linux")]
     async fn timestamping_reasonable_so_timestampns() {
-        timestamping_reasonable(TimestampMethod::SoTimestampns, 8002, 8003).await
+        timestamping_reasonable(TimestampMethod::SoTimestampns, 8002, 8003).await;
     }
 
     #[tokio::test]
     #[cfg(unix)]
     async fn timestamping_reasonable_so_timestamp() {
-        timestamping_reasonable(TimestampMethod::SoTimestamp, 8004, 8005).await
+        timestamping_reasonable(TimestampMethod::SoTimestamp, 8004, 8005).await;
     }
 
     #[tokio::test]

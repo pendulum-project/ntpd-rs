@@ -54,7 +54,7 @@ impl PoolSpawner {
                         self.known_ips.append(&mut addresses.collect());
                         // remove known ips that we are already connected to
                         self.known_ips
-                            .retain(|ip| !self.current_peers.iter().any(|p| p.addr == *ip))
+                            .retain(|ip| !self.current_peers.iter().any(|p| p.addr == *ip));
                     }
                     Err(e) => {
                         warn!(error = ?e, "error while resolving peer address, retrying");
