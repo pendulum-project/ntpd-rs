@@ -10,6 +10,7 @@ use fixed::{
     types::I96F32,
 };
 
+use super::Interval;
 use crate::datastructures::common::TimeInterval;
 
 /// A duration is a span of time that can also be negative.
@@ -75,6 +76,13 @@ impl Duration {
     /// Converts a log interval (as defined by the PTP spec) to a duration
     pub fn from_log_interval(log_interval: i8) -> Self {
         let seconds = libm::pow(2.0f64, log_interval as f64);
+        let nanos = seconds * 1_000_000_000.0;
+        Self::from_fixed_nanos(nanos)
+    }
+
+    /// Converts a interval (as defined by the PTP spec) to a duration
+    pub fn from_interval(interval: Interval) -> Self {
+        let seconds = interval.seconds();
         let nanos = seconds * 1_000_000_000.0;
         Self::from_fixed_nanos(nanos)
     }

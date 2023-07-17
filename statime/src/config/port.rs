@@ -1,4 +1,4 @@
-use crate::{Duration, PortIdentity};
+use crate::{time::Interval, Duration, PortIdentity};
 
 /// Which delay mechanism a port is using.
 ///
@@ -18,9 +18,9 @@ pub enum DelayMechanism {
 pub struct PortConfig {
     pub port_identity: PortIdentity,
     pub delay_mechanism: DelayMechanism,
-    pub log_announce_interval: i8,
+    pub log_announce_interval: Interval,
     pub announce_receipt_timeout: u8,
-    pub log_sync_interval: i8,
+    pub log_sync_interval: Interval,
     pub master_only: bool,
     pub delay_asymmetry: Duration,
     // Notes:
@@ -33,5 +33,10 @@ impl PortConfig {
         match self.delay_mechanism {
             DelayMechanism::E2E { log_interval } => log_interval,
         }
+    }
+
+    pub fn announce_duration(&self) -> core::time::Duration {
+        // timeout is the number of announce intervals before the announce expires
+        self.log_announce_interval.as_core_duration() * self.announce_receipt_timeout as u32
     }
 }

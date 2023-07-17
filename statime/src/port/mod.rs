@@ -276,10 +276,7 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
                     self.lifecycle.state.local_clock.borrow().now().into(),
                 );
                 actions![PortAction::ResetAnnounceReceiptTimer {
-                    duration: core::time::Duration::from_secs_f64(
-                        2f64.powi(self.config.log_announce_interval as i32)
-                            * (self.config.announce_receipt_timeout as f64),
-                    ),
+                    duration: self.config.announce_duration(),
                 }]
             }
             _ => {
@@ -362,16 +359,15 @@ impl<L> Port<L> {
 
     // From here, functions are kept temporarily to make conversion easier
     pub(crate) fn announce_interval(&self) -> Duration {
-        Duration::from_log_interval(self.config.log_announce_interval)
+        self.config.log_announce_interval.as_duration()
     }
 
     pub(crate) fn sync_interval(&self) -> Duration {
-        Duration::from_log_interval(self.config.log_sync_interval)
+        self.config.log_sync_interval.as_duration()
     }
 
     pub(crate) fn announce_receipt_interval(&self) -> Duration {
-        Duration::from_log_interval(self.config.log_announce_interval)
-            * self.config.announce_receipt_timeout
+        self.config.log_announce_interval.as_duration() * self.config.announce_receipt_timeout
     }
 
     pub(crate) fn identity(&self) -> PortIdentity {
@@ -451,29 +447,17 @@ impl<'a, C, F> Port<InBmca<'a, C, F>> {
                 let remote_master = announce_message.header().source_port_identity();
                 let state = PortState::Slave(SlaveState::new(remote_master));
 
-                match &self.port_state {
-                    PortState::Listening | PortState::Master(_) | PortState::Passive => {
-                        self.set_forced_port_state(state);
-                        self.lifecycle.pending_action =
-                            actions![PortAction::ResetAnnounceReceiptTimer {
-                                duration: core::time::Duration::from_secs_f64(
-                                    2f64.powi(self.config.log_announce_interval as i32)
-                                        * (self.config.announce_receipt_timeout as f64),
-                                ),
-                            }];
-                    }
-                    PortState::Slave(old_state) => {
-                        if old_state.remote_master() != remote_master {
-                            self.set_forced_port_state(state);
-                            self.lifecycle.pending_action =
-                                actions![PortAction::ResetAnnounceReceiptTimer {
-                                    duration: core::time::Duration::from_secs_f64(
-                                        2f64.powi(self.config.log_announce_interval as i32)
-                                            * (self.config.announce_receipt_timeout as f64),
-                                    ),
-                                }];
-                        }
-                    }
+                let update_state = match &self.port_state {
+                    PortState::Listening | PortState::Master(_) | PortState::Passive => true,
+                    PortState::Slave(old_state) => old_state.remote_master() != remote_master,
+                };
+
+                if update_state {
+                    self.set_forced_port_state(state);
+
+                    let duration = self.config.announce_duration();
+                    let action = PortAction::ResetAnnounceReceiptTimer { duration };
+                    self.lifecycle.pending_action = actions![action];
                 }
             }
             RecommendedState::M1(_) | RecommendedState::M2(_) | RecommendedState::M3(_) => {
@@ -481,13 +465,10 @@ impl<'a, C, F> Port<InBmca<'a, C, F>> {
                     PortState::Listening | PortState::Slave(_) | PortState::Passive => {
                         self.set_forced_port_state(PortState::Master(MasterState::new()));
                         // Immediately start sending announces and syncs
+                        let duration = core::time::Duration::from_secs(0);
                         self.lifecycle.pending_action = actions![
-                            PortAction::ResetAnnounceTimer {
-                                duration: core::time::Duration::from_secs(0)
-                            },
-                            PortAction::ResetSyncTimer {
-                                duration: core::time::Duration::from_secs(0)
-                            }
+                            PortAction::ResetAnnounceTimer { duration },
+                            PortAction::ResetSyncTimer { duration }
                         ];
                     }
                     PortState::Master(_) => (),
@@ -519,7 +500,7 @@ impl<P> Port<Startup<P>> {
             .expect("Could not create network port");
 
         let bmca = Bmca::new(
-            Duration::from_log_interval(config.log_announce_interval).into(),
+            config.log_announce_interval.as_duration().into(),
             config.port_identity,
         );
 

@@ -117,9 +117,7 @@ impl MasterState {
 
         actions![
             PortAction::ResetSyncTimer {
-                duration: core::time::Duration::from_secs_f64(
-                    2f64.powi(config.log_sync_interval as i32),
-                ),
+                duration: config.log_sync_interval.as_core_duration(),
             },
             PortAction::SendTimeCritical {
                 context: TimestampContext {
@@ -181,9 +179,7 @@ impl MasterState {
 
         actions![
             PortAction::ResetAnnounceTimer {
-                duration: core::time::Duration::from_secs_f64(
-                    2f64.powi(config.log_announce_interval as i32)
-                )
+                duration: config.log_announce_interval.as_core_duration(),
             },
             PortAction::SendGeneral {
                 data: &buffer[..packet_length]
@@ -265,6 +261,7 @@ mod tests {
             datasets::{CurrentDS, ParentDS},
             messages::{Header, SdoId},
         },
+        time::Interval,
         Duration, NetworkPort, TimePropertiesDS, MAX_DATA_LEN,
     };
 
@@ -450,9 +447,9 @@ mod tests {
         let config = PortConfig {
             port_identity: PortIdentity::default(),
             delay_mechanism: crate::DelayMechanism::E2E { log_interval: 1 },
-            log_announce_interval: 1,
+            log_announce_interval: Interval::TWO_SECONDS,
             announce_receipt_timeout: 2,
-            log_sync_interval: 0,
+            log_sync_interval: Interval::ONE_SECOND,
             master_only: false,
             delay_asymmetry: Duration::ZERO,
         };
@@ -503,9 +500,9 @@ mod tests {
         let config = PortConfig {
             port_identity: PortIdentity::default(),
             delay_mechanism: crate::DelayMechanism::E2E { log_interval: 1 },
-            log_announce_interval: 1,
+            log_announce_interval: Interval::TWO_SECONDS,
             announce_receipt_timeout: 2,
-            log_sync_interval: 0,
+            log_sync_interval: Interval::ONE_SECOND,
             master_only: false,
             delay_asymmetry: crate::Duration::ZERO,
         };
