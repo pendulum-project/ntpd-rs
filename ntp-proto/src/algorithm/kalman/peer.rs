@@ -292,7 +292,7 @@ impl PeerFilter {
         } else if 1. - p > algo_config.precision_high_probability {
             self.precision_score += 1;
         } else {
-            self.precision_score -= self.precision_score.signum()
+            self.precision_score -= self.precision_score.signum();
         }
         trace!(
             precision_score = self.precision_score,

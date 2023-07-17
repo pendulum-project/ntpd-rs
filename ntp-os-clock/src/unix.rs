@@ -512,7 +512,7 @@ mod tests {
         let clock = UnixNtpClock::realtime();
         let time = clock.clock_gettime().unwrap();
 
-        assert_ne!((time.tv_sec, time.tv_nsec), (0, 0))
+        assert_ne!((time.tv_sec, time.tv_nsec), (0, 0));
     }
 
     #[test]
@@ -521,7 +521,7 @@ mod tests {
         let clock = UnixNtpClock::realtime();
         let time = clock.clock_gettime().unwrap();
 
-        assert_ne!((time.tv_sec, time.tv_nsec), (0, 0))
+        assert_ne!((time.tv_sec, time.tv_nsec), (0, 0));
     }
 
     #[test]

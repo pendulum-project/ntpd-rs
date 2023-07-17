@@ -72,14 +72,14 @@ mod tests {
     #[test]
     fn test_empty_read() {
         let mut stash = CookieStash::default();
-        assert_eq!(stash.get(), None)
+        assert_eq!(stash.get(), None);
     }
 
     #[test]
     fn test_overfill() {
         let mut stash = CookieStash::default();
         for i in 0..10_u8 {
-            stash.store(vec![i])
+            stash.store(vec![i]);
         }
         assert_eq!(stash.get(), Some(vec![2]));
         assert_eq!(stash.get(), Some(vec![3]));

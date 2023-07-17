@@ -84,7 +84,7 @@ impl KeySetProvider {
                 .wrapping_add(self.current.keys.len().saturating_sub(self.history) as u32),
             primary: keys.len() as u32 - 1,
             keys,
-        })
+        });
     }
 
     pub fn load(
@@ -264,7 +264,7 @@ impl CipherProvider for KeySet {
                     // more than one cookie, abort
                     return None;
                 }
-                decoded = Some(self.decode_cookie(cookie).ok()?)
+                decoded = Some(self.decode_cookie(cookie).ok()?);
             }
         }
 

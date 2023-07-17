@@ -483,7 +483,7 @@ impl<'a> ExtensionFieldData<'a> {
                 }
                 _ => {
                     let field = ExtensionField::decode(field).map_err(|e| e.generalize())?;
-                    efdata.untrusted.push(field)
+                    efdata.untrusted.push(field);
                 }
             }
         }

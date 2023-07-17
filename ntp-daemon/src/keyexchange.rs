@@ -551,7 +551,7 @@ mod tests {
 
         match error {
             KeyExchangeError::Io(error) => {
-                assert_eq!(error.kind(), std::io::ErrorKind::ConnectionRefused)
+                assert_eq!(error.kind(), std::io::ErrorKind::ConnectionRefused);
             }
             _ => panic!(),
         }

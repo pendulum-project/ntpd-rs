@@ -225,7 +225,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
                 .step_clock(NtpDuration::from_seconds(change))
                 .expect("Cannot adjust clock");
             for (state, _) in self.peers.values_mut() {
-                state.process_offset_steering(change)
+                state.process_offset_steering(change);
             }
             info!("Jumped offset by {}ms", change * 1e3);
             None
@@ -263,7 +263,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
             .set_frequency(self.freq_offset)
             .expect("Cannot adjust clock");
         for (state, _) in self.peers.values_mut() {
-            state.process_frequency_steering(freq_update, actual_change)
+            state.process_frequency_steering(freq_update, actual_change);
         }
         info!(
             "Changed frequency, current steer {}ppm, desired freq {}ppm",

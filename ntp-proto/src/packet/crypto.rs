@@ -94,7 +94,7 @@ impl AesSivCmac256 {
 
 impl Drop for AesSivCmac256 {
     fn drop(&mut self) {
-        self.key.zeroize()
+        self.key.zeroize();
     }
 }
 
@@ -158,7 +158,7 @@ impl ZeroizeOnDrop for AesSivCmac512 {}
 
 impl Drop for AesSivCmac512 {
     fn drop(&mut self) {
-        self.key.zeroize()
+        self.key.zeroize();
     }
 }
 
