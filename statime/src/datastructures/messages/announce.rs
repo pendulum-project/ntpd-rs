@@ -2,7 +2,7 @@ use getset::CopyGetters;
 
 use super::Header;
 use crate::datastructures::{
-    common::{ClockIdentity, ClockQuality, TimeSource, WireTimestamp},
+    common::{ClockIdentity, ClockQuality, LeapIndicator, TimeSource, WireTimestamp},
     datasets::TimePropertiesDS,
     WireFormat, WireFormatError,
 };
@@ -63,11 +63,18 @@ impl AnnounceMessage {
     }
 
     pub fn time_properties(&self) -> TimePropertiesDS {
+        let leap_indicator = if self.header.leap59 {
+            LeapIndicator::Leap59
+        } else if self.header.leap61 {
+            LeapIndicator::Leap61
+        } else {
+            LeapIndicator::NoLeap
+        };
+
         TimePropertiesDS {
             current_utc_offset: self.current_utc_offset,
             current_utc_offset_valid: self.header.current_utc_offset_valid,
-            leap59: self.header.leap61,
-            leap61: self.header.leap59,
+            leap_indicator,
             time_traceable: self.header.time_tracable,
             frequency_traceable: self.header.frequency_tracable,
             ptp_timescale: self.header.ptp_timescale,

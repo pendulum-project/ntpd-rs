@@ -44,7 +44,7 @@ impl Clock for LinuxClock {
     ) -> Result<(), Self::Error> {
         if time_properties.is_ptp() {
             self.clock
-                .set_leap_seconds(time_properties.leap61(), time_properties.leap59())
+                .set_leap_seconds(time_properties.leap_indicator())
                 .map_err(Error::LinuxError)?;
         }
 

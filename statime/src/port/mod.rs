@@ -14,7 +14,7 @@ use crate::{
     clock::Clock,
     config::PortConfig,
     datastructures::{
-        common::{TimeSource, WireTimestamp},
+        common::{LeapIndicator, TimeSource, WireTimestamp},
         datasets::{CurrentDS, ParentDS, TimePropertiesDS},
         messages::Message,
     },
@@ -371,8 +371,7 @@ impl<'a, C, F> Port<InBmca<'a, C, F>> {
                 parent_ds.grandmaster_priority_1 = defaultds.priority_1;
                 parent_ds.grandmaster_priority_2 = defaultds.priority_2;
 
-                time_properties_ds.leap59 = false;
-                time_properties_ds.leap61 = false;
+                time_properties_ds.leap_indicator = LeapIndicator::NoLeap;
                 time_properties_ds.current_utc_offset = 37;
                 time_properties_ds.current_utc_offset_valid = false;
                 time_properties_ds.ptp_timescale = true;

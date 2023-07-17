@@ -4,7 +4,8 @@ use super::{
 };
 use crate::{
     datastructures::common::{
-        ClockIdentity, ClockQuality, PortIdentity, TimeInterval, TimeSource, WireTimestamp,
+        ClockIdentity, ClockQuality, LeapIndicator, PortIdentity, TimeInterval, TimeSource,
+        WireTimestamp,
     },
     time::Interval,
 };
@@ -87,13 +88,13 @@ impl MessageBuilder {
         self
     }
 
-    pub fn leap61(mut self, leap61: bool) -> Self {
-        self.header.leap61 = leap61;
-        self
-    }
+    pub fn leap_indicator(mut self, leap_indicator: LeapIndicator) -> Self {
+        match leap_indicator {
+            LeapIndicator::NoLeap => { /* do nothing */ }
+            LeapIndicator::Leap61 => self.header.leap61 = true,
+            LeapIndicator::Leap59 => self.header.leap59 = true,
+        }
 
-    pub fn leap59(mut self, leap59: bool) -> Self {
-        self.header.leap59 = leap59;
         self
     }
 

@@ -1,17 +1,7 @@
 use std::{ffi::CString, fmt::Display};
 
 use libc::{clockid_t, timespec};
-use statime::{ClockAccuracy, ClockQuality, Duration, Time};
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
-pub enum LeapIndicator {
-    #[default]
-    NoWarning,
-    Leap61,
-    Leap59,
-    #[allow(unused)]
-    Unknown,
-}
+use statime::{ClockAccuracy, ClockQuality, Duration, LeapIndicator, Time};
 
 /// A type for precisely adjusting the time of a linux clock.
 ///
@@ -246,19 +236,7 @@ impl RawLinuxClock {
         self.quality
     }
 
-    pub fn set_leap_seconds(&self, leap_61: bool, leap_59: bool) -> Result<(), Error> {
-        let leap_status = if leap_61 {
-            LeapIndicator::Leap61
-        } else if leap_59 {
-            LeapIndicator::Leap59
-        } else {
-            LeapIndicator::NoWarning
-        };
-
-        self.status_update(leap_status)
-    }
-
-    fn status_update(&self, leap_status: LeapIndicator) -> Result<(), Error> {
+    pub fn set_leap_seconds(&self, leap_status: LeapIndicator) -> Result<(), Error> {
         let mut timex = EMPTY_TIMEX;
         self.adjtime(&mut timex)?;
 
@@ -267,10 +245,9 @@ impl RawLinuxClock {
 
         // and add back in what is needed.
         match leap_status {
-            LeapIndicator::NoWarning => {}
+            LeapIndicator::NoLeap => {}
             LeapIndicator::Leap61 => timex.status |= libc::STA_INS,
             LeapIndicator::Leap59 => timex.status |= libc::STA_DEL,
-            LeapIndicator::Unknown => timex.status |= libc::STA_UNSYNC,
         }
 
         self.adjtime(&mut timex)

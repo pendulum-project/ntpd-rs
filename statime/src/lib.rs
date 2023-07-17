@@ -146,7 +146,7 @@ pub use config::{DelayMechanism, PortConfig};
 #[cfg(feature = "fuzz")]
 pub use datastructures::messages::Message;
 pub use datastructures::{
-    common::{ClockAccuracy, ClockIdentity, ClockQuality, PortIdentity, TimeSource},
+    common::{ClockAccuracy, ClockIdentity, ClockQuality, LeapIndicator, PortIdentity, TimeSource},
     datasets::{DefaultDS, TimePropertiesDS},
     messages::{SdoId, MAX_DATA_LEN},
 };
