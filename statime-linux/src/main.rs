@@ -1,9 +1,12 @@
-use std::{future::Future, pin::Pin};
+use std::{
+    future::Future,
+    pin::{pin, Pin},
+};
 
 use clap::Parser;
 use fern::colors::Color;
 use statime::{
-    BasicFilter, Clock, ClockIdentity, DefaultDS, DelayMechanism, Duration, Interval,
+    BasicFilter, Clock, ClockIdentity, DefaultDS, DelayMechanism, Duration, Interval, PortAction,
     PortActionIterator, PortConfig, PortIdentity, PtpInstance, SdoId, Time, TimePropertiesDS,
     TimeSource, TimestampContext,
 };
@@ -11,7 +14,7 @@ use statime_linux::{
     clock::{LinuxClock, RawLinuxClock},
     network::linux::{get_clock_id, InterfaceDescriptor, LinuxRuntime, TimestampingMode},
 };
-use tokio::{pin, time::Sleep};
+use tokio::time::Sleep;
 
 #[derive(Clone, Copy)]
 struct SdoIdParser;
@@ -183,8 +186,6 @@ async fn actual_main() {
 
     setup_logger(args.loglevel).expect("Could not setup logging");
 
-    println!("Starting PTP");
-
     let mut local_clock = if let Some(hardware_clock) = &args.hardware_clock {
         let clock =
             RawLinuxClock::get_from_file(hardware_clock).expect("Could not open hardware clock");
@@ -238,15 +239,10 @@ async fn actual_main() {
     );
     let mut bmca_port = instance.add_port(port_config);
 
-    let bmca_timer = Timer::new();
-    let port_sync_timer = Timer::new();
-    let port_announce_timer = Timer::new();
-    let port_announce_timeout_timer = Timer::new();
-
-    pin!(bmca_timer);
-    pin!(port_sync_timer);
-    pin!(port_announce_timer);
-    pin!(port_announce_timeout_timer);
+    let mut bmca_timer = pin!(Timer::new());
+    let mut port_sync_timer = pin!(Timer::new());
+    let mut port_announce_timer = pin!(Timer::new());
+    let mut port_announce_timeout_timer = pin!(Timer::new());
 
     let mut network_port = network_runtime.open(args.interface).await.unwrap();
 
@@ -256,6 +252,7 @@ async fn actual_main() {
 
         // handle post-bmca actions
         let (mut port, actions) = bmca_port.end_bmca();
+
         let mut pending_timestamp = handle_actions(
             actions,
             &mut network_port,
@@ -265,10 +262,10 @@ async fn actual_main() {
             &mut local_clock,
         )
         .await;
-        while let Some((context, timestamp)) = pending_timestamp.take() {
-            let actions = port.handle_send_timestamp(context, timestamp);
+
+        while let Some((context, timestamp)) = pending_timestamp {
             pending_timestamp = handle_actions(
-                actions,
+                port.handle_send_timestamp(context, timestamp),
                 &mut network_port,
                 &mut port_announce_timer,
                 &mut port_sync_timer,
@@ -279,8 +276,7 @@ async fn actual_main() {
         }
 
         loop {
-            println!("Inner loop");
-            let actions = tokio::select! {
+            let mut actions = tokio::select! {
                 result = network_port.recv() => {
                     match result {
                         Ok(packet) => {
@@ -289,7 +285,7 @@ async fn actual_main() {
                                 None => port.handle_general_receive(&packet.data),
                             }
                         },
-                        Err(error) => panic!("Error receiving: {:?}", error),
+                        Err(error) => panic!("Error receiving: {error:?}"),
                     }
                 },
                 () = &mut port_announce_timer => {
@@ -306,18 +302,8 @@ async fn actual_main() {
                 }
             };
 
-            let mut pending_timestamp = handle_actions(
-                actions,
-                &mut network_port,
-                &mut port_announce_timer,
-                &mut port_sync_timer,
-                &mut port_announce_timeout_timer,
-                &mut local_clock,
-            )
-            .await;
-            while let Some((context, timestamp)) = pending_timestamp.take() {
-                let actions = port.handle_send_timestamp(context, timestamp);
-                pending_timestamp = handle_actions(
+            loop {
+                let pending_timestamp = handle_actions(
                     actions,
                     &mut network_port,
                     &mut port_announce_timer,
@@ -326,6 +312,12 @@ async fn actual_main() {
                     &mut local_clock,
                 )
                 .await;
+
+                // there might be more actions to handle based on the current action
+                actions = match pending_timestamp {
+                    Some((context, timestamp)) => port.handle_send_timestamp(context, timestamp),
+                    None => break,
+                };
             }
         }
 
@@ -344,30 +336,34 @@ async fn handle_actions(
     local_clock: &mut LinuxClock,
 ) -> Option<(TimestampContext, Time)> {
     let mut pending_timestamp = None;
+
     for action in actions {
         match action {
-            statime::PortAction::SendTimeCritical { context, data } => {
-                // TODO: Discuss local_clock
-                pending_timestamp = Some((
-                    context,
-                    network_port
-                        .send_time_critical(data)
-                        .await
-                        .unwrap()
-                        .unwrap_or(local_clock.now()),
-                ))
+            PortAction::SendTimeCritical { context, data } => {
+                // send timestamp of the send
+                let time = network_port
+                    .send_time_critical(data)
+                    .await
+                    .unwrap()
+                    .unwrap_or(local_clock.now());
+
+                // anything we send later will have a later pending (send) timestamp
+                pending_timestamp = Some((context, time));
             }
-            statime::PortAction::SendGeneral { data } => network_port.send(data).await.unwrap(),
-            statime::PortAction::ResetAnnounceTimer { duration } => {
-                port_announce_timer.as_mut().reset(duration)
+            PortAction::SendGeneral { data } => {
+                network_port.send(data).await.unwrap();
             }
-            statime::PortAction::ResetSyncTimer { duration } => {
-                port_sync_timer.as_mut().reset(duration)
+            PortAction::ResetAnnounceTimer { duration } => {
+                port_announce_timer.as_mut().reset(duration);
             }
-            statime::PortAction::ResetAnnounceReceiptTimer { duration } => {
-                port_announce_timeout_timer.as_mut().reset(duration)
+            PortAction::ResetSyncTimer { duration } => {
+                port_sync_timer.as_mut().reset(duration);
+            }
+            PortAction::ResetAnnounceReceiptTimer { duration } => {
+                port_announce_timeout_timer.as_mut().reset(duration);
             }
         }
     }
+
     pending_timestamp
 }
