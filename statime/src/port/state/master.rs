@@ -12,7 +12,7 @@ use crate::{
         TimestampContextInner,
     },
     ptp_instance::PtpInstanceState,
-    time::Time,
+    time::{Interval, Time},
     PortConfig,
 };
 
@@ -191,7 +191,7 @@ impl MasterState {
         &mut self,
         message: Message,
         timestamp: Time,
-        min_delay_req_interval: i8,
+        min_delay_req_interval: Interval,
         port_identity: PortIdentity,
         buffer: &'a mut [u8],
     ) -> PortActionIterator<'a> {
@@ -218,7 +218,7 @@ impl MasterState {
         &mut self,
         message: DelayReqMessage,
         timestamp: Time,
-        min_delay_req_interval: i8,
+        min_delay_req_interval: Interval,
         port_identity: PortIdentity,
         buffer: &'a mut [u8],
     ) -> PortActionIterator<'a> {
@@ -228,7 +228,7 @@ impl MasterState {
             .two_step_flag(false)
             .source_port_identity(port_identity)
             .add_to_correction(timestamp.subnano())
-            .log_message_interval(min_delay_req_interval)
+            .message_interval(min_delay_req_interval)
             .delay_resp_message(
                 WireTimestamp::from(timestamp),
                 message.header().source_port_identity(),
@@ -341,7 +341,7 @@ mod tests {
                 origin_timestamp: Time::from_micros(0).into(),
             }),
             Time::from_fixed_nanos(U96F32::from_bits((200000 << 32) + (500 << 16))),
-            2,
+            Interval::from_log_2(2),
             PortIdentity::default(),
             &mut buffer,
         );
@@ -386,7 +386,7 @@ mod tests {
                 origin_timestamp: Time::from_micros(0).into(),
             }),
             Time::from_fixed_nanos(U96F32::from_bits((220000 << 32) + (300 << 16))),
-            5,
+            Interval::from_log_2(5),
             PortIdentity::default(),
             &mut buffer,
         );
@@ -446,7 +446,9 @@ mod tests {
 
         let config = PortConfig {
             port_identity: PortIdentity::default(),
-            delay_mechanism: crate::DelayMechanism::E2E { log_interval: 1 },
+            delay_mechanism: crate::DelayMechanism::E2E {
+                interval: Interval::TWO_SECONDS,
+            },
             announce_interval: Interval::TWO_SECONDS,
             announce_receipt_timeout: 2,
             sync_interval: Interval::ONE_SECOND,
@@ -499,7 +501,9 @@ mod tests {
         let mut buffer = [0u8; MAX_DATA_LEN];
         let config = PortConfig {
             port_identity: PortIdentity::default(),
-            delay_mechanism: crate::DelayMechanism::E2E { log_interval: 1 },
+            delay_mechanism: crate::DelayMechanism::E2E {
+                interval: Interval::TWO_SECONDS,
+            },
             announce_interval: Interval::TWO_SECONDS,
             announce_receipt_timeout: 2,
             sync_interval: Interval::ONE_SECOND,

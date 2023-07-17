@@ -8,7 +8,7 @@ use crate::{
         sequence_id::SequenceIdGenerator, Measurement, PortAction, PortActionIterator,
         TimestampContext, TimestampContextInner,
     },
-    time::{Duration, Time},
+    time::{Duration, Interval, Time},
 };
 
 #[derive(Debug)]
@@ -221,7 +221,7 @@ impl SlaveState {
                 .domain_number(default_ds.domain_number)
                 .source_port_identity(port_identity)
                 .sequence_id(delay_id)
-                .log_message_interval(0x7f)
+                .message_interval(Interval::from_log_2(0x7f))
                 .delay_req_message(WireTimestamp::default());
             let message_length = match delay_req.serialize(buffer) {
                 Ok(length) => length,

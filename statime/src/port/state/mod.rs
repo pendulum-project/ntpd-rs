@@ -11,7 +11,7 @@ use crate::{
     clock::Clock,
     datastructures::{common::PortIdentity, datasets::DefaultDS, messages::Message},
     ptp_instance::PtpInstanceState,
-    time::Time,
+    time::{Interval, Time},
     PortConfig,
 };
 
@@ -49,7 +49,7 @@ impl PortState {
         &mut self,
         message: Message,
         timestamp: Time,
-        min_delay_req_interval: i8,
+        min_delay_req_interval: Interval,
         port_identity: PortIdentity,
         default_ds: &DefaultDS,
         buffer: &'a mut [u8],

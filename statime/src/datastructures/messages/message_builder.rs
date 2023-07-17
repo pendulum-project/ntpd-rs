@@ -2,8 +2,11 @@ use super::{
     AnnounceMessage, DelayReqMessage, DelayRespMessage, FollowUpMessage, Header, Message,
     PtpVersion, SdoId, SyncMessage,
 };
-use crate::datastructures::common::{
-    ClockIdentity, ClockQuality, PortIdentity, TimeInterval, TimeSource, WireTimestamp,
+use crate::{
+    datastructures::common::{
+        ClockIdentity, ClockQuality, PortIdentity, TimeInterval, TimeSource, WireTimestamp,
+    },
+    time::Interval,
 };
 
 #[derive(Debug, Clone)]
@@ -140,8 +143,8 @@ impl MessageBuilder {
         self
     }
 
-    pub fn log_message_interval(mut self, log_message_interval: i8) -> Self {
-        self.header.log_message_interval = log_message_interval;
+    pub fn message_interval(mut self, message_interval: Interval) -> Self {
+        self.header.log_message_interval = message_interval.as_log_2();
         self
     }
 

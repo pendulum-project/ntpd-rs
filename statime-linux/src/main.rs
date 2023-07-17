@@ -1,7 +1,7 @@
 use clap::Parser;
 use fern::colors::Color;
 use statime::{
-    BasicFilter, ClockIdentity, DefaultDS, DelayMechanism, Duration, Port, PortConfig,
+    BasicFilter, ClockIdentity, DefaultDS, DelayMechanism, Duration, Interval, Port, PortConfig,
     PortIdentity, PtpInstance, SdoId, TimePropertiesDS, TimeSource,
 };
 use statime_linux::{
@@ -170,10 +170,12 @@ async fn main() {
             clock_identity,
             port_number: 1,
         },
-        delay_mechanism: DelayMechanism::E2E { log_interval: 1 },
-        announce_interval: args.log_announce_interval.into(),
+        delay_mechanism: DelayMechanism::E2E {
+            interval: Interval::TWO_SECONDS,
+        },
+        announce_interval: Interval::from_log_2(args.log_announce_interval),
         announce_receipt_timeout: args.announce_receipt_timeout,
-        sync_interval: args.log_sync_interval.into(),
+        sync_interval: Interval::from_log_2(args.log_sync_interval),
         master_only: false,
         delay_asymmetry: Duration::ZERO,
     };

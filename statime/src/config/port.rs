@@ -9,7 +9,7 @@ pub enum DelayMechanism {
     /// chosen master, across potential transparent nodes in between.
     ///
     /// the interval corresponds to the PortDS logMinDelayReqInterval
-    E2E { log_interval: i8 },
+    E2E { interval: Interval },
     // No support for other delay mechanisms
 }
 
@@ -19,6 +19,8 @@ pub struct PortConfig {
     pub port_identity: PortIdentity,
     pub delay_mechanism: DelayMechanism,
     pub announce_interval: Interval,
+    // more like announce_message_retries. Specifies how many announce_intervals to wait until the
+    // announce message expires.
     pub announce_receipt_timeout: u8,
     pub sync_interval: Interval,
     pub master_only: bool,
@@ -29,9 +31,9 @@ pub struct PortConfig {
 }
 
 impl PortConfig {
-    pub fn min_delay_req_interval(&self) -> i8 {
+    pub fn min_delay_req_interval(&self) -> Interval {
         match self.delay_mechanism {
-            DelayMechanism::E2E { log_interval } => log_interval,
+            DelayMechanism::E2E { interval } => interval,
         }
     }
 

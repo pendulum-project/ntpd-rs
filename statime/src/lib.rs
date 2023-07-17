@@ -155,4 +155,4 @@ pub use filters::{basic::BasicFilter, Filter};
 pub use network::{NetworkPacket, NetworkPort, NetworkRuntime};
 pub use port::{Measurement, Port};
 pub use ptp_instance::PtpInstance;
-pub use time::{Duration, Time};
+pub use time::{Duration, Interval, Time};
