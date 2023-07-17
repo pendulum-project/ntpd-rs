@@ -186,3 +186,46 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tcp_stream.write_all(buf.as_bytes()).await.unwrap();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    const BINARY: &str = "/usr/bin/ntp-metrics-exporter";
+
+    #[test]
+    fn cli_config() {
+        let config_str = "/foo/bar/ntp.toml";
+        let config = Path::new(config_str);
+        let arguments = &[BINARY, "-c", config_str];
+
+        let options = NtpDaemonOptions::try_parse_from(arguments).unwrap();
+        assert_eq!(options.config.unwrap().as_path(), config);
+    }
+
+    #[test]
+    fn cli_observation_socket() {
+        let observation_str = "/bar/baz";
+        let observation = Path::new(observation_str);
+
+        let arguments = &[BINARY, "-o", observation_str];
+
+        let options = NtpDaemonOptions::try_parse_from(arguments).unwrap();
+
+        assert_eq!(options.observation_socket.unwrap().as_path(), observation);
+    }
+
+    #[test]
+    fn cli_listen_socket() {
+        let listen_str = "127.0.0.1:1234";
+        let listen = SocketAddr::from((Ipv4Addr::LOCALHOST, 1234));
+
+        let arguments = &[BINARY, "-l", listen_str];
+
+        let options = NtpDaemonOptions::try_parse_from(arguments).unwrap();
+
+        assert_eq!(options.listen_addr, listen);
+    }
+}

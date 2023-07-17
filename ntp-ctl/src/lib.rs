@@ -248,6 +248,7 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
 #[cfg(test)]
 mod tests {
     use std::os::unix::prelude::PermissionsExt;
+    use std::path::Path;
 
     use ntp_daemon::{
         config::ObserveConfig,
@@ -347,5 +348,44 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    const BINARY: &str = "/usr/bin/ntp-ctl";
+
+    #[test]
+    fn cli_config() {
+        let config_str = "/foo/bar/ntp.toml";
+        let config = Path::new(config_str);
+        let arguments = &[BINARY, "-c", config_str];
+
+        let options = NtpDaemonOptions::try_parse_from(arguments).unwrap();
+        assert_eq!(options.config.unwrap().as_path(), config);
+    }
+
+    #[test]
+    fn cli_observation_socket() {
+        let observation_str = "/bar/baz";
+        let observation = Path::new(observation_str);
+
+        let arguments = &[BINARY, "-o", observation_str];
+
+        let options = NtpDaemonOptions::try_parse_from(arguments).unwrap();
+
+        assert_eq!(options.observation_socket.unwrap().as_path(), observation);
+    }
+
+    #[test]
+    fn cli_format() {
+        let arguments = &[BINARY, "-f", "plain"];
+        let options = NtpDaemonOptions::try_parse_from(arguments).unwrap();
+        assert_eq!(options.format, Format::Plain);
+
+        let arguments = &[BINARY, "-f", "prometheus"];
+        let options = NtpDaemonOptions::try_parse_from(arguments).unwrap();
+        assert_eq!(options.format, Format::Prometheus);
+
+        let arguments = &[BINARY, "-f", "yaml"];
+        let err = NtpDaemonOptions::try_parse_from(arguments).unwrap_err();
+        assert_eq!(err, "invalid format option provided: yaml");
     }
 }
