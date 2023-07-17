@@ -171,9 +171,9 @@ async fn main() {
             port_number: 1,
         },
         delay_mechanism: DelayMechanism::E2E { log_interval: 1 },
-        log_announce_interval: args.log_announce_interval.into(),
+        announce_interval: args.log_announce_interval.into(),
         announce_receipt_timeout: args.announce_receipt_timeout,
-        log_sync_interval: args.log_sync_interval.into(),
+        sync_interval: args.log_sync_interval.into(),
         master_only: false,
         delay_asymmetry: Duration::ZERO,
     };

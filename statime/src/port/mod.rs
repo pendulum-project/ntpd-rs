@@ -359,15 +359,15 @@ impl<L> Port<L> {
 
     // From here, functions are kept temporarily to make conversion easier
     pub(crate) fn announce_interval(&self) -> Duration {
-        self.config.log_announce_interval.as_duration()
+        self.config.announce_interval.as_duration()
     }
 
     pub(crate) fn sync_interval(&self) -> Duration {
-        self.config.log_sync_interval.as_duration()
+        self.config.sync_interval.as_duration()
     }
 
     pub(crate) fn announce_receipt_interval(&self) -> Duration {
-        self.config.log_announce_interval.as_duration() * self.config.announce_receipt_timeout
+        self.config.announce_interval.as_duration() * self.config.announce_receipt_timeout
     }
 
     pub(crate) fn identity(&self) -> PortIdentity {
@@ -500,7 +500,7 @@ impl<P> Port<Startup<P>> {
             .expect("Could not create network port");
 
         let bmca = Bmca::new(
-            config.log_announce_interval.as_duration().into(),
+            config.announce_interval.as_duration().into(),
             config.port_identity,
         );
 

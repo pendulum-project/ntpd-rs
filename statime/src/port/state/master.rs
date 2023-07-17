@@ -117,7 +117,7 @@ impl MasterState {
 
         actions![
             PortAction::ResetSyncTimer {
-                duration: config.log_sync_interval.as_core_duration(),
+                duration: config.sync_interval.as_core_duration(),
             },
             PortAction::SendTimeCritical {
                 context: TimestampContext {
@@ -179,7 +179,7 @@ impl MasterState {
 
         actions![
             PortAction::ResetAnnounceTimer {
-                duration: config.log_announce_interval.as_core_duration(),
+                duration: config.announce_interval.as_core_duration(),
             },
             PortAction::SendGeneral {
                 data: &buffer[..packet_length]
@@ -447,9 +447,9 @@ mod tests {
         let config = PortConfig {
             port_identity: PortIdentity::default(),
             delay_mechanism: crate::DelayMechanism::E2E { log_interval: 1 },
-            log_announce_interval: Interval::TWO_SECONDS,
+            announce_interval: Interval::TWO_SECONDS,
             announce_receipt_timeout: 2,
-            log_sync_interval: Interval::ONE_SECOND,
+            sync_interval: Interval::ONE_SECOND,
             master_only: false,
             delay_asymmetry: Duration::ZERO,
         };
@@ -500,9 +500,9 @@ mod tests {
         let config = PortConfig {
             port_identity: PortIdentity::default(),
             delay_mechanism: crate::DelayMechanism::E2E { log_interval: 1 },
-            log_announce_interval: Interval::TWO_SECONDS,
+            announce_interval: Interval::TWO_SECONDS,
             announce_receipt_timeout: 2,
-            log_sync_interval: Interval::ONE_SECOND,
+            sync_interval: Interval::ONE_SECOND,
             master_only: false,
             delay_asymmetry: crate::Duration::ZERO,
         };
