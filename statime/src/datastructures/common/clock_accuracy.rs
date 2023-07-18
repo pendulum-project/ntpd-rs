@@ -138,17 +138,16 @@ impl ClockAccuracy {
 
 impl PartialOrd for ClockAccuracy {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        // The clock gets more inaccurate with the higher numbers for the normal
-        // accuracy values.
-        self.to_primitive()
-            .partial_cmp(&other.to_primitive())
-            .map(|r| r.reverse())
+        Some(self.cmp(other))
     }
 }
 
 impl Ord for ClockAccuracy {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.partial_cmp(other).unwrap()
+        // this comparison is flipped by design: The clock gets more inaccurate with the
+        // higher numbers for the normal accuracy values. so a clock with a
+        // lower inaccuracy is better in the ordering of clocks
+        other.to_primitive().cmp(&self.to_primitive())
     }
 }
 
@@ -160,6 +159,8 @@ impl Default for ClockAccuracy {
 
 #[cfg(test)]
 mod tests {
+    use core::cmp::Ordering;
+
     use super::*;
 
     #[test]
@@ -172,5 +173,14 @@ mod tests {
         }
 
         assert_eq!(ClockAccuracy::ProfileSpecific(5).to_primitive(), 0x85);
+    }
+
+    #[test]
+    fn ordering() {
+        let a = ClockAccuracy::PS1;
+        let b = ClockAccuracy::PS10;
+
+        assert_eq!(a.partial_cmp(&b), Some(Ordering::Greater));
+        assert_eq!(a.cmp(&b), Ordering::Greater);
     }
 }
