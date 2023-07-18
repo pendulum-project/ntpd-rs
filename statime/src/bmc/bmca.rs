@@ -99,6 +99,25 @@ impl Bmca {
             .max_by(BestAnnounceMessage::compare)
     }
 
+    fn compare_d0_best(
+        d0: &ComparisonDataset,
+        opt_best: Option<BestAnnounceMessage>,
+    ) -> MessageComparison {
+        match opt_best {
+            None => MessageComparison::Better,
+            Some(best) => {
+                let dataset =
+                    ComparisonDataset::from_announce_message(&best.message, &best.identity);
+
+                match d0.compare(&dataset).as_ordering() {
+                    Ordering::Less => MessageComparison::Worse(best),
+                    Ordering::Equal => MessageComparison::Same,
+                    Ordering::Greater => MessageComparison::Better,
+                }
+            }
+        }
+    }
+
     /// Calculates the recommended port state. This has to be run for every
     /// port. The PTP spec calls this the State Decision Algorithm.
     ///
@@ -123,59 +142,87 @@ impl Bmca {
         best_port_announce_message: Option<BestAnnounceMessage>,
         port_state: &PortState,
     ) -> Option<RecommendedState> {
-        let d0 = ComparisonDataset::from_own_data(own_data);
-        let ebest = best_global_announce_message
-            .map(|best| ComparisonDataset::from_announce_message(&best.message, &best.identity));
-        let erbest = best_port_announce_message
-            .map(|best| ComparisonDataset::from_announce_message(&best.message, &best.identity));
-
         if best_global_announce_message.is_none() && matches!(port_state, PortState::Listening) {
-            return None;
+            None
+        } else if (1..=127).contains(&own_data.clock_quality.clock_class) {
+            // only consider the best message of the port
+            Some(Self::calculate_recommended_state_low_class(
+                own_data,
+                best_port_announce_message,
+            ))
+        } else {
+            // see if the best of this port is better than the global best
+            Some(Self::calculate_recommended_state_high_class(
+                own_data,
+                best_global_announce_message,
+                best_port_announce_message,
+            ))
         }
+    }
 
-        if (1..=127).contains(&own_data.clock_quality.clock_class) {
-            return match erbest {
-                None => Some(RecommendedState::M1(*own_data)),
-                Some(erbest) => {
-                    if d0.compare(&erbest).is_better() {
-                        Some(RecommendedState::M1(*own_data))
-                    } else {
-                        Some(RecommendedState::P1(
-                            best_port_announce_message.unwrap().message,
-                        ))
-                    }
-                }
-            };
+    fn calculate_recommended_state_low_class(
+        own_data: &DefaultDS,
+        best_port_announce_message: Option<BestAnnounceMessage>,
+    ) -> RecommendedState {
+        let d0 = ComparisonDataset::from_own_data(own_data);
+
+        match Self::compare_d0_best(&d0, best_port_announce_message) {
+            MessageComparison::Better => RecommendedState::M1(*own_data),
+            MessageComparison::Same => RecommendedState::M1(*own_data),
+            MessageComparison::Worse(port) => RecommendedState::P1(port.message),
         }
+    }
 
-        match &ebest {
-            None => return Some(RecommendedState::M2(*own_data)),
-            Some(ebest) => {
-                if d0.compare(ebest).is_better() {
-                    return Some(RecommendedState::M2(*own_data));
-                }
-            }
+    fn calculate_recommended_state_high_class(
+        own_data: &DefaultDS,
+        best_global_announce_message: Option<BestAnnounceMessage>,
+        best_port_announce_message: Option<BestAnnounceMessage>,
+    ) -> RecommendedState {
+        let d0 = ComparisonDataset::from_own_data(own_data);
+
+        match Self::compare_d0_best(&d0, best_global_announce_message) {
+            MessageComparison::Better => RecommendedState::M2(*own_data),
+            MessageComparison::Same => RecommendedState::M2(*own_data),
+            MessageComparison::Worse(global_message) => match best_port_announce_message {
+                None => RecommendedState::M3(global_message.message),
+                Some(port_message) => Self::compare_global_and_port(global_message, port_message),
+            },
         }
+    }
 
-        // If ebest was empty, then we would have returned in the previous step
-        let best_global_announce_message = best_global_announce_message.unwrap();
-        let ebest = ebest.unwrap();
+    fn compare_global_and_port(
+        global_message: BestAnnounceMessage,
+        port_message: BestAnnounceMessage,
+    ) -> RecommendedState {
+        if global_message.timestamp == port_message.timestamp {
+            // effectively, E_best == E_rbest
+            RecommendedState::S1(global_message.message)
+        } else {
+            let ebest = ComparisonDataset::from_announce_message(
+                &global_message.message,
+                &global_message.identity,
+            );
 
-        match erbest {
-            None => Some(RecommendedState::M3(best_global_announce_message.message)),
-            Some(erbest) => {
-                let best_port_announce_message = best_port_announce_message.unwrap();
+            let erbest = ComparisonDataset::from_announce_message(
+                &port_message.message,
+                &port_message.identity,
+            );
 
-                if best_global_announce_message.timestamp == best_port_announce_message.timestamp {
-                    Some(RecommendedState::S1(best_global_announce_message.message))
-                } else if matches!(ebest.compare(&erbest), DatasetOrdering::BetterByTopology) {
-                    Some(RecommendedState::P2(best_port_announce_message.message))
-                } else {
-                    Some(RecommendedState::M3(best_global_announce_message.message))
-                }
+            // E_best better by topology than E_rbest
+            if matches!(ebest.compare(&erbest), DatasetOrdering::BetterByTopology) {
+                RecommendedState::P2(port_message.message)
+            } else {
+                RecommendedState::M3(global_message.message)
             }
         }
     }
+}
+
+#[derive(Debug)]
+enum MessageComparison {
+    Better,
+    Same,
+    Worse(BestAnnounceMessage),
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -200,7 +247,7 @@ impl BestAnnounceMessage {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum RecommendedState {
     M1(DefaultDS),
     M2(DefaultDS),
@@ -219,7 +266,7 @@ mod tests {
         ClockIdentity,
     };
 
-    fn default_best_announce_message() -> BestAnnounceMessage {
+    fn default_announce_message() -> AnnounceMessage {
         let header = Header {
             sdo_id: Default::default(),
             version: PtpVersion::new(2, 1).unwrap(),
@@ -242,7 +289,7 @@ mod tests {
             log_message_interval: Default::default(),
         };
 
-        let message = AnnounceMessage {
+        AnnounceMessage {
             header,
             origin_timestamp: Default::default(),
             current_utc_offset: Default::default(),
@@ -252,7 +299,11 @@ mod tests {
             grandmaster_identity: Default::default(),
             steps_removed: Default::default(),
             time_source: Default::default(),
-        };
+        }
+    }
+
+    fn default_best_announce_message() -> BestAnnounceMessage {
+        let message = default_announce_message();
 
         let timestamp = WireTimestamp {
             seconds: 0,
@@ -261,7 +312,7 @@ mod tests {
 
         let identity = PortIdentity {
             clock_identity: ClockIdentity([0; 8]),
-            port_number: 1,
+            port_number: 0,
         };
 
         BestAnnounceMessage {
@@ -323,5 +374,310 @@ mod tests {
 
         // so message1 is lower in the ordering than message2
         assert_eq!(message1.compare(&message2), Ordering::Less)
+    }
+
+    fn default_own_data() -> DefaultDS {
+        let clock_identity = Default::default();
+        let priority_1 = 0;
+        let priority_2 = 0;
+        let domain_number = 0;
+        let slave_only = false;
+        let sdo_id = Default::default();
+
+        DefaultDS::new_ordinary_clock(
+            clock_identity,
+            priority_1,
+            priority_2,
+            domain_number,
+            slave_only,
+            sdo_id,
+        )
+    }
+
+    #[test]
+    fn recommend_state_no_best() {
+        let mut own_data = default_own_data();
+
+        // zero is reserved
+        own_data.clock_quality.clock_class = 1;
+
+        let call =
+            |port_state| Bmca::calculate_recommended_state(&own_data, None, None, port_state);
+
+        // when E_best is empty and the port state is listening, it should remain
+        // listening
+        assert!(call(&PortState::Listening).is_none());
+
+        // otherwise it should return a recommendation
+        assert!(matches!(
+            call(&PortState::Passive),
+            Some(RecommendedState::M1(_))
+        ))
+    }
+
+    #[test]
+    fn recommend_state_low_class() {
+        let clock_identity = Default::default();
+        let priority_1 = 0;
+        let priority_2 = 0;
+        let domain_number = 0;
+        let slave_only = false;
+        let sdo_id = Default::default();
+
+        let mut own_data = DefaultDS::new_ordinary_clock(
+            clock_identity,
+            priority_1,
+            priority_2,
+            domain_number,
+            slave_only,
+            sdo_id,
+        );
+
+        own_data.clock_quality.clock_class = 1;
+        assert!((1..=127).contains(&own_data.clock_quality.clock_class));
+
+        // D0 is the same as E_rbest; this is unreachable in practice, but we return M1
+        // in this case
+        let d0 = ComparisonDataset::from_own_data(&own_data);
+        let port_message = default_best_announce_message();
+
+        assert!(matches!(
+            Bmca::compare_d0_best(&d0, Some(port_message)),
+            MessageComparison::Same
+        ));
+
+        assert_eq!(
+            Some(RecommendedState::M1(own_data)),
+            Bmca::calculate_recommended_state(
+                &own_data,
+                None,
+                Some(port_message),
+                &PortState::Passive,
+            )
+        );
+
+        // D0 is the better than E_rbest; M1 is expected
+        let d0 = ComparisonDataset::from_own_data(&own_data);
+        let mut port_message = default_best_announce_message();
+
+        port_message.identity.port_number = 1;
+
+        assert!(matches!(
+            Bmca::compare_d0_best(&d0, Some(port_message)),
+            MessageComparison::Better
+        ));
+
+        assert_eq!(
+            Some(RecommendedState::M1(own_data)),
+            Bmca::calculate_recommended_state(
+                &own_data,
+                None,
+                Some(port_message),
+                &PortState::Passive,
+            )
+        );
+
+        // D0 is NOT better than E_rbest; P1 is expected
+        let mut own_data = own_data;
+
+        let mut port_message = default_best_announce_message();
+
+        own_data.clock_identity = ClockIdentity([0; 8]);
+        port_message.message.grandmaster_identity = ClockIdentity([1; 8]);
+
+        own_data.priority_1 = 1;
+        port_message.message.grandmaster_priority_1 = 0;
+
+        let d0 = ComparisonDataset::from_own_data(&own_data);
+
+        assert!(matches!(
+            Bmca::compare_d0_best(&d0, Some(port_message)),
+            MessageComparison::Worse(_)
+        ));
+
+        assert_eq!(
+            Some(RecommendedState::P1(port_message.message)),
+            Bmca::calculate_recommended_state(
+                &own_data,
+                None,
+                Some(port_message),
+                &PortState::Passive,
+            )
+        );
+    }
+
+    #[test]
+    fn recommend_state_high() {
+        let mut own_data = default_own_data();
+
+        own_data.clock_quality.clock_class = 128;
+        assert!(!(1..=127).contains(&own_data.clock_quality.clock_class));
+
+        // D0 is the same as E_best; this is unreachable in practice, but we return M2
+        // in this case
+        let d0 = ComparisonDataset::from_own_data(&own_data);
+        let global_message = default_best_announce_message();
+
+        assert!(matches!(
+            Bmca::compare_d0_best(&d0, Some(global_message)),
+            MessageComparison::Same
+        ));
+
+        assert_eq!(
+            Some(RecommendedState::M2(own_data)),
+            Bmca::calculate_recommended_state(
+                &own_data,
+                Some(global_message),
+                None,
+                &PortState::Passive,
+            )
+        );
+
+        // D0 is better than E_best; M1 is expected
+        let d0 = ComparisonDataset::from_own_data(&own_data);
+        let mut global_message = default_best_announce_message();
+
+        global_message.identity.port_number = 1;
+
+        assert!(matches!(
+            Bmca::compare_d0_best(&d0, Some(global_message)),
+            MessageComparison::Better
+        ));
+
+        assert_eq!(
+            Some(RecommendedState::M2(own_data)),
+            Bmca::calculate_recommended_state(
+                &own_data,
+                Some(global_message),
+                None,
+                &PortState::Passive,
+            )
+        );
+
+        // D0 is NOT better than E_best
+        let mut own_data = own_data;
+
+        let mut global_message = default_best_announce_message();
+
+        own_data.clock_identity = ClockIdentity([0; 8]);
+        global_message.message.grandmaster_identity = ClockIdentity([1; 8]);
+
+        own_data.priority_1 = 1;
+        global_message.message.grandmaster_priority_1 = 0;
+
+        let d0 = ComparisonDataset::from_own_data(&own_data);
+
+        assert!(matches!(
+            Bmca::compare_d0_best(&d0, Some(global_message)),
+            MessageComparison::Worse(_)
+        ));
+
+        assert_eq!(
+            Some(RecommendedState::S1(global_message.message)),
+            Bmca::calculate_recommended_state(
+                &own_data,
+                Some(global_message),
+                Some(global_message),
+                &PortState::Passive,
+            )
+        );
+    }
+
+    #[test]
+    fn ebest_better_by_topology_no() {
+        let mut own_data = default_own_data();
+        let mut global_message = default_best_announce_message();
+
+        // take the erest branch
+        own_data.clock_quality.clock_class = 128;
+
+        own_data.clock_identity = ClockIdentity([0; 8]);
+        global_message.message.grandmaster_identity = ClockIdentity([1; 8]);
+
+        own_data.priority_1 = 1;
+        global_message.message.grandmaster_priority_1 = 0;
+
+        let mut port_message = global_message;
+
+        global_message.timestamp = WireTimestamp {
+            seconds: 1,
+            nanos: 2,
+        };
+        port_message.timestamp = WireTimestamp {
+            seconds: 3,
+            nanos: 4,
+        };
+
+        let ebest = ComparisonDataset::from_announce_message(
+            &global_message.message,
+            &global_message.identity,
+        );
+
+        let erbest =
+            ComparisonDataset::from_announce_message(&port_message.message, &port_message.identity);
+
+        assert!(!matches!(
+            ebest.compare(&erbest),
+            DatasetOrdering::BetterByTopology
+        ));
+
+        assert_eq!(
+            Some(RecommendedState::M3(global_message.message)),
+            Bmca::calculate_recommended_state(
+                &own_data,
+                Some(global_message),
+                Some(port_message),
+                &PortState::Passive,
+            )
+        );
+    }
+
+    #[test]
+    fn ebest_better_by_topology_yes() {
+        let mut own_data = default_own_data();
+        let mut global_message = default_best_announce_message();
+
+        // take the erest branch
+        own_data.clock_quality.clock_class = 128;
+
+        own_data.clock_identity = ClockIdentity([0; 8]);
+        global_message.message.grandmaster_identity = ClockIdentity([1; 8]);
+
+        own_data.priority_1 = 1;
+        global_message.message.grandmaster_priority_1 = 0;
+
+        let mut port_message = global_message;
+
+        global_message.timestamp = WireTimestamp {
+            seconds: 1,
+            nanos: 2,
+        };
+        port_message.timestamp = WireTimestamp {
+            seconds: 3,
+            nanos: 4,
+        };
+
+        let ebest = ComparisonDataset::from_announce_message(
+            &global_message.message,
+            &global_message.identity,
+        );
+
+        let erbest =
+            ComparisonDataset::from_announce_message(&port_message.message, &port_message.identity);
+
+        assert!(!matches!(
+            ebest.compare(&erbest),
+            DatasetOrdering::BetterByTopology
+        ));
+
+        assert_eq!(
+            Some(RecommendedState::M3(global_message.message)),
+            Bmca::calculate_recommended_state(
+                &own_data,
+                Some(global_message),
+                Some(port_message),
+                &PortState::Passive,
+            )
+        );
     }
 }

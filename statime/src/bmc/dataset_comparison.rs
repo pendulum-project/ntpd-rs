@@ -82,8 +82,8 @@ impl ComparisonDataset {
                     .cmp(&other.gm_clock_quality.clock_accuracy)
                 {
                     Ordering::Equal => {}
-                    // Ordering in reverse here because the cmp function of the ClockAccuracy does
-                    // it semantically instead of numerically The spec assumes
+                    // Ordering in reverse here because the cmp function of the ClockAccuracy
+                    // type orders semantically instead of numerically. The spec assumes
                     // numerical ordering which is the reverse of the semantical ordering
                     Ordering::Less => return DatasetOrdering::Worse,
                     Ordering::Greater => return DatasetOrdering::Better,
@@ -174,10 +174,6 @@ pub enum DatasetOrdering {
 }
 
 impl DatasetOrdering {
-    pub const fn is_better(self) -> bool {
-        matches!(self.as_ordering(), Ordering::Greater | Ordering::Equal)
-    }
-
     pub const fn as_ordering(self) -> Ordering {
         // We get errors if two announce messages are (functionally) the same
         // in that case either option is a valid choice
