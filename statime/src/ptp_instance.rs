@@ -147,7 +147,7 @@ impl<C: Clock, F> PtpInstance<C, F> {
         self.state.borrow_mut().bmca(ports)
     }
 
-    pub fn bmca_interval(&self) -> std::time::Duration {
+    pub fn bmca_interval(&self) -> core::time::Duration {
         core::time::Duration::from_secs_f64(
             2f64.powi(self.log_bmca_interval.load(Ordering::Relaxed) as i32),
         )
