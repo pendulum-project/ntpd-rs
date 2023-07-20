@@ -9,15 +9,27 @@ pub mod datasets;
 pub mod messages;
 
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum WireFormatError {
-    #[cfg_attr(feature = "std", error("enum conversion failed"))]
     EnumConversionError,
-    #[cfg_attr(feature = "std", error("a buffer is too short"))]
     BufferTooShort,
-    #[cfg_attr(feature = "std", error("a container has insufficient capacity"))]
     CapacityError,
 }
+
+impl core::fmt::Display for WireFormatError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            WireFormatError::EnumConversionError => f.write_str("enum conversion failed"),
+            WireFormatError::BufferTooShort => f.write_str("a buffer is too short"),
+            WireFormatError::CapacityError => f.write_str("a container has insufficient capacity"),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for WireFormatError {}
+
+#[cfg(feature = "error_in_core")]
+impl core::error::Error for WireFormatError {}
 
 impl From<arrayvec::CapacityError> for WireFormatError {
     fn from(_: arrayvec::CapacityError) -> Self {

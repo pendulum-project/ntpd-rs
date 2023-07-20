@@ -563,7 +563,6 @@ dependencies = [
  "getset",
  "libm",
  "log",
- "thiserror",
 ]
 
 [[package]]
