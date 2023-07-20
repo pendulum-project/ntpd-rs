@@ -1,3 +1,5 @@
+use core::cmp::Ordering;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// How accurate the underlying clock device is expected to be when not
 /// synchronized.
@@ -134,20 +136,32 @@ impl ClockAccuracy {
             0xfe => ClockAccuracy::Unknown,
         }
     }
-}
 
-impl PartialOrd for ClockAccuracy {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for ClockAccuracy {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+    /// low accuracy to high accuracy
+    ///
+    /// ```
+    /// use core::cmp::Ordering;
+    /// use statime::ClockAccuracy;
+    /// // PS1 has a higher accuracy than PS10
+    /// assert_eq!(ClockAccuracy::PS1.cmp_semantic(&ClockAccuracy::PS10), Ordering::Greater);
+    /// ```
+    pub fn cmp_semantic(&self, other: &Self) -> Ordering {
         // this comparison is flipped by design: The clock gets more inaccurate with the
         // higher numbers for the normal accuracy values. so a clock with a
         // lower inaccuracy is better in the ordering of clocks
-        other.to_primitive().cmp(&self.to_primitive())
+        self.cmp_numeric(other).reverse()
+    }
+
+    /// high accuracy to low accuracy
+    ///
+    /// ```
+    /// use core::cmp::Ordering;
+    /// use statime::ClockAccuracy;
+    /// // the inaccuracy of PS1 is less than of PS10
+    /// assert_eq!(ClockAccuracy::PS1.cmp_numeric(&ClockAccuracy::PS10), Ordering::Less);
+    /// ```
+    pub fn cmp_numeric(&self, other: &Self) -> Ordering {
+        self.to_primitive().cmp(&other.to_primitive())
     }
 }
 
@@ -180,7 +194,6 @@ mod tests {
         let a = ClockAccuracy::PS1;
         let b = ClockAccuracy::PS10;
 
-        assert_eq!(a.partial_cmp(&b), Some(Ordering::Greater));
-        assert_eq!(a.cmp(&b), Ordering::Greater);
+        assert_eq!(a.cmp_semantic(&b), Ordering::Greater);
     }
 }

@@ -59,95 +59,69 @@ impl ComparisonDataset {
 
     /// Returns the ordering of `self` in comparison to other.
     pub fn compare(&self, other: &Self) -> DatasetOrdering {
-        match self.gm_identity == other.gm_identity {
-            // Figure 34
-            false => {
-                match self.gm_priority_1.cmp(&other.gm_priority_1) {
-                    Ordering::Equal => {}
-                    Ordering::Greater => return DatasetOrdering::Worse,
-                    Ordering::Less => return DatasetOrdering::Better,
-                }
-                match self
-                    .gm_clock_quality
-                    .clock_class
-                    .cmp(&other.gm_clock_quality.clock_class)
-                {
-                    Ordering::Equal => {}
-                    Ordering::Greater => return DatasetOrdering::Worse,
-                    Ordering::Less => return DatasetOrdering::Better,
-                }
-                match self
-                    .gm_clock_quality
-                    .clock_accuracy
-                    .cmp(&other.gm_clock_quality.clock_accuracy)
-                {
-                    Ordering::Equal => {}
-                    // Ordering in reverse here because the cmp function of the ClockAccuracy
-                    // type orders semantically instead of numerically. The spec assumes
-                    // numerical ordering which is the reverse of the semantical ordering
-                    Ordering::Less => return DatasetOrdering::Worse,
-                    Ordering::Greater => return DatasetOrdering::Better,
-                }
-                match self
-                    .gm_clock_quality
-                    .offset_scaled_log_variance
-                    .cmp(&other.gm_clock_quality.offset_scaled_log_variance)
-                {
-                    Ordering::Equal => {}
-                    Ordering::Greater => return DatasetOrdering::Worse,
-                    Ordering::Less => return DatasetOrdering::Better,
-                }
-                match self.gm_priority_2.cmp(&other.gm_priority_2) {
-                    Ordering::Equal => {}
-                    Ordering::Greater => return DatasetOrdering::Worse,
-                    Ordering::Less => return DatasetOrdering::Better,
-                }
+        if self.gm_identity == other.gm_identity {
+            Self::compare_same_identity(self, other)
+        } else {
+            Self::compare_different_identity(self, other)
+        }
+    }
 
-                match self.gm_identity.cmp(&other.gm_identity) {
-                    Ordering::Equal => unreachable!(),
-                    Ordering::Greater => DatasetOrdering::Worse,
-                    Ordering::Less => DatasetOrdering::Better,
-                }
-            }
-            // Figure 35
-            true => {
-                let steps_removed_difference =
-                    self.steps_removed as i32 - other.steps_removed as i32;
+    /// PTP grandmaster instances are different
+    fn compare_different_identity(&self, other: &Self) -> DatasetOrdering {
+        let self_quality = self.gm_clock_quality;
+        let other_quality = other.gm_clock_quality;
 
-                match steps_removed_difference {
-                    2..=i32::MAX => DatasetOrdering::Worse,
-                    i32::MIN..=-2 => DatasetOrdering::Better,
-                    1 => match self
-                        .identity_of_receiver
-                        .clock_identity
-                        .cmp(&self.identity_of_senders)
-                    {
-                        Ordering::Less => DatasetOrdering::Better,
-                        Ordering::Equal => DatasetOrdering::Error1,
-                        Ordering::Greater => DatasetOrdering::BetterByTopology,
-                    },
-                    -1 => match other
-                        .identity_of_receiver
-                        .clock_identity
-                        .cmp(&other.identity_of_senders)
-                    {
-                        Ordering::Less => DatasetOrdering::Worse,
-                        Ordering::Equal => DatasetOrdering::Error1,
-                        Ordering::Greater => DatasetOrdering::WorseByTopology,
-                    },
-                    0 => match self.identity_of_senders.cmp(&other.identity_of_senders) {
-                        Ordering::Less => DatasetOrdering::BetterByTopology,
-                        Ordering::Equal => match self
-                            .identity_of_receiver
-                            .port_number
-                            .cmp(&other.identity_of_receiver.port_number)
-                        {
-                            Ordering::Less => DatasetOrdering::BetterByTopology,
-                            Ordering::Equal => DatasetOrdering::Error2,
-                            Ordering::Greater => DatasetOrdering::WorseByTopology,
-                        },
-                        Ordering::Greater => DatasetOrdering::WorseByTopology,
-                    },
+        // Figure 34
+        let ordering = (self.gm_priority_1.cmp(&other.gm_priority_1))
+            .then_with(|| self_quality.clock_class.cmp(&other_quality.clock_class))
+            // The spec assumes numerical ordering (which is the reverse of the semantic ordering)
+            .then_with(|| self_quality.clock_accuracy.cmp_numeric(&other_quality.clock_accuracy))
+            .then_with(|| self_quality.offset_scaled_log_variance.cmp(&other_quality.offset_scaled_log_variance))
+            .then_with(|| self.gm_priority_2.cmp(&other.gm_priority_2))
+            .then_with(|| self.gm_identity.cmp(&other.gm_identity));
+
+        match ordering {
+            Ordering::Equal => unreachable!("gm_identity is guaranteed to be different"),
+            Ordering::Greater => DatasetOrdering::Worse,
+            Ordering::Less => DatasetOrdering::Better,
+        }
+    }
+
+    /// Potentially the same PTP grandmaster instance
+    fn compare_same_identity(&self, other: &Self) -> DatasetOrdering {
+        let steps_removed_difference = self.steps_removed as i32 - other.steps_removed as i32;
+
+        // Figure 35
+        match steps_removed_difference {
+            2..=i32::MAX => DatasetOrdering::Worse,
+            i32::MIN..=-2 => DatasetOrdering::Better,
+            1 => match Ord::cmp(
+                &self.identity_of_receiver.clock_identity,
+                &self.identity_of_senders,
+            ) {
+                Ordering::Less => DatasetOrdering::Better,
+                Ordering::Equal => DatasetOrdering::Error1,
+                Ordering::Greater => DatasetOrdering::BetterByTopology,
+            },
+            -1 => match Ord::cmp(
+                &other.identity_of_receiver.clock_identity,
+                &other.identity_of_senders,
+            ) {
+                Ordering::Less => DatasetOrdering::Worse,
+                Ordering::Equal => DatasetOrdering::Error1,
+                Ordering::Greater => DatasetOrdering::WorseByTopology,
+            },
+            0 => {
+                let senders = self.identity_of_senders.cmp(&other.identity_of_senders);
+                let receivers = Ord::cmp(
+                    &self.identity_of_receiver.port_number,
+                    &other.identity_of_receiver.port_number,
+                );
+
+                match senders.then(receivers) {
+                    Ordering::Less => DatasetOrdering::BetterByTopology,
+                    Ordering::Equal => DatasetOrdering::Error2,
+                    Ordering::Greater => DatasetOrdering::WorseByTopology,
                 }
             }
         }
@@ -276,6 +250,13 @@ mod tests {
 
         assert_eq!(a.compare(&b), DatasetOrdering::WorseByTopology);
         assert_eq!(b.compare(&a), DatasetOrdering::BetterByTopology);
+
+        // the inverse of the identity_of_senders
+        a.identity_of_receiver.clock_identity = IDENTITY_B;
+        b.identity_of_receiver.clock_identity = IDENTITY_A;
+
+        assert_eq!(a.compare(&b), DatasetOrdering::Worse);
+        assert_eq!(b.compare(&a), DatasetOrdering::Better);
 
         a.steps_removed = 0;
         b.steps_removed = 2;
