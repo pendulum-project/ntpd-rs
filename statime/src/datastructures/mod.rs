@@ -2,6 +2,8 @@
 
 use core::fmt::Debug;
 
+use self::messages::EnumConversionError;
+
 pub mod common;
 pub mod datasets;
 pub mod messages;
@@ -23,10 +25,8 @@ impl From<arrayvec::CapacityError> for WireFormatError {
     }
 }
 
-impl<Enum: num_enum::TryFromPrimitive> From<num_enum::TryFromPrimitiveError<Enum>>
-    for WireFormatError
-{
-    fn from(_: num_enum::TryFromPrimitiveError<Enum>) -> Self {
+impl From<EnumConversionError> for WireFormatError {
+    fn from(_: EnumConversionError) -> Self {
         Self::EnumConversionError
     }
 }

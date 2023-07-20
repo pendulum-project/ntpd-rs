@@ -6,7 +6,6 @@ pub use delay_resp::*;
 pub use follow_up::*;
 pub use header::*;
 pub use message_builder::*;
-use num_enum::{IntoPrimitive, TryFromPrimitive};
 pub use sync::*;
 
 use self::{
@@ -30,7 +29,7 @@ mod sync;
 
 pub const MAX_DATA_LEN: usize = 255;
 
-#[derive(Debug, Clone, Copy, TryFromPrimitive, IntoPrimitive, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum MessageType {
     Sync = 0x0,
@@ -43,6 +42,30 @@ pub enum MessageType {
     Announce = 0xb,
     Signaling = 0xc,
     Management = 0xd,
+}
+
+pub struct EnumConversionError(u8);
+
+impl TryFrom<u8> for MessageType {
+    type Error = EnumConversionError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        use MessageType::*;
+
+        match value {
+            0x0 => Ok(Sync),
+            0x1 => Ok(DelayReq),
+            0x2 => Ok(PDelayReq),
+            0x3 => Ok(PDelayResp),
+            0x8 => Ok(FollowUp),
+            0x9 => Ok(DelayResp),
+            0xa => Ok(PDelayRespFollowUp),
+            0xb => Ok(Announce),
+            0xc => Ok(Signaling),
+            0xd => Ok(Management),
+            _ => Err(EnumConversionError(value)),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

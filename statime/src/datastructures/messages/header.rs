@@ -72,7 +72,7 @@ impl Header {
         content_length: usize,
         buffer: &mut [u8],
     ) -> Result<(), WireFormatError> {
-        buffer[0] = ((self.sdo_id.high_byte()) << 4) | (u8::from(content_type) & 0x0f);
+        buffer[0] = ((self.sdo_id.high_byte()) << 4) | ((content_type as u8) & 0x0f);
         buffer[1] = self.version.as_byte();
         buffer[2..4].copy_from_slice(&((content_length + self.wire_size()) as u16).to_be_bytes());
         buffer[4] = self.domain_number;
