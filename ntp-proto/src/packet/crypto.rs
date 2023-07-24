@@ -282,6 +282,66 @@ impl std::fmt::Debug for AesSivCmac512 {
 }
 
 #[cfg(test)]
+pub struct IdentityCipher {
+    nonce_length: usize,
+}
+
+#[cfg(test)]
+impl IdentityCipher {
+    pub fn new(nonce_length: usize) -> Self {
+        Self { nonce_length }
+    }
+}
+
+#[cfg(test)]
+impl ZeroizeOnDrop for IdentityCipher {}
+
+#[cfg(test)]
+impl Cipher for IdentityCipher {
+    fn encrypt(
+        &self,
+        buffer: &mut [u8],
+        plaintext_length: usize,
+        associated_data: &[u8],
+    ) -> std::io::Result<EncryptResult> {
+        debug_assert!(associated_data.is_empty());
+
+        let nonce: Vec<u8> = (0..self.nonce_length as u8).collect();
+
+        // Prepare the buffer for in place encryption by moving the plaintext
+        // back, creating space for the nonce.
+        if buffer.len() < nonce.len() + plaintext_length {
+            return Err(std::io::ErrorKind::WriteZero.into());
+        }
+        buffer.copy_within(..plaintext_length, nonce.len());
+        // And place the nonce where the caller expects it
+        buffer[..nonce.len()].copy_from_slice(&nonce);
+
+        Ok(EncryptResult {
+            nonce_length: nonce.len(),
+            ciphertext_length: plaintext_length,
+        })
+    }
+
+    fn decrypt(
+        &self,
+        nonce: &[u8],
+        ciphertext: &[u8],
+        associated_data: &[u8],
+    ) -> Result<Vec<u8>, DecryptError> {
+        debug_assert!(associated_data.is_empty());
+
+        debug_assert_eq!(nonce.len(), self.nonce_length);
+
+        Ok(ciphertext.to_vec())
+    }
+
+    fn key_bytes(&self) -> &[u8] {
+        unimplemented!()
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

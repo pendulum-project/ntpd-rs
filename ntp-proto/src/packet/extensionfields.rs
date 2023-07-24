@@ -303,13 +303,23 @@ impl<'a> ExtensionField<'a> {
             header_size + nonce_length..header_size + nonce_length + ciphertext_length,
             header_size + padded_nonce_length,
         );
-        cur_extension_field[header_size + nonce_length..header_size + padded_nonce_length]
-            .copy_from_slice(&padding[..padded_nonce_length - nonce_length]);
-        cur_extension_field[header_size + padded_nonce_length + ciphertext_length
-            ..header_size + padded_nonce_length + padded_ciphertext_length]
-            .copy_from_slice(&padding[..padded_nonce_length - nonce_length]);
 
-        // Final header
+        // zero out then nonce padding
+        let nonce_padding = padded_nonce_length - nonce_length;
+        cur_extension_field[header_size + nonce_length..][..nonce_padding]
+            .copy_from_slice(&padding[..nonce_padding]);
+
+        // zero out the ciphertext padding
+        let ciphertext_padding = padded_ciphertext_length - ciphertext_length;
+        debug_assert_eq!(
+            ciphertext_padding, 0,
+            "extension field encoding should add padding"
+        );
+        cur_extension_field[header_size + padded_nonce_length + ciphertext_length..]
+            [..ciphertext_padding]
+            .copy_from_slice(&padding[..ciphertext_padding]);
+
+        // go back and fill in the header
         let signature_length = header_size + padded_nonce_length + padded_ciphertext_length;
         w.set_position(header_start);
 
@@ -493,6 +503,10 @@ impl<'a> ExtensionFieldData<'a> {
                             }
                         };
 
+                    // for the current ciphers we allow in non-test code,
+                    // the nonce should always be 16 bytes
+                    debug_assert_eq!(encrypted.nonce.len(), 16);
+
                     efdata.encrypted.extend(encrypted_fields.into_iter());
                     cookie = match cipher {
                         super::crypto::CipherHolder::DecodedServerCookie(cookie) => Some(cookie),
@@ -547,10 +561,6 @@ impl<'a> RawEncryptedField<'a> {
 
         let nonce_length = u16::from_be_bytes([b0, b1]) as usize;
         let ciphertext_length = u16::from_be_bytes([b2, b3]) as usize;
-
-        if nonce_length != 16 {
-            return Err(IncorrectLength);
-        }
 
         let nonce = rest.get(..nonce_length).ok_or(IncorrectLength)?;
 
@@ -708,7 +718,7 @@ const fn next_multiple_of_usize(lhs: usize, rhs: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use crate::packet::AesSivCmac256;
+    use crate::packet::{extensionfields::ExtensionFieldTypeId, AesSivCmac256};
 
     use super::*;
 
@@ -828,5 +838,48 @@ mod tests {
             cursor.position() as usize,
             2 + 6 + c2s.len() + expected_size
         );
+    }
+
+    #[test]
+    fn nonce_padding() {
+        let nonce_length = 11;
+        let cipher = crate::packet::crypto::IdentityCipher::new(nonce_length);
+
+        // multiple of 4; no padding is needed
+        let fields_to_encrypt = [ExtensionField::Unknown {
+            type_id: 42u16,
+            data: Cow::Borrowed(&[1, 2, 3, 4]),
+        }];
+
+        // 6 bytes of data, rounded up to a multiple of 4
+        let plaintext_length = 8;
+
+        let mut w = [0u8; 128];
+        let mut cursor = Cursor::new(w.as_mut_slice());
+        ExtensionField::encode_encrypted(&mut cursor, &fields_to_encrypt, &cipher).unwrap();
+
+        let expected_length = 2 + 6 + next_multiple_of_usize(nonce_length, 4) + plaintext_length;
+        assert_eq!(cursor.position() as usize, expected_length,);
+
+        let message_bytes = &w.as_ref()[..expected_length];
+
+        let mut it = RawExtensionField::deserialize_sequence(message_bytes, 0, 0);
+        let field = it.next().unwrap().unwrap();
+        assert!(it.next().is_none());
+
+        match field {
+            (
+                0,
+                RawExtensionField {
+                    type_id: ExtensionFieldTypeId::NtsEncryptedField,
+                    message_bytes,
+                },
+            ) => {
+                let raw = RawEncryptedField::from_message_bytes(message_bytes).unwrap();
+                let decrypted_fields = raw.decrypt(&cipher, &[]).unwrap();
+                assert_eq!(decrypted_fields, fields_to_encrypt);
+            }
+            _ => panic!("invalid"),
+        }
     }
 }
