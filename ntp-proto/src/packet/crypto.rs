@@ -60,9 +60,11 @@ pub struct EncryptResult {
 }
 
 pub trait Cipher: Sync + Send + ZeroizeOnDrop + 'static {
-    /// encrypt should encrypt the plaintext present in the buffer
-    /// and in replace it with the nonce followed by the cyphertext
-    /// returning the sizes of both.
+    /// encrypts the plaintext present in the buffer
+    ///
+    /// - encrypts `plaintext_length` bytes from the buffer
+    /// - puts the nonce followed by the ciphertext into the buffer
+    /// - returns the size of the nonce and ciphertext
     fn encrypt(
         &self,
         buffer: &mut [u8],
