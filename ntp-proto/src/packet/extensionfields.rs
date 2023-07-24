@@ -258,12 +258,9 @@ impl<'a> ExtensionField<'a> {
 
         let header_start = w.position();
 
-        // Temporary header
-        w.write_all(
-            &ExtensionFieldTypeId::NtsEncryptedField
-                .to_type_id()
-                .to_be_bytes(),
-        )?;
+        // Placeholder header
+        let type_id: u16 = ExtensionFieldTypeId::NtsEncryptedField.to_type_id();
+        w.write_all(&type_id.to_be_bytes())?;
         w.write_all(&0u16.to_be_bytes())?;
         w.write_all(&0u16.to_be_bytes())?;
         w.write_all(&0u16.to_be_bytes())?;
@@ -300,6 +297,8 @@ impl<'a> ExtensionField<'a> {
         {
             return Err(std::io::ErrorKind::WriteZero.into());
         }
+
+        // move the ciphertext over to make space for nonce padding
         cur_extension_field.copy_within(
             header_size + nonce_length..header_size + nonce_length + ciphertext_length,
             header_size + padded_nonce_length,
@@ -313,14 +312,14 @@ impl<'a> ExtensionField<'a> {
         // Final header
         let signature_length = header_size + padded_nonce_length + padded_ciphertext_length;
         w.set_position(header_start);
-        w.write_all(
-            &ExtensionFieldTypeId::NtsEncryptedField
-                .to_type_id()
-                .to_be_bytes(),
-        )?;
+
+        let type_id: u16 = ExtensionFieldTypeId::NtsEncryptedField.to_type_id();
+        w.write_all(&type_id.to_be_bytes())?;
         w.write_all(&(signature_length as u16).to_be_bytes())?;
         w.write_all(&(nonce_length as u16).to_be_bytes())?;
         w.write_all(&(ciphertext_length as u16).to_be_bytes())?;
+
+        // set the final position
         w.set_position(header_start + signature_length as u64);
 
         Ok(())
