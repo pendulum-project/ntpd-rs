@@ -1,4 +1,6 @@
-peers=["example.com"]
+[[peers]]
+mode = "simple"
+address = "example.com"
 
 [system]
 min-intersection-survivors = 2

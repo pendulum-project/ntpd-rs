@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tracing::warn;
@@ -69,7 +71,7 @@ impl NtsSpawner {
                 SpawnAction::create(
                     PeerId::new(),
                     addr,
-                    self.config.ke_addr.clone(),
+                    self.config.ke_addr.deref().clone(),
                     Some(ke.nts),
                 ),
             ))

@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, ops::Deref};
 
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -69,7 +69,8 @@ impl PoolSpawner {
                 if let Some(addr) = self.known_ips.pop() {
                     let id = PeerId::new();
                     self.current_peers.push(PoolPeer { id, addr });
-                    let action = SpawnAction::create(id, addr, self.config.addr.clone(), None);
+                    let action =
+                        SpawnAction::create(id, addr, self.config.addr.deref().clone(), None);
                     tracing::debug!(?action, "intending to spawn new pool peer at");
 
                     action_tx
@@ -126,7 +127,7 @@ impl BasicSpawner for PoolSpawner {
     }
 
     fn get_addr_description(&self) -> String {
-        format!("{} ({})", self.config.addr, self.config.max_peers)
+        format!("{} ({})", self.config.addr.deref(), self.config.max_peers)
     }
 
     fn get_description(&self) -> &str {
@@ -155,7 +156,8 @@ mod tests {
 
         let pool = PoolSpawner::new(
             PoolPeerConfig {
-                addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec()),
+                addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
+                    .into(),
                 max_peers: 2,
             },
             NETWORK_WAIT_PERIOD,
@@ -192,7 +194,8 @@ mod tests {
 
         let pool = PoolSpawner::new(
             PoolPeerConfig {
-                addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec()),
+                addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
+                    .into(),
                 max_peers: 2,
             },
             NETWORK_WAIT_PERIOD,
@@ -235,7 +238,7 @@ mod tests {
     async fn works_if_address_does_not_resolve() {
         let pool = PoolSpawner::new(
             PoolPeerConfig {
-                addr: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]),
+                addr: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]).into(),
                 max_peers: 2,
             },
             NETWORK_WAIT_PERIOD,

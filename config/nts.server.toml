@@ -4,7 +4,7 @@ log-filter = "info"
 # the server will get its time from the NTP pool
 [[peers]]
 mode = "pool"
-addr = "pool.ntp.org"
+address = "pool.ntp.org"
 max-peers = 4
 
 [[server]]

@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, ops::Deref};
 
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -70,7 +70,7 @@ impl StandardSpawner {
         action_tx
             .send(SpawnEvent::new(
                 self.id,
-                SpawnAction::create(PeerId::new(), addr, self.config.addr.clone(), None),
+                SpawnAction::create(PeerId::new(), addr, self.config.addr.deref().clone(), None),
             ))
             .await?;
         Ok(())
@@ -140,7 +140,8 @@ mod tests {
                     "example.com",
                     123,
                     vec!["127.0.0.1:123".parse().unwrap()],
-                ),
+                )
+                .into(),
             },
             NETWORK_WAIT_PERIOD,
         );
@@ -169,7 +170,8 @@ mod tests {
                     "example.com",
                     123,
                     vec!["127.0.0.1:123".parse().unwrap()],
-                ),
+                )
+                .into(),
             },
             NETWORK_WAIT_PERIOD,
         );
@@ -206,7 +208,8 @@ mod tests {
                     "europe.pool.ntp.org",
                     123,
                     addresses.to_vec(),
-                ),
+                )
+                .into(),
             },
             NETWORK_WAIT_PERIOD,
         );
@@ -256,7 +259,7 @@ mod tests {
     async fn works_if_address_does_not_resolve() {
         let spawner = StandardSpawner::new(
             StandardPeerConfig {
-                addr: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]),
+                addr: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]).into(),
             },
             NETWORK_WAIT_PERIOD,
         );

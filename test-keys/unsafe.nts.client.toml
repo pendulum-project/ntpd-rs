@@ -3,9 +3,8 @@ log-filter = "info"
 
 # uses an unsecure certificate!
 [[peers]]
-mode = "NtsServer"
-addr = "localhost:123"
-ke-addr =  "localhost:4460"
+mode = "nts"
+address =  "localhost:4460"
 certificate = "test-keys/testca.pem"
 
 # System parameters used in filtering and steering the clock:
