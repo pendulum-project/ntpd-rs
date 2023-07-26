@@ -281,7 +281,6 @@ impl std::fmt::Display for NormalizedAddress {
     }
 }
 
-#[cfg(test)]
 impl TryFrom<&str> for StandardPeerConfig {
     type Error = std::io::Error;
 
@@ -292,7 +291,6 @@ impl TryFrom<&str> for StandardPeerConfig {
     }
 }
 
-#[cfg(test)]
 impl<'a> TryFrom<&'a str> for PeerConfig {
     type Error = std::io::Error;
 
