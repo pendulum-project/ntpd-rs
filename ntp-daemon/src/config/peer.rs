@@ -1,52 +1,72 @@
 use std::{
     fmt,
     net::SocketAddr,
+    ops::Deref,
     path::PathBuf,
     sync::{Arc, Mutex},
 };
 
 use rustls::Certificate;
-use serde::{
-    de::{self, MapAccess, Visitor},
-    Deserialize, Deserializer,
-};
+use serde::{de, Deserialize, Deserializer};
 
 use crate::keyexchange::certificates_from_file;
-
-#[derive(Deserialize, Debug, PartialEq, Eq, Clone, Copy, Default)]
-pub enum PeerHostMode {
-    #[serde(alias = "server")]
-    #[default]
-    Server,
-    #[serde(alias = "nts-server")]
-    NtsServer,
-    #[serde(alias = "pool")]
-    Pool,
-}
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct StandardPeerConfig {
-    pub addr: NormalizedAddress,
+    #[serde(rename = "address")]
+    pub addr: NtpAddress,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct NtsPeerConfig {
-    pub ke_addr: NormalizedAddress,
+    #[serde(rename = "address")]
+    pub ke_addr: NtsKeAddress,
+    #[serde(deserialize_with = "deserialize_certificates")]
+    #[serde(default = "default_certificates")]
     pub certificates: Arc<[Certificate]>,
+}
+
+fn deserialize_certificates<'de, D>(deserializer: D) -> Result<Arc<[Certificate]>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let certificate_path: PathBuf = PathBuf::deserialize(deserializer)?;
+    match certificates_from_file(&certificate_path) {
+        Ok(certificates) => Ok(Arc::from(certificates)),
+        Err(io_error) => {
+            let msg =
+                format!("error while parsing certificate file {certificate_path:?}: {io_error:?}");
+            Err(de::Error::custom(msg))
+        }
+    }
+}
+
+fn default_certificates() -> Arc<[Certificate]> {
+    Arc::from([])
 }
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct PoolPeerConfig {
-    pub addr: NormalizedAddress,
+    #[serde(rename = "address")]
+    pub addr: NtpAddress,
+    #[serde(default = "max_peers_default")]
     pub max_peers: usize,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+fn max_peers_default() -> usize {
+    4
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
+#[serde(tag = "mode")]
 pub enum PeerConfig {
+    #[serde(rename = "simple")]
     Standard(StandardPeerConfig),
+    #[serde(rename = "nts")]
     Nts(NtsPeerConfig),
+    #[serde(rename = "pool")]
     Pool(PoolPeerConfig),
     // Consul(ConsulPeerConfig),
 }
@@ -84,6 +104,64 @@ impl From<Vec<SocketAddr>> for HardcodedDnsResolve {
         Self {
             addresses: Arc::new(Mutex::new(value)),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NtpAddress(pub NormalizedAddress);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NtsKeAddress(pub NormalizedAddress);
+
+impl<'de> Deserialize<'de> for NtpAddress {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(NormalizedAddress::from_string_ntp(s)
+            .map_err(serde::de::Error::custom)?
+            .into())
+    }
+}
+
+impl<'de> Deserialize<'de> for NtsKeAddress {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(NtsKeAddress(
+            NormalizedAddress::from_string_nts_ke(s).map_err(serde::de::Error::custom)?,
+        ))
+    }
+}
+
+impl From<NormalizedAddress> for NtpAddress {
+    fn from(addr: NormalizedAddress) -> Self {
+        Self(addr)
+    }
+}
+
+impl From<NormalizedAddress> for NtsKeAddress {
+    fn from(addr: NormalizedAddress) -> Self {
+        Self(addr)
+    }
+}
+
+impl Deref for NtsKeAddress {
+    type Target = NormalizedAddress;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Deref for NtpAddress {
+    type Target = NormalizedAddress;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -203,173 +281,23 @@ impl std::fmt::Display for NormalizedAddress {
     }
 }
 
+#[cfg(test)]
 impl TryFrom<&str> for StandardPeerConfig {
     type Error = std::io::Error;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Ok(Self {
-            addr: NormalizedAddress::from_string_ntp(value.to_string())?,
+            addr: NormalizedAddress::from_string_ntp(value.to_string())?.into(),
         })
     }
 }
 
+#[cfg(test)]
 impl<'a> TryFrom<&'a str> for PeerConfig {
     type Error = std::io::Error;
 
     fn try_from(value: &'a str) -> Result<Self, Self::Error> {
         StandardPeerConfig::try_from(value).map(Self::Standard)
-    }
-}
-
-// We have a custom deserializer for peerconfig because we
-// want to deserialize it from either a string or a map
-impl<'de> Deserialize<'de> for PeerConfig {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct PeerConfigVisitor;
-
-        impl<'de> Visitor<'de> for PeerConfigVisitor {
-            type Value = PeerConfig;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("string or map")
-            }
-
-            fn visit_str<E: de::Error>(self, value: &str) -> Result<PeerConfig, E> {
-                TryFrom::try_from(value).map_err(de::Error::custom)
-            }
-
-            fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<PeerConfig, M::Error> {
-                let mut ke_addr = None;
-                let mut opt_certificate_path = None;
-                let mut addr = None;
-                let mut mode = None;
-                let mut max_peers = None;
-                while let Some(key) = map.next_key::<String>()? {
-                    match key.as_str() {
-                        "addr" => {
-                            if addr.is_some() {
-                                return Err(de::Error::duplicate_field("addr"));
-                            }
-                            let raw: String = map.next_value()?;
-
-                            let parsed_addr =
-                                NormalizedAddress::from_string_ntp(raw.as_str().to_string())
-                                    .map_err(de::Error::custom)?;
-
-                            addr = Some(parsed_addr);
-                        }
-                        "ke-addr" => {
-                            if ke_addr.is_some() {
-                                return Err(de::Error::duplicate_field("ke-addr"));
-                            }
-                            let raw: String = map.next_value()?;
-
-                            let parsed_addr =
-                                NormalizedAddress::from_string_nts_ke(raw.as_str().to_string())
-                                    .map_err(de::Error::custom)?;
-
-                            ke_addr = Some(parsed_addr);
-                        }
-                        "certificate" => {
-                            if opt_certificate_path.is_some() {
-                                return Err(de::Error::duplicate_field("certificate"));
-                            }
-                            let raw: String = map.next_value()?;
-
-                            opt_certificate_path = Some(PathBuf::from(raw));
-                        }
-                        "mode" => {
-                            if mode.is_some() {
-                                return Err(de::Error::duplicate_field("mode"));
-                            }
-                            mode = Some(map.next_value()?);
-                        }
-                        "max-peers" => {
-                            if max_peers.is_some() {
-                                return Err(de::Error::duplicate_field("max-peers"));
-                            }
-                            max_peers = Some(map.next_value()?);
-                        }
-                        _ => {
-                            return Err(de::Error::unknown_field(
-                                key.as_str(),
-                                &["addr", "ke-addr", "certificate", "mode", "max-peers"],
-                            ));
-                        }
-                    }
-                }
-
-                let mode = mode.unwrap_or_default();
-
-                let unknown_field =
-                    |field, valid_fields| Err(de::Error::unknown_field(field, valid_fields));
-
-                match mode {
-                    PeerHostMode::Server => {
-                        let addr = addr.ok_or_else(|| de::Error::missing_field("addr"))?;
-
-                        let valid_fields = &["addr", "mode"];
-                        if max_peers.is_some() {
-                            unknown_field("max-peers", valid_fields)
-                        } else if ke_addr.is_some() {
-                            unknown_field("ke-addr", valid_fields)
-                        } else if opt_certificate_path.is_some() {
-                            unknown_field("certificate", valid_fields)
-                        } else {
-                            Ok(PeerConfig::Standard(StandardPeerConfig { addr }))
-                        }
-                    }
-                    PeerHostMode::NtsServer => {
-                        let ke_addr = ke_addr.ok_or_else(|| de::Error::missing_field("ke-addr"))?;
-
-                        let valid_fields = &["mode", "ke-addr", "certificate"];
-                        if max_peers.is_some() {
-                            unknown_field("max-peers", valid_fields)
-                        } else {
-                            let certificates: Arc<[Certificate]> = if let Some(certificate_path) =
-                                opt_certificate_path
-                            {
-                                match certificates_from_file(&certificate_path) {
-                                    Ok(certificates) => Arc::from(certificates),
-                                    Err(io_error) => {
-                                        let msg = format!(
-                                                "error while parsing certificate file {certificate_path:?}: {io_error:?}"
-                                            );
-                                        return Err(de::Error::custom(msg));
-                                    }
-                                }
-                            } else {
-                                Arc::from([])
-                            };
-
-                            Ok(PeerConfig::Nts(NtsPeerConfig {
-                                ke_addr,
-                                certificates,
-                            }))
-                        }
-                    }
-                    PeerHostMode::Pool => {
-                        let addr = addr.ok_or_else(|| de::Error::missing_field("addr"))?;
-
-                        let valid_fields = &["addr", "mode", "max-peers"];
-                        if ke_addr.is_some() {
-                            unknown_field("ke-addr", valid_fields)
-                        } else if opt_certificate_path.is_some() {
-                            unknown_field("certificate", valid_fields)
-                        } else {
-                            let max_peers = max_peers.unwrap_or(1);
-
-                            Ok(PeerConfig::Pool(PoolPeerConfig { addr, max_peers }))
-                        }
-                    }
-                }
-            }
-        }
-
-        deserializer.deserialize_any(PeerConfigVisitor)
     }
 }
 
@@ -392,27 +320,11 @@ mod tests {
             peer: PeerConfig,
         }
 
-        let test: TestConfig = toml::from_str("peer = \"example.com\"").unwrap();
-        assert_eq!(peer_addr(&test.peer), "example.com:123");
-        assert!(matches!(test.peer, PeerConfig::Standard(_)));
-
-        let test: TestConfig = toml::from_str("peer = \"example.com:5678\"").unwrap();
-        assert_eq!(peer_addr(&test.peer), "example.com:5678");
-        assert!(matches!(test.peer, PeerConfig::Standard(_)));
-
-        let test: TestConfig = toml::from_str("[peer]\naddr = \"example.com\"").unwrap();
-        assert_eq!(peer_addr(&test.peer), "example.com:123");
-        assert!(matches!(test.peer, PeerConfig::Standard(_)));
-
-        let test: TestConfig = toml::from_str("[peer]\naddr = \"example.com:5678\"").unwrap();
-        assert_eq!(peer_addr(&test.peer), "example.com:5678");
-        assert!(matches!(test.peer, PeerConfig::Standard(_)));
-
         let test: TestConfig = toml::from_str(
             r#"
             [peer]
-            addr = "example.com"
-            mode = "Server"
+            mode = "simple"
+            address = "example.com"
             "#,
         )
         .unwrap();
@@ -422,22 +334,44 @@ mod tests {
         let test: TestConfig = toml::from_str(
             r#"
             [peer]
-            addr = "example.com"
-            mode = "Pool"
+            mode = "simple"
+            address = "example.com:5678"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(peer_addr(&test.peer), "example.com:5678");
+        assert!(matches!(test.peer, PeerConfig::Standard(_)));
+
+        let test: TestConfig = toml::from_str(
+            r#"
+            [peer]
+            mode = "simple"
+            address = "example.com"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(peer_addr(&test.peer), "example.com:123");
+        assert!(matches!(test.peer, PeerConfig::Standard(_)));
+
+        let test: TestConfig = toml::from_str(
+            r#"
+            [peer]
+            address = "example.com"
+            mode = "pool"
             "#,
         )
         .unwrap();
         assert!(matches!(test.peer, PeerConfig::Pool(_)));
         if let PeerConfig::Pool(config) = test.peer {
             assert_eq!(config.addr.to_string(), "example.com:123");
-            assert_eq!(config.max_peers, 1);
+            assert_eq!(config.max_peers, 4);
         }
 
         let test: TestConfig = toml::from_str(
             r#"
             [peer]
-            addr = "example.com"
-            mode = "Pool"
+            address = "example.com"
+            mode = "pool"
             max-peers = 42
             "#,
         )
@@ -451,8 +385,8 @@ mod tests {
         let test: TestConfig = toml::from_str(
             r#"
             [peer]
-            ke-addr = "example.com"
-            mode = "NtsServer"
+            address = "example.com"
+            mode = "nts"
             "#,
         )
         .unwrap();
@@ -476,9 +410,9 @@ mod tests {
         let test: TestConfig = toml::from_str(&format!(
             r#"
                 [peer]
-                ke-addr = "example.com"
+                address = "example.com"
                 certificate = "{}"
-                mode = "NtsServer"
+                mode = "nts"
                 "#,
             path.display()
         ))

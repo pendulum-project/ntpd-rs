@@ -126,7 +126,7 @@ Peers are configured in the peers section, which should consist of a list of pee
 | mode | server | Type of peer connection to create. Can be any of `server`, `nts-server` or `pool` (for meaning of these, see below). |
 | addr | | Address of the server or pool. The default port (123) is automatically appended if not given. (not valid for nts connections) |
 | addr-ke | | Address of the nts server. The default port (4460) is automatically appended if not given. (only valid for nts connections) |
-| max-peers | 1 | Maximum number of peers to create from the pool. (only  valid for pools) |
+| max-peers | 4 | Maximum number of peers to create from the pool. (only  valid for pools) |
 | certificates | | Path to a pem file containing additional root certificates to accept for the TLS connection to the nts server. In addition to these certificates, the system certificates will also be accepted. (only valid for nts connections) |
 
 ##### Server peers

@@ -466,41 +466,47 @@ mod tests {
 
     #[test]
     fn test_config() {
-        let config: Config = toml::from_str("[[peers]]\naddr = \"example.com\"").unwrap();
+        let config: Config =
+            toml::from_str("[[peers]]\nmode = \"simple\"\naddress = \"example.com\"").unwrap();
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com", 123),
+                addr: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
 
-        let config: Config =
-            toml::from_str("log-filter = \"\"\n[[peers]]\naddr = \"example.com\"").unwrap();
+        let config: Config = toml::from_str(
+            "log-filter = \"\"\n[[peers]]\nmode = \"simple\"\naddress = \"example.com\"",
+        )
+        .unwrap();
         assert!(config.log_filter.is_none());
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com", 123),
+                addr: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
 
-        let config: Config =
-            toml::from_str("log-filter = \"info\"\n[[peers]]\naddr = \"example.com\"").unwrap();
+        let config: Config = toml::from_str(
+            "log-filter = \"info\"\n[[peers]]\nmode = \"simple\"\naddress = \"example.com\"",
+        )
+        .unwrap();
         assert!(config.log_filter.is_some());
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com", 123),
+                addr: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
 
-        let config: Config =
-            toml::from_str("[[peers]]\naddr = \"example.com\"\n[system]\npanic-threshold = 0")
-                .unwrap();
+        let config: Config = toml::from_str(
+            "[[peers]]\nmode = \"simple\"\naddress = \"example.com\"\n[system]\npanic-threshold = 0",
+        )
+        .unwrap();
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com", 123),
+                addr: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
         assert_eq!(
@@ -513,13 +519,13 @@ mod tests {
         );
 
         let config: Config = toml::from_str(
-            "[[peers]]\naddr = \"example.com\"\n[system]\npanic-threshold = \"inf\"",
+            "[[peers]]\nmode = \"simple\"\naddress = \"example.com\"\n[system]\npanic-threshold = \"inf\"",
         )
         .unwrap();
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com", 123),
+                addr: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
         assert!(config.system.system.panic_threshold.forward.is_none());
@@ -529,7 +535,8 @@ mod tests {
             r#"
             log-filter = "info"
             [[peers]]
-            addr = "example.com"
+            mode = "simple"
+            address = "example.com"
             [observe]
             path = "/foo/bar/observe"
             mode = 0o567
@@ -553,7 +560,7 @@ mod tests {
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com", 123),
+                addr: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
     }
@@ -605,7 +612,7 @@ mod tests {
         let config: Result<Config, _> = toml::from_str(
             r#"
             [[peers]]
-            addr = ":invalid:ipv6:123"
+            address = ":invalid:ipv6:123"
             "#,
         );
 

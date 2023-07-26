@@ -21,7 +21,6 @@ pub mod tracing;
 
 use std::{error::Error, sync::Arc};
 
-use config::ClockConfig;
 pub use config::Config;
 pub use observer::{ObservablePeerState, ObservableState};
 pub use system::spawn;

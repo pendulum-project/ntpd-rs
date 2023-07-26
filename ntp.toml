@@ -5,7 +5,7 @@ log-filter = "info"
 # for more information
 [[peers]]
 mode = "pool"
-addr = "ntpd-rs.pool.ntp.org"
+address = "ntpd-rs.pool.ntp.org"
 max-peers = 4
 
 # Alternative configuration for IPv6 only machines

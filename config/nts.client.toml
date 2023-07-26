@@ -3,9 +3,8 @@ log-filter = "info"
 
 # See CONFIGURATION.md for how to set up certificates
 [[peers]]
-mode = "NtsServer"
-addr = "localhost:123"
-ke-addr =  "localhost:4460"
+mode = "nts"
+address =  "localhost:4460"
 certificate = "path/to/certificate/authority.pem"
 
 # System parameters used in filtering and steering the clock:
