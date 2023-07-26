@@ -123,49 +123,45 @@ The ntp-daemon's primary configuration method is through a TOML configuration fi
 Peers are configured in the peers section, which should consist of a list of peers. Per peer, the following options are available:
 | Option | Default | Description |
 | --- | --- | --- |
-| mode | server | Type of peer connection to create. Can be any of `server`, `nts-server` or `pool` (for meaning of these, see below). |
-| addr | | Address of the server or pool. The default port (123) is automatically appended if not given. (not valid for nts connections) |
-| addr-ke | | Address of the nts server. The default port (4460) is automatically appended if not given. (only valid for nts connections) |
+| mode | server | Type of peer connection to create. Can be any of `simple`, `nts` or `pool` (for meaning of these, see below). |
+| address | | Address of the server, pool or nts server. The default port (123 for server or pool, 4460 for nts) is automatically appended if not given. |
 | max-peers | 4 | Maximum number of peers to create from the pool. (only  valid for pools) |
 | certificates | | Path to a pem file containing additional root certificates to accept for the TLS connection to the nts server. In addition to these certificates, the system certificates will also be accepted. (only valid for nts connections) |
 
-##### Server peers
+##### Simple peers
 
-Server peers are direct NTP connections to a single remote server. This is the default. In addition to being able to be configured as a struct, they can also be configured from a string. This is useful when defining multiple servers. For example:
+Simple peers are direct NTP connections to a single remote server. This is the default. To configure multiple servers, add a `[[peers]]` section for each server. For example:
 
 ```
-# As a simple list (pool servers from ntppool.org)
-peers = ["0.pool.ntp.org", "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
-
-# Or by providing written out configuration
+# Multiple server can be configured by defining multiple `[[peers]]` sections
 [[peers]]
-addr = "0.pool.ntp.org:123"
+address = "0.pool.ntp.org:123"
 
 [[peers]]
-addr = "1.pool.ntp.org:123"
+address = "1.pool.ntp.org:123"
 ```
 
 ##### Nts peers
 
-A peer in `nts-server` mode will use NTS (Network Times Security) to communicate with its server. The server must support NTS. The configuration requires the address of the Key Exchange server (the address of the actual NTP server that ends up being used may be different). For example:
+A peer in `nts` mode will use NTS (Network Times Security) to communicate with its server. The server must support NTS. The configuration requires the address of the Key Exchange server (the address of the actual NTP server that ends up being used may be different). For example:
 
 ```
 [[peers]]
-mode = "nts-server"
-ke-addr = "time.cloudflare.com:4460"
+mode = "nts"
+address = "time.cloudflare.com:4460"
 ```
 
 ##### Pool
 
-`Pool` mode is a convenient way to configure many NTP servers, without having to worry about individual servers' IP addresses.
+`pool` mode is a convenient way to configure many NTP servers, without having to worry about individual servers' IP addresses.
 
-A peer in `Pool` mode will try to acquire `max_peers` addresses of NTP servers from the pool. `ntpd-rs` will actively try to keep a pool filled up. For instance if a server cannot be reached, a different server will be picked from the pool.
+A peer in `pool` mode will try to acquire `max_peers` addresses of NTP servers from the pool. `ntpd-rs` will actively try to keep a pool filled up. For instance if a server cannot be reached, a different server will be picked from the pool.
 
 An example configuration for the ntppool.org ntp pool can look like
 ```
 [[peers]]
-addr = "pool.ntp.org"
-mode = "Pool"
+address = "pool.ntp.org"
+mode = "pool"
 max-peers = 4
 ```
 
@@ -174,7 +170,7 @@ max-peers = 4
 Interfaces on which to act as a server are configured in the `server` section. Per interface configured, the following options are available:
 | Option | Default | Description |
 | --- | --- | --- |
-| addr | | Address of the interface to bind to. |
+| address | | Address of the interface to bind to. |
 | allowlist | ["0.0.0.0/0", "::/0"] | List of IP subnets allowed to contact through this interface. |
 | allowlist-action | | Action taken when a client's IP is not on the list of allowed clients. Can be `Ignore` to ignore packets from such clients, or `Deny` to send a deny response to those clients. |
 | denylist | [] | List of IP subnets disallowed to contact through this interface. |
@@ -194,7 +190,7 @@ Servers configured via the `server` section can also support NTS. To enable this
 | cert-chain-path | | Path to the full chain TLS certificate for the server. Note that currently self-signed certificates are not supported. |
 | key-der-path | | Path to the TLS private key for the server. |
 | timeout-ms | 1000 | Timeout on NTS-KE sessions, after which the server decides to hang up. This is to prevent large resource utilization from old and or inactive sessions. Timeout duration is in milliseconds. |
-| addr | | Address of the interface to bind to for the NTS-KE server. |
+| address | | Address of the interface to bind to for the NTS-KE server. |
 
 Our implementation of NTS follows the recommendations of section 6 in [RFC8915](https://www.rfc-editor.org/rfc/rfc8915.html). Currently, the master keys for encryption of the cookies are generated internally, and their generation can be controlled via the settings in the `keyset` section
 | Option | Default | Description |
@@ -295,16 +291,13 @@ The high performance clock algorithm has quite a few options. Most of these are 
 # Other values include trace, debug, warn and error
 log-filter = "info"
 
-# Peers can be configured as a simple list (pool servers from ntppool.org)
-peers = ["0.pool.ntp.org", "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
-
 # Or by providing written out configuration
 # [[peers]]
-# addr = "0.pool.ntp.org:123"
+# address = "0.pool.ntp.org:123"
 #
 
 # [[peers]]
-# addr = "1.pool.ntp.org:123"
+# address = "1.pool.ntp.org:123"
 
 # System parameters used in filtering and steering the clock:
 [system]
