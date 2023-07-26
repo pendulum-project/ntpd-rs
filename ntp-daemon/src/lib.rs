@@ -91,7 +91,7 @@ async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
     let clock_config = config.clock;
 
     #[cfg(not(feature = "hardware-timestamping"))]
-    let clock_config = ClockConfig::default();
+    let clock_config = config::ClockConfig::default();
 
     ::tracing::debug!("Configuration loaded, spawning daemon jobs");
     let (main_loop_handle, channels) = crate::spawn(
