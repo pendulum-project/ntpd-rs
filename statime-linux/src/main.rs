@@ -7,8 +7,8 @@ use clap::Parser;
 use fern::colors::Color;
 use rand::{rngs::StdRng, SeedableRng};
 use statime::{
-    BasicFilter, Clock, ClockIdentity, DefaultDS, DelayMechanism, Duration, Interval, PortAction,
-    PortActionIterator, PortConfig, PortIdentity, PtpInstance, SdoId, Time, TimePropertiesDS,
+    BasicFilter, Clock, ClockIdentity, DelayMechanism, Duration, InstanceConfig, Interval,
+    PortAction, PortActionIterator, PortConfig, PtpInstance, SdoId, Time, TimePropertiesDS,
     TimeSource, TimestampContext,
 };
 use statime_linux::{
@@ -207,21 +207,18 @@ async fn actual_main() {
     let mut network_runtime = LinuxRuntime::new(timestamping_mode, local_clock.clone());
     let clock_identity = ClockIdentity(get_clock_id().expect("Could not get clock identity"));
 
-    let default_ds = DefaultDS::new_ordinary_clock(
+    let config = InstanceConfig {
         clock_identity,
-        args.priority_1,
-        args.priority_2,
-        args.domain,
-        false,
-        args.sdo,
-    );
+        priority_1: args.priority_1,
+        priority_2: args.priority_2,
+        domain_number: args.domain,
+        slave_only: false,
+        sdo_id: args.sdo,
+    };
+
     let time_properties_ds =
         TimePropertiesDS::new_arbitrary_time(false, false, TimeSource::InternalOscillator);
     let port_config = PortConfig {
-        port_identity: PortIdentity {
-            clock_identity,
-            port_number: 1,
-        },
         delay_mechanism: DelayMechanism::E2E {
             interval: Interval::TWO_SECONDS,
         },
@@ -233,7 +230,7 @@ async fn actual_main() {
     };
 
     let instance = PtpInstance::new(
-        default_ds,
+        config,
         time_properties_ds,
         local_clock.clone(),
         BasicFilter::new(0.25),

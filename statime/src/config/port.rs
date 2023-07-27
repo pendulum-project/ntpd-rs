@@ -1,11 +1,11 @@
 use rand::Rng;
 
-use crate::{time::Interval, Duration, PortIdentity};
+use crate::{time::Interval, Duration};
 
 /// Which delay mechanism a port is using.
 ///
 /// Currently, statime only supports the end to end (E2E) delay mechanism.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum DelayMechanism {
     /// End to end delay mechanism. Delay measurement is done directly to the
     /// chosen master, across potential transparent nodes in between.
@@ -17,8 +17,8 @@ pub enum DelayMechanism {
 
 /// Configuration items of the PTP PortDS dataset. Dynamical fields are kept
 /// as part of [crate::port::Port].
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct PortConfig {
-    pub port_identity: PortIdentity,
     pub delay_mechanism: DelayMechanism,
     pub announce_interval: Interval,
     // more like announce_message_retries. Specifies how many announce_intervals to wait until the

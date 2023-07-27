@@ -17,7 +17,7 @@ use crate::datastructures::common::TimeInterval;
 ///
 /// For example, the difference between two instants is a duration.
 /// And an instant plus a duration is another instant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
 pub struct Duration {
     /// Time in nanos
     inner: I96F32,

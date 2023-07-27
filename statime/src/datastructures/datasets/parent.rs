@@ -1,7 +1,5 @@
-use crate::{
-    datastructures::common::{ClockIdentity, ClockQuality, PortIdentity},
-    DefaultDS,
-};
+use super::DefaultDS;
+use crate::datastructures::common::{ClockIdentity, ClockQuality, PortIdentity};
 
 // TODO: Discuss moving this (and TimePropertiesDS, ...) to slave?
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -17,7 +15,7 @@ pub struct ParentDS {
 }
 
 impl ParentDS {
-    pub fn new(default_ds: DefaultDS) -> Self {
+    pub(crate) fn new(default_ds: DefaultDS) -> Self {
         ParentDS {
             parent_port_identity: PortIdentity {
                 clock_identity: default_ds.clock_identity,

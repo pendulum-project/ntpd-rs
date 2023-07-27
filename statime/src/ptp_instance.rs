@@ -8,9 +8,10 @@ use rand::Rng;
 use crate::{
     bmc::bmca::Bmca,
     clock::Clock,
+    config::InstanceConfig,
     datastructures::datasets::{CurrentDS, DefaultDS, ParentDS, TimePropertiesDS},
     port::{InBmca, Port},
-    PortConfig,
+    PortConfig, PortIdentity,
 };
 
 /// A PTP node.
@@ -121,11 +122,12 @@ impl<C: Clock, F> PtpInstanceState<C, F> {
 
 impl<C: Clock, F> PtpInstance<C, F> {
     pub fn new(
-        default_ds: DefaultDS,
+        config: InstanceConfig,
         time_properties_ds: TimePropertiesDS,
         local_clock: C,
         filter: F,
     ) -> Self {
+        let default_ds = DefaultDS::new(config);
         Self {
             state: RefCell::new(PtpInstanceState {
                 default_ds,
@@ -142,7 +144,13 @@ impl<C: Clock, F> PtpInstance<C, F> {
     pub fn add_port<R: Rng>(&self, config: PortConfig, rng: R) -> Port<InBmca<'_, C, F>, R> {
         self.log_bmca_interval
             .fetch_min(config.announce_interval.as_log_2(), Ordering::Relaxed);
-        Port::new(&self.state, config, rng)
+        let mut state = self.state.borrow_mut();
+        let port_identity = PortIdentity {
+            clock_identity: state.default_ds.clock_identity,
+            port_number: state.default_ds.number_ports,
+        };
+        state.default_ds.number_ports += 1;
+        Port::new(&self.state, config, port_identity, rng)
     }
 
     pub fn bmca<R: Rng>(&self, ports: &mut [&mut Port<InBmca<'_, C, F>, R>]) {

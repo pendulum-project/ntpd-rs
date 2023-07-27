@@ -23,6 +23,7 @@ use crate::{
     // network::{NetworkPort, NetworkRuntime},
     ptp_instance::PtpInstanceState,
     time::Duration,
+    PortIdentity,
     Time,
     MAX_DATA_LEN,
 };
@@ -61,6 +62,8 @@ pub mod state;
 /// One of these needs to be created per port of the PTP instance.
 pub struct Port<L, R> {
     config: PortConfig,
+    // PortDS port_identity
+    pub port_identity: PortIdentity,
     // Corresponds with PortDS port_state and enabled
     port_state: PortState,
     bmca: Bmca,
@@ -148,7 +151,7 @@ impl<'a, C: Clock, F: Filter, R: Rng> Port<Running<'a, C, F>, R> {
         let actions = self.port_state.handle_timestamp(
             context,
             timestamp,
-            self.config.port_identity,
+            self.port_identity,
             &self.lifecycle.state.default_ds,
             &mut self.packet_buffer,
         );
@@ -168,6 +171,7 @@ impl<'a, C: Clock, F: Filter, R: Rng> Port<Running<'a, C, F>, R> {
         self.port_state.send_announce(
             self.lifecycle.state.deref(),
             &self.config,
+            self.port_identity,
             &mut self.packet_buffer,
         )
     }
@@ -177,6 +181,7 @@ impl<'a, C: Clock, F: Filter, R: Rng> Port<Running<'a, C, F>, R> {
         self.port_state.send_sync(
             &self.lifecycle.state.local_clock,
             &self.config,
+            self.port_identity,
             &self.lifecycle.state.default_ds,
             &mut self.packet_buffer,
         )
@@ -227,7 +232,7 @@ impl<'a, C: Clock, F: Filter, R: Rng> Port<Running<'a, C, F>, R> {
             message,
             timestamp,
             self.config.min_delay_req_interval(),
-            self.config.port_identity,
+            self.port_identity,
             &self.lifecycle.state.default_ds,
             &mut self.packet_buffer,
         );
@@ -271,7 +276,7 @@ impl<'a, C: Clock, F: Filter, R: Rng> Port<Running<'a, C, F>, R> {
             }
             _ => {
                 self.port_state
-                    .handle_general_receive(message, self.config.port_identity);
+                    .handle_general_receive(message, self.port_identity);
                 actions![]
             }
         };
@@ -292,6 +297,7 @@ impl<'a, C: Clock, F: Filter, R: Rng> Port<Running<'a, C, F>, R> {
         Port {
             port_state: self.port_state,
             config: self.config,
+            port_identity: self.port_identity,
             bmca: self.bmca,
             rng: self.rng,
             packet_buffer: [0; MAX_DATA_LEN],
@@ -311,6 +317,7 @@ impl<'a, C, F, R> Port<InBmca<'a, C, F>, R> {
             Port {
                 port_state: self.port_state,
                 config: self.config,
+                port_identity: self.port_identity,
                 bmca: self.bmca,
                 rng: self.rng,
                 packet_buffer: [0; MAX_DATA_LEN],
@@ -328,7 +335,7 @@ impl<L, R> Port<L, R> {
     fn set_forced_port_state(&mut self, state: PortState) {
         log::info!(
             "new state for port {}: {} -> {}",
-            self.config.port_identity.port_number,
+            self.port_identity.port_number,
             self.port_state,
             state
         );
@@ -340,7 +347,7 @@ impl<L, R> Port<L, R> {
     }
 
     pub(crate) fn number(&self) -> u16 {
-        self.config.port_identity.port_number
+        self.port_identity.port_number
     }
 }
 
@@ -457,17 +464,16 @@ impl<'a, C, F, R: Rng> Port<InBmca<'a, C, F>, R> {
     pub(crate) fn new(
         state_refcell: &'a RefCell<PtpInstanceState<C, F>>,
         config: PortConfig,
+        port_identity: PortIdentity,
         mut rng: R,
     ) -> Self {
-        let bmca = Bmca::new(
-            config.announce_interval.as_duration().into(),
-            config.port_identity,
-        );
+        let bmca = Bmca::new(config.announce_interval.as_duration().into(), port_identity);
 
         let duration = config.announce_duration(&mut rng);
 
         Port {
             config,
+            port_identity,
             port_state: PortState::Listening,
             bmca,
             rng,

@@ -4,7 +4,7 @@ use crate::datastructures::{WireFormat, WireFormatError};
 ///
 /// Must have a unique value for each node in a ptp network. For notes on
 /// generating these, see IEEE1588-2019 section 7.5.2.2
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord, Hash)]
 pub struct ClockIdentity(pub [u8; 8]);
 
 impl WireFormat for ClockIdentity {

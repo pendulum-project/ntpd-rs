@@ -141,12 +141,12 @@ mod ptp_instance;
 mod time;
 
 pub use clock::{Clock, Timer};
-pub use config::{DelayMechanism, PortConfig};
+pub use config::{DelayMechanism, InstanceConfig, PortConfig};
 #[cfg(feature = "fuzz")]
 pub use datastructures::messages::Message;
 pub use datastructures::{
     common::{ClockAccuracy, ClockIdentity, ClockQuality, LeapIndicator, PortIdentity, TimeSource},
-    datasets::{DefaultDS, TimePropertiesDS},
+    datasets::TimePropertiesDS,
     messages::{SdoId, MAX_DATA_LEN},
 };
 pub use filters::{basic::BasicFilter, Filter};

@@ -362,6 +362,7 @@ impl SlaveState {
 mod tests {
     use super::*;
     use crate::{
+        config::InstanceConfig,
         datastructures::{
             common::{ClockIdentity, TimeInterval},
             messages::{Header, SdoId},
@@ -377,14 +378,14 @@ mod tests {
         state.mean_delay = Some(Duration::from_micros(100));
         state.next_delay_measurement = Some(Time::from_secs(10));
 
-        let defaultds = DefaultDS::new_ordinary_clock(
-            ClockIdentity::default(),
-            15,
-            128,
-            0,
-            false,
-            SdoId::default(),
-        );
+        let defaultds = DefaultDS::new(InstanceConfig {
+            clock_identity: ClockIdentity::default(),
+            priority_1: 15,
+            priority_2: 128,
+            domain_number: 0,
+            slave_only: false,
+            sdo_id: SdoId::default(),
+        });
 
         let mut action = state.handle_event_receive(
             Message::Sync(SyncMessage {
@@ -457,14 +458,14 @@ mod tests {
 
         let mut state = SlaveState::new(Default::default());
 
-        let defaultds = DefaultDS::new_ordinary_clock(
-            ClockIdentity::default(),
-            15,
-            128,
-            0,
-            false,
-            SdoId::default(),
-        );
+        let defaultds = DefaultDS::new(InstanceConfig {
+            clock_identity: ClockIdentity::default(),
+            priority_1: 15,
+            priority_2: 128,
+            domain_number: 0,
+            slave_only: false,
+            sdo_id: SdoId::default(),
+        });
 
         let mut action = state.handle_event_receive(
             Message::Sync(SyncMessage {
@@ -594,14 +595,14 @@ mod tests {
         state.mean_delay = Some(Duration::from_micros(100));
         state.next_delay_measurement = Some(Time::from_secs(10));
 
-        let defaultds = DefaultDS::new_ordinary_clock(
-            ClockIdentity::default(),
-            15,
-            128,
-            0,
-            false,
-            SdoId::default(),
-        );
+        let defaultds = DefaultDS::new(InstanceConfig {
+            clock_identity: ClockIdentity::default(),
+            priority_1: 15,
+            priority_2: 128,
+            domain_number: 0,
+            slave_only: false,
+            sdo_id: SdoId::default(),
+        });
 
         state.handle_general_receive(
             Message::FollowUp(FollowUpMessage {
@@ -651,14 +652,14 @@ mod tests {
         state.mean_delay = Some(Duration::from_micros(100));
         state.next_delay_measurement = Some(Time::from_secs(10));
 
-        let defaultds = DefaultDS::new_ordinary_clock(
-            ClockIdentity::default(),
-            15,
-            128,
-            0,
-            false,
-            SdoId::default(),
-        );
+        let defaultds = DefaultDS::new(InstanceConfig {
+            clock_identity: ClockIdentity::default(),
+            priority_1: 15,
+            priority_2: 128,
+            domain_number: 0,
+            slave_only: false,
+            sdo_id: SdoId::default(),
+        });
 
         let mut action = state.handle_event_receive(
             Message::Sync(SyncMessage {
@@ -716,14 +717,14 @@ mod tests {
         state.mean_delay = Some(Duration::from_micros(100));
         state.next_delay_measurement = Some(Time::from_secs(10));
 
-        let defaultds = DefaultDS::new_ordinary_clock(
-            ClockIdentity::default(),
-            15,
-            128,
-            0,
-            false,
-            SdoId::default(),
-        );
+        let defaultds = DefaultDS::new(InstanceConfig {
+            clock_identity: ClockIdentity::default(),
+            priority_1: 15,
+            priority_2: 128,
+            domain_number: 0,
+            slave_only: false,
+            sdo_id: SdoId::default(),
+        });
 
         let mut action = state.handle_event_receive(
             Message::Sync(SyncMessage {
@@ -791,14 +792,14 @@ mod tests {
 
         let mut state = SlaveState::new(Default::default());
 
-        let defaultds = DefaultDS::new_ordinary_clock(
-            ClockIdentity::default(),
-            15,
-            128,
-            0,
-            false,
-            SdoId::default(),
-        );
+        let defaultds = DefaultDS::new(InstanceConfig {
+            clock_identity: ClockIdentity::default(),
+            priority_1: 15,
+            priority_2: 128,
+            domain_number: 0,
+            slave_only: false,
+            sdo_id: SdoId::default(),
+        });
 
         let mut action = state.handle_event_receive(
             Message::Sync(SyncMessage {

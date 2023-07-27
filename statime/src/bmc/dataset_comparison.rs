@@ -14,7 +14,7 @@ use crate::datastructures::{
 /// used to find out which source is better according to the dataset comparison
 /// algorithm.
 #[derive(Eq, PartialEq, Default, Debug)]
-pub struct ComparisonDataset {
+pub(crate) struct ComparisonDataset {
     gm_priority_1: u8,
     gm_identity: ClockIdentity,
     gm_clock_quality: ClockQuality,
@@ -27,7 +27,7 @@ pub struct ComparisonDataset {
 impl ComparisonDataset {
     /// Create a ComparisonDataset from the data in an announce message and the
     /// port identity of the port that received the announce message
-    pub fn from_announce_message(
+    pub(crate) fn from_announce_message(
         message: &AnnounceMessage,
         port_receiver_identity: &PortIdentity,
     ) -> Self {
@@ -42,7 +42,7 @@ impl ComparisonDataset {
         }
     }
 
-    pub fn from_own_data(data: &DefaultDS) -> Self {
+    pub(crate) fn from_own_data(data: &DefaultDS) -> Self {
         Self {
             gm_priority_1: data.priority_1,
             gm_identity: data.clock_identity,
@@ -58,7 +58,7 @@ impl ComparisonDataset {
     }
 
     /// Returns the ordering of `self` in comparison to other.
-    pub fn compare(&self, other: &Self) -> DatasetOrdering {
+    pub(crate) fn compare(&self, other: &Self) -> DatasetOrdering {
         if self.gm_identity == other.gm_identity {
             Self::compare_same_identity(self, other)
         } else {

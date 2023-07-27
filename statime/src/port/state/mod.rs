@@ -79,15 +79,18 @@ impl PortState {
         }
     }
 
-    pub fn send_sync<'a>(
+    pub(crate) fn send_sync<'a>(
         &mut self,
         local_clock: &RefCell<impl Clock>,
         config: &PortConfig,
+        port_identity: PortIdentity,
         default_ds: &DefaultDS,
         buffer: &'a mut [u8],
     ) -> PortActionIterator<'a> {
         match self {
-            PortState::Master(master) => master.send_sync(local_clock, config, default_ds, buffer),
+            PortState::Master(master) => {
+                master.send_sync(local_clock, config, port_identity, default_ds, buffer)
+            }
             PortState::Slave(_) | PortState::Listening | PortState::Passive => {
                 actions![]
             }
@@ -98,10 +101,13 @@ impl PortState {
         &mut self,
         global: &PtpInstanceState<C, F>,
         config: &PortConfig,
+        port_identity: PortIdentity,
         buffer: &'a mut [u8],
     ) -> PortActionIterator<'a> {
         match self {
-            PortState::Master(master) => master.send_announce(global, config, buffer),
+            PortState::Master(master) => {
+                master.send_announce(global, config, port_identity, buffer)
+            }
             PortState::Slave(_) | PortState::Listening | PortState::Passive => actions![],
         }
     }

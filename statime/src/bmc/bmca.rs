@@ -136,7 +136,7 @@ impl Bmca {
     ///
     /// If None is returned, then the port should remain in the same state as it
     /// is now.
-    pub fn calculate_recommended_state(
+    pub(crate) fn calculate_recommended_state(
         own_data: &DefaultDS,
         best_global_announce_message: Option<BestAnnounceMessage>,
         best_port_announce_message: Option<BestAnnounceMessage>,
@@ -248,7 +248,7 @@ impl BestAnnounceMessage {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum RecommendedState {
+pub(crate) enum RecommendedState {
     M1(DefaultDS),
     M2(DefaultDS),
     M3(AnnounceMessage),
@@ -262,6 +262,7 @@ pub enum RecommendedState {
 mod tests {
     use super::*;
     use crate::{
+        config::InstanceConfig,
         datastructures::messages::{Header, PtpVersion},
         ClockIdentity,
     };
@@ -384,14 +385,14 @@ mod tests {
         let slave_only = false;
         let sdo_id = Default::default();
 
-        DefaultDS::new_ordinary_clock(
+        DefaultDS::new(InstanceConfig {
             clock_identity,
             priority_1,
             priority_2,
             domain_number,
             slave_only,
             sdo_id,
-        )
+        })
     }
 
     #[test]
@@ -424,14 +425,14 @@ mod tests {
         let slave_only = false;
         let sdo_id = Default::default();
 
-        let mut own_data = DefaultDS::new_ordinary_clock(
+        let mut own_data = DefaultDS::new(InstanceConfig {
             clock_identity,
             priority_1,
             priority_2,
             domain_number,
             slave_only,
             sdo_id,
-        );
+        });
 
         own_data.clock_quality.clock_class = 1;
         assert!((1..=127).contains(&own_data.clock_quality.clock_class));

@@ -146,7 +146,7 @@ impl Default for Header {
 /// A wrapper type for PTP Sdo Identifiers.
 ///
 /// This is a separate type as sdo identifiers should be in the range 0-4095
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub struct SdoId(u16);
 
 impl core::fmt::Display for SdoId {

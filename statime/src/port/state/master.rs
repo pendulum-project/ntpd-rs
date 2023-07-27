@@ -85,6 +85,7 @@ impl MasterState {
         &mut self,
         local_clock: &RefCell<impl Clock>,
         config: &PortConfig,
+        port_identity: PortIdentity,
         default_ds: &DefaultDS,
         buffer: &'a mut [u8],
     ) -> PortActionIterator<'a> {
@@ -104,7 +105,7 @@ impl MasterState {
             .domain_number(default_ds.domain_number)
             .two_step_flag(true)
             .sequence_id(seq_id)
-            .source_port_identity(config.port_identity)
+            .source_port_identity(port_identity)
             .sync_message(current_time.into())
             .serialize(buffer)
         {
@@ -132,6 +133,7 @@ impl MasterState {
         &mut self,
         global: &PtpInstanceState<C, F>,
         config: &PortConfig,
+        port_identity: PortIdentity,
         buffer: &'a mut [u8],
     ) -> PortActionIterator<'a> {
         log::trace!("sending announce message");
@@ -153,7 +155,7 @@ impl MasterState {
             .time_tracable(global.time_properties_ds.time_traceable)
             .frequency_tracable(global.time_properties_ds.frequency_traceable)
             .sequence_id(self.announce_seq_ids.generate())
-            .source_port_identity(config.port_identity)
+            .source_port_identity(port_identity)
             .announce_message(
                 current_time.into(), // origin_timestamp: Timestamp,
                 global.time_properties_ds.current_utc_offset,
@@ -253,6 +255,7 @@ mod tests {
 
     use super::*;
     use crate::{
+        config::InstanceConfig,
         datastructures::{
             common::{ClockIdentity, TimeInterval},
             datasets::{CurrentDS, ParentDS},
@@ -387,14 +390,14 @@ mod tests {
     fn test_announce() {
         let mut buffer = [0u8; MAX_DATA_LEN];
 
-        let default_ds = DefaultDS::new_ordinary_clock(
-            ClockIdentity::default(),
-            15,
-            128,
-            0,
-            false,
-            SdoId::default(),
-        );
+        let default_ds = DefaultDS::new(InstanceConfig {
+            clock_identity: ClockIdentity::default(),
+            priority_1: 15,
+            priority_2: 128,
+            domain_number: 0,
+            slave_only: false,
+            sdo_id: SdoId::default(),
+        });
         let mut parent_ds = ParentDS::new(default_ds);
         parent_ds.grandmaster_priority_1 = 15;
         let current_ds = CurrentDS::default();
@@ -411,7 +414,6 @@ mod tests {
         };
 
         let config = PortConfig {
-            port_identity: PortIdentity::default(),
             delay_mechanism: crate::DelayMechanism::E2E {
                 interval: Interval::TWO_SECONDS,
             },
@@ -423,7 +425,8 @@ mod tests {
         };
         let mut state = MasterState::new();
 
-        let mut actions = state.send_announce(&global, &config, &mut buffer);
+        let mut actions =
+            state.send_announce(&global, &config, PortIdentity::default(), &mut buffer);
 
         assert!(matches!(
             actions.next(),
@@ -442,7 +445,8 @@ mod tests {
 
         assert_eq!(msg.grandmaster_priority_1, 15);
 
-        let mut actions = state.send_announce(&global, &config, &mut buffer);
+        let mut actions =
+            state.send_announce(&global, &config, PortIdentity::default(), &mut buffer);
 
         assert!(matches!(
             actions.next(),
@@ -466,7 +470,6 @@ mod tests {
     fn test_sync() {
         let mut buffer = [0u8; MAX_DATA_LEN];
         let config = PortConfig {
-            port_identity: PortIdentity::default(),
             delay_mechanism: crate::DelayMechanism::E2E {
                 interval: Interval::TWO_SECONDS,
             },
@@ -482,16 +485,22 @@ mod tests {
         });
 
         let mut state = MasterState::new();
-        let defaultds = DefaultDS::new_ordinary_clock(
-            ClockIdentity::default(),
-            15,
-            128,
-            0,
-            false,
-            SdoId::default(),
-        );
+        let defaultds = DefaultDS::new(InstanceConfig {
+            clock_identity: ClockIdentity::default(),
+            priority_1: 15,
+            priority_2: 128,
+            domain_number: 0,
+            slave_only: false,
+            sdo_id: SdoId::default(),
+        });
 
-        let mut actions = state.send_sync(&clock, &config, &defaultds, &mut buffer);
+        let mut actions = state.send_sync(
+            &clock,
+            &config,
+            PortIdentity::default(),
+            &defaultds,
+            &mut buffer,
+        );
 
         assert!(matches!(
             actions.next(),
@@ -511,7 +520,7 @@ mod tests {
         let mut actions = state.handle_timestamp(
             context,
             Time::from_fixed_nanos(U96F32::from_bits((601300 << 32) + (230 << 16))),
-            config.port_identity,
+            PortIdentity::default(),
             &defaultds,
             &mut buffer,
         );
@@ -544,7 +553,13 @@ mod tests {
 
         clock.borrow_mut().current_time =
             Time::from_fixed_nanos(U96F32::from_bits((1000600000 << 32) + (192 << 16)));
-        let mut actions = state.send_sync(&clock, &config, &defaultds, &mut buffer);
+        let mut actions = state.send_sync(
+            &clock,
+            &config,
+            PortIdentity::default(),
+            &defaultds,
+            &mut buffer,
+        );
 
         assert!(matches!(
             actions.next(),
@@ -564,7 +579,7 @@ mod tests {
         let mut actions = state.handle_timestamp(
             context,
             Time::from_fixed_nanos(U96F32::from_bits((1000601300 << 32) + (543 << 16))),
-            config.port_identity,
+            PortIdentity::default(),
             &defaultds,
             &mut buffer,
         );
