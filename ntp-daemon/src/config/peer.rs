@@ -23,8 +23,11 @@ pub struct StandardPeerConfig {
 pub struct NtsPeerConfig {
     #[serde(rename = "address")]
     pub ke_addr: NtsKeAddress,
-    #[serde(deserialize_with = "deserialize_certificates")]
-    #[serde(default = "default_certificates")]
+    #[serde(
+        deserialize_with = "deserialize_certificates",
+        default = "default_certificates",
+        rename = "certificate"
+    )]
     pub certificates: Arc<[Certificate]>,
 }
 
