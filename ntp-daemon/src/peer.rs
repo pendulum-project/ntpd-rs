@@ -692,12 +692,10 @@ mod tests {
 
         let rec_packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap().0;
         let send_packet = NtpPacket::deny_response(rec_packet);
-
         let serialized = serialize_packet_unencryped(&send_packet);
-        dbg!("got here");
+        
         socket.send(&serialized).await.unwrap();
 
-        dbg!("got here");
         let msg = msg_recv.recv().await.unwrap();
         assert!(matches!(msg, MsgForSystem::MustDemobilize(_)));
 

@@ -243,13 +243,13 @@ mod tests {
             server: ServerConfig,
         }
 
-        let test: TestConfig = dbg!(toml::from_str(
+        let test: TestConfig = toml::from_str(
             r#"
             [server]
             listen = "0.0.0.0:123"
             "#,
         )
-        .unwrap());
+        .unwrap();
         println!("{:?}", IpFilter::all());
         assert_eq!(test.server.addr, "0.0.0.0:123".parse().unwrap());
         // Defaults
