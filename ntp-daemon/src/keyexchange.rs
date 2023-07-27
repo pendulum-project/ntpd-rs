@@ -115,7 +115,6 @@ async fn key_exchange_server(
 ) -> std::io::Result<()> {
     use std::io;
 
-    dbg!("listening");
     let listener = TcpListener::bind(&address).await?;
 
     let mut config = rustls::ServerConfig::builder()
