@@ -51,11 +51,11 @@ fn default_certificates() -> Arc<[Certificate]> {
 }
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct PoolPeerConfig {
     #[serde(rename = "address")]
     pub addr: NtpAddress,
-    #[serde(default = "max_peers_default")]
+    #[serde(rename = "count", default = "max_peers_default")]
     pub max_peers: usize,
 }
 
@@ -374,7 +374,7 @@ mod tests {
             [peer]
             address = "example.com"
             mode = "pool"
-            max-peers = 42
+            count = 42
             "#,
         )
         .unwrap();

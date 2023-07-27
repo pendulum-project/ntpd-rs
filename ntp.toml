@@ -6,13 +6,13 @@ log-filter = "info"
 [[peers]]
 mode = "pool"
 address = "ntpd-rs.pool.ntp.org"
-max-peers = 4
+count = 4
 
 # Alternative configuration for IPv6 only machines
 #[[peers]]
 #mode = "pool"
 #addr = "2.pool.ntp.org"
-#max-peers = 4
+#count = 4
 
 [observe]
 path = "/run/ntpd-rs/observe"

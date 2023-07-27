@@ -125,7 +125,7 @@ Peers are configured in the peers section, which should consist of a list of pee
 | --- | --- | --- |
 | mode | server | Type of peer connection to create. Can be any of `simple`, `nts` or `pool` (for meaning of these, see below). |
 | address | | Address of the server, pool or nts server. The default port (123 for `simple` or `pool`, 4460 for `nts`) is automatically appended if not given. |
-| max-peers | 4 | Maximum number of peers to create from the pool. (only valid for pools) |
+| count | 4 | Maximum number of peers to create from the pool. (only valid for pools) |
 | certificates | | Path to a pem file containing additional root certificates to accept for the TLS connection to the nts server. In addition to these certificates, the system certificates will also be accepted. (only valid for nts connections) |
 
 ##### Simple peers
@@ -162,7 +162,7 @@ An example configuration for the ntppool.org ntp pool can look like
 [[peers]]
 address = "pool.ntp.org"
 mode = "pool"
-max-peers = 4
+count = 4
 ```
 
 #### Server

@@ -10,7 +10,7 @@ log-filter = "info"
 [[peers]]
 mode = "pool"
 address = "ntpd-rs.pool.ntp.org"
-max-peers = 4
+count = 4
 
 ## If you have an NTS server, you can configure a peer that connects using NTS
 ## by adding a configuration such as the one below
