@@ -4,6 +4,7 @@ use core::{
 };
 
 pub use master::MasterState;
+use rand::Rng;
 pub use slave::SlaveState;
 
 use super::{Measurement, PortActionIterator, TimestampContext};
@@ -51,7 +52,6 @@ impl PortState {
         timestamp: Time,
         min_delay_req_interval: Interval,
         port_identity: PortIdentity,
-        default_ds: &DefaultDS,
         buffer: &'a mut [u8],
     ) -> PortActionIterator<'a> {
         match self {
@@ -62,9 +62,7 @@ impl PortState {
                 port_identity,
                 buffer,
             ),
-            PortState::Slave(slave) => {
-                slave.handle_event_receive(message, timestamp, port_identity, default_ds, buffer)
-            }
+            PortState::Slave(slave) => slave.handle_event_receive(message, timestamp),
             PortState::Listening | PortState::Passive => actions![],
         }
     }
@@ -94,6 +92,24 @@ impl PortState {
                 master.send_sync(local_clock, config, port_identity, default_ds, buffer)
             }
             PortState::Slave(_) | PortState::Listening | PortState::Passive => {
+                actions![]
+            }
+        }
+    }
+
+    pub(crate) fn send_delay_request<'a>(
+        &mut self,
+        rng: &mut impl Rng,
+        port_config: &PortConfig,
+        port_identity: PortIdentity,
+        default_ds: &DefaultDS,
+        buffer: &'a mut [u8],
+    ) -> PortActionIterator<'a> {
+        match self {
+            PortState::Slave(slave) => {
+                slave.send_delay_request(rng, port_config, port_identity, default_ds, buffer)
+            }
+            PortState::Master(_) | PortState::Listening | PortState::Passive => {
                 actions![]
             }
         }

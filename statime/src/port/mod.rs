@@ -111,6 +111,9 @@ pub enum PortAction<'a> {
     ResetSyncTimer {
         duration: core::time::Duration,
     },
+    ResetDelayRequestTimer {
+        duration: core::time::Duration,
+    },
     ResetAnnounceReceiptTimer {
         duration: core::time::Duration,
     },
@@ -187,7 +190,18 @@ impl<'a, C: Clock, F: Filter, R: Rng> Port<Running<'a, C, F>, R> {
         )
     }
 
-    // Handle the announce receipt timer going of
+    // Handle the sync timer going of
+    pub fn handle_delay_request_timer(&mut self) -> PortActionIterator<'_> {
+        self.port_state.send_delay_request(
+            &mut self.rng,
+            &self.config,
+            self.port_identity,
+            &self.lifecycle.state.default_ds,
+            &mut self.packet_buffer,
+        )
+    }
+
+    // Handle the announce receipt timer going off
     pub fn handle_announce_receipt_timer(&mut self) -> PortActionIterator<'_> {
         // we didn't hear announce messages from other masters, so become master
         // ourselves
@@ -233,7 +247,6 @@ impl<'a, C: Clock, F: Filter, R: Rng> Port<Running<'a, C, F>, R> {
             timestamp,
             self.config.min_delay_req_interval(),
             self.port_identity,
-            &self.lifecycle.state.default_ds,
             &mut self.packet_buffer,
         );
 

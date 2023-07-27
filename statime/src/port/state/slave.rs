@@ -1,3 +1,5 @@
+use rand::Rng;
+
 use crate::{
     datastructures::{
         common::PortIdentity,
@@ -9,6 +11,7 @@ use crate::{
         TimestampContext, TimestampContextInner,
     },
     time::{Duration, Time},
+    DelayMechanism, PortConfig,
 };
 
 #[derive(Debug)]
@@ -112,9 +115,6 @@ impl SlaveState {
         &mut self,
         message: Message,
         timestamp: Time,
-        port_identity: PortIdentity,
-        default_ds: &DefaultDS,
-        buffer: &'a mut [u8],
     ) -> PortActionIterator<'a> {
         // Ignore everything not from master
         if message.header().source_port_identity() != self.remote_master {
@@ -122,9 +122,7 @@ impl SlaveState {
         }
 
         match message {
-            Message::Sync(message) => {
-                self.handle_sync(message, timestamp, port_identity, default_ds, buffer)
-            }
+            Message::Sync(message) => self.handle_sync(message, timestamp),
             _ => {
                 log::warn!("Unexpected message {:?}", message);
                 actions![]
@@ -157,14 +155,7 @@ impl SlaveState {
         }
     }
 
-    fn handle_sync<'a>(
-        &mut self,
-        message: SyncMessage,
-        recv_time: Time,
-        port_identity: PortIdentity,
-        default_ds: &DefaultDS,
-        buffer: &'a mut [u8],
-    ) -> PortActionIterator<'a> {
+    fn handle_sync<'a>(&mut self, message: SyncMessage, recv_time: Time) -> PortActionIterator<'a> {
         log::debug!("Received sync {:?}", message.header().sequence_id());
 
         // substracting correction from recv time is equivalent to adding it to send
@@ -212,32 +203,56 @@ impl SlaveState {
 
         self.update_last_raw_offset();
 
-        if self.mean_delay.is_none() || self.next_delay_measurement.unwrap_or_default() < recv_time
-        {
-            log::debug!("Starting new delay measurement");
-            let delay_id = self.delay_req_ids.generate();
-            let delay_req = Message::delay_req(default_ds, port_identity, delay_id);
-            let message_length = match delay_req.serialize(buffer) {
-                Ok(length) => length,
-                Err(error) => {
-                    log::error!("Could not serialize delay request: {:?}", error);
-                    return actions![];
-                }
-            };
-            self.delay_state = DelayState::Measuring {
-                id: delay_id,
-                send_time: None,
-                recv_time: None,
-            };
-            actions![PortAction::SendTimeCritical {
+        actions![]
+    }
+
+    pub(crate) fn send_delay_request<'a>(
+        &mut self,
+        rng: &mut impl Rng,
+        port_config: &PortConfig,
+        port_identity: PortIdentity,
+        default_ds: &DefaultDS,
+        buffer: &'a mut [u8],
+    ) -> PortActionIterator<'a> {
+        log::debug!("Starting new delay measurement");
+
+        let delay_id = self.delay_req_ids.generate();
+        let delay_req = Message::delay_req(default_ds, port_identity, delay_id);
+
+        let message_length = match delay_req.serialize(buffer) {
+            Ok(length) => length,
+            Err(error) => {
+                log::error!("Could not serialize delay request: {:?}", error);
+                return actions![];
+            }
+        };
+
+        self.delay_state = DelayState::Measuring {
+            id: delay_id,
+            send_time: None,
+            recv_time: None,
+        };
+
+        let random = rng.sample::<f64, _>(rand::distributions::Open01);
+        let log_min_delay_req_interval = match port_config.delay_mechanism {
+            // the interval corresponds to the PortDS logMinDelayReqInterval
+            DelayMechanism::E2E { interval } => interval,
+        };
+        let log_sync_interval = port_config.sync_interval.as_log_2() as i32;
+        let factor = random * 2.0f64.powi(log_sync_interval + 1);
+        let duration = log_min_delay_req_interval
+            .as_core_duration()
+            .mul_f64(factor);
+
+        actions![
+            PortAction::ResetDelayRequestTimer { duration },
+            PortAction::SendTimeCritical {
                 context: TimestampContext {
                     inner: TimestampContextInner::DelayReq { id: delay_id },
                 },
                 data: &buffer[..message_length],
-            }]
-        } else {
-            actions![]
-        }
+            }
+        ]
     }
 
     fn handle_follow_up(&mut self, message: FollowUpMessage) {
@@ -361,25 +376,14 @@ mod tests {
             common::{ClockIdentity, TimeInterval},
             messages::{Header, SdoId},
         },
-        MAX_DATA_LEN,
+        Interval, MAX_DATA_LEN,
     };
 
     #[test]
     fn test_sync_without_delay_msg() {
-        let mut buffer = [0u8; MAX_DATA_LEN];
-
         let mut state = SlaveState::new(Default::default());
         state.mean_delay = Some(Duration::from_micros(100));
         state.next_delay_measurement = Some(Time::from_secs(10));
-
-        let defaultds = DefaultDS::new(InstanceConfig {
-            clock_identity: ClockIdentity::default(),
-            priority_1: 15,
-            priority_2: 128,
-            domain_number: 0,
-            slave_only: false,
-            sdo_id: SdoId::default(),
-        });
 
         let mut action = state.handle_event_receive(
             Message::Sync(SyncMessage {
@@ -391,9 +395,6 @@ mod tests {
                 origin_timestamp: Time::from_micros(0).into(),
             }),
             Time::from_micros(50),
-            PortIdentity::default(),
-            &defaultds,
-            &mut buffer,
         );
 
         assert!(action.next().is_none());
@@ -417,9 +418,6 @@ mod tests {
                 origin_timestamp: Time::from_micros(0).into(),
             }),
             Time::from_micros(1050),
-            PortIdentity::default(),
-            &defaultds,
-            &mut buffer,
         );
 
         assert!(action.next().is_none());
@@ -448,18 +446,7 @@ mod tests {
 
     #[test]
     fn test_sync_with_delay() {
-        let mut buffer = [0u8; MAX_DATA_LEN];
-
         let mut state = SlaveState::new(Default::default());
-
-        let defaultds = DefaultDS::new(InstanceConfig {
-            clock_identity: ClockIdentity::default(),
-            priority_1: 15,
-            priority_2: 128,
-            domain_number: 0,
-            slave_only: false,
-            sdo_id: SdoId::default(),
-        });
 
         let mut action = state.handle_event_receive(
             Message::Sync(SyncMessage {
@@ -471,10 +458,45 @@ mod tests {
                 origin_timestamp: Time::from_micros(0).into(),
             }),
             Time::from_micros(50),
-            PortIdentity::default(),
-            &defaultds,
+        );
+
+        assert!(action.next().is_none());
+
+        let mut buffer = [0u8; MAX_DATA_LEN];
+        let default_ds = DefaultDS::new(InstanceConfig {
+            clock_identity: ClockIdentity::default(),
+            priority_1: 15,
+            priority_2: 128,
+            domain_number: 0,
+            slave_only: false,
+            sdo_id: SdoId::default(),
+        });
+
+        // mock rng and port config
+        let mut rng = rand::rngs::mock::StepRng::new(2, 1);
+        let port_identity = Default::default();
+        let port_config = PortConfig {
+            delay_mechanism: DelayMechanism::E2E {
+                interval: Interval::ONE_SECOND,
+            },
+            announce_interval: Interval::ONE_SECOND,
+            announce_receipt_timeout: Default::default(),
+            sync_interval: Interval::ONE_SECOND,
+            master_only: Default::default(),
+            delay_asymmetry: Default::default(),
+        };
+
+        let mut action = state.send_delay_request(
+            &mut rng,
+            &port_config,
+            port_identity,
+            &default_ds,
             &mut buffer,
         );
+
+        let Some(PortAction::ResetDelayRequestTimer { .. }) = action.next() else {
+            panic!("Unexpected action");
+        };
 
         let Some(PortAction::SendTimeCritical { context, data }) = action.next() else {
             panic!("Unexpected action");
@@ -526,10 +548,21 @@ mod tests {
                 origin_timestamp: Time::from_micros(0).into(),
             }),
             Time::from_micros(1050),
-            PortIdentity::default(),
-            &defaultds,
+        );
+
+        assert!(action.next().is_none());
+
+        let mut action = state.send_delay_request(
+            &mut rng,
+            &port_config,
+            port_identity,
+            &default_ds,
             &mut buffer,
         );
+
+        let Some(PortAction::ResetDelayRequestTimer { .. }) = action.next() else {
+            panic!("Unexpected action");
+        };
 
         let Some(PortAction::SendTimeCritical { context, data }) = action.next() else {
             panic!("Unexpected action");
@@ -583,20 +616,9 @@ mod tests {
 
     #[test]
     fn test_follow_up_before_sync() {
-        let mut buffer = [0u8; MAX_DATA_LEN];
-
         let mut state = SlaveState::new(Default::default());
         state.mean_delay = Some(Duration::from_micros(100));
         state.next_delay_measurement = Some(Time::from_secs(10));
-
-        let defaultds = DefaultDS::new(InstanceConfig {
-            clock_identity: ClockIdentity::default(),
-            priority_1: 15,
-            priority_2: 128,
-            domain_number: 0,
-            slave_only: false,
-            sdo_id: SdoId::default(),
-        });
 
         state.handle_general_receive(
             Message::FollowUp(FollowUpMessage {
@@ -623,9 +645,6 @@ mod tests {
                 origin_timestamp: Time::from_micros(0).into(),
             }),
             Time::from_micros(50),
-            PortIdentity::default(),
-            &defaultds,
-            &mut buffer,
         );
 
         assert!(action.next().is_none());
@@ -640,20 +659,9 @@ mod tests {
 
     #[test]
     fn test_old_followup_during() {
-        let mut buffer = [0u8; MAX_DATA_LEN];
-
         let mut state = SlaveState::new(Default::default());
         state.mean_delay = Some(Duration::from_micros(100));
         state.next_delay_measurement = Some(Time::from_secs(10));
-
-        let defaultds = DefaultDS::new(InstanceConfig {
-            clock_identity: ClockIdentity::default(),
-            priority_1: 15,
-            priority_2: 128,
-            domain_number: 0,
-            slave_only: false,
-            sdo_id: SdoId::default(),
-        });
 
         let mut action = state.handle_event_receive(
             Message::Sync(SyncMessage {
@@ -666,9 +674,6 @@ mod tests {
                 origin_timestamp: Time::from_micros(0).into(),
             }),
             Time::from_micros(50),
-            PortIdentity::default(),
-            &defaultds,
-            &mut buffer,
         );
 
         assert!(action.next().is_none());
@@ -705,20 +710,9 @@ mod tests {
 
     #[test]
     fn test_reset_after_missing_followup() {
-        let mut buffer = [0u8; MAX_DATA_LEN];
-
         let mut state = SlaveState::new(Default::default());
         state.mean_delay = Some(Duration::from_micros(100));
         state.next_delay_measurement = Some(Time::from_secs(10));
-
-        let defaultds = DefaultDS::new(InstanceConfig {
-            clock_identity: ClockIdentity::default(),
-            priority_1: 15,
-            priority_2: 128,
-            domain_number: 0,
-            slave_only: false,
-            sdo_id: SdoId::default(),
-        });
 
         let mut action = state.handle_event_receive(
             Message::Sync(SyncMessage {
@@ -731,9 +725,6 @@ mod tests {
                 origin_timestamp: Time::from_micros(0).into(),
             }),
             Time::from_micros(50),
-            PortIdentity::default(),
-            &defaultds,
-            &mut buffer,
         );
 
         assert!(action.next().is_none());
@@ -751,9 +742,6 @@ mod tests {
                 origin_timestamp: Time::from_micros(0).into(),
             }),
             Time::from_micros(1050),
-            PortIdentity::default(),
-            &defaultds,
-            &mut buffer,
         );
 
         assert!(action.next().is_none());
@@ -782,18 +770,7 @@ mod tests {
 
     #[test]
     fn test_ignore_unrelated_delayresp() {
-        let mut buffer = [0u8; MAX_DATA_LEN];
-
         let mut state = SlaveState::new(Default::default());
-
-        let defaultds = DefaultDS::new(InstanceConfig {
-            clock_identity: ClockIdentity::default(),
-            priority_1: 15,
-            priority_2: 128,
-            domain_number: 0,
-            slave_only: false,
-            sdo_id: SdoId::default(),
-        });
 
         let mut action = state.handle_event_receive(
             Message::Sync(SyncMessage {
@@ -805,22 +782,59 @@ mod tests {
                 origin_timestamp: Time::from_micros(0).into(),
             }),
             Time::from_micros(50),
-            PortIdentity::default(),
-            &defaultds,
+        );
+
+        // DelayReq is sent independently
+        assert!(action.next().is_none());
+
+        let mut buffer = [0u8; MAX_DATA_LEN];
+
+        let default_ds = DefaultDS::new(InstanceConfig {
+            clock_identity: ClockIdentity::default(),
+            priority_1: 15,
+            priority_2: 128,
+            domain_number: 0,
+            slave_only: false,
+            sdo_id: SdoId::default(),
+        });
+
+        // mock rng and port config
+        let mut rng = rand::rngs::mock::StepRng::new(2, 1);
+        let port_identity = Default::default();
+        let port_config = PortConfig {
+            delay_mechanism: DelayMechanism::E2E {
+                interval: Interval::ONE_SECOND,
+            },
+            announce_interval: Interval::ONE_SECOND,
+            announce_receipt_timeout: Default::default(),
+            sync_interval: Interval::ONE_SECOND,
+            master_only: Default::default(),
+            delay_asymmetry: Default::default(),
+        };
+
+        let mut action = state.send_delay_request(
+            &mut rng,
+            &port_config,
+            port_identity,
+            &default_ds,
             &mut buffer,
         );
+
+        let Some(PortAction::ResetDelayRequestTimer { .. }) = action.next() else {
+            panic!("Unexpected action");
+        };
 
         let Some(PortAction::SendTimeCritical { context, data }) = action.next() else {
             panic!("Unexpected action");
         };
-        assert!(action.next().is_none());
 
         let mut action = state.handle_timestamp(context, Time::from_micros(100));
+
         assert!(action.next().is_none());
 
         assert_eq!(state.extract_measurement(), None);
 
-        let req = match Message::deserialize(&data).unwrap() {
+        let req = match Message::deserialize(data).unwrap() {
             Message::DelayReq(msg) => msg,
             _ => panic!("Incorrect message type"),
         };
@@ -872,6 +886,7 @@ mod tests {
         );
 
         assert_eq!(state.mean_delay, Some(Duration::from_micros(100)));
+
         assert_eq!(
             state.extract_measurement(),
             Some(Measurement {

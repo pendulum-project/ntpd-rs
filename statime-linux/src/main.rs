@@ -240,6 +240,7 @@ async fn actual_main() {
     let mut port_sync_timer = pin!(Timer::new());
     let mut port_announce_timer = pin!(Timer::new());
     let mut port_announce_timeout_timer = pin!(Timer::new());
+    let mut delay_request_timer = pin!(Timer::new());
 
     let mut network_port = network_runtime.open(args.interface).await.unwrap();
 
@@ -256,6 +257,7 @@ async fn actual_main() {
             &mut port_announce_timer,
             &mut port_sync_timer,
             &mut port_announce_timeout_timer,
+            &mut delay_request_timer,
             &mut local_clock,
         )
         .await;
@@ -267,6 +269,7 @@ async fn actual_main() {
                 &mut port_announce_timer,
                 &mut port_sync_timer,
                 &mut port_announce_timeout_timer,
+                &mut delay_request_timer,
                 &mut local_clock,
             )
             .await;
@@ -294,6 +297,9 @@ async fn actual_main() {
                 () = &mut port_announce_timeout_timer => {
                     port.handle_announce_receipt_timer()
                 },
+                () = &mut delay_request_timer => {
+                    port.handle_delay_request_timer()
+                },
                 () = &mut bmca_timer => {
                     break;
                 }
@@ -306,6 +312,7 @@ async fn actual_main() {
                     &mut port_announce_timer,
                     &mut port_sync_timer,
                     &mut port_announce_timeout_timer,
+                    &mut delay_request_timer,
                     &mut local_clock,
                 )
                 .await;
@@ -330,6 +337,7 @@ async fn handle_actions(
     port_announce_timer: &mut Pin<&mut Timer>,
     port_sync_timer: &mut Pin<&mut Timer>,
     port_announce_timeout_timer: &mut Pin<&mut Timer>,
+    delay_request_timer: &mut Pin<&mut Timer>,
     local_clock: &mut LinuxClock,
 ) -> Option<(TimestampContext, Time)> {
     let mut pending_timestamp = None;
@@ -355,6 +363,9 @@ async fn handle_actions(
             }
             PortAction::ResetSyncTimer { duration } => {
                 port_sync_timer.as_mut().reset(duration);
+            }
+            PortAction::ResetDelayRequestTimer { duration } => {
+                delay_request_timer.as_mut().reset(duration);
             }
             PortAction::ResetAnnounceReceiptTimer { duration } => {
                 port_announce_timeout_timer.as_mut().reset(duration);
