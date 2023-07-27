@@ -12,13 +12,14 @@ use serde::{de, Deserialize, Deserializer};
 use crate::keyexchange::certificates_from_file;
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct StandardPeerConfig {
     #[serde(rename = "address")]
     pub addr: NtpAddress,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct NtsPeerConfig {
     #[serde(rename = "address")]
     pub ke_addr: NtsKeAddress,
