@@ -47,6 +47,7 @@ fn default_old_keys() -> usize {
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum FilterAction {
     Ignore,
     Deny,
@@ -109,9 +110,9 @@ impl<'de> Deserialize<'de> for ServerConfig {
                 let mut denylist_action = None;
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
-                        "addr" => {
+                        "listen" => {
                             if addr.is_some() {
-                                return Err(de::Error::duplicate_field("addr"));
+                                return Err(de::Error::duplicate_field("listen"));
                             }
                             addr = Some(map.next_value::<SocketAddr>()?);
                         }
@@ -159,7 +160,7 @@ impl<'de> Deserialize<'de> for ServerConfig {
                             return Err(de::Error::unknown_field(
                                 key.as_str(),
                                 &[
-                                    "addr",
+                                    "listen",
                                     "allowlist",
                                     "allowlist-action",
                                     "denylist",
@@ -172,22 +173,30 @@ impl<'de> Deserialize<'de> for ServerConfig {
                     }
                 }
 
-                let addr = addr.ok_or_else(|| de::Error::missing_field("addr"))?;
-                let (allowlist, allowlist_action) = match allowlist {
-                    Some(allowlist) => (
-                        allowlist,
-                        allowlist_action
-                            .ok_or_else(|| de::Error::missing_field("allowlist-action"))?,
-                    ),
-                    None => (IpFilter::all(), FilterAction::Ignore),
+                let addr = addr.ok_or_else(|| de::Error::missing_field("listen"))?;
+
+                // Throw an error when either the list or action is missing.
+                // Use defaults when neither is given
+                let (allowlist, allowlist_action) = match (allowlist, allowlist_action) {
+                    (Some(allowlist), Some(allowlist_action)) => (allowlist, allowlist_action),
+                    (Some(_allowlist), None) => {
+                        return Err(de::Error::missing_field("allowlist-action"))
+                    }
+                    (None, Some(_allowlist_action)) => {
+                        return Err(de::Error::missing_field("allowlist"))
+                    }
+                    (None, None) => (IpFilter::all(), FilterAction::Ignore),
                 };
-                let (denylist, denylist_action) = match denylist {
-                    Some(denylist) => (
-                        denylist,
-                        denylist_action
-                            .ok_or_else(|| de::Error::missing_field("denylist-action"))?,
-                    ),
-                    None => (IpFilter::none(), FilterAction::Ignore),
+
+                let (denylist, denylist_action) = match (denylist, denylist_action) {
+                    (Some(denylist), Some(denylist_action)) => (denylist, denylist_action),
+                    (Some(_denylist), None) => {
+                        return Err(de::Error::missing_field("denylist-action"))
+                    }
+                    (None, Some(_denylist_action)) => {
+                        return Err(de::Error::missing_field("denylist"))
+                    }
+                    (None, None) => (IpFilter::none(), FilterAction::Ignore),
                 };
 
                 let rate_limiting_cache_size = rate_limiting_cache_size.unwrap_or_default();
@@ -234,19 +243,25 @@ mod tests {
             server: ServerConfig,
         }
 
-        let test: TestConfig = toml::from_str(
+        let test: TestConfig = dbg!(toml::from_str(
             r#"
             [server]
-            addr = "0.0.0.0:123"
+            listen = "0.0.0.0:123"
             "#,
         )
-        .unwrap();
+        .unwrap());
+        println!("{:?}", IpFilter::all());
         assert_eq!(test.server.addr, "0.0.0.0:123".parse().unwrap());
+        // Defaults
+        assert_eq!(test.server.allowlist, IpFilter::all());
+        assert_eq!(test.server.allowlist_action, FilterAction::Ignore);
+        assert_eq!(test.server.denylist, IpFilter::none());
+        assert_eq!(test.server.denylist_action, FilterAction::Ignore);
 
         let test: TestConfig = toml::from_str(
             r#"
             [server]
-            addr = "127.0.0.1:123"
+            listen = "127.0.0.1:123"
             rate-limiting-cutoff-ms = 1000
             rate-limiting-cache-size = 32
             "#,
@@ -258,6 +273,36 @@ mod tests {
             test.server.rate_limiting_cutoff,
             Duration::from_millis(1000)
         );
+
+        let test: TestConfig = toml::from_str(
+            r#"
+            [server]
+            listen = "127.0.0.1:123"
+            denylist = ["192.168.33.34/24"]
+            denylist-action = "deny"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(test.server.addr, "127.0.0.1:123".parse().unwrap());
+        assert_eq!(test.server.denylist_action, FilterAction::Deny);
+
+        let test = toml::from_str::<TestConfig>(
+            r#"
+            [server]
+            listen = "127.0.0.1:123"
+            allowlist = ["192.168.33.34/24"]
+            "#,
+        );
+        assert!(matches!(test, Err(_)));
+
+        let test = toml::from_str::<TestConfig>(
+            r#"
+            [server]
+            listen = "127.0.0.1:123"
+            denylist-action = "deny"
+            "#,
+        );
+        assert!(matches!(test, Err(_)));
     }
 
     #[test]
