@@ -8,7 +8,7 @@ address = "pool.ntp.org"
 count = 4
 
 [[server]]
-addr = "0.0.0.0:123"
+listen = "0.0.0.0:123"
 
 # to function as an NTS server, we must also provide key exchange
 [nts-ke-server]

@@ -101,12 +101,12 @@ The ntp-daemon binary can be configured through two channels: via command line o
 
 The following command line options are available. When an option is not provided, the indicated default is used.
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `-c <FILE>`, `--config <FILE>` | `/etc/ntpd-rs/ntp.toml` | Which configuration file to use. When provided, the fallback locations are not used. |
-| `-l <LEVEL>`, `--log-filter <LEVEL>` | From configuration file | Override for the configuration file `log-filter` parameter, see explanation there. |
-| `-p <ADDR>`, `--peer <ADDR>` | | Setup a connection to the given server, overrides the peers in the configuration file. Can be given multiple times to configure multiple servers as reference. |
-| `-s <ADDR>`, `--server <ADDR>` | | Respond as NTP server to packets arriving to the given address, overrides server configuration in the configuration file. Can be given multiple times to attach as NTP server to multiple network interfaces. |
+| Option                               | Default                 | Description                                                                                                                                                                                                   |
+|--------------------------------------|-------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `-c <FILE>`, `--config <FILE>`       | `/etc/ntpd-rs/ntp.toml` | Which configuration file to use. When provided, the fallback locations are not used.                                                                                                                          |
+| `-l <LEVEL>`, `--log-filter <LEVEL>` | From configuration file | Override for the configuration file `log-filter` parameter, see explanation there.                                                                                                                            |
+| `-p <ADDR>`, `--peer <ADDR>`         |                         | Setup a connection to the given server, overrides the peers in the configuration file. Can be given multiple times to configure multiple servers as reference.                                                |
+| `-s <ADDR>`, `--server <ADDR>`       |                         | Respond as NTP server to packets arriving to the given address, overrides server configuration in the configuration file. Can be given multiple times to attach as NTP server to multiple network interfaces. |
 
 ### Configuration file
 
@@ -114,19 +114,19 @@ The ntp-daemon's primary configuration method is through a TOML configuration fi
 
 #### General options
 
-| Option | Default | Description |
-| --- | --- | --- |
-| log-filter | info | Set the amount of information logged. Available levels: trace, debug, info, warn. |
+| Option     | Default | Description                                                                       |
+|------------|---------|-----------------------------------------------------------------------------------|
+| log-filter | info    | Set the amount of information logged. Available levels: trace, debug, info, warn. |
 
 #### Peer configuration
 
 Peers are configured in the peers section, which should consist of a list of peers. Per peer, the following options are available:
-| Option | Default | Description |
-| --- | --- | --- |
-| mode | server | Type of peer connection to create. Can be any of `simple`, `nts` or `pool` (for meaning of these, see below). |
-| address | | Address of the server, pool or nts server. The default port (123 for `simple` or `pool`, 4460 for `nts`) is automatically appended if not given. |
-| count | 4 | Maximum number of peers to create from the pool. (only valid for pools) |
-| certificates | | Path to a pem file containing additional root certificates to accept for the TLS connection to the nts server. In addition to these certificates, the system certificates will also be accepted. (only valid for nts connections) |
+| Option       | Default | Description                                                                                                                                                                                                                       |
+|--------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| mode         | server  | Type of peer connection to create. Can be any of `simple`, `nts` or `pool` (for meaning of these, see below).                                                                                                                     |
+| address      |         | Address of the server, pool or nts server. The default port (123 for `simple` or `pool`, 4460 for `nts`) is automatically appended if not given.                                                                                  |
+| count        | 4       | Maximum number of peers to create from the pool. (only valid for pools)                                                                                                                                                           |
+| certificates |         | Path to a pem file containing additional root certificates to accept for the TLS connection to the nts server. In addition to these certificates, the system certificates will also be accepted. (only valid for nts connections) |
 
 ##### Simple peers
 
@@ -168,15 +168,15 @@ count = 4
 #### Server
 
 Interfaces on which to act as a server are configured in the `server` section. Per interface configured, the following options are available:
-| Option | Default | Description |
-| --- | --- | --- |
-| address | | Address of the interface to bind to. |
-| allowlist | ["0.0.0.0/0", "::/0"] | List of IP subnets allowed to contact through this interface. |
-| allowlist-action | | Action taken when a client's IP is not on the list of allowed clients. Can be `Ignore` to ignore packets from such clients, or `Deny` to send a deny response to those clients. |
-| denylist | [] | List of IP subnets disallowed to contact through this interface. |
-| denylist-action | | Action taken when a client's IP is on the list of denied clients. Can be `Ignore` to ignore packets from such clients, or `Deny` to send a deny response to those clients. |
-| rate-limiting-cache-size | 0 | How many clients to remember for the purpose of rate limiting. Increasing this number also decreases the probability of two clients sharing an entry in the table. A size of 0 disables rate limiting. |
-| rate-limiting-cutoff-ms | 1000 | Minimum time between two client requests from the same IP address, in milliseconds. When a client send requests closer together than this it is sent a rate limit message instead of a normal time-providing response. |
+| Option                   | Default               | Description                                                                                                                                                                                                            |
+|--------------------------|-----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| listen                   |                       | Address of the interface to bind to.                                                                                                                                                                                   |
+| allowlist                | ["0.0.0.0/0", "::/0"] | List of IP subnets allowed to contact through this interface.                                                                                                                                                          |
+| allowlist-action         |                       | Action taken when a client's IP is not on the list of allowed clients. Can be `ignore` to ignore packets from such clients, or `deny` to send a deny response to those clients.                                        |
+| denylist                 | []                    | List of IP subnets disallowed to contact through this interface.                                                                                                                                                       |
+| denylist-action          |                       | Action taken when a client's IP is on the list of denied clients. Can be `ignore` to ignore packets from such clients, or `deny` to send a deny response to those clients.                                             |
+| rate-limiting-cache-size | 0                     | How many clients to remember for the purpose of rate limiting. Increasing this number also decreases the probability of two clients sharing an entry in the table. A size of 0 disables rate limiting.                 |
+| rate-limiting-cutoff-ms  | 1000                  | Minimum time between two client requests from the same IP address, in milliseconds. When a client send requests closer together than this it is sent a rate limit message instead of a normal time-providing response. |
 
 For rate limiting, the server uses a hashtable to store when it has last seen a client. On a hash collision, the previous entry at that position is evicted. At small table sizes, this might reduce the effectiveness of ratelimiting when combined with high overall server load. It is important to note that the rate limiting this provides is best effort, and only works on benign misconfigured clients. *IT WILL NOT STAND UP AGAINST A DETERMINED ATTACKER*
 
@@ -185,19 +185,19 @@ In applying the three client filters (deny, allow and ratelimiting), the server 
 #### NTS Server
 
 Servers configured via the `server` section can also support NTS. To enable this, the built-in NTS-KE server needs to be enabled (hosting the NTS-KE server separately is not yet supported). This can be configured through the `nts-ke` section:
-| Option | Default | Description |
-| --- | --- | --- |
-| cert-chain-path | | Path to the full chain TLS certificate for the server. Note that currently self-signed certificates are not supported. |
-| key-der-path | | Path to the TLS private key for the server. |
-| timeout-ms | 1000 | Timeout on NTS-KE sessions, after which the server decides to hang up. This is to prevent large resource utilization from old and or inactive sessions. Timeout duration is in milliseconds. |
-| address | | Address of the interface to bind to for the NTS-KE server. |
+| Option          | Default | Description                                                                                                                                                                                  |
+|-----------------|---------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| cert-chain-path |         | Path to the full chain TLS certificate for the server. Note that currently self-signed certificates are not supported.                                                                       |
+| key-der-path    |         | Path to the TLS private key for the server.                                                                                                                                                  |
+| timeout-ms      | 1000    | Timeout on NTS-KE sessions, after which the server decides to hang up. This is to prevent large resource utilization from old and or inactive sessions. Timeout duration is in milliseconds. |
+| address         |         | Address of the interface to bind to for the NTS-KE server.                                                                                                                                   |
 
 Our implementation of NTS follows the recommendations of section 6 in [RFC8915](https://www.rfc-editor.org/rfc/rfc8915.html). Currently, the master keys for encryption of the cookies are generated internally, and their generation can be controlled via the settings in the `keyset` section
-| Option | Default | Description |
-| --- | --- | --- |
-| old-keys | 7 | Number of old keys to keep valid for existing cookies. |
-| rotation-interval | 86400 | Time (in seconds) between generating new keys. |
-| storage-path | | If specified, server keys are saved and restored from this path. This enables reboots of the server without invalidating the cookies of existing clients. |
+| Option            | Default | Description                                                                                                                                               |
+|-------------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| old-keys          | 7       | Number of old keys to keep valid for existing cookies.                                                                                                    |
+| rotation-interval | 86400   | Time (in seconds) between generating new keys.                                                                                                            |
+| storage-path      |         | If specified, server keys are saved and restored from this path. This enables reboots of the server without invalidating the cookies of existing clients. |
 
 ##### A note on TLS keys and certificates
 
@@ -210,16 +210,17 @@ Instructions for how to generate a CA certificate and use it to sign certificate
 **The management client interface format is unstable! Would you like to observe additional values? let us know in an issue!**
 
 The daemon can expose an observation socket that can be read to obtain information on the current state of the peer connections and clock steering algorithm. This socket can be configured via the `observe` section:
-| Option | Default | Description |
-| --- | --- | --- |
-| path | | Path on which the observation socket is exposed. If no path is given, the observation socket is disabled. |
-| mode | 0o666 | Permissions with which the socket should be created, given as (octal) integer. |
+| Option | Default | Description                                                                                               |
+|--------|---------|-----------------------------------------------------------------------------------------------------------|
+| path   |         | Path on which the observation socket is exposed. If no path is given, the observation socket is disabled. |
+| mode   | 0o666   | Permissions with which the socket should be created, given as (octal) integer.                            |
 
 The daemon can also expose a configuration socket that can be used to change some configuration options dynamically. This socket can be configured via the `configure` section:
-| Option | Default | Description |
-| --- | --- | --- |
-| path | | Path on which the configuration socket is exposed. If no path is given, the configuration socket is disabled. |
-| mode | 0o660 | Permissions with which the socket should be created, given as (octal) integer. |
+| Option | Default | Description                                                                                                   |
+|--------|---------|---------------------------------------------------------------------------------------------------------------|
+| path   |         | Path on which the configuration socket is exposed. If no path is given, the configuration socket is disabled. |
+| mode   | 0o660   | Permissions with which the socket should be created, given as (octal) integer.                                |
+|        |         |                                                                                                               |
 
 The management and configuration sockets are used by the [management client](MANAGEMENT_CLIENT.md) to display the daemon's state and to allow for dynamic changing of some configuration parameters.
 
@@ -235,7 +236,7 @@ This section servers two practical (advanced and experimental) use cases:
 - enable hardware timestamping (linux only)
 
 | Option                          | Default               | Description                                                  |
-| ---                             | ---                   | ---                                                          |
+|---------------------------------|-----------------------|--------------------------------------------------------------|
 | clock                           | system realtime clock | Path to a file descriptor that is a clock (e.g. "/dev/ptp0") |
 | interface                       | system default        | Network interface to use for timestamped packets             |
 | enable-timestamping.rx-software | true                  | Enable software receive timestamping                         |
@@ -250,15 +251,15 @@ The default clock on unix systems is `CLOCK_REALTIME`. It is important to synchr
 #### Time synchronization
 
 There are a number of options available to influence how time differences to the various servers are used to synchronize the system clock. All of these are part of the `system` section of the configuration:
-| Option | Default | Description |
-| --- | --- | --- |
-| min-intersection-survivors | 3 | Minimum number of servers that need to agree on the true time from our perspective for synchronization to start. |
-| panic-threshold | 1800 (symmetric) | Largest time difference the client is allowed to correct in one go. Differences beyond this cause the client to abort synchronization. Value provided is in seconds, set to "inf" to disable checking of jumps. Setting this to 0 will disable time jumps except at startup. |
-| startup-panic-threshold | No limit forward, 1800 backward | Largest time difference the client is allowed to correct during startup. By default, this is unrestricted as we may be the initial source of time for systems without a hardware backed clock. Value provided is in seconds, set to "inf" to disable checking of jumps. |
-| accumulated-threshold | Disabled | Total amount of time difference the client is allowed to correct using steps whilst running. By default, this is unrestricted. Value provided is in seconds, set to 0 to disable checking of accumulated steps. |
-| local-stratum | 16 | Stratum of the local clock, when not synchronized through ntp. The default value of 16 is conventionally used to indicate unsynchronized clocks. This can be used in servers to indicate that there are external mechanisms synchronizing the clock by setting it to the appropriate value for the external source. If the external source is a GPS clock or a direct connection to a UTC source, this will typically be 1. |
-| poll-limits | { min = 4, max = 10 } | Limits on the poll interval towards clients. The defaults are fine for most applications. The values are given as the log2 of the number of seconds, so 4 indicates a poll interval of 32 seconds, and 10 a poll interval of 1024 seconds. |
-| initial-poll | 4 | Initial poll interval used on startup. The value is given as the log2 of the number of seconds, so 4 indicates a poll interval of 32 seconds. |
+| Option                     | Default                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                 |
+|----------------------------|---------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| min-intersection-survivors | 3                               | Minimum number of servers that need to agree on the true time from our perspective for synchronization to start.                                                                                                                                                                                                                                                                                                            |
+| panic-threshold            | 1800 (symmetric)                | Largest time difference the client is allowed to correct in one go. Differences beyond this cause the client to abort synchronization. Value provided is in seconds, set to "inf" to disable checking of jumps. Setting this to 0 will disable time jumps except at startup.                                                                                                                                                |
+| startup-panic-threshold    | No limit forward, 1800 backward | Largest time difference the client is allowed to correct during startup. By default, this is unrestricted as we may be the initial source of time for systems without a hardware backed clock. Value provided is in seconds, set to "inf" to disable checking of jumps.                                                                                                                                                     |
+| accumulated-threshold      | Disabled                        | Total amount of time difference the client is allowed to correct using steps whilst running. By default, this is unrestricted. Value provided is in seconds, set to 0 to disable checking of accumulated steps.                                                                                                                                                                                                             |
+| local-stratum              | 16                              | Stratum of the local clock, when not synchronized through ntp. The default value of 16 is conventionally used to indicate unsynchronized clocks. This can be used in servers to indicate that there are external mechanisms synchronizing the clock by setting it to the appropriate value for the external source. If the external source is a GPS clock or a direct connection to a UTC source, this will typically be 1. |
+| poll-limits                | { min = 4, max = 10 }           | Limits on the poll interval towards clients. The defaults are fine for most applications. The values are given as the log2 of the number of seconds, so 4 indicates a poll interval of 32 seconds, and 10 a poll interval of 1024 seconds.                                                                                                                                                                                  |
+| initial-poll               | 4                               | Initial poll interval used on startup. The value is given as the log2 of the number of seconds, so 4 indicates a poll interval of 32 seconds.                                                                                                                                                                                                                                                                               |
 
 For panic thresholds, asymmetric thresholds can be configured, allowing a different sized step going forwards compared to going backwards. This is done by configuring a struct with two values, `forward` and `backward` for the panic threshold.
 
@@ -266,24 +267,24 @@ For panic thresholds, asymmetric thresholds can be configured, allowing a differ
 
 NTPD-rs currently supports a custom, high performance algorithm
 The high performance clock algorithm has quite a few options. Most of these are quite straightforward to understand and can be used to tune the style of time synchronization to the users liking (although the defaults are probably fine for most):
-| Option | Default | Description |
-| --- | --- | --- |
-| steer-offset-threshold | 2.0 | How far from 0 (in multiples of the uncertainty) should the offset be before we correct. A higher value reduces the amount of steering, but at the cost of a slower synchronization. (standard deviations, 0+) |
-| steer-offset-leftover | 1.0 | How many standard deviations do we leave after offset correction? A higher value decreases the amount of overcorrections at the cost of slower synchronization and more steering. (standard deviations, 0+) |
-| jump-threshold | 10e-3 | From what offset should we jump the clock instead of trying to adjust gradually? (seconds, 0+) |
-| slew-max-frequency-offset | 200e-6 | What is the maximum frequency offset during a slew (a gradual changing of the time). (s/s) |
-| slew-min-duration | 20.0 | What is the minimum duration of a slew (a gradual changing of the time). Larger values increase the precision of the slew, at the cost of longer time taken per slew. (s) |
-| steer-frequency-threshold | 0.0 | How far from 0 (in multiples of the uncertainty) should the frequency estimate be before we correct. A higher value reduces the amount of steering, but at the cost of a slower synchronization. (standard deviations, 0+) |
-| steer-frequency-leftover | 0.0 | How many standard deviations do we leave after frequency correction? A higher value decreases the amount of overcorrections at the cost of slower synchronization and more steering. (standard deviations, 0+) |
-| ignore-server-dispersion | false | Ignore a servers advertised dispersion when synchronizing. Can improve synchronization quality with servers reporting overly conservative root dispersion. |
-| range-statistical-weight | 2.0 | Weight of statistical uncertainty when constructing a peers uncertainty range. This range is used when checking if two peers agree on the same time, and for choosing whether to use a peer for synchronization. (standard deviations, 0+) |
-| range-delay-weight | 0.25 | Weight of delay uncertainty when constructing overlap ranges. This range is used when checking if two peers agree on the same time, and for choosing whether to use a peer for synchronization. (weight, 0-1) |
-| max-peer-uncertainty | 1.0 | Maximum peer uncertainty before we start disregarding it. Note that this is combined uncertainty due to noise and possible asymmetry error (see also weights above). (seconds) |
-| poll-jump-threshold | 1e-6 | Probability threshold for when a measurement is considered a significant enough outlier that we decide something weird is going on and we need to immediately decrease the polling interval to quickly correct. (probability, 0-1) |
-| delay-outlier-threshold | 5.0 | Threshold (in number of standard deviations) above which measurements with a significantly larger network delay are rejected. (standard deviations, 0+) |
-| initial-wander | 1e-8 | Initial estimate of the clock wander between our local clock and that of the peer. Increasing this results in better synchronization if the hardware matches it, but at the cost of slower synchronization when overly optimistic. (s/s^2) |
-| initial-frequency-uncertainty | 100e-6 | Initial uncertainty of the frequency difference between our clock and that of the peer. Lower values increase the speed of frequency synchronization when correct, but decrease it when overly optimistic. (s/s) |
-| meddling-threshold | 5.0 | Threshold (in seconds) above which unexpected time differences between the monotonic and system clocks trigger a restart of the synchronization process. |
+| Option                        | Default | Description                                                                                                                                                                                                                                |
+|-------------------------------|---------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| steer-offset-threshold        | 2.0     | How far from 0 (in multiples of the uncertainty) should the offset be before we correct. A higher value reduces the amount of steering, but at the cost of a slower synchronization. (standard deviations, 0+)                             |
+| steer-offset-leftover         | 1.0     | How many standard deviations do we leave after offset correction? A higher value decreases the amount of overcorrections at the cost of slower synchronization and more steering. (standard deviations, 0+)                                |
+| jump-threshold                | 10e-3   | From what offset should we jump the clock instead of trying to adjust gradually? (seconds, 0+)                                                                                                                                             |
+| slew-max-frequency-offset     | 200e-6  | What is the maximum frequency offset during a slew (a gradual changing of the time). (s/s)                                                                                                                                                 |
+| slew-min-duration             | 20.0    | What is the minimum duration of a slew (a gradual changing of the time). Larger values increase the precision of the slew, at the cost of longer time taken per slew. (s)                                                                  |
+| steer-frequency-threshold     | 0.0     | How far from 0 (in multiples of the uncertainty) should the frequency estimate be before we correct. A higher value reduces the amount of steering, but at the cost of a slower synchronization. (standard deviations, 0+)                 |
+| steer-frequency-leftover      | 0.0     | How many standard deviations do we leave after frequency correction? A higher value decreases the amount of overcorrections at the cost of slower synchronization and more steering. (standard deviations, 0+)                             |
+| ignore-server-dispersion      | false   | Ignore a servers advertised dispersion when synchronizing. Can improve synchronization quality with servers reporting overly conservative root dispersion.                                                                                 |
+| range-statistical-weight      | 2.0     | Weight of statistical uncertainty when constructing a peers uncertainty range. This range is used when checking if two peers agree on the same time, and for choosing whether to use a peer for synchronization. (standard deviations, 0+) |
+| range-delay-weight            | 0.25    | Weight of delay uncertainty when constructing overlap ranges. This range is used when checking if two peers agree on the same time, and for choosing whether to use a peer for synchronization. (weight, 0-1)                              |
+| max-peer-uncertainty          | 1.0     | Maximum peer uncertainty before we start disregarding it. Note that this is combined uncertainty due to noise and possible asymmetry error (see also weights above). (seconds)                                                             |
+| poll-jump-threshold           | 1e-6    | Probability threshold for when a measurement is considered a significant enough outlier that we decide something weird is going on and we need to immediately decrease the polling interval to quickly correct. (probability, 0-1)         |
+| delay-outlier-threshold       | 5.0     | Threshold (in number of standard deviations) above which measurements with a significantly larger network delay are rejected. (standard deviations, 0+)                                                                                    |
+| initial-wander                | 1e-8    | Initial estimate of the clock wander between our local clock and that of the peer. Increasing this results in better synchronization if the hardware matches it, but at the cost of slower synchronization when overly optimistic. (s/s^2) |
+| initial-frequency-uncertainty | 100e-6  | Initial uncertainty of the frequency difference between our clock and that of the peer. Lower values increase the speed of frequency synchronization when correct, but decrease it when overly optimistic. (s/s)                           |
+| meddling-threshold            | 5.0     | Threshold (in seconds) above which unexpected time differences between the monotonic and system clocks trigger a restart of the synchronization process.                                                                                   |
 
 #### Example configuration file:
 
