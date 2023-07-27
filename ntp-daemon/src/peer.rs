@@ -693,7 +693,7 @@ mod tests {
         let rec_packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap().0;
         let send_packet = NtpPacket::deny_response(rec_packet);
         let serialized = serialize_packet_unencryped(&send_packet);
-        
+
         socket.send(&serialized).await.unwrap();
 
         let msg = msg_recv.recv().await.unwrap();
