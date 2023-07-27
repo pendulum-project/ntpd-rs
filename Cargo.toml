@@ -3,3 +3,4 @@ members = [
     "statime",
     "statime-linux",
 ]
+resolver = "2"
