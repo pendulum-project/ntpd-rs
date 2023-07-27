@@ -1,14 +1,14 @@
 use crate::{
     datastructures::{
-        common::{PortIdentity, WireTimestamp},
+        common::PortIdentity,
         datasets::DefaultDS,
-        messages::{DelayRespMessage, FollowUpMessage, Message, MessageBuilder, SyncMessage},
+        messages::{DelayRespMessage, FollowUpMessage, Message, SyncMessage},
     },
     port::{
         sequence_id::SequenceIdGenerator, Measurement, PortAction, PortActionIterator,
         TimestampContext, TimestampContextInner,
     },
-    time::{Duration, Interval, Time},
+    time::{Duration, Time},
 };
 
 #[derive(Debug)]
@@ -216,13 +216,7 @@ impl SlaveState {
         {
             log::debug!("Starting new delay measurement");
             let delay_id = self.delay_req_ids.generate();
-            let delay_req = MessageBuilder::new()
-                .sdo_id(default_ds.sdo_id)
-                .domain_number(default_ds.domain_number)
-                .source_port_identity(port_identity)
-                .sequence_id(delay_id)
-                .message_interval(Interval::from_log_2(0x7f))
-                .delay_req_message(WireTimestamp::default());
+            let delay_req = Message::delay_req(default_ds, port_identity, delay_id);
             let message_length = match delay_req.serialize(buffer) {
                 Ok(length) => length,
                 Err(error) => {

@@ -5,13 +5,17 @@ pub use delay_req::*;
 pub use delay_resp::*;
 pub use follow_up::*;
 pub use header::*;
-pub use message_builder::*;
 pub use sync::*;
 
 use self::{
     management::ManagementMessage, p_delay_req::PDelayReqMessage, p_delay_resp::PDelayRespMessage,
     p_delay_resp_follow_up::PDelayRespFollowUpMessage, signalling::SignalingMessage,
 };
+use super::{
+    common::{TimeInterval, WireTimestamp},
+    datasets::DefaultDS,
+};
+use crate::{ptp_instance::PtpInstanceState, Interval, LeapIndicator, PortIdentity, Time};
 
 mod announce;
 mod control_field;
@@ -20,7 +24,6 @@ mod delay_resp;
 mod follow_up;
 mod header;
 mod management;
-mod message_builder;
 mod p_delay_req;
 mod p_delay_resp;
 mod p_delay_resp_follow_up;
@@ -82,12 +85,111 @@ pub enum Message {
     Management(ManagementMessage),
 }
 
+fn base_header(default_ds: &DefaultDS, port_identity: PortIdentity, sequence_id: u16) -> Header {
+    Header {
+        sdo_id: default_ds.sdo_id,
+        domain_number: default_ds.domain_number,
+        source_port_identity: port_identity,
+        sequence_id,
+        ..Default::default()
+    }
+}
+
 impl Message {
-    #[allow(unused)]
-    pub fn builder() -> MessageBuilder {
-        MessageBuilder::new()
+    pub(crate) fn sync(
+        default_ds: &DefaultDS,
+        port_identity: PortIdentity,
+        sequence_id: u16,
+        current_time: Time,
+    ) -> Self {
+        Message::Sync(SyncMessage {
+            header: Header {
+                two_step_flag: true,
+                ..base_header(default_ds, port_identity, sequence_id)
+            },
+            origin_timestamp: current_time.into(),
+        })
     }
 
+    pub(crate) fn follow_up(
+        default_ds: &DefaultDS,
+        port_identity: PortIdentity,
+        sequence_id: u16,
+        timestamp: Time,
+    ) -> Self {
+        Message::FollowUp(FollowUpMessage {
+            header: Header {
+                correction_field: timestamp.subnano(),
+                ..base_header(default_ds, port_identity, sequence_id)
+            },
+            precise_origin_timestamp: timestamp.into(),
+        })
+    }
+
+    pub(crate) fn announce<C, F>(
+        global: &PtpInstanceState<C, F>,
+        port_identity: PortIdentity,
+        sequence_id: u16,
+        current_time: Time,
+    ) -> Self {
+        Message::Announce(AnnounceMessage {
+            header: Header {
+                leap59: global.time_properties_ds.leap_indicator == LeapIndicator::Leap59,
+                leap61: global.time_properties_ds.leap_indicator == LeapIndicator::Leap61,
+                current_utc_offset_valid: global.time_properties_ds.current_utc_offset_valid,
+                ptp_timescale: global.time_properties_ds.ptp_timescale,
+                time_tracable: global.time_properties_ds.time_traceable,
+                frequency_tracable: global.time_properties_ds.frequency_traceable,
+                ..base_header(&global.default_ds, port_identity, sequence_id)
+            },
+            origin_timestamp: current_time.into(),
+            current_utc_offset: global.time_properties_ds.current_utc_offset,
+            grandmaster_priority_1: global.parent_ds.grandmaster_priority_1,
+            grandmaster_clock_quality: global.parent_ds.grandmaster_clock_quality,
+            grandmaster_priority_2: global.parent_ds.grandmaster_priority_2,
+            grandmaster_identity: global.parent_ds.grandmaster_identity,
+            steps_removed: global.current_ds.steps_removed,
+            time_source: global.time_properties_ds.time_source,
+        })
+    }
+
+    pub(crate) fn delay_req(
+        default_ds: &DefaultDS,
+        port_identity: PortIdentity,
+        sequence_id: u16,
+    ) -> Self {
+        Message::DelayReq(DelayReqMessage {
+            header: Header {
+                log_message_interval: 0x7f,
+                ..base_header(default_ds, port_identity, sequence_id)
+            },
+            origin_timestamp: WireTimestamp::default(),
+        })
+    }
+
+    pub(crate) fn delay_resp(
+        request: &DelayReqMessage,
+        port_identity: PortIdentity,
+        min_delay_req_interval: Interval,
+        timestamp: Time,
+    ) -> Self {
+        Message::DelayResp(DelayRespMessage {
+            header: Header {
+                two_step_flag: false,
+                source_port_identity: port_identity,
+                correction_field: TimeInterval(
+                    request.header.correction_field.0 + timestamp.subnano().0,
+                ),
+                log_message_interval: min_delay_req_interval.as_log_2(),
+                ..request.header
+            },
+            receive_timestamp: timestamp.into(),
+            requesting_port_identity: request.header.source_port_identity,
+        })
+    }
+}
+
+impl Message {
     pub fn header(&self) -> &Header {
         match self {
             Message::Sync(m) => &m.header,

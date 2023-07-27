@@ -3,9 +3,9 @@ use core::{cell::RefCell, fmt::Debug};
 use crate::{
     clock::Clock,
     datastructures::{
-        common::{PortIdentity, WireTimestamp},
+        common::PortIdentity,
         datasets::DefaultDS,
-        messages::{DelayReqMessage, Message, MessageBuilder},
+        messages::{DelayReqMessage, Message},
     },
     port::{
         sequence_id::SequenceIdGenerator, PortAction, PortActionIterator, TimestampContext,
@@ -57,24 +57,17 @@ impl MasterState {
         default_ds: &DefaultDS,
         buffer: &'a mut [u8],
     ) -> PortActionIterator<'a> {
-        let packet_length = match MessageBuilder::new()
-            .sdo_id(default_ds.sdo_id)
-            .domain_number(default_ds.domain_number)
-            .sequence_id(id)
-            .source_port_identity(port_identity)
-            .correction_field(timestamp.subnano())
-            .follow_up_message(timestamp.into())
-            .serialize(buffer)
-        {
-            Ok(length) => length,
-            Err(error) => {
-                log::error!(
-                    "Statime bug: Could not serialize sync follow up {:?}",
-                    error
-                );
-                return actions![];
-            }
-        };
+        let packet_length =
+            match Message::follow_up(default_ds, port_identity, id, timestamp).serialize(buffer) {
+                Ok(length) => length,
+                Err(error) => {
+                    log::error!(
+                        "Statime bug: Could not serialize sync follow up {:?}",
+                        error
+                    );
+                    return actions![];
+                }
+            };
 
         actions![PortAction::SendGeneral {
             data: &buffer[..packet_length],
@@ -100,13 +93,7 @@ impl MasterState {
         };
 
         let seq_id = self.sync_seq_ids.generate();
-        let packet_length = match MessageBuilder::new()
-            .sdo_id(default_ds.sdo_id)
-            .domain_number(default_ds.domain_number)
-            .two_step_flag(true)
-            .sequence_id(seq_id)
-            .source_port_identity(port_identity)
-            .sync_message(current_time.into())
+        let packet_length = match Message::sync(default_ds, port_identity, seq_id, current_time)
             .serialize(buffer)
         {
             Ok(message) => message,
@@ -146,27 +133,13 @@ impl MasterState {
             }
         };
 
-        let packet_length = match MessageBuilder::new()
-            .sdo_id(global.default_ds.sdo_id)
-            .domain_number(global.default_ds.domain_number)
-            .leap_indicator(global.time_properties_ds.leap_indicator)
-            .current_utc_offset_valid(global.time_properties_ds.current_utc_offset_valid)
-            .ptp_timescale(global.time_properties_ds.ptp_timescale)
-            .time_tracable(global.time_properties_ds.time_traceable)
-            .frequency_tracable(global.time_properties_ds.frequency_traceable)
-            .sequence_id(self.announce_seq_ids.generate())
-            .source_port_identity(port_identity)
-            .announce_message(
-                current_time.into(), // origin_timestamp: Timestamp,
-                global.time_properties_ds.current_utc_offset,
-                global.parent_ds.grandmaster_priority_1,
-                global.parent_ds.grandmaster_clock_quality,
-                global.parent_ds.grandmaster_priority_2,
-                global.parent_ds.grandmaster_identity,
-                global.current_ds.steps_removed,
-                global.time_properties_ds.time_source,
-            )
-            .serialize(buffer)
+        let packet_length = match Message::announce(
+            global,
+            port_identity,
+            self.announce_seq_ids.generate(),
+            current_time,
+        )
+        .serialize(buffer)
         {
             Ok(length) => length,
             Err(error) => {
@@ -224,16 +197,8 @@ impl MasterState {
         buffer: &'a mut [u8],
     ) -> PortActionIterator<'a> {
         log::debug!("Received DelayReq");
-        let delay_resp_message = MessageBuilder::new()
-            .copy_header(Message::DelayReq(message))
-            .two_step_flag(false)
-            .source_port_identity(port_identity)
-            .add_to_correction(timestamp.subnano())
-            .message_interval(min_delay_req_interval)
-            .delay_resp_message(
-                WireTimestamp::from(timestamp),
-                message.header().source_port_identity(),
-            );
+        let delay_resp_message =
+            Message::delay_resp(&message, port_identity, min_delay_req_interval, timestamp);
 
         let packet_length = match delay_resp_message.serialize(buffer) {
             Ok(length) => length,
