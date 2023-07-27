@@ -5,6 +5,7 @@ use std::{
 
 use clap::Parser;
 use fern::colors::Color;
+use rand::{rngs::StdRng, SeedableRng};
 use statime::{
     BasicFilter, Clock, ClockIdentity, DefaultDS, DelayMechanism, Duration, Interval, PortAction,
     PortActionIterator, PortConfig, PortIdentity, PtpInstance, SdoId, Time, TimePropertiesDS,
@@ -237,7 +238,8 @@ async fn actual_main() {
         local_clock.clone(),
         BasicFilter::new(0.25),
     );
-    let mut bmca_port = instance.add_port(port_config);
+    let rng = StdRng::from_entropy();
+    let mut bmca_port = instance.add_port(port_config, rng);
 
     let mut bmca_timer = pin!(Timer::new());
     let mut port_sync_timer = pin!(Timer::new());

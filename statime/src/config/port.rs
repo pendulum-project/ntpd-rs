@@ -1,3 +1,5 @@
+use rand::Rng;
+
 use crate::{time::Interval, Duration, PortIdentity};
 
 /// Which delay mechanism a port is using.
@@ -37,8 +39,12 @@ impl PortConfig {
         }
     }
 
-    pub fn announce_duration(&self) -> core::time::Duration {
-        // timeout is the number of announce intervals before the announce expires
-        self.announce_interval.as_core_duration() * self.announce_receipt_timeout as u32
+    // section 9.2.6.12
+    pub fn announce_duration(&self, rng: &mut impl Rng) -> core::time::Duration {
+        // add some randomness so that not all timers expire at the same time
+        let factor = 1.0 + rng.sample::<f64, _>(rand::distributions::Open01);
+        let duration = self.announce_interval.as_core_duration();
+
+        duration.mul_f64(factor * self.announce_receipt_timeout as u32 as f64)
     }
 }

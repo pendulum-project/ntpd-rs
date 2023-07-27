@@ -3,6 +3,8 @@ use core::{
     sync::atomic::{AtomicI8, Ordering},
 };
 
+use rand::Rng;
+
 use crate::{
     bmc::bmca::Bmca,
     clock::Clock,
@@ -70,7 +72,7 @@ pub(crate) struct PtpInstanceState<C, F> {
 }
 
 impl<C: Clock, F> PtpInstanceState<C, F> {
-    fn bmca(&mut self, ports: &mut [&mut Port<InBmca<'_, C, F>>]) {
+    fn bmca<R: Rng>(&mut self, ports: &mut [&mut Port<InBmca<'_, C, F>, R>]) {
         let current_time = self.local_clock.get_mut().now().into();
 
         for port in ports.iter_mut() {
@@ -137,13 +139,13 @@ impl<C: Clock, F> PtpInstance<C, F> {
         }
     }
 
-    pub fn add_port(&self, config: PortConfig) -> Port<InBmca<'_, C, F>> {
+    pub fn add_port<R: Rng>(&self, config: PortConfig, rng: R) -> Port<InBmca<'_, C, F>, R> {
         self.log_bmca_interval
             .fetch_min(config.announce_interval.as_log_2(), Ordering::Relaxed);
-        Port::new(&self.state, config)
+        Port::new(&self.state, config, rng)
     }
 
-    pub fn bmca(&self, ports: &mut [&mut Port<InBmca<'_, C, F>>]) {
+    pub fn bmca<R: Rng>(&self, ports: &mut [&mut Port<InBmca<'_, C, F>, R>]) {
         self.state.borrow_mut().bmca(ports)
     }
 

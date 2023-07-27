@@ -6,6 +6,7 @@ use core::{
 use arrayvec::ArrayVec;
 pub use error::{PortError, Result};
 pub use measurement::Measurement;
+use rand::Rng;
 use state::{MasterState, PortState};
 
 use self::state::SlaveState;
@@ -58,13 +59,14 @@ pub mod state;
 /// A single port of the PTP instance
 ///
 /// One of these needs to be created per port of the PTP instance.
-pub struct Port<L> {
+pub struct Port<L, R> {
     config: PortConfig,
     // Corresponds with PortDS port_state and enabled
     port_state: PortState,
     bmca: Bmca,
     packet_buffer: [u8; MAX_DATA_LEN],
     lifecycle: L,
+    rng: R,
 }
 
 pub struct Running<'a, C, F> {
@@ -136,7 +138,7 @@ impl<'a> Iterator for PortActionIterator<'a> {
     }
 }
 
-impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
+impl<'a, C: Clock, F: Filter, R: Rng> Port<Running<'a, C, F>, R> {
     // Send timestamp for last timecritical message became available
     pub fn handle_send_timestamp(
         &mut self,
@@ -264,7 +266,7 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
                     self.lifecycle.state.local_clock.borrow().now().into(),
                 );
                 actions![PortAction::ResetAnnounceReceiptTimer {
-                    duration: self.config.announce_duration(),
+                    duration: self.config.announce_duration(&mut self.rng),
                 }]
             }
             _ => {
@@ -286,11 +288,12 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
 
     // Start a BMCA cycle and ensure this happens instantly from the perspective of
     // the port
-    pub fn start_bmca(self) -> Port<InBmca<'a, C, F>> {
+    pub fn start_bmca(self) -> Port<InBmca<'a, C, F>, R> {
         Port {
             port_state: self.port_state,
             config: self.config,
             bmca: self.bmca,
+            rng: self.rng,
             packet_buffer: [0; MAX_DATA_LEN],
             lifecycle: InBmca {
                 pending_action: actions![],
@@ -301,14 +304,15 @@ impl<'a, C: Clock, F: Filter> Port<Running<'a, C, F>> {
     }
 }
 
-impl<'a, C, F> Port<InBmca<'a, C, F>> {
+impl<'a, C, F, R> Port<InBmca<'a, C, F>, R> {
     // End a BMCA cycle and make the port available again
-    pub fn end_bmca(self) -> (Port<Running<'a, C, F>>, PortActionIterator<'static>) {
+    pub fn end_bmca(self) -> (Port<Running<'a, C, F>, R>, PortActionIterator<'static>) {
         (
             Port {
                 port_state: self.port_state,
                 config: self.config,
                 bmca: self.bmca,
+                rng: self.rng,
                 packet_buffer: [0; MAX_DATA_LEN],
                 lifecycle: Running {
                     state_refcell: self.lifecycle.state_refcell,
@@ -320,7 +324,7 @@ impl<'a, C, F> Port<InBmca<'a, C, F>> {
     }
 }
 
-impl<L> Port<L> {
+impl<L, R> Port<L, R> {
     fn set_forced_port_state(&mut self, state: PortState) {
         log::info!(
             "new state for port {}: {} -> {}",
@@ -340,7 +344,7 @@ impl<L> Port<L> {
     }
 }
 
-impl<'a, C, F> Port<InBmca<'a, C, F>> {
+impl<'a, C, F, R: Rng> Port<InBmca<'a, C, F>, R> {
     pub(crate) fn calculate_best_local_announce_message(&mut self, current_time: WireTimestamp) {
         self.lifecycle.local_best = self.bmca.take_best_port_announce_message(current_time)
     }
@@ -419,7 +423,7 @@ impl<'a, C, F> Port<InBmca<'a, C, F>> {
                 if update_state {
                     self.set_forced_port_state(state);
 
-                    let duration = self.config.announce_duration();
+                    let duration = self.config.announce_duration(&mut self.rng);
                     let action = PortAction::ResetAnnounceReceiptTimer { duration };
                     self.lifecycle.pending_action = actions![action];
                 }
@@ -448,23 +452,25 @@ impl<'a, C, F> Port<InBmca<'a, C, F>> {
     }
 }
 
-impl<'a, C, F> Port<InBmca<'a, C, F>> {
+impl<'a, C, F, R: Rng> Port<InBmca<'a, C, F>, R> {
     /// Create a new port from a port dataset on a given interface.
     pub(crate) fn new(
         state_refcell: &'a RefCell<PtpInstanceState<C, F>>,
         config: PortConfig,
+        mut rng: R,
     ) -> Self {
         let bmca = Bmca::new(
             config.announce_interval.as_duration().into(),
             config.port_identity,
         );
 
-        let duration = config.announce_duration();
+        let duration = config.announce_duration(&mut rng);
 
         Port {
             config,
             port_state: PortState::Listening,
             bmca,
+            rng,
             packet_buffer: [0; MAX_DATA_LEN],
             lifecycle: InBmca {
                 pending_action: actions![PortAction::ResetAnnounceReceiptTimer { duration }],
