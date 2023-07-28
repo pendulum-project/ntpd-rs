@@ -443,8 +443,9 @@ impl<'a, C, F, R: Rng> Port<InBmca<'a, C, F>, R> {
                     self.set_forced_port_state(state);
 
                     let duration = self.config.announce_duration(&mut self.rng);
-                    let action = PortAction::ResetAnnounceReceiptTimer { duration };
-                    self.lifecycle.pending_action = actions![action];
+                    let reset_announce = PortAction::ResetAnnounceReceiptTimer { duration };
+                    let reset_delay = PortAction::ResetDelayRequestTimer { duration };
+                    self.lifecycle.pending_action = actions![reset_announce, reset_delay];
                 }
             }
             RecommendedState::M1(_) | RecommendedState::M2(_) | RecommendedState::M3(_) => {
