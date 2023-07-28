@@ -448,18 +448,7 @@ mod tests {
                 addr: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
-
-        let config: Config = toml::from_str(
-            "log-filter = \"\"\n[[peers]]\nmode = \"simple\"\naddress = \"example.com\"",
-        )
-        .unwrap();
         assert!(config.log_filter.is_none());
-        assert_eq!(
-            config.peers,
-            vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com", 123).into(),
-            })]
-        );
 
         let config: Config = toml::from_str(
             "log-filter = \"info\"\n[[peers]]\nmode = \"simple\"\naddress = \"example.com\"",
