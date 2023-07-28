@@ -3,7 +3,7 @@ use std::str::FromStr;
 use serde::Deserialize;
 use tracing::metadata::LevelFilter;
 
-#[derive(Debug, Copy, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Default, Copy, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
     /// The "trace" level.
@@ -17,6 +17,7 @@ pub enum LogLevel {
     /// The "info" level.
     ///
     /// Designates useful information.
+    #[default]
     Info = 2,
     /// The "warn" level.
     ///
@@ -26,12 +27,6 @@ pub enum LogLevel {
     ///
     /// Designates very serious errors.
     Error = 4,
-}
-
-impl Default for LogLevel {
-    fn default() -> Self {
-        LogLevel::Info
-    }
 }
 
 pub struct UnknownLogLevel;
@@ -51,9 +46,9 @@ impl FromStr for LogLevel {
     }
 }
 
-impl Into<tracing::Level> for LogLevel {
-    fn into(self) -> tracing::Level {
-        match self {
+impl From<LogLevel> for tracing::Level {
+    fn from(value: LogLevel) -> Self {
+        match value {
             LogLevel::Trace => tracing::Level::TRACE,
             LogLevel::Debug => tracing::Level::DEBUG,
             LogLevel::Info => tracing::Level::INFO,
@@ -63,9 +58,9 @@ impl Into<tracing::Level> for LogLevel {
     }
 }
 
-impl Into<LevelFilter> for LogLevel {
-    fn into(self) -> LevelFilter {
-        LevelFilter::from_level(self.into())
+impl From<LogLevel> for LevelFilter {
+    fn from(value: LogLevel) -> Self {
+        LevelFilter::from_level(value.into())
     }
 }
 
