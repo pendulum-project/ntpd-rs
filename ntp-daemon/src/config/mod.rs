@@ -6,45 +6,19 @@ use ntp_os_clock::DefaultNtpClock;
 use ntp_proto::{DefaultTimeSyncController, SystemConfig, TimeSyncController};
 use ntp_udp::{EnableTimestamps, InterfaceName};
 pub use peer::*;
-use serde::{de, Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer};
 pub use server::*;
 use std::{
     io::ErrorKind,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    sync::Arc,
+    str::FromStr,
 };
 use thiserror::Error;
 use tokio::{fs::read_to_string, io};
 use tracing::{info, warn};
-use tracing_subscriber::filter::EnvFilter;
 
-use crate::spawn::PeerId;
-
-fn deserialize_option_env_filter<'de, D>(deserializer: D) -> Result<Option<EnvFilter>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let data: Option<String> = Deserialize::deserialize(deserializer)?;
-
-    if let Some(dirs) = data {
-        // allow us to recognise configs with an empty log filter directive
-        if dirs.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(EnvFilter::try_new(dirs).map_err(de::Error::custom)?))
-        }
-    } else {
-        Ok(None)
-    }
-}
-
-fn parse_env_filter(input: &str) -> Result<Arc<EnvFilter>, tracing_subscriber::filter::ParseError> {
-    EnvFilter::builder()
-        .with_regex(false)
-        .parse(input)
-        .map(Arc::new)
-}
+use crate::{spawn::PeerId, tracing::LogLevel};
 
 const USAGE_MSG: &str = "\
 usage: ntp-daemon [-c PATH] [-l LOG_LEVEL]
@@ -65,7 +39,7 @@ pub(crate) struct NtpDaemonOptions {
     /// Path of the configuration file
     pub config: Option<PathBuf>,
     /// Filter to apply to log messages
-    pub log_filter: Option<Arc<EnvFilter>>,
+    pub log_filter: Option<LogLevel>,
     help: bool,
     version: bool,
     pub action: NtpDaemonAction,
@@ -200,9 +174,9 @@ impl NtpDaemonOptions {
                     "-c" | "--config" => {
                         options.config = Some(PathBuf::from(value));
                     }
-                    "-l" | "--log-filter" => match parse_env_filter(&value) {
+                    "-l" | "--log-filter" => match LogLevel::from_str(&value) {
                         Ok(filter) => options.log_filter = Some(filter),
-                        Err(e) => Err(format!("invalid log level: {e}"))?,
+                        Err(_) => Err(format!("invalid log level"))?,
                     },
                     option => {
                         Err(format!("invalid option provided: {option}"))?;
@@ -293,8 +267,8 @@ pub struct Config {
     pub nts_ke: Option<NtsKeConfig>,
     #[serde(default)]
     pub system: CombinedSystemConfig,
-    #[serde(deserialize_with = "deserialize_option_env_filter", default)]
-    pub log_filter: Option<EnvFilter>,
+    #[serde(default)]
+    pub log_filter: Option<LogLevel>,
     #[serde(default)]
     pub observe: ObserveConfig,
     #[serde(default)]
@@ -598,13 +572,13 @@ mod tests {
         let parsed_empty = NtpDaemonOptions::try_parse_from(arguments).unwrap();
 
         assert!(parsed_empty.config.is_none());
-        assert_eq!(parsed_empty.log_filter.unwrap().to_string(), "debug");
+        assert_eq!(parsed_empty.log_filter.unwrap(), LogLevel::Debug);
 
         let arguments = &["/usr/bin/ntp-daemon", "-l", "debug"];
         let parsed_empty = NtpDaemonOptions::try_parse_from(arguments).unwrap();
 
         assert!(parsed_empty.config.is_none());
-        assert_eq!(parsed_empty.log_filter.unwrap().to_string(), "debug");
+        assert_eq!(parsed_empty.log_filter.unwrap(), LogLevel::Debug);
     }
 
     #[test]

@@ -9,8 +9,9 @@
 
 use std::{path::PathBuf, process::ExitCode};
 
-use ntp_daemon::{config::CliArg, Config, ObservableState};
+use ntp_daemon::{config::CliArg, tracing::LogLevel, Config, ObservableState};
 use ntp_metrics_exporter::Metrics;
+use tracing_subscriber::util::SubscriberInitExt;
 
 const USAGE_MSG: &str = "\
 usage: ntp-ctl validate [-c PATH]
@@ -144,7 +145,7 @@ impl NtpDaemonOptions {
 
 async fn validate(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
     // Late completion not needed, so ignore result.
-    let _ = ntp_daemon::tracing::init(tracing_subscriber::EnvFilter::new("info"));
+    ntp_daemon::tracing::tracing_init(LogLevel::Info).init();
     match Config::from_args(config, vec![], vec![]).await {
         Ok(config) => {
             if config.check() {
