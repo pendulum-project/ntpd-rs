@@ -1,39 +1,48 @@
 //! Implementation of the abstract clock for the linux platform
 
-pub use raw::RawLinuxClock;
-use statime::{Clock, ClockQuality, Duration, Time, TimePropertiesDS, Timer};
+use std::path::Path;
 
-mod raw;
-
-#[derive(Debug, Clone)]
-pub enum Error {
-    LinuxError(raw::Error),
-}
+use clock_steering::unix::UnixClock;
+use statime::{Clock, Duration, Time, TimePropertiesDS, Timer};
 
 #[derive(Debug, Clone)]
 pub struct LinuxClock {
-    clock: RawLinuxClock,
+    clock: clock_steering::unix::UnixClock,
 }
 
 impl LinuxClock {
-    pub fn new(clock: RawLinuxClock) -> Self {
-        Self { clock }
+    pub const CLOCK_REALTIME: Self = Self {
+        clock: UnixClock::CLOCK_REALTIME,
+    };
+
+    pub fn open(path: impl AsRef<Path>) -> std::io::Result<Self> {
+        let clock = UnixClock::open(path)?;
+
+        Ok(Self { clock })
     }
 
     pub fn timespec(&self) -> std::io::Result<libc::timespec> {
-        self.clock.get_timespec()
+        use clock_steering::Clock;
+
+        let now = self.clock.now()?;
+        Ok(libc::timespec {
+            tv_sec: now.seconds,
+            tv_nsec: now.nanos as _,
+        })
     }
 }
 
 impl Clock for LinuxClock {
-    type Error = Error;
+    type Error = clock_steering::unix::Error;
 
     fn now(&self) -> Time {
-        self.clock.get_time().unwrap()
-    }
+        use clock_steering::Clock;
 
-    fn quality(&self) -> ClockQuality {
-        self.clock.quality()
+        let timestamp = self.clock.now().unwrap();
+        let seconds: u64 = timestamp.seconds.try_into().unwrap();
+
+        let nanos = seconds * 1_000_000_000 + timestamp.nanos as u64;
+        Time::from_nanos_subnanos(nanos, timestamp.subnanos)
     }
 
     fn adjust(
@@ -42,17 +51,33 @@ impl Clock for LinuxClock {
         frequency_multiplier: f64,
         time_properties: &TimePropertiesDS,
     ) -> Result<(), Self::Error> {
+        use clock_steering::Clock;
+
+        let leap_indicator = match time_properties.leap_indicator() {
+            statime::LeapIndicator::NoLeap => clock_steering::LeapIndicator::NoWarning,
+            statime::LeapIndicator::Leap61 => clock_steering::LeapIndicator::Leap61,
+            statime::LeapIndicator::Leap59 => clock_steering::LeapIndicator::Leap59,
+        };
+
         if time_properties.is_ptp() {
-            self.clock
-                .set_leap_seconds(time_properties.leap_indicator())
-                .map_err(Error::LinuxError)?;
+            self.clock.set_leap_seconds(leap_indicator)?
         }
 
-        let time_offset_float: f64 = time_offset.nanos_lossy();
+        // a statime Duration has 96 bits to store nanoseconds, but the linux api only
+        // has 64. So potentially we use information, but more than 64 bits of
+        // nanoseconds seems very unlikely.
+        let offset = std::time::Duration::from_nanos(time_offset.nanos_lossy() as u64);
 
-        self.clock
-            .adjust_clock(time_offset_float / 1e9, frequency_multiplier)
-            .map_err(Error::LinuxError)
+        log::trace!(
+            "Adjusting clock: {:e}ns, 1 + {:e}x",
+            offset.as_nanos(),
+            frequency_multiplier - 1.0
+        );
+
+        self.clock.adjust_frequency(frequency_multiplier)?;
+        self.clock.step_clock(offset)?;
+
+        Ok(())
     }
 }
 

@@ -13,12 +13,13 @@ use statime::{Time, MAX_DATA_LEN};
 use tokio::io::{unix::AsyncFd, Interest};
 
 pub use super::interface::InterfaceDescriptor;
+use super::timestamped_udp_socket::LibcTimestamp;
 use crate::{
     clock::LinuxClock,
     network::{
         interface::{InterfaceIterator, InterfaceName},
         raw_udp_socket::RawUdpSocket,
-        timestamped_udp_socket::{LibcTimestamp, TimestampedUdpSocket},
+        timestamped_udp_socket::TimestampedUdpSocket,
     },
 };
 

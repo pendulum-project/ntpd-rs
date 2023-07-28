@@ -286,7 +286,6 @@ mod tests {
     use std::net::{Ipv4Addr, UdpSocket};
 
     use super::*;
-    use crate::clock::RawLinuxClock;
 
     fn new_timestamped(p1: u16, p2: u16) -> TimestampedUdpSocket {
         let mode = TimestampingMode::Software;
@@ -307,7 +306,7 @@ mod tests {
             a.send(&[2; 48], target).await.unwrap();
         });
 
-        let clock = LinuxClock::new(RawLinuxClock::get_realtime_clock());
+        let clock = LinuxClock::CLOCK_REALTIME;
 
         let mut buf = [0; 48];
         let r1 = b.recv(&clock, &mut buf).await.unwrap();
@@ -346,7 +345,7 @@ mod tests {
         let (mut a, b) = (new_timestamped(p1, p2), new_timestamped(p2, p1));
         let target = b.io.get_ref().local_addr().unwrap();
 
-        let clock = LinuxClock::new(RawLinuxClock::get_realtime_clock());
+        let clock = LinuxClock::CLOCK_REALTIME;
 
         let tsend = a.send(&[1; 48], target).await.unwrap();
         let mut buf = [0; 48];

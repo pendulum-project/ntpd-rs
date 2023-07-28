@@ -1,7 +1,7 @@
 //! Definitions and implementations of the abstract clock types
 
 use crate::{
-    datastructures::{common::ClockQuality, datasets::TimePropertiesDS},
+    datastructures::datasets::TimePropertiesDS,
     time::{Duration, Time},
 };
 
@@ -21,9 +21,6 @@ pub trait Clock {
 
     /// Get the current time of the clock
     fn now(&self) -> Time;
-
-    /// Get the quality of the clock
-    fn quality(&self) -> ClockQuality;
 
     /// Adjust the clock with the given time offset and frequency multiplier.
     /// The adjustment is based on the given time properties.

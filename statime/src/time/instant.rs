@@ -53,6 +53,12 @@ impl Time {
         }
     }
 
+    pub fn from_nanos_subnanos(nanos: u64, subnanos: u32) -> Self {
+        let bits = (nanos as u128) << 32 | (subnanos as u128);
+        let inner = U96F32::from_bits(bits);
+        Self { inner }
+    }
+
     /// Get the total amount of nanoseconds since the origin
     pub fn nanos(&self) -> U96F32 {
         self.inner

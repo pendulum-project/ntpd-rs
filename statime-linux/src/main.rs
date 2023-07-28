@@ -12,7 +12,7 @@ use statime::{
     TimeSource, TimestampContext,
 };
 use statime_linux::{
-    clock::{LinuxClock, RawLinuxClock},
+    clock::LinuxClock,
     network::linux::{get_clock_id, InterfaceDescriptor, LinuxRuntime, TimestampingMode},
 };
 use tokio::time::Sleep;
@@ -188,11 +188,9 @@ async fn actual_main() {
     setup_logger(args.loglevel).expect("Could not setup logging");
 
     let mut local_clock = if let Some(hardware_clock) = &args.hardware_clock {
-        let clock =
-            RawLinuxClock::get_from_file(hardware_clock).expect("Could not open hardware clock");
-        LinuxClock::new(clock)
+        LinuxClock::open(hardware_clock).expect("Could not open hardware clock")
     } else {
-        LinuxClock::new(RawLinuxClock::get_realtime_clock())
+        LinuxClock::CLOCK_REALTIME
     };
 
     let timestamping_mode = if args.hardware_clock.is_some() {

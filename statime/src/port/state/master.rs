@@ -241,10 +241,6 @@ mod tests {
             self.current_time
         }
 
-        fn quality(&self) -> crate::datastructures::common::ClockQuality {
-            panic!("Shouldn't be called");
-        }
-
         fn adjust(
             &mut self,
             _time_offset: crate::time::Duration,
