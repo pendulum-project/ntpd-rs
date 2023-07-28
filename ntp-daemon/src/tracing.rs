@@ -1,57 +1,74 @@
-use crate::config::Config;
-use tracing::info;
-use tracing_subscriber::{
-    filter::Filtered,
-    fmt::format::{DefaultFields, Format, Full},
-    EnvFilter, Registry,
-};
+use std::str::FromStr;
 
-pub type ReloadHandle = tracing_subscriber::reload::Handle<
-    Filtered<
-        tracing_subscriber::fmt::Layer<Registry, DefaultFields, Format<Full>>,
-        EnvFilter,
-        Registry,
-    >,
-    Registry,
->;
+use serde::Deserialize;
+use tracing::metadata::LevelFilter;
 
-pub struct TracingState {
-    pub reload_handle: ReloadHandle,
+#[derive(Debug, Copy, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LogLevel {
+    /// The "trace" level.
+    ///
+    /// Designates very low priority, often extremely verbose, information.
+    Trace = 0,
+    /// The "debug" level.
+    ///
+    /// Designates lower priority information.
+    Debug = 1,
+    /// The "info" level.
+    ///
+    /// Designates useful information.
+    Info = 2,
+    /// The "warn" level.
+    ///
+    /// Designates hazardous situations.
+    Warn = 3,
+    /// The "error" level.
+    ///
+    /// Designates very serious errors.
+    Error = 4,
 }
 
-/// Setup tracing. Since we know the settings of some subscribers only once
-/// the full configuration has been loaded, this returns an `FnOnce` to complete
-/// setup when the config is available.
-pub fn init(
-    filter: EnvFilter,
-) -> impl FnOnce(&mut Config, bool) -> Result<TracingState, tracing_subscriber::reload::Error> {
-    // Setup a tracing subscriber with the bare minimum for now, so that errors
-    // in loading the configuration can be properly logged.
-    use tracing_subscriber::prelude::*;
-    let layer = tracing_subscriber::fmt::layer()
-        .fmt_fields(DefaultFields::default())
-        .event_format(Format::<Full>::default())
-        .with_filter(filter);
-    let (fmt_layer, fmt_handle) = tracing_subscriber::reload::Layer::new(layer);
-
-    let registry = tracing_subscriber::registry().with(fmt_layer);
-    registry.init();
-
-    // Final setup needs the full configuration
-    #[allow(clippy::let_unit_value)]
-    move |config, has_log_override| -> _ {
-        if let Some(log_filter) = config.log_filter.take() {
-            if has_log_override {
-                info!("Log filter override from command line arguments is active");
-            } else {
-                fmt_handle.modify(|l| *l.filter_mut() = log_filter)?;
-            }
-        }
-
-        let state = TracingState {
-            reload_handle: fmt_handle,
-        };
-
-        Ok(state)
+impl Default for LogLevel {
+    fn default() -> Self {
+        LogLevel::Info
     }
+}
+
+pub struct UnknownLogLevel;
+
+impl FromStr for LogLevel {
+    type Err = UnknownLogLevel;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "trace" => Ok(LogLevel::Trace),
+            "debug" => Ok(LogLevel::Debug),
+            "info" => Ok(LogLevel::Info),
+            "warn" => Ok(LogLevel::Warn),
+            "error" => Ok(LogLevel::Error),
+            _ => Err(UnknownLogLevel),
+        }
+    }
+}
+
+impl Into<tracing::Level> for LogLevel {
+    fn into(self) -> tracing::Level {
+        match self {
+            LogLevel::Trace => tracing::Level::TRACE,
+            LogLevel::Debug => tracing::Level::DEBUG,
+            LogLevel::Info => tracing::Level::INFO,
+            LogLevel::Warn => tracing::Level::WARN,
+            LogLevel::Error => tracing::Level::ERROR,
+        }
+    }
+}
+
+impl Into<LevelFilter> for LogLevel {
+    fn into(self) -> LevelFilter {
+        LevelFilter::from_level(self.into())
+    }
+}
+
+pub fn tracing_init(level: impl Into<LevelFilter>) -> tracing_subscriber::fmt::Subscriber {
+    tracing_subscriber::fmt().with_max_level(level).finish()
 }

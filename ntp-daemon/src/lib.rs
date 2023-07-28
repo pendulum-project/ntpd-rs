@@ -19,14 +19,15 @@ pub mod spawn;
 mod system;
 pub mod tracing;
 
-use std::{error::Error, sync::Arc};
+use std::error::Error;
 
 pub use config::Config;
 pub use observer::{ObservablePeerState, ObservableState};
 pub use system::spawn;
 //#[cfg(fuzz)]
+use ::tracing::info;
 pub use ipfilter::fuzz::fuzz_ipfilter;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::util::SubscriberInitExt;
 
 use crate::config::NtpDaemonOptions;
 
@@ -49,36 +50,37 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
-    let has_log_override = options.log_filter.is_some();
-    let log_filter = options
-        .log_filter
-        // asserts that the arc is not shared. There is no reason it would be,
-        // we just use Arc to work around EnvFilter not implementing Clone
-        .map(|this| Arc::try_unwrap(this).unwrap())
-        .unwrap_or_else(|| EnvFilter::new("info"));
+    let mut log_filter = options.log_filter.unwrap_or_default();
 
-    // Setup some basic tracing now so we are able
-    // to log errors when loading the full configuration.
-    let finish_tracing_init = crate::tracing::init(log_filter);
-
-    let mut config = match Config::from_args(options.config, vec![], vec![]).await {
-        Ok(c) => c,
-        Err(e) => {
-            // print to stderr because tracing is not yet setup
-            eprintln!("There was an error loading the config: {e}");
-            std::process::exit(exitcode::CONFIG);
+    let config_tracing = crate::tracing::tracing_init(log_filter);
+    let config = ::tracing::subscriber::with_default(config_tracing, || {
+        async {
+            match Config::from_args(options.config, vec![], vec![]).await {
+                Ok(c) => c,
+                Err(e) => {
+                    // print to stderr because tracing is not yet setup
+                    eprintln!("There was an error loading the config: {e}");
+                    std::process::exit(exitcode::CONFIG);
+                }
+            }
         }
-    };
+    })
+    .await;
 
-    // make sure to only drop at the end of this scope
-    let _tracing_state = match finish_tracing_init(&mut config, has_log_override) {
-        Ok(s) => s,
-        Err(e) => {
-            // print to stderr because tracing was not correctly initialized
-            eprintln!("Failed to complete logging setup: {e}");
-            std::process::exit(exitcode::CONFIG);
+    if let Some(config_log_filter) = config.log_filter {
+        if options.log_filter.is_none() {
+            log_filter = config_log_filter;
         }
-    };
+    }
+
+    // set a default global subscriber from now on
+    let tracing_inst = crate::tracing::tracing_init(log_filter);
+    tracing_inst.init();
+
+    // give the user a warning that we use the command line option
+    if config.log_filter.is_some() && options.log_filter.is_some() {
+        info!("Log filter override from command line arguments is active");
+    }
 
     // Warn/error if the config is unreasonable. We do this after finishing
     // tracing setup to ensure logging is fully configured.

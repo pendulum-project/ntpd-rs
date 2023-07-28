@@ -44,7 +44,7 @@ strip = "debuginfo"
 
 [workspace.dependencies]
 tracing = "0.1.37"
-tracing-subscriber = { version = "0.3.17", default-features = false, features = ["std", "fmt", "ansi", "registry", "env-filter"] }
+tracing-subscriber = { version = "0.3.17", default-features = false, features = ["std", "fmt", "ansi"] }
 serde = { version = "1.0.177", features = ["derive"] }
 serde_json = "1.0.104"
 rand = "0.8.5"
