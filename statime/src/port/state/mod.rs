@@ -72,7 +72,9 @@ impl PortState {
     pub(crate) fn handle_general_receive(&mut self, message: Message, port_identity: PortIdentity) {
         match self {
             PortState::Master(_) => {
-                log::warn!("Unexpected message {:?}", message);
+                if message.header().source_port_identity() != port_identity {
+                    log::warn!("Unexpected message {:?}", message);
+                }
             }
             PortState::Slave(slave) => slave.handle_general_receive(message, port_identity),
             PortState::Listening | PortState::Passive => {}
