@@ -176,7 +176,7 @@ impl NtpDaemonOptions {
                     }
                     "-l" | "--log-filter" => match LogLevel::from_str(&value) {
                         Ok(filter) => options.log_filter = Some(filter),
-                        Err(_) => Err(format!("invalid log level"))?,
+                        Err(_) => return Err("invalid log level".into()),
                     },
                     option => {
                         Err(format!("invalid option provided: {option}"))?;
