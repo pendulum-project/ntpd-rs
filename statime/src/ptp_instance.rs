@@ -101,17 +101,11 @@ impl<C: Clock, F> PtpInstanceState<C, F> {
             );
 
             if let Some(recommended_state) = recommended_state {
-                let PtpInstanceState {
-                    ref mut time_properties_ds,
-                    ref mut current_ds,
-                    ref mut parent_ds,
-                    ..
-                } = *self;
                 if let Err(error) = port.set_recommended_state(
                     recommended_state,
-                    time_properties_ds,
-                    current_ds,
-                    parent_ds,
+                    &mut self.time_properties_ds,
+                    &mut self.current_ds,
+                    &mut self.parent_ds,
                 ) {
                     log::error!("{:?}", error)
                 }

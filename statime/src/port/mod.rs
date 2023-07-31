@@ -383,8 +383,7 @@ impl<'a, C, F, R: Rng> Port<InBmca<'a, C, F>, R> {
                 parent_ds.grandmaster_priority_2 = defaultds.priority_2;
 
                 time_properties_ds.leap_indicator = LeapIndicator::NoLeap;
-                time_properties_ds.current_utc_offset = 37;
-                time_properties_ds.current_utc_offset_valid = false;
+                time_properties_ds.current_utc_offset = None;
                 time_properties_ds.ptp_timescale = true;
                 time_properties_ds.time_traceable = false;
                 time_properties_ds.frequency_traceable = false;

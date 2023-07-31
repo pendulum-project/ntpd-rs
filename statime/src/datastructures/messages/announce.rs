@@ -71,9 +71,13 @@ impl AnnounceMessage {
             LeapIndicator::NoLeap
         };
 
+        let current_utc_offset = self
+            .header
+            .current_utc_offset_valid
+            .then_some(self.current_utc_offset);
+
         TimePropertiesDS {
-            current_utc_offset: self.current_utc_offset,
-            current_utc_offset_valid: self.header.current_utc_offset_valid,
+            current_utc_offset,
             leap_indicator,
             time_traceable: self.header.time_tracable,
             frequency_traceable: self.header.frequency_tracable,

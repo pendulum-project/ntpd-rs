@@ -7,8 +7,7 @@ use crate::datastructures::common::{LeapIndicator, TimeSource};
 /// upcoming leap seconds on that timescale.
 #[derive(Default, Copy, Clone, Debug, Eq, PartialEq)]
 pub struct TimePropertiesDS {
-    pub(crate) current_utc_offset: i16,
-    pub(crate) current_utc_offset_valid: bool,
+    pub(crate) current_utc_offset: Option<i16>,
     pub(crate) leap_indicator: LeapIndicator,
     pub(crate) time_traceable: bool,
     pub(crate) frequency_traceable: bool,
@@ -25,8 +24,7 @@ impl TimePropertiesDS {
     /// traced back to an internationally recognized standard in the metrology
     /// sense of the word. When in doubt, just set these to false.
     pub fn new_ptp_time(
-        current_utc_offset: i16,
-        current_utc_offset_valid: bool,
+        current_utc_offset: Option<i16>,
         leap_indicator: LeapIndicator,
         time_traceable: bool,
         frequency_traceable: bool,
@@ -34,7 +32,6 @@ impl TimePropertiesDS {
     ) -> Self {
         TimePropertiesDS {
             current_utc_offset,
-            current_utc_offset_valid,
             leap_indicator,
             time_traceable,
             frequency_traceable,
@@ -57,8 +54,7 @@ impl TimePropertiesDS {
         time_source: TimeSource,
     ) -> Self {
         TimePropertiesDS {
-            current_utc_offset: 0,
-            current_utc_offset_valid: false,
+            current_utc_offset: None,
             leap_indicator: LeapIndicator::NoLeap,
             time_traceable,
             frequency_traceable,

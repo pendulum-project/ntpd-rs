@@ -132,24 +132,26 @@ impl Message {
         sequence_id: u16,
         current_time: Time,
     ) -> Self {
+        let time_properties_ds = &global.time_properties_ds;
+
         Message::Announce(AnnounceMessage {
             header: Header {
-                leap59: global.time_properties_ds.leap_indicator == LeapIndicator::Leap59,
-                leap61: global.time_properties_ds.leap_indicator == LeapIndicator::Leap61,
-                current_utc_offset_valid: global.time_properties_ds.current_utc_offset_valid,
-                ptp_timescale: global.time_properties_ds.ptp_timescale,
-                time_tracable: global.time_properties_ds.time_traceable,
-                frequency_tracable: global.time_properties_ds.frequency_traceable,
+                leap59: time_properties_ds.leap_indicator == LeapIndicator::Leap59,
+                leap61: time_properties_ds.leap_indicator == LeapIndicator::Leap61,
+                current_utc_offset_valid: time_properties_ds.current_utc_offset.is_some(),
+                ptp_timescale: time_properties_ds.ptp_timescale,
+                time_tracable: time_properties_ds.time_traceable,
+                frequency_tracable: time_properties_ds.frequency_traceable,
                 ..base_header(&global.default_ds, port_identity, sequence_id)
             },
             origin_timestamp: current_time.into(),
-            current_utc_offset: global.time_properties_ds.current_utc_offset,
+            current_utc_offset: time_properties_ds.current_utc_offset.unwrap_or_default(),
             grandmaster_priority_1: global.parent_ds.grandmaster_priority_1,
             grandmaster_clock_quality: global.parent_ds.grandmaster_clock_quality,
             grandmaster_priority_2: global.parent_ds.grandmaster_priority_2,
             grandmaster_identity: global.parent_ds.grandmaster_identity,
             steps_removed: global.current_ds.steps_removed,
-            time_source: global.time_properties_ds.time_source,
+            time_source: time_properties_ds.time_source,
         })
     }
 
