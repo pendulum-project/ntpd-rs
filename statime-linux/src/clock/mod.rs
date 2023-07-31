@@ -64,7 +64,7 @@ impl Clock for LinuxClock {
         }
 
         // a statime Duration has 96 bits to store nanoseconds, but the linux api only
-        // has 64. So potentially we use information, but more than 64 bits of
+        // has 64. So potentially we lose information, but more than 64 bits of
         // nanoseconds seems very unlikely.
         let offset = std::time::Duration::from_nanos(time_offset.nanos_lossy() as u64);
 

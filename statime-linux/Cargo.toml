@@ -16,4 +16,4 @@ thiserror = "1.0.43"
 pin-project = "1.1"
 tokio = { version = "1.29", features = ["full"] }
 rand = { version = "0.8.5", default-features = false, features = ["std", "std_rng"] }
-clock-steering = { path = "/home/folkertdev/tg/ntp/clock-steering" }
+clock-steering = { git = "https://github.com/pendulum-project/clock-steering.git", rev = "4628f18" }
