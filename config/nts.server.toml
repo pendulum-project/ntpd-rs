@@ -15,4 +15,4 @@ listen = "0.0.0.0:123"
 key-exchange-listen = "0.0.0.0:4460"
 cert-chain-path = "path/to/certificate/chain.pem"
 key-der-path = "path/to/private.key"
-timeout-ms = 1000
+key-exchange-timeout-ms = 1000

@@ -224,7 +224,7 @@ pub struct NtsKeConfig {
     pub cert_chain_path: PathBuf,
     pub key_der_path: PathBuf,
     #[serde(default = "default_nts_ke_timeout")]
-    pub timeout_ms: u64,
+    pub key_exchange_timeout_ms: u64,
     pub key_exchange_listen: SocketAddr,
 }
 
@@ -326,7 +326,7 @@ mod tests {
         let pem = PathBuf::from("/foo/bar/baz.pem");
         assert_eq!(test.nts_ke_server.cert_chain_path, pem);
         assert_eq!(test.nts_ke_server.key_der_path, PathBuf::from("spam.der"));
-        assert_eq!(test.nts_ke_server.timeout_ms, 1000,);
+        assert_eq!(test.nts_ke_server.key_exchange_timeout_ms, 1000,);
         assert_eq!(
             test.nts_ke_server.key_exchange_listen,
             "0.0.0.0:4460".parse().unwrap(),

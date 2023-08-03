@@ -185,12 +185,12 @@ In applying the three client filters (deny, allow and ratelimiting), the server 
 #### NTS Server
 
 Servers configured via the `server` section can also support NTS. To enable this, the built-in NTS-KE server needs to be enabled (hosting the NTS-KE server separately is not yet supported). This can be configured through the `nts-ke` section:
-| Option              | Default | Description                                                                                                                                                                                  |
-|---------------------|---------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| cert-chain-path     |         | Path to the full chain TLS certificate for the server. Note that currently self-signed certificates are not supported.                                                                       |
-| key-der-path        |         | Path to the TLS private key for the server.                                                                                                                                                  |
-| timeout-ms          | 1000    | Timeout on NTS-KE sessions, after which the server decides to hang up. This is to prevent large resource utilization from old and or inactive sessions. Timeout duration is in milliseconds. |
-| key-exchange-listen |         | Address of the interface to bind to for the NTS-KE server.                                                                                                                                   |
+| Option                  | Default | Description                                                                                                                                                                                  |
+|-------------------------|---------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| cert-chain-path         |         | Path to the full chain TLS certificate for the server. Note that currently self-signed certificates are not supported.                                                                       |
+| key-der-path            |         | Path to the TLS private key for the server.                                                                                                                                                  |
+| key-exchange-timeout-ms | 1000    | Timeout on NTS-KE sessions, after which the server decides to hang up. This is to prevent large resource utilization from old and or inactive sessions. Timeout duration is in milliseconds. |
+| key-exchange-listen     |         | Address of the interface to bind to for the NTS-KE server.                                                                                                                                   |
 
 Our implementation of NTS follows the recommendations of section 6 in [RFC8915](https://www.rfc-editor.org/rfc/rfc8915.html). Currently, the master keys for encryption of the cookies are generated internally, and their generation can be controlled via the settings in the `keyset` section
 | Option            | Default | Description                                                                                                                                               |

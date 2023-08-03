@@ -25,4 +25,4 @@ path = "/run/ntpd-rs/observe"
 key-_exchange-_listen = "0.0.0.0:4460"
 cert-chain-path = "test-keys/end.fullchain.pem"
 key-der-path = "test-keys/end.key"
-timeout-ms = 1000
+key-exchange-timeout-ms = 1000

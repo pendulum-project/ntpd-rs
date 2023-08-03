@@ -101,7 +101,7 @@ async fn run_nts_ke(
         nts_ke_config.key_exchange_listen,
         cert_chain,
         key_der,
-        nts_ke_config.timeout_ms,
+        nts_ke_config.key_exchange_timeout_ms,
     )
     .await
 }
@@ -520,7 +520,7 @@ mod tests {
         let nts_ke_config = NtsKeConfig {
             cert_chain_path: PathBuf::from("../test-keys/end.fullchain.pem"),
             key_der_path: PathBuf::from("../test-keys/end.key"),
-            timeout_ms: 1000,
+            key_exchange_timeout_ms: 1000,
             key_exchange_listen: "0.0.0.0:5431".parse().unwrap(),
         };
 
