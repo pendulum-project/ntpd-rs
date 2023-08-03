@@ -71,16 +71,17 @@ async fn run_nts_ke(
     nts_ke_config: NtsKeConfig,
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
 ) -> std::io::Result<()> {
-    let cert_chain_file = std::fs::File::open(&nts_ke_config.cert_chain_path).map_err(|e| {
-        error(&format!(
-            "error reading cert_chain_path at `{:?}`: {:?}",
-            nts_ke_config.cert_chain_path, e
-        ))
-    })?;
-    let key_der_file = std::fs::File::open(&nts_ke_config.key_der_path).map_err(|e| {
+    let cert_chain_file =
+        std::fs::File::open(&nts_ke_config.certificate_chain_path).map_err(|e| {
+            error(&format!(
+                "error reading cert_chain_path at `{:?}`: {:?}",
+                nts_ke_config.certificate_chain_path, e
+            ))
+        })?;
+    let key_der_file = std::fs::File::open(&nts_ke_config.private_key_path).map_err(|e| {
         error(&format!(
             "error reading key_der_path at `{:?}`: {:?}",
-            nts_ke_config.key_der_path, e
+            nts_ke_config.private_key_path, e
         ))
     })?;
 
@@ -518,8 +519,8 @@ mod tests {
 
         let (_sender, keyset) = tokio::sync::watch::channel(keyset);
         let nts_ke_config = NtsKeConfig {
-            cert_chain_path: PathBuf::from("../test-keys/end.fullchain.pem"),
-            key_der_path: PathBuf::from("../test-keys/end.key"),
+            certificate_chain_path: PathBuf::from("../test-keys/end.fullchain.pem"),
+            private_key_path: PathBuf::from("../test-keys/end.key"),
             key_exchange_timeout_ms: 1000,
             key_exchange_listen: "0.0.0.0:5431".parse().unwrap(),
         };

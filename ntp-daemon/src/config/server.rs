@@ -221,8 +221,8 @@ impl<'de> Deserialize<'de> for ServerConfig {
 #[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct NtsKeConfig {
-    pub cert_chain_path: PathBuf,
-    pub key_der_path: PathBuf,
+    pub certificate_chain_path: PathBuf,
+    pub private_key_path: PathBuf,
     #[serde(default = "default_nts_ke_timeout")]
     pub key_exchange_timeout_ms: u64,
     pub key_exchange_listen: SocketAddr,
@@ -317,15 +317,18 @@ mod tests {
             r#"
             [nts-ke-server]
             key-exchange-listen = "0.0.0.0:4460"
-            cert-chain-path = "/foo/bar/baz.pem"
-            key-der-path = "spam.der"
+            certificate-chain-path = "/foo/bar/baz.pem"
+            private-key-path = "spam.der"
             "#,
         )
         .unwrap();
 
         let pem = PathBuf::from("/foo/bar/baz.pem");
-        assert_eq!(test.nts_ke_server.cert_chain_path, pem);
-        assert_eq!(test.nts_ke_server.key_der_path, PathBuf::from("spam.der"));
+        assert_eq!(test.nts_ke_server.certificate_chain_path, pem);
+        assert_eq!(
+            test.nts_ke_server.private_key_path,
+            PathBuf::from("spam.der")
+        );
         assert_eq!(test.nts_ke_server.key_exchange_timeout_ms, 1000,);
         assert_eq!(
             test.nts_ke_server.key_exchange_listen,
