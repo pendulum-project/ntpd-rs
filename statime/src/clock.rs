@@ -37,18 +37,3 @@ pub trait Clock {
         time_properties_ds: &TimePropertiesDS,
     ) -> Result<(), Self::Error>;
 }
-
-/// Async timer trait for waiting an interval
-///
-/// The Timer trait is the primary way the ptp futures wait for time to pass.
-/// The after future should provide waiting for multpile timers.
-///
-/// Note: the timer need not use a high precision time source. The only
-/// requirement is that the underlying definition of a second is the same
-/// between the [Clock] and timers.
-pub trait Timer {
-    /// Wait for a given amount of time
-    type F: core::future::Future + Send + 'static;
-
-    fn after(&self, duration: Duration) -> Self::F;
-}

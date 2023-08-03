@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use clock_steering::unix::UnixClock;
-use statime::{Clock, Duration, Time, TimePropertiesDS, Timer};
+use statime::{Clock, Duration, Time, TimePropertiesDS};
 
 #[derive(Debug, Clone)]
 pub struct LinuxClock {
@@ -78,16 +78,6 @@ impl Clock for LinuxClock {
         self.clock.step_clock(offset)?;
 
         Ok(())
-    }
-}
-
-pub struct LinuxTimer;
-
-impl Timer for LinuxTimer {
-    type F = tokio::time::Sleep;
-
-    fn after(&self, duration: Duration) -> Self::F {
-        tokio::time::sleep(duration.into())
     }
 }
 
