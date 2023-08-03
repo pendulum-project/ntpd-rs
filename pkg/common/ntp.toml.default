@@ -1,7 +1,13 @@
+[logging-observability]
 # You can configure ntpd-rs with different output levels of logging information
 # Basic values for this are `trace`, `debug`, `info`, `warn`, `error` and `off`.
 # However it is possible to specify more advanced log filters using the
-log-filter = "info"
+log-level = "info"
+## Using the observe socket you can retrieve statistical information about the
+## daemon while it is running. You can use the `ntp-ctl` or prometheus based
+## `ntp-metrics-exporter` binaries for some default options to read from the
+## observe socket.
+observation-path = "/run/ntpd-rs/observe"
 
 ## The peers section allows configuring peers, you may configure multiple of
 ## these blocks to add more peers to your configuration.
@@ -25,13 +31,6 @@ count = 4
 #[[peers]]
 #mode = "server"
 #address = "ntpd-rs.pool.ntp.org"
-
-## Using the observe socket you can retrieve statistical information about the
-## daemon while it is running. You can use the `ntp-ctl` or prometheus based
-## `ntp-metrics-exporter` binaries for some default options to read from the
-## observe socket.
-[observe]
-observation-path = "/run/ntpd-rs/observe"
 
 ## Below are configured various thresholds beyond which ntpd-rs will not
 ## change the system clock. CHANGE THESE TO MATCH YOUR SECURITY NEEDS!

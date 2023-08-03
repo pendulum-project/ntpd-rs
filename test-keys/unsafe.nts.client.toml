@@ -1,5 +1,7 @@
+[logging-observability]
 # Other values include trace, debug, warn and error
-log-filter = "info"
+log-level = "info"
+observation-path = "/run/ntpd-rs/observe"
 
 # uses an unsecure certificate!
 [[peers]]
@@ -12,6 +14,3 @@ certificate = "test-keys/testca.pem"
 min-intersection-survivors = 1
 panic-threshold = 10
 startup-panic-threshold = { forward = "inf", backward = 1800 }
-
-[observe]
-path = "/run/ntpd-rs/observe"

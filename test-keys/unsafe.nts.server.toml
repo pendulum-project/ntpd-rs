@@ -1,5 +1,7 @@
+[logging-observability]
 # Other values include trace, debug, warn and error
-log-filter = "info"
+log-level = "info"
+observation-path = "/run/ntpd-rs/observe"
 
 # the server will get its time from the NTP pool
 [[peers]]
@@ -15,9 +17,6 @@ listen = "0.0.0.0:123"
 min-intersection-survivors = 1
 panic-threshold = 10
 startup-panic-threshold = { forward = 0, backward = 1800 }
-
-[observe]
-observation-path = "/run/ntpd-rs/observe"
 
 # to function as an NTS server, we must also provide key exchange
 # uses an unsecure certificate chain!

@@ -112,12 +112,6 @@ The following command line options are available. When an option is not provided
 
 The ntp-daemon's primary configuration method is through a TOML configuration file. By default, this is looked for in the system-wide configuration directories under `/etc/ntpd-rs/ntp.toml`. A non-standard location can be provided via the `-c` or `--config` command line flags.
 
-#### General options
-
-| Option     | Default | Description                                                                       |
-|------------|---------|-----------------------------------------------------------------------------------|
-| log-filter | info    | Set the amount of information logged. Available levels: trace, debug, info, warn. |
-
 #### Peer configuration
 
 Peers are configured in the peers section, which should consist of a list of peers. Per peer, the following options are available:
@@ -205,19 +199,20 @@ Due to limitations in rustls, we currently do not support self-signed certificat
 
 Instructions for how to generate a CA certificate and use it to sign certificates can be found in many places on the internet, for example in this [github gist](https://gist.github.com/Soarez/9688998)
 
-#### Observability and dynamic configuration
+#### Logging and observability
 
 **The management client interface format is unstable! Would you like to observe additional values? let us know in an issue!**
 
-The daemon can expose an observation socket that can be read to obtain information on the current state of the peer connections and clock steering algorithm. This socket can be configured via the `observe` section:
-| Option                    | Default | Description                                                                                               |
-|---------------------------|---------|-----------------------------------------------------------------------------------------------------------|
-| observability-path        |         | Path on which the observation socket is exposed. If no path is given, the observation socket is disabled. |
-| observability-permissions | 0o666   | Permissions with which the socket should be created, given as (octal) integer.                            |
+The `logging-observability` sector contains configuration for setting the logging level and exposing sockets for observation and configuration
 
-The daemon can also expose a configuration socket that can be used to change some configuration options dynamically. This socket can be configured via the `configure` section:
+- The observation socket can be read to obtain information on the current state of the peer connections and clock steering algorithm.
+- The configuration socket can be used to change some configuration options dynamically.
+
 | Option                    | Default | Description                                                                                                   |
 |---------------------------|---------|---------------------------------------------------------------------------------------------------------------|
+| log-level                 | info    | Set the amount of information logged. Available levels: trace, debug, info, warn.                             |
+| observability-path        |         | Path on which the observation socket is exposed. If no path is given, the observation socket is disabled.     |
+| observability-permissions | 0o666   | Permissions with which the socket should be created, given as (octal) integer.                                |
 | configure-path            |         | Path on which the configuration socket is exposed. If no path is given, the configuration socket is disabled. |
 | configuration-permissions | 0o660   | Permissions with which the socket should be created, given as (octal) integer.                                |
 
@@ -288,8 +283,9 @@ The high performance clock algorithm has quite a few options. Most of these are 
 #### Example configuration file:
 
 ```toml
+[logging-observability]
 # Other values include trace, debug, warn and error
-log-filter = "info"
+log-level = "info"
 
 # Or by providing written out configuration
 # [[peers]]

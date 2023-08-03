@@ -67,7 +67,7 @@ async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
     })
     .await;
 
-    if let Some(config_log_filter) = config.log_filter {
+    if let Some(config_log_filter) = config.logging_observability.log_level {
         if options.log_filter.is_none() {
             log_filter = config_log_filter;
         }
@@ -78,7 +78,7 @@ async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
     tracing_inst.init();
 
     // give the user a warning that we use the command line option
-    if config.log_filter.is_some() && options.log_filter.is_some() {
+    if config.logging_observability.log_level.is_some() && options.log_filter.is_some() {
         info!("Log filter override from command line arguments is active");
     }
 
@@ -110,7 +110,7 @@ async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
     }
 
     crate::observer::spawn(
-        &config.observe,
+        &config.logging_observability.observe,
         channels.peer_snapshots_receiver,
         channels.server_data_receiver,
         channels.system_snapshot_receiver,

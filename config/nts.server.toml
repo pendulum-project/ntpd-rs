@@ -1,5 +1,6 @@
+[logging-observability]
 # Other values include trace, debug, warn and error
-log-filter = "info"
+log-level = "info"
 
 # the server will get its time from the NTP pool
 [[peers]]

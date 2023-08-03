@@ -1,5 +1,7 @@
+[logging-observability]
 # Other values include trace, debug, warn and error
-log-filter = "info"
+log-level = "info"
+observation-path = "/run/ntpd-rs/observe"
 
 # Pool servers from ntppool.org. See http://www.pool.ntp.org/join.html
 # for more information
@@ -13,9 +15,6 @@ count = 4
 #mode = "pool"
 #addr = "2.pool.ntp.org"
 #count = 4
-
-[observe]
-observation-path = "/run/ntpd-rs/observe"
 
 # Serve NTP on any interface (requires permissions to use udp port 123)
 [[server]]

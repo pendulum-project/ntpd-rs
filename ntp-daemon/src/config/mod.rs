@@ -258,6 +258,17 @@ pub struct CombinedSystemConfig {
 
 #[derive(Deserialize, Debug, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct LoggingObservabilityConfig {
+    #[serde(default)]
+    pub log_level: Option<LogLevel>,
+    #[serde(flatten, default)]
+    pub observe: ObserveConfig,
+    #[serde(flatten, default)]
+    pub configure: ConfigureConfig,
+}
+
+#[derive(Deserialize, Debug, Default)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Config {
     #[serde(alias = "peer")]
     pub peers: Vec<PeerConfig>,
@@ -268,68 +279,12 @@ pub struct Config {
     #[serde(default)]
     pub system: CombinedSystemConfig,
     #[serde(default)]
-    pub log_filter: Option<LogLevel>,
-    #[serde(default)]
-    pub observe: ObserveConfig,
-    #[serde(default)]
-    pub configure: ConfigureConfig,
+    pub logging_observability: LoggingObservabilityConfig,
     #[serde(default)]
     pub keyset: KeysetConfig,
     #[serde(default)]
     #[cfg(feature = "hardware-timestamping")]
     pub clock: ClockConfig,
-}
-
-#[derive(Clone, Deserialize, Debug)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct ObserveConfig {
-    #[serde(default)]
-    pub observation_path: Option<PathBuf>,
-    #[serde(default = "default_observation_permissions")]
-    pub observation_permissions: u32,
-}
-
-const fn default_observation_permissions() -> u32 {
-    0o666
-}
-
-const fn default_configure_permissions() -> u32 {
-    0o660
-}
-
-impl Default for ObserveConfig {
-    fn default() -> Self {
-        Self {
-            observation_path: None,
-            observation_permissions: default_observation_permissions(),
-        }
-    }
-}
-
-#[derive(Clone, Deserialize, Debug)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct ConfigureConfig {
-    #[serde(default)]
-    pub configure_path: Option<std::path::PathBuf>,
-    #[serde(default = "default_configure_permissions")]
-    pub configure_permissions: u32,
-}
-
-impl Default for ConfigureConfig {
-    fn default() -> Self {
-        Self {
-            configure_path: None,
-            configure_permissions: default_configure_permissions(),
-        }
-    }
-}
-
-#[derive(Error, Debug)]
-pub enum ConfigError {
-    #[error("io error while reading config: {0}")]
-    Io(#[from] io::Error),
-    #[error("config toml parsing error: {0}")]
-    Toml(#[from] toml::de::Error),
 }
 
 impl Config {
@@ -430,6 +385,58 @@ impl Config {
     }
 }
 
+#[derive(Clone, Deserialize, Debug)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct ObserveConfig {
+    #[serde(default)]
+    pub observation_path: Option<PathBuf>,
+    #[serde(default = "default_observation_permissions")]
+    pub observation_permissions: u32,
+}
+
+const fn default_observation_permissions() -> u32 {
+    0o666
+}
+
+const fn default_configure_permissions() -> u32 {
+    0o660
+}
+
+impl Default for ObserveConfig {
+    fn default() -> Self {
+        Self {
+            observation_path: None,
+            observation_permissions: default_observation_permissions(),
+        }
+    }
+}
+
+#[derive(Clone, Deserialize, Debug)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct ConfigureConfig {
+    #[serde(default)]
+    pub configure_path: Option<std::path::PathBuf>,
+    #[serde(default = "default_configure_permissions")]
+    pub configure_permissions: u32,
+}
+
+impl Default for ConfigureConfig {
+    fn default() -> Self {
+        Self {
+            configure_path: None,
+            configure_permissions: default_configure_permissions(),
+        }
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum ConfigError {
+    #[error("io error while reading config: {0}")]
+    Io(#[from] io::Error),
+    #[error("config toml parsing error: {0}")]
+    Toml(#[from] toml::de::Error),
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -448,13 +455,13 @@ mod tests {
                 addr: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
-        assert!(config.log_filter.is_none());
+        assert!(config.logging_observability.log_level.is_none());
 
         let config: Config = toml::from_str(
-            "log-filter = \"info\"\n[[peers]]\nmode = \"simple\"\naddress = \"example.com\"",
+            "[logging-observability]\nlog-level = \"info\"\n[[peers]]\nmode = \"simple\"\naddress = \"example.com\"",
         )
         .unwrap();
-        assert!(config.log_filter.is_some());
+        assert_eq!(config.logging_observability.log_level, Some(LogLevel::Info));
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
@@ -496,32 +503,37 @@ mod tests {
 
         let config: Config = toml::from_str(
             r#"
-            log-filter = "info"
             [[peers]]
             mode = "simple"
             address = "example.com"
-            [observe]
+            [logging-observability]
+            log-level = "info"
             observation-path = "/foo/bar/observe"
             observation-permissions = 0o567
-            [configure]
             configure-path = "/foo/bar/configure"
             configure-permissions = 0o123
             "#,
         )
         .unwrap();
-        assert!(config.log_filter.is_some());
+        assert!(config.logging_observability.log_level.is_some());
 
         assert_eq!(
-            config.observe.observation_path,
+            config.logging_observability.observe.observation_path,
             Some(PathBuf::from("/foo/bar/observe"))
         );
-        assert_eq!(config.observe.observation_permissions, 0o567);
+        assert_eq!(
+            config.logging_observability.observe.observation_permissions,
+            0o567
+        );
 
         assert_eq!(
-            config.configure.configure_path,
+            config.logging_observability.configure.configure_path,
             Some(PathBuf::from("/foo/bar/configure"))
         );
-        assert_eq!(config.configure.configure_permissions, 0o123);
+        assert_eq!(
+            config.logging_observability.configure.configure_permissions,
+            0o123
+        );
 
         assert_eq!(
             config.peers,
