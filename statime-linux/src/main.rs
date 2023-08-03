@@ -1,22 +1,30 @@
 use std::{
     future::Future,
     pin::{pin, Pin},
-    sync::Mutex,
+    sync::{Arc, OnceLock},
 };
 
 use clap::Parser;
 use fern::colors::Color;
 use rand::{rngs::StdRng, SeedableRng};
 use statime::{
-    BasicFilter, Clock, ClockIdentity, DelayMechanism, Duration, InstanceConfig, Interval,
-    PortAction, PortActionIterator, PortConfig, PtpInstance, SdoId, Time, TimePropertiesDS,
+    BasicFilter, Clock, ClockIdentity, DelayMechanism, Duration, InBmca, InstanceConfig, Interval,
+    Port, PortAction, PortActionIterator, PortConfig, PtpInstance, SdoId, Time, TimePropertiesDS,
     TimeSource, TimestampContext,
 };
 use statime_linux::{
     clock::LinuxClock,
-    network::linux::{get_clock_id, InterfaceDescriptor, LinuxRuntime, TimestampingMode},
+    network::linux::{
+        get_clock_id, InterfaceDescriptor, LinuxNetworkPort, LinuxRuntime, TimestampingMode,
+    },
 };
-use tokio::time::Sleep;
+use tokio::{
+    sync::{
+        mpsc::{Receiver, Sender},
+        Notify,
+    },
+    time::Sleep,
+};
 
 #[derive(Clone, Copy)]
 struct SdoIdParser;
@@ -178,6 +186,9 @@ impl Future for Timer {
     }
 }
 
+// used to borrow the instance with a static lifetime
+static INSTANCE: OnceLock<PtpInstance<LinuxClock, BasicFilter>> = OnceLock::new();
+
 #[tokio::main]
 async fn main() {
     actual_main().await;
@@ -188,7 +199,7 @@ async fn actual_main() {
 
     setup_logger(args.loglevel).expect("Could not setup logging");
 
-    let mut local_clock = if let Some(hardware_clock) = &args.hardware_clock {
+    let local_clock = if let Some(hardware_clock) = &args.hardware_clock {
         LinuxClock::open(hardware_clock).expect("Could not open hardware clock")
     } else {
         LinuxClock::CLOCK_REALTIME
@@ -235,119 +246,162 @@ async fn actual_main() {
         BasicFilter::new(0.25),
     );
 
+    // borrow instance with the static lifetime
+    let instance = INSTANCE.get_or_init(|| instance);
+
     let rng1 = StdRng::from_entropy();
     let port_in_bmca1 = instance.add_port(port_config, rng1);
 
     let rng2 = StdRng::from_entropy();
     let port_in_bmca2 = instance.add_port(port_config, rng2);
 
-    let mut ports = vec![
-        Mutex::new(Some(port_in_bmca1)),
-        Mutex::new(Some(port_in_bmca2)),
-    ];
+    let ports = vec![port_in_bmca1, port_in_bmca2];
 
+    let bmca_notify = Arc::new(Notify::new());
+
+    let mut main_task_senders = Vec::with_capacity(ports.len());
+    let mut main_task_receivers = Vec::with_capacity(ports.len());
+
+    for port in ports.into_iter() {
+        let network_port = network_runtime.open(args.interface.clone()).await.unwrap();
+
+        let (main_task_sender, port_task_receiver) = tokio::sync::mpsc::channel(1);
+        let (port_task_sender, main_task_receiver) = tokio::sync::mpsc::channel(1);
+
+        tokio::spawn(port_task(
+            port_task_receiver,
+            port_task_sender,
+            network_port,
+            local_clock.clone(),
+            bmca_notify.clone(),
+        ));
+
+        main_task_sender.send(port).await.unwrap();
+
+        main_task_senders.push(main_task_sender);
+        main_task_receivers.push(main_task_receiver);
+    }
+
+    // run bmca over all of the ports at the same time. The ports don't perform
+    // their normal actions at this time: bmca is stop-the-world!
     let mut bmca_timer = pin!(Timer::new());
-    let port_sync_timer = pin!(Timer::new());
-    let port_announce_timer = pin!(Timer::new());
-    let port_announce_timeout_timer = pin!(Timer::new());
-    let delay_request_timer = pin!(Timer::new());
-
-    let mut timers = Timers {
-        port_sync_timer,
-        port_announce_timer,
-        port_announce_timeout_timer,
-        delay_request_timer,
-    };
-
-    let mut network_port = network_runtime.open(args.interface).await.unwrap();
 
     loop {
-        for mutex_opt_port_in_bmca in ports.iter_mut() {
-            // take the port out of the vector of ports
-            let port_in_bmca_ref = mutex_opt_port_in_bmca.get_mut().unwrap();
-            let port_in_bmca = port_in_bmca_ref.take().unwrap();
+        // reset bmca timer
+        bmca_timer.as_mut().reset(instance.bmca_interval());
 
-            // reset bmca timer
-            bmca_timer.as_mut().reset(instance.bmca_interval());
+        // wait until the next BMCA
+        bmca_timer.as_mut().await;
 
-            // handle post-bmca actions
-            let (mut port, actions) = port_in_bmca.end_bmca();
+        // notify all the ports that they need to stop what they're doing
+        bmca_notify.notify_waiters();
 
-            let mut pending_timestamp =
-                handle_actions(actions, &mut network_port, &mut timers, &mut local_clock).await;
+        let mut bmca_ports = Vec::with_capacity(main_task_receivers.len());
+        let mut mut_bmca_ports = Vec::with_capacity(main_task_receivers.len());
 
-            while let Some((context, timestamp)) = pending_timestamp {
-                pending_timestamp = handle_actions(
-                    port.handle_send_timestamp(context, timestamp),
-                    &mut network_port,
-                    &mut timers,
-                    &mut local_clock,
-                )
-                .await;
-
-                loop {
-                    let mut actions = tokio::select! {
-                        result = network_port.recv() => {
-                            match result {
-                                Ok(packet) => {
-                                    match packet.timestamp {
-                                        Some(timestamp) => port.handle_timecritical_receive(&packet.data, timestamp),
-                                        None => port.handle_general_receive(&packet.data),
-                                    }
-                                },
-                                Err(error) => panic!("Error receiving: {error:?}"),
-                            }
-                        },
-                        () = &mut timers.port_announce_timer => {
-                            port.handle_announce_timer()
-                        },
-                        () = &mut timers.port_sync_timer => {
-                            port.handle_sync_timer()
-                        },
-                        () = &mut timers.port_announce_timeout_timer => {
-                            port.handle_announce_receipt_timer()
-                        },
-                        () = &mut timers.delay_request_timer => {
-                            port.handle_delay_request_timer()
-                        },
-                        () = &mut bmca_timer => {
-                            break;
-                        }
-                    };
-
-                    loop {
-                        let pending_timestamp = handle_actions(
-                            actions,
-                            &mut network_port,
-                            &mut timers,
-                            &mut local_clock,
-                        )
-                        .await;
-
-                        // there might be more actions to handle based on the current action
-                        actions = match pending_timestamp {
-                            Some((context, timestamp)) => {
-                                port.handle_send_timestamp(context, timestamp)
-                            }
-                            None => break,
-                        };
-                    }
-                }
-            }
-
-            // put the port back into the vector of ports
-            let _ = port_in_bmca_ref.insert(port.start_bmca());
+        for receiver in main_task_receivers.iter_mut() {
+            bmca_ports.push(receiver.recv().await.unwrap());
         }
 
-        // run bmca over all of the ports at the same time. The ports don't perform
-        // their normal actions at this time: bmca is stop-the-world!
-        let mut bmca_ports: Vec<_> = ports
-            .iter_mut()
-            .map(|mutex| mutex.get_mut().unwrap())
-            .map(|opt_port| opt_port.as_mut().unwrap())
-            .collect();
+        for mut_bmca_port in bmca_ports.iter_mut() {
+            mut_bmca_ports.push(mut_bmca_port);
+        }
 
-        instance.bmca(&mut bmca_ports);
+        instance.bmca(&mut mut_bmca_ports);
+
+        drop(mut_bmca_ports);
+
+        for (port, sender) in bmca_ports.into_iter().zip(main_task_senders.iter()) {
+            sender.send(port).await.unwrap();
+        }
+    }
+}
+
+type BmcaPort = Port<InBmca<'static, LinuxClock, BasicFilter>, StdRng>;
+
+// the Port task
+//
+// This task waits for a new port (in the bmca state) to arrive on its Receiver.
+// It will then move the port into the running state, and process actions. When
+// the task is notified of a BMCA, it will stop running, move the port into the
+// bmca state, and send it on its Sender
+async fn port_task(
+    mut port_task_receiver: Receiver<BmcaPort>,
+    port_task_sender: Sender<BmcaPort>,
+    mut network_port: LinuxNetworkPort,
+    mut local_clock: LinuxClock,
+    bmca_notify: Arc<Notify>,
+) {
+    let mut timers = Timers {
+        port_sync_timer: pin!(Timer::new()),
+        port_announce_timer: pin!(Timer::new()),
+        port_announce_timeout_timer: pin!(Timer::new()),
+        delay_request_timer: pin!(Timer::new()),
+    };
+
+    loop {
+        let port_in_bmca = port_task_receiver.recv().await.unwrap();
+
+        // handle post-bmca actions
+        let (mut port, actions) = port_in_bmca.end_bmca();
+
+        let mut pending_timestamp =
+            handle_actions(actions, &mut network_port, &mut timers, &mut local_clock).await;
+
+        while let Some((context, timestamp)) = pending_timestamp {
+            pending_timestamp = handle_actions(
+                port.handle_send_timestamp(context, timestamp),
+                &mut network_port,
+                &mut timers,
+                &mut local_clock,
+            )
+            .await;
+        }
+
+        loop {
+            let mut actions = tokio::select! {
+                result = network_port.recv() => {
+                    match result {
+                        Ok(packet) => {
+                            match packet.timestamp {
+                                Some(timestamp) => port.handle_timecritical_receive(&packet.data, timestamp),
+                                None => port.handle_general_receive(&packet.data),
+                            }
+                        },
+                        Err(error) => panic!("Error receiving: {error:?}"),
+                    }
+                },
+                () = &mut timers.port_announce_timer => {
+                    port.handle_announce_timer()
+                },
+                () = &mut timers.port_sync_timer => {
+                    port.handle_sync_timer()
+                },
+                () = &mut timers.port_announce_timeout_timer => {
+                    port.handle_announce_receipt_timer()
+                },
+                () = &mut timers.delay_request_timer => {
+                    port.handle_delay_request_timer()
+                },
+                () = bmca_notify.notified() => {
+                    break;
+                }
+            };
+
+            loop {
+                let pending_timestamp =
+                    handle_actions(actions, &mut network_port, &mut timers, &mut local_clock).await;
+
+                // there might be more actions to handle based on the current action
+                actions = match pending_timestamp {
+                    Some((context, timestamp)) => port.handle_send_timestamp(context, timestamp),
+                    None => break,
+                };
+            }
+        }
+
+        let port_in_bmca = port.start_bmca();
+        port_task_sender.send(port_in_bmca).await.unwrap();
     }
 }
 

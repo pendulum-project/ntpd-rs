@@ -1,4 +1,6 @@
-use core::{cell::RefCell, fmt::Debug};
+use core::fmt::Debug;
+
+use atomic_refcell::AtomicRefCell;
 
 use crate::{
     clock::Clock,
@@ -76,7 +78,7 @@ impl MasterState {
 
     pub(crate) fn send_sync<'a>(
         &mut self,
-        local_clock: &RefCell<impl Clock>,
+        local_clock: &AtomicRefCell<impl Clock>,
         config: &PortConfig,
         port_identity: PortIdentity,
         default_ds: &DefaultDS,
@@ -368,10 +370,10 @@ mod tests {
             current_ds,
             parent_ds,
             time_properties_ds,
-            local_clock: RefCell::new(TestClock {
+            local_clock: AtomicRefCell::new(TestClock {
                 current_time: Time::from_micros(600),
             }),
-            filter: RefCell::new(()),
+            filter: AtomicRefCell::new(()),
         };
 
         let config = PortConfig {
@@ -441,7 +443,7 @@ mod tests {
             delay_asymmetry: crate::Duration::ZERO,
         };
 
-        let clock = RefCell::new(TestClock {
+        let clock = AtomicRefCell::new(TestClock {
             current_time: Time::from_fixed_nanos(U96F32::from_bits((600000 << 32) + (248 << 16))),
         });
 

@@ -1,8 +1,6 @@
-use core::{
-    cell::RefCell,
-    sync::atomic::{AtomicI8, Ordering},
-};
+use core::sync::atomic::{AtomicI8, Ordering};
 
+use atomic_refcell::AtomicRefCell;
 use rand::Rng;
 
 use crate::{
@@ -59,17 +57,18 @@ use crate::{
 /// instance.run(&TimerImpl).await;
 /// ```
 pub struct PtpInstance<C, F> {
-    state: RefCell<PtpInstanceState<C, F>>,
+    state: AtomicRefCell<PtpInstanceState<C, F>>,
     log_bmca_interval: AtomicI8,
 }
 
+#[derive(Debug)]
 pub(crate) struct PtpInstanceState<C, F> {
     pub(crate) default_ds: DefaultDS,
     pub(crate) current_ds: CurrentDS,
     pub(crate) parent_ds: ParentDS,
     pub(crate) time_properties_ds: TimePropertiesDS,
-    pub(crate) local_clock: RefCell<C>,
-    pub(crate) filter: RefCell<F>,
+    pub(crate) local_clock: AtomicRefCell<C>,
+    pub(crate) filter: AtomicRefCell<F>,
 }
 
 impl<C: Clock, F> PtpInstanceState<C, F> {
@@ -123,13 +122,13 @@ impl<C: Clock, F> PtpInstance<C, F> {
     ) -> Self {
         let default_ds = DefaultDS::new(config);
         Self {
-            state: RefCell::new(PtpInstanceState {
+            state: AtomicRefCell::new(PtpInstanceState {
                 default_ds,
                 current_ds: Default::default(),
                 parent_ds: ParentDS::new(default_ds),
                 time_properties_ds,
-                local_clock: RefCell::new(local_clock),
-                filter: RefCell::new(filter),
+                local_clock: AtomicRefCell::new(local_clock),
+                filter: AtomicRefCell::new(filter),
             }),
             log_bmca_interval: AtomicI8::new(i8::MAX),
         }

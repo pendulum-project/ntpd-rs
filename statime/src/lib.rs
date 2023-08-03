@@ -55,6 +55,6 @@ pub use datastructures::{
     messages::{SdoId, MAX_DATA_LEN},
 };
 pub use filters::{basic::BasicFilter, Filter};
-pub use port::{Measurement, Port, PortAction, PortActionIterator, TimestampContext};
+pub use port::{InBmca, Measurement, Port, PortAction, PortActionIterator, TimestampContext};
 pub use ptp_instance::PtpInstance;
 pub use time::{Duration, Interval, Time};

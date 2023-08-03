@@ -1,11 +1,7 @@
-use core::{
-    cell::RefCell,
-    fmt::{Display, Formatter},
-};
+use core::fmt::{Display, Formatter};
 
-pub use master::MasterState;
+use atomic_refcell::AtomicRefCell;
 use rand::Rng;
-pub use slave::SlaveState;
 
 use super::{Measurement, PortActionIterator, TimestampContext};
 use crate::{
@@ -18,6 +14,9 @@ use crate::{
 
 mod master;
 mod slave;
+
+pub use master::MasterState;
+pub use slave::SlaveState;
 
 #[derive(Debug, Default)]
 pub enum PortState {
@@ -81,7 +80,7 @@ impl PortState {
 
     pub(crate) fn send_sync<'a>(
         &mut self,
-        local_clock: &RefCell<impl Clock>,
+        local_clock: &AtomicRefCell<impl Clock>,
         config: &PortConfig,
         port_identity: PortIdentity,
         default_ds: &DefaultDS,

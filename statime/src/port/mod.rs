@@ -1,9 +1,7 @@
-use core::{
-    cell::{Ref, RefCell},
-    ops::Deref,
-};
+use core::ops::Deref;
 
 use arrayvec::ArrayVec;
+use atomic_refcell::{AtomicRef, AtomicRefCell};
 pub use error::{PortError, Result};
 pub use measurement::Measurement;
 use rand::Rng;
@@ -60,6 +58,7 @@ pub mod state;
 /// A single port of the PTP instance
 ///
 /// One of these needs to be created per port of the PTP instance.
+#[derive(Debug)]
 pub struct Port<L, R> {
     config: PortConfig,
     // PortDS port_identity
@@ -72,15 +71,17 @@ pub struct Port<L, R> {
     rng: R,
 }
 
+#[derive(Debug)]
 pub struct Running<'a, C, F> {
-    state_refcell: &'a RefCell<PtpInstanceState<C, F>>,
-    state: Ref<'a, PtpInstanceState<C, F>>,
+    state_refcell: &'a AtomicRefCell<PtpInstanceState<C, F>>,
+    state: AtomicRef<'a, PtpInstanceState<C, F>>,
 }
 
+#[derive(Debug)]
 pub struct InBmca<'a, C, F> {
     pending_action: PortActionIterator<'static>,
     local_best: Option<BestAnnounceMessage>,
-    state_refcell: &'a RefCell<PtpInstanceState<C, F>>,
+    state_refcell: &'a AtomicRefCell<PtpInstanceState<C, F>>,
 }
 
 // Making this non-copy and non-clone ensures a single handle_send_timestamp
@@ -459,14 +460,14 @@ impl<'a, C, F, R: Rng> Port<InBmca<'a, C, F>, R> {
                             PortAction::ResetSyncTimer { duration }
                         ];
                     }
-                    PortState::Master(_) => (),
+                    PortState::Master(_) => {}
                 }
             }
             RecommendedState::P1(_) | RecommendedState::P2(_) => match self.port_state {
                 PortState::Listening | PortState::Slave(_) | PortState::Master(_) => {
                     self.set_forced_port_state(PortState::Passive)
                 }
-                PortState::Passive => (),
+                PortState::Passive => {}
             },
         }
     }
@@ -475,7 +476,7 @@ impl<'a, C, F, R: Rng> Port<InBmca<'a, C, F>, R> {
 impl<'a, C, F, R: Rng> Port<InBmca<'a, C, F>, R> {
     /// Create a new port from a port dataset on a given interface.
     pub(crate) fn new(
-        state_refcell: &'a RefCell<PtpInstanceState<C, F>>,
+        state_refcell: &'a AtomicRefCell<PtpInstanceState<C, F>>,
         config: PortConfig,
         port_identity: PortIdentity,
         mut rng: R,
@@ -503,28 +504,28 @@ impl<'a, C, F, R: Rng> Port<InBmca<'a, C, F>, R> {
 // Separate from the object to deal with lifetime issues.
 fn handle_time_measurement<C: Clock, F: Filter>(
     port_state: &mut PortState,
-    filter: &RefCell<F>,
-    clock: &RefCell<C>,
+    filter: &AtomicRefCell<F>,
+    clock: &AtomicRefCell<C>,
     time_properties_ds: &TimePropertiesDS,
 ) {
-    // If the received message allowed the (slave) state to calculate its offset
-    // from the master, update the local clock
-    let mut filter = match filter.try_borrow_mut() {
-        Ok(filter) => filter,
-        Err(_) => {
-            log::error!("Statime bug: filter busy");
-            return;
-        }
-    };
-    let mut clock = match clock.try_borrow_mut() {
-        Ok(clock) => clock,
-        Err(_) => {
-            log::error!("Statime bug: filter busy");
-            return;
-        }
-    };
-
     if let Some(measurement) = port_state.extract_measurement() {
+        // If the received message allowed the (slave) state to calculate its offset
+        // from the master, update the local clock
+        let mut filter = match filter.try_borrow_mut() {
+            Ok(filter) => filter,
+            Err(_) => {
+                log::error!("Statime bug: filter busy");
+                return;
+            }
+        };
+        let mut clock = match clock.try_borrow_mut() {
+            Ok(clock) => clock,
+            Err(_) => {
+                log::error!("Statime bug: clock busy");
+                return;
+            }
+        };
+
         let (offset, freq_corr) = filter.absorb(measurement);
 
         if let Err(error) = clock.adjust(offset, freq_corr, time_properties_ds) {

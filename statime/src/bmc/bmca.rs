@@ -28,6 +28,7 @@ use crate::{
 ///   be done using [Bmca::find_best_announce_message]
 /// - Then to get the recommended state for each port,
 ///   [Bmca::calculate_recommended_state] needs to be called
+#[derive(Debug)]
 pub struct Bmca {
     foreign_master_list: ForeignMasterList,
     own_port_identity: PortIdentity,

@@ -24,6 +24,7 @@ const MAX_ANNOUNCE_MESSAGES: usize = 8;
 /// The maximum amount of foreign masters to store at the same time
 const MAX_FOREIGN_MASTERS: usize = 8;
 
+#[derive(Debug)]
 pub struct ForeignMaster {
     foreign_master_port_identity: PortIdentity,
     // Must have a capacity of at least 2
@@ -81,6 +82,7 @@ impl ForeignMaster {
     }
 }
 
+#[derive(Debug)]
 pub struct ForeignMasterList {
     // Must have a capacity of at least 5
     foreign_masters: ArrayVec<ForeignMaster, MAX_FOREIGN_MASTERS>,
