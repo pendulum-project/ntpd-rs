@@ -1,10 +1,16 @@
 Version 0.3.7
 ======
 
+Major Changes
+-----
+- Reworked configuration options for peers (see [documentation](CONFIGURATION.md) for new instructions on how to configure peers).
+- Removed support for rfc5905 algorithm.
+
 Minor Changes
 -----
 - Send software timestamping is now enabled by default
 - Hardware timestamping can now only be configured if ntpd-rs is built with the `hardware-timestamping` feature (off by default).
+- Upgraded dependencies.
 
 Bug fixes
 -----
