@@ -191,7 +191,7 @@ pub async fn main() -> std::io::Result<ExitCode> {
 
             let observation = options
                 .observation_socket
-                .or(config.observe.path)
+                .or(config.observe.observation_path)
                 .unwrap_or_else(|| PathBuf::from("/run/ntpd-rs/observe"));
 
             match options.format {
@@ -272,7 +272,8 @@ mod tests {
 
         let peers_listener = create_unix_socket(&path)?;
 
-        let permissions: std::fs::Permissions = PermissionsExt::from_mode(config.mode);
+        let permissions: std::fs::Permissions =
+            PermissionsExt::from_mode(config.observation_permissions);
         std::fs::set_permissions(&path, permissions)?;
 
         let fut = super::print_state(command, path);
@@ -330,7 +331,8 @@ mod tests {
 
         let peers_listener = create_unix_socket(&path)?;
 
-        let permissions: std::fs::Permissions = PermissionsExt::from_mode(config.mode);
+        let permissions: std::fs::Permissions =
+            PermissionsExt::from_mode(config.observation_permissions);
         std::fs::set_permissions(&path, permissions)?;
 
         let fut = super::print_state(Format::Plain, path);

@@ -150,7 +150,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let observation_socket_path = match options.observation_socket {
         Some(path) => path,
-        None => match config.observe.path {
+        None => match config.observe.observation_path {
             Some(path) => path,
             None => "/run/ntpd-rs/observe".into(),
         },

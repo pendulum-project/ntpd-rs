@@ -310,16 +310,16 @@ impl Default for ObserveConfig {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ConfigureConfig {
     #[serde(default)]
-    pub path: Option<std::path::PathBuf>,
+    pub configure_path: Option<std::path::PathBuf>,
     #[serde(default = "default_configure_permissions")]
-    pub mode: u32,
+    pub configure_permissions: u32,
 }
 
 impl Default for ConfigureConfig {
     fn default() -> Self {
         Self {
-            path: None,
-            mode: default_configure_permissions(),
+            configure_path: None,
+            configure_permissions: default_configure_permissions(),
         }
     }
 }
@@ -504,8 +504,8 @@ mod tests {
             observation-path = "/foo/bar/observe"
             observation-permissions = 0o567
             [configure]
-            path = "/foo/bar/configure"
-            mode = 0o123
+            configure-path = "/foo/bar/configure"
+            configure-permissions = 0o123
             "#,
         )
         .unwrap();
@@ -518,10 +518,10 @@ mod tests {
         assert_eq!(config.observe.observation_permissions, 0o567);
 
         assert_eq!(
-            config.configure.path,
+            config.configure.configure_path,
             Some(PathBuf::from("/foo/bar/configure"))
         );
-        assert_eq!(config.configure.mode, 0o123);
+        assert_eq!(config.configure.configure_permissions, 0o123);
 
         assert_eq!(
             config.peers,
