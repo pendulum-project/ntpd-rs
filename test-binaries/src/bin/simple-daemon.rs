@@ -1,4 +1,4 @@
-use ntp_daemon::config::{ClockConfig, CombinedSystemConfig, KeysetConfig, PeerConfig};
+use ntp_daemon::config::{ClockConfig, CombinedSynchronizationConfig, KeysetConfig, PeerConfig};
 use std::error::Error;
 
 #[tokio::main]
@@ -11,7 +11,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let keyset = ntp_daemon::nts_key_provider::spawn(KeysetConfig::default()).await;
 
     let (handle, _) = ntp_daemon::spawn(
-        CombinedSystemConfig::default(),
+        CombinedSynchronizationConfig::default(),
         ClockConfig::default(),
         &peer_configs,
         &[],

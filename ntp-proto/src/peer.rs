@@ -5,7 +5,7 @@ use crate::{
     packet::{Cipher, NtpAssociationMode, RequestIdentifier},
     time_types::NtpInstant,
     NtpDuration, NtpLeapIndicator, NtpPacket, NtpTimestamp, PollInterval, ReferenceId,
-    SystemConfig, SystemSnapshot,
+    SynchronizationConfig, SystemSnapshot,
 };
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument, trace, warn};
@@ -73,7 +73,7 @@ pub struct Peer {
     reach: Reach,
     tries: usize,
 
-    system_config: SystemConfig,
+    synchronization_config: SynchronizationConfig,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -297,14 +297,14 @@ impl Peer {
         our_id: ReferenceId,
         peer_id: ReferenceId,
         local_clock_time: NtpInstant,
-        system_config: SystemConfig,
+        synchronization_config: SynchronizationConfig,
     ) -> Self {
         Self {
             nts: None,
 
-            last_poll_interval: system_config.poll_limits.min,
-            backoff_interval: system_config.poll_limits.min,
-            remote_min_poll_interval: system_config.poll_limits.min,
+            last_poll_interval: synchronization_config.poll_limits.min,
+            backoff_interval: synchronization_config.poll_limits.min,
+            remote_min_poll_interval: synchronization_config.poll_limits.min,
 
             current_request_identifier: None,
             our_id,
@@ -315,7 +315,7 @@ impl Peer {
             stratum: 16,
             reference_id: ReferenceId::NONE,
 
-            system_config,
+            synchronization_config,
         }
     }
 
@@ -324,7 +324,7 @@ impl Peer {
         our_id: ReferenceId,
         peer_id: ReferenceId,
         local_clock_time: NtpInstant,
-        system_config: SystemConfig,
+        system_config: SynchronizationConfig,
         nts: Box<PeerNtsData>,
     ) -> Self {
         Self {
@@ -333,8 +333,8 @@ impl Peer {
         }
     }
 
-    pub fn update_config(&mut self, system_config: SystemConfig) {
-        self.system_config = system_config;
+    pub fn update_config(&mut self, system_config: SynchronizationConfig) {
+        self.synchronization_config = system_config;
     }
 
     pub fn current_poll_interval(&self, system: SystemSnapshot) -> PollInterval {
@@ -349,7 +349,7 @@ impl Peer {
         &mut self,
         buf: &'a mut [u8],
         system: SystemSnapshot,
-        system_config: &SystemConfig,
+        synchronization_config: &SynchronizationConfig,
     ) -> Result<&'a [u8], PollError> {
         if !self.reach.is_reachable() && self.tries >= STARTUP_TRIES_THRESHOLD {
             return Err(PollError::Unreachable);
@@ -371,7 +371,7 @@ impl Peer {
         self.current_request_identifier = Some((identifier, NtpInstant::now() + POLL_WINDOW));
 
         // Ensure we don't spam the remote with polls if it is not reachable
-        self.backoff_interval = poll_interval.inc(system_config.poll_limits);
+        self.backoff_interval = poll_interval.inc(synchronization_config.poll_limits);
 
         // Write packet to buffer
         let mut cursor = Cursor::new(buf);
@@ -423,7 +423,7 @@ impl Peer {
             // KISS packets may not have correct timestamps at all, handle them anyway
             self.remote_min_poll_interval = Ord::max(
                 self.remote_min_poll_interval
-                    .inc(self.system_config.poll_limits),
+                    .inc(self.synchronization_config.poll_limits),
                 self.last_poll_interval,
             );
             warn!(?self.remote_min_poll_interval, "Peer requested rate limit");
@@ -438,7 +438,7 @@ impl Peer {
             // a response, however, for the purpose of backoff we do count it as a response.
             // This ensures that if we have expired cookies, we get through them
             // fairly quickly.
-            self.backoff_interval = self.system_config.poll_limits.min;
+            self.backoff_interval = self.synchronization_config.poll_limits.min;
             Err(IgnoreReason::KissNtsNack)
         } else if message.is_kiss() {
             warn!("Unrecognized KISS Message from peer");
@@ -474,7 +474,7 @@ impl Peer {
         self.reach.received_packet();
 
         // Got a response, so no need for unreachability backoff
-        self.backoff_interval = self.system_config.poll_limits.min;
+        self.backoff_interval = self.synchronization_config.poll_limits.min;
 
         // we received this packet, and don't want to accept future ones with this next_expected_origin
         self.current_request_identifier = None;
@@ -529,7 +529,7 @@ impl Peer {
             stratum: 0,
             reference_id: ReferenceId::from_int(0),
 
-            system_config: SystemConfig::default(),
+            synchronization_config: SynchronizationConfig::default(),
         }
     }
 }
@@ -694,7 +694,7 @@ mod test {
         let prev = peer.current_poll_interval(system);
         let mut buf = [0; 1024];
         let packetbuf = peer
-            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .generate_poll_message(&mut buf, system, &SynchronizationConfig::default())
             .unwrap();
         let packet = NtpPacket::deserialize(packetbuf, &NoCipher).unwrap().0;
         assert!(peer.current_poll_interval(system) > prev);
@@ -716,7 +716,7 @@ mod test {
         let prev = peer.current_poll_interval(system);
         let mut buf = [0; 1024];
         let packetbuf = peer
-            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .generate_poll_message(&mut buf, system, &SynchronizationConfig::default())
             .unwrap();
         let packet = NtpPacket::deserialize(packetbuf, &NoCipher).unwrap().0;
         assert!(peer.current_poll_interval(system) > prev);
@@ -746,7 +746,7 @@ mod test {
         let system = SystemSnapshot::default();
         let mut buf = [0; 1024];
         let outgoingbuf = peer
-            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .generate_poll_message(&mut buf, system, &SynchronizationConfig::default())
             .unwrap();
         let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
         let mut packet = NtpPacket::test();
@@ -784,16 +784,16 @@ mod test {
         let system = SystemSnapshot::default();
         let mut buf = [0; 1024];
         assert!(peer
-            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .generate_poll_message(&mut buf, system, &SynchronizationConfig::default())
             .is_ok());
         assert!(peer
-            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .generate_poll_message(&mut buf, system, &SynchronizationConfig::default())
             .is_ok());
         assert!(peer
-            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .generate_poll_message(&mut buf, system, &SynchronizationConfig::default())
             .is_ok());
         assert!(matches!(
-            peer.generate_poll_message(&mut buf, system, &SystemConfig::default()),
+            peer.generate_poll_message(&mut buf, system, &SynchronizationConfig::default()),
             Err(PollError::Unreachable)
         ));
     }
@@ -806,7 +806,7 @@ mod test {
         let system = SystemSnapshot::default();
         let mut buf = [0; 1024];
         let outgoingbuf = peer
-            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .generate_poll_message(&mut buf, system, &SynchronizationConfig::default())
             .unwrap();
         let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
         let mut packet = NtpPacket::test();
@@ -827,31 +827,31 @@ mod test {
             .is_ok());
 
         assert!(peer
-            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .generate_poll_message(&mut buf, system, &SynchronizationConfig::default())
             .is_ok());
         assert!(peer
-            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .generate_poll_message(&mut buf, system, &SynchronizationConfig::default())
             .is_ok());
         assert!(peer
-            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .generate_poll_message(&mut buf, system, &SynchronizationConfig::default())
             .is_ok());
         assert!(peer
-            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .generate_poll_message(&mut buf, system, &SynchronizationConfig::default())
             .is_ok());
         assert!(peer
-            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .generate_poll_message(&mut buf, system, &SynchronizationConfig::default())
             .is_ok());
         assert!(peer
-            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .generate_poll_message(&mut buf, system, &SynchronizationConfig::default())
             .is_ok());
         assert!(peer
-            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .generate_poll_message(&mut buf, system, &SynchronizationConfig::default())
             .is_ok());
         assert!(peer
-            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .generate_poll_message(&mut buf, system, &SynchronizationConfig::default())
             .is_ok());
         assert!(matches!(
-            peer.generate_poll_message(&mut buf, system, &SystemConfig::default()),
+            peer.generate_poll_message(&mut buf, system, &SynchronizationConfig::default()),
             Err(PollError::Unreachable)
         ));
     }
@@ -864,7 +864,7 @@ mod test {
         let system = SystemSnapshot::default();
         let mut buf = [0; 1024];
         let outgoingbuf = peer
-            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .generate_poll_message(&mut buf, system, &SynchronizationConfig::default())
             .unwrap();
         let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
         let mut packet = NtpPacket::test();
@@ -920,7 +920,7 @@ mod test {
         let system = SystemSnapshot::default();
         let mut buf = [0; 1024];
         let outgoingbuf = peer
-            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .generate_poll_message(&mut buf, system, &SynchronizationConfig::default())
             .unwrap();
         let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
         packet.set_reference_id(ReferenceId::KISS_RSTR);
@@ -955,7 +955,7 @@ mod test {
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         let outgoingbuf = peer
-            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .generate_poll_message(&mut buf, system, &SynchronizationConfig::default())
             .unwrap();
         let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
         packet.set_reference_id(ReferenceId::KISS_DENY);
@@ -996,7 +996,7 @@ mod test {
         let system = SystemSnapshot::default();
         let mut buf = [0; 1024];
         let outgoingbuf = peer
-            .generate_poll_message(&mut buf, system, &SystemConfig::default())
+            .generate_poll_message(&mut buf, system, &SynchronizationConfig::default())
             .unwrap();
         let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
         packet.set_reference_id(ReferenceId::KISS_RATE);

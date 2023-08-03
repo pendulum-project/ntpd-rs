@@ -191,7 +191,7 @@ pub async fn main() -> std::io::Result<ExitCode> {
 
             let observation = options
                 .observation_socket
-                .or(config.observe.observation_path)
+                .or(config.logging_observability.observe.observation_path)
                 .unwrap_or_else(|| PathBuf::from("/run/ntpd-rs/observe"));
 
             match options.format {

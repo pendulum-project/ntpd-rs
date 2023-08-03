@@ -1,4 +1,4 @@
-use crate::SystemConfig;
+use crate::SynchronizationConfig;
 
 use super::{config::AlgorithmConfig, PeerSnapshot};
 
@@ -16,7 +16,7 @@ enum BoundType {
 // can be compensated for if desired by setting tighter bounds on the weights
 // determining the confidence interval.
 pub(super) fn select<Index: Copy>(
-    config: &SystemConfig,
+    config: &SynchronizationConfig,
     algo_config: &AlgorithmConfig,
     candidates: Vec<PeerSnapshot<Index>>,
 ) -> Vec<PeerSnapshot<Index>> {
@@ -102,7 +102,7 @@ mod tests {
             snapshot_for_range(0.05, 0.01, 0.09),
             snapshot_for_range(0.05, 0.09, 0.01),
         ];
-        let sysconfig = SystemConfig {
+        let sysconfig = SynchronizationConfig {
             min_intersection_survivors: 4,
             ..Default::default()
         };
@@ -143,7 +143,7 @@ mod tests {
             snapshot_for_range(0.0, 0.1, 0.1),
             snapshot_for_range(0.0, 0.01, 0.01),
         ];
-        let sysconfig = SystemConfig {
+        let sysconfig = SynchronizationConfig {
             min_intersection_survivors: 1,
             ..Default::default()
         };
@@ -202,14 +202,14 @@ mod tests {
             ..Default::default()
         };
 
-        let sysconfig = SystemConfig {
+        let sysconfig = SynchronizationConfig {
             min_intersection_survivors: 3,
             ..Default::default()
         };
         let result = select(&sysconfig, &algconfig, candidates.clone());
         assert_eq!(result.len(), 3);
 
-        let sysconfig = SystemConfig {
+        let sysconfig = SynchronizationConfig {
             min_intersection_survivors: 4,
             ..Default::default()
         };
@@ -232,7 +232,7 @@ mod tests {
             range_delay_weight: 1.0,
             ..Default::default()
         };
-        let sysconfig = SystemConfig {
+        let sysconfig = SynchronizationConfig {
             min_intersection_survivors: 1,
             ..Default::default()
         };

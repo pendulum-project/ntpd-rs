@@ -75,7 +75,7 @@
 use tracing::{debug, error, info, trace};
 
 use crate::{
-    Measurement, NtpDuration, NtpTimestamp, PollInterval, PollIntervalLimits, SystemConfig,
+    Measurement, NtpDuration, NtpTimestamp, PollInterval, PollIntervalLimits, SynchronizationConfig,
 };
 
 use super::{
@@ -245,7 +245,7 @@ impl PeerFilter {
     /// not so much that each individual poll message gives us very little new information.
     fn update_desired_poll(
         &mut self,
-        config: &SystemConfig,
+        config: &SynchronizationConfig,
         algo_config: &AlgorithmConfig,
         p: f64,
         weight: f64,
@@ -319,7 +319,7 @@ impl PeerFilter {
     /// Update our estimates based on a new measurement.
     fn update(
         &mut self,
-        config: &SystemConfig,
+        config: &SynchronizationConfig,
         algo_config: &AlgorithmConfig,
         measurement: Measurement,
     ) -> bool {
@@ -407,7 +407,7 @@ impl PeerState {
     // Returs whether the clock may need adjusting.
     pub fn update_self_using_measurement(
         &mut self,
-        config: &SystemConfig,
+        config: &SynchronizationConfig,
         algo_config: &AlgorithmConfig,
         measurement: Measurement,
     ) -> bool {
@@ -598,7 +598,7 @@ mod tests {
             filter_time: base,
         }));
         peer.update_self_using_measurement(
-            &SystemConfig::default(),
+            &SynchronizationConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -648,7 +648,7 @@ mod tests {
         }));
         peer.process_offset_steering(-1800.0);
         peer.update_self_using_measurement(
-            &SystemConfig::default(),
+            &SynchronizationConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -698,7 +698,7 @@ mod tests {
         }));
         peer.process_offset_steering(1800.0);
         peer.update_self_using_measurement(
-            &SystemConfig::default(),
+            &SynchronizationConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -794,7 +794,7 @@ mod tests {
         assert!(peer.snapshot(0_usize).unwrap().state.ventry(0).abs() < 1e-7);
 
         peer.update_self_using_measurement(
-            &SystemConfig::default(),
+            &SynchronizationConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -851,7 +851,7 @@ mod tests {
         peer.progress_filtertime(base - NtpDuration::from_seconds(10e-3)); // should succeed
 
         peer.update_self_using_measurement(
-            &SystemConfig::default(),
+            &SynchronizationConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -961,7 +961,7 @@ mod tests {
         let mut peer = PeerState::new();
         assert!(peer.snapshot(0_usize).is_none());
         peer.update_self_using_measurement(
-            &SystemConfig::default(),
+            &SynchronizationConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -980,7 +980,7 @@ mod tests {
         );
         assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
-            &SystemConfig::default(),
+            &SynchronizationConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -999,7 +999,7 @@ mod tests {
         );
         assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
-            &SystemConfig::default(),
+            &SynchronizationConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1018,7 +1018,7 @@ mod tests {
         );
         assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
-            &SystemConfig::default(),
+            &SynchronizationConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1037,7 +1037,7 @@ mod tests {
         );
         assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
-            &SystemConfig::default(),
+            &SynchronizationConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1056,7 +1056,7 @@ mod tests {
         );
         assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
-            &SystemConfig::default(),
+            &SynchronizationConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1075,7 +1075,7 @@ mod tests {
         );
         assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
-            &SystemConfig::default(),
+            &SynchronizationConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1094,7 +1094,7 @@ mod tests {
         );
         assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
-            &SystemConfig::default(),
+            &SynchronizationConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1122,7 +1122,7 @@ mod tests {
         let mut peer = PeerState::new();
         assert!(peer.snapshot(0_usize).is_none());
         peer.update_self_using_measurement(
-            &SystemConfig::default(),
+            &SynchronizationConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1141,7 +1141,7 @@ mod tests {
         );
         assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
-            &SystemConfig::default(),
+            &SynchronizationConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1160,7 +1160,7 @@ mod tests {
         );
         assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
-            &SystemConfig::default(),
+            &SynchronizationConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1179,7 +1179,7 @@ mod tests {
         );
         assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
-            &SystemConfig::default(),
+            &SynchronizationConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1199,7 +1199,7 @@ mod tests {
         peer.process_offset_steering(4e-3);
         assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
-            &SystemConfig::default(),
+            &SynchronizationConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1218,7 +1218,7 @@ mod tests {
         );
         assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
-            &SystemConfig::default(),
+            &SynchronizationConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1237,7 +1237,7 @@ mod tests {
         );
         assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
-            &SystemConfig::default(),
+            &SynchronizationConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1256,7 +1256,7 @@ mod tests {
         );
         assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
         peer.update_self_using_measurement(
-            &SystemConfig::default(),
+            &SynchronizationConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1279,7 +1279,7 @@ mod tests {
 
     #[test]
     fn test_poll_duration_variation() {
-        let config = SystemConfig::default();
+        let config = SynchronizationConfig::default();
         let algo_config = AlgorithmConfig {
             poll_hysteresis: 2,
             ..Default::default()

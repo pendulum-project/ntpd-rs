@@ -23,7 +23,7 @@ listen = "[::]:123"
 # Below are configured various thresholds beyond which ntpd-rs will not
 # change the system clock. CHANGE THESE TO MATCH YOUR SECURITY NEEDS!
 # For guidance, see OPERATIONAL_CONSIDERATIONS.md
-[system]
+[synchronization]
 panic-threshold = 1800
 startup-panic-threshold = { forward="inf", backward = 1800 }
 #accumulated-threshold = 1800

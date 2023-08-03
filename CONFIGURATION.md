@@ -244,7 +244,7 @@ The default clock on unix systems is `CLOCK_REALTIME`. It is important to synchr
 
 #### Time synchronization
 
-There are a number of options available to influence how time differences to the various servers are used to synchronize the system clock. All of these are part of the `system` section of the configuration:
+There are a number of options available to influence how time differences to the various servers are used to synchronize the system clock. All of these are part of the `synchronization` section of the configuration:
 | Option                     | Default                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                 |
 |----------------------------|---------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | min-intersection-survivors | 3                               | Minimum number of servers that need to agree on the true time from our perspective for synchronization to start.                                                                                                                                                                                                                                                                                                            |
@@ -296,7 +296,7 @@ log-level = "info"
 # address = "1.pool.ntp.org:123"
 
 # System parameters used in filtering and steering the clock:
-[system]
+[synchronization]
 min-intersection-survivors = 1
 poll-limits = { min = 6, max = 10 }
 panic-threshold = 10

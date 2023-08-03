@@ -3,7 +3,7 @@ mod server;
 pub mod subnet;
 
 use ntp_os_clock::DefaultNtpClock;
-use ntp_proto::{DefaultTimeSyncController, SystemConfig, TimeSyncController};
+use ntp_proto::{DefaultTimeSyncController, SynchronizationConfig, TimeSyncController};
 use ntp_udp::{EnableTimestamps, InterfaceName};
 pub use peer::*;
 use serde::{Deserialize, Deserializer};
@@ -246,9 +246,9 @@ pub struct ClockConfig {
 
 #[derive(Deserialize, Debug, Default, Clone, Copy)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct CombinedSystemConfig {
+pub struct CombinedSynchronizationConfig {
     #[serde(flatten)]
-    pub system: SystemConfig,
+    pub synchronization: SynchronizationConfig,
     #[serde(flatten)]
     pub algorithm: <DefaultTimeSyncController<DefaultNtpClock, PeerId> as TimeSyncController<
         DefaultNtpClock,
@@ -277,7 +277,7 @@ pub struct Config {
     #[serde(alias = "nts-ke-server", default)]
     pub nts_ke: Option<NtsKeConfig>,
     #[serde(default)]
-    pub system: CombinedSystemConfig,
+    pub synchronization: CombinedSynchronizationConfig,
     #[serde(default)]
     pub logging_observability: LoggingObservabilityConfig,
     #[serde(default)]
@@ -376,7 +376,12 @@ impl Config {
             ok = false;
         }
 
-        if self.count_peers() < self.system.system.min_intersection_survivors {
+        if self.count_peers()
+            < self
+                .synchronization
+                .synchronization
+                .min_intersection_survivors
+        {
             warn!("Fewer peers configured than are required to agree on the current time. Daemon will not change system time.");
             ok = false;
         }
@@ -470,7 +475,7 @@ mod tests {
         );
 
         let config: Config = toml::from_str(
-            "[[peers]]\nmode = \"simple\"\naddress = \"example.com\"\n[system]\npanic-threshold = 0",
+            "[[peers]]\nmode = \"simple\"\naddress = \"example.com\"\n[synchronization]\npanic-threshold = 0",
         )
         .unwrap();
         assert_eq!(
@@ -480,16 +485,24 @@ mod tests {
             })]
         );
         assert_eq!(
-            config.system.system.panic_threshold.forward,
+            config
+                .synchronization
+                .synchronization
+                .panic_threshold
+                .forward,
             Some(NtpDuration::from_seconds(0.))
         );
         assert_eq!(
-            config.system.system.panic_threshold.backward,
+            config
+                .synchronization
+                .synchronization
+                .panic_threshold
+                .backward,
             Some(NtpDuration::from_seconds(0.))
         );
 
         let config: Config = toml::from_str(
-            "[[peers]]\nmode = \"simple\"\naddress = \"example.com\"\n[system]\npanic-threshold = \"inf\"",
+            "[[peers]]\nmode = \"simple\"\naddress = \"example.com\"\n[synchronization]\npanic-threshold = \"inf\"",
         )
         .unwrap();
         assert_eq!(
@@ -498,8 +511,18 @@ mod tests {
                 addr: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
-        assert!(config.system.system.panic_threshold.forward.is_none());
-        assert!(config.system.system.panic_threshold.backward.is_none());
+        assert!(config
+            .synchronization
+            .synchronization
+            .panic_threshold
+            .forward
+            .is_none());
+        assert!(config
+            .synchronization
+            .synchronization
+            .panic_threshold
+            .backward
+            .is_none());
 
         let config: Config = toml::from_str(
             r#"
@@ -599,7 +622,7 @@ mod tests {
 
     #[test]
     fn system_config_accumulated_threshold() {
-        let config: Result<SystemConfig, _> = toml::from_str(
+        let config: Result<SynchronizationConfig, _> = toml::from_str(
             r#"
             accumulated-threshold = 0
             "#,
@@ -608,7 +631,7 @@ mod tests {
         let config = config.unwrap();
         assert!(config.accumulated_threshold.is_none());
 
-        let config: Result<SystemConfig, _> = toml::from_str(
+        let config: Result<SynchronizationConfig, _> = toml::from_str(
             r#"
             accumulated-threshold = 1000
             "#,
@@ -623,7 +646,7 @@ mod tests {
 
     #[test]
     fn system_config_startup_panic_threshold() {
-        let config: Result<SystemConfig, _> = toml::from_str(
+        let config: Result<SynchronizationConfig, _> = toml::from_str(
             r#"
             startup-panic-threshold = { forward = 10, backward = 20 }
             "#,
@@ -678,7 +701,7 @@ mod tests {
 
     #[test]
     fn deny_unknown_fields() {
-        let config: Result<SystemConfig, _> = toml::from_str(
+        let config: Result<SynchronizationConfig, _> = toml::from_str(
             r#"
             unknown-field = 42
             "#,

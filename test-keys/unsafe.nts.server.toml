@@ -13,7 +13,7 @@ count = 4
 listen = "0.0.0.0:123"
 
 # System parameters used in filtering and steering the clock:
-[system]
+[synchronization]
 min-intersection-survivors = 1
 panic-threshold = 10
 startup-panic-threshold = { forward = 0, backward = 1800 }

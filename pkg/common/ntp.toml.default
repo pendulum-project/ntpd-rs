@@ -34,7 +34,7 @@ count = 4
 
 ## Below are configured various thresholds beyond which ntpd-rs will not
 ## change the system clock. CHANGE THESE TO MATCH YOUR SECURITY NEEDS!
-[system]
+[synchronization]
 # The maximum step size (in seconds) of a single step during normal operation
 panic-threshold = 1800
 # On startup a larger jump may occur, this sets limits for that initial jump

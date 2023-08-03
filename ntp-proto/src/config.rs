@@ -192,7 +192,7 @@ impl<'de> Deserialize<'de> for StepThreshold {
 
 #[derive(Deserialize, Debug, Clone, Copy)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct SystemConfig {
+pub struct SynchronizationConfig {
     /// Minimum number of survivors needed to be able to discipline the system clock.
     /// More survivors (so more servers from which to get the time) means a more accurate time.
     ///
@@ -240,7 +240,7 @@ pub struct SystemConfig {
     pub initial_poll: PollInterval,
 }
 
-impl Default for SystemConfig {
+impl Default for SynchronizationConfig {
     fn default() -> Self {
         Self {
             min_intersection_survivors: default_min_intersection_survivors(),

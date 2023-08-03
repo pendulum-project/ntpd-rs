@@ -1,5 +1,7 @@
 use crate::{
-    config::{ClockConfig, CombinedSystemConfig, NormalizedAddress, PeerConfig, ServerConfig},
+    config::{
+        ClockConfig, CombinedSynchronizationConfig, NormalizedAddress, PeerConfig, ServerConfig,
+    },
     peer::{MsgForSystem, PeerChannels},
     peer::{PeerTask, Wait},
     server::{ServerStats, ServerTask},
@@ -68,8 +70,8 @@ impl<T: Wait> Wait for SingleshotSleep<T> {
 }
 
 pub struct DaemonChannels {
-    pub config_receiver: tokio::sync::watch::Receiver<CombinedSystemConfig>,
-    pub config_sender: tokio::sync::watch::Sender<CombinedSystemConfig>,
+    pub config_receiver: tokio::sync::watch::Receiver<CombinedSynchronizationConfig>,
+    pub config_sender: tokio::sync::watch::Sender<CombinedSynchronizationConfig>,
     pub peer_snapshots_receiver: tokio::sync::watch::Receiver<Vec<ObservablePeerState>>,
     pub server_data_receiver: tokio::sync::watch::Receiver<Vec<ServerData>>,
     pub system_snapshot_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
@@ -78,7 +80,7 @@ pub struct DaemonChannels {
 
 /// Spawn the NTP daemon
 pub async fn spawn(
-    system_config: CombinedSystemConfig,
+    system_config: CombinedSynchronizationConfig,
     clock_config: ClockConfig,
     peer_configs: &[PeerConfig],
     server_configs: &[ServerConfig],
@@ -127,10 +129,10 @@ struct SystemSpawnerData {
 
 struct System<C: NtpClock, T: Wait> {
     _wait: PhantomData<SingleshotSleep<T>>,
-    config: CombinedSystemConfig,
+    config: CombinedSynchronizationConfig,
     system: SystemSnapshot,
 
-    config_receiver: tokio::sync::watch::Receiver<CombinedSystemConfig>,
+    config_receiver: tokio::sync::watch::Receiver<CombinedSynchronizationConfig>,
     system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
     peer_snapshots_sender: tokio::sync::watch::Sender<Vec<ObservablePeerState>>,
     server_data_sender: tokio::sync::watch::Sender<Vec<ServerData>>,
@@ -162,12 +164,12 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         clock: C,
         interface: Option<InterfaceName>,
         enable_timestamps: EnableTimestamps,
-        config: CombinedSystemConfig,
+        config: CombinedSynchronizationConfig,
         keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     ) -> (Self, DaemonChannels) {
         // Setup system snapshot
         let system = SystemSnapshot {
-            stratum: config.system.local_stratum,
+            stratum: config.synchronization.local_stratum,
             ..Default::default()
         };
 
@@ -204,10 +206,14 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                 peer_channels: PeerChannels {
                     msg_for_system_sender,
                     system_snapshot_receiver: system_snapshot_receiver.clone(),
-                    system_config_receiver: config_receiver.clone(),
+                    synchronization_config_receiver: config_receiver.clone(),
                 },
                 clock: clock.clone(),
-                controller: DefaultTimeSyncController::new(clock, config.system, config.algorithm),
+                controller: DefaultTimeSyncController::new(
+                    clock,
+                    config.synchronization,
+                    config.algorithm,
+                ),
                 enable_timestamps,
                 interface,
             },
@@ -274,7 +280,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
     fn handle_config_update(&mut self) {
         let config = *self.config_receiver.borrow_and_update();
         self.controller
-            .update_config(config.system, config.algorithm);
+            .update_config(config.synchronization, config.algorithm);
         self.config = config;
     }
 
@@ -367,7 +373,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         self.controller.peer_update(
             index,
             snapshot
-                .accept_synchronization(self.config.system.local_stratum)
+                .accept_synchronization(self.config.synchronization.local_stratum)
                 .is_ok(),
         );
         self.peers.get_mut(&index).unwrap().snapshot = Some(snapshot);
@@ -400,7 +406,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         }
         if let Some(time_snapshot) = update.time_snapshot {
             self.system
-                .update_timedata(time_snapshot, &self.config.system);
+                .update_timedata(time_snapshot, &self.config.synchronization);
         }
         if let Some(timestamp) = update.next_update {
             let duration = timestamp - self.clock.now().expect("Could not get current time");
@@ -607,7 +613,7 @@ mod tests {
             TestClock {},
             InterfaceName::DEFAULT,
             EnableTimestamps::default(),
-            CombinedSystemConfig::default(),
+            CombinedSynchronizationConfig::default(),
             keyset,
         );
         let wait =

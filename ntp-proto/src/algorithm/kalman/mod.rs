@@ -4,7 +4,7 @@ use tracing::{error, info, instrument};
 
 use crate::{
     Measurement, NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, ObservablePeerTimedata,
-    StateUpdate, SystemConfig, TimeSnapshot, TimeSyncController,
+    StateUpdate, SynchronizationConfig, TimeSnapshot, TimeSyncController,
 };
 
 use self::{
@@ -63,7 +63,7 @@ impl<Index: Copy> PeerSnapshot<Index> {
 pub struct KalmanClockController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> {
     peers: HashMap<PeerID, (PeerState, bool)>,
     clock: C,
-    config: SystemConfig,
+    config: SynchronizationConfig,
     algo_config: AlgorithmConfig,
     freq_offset: f64,
     timedata: TimeSnapshot,
@@ -288,7 +288,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
 {
     type AlgorithmConfig = AlgorithmConfig;
 
-    fn new(clock: C, config: SystemConfig, algo_config: Self::AlgorithmConfig) -> Self {
+    fn new(clock: C, config: SynchronizationConfig, algo_config: Self::AlgorithmConfig) -> Self {
         // Setup clock
         clock
             .disable_ntp_algorithm()
@@ -312,7 +312,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
         }
     }
 
-    fn update_config(&mut self, config: SystemConfig, algo_config: Self::AlgorithmConfig) {
+    fn update_config(&mut self, config: SynchronizationConfig, algo_config: Self::AlgorithmConfig) {
         self.config = config;
         self.algo_config = algo_config;
     }
@@ -421,9 +421,9 @@ mod tests {
 
     #[test]
     fn test_startup_flag_unsets() {
-        let system_config = SystemConfig {
+        let system_config = SynchronizationConfig {
             min_intersection_survivors: 1,
-            ..SystemConfig::default()
+            ..SynchronizationConfig::default()
         };
         let algo_config = AlgorithmConfig::default();
         let mut algo = KalmanClockController::new(
@@ -475,9 +475,9 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_large_offset_eventually_panics() {
-        let system_config = SystemConfig {
+        let system_config = SynchronizationConfig {
             min_intersection_survivors: 1,
-            ..SystemConfig::default()
+            ..SynchronizationConfig::default()
         };
         let algo_config = AlgorithmConfig::default();
         let mut algo = KalmanClockController::new(
@@ -525,9 +525,9 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_backward_step_panics_before_steer() {
-        let system_config = SystemConfig {
+        let system_config = SynchronizationConfig {
             min_intersection_survivors: 1,
-            ..SystemConfig::default()
+            ..SynchronizationConfig::default()
         };
         let algo_config = AlgorithmConfig::default();
         let mut algo = KalmanClockController::new(
