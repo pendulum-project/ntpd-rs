@@ -66,7 +66,7 @@ async fn observer(
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
     system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
 ) -> std::io::Result<()> {
-    let path = match config.path {
+    let path = match config.observation_path {
         Some(path) => path,
         None => return Ok(()),
     };
@@ -76,7 +76,8 @@ async fn observer(
     // this binary needs to run as root to be able to adjust the system clock.
     // by default, the socket inherits root permissions, but the client should not need
     // elevated permissions to read from the socket. So we explicitly set the permissions
-    let permissions: std::fs::Permissions = PermissionsExt::from_mode(config.mode);
+    let permissions: std::fs::Permissions =
+        PermissionsExt::from_mode(config.observation_permissions);
     std::fs::set_permissions(&path, permissions)?;
 
     loop {
@@ -156,8 +157,8 @@ mod tests {
         // be careful with copying: tests run concurrently and should use a unique socket name!
         let path = std::env::temp_dir().join("ntp-test-stream-2");
         let config = crate::config::ObserveConfig {
-            path: Some(path.clone()),
-            mode: 0o700,
+            observation_path: Some(path.clone()),
+            observation_permissions: 0o700,
         };
 
         let (_, peers_reader) = tokio::sync::watch::channel(vec![
@@ -219,8 +220,8 @@ mod tests {
         // be careful with copying: tests run concurrently and should use a unique socket name!
         let path = std::env::temp_dir().join("ntp-test-stream-3");
         let config = crate::config::ObserveConfig {
-            path: Some(path.clone()),
-            mode: 0o700,
+            observation_path: Some(path.clone()),
+            observation_permissions: 0o700,
         };
 
         let (mut peers_writer, peers_reader) = tokio::sync::watch::channel(vec![

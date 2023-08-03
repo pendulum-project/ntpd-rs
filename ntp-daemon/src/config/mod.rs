@@ -280,17 +280,17 @@ pub struct Config {
     pub clock: ClockConfig,
 }
 
-const fn default_observe_permissions() -> u32 {
-    0o666
-}
-
 #[derive(Clone, Deserialize, Debug)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ObserveConfig {
     #[serde(default)]
-    pub path: Option<PathBuf>,
-    #[serde(default = "default_observe_permissions")]
-    pub mode: u32,
+    pub observation_path: Option<PathBuf>,
+    #[serde(default = "default_observation_permissions")]
+    pub observation_permissions: u32,
+}
+
+const fn default_observation_permissions() -> u32 {
+    0o666
 }
 
 const fn default_configure_permissions() -> u32 {
@@ -300,8 +300,8 @@ const fn default_configure_permissions() -> u32 {
 impl Default for ObserveConfig {
     fn default() -> Self {
         Self {
-            path: None,
-            mode: default_observe_permissions(),
+            observation_path: None,
+            observation_permissions: default_observation_permissions(),
         }
     }
 }
@@ -501,8 +501,8 @@ mod tests {
             mode = "simple"
             address = "example.com"
             [observe]
-            path = "/foo/bar/observe"
-            mode = 0o567
+            observation-path = "/foo/bar/observe"
+            observation-permissions = 0o567
             [configure]
             path = "/foo/bar/configure"
             mode = 0o123
@@ -511,8 +511,11 @@ mod tests {
         .unwrap();
         assert!(config.log_filter.is_some());
 
-        assert_eq!(config.observe.path, Some(PathBuf::from("/foo/bar/observe")));
-        assert_eq!(config.observe.mode, 0o567);
+        assert_eq!(
+            config.observe.observation_path,
+            Some(PathBuf::from("/foo/bar/observe"))
+        );
+        assert_eq!(config.observe.observation_permissions, 0o567);
 
         assert_eq!(
             config.configure.path,

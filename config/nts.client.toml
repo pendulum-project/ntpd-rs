@@ -14,4 +14,4 @@ panic-threshold = 10
 startup-panic-threshold = { forward = "inf", backward = 1800 }
 
 [observe]
-path = "/run/ntpd-rs/observe"
+observation-path = "/run/ntpd-rs/observe"

@@ -193,11 +193,11 @@ Servers configured via the `server` section can also support NTS. To enable this
 | key-exchange-listen     |         | Address of the interface to bind to for the NTS-KE server.                                                                                                                                   |
 
 Our implementation of NTS follows the recommendations of section 6 in [RFC8915](https://www.rfc-editor.org/rfc/rfc8915.html). Currently, the master keys for encryption of the cookies are generated internally, and their generation can be controlled via the settings in the `keyset` section
-| Option            | Default | Description                                                                                                                                               |
-|-------------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
-| old-keys          | 7       | Number of old keys to keep valid for existing cookies.                                                                                                    |
-| rotation-interval | 86400   | Time (in seconds) between generating new keys.                                                                                                            |
-| storage-path      |         | If specified, server keys are saved and restored from this path. This enables reboots of the server without invalidating the cookies of existing clients. |
+| Option                | Default | Description                                                                                                                                               |
+|-----------------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| stale-key-count       | 7       | Number of old keys to keep valid for existing cookies.                                                                                                    |
+| key-rotation-interval | 86400   | Time (in seconds) between generating new keys.                                                                                                            |
+| key-storage-path      |         | If specified, server keys are saved and restored from this path. This enables reboots of the server without invalidating the cookies of existing clients. |
 
 ##### A note on TLS keys and certificates
 

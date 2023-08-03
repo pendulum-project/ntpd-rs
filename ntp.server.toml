@@ -15,7 +15,7 @@ count = 4
 #count = 4
 
 [observe]
-path = "/run/ntpd-rs/observe"
+observation-path = "/run/ntpd-rs/observe"
 
 # Serve NTP on any interface (requires permissions to use udp port 123)
 [[server]]

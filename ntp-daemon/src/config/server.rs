@@ -17,31 +17,31 @@ use crate::{config::subnet::IpSubnet, ipfilter::IpFilter};
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct KeysetConfig {
     /// Number of old keys to keep around
-    #[serde(default = "default_old_keys")]
-    pub old_keys: usize,
+    #[serde(default = "default_stale_key_count")]
+    pub stale_key_count: usize,
     /// How often to rotate keys (seconds between rotations)
-    #[serde(default = "default_rotation_interval")]
-    pub rotation_interval: usize,
+    #[serde(default = "default_key_rotation_interval")]
+    pub key_rotation_interval: usize,
     #[serde(default)]
-    pub storage_path: Option<String>,
+    pub key_storage_path: Option<String>,
 }
 
 impl Default for KeysetConfig {
     fn default() -> Self {
         Self {
-            old_keys: default_old_keys(),
-            rotation_interval: default_rotation_interval(),
-            storage_path: None,
+            stale_key_count: default_stale_key_count(),
+            key_rotation_interval: default_key_rotation_interval(),
+            key_storage_path: None,
         }
     }
 }
 
-fn default_rotation_interval() -> usize {
+fn default_key_rotation_interval() -> usize {
     // 1 day in seconds
     86400
 }
 
-fn default_old_keys() -> usize {
+fn default_stale_key_count() -> usize {
     // 1 weeks worth at 1 key per day
     7
 }
@@ -303,6 +303,27 @@ mod tests {
             "#,
         );
         assert!(matches!(test, Err(_)));
+    }
+
+    #[test]
+    fn test_deserialize_keyset() {
+        #[derive(Deserialize, Debug)]
+        #[serde(rename_all = "kebab-case", deny_unknown_fields)]
+        struct TestConfig {
+            keyset: KeysetConfig,
+        }
+
+        let test: TestConfig = toml::from_str(
+            r#"
+            [keyset]
+            stale-key-count = 5
+            key-rotation-interval = 500
+            key-storage-path = "key/storage/path.key"
+            "#,
+        )
+        .unwrap();
+
+        assert_ne!(test.keyset, KeysetConfig::default())
     }
 
     #[test]

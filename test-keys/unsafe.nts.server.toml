@@ -17,7 +17,7 @@ panic-threshold = 10
 startup-panic-threshold = { forward = 0, backward = 1800 }
 
 [observe]
-path = "/run/ntpd-rs/observe"
+observation-path = "/run/ntpd-rs/observe"
 
 # to function as an NTS server, we must also provide key exchange
 # uses an unsecure certificate chain!

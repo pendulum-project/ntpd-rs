@@ -31,7 +31,7 @@ count = 4
 ## `ntp-metrics-exporter` binaries for some default options to read from the
 ## observe socket.
 [observe]
-path = "/run/ntpd-rs/observe"
+observation-path = "/run/ntpd-rs/observe"
 
 ## Below are configured various thresholds beyond which ntpd-rs will not
 ## change the system clock. CHANGE THESE TO MATCH YOUR SECURITY NEEDS!
