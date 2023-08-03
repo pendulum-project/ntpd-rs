@@ -22,7 +22,7 @@ path = "/run/ntpd-rs/observe"
 # to function as an NTS server, we must also provide key exchange
 # uses an unsecure certificate chain!
 [nts-ke-server]
-addr = "0.0.0.0:4460"
+key-_exchange-_listen = "0.0.0.0:4460"
 cert-chain-path = "test-keys/end.fullchain.pem"
 key-der-path = "test-keys/end.key"
 timeout-ms = 1000

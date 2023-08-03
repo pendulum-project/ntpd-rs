@@ -12,7 +12,7 @@ listen = "0.0.0.0:123"
 
 # to function as an NTS server, we must also provide key exchange
 [nts-ke-server]
-addr = "0.0.0.0:4460"
+key-exchange-listen = "0.0.0.0:4460"
 cert-chain-path = "path/to/certificate/chain.pem"
 key-der-path = "path/to/private.key"
 timeout-ms = 1000
