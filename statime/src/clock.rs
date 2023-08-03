@@ -48,5 +48,7 @@ pub trait Clock {
 /// between the [Clock] and timers.
 pub trait Timer {
     /// Wait for a given amount of time
-    async fn after(&self, duration: Duration);
+    type F: core::future::Future + Send + 'static;
+
+    fn after(&self, duration: Duration) -> Self::F;
 }

@@ -84,8 +84,10 @@ impl Clock for LinuxClock {
 pub struct LinuxTimer;
 
 impl Timer for LinuxTimer {
-    async fn after(&self, duration: Duration) {
-        tokio::time::sleep(duration.into()).await
+    type F = tokio::time::Sleep;
+
+    fn after(&self, duration: Duration) -> Self::F {
+        tokio::time::sleep(duration.into())
     }
 }
 
