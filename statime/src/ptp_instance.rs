@@ -135,6 +135,9 @@ impl<C: Clock, F> PtpInstance<C, F> {
         }
     }
 
+    /// Add and initialize this port
+    ///
+    /// We start in the BMCA state because that is convenient
     pub fn add_port<R: Rng>(&self, config: PortConfig, rng: R) -> Port<InBmca<'_, C, F>, R> {
         self.log_bmca_interval
             .fetch_min(config.announce_interval.as_log_2(), Ordering::Relaxed);

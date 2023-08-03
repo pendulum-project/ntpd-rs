@@ -1,6 +1,7 @@
 use std::{
     future::Future,
     pin::{pin, Pin},
+    sync::Mutex,
 };
 
 use clap::Parser;
@@ -233,111 +234,134 @@ async fn actual_main() {
         local_clock.clone(),
         BasicFilter::new(0.25),
     );
-    let rng = StdRng::from_entropy();
-    let mut bmca_port = instance.add_port(port_config, rng);
+
+    let rng1 = StdRng::from_entropy();
+    let port_in_bmca1 = instance.add_port(port_config, rng1);
+
+    let rng2 = StdRng::from_entropy();
+    let port_in_bmca2 = instance.add_port(port_config, rng2);
+
+    let mut ports = vec![
+        Mutex::new(Some(port_in_bmca1)),
+        Mutex::new(Some(port_in_bmca2)),
+    ];
 
     let mut bmca_timer = pin!(Timer::new());
-    let mut port_sync_timer = pin!(Timer::new());
-    let mut port_announce_timer = pin!(Timer::new());
-    let mut port_announce_timeout_timer = pin!(Timer::new());
-    let mut delay_request_timer = pin!(Timer::new());
+    let port_sync_timer = pin!(Timer::new());
+    let port_announce_timer = pin!(Timer::new());
+    let port_announce_timeout_timer = pin!(Timer::new());
+    let delay_request_timer = pin!(Timer::new());
+
+    let mut timers = Timers {
+        port_sync_timer,
+        port_announce_timer,
+        port_announce_timeout_timer,
+        delay_request_timer,
+    };
 
     let mut network_port = network_runtime.open(args.interface).await.unwrap();
 
     loop {
-        // reset bmca timer
-        bmca_timer.as_mut().reset(instance.bmca_interval());
+        for mutex_opt_port_in_bmca in ports.iter_mut() {
+            // take the port out of the vector of ports
+            let port_in_bmca_ref = mutex_opt_port_in_bmca.get_mut().unwrap();
+            let port_in_bmca = port_in_bmca_ref.take().unwrap();
 
-        // handle post-bmca actions
-        let (mut port, actions) = bmca_port.end_bmca();
+            // reset bmca timer
+            bmca_timer.as_mut().reset(instance.bmca_interval());
 
-        let mut pending_timestamp = handle_actions(
-            actions,
-            &mut network_port,
-            &mut port_announce_timer,
-            &mut port_sync_timer,
-            &mut port_announce_timeout_timer,
-            &mut delay_request_timer,
-            &mut local_clock,
-        )
-        .await;
+            // handle post-bmca actions
+            let (mut port, actions) = port_in_bmca.end_bmca();
 
-        while let Some((context, timestamp)) = pending_timestamp {
-            pending_timestamp = handle_actions(
-                port.handle_send_timestamp(context, timestamp),
-                &mut network_port,
-                &mut port_announce_timer,
-                &mut port_sync_timer,
-                &mut port_announce_timeout_timer,
-                &mut delay_request_timer,
-                &mut local_clock,
-            )
-            .await;
-        }
+            let mut pending_timestamp =
+                handle_actions(actions, &mut network_port, &mut timers, &mut local_clock).await;
 
-        loop {
-            let mut actions = tokio::select! {
-                result = network_port.recv() => {
-                    match result {
-                        Ok(packet) => {
-                            match packet.timestamp {
-                                Some(timestamp) => port.handle_timecritical_receive(&packet.data, timestamp),
-                                None => port.handle_general_receive(&packet.data),
-                            }
-                        },
-                        Err(error) => panic!("Error receiving: {error:?}"),
-                    }
-                },
-                () = &mut port_announce_timer => {
-                    port.handle_announce_timer()
-                },
-                () = &mut port_sync_timer => {
-                    port.handle_sync_timer()
-                },
-                () = &mut port_announce_timeout_timer => {
-                    port.handle_announce_receipt_timer()
-                },
-                () = &mut delay_request_timer => {
-                    port.handle_delay_request_timer()
-                },
-                () = &mut bmca_timer => {
-                    break;
-                }
-            };
-
-            loop {
-                let pending_timestamp = handle_actions(
-                    actions,
+            while let Some((context, timestamp)) = pending_timestamp {
+                pending_timestamp = handle_actions(
+                    port.handle_send_timestamp(context, timestamp),
                     &mut network_port,
-                    &mut port_announce_timer,
-                    &mut port_sync_timer,
-                    &mut port_announce_timeout_timer,
-                    &mut delay_request_timer,
+                    &mut timers,
                     &mut local_clock,
                 )
                 .await;
 
-                // there might be more actions to handle based on the current action
-                actions = match pending_timestamp {
-                    Some((context, timestamp)) => port.handle_send_timestamp(context, timestamp),
-                    None => break,
-                };
+                loop {
+                    let mut actions = tokio::select! {
+                        result = network_port.recv() => {
+                            match result {
+                                Ok(packet) => {
+                                    match packet.timestamp {
+                                        Some(timestamp) => port.handle_timecritical_receive(&packet.data, timestamp),
+                                        None => port.handle_general_receive(&packet.data),
+                                    }
+                                },
+                                Err(error) => panic!("Error receiving: {error:?}"),
+                            }
+                        },
+                        () = &mut timers.port_announce_timer => {
+                            port.handle_announce_timer()
+                        },
+                        () = &mut timers.port_sync_timer => {
+                            port.handle_sync_timer()
+                        },
+                        () = &mut timers.port_announce_timeout_timer => {
+                            port.handle_announce_receipt_timer()
+                        },
+                        () = &mut timers.delay_request_timer => {
+                            port.handle_delay_request_timer()
+                        },
+                        () = &mut bmca_timer => {
+                            break;
+                        }
+                    };
+
+                    loop {
+                        let pending_timestamp = handle_actions(
+                            actions,
+                            &mut network_port,
+                            &mut timers,
+                            &mut local_clock,
+                        )
+                        .await;
+
+                        // there might be more actions to handle based on the current action
+                        actions = match pending_timestamp {
+                            Some((context, timestamp)) => {
+                                port.handle_send_timestamp(context, timestamp)
+                            }
+                            None => break,
+                        };
+                    }
+                }
             }
+
+            // put the port back into the vector of ports
+            let _ = port_in_bmca_ref.insert(port.start_bmca());
         }
 
-        bmca_port = port.start_bmca();
+        // run bmca over all of the ports at the same time. The ports don't perform
+        // their normal actions at this time: bmca is stop-the-world!
+        let mut bmca_ports: Vec<_> = ports
+            .iter_mut()
+            .map(|mutex| mutex.get_mut().unwrap())
+            .map(|opt_port| opt_port.as_mut().unwrap())
+            .collect();
 
-        instance.bmca(&mut [&mut bmca_port]);
+        instance.bmca(&mut bmca_ports);
     }
+}
+
+struct Timers<'a> {
+    port_sync_timer: Pin<&'a mut Timer>,
+    port_announce_timer: Pin<&'a mut Timer>,
+    port_announce_timeout_timer: Pin<&'a mut Timer>,
+    delay_request_timer: Pin<&'a mut Timer>,
 }
 
 async fn handle_actions(
     actions: PortActionIterator<'_>,
     network_port: &mut statime_linux::network::linux::LinuxNetworkPort,
-    port_announce_timer: &mut Pin<&mut Timer>,
-    port_sync_timer: &mut Pin<&mut Timer>,
-    port_announce_timeout_timer: &mut Pin<&mut Timer>,
-    delay_request_timer: &mut Pin<&mut Timer>,
+    timers: &mut Timers<'_>,
     local_clock: &mut LinuxClock,
 ) -> Option<(TimestampContext, Time)> {
     let mut pending_timestamp = None;
@@ -359,16 +383,16 @@ async fn handle_actions(
                 network_port.send(data).await.unwrap();
             }
             PortAction::ResetAnnounceTimer { duration } => {
-                port_announce_timer.as_mut().reset(duration);
+                timers.port_announce_timer.as_mut().reset(duration);
             }
             PortAction::ResetSyncTimer { duration } => {
-                port_sync_timer.as_mut().reset(duration);
+                timers.port_sync_timer.as_mut().reset(duration);
             }
             PortAction::ResetDelayRequestTimer { duration } => {
-                delay_request_timer.as_mut().reset(duration);
+                timers.delay_request_timer.as_mut().reset(duration);
             }
             PortAction::ResetAnnounceReceiptTimer { duration } => {
-                port_announce_timeout_timer.as_mut().reset(duration);
+                timers.port_announce_timeout_timer.as_mut().reset(duration);
             }
         }
     }
