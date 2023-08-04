@@ -32,6 +32,45 @@ impl LinuxClock {
     }
 }
 
+impl clock_steering::Clock for LinuxClock {
+    type Error = clock_steering::unix::Error;
+
+    fn now(&self) -> Result<clock_steering::Timestamp, Self::Error> {
+        self.clock.now()
+    }
+
+    fn resolution(&self) -> Result<clock_steering::Timestamp, Self::Error> {
+        self.clock.resolution()
+    }
+
+    fn set_frequency(&self, frequency: f64) -> Result<clock_steering::Timestamp, Self::Error> {
+        self.clock.set_frequency(frequency)
+    }
+
+    fn step_clock(
+        &self,
+        offset: std::time::Duration,
+    ) -> Result<clock_steering::Timestamp, Self::Error> {
+        self.clock.step_clock(offset)
+    }
+
+    fn set_leap_seconds(
+        &self,
+        leap_status: clock_steering::LeapIndicator,
+    ) -> Result<(), Self::Error> {
+        self.clock.set_leap_seconds(leap_status)
+    }
+
+    fn error_estimate_update(
+        &self,
+        estimated_error: std::time::Duration,
+        maximum_error: std::time::Duration,
+    ) -> Result<(), Self::Error> {
+        self.clock
+            .error_estimate_update(estimated_error, maximum_error)
+    }
+}
+
 impl Clock for LinuxClock {
     type Error = clock_steering::unix::Error;
 

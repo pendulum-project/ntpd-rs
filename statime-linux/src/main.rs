@@ -12,12 +12,8 @@ use statime::{
     Port, PortAction, PortActionIterator, PortConfig, PtpInstance, SdoId, Time, TimePropertiesDS,
     TimeSource, TimestampContext,
 };
-use statime_linux::{
-    clock::LinuxClock,
-    network::linux::{
-        get_clock_id, InterfaceDescriptor, LinuxNetworkPort, LinuxRuntime, TimestampingMode,
-    },
-};
+use statime_linux::clock::LinuxClock;
+use statime_linux::network::{get_clock_id, LinuxNetworkPort, LinuxRuntime};
 use tokio::{
     sync::{
         mpsc::{Receiver, Sender},
@@ -25,6 +21,8 @@ use tokio::{
     },
     time::Sleep,
 };
+
+use timestamped_socket::{interface::InterfaceDescriptor, raw_udp_socket::TimestampingMode};
 
 #[derive(Clone, Copy)]
 struct SdoIdParser;
@@ -415,7 +413,7 @@ struct Timers<'a> {
 
 async fn handle_actions(
     actions: PortActionIterator<'_>,
-    network_port: &mut statime_linux::network::linux::LinuxNetworkPort,
+    network_port: &mut statime_linux::network::LinuxNetworkPort,
     timers: &mut Timers<'_>,
     local_clock: &mut LinuxClock,
 ) -> Option<(TimestampContext, Time)> {
