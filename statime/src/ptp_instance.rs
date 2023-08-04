@@ -89,14 +89,13 @@ impl<C: Clock, F> PtpInstanceState<C, F> {
             let recommended_state = Bmca::calculate_recommended_state(
                 &self.default_ds,
                 ebest,
-                port.best_local_announce_message(),
+                port.best_local_announce_message(), // erbest
                 port.state(),
             );
 
             log::debug!(
-                "Recommended state port {}: {:?}",
+                "Recommended state port {}: {recommended_state:?}",
                 port.number(),
-                recommended_state
             );
 
             if let Some(recommended_state) = recommended_state {
@@ -105,6 +104,7 @@ impl<C: Clock, F> PtpInstanceState<C, F> {
                     &mut self.time_properties_ds,
                     &mut self.current_ds,
                     &mut self.parent_ds,
+                    &self.default_ds,
                 ) {
                     log::error!("{:?}", error)
                 }

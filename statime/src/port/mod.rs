@@ -14,7 +14,7 @@ use crate::{
     config::PortConfig,
     datastructures::{
         common::{LeapIndicator, TimeSource, WireTimestamp},
-        datasets::{CurrentDS, ParentDS, TimePropertiesDS},
+        datasets::{CurrentDS, DefaultDS, ParentDS, TimePropertiesDS},
         messages::Message,
     },
     filters::Filter,
@@ -371,7 +371,14 @@ impl<'a, C, F, R: Rng> Port<InBmca<'a, C, F>, R> {
     }
 
     pub(crate) fn best_local_announce_message(&self) -> Option<BestAnnounceMessage> {
-        self.lifecycle.local_best
+        // Announce messages received on a masterOnly PTP Port shall not be considered
+        // in the operation of the best master clock algorithm or in the update
+        // of data sets.
+        if self.config.master_only {
+            None
+        } else {
+            self.lifecycle.local_best
+        }
     }
 
     pub(crate) fn set_recommended_state(
@@ -380,11 +387,15 @@ impl<'a, C, F, R: Rng> Port<InBmca<'a, C, F>, R> {
         time_properties_ds: &mut TimePropertiesDS,
         current_ds: &mut CurrentDS,
         parent_ds: &mut ParentDS,
+        default_ds: &DefaultDS,
     ) -> Result<()> {
-        self.set_recommended_port_state(&recommended_state);
+        self.set_recommended_port_state(&recommended_state, default_ds);
 
         match recommended_state {
             RecommendedState::M1(defaultds) | RecommendedState::M2(defaultds) => {
+                // a slave-only PTP port should never end up in the slave state
+                debug_assert!(!default_ds.slave_only);
+
                 current_ds.steps_removed = 0;
                 current_ds.offset_from_master = Duration::ZERO;
                 current_ds.mean_delay = Duration::ZERO;
@@ -405,6 +416,9 @@ impl<'a, C, F, R: Rng> Port<InBmca<'a, C, F>, R> {
             }
             RecommendedState::M3(_) | RecommendedState::P1(_) | RecommendedState::P2(_) => {}
             RecommendedState::S1(announce_message) => {
+                // a master-only PTP port should never end up in the slave state
+                debug_assert!(!self.config.master_only);
+
                 current_ds.steps_removed = announce_message.steps_removed() + 1;
 
                 parent_ds.parent_port_identity = announce_message.header().source_port_identity();
@@ -427,11 +441,18 @@ impl<'a, C, F, R: Rng> Port<InBmca<'a, C, F>, R> {
         Ok(())
     }
 
-    fn set_recommended_port_state(&mut self, recommended_state: &RecommendedState) {
+    fn set_recommended_port_state(
+        &mut self,
+        recommended_state: &RecommendedState,
+        default_ds: &DefaultDS,
+    ) {
         match recommended_state {
             // TODO set things like steps_removed once they are added
             // TODO make sure states are complete
             RecommendedState::S1(announce_message) => {
+                // a master-only PTP port should never end up in the slave state
+                debug_assert!(!self.config.master_only);
+
                 let remote_master = announce_message.header().source_port_identity();
                 let state = PortState::Slave(SlaveState::new(remote_master));
 
@@ -450,17 +471,37 @@ impl<'a, C, F, R: Rng> Port<InBmca<'a, C, F>, R> {
                 }
             }
             RecommendedState::M1(_) | RecommendedState::M2(_) | RecommendedState::M3(_) => {
-                match self.port_state {
-                    PortState::Listening | PortState::Slave(_) | PortState::Passive => {
-                        self.set_forced_port_state(PortState::Master(MasterState::new()));
-                        // Immediately start sending announces and syncs
-                        let duration = core::time::Duration::from_secs(0);
-                        self.lifecycle.pending_action = actions![
-                            PortAction::ResetAnnounceTimer { duration },
-                            PortAction::ResetSyncTimer { duration }
-                        ];
+                if default_ds.slave_only {
+                    match self.port_state {
+                        PortState::Listening => { /* do nothing */ }
+                        PortState::Slave(_) | PortState::Passive => {
+                            self.set_forced_port_state(PortState::Listening);
+
+                            // consistent with Port<InBmca>::new()
+                            let duration = self.config.announce_duration(&mut self.rng);
+                            let reset_announce = PortAction::ResetAnnounceReceiptTimer { duration };
+                            self.lifecycle.pending_action = actions![reset_announce];
+                        }
+                        PortState::Master(_) => {
+                            let msg = "slave-only PTP port should not be in master state";
+                            debug_assert!(!default_ds.slave_only, "{msg}");
+                            log::error!("{msg}");
+                        }
                     }
-                    PortState::Master(_) => {}
+                } else {
+                    match self.port_state {
+                        PortState::Listening | PortState::Slave(_) | PortState::Passive => {
+                            self.set_forced_port_state(PortState::Master(MasterState::new()));
+
+                            // Immediately start sending announces and syncs
+                            let duration = core::time::Duration::from_secs(0);
+                            self.lifecycle.pending_action = actions![
+                                PortAction::ResetAnnounceTimer { duration },
+                                PortAction::ResetSyncTimer { duration }
+                            ];
+                        }
+                        PortState::Master(_) => { /* do nothing */ }
+                    }
                 }
             }
             RecommendedState::P1(_) | RecommendedState::P2(_) => match self.port_state {
