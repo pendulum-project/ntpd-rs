@@ -18,7 +18,7 @@ use ntp_proto::{
 };
 use ntp_udp::{EnableTimestamps, InterfaceName};
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::info;
+use tracing::{debug, info};
 
 pub const NETWORK_WAIT_PERIOD: std::time::Duration = std::time::Duration::from_secs(1);
 
@@ -226,7 +226,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         let (notify_tx, notify_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
         let id = spawner.get_id();
         let spawner_data = SystemSpawnerData { id, notify_tx };
-        info!(id=?spawner_data.id, ty=spawner.get_description(), addr=spawner.get_addr_description(), "Running spawner");
+        debug!(id=?spawner_data.id, ty=spawner.get_description(), addr=spawner.get_addr_description(), "Running spawner");
         self.spawners.push(spawner_data);
         let spawn_tx = self.spawn_tx.clone();
         tokio::spawn(async move { spawner.run(spawn_tx, notify_rx).await });
@@ -251,7 +251,8 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                 opt_spawn_event = self.spawn_rx.recv() => {
                     match opt_spawn_event {
                         None => {
-                            tracing::warn!("the spawn channel closed unexpectedly");
+                            let msg = "the spawn channel closed unexpectedly. ntpd-rs is likely in an invalid state!";
+                            tracing::warn!(msg);
                         }
                         Some(spawn_event) => {
                             self.handle_spawn_event(spawn_event).await;

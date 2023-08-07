@@ -17,7 +17,7 @@ use ntp_proto::{
 use ntp_udp::{InterfaceName, UdpSocket};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tokio::task::JoinHandle;
-use tracing::{debug, error, info, instrument, trace, warn};
+use tracing::{debug, info, instrument, trace, warn};
 
 use crate::config::{FilterAction, ServerConfig};
 
@@ -233,12 +233,12 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 };
 
                 if let Err(serialize_err) = serialize_result {
-                    error!(error=?serialize_err, "Could not serialize response");
+                    warn!(error=?serialize_err, "Could not serialize response");
                     return true;
                 }
 
                 if cursor.position() as usize > max_response_size {
-                    error!("Generated response that was larger than the request");
+                    warn!("Generated response that was larger than the request. This is a bug!");
                     return true;
                 }
 
@@ -273,12 +273,12 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
 
                 if let Err(serialize_err) = serialize_result {
                     self.stats.response_send_errors.inc();
-                    error!(error=?serialize_err, "Could not serialize response");
+                    warn!(error=?serialize_err, "Could not serialize response");
                     return true;
                 }
 
                 if cursor.position() as usize > max_response_size {
-                    error!("Generated response that was larger than the request");
+                    warn!("Generated response that was larger than the request. This is a bug!");
                     return true;
                 }
 
@@ -291,7 +291,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 }
             }
             AcceptResult::NetworkGone => {
-                error!("Server connection gone");
+                warn!("Server connection gone");
                 return false;
             }
             AcceptResult::RateLimit {
@@ -317,12 +317,12 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
 
                 if let Err(serialize_err) = serialize_result {
                     self.stats.response_send_errors.inc();
-                    error!(error=?serialize_err, "Could not serialize response");
+                    warn!(error=?serialize_err, "Could not serialize response");
                     return true;
                 }
 
                 if cursor.position() as usize > max_response_size {
-                    error!("Generated response that was larger than the request");
+                    warn!("Generated response that was larger than the request. This is a bug!");
                     return true;
                 }
 
@@ -402,12 +402,12 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 }
             }
             Ok((size, _, Some(_))) => {
-                info!(expected = 48, actual = size, "received packet is too small");
+                debug!(expected = 48, actual = size, "received packet is too small");
 
                 AcceptResult::Ignore
             }
             Ok((size, _, None)) => {
-                warn!(?size, "received a packet without a timestamp");
+                debug!(?size, "received a packet without a timestamp");
 
                 AcceptResult::Ignore
             }
@@ -459,7 +459,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 }
             },
             Err(e) => {
-                info!("received invalid packet: {}", e);
+                info!("received invalid packet: {e}");
                 AcceptResult::Ignore
             }
         }
