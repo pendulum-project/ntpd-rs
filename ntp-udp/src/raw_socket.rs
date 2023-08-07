@@ -180,8 +180,6 @@ mod recv_message {
         os::unix::prelude::AsRawFd,
     };
 
-    use tracing::warn;
-
     use crate::interface::sockaddr_storage_to_socket_addr;
     use crate::LibcTimestamp;
 
@@ -253,14 +251,14 @@ mod recv_message {
         };
 
         if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
-            warn!(
+            tracing::info!(
                 max_len = packet_buf.len(),
                 "truncated packet because it was larger than expected",
             );
         }
 
         if mhdr.msg_flags & libc::MSG_CTRUNC > 0 {
-            warn!("truncated control messages");
+            tracing::info!("truncated control messages");
         }
 
         // Clear out the fields for which we are giving up the reference

@@ -4,7 +4,7 @@ use std::{io, net::SocketAddr};
 
 use ntp_proto::NtpTimestamp;
 use tokio::io::{unix::AsyncFd, Interest};
-use tracing::{debug, instrument, trace, warn};
+use tracing::instrument;
 
 use crate::{
     interface::InterfaceName,
@@ -68,8 +68,8 @@ impl UdpSocket {
         timestamping: EnableTimestamps,
     ) -> io::Result<UdpSocket> {
         let socket = tokio::net::UdpSocket::bind(listen_addr).await?;
-        debug!(
-            local_addr = debug(socket.local_addr().unwrap()),
+        tracing::debug!(
+            local_addr = ?socket.local_addr().unwrap(),
             "client socket bound"
         );
 
@@ -81,9 +81,9 @@ impl UdpSocket {
         }
 
         socket.connect(peer_addr).await?;
-        debug!(
-            local_addr = debug(socket.local_addr().unwrap()),
-            peer_addr = debug(socket.peer_addr().unwrap()),
+        tracing::debug!(
+            local_addr = ?socket.local_addr().unwrap(),
+            peer_addr = ?socket.peer_addr().unwrap(),
             "client socket connected"
         );
 
@@ -106,8 +106,8 @@ impl UdpSocket {
         interface: Option<InterfaceName>,
     ) -> io::Result<UdpSocket> {
         let socket = tokio::net::UdpSocket::bind(listen_addr).await?;
-        debug!(
-            local_addr = debug(socket.local_addr().unwrap()),
+        tracing::debug!(
+            local_addr = ?socket.local_addr().unwrap(),
             "server socket bound"
         );
 
@@ -146,7 +146,7 @@ impl UdpSocket {
         buf_size = buf.len(),
     ))]
     pub async fn send(&mut self, buf: &[u8]) -> io::Result<(usize, Option<NtpTimestamp>)> {
-        trace!(size = buf.len(), "sending bytes");
+        tracing::trace!(size = buf.len(), "sending bytes");
 
         let result = self
             .io
@@ -155,11 +155,11 @@ impl UdpSocket {
 
         let send_size = match result {
             Ok(size) => {
-                trace!(sent = size, "sent bytes");
+                tracing::trace!(sent = size, "sent bytes");
                 size
             }
             Err(e) => {
-                debug!(error = debug(&e), "error sending data");
+                tracing::debug!(error = debug(&e), "error sending data");
                 return Err(e);
             }
         };
@@ -179,7 +179,7 @@ impl UdpSocket {
                     .await
                 {
                     Err(_) => {
-                        warn!("Packet without timestamp");
+                        tracing::info!("Packet without timestamp");
                         Ok((send_size, None))
                     }
                     Ok(send_timestamp) => Ok((send_size, Some(send_timestamp?))),
@@ -192,14 +192,15 @@ impl UdpSocket {
                 Ok((send_size, None))
             }
         } else {
-            trace!("send timestamping not supported");
+            tracing::trace!("send timestamping not supported");
             Ok((send_size, None))
         }
     }
 
     #[cfg(target_os = "linux")]
     async fn fetch_send_timestamp(&self, expected_counter: u32) -> io::Result<NtpTimestamp> {
-        trace!("waiting for timestamp socket to become readable to fetch a send timestamp");
+        let msg = "waiting for timestamp socket to become readable to fetch a send timestamp";
+        tracing::trace!(msg);
 
         // Send timestamps are sent to the udp socket's error queue. Sadly, tokio does not
         // currently support awaiting whether there is something in the error queue
@@ -222,7 +223,7 @@ impl UdpSocket {
                     continue;
                 }
                 Err(e) => {
-                    warn!(error = debug(&e), "Error fetching timestamp");
+                    tracing::warn!(error = ?&e, "Error fetching timestamp");
                     return Err(e);
                 }
             }
@@ -234,7 +235,7 @@ impl UdpSocket {
         buf_size = buf.len(),
     ))]
     pub async fn send_to(&self, buf: &[u8], addr: SocketAddr) -> io::Result<usize> {
-        trace!(size = buf.len(), ?addr, "sending bytes");
+        tracing::trace!(size = buf.len(), ?addr, "sending bytes");
 
         let result = self
             .io
@@ -242,8 +243,8 @@ impl UdpSocket {
             .await;
 
         match &result {
-            Ok(size) => trace!(sent = size, "sent bytes"),
-            Err(e) => debug!(error = debug(e), "error sending data"),
+            Ok(size) => tracing::trace!(sent = size, "sent bytes"),
+            Err(e) => tracing::debug!(error = debug(e), "error sending data"),
         }
 
         result
@@ -258,7 +259,7 @@ impl UdpSocket {
         &self,
         buf: &mut [u8],
     ) -> io::Result<(usize, SocketAddr, Option<NtpTimestamp>)> {
-        trace!("waiting for socket to become readable");
+        tracing::trace!("waiting for socket to become readable");
 
         let result = self
             .io
@@ -267,9 +268,9 @@ impl UdpSocket {
 
         match &result {
             Ok((size, addr, ts)) => {
-                trace!(size, ts = debug(ts), addr = debug(addr), "received message");
+                tracing::trace!(size, ts = ?ts, addr = ?addr, "received message");
             }
-            Err(e) => debug!(error = debug(e), "error receiving data"),
+            Err(e) => tracing::debug!(error = ?e, "error receiving data"),
         }
 
         result
@@ -304,13 +305,14 @@ fn recv(
 
             #[cfg(target_os = "linux")]
             ControlMessage::ReceiveError(_error) => {
-                warn!("unexpected error message on the MSG_ERRQUEUE");
+                tracing::info!("unexpected error message on the MSG_ERRQUEUE");
             }
 
             ControlMessage::Other(msg) => {
-                warn!(
+                tracing::info!(
                     "weird control message {:?} {:?}",
-                    msg.cmsg_level, msg.cmsg_type
+                    msg.cmsg_level,
+                    msg.cmsg_type
                 );
             }
         }
@@ -352,26 +354,29 @@ fn fetch_send_timestamp_help(
                 // the timestamping does not set a message; if there is a message, that means
                 // something else is wrong, and we want to know about it.
                 if error.ee_errno as libc::c_int != libc::ENOMSG {
-                    warn!(
+                    tracing::warn!(
                         expected_counter,
-                        error.ee_data, "error message on the MSG_ERRQUEUE"
+                        error.ee_data,
+                        "error message on the MSG_ERRQUEUE"
                     );
                 }
 
                 // Check that this message belongs to the send we are interested in
                 if error.ee_data != expected_counter {
-                    warn!(
+                    tracing::info!(
                         error.ee_data,
-                        expected_counter, "Timestamp for unrelated packet"
+                        expected_counter,
+                        "Timestamp for unrelated packet"
                     );
                     return Ok(None);
                 }
             }
 
             ControlMessage::Other(msg) => {
-                warn!(
+                tracing::info!(
                     msg.cmsg_level,
-                    msg.cmsg_type, "unexpected message on the MSG_ERRQUEUE",
+                    msg.cmsg_type,
+                    "unexpected message on the MSG_ERRQUEUE",
                 );
             }
         }
