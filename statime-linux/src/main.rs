@@ -144,11 +144,12 @@ fn setup_logger(level: log::LevelFilter) -> Result<(), fern::InitError> {
     Ok(())
 }
 
-#[pin_project::pin_project]
-struct Timer {
-    #[pin]
-    timer: Sleep,
-    running: bool,
+pin_project_lite::pin_project! {
+    struct Timer {
+        #[pin]
+        timer: Sleep,
+        running: bool,
+    }
 }
 
 impl Timer {
