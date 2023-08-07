@@ -11,7 +11,7 @@ use ntp_proto::{
 };
 use ntp_udp::{EnableTimestamps, InterfaceName, UdpSocket};
 use rand::{thread_rng, Rng};
-use tracing::{debug, error, instrument, warn, Instrument, Span};
+use tracing::{debug, error, info, instrument, warn, Instrument, Span};
 
 use tokio::time::{Instant, Sleep};
 
@@ -119,7 +119,7 @@ where
         ) {
             Ok(packet) => packet,
             Err(PollError::Io(e)) => {
-                error!(error = ?e, "Could not generate poll message");
+                warn!(error = ?e, "Could not generate poll message");
                 // not exactly a network gone situation, but needs the same response
                 return PollResult::NetworkGone;
             }
@@ -215,7 +215,7 @@ where
                 self.channels.msg_for_system_sender.send(msg).await.ok();
             }
             Err(IgnoreReason::KissDemobilize) => {
-                warn!("Demobilizing peer connection on request of remote.");
+                info!("Demobilizing peer connection on request of remote.");
                 let msg = MsgForSystem::MustDemobilize(self.index);
                 self.channels.msg_for_system_sender.send(msg).await.ok();
 
@@ -255,7 +255,7 @@ where
                             let send_timestamp = match self.last_send_timestamp {
                                 Some(ts) => ts,
                                 None => {
-                                    warn!("we received a message without having sent one; discarding");
+                                    debug!("we received a message without having sent one; discarding");
                                     continue;
                                 }
                             };
@@ -384,7 +384,7 @@ fn accept_packet(
             // extra bytes are guaranteed safe to ignore. `recv` truncates the messages.
             // Messages of fewer than 48 bytes are skipped entirely
             if size < 48 {
-                warn!(expected = 48, actual = size, "received packet is too small");
+                debug!(expected = 48, actual = size, "received packet is too small");
 
                 AcceptResult::Ignore
             } else {
