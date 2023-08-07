@@ -72,7 +72,7 @@
 /// If they are often too small, v is quartered, and if they are often too
 /// large, v is quadrupled (note, this corresponds with doubling/halving
 /// the more intuitive standard deviation).
-use tracing::{debug, error, info, trace};
+use tracing::{debug, info, trace};
 
 use crate::{
     Measurement, NtpDuration, NtpTimestamp, PollInterval, PollIntervalLimits, SystemConfig,
@@ -446,16 +446,19 @@ impl PeerState {
                     .monotime
                     .abs_diff(filter.last_measurement.monotime);
 
-                if (localtime_difference - monotime_difference).abs()
+                if localtime_difference.abs_diff(monotime_difference)
                     > algo_config.meddling_threshold
                 {
-                    error!("Detected clock meddling");
+                    let msg = "Detected clock meddling. Has another process updated the clock?";
+                    tracing::warn!(msg);
+
                     *self = PeerState(PeerStateInner::Initial(InitialPeerFilter {
                         roundtriptime_stats: AveragingBuffer::default(),
                         init_offset: AveragingBuffer::default(),
                         last_measurement: None,
                         samples: 0,
                     }));
+
                     false
                 } else {
                     filter.update(config, algo_config, measurement)

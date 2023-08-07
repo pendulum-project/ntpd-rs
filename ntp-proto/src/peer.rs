@@ -215,9 +215,10 @@ impl PeerSnapshot {
         use AcceptSynchronizationError::*;
 
         if self.stratum >= local_stratum {
-            warn!(
-                stratum = debug(self.stratum),
-                "Peer rejected due to invalid stratum"
+            info!(
+                peer_stratum = self.stratum,
+                own_stratum = local_stratum,
+                "Peer rejected due to invalid stratum. The stratum of a peer must be lower than the own stratum",
             );
             return Err(Stratum);
         }
@@ -227,13 +228,13 @@ impl PeerSnapshot {
         // Note, this can only ever be an issue if the peer is not using
         // hardware as its source, so ignore reference_id if stratum is 1.
         if self.stratum != 1 && self.reference_id == self.our_id {
-            debug!("Peer rejected because of detected synchornization loop");
+            warn!("Peer rejected because of detected synchornization loop");
             return Err(Loop);
         }
 
         // An unreachable error occurs if the server is unreachable.
         if !self.reach.is_reachable() {
-            warn!("Peer unreachable");
+            info!("Peer is unreachable");
             return Err(ServerUnreachable);
         }
 
