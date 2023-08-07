@@ -23,13 +23,13 @@ The current client exposes 3 different commands:
 
 ## Available configuration parameters
 
-Currently, only the `log-level` and `panic-threshold` configuration parameters can be set dynamically, through the `--log-level` and `--panic-threshold` command line parameters respectively. For information on the allowed values for these, see [the configuration documentation](CONFIGURATION.md). Note that for the panic threshold, only symmetric thresholds can be configured through the management client.
+Currently, only the `log-level` configuration parameter can be set dynamically, through the `--log-level` command line parameter. For information on the allowed values, see [the configuration documentation](CONFIGURATION.md).
 
 ## Specifying socket locations
 
 By default, the management client looks for the daemon's configuration in `/etc/ntpd-rs/ntp.toml` in order to extract the paths of the socket. If this file is not present, or when the socket paths are not configured in these, it defaults to `/run/ntpd-rs/observe` for the observation socket and `/run/ntpd-rs/configure` for the configuration sockets.
 
-If the client fails to find the correct socket paths using the above process, it can be manually configured to look elsewhere. Most advisable is to point the management client to the configuration file of the server via the `--config` command line flag. If this is not an option in your setup, alternatively the `--observation-socket` and `--configuration-socket` command line options.
+If the client fails to find the correct socket paths using the above process, it can be manually configured to look elsewhere. Most advisable is to point the management client to the configuration file of the server via the `--config` command line flag.
 
 ## Output format
 

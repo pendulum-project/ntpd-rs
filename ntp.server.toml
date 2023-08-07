@@ -24,6 +24,6 @@ listen = "[::]:123"
 # change the system clock. CHANGE THESE TO MATCH YOUR SECURITY NEEDS!
 # For guidance, see OPERATIONAL_CONSIDERATIONS.md
 [synchronization]
-panic-threshold = 1800
-startup-panic-threshold = { forward="inf", backward = 1800 }
+single-step-panic-threshold = 1800
+startup-step-panic-threshold = { forward="inf", backward = 1800 }
 #accumulated-threshold = 1800

@@ -246,11 +246,11 @@ pub struct SynchronizationConfig {
 
     /// Minima and maxima for the poll interval of clients
     #[serde(default)]
-    pub poll_limits: PollIntervalLimits,
+    pub poll_interval_limits: PollIntervalLimits,
 
     /// Initial poll interval of the system
-    #[serde(default = "default_initial_poll")]
-    pub initial_poll: PollInterval,
+    #[serde(default = "default_initial_poll_interval")]
+    pub initial_poll_interval: PollInterval,
 }
 
 impl Default for SynchronizationConfig {
@@ -264,8 +264,8 @@ impl Default for SynchronizationConfig {
 
             local_stratum: default_local_stratum(),
 
-            poll_limits: Default::default(),
-            initial_poll: default_initial_poll(),
+            poll_interval_limits: Default::default(),
+            initial_poll_interval: default_initial_poll_interval(),
         }
     }
 }
@@ -293,6 +293,6 @@ fn default_local_stratum() -> u8 {
     16
 }
 
-fn default_initial_poll() -> PollInterval {
+fn default_initial_poll_interval() -> PollInterval {
     PollIntervalLimits::default().min
 }

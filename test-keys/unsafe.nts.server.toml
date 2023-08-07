@@ -15,8 +15,8 @@ listen = "0.0.0.0:123"
 # System parameters used in filtering and steering the clock:
 [synchronization]
 min-intersection-survivors = 1
-panic-threshold = 10
-startup-panic-threshold = { forward = 0, backward = 1800 }
+single-step-panic-threshold = 10
+startup-step-panic-threshold = { forward = 0, backward = 1800 }
 
 # to function as an NTS server, we must also provide key exchange
 # uses an unsecure certificate chain!

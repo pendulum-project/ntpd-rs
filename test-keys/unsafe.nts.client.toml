@@ -12,5 +12,5 @@ certificate = "test-keys/testca.pem"
 # System parameters used in filtering and steering the clock:
 [synchronization]
 min-intersection-survivors = 1
-panic-threshold = 10
-startup-panic-threshold = { forward = "inf", backward = 1800 }
+single-step-panic-threshold = 10
+startup-step-panic-threshold = { forward = "inf", backward = 1800 }

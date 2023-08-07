@@ -277,9 +277,9 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
         self.timedata.poll_interval = self
             .peers
             .values()
-            .map(|(state, _)| state.get_desired_poll(&self.config.poll_limits))
+            .map(|(state, _)| state.get_desired_poll(&self.config.poll_interval_limits))
             .min()
-            .unwrap_or(self.config.poll_limits.max);
+            .unwrap_or(self.config.poll_interval_limits.max);
     }
 }
 

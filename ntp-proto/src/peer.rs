@@ -302,9 +302,9 @@ impl Peer {
         Self {
             nts: None,
 
-            last_poll_interval: synchronization_config.poll_limits.min,
-            backoff_interval: synchronization_config.poll_limits.min,
-            remote_min_poll_interval: synchronization_config.poll_limits.min,
+            last_poll_interval: synchronization_config.poll_interval_limits.min,
+            backoff_interval: synchronization_config.poll_interval_limits.min,
+            remote_min_poll_interval: synchronization_config.poll_interval_limits.min,
 
             current_request_identifier: None,
             our_id,
@@ -371,7 +371,7 @@ impl Peer {
         self.current_request_identifier = Some((identifier, NtpInstant::now() + POLL_WINDOW));
 
         // Ensure we don't spam the remote with polls if it is not reachable
-        self.backoff_interval = poll_interval.inc(synchronization_config.poll_limits);
+        self.backoff_interval = poll_interval.inc(synchronization_config.poll_interval_limits);
 
         // Write packet to buffer
         let mut cursor = Cursor::new(buf);
@@ -423,7 +423,7 @@ impl Peer {
             // KISS packets may not have correct timestamps at all, handle them anyway
             self.remote_min_poll_interval = Ord::max(
                 self.remote_min_poll_interval
-                    .inc(self.synchronization_config.poll_limits),
+                    .inc(self.synchronization_config.poll_interval_limits),
                 self.last_poll_interval,
             );
             warn!(?self.remote_min_poll_interval, "Peer requested rate limit");
@@ -438,7 +438,7 @@ impl Peer {
             // a response, however, for the purpose of backoff we do count it as a response.
             // This ensures that if we have expired cookies, we get through them
             // fairly quickly.
-            self.backoff_interval = self.synchronization_config.poll_limits.min;
+            self.backoff_interval = self.synchronization_config.poll_interval_limits.min;
             Err(IgnoreReason::KissNtsNack)
         } else if message.is_kiss() {
             warn!("Unrecognized KISS Message from peer");
@@ -474,7 +474,7 @@ impl Peer {
         self.reach.received_packet();
 
         // Got a response, so no need for unreachability backoff
-        self.backoff_interval = self.synchronization_config.poll_limits.min;
+        self.backoff_interval = self.synchronization_config.poll_interval_limits.min;
 
         // we received this packet, and don't want to accept future ones with this next_expected_origin
         self.current_request_identifier = None;

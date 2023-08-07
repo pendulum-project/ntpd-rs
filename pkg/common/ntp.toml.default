@@ -36,9 +36,9 @@ count = 4
 ## change the system clock. CHANGE THESE TO MATCH YOUR SECURITY NEEDS!
 [synchronization]
 # The maximum step size (in seconds) of a single step during normal operation
-panic-threshold = 1800
+single-step-panic-threshold = 1800
 # On startup a larger jump may occur, this sets limits for that initial jump
-startup-panic-threshold = { forward="inf", backward = 1800 }
+startup-step-panic-threshold = { forward="inf", backward = 1800 }
 # If, during the lifetime of the ntp-daemon the combined time of time jumps
 # exceeds this value, then the NTP daemon will stop, this is disabled by default
 #accumulated-threshold = 1800

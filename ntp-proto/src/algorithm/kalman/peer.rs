@@ -266,14 +266,16 @@ impl PeerFilter {
         }
         trace!(poll_score = self.poll_score, ?weight, "Poll desire update");
         if p <= algo_config.poll_interval_step_threshold {
-            self.desired_poll_interval = config.poll_limits.min;
+            self.desired_poll_interval = config.poll_interval_limits.min;
             self.poll_score = 0;
         } else if self.poll_score <= -algo_config.poll_interval_hysteresis {
-            self.desired_poll_interval = self.desired_poll_interval.inc(config.poll_limits);
+            self.desired_poll_interval =
+                self.desired_poll_interval.inc(config.poll_interval_limits);
             self.poll_score = 0;
             info!(interval = ?self.desired_poll_interval, "Increased poll interval");
         } else if self.poll_score >= algo_config.poll_interval_hysteresis {
-            self.desired_poll_interval = self.desired_poll_interval.dec(config.poll_limits);
+            self.desired_poll_interval =
+                self.desired_poll_interval.dec(config.poll_interval_limits);
             self.poll_score = 0;
             info!(interval = ?self.desired_poll_interval, "Decreased poll interval");
         }
@@ -425,7 +427,7 @@ impl PeerState {
                         roundtriptime_stats: filter.roundtriptime_stats,
                         precision_score: 0,
                         poll_score: 0,
-                        desired_poll_interval: config.initial_poll,
+                        desired_poll_interval: config.initial_poll_interval,
                         last_measurement: measurement,
                         prev_was_outlier: false,
                         last_iter: measurement.localtime,
