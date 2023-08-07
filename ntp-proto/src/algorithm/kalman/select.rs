@@ -25,7 +25,9 @@ pub(super) fn select<Index: Copy>(
     for snapshot in candidates.iter() {
         let radius = snapshot.offset_uncertainty() * algo_config.range_statistical_weight
             + snapshot.delay * algo_config.range_delay_weight;
-        if radius > algo_config.max_peer_uncertainty || !snapshot.leap_indicator.is_synchronized() {
+        if radius > algo_config.maximum_peer_uncertainty
+            || !snapshot.leap_indicator.is_synchronized()
+        {
             continue;
         }
 
@@ -56,7 +58,7 @@ pub(super) fn select<Index: Copy>(
             .filter(|snapshot| {
                 let radius = snapshot.offset_uncertainty() * algo_config.range_statistical_weight
                     + snapshot.delay * algo_config.range_delay_weight;
-                radius <= algo_config.max_peer_uncertainty
+                radius <= algo_config.maximum_peer_uncertainty
                     && snapshot.offset() - radius <= maxt
                     && snapshot.offset() + radius >= maxt
                     && snapshot.leap_indicator.is_synchronized()
@@ -108,7 +110,7 @@ mod tests {
         };
 
         let algconfig = AlgorithmConfig {
-            max_peer_uncertainty: 1.0,
+            maximum_peer_uncertainty: 1.0,
             range_statistical_weight: 1.0,
             range_delay_weight: 0.0,
             ..Default::default()
@@ -117,7 +119,7 @@ mod tests {
         assert_eq!(result.len(), 0);
 
         let algconfig = AlgorithmConfig {
-            max_peer_uncertainty: 1.0,
+            maximum_peer_uncertainty: 1.0,
             range_statistical_weight: 0.0,
             range_delay_weight: 1.0,
             ..Default::default()
@@ -126,7 +128,7 @@ mod tests {
         assert_eq!(result.len(), 0);
 
         let algconfig = AlgorithmConfig {
-            max_peer_uncertainty: 1.0,
+            maximum_peer_uncertainty: 1.0,
             range_statistical_weight: 1.0,
             range_delay_weight: 1.0,
             ..Default::default()
@@ -149,7 +151,7 @@ mod tests {
         };
 
         let algconfig = AlgorithmConfig {
-            max_peer_uncertainty: 3.0,
+            maximum_peer_uncertainty: 3.0,
             range_statistical_weight: 1.0,
             range_delay_weight: 1.0,
             ..Default::default()
@@ -158,7 +160,7 @@ mod tests {
         assert_eq!(result.len(), 3);
 
         let algconfig = AlgorithmConfig {
-            max_peer_uncertainty: 0.3,
+            maximum_peer_uncertainty: 0.3,
             range_statistical_weight: 1.0,
             range_delay_weight: 1.0,
             ..Default::default()
@@ -167,7 +169,7 @@ mod tests {
         assert_eq!(result.len(), 2);
 
         let algconfig = AlgorithmConfig {
-            max_peer_uncertainty: 0.03,
+            maximum_peer_uncertainty: 0.03,
             range_statistical_weight: 1.0,
             range_delay_weight: 1.0,
             ..Default::default()
@@ -176,7 +178,7 @@ mod tests {
         assert_eq!(result.len(), 1);
 
         let algconfig = AlgorithmConfig {
-            max_peer_uncertainty: 0.003,
+            maximum_peer_uncertainty: 0.003,
             range_statistical_weight: 1.0,
             range_delay_weight: 1.0,
             ..Default::default()
@@ -196,7 +198,7 @@ mod tests {
             snapshot_for_range(0.5, 0.1, 0.1),
         ];
         let algconfig = AlgorithmConfig {
-            max_peer_uncertainty: 3.0,
+            maximum_peer_uncertainty: 3.0,
             range_statistical_weight: 1.0,
             range_delay_weight: 1.0,
             ..Default::default()
@@ -227,7 +229,7 @@ mod tests {
             snapshot_for_range(0.5, 0.1, 0.1),
         ];
         let algconfig = AlgorithmConfig {
-            max_peer_uncertainty: 3.0,
+            maximum_peer_uncertainty: 3.0,
             range_statistical_weight: 1.0,
             range_delay_weight: 1.0,
             ..Default::default()

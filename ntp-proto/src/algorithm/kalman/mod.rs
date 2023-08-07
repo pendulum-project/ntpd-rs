@@ -219,7 +219,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
 
     fn steer_offset(&mut self, change: f64, freq_delta: f64) -> Option<NtpTimestamp> {
         self.check_offset_steer(change);
-        if change.abs() > self.algo_config.jump_threshold {
+        if change.abs() > self.algo_config.step_threshold {
             // jump
             self.clock
                 .step_clock(NtpDuration::from_seconds(change))
@@ -233,8 +233,8 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
             // start slew
             let freq = self
                 .algo_config
-                .slew_max_frequency_offset
-                .min(change.abs() / self.algo_config.slew_min_duration);
+                .slew_maximum_frequency_offset
+                .min(change.abs() / self.algo_config.slew_minimum_duration);
             let duration = NtpDuration::from_seconds(change.abs() / freq);
             info!(
                 "Slewing by {}ms over {}s",
@@ -253,8 +253,8 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
 
     fn steer_frequency(&mut self, change: f64) -> NtpTimestamp {
         let new_freq_offset = ((1.0 + self.freq_offset) * (1.0 + change) - 1.0).clamp(
-            -self.algo_config.max_frequency_steer,
-            self.algo_config.max_frequency_steer,
+            -self.algo_config.maximum_frequency_steer,
+            self.algo_config.maximum_frequency_steer,
         );
         let actual_change = (1.0 + new_freq_offset) / (1.0 + self.freq_offset) - 1.0;
         self.freq_offset = new_freq_offset;
@@ -409,7 +409,7 @@ mod tests {
         fn error_estimate_update(
             &self,
             _est_error: NtpDuration,
-            _max_error: NtpDuration,
+            _maximum_error: NtpDuration,
         ) -> Result<(), Self::Error> {
             Ok(())
         }

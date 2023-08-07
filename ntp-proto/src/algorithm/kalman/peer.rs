@@ -253,11 +253,11 @@ impl PeerFilter {
     ) {
         // We dont want to speed up when we already want more than we get, and vice versa.
         let reference_measurement_period = self.desired_poll_interval.as_duration().to_seconds();
-        if weight < algo_config.poll_low_weight
+        if weight < algo_config.poll_interval_low_weight
             && measurement_period / reference_measurement_period > 0.75
         {
             self.poll_score -= 1;
-        } else if weight > algo_config.poll_high_weight
+        } else if weight > algo_config.poll_interval_high_weight
             && measurement_period / reference_measurement_period < 1.4
         {
             self.poll_score += 1;
@@ -265,14 +265,14 @@ impl PeerFilter {
             self.poll_score -= self.poll_score.signum();
         }
         trace!(poll_score = self.poll_score, ?weight, "Poll desire update");
-        if p <= algo_config.poll_jump_threshold {
+        if p <= algo_config.poll_interval_step_threshold {
             self.desired_poll_interval = config.poll_limits.min;
             self.poll_score = 0;
-        } else if self.poll_score <= -algo_config.poll_hysteresis {
+        } else if self.poll_score <= -algo_config.poll_interval_hysteresis {
             self.desired_poll_interval = self.desired_poll_interval.inc(config.poll_limits);
             self.poll_score = 0;
             info!(interval = ?self.desired_poll_interval, "Increased poll interval");
-        } else if self.poll_score >= algo_config.poll_hysteresis {
+        } else if self.poll_score >= algo_config.poll_interval_hysteresis {
             self.desired_poll_interval = self.desired_poll_interval.dec(config.poll_limits);
             self.poll_score = 0;
             info!(interval = ?self.desired_poll_interval, "Decreased poll interval");
@@ -286,7 +286,7 @@ impl PeerFilter {
         // Note that chi is exponentially distributed with mean 2
         // Also, we do not steer towards a smaller precision estimate when measurement noise dominates.
         if 1. - p < algo_config.precision_low_probability
-            && weight > algo_config.precision_min_weight
+            && weight > algo_config.precision_minimum_weight
         {
             self.precision_score -= 1;
         } else if 1. - p > algo_config.precision_high_probability {
@@ -1281,7 +1281,7 @@ mod tests {
     fn test_poll_duration_variation() {
         let config = SynchronizationConfig::default();
         let algo_config = AlgorithmConfig {
-            poll_hysteresis: 2,
+            poll_interval_hysteresis: 2,
             ..Default::default()
         };
 
@@ -1376,7 +1376,7 @@ mod tests {
             &config,
             &algo_config,
             1.0,
-            (algo_config.poll_high_weight + algo_config.poll_low_weight) / 2.,
+            (algo_config.poll_interval_high_weight + algo_config.poll_interval_low_weight) / 2.,
             baseinterval,
         );
         assert_eq!(peer.poll_score, 0);
@@ -1394,7 +1394,7 @@ mod tests {
             &config,
             &algo_config,
             1.0,
-            (algo_config.poll_high_weight + algo_config.poll_low_weight) / 2.,
+            (algo_config.poll_interval_high_weight + algo_config.poll_interval_low_weight) / 2.,
             baseinterval,
         );
         assert_eq!(peer.poll_score, 0);
