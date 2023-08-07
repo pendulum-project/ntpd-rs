@@ -642,7 +642,7 @@ impl KeyExchangeResultDecoder {
                 Break(Err(error))
             }
             Warning { warningcode } => {
-                tracing::warn!(warningcode, "Received key exchange warning code");
+                tracing::info!(warningcode, "Received key exchange warning code");
 
                 Continue(state)
             }
@@ -728,7 +728,7 @@ impl KeyExchangeClient {
                         ControlFlow::Break(Ok(result)) => {
                             let algorithm = result.algorithm.unwrap_or_default();
 
-                            tracing::info!(?algorithm, "selected AEAD algorithm");
+                            tracing::debug!(?algorithm, "selected AEAD algorithm");
 
                             let keys = match algorithm.extract_nts_keys(&self.tls_connection) {
                                 Ok(keys) => keys,
@@ -878,7 +878,7 @@ impl KeyExchangeServerDecoder {
                 Break(Err(error))
             }
             Warning { warningcode } => {
-                tracing::warn!(warningcode, "Received key exchange warning code");
+                tracing::info!(warningcode, "Received key exchange warning code");
 
                 Continue(state)
             }
@@ -1003,7 +1003,7 @@ impl KeyExchangeServer {
                             let algorithm = result.algorithm;
                             let protocol = result.protocol;
 
-                            tracing::info!(?algorithm, "selected AEAD algorithm");
+                            tracing::debug!(?algorithm, "selected AEAD algorithm");
 
                             let keys = match algorithm.extract_nts_keys(&self.tls_connection) {
                                 Ok(keys) => keys,
