@@ -201,7 +201,10 @@ pub struct SynchronizationConfig {
     /// > CMIN defines the minimum number of servers consistent with the correctness requirements.
     /// > Suspicious operators would set CMIN to ensure multiple redundant servers are available for the
     /// > algorithms to mitigate properly. However, for historic reasons the default value for CMIN is one.
-    #[serde(default = "default_min_intersection_survivors")]
+    #[serde(
+        rename = "minimum-agreeing-peers",
+        default = "default_min_intersection_survivors"
+    )]
     pub min_intersection_survivors: usize,
 
     /// The maximum amount the system clock is allowed to change in a single go
@@ -211,18 +214,28 @@ pub struct SynchronizationConfig {
     ///
     /// Note that this is not used during startup. To limit system clock changes
     /// during startup, use startup_panic_threshold
-    #[serde(default = "default_panic_threshold")]
+    #[serde(
+        rename = "single-step-panic-threshold",
+        default = "default_panic_threshold"
+    )]
     pub panic_threshold: StepThreshold,
 
     /// The maximum amount the system clock is allowed to change during startup.
     /// This can be used to limit the impact of bad servers if the system clock
     /// is known to be reasonable on startup
-    #[serde(default = "startup_panic_threshold")]
+    #[serde(
+        rename = "startup-step-panic-threshold",
+        default = "startup_panic_threshold"
+    )]
     pub startup_panic_threshold: StepThreshold,
 
     /// The maximum amount distributed amongst all steps except at startup the
     /// daemon is allowed to step the system clock.
-    #[serde(deserialize_with = "deserialize_option_threshold", default)]
+    #[serde(
+        rename = "accumulated-step-panic-threshold",
+        deserialize_with = "deserialize_option_threshold",
+        default
+    )]
     pub accumulated_threshold: Option<NtpDuration>,
 
     /// Stratum of the local clock, when not synchronized through ntp. This

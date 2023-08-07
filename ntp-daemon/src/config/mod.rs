@@ -475,7 +475,7 @@ mod tests {
         );
 
         let config: Config = toml::from_str(
-            "[[peers]]\nmode = \"simple\"\naddress = \"example.com\"\n[synchronization]\npanic-threshold = 0",
+            "[[peers]]\nmode = \"simple\"\naddress = \"example.com\"\n[synchronization]\nsingle-step-panic-threshold = 0",
         )
         .unwrap();
         assert_eq!(
@@ -502,7 +502,7 @@ mod tests {
         );
 
         let config: Config = toml::from_str(
-            "[[peers]]\nmode = \"simple\"\naddress = \"example.com\"\n[synchronization]\npanic-threshold = \"inf\"",
+            "[[peers]]\nmode = \"simple\"\naddress = \"example.com\"\n[synchronization]\nsingle-step-panic-threshold = \"inf\"",
         )
         .unwrap();
         assert_eq!(
@@ -624,7 +624,7 @@ mod tests {
     fn system_config_accumulated_threshold() {
         let config: Result<SynchronizationConfig, _> = toml::from_str(
             r#"
-            accumulated-threshold = 0
+            accumulated-step-panic-threshold = 0
             "#,
         );
 
@@ -633,7 +633,7 @@ mod tests {
 
         let config: Result<SynchronizationConfig, _> = toml::from_str(
             r#"
-            accumulated-threshold = 1000
+            accumulated-step-panic-threshold = 1000
             "#,
         );
 
@@ -648,7 +648,7 @@ mod tests {
     fn system_config_startup_panic_threshold() {
         let config: Result<SynchronizationConfig, _> = toml::from_str(
             r#"
-            startup-panic-threshold = { forward = 10, backward = 20 }
+            startup-step-panic-threshold = { forward = 10, backward = 20 }
             "#,
         );
 
