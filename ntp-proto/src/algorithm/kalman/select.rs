@@ -16,7 +16,7 @@ enum BoundType {
 // can be compensated for if desired by setting tighter bounds on the weights
 // determining the confidence interval.
 pub(super) fn select<Index: Copy>(
-    config: &SynchronizationConfig,
+    synchronization_config: &SynchronizationConfig,
     algo_config: &AlgorithmConfig,
     candidates: Vec<PeerSnapshot<Index>>,
 ) -> Vec<PeerSnapshot<Index>> {
@@ -52,7 +52,7 @@ pub(super) fn select<Index: Copy>(
         }
     }
 
-    if max >= config.min_intersection_survivors && max * 4 > bounds.len() {
+    if max >= synchronization_config.min_intersection_survivors && max * 4 > bounds.len() {
         candidates
             .iter()
             .filter(|snapshot| {
@@ -115,6 +115,7 @@ mod tests {
             range_delay_weight: 0.0,
             ..Default::default()
         };
+
         let result = select(&sysconfig, &algconfig, candidates.clone());
         assert_eq!(result.len(), 0);
 

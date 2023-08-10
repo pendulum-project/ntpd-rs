@@ -190,6 +190,31 @@ impl<'de> Deserialize<'de> for StepThreshold {
     }
 }
 
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct PeerDefaultsConfig {
+    /// Minima and maxima for the poll interval of clients
+    #[serde(default)]
+    pub poll_interval_limits: PollIntervalLimits,
+
+    /// Initial poll interval of the system
+    #[serde(default = "default_initial_poll_interval")]
+    pub initial_poll_interval: PollInterval,
+}
+
+impl Default for PeerDefaultsConfig {
+    fn default() -> Self {
+        Self {
+            poll_interval_limits: Default::default(),
+            initial_poll_interval: default_initial_poll_interval(),
+        }
+    }
+}
+
+fn default_initial_poll_interval() -> PollInterval {
+    PollIntervalLimits::default().min
+}
+
 #[derive(Deserialize, Debug, Clone, Copy)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct SynchronizationConfig {
@@ -243,14 +268,6 @@ pub struct SynchronizationConfig {
     /// synchronizing the clock
     #[serde(default = "default_local_stratum")]
     pub local_stratum: u8,
-
-    /// Minima and maxima for the poll interval of clients
-    #[serde(default)]
-    pub poll_interval_limits: PollIntervalLimits,
-
-    /// Initial poll interval of the system
-    #[serde(default = "default_initial_poll_interval")]
-    pub initial_poll_interval: PollInterval,
 }
 
 impl Default for SynchronizationConfig {
@@ -263,9 +280,6 @@ impl Default for SynchronizationConfig {
             accumulated_threshold: None,
 
             local_stratum: default_local_stratum(),
-
-            poll_interval_limits: Default::default(),
-            initial_poll_interval: default_initial_poll_interval(),
         }
     }
 }
@@ -291,8 +305,4 @@ fn startup_panic_threshold() -> StepThreshold {
 
 fn default_local_stratum() -> u8 {
     16
-}
-
-fn default_initial_poll_interval() -> PollInterval {
-    PollIntervalLimits::default().min
 }

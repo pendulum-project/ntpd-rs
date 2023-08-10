@@ -14,15 +14,13 @@ use crate::keyexchange::certificates_from_file;
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct StandardPeerConfig {
-    #[serde(rename = "address")]
-    pub addr: NtpAddress,
+    pub address: NtpAddress,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct NtsPeerConfig {
-    #[serde(rename = "address")]
-    pub ke_addr: NtsKeAddress,
+    pub address: NtsKeAddress,
     #[serde(
         deserialize_with = "deserialize_certificates",
         default = "default_certificates",
@@ -290,7 +288,7 @@ impl TryFrom<&str> for StandardPeerConfig {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Ok(Self {
-            addr: NormalizedAddress::from_string_ntp(value.to_string())?.into(),
+            address: NormalizedAddress::from_string_ntp(value.to_string())?.into(),
         })
     }
 }
@@ -309,8 +307,8 @@ mod tests {
 
     fn peer_addr(config: &PeerConfig) -> String {
         match config {
-            PeerConfig::Standard(c) => c.addr.to_string(),
-            PeerConfig::Nts(c) => c.ke_addr.to_string(),
+            PeerConfig::Standard(c) => c.address.to_string(),
+            PeerConfig::Nts(c) => c.address.to_string(),
             PeerConfig::Pool(c) => c.addr.to_string(),
         }
     }
@@ -329,7 +327,7 @@ mod tests {
             address = "example.com"
             "#,
         )
-        .unwrap();
+            .unwrap();
         assert_eq!(peer_addr(&test.peer), "example.com:123");
         assert!(matches!(test.peer, PeerConfig::Standard(_)));
 
@@ -340,7 +338,7 @@ mod tests {
             address = "example.com:5678"
             "#,
         )
-        .unwrap();
+            .unwrap();
         assert_eq!(peer_addr(&test.peer), "example.com:5678");
         assert!(matches!(test.peer, PeerConfig::Standard(_)));
 
@@ -351,7 +349,7 @@ mod tests {
             address = "example.com"
             "#,
         )
-        .unwrap();
+            .unwrap();
         assert_eq!(peer_addr(&test.peer), "example.com:123");
         assert!(matches!(test.peer, PeerConfig::Standard(_)));
 
@@ -362,7 +360,7 @@ mod tests {
             mode = "pool"
             "#,
         )
-        .unwrap();
+            .unwrap();
         assert!(matches!(test.peer, PeerConfig::Pool(_)));
         if let PeerConfig::Pool(config) = test.peer {
             assert_eq!(config.addr.to_string(), "example.com:123");
@@ -377,7 +375,7 @@ mod tests {
             count = 42
             "#,
         )
-        .unwrap();
+            .unwrap();
         assert!(matches!(test.peer, PeerConfig::Pool(_)));
         if let PeerConfig::Pool(config) = test.peer {
             assert_eq!(config.addr.to_string(), "example.com:123");
@@ -391,10 +389,10 @@ mod tests {
             mode = "nts"
             "#,
         )
-        .unwrap();
+            .unwrap();
         assert!(matches!(test.peer, PeerConfig::Nts(_)));
         if let PeerConfig::Nts(config) = test.peer {
-            assert_eq!(config.ke_addr.to_string(), "example.com:4460");
+            assert_eq!(config.address.to_string(), "example.com:4460");
         }
     }
 
@@ -418,10 +416,10 @@ mod tests {
                 "#,
             path.display()
         ))
-        .unwrap();
+            .unwrap();
         assert!(matches!(test.peer, PeerConfig::Nts(_)));
         if let PeerConfig::Nts(config) = test.peer {
-            assert_eq!(config.ke_addr.to_string(), "example.com:4460");
+            assert_eq!(config.address.to_string(), "example.com:4460");
         }
     }
 

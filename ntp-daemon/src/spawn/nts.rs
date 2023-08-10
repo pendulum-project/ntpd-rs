@@ -32,8 +32,8 @@ impl NtsSpawner {
     async fn spawn(&mut self, action_tx: &mpsc::Sender<SpawnEvent>) -> Result<(), NtsSpawnError> {
         let ke = loop {
             match key_exchange_client(
-                self.config.ke_addr.server_name.clone(),
-                self.config.ke_addr.port,
+                self.config.address.server_name.clone(),
+                self.config.address.port,
                 &self.config.certificates,
             )
             .await
@@ -71,7 +71,7 @@ impl NtsSpawner {
                 SpawnAction::create(
                     PeerId::new(),
                     addr,
-                    self.config.ke_addr.deref().clone(),
+                    self.config.address.deref().clone(),
                     Some(ke.nts),
                 ),
             ))
@@ -104,7 +104,7 @@ impl BasicSpawner for NtsSpawner {
     }
 
     fn get_addr_description(&self) -> String {
-        self.config.ke_addr.to_string()
+        self.config.address.to_string()
     }
 
     fn get_description(&self) -> &str {

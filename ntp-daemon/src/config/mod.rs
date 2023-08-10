@@ -3,7 +3,7 @@ mod server;
 pub mod subnet;
 
 use ntp_os_clock::DefaultNtpClock;
-use ntp_proto::{DefaultTimeSyncController, SynchronizationConfig, TimeSyncController};
+use ntp_proto::{DefaultTimeSyncController, SynchronizationConfig, PeerDefaultsConfig, TimeSyncController};
 use ntp_udp::{EnableTimestamps, InterfaceName};
 pub use peer::*;
 use serde::{Deserialize, Deserializer};
@@ -272,6 +272,7 @@ pub struct LoggingObservabilityConfig {
 pub struct Config {
     #[serde(alias = "peer")]
     pub peers: Vec<PeerConfig>,
+    pub peer_defaults: Vec<PeerDefaultsConfig>,
     #[serde(alias = "server", default)]
     pub servers: Vec<ServerConfig>,
     #[serde(alias = "nts-ke-server", default)]
@@ -457,7 +458,7 @@ mod tests {
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com", 123).into(),
+                address: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
         assert!(config.logging_observability.log_level.is_none());
@@ -470,7 +471,7 @@ mod tests {
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com", 123).into(),
+                address: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
 
@@ -481,7 +482,7 @@ mod tests {
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com", 123).into(),
+                address: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
         assert_eq!(
@@ -508,7 +509,7 @@ mod tests {
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com", 123).into(),
+                address: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
         assert!(config
@@ -561,7 +562,7 @@ mod tests {
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com", 123).into(),
+                address: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
     }

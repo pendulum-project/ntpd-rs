@@ -3,7 +3,7 @@ use std::{fmt::Debug, hash::Hash};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{
-    peer::Measurement, NtpClock, NtpDuration, NtpTimestamp, SynchronizationConfig, TimeSnapshot,
+    peer::Measurement, NtpClock, NtpDuration, NtpTimestamp, SynchronizationConfig, TimeSnapshot, config::PeerDefaultsConfig,
 };
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -47,13 +47,15 @@ pub trait TimeSyncController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> {
     /// Create a new clock controller controling the given clock
     fn new(
         clock: C,
-        config: SynchronizationConfig,
+        synchronization_config: SynchronizationConfig,
+        peer_defaults_config: PeerDefaultsConfig,
         algorithm_config: Self::AlgorithmConfig,
     ) -> Self;
     /// Update used system config
     fn update_config(
         &mut self,
-        config: SynchronizationConfig,
+        synchronization_config: SynchronizationConfig,
+        peer_defaults_config: PeerDefaultsConfig,
         algorithm_config: Self::AlgorithmConfig,
     );
     /// Notify the controller that there is a new peer
