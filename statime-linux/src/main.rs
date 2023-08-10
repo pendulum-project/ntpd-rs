@@ -12,8 +12,11 @@ use statime::{
     Port, PortAction, PortActionIterator, PortConfig, PtpInstance, SdoId, Time, TimePropertiesDS,
     TimeSource, TimestampContext,
 };
-use statime_linux::clock::LinuxClock;
-use statime_linux::network::{get_clock_id, LinuxNetworkPort, LinuxRuntime};
+use statime_linux::{
+    clock::LinuxClock,
+    network::{get_clock_id, LinuxNetworkPort, LinuxRuntime},
+};
+use timestamped_socket::{interface::InterfaceDescriptor, raw_udp_socket::TimestampingMode};
 use tokio::{
     sync::{
         mpsc::{Receiver, Sender},
@@ -21,8 +24,6 @@ use tokio::{
     },
     time::Sleep,
 };
-
-use timestamped_socket::{interface::InterfaceDescriptor, raw_udp_socket::TimestampingMode};
 
 #[derive(Clone, Copy)]
 struct SdoIdParser;
