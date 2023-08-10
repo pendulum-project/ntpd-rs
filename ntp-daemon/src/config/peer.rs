@@ -327,7 +327,7 @@ mod tests {
             address = "example.com"
             "#,
         )
-            .unwrap();
+        .unwrap();
         assert_eq!(peer_addr(&test.peer), "example.com:123");
         assert!(matches!(test.peer, PeerConfig::Standard(_)));
 
@@ -338,7 +338,7 @@ mod tests {
             address = "example.com:5678"
             "#,
         )
-            .unwrap();
+        .unwrap();
         assert_eq!(peer_addr(&test.peer), "example.com:5678");
         assert!(matches!(test.peer, PeerConfig::Standard(_)));
 
@@ -349,7 +349,7 @@ mod tests {
             address = "example.com"
             "#,
         )
-            .unwrap();
+        .unwrap();
         assert_eq!(peer_addr(&test.peer), "example.com:123");
         assert!(matches!(test.peer, PeerConfig::Standard(_)));
 
@@ -360,7 +360,7 @@ mod tests {
             mode = "pool"
             "#,
         )
-            .unwrap();
+        .unwrap();
         assert!(matches!(test.peer, PeerConfig::Pool(_)));
         if let PeerConfig::Pool(config) = test.peer {
             assert_eq!(config.addr.to_string(), "example.com:123");
@@ -375,7 +375,7 @@ mod tests {
             count = 42
             "#,
         )
-            .unwrap();
+        .unwrap();
         assert!(matches!(test.peer, PeerConfig::Pool(_)));
         if let PeerConfig::Pool(config) = test.peer {
             assert_eq!(config.addr.to_string(), "example.com:123");
@@ -389,7 +389,7 @@ mod tests {
             mode = "nts"
             "#,
         )
-            .unwrap();
+        .unwrap();
         assert!(matches!(test.peer, PeerConfig::Nts(_)));
         if let PeerConfig::Nts(config) = test.peer {
             assert_eq!(config.address.to_string(), "example.com:4460");
@@ -416,7 +416,7 @@ mod tests {
                 "#,
             path.display()
         ))
-            .unwrap();
+        .unwrap();
         assert!(matches!(test.peer, PeerConfig::Nts(_)));
         if let PeerConfig::Nts(config) = test.peer {
             assert_eq!(config.address.to_string(), "example.com:4460");

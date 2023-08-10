@@ -255,7 +255,7 @@ pub struct CombinedSynchronizationConfig {
     pub algorithm: <DefaultTimeSyncController<DefaultNtpClock, PeerId> as TimeSyncController<
         DefaultNtpClock,
         PeerId,
-        >>::AlgorithmConfig,
+    >>::AlgorithmConfig,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -572,15 +572,9 @@ mod tests {
             })]
         );
 
-        let poll_interval_limits =config.peer_defaults.poll_interval_limits;
-        assert_eq!(
-            poll_interval_limits.min.as_log(),
-            5
-        );
-        assert_eq!(
-            poll_interval_limits.max.as_log(),
-            9
-        );
+        let poll_interval_limits = config.peer_defaults.poll_interval_limits;
+        assert_eq!(poll_interval_limits.min.as_log(), 5);
+        assert_eq!(poll_interval_limits.max.as_log(), 9);
 
         assert_eq!(config.peer_defaults.initial_poll_interval.as_log(), 5);
     }

@@ -3,8 +3,8 @@ use std::{collections::HashMap, fmt::Debug, hash::Hash};
 use tracing::{error, info, instrument};
 
 use crate::{
-    Measurement, NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, ObservablePeerTimedata,
-    StateUpdate, SynchronizationConfig, TimeSnapshot, TimeSyncController, config::PeerDefaultsConfig,
+    config::PeerDefaultsConfig, Measurement, NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp,
+    ObservablePeerTimedata, StateUpdate, SynchronizationConfig, TimeSnapshot, TimeSyncController,
 };
 
 use self::{
@@ -194,7 +194,11 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
     fn check_offset_steer(&mut self, change: f64) {
         let change = NtpDuration::from_seconds(change);
         if self.in_startup {
-            if !self.synchronization_config.startup_panic_threshold.is_within(change) {
+            if !self
+                .synchronization_config
+                .startup_panic_threshold
+                .is_within(change)
+            {
                 error!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate.");
                 #[cfg(not(test))]
                 std::process::exit(crate::exitcode::SOFTWARE);
@@ -203,7 +207,10 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
             }
         } else {
             self.timedata.accumulated_steps += change;
-            if !self.synchronization_config.panic_threshold.is_within(change)
+            if !self
+                .synchronization_config
+                .panic_threshold
+                .is_within(change)
                 || !self
                     .synchronization_config
                     .accumulated_threshold
@@ -279,7 +286,9 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
         self.timedata.poll_interval = self
             .peers
             .values()
-            .map(|(state, _)| state.get_desired_poll(&self.peer_defaults_config.poll_interval_limits))
+            .map(|(state, _)| {
+                state.get_desired_poll(&self.peer_defaults_config.poll_interval_limits)
+            })
             .min()
             .unwrap_or(self.peer_defaults_config.poll_interval_limits.max);
     }
@@ -290,7 +299,12 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
 {
     type AlgorithmConfig = AlgorithmConfig;
 
-    fn new(clock: C, synchronization_config: SynchronizationConfig, peer_defaults_config: PeerDefaultsConfig, algo_config: Self::AlgorithmConfig) -> Self {
+    fn new(
+        clock: C,
+        synchronization_config: SynchronizationConfig,
+        peer_defaults_config: PeerDefaultsConfig,
+        algo_config: Self::AlgorithmConfig,
+    ) -> Self {
         // Setup clock
         clock
             .disable_ntp_algorithm()
@@ -315,7 +329,12 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
         }
     }
 
-    fn update_config(&mut self, synchronization_config: SynchronizationConfig, peer_defaults_config: PeerDefaultsConfig, algo_config: Self::AlgorithmConfig) {
+    fn update_config(
+        &mut self,
+        synchronization_config: SynchronizationConfig,
+        peer_defaults_config: PeerDefaultsConfig,
+        algo_config: Self::AlgorithmConfig,
+    ) {
         self.synchronization_config = synchronization_config;
         self.peer_defaults_config = peer_defaults_config;
         self.algo_config = algo_config;

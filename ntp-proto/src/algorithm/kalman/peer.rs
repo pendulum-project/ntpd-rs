@@ -75,7 +75,8 @@
 use tracing::{debug, error, info, trace};
 
 use crate::{
-    Measurement, NtpDuration, NtpTimestamp, PollInterval, PollIntervalLimits, config::PeerDefaultsConfig
+    config::PeerDefaultsConfig, Measurement, NtpDuration, NtpTimestamp, PollInterval,
+    PollIntervalLimits,
 };
 
 use super::{
@@ -269,13 +270,15 @@ impl PeerFilter {
             self.desired_poll_interval = peer_defaults_config.poll_interval_limits.min;
             self.poll_score = 0;
         } else if self.poll_score <= -algo_config.poll_interval_hysteresis {
-            self.desired_poll_interval =
-                self.desired_poll_interval.inc(peer_defaults_config.poll_interval_limits);
+            self.desired_poll_interval = self
+                .desired_poll_interval
+                .inc(peer_defaults_config.poll_interval_limits);
             self.poll_score = 0;
             info!(interval = ?self.desired_poll_interval, "Increased poll interval");
         } else if self.poll_score >= algo_config.poll_interval_hysteresis {
-            self.desired_poll_interval =
-                self.desired_poll_interval.dec(peer_defaults_config.poll_interval_limits);
+            self.desired_poll_interval = self
+                .desired_poll_interval
+                .dec(peer_defaults_config.poll_interval_limits);
             self.poll_score = 0;
             info!(interval = ?self.desired_poll_interval, "Decreased poll interval");
         }
@@ -354,7 +357,13 @@ impl PeerFilter {
         let (p, weight, measurement_period) = self.absorb_measurement(measurement);
 
         self.update_wander_estimate(algo_config, p, weight);
-        self.update_desired_poll(peer_defaults_config, algo_config, p, weight, measurement_period);
+        self.update_desired_poll(
+            peer_defaults_config,
+            algo_config,
+            p,
+            weight,
+            measurement_period,
+        );
 
         debug!(
             "peer offset {}±{}ms, freq {}±{}ppm",

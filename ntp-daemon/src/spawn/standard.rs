@@ -70,7 +70,12 @@ impl StandardSpawner {
         action_tx
             .send(SpawnEvent::new(
                 self.id,
-                SpawnAction::create(PeerId::new(), addr, self.config.address.deref().clone(), None),
+                SpawnAction::create(
+                    PeerId::new(),
+                    addr,
+                    self.config.address.deref().clone(),
+                    None,
+                ),
             ))
             .await?;
         Ok(())
@@ -259,7 +264,8 @@ mod tests {
     async fn works_if_address_does_not_resolve() {
         let spawner = StandardSpawner::new(
             StandardPeerConfig {
-                address: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]).into(),
+                address: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![])
+                    .into(),
             },
             NETWORK_WAIT_PERIOD,
         );

@@ -2,12 +2,12 @@ use std::{
     future::Future,
     marker::PhantomData,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr},
-    pin::Pin
+    pin::Pin,
 };
 
 use ntp_proto::{
-    IgnoreReason, Measurement, NtpClock, NtpInstant, NtpTimestamp, Peer, PeerNtsData, PeerSnapshot,
-    PollError, ReferenceId, SystemSnapshot, Update, PeerDefaultsConfig,
+    IgnoreReason, Measurement, NtpClock, NtpInstant, NtpTimestamp, Peer, PeerDefaultsConfig,
+    PeerNtsData, PeerSnapshot, PollError, ReferenceId, SystemSnapshot, Update,
 };
 use ntp_udp::{EnableTimestamps, InterfaceName, UdpSocket};
 use rand::{thread_rng, Rng};
@@ -112,7 +112,7 @@ where
             .channels
             .peer_defaults_config_receiver
             .borrow_and_update();
-        
+
         let mut buf = [0; 1024];
         let packet = match self.peer.generate_poll_message(
             &mut buf,
@@ -329,20 +329,9 @@ where
                 let local_clock_time = NtpInstant::now();
                 let config_snapshot = *channels.peer_defaults_config_receiver.borrow_and_update();
                 let peer = if let Some(nts) = nts {
-                    Peer::new_nts(
-                        our_id,
-                        peer_id,
-                        local_clock_time,
-                        config_snapshot,
-                        nts,
-                    )
+                    Peer::new_nts(our_id, peer_id, local_clock_time, config_snapshot, nts)
                 } else {
-                    Peer::new(
-                        our_id,
-                        peer_id,
-                        local_clock_time,
-                        config_snapshot,
-                    )
+                    Peer::new(our_id, peer_id, local_clock_time, config_snapshot)
                 };
 
                 let poll_wait = tokio::time::sleep(std::time::Duration::default());

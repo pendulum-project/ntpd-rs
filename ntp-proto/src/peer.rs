@@ -1,11 +1,12 @@
 use std::io::Cursor;
 
 use crate::{
+    config::PeerDefaultsConfig,
     cookiestash::CookieStash,
     packet::{Cipher, NtpAssociationMode, RequestIdentifier},
     time_types::NtpInstant,
     NtpDuration, NtpLeapIndicator, NtpPacket, NtpTimestamp, PollInterval, ReferenceId,
-    SystemSnapshot, config::PeerDefaultsConfig,
+    SystemSnapshot,
 };
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument, trace, warn};

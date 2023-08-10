@@ -15,8 +15,8 @@ use crate::{
 use std::{collections::HashMap, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
 
 use ntp_proto::{
-    DefaultTimeSyncController, KeySet, NtpClock, NtpDuration, PeerSnapshot, SystemSnapshot,
-    TimeSyncController, PeerDefaultsConfig,
+    DefaultTimeSyncController, KeySet, NtpClock, NtpDuration, PeerDefaultsConfig, PeerSnapshot,
+    SystemSnapshot, TimeSyncController,
 };
 use ntp_udp::{EnableTimestamps, InterfaceName};
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -70,7 +70,8 @@ impl<T: Wait> Wait for SingleshotSleep<T> {
 }
 
 pub struct DaemonChannels {
-    pub synchronization_config_receiver: tokio::sync::watch::Receiver<CombinedSynchronizationConfig>,
+    pub synchronization_config_receiver:
+        tokio::sync::watch::Receiver<CombinedSynchronizationConfig>,
     pub synchronization_config_sender: tokio::sync::watch::Sender<CombinedSynchronizationConfig>,
     pub peer_defaults_config_receiver: tokio::sync::watch::Receiver<PeerDefaultsConfig>,
     pub peer_defaults_config_sender: tokio::sync::watch::Sender<PeerDefaultsConfig>,
@@ -181,8 +182,10 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         };
 
         // Create communication channels
-        let (synchronization_config_sender, synchronization_config_receiver) = tokio::sync::watch::channel(synchronization_config);
-        let (peer_defaults_config_sender, peer_defaults_config_receiver) = tokio::sync::watch::channel(peer_defaults_config);
+        let (synchronization_config_sender, synchronization_config_receiver) =
+            tokio::sync::watch::channel(synchronization_config);
+        let (peer_defaults_config_sender, peer_defaults_config_receiver) =
+            tokio::sync::watch::channel(peer_defaults_config);
         let (system_snapshot_sender, system_snapshot_receiver) =
             tokio::sync::watch::channel(system);
         let (peer_snapshots_sender, peer_snapshots_receiver) = tokio::sync::watch::channel(vec![]);
@@ -294,8 +297,11 @@ impl<C: NtpClock, T: Wait> System<C, T> {
     fn handle_config_update(&mut self) {
         let synchronization_config = *self.synchronization_config_receiver.borrow_and_update();
         let peer_defaults_config = *self.peer_defaults_config_receiver.borrow_and_update();
-        self.controller
-            .update_config(synchronization_config.synchronization, peer_defaults_config, synchronization_config.algorithm);
+        self.controller.update_config(
+            synchronization_config.synchronization,
+            peer_defaults_config,
+            synchronization_config.algorithm,
+        );
         self.synchronization_config = synchronization_config;
         self.peer_defaults_config = peer_defaults_config;
     }
