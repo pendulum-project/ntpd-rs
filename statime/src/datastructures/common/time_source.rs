@@ -22,7 +22,7 @@ pub enum TimeSource {
 }
 
 impl TimeSource {
-    pub(crate) fn to_primitive(&self) -> u8 {
+    pub(crate) fn to_primitive(self) -> u8 {
         match self {
             Self::AtomicClock => 0x10,
             Self::Gnss => 0x20,
@@ -33,9 +33,9 @@ impl TimeSource {
             Self::HandSet => 0x60,
             Self::Other => 0x90,
             Self::InternalOscillator => 0xa0,
-            Self::ProfileSpecific(p) => 0xf0 + *p,
+            Self::ProfileSpecific(p) => 0xf0 + p,
             Self::Reserved => 0xff,
-            Self::Unknown(v) => *v,
+            Self::Unknown(v) => v,
         }
     }
 

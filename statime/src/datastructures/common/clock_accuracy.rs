@@ -67,7 +67,7 @@ pub enum ClockAccuracy {
 }
 
 impl ClockAccuracy {
-    pub(crate) fn to_primitive(&self) -> u8 {
+    pub(crate) fn to_primitive(self) -> u8 {
         match self {
             Self::Reserved => 0x00,
             Self::PS1 => 0x17,
