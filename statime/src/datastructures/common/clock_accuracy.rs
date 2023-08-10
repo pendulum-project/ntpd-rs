@@ -138,13 +138,6 @@ impl ClockAccuracy {
     }
 
     /// high accuracy to low accuracy
-    ///
-    /// ```
-    /// use core::cmp::Ordering;
-    /// use statime::ClockAccuracy;
-    /// // the inaccuracy of PS1 is less than of PS10
-    /// assert_eq!(ClockAccuracy::PS1.cmp_numeric(&ClockAccuracy::PS10), Ordering::Less);
-    /// ```
     pub(crate) fn cmp_numeric(&self, other: &Self) -> Ordering {
         self.to_primitive().cmp(&other.to_primitive())
     }
@@ -170,5 +163,14 @@ mod tests {
         }
 
         assert_eq!(ClockAccuracy::ProfileSpecific(5).to_primitive(), 0x85);
+    }
+
+    #[test]
+    fn ordering() {
+        // the inaccuracy of PS1 is less than of PS10
+        let a = ClockAccuracy::PS1;
+        let b = ClockAccuracy::PS10;
+
+        assert_eq!(a.cmp_numeric(&b), Ordering::Less);
     }
 }
