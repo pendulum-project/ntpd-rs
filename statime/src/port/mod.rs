@@ -393,7 +393,7 @@ impl<'a, C, F, R: Rng> Port<InBmca<'a, C, F>, R> {
 
         match recommended_state {
             RecommendedState::M1(defaultds) | RecommendedState::M2(defaultds) => {
-                // a slave-only PTP port should never end up in the slave state
+                // a slave-only PTP port should never end up in the master state
                 debug_assert!(!default_ds.slave_only);
 
                 current_ds.steps_removed = 0;
