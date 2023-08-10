@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use clock_steering::unix::UnixClock;
+use clock_steering::{unix::UnixClock, TimeOffset};
 use statime::{Clock, Duration, Time, TimePropertiesDS};
 
 #[derive(Debug, Clone)]
@@ -47,10 +47,7 @@ impl clock_steering::Clock for LinuxClock {
         self.clock.set_frequency(frequency)
     }
 
-    fn step_clock(
-        &self,
-        offset: std::time::Duration,
-    ) -> Result<clock_steering::Timestamp, Self::Error> {
+    fn step_clock(&self, offset: TimeOffset) -> Result<clock_steering::Timestamp, Self::Error> {
         self.clock.step_clock(offset)
     }
 
@@ -81,7 +78,7 @@ impl Clock for LinuxClock {
         let seconds: u64 = timestamp.seconds.try_into().unwrap();
 
         let nanos = seconds * 1_000_000_000 + timestamp.nanos as u64;
-        Time::from_nanos_subnanos(nanos, timestamp.subnanos)
+        Time::from_nanos_subnanos(nanos, 0)
     }
 
     fn adjust(
@@ -102,14 +99,16 @@ impl Clock for LinuxClock {
             self.clock.set_leap_seconds(leap_indicator)?
         }
 
-        // a statime Duration has 96 bits to store nanoseconds, but the linux api only
-        // has 64. So potentially we lose information, but more than 64 bits of
-        // nanoseconds seems very unlikely.
-        let offset = std::time::Duration::from_nanos(time_offset.nanos_lossy() as u64);
+        // For nanos, we need the modulo operation, not remainder
+        // hence the workaround.
+        let offset = TimeOffset {
+            seconds: (time_offset.nanos_lossy() / 1e9).floor() as _,
+            nanos: (((time_offset.nanos_lossy() % 1e9) + 1e9) % 1e9).floor() as _,
+        };
 
         log::trace!(
             "Adjusting clock: {:e}ns, 1 + {:e}x",
-            offset.as_nanos(),
+            (offset.seconds as f64) * 1e9 + (offset.nanos as f64),
             frequency_multiplier - 1.0
         );
 
