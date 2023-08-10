@@ -179,7 +179,7 @@ impl UdpSocket {
                     .await
                 {
                     Err(_) => {
-                        tracing::info!("Packet without timestamp");
+                        tracing::warn!("Packet without timestamp");
                         Ok((send_size, None))
                     }
                     Ok(send_timestamp) => Ok((send_size, Some(send_timestamp?))),
@@ -305,11 +305,11 @@ fn recv(
 
             #[cfg(target_os = "linux")]
             ControlMessage::ReceiveError(_error) => {
-                tracing::info!("unexpected error message on the MSG_ERRQUEUE");
+                tracing::warn!("unexpected error message on the MSG_ERRQUEUE");
             }
 
             ControlMessage::Other(msg) => {
-                tracing::info!(
+                tracing::warn!(
                     "weird control message {:?} {:?}",
                     msg.cmsg_level,
                     msg.cmsg_type
@@ -363,7 +363,7 @@ fn fetch_send_timestamp_help(
 
                 // Check that this message belongs to the send we are interested in
                 if error.ee_data != expected_counter {
-                    tracing::info!(
+                    tracing::debug!(
                         error.ee_data,
                         expected_counter,
                         "Timestamp for unrelated packet"
@@ -373,7 +373,7 @@ fn fetch_send_timestamp_help(
             }
 
             ControlMessage::Other(msg) => {
-                tracing::info!(
+                tracing::warn!(
                     msg.cmsg_level,
                     msg.cmsg_type,
                     "unexpected message on the MSG_ERRQUEUE",

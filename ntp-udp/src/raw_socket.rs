@@ -251,14 +251,14 @@ mod recv_message {
         };
 
         if mhdr.msg_flags & libc::MSG_TRUNC > 0 {
-            tracing::info!(
+            tracing::debug!(
                 max_len = packet_buf.len(),
                 "truncated packet because it was larger than expected",
             );
         }
 
         if mhdr.msg_flags & libc::MSG_CTRUNC > 0 {
-            tracing::info!("truncated control messages");
+            tracing::warn!("truncated control messages");
         }
 
         // Clear out the fields for which we are giving up the reference
