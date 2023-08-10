@@ -228,7 +228,7 @@ impl PeerSnapshot {
         // Note, this can only ever be an issue if the peer is not using
         // hardware as its source, so ignore reference_id if stratum is 1.
         if self.stratum != 1 && self.reference_id == self.our_id {
-            warn!("Peer rejected because of detected synchornization loop");
+            info!("Peer rejected because of detected synchornization loop");
             return Err(Loop);
         }
 
