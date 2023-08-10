@@ -190,7 +190,7 @@ impl<'de> Deserialize<'de> for StepThreshold {
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, Copy)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct PeerDefaultsConfig {
     /// Minima and maxima for the poll interval of clients

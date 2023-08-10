@@ -111,7 +111,7 @@ where
             .channels
             .synchronization_config_receiver
             .borrow_and_update()
-            .synchronization;
+            .peer_defaults;
         let mut buf = [0; 1024];
         let packet = match self.peer.generate_poll_message(
             &mut buf,
@@ -274,7 +274,7 @@ where
                     }
                 },
                 _ = self.channels.synchronization_config_receiver.changed(), if self.channels.synchronization_config_receiver.has_changed().is_ok() => {
-                    self.peer.update_config(self.channels.synchronization_config_receiver.borrow_and_update().synchronization);
+                    self.peer.update_config(self.channels.synchronization_config_receiver.borrow_and_update().peer_defaults);
                 },
             }
         }
@@ -332,7 +332,7 @@ where
                         our_id,
                         peer_id,
                         local_clock_time,
-                        config_snapshot.synchronization,
+                        config_snapshot.peer_defaults,
                         nts,
                     )
                 } else {
@@ -340,7 +340,7 @@ where
                         our_id,
                         peer_id,
                         local_clock_time,
-                        config_snapshot.synchronization,
+                        config_snapshot.peer_defaults,
                     )
                 };
 
@@ -587,7 +587,7 @@ mod tests {
             local_clock_time,
             synchronization_config_receiver
                 .borrow_and_update()
-                .synchronization,
+                .peer_defaults,
         );
 
         let process = PeerTask {

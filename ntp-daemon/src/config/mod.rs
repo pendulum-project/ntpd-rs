@@ -250,6 +250,8 @@ pub struct CombinedSynchronizationConfig {
     #[serde(flatten)]
     pub synchronization: SynchronizationConfig,
     #[serde(flatten)]
+    pub peer_defaults: PeerDefaultsConfig,
+    #[serde(flatten)]
     pub algorithm: <DefaultTimeSyncController<DefaultNtpClock, PeerId> as TimeSyncController<
         DefaultNtpClock,
         PeerId,
@@ -272,7 +274,6 @@ pub struct LoggingObservabilityConfig {
 pub struct Config {
     #[serde(alias = "peer")]
     pub peers: Vec<PeerConfig>,
-    pub peer_defaults: Vec<PeerDefaultsConfig>,
     #[serde(alias = "server", default)]
     pub servers: Vec<ServerConfig>,
     #[serde(alias = "nts-ke-server", default)]

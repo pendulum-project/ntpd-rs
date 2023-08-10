@@ -212,6 +212,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                 controller: DefaultTimeSyncController::new(
                     clock,
                     config.synchronization,
+                    config.peer_defaults,
                     config.algorithm,
                 ),
                 enable_timestamps,
@@ -280,7 +281,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
     fn handle_config_update(&mut self) {
         let config = *self.config_receiver.borrow_and_update();
         self.controller
-            .update_config(config.synchronization, config.algorithm);
+            .update_config(config.synchronization, config.peer_defaults, config.algorithm);
         self.config = config;
     }
 
