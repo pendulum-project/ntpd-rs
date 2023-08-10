@@ -13,7 +13,7 @@ use crate::{
     config::PortConfig,
     datastructures::{
         common::{LeapIndicator, PortIdentity, TimeSource, WireTimestamp},
-        datasets::{CurrentDS, ParentDS, TimePropertiesDS, DefaultDS},
+        datasets::{CurrentDS, DefaultDS, ParentDS, TimePropertiesDS},
         messages::Message,
     },
     filters::Filter,
