@@ -642,7 +642,7 @@ impl KeyExchangeResultDecoder {
                 Break(Err(error))
             }
             Warning { warningcode } => {
-                tracing::info!(warningcode, "Received key exchange warning code");
+                tracing::warn!(warningcode, "Received key exchange warning code");
 
                 Continue(state)
             }
@@ -878,7 +878,7 @@ impl KeyExchangeServerDecoder {
                 Break(Err(error))
             }
             Warning { warningcode } => {
-                tracing::info!(warningcode, "Received key exchange warning code");
+                tracing::debug!(warningcode, "Received key exchange warning code");
 
                 Continue(state)
             }
