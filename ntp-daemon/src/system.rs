@@ -16,7 +16,7 @@ use std::{collections::HashMap, future::Future, marker::PhantomData, pin::Pin, s
 
 use ntp_proto::{
     DefaultTimeSyncController, KeySet, NtpClock, NtpDuration, PeerSnapshot, SystemSnapshot,
-    TimeSyncController,
+    TimeSyncController, PeerDefaultsConfig,
 };
 use ntp_udp::{EnableTimestamps, InterfaceName};
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -70,8 +70,10 @@ impl<T: Wait> Wait for SingleshotSleep<T> {
 }
 
 pub struct DaemonChannels {
-    pub config_receiver: tokio::sync::watch::Receiver<CombinedSynchronizationConfig>,
-    pub config_sender: tokio::sync::watch::Sender<CombinedSynchronizationConfig>,
+    pub synchronization_config_receiver: tokio::sync::watch::Receiver<CombinedSynchronizationConfig>,
+    pub synchronization_config_sender: tokio::sync::watch::Sender<CombinedSynchronizationConfig>,
+    pub peer_defaults_config_receiver: tokio::sync::watch::Receiver<PeerDefaultsConfig>,
+    pub peer_defaults_config_sender: tokio::sync::watch::Sender<PeerDefaultsConfig>,
     pub peer_snapshots_receiver: tokio::sync::watch::Receiver<Vec<ObservablePeerState>>,
     pub server_data_receiver: tokio::sync::watch::Receiver<Vec<ServerData>>,
     pub system_snapshot_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
@@ -80,7 +82,8 @@ pub struct DaemonChannels {
 
 /// Spawn the NTP daemon
 pub async fn spawn(
-    system_config: CombinedSynchronizationConfig,
+    synchronization_config: CombinedSynchronizationConfig,
+    peer_defaults_config: PeerDefaultsConfig,
     clock_config: ClockConfig,
     peer_configs: &[PeerConfig],
     server_configs: &[ServerConfig],
@@ -90,7 +93,8 @@ pub async fn spawn(
         clock_config.clock,
         clock_config.interface,
         clock_config.enable_timestamps,
-        system_config,
+        synchronization_config,
+        peer_defaults_config,
         keyset,
     );
 
@@ -129,10 +133,12 @@ struct SystemSpawnerData {
 
 struct System<C: NtpClock, T: Wait> {
     _wait: PhantomData<SingleshotSleep<T>>,
-    config: CombinedSynchronizationConfig,
+    synchronization_config: CombinedSynchronizationConfig,
+    peer_defaults_config: PeerDefaultsConfig,
     system: SystemSnapshot,
 
-    config_receiver: tokio::sync::watch::Receiver<CombinedSynchronizationConfig>,
+    synchronization_config_receiver: tokio::sync::watch::Receiver<CombinedSynchronizationConfig>,
+    peer_defaults_config_receiver: tokio::sync::watch::Receiver<PeerDefaultsConfig>,
     system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
     peer_snapshots_sender: tokio::sync::watch::Sender<Vec<ObservablePeerState>>,
     server_data_sender: tokio::sync::watch::Sender<Vec<ServerData>>,
@@ -164,17 +170,19 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         clock: C,
         interface: Option<InterfaceName>,
         enable_timestamps: EnableTimestamps,
-        config: CombinedSynchronizationConfig,
+        synchronization_config: CombinedSynchronizationConfig,
+        peer_defaults_config: PeerDefaultsConfig,
         keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     ) -> (Self, DaemonChannels) {
         // Setup system snapshot
         let system = SystemSnapshot {
-            stratum: config.synchronization.local_stratum,
+            stratum: synchronization_config.synchronization.local_stratum,
             ..Default::default()
         };
 
         // Create communication channels
-        let (config_sender, config_receiver) = tokio::sync::watch::channel(config);
+        let (synchronization_config_sender, synchronization_config_receiver) = tokio::sync::watch::channel(synchronization_config);
+        let (peer_defaults_config_sender, peer_defaults_config_receiver) = tokio::sync::watch::channel(peer_defaults_config);
         let (system_snapshot_sender, system_snapshot_receiver) =
             tokio::sync::watch::channel(system);
         let (peer_snapshots_sender, peer_snapshots_receiver) = tokio::sync::watch::channel(vec![]);
@@ -187,10 +195,12 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         (
             System {
                 _wait: PhantomData,
-                config,
+                synchronization_config,
+                peer_defaults_config,
                 system,
 
-                config_receiver: config_receiver.clone(),
+                synchronization_config_receiver: synchronization_config_receiver.clone(),
+                peer_defaults_config_receiver: peer_defaults_config_receiver.clone(),
                 system_snapshot_sender,
                 peer_snapshots_sender,
                 server_data_sender,
@@ -206,21 +216,24 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                 peer_channels: PeerChannels {
                     msg_for_system_sender,
                     system_snapshot_receiver: system_snapshot_receiver.clone(),
-                    synchronization_config_receiver: config_receiver.clone(),
+                    synchronization_config_receiver: synchronization_config_receiver.clone(),
+                    peer_defaults_config_receiver: peer_defaults_config_receiver.clone(),
                 },
                 clock: clock.clone(),
                 controller: DefaultTimeSyncController::new(
                     clock,
-                    config.synchronization,
-                    config.peer_defaults,
-                    config.algorithm,
+                    synchronization_config.synchronization,
+                    peer_defaults_config,
+                    synchronization_config.algorithm,
                 ),
                 enable_timestamps,
                 interface,
             },
             DaemonChannels {
-                config_receiver,
-                config_sender,
+                synchronization_config_receiver,
+                synchronization_config_sender,
+                peer_defaults_config_receiver,
+                peer_defaults_config_sender,
                 peer_snapshots_receiver,
                 server_data_receiver,
                 system_snapshot_receiver,
@@ -268,7 +281,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                 () = &mut wait => {
                     self.handle_timer(&mut wait);
                 }
-                _ = self.config_receiver.changed(), if self.config_receiver.has_changed().is_ok() => {
+                _ = self.synchronization_config_receiver.changed(), if self.synchronization_config_receiver.has_changed().is_ok() => {
                     self.handle_config_update();
                 }
             }
@@ -279,10 +292,12 @@ impl<C: NtpClock, T: Wait> System<C, T> {
     }
 
     fn handle_config_update(&mut self) {
-        let config = *self.config_receiver.borrow_and_update();
+        let synchronization_config = *self.synchronization_config_receiver.borrow_and_update();
+        let peer_defaults_config = *self.peer_defaults_config_receiver.borrow_and_update();
         self.controller
-            .update_config(config.synchronization, config.peer_defaults, config.algorithm);
-        self.config = config;
+            .update_config(synchronization_config.synchronization, peer_defaults_config, synchronization_config.algorithm);
+        self.synchronization_config = synchronization_config;
+        self.peer_defaults_config = peer_defaults_config;
     }
 
     fn handle_timer(&mut self, wait: &mut Pin<&mut SingleshotSleep<T>>) {
@@ -374,7 +389,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         self.controller.peer_update(
             index,
             snapshot
-                .accept_synchronization(self.config.synchronization.local_stratum)
+                .accept_synchronization(self.synchronization_config.synchronization.local_stratum)
                 .is_ok(),
         );
         self.peers.get_mut(&index).unwrap().snapshot = Some(snapshot);
@@ -407,7 +422,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         }
         if let Some(time_snapshot) = update.time_snapshot {
             self.system
-                .update_timedata(time_snapshot, &self.config.synchronization);
+                .update_timedata(time_snapshot, &self.synchronization_config.synchronization);
         }
         if let Some(timestamp) = update.next_update {
             let duration = timestamp - self.clock.now().expect("Could not get current time");
@@ -615,6 +630,7 @@ mod tests {
             InterfaceName::DEFAULT,
             EnableTimestamps::default(),
             CombinedSynchronizationConfig::default(),
+            PeerDefaultsConfig::default(),
             keyset,
         );
         let wait =

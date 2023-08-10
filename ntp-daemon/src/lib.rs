@@ -98,6 +98,7 @@ async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
     ::tracing::debug!("Configuration loaded, spawning daemon jobs");
     let (main_loop_handle, channels) = crate::spawn(
         config.synchronization,
+        config.peer_defaults,
         clock_config,
         &config.peers,
         &config.servers,

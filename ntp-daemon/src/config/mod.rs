@@ -3,7 +3,9 @@ mod server;
 pub mod subnet;
 
 use ntp_os_clock::DefaultNtpClock;
-use ntp_proto::{DefaultTimeSyncController, SynchronizationConfig, PeerDefaultsConfig, TimeSyncController};
+use ntp_proto::{
+    DefaultTimeSyncController, PeerDefaultsConfig, SynchronizationConfig, TimeSyncController,
+};
 use ntp_udp::{EnableTimestamps, InterfaceName};
 pub use peer::*;
 use serde::{Deserialize, Deserializer};
@@ -250,12 +252,10 @@ pub struct CombinedSynchronizationConfig {
     #[serde(flatten)]
     pub synchronization: SynchronizationConfig,
     #[serde(flatten)]
-    pub peer_defaults: PeerDefaultsConfig,
-    #[serde(flatten)]
     pub algorithm: <DefaultTimeSyncController<DefaultNtpClock, PeerId> as TimeSyncController<
         DefaultNtpClock,
         PeerId,
-    >>::AlgorithmConfig,
+        >>::AlgorithmConfig,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -280,6 +280,8 @@ pub struct Config {
     pub nts_ke: Option<NtsKeConfig>,
     #[serde(default)]
     pub synchronization: CombinedSynchronizationConfig,
+    #[serde(default)]
+    pub peer_defaults: PeerDefaultsConfig,
     #[serde(default)]
     pub logging_observability: LoggingObservabilityConfig,
     #[serde(default)]
@@ -467,7 +469,7 @@ mod tests {
         let config: Config = toml::from_str(
             "[logging-observability]\nlog-level = \"info\"\n[[peers]]\nmode = \"simple\"\naddress = \"example.com\"",
         )
-        .unwrap();
+            .unwrap();
         assert_eq!(config.logging_observability.log_level, Some(LogLevel::Info));
         assert_eq!(
             config.peers,
@@ -479,7 +481,7 @@ mod tests {
         let config: Config = toml::from_str(
             "[[peers]]\nmode = \"simple\"\naddress = \"example.com\"\n[synchronization]\nsingle-step-panic-threshold = 0",
         )
-        .unwrap();
+            .unwrap();
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
@@ -506,7 +508,7 @@ mod tests {
         let config: Config = toml::from_str(
             "[[peers]]\nmode = \"simple\"\naddress = \"example.com\"\n[synchronization]\nsingle-step-panic-threshold = \"inf\"",
         )
-        .unwrap();
+            .unwrap();
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
@@ -531,6 +533,9 @@ mod tests {
             [[peers]]
             mode = "simple"
             address = "example.com"
+            [peer-defaults]
+            poll-interval-limits = { min = 5, max = 9 }
+            initial-poll-interval = 5
             [logging-observability]
             log-level = "info"
             observation-path = "/foo/bar/observe"
@@ -566,6 +571,18 @@ mod tests {
                 address: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
+
+        let poll_interval_limits =config.peer_defaults.poll_interval_limits;
+        assert_eq!(
+            poll_interval_limits.min.as_log(),
+            5
+        );
+        assert_eq!(
+            poll_interval_limits.max.as_log(),
+            9
+        );
+
+        assert_eq!(config.peer_defaults.initial_poll_interval.as_log(), 5);
     }
 
     #[test]

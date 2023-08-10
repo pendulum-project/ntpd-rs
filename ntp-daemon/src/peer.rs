@@ -2,12 +2,12 @@ use std::{
     future::Future,
     marker::PhantomData,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr},
-    pin::Pin,
+    pin::Pin
 };
 
 use ntp_proto::{
     IgnoreReason, Measurement, NtpClock, NtpInstant, NtpTimestamp, Peer, PeerNtsData, PeerSnapshot,
-    PollError, ReferenceId, SystemSnapshot, Update,
+    PollError, ReferenceId, SystemSnapshot, Update, PeerDefaultsConfig,
 };
 use ntp_udp::{EnableTimestamps, InterfaceName, UdpSocket};
 use rand::{thread_rng, Rng};
@@ -50,6 +50,7 @@ pub struct PeerChannels {
     pub system_snapshot_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
     pub synchronization_config_receiver:
         tokio::sync::watch::Receiver<CombinedSynchronizationConfig>,
+    pub peer_defaults_config_receiver: tokio::sync::watch::Receiver<PeerDefaultsConfig>,
 }
 
 pub(crate) struct PeerTask<C: 'static + NtpClock + Send, T: Wait> {
@@ -107,16 +108,16 @@ where
 
     async fn handle_poll(&mut self, poll_wait: &mut Pin<&mut T>) -> PollResult {
         let system_snapshot = *self.channels.system_snapshot_receiver.borrow();
-        let config_snapshot_system = self
+        let peer_defaults_snapshot_system = *self
             .channels
-            .synchronization_config_receiver
-            .borrow_and_update()
-            .peer_defaults;
+            .peer_defaults_config_receiver
+            .borrow_and_update();
+        
         let mut buf = [0; 1024];
         let packet = match self.peer.generate_poll_message(
             &mut buf,
             system_snapshot,
-            &config_snapshot_system,
+            &peer_defaults_snapshot_system,
         ) {
             Ok(packet) => packet,
             Err(PollError::Io(e)) => {
@@ -274,7 +275,7 @@ where
                     }
                 },
                 _ = self.channels.synchronization_config_receiver.changed(), if self.channels.synchronization_config_receiver.has_changed().is_ok() => {
-                    self.peer.update_config(self.channels.synchronization_config_receiver.borrow_and_update().peer_defaults);
+                    self.peer.update_config(*self.channels.peer_defaults_config_receiver.borrow_and_update());
                 },
             }
         }
@@ -326,13 +327,13 @@ where
                 let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
 
                 let local_clock_time = NtpInstant::now();
-                let config_snapshot = *channels.synchronization_config_receiver.borrow_and_update();
+                let config_snapshot = *channels.peer_defaults_config_receiver.borrow_and_update();
                 let peer = if let Some(nts) = nts {
                     Peer::new_nts(
                         our_id,
                         peer_id,
                         local_clock_time,
-                        config_snapshot.peer_defaults,
+                        config_snapshot,
                         nts,
                     )
                 } else {
@@ -340,7 +341,7 @@ where
                         our_id,
                         peer_id,
                         local_clock_time,
-                        config_snapshot.peer_defaults,
+                        config_snapshot,
                     )
                 };
 
@@ -576,8 +577,10 @@ mod tests {
         let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
 
         let (_, system_snapshot_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
-        let (_, mut synchronization_config_receiver) =
+        let (_, synchronization_config_receiver) =
             tokio::sync::watch::channel(CombinedSynchronizationConfig::default());
+        let (_, mut peer_defaults_config_receiver) =
+            tokio::sync::watch::channel(PeerDefaultsConfig::default());
         let (msg_for_system_sender, msg_for_system_receiver) = mpsc::channel(1);
 
         let local_clock_time = NtpInstant::now();
@@ -585,9 +588,7 @@ mod tests {
             our_id,
             peer_id,
             local_clock_time,
-            synchronization_config_receiver
-                .borrow_and_update()
-                .peer_defaults,
+            *peer_defaults_config_receiver.borrow_and_update(),
         );
 
         let process = PeerTask {
@@ -598,6 +599,7 @@ mod tests {
                 msg_for_system_sender,
                 system_snapshot_receiver,
                 synchronization_config_receiver,
+                peer_defaults_config_receiver,
             },
             socket,
             peer,

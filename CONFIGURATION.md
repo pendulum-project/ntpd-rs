@@ -159,6 +159,21 @@ mode = "pool"
 count = 4
 ```
 
+##### Peer Defaults
+
+Peer defaults are settings that are the same across all peers. An example configuration for peer defaults can look like
+```
+[peer-defaults]
+poll-interval-limits = { min = 5, max = 9 }
+initial-poll-interval = 5
+```
+
+| Option                | Default               | Description                                                                                                                                                                                                                                |
+|-----------------------|-----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| poll-interval-limits  | { min = 4, max = 10 } | Limits on the poll interval towards clients. The defaults are fine for most applications. The values are given as the log2 of the number of seconds, so 4 indicates a poll interval of 32 seconds, and 10 a poll interval of 1024 seconds. |
+| initial-poll-interval | 4                     | Initial poll interval used on startup. The value is given as the log2 of the number of seconds, so 4 indicates a poll interval of 32 seconds.                                                                                              |
+
+
 #### Server
 
 Interfaces on which to act as a server are configured in the `server` section. Per interface configured, the following options are available:
@@ -252,8 +267,6 @@ There are a number of options available to influence how time differences to the
 | startup-step-panic-threshold     | No limit forward, 1800 backward | Largest time difference the client is allowed to correct during startup. By default, this is unrestricted as we may be the initial source of time for systems without a hardware backed clock. Value provided is in seconds, set to "inf" to disable checking of jumps.                                                                                                                                                     |
 | accumulated-step-panic-threshold | Disabled                        | Total amount of time difference the client is allowed to correct using steps whilst running. By default, this is unrestricted. Value provided is in seconds, set to 0 to disable checking of accumulated steps.                                                                                                                                                                                                             |
 | local-stratum                    | 16                              | Stratum of the local clock, when not synchronized through ntp. The default value of 16 is conventionally used to indicate unsynchronized clocks. This can be used in servers to indicate that there are external mechanisms synchronizing the clock by setting it to the appropriate value for the external source. If the external source is a GPS clock or a direct connection to a UTC source, this will typically be 1. |
-| poll-limits                      | { min = 4, max = 10 }           | Limits on the poll interval towards clients. The defaults are fine for most applications. The values are given as the log2 of the number of seconds, so 4 indicates a poll interval of 32 seconds, and 10 a poll interval of 1024 seconds.                                                                                                                                                                                  |
-| initial-poll                     | 4                               | Initial poll interval used on startup. The value is given as the log2 of the number of seconds, so 4 indicates a poll interval of 32 seconds.                                                                                                                                                                                                                                                                               |
 
 For panic thresholds, asymmetric thresholds can be configured, allowing a different sized step going forwards compared to going backwards. This is done by configuring a struct with two values, `forward` and `backward` for the panic threshold.
 
@@ -298,9 +311,11 @@ log-level = "info"
 # System parameters used in filtering and steering the clock:
 [synchronization]
 minimum-agreeing-peers = 1
-poll-limits = { min = 6, max = 10 }
 single-step-panic-threshold = 10
 startup-step-panic-threshold = { forward = "inf", backward = 1800 }
+
+[peer-defaults]
+poll-limits = { min = 6, max = 10 }
 
 [clock]
 # clock = "/dev/ptp0"
