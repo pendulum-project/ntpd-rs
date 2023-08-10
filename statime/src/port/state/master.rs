@@ -19,13 +19,13 @@ use crate::{
 };
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct MasterState {
+pub(crate) struct MasterState {
     pub(in crate::port) announce_seq_ids: SequenceIdGenerator,
     pub(in crate::port) sync_seq_ids: SequenceIdGenerator,
 }
 
 impl MasterState {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         MasterState {
             announce_seq_ids: SequenceIdGenerator::new(),
             sync_seq_ids: SequenceIdGenerator::new(),
@@ -171,7 +171,7 @@ impl MasterState {
         port_identity: PortIdentity,
         buffer: &'a mut [u8],
     ) -> PortActionIterator<'a> {
-        if message.header().source_port_identity() == port_identity {
+        if message.header().source_port_identity == port_identity {
             return actions![];
         }
 

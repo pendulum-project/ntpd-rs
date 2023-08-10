@@ -29,13 +29,16 @@ use crate::{
 /// - Then to get the recommended state for each port,
 ///   [Bmca::calculate_recommended_state] needs to be called
 #[derive(Debug)]
-pub struct Bmca {
+pub(crate) struct Bmca {
     foreign_master_list: ForeignMasterList,
     own_port_identity: PortIdentity,
 }
 
 impl Bmca {
-    pub fn new(own_port_announce_interval: TimeInterval, own_port_identity: PortIdentity) -> Self {
+    pub(crate) fn new(
+        own_port_announce_interval: TimeInterval,
+        own_port_identity: PortIdentity,
+    ) -> Self {
         Self {
             foreign_master_list: ForeignMasterList::new(
                 own_port_announce_interval,
@@ -46,20 +49,20 @@ impl Bmca {
     }
 
     /// Register a received announce message to the BMC algorithm
-    pub fn register_announce_message(
+    pub(crate) fn register_announce_message(
         &mut self,
         announce_message: &AnnounceMessage,
         current_time: WireTimestamp,
     ) {
         // Ignore messages comming from the same port
-        if announce_message.header().source_port_identity() != self.own_port_identity {
+        if announce_message.header.source_port_identity != self.own_port_identity {
             self.foreign_master_list
                 .register_announce_message(announce_message, current_time);
         }
     }
 
     /// Takes the Erbest from this port
-    pub fn take_best_port_announce_message(
+    pub(crate) fn take_best_port_announce_message(
         &mut self,
         current_time: WireTimestamp,
     ) -> Option<BestAnnounceMessage> {
@@ -92,7 +95,7 @@ impl Bmca {
     /// Finds the best announce message in the given iterator.
     /// The port identity in the tuple is the identity of the port that received
     /// the announce message.
-    pub fn find_best_announce_message(
+    pub(crate) fn find_best_announce_message(
         announce_messages: impl IntoIterator<Item = BestAnnounceMessage>,
     ) -> Option<BestAnnounceMessage> {
         announce_messages
@@ -227,7 +230,7 @@ enum MessageComparison {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct BestAnnounceMessage {
+pub(crate) struct BestAnnounceMessage {
     message: AnnounceMessage,
     timestamp: WireTimestamp,
     identity: PortIdentity,

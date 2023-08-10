@@ -48,13 +48,13 @@ mod time;
 pub use clock::Clock;
 pub use config::{DelayMechanism, InstanceConfig, PortConfig};
 #[cfg(feature = "fuzz")]
-pub use datastructures::messages::Message;
+pub use datastructures::messages::FuzzMessage;
 pub use datastructures::{
-    common::{ClockAccuracy, ClockIdentity, ClockQuality, LeapIndicator, PortIdentity, TimeSource},
+    common::{ClockAccuracy, ClockIdentity, ClockQuality, LeapIndicator, TimeSource},
     datasets::TimePropertiesDS,
     messages::{SdoId, MAX_DATA_LEN},
 };
 pub use filters::{basic::BasicFilter, Filter};
-pub use port::{InBmca, Measurement, Port, PortAction, PortActionIterator, TimestampContext};
+pub use port::{InBmca, Running, Measurement, Port, PortAction, PortActionIterator, TimestampContext};
 pub use ptp_instance::PtpInstance;
 pub use time::{Duration, Interval, Time};

@@ -7,9 +7,12 @@ use crate::{
     bmc::bmca::Bmca,
     clock::Clock,
     config::InstanceConfig,
-    datastructures::datasets::{CurrentDS, DefaultDS, ParentDS, TimePropertiesDS},
+    datastructures::{
+        common::PortIdentity,
+        datasets::{CurrentDS, DefaultDS, ParentDS, TimePropertiesDS},
+    },
     port::{InBmca, Port},
-    PortConfig, PortIdentity,
+    PortConfig,
 };
 
 /// A PTP node.
@@ -99,15 +102,13 @@ impl<C: Clock, F> PtpInstanceState<C, F> {
             );
 
             if let Some(recommended_state) = recommended_state {
-                if let Err(error) = port.set_recommended_state(
+                port.set_recommended_state(
                     recommended_state,
                     &mut self.time_properties_ds,
                     &mut self.current_ds,
                     &mut self.parent_ds,
                     &self.default_ds,
-                ) {
-                    log::error!("{:?}", error)
-                }
+                );
             }
         }
     }

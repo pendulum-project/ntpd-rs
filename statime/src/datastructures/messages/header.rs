@@ -1,13 +1,10 @@
-use getset::CopyGetters;
-
 use super::{control_field::ControlField, MessageType};
 use crate::datastructures::{
     common::{PortIdentity, TimeInterval},
     WireFormat, WireFormatError,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
-#[getset(get_copy = "pub")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Header {
     pub(crate) sdo_id: SdoId,
     pub(crate) version: PtpVersion,
@@ -31,10 +28,10 @@ pub struct Header {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DeserializedHeader {
-    pub header: Header,
-    pub message_type: MessageType,
-    pub message_length: u16,
+pub(crate) struct DeserializedHeader {
+    pub(crate) header: Header,
+    pub(crate) message_type: MessageType,
+    pub(crate) message_length: u16,
 }
 
 impl Header {
@@ -62,11 +59,11 @@ impl Header {
         }
     }
 
-    pub fn wire_size(&self) -> usize {
+    pub(crate) fn wire_size(&self) -> usize {
         34
     }
 
-    pub fn serialize_header(
+    pub(crate) fn serialize_header(
         &self,
         content_type: MessageType,
         content_length: usize,
@@ -101,7 +98,7 @@ impl Header {
         Ok(())
     }
 
-    pub fn deserialize_header(buffer: &[u8]) -> Result<DeserializedHeader, WireFormatError> {
+    pub(crate) fn deserialize_header(buffer: &[u8]) -> Result<DeserializedHeader, WireFormatError> {
         if buffer.len() < 34 {
             return Err(WireFormatError::BufferTooShort);
         }

@@ -5,7 +5,7 @@ use crate::datastructures::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ManagementMessage {
+pub(crate) struct ManagementMessage {
     pub(super) header: Header,
     pub(super) target_port_identity: PortIdentity,
     pub(super) starting_boundary_hops: u8,
@@ -15,11 +15,11 @@ pub struct ManagementMessage {
 }
 
 impl ManagementMessage {
-    pub fn content_size(&self) -> usize {
+    pub(crate) fn content_size(&self) -> usize {
         10
     }
 
-    pub fn serialize_content(
+    pub(crate) fn serialize_content(
         &self,
         buffer: &mut [u8],
     ) -> Result<(), crate::datastructures::WireFormatError> {
@@ -32,7 +32,7 @@ impl ManagementMessage {
         Ok(())
     }
 
-    pub fn deserialize_content(
+    pub(crate) fn deserialize_content(
         header: Header,
         buffer: &[u8],
     ) -> Result<Self, crate::datastructures::WireFormatError> {
@@ -53,7 +53,7 @@ impl ManagementMessage {
 /// See: 15.4.1.6
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(clippy::upper_case_acronyms)]
-pub enum ManagementAction {
+pub(crate) enum ManagementAction {
     Reserved,
     GET,
     SET,

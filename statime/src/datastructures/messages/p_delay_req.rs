@@ -1,21 +1,18 @@
-use getset::CopyGetters;
-
 use super::Header;
 use crate::datastructures::{common::WireTimestamp, WireFormat, WireFormatError};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
-#[getset(get_copy = "pub")]
-pub struct PDelayReqMessage {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PDelayReqMessage {
     pub(super) header: Header,
     pub(super) origin_timestamp: WireTimestamp,
 }
 
 impl PDelayReqMessage {
-    pub fn content_size(&self) -> usize {
+    pub(crate) fn content_size(&self) -> usize {
         10
     }
 
-    pub fn serialize_content(
+    pub(crate) fn serialize_content(
         &self,
         buffer: &mut [u8],
     ) -> Result<(), crate::datastructures::WireFormatError> {
@@ -28,7 +25,7 @@ impl PDelayReqMessage {
         Ok(())
     }
 
-    pub fn deserialize_content(
+    pub(crate) fn deserialize_content(
         header: Header,
         buffer: &[u8],
     ) -> Result<Self, crate::datastructures::WireFormatError> {

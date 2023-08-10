@@ -36,7 +36,7 @@ impl ForeignMaster {
         let mut messages = ArrayVec::<_, MAX_ANNOUNCE_MESSAGES>::new();
         messages.push((announce_message, current_time));
         Self {
-            foreign_master_port_identity: announce_message.header().source_port_identity(),
+            foreign_master_port_identity: announce_message.header.source_port_identity,
             announce_messages: messages,
         }
     }
@@ -83,7 +83,7 @@ impl ForeignMaster {
 }
 
 #[derive(Debug)]
-pub struct ForeignMasterList {
+pub(crate) struct ForeignMasterList {
     // Must have a capacity of at least 5
     foreign_masters: ArrayVec<ForeignMaster, MAX_FOREIGN_MASTERS>,
     own_port_announce_interval: TimeInterval,
@@ -94,7 +94,10 @@ impl ForeignMasterList {
     /// - `port_announce_interval`: The time interval derived from the
     ///   PortDS.log_announce_interval
     /// - `port_identity`: The identity of the port for which this list is used
-    pub fn new(own_port_announce_interval: TimeInterval, own_port_identity: PortIdentity) -> Self {
+    pub(crate) fn new(
+        own_port_announce_interval: TimeInterval,
+        own_port_identity: PortIdentity,
+    ) -> Self {
         Self {
             foreign_masters: ArrayVec::<ForeignMaster, MAX_FOREIGN_MASTERS>::new(),
             own_port_announce_interval,
@@ -104,7 +107,7 @@ impl ForeignMasterList {
 
     /// Takes the qualified announce message of all foreign masters that have
     /// one
-    pub fn take_qualified_announce_messages(
+    pub(crate) fn take_qualified_announce_messages(
         &mut self,
         current_time: WireTimestamp,
     ) -> impl Iterator<Item = (AnnounceMessage, WireTimestamp)> {
@@ -136,7 +139,7 @@ impl ForeignMasterList {
         qualified_foreign_masters.into_iter()
     }
 
-    pub fn register_announce_message(
+    pub(crate) fn register_announce_message(
         &mut self,
         announce_message: &AnnounceMessage,
         current_time: WireTimestamp,
@@ -150,7 +153,7 @@ impl ForeignMasterList {
 
         // Is the foreign master that the message represents already known?
         if let Some(foreign_master) =
-            self.get_foreign_master_mut(announce_message.header().source_port_identity())
+            self.get_foreign_master_mut(announce_message.header.source_port_identity)
         {
             // Yes, so add the announce message to it
             foreign_master.register_announce_message(
@@ -183,7 +186,7 @@ impl ForeignMasterList {
     }
 
     fn is_announce_message_qualified(&self, announce_message: &AnnounceMessage) -> bool {
-        let source_identity = announce_message.header().source_port_identity();
+        let source_identity = announce_message.header.source_port_identity;
 
         // 1. The message must not come from our own ptp instance. Since every instance
         // only has 1 clock, we can check the clock identity. That must be
@@ -196,8 +199,8 @@ impl ForeignMasterList {
         // We can check the sequence id for that (with some logic for u16 rollover)
         if let Some(foreign_master) = self.get_foreign_master(source_identity) {
             if let Some((last_announce_message, _)) = foreign_master.announce_messages.last() {
-                let announce_sequence_id = announce_message.header().sequence_id();
-                let last_sequence_id = last_announce_message.header().sequence_id();
+                let announce_sequence_id = announce_message.header.sequence_id;
+                let last_sequence_id = last_announce_message.header.sequence_id;
 
                 if last_sequence_id >= FOREIGN_MASTER_TIME_WINDOW {
                     if announce_sequence_id < last_sequence_id {
@@ -212,7 +215,7 @@ impl ForeignMasterList {
         }
 
         // 3. The announce message must not have a steps removed of 255 and greater
-        if announce_message.steps_removed() >= 255 {
+        if announce_message.steps_removed >= 255 {
             return false;
         }
 

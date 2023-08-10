@@ -72,7 +72,7 @@ impl Time {
         (self.inner / 1_000_000_000.to_fixed::<U96F32>()).to_num()
     }
     // Get the subnanosecond amount
-    pub fn subnano(&self) -> crate::datastructures::common::TimeInterval {
+    pub(crate) fn subnano(&self) -> crate::datastructures::common::TimeInterval {
         let inter: U112F16 = self.inner.frac().lossy_into();
         // unwrap is ok since always less than 1.
         crate::datastructures::common::TimeInterval(inter.lossless_try_into().unwrap())

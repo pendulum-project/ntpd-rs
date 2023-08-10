@@ -1,25 +1,22 @@
-use getset::CopyGetters;
-
 use super::Header;
 use crate::datastructures::{
     common::{PortIdentity, WireTimestamp},
     WireFormat, WireFormatError,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
-#[getset(get_copy = "pub")]
-pub struct DelayRespMessage {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DelayRespMessage {
     pub(crate) header: Header,
     pub(crate) receive_timestamp: WireTimestamp,
     pub(crate) requesting_port_identity: PortIdentity,
 }
 
 impl DelayRespMessage {
-    pub fn content_size(&self) -> usize {
+    pub(crate) fn content_size(&self) -> usize {
         20
     }
 
-    pub fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
+    pub(crate) fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
         self.receive_timestamp.serialize(&mut buffer[0..10])?;
         self.requesting_port_identity
             .serialize(&mut buffer[10..20])?;
@@ -27,7 +24,10 @@ impl DelayRespMessage {
         Ok(())
     }
 
-    pub fn deserialize_content(header: Header, buffer: &[u8]) -> Result<Self, WireFormatError> {
+    pub(crate) fn deserialize_content(
+        header: Header,
+        buffer: &[u8],
+    ) -> Result<Self, WireFormatError> {
         let slice = buffer.get(0..20).ok_or(WireFormatError::BufferTooShort)?;
         let receive_timestamp = WireTimestamp::deserialize(&slice[0..10])?;
         let requesting_port_identity = PortIdentity::deserialize(&slice[10..20])?;

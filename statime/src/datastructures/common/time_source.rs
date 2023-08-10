@@ -22,7 +22,7 @@ pub enum TimeSource {
 }
 
 impl TimeSource {
-    pub fn to_primitive(&self) -> u8 {
+    pub(crate) fn to_primitive(&self) -> u8 {
         match self {
             Self::AtomicClock => 0x10,
             Self::Gnss => 0x20,
@@ -39,7 +39,7 @@ impl TimeSource {
         }
     }
 
-    pub fn from_primitive(value: u8) -> Self {
+    pub(crate) fn from_primitive(value: u8) -> Self {
         match value {
             0x10 => Self::AtomicClock,
             0x20 => Self::Gnss,

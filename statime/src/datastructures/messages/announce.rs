@@ -1,5 +1,3 @@
-use getset::CopyGetters;
-
 use super::Header;
 use crate::datastructures::{
     common::{ClockIdentity, ClockQuality, LeapIndicator, TimeSource, WireTimestamp},
@@ -7,9 +5,8 @@ use crate::datastructures::{
     WireFormat, WireFormatError,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
-#[getset(get_copy = "pub")]
-pub struct AnnounceMessage {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AnnounceMessage {
     pub(crate) header: Header,
     pub(crate) origin_timestamp: WireTimestamp,
     pub(crate) current_utc_offset: i16,
@@ -22,11 +19,11 @@ pub struct AnnounceMessage {
 }
 
 impl AnnounceMessage {
-    pub fn content_size(&self) -> usize {
+    pub(crate) fn content_size(&self) -> usize {
         30
     }
 
-    pub fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
+    pub(crate) fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
         if buffer.len() < 30 {
             return Err(WireFormatError::BufferTooShort);
         }
@@ -44,7 +41,10 @@ impl AnnounceMessage {
         Ok(())
     }
 
-    pub fn deserialize_content(header: Header, buffer: &[u8]) -> Result<Self, WireFormatError> {
+    pub(crate) fn deserialize_content(
+        header: Header,
+        buffer: &[u8],
+    ) -> Result<Self, WireFormatError> {
         if buffer.len() < 30 {
             return Err(WireFormatError::BufferTooShort);
         }
@@ -62,7 +62,7 @@ impl AnnounceMessage {
         })
     }
 
-    pub fn time_properties(&self) -> TimePropertiesDS {
+    pub(crate) fn time_properties(&self) -> TimePropertiesDS {
         let leap_indicator = if self.header.leap59 {
             LeapIndicator::Leap59
         } else if self.header.leap61 {

@@ -1,21 +1,21 @@
 //! Ptp network messages
 
-pub use announce::*;
-pub use delay_req::*;
-pub use delay_resp::*;
-pub use follow_up::*;
+pub(crate) use announce::*;
+pub(crate) use delay_req::*;
+pub(crate) use delay_resp::*;
+pub(crate) use follow_up::*;
 pub use header::*;
-pub use sync::*;
+pub(crate) use sync::*;
 
 use self::{
     management::ManagementMessage, p_delay_req::PDelayReqMessage, p_delay_resp::PDelayRespMessage,
     p_delay_resp_follow_up::PDelayRespFollowUpMessage, signalling::SignalingMessage,
 };
 use super::{
-    common::{TimeInterval, WireTimestamp},
+    common::{PortIdentity, TimeInterval, WireTimestamp},
     datasets::DefaultDS,
 };
-use crate::{ptp_instance::PtpInstanceState, Interval, LeapIndicator, PortIdentity, Time};
+use crate::{ptp_instance::PtpInstanceState, Interval, LeapIndicator, Time};
 
 mod announce;
 mod control_field;
@@ -71,8 +71,27 @@ impl TryFrom<u8> for MessageType {
     }
 }
 
+#[cfg(feature = "fuzz")]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Message {
+pub struct FuzzMessage {
+    inner: Message,
+}
+
+#[cfg(feature = "fuzz")]
+impl FuzzMessage {
+    pub fn deserialize(buffer: &[u8]) -> Result<Self, impl std::error::Error> {
+        Ok::<FuzzMessage, super::WireFormatError>(FuzzMessage {
+            inner: Message::deserialize(buffer)?,
+        })
+    }
+
+    pub fn serialize(&self, buffer: &mut [u8]) -> Result<usize, impl std::error::Error> {
+        self.inner.serialize(buffer)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Message {
     Sync(SyncMessage),
     DelayReq(DelayReqMessage),
     PDelayReq(PDelayReqMessage),
@@ -192,7 +211,7 @@ impl Message {
 }
 
 impl Message {
-    pub fn header(&self) -> &Header {
+    pub(crate) fn header(&self) -> &Header {
         match self {
             Message::Sync(m) => &m.header,
             Message::DelayReq(m) => &m.header,
@@ -208,7 +227,7 @@ impl Message {
     }
 
     /// The byte size on the wire of this message
-    pub fn wire_size(&self) -> usize {
+    pub(crate) fn wire_size(&self) -> usize {
         self.header().wire_size() + self.content_size()
     }
 
@@ -245,7 +264,7 @@ impl Message {
     /// Serializes the object into the PTP wire format.
     ///
     /// Returns the used buffer size that contains the message or an error.
-    pub fn serialize(&self, buffer: &mut [u8]) -> Result<usize, super::WireFormatError> {
+    pub(crate) fn serialize(&self, buffer: &mut [u8]) -> Result<usize, super::WireFormatError> {
         let (header, rest) = buffer.split_at_mut(34);
 
         self.header()
@@ -270,7 +289,7 @@ impl Message {
     /// Deserializes a message from the PTP wire format.
     ///
     /// Returns the message or an error.
-    pub fn deserialize(buffer: &[u8]) -> Result<Self, super::WireFormatError> {
+    pub(crate) fn deserialize(buffer: &[u8]) -> Result<Self, super::WireFormatError> {
         let header_data = Header::deserialize_header(buffer)?;
 
         // Skip the header bytes and only keep the content

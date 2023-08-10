@@ -15,11 +15,11 @@ use crate::{
 mod master;
 mod slave;
 
-pub use master::MasterState;
-pub use slave::SlaveState;
+pub(crate) use master::MasterState;
+pub(crate) use slave::SlaveState;
 
 #[derive(Debug, Default)]
-pub enum PortState {
+pub(crate) enum PortState {
     #[default]
     Listening,
     Master(MasterState),
@@ -69,7 +69,7 @@ impl PortState {
     pub(crate) fn handle_general_receive(&mut self, message: Message, port_identity: PortIdentity) {
         match self {
             PortState::Master(_) => {
-                if message.header().source_port_identity() != port_identity {
+                if message.header().source_port_identity != port_identity {
                     log::warn!("Unexpected message {:?}", message);
                 }
             }
@@ -129,7 +129,7 @@ impl PortState {
         }
     }
 
-    pub fn extract_measurement(&mut self) -> Option<Measurement> {
+    pub(crate) fn extract_measurement(&mut self) -> Option<Measurement> {
         match self {
             PortState::Slave(slave) => slave.extract_measurement(),
             PortState::Master(_) | PortState::Listening | PortState::Passive => None,

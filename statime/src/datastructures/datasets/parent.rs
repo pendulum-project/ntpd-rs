@@ -3,7 +3,7 @@ use crate::datastructures::common::{ClockIdentity, ClockQuality, PortIdentity};
 
 // TODO: Discuss moving this (and TimePropertiesDS, ...) to slave?
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ParentDS {
+pub(crate) struct ParentDS {
     pub(crate) parent_port_identity: PortIdentity,
     pub(crate) parent_stats: bool,
     pub(crate) observed_parent_offset_scaled_log_variance: u16,

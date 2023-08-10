@@ -3,7 +3,7 @@ use arrayvec::ArrayVec;
 use crate::datastructures::{WireFormat, WireFormatError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Tlv {
+pub(crate) struct Tlv {
     pub tlv_type: TlvType,
     pub value: ArrayVec<u8, { Self::CAPACITY }>,
 }

@@ -9,7 +9,7 @@ use crate::{
 
 /// Represents time intervals in nanoseconds
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct TimeInterval(pub I48F16);
+pub(crate) struct TimeInterval(pub I48F16);
 
 impl Deref for TimeInterval {
     type Target = I48F16;

@@ -15,7 +15,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct SlaveState {
+pub(crate) struct SlaveState {
     remote_master: PortIdentity,
 
     sync_state: SyncState,
@@ -30,7 +30,7 @@ pub struct SlaveState {
 }
 
 impl SlaveState {
-    pub fn remote_master(&self) -> PortIdentity {
+    pub(crate) fn remote_master(&self) -> PortIdentity {
         self.remote_master
     }
 }
@@ -56,7 +56,7 @@ enum DelayState {
 }
 
 impl SlaveState {
-    pub fn new(remote_master: PortIdentity) -> Self {
+    pub(crate) fn new(remote_master: PortIdentity) -> Self {
         SlaveState {
             remote_master,
             sync_state: SyncState::Empty,
@@ -117,7 +117,7 @@ impl SlaveState {
         timestamp: Time,
     ) -> PortActionIterator<'a> {
         // Ignore everything not from master
-        if message.header().source_port_identity() != self.remote_master {
+        if message.header().source_port_identity != self.remote_master {
             return actions![];
         }
 
@@ -132,7 +132,7 @@ impl SlaveState {
 
     pub(crate) fn handle_general_receive(&mut self, message: Message, port_identity: PortIdentity) {
         // Ignore everything not from master
-        if message.header().source_port_identity() != self.remote_master {
+        if message.header().source_port_identity != self.remote_master {
             return;
         }
 
@@ -156,19 +156,19 @@ impl SlaveState {
     }
 
     fn handle_sync<'a>(&mut self, message: SyncMessage, recv_time: Time) -> PortActionIterator<'a> {
-        log::debug!("Received sync {:?}", message.header().sequence_id());
+        log::debug!("Received sync {:?}", message.header.sequence_id);
 
         // substracting correction from recv time is equivalent to adding it to send
         // time
-        let corrected_recv_time = recv_time - Duration::from(message.header().correction_field());
+        let corrected_recv_time = recv_time - Duration::from(message.header.correction_field);
 
-        if message.header().two_step_flag() {
+        if message.header.two_step_flag {
             match self.sync_state {
                 SyncState::Measuring {
                     id,
                     recv_time: Some(_),
                     ..
-                } if id == message.header().sequence_id() => {
+                } if id == message.header.sequence_id => {
                     log::warn!("Duplicate sync message");
                     // Ignore the sync message
                 }
@@ -176,10 +176,10 @@ impl SlaveState {
                     id,
                     ref mut recv_time,
                     ..
-                } if id == message.header().sequence_id() => *recv_time = Some(corrected_recv_time),
+                } if id == message.header.sequence_id => *recv_time = Some(corrected_recv_time),
                 _ => {
                     self.sync_state = SyncState::Measuring {
-                        id: message.header().sequence_id(),
+                        id: message.header.sequence_id,
                         send_time: None,
                         recv_time: Some(corrected_recv_time),
                     }
@@ -187,13 +187,13 @@ impl SlaveState {
             }
         } else {
             match self.sync_state {
-                SyncState::Measuring { id, .. } if id == message.header().sequence_id() => {
+                SyncState::Measuring { id, .. } if id == message.header.sequence_id => {
                     log::warn!("Duplicate sync message");
                     // Ignore the sync message
                 }
                 _ => {
                     self.sync_state = SyncState::Measuring {
-                        id: message.header().sequence_id(),
+                        id: message.header.sequence_id,
                         send_time: Some(Time::from(message.origin_timestamp)),
                         recv_time: Some(corrected_recv_time),
                     };
@@ -256,17 +256,17 @@ impl SlaveState {
     }
 
     fn handle_follow_up(&mut self, message: FollowUpMessage) {
-        log::debug!("Received FollowUp {:?}", message.header().sequence_id());
+        log::debug!("Received FollowUp {:?}", message.header.sequence_id);
 
-        let packet_send_time = Time::from(message.precise_origin_timestamp())
-            + Duration::from(message.header().correction_field());
+        let packet_send_time = Time::from(message.precise_origin_timestamp)
+            + Duration::from(message.header.correction_field);
 
         match self.sync_state {
             SyncState::Measuring {
                 id,
                 send_time: Some(_),
                 ..
-            } if id == message.header().sequence_id() => {
+            } if id == message.header.sequence_id => {
                 log::warn!("Duplicate FollowUp message");
                 // Ignore the followup
             }
@@ -274,10 +274,10 @@ impl SlaveState {
                 id,
                 ref mut send_time,
                 ..
-            } if id == message.header().sequence_id() => *send_time = Some(packet_send_time),
+            } if id == message.header.sequence_id => *send_time = Some(packet_send_time),
             _ => {
                 self.sync_state = SyncState::Measuring {
-                    id: message.header().sequence_id(),
+                    id: message.header.sequence_id,
                     send_time: Some(packet_send_time),
                     recv_time: None,
                 }
@@ -304,7 +304,7 @@ impl SlaveState {
 
     fn handle_delay_resp(&mut self, message: DelayRespMessage, port_identity: PortIdentity) {
         log::debug!("Received DelayResp");
-        if port_identity != message.requesting_port_identity() {
+        if port_identity != message.requesting_port_identity {
             return;
         }
 
@@ -313,7 +313,7 @@ impl SlaveState {
                 id,
                 recv_time: Some(_),
                 ..
-            } if id == message.header().sequence_id() => {
+            } if id == message.header.sequence_id => {
                 log::warn!("Duplicate DelayResp message");
                 // Ignore the Delay response
             }
@@ -321,14 +321,14 @@ impl SlaveState {
                 id,
                 ref mut recv_time,
                 ..
-            } if id == message.header().sequence_id() => {
+            } if id == message.header.sequence_id => {
                 *recv_time = Some(
-                    Time::from(message.receive_timestamp())
-                        - Duration::from(message.header().correction_field()),
+                    Time::from(message.receive_timestamp)
+                        - Duration::from(message.header.correction_field),
                 );
                 self.next_delay_measurement = Some(
                     *recv_time.as_ref().unwrap()
-                        + Duration::from_log_interval(message.header().log_message_interval())
+                        + Duration::from_log_interval(message.header.log_message_interval)
                         - Duration::from_fixed_nanos(0.1f64),
                 );
             }
@@ -522,7 +522,7 @@ mod tests {
                     ..Default::default()
                 },
                 receive_timestamp: Time::from_micros(253).into(),
-                requesting_port_identity: req.header.source_port_identity(),
+                requesting_port_identity: req.header.source_port_identity,
             }),
             PortIdentity::default(),
         );
@@ -599,7 +599,7 @@ mod tests {
                     ..Default::default()
                 },
                 receive_timestamp: Time::from_micros(1255).into(),
-                requesting_port_identity: req.header.source_port_identity(),
+                requesting_port_identity: req.header.source_port_identity,
             }),
             PortIdentity::default(),
         );
@@ -865,7 +865,7 @@ mod tests {
                     ..Default::default()
                 },
                 receive_timestamp: Time::from_micros(353).into(),
-                requesting_port_identity: req.header.source_port_identity(),
+                requesting_port_identity: req.header.source_port_identity,
             }),
             PortIdentity::default(),
         );
@@ -880,7 +880,7 @@ mod tests {
                     ..Default::default()
                 },
                 receive_timestamp: Time::from_micros(253).into(),
-                requesting_port_identity: req.header.source_port_identity(),
+                requesting_port_identity: req.header.source_port_identity,
             }),
             PortIdentity::default(),
         );

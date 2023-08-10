@@ -67,7 +67,7 @@ pub enum ClockAccuracy {
 }
 
 impl ClockAccuracy {
-    pub fn to_primitive(&self) -> u8 {
+    pub(crate) fn to_primitive(&self) -> u8 {
         match self {
             Self::Reserved => 0x00,
             Self::PS1 => 0x17,
@@ -102,7 +102,7 @@ impl ClockAccuracy {
         }
     }
 
-    pub fn from_primitive(value: u8) -> Self {
+    pub(crate) fn from_primitive(value: u8) -> Self {
         match value {
             0x00..=0x16 | 0x32..=0x7f | 0xff => Self::Reserved,
             0x17 => Self::PS1,
@@ -137,21 +137,6 @@ impl ClockAccuracy {
         }
     }
 
-    /// low accuracy to high accuracy
-    ///
-    /// ```
-    /// use core::cmp::Ordering;
-    /// use statime::ClockAccuracy;
-    /// // PS1 has a higher accuracy than PS10
-    /// assert_eq!(ClockAccuracy::PS1.cmp_semantic(&ClockAccuracy::PS10), Ordering::Greater);
-    /// ```
-    pub fn cmp_semantic(&self, other: &Self) -> Ordering {
-        // this comparison is flipped by design: The clock gets more inaccurate with the
-        // higher numbers for the normal accuracy values. so a clock with a
-        // lower inaccuracy is better in the ordering of clocks
-        self.cmp_numeric(other).reverse()
-    }
-
     /// high accuracy to low accuracy
     ///
     /// ```
@@ -160,7 +145,7 @@ impl ClockAccuracy {
     /// // the inaccuracy of PS1 is less than of PS10
     /// assert_eq!(ClockAccuracy::PS1.cmp_numeric(&ClockAccuracy::PS10), Ordering::Less);
     /// ```
-    pub fn cmp_numeric(&self, other: &Self) -> Ordering {
+    pub(crate) fn cmp_numeric(&self, other: &Self) -> Ordering {
         self.to_primitive().cmp(&other.to_primitive())
     }
 }
@@ -173,8 +158,6 @@ impl Default for ClockAccuracy {
 
 #[cfg(test)]
 mod tests {
-    use core::cmp::Ordering;
-
     use super::*;
 
     #[test]
@@ -187,13 +170,5 @@ mod tests {
         }
 
         assert_eq!(ClockAccuracy::ProfileSpecific(5).to_primitive(), 0x85);
-    }
-
-    #[test]
-    fn ordering() {
-        let a = ClockAccuracy::PS1;
-        let b = ClockAccuracy::PS10;
-
-        assert_eq!(a.cmp_semantic(&b), Ordering::Greater);
     }
 }

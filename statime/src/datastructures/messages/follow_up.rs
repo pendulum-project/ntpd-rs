@@ -1,28 +1,28 @@
-use getset::CopyGetters;
-
 use super::Header;
 use crate::datastructures::{common::WireTimestamp, WireFormat, WireFormatError};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, CopyGetters)]
-#[getset(get_copy = "pub")]
-pub struct FollowUpMessage {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FollowUpMessage {
     pub(crate) header: Header,
     pub(crate) precise_origin_timestamp: WireTimestamp,
 }
 
 impl FollowUpMessage {
-    pub fn content_size(&self) -> usize {
+    pub(crate) fn content_size(&self) -> usize {
         10
     }
 
-    pub fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
+    pub(crate) fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
         self.precise_origin_timestamp
             .serialize(&mut buffer[0..10])?;
 
         Ok(())
     }
 
-    pub fn deserialize_content(header: Header, buffer: &[u8]) -> Result<Self, WireFormatError> {
+    pub(crate) fn deserialize_content(
+        header: Header,
+        buffer: &[u8],
+    ) -> Result<Self, WireFormatError> {
         let slice = buffer.get(0..10).ok_or(WireFormatError::BufferTooShort)?;
         let precise_origin_timestamp = WireTimestamp::deserialize(slice)?;
 

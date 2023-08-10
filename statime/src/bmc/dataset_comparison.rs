@@ -32,12 +32,12 @@ impl ComparisonDataset {
         port_receiver_identity: &PortIdentity,
     ) -> Self {
         Self {
-            gm_priority_1: message.grandmaster_priority_1(),
-            gm_identity: message.grandmaster_identity(),
-            gm_clock_quality: message.grandmaster_clock_quality(),
-            gm_priority_2: message.grandmaster_priority_2(),
-            steps_removed: message.steps_removed(),
-            identity_of_senders: message.header().source_port_identity().clock_identity,
+            gm_priority_1: message.grandmaster_priority_1,
+            gm_identity: message.grandmaster_identity,
+            gm_clock_quality: message.grandmaster_clock_quality,
+            gm_priority_2: message.grandmaster_priority_2,
+            steps_removed: message.steps_removed,
+            identity_of_senders: message.header.source_port_identity.clock_identity,
             identity_of_receiver: *port_receiver_identity,
         }
     }

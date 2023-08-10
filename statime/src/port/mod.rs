@@ -2,7 +2,6 @@ use core::ops::Deref;
 
 use arrayvec::ArrayVec;
 use atomic_refcell::{AtomicRef, AtomicRefCell};
-pub use error::{PortError, Result};
 pub use measurement::Measurement;
 use rand::Rng;
 use state::{MasterState, PortState};
@@ -13,17 +12,14 @@ use crate::{
     clock::Clock,
     config::PortConfig,
     datastructures::{
-        common::{LeapIndicator, TimeSource, WireTimestamp},
-        datasets::{CurrentDS, DefaultDS, ParentDS, TimePropertiesDS},
+        common::{LeapIndicator, PortIdentity, TimeSource, WireTimestamp},
+        datasets::{CurrentDS, ParentDS, TimePropertiesDS, DefaultDS},
         messages::Message,
     },
     filters::Filter,
-    // network::{NetworkPort, NetworkRuntime},
     ptp_instance::PtpInstanceState,
     time::Duration,
-    PortIdentity,
-    Time,
-    MAX_DATA_LEN,
+    Time, MAX_DATA_LEN,
 };
 
 // Needs to be here because of use rules
@@ -50,10 +46,9 @@ macro_rules! actions {
     };
 }
 
-mod error;
 mod measurement;
 mod sequence_id;
-pub mod state;
+pub(crate) mod state;
 
 /// A single port of the PTP instance
 ///
@@ -62,7 +57,7 @@ pub mod state;
 pub struct Port<L, R> {
     config: PortConfig,
     // PortDS port_identity
-    pub port_identity: PortIdentity,
+    pub(crate) port_identity: PortIdentity,
     // Corresponds with PortDS port_state and enabled
     port_state: PortState,
     bmca: Bmca,
@@ -237,8 +232,8 @@ impl<'a, C: Clock, F: Filter, R: Rng> Port<Running<'a, C, F>, R> {
         };
 
         // Only process messages from the same domain
-        if message.header().sdo_id() != self.lifecycle.state.default_ds.sdo_id
-            || message.header().domain_number() != self.lifecycle.state.default_ds.domain_number
+        if message.header().sdo_id != self.lifecycle.state.default_ds.sdo_id
+            || message.header().domain_number != self.lifecycle.state.default_ds.domain_number
         {
             return actions![];
         }
@@ -272,8 +267,8 @@ impl<'a, C: Clock, F: Filter, R: Rng> Port<Running<'a, C, F>, R> {
         };
 
         // Only process messages from the same domain
-        if message.header().sdo_id() != self.lifecycle.state.default_ds.sdo_id
-            || message.header().domain_number() != self.lifecycle.state.default_ds.domain_number
+        if message.header().sdo_id != self.lifecycle.state.default_ds.sdo_id
+            || message.header().domain_number != self.lifecycle.state.default_ds.domain_number
         {
             return actions![];
         }
@@ -388,7 +383,7 @@ impl<'a, C, F, R: Rng> Port<InBmca<'a, C, F>, R> {
         current_ds: &mut CurrentDS,
         parent_ds: &mut ParentDS,
         default_ds: &DefaultDS,
-    ) -> Result<()> {
+    ) {
         self.set_recommended_port_state(&recommended_state, default_ds);
 
         match recommended_state {
@@ -419,13 +414,13 @@ impl<'a, C, F, R: Rng> Port<InBmca<'a, C, F>, R> {
                 // a master-only PTP port should never end up in the slave state
                 debug_assert!(!self.config.master_only);
 
-                current_ds.steps_removed = announce_message.steps_removed() + 1;
+                current_ds.steps_removed = announce_message.steps_removed + 1;
 
-                parent_ds.parent_port_identity = announce_message.header().source_port_identity();
-                parent_ds.grandmaster_identity = announce_message.grandmaster_identity();
-                parent_ds.grandmaster_clock_quality = announce_message.grandmaster_clock_quality();
-                parent_ds.grandmaster_priority_1 = announce_message.grandmaster_priority_1();
-                parent_ds.grandmaster_priority_2 = announce_message.grandmaster_priority_2();
+                parent_ds.parent_port_identity = announce_message.header.source_port_identity;
+                parent_ds.grandmaster_identity = announce_message.grandmaster_identity;
+                parent_ds.grandmaster_clock_quality = announce_message.grandmaster_clock_quality;
+                parent_ds.grandmaster_priority_1 = announce_message.grandmaster_priority_1;
+                parent_ds.grandmaster_priority_2 = announce_message.grandmaster_priority_2;
 
                 *time_properties_ds = announce_message.time_properties();
             }
@@ -437,8 +432,6 @@ impl<'a, C, F, R: Rng> Port<InBmca<'a, C, F>, R> {
             // Update time properties
             *time_properties_ds = announce_message.time_properties();
         }
-
-        Ok(())
     }
 
     fn set_recommended_port_state(
@@ -453,7 +446,7 @@ impl<'a, C, F, R: Rng> Port<InBmca<'a, C, F>, R> {
                 // a master-only PTP port should never end up in the slave state
                 debug_assert!(!self.config.master_only);
 
-                let remote_master = announce_message.header().source_port_identity();
+                let remote_master = announce_message.header.source_port_identity;
                 let state = PortState::Slave(SlaveState::new(remote_master));
 
                 let update_state = match &self.port_state {

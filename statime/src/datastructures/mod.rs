@@ -9,7 +9,7 @@ pub mod datasets;
 pub mod messages;
 
 #[derive(Clone, Debug)]
-pub enum WireFormatError {
+pub(crate) enum WireFormatError {
     EnumConversionError,
     BufferTooShort,
     CapacityError,
