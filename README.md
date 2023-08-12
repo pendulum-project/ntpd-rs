@@ -46,7 +46,7 @@ Then, to start ptpd, as root run
 ```bash
 ptpd -V -n -M -i <INTERFACE>
 ```
-where `<INTERFACE>` is the netwerk interface you want ptpd to use. Here `-n` disables clock adjustment by ptpd, and `-M` ensures that it runs in master mode only.
+where `<INTERFACE>` is the network interface you want ptpd to use. Here `-n` disables clock adjustment by ptpd, and `-M` ensures that it runs in master mode only.
 
 # Roadmap
 
