@@ -277,7 +277,7 @@ async fn run(
     instance: &'static PtpInstance<LinuxClock, BasicFilter>,
 ) -> std::io::Result<()> {
     static BMCA_NOTIFY: OnceLock<Notify> = OnceLock::new();
-    let bmca_notify = BMCA_NOTIFY.get_or_init(|| Notify::new());
+    let bmca_notify = BMCA_NOTIFY.get_or_init(Notify::new);
 
     let mut main_task_senders = Vec::with_capacity(ports.len());
     let mut main_task_receivers = Vec::with_capacity(ports.len());

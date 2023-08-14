@@ -41,7 +41,7 @@ impl EventSocket {
         log::info!("Binding time critical socket on {addr}");
 
         let socket = RawUdpSocket::new_into_std(addr, interface.interface_name)?;
-        let address = join_multicast(&interface, &socket)?;
+        let address = join_multicast(interface, &socket)?;
 
         Ok(Self {
             socket: TimestampedUdpSocket::from_udp_socket(socket, timestamping_mode)?,
@@ -95,7 +95,7 @@ impl GeneralSocket {
         log::info!("Binding non time critical socket on {addr}");
 
         let socket = RawUdpSocket::new_into_std(addr, interface.interface_name)?;
-        let address = join_multicast(&interface, &socket)?;
+        let address = join_multicast(interface, &socket)?;
 
         Ok(Self {
             socket: AsyncFd::new(socket)?,
