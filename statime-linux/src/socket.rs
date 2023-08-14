@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-//! Implementation of the abstract network types for the linux platform
+//! Event and General sockets for linux systems
 
 use std::{
     io,
@@ -11,47 +11,11 @@ use std::{
 use clock_steering::Clock;
 use statime::{Time, MAX_DATA_LEN};
 use timestamped_socket::{
-    interface::{InterfaceDescriptor, InterfaceIterator},
+    interface::InterfaceDescriptor,
     raw_udp_socket::{RawUdpSocket, TimestampingMode},
     timestamped_udp_socket::{LibcTimestamp, TimestampedUdpSocket},
 };
 use tokio::io::{unix::AsyncFd, Interest};
-
-fn join_multicast(
-    interface: &InterfaceDescriptor,
-    socket: &std::net::UdpSocket,
-) -> std::io::Result<SocketAddr> {
-    const IPV6_PRIMARY_MULTICAST: Ipv6Addr = Ipv6Addr::new(0xff, 0x0e, 0, 0, 0, 0, 0x01, 0x81);
-    const IPV6_PDELAY_MULTICAST: Ipv6Addr = Ipv6Addr::new(0xff, 0x02, 0, 0, 0, 0, 0, 0x6b);
-
-    const IPV4_PRIMARY_MULTICAST: Ipv4Addr = Ipv4Addr::new(224, 0, 1, 129);
-    const IPV4_PDELAY_MULTICAST: Ipv4Addr = Ipv4Addr::new(224, 0, 0, 107);
-
-    let port = socket.local_addr()?.port();
-
-    match interface.get_address()? {
-        IpAddr::V4(ip) => {
-            // TODO: multicast ttl limit for ipv4
-
-            socket.join_multicast_v4(&IPV4_PRIMARY_MULTICAST, &ip)?;
-            socket.join_multicast_v4(&IPV4_PDELAY_MULTICAST, &ip)?;
-
-            Ok((IPV4_PRIMARY_MULTICAST, port).into())
-        }
-        IpAddr::V6(_ip) => {
-            // TODO: multicast hops limit for ipv6
-
-            // 0 indicates any interface, though it is likely this interface does not
-            // support multicast
-            let if_index = interface.get_index().unwrap_or(0);
-
-            socket.join_multicast_v6(&IPV6_PRIMARY_MULTICAST, if_index)?;
-            socket.join_multicast_v6(&IPV6_PDELAY_MULTICAST, if_index)?;
-
-            Ok((IPV6_PRIMARY_MULTICAST, port).into())
-        }
-    }
-}
 
 pub struct EventSocket {
     socket: TimestampedUdpSocket,
@@ -160,6 +124,42 @@ impl GeneralSocket {
         } else {
             let data = &buf[..received_len];
             Ok(GeneralPacket { data })
+        }
+    }
+}
+
+fn join_multicast(
+    interface: &InterfaceDescriptor,
+    socket: &std::net::UdpSocket,
+) -> std::io::Result<SocketAddr> {
+    const IPV6_PRIMARY_MULTICAST: Ipv6Addr = Ipv6Addr::new(0xff, 0x0e, 0, 0, 0, 0, 0x01, 0x81);
+    const IPV6_PDELAY_MULTICAST: Ipv6Addr = Ipv6Addr::new(0xff, 0x02, 0, 0, 0, 0, 0, 0x6b);
+
+    const IPV4_PRIMARY_MULTICAST: Ipv4Addr = Ipv4Addr::new(224, 0, 1, 129);
+    const IPV4_PDELAY_MULTICAST: Ipv4Addr = Ipv4Addr::new(224, 0, 0, 107);
+
+    let port = socket.local_addr()?.port();
+
+    match interface.get_address()? {
+        IpAddr::V4(ip) => {
+            // TODO: multicast ttl limit for ipv4
+
+            socket.join_multicast_v4(&IPV4_PRIMARY_MULTICAST, &ip)?;
+            socket.join_multicast_v4(&IPV4_PDELAY_MULTICAST, &ip)?;
+
+            Ok((IPV4_PRIMARY_MULTICAST, port).into())
+        }
+        IpAddr::V6(_ip) => {
+            // TODO: multicast hops limit for ipv6
+
+            // 0 indicates any interface, though it is likely this interface does not
+            // support multicast
+            let if_index = interface.get_index().unwrap_or(0);
+
+            socket.join_multicast_v6(&IPV6_PRIMARY_MULTICAST, if_index)?;
+            socket.join_multicast_v6(&IPV6_PDELAY_MULTICAST, if_index)?;
+
+            Ok((IPV6_PRIMARY_MULTICAST, port).into())
         }
     }
 }

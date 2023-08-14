@@ -14,7 +14,7 @@ use statime::{
 };
 use statime_linux::{
     clock::LinuxClock,
-    network::{EventSocket, GeneralSocket},
+    socket::{EventSocket, GeneralSocket},
 };
 use timestamped_socket::{
     interface::{InterfaceDescriptor, InterfaceIterator},
