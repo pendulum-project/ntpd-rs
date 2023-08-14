@@ -1,4 +1,3 @@
-use super::Header;
 use crate::datastructures::{
     common::{PortIdentity, WireTimestamp},
     WireFormat, WireFormatError,
@@ -6,7 +5,6 @@ use crate::datastructures::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct DelayRespMessage {
-    pub(crate) header: Header,
     pub(crate) receive_timestamp: WireTimestamp,
     pub(crate) requesting_port_identity: PortIdentity,
 }
@@ -24,16 +22,12 @@ impl DelayRespMessage {
         Ok(())
     }
 
-    pub(crate) fn deserialize_content(
-        header: Header,
-        buffer: &[u8],
-    ) -> Result<Self, WireFormatError> {
+    pub(crate) fn deserialize_content(buffer: &[u8]) -> Result<Self, WireFormatError> {
         let slice = buffer.get(0..20).ok_or(WireFormatError::BufferTooShort)?;
         let receive_timestamp = WireTimestamp::deserialize(&slice[0..10])?;
         let requesting_port_identity = PortIdentity::deserialize(&slice[10..20])?;
 
         Ok(Self {
-            header,
             receive_timestamp,
             requesting_port_identity,
         })
@@ -53,7 +47,6 @@ mod tests {
                 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a,
             ],
             DelayRespMessage {
-                header: Header::default(),
                 receive_timestamp: WireTimestamp {
                     seconds: 1169232218,
                     nanos: 174389936,
@@ -75,8 +68,7 @@ mod tests {
 
             // Test the deserialization output
             let deserialized_data =
-                DelayRespMessage::deserialize_content(Header::default(), &byte_representation)
-                    .unwrap();
+                DelayRespMessage::deserialize_content(&byte_representation).unwrap();
             assert_eq!(deserialized_data, object_representation);
         }
     }

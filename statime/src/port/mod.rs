@@ -14,7 +14,7 @@ use crate::{
     datastructures::{
         common::{LeapIndicator, PortIdentity, TimeSource, WireTimestamp},
         datasets::{CurrentDS, DefaultDS, ParentDS, TimePropertiesDS},
-        messages::Message,
+        messages::{Message, MessageBody},
     },
     filters::Filter,
     ptp_instance::PtpInstanceState,
@@ -273,8 +273,8 @@ impl<'a, C: Clock, F: Filter, R: Rng> Port<Running<'a, C, F>, R> {
             return actions![];
         }
 
-        let action = match message {
-            Message::Announce(announce) => {
+        let action = match message.body {
+            MessageBody::Announce(announce) => {
                 self.bmca.register_announce_message(
                     &announce,
                     self.lifecycle.state.local_clock.borrow().now().into(),

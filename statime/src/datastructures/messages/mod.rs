@@ -1,6 +1,7 @@
 //! Ptp network messages
 
 pub(crate) use announce::*;
+use arrayvec::ArrayVec;
 pub(crate) use delay_req::*;
 pub(crate) use delay_resp::*;
 pub(crate) use follow_up::*;
@@ -12,7 +13,7 @@ use self::{
     p_delay_resp_follow_up::PDelayRespFollowUpMessage, signalling::SignalingMessage,
 };
 use super::{
-    common::{PortIdentity, TimeInterval, WireTimestamp},
+    common::{PortIdentity, TimeInterval, Tlv, WireTimestamp},
     datasets::DefaultDS,
 };
 use crate::{ptp_instance::PtpInstanceState, Interval, LeapIndicator, Time};
@@ -91,7 +92,14 @@ impl FuzzMessage {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Message {
+pub(crate) struct Message {
+    pub(crate) header: Header,
+    pub(crate) body: MessageBody,
+    pub(crate) suffix: ArrayVec<Tlv, 4>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum MessageBody {
     Sync(SyncMessage),
     DelayReq(DelayReqMessage),
     PDelayReq(PDelayReqMessage),
@@ -121,13 +129,18 @@ impl Message {
         sequence_id: u16,
         current_time: Time,
     ) -> Self {
-        Message::Sync(SyncMessage {
-            header: Header {
-                two_step_flag: true,
-                ..base_header(default_ds, port_identity, sequence_id)
-            },
-            origin_timestamp: current_time.into(),
-        })
+        let header = Header {
+            two_step_flag: true,
+            ..base_header(default_ds, port_identity, sequence_id)
+        };
+
+        Message {
+            header,
+            body: MessageBody::Sync(SyncMessage {
+                origin_timestamp: current_time.into(),
+            }),
+            suffix: ArrayVec::default(),
+        }
     }
 
     pub(crate) fn follow_up(
@@ -136,13 +149,18 @@ impl Message {
         sequence_id: u16,
         timestamp: Time,
     ) -> Self {
-        Message::FollowUp(FollowUpMessage {
-            header: Header {
-                correction_field: timestamp.subnano(),
-                ..base_header(default_ds, port_identity, sequence_id)
-            },
-            precise_origin_timestamp: timestamp.into(),
-        })
+        let header = Header {
+            correction_field: timestamp.subnano(),
+            ..base_header(default_ds, port_identity, sequence_id)
+        };
+
+        Message {
+            header,
+            body: MessageBody::FollowUp(FollowUpMessage {
+                precise_origin_timestamp: timestamp.into(),
+            }),
+            suffix: ArrayVec::default(),
+        }
     }
 
     pub(crate) fn announce<C, F>(
@@ -153,16 +171,18 @@ impl Message {
     ) -> Self {
         let time_properties_ds = &global.time_properties_ds;
 
-        Message::Announce(AnnounceMessage {
-            header: Header {
-                leap59: time_properties_ds.leap_indicator == LeapIndicator::Leap59,
-                leap61: time_properties_ds.leap_indicator == LeapIndicator::Leap61,
-                current_utc_offset_valid: time_properties_ds.current_utc_offset.is_some(),
-                ptp_timescale: time_properties_ds.ptp_timescale,
-                time_tracable: time_properties_ds.time_traceable,
-                frequency_tracable: time_properties_ds.frequency_traceable,
-                ..base_header(&global.default_ds, port_identity, sequence_id)
-            },
+        let header = Header {
+            leap59: time_properties_ds.leap_indicator == LeapIndicator::Leap59,
+            leap61: time_properties_ds.leap_indicator == LeapIndicator::Leap61,
+            current_utc_offset_valid: time_properties_ds.current_utc_offset.is_some(),
+            ptp_timescale: time_properties_ds.ptp_timescale,
+            time_tracable: time_properties_ds.time_traceable,
+            frequency_tracable: time_properties_ds.frequency_traceable,
+            ..base_header(&global.default_ds, port_identity, sequence_id)
+        };
+
+        let body = MessageBody::Announce(AnnounceMessage {
+            header: header.clone(),
             origin_timestamp: current_time.into(),
             current_utc_offset: time_properties_ds.current_utc_offset.unwrap_or_default(),
             grandmaster_priority_1: global.parent_ds.grandmaster_priority_1,
@@ -171,7 +191,13 @@ impl Message {
             grandmaster_identity: global.parent_ds.grandmaster_identity,
             steps_removed: global.current_ds.steps_removed,
             time_source: time_properties_ds.time_source,
-        })
+        });
+
+        Message {
+            header,
+            body,
+            suffix: ArrayVec::default(),
+        }
     }
 
     pub(crate) fn delay_req(
@@ -179,85 +205,90 @@ impl Message {
         port_identity: PortIdentity,
         sequence_id: u16,
     ) -> Self {
-        Message::DelayReq(DelayReqMessage {
-            header: Header {
-                log_message_interval: 0x7f,
-                ..base_header(default_ds, port_identity, sequence_id)
-            },
-            origin_timestamp: WireTimestamp::default(),
-        })
+        let header = Header {
+            log_message_interval: 0x7f,
+            ..base_header(default_ds, port_identity, sequence_id)
+        };
+
+        Message {
+            header,
+            body: MessageBody::DelayReq(DelayReqMessage {
+                origin_timestamp: WireTimestamp::default(),
+            }),
+            suffix: ArrayVec::default(),
+        }
     }
 
     pub(crate) fn delay_resp(
-        request: &DelayReqMessage,
+        request_header: Header,
+        request: DelayReqMessage,
         port_identity: PortIdentity,
         min_delay_req_interval: Interval,
         timestamp: Time,
     ) -> Self {
-        Message::DelayResp(DelayRespMessage {
-            header: Header {
-                two_step_flag: false,
-                source_port_identity: port_identity,
-                correction_field: TimeInterval(
-                    request.header.correction_field.0 + timestamp.subnano().0,
-                ),
-                log_message_interval: min_delay_req_interval.as_log_2(),
-                ..request.header
-            },
+        // TODO is it really correct that we don't use any of the data?
+        let _ = request;
+
+        let header = Header {
+            two_step_flag: false,
+            source_port_identity: port_identity,
+            correction_field: TimeInterval(
+                request_header.correction_field.0 + timestamp.subnano().0,
+            ),
+            log_message_interval: min_delay_req_interval.as_log_2(),
+            ..request_header
+        };
+
+        let body = MessageBody::DelayResp(DelayRespMessage {
             receive_timestamp: timestamp.into(),
-            requesting_port_identity: request.header.source_port_identity,
-        })
+            requesting_port_identity: request_header.source_port_identity,
+        });
+
+        Message {
+            header,
+            body,
+            suffix: ArrayVec::default(),
+        }
     }
 }
 
 impl Message {
     pub(crate) fn header(&self) -> &Header {
-        match self {
-            Message::Sync(m) => &m.header,
-            Message::DelayReq(m) => &m.header,
-            Message::PDelayReq(m) => &m.header,
-            Message::PDelayResp(m) => &m.header,
-            Message::FollowUp(m) => &m.header,
-            Message::DelayResp(m) => &m.header,
-            Message::PDelayRespFollowUp(m) => &m.header,
-            Message::Announce(m) => &m.header,
-            Message::Signaling(m) => &m.header,
-            Message::Management(m) => &m.header,
-        }
+        &self.header
     }
 
     /// The byte size on the wire of this message
     pub(crate) fn wire_size(&self) -> usize {
-        self.header().wire_size() + self.content_size()
+        self.header.wire_size() + self.content_size()
     }
 
     fn content_size(&self) -> usize {
-        match self {
-            Message::Sync(m) => m.content_size(),
-            Message::DelayReq(m) => m.content_size(),
-            Message::PDelayReq(m) => m.content_size(),
-            Message::PDelayResp(m) => m.content_size(),
-            Message::FollowUp(m) => m.content_size(),
-            Message::DelayResp(m) => m.content_size(),
-            Message::PDelayRespFollowUp(m) => m.content_size(),
-            Message::Announce(m) => m.content_size(),
-            Message::Signaling(m) => m.content_size(),
-            Message::Management(m) => m.content_size(),
+        match &self.body {
+            MessageBody::Sync(m) => m.content_size(),
+            MessageBody::DelayReq(m) => m.content_size(),
+            MessageBody::PDelayReq(m) => m.content_size(),
+            MessageBody::PDelayResp(m) => m.content_size(),
+            MessageBody::FollowUp(m) => m.content_size(),
+            MessageBody::DelayResp(m) => m.content_size(),
+            MessageBody::PDelayRespFollowUp(m) => m.content_size(),
+            MessageBody::Announce(m) => m.content_size(),
+            MessageBody::Signaling(m) => m.content_size(),
+            MessageBody::Management(m) => m.content_size(),
         }
     }
 
     fn content_type(&self) -> MessageType {
-        match self {
-            Message::Sync(_) => MessageType::Sync,
-            Message::DelayReq(_) => MessageType::DelayReq,
-            Message::PDelayReq(_) => MessageType::PDelayReq,
-            Message::PDelayResp(_) => MessageType::PDelayResp,
-            Message::FollowUp(_) => MessageType::FollowUp,
-            Message::DelayResp(_) => MessageType::DelayResp,
-            Message::PDelayRespFollowUp(_) => MessageType::PDelayRespFollowUp,
-            Message::Announce(_) => MessageType::Announce,
-            Message::Signaling(_) => MessageType::Signaling,
-            Message::Management(_) => MessageType::Management,
+        match self.body {
+            MessageBody::Sync(_) => MessageType::Sync,
+            MessageBody::DelayReq(_) => MessageType::DelayReq,
+            MessageBody::PDelayReq(_) => MessageType::PDelayReq,
+            MessageBody::PDelayResp(_) => MessageType::PDelayResp,
+            MessageBody::FollowUp(_) => MessageType::FollowUp,
+            MessageBody::DelayResp(_) => MessageType::DelayResp,
+            MessageBody::PDelayRespFollowUp(_) => MessageType::PDelayRespFollowUp,
+            MessageBody::Announce(_) => MessageType::Announce,
+            MessageBody::Signaling(_) => MessageType::Signaling,
+            MessageBody::Management(_) => MessageType::Management,
         }
     }
 
@@ -267,20 +298,20 @@ impl Message {
     pub(crate) fn serialize(&self, buffer: &mut [u8]) -> Result<usize, super::WireFormatError> {
         let (header, rest) = buffer.split_at_mut(34);
 
-        self.header()
+        self.header
             .serialize_header(self.content_type(), self.content_size(), header)?;
 
-        match self {
-            Message::Sync(m) => m.serialize_content(rest)?,
-            Message::DelayReq(m) => m.serialize_content(rest)?,
-            Message::PDelayReq(m) => m.serialize_content(rest)?,
-            Message::PDelayResp(m) => m.serialize_content(rest)?,
-            Message::FollowUp(m) => m.serialize_content(rest)?,
-            Message::DelayResp(m) => m.serialize_content(rest)?,
-            Message::PDelayRespFollowUp(m) => m.serialize_content(rest)?,
-            Message::Announce(m) => m.serialize_content(rest)?,
-            Message::Signaling(m) => m.serialize_content(rest)?,
-            Message::Management(m) => m.serialize_content(rest)?,
+        match &self.body {
+            MessageBody::Sync(m) => m.serialize_content(rest)?,
+            MessageBody::DelayReq(m) => m.serialize_content(rest)?,
+            MessageBody::PDelayReq(m) => m.serialize_content(rest)?,
+            MessageBody::PDelayResp(m) => m.serialize_content(rest)?,
+            MessageBody::FollowUp(m) => m.serialize_content(rest)?,
+            MessageBody::DelayResp(m) => m.serialize_content(rest)?,
+            MessageBody::PDelayRespFollowUp(m) => m.serialize_content(rest)?,
+            MessageBody::Announce(m) => m.serialize_content(rest)?,
+            MessageBody::Signaling(m) => m.serialize_content(rest)?,
+            MessageBody::Management(m) => m.serialize_content(rest)?,
         }
 
         Ok(self.wire_size())
@@ -295,46 +326,44 @@ impl Message {
         // Skip the header bytes and only keep the content
         let content_buffer = &buffer[34..];
 
-        Ok(match header_data.message_type {
-            MessageType::Sync => Message::Sync(SyncMessage::deserialize_content(
-                header_data.header,
-                content_buffer,
-            )?),
-            MessageType::DelayReq => Message::DelayReq(DelayReqMessage::deserialize_content(
-                header_data.header,
-                content_buffer,
-            )?),
-            MessageType::PDelayReq => Message::PDelayReq(PDelayReqMessage::deserialize_content(
-                header_data.header,
-                content_buffer,
-            )?),
-            MessageType::PDelayResp => Message::PDelayResp(PDelayRespMessage::deserialize_content(
-                header_data.header,
-                content_buffer,
-            )?),
-            MessageType::FollowUp => Message::FollowUp(FollowUpMessage::deserialize_content(
-                header_data.header,
-                content_buffer,
-            )?),
-            MessageType::DelayResp => Message::DelayResp(DelayRespMessage::deserialize_content(
-                header_data.header,
-                content_buffer,
-            )?),
-            MessageType::PDelayRespFollowUp => Message::PDelayRespFollowUp(
-                PDelayRespFollowUpMessage::deserialize_content(header_data.header, content_buffer)?,
+        let body = match header_data.message_type {
+            MessageType::Sync => {
+                MessageBody::Sync(SyncMessage::deserialize_content(content_buffer)?)
+            }
+            MessageType::DelayReq => {
+                MessageBody::DelayReq(DelayReqMessage::deserialize_content(content_buffer)?)
+            }
+            MessageType::PDelayReq => {
+                MessageBody::PDelayReq(PDelayReqMessage::deserialize_content(content_buffer)?)
+            }
+            MessageType::PDelayResp => {
+                MessageBody::PDelayResp(PDelayRespMessage::deserialize_content(content_buffer)?)
+            }
+            MessageType::FollowUp => {
+                MessageBody::FollowUp(FollowUpMessage::deserialize_content(content_buffer)?)
+            }
+            MessageType::DelayResp => {
+                MessageBody::DelayResp(DelayRespMessage::deserialize_content(content_buffer)?)
+            }
+            MessageType::PDelayRespFollowUp => MessageBody::PDelayRespFollowUp(
+                PDelayRespFollowUpMessage::deserialize_content(content_buffer)?,
             ),
-            MessageType::Announce => Message::Announce(AnnounceMessage::deserialize_content(
+            MessageType::Announce => MessageBody::Announce(AnnounceMessage::deserialize_content(
                 header_data.header,
                 content_buffer,
             )?),
-            MessageType::Signaling => Message::Signaling(SignalingMessage::deserialize_content(
-                header_data.header,
-                content_buffer,
-            )?),
-            MessageType::Management => Message::Management(ManagementMessage::deserialize_content(
-                header_data.header,
-                content_buffer,
-            )?),
+            MessageType::Signaling => {
+                MessageBody::Signaling(SignalingMessage::deserialize_content(content_buffer)?)
+            }
+            MessageType::Management => {
+                MessageBody::Management(ManagementMessage::deserialize_content(content_buffer)?)
+            }
+        };
+
+        Ok(Message {
+            header: header_data.header,
+            body,
+            suffix: ArrayVec::default(),
         })
     }
 }

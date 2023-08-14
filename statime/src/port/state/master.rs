@@ -7,7 +7,7 @@ use crate::{
     datastructures::{
         common::PortIdentity,
         datasets::DefaultDS,
-        messages::{DelayReqMessage, Message},
+        messages::{DelayReqMessage, Header, Message, MessageBody},
     },
     port::{
         sequence_id::SequenceIdGenerator, PortAction, PortActionIterator, TimestampContext,
@@ -171,12 +171,15 @@ impl MasterState {
         port_identity: PortIdentity,
         buffer: &'a mut [u8],
     ) -> PortActionIterator<'a> {
-        if message.header().source_port_identity == port_identity {
+        let header = message.header;
+
+        if header.source_port_identity == port_identity {
             return actions![];
         }
 
-        match message {
-            Message::DelayReq(message) => self.handle_delay_req(
+        match message.body {
+            MessageBody::DelayReq(message) => self.handle_delay_req(
+                header,
                 message,
                 timestamp,
                 min_delay_req_interval,
@@ -192,6 +195,7 @@ impl MasterState {
 
     fn handle_delay_req<'a>(
         &mut self,
+        header: Header,
         message: DelayReqMessage,
         timestamp: Time,
         min_delay_req_interval: Interval,
@@ -199,8 +203,13 @@ impl MasterState {
         buffer: &'a mut [u8],
     ) -> PortActionIterator<'a> {
         log::debug!("Received DelayReq");
-        let delay_resp_message =
-            Message::delay_resp(&message, port_identity, min_delay_req_interval, timestamp);
+        let delay_resp_message = Message::delay_resp(
+            header,
+            message,
+            port_identity,
+            min_delay_req_interval,
+            timestamp,
+        );
 
         let packet_length = match delay_resp_message.serialize(buffer) {
             Ok(length) => length,
@@ -218,6 +227,7 @@ impl MasterState {
 
 #[cfg(test)]
 mod tests {
+    use arrayvec::ArrayVec;
     use fixed::types::{I48F16, U96F32};
 
     use super::*;
@@ -260,7 +270,7 @@ mod tests {
         let mut buffer = [0u8; MAX_DATA_LEN];
 
         let mut action = state.handle_event_receive(
-            Message::DelayReq(DelayReqMessage {
+            Message {
                 header: Header {
                     sequence_id: 5123,
                     source_port_identity: PortIdentity {
@@ -270,8 +280,11 @@ mod tests {
                     correction_field: TimeInterval(I48F16::from_bits(400)),
                     ..Default::default()
                 },
-                origin_timestamp: Time::from_micros(0).into(),
-            }),
+                body: MessageBody::DelayReq(DelayReqMessage {
+                    origin_timestamp: Time::from_micros(0).into(),
+                }),
+                suffix: ArrayVec::new(),
+            },
             Time::from_fixed_nanos(U96F32::from_bits((200000 << 32) + (500 << 16))),
             Interval::from_log_2(2),
             PortIdentity::default(),
@@ -284,8 +297,11 @@ mod tests {
         assert!(action.next().is_none());
         drop(action);
 
-        let msg = match Message::deserialize(data).unwrap() {
-            Message::DelayResp(msg) => msg,
+        let msg = Message::deserialize(data).unwrap();
+        let msg_header = msg.header;
+
+        let msg = match msg.body {
+            MessageBody::DelayResp(msg) => msg,
             _ => panic!("Unexpected message type"),
         };
 
@@ -296,16 +312,16 @@ mod tests {
                 ..Default::default()
             }
         );
-        assert_eq!(msg.header.sequence_id, 5123);
+        assert_eq!(msg_header.sequence_id, 5123);
         assert_eq!(msg.receive_timestamp, Time::from_micros(200).into());
-        assert_eq!(msg.header.log_message_interval, 2);
+        assert_eq!(msg_header.log_message_interval, 2);
         assert_eq!(
-            msg.header.correction_field,
+            msg_header.correction_field,
             TimeInterval(I48F16::from_bits(900))
         );
 
         let mut action = state.handle_event_receive(
-            Message::DelayReq(DelayReqMessage {
+            Message {
                 header: Header {
                     sequence_id: 879,
                     source_port_identity: PortIdentity {
@@ -315,8 +331,11 @@ mod tests {
                     correction_field: TimeInterval(I48F16::from_bits(200)),
                     ..Default::default()
                 },
-                origin_timestamp: Time::from_micros(0).into(),
-            }),
+                body: MessageBody::DelayReq(DelayReqMessage {
+                    origin_timestamp: Time::from_micros(0).into(),
+                }),
+                suffix: ArrayVec::new(),
+            },
             Time::from_fixed_nanos(U96F32::from_bits((220000 << 32) + (300 << 16))),
             Interval::from_log_2(5),
             PortIdentity::default(),
@@ -328,8 +347,11 @@ mod tests {
         };
         assert!(action.next().is_none());
 
-        let msg = match Message::deserialize(data).unwrap() {
-            Message::DelayResp(msg) => msg,
+        let msg = Message::deserialize(data).unwrap();
+        let msg_header = msg.header;
+
+        let msg = match msg.body {
+            MessageBody::DelayResp(msg) => msg,
             _ => panic!("Unexpected message type"),
         };
 
@@ -340,11 +362,11 @@ mod tests {
                 ..Default::default()
             }
         );
-        assert_eq!(msg.header.sequence_id, 879);
+        assert_eq!(msg_header.sequence_id, 879);
         assert_eq!(msg.receive_timestamp, Time::from_micros(220).into());
-        assert_eq!(msg.header.log_message_interval, 5);
+        assert_eq!(msg_header.log_message_interval, 5);
         assert_eq!(
-            msg.header.correction_field,
+            msg_header.correction_field,
             TimeInterval(I48F16::from_bits(500))
         );
     }
@@ -401,8 +423,11 @@ mod tests {
         assert!(actions.next().is_none());
         drop(actions);
 
-        let msg = match Message::deserialize(data).unwrap() {
-            Message::Announce(msg) => msg,
+        let msg = Message::deserialize(data).unwrap();
+        let msg_header = msg.header;
+
+        let msg = match msg.body {
+            MessageBody::Announce(msg) => msg,
             _ => panic!("Unexpected message type"),
         };
 
@@ -420,13 +445,16 @@ mod tests {
         };
         assert!(actions.next().is_none());
 
-        let msg2 = match Message::deserialize(data).unwrap() {
-            Message::Announce(msg) => msg,
+        let msg2 = Message::deserialize(data).unwrap();
+        let msg2_header = msg2.header;
+
+        let msg2 = match msg2.body {
+            MessageBody::Announce(msg) => msg,
             _ => panic!("Unexpected message type"),
         };
 
         assert_eq!(msg2.grandmaster_priority_1, 15);
-        assert_ne!(msg2.header.sequence_id, msg.header.sequence_id);
+        assert_ne!(msg2_header.sequence_id, msg_header.sequence_id);
     }
 
     #[test]
@@ -475,8 +503,11 @@ mod tests {
         assert!(actions.next().is_none());
         drop(actions);
 
-        let sync = match Message::deserialize(&data).unwrap() {
-            Message::Sync(msg) => msg,
+        let sync = Message::deserialize(&data).unwrap();
+        let sync_header = sync.header;
+
+        let sync = match sync.body {
+            MessageBody::Sync(msg) => msg,
             _ => panic!("Unexpected message type"),
         };
 
@@ -494,15 +525,18 @@ mod tests {
         assert!(actions.next().is_none());
         drop(actions);
 
-        let follow = match Message::deserialize(&data).unwrap() {
-            Message::FollowUp(msg) => msg,
+        let follow = Message::deserialize(&data).unwrap();
+        let follow_header = follow.header;
+
+        let follow = match follow.body {
+            MessageBody::FollowUp(msg) => msg,
             _ => panic!("Unexpected message type"),
         };
 
-        assert_eq!(sync.header.sequence_id, follow.header.sequence_id);
+        assert_eq!(sync_header.sequence_id, follow_header.sequence_id);
         assert_eq!(sync.origin_timestamp, Time::from_micros(600).into());
         assert_eq!(
-            sync.header.correction_field,
+            sync_header.correction_field,
             TimeInterval(I48F16::from_bits(0))
         );
         assert_eq!(
@@ -510,7 +544,7 @@ mod tests {
             Time::from_fixed_nanos(601300).into()
         );
         assert_eq!(
-            follow.header.correction_field,
+            follow_header.correction_field,
             TimeInterval(I48F16::from_bits(230))
         );
 
@@ -534,8 +568,11 @@ mod tests {
         assert!(actions.next().is_none());
         drop(actions);
 
-        let sync2 = match Message::deserialize(&data).unwrap() {
-            Message::Sync(msg) => msg,
+        let sync2 = Message::deserialize(&data).unwrap();
+        let sync2_header = sync2.header;
+
+        let sync2 = match sync2.body {
+            MessageBody::Sync(msg) => msg,
             _ => panic!("Unexpected message type"),
         };
 
@@ -552,16 +589,19 @@ mod tests {
         };
         assert!(actions.next().is_none());
 
-        let follow2 = match Message::deserialize(&data).unwrap() {
-            Message::FollowUp(msg) => msg,
+        let follow2 = Message::deserialize(&data).unwrap();
+        let follow2_header = follow2.header;
+
+        let follow2 = match follow2.body {
+            MessageBody::FollowUp(msg) => msg,
             _ => panic!("Unexpected message type"),
         };
 
-        assert_ne!(sync.header.sequence_id, sync2.header.sequence_id);
-        assert_eq!(sync2.header.sequence_id, follow2.header.sequence_id);
+        assert_ne!(sync_header.sequence_id, sync2_header.sequence_id);
+        assert_eq!(sync2_header.sequence_id, follow2_header.sequence_id);
         assert_eq!(sync2.origin_timestamp, Time::from_micros(1000600).into());
         assert_eq!(
-            sync2.header.correction_field,
+            sync2_header.correction_field,
             TimeInterval(I48F16::from_bits(0))
         );
         assert_eq!(
@@ -569,7 +609,7 @@ mod tests {
             Time::from_fixed_nanos(1000601300).into()
         );
         assert_eq!(
-            follow2.header.correction_field,
+            follow2_header.correction_field,
             TimeInterval(I48F16::from_bits(543))
         );
     }

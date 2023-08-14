@@ -4,7 +4,7 @@ use crate::{
     datastructures::{
         common::PortIdentity,
         datasets::DefaultDS,
-        messages::{DelayRespMessage, FollowUpMessage, Message, SyncMessage},
+        messages::{DelayRespMessage, FollowUpMessage, Header, Message, MessageBody, SyncMessage},
     },
     port::{
         sequence_id::SequenceIdGenerator, Measurement, PortAction, PortActionIterator,
@@ -117,12 +117,14 @@ impl SlaveState {
         timestamp: Time,
     ) -> PortActionIterator<'a> {
         // Ignore everything not from master
-        if message.header().source_port_identity != self.remote_master {
+        let header = &message.header;
+
+        if header.source_port_identity != self.remote_master {
             return actions![];
         }
 
-        match message {
-            Message::Sync(message) => self.handle_sync(message, timestamp),
+        match message.body {
+            MessageBody::Sync(sync) => self.handle_sync(header, sync, timestamp),
             _ => {
                 log::warn!("Unexpected message {:?}", message);
                 actions![]
@@ -131,14 +133,18 @@ impl SlaveState {
     }
 
     pub(crate) fn handle_general_receive(&mut self, message: Message, port_identity: PortIdentity) {
+        let header = &message.header;
+
         // Ignore everything not from master
-        if message.header().source_port_identity != self.remote_master {
+        if header.source_port_identity != self.remote_master {
             return;
         }
 
-        match message {
-            Message::FollowUp(message) => self.handle_follow_up(message),
-            Message::DelayResp(message) => self.handle_delay_resp(message, port_identity),
+        match message.body {
+            MessageBody::FollowUp(message) => self.handle_follow_up(header, message),
+            MessageBody::DelayResp(message) => {
+                self.handle_delay_resp(header, message, port_identity)
+            }
             _ => log::warn!("Unexpected message {:?}", message),
         }
     }
@@ -155,20 +161,25 @@ impl SlaveState {
         }
     }
 
-    fn handle_sync<'a>(&mut self, message: SyncMessage, recv_time: Time) -> PortActionIterator<'a> {
-        log::debug!("Received sync {:?}", message.header.sequence_id);
+    fn handle_sync<'a>(
+        &mut self,
+        header: &Header,
+        message: SyncMessage,
+        recv_time: Time,
+    ) -> PortActionIterator<'a> {
+        log::debug!("Received sync {:?}", header.sequence_id);
 
         // substracting correction from recv time is equivalent to adding it to send
         // time
-        let corrected_recv_time = recv_time - Duration::from(message.header.correction_field);
+        let corrected_recv_time = recv_time - Duration::from(header.correction_field);
 
-        if message.header.two_step_flag {
+        if header.two_step_flag {
             match self.sync_state {
                 SyncState::Measuring {
                     id,
                     recv_time: Some(_),
                     ..
-                } if id == message.header.sequence_id => {
+                } if id == header.sequence_id => {
                     log::warn!("Duplicate sync message");
                     // Ignore the sync message
                 }
@@ -176,10 +187,10 @@ impl SlaveState {
                     id,
                     ref mut recv_time,
                     ..
-                } if id == message.header.sequence_id => *recv_time = Some(corrected_recv_time),
+                } if id == header.sequence_id => *recv_time = Some(corrected_recv_time),
                 _ => {
                     self.sync_state = SyncState::Measuring {
-                        id: message.header.sequence_id,
+                        id: header.sequence_id,
                         send_time: None,
                         recv_time: Some(corrected_recv_time),
                     }
@@ -187,13 +198,13 @@ impl SlaveState {
             }
         } else {
             match self.sync_state {
-                SyncState::Measuring { id, .. } if id == message.header.sequence_id => {
+                SyncState::Measuring { id, .. } if id == header.sequence_id => {
                     log::warn!("Duplicate sync message");
                     // Ignore the sync message
                 }
                 _ => {
                     self.sync_state = SyncState::Measuring {
-                        id: message.header.sequence_id,
+                        id: header.sequence_id,
                         send_time: Some(Time::from(message.origin_timestamp)),
                         recv_time: Some(corrected_recv_time),
                     };
@@ -255,18 +266,18 @@ impl SlaveState {
         ]
     }
 
-    fn handle_follow_up(&mut self, message: FollowUpMessage) {
-        log::debug!("Received FollowUp {:?}", message.header.sequence_id);
+    fn handle_follow_up(&mut self, header: &Header, message: FollowUpMessage) {
+        log::debug!("Received FollowUp {:?}", header.sequence_id);
 
-        let packet_send_time = Time::from(message.precise_origin_timestamp)
-            + Duration::from(message.header.correction_field);
+        let packet_send_time =
+            Time::from(message.precise_origin_timestamp) + Duration::from(header.correction_field);
 
         match self.sync_state {
             SyncState::Measuring {
                 id,
                 send_time: Some(_),
                 ..
-            } if id == message.header.sequence_id => {
+            } if id == header.sequence_id => {
                 log::warn!("Duplicate FollowUp message");
                 // Ignore the followup
             }
@@ -274,10 +285,10 @@ impl SlaveState {
                 id,
                 ref mut send_time,
                 ..
-            } if id == message.header.sequence_id => *send_time = Some(packet_send_time),
+            } if id == header.sequence_id => *send_time = Some(packet_send_time),
             _ => {
                 self.sync_state = SyncState::Measuring {
-                    id: message.header.sequence_id,
+                    id: header.sequence_id,
                     send_time: Some(packet_send_time),
                     recv_time: None,
                 }
@@ -302,7 +313,12 @@ impl SlaveState {
         }
     }
 
-    fn handle_delay_resp(&mut self, message: DelayRespMessage, port_identity: PortIdentity) {
+    fn handle_delay_resp(
+        &mut self,
+        header: &Header,
+        message: DelayRespMessage,
+        port_identity: PortIdentity,
+    ) {
         log::debug!("Received DelayResp");
         if port_identity != message.requesting_port_identity {
             return;
@@ -313,7 +329,7 @@ impl SlaveState {
                 id,
                 recv_time: Some(_),
                 ..
-            } if id == message.header.sequence_id => {
+            } if id == header.sequence_id => {
                 log::warn!("Duplicate DelayResp message");
                 // Ignore the Delay response
             }
@@ -321,14 +337,13 @@ impl SlaveState {
                 id,
                 ref mut recv_time,
                 ..
-            } if id == message.header.sequence_id => {
+            } if id == header.sequence_id => {
                 *recv_time = Some(
-                    Time::from(message.receive_timestamp)
-                        - Duration::from(message.header.correction_field),
+                    Time::from(message.receive_timestamp) - Duration::from(header.correction_field),
                 );
                 self.next_delay_measurement = Some(
                     *recv_time.as_ref().unwrap()
-                        + Duration::from_log_interval(message.header.log_message_interval)
+                        + Duration::from_log_interval(header.log_message_interval)
                         - Duration::from_fixed_nanos(0.1f64),
                 );
             }
@@ -369,6 +384,8 @@ impl SlaveState {
 
 #[cfg(test)]
 mod tests {
+    use arrayvec::ArrayVec;
+
     use super::*;
     use crate::{
         config::InstanceConfig,
@@ -385,15 +402,22 @@ mod tests {
         state.mean_delay = Some(Duration::from_micros(100));
         state.next_delay_measurement = Some(Time::from_secs(10));
 
+        let header = Header {
+            two_step_flag: false,
+            correction_field: TimeInterval(1000.into()),
+            ..Default::default()
+        };
+
+        let body = MessageBody::Sync(SyncMessage {
+            origin_timestamp: Time::from_micros(0).into(),
+        });
+
         let mut action = state.handle_event_receive(
-            Message::Sync(SyncMessage {
-                header: Header {
-                    two_step_flag: false,
-                    correction_field: TimeInterval(1000.into()),
-                    ..Default::default()
-                },
-                origin_timestamp: Time::from_micros(0).into(),
-            }),
+            Message {
+                header,
+                body,
+                suffix: ArrayVec::new(),
+            },
             Time::from_micros(50),
         );
 
@@ -407,31 +431,41 @@ mod tests {
             })
         );
 
+        let header = Header {
+            two_step_flag: true,
+            sequence_id: 15,
+            correction_field: TimeInterval(1000.into()),
+            ..Default::default()
+        };
+
         let mut action = state.handle_event_receive(
-            Message::Sync(SyncMessage {
-                header: Header {
-                    two_step_flag: true,
-                    sequence_id: 15,
-                    correction_field: TimeInterval(1000.into()),
-                    ..Default::default()
-                },
-                origin_timestamp: Time::from_micros(0).into(),
-            }),
+            Message {
+                header,
+                body: MessageBody::Sync(SyncMessage {
+                    origin_timestamp: Time::from_micros(0).into(),
+                }),
+                suffix: ArrayVec::new(),
+            },
             Time::from_micros(1050),
         );
 
         assert!(action.next().is_none());
         assert_eq!(state.extract_measurement(), None);
 
+        let header = Header {
+            sequence_id: 15,
+            correction_field: TimeInterval(2000.into()),
+            ..Default::default()
+        };
+
         state.handle_general_receive(
-            Message::FollowUp(FollowUpMessage {
-                header: Header {
-                    sequence_id: 15,
-                    correction_field: TimeInterval(2000.into()),
-                    ..Default::default()
-                },
-                precise_origin_timestamp: Time::from_micros(1000).into(),
-            }),
+            Message {
+                header,
+                body: MessageBody::FollowUp(FollowUpMessage {
+                    precise_origin_timestamp: Time::from_micros(1000).into(),
+                }),
+                suffix: ArrayVec::new(),
+            },
             PortIdentity::default(),
         );
 
@@ -448,15 +482,20 @@ mod tests {
     fn test_sync_with_delay() {
         let mut state = SlaveState::new(Default::default());
 
+        let header = Header {
+            two_step_flag: false,
+            correction_field: TimeInterval(1000.into()),
+            ..Default::default()
+        };
+
         let mut action = state.handle_event_receive(
-            Message::Sync(SyncMessage {
-                header: Header {
-                    two_step_flag: false,
-                    correction_field: TimeInterval(1000.into()),
-                    ..Default::default()
-                },
-                origin_timestamp: Time::from_micros(0).into(),
-            }),
+            Message {
+                header,
+                body: MessageBody::Sync(SyncMessage {
+                    origin_timestamp: Time::from_micros(0).into(),
+                }),
+                suffix: ArrayVec::new(),
+            },
             Time::from_micros(50),
         );
 
@@ -505,8 +544,11 @@ mod tests {
         drop(action);
         assert_eq!(state.extract_measurement(), None);
 
-        let req = match Message::deserialize(data).unwrap() {
-            Message::DelayReq(msg) => msg,
+        let req = Message::deserialize(data).unwrap();
+        let req_header = req.header;
+
+        let _req = match req.body {
+            MessageBody::DelayReq(msg) => msg,
             _ => panic!("Incorrect message type"),
         };
 
@@ -514,16 +556,23 @@ mod tests {
         assert!(action.next().is_none());
         drop(action);
 
+        let header = Header {
+            correction_field: TimeInterval(2000.into()),
+            sequence_id: req_header.sequence_id,
+            ..Default::default()
+        };
+
+        let body = MessageBody::DelayResp(DelayRespMessage {
+            receive_timestamp: Time::from_micros(253).into(),
+            requesting_port_identity: req_header.source_port_identity,
+        });
+
         state.handle_general_receive(
-            Message::DelayResp(DelayRespMessage {
-                header: Header {
-                    correction_field: TimeInterval(2000.into()),
-                    sequence_id: req.header.sequence_id,
-                    ..Default::default()
-                },
-                receive_timestamp: Time::from_micros(253).into(),
-                requesting_port_identity: req.header.source_port_identity,
-            }),
+            Message {
+                header,
+                body,
+                suffix: ArrayVec::new(),
+            },
             PortIdentity::default(),
         );
 
@@ -538,15 +587,20 @@ mod tests {
 
         state.mean_delay = None;
 
+        let header = Header {
+            two_step_flag: true,
+            correction_field: TimeInterval(1000.into()),
+            ..Default::default()
+        };
+
         let mut action = state.handle_event_receive(
-            Message::Sync(SyncMessage {
-                header: Header {
-                    two_step_flag: true,
-                    correction_field: TimeInterval(1000.into()),
-                    ..Default::default()
-                },
-                origin_timestamp: Time::from_micros(0).into(),
-            }),
+            Message {
+                header,
+                body: MessageBody::Sync(SyncMessage {
+                    origin_timestamp: Time::from_micros(0).into(),
+                }),
+                suffix: ArrayVec::new(),
+            },
             Time::from_micros(1050),
         );
 
@@ -570,8 +624,11 @@ mod tests {
         assert!(action.next().is_none());
         drop(action);
 
-        let req = match Message::deserialize(data).unwrap() {
-            Message::DelayReq(msg) => msg,
+        let req = Message::deserialize(data).unwrap();
+        let req_header = req.header;
+
+        let _req = match req.body {
+            MessageBody::DelayReq(msg) => msg,
             _ => panic!("Incorrect message type"),
         };
 
@@ -581,26 +638,32 @@ mod tests {
         assert_eq!(state.extract_measurement(), None);
 
         state.handle_general_receive(
-            Message::FollowUp(FollowUpMessage {
+            Message {
                 header: Header {
                     correction_field: TimeInterval(2000.into()),
                     ..Default::default()
                 },
-                precise_origin_timestamp: Time::from_micros(1000).into(),
-            }),
+                body: MessageBody::FollowUp(FollowUpMessage {
+                    precise_origin_timestamp: Time::from_micros(1000).into(),
+                }),
+                suffix: ArrayVec::new(),
+            },
             PortIdentity::default(),
         );
 
         state.handle_general_receive(
-            Message::DelayResp(DelayRespMessage {
+            Message {
                 header: Header {
                     correction_field: TimeInterval(2000.into()),
-                    sequence_id: req.header.sequence_id,
+                    sequence_id: req_header.sequence_id,
                     ..Default::default()
                 },
-                receive_timestamp: Time::from_micros(1255).into(),
-                requesting_port_identity: req.header.source_port_identity,
-            }),
+                body: MessageBody::DelayResp(DelayRespMessage {
+                    receive_timestamp: Time::from_micros(1255).into(),
+                    requesting_port_identity: req_header.source_port_identity,
+                }),
+                suffix: ArrayVec::new(),
+            },
             PortIdentity::default(),
         );
 
@@ -621,29 +684,35 @@ mod tests {
         state.next_delay_measurement = Some(Time::from_secs(10));
 
         state.handle_general_receive(
-            Message::FollowUp(FollowUpMessage {
+            Message {
                 header: Header {
                     sequence_id: 15,
                     correction_field: TimeInterval(2000.into()),
                     ..Default::default()
                 },
-                precise_origin_timestamp: Time::from_micros(10).into(),
-            }),
+                body: MessageBody::FollowUp(FollowUpMessage {
+                    precise_origin_timestamp: Time::from_micros(10).into(),
+                }),
+                suffix: ArrayVec::new(),
+            },
             PortIdentity::default(),
         );
 
         assert_eq!(state.extract_measurement(), None);
 
         let mut action = state.handle_event_receive(
-            Message::Sync(SyncMessage {
+            Message {
                 header: Header {
                     two_step_flag: true,
                     sequence_id: 15,
                     correction_field: TimeInterval(1000.into()),
                     ..Default::default()
                 },
-                origin_timestamp: Time::from_micros(0).into(),
-            }),
+                body: MessageBody::Sync(SyncMessage {
+                    origin_timestamp: Time::from_micros(0).into(),
+                }),
+                suffix: ArrayVec::new(),
+            },
             Time::from_micros(50),
         );
 
@@ -664,15 +733,18 @@ mod tests {
         state.next_delay_measurement = Some(Time::from_secs(10));
 
         let mut action = state.handle_event_receive(
-            Message::Sync(SyncMessage {
+            Message {
                 header: Header {
                     two_step_flag: true,
                     sequence_id: 15,
                     correction_field: TimeInterval(1000.into()),
                     ..Default::default()
                 },
-                origin_timestamp: Time::from_micros(0).into(),
-            }),
+                body: MessageBody::Sync(SyncMessage {
+                    origin_timestamp: Time::from_micros(0).into(),
+                }),
+                suffix: ArrayVec::new(),
+            },
             Time::from_micros(50),
         );
 
@@ -680,28 +752,34 @@ mod tests {
         assert_eq!(state.extract_measurement(), None);
 
         state.handle_general_receive(
-            Message::FollowUp(FollowUpMessage {
+            Message {
                 header: Header {
                     sequence_id: 14,
                     correction_field: TimeInterval(2000.into()),
                     ..Default::default()
                 },
-                precise_origin_timestamp: Time::from_micros(10).into(),
-            }),
+                body: MessageBody::FollowUp(FollowUpMessage {
+                    precise_origin_timestamp: Time::from_micros(10).into(),
+                }),
+                suffix: ArrayVec::new(),
+            },
             PortIdentity::default(),
         );
 
         assert_eq!(state.extract_measurement(), None);
 
         state.handle_general_receive(
-            Message::FollowUp(FollowUpMessage {
+            Message {
                 header: Header {
                     sequence_id: 15,
                     correction_field: TimeInterval(2000.into()),
                     ..Default::default()
                 },
-                precise_origin_timestamp: Time::from_micros(10).into(),
-            }),
+                body: MessageBody::FollowUp(FollowUpMessage {
+                    precise_origin_timestamp: Time::from_micros(10).into(),
+                }),
+                suffix: ArrayVec::new(),
+            },
             PortIdentity::default(),
         );
 
@@ -715,15 +793,18 @@ mod tests {
         state.next_delay_measurement = Some(Time::from_secs(10));
 
         let mut action = state.handle_event_receive(
-            Message::Sync(SyncMessage {
+            Message {
                 header: Header {
                     two_step_flag: true,
                     sequence_id: 14,
                     correction_field: TimeInterval(1000.into()),
                     ..Default::default()
                 },
-                origin_timestamp: Time::from_micros(0).into(),
-            }),
+                body: MessageBody::Sync(SyncMessage {
+                    origin_timestamp: Time::from_micros(0).into(),
+                }),
+                suffix: ArrayVec::new(),
+            },
             Time::from_micros(50),
         );
 
@@ -732,15 +813,18 @@ mod tests {
         assert_eq!(state.extract_measurement(), None);
 
         let mut action = state.handle_event_receive(
-            Message::Sync(SyncMessage {
+            Message {
                 header: Header {
                     two_step_flag: true,
                     sequence_id: 15,
                     correction_field: TimeInterval(1000.into()),
                     ..Default::default()
                 },
-                origin_timestamp: Time::from_micros(0).into(),
-            }),
+                body: MessageBody::Sync(SyncMessage {
+                    origin_timestamp: Time::from_micros(0).into(),
+                }),
+                suffix: ArrayVec::new(),
+            },
             Time::from_micros(1050),
         );
 
@@ -748,14 +832,17 @@ mod tests {
         assert_eq!(state.extract_measurement(), None);
 
         state.handle_general_receive(
-            Message::FollowUp(FollowUpMessage {
+            Message {
                 header: Header {
                     sequence_id: 15,
                     correction_field: TimeInterval(2000.into()),
                     ..Default::default()
                 },
-                precise_origin_timestamp: Time::from_micros(1000).into(),
-            }),
+                body: MessageBody::FollowUp(FollowUpMessage {
+                    precise_origin_timestamp: Time::from_micros(1000).into(),
+                }),
+                suffix: ArrayVec::new(),
+            },
             PortIdentity::default(),
         );
 
@@ -773,14 +860,17 @@ mod tests {
         let mut state = SlaveState::new(Default::default());
 
         let mut action = state.handle_event_receive(
-            Message::Sync(SyncMessage {
+            Message {
                 header: Header {
                     two_step_flag: false,
                     correction_field: TimeInterval(1000.into()),
                     ..Default::default()
                 },
-                origin_timestamp: Time::from_micros(0).into(),
-            }),
+                body: MessageBody::Sync(SyncMessage {
+                    origin_timestamp: Time::from_micros(0).into(),
+                }),
+                suffix: ArrayVec::new(),
+            },
             Time::from_micros(50),
         );
 
@@ -834,54 +924,66 @@ mod tests {
 
         assert_eq!(state.extract_measurement(), None);
 
-        let req = match Message::deserialize(data).unwrap() {
-            Message::DelayReq(msg) => msg,
+        let req = Message::deserialize(data).unwrap();
+        let req_header = req.header;
+
+        let _req = match req.body {
+            MessageBody::DelayReq(msg) => msg,
             _ => panic!("Incorrect message type"),
         };
 
         state.handle_general_receive(
-            Message::DelayResp(DelayRespMessage {
+            Message {
                 header: Header {
                     correction_field: TimeInterval(2000.into()),
-                    sequence_id: req.header.sequence_id,
+                    sequence_id: req_header.sequence_id,
                     ..Default::default()
                 },
-                receive_timestamp: Time::from_micros(353).into(),
-                requesting_port_identity: PortIdentity {
-                    port_number: 83,
-                    ..Default::default()
-                },
-            }),
+                body: MessageBody::DelayResp(DelayRespMessage {
+                    receive_timestamp: Time::from_micros(353).into(),
+                    requesting_port_identity: PortIdentity {
+                        port_number: 83,
+                        ..Default::default()
+                    },
+                }),
+                suffix: ArrayVec::new(),
+            },
             PortIdentity::default(),
         );
 
         assert_eq!(state.extract_measurement(), None);
 
         state.handle_general_receive(
-            Message::DelayResp(DelayRespMessage {
+            Message {
                 header: Header {
                     correction_field: TimeInterval(2000.into()),
-                    sequence_id: req.header.sequence_id.wrapping_sub(1),
+                    sequence_id: req_header.sequence_id.wrapping_sub(1),
                     ..Default::default()
                 },
-                receive_timestamp: Time::from_micros(353).into(),
-                requesting_port_identity: req.header.source_port_identity,
-            }),
+                body: MessageBody::DelayResp(DelayRespMessage {
+                    receive_timestamp: Time::from_micros(353).into(),
+                    requesting_port_identity: req_header.source_port_identity,
+                }),
+                suffix: ArrayVec::new(),
+            },
             PortIdentity::default(),
         );
 
         assert_eq!(state.extract_measurement(), None);
 
         state.handle_general_receive(
-            Message::DelayResp(DelayRespMessage {
+            Message {
                 header: Header {
                     correction_field: TimeInterval(2000.into()),
-                    sequence_id: req.header.sequence_id,
+                    sequence_id: req_header.sequence_id,
                     ..Default::default()
                 },
-                receive_timestamp: Time::from_micros(253).into(),
-                requesting_port_identity: req.header.source_port_identity,
-            }),
+                body: MessageBody::DelayResp(DelayRespMessage {
+                    receive_timestamp: Time::from_micros(253).into(),
+                    requesting_port_identity: req_header.source_port_identity,
+                }),
+                suffix: ArrayVec::new(),
+            },
             PortIdentity::default(),
         );
 

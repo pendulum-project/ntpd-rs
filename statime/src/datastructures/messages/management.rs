@@ -1,4 +1,3 @@
-use super::Header;
 use crate::datastructures::{
     common::{PortIdentity, Tlv},
     WireFormat, WireFormatError,
@@ -6,7 +5,6 @@ use crate::datastructures::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ManagementMessage {
-    pub(super) header: Header,
     pub(super) target_port_identity: PortIdentity,
     pub(super) starting_boundary_hops: u8,
     pub(super) boundary_hops: u8,
@@ -33,14 +31,12 @@ impl ManagementMessage {
     }
 
     pub(crate) fn deserialize_content(
-        header: Header,
         buffer: &[u8],
     ) -> Result<Self, crate::datastructures::WireFormatError> {
         if buffer.len() < 14 {
             return Err(WireFormatError::BufferTooShort);
         }
         Ok(Self {
-            header,
             target_port_identity: PortIdentity::deserialize(&buffer[0..10])?,
             starting_boundary_hops: buffer[11],
             boundary_hops: buffer[12],

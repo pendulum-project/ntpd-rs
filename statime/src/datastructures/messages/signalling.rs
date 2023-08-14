@@ -1,6 +1,5 @@
 use arrayvec::ArrayVec;
 
-use super::Header;
 use crate::datastructures::{
     common::{PortIdentity, Tlv},
     WireFormat, WireFormatError,
@@ -8,7 +7,6 @@ use crate::datastructures::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SignalingMessage {
-    pub(super) header: Header,
     pub(super) target_port_identity: PortIdentity,
 
     pub(super) value: ArrayVec<Tlv, { Self::CAPACITY }>,
@@ -42,10 +40,7 @@ impl SignalingMessage {
         Ok(())
     }
 
-    pub(crate) fn deserialize_content(
-        header: Header,
-        buffer: &[u8],
-    ) -> Result<Self, WireFormatError> {
+    pub(crate) fn deserialize_content(buffer: &[u8]) -> Result<Self, WireFormatError> {
         let identity_bytes = buffer.get(0..10).ok_or(WireFormatError::BufferTooShort)?;
         let target_port_identity = PortIdentity::deserialize(identity_bytes)?;
 
@@ -62,7 +57,6 @@ impl SignalingMessage {
         }
 
         Ok(Self {
-            header,
             target_port_identity,
             value: tlvs,
         })

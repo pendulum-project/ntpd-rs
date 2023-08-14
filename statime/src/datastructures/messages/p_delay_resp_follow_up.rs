@@ -1,4 +1,3 @@
-use super::Header;
 use crate::datastructures::{
     common::{PortIdentity, WireTimestamp},
     WireFormat, WireFormatError,
@@ -6,7 +5,6 @@ use crate::datastructures::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PDelayRespFollowUpMessage {
-    pub(super) header: Header,
     pub(super) response_origin_timestamp: WireTimestamp,
     pub(super) requesting_port_identity: PortIdentity,
 }
@@ -33,14 +31,12 @@ impl PDelayRespFollowUpMessage {
     }
 
     pub(crate) fn deserialize_content(
-        header: Header,
         buffer: &[u8],
     ) -> Result<Self, crate::datastructures::WireFormatError> {
         if buffer.len() < 20 {
             return Err(WireFormatError::BufferTooShort);
         }
         Ok(Self {
-            header,
             response_origin_timestamp: WireTimestamp::deserialize(&buffer[0..10])?,
             requesting_port_identity: PortIdentity::deserialize(&buffer[10..20])?,
         })
@@ -60,7 +56,6 @@ mod tests {
                 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a,
             ],
             PDelayRespFollowUpMessage {
-                header: Header::default(),
                 response_origin_timestamp: WireTimestamp {
                     seconds: 1169232218,
                     nanos: 174389936,
@@ -81,11 +76,8 @@ mod tests {
             assert_eq!(serialization_buffer, byte_representation);
 
             // Test the deserialization output
-            let deserialized_data = PDelayRespFollowUpMessage::deserialize_content(
-                Header::default(),
-                &byte_representation,
-            )
-            .unwrap();
+            let deserialized_data =
+                PDelayRespFollowUpMessage::deserialize_content(&byte_representation).unwrap();
             assert_eq!(deserialized_data, object_representation);
         }
     }
