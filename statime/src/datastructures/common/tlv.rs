@@ -139,4 +139,10 @@ impl TlvType {
             0x8009 => Self::Authentication,
         }
     }
+
+    // True if this message should be propagated by a boundary clock if it is
+    // attached to an announce message
+    pub fn announce_propagate(self) -> bool {
+        matches!(self.to_primitive(), 0x0008 | 0x0009 | 0x4000..=0x7fff)
+    }
 }
