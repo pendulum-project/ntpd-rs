@@ -498,7 +498,6 @@ dependencies = [
  "clap",
  "clock-steering",
  "fern",
- "fixed",
  "libc",
  "log",
  "pin-project-lite",

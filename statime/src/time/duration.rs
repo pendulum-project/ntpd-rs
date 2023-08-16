@@ -63,6 +63,10 @@ impl Duration {
         self.inner
     }
 
+    pub fn nanos_rounded(&self) -> i128 {
+        self.nanos().lossy_into()
+    }
+
     /// Get the total amount of nanoseconds, losing some precision
     pub fn nanos_lossy(&self) -> f64 {
         self.nanos().lossy_into()

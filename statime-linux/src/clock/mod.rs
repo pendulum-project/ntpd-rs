@@ -3,7 +3,6 @@
 use std::path::Path;
 
 use clock_steering::{unix::UnixClock, TimeOffset};
-use fixed::traits::LossyInto;
 use statime::{Clock, Duration, Time, TimePropertiesDS};
 
 #[derive(Debug, Clone)]
@@ -102,7 +101,7 @@ impl Clock for LinuxClock {
 
         // Since we want nanos to be in [0,1_000_000_000), we need
         // euclidean division and remainder.
-        let offset_nanos: i128 = time_offset.nanos().lossy_into();
+        let offset_nanos: i128 = time_offset.nanos_rounded();
         let offset = TimeOffset {
             seconds: offset_nanos
                 .div_euclid(1_000_000_000)
