@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use clock_steering::{unix::UnixClock, TimeOffset};
+use fixed::traits::LossyInto;
 use statime::{Clock, Duration, Time, TimePropertiesDS};
 
 #[derive(Debug, Clone)]
@@ -99,11 +100,15 @@ impl Clock for LinuxClock {
             self.clock.set_leap_seconds(leap_indicator)?
         }
 
-        // For nanos, we need the modulo operation, not remainder
-        // hence the workaround.
+        // Since we want nanos to be in [0,1_000_000_000), we need
+        // euclidean division and remainder.
+        let offset_nanos: i128 = time_offset.nanos().lossy_into();
         let offset = TimeOffset {
-            seconds: (time_offset.nanos_lossy() / 1e9).floor() as _,
-            nanos: (((time_offset.nanos_lossy() % 1e9) + 1e9) % 1e9).floor() as _,
+            seconds: offset_nanos
+                .div_euclid(1_000_000_000)
+                .try_into()
+                .expect("Unexpected jump larger than 2^64 seconds"),
+            nanos: offset_nanos.rem_euclid(1_000_000_000) as _, // Result will always fit in u32
         };
 
         log::trace!(
