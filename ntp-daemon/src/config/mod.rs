@@ -487,7 +487,7 @@ mod tests {
             config
                 .synchronization
                 .synchronization
-                .panic_threshold
+                .single_step_panic_threshold
                 .forward,
             Some(NtpDuration::from_seconds(0.))
         );
@@ -495,7 +495,7 @@ mod tests {
             config
                 .synchronization
                 .synchronization
-                .panic_threshold
+                .single_step_panic_threshold
                 .backward,
             Some(NtpDuration::from_seconds(0.))
         );
@@ -513,13 +513,13 @@ mod tests {
         assert!(config
             .synchronization
             .synchronization
-            .panic_threshold
+            .single_step_panic_threshold
             .forward
             .is_none());
         assert!(config
             .synchronization
             .synchronization
-            .panic_threshold
+            .single_step_panic_threshold
             .backward
             .is_none());
 
@@ -637,7 +637,7 @@ mod tests {
         );
 
         let config = config.unwrap();
-        assert!(config.accumulated_threshold.is_none());
+        assert!(config.accumulated_step_panic_threshold.is_none());
 
         let config: Result<SynchronizationConfig, _> = toml::from_str(
             r#"
@@ -647,7 +647,7 @@ mod tests {
 
         let config = config.unwrap();
         assert_eq!(
-            config.accumulated_threshold,
+            config.accumulated_step_panic_threshold,
             Some(NtpDuration::from_seconds(1000.0))
         );
     }
@@ -662,11 +662,11 @@ mod tests {
 
         let config = config.unwrap();
         assert_eq!(
-            config.startup_panic_threshold.forward,
+            config.startup_step_panic_threshold.forward,
             Some(NtpDuration::from_seconds(10.0))
         );
         assert_eq!(
-            config.startup_panic_threshold.backward,
+            config.startup_step_panic_threshold.backward,
             Some(NtpDuration::from_seconds(20.0))
         );
     }
