@@ -1,0 +1,19 @@
+theme:
+  name: material
+  features:
+    - content.tooltips
+docs_dir: docs
+site_name: ntpd-rs documentation
+site_dir: target/docs/site
+markdown_extensions:
+  - def_list
+  - abbr
+  - pymdownx.escapeall:
+      hardbreak: true
+nav:
+  - Home: index.md
+  - Man pages:
+    - ntp-daemon(8): man/ntp-daemon.8.md
+    - ntp.toml(5): man/ntp.toml.5.md
+    - ntp-ctl(8): man/ntp-ctl.8.md
+    - ntp-metrics-exporter(8): man/ntp-metrics-exporter.8.md
