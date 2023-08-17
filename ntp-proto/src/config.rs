@@ -7,7 +7,9 @@ use serde::{
 
 use crate::{time_types::PollIntervalLimits, NtpDuration, PollInterval};
 
-fn deserialize_option_accumulated_step_panic_threshold<'de, D>(deserializer: D) -> Result<Option<NtpDuration>, D::Error>
+fn deserialize_option_accumulated_step_panic_threshold<'de, D>(
+    deserializer: D,
+) -> Result<Option<NtpDuration>, D::Error>
 where
     D: Deserializer<'de>,
 {

@@ -380,12 +380,7 @@ impl Config {
             ok = false;
         }
 
-        if self.count_peers()
-            < self
-                .synchronization
-                .synchronization
-                .min_intersection_survivors
-        {
+        if self.count_peers() < self.synchronization.synchronization.minimum_agreeing_peers {
             warn!("Fewer peers configured than are required to agree on the current time. Daemon will not change system time.");
             ok = false;
         }
