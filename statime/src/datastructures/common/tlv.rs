@@ -2,6 +2,43 @@ use arrayvec::ArrayVec;
 
 use crate::datastructures::{WireFormat, WireFormatError};
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct TlvSet<'a> {
+    bytes: &'a [u8],
+}
+
+impl<'a> TlvSet<'a> {
+    pub(crate) fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
+        if buffer.len() < self.bytes.len() {
+            return Err(WireFormatError::BufferTooShort);
+        }
+
+        buffer[..self.bytes.len()].copy_from_slice(self.bytes);
+
+        Ok(self.bytes.len())
+    }
+
+    pub(crate) fn deserialize(mut buffer: &'a [u8]) -> Result<Self, WireFormatError> {
+        let original = buffer;
+        let mut total_length = 0;
+
+        while buffer.len() > 4 {
+            let _tlv_type = TlvType::from_primitive(u16::from_be_bytes([buffer[0], buffer[1]]));
+            let length = u16::from_be_bytes([buffer[2], buffer[3]]) as usize;
+
+            buffer = buffer
+                .get(4 + length..)
+                .ok_or(WireFormatError::BufferTooShort)?;
+
+            total_length += 4 + length;
+        }
+
+        Ok(Self {
+            bytes: &original[..total_length],
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Tlv {
     pub tlv_type: TlvType,

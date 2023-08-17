@@ -202,14 +202,13 @@ impl MasterState {
 
 #[cfg(test)]
 mod tests {
-    use arrayvec::ArrayVec;
     use fixed::types::{I48F16, U96F32};
 
     use super::*;
     use crate::{
         config::InstanceConfig,
         datastructures::{
-            common::{ClockIdentity, TimeInterval},
+            common::{ClockIdentity, TimeInterval, TlvSet},
             datasets::{CurrentDS, ParentDS},
             messages::{Header, SdoId},
         },
@@ -237,7 +236,7 @@ mod tests {
                 body: MessageBody::DelayReq(DelayReqMessage {
                     origin_timestamp: Time::from_micros(0).into(),
                 }),
-                suffix: ArrayVec::new(),
+                suffix: TlvSet::default(),
             },
             Time::from_fixed_nanos(U96F32::from_bits((200000 << 32) + (500 << 16))),
             Interval::from_log_2(2),
@@ -288,7 +287,7 @@ mod tests {
                 body: MessageBody::DelayReq(DelayReqMessage {
                     origin_timestamp: Time::from_micros(0).into(),
                 }),
-                suffix: ArrayVec::new(),
+                suffix: TlvSet::default(),
             },
             Time::from_fixed_nanos(U96F32::from_bits((220000 << 32) + (300 << 16))),
             Interval::from_log_2(5),

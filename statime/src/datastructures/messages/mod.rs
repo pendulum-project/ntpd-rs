@@ -1,7 +1,6 @@
 //! Ptp network messages
 
 pub(crate) use announce::*;
-use arrayvec::ArrayVec;
 pub(crate) use delay_req::*;
 pub(crate) use delay_resp::*;
 pub(crate) use follow_up::*;
@@ -13,7 +12,7 @@ use self::{
     p_delay_resp_follow_up::PDelayRespFollowUpMessage, signalling::SignalingMessage,
 };
 use super::{
-    common::{PortIdentity, TimeInterval, Tlv, WireTimestamp},
+    common::{PortIdentity, TimeInterval, TlvSet, WireTimestamp},
     datasets::DefaultDS,
 };
 use crate::{ptp_instance::PtpInstanceState, Interval, LeapIndicator, Time};
@@ -92,10 +91,10 @@ impl FuzzMessage {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Message {
+pub(crate) struct Message<'a> {
     pub(crate) header: Header,
     pub(crate) body: MessageBody,
-    pub(crate) suffix: ArrayVec<Tlv, 4>,
+    pub(crate) suffix: TlvSet<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -122,7 +121,7 @@ fn base_header(default_ds: &DefaultDS, port_identity: PortIdentity, sequence_id:
     }
 }
 
-impl Message {
+impl Message<'_> {
     pub(crate) fn sync(
         default_ds: &DefaultDS,
         port_identity: PortIdentity,
@@ -138,7 +137,7 @@ impl Message {
             body: MessageBody::Sync(SyncMessage {
                 origin_timestamp: Default::default(),
             }),
-            suffix: ArrayVec::default(),
+            suffix: TlvSet::default(),
         }
     }
 
@@ -158,7 +157,7 @@ impl Message {
             body: MessageBody::FollowUp(FollowUpMessage {
                 precise_origin_timestamp: timestamp.into(),
             }),
-            suffix: ArrayVec::default(),
+            suffix: TlvSet::default(),
         }
     }
 
@@ -194,7 +193,7 @@ impl Message {
         Message {
             header,
             body,
-            suffix: ArrayVec::default(),
+            suffix: TlvSet::default(),
         }
     }
 
@@ -213,7 +212,7 @@ impl Message {
             body: MessageBody::DelayReq(DelayReqMessage {
                 origin_timestamp: WireTimestamp::default(),
             }),
-            suffix: ArrayVec::default(),
+            suffix: TlvSet::default(),
         }
     }
 
@@ -245,12 +244,12 @@ impl Message {
         Message {
             header,
             body,
-            suffix: ArrayVec::default(),
+            suffix: TlvSet::default(),
         }
     }
 }
 
-impl Message {
+impl Message<'_> {
     pub(crate) fn header(&self) -> &Header {
         &self.header
     }
@@ -361,7 +360,7 @@ impl Message {
         Ok(Message {
             header: header_data.header,
             body,
-            suffix: ArrayVec::default(),
+            suffix: TlvSet::default(),
         })
     }
 }
