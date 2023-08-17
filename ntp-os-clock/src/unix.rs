@@ -349,7 +349,7 @@ fn micros_to_nanos(micros: u32) -> u32 {
     match micros.checked_mul(1000) {
         Some(v) => v,
         None => {
-            tracing::warn!(msg);
+            tracing::debug!(msg);
             0
         }
     }

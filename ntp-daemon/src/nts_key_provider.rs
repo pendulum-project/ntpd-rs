@@ -2,7 +2,7 @@ use std::{fs::File, sync::Arc};
 
 use ntp_proto::{KeySet, KeySetProvider};
 use tokio::sync::watch;
-use tracing::{error, warn};
+use tracing::warn;
 
 use crate::config::KeysetConfig;
 
@@ -19,7 +19,7 @@ pub async fn spawn(config: KeysetConfig) -> watch::Receiver<Arc<KeySet>> {
             .await
             .unwrap_or_else(|e| Err(std::io::Error::new(std::io::ErrorKind::Other, e)))
             .unwrap_or_else(|e| {
-                error!(error = ?e, "Could not load nts server keys, starting with new set");
+                warn!(error = ?e, "Could not load nts server keys, starting with new set");
                 (
                     KeySetProvider::new(config.stale_key_count),
                     std::time::SystemTime::now(),

@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use thiserror::Error;
 use tokio::sync::mpsc;
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::{config::NtsPeerConfig, keyexchange::key_exchange_client};
 
@@ -51,7 +51,7 @@ impl NtsSpawner {
             match tokio::net::lookup_host(address).await {
                 Ok(mut addresses) => match addresses.next() {
                     None => {
-                        warn!("Could not resolve peer address, retrying");
+                        debug!("Could not resolve peer address, retrying");
                         tokio::time::sleep(self.network_wait_period).await;
                     }
                     Some(first) => {

@@ -53,7 +53,7 @@ pub async fn spawn(
     tokio::spawn(async move {
         let result = observer(config, peers_reader, server_reader, system_reader).await;
         if let Err(ref e) = result {
-            warn!("Abnormal termination of the state observer: {}", e);
+            warn!("Abnormal termination of the state observer: {e}");
             warn!("The state observer will not be available");
         }
         result
