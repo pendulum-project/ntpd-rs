@@ -70,7 +70,8 @@ impl Default for NtpMetricsExporterOptions {
 }
 
 impl NtpMetricsExporterOptions {
-    const TAKES_ARGUMENT: &[&'static str] = &["--config", "--observation-socket", "--listen-socket"];
+    const TAKES_ARGUMENT: &[&'static str] =
+        &["--config", "--observation-socket", "--listen-socket"];
     const TAKES_ARGUMENT_SHORT: &[char] = &['o', 'c', 'l'];
 
     /// parse an iterator over command line arguments
