@@ -2,5 +2,5 @@
 mode = "simple"
 address = "example.com"
 
-[system]
-min-intersection-survivors = 2
+[synchronization]
+minimum-agreeing-peers = 2

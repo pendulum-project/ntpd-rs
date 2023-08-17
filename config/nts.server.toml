@@ -1,5 +1,6 @@
+[logging-observability]
 # Other values include trace, debug, warn and error
-log-filter = "info"
+log-level = "info"
 
 # the server will get its time from the NTP pool
 [[peers]]
@@ -12,7 +13,7 @@ listen = "0.0.0.0:123"
 
 # to function as an NTS server, we must also provide key exchange
 [nts-ke-server]
-addr = "0.0.0.0:4460"
-cert-chain-path = "path/to/certificate/chain.pem"
-key-der-path = "path/to/private.key"
-timeout-ms = 1000
+key-exchange-listen = "0.0.0.0:4460"
+certificate-chain-path = "path/to/certificate/chain.pem"
+private-key-path = "path/to/private.key"
+key-exchange-timeout-ms = 1000

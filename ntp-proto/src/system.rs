@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{NtpDuration, NtpLeapIndicator, PeerSnapshot, PollInterval, ReferenceId, SystemConfig};
+use crate::{
+    NtpDuration, NtpLeapIndicator, PeerSnapshot, PollInterval, ReferenceId, SynchronizationConfig,
+};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TimeSnapshot {
@@ -45,9 +47,9 @@ pub struct SystemSnapshot {
 }
 
 impl SystemSnapshot {
-    pub fn update_timedata(&mut self, timedata: TimeSnapshot, config: &SystemConfig) {
+    pub fn update_timedata(&mut self, timedata: TimeSnapshot, config: &SynchronizationConfig) {
         self.time_snapshot = timedata;
-        self.accumulated_steps_threshold = config.accumulated_threshold;
+        self.accumulated_steps_threshold = config.accumulated_step_panic_threshold;
     }
 
     pub fn update_used_peers(&mut self, mut used_peers: impl Iterator<Item = PeerSnapshot>) {
@@ -129,8 +131,8 @@ mod tests {
         };
         system.update_timedata(
             snapshot,
-            &SystemConfig {
-                accumulated_threshold: Some(new_accumulated_threshold),
+            &SynchronizationConfig {
+                accumulated_step_panic_threshold: Some(new_accumulated_threshold),
                 ..Default::default()
             },
         );

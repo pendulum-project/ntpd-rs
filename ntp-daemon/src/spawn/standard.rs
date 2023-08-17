@@ -41,7 +41,7 @@ impl StandardSpawner {
             addr
         } else {
             let addr = loop {
-                match self.config.addr.lookup_host().await {
+                match self.config.address.lookup_host().await {
                     Ok(mut addresses) => match addresses.next() {
                         None => {
                             warn!("Could not resolve peer address, retrying");
@@ -70,7 +70,12 @@ impl StandardSpawner {
         action_tx
             .send(SpawnEvent::new(
                 self.id,
-                SpawnAction::create(PeerId::new(), addr, self.config.addr.deref().clone(), None),
+                SpawnAction::create(
+                    PeerId::new(),
+                    addr,
+                    self.config.address.deref().clone(),
+                    None,
+                ),
             ))
             .await?;
         Ok(())
@@ -109,7 +114,7 @@ impl BasicSpawner for StandardSpawner {
     }
 
     fn get_addr_description(&self) -> String {
-        self.config.addr.to_string()
+        self.config.address.to_string()
     }
 
     fn get_description(&self) -> &str {
@@ -136,7 +141,7 @@ mod tests {
     async fn creates_a_peer() {
         let spawner = StandardSpawner::new(
             StandardPeerConfig {
-                addr: NormalizedAddress::with_hardcoded_dns(
+                address: NormalizedAddress::with_hardcoded_dns(
                     "example.com",
                     123,
                     vec!["127.0.0.1:123".parse().unwrap()],
@@ -166,7 +171,7 @@ mod tests {
     async fn recreates_a_peer() {
         let spawner = StandardSpawner::new(
             StandardPeerConfig {
-                addr: NormalizedAddress::with_hardcoded_dns(
+                address: NormalizedAddress::with_hardcoded_dns(
                     "example.com",
                     123,
                     vec!["127.0.0.1:123".parse().unwrap()],
@@ -204,7 +209,7 @@ mod tests {
 
         let spawner = StandardSpawner::new(
             StandardPeerConfig {
-                addr: NormalizedAddress::with_hardcoded_dns(
+                address: NormalizedAddress::with_hardcoded_dns(
                     "europe.pool.ntp.org",
                     123,
                     addresses.to_vec(),
@@ -259,7 +264,8 @@ mod tests {
     async fn works_if_address_does_not_resolve() {
         let spawner = StandardSpawner::new(
             StandardPeerConfig {
-                addr: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]).into(),
+                address: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![])
+                    .into(),
             },
             NETWORK_WAIT_PERIOD,
         );

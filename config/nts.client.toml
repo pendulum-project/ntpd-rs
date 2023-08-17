@@ -1,17 +1,16 @@
+[logging-observability]
 # Other values include trace, debug, warn and error
-log-filter = "info"
+log-level = "info"
+observation-path = "/run/ntpd-rs/observe"
 
 # See CONFIGURATION.md for how to set up certificates
 [[peers]]
 mode = "nts"
 address =  "localhost:4460"
-certificate = "path/to/certificate/authority.pem"
+certificates = "path/to/certificate/authority.pem"
 
 # System parameters used in filtering and steering the clock:
-[system]
-min-intersection-survivors = 1
-panic-threshold = 10
-startup-panic-threshold = { forward = "inf", backward = 1800 }
-
-[observe]
-path = "/run/ntpd-rs/observe"
+[synchronization]
+minimum-agreeing-peers = 1
+single-step-panic-threshold = 10
+startup-step-panic-threshold = { forward = "inf", backward = 1800 }

@@ -23,7 +23,7 @@ pub use algorithm::{
     DefaultTimeSyncController, ObservablePeerTimedata, StateUpdate, TimeSyncController,
 };
 pub use clock::NtpClock;
-pub use config::{StepThreshold, SystemConfig};
+pub use config::{PeerDefaultsConfig, StepThreshold, SynchronizationConfig};
 pub use identifiers::ReferenceId;
 pub use keyset::{DecodedServerCookie, KeySet, KeySetProvider};
 

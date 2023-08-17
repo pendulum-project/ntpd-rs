@@ -1,5 +1,7 @@
+[logging-observability]
 # Other values include trace, debug, warn and error
-log-filter = "info"
+log-level = "info"
+observation-path = "/run/ntpd-rs/observe"
 
 # Pool servers from ntppool.org. See http://www.pool.ntp.org/join.html
 # for more information
@@ -11,16 +13,13 @@ count = 4
 # Alternative configuration for IPv6 only machines
 #[[peers]]
 #mode = "pool"
-#addr = "2.pool.ntp.org"
+#address = "2.pool.ntp.org"
 #count = 4
-
-[observe]
-path = "/run/ntpd-rs/observe"
 
 # Below are configured various thresholds beyond which ntpd-rs will not
 # change the system clock. CHANGE THESE TO MATCH YOUR SECURITY NEEDS!
 # For guidance, see OPERATIONAL_CONSIDERATIONS.md
-[system]
-panic-threshold = 1800
-startup-panic-threshold = { forward="inf", backward = 1800 }
-#accumulated-threshold = 1800
+[synchronization]
+single-step-panic-threshold = 1800
+startup-step-panic-threshold = { forward="inf", backward = 1800 }
+#accumulated-step-panic-threshold = 1800

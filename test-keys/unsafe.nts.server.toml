@@ -1,5 +1,7 @@
+[logging-observability]
 # Other values include trace, debug, warn and error
-log-filter = "info"
+log-level = "info"
+observation-path = "/run/ntpd-rs/observe"
 
 # the server will get its time from the NTP pool
 [[peers]]
@@ -11,18 +13,15 @@ count = 4
 listen = "0.0.0.0:123"
 
 # System parameters used in filtering and steering the clock:
-[system]
-min-intersection-survivors = 1
-panic-threshold = 10
-startup-panic-threshold = { forward = 0, backward = 1800 }
-
-[observe]
-path = "/run/ntpd-rs/observe"
+[synchronization]
+minimum-agreeing-peers = 1
+single-step-panic-threshold = 10
+startup-step-panic-threshold = { forward = 0, backward = 1800 }
 
 # to function as an NTS server, we must also provide key exchange
 # uses an unsecure certificate chain!
 [nts-ke-server]
-addr = "0.0.0.0:4460"
-cert-chain-path = "test-keys/end.fullchain.pem"
-key-der-path = "test-keys/end.key"
-timeout-ms = 1000
+key-exchange-listen = "0.0.0.0:4460"
+certificate-chain-path = "test-keys/end.fullchain.pem"
+private-key-path = "test-keys/end.key"
+key-exchange-timeout-ms = 1000

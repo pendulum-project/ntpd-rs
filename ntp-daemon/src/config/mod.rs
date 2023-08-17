@@ -3,7 +3,9 @@ mod server;
 pub mod subnet;
 
 use ntp_os_clock::DefaultNtpClock;
-use ntp_proto::{DefaultTimeSyncController, SystemConfig, TimeSyncController};
+use ntp_proto::{
+    DefaultTimeSyncController, PeerDefaultsConfig, SynchronizationConfig, TimeSyncController,
+};
 use ntp_udp::{EnableTimestamps, InterfaceName};
 pub use peer::*;
 use serde::{Deserialize, Deserializer};
@@ -246,14 +248,25 @@ pub struct ClockConfig {
 
 #[derive(Deserialize, Debug, Default, Clone, Copy)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct CombinedSystemConfig {
+pub struct CombinedSynchronizationConfig {
     #[serde(flatten)]
-    pub system: SystemConfig,
+    pub synchronization: SynchronizationConfig,
     #[serde(flatten)]
     pub algorithm: <DefaultTimeSyncController<DefaultNtpClock, PeerId> as TimeSyncController<
         DefaultNtpClock,
         PeerId,
     >>::AlgorithmConfig,
+}
+
+#[derive(Deserialize, Debug, Default)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct LoggingObservabilityConfig {
+    #[serde(default)]
+    pub log_level: Option<LogLevel>,
+    #[serde(flatten, default)]
+    pub observe: ObserveConfig,
+    #[serde(flatten, default)]
+    pub configure: ConfigureConfig,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -266,70 +279,16 @@ pub struct Config {
     #[serde(alias = "nts-ke-server", default)]
     pub nts_ke: Option<NtsKeConfig>,
     #[serde(default)]
-    pub system: CombinedSystemConfig,
+    pub synchronization: CombinedSynchronizationConfig,
     #[serde(default)]
-    pub log_filter: Option<LogLevel>,
+    pub peer_defaults: PeerDefaultsConfig,
     #[serde(default)]
-    pub observe: ObserveConfig,
-    #[serde(default)]
-    pub configure: ConfigureConfig,
+    pub logging_observability: LoggingObservabilityConfig,
     #[serde(default)]
     pub keyset: KeysetConfig,
     #[serde(default)]
     #[cfg(feature = "hardware-timestamping")]
     pub clock: ClockConfig,
-}
-
-const fn default_observe_permissions() -> u32 {
-    0o666
-}
-
-#[derive(Clone, Deserialize, Debug)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct ObserveConfig {
-    #[serde(default)]
-    pub path: Option<PathBuf>,
-    #[serde(default = "default_observe_permissions")]
-    pub mode: u32,
-}
-
-const fn default_configure_permissions() -> u32 {
-    0o660
-}
-
-impl Default for ObserveConfig {
-    fn default() -> Self {
-        Self {
-            path: None,
-            mode: default_observe_permissions(),
-        }
-    }
-}
-
-#[derive(Clone, Deserialize, Debug)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct ConfigureConfig {
-    #[serde(default)]
-    pub path: Option<std::path::PathBuf>,
-    #[serde(default = "default_configure_permissions")]
-    pub mode: u32,
-}
-
-impl Default for ConfigureConfig {
-    fn default() -> Self {
-        Self {
-            path: None,
-            mode: default_configure_permissions(),
-        }
-    }
-}
-
-#[derive(Error, Debug)]
-pub enum ConfigError {
-    #[error("io error while reading config: {0}")]
-    Io(#[from] io::Error),
-    #[error("config toml parsing error: {0}")]
-    Toml(#[from] toml::de::Error),
 }
 
 impl Config {
@@ -421,13 +380,65 @@ impl Config {
             ok = false;
         }
 
-        if self.count_peers() < self.system.system.min_intersection_survivors {
+        if self.count_peers() < self.synchronization.synchronization.minimum_agreeing_peers {
             warn!("Fewer peers configured than are required to agree on the current time. Daemon will not change system time.");
             ok = false;
         }
 
         ok
     }
+}
+
+#[derive(Clone, Deserialize, Debug)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct ObserveConfig {
+    #[serde(default)]
+    pub observation_path: Option<PathBuf>,
+    #[serde(default = "default_observation_permissions")]
+    pub observation_permissions: u32,
+}
+
+const fn default_observation_permissions() -> u32 {
+    0o666
+}
+
+const fn default_configure_permissions() -> u32 {
+    0o660
+}
+
+impl Default for ObserveConfig {
+    fn default() -> Self {
+        Self {
+            observation_path: None,
+            observation_permissions: default_observation_permissions(),
+        }
+    }
+}
+
+#[derive(Clone, Deserialize, Debug)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct ConfigureConfig {
+    #[serde(default)]
+    pub configure_path: Option<std::path::PathBuf>,
+    #[serde(default = "default_configure_permissions")]
+    pub configure_permissions: u32,
+}
+
+impl Default for ConfigureConfig {
+    fn default() -> Self {
+        Self {
+            configure_path: None,
+            configure_permissions: default_configure_permissions(),
+        }
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum ConfigError {
+    #[error("io error while reading config: {0}")]
+    Io(#[from] io::Error),
+    #[error("config toml parsing error: {0}")]
+    Toml(#[from] toml::de::Error),
 }
 
 #[cfg(test)]
@@ -445,87 +456,122 @@ mod tests {
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com", 123).into(),
+                address: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
-        assert!(config.log_filter.is_none());
+        assert!(config.logging_observability.log_level.is_none());
 
         let config: Config = toml::from_str(
-            "log-filter = \"info\"\n[[peers]]\nmode = \"simple\"\naddress = \"example.com\"",
+            "[logging-observability]\nlog-level = \"info\"\n[[peers]]\nmode = \"simple\"\naddress = \"example.com\"",
         )
-        .unwrap();
-        assert!(config.log_filter.is_some());
+            .unwrap();
+        assert_eq!(config.logging_observability.log_level, Some(LogLevel::Info));
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com", 123).into(),
+                address: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
 
         let config: Config = toml::from_str(
-            "[[peers]]\nmode = \"simple\"\naddress = \"example.com\"\n[system]\npanic-threshold = 0",
+            "[[peers]]\nmode = \"simple\"\naddress = \"example.com\"\n[synchronization]\nsingle-step-panic-threshold = 0",
         )
-        .unwrap();
+            .unwrap();
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com", 123).into(),
+                address: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
         assert_eq!(
-            config.system.system.panic_threshold.forward,
+            config
+                .synchronization
+                .synchronization
+                .single_step_panic_threshold
+                .forward,
             Some(NtpDuration::from_seconds(0.))
         );
         assert_eq!(
-            config.system.system.panic_threshold.backward,
+            config
+                .synchronization
+                .synchronization
+                .single_step_panic_threshold
+                .backward,
             Some(NtpDuration::from_seconds(0.))
         );
 
         let config: Config = toml::from_str(
-            "[[peers]]\nmode = \"simple\"\naddress = \"example.com\"\n[system]\npanic-threshold = \"inf\"",
+            "[[peers]]\nmode = \"simple\"\naddress = \"example.com\"\n[synchronization]\nsingle-step-panic-threshold = \"inf\"",
         )
-        .unwrap();
+            .unwrap();
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com", 123).into(),
+                address: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
-        assert!(config.system.system.panic_threshold.forward.is_none());
-        assert!(config.system.system.panic_threshold.backward.is_none());
+        assert!(config
+            .synchronization
+            .synchronization
+            .single_step_panic_threshold
+            .forward
+            .is_none());
+        assert!(config
+            .synchronization
+            .synchronization
+            .single_step_panic_threshold
+            .backward
+            .is_none());
 
         let config: Config = toml::from_str(
             r#"
-            log-filter = "info"
             [[peers]]
             mode = "simple"
             address = "example.com"
-            [observe]
-            path = "/foo/bar/observe"
-            mode = 0o567
-            [configure]
-            path = "/foo/bar/configure"
-            mode = 0o123
+            [peer-defaults]
+            poll-interval-limits = { min = 5, max = 9 }
+            initial-poll-interval = 5
+            [logging-observability]
+            log-level = "info"
+            observation-path = "/foo/bar/observe"
+            observation-permissions = 0o567
+            configure-path = "/foo/bar/configure"
+            configure-permissions = 0o123
             "#,
         )
         .unwrap();
-        assert!(config.log_filter.is_some());
-
-        assert_eq!(config.observe.path, Some(PathBuf::from("/foo/bar/observe")));
-        assert_eq!(config.observe.mode, 0o567);
+        assert!(config.logging_observability.log_level.is_some());
 
         assert_eq!(
-            config.configure.path,
+            config.logging_observability.observe.observation_path,
+            Some(PathBuf::from("/foo/bar/observe"))
+        );
+        assert_eq!(
+            config.logging_observability.observe.observation_permissions,
+            0o567
+        );
+
+        assert_eq!(
+            config.logging_observability.configure.configure_path,
             Some(PathBuf::from("/foo/bar/configure"))
         );
-        assert_eq!(config.configure.mode, 0o123);
+        assert_eq!(
+            config.logging_observability.configure.configure_permissions,
+            0o123
+        );
 
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
-                addr: NormalizedAddress::new_unchecked("example.com", 123).into(),
+                address: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
+
+        let poll_interval_limits = config.peer_defaults.poll_interval_limits;
+        assert_eq!(poll_interval_limits.min.as_log(), 5);
+        assert_eq!(poll_interval_limits.max.as_log(), 9);
+
+        assert_eq!(config.peer_defaults.initial_poll_interval.as_log(), 5);
     }
 
     #[test]
@@ -584,43 +630,43 @@ mod tests {
 
     #[test]
     fn system_config_accumulated_threshold() {
-        let config: Result<SystemConfig, _> = toml::from_str(
+        let config: Result<SynchronizationConfig, _> = toml::from_str(
             r#"
-            accumulated-threshold = 0
+            accumulated-step-panic-threshold = 0
             "#,
         );
 
         let config = config.unwrap();
-        assert!(config.accumulated_threshold.is_none());
+        assert!(config.accumulated_step_panic_threshold.is_none());
 
-        let config: Result<SystemConfig, _> = toml::from_str(
+        let config: Result<SynchronizationConfig, _> = toml::from_str(
             r#"
-            accumulated-threshold = 1000
+            accumulated-step-panic-threshold = 1000
             "#,
         );
 
         let config = config.unwrap();
         assert_eq!(
-            config.accumulated_threshold,
+            config.accumulated_step_panic_threshold,
             Some(NtpDuration::from_seconds(1000.0))
         );
     }
 
     #[test]
     fn system_config_startup_panic_threshold() {
-        let config: Result<SystemConfig, _> = toml::from_str(
+        let config: Result<SynchronizationConfig, _> = toml::from_str(
             r#"
-            startup-panic-threshold = { forward = 10, backward = 20 }
+            startup-step-panic-threshold = { forward = 10, backward = 20 }
             "#,
         );
 
         let config = config.unwrap();
         assert_eq!(
-            config.startup_panic_threshold.forward,
+            config.startup_step_panic_threshold.forward,
             Some(NtpDuration::from_seconds(10.0))
         );
         assert_eq!(
-            config.startup_panic_threshold.backward,
+            config.startup_step_panic_threshold.backward,
             Some(NtpDuration::from_seconds(20.0))
         );
     }
@@ -663,7 +709,7 @@ mod tests {
 
     #[test]
     fn deny_unknown_fields() {
-        let config: Result<SystemConfig, _> = toml::from_str(
+        let config: Result<SynchronizationConfig, _> = toml::from_str(
             r#"
             unknown-field = 42
             "#,

@@ -7,13 +7,13 @@ use tracing::warn;
 use crate::config::KeysetConfig;
 
 pub async fn spawn(config: KeysetConfig) -> watch::Receiver<Arc<KeySet>> {
-    let (mut provider, mut next_interval) = match &config.storage_path {
+    let (mut provider, mut next_interval) = match &config.key_storage_path {
         Some(path) => {
             let path = path.to_owned();
             let (provider, time) = tokio::task::spawn_blocking(
                 move || -> std::io::Result<(KeySetProvider, std::time::SystemTime)> {
                     let mut input = File::open(path)?;
-                    KeySetProvider::load(&mut input, config.old_keys)
+                    KeySetProvider::load(&mut input, config.stale_key_count)
                 },
             )
             .await
@@ -21,13 +21,13 @@ pub async fn spawn(config: KeysetConfig) -> watch::Receiver<Arc<KeySet>> {
             .unwrap_or_else(|e| {
                 warn!(error = ?e, "Could not load nts server keys, starting with new set");
                 (
-                    KeySetProvider::new(config.old_keys),
+                    KeySetProvider::new(config.stale_key_count),
                     std::time::SystemTime::now(),
                 )
             });
             (
                 provider,
-                std::time::Duration::from_secs(config.rotation_interval as _).saturating_sub(
+                std::time::Duration::from_secs(config.key_rotation_interval as _).saturating_sub(
                     std::time::SystemTime::now()
                         .duration_since(time)
                         .unwrap_or(std::time::Duration::from_secs(0)),
@@ -35,16 +35,16 @@ pub async fn spawn(config: KeysetConfig) -> watch::Receiver<Arc<KeySet>> {
             )
         }
         None => (
-            KeySetProvider::new(config.old_keys),
-            std::time::Duration::from_secs(config.rotation_interval as _),
+            KeySetProvider::new(config.stale_key_count),
+            std::time::Duration::from_secs(config.key_rotation_interval as _),
         ),
     };
     let (tx, rx) = watch::channel(provider.get());
     tokio::task::spawn_blocking(move || loop {
         std::thread::sleep(next_interval);
-        next_interval = std::time::Duration::from_secs(config.rotation_interval as _);
+        next_interval = std::time::Duration::from_secs(config.key_rotation_interval as _);
         provider.rotate();
-        if let Some(path) = &config.storage_path {
+        if let Some(path) = &config.key_storage_path {
             if let Err(e) = (|| -> std::io::Result<()> {
                 let mut output = File::create(path)?;
                 provider.store(&mut output)

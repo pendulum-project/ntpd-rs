@@ -534,6 +534,11 @@ impl std::fmt::Debug for PollInterval {
 }
 
 impl PollInterval {
+    #[cfg(test)]
+    pub fn test_new(value: i8) -> Self {
+        Self(value)
+    }
+
     #[must_use]
     pub fn inc(self, limits: PollIntervalLimits) -> Self {
         Self(self.0 + 1).min(limits.max)

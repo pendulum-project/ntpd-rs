@@ -112,12 +112,6 @@ The following command line options are available. When an option is not provided
 
 The ntp-daemon's primary configuration method is through a TOML configuration file. By default, this is looked for in the system-wide configuration directories under `/etc/ntpd-rs/ntp.toml`. A non-standard location can be provided via the `-c` or `--config` command line flags.
 
-#### General options
-
-| Option     | Default | Description                                                                       |
-|------------|---------|-----------------------------------------------------------------------------------|
-| log-filter | info    | Set the amount of information logged. Available levels: trace, debug, info, warn. |
-
 #### Peer configuration
 
 Peers are configured in the peers section, which should consist of a list of peers. Per peer, the following options are available:
@@ -165,6 +159,21 @@ mode = "pool"
 count = 4
 ```
 
+##### Peer Defaults
+
+Peer defaults are settings that are the same across all peers. An example configuration for peer defaults can look like
+```
+[peer-defaults]
+poll-interval-limits = { min = 5, max = 9 }
+initial-poll-interval = 5
+```
+
+| Option                | Default               | Description                                                                                                                                                                                                                                |
+|-----------------------|-----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| poll-interval-limits  | { min = 4, max = 10 } | Limits on the poll interval towards clients. The defaults are fine for most applications. The values are given as the log2 of the number of seconds, so 4 indicates a poll interval of 32 seconds, and 10 a poll interval of 1024 seconds. |
+| initial-poll-interval | 4                     | Initial poll interval used on startup. The value is given as the log2 of the number of seconds, so 4 indicates a poll interval of 32 seconds.                                                                                              |
+
+
 #### Server
 
 Interfaces on which to act as a server are configured in the `server` section. Per interface configured, the following options are available:
@@ -185,19 +194,19 @@ In applying the three client filters (deny, allow and ratelimiting), the server 
 #### NTS Server
 
 Servers configured via the `server` section can also support NTS. To enable this, the built-in NTS-KE server needs to be enabled (hosting the NTS-KE server separately is not yet supported). This can be configured through the `nts-ke` section:
-| Option          | Default | Description                                                                                                                                                                                  |
-|-----------------|---------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| cert-chain-path |         | Path to the full chain TLS certificate for the server. Note that currently self-signed certificates are not supported.                                                                       |
-| key-der-path    |         | Path to the TLS private key for the server.                                                                                                                                                  |
-| timeout-ms      | 1000    | Timeout on NTS-KE sessions, after which the server decides to hang up. This is to prevent large resource utilization from old and or inactive sessions. Timeout duration is in milliseconds. |
-| address         |         | Address of the interface to bind to for the NTS-KE server.                                                                                                                                   |
+| Option                  | Default | Description                                                                                                                                                                                  |
+|-------------------------|---------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| certificate-chain-path  |         | Path to the full chain TLS certificate for the server. Note that currently self-signed certificates are not supported.                                                                       |
+| private-key-path        |         | Path to the TLS private key for the server.                                                                                                                                                  |
+| key-exchange-timeout-ms | 1000    | Timeout on NTS-KE sessions, after which the server decides to hang up. This is to prevent large resource utilization from old and or inactive sessions. Timeout duration is in milliseconds. |
+| key-exchange-listen     |         | Address of the interface to bind to for the NTS-KE server.                                                                                                                                   |
 
 Our implementation of NTS follows the recommendations of section 6 in [RFC8915](https://www.rfc-editor.org/rfc/rfc8915.html). Currently, the master keys for encryption of the cookies are generated internally, and their generation can be controlled via the settings in the `keyset` section
-| Option            | Default | Description                                                                                                                                               |
-|-------------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
-| old-keys          | 7       | Number of old keys to keep valid for existing cookies.                                                                                                    |
-| rotation-interval | 86400   | Time (in seconds) between generating new keys.                                                                                                            |
-| storage-path      |         | If specified, server keys are saved and restored from this path. This enables reboots of the server without invalidating the cookies of existing clients. |
+| Option                | Default | Description                                                                                                                                               |
+|-----------------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| stale-key-count       | 7       | Number of old keys to keep valid for existing cookies.                                                                                                    |
+| key-rotation-interval | 86400   | Time (in seconds) between generating new keys.                                                                                                            |
+| key-storage-path      |         | If specified, server keys are saved and restored from this path. This enables reboots of the server without invalidating the cookies of existing clients. |
 
 ##### A note on TLS keys and certificates
 
@@ -205,22 +214,22 @@ Due to limitations in rustls, we currently do not support self-signed certificat
 
 Instructions for how to generate a CA certificate and use it to sign certificates can be found in many places on the internet, for example in this [github gist](https://gist.github.com/Soarez/9688998)
 
-#### Observability and dynamic configuration
+#### Logging and observability
 
 **The management client interface format is unstable! Would you like to observe additional values? let us know in an issue!**
 
-The daemon can expose an observation socket that can be read to obtain information on the current state of the peer connections and clock steering algorithm. This socket can be configured via the `observe` section:
-| Option | Default | Description                                                                                               |
-|--------|---------|-----------------------------------------------------------------------------------------------------------|
-| path   |         | Path on which the observation socket is exposed. If no path is given, the observation socket is disabled. |
-| mode   | 0o666   | Permissions with which the socket should be created, given as (octal) integer.                            |
+The `logging-observability` section contains configuration for setting the logging level and exposing sockets for observation and configuration
 
-The daemon can also expose a configuration socket that can be used to change some configuration options dynamically. This socket can be configured via the `configure` section:
-| Option | Default | Description                                                                                                   |
-|--------|---------|---------------------------------------------------------------------------------------------------------------|
-| path   |         | Path on which the configuration socket is exposed. If no path is given, the configuration socket is disabled. |
-| mode   | 0o660   | Permissions with which the socket should be created, given as (octal) integer.                                |
-|        |         |                                                                                                               |
+- The observation socket can be read to obtain information on the current state of the peer connections and clock steering algorithm.
+- The configuration socket can be used to change some configuration options dynamically.
+
+| Option                    | Default | Description                                                                                                   |
+|---------------------------|---------|---------------------------------------------------------------------------------------------------------------|
+| log-level                 | info    | Set the amount of information logged. Available levels: trace, debug, info, warn.                             |
+| observation-path        |         | Path on which the observation socket is exposed. If no path is given, the observation socket is disabled.     |
+| observation-permissions | 0o666   | Permissions with which the socket should be created, given as (octal) integer.                                |
+| configure-path            |         | Path on which the configuration socket is exposed. If no path is given, the configuration socket is disabled. |
+| configure-permissions | 0o660   | Permissions with which the socket should be created, given as (octal) integer.                                |
 
 The management and configuration sockets are used by the [management client](MANAGEMENT_CLIENT.md) to display the daemon's state and to allow for dynamic changing of some configuration parameters.
 
@@ -250,16 +259,14 @@ The default clock on unix systems is `CLOCK_REALTIME`. It is important to synchr
 
 #### Time synchronization
 
-There are a number of options available to influence how time differences to the various servers are used to synchronize the system clock. All of these are part of the `system` section of the configuration:
-| Option                     | Default                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                 |
-|----------------------------|---------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| min-intersection-survivors | 3                               | Minimum number of servers that need to agree on the true time from our perspective for synchronization to start.                                                                                                                                                                                                                                                                                                            |
-| panic-threshold            | 1800 (symmetric)                | Largest time difference the client is allowed to correct in one go. Differences beyond this cause the client to abort synchronization. Value provided is in seconds, set to "inf" to disable checking of jumps. Setting this to 0 will disable time jumps except at startup.                                                                                                                                                |
-| startup-panic-threshold    | No limit forward, 1800 backward | Largest time difference the client is allowed to correct during startup. By default, this is unrestricted as we may be the initial source of time for systems without a hardware backed clock. Value provided is in seconds, set to "inf" to disable checking of jumps.                                                                                                                                                     |
-| accumulated-threshold      | Disabled                        | Total amount of time difference the client is allowed to correct using steps whilst running. By default, this is unrestricted. Value provided is in seconds, set to 0 to disable checking of accumulated steps.                                                                                                                                                                                                             |
-| local-stratum              | 16                              | Stratum of the local clock, when not synchronized through ntp. The default value of 16 is conventionally used to indicate unsynchronized clocks. This can be used in servers to indicate that there are external mechanisms synchronizing the clock by setting it to the appropriate value for the external source. If the external source is a GPS clock or a direct connection to a UTC source, this will typically be 1. |
-| poll-limits                | { min = 4, max = 10 }           | Limits on the poll interval towards clients. The defaults are fine for most applications. The values are given as the log2 of the number of seconds, so 4 indicates a poll interval of 32 seconds, and 10 a poll interval of 1024 seconds.                                                                                                                                                                                  |
-| initial-poll               | 4                               | Initial poll interval used on startup. The value is given as the log2 of the number of seconds, so 4 indicates a poll interval of 32 seconds.                                                                                                                                                                                                                                                                               |
+There are a number of options available to influence how time differences to the various servers are used to synchronize the system clock. All of these are part of the `synchronization` section of the configuration:
+| Option                           | Default                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                 |
+|----------------------------------|---------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| minimum-agreeing-peers           | 3                               | Minimum number of servers that need to agree on the true time from our perspective for synchronization to start.                                                                                                                                                                                                                                                                                                            |
+| single-step-panic-threshold      | 1800 (symmetric)                | Largest time difference the client is allowed to correct in one go. Differences beyond this cause the client to abort synchronization. Value provided is in seconds, set to "inf" to disable checking of jumps. Setting this to 0 will disable time jumps except at startup.                                                                                                                                                |
+| startup-step-panic-threshold     | No limit forward, 1800 backward | Largest time difference the client is allowed to correct during startup. By default, this is unrestricted as we may be the initial source of time for systems without a hardware backed clock. Value provided is in seconds, set to "inf" to disable checking of jumps.                                                                                                                                                     |
+| accumulated-step-panic-threshold | Disabled                        | Total amount of time difference the client is allowed to correct using steps whilst running. By default, this is unrestricted. Value provided is in seconds, set to 0 to disable checking of accumulated steps.                                                                                                                                                                                                             |
+| local-stratum                    | 16                              | Stratum of the local clock, when not synchronized through ntp. The default value of 16 is conventionally used to indicate unsynchronized clocks. This can be used in servers to indicate that there are external mechanisms synchronizing the clock by setting it to the appropriate value for the external source. If the external source is a GPS clock or a direct connection to a UTC source, this will typically be 1. |
 
 For panic thresholds, asymmetric thresholds can be configured, allowing a different sized step going forwards compared to going backwards. This is done by configuring a struct with two values, `forward` and `backward` for the panic threshold.
 
@@ -272,14 +279,14 @@ The high performance clock algorithm has quite a few options. Most of these are 
 | steer-offset-threshold        | 2.0     | How far from 0 (in multiples of the uncertainty) should the offset be before we correct. A higher value reduces the amount of steering, but at the cost of a slower synchronization. (standard deviations, 0+)                             |
 | steer-offset-leftover         | 1.0     | How many standard deviations do we leave after offset correction? A higher value decreases the amount of overcorrections at the cost of slower synchronization and more steering. (standard deviations, 0+)                                |
 | jump-threshold                | 10e-3   | From what offset should we jump the clock instead of trying to adjust gradually? (seconds, 0+)                                                                                                                                             |
-| slew-max-frequency-offset     | 200e-6  | What is the maximum frequency offset during a slew (a gradual changing of the time). (s/s)                                                                                                                                                 |
-| slew-min-duration             | 20.0    | What is the minimum duration of a slew (a gradual changing of the time). Larger values increase the precision of the slew, at the cost of longer time taken per slew. (s)                                                                  |
+| slew-maximum-frequency-offset | 200e-6  | What is the maximum frequency offset during a slew (a gradual changing of the time). (s/s)                                                                                                                                                 |
+| slew-minimum-duration         | 20.0    | What is the minimum duration of a slew (a gradual changing of the time). Larger values increase the precision of the slew, at the cost of longer time taken per slew. (s)                                                                  |
 | steer-frequency-threshold     | 0.0     | How far from 0 (in multiples of the uncertainty) should the frequency estimate be before we correct. A higher value reduces the amount of steering, but at the cost of a slower synchronization. (standard deviations, 0+)                 |
 | steer-frequency-leftover      | 0.0     | How many standard deviations do we leave after frequency correction? A higher value decreases the amount of overcorrections at the cost of slower synchronization and more steering. (standard deviations, 0+)                             |
 | ignore-server-dispersion      | false   | Ignore a servers advertised dispersion when synchronizing. Can improve synchronization quality with servers reporting overly conservative root dispersion.                                                                                 |
 | range-statistical-weight      | 2.0     | Weight of statistical uncertainty when constructing a peers uncertainty range. This range is used when checking if two peers agree on the same time, and for choosing whether to use a peer for synchronization. (standard deviations, 0+) |
 | range-delay-weight            | 0.25    | Weight of delay uncertainty when constructing overlap ranges. This range is used when checking if two peers agree on the same time, and for choosing whether to use a peer for synchronization. (weight, 0-1)                              |
-| max-peer-uncertainty          | 1.0     | Maximum peer uncertainty before we start disregarding it. Note that this is combined uncertainty due to noise and possible asymmetry error (see also weights above). (seconds)                                                             |
+| maximum-peer-uncertainty      | 1.0     | Maximum peer uncertainty before we start disregarding it. Note that this is combined uncertainty due to noise and possible asymmetry error (see also weights above). (seconds)                                                             |
 | poll-jump-threshold           | 1e-6    | Probability threshold for when a measurement is considered a significant enough outlier that we decide something weird is going on and we need to immediately decrease the polling interval to quickly correct. (probability, 0-1)         |
 | delay-outlier-threshold       | 5.0     | Threshold (in number of standard deviations) above which measurements with a significantly larger network delay are rejected. (standard deviations, 0+)                                                                                    |
 | initial-wander                | 1e-8    | Initial estimate of the clock wander between our local clock and that of the peer. Increasing this results in better synchronization if the hardware matches it, but at the cost of slower synchronization when overly optimistic. (s/s^2) |
@@ -289,8 +296,9 @@ The high performance clock algorithm has quite a few options. Most of these are 
 #### Example configuration file:
 
 ```toml
+[logging-observability]
 # Other values include trace, debug, warn and error
-log-filter = "info"
+log-level = "info"
 
 # Or by providing written out configuration
 # [[peers]]
@@ -301,11 +309,13 @@ log-filter = "info"
 # address = "1.pool.ntp.org:123"
 
 # System parameters used in filtering and steering the clock:
-[system]
-min-intersection-survivors = 1
+[synchronization]
+minimum-agreeing-peers = 1
+single-step-panic-threshold = 10
+startup-step-panic-threshold = { forward = "inf", backward = 1800 }
+
+[peer-defaults]
 poll-limits = { min = 6, max = 10 }
-panic-threshold = 10
-startup-panic-threshold = { forward = "inf", backward = 1800 }
 
 [clock]
 # clock = "/dev/ptp0"

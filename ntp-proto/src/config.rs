@@ -7,7 +7,9 @@ use serde::{
 
 use crate::{time_types::PollIntervalLimits, NtpDuration, PollInterval};
 
-fn deserialize_option_threshold<'de, D>(deserializer: D) -> Result<Option<NtpDuration>, D::Error>
+fn deserialize_option_accumulated_step_panic_threshold<'de, D>(
+    deserializer: D,
+) -> Result<Option<NtpDuration>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -192,7 +194,32 @@ impl<'de> Deserialize<'de> for StepThreshold {
 
 #[derive(Deserialize, Debug, Clone, Copy)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct SystemConfig {
+pub struct PeerDefaultsConfig {
+    /// Minima and maxima for the poll interval of clients
+    #[serde(default)]
+    pub poll_interval_limits: PollIntervalLimits,
+
+    /// Initial poll interval of the system
+    #[serde(default = "default_initial_poll_interval")]
+    pub initial_poll_interval: PollInterval,
+}
+
+impl Default for PeerDefaultsConfig {
+    fn default() -> Self {
+        Self {
+            poll_interval_limits: Default::default(),
+            initial_poll_interval: default_initial_poll_interval(),
+        }
+    }
+}
+
+fn default_initial_poll_interval() -> PollInterval {
+    PollIntervalLimits::default().min
+}
+
+#[derive(Deserialize, Debug, Clone, Copy)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct SynchronizationConfig {
     /// Minimum number of survivors needed to be able to discipline the system clock.
     /// More survivors (so more servers from which to get the time) means a more accurate time.
     ///
@@ -201,8 +228,8 @@ pub struct SystemConfig {
     /// > CMIN defines the minimum number of servers consistent with the correctness requirements.
     /// > Suspicious operators would set CMIN to ensure multiple redundant servers are available for the
     /// > algorithms to mitigate properly. However, for historic reasons the default value for CMIN is one.
-    #[serde(default = "default_min_intersection_survivors")]
-    pub min_intersection_survivors: usize,
+    #[serde(default = "default_minimum_agreeing_peers")]
+    pub minimum_agreeing_peers: usize,
 
     /// The maximum amount the system clock is allowed to change in a single go
     /// before we conclude something is seriously wrong. This is used to limit
@@ -211,57 +238,49 @@ pub struct SystemConfig {
     ///
     /// Note that this is not used during startup. To limit system clock changes
     /// during startup, use startup_panic_threshold
-    #[serde(default = "default_panic_threshold")]
-    pub panic_threshold: StepThreshold,
+    #[serde(default = "default_single_step_panic_threshold")]
+    pub single_step_panic_threshold: StepThreshold,
 
     /// The maximum amount the system clock is allowed to change during startup.
     /// This can be used to limit the impact of bad servers if the system clock
     /// is known to be reasonable on startup
-    #[serde(default = "startup_panic_threshold")]
-    pub startup_panic_threshold: StepThreshold,
+    #[serde(default = "default_startup_step_panic_threshold")]
+    pub startup_step_panic_threshold: StepThreshold,
 
     /// The maximum amount distributed amongst all steps except at startup the
     /// daemon is allowed to step the system clock.
-    #[serde(deserialize_with = "deserialize_option_threshold", default)]
-    pub accumulated_threshold: Option<NtpDuration>,
+    #[serde(
+        deserialize_with = "deserialize_option_accumulated_step_panic_threshold",
+        default
+    )]
+    pub accumulated_step_panic_threshold: Option<NtpDuration>,
 
     /// Stratum of the local clock, when not synchronized through ntp. This
     /// can be used in servers to indicate that there are external mechanisms
     /// synchronizing the clock
     #[serde(default = "default_local_stratum")]
     pub local_stratum: u8,
-
-    /// Minima and maxima for the poll interval of clients
-    #[serde(default)]
-    pub poll_limits: PollIntervalLimits,
-
-    /// Initial poll interval of the system
-    #[serde(default = "default_initial_poll")]
-    pub initial_poll: PollInterval,
 }
 
-impl Default for SystemConfig {
+impl Default for SynchronizationConfig {
     fn default() -> Self {
         Self {
-            min_intersection_survivors: default_min_intersection_survivors(),
+            minimum_agreeing_peers: default_minimum_agreeing_peers(),
 
-            panic_threshold: default_panic_threshold(),
-            startup_panic_threshold: startup_panic_threshold(),
-            accumulated_threshold: None,
+            single_step_panic_threshold: default_single_step_panic_threshold(),
+            startup_step_panic_threshold: default_startup_step_panic_threshold(),
+            accumulated_step_panic_threshold: None,
 
             local_stratum: default_local_stratum(),
-
-            poll_limits: Default::default(),
-            initial_poll: default_initial_poll(),
         }
     }
 }
 
-fn default_min_intersection_survivors() -> usize {
+fn default_minimum_agreeing_peers() -> usize {
     3
 }
 
-fn default_panic_threshold() -> StepThreshold {
+fn default_single_step_panic_threshold() -> StepThreshold {
     let raw = NtpDuration::from_seconds(1000.);
     StepThreshold {
         forward: Some(raw),
@@ -269,7 +288,7 @@ fn default_panic_threshold() -> StepThreshold {
     }
 }
 
-fn startup_panic_threshold() -> StepThreshold {
+fn default_startup_step_panic_threshold() -> StepThreshold {
     StepThreshold {
         forward: None,
         backward: Some(NtpDuration::from_seconds(1800.)),
@@ -278,8 +297,4 @@ fn startup_panic_threshold() -> StepThreshold {
 
 fn default_local_stratum() -> u8 {
     16
-}
-
-fn default_initial_poll() -> PollInterval {
-    PollIntervalLimits::default().min
 }

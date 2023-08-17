@@ -18,6 +18,10 @@ Bug fixes
 Version 0.3.6
 ======
 
+Major Changes
+-----
+- Restructured configuration. See CONFIGURATION.md.
+
 Minor Changes
 -----
 - Additional example configuration for freeBSD.

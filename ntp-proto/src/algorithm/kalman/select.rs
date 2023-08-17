@@ -1,4 +1,4 @@
-use crate::SystemConfig;
+use crate::SynchronizationConfig;
 
 use super::{config::AlgorithmConfig, PeerSnapshot};
 
@@ -16,7 +16,7 @@ enum BoundType {
 // can be compensated for if desired by setting tighter bounds on the weights
 // determining the confidence interval.
 pub(super) fn select<Index: Copy>(
-    config: &SystemConfig,
+    synchronization_config: &SynchronizationConfig,
     algo_config: &AlgorithmConfig,
     candidates: Vec<PeerSnapshot<Index>>,
 ) -> Vec<PeerSnapshot<Index>> {
@@ -25,7 +25,9 @@ pub(super) fn select<Index: Copy>(
     for snapshot in candidates.iter() {
         let radius = snapshot.offset_uncertainty() * algo_config.range_statistical_weight
             + snapshot.delay * algo_config.range_delay_weight;
-        if radius > algo_config.max_peer_uncertainty || !snapshot.leap_indicator.is_synchronized() {
+        if radius > algo_config.maximum_peer_uncertainty
+            || !snapshot.leap_indicator.is_synchronized()
+        {
             continue;
         }
 
@@ -50,13 +52,13 @@ pub(super) fn select<Index: Copy>(
         }
     }
 
-    if max >= config.min_intersection_survivors && max * 4 > bounds.len() {
+    if max >= synchronization_config.minimum_agreeing_peers && max * 4 > bounds.len() {
         candidates
             .iter()
             .filter(|snapshot| {
                 let radius = snapshot.offset_uncertainty() * algo_config.range_statistical_weight
                     + snapshot.delay * algo_config.range_delay_weight;
-                radius <= algo_config.max_peer_uncertainty
+                radius <= algo_config.maximum_peer_uncertainty
                     && snapshot.offset() - radius <= maxt
                     && snapshot.offset() + radius >= maxt
                     && snapshot.leap_indicator.is_synchronized()
@@ -102,22 +104,23 @@ mod tests {
             snapshot_for_range(0.05, 0.01, 0.09),
             snapshot_for_range(0.05, 0.09, 0.01),
         ];
-        let sysconfig = SystemConfig {
-            min_intersection_survivors: 4,
+        let sysconfig = SynchronizationConfig {
+            minimum_agreeing_peers: 4,
             ..Default::default()
         };
 
         let algconfig = AlgorithmConfig {
-            max_peer_uncertainty: 1.0,
+            maximum_peer_uncertainty: 1.0,
             range_statistical_weight: 1.0,
             range_delay_weight: 0.0,
             ..Default::default()
         };
+
         let result = select(&sysconfig, &algconfig, candidates.clone());
         assert_eq!(result.len(), 0);
 
         let algconfig = AlgorithmConfig {
-            max_peer_uncertainty: 1.0,
+            maximum_peer_uncertainty: 1.0,
             range_statistical_weight: 0.0,
             range_delay_weight: 1.0,
             ..Default::default()
@@ -126,7 +129,7 @@ mod tests {
         assert_eq!(result.len(), 0);
 
         let algconfig = AlgorithmConfig {
-            max_peer_uncertainty: 1.0,
+            maximum_peer_uncertainty: 1.0,
             range_statistical_weight: 1.0,
             range_delay_weight: 1.0,
             ..Default::default()
@@ -143,13 +146,13 @@ mod tests {
             snapshot_for_range(0.0, 0.1, 0.1),
             snapshot_for_range(0.0, 0.01, 0.01),
         ];
-        let sysconfig = SystemConfig {
-            min_intersection_survivors: 1,
+        let sysconfig = SynchronizationConfig {
+            minimum_agreeing_peers: 1,
             ..Default::default()
         };
 
         let algconfig = AlgorithmConfig {
-            max_peer_uncertainty: 3.0,
+            maximum_peer_uncertainty: 3.0,
             range_statistical_weight: 1.0,
             range_delay_weight: 1.0,
             ..Default::default()
@@ -158,7 +161,7 @@ mod tests {
         assert_eq!(result.len(), 3);
 
         let algconfig = AlgorithmConfig {
-            max_peer_uncertainty: 0.3,
+            maximum_peer_uncertainty: 0.3,
             range_statistical_weight: 1.0,
             range_delay_weight: 1.0,
             ..Default::default()
@@ -167,7 +170,7 @@ mod tests {
         assert_eq!(result.len(), 2);
 
         let algconfig = AlgorithmConfig {
-            max_peer_uncertainty: 0.03,
+            maximum_peer_uncertainty: 0.03,
             range_statistical_weight: 1.0,
             range_delay_weight: 1.0,
             ..Default::default()
@@ -176,7 +179,7 @@ mod tests {
         assert_eq!(result.len(), 1);
 
         let algconfig = AlgorithmConfig {
-            max_peer_uncertainty: 0.003,
+            maximum_peer_uncertainty: 0.003,
             range_statistical_weight: 1.0,
             range_delay_weight: 1.0,
             ..Default::default()
@@ -196,21 +199,21 @@ mod tests {
             snapshot_for_range(0.5, 0.1, 0.1),
         ];
         let algconfig = AlgorithmConfig {
-            max_peer_uncertainty: 3.0,
+            maximum_peer_uncertainty: 3.0,
             range_statistical_weight: 1.0,
             range_delay_weight: 1.0,
             ..Default::default()
         };
 
-        let sysconfig = SystemConfig {
-            min_intersection_survivors: 3,
+        let sysconfig = SynchronizationConfig {
+            minimum_agreeing_peers: 3,
             ..Default::default()
         };
         let result = select(&sysconfig, &algconfig, candidates.clone());
         assert_eq!(result.len(), 3);
 
-        let sysconfig = SystemConfig {
-            min_intersection_survivors: 4,
+        let sysconfig = SynchronizationConfig {
+            minimum_agreeing_peers: 4,
             ..Default::default()
         };
         let result = select(&sysconfig, &algconfig, candidates);
@@ -227,13 +230,13 @@ mod tests {
             snapshot_for_range(0.5, 0.1, 0.1),
         ];
         let algconfig = AlgorithmConfig {
-            max_peer_uncertainty: 3.0,
+            maximum_peer_uncertainty: 3.0,
             range_statistical_weight: 1.0,
             range_delay_weight: 1.0,
             ..Default::default()
         };
-        let sysconfig = SystemConfig {
-            min_intersection_survivors: 1,
+        let sysconfig = SynchronizationConfig {
+            minimum_agreeing_peers: 1,
             ..Default::default()
         };
         let result = select(&sysconfig, &algconfig, candidates);

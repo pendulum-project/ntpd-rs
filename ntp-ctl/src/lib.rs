@@ -22,8 +22,7 @@ const DESCRIPTOR: &str = "ntp-ctl - ntp-daemon monitoring";
 
 const HELP_MSG: &str = "Options:
   -f, --format=FORMAT                  which format to use for printing statistics [plain, prometheus]
-  -c, --config=CONFIG                  which configuration file to read the socket paths from
-  -o, --observation-socket=SOCKET      path of the observation socket";
+  -c, --config=CONFIG                  which configuration file to read the socket paths from";
 
 pub fn long_help_message() -> String {
     format!("{DESCRIPTOR}\n\n{USAGE_MSG}\n\n{HELP_MSG}")
@@ -48,7 +47,6 @@ pub enum NtpCtlAction {
 #[derive(Debug, Default)]
 pub(crate) struct NtpDaemonOptions {
     config: Option<PathBuf>,
-    observation_socket: Option<PathBuf>,
     format: Format,
     help: bool,
     version: bool,
@@ -58,8 +56,8 @@ pub(crate) struct NtpDaemonOptions {
 }
 
 impl NtpDaemonOptions {
-    const TAKES_ARGUMENT: &[&'static str] = &["--config", "--format", "--observation-socket"];
-    const TAKES_ARGUMENT_SHORT: &[char] = &['o', 'c', 'f'];
+    const TAKES_ARGUMENT: &[&'static str] = &["--config", "--format"];
+    const TAKES_ARGUMENT_SHORT: &[char] = &['c', 'f'];
 
     /// parse an iterator over command line arguments
     pub fn try_parse_from<I, T>(iter: I) -> Result<Self, String>
@@ -110,9 +108,6 @@ impl NtpDaemonOptions {
                         "prometheus" => options.format = Format::Prometheus,
                         _ => Err(format!("invalid format option provided: {value}"))?,
                     },
-                    "-o" | "--observation-socket" => {
-                        options.observation_socket = Some(PathBuf::from(value));
-                    }
                     option => {
                         Err(format!("invalid option provided: {option}"))?;
                     }
@@ -189,9 +184,10 @@ pub async fn main() -> std::io::Result<ExitCode> {
 
             let config = config.unwrap_or_default();
 
-            let observation = options
-                .observation_socket
-                .or(config.observe.path)
+            let observation = config
+                .logging_observability
+                .observe
+                .observation_path
                 .unwrap_or_else(|| PathBuf::from("/run/ntpd-rs/observe"));
 
             match options.format {
@@ -272,7 +268,8 @@ mod tests {
 
         let peers_listener = create_unix_socket(&path)?;
 
-        let permissions: std::fs::Permissions = PermissionsExt::from_mode(config.mode);
+        let permissions: std::fs::Permissions =
+            PermissionsExt::from_mode(config.observation_permissions);
         std::fs::set_permissions(&path, permissions)?;
 
         let fut = super::print_state(command, path);
@@ -330,7 +327,8 @@ mod tests {
 
         let peers_listener = create_unix_socket(&path)?;
 
-        let permissions: std::fs::Permissions = PermissionsExt::from_mode(config.mode);
+        let permissions: std::fs::Permissions =
+            PermissionsExt::from_mode(config.observation_permissions);
         std::fs::set_permissions(&path, permissions)?;
 
         let fut = super::print_state(Format::Plain, path);
@@ -361,18 +359,6 @@ mod tests {
 
         let options = NtpDaemonOptions::try_parse_from(arguments).unwrap();
         assert_eq!(options.config.unwrap().as_path(), config);
-    }
-
-    #[test]
-    fn cli_observation_socket() {
-        let observation_str = "/bar/baz";
-        let observation = Path::new(observation_str);
-
-        let arguments = &[BINARY, "-o", observation_str];
-
-        let options = NtpDaemonOptions::try_parse_from(arguments).unwrap();
-
-        assert_eq!(options.observation_socket.unwrap().as_path(), observation);
     }
 
     #[test]

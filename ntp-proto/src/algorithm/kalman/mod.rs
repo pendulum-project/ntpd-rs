@@ -3,8 +3,8 @@ use std::{collections::HashMap, fmt::Debug, hash::Hash};
 use tracing::{error, info, instrument};
 
 use crate::{
-    Measurement, NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, ObservablePeerTimedata,
-    StateUpdate, SystemConfig, TimeSnapshot, TimeSyncController,
+    config::PeerDefaultsConfig, Measurement, NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp,
+    ObservablePeerTimedata, StateUpdate, SynchronizationConfig, TimeSnapshot, TimeSyncController,
 };
 
 use self::{
@@ -63,7 +63,8 @@ impl<Index: Copy> PeerSnapshot<Index> {
 pub struct KalmanClockController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> {
     peers: HashMap<PeerID, (PeerState, bool)>,
     clock: C,
-    config: SystemConfig,
+    synchronization_config: SynchronizationConfig,
+    peer_defaults_config: PeerDefaultsConfig,
     algo_config: AlgorithmConfig,
     freq_offset: f64,
     timedata: TimeSnapshot,
@@ -75,10 +76,11 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
     #[instrument(skip(self))]
     fn update_peer(&mut self, id: PeerID, measurement: Measurement) -> bool {
         self.peers.get_mut(&id).map(|state| {
-            state
-                .0
-                .update_self_using_measurement(&self.config, &self.algo_config, measurement)
-                && state.1
+            state.0.update_self_using_measurement(
+                &self.peer_defaults_config,
+                &self.algo_config,
+                measurement,
+            ) && state.1
         }) == Some(true)
     }
 
@@ -101,7 +103,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
         }
 
         let selection = select::select(
-            &self.config,
+            &self.synchronization_config,
             &self.algo_config,
             self.peers
                 .iter()
@@ -192,7 +194,11 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
     fn check_offset_steer(&mut self, change: f64) {
         let change = NtpDuration::from_seconds(change);
         if self.in_startup {
-            if !self.config.startup_panic_threshold.is_within(change) {
+            if !self
+                .synchronization_config
+                .startup_step_panic_threshold
+                .is_within(change)
+            {
                 error!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate.");
                 #[cfg(not(test))]
                 std::process::exit(crate::exitcode::SOFTWARE);
@@ -201,10 +207,13 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
             }
         } else {
             self.timedata.accumulated_steps += change;
-            if !self.config.panic_threshold.is_within(change)
+            if !self
+                .synchronization_config
+                .single_step_panic_threshold
+                .is_within(change)
                 || !self
-                    .config
-                    .accumulated_threshold
+                    .synchronization_config
+                    .accumulated_step_panic_threshold
                     .map(|v| change.abs() < v)
                     .unwrap_or(true)
             {
@@ -219,7 +228,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
 
     fn steer_offset(&mut self, change: f64, freq_delta: f64) -> Option<NtpTimestamp> {
         self.check_offset_steer(change);
-        if change.abs() > self.algo_config.jump_threshold {
+        if change.abs() > self.algo_config.step_threshold {
             // jump
             self.clock
                 .step_clock(NtpDuration::from_seconds(change))
@@ -233,8 +242,8 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
             // start slew
             let freq = self
                 .algo_config
-                .slew_max_frequency_offset
-                .min(change.abs() / self.algo_config.slew_min_duration);
+                .slew_maximum_frequency_offset
+                .min(change.abs() / self.algo_config.slew_minimum_duration);
             let duration = NtpDuration::from_seconds(change.abs() / freq);
             info!(
                 "Slewing by {}ms over {}s",
@@ -253,8 +262,8 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
 
     fn steer_frequency(&mut self, change: f64) -> NtpTimestamp {
         let new_freq_offset = ((1.0 + self.freq_offset) * (1.0 + change) - 1.0).clamp(
-            -self.algo_config.max_frequency_steer,
-            self.algo_config.max_frequency_steer,
+            -self.algo_config.maximum_frequency_steer,
+            self.algo_config.maximum_frequency_steer,
         );
         let actual_change = (1.0 + new_freq_offset) / (1.0 + self.freq_offset) - 1.0;
         self.freq_offset = new_freq_offset;
@@ -277,9 +286,11 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
         self.timedata.poll_interval = self
             .peers
             .values()
-            .map(|(state, _)| state.get_desired_poll(&self.config.poll_limits))
+            .map(|(state, _)| {
+                state.get_desired_poll(&self.peer_defaults_config.poll_interval_limits)
+            })
             .min()
-            .unwrap_or(self.config.poll_limits.max);
+            .unwrap_or(self.peer_defaults_config.poll_interval_limits.max);
     }
 }
 
@@ -288,7 +299,12 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
 {
     type AlgorithmConfig = AlgorithmConfig;
 
-    fn new(clock: C, config: SystemConfig, algo_config: Self::AlgorithmConfig) -> Self {
+    fn new(
+        clock: C,
+        synchronization_config: SynchronizationConfig,
+        peer_defaults_config: PeerDefaultsConfig,
+        algo_config: Self::AlgorithmConfig,
+    ) -> Self {
         // Setup clock
         clock
             .disable_ntp_algorithm()
@@ -303,7 +319,8 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
         KalmanClockController {
             peers: HashMap::new(),
             clock,
-            config,
+            synchronization_config,
+            peer_defaults_config,
             algo_config,
             freq_offset: 0.0,
             desired_freq: 0.0,
@@ -312,8 +329,14 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
         }
     }
 
-    fn update_config(&mut self, config: SystemConfig, algo_config: Self::AlgorithmConfig) {
-        self.config = config;
+    fn update_config(
+        &mut self,
+        synchronization_config: SynchronizationConfig,
+        peer_defaults_config: PeerDefaultsConfig,
+        algo_config: Self::AlgorithmConfig,
+    ) {
+        self.synchronization_config = synchronization_config;
+        self.peer_defaults_config = peer_defaults_config;
         self.algo_config = algo_config;
     }
 
@@ -409,7 +432,7 @@ mod tests {
         fn error_estimate_update(
             &self,
             _est_error: NtpDuration,
-            _max_error: NtpDuration,
+            _maximum_error: NtpDuration,
         ) -> Result<(), Self::Error> {
             Ok(())
         }
@@ -421,17 +444,19 @@ mod tests {
 
     #[test]
     fn test_startup_flag_unsets() {
-        let system_config = SystemConfig {
-            min_intersection_survivors: 1,
-            ..SystemConfig::default()
+        let synchronization_config = SynchronizationConfig {
+            minimum_agreeing_peers: 1,
+            ..SynchronizationConfig::default()
         };
         let algo_config = AlgorithmConfig::default();
+        let peer_defaults_config = PeerDefaultsConfig::default();
         let mut algo = KalmanClockController::new(
             TestClock {
                 has_steered: RefCell::new(false),
                 current_time: NtpTimestamp::from_fixed_int(0),
             },
-            system_config,
+            synchronization_config,
+            peer_defaults_config,
             algo_config,
         );
         let mut cur_instant = NtpInstant::now();
@@ -475,17 +500,19 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_large_offset_eventually_panics() {
-        let system_config = SystemConfig {
-            min_intersection_survivors: 1,
-            ..SystemConfig::default()
+        let synchronization_config = SynchronizationConfig {
+            minimum_agreeing_peers: 1,
+            ..SynchronizationConfig::default()
         };
         let algo_config = AlgorithmConfig::default();
+        let peer_defaults_config = PeerDefaultsConfig::default();
         let mut algo = KalmanClockController::new(
             TestClock {
                 has_steered: RefCell::new(false),
                 current_time: NtpTimestamp::from_fixed_int(0),
             },
-            system_config,
+            synchronization_config,
+            peer_defaults_config,
             algo_config,
         );
         let mut cur_instant = NtpInstant::now();
@@ -525,17 +552,19 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_backward_step_panics_before_steer() {
-        let system_config = SystemConfig {
-            min_intersection_survivors: 1,
-            ..SystemConfig::default()
+        let synchronization_config = SynchronizationConfig {
+            minimum_agreeing_peers: 1,
+            ..SynchronizationConfig::default()
         };
         let algo_config = AlgorithmConfig::default();
+        let peer_defaults_config = PeerDefaultsConfig::default();
         let mut algo = KalmanClockController::new(
             TestClock {
                 has_steered: RefCell::new(false),
                 current_time: NtpTimestamp::from_fixed_int(0),
             },
-            system_config,
+            synchronization_config,
+            peer_defaults_config,
             algo_config,
         );
         let mut cur_instant = NtpInstant::now();

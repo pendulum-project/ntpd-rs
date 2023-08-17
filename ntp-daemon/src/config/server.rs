@@ -17,31 +17,31 @@ use crate::{config::subnet::IpSubnet, ipfilter::IpFilter};
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct KeysetConfig {
     /// Number of old keys to keep around
-    #[serde(default = "default_old_keys")]
-    pub old_keys: usize,
+    #[serde(default = "default_stale_key_count")]
+    pub stale_key_count: usize,
     /// How often to rotate keys (seconds between rotations)
-    #[serde(default = "default_rotation_interval")]
-    pub rotation_interval: usize,
+    #[serde(default = "default_key_rotation_interval")]
+    pub key_rotation_interval: usize,
     #[serde(default)]
-    pub storage_path: Option<String>,
+    pub key_storage_path: Option<String>,
 }
 
 impl Default for KeysetConfig {
     fn default() -> Self {
         Self {
-            old_keys: default_old_keys(),
-            rotation_interval: default_rotation_interval(),
-            storage_path: None,
+            stale_key_count: default_stale_key_count(),
+            key_rotation_interval: default_key_rotation_interval(),
+            key_storage_path: None,
         }
     }
 }
 
-fn default_rotation_interval() -> usize {
+fn default_key_rotation_interval() -> usize {
     // 1 day in seconds
     86400
 }
 
-fn default_old_keys() -> usize {
+fn default_stale_key_count() -> usize {
     // 1 weeks worth at 1 key per day
     7
 }
@@ -221,11 +221,11 @@ impl<'de> Deserialize<'de> for ServerConfig {
 #[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct NtsKeConfig {
-    pub cert_chain_path: PathBuf,
-    pub key_der_path: PathBuf,
+    pub certificate_chain_path: PathBuf,
+    pub private_key_path: PathBuf,
     #[serde(default = "default_nts_ke_timeout")]
-    pub timeout_ms: u64,
-    pub addr: SocketAddr,
+    pub key_exchange_timeout_ms: u64,
+    pub key_exchange_listen: SocketAddr,
 }
 
 fn default_nts_ke_timeout() -> u64 {
@@ -306,6 +306,27 @@ mod tests {
     }
 
     #[test]
+    fn test_deserialize_keyset() {
+        #[derive(Deserialize, Debug)]
+        #[serde(rename_all = "kebab-case", deny_unknown_fields)]
+        struct TestConfig {
+            keyset: KeysetConfig,
+        }
+
+        let test: TestConfig = toml::from_str(
+            r#"
+            [keyset]
+            stale-key-count = 5
+            key-rotation-interval = 500
+            key-storage-path = "key/storage/path.key"
+            "#,
+        )
+        .unwrap();
+
+        assert_ne!(test.keyset, KeysetConfig::default())
+    }
+
+    #[test]
     fn test_deserialize_nts_ke() {
         #[derive(Deserialize, Debug)]
         #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -316,17 +337,23 @@ mod tests {
         let test: TestConfig = toml::from_str(
             r#"
             [nts-ke-server]
-            addr = "0.0.0.0:4460"
-            cert-chain-path = "/foo/bar/baz.pem"
-            key-der-path = "spam.der"
+            key-exchange-listen = "0.0.0.0:4460"
+            certificate-chain-path = "/foo/bar/baz.pem"
+            private-key-path = "spam.der"
             "#,
         )
         .unwrap();
 
         let pem = PathBuf::from("/foo/bar/baz.pem");
-        assert_eq!(test.nts_ke_server.cert_chain_path, pem);
-        assert_eq!(test.nts_ke_server.key_der_path, PathBuf::from("spam.der"));
-        assert_eq!(test.nts_ke_server.timeout_ms, 1000,);
-        assert_eq!(test.nts_ke_server.addr, "0.0.0.0:4460".parse().unwrap(),);
+        assert_eq!(test.nts_ke_server.certificate_chain_path, pem);
+        assert_eq!(
+            test.nts_ke_server.private_key_path,
+            PathBuf::from("spam.der")
+        );
+        assert_eq!(test.nts_ke_server.key_exchange_timeout_ms, 1000,);
+        assert_eq!(
+            test.nts_ke_server.key_exchange_listen,
+            "0.0.0.0:4460".parse().unwrap(),
+        );
     }
 }
