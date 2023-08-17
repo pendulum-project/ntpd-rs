@@ -182,7 +182,7 @@ impl Message {
         };
 
         let body = MessageBody::Announce(AnnounceMessage {
-            header: header.clone(),
+            header,
             origin_timestamp: current_time.into(),
             current_utc_offset: time_properties_ds.current_utc_offset.unwrap_or_default(),
             grandmaster_priority_1: global.parent_ds.grandmaster_priority_1,
