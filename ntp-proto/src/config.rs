@@ -228,9 +228,9 @@ pub struct SynchronizationConfig {
     /// > algorithms to mitigate properly. However, for historic reasons the default value for CMIN is one.
     #[serde(
         rename = "minimum-agreeing-peers",
-        default = "default_min_intersection_survivors"
+        default = "default_minimum_agreeing_peers"
     )]
-    pub min_intersection_survivors: usize,
+    pub minimum_agreeing_peers: usize,
 
     /// The maximum amount the system clock is allowed to change in a single go
     /// before we conclude something is seriously wrong. This is used to limit
@@ -273,7 +273,7 @@ pub struct SynchronizationConfig {
 impl Default for SynchronizationConfig {
     fn default() -> Self {
         Self {
-            min_intersection_survivors: default_min_intersection_survivors(),
+            minimum_agreeing_peers: default_minimum_agreeing_peers(),
 
             panic_threshold: default_panic_threshold(),
             startup_panic_threshold: startup_panic_threshold(),
@@ -284,7 +284,7 @@ impl Default for SynchronizationConfig {
     }
 }
 
-fn default_min_intersection_survivors() -> usize {
+fn default_minimum_agreeing_peers() -> usize {
     3
 }
 

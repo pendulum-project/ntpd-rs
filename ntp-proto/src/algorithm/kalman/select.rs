@@ -52,7 +52,7 @@ pub(super) fn select<Index: Copy>(
         }
     }
 
-    if max >= synchronization_config.min_intersection_survivors && max * 4 > bounds.len() {
+    if max >= synchronization_config.minimum_agreeing_peers && max * 4 > bounds.len() {
         candidates
             .iter()
             .filter(|snapshot| {
@@ -105,7 +105,7 @@ mod tests {
             snapshot_for_range(0.05, 0.09, 0.01),
         ];
         let sysconfig = SynchronizationConfig {
-            min_intersection_survivors: 4,
+            minimum_agreeing_peers: 4,
             ..Default::default()
         };
 
@@ -147,7 +147,7 @@ mod tests {
             snapshot_for_range(0.0, 0.01, 0.01),
         ];
         let sysconfig = SynchronizationConfig {
-            min_intersection_survivors: 1,
+            minimum_agreeing_peers: 1,
             ..Default::default()
         };
 
@@ -206,14 +206,14 @@ mod tests {
         };
 
         let sysconfig = SynchronizationConfig {
-            min_intersection_survivors: 3,
+            minimum_agreeing_peers: 3,
             ..Default::default()
         };
         let result = select(&sysconfig, &algconfig, candidates.clone());
         assert_eq!(result.len(), 3);
 
         let sysconfig = SynchronizationConfig {
-            min_intersection_survivors: 4,
+            minimum_agreeing_peers: 4,
             ..Default::default()
         };
         let result = select(&sysconfig, &algconfig, candidates);
@@ -236,7 +236,7 @@ mod tests {
             ..Default::default()
         };
         let sysconfig = SynchronizationConfig {
-            min_intersection_survivors: 1,
+            minimum_agreeing_peers: 1,
             ..Default::default()
         };
         let result = select(&sysconfig, &algconfig, candidates);

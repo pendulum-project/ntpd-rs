@@ -445,7 +445,7 @@ mod tests {
     #[test]
     fn test_startup_flag_unsets() {
         let synchronization_config = SynchronizationConfig {
-            min_intersection_survivors: 1,
+            minimum_agreeing_peers: 1,
             ..SynchronizationConfig::default()
         };
         let algo_config = AlgorithmConfig::default();
@@ -501,7 +501,7 @@ mod tests {
     #[should_panic]
     fn test_large_offset_eventually_panics() {
         let synchronization_config = SynchronizationConfig {
-            min_intersection_survivors: 1,
+            minimum_agreeing_peers: 1,
             ..SynchronizationConfig::default()
         };
         let algo_config = AlgorithmConfig::default();
@@ -553,7 +553,7 @@ mod tests {
     #[should_panic]
     fn test_backward_step_panics_before_steer() {
         let synchronization_config = SynchronizationConfig {
-            min_intersection_survivors: 1,
+            minimum_agreeing_peers: 1,
             ..SynchronizationConfig::default()
         };
         let algo_config = AlgorithmConfig::default();
