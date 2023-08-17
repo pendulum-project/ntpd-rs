@@ -253,12 +253,18 @@ mod tests {
             self.current_time
         }
 
-        fn adjust(
+        fn adjust_frequency(&mut self, _freq: f64) -> Result<Time, Self::Error> {
+            panic!("Shouldn't be called");
+        }
+
+        fn set_properties(
             &mut self,
-            _time_offset: crate::time::Duration,
-            _frequency_multiplier: f64,
-            _time_properties_ds: &crate::datastructures::datasets::TimePropertiesDS,
-        ) -> core::result::Result<(), Self::Error> {
+            _time_properties_ds: &TimePropertiesDS,
+        ) -> Result<(), Self::Error> {
+            panic!("Shouldn't be called");
+        }
+
+        fn step_clock(&mut self, _offset: Duration) -> Result<Time, Self::Error> {
             panic!("Shouldn't be called");
         }
     }

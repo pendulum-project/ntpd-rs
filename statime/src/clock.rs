@@ -22,18 +22,26 @@ pub trait Clock {
     /// Get the current time of the clock
     fn now(&self) -> Time;
 
-    /// Adjust the clock with the given time offset and frequency multiplier.
-    /// The adjustment is based on the given time properties.
+    /// Change the current time of the clock by offset. Returns
+    /// the time at which the change was applied.
     ///
-    /// The adjustment that is actually being done to the clock doesn't have to
-    /// be exactly what is being given. The clock can (and should) do some
-    /// filtering.
-    // TODO: Discuss whether both the PTP instance and the clock itself should do
-    // filtering?
-    fn adjust(
-        &mut self,
-        time_offset: Duration,
-        frequency_multiplier: f64,
-        time_properties_ds: &TimePropertiesDS,
-    ) -> Result<(), Self::Error>;
+    /// The applied correction should be as close as possible to
+    /// the requested correction. The reported time of the change
+    /// should be as close as possible to the time the change was
+    /// applied
+    fn step_clock(&mut self, offset: Duration) -> Result<Time, Self::Error>;
+
+    /// Change the frequency of the clock, returning the time
+    /// at which the change was applied.
+    ///
+    /// The applied correction should be as close as possible to
+    /// the requested correction. The reported time of the change
+    /// should be as close as possible to the time the change was
+    /// applied
+    fn adjust_frequency(&mut self, freq: f64) -> Result<Time, Self::Error>;
+
+    /// Adjust the timescale properties of the clock, including
+    /// things like the leap indicator, to the extend supported by the
+    /// system.
+    fn set_properties(&mut self, time_properties_ds: &TimePropertiesDS) -> Result<(), Self::Error>;
 }

@@ -355,7 +355,7 @@ async fn port_task(
     port_task_sender: Sender<BmcaPort>,
     mut event_socket: EventSocket,
     mut general_socket: GeneralSocket,
-    mut local_clock: LinuxClock,
+    local_clock: LinuxClock,
     bmca_notify: &Notify,
 ) {
     let mut timers = Timers {
@@ -376,7 +376,7 @@ async fn port_task(
             &mut event_socket,
             &mut general_socket,
             &mut timers,
-            &mut local_clock,
+            &local_clock,
         )
         .await;
 
@@ -386,7 +386,7 @@ async fn port_task(
                 &mut event_socket,
                 &mut general_socket,
                 &mut timers,
-                &mut local_clock,
+                &local_clock,
             )
             .await;
         }
@@ -427,7 +427,7 @@ async fn port_task(
                     &mut event_socket,
                     &mut general_socket,
                     &mut timers,
-                    &mut local_clock,
+                    &local_clock,
                 )
                 .await;
 
@@ -456,7 +456,7 @@ async fn handle_actions(
     event_socket: &mut EventSocket,
     general_socket: &mut GeneralSocket,
     timers: &mut Timers<'_>,
-    local_clock: &mut LinuxClock,
+    local_clock: &LinuxClock,
 ) -> Option<(TimestampContext, Time)> {
     let mut pending_timestamp = None;
 

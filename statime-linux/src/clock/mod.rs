@@ -68,6 +68,13 @@ impl clock_steering::Clock for LinuxClock {
     }
 }
 
+fn time_from_timestamp(timestamp: clock_steering::Timestamp) -> Time {
+    let seconds: u64 = timestamp.seconds.try_into().unwrap();
+
+    let nanos = seconds * 1_000_000_000 + timestamp.nanos as u64;
+    Time::from_nanos_subnanos(nanos, 0)
+}
+
 impl Clock for LinuxClock {
     type Error = clock_steering::unix::Error;
 
@@ -75,29 +82,17 @@ impl Clock for LinuxClock {
         use clock_steering::Clock;
 
         let timestamp = self.clock.now().unwrap();
-        let seconds: u64 = timestamp.seconds.try_into().unwrap();
-
-        let nanos = seconds * 1_000_000_000 + timestamp.nanos as u64;
-        Time::from_nanos_subnanos(nanos, 0)
+        time_from_timestamp(timestamp)
     }
 
-    fn adjust(
-        &mut self,
-        time_offset: Duration,
-        frequency_multiplier: f64,
-        time_properties: &TimePropertiesDS,
-    ) -> Result<(), Self::Error> {
+    fn adjust_frequency(&mut self, freq: f64) -> Result<Time, Self::Error> {
+        log::trace!("Adjusting clock frequency by factor 1 + {:e}x", freq - 1.0);
+        let timestamp = self.clock.adjust_frequency(freq)?;
+        Ok(time_from_timestamp(timestamp))
+    }
+
+    fn step_clock(&mut self, time_offset: Duration) -> Result<Time, Self::Error> {
         use clock_steering::Clock;
-
-        let leap_indicator = match time_properties.leap_indicator() {
-            statime::LeapIndicator::NoLeap => clock_steering::LeapIndicator::NoWarning,
-            statime::LeapIndicator::Leap61 => clock_steering::LeapIndicator::Leap61,
-            statime::LeapIndicator::Leap59 => clock_steering::LeapIndicator::Leap59,
-        };
-
-        if time_properties.is_ptp() {
-            self.clock.set_leap_seconds(leap_indicator)?
-        }
 
         // Since we want nanos to be in [0,1_000_000_000), we need
         // euclidean division and remainder.
@@ -111,13 +106,26 @@ impl Clock for LinuxClock {
         };
 
         log::trace!(
-            "Adjusting clock: {:e}ns, 1 + {:e}x",
-            (offset.seconds as f64) * 1e9 + (offset.nanos as f64),
-            frequency_multiplier - 1.0
+            "Stepping clock {:e}ns",
+            (offset.seconds as f64) * 1e9 + (offset.nanos as f64)
         );
 
-        self.clock.adjust_frequency(frequency_multiplier)?;
-        self.clock.step_clock(offset)?;
+        let timestamp = self.clock.step_clock(offset)?;
+        Ok(time_from_timestamp(timestamp))
+    }
+
+    fn set_properties(&mut self, time_properties: &TimePropertiesDS) -> Result<(), Self::Error> {
+        use clock_steering::Clock;
+
+        let leap_indicator = match time_properties.leap_indicator() {
+            statime::LeapIndicator::NoLeap => clock_steering::LeapIndicator::NoWarning,
+            statime::LeapIndicator::Leap61 => clock_steering::LeapIndicator::Leap61,
+            statime::LeapIndicator::Leap59 => clock_steering::LeapIndicator::Leap59,
+        };
+
+        if time_properties.is_ptp() {
+            self.clock.set_leap_seconds(leap_indicator)?;
+        }
 
         Ok(())
     }

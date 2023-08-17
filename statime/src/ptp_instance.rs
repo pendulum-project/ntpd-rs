@@ -108,6 +108,7 @@ impl<C: Clock, F> PtpInstanceState<C, F> {
                     &mut self.current_ds,
                     &mut self.parent_ds,
                     &self.default_ds,
+                    self.local_clock.get_mut(),
                 );
             }
         }
