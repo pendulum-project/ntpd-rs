@@ -21,6 +21,8 @@ use std::{
 
 use ntp_daemon::{config::CliArg, Config, ObservableState};
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 const USAGE_MSG: &str = "\
 usage: ntp-metrics-exporter [-c PATH] [-o PATH] [-l SOCKET_ADDR]
        ntp-metrics-exporter -h | ntp-metrics-exporter -v";
@@ -45,7 +47,7 @@ pub enum MetricsAction {
 }
 
 #[derive(Debug)]
-pub(crate) struct NtpDaemonOptions {
+pub(crate) struct NtpMetricsExporterOptions {
     config: Option<PathBuf>,
     observation_socket: Option<PathBuf>,
     listen_addr: SocketAddr,
@@ -54,7 +56,7 @@ pub(crate) struct NtpDaemonOptions {
     action: MetricsAction,
 }
 
-impl Default for NtpDaemonOptions {
+impl Default for NtpMetricsExporterOptions {
     fn default() -> Self {
         Self {
             config: Default::default(),
@@ -67,8 +69,8 @@ impl Default for NtpDaemonOptions {
     }
 }
 
-impl NtpDaemonOptions {
-    const TAKES_ARGUMENT: &[&'static str] = &["--config", "--observation-socket", "listen-socket"];
+impl NtpMetricsExporterOptions {
+    const TAKES_ARGUMENT: &[&'static str] = &["--config", "--observation-socket", "--listen-socket"];
     const TAKES_ARGUMENT_SHORT: &[char] = &['o', 'c', 'l'];
 
     /// parse an iterator over command line arguments
@@ -77,7 +79,7 @@ impl NtpDaemonOptions {
         I: IntoIterator<Item = T>,
         T: AsRef<str> + Clone,
     {
-        let mut options = NtpDaemonOptions::default();
+        let mut options = NtpMetricsExporterOptions::default();
 
         let arg_iter = CliArg::normalize_arguments(
             Self::TAKES_ARGUMENT,
@@ -138,8 +140,21 @@ impl NtpDaemonOptions {
 }
 
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let options = NtpDaemonOptions::try_parse_from(std::env::args())?;
+    let options = NtpMetricsExporterOptions::try_parse_from(std::env::args())?;
+    match options.action {
+        MetricsAction::Help => {
+            println!("{}", long_help_message());
+            Ok(())
+        }
+        MetricsAction::Version => {
+            eprintln!("ntp-metrics-exporter {VERSION}");
+            Ok(())
+        }
+        MetricsAction::Run => run(options).await,
+    }
+}
 
+async fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::from_args(options.config, vec![], vec![]).await;
 
     if let Err(ref e) = config {
@@ -201,7 +216,7 @@ mod tests {
         let config = Path::new(config_str);
         let arguments = &[BINARY, "-c", config_str];
 
-        let options = NtpDaemonOptions::try_parse_from(arguments).unwrap();
+        let options = NtpMetricsExporterOptions::try_parse_from(arguments).unwrap();
         assert_eq!(options.config.unwrap().as_path(), config);
     }
 
@@ -212,7 +227,7 @@ mod tests {
 
         let arguments = &[BINARY, "-o", observation_str];
 
-        let options = NtpDaemonOptions::try_parse_from(arguments).unwrap();
+        let options = NtpMetricsExporterOptions::try_parse_from(arguments).unwrap();
 
         assert_eq!(options.observation_socket.unwrap().as_path(), observation);
     }
@@ -224,7 +239,7 @@ mod tests {
 
         let arguments = &[BINARY, "-l", listen_str];
 
-        let options = NtpDaemonOptions::try_parse_from(arguments).unwrap();
+        let options = NtpMetricsExporterOptions::try_parse_from(arguments).unwrap();
 
         assert_eq!(options.listen_addr, listen);
     }
