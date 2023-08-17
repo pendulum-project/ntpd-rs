@@ -14,7 +14,7 @@ log = "0.4.20"
 statime = { path = "../statime" }
 thiserror = "1.0.47"
 pin-project-lite = "0.2.12"
-tokio = { version = "1.31", features = ["net", "rt-multi-thread", "time", "macros", "sync"] }
+tokio = { version = "1.32", features = ["net", "rt-multi-thread", "time", "macros", "sync"] }
 rand = { version = "0.8.5", default-features = false, features = ["std", "std_rng"] }
 
 clock-steering = { git = "https://github.com/pendulum-project/clock-steering.git", rev = "3ab6721" }
