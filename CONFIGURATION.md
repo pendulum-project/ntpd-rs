@@ -229,7 +229,7 @@ The `logging-observability` sector contains configuration for setting the loggin
 | observability-path        |         | Path on which the observation socket is exposed. If no path is given, the observation socket is disabled.     |
 | observability-permissions | 0o666   | Permissions with which the socket should be created, given as (octal) integer.                                |
 | configure-path            |         | Path on which the configuration socket is exposed. If no path is given, the configuration socket is disabled. |
-| configuration-permissions | 0o660   | Permissions with which the socket should be created, given as (octal) integer.                                |
+| configure-permissions | 0o660   | Permissions with which the socket should be created, given as (octal) integer.                                |
 
 The management and configuration sockets are used by the [management client](MANAGEMENT_CLIENT.md) to display the daemon's state and to allow for dynamic changing of some configuration parameters.
 
