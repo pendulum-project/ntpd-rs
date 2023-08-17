@@ -196,7 +196,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
         if self.in_startup {
             if !self
                 .synchronization_config
-                .startup_panic_threshold
+                .startup_step_panic_threshold
                 .is_within(change)
             {
                 error!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate.");
@@ -209,11 +209,11 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
             self.timedata.accumulated_steps += change;
             if !self
                 .synchronization_config
-                .panic_threshold
+                .single_step_panic_threshold
                 .is_within(change)
                 || !self
                     .synchronization_config
-                    .accumulated_threshold
+                    .accumulated_step_panic_threshold
                     .map(|v| change.abs() < v)
                     .unwrap_or(true)
             {

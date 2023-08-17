@@ -7,7 +7,7 @@ use serde::{
 
 use crate::{time_types::PollIntervalLimits, NtpDuration, PollInterval};
 
-fn deserialize_option_threshold<'de, D>(deserializer: D) -> Result<Option<NtpDuration>, D::Error>
+fn deserialize_option_accumulated_step_panic_threshold<'de, D>(deserializer: D) -> Result<Option<NtpDuration>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -226,10 +226,7 @@ pub struct SynchronizationConfig {
     /// > CMIN defines the minimum number of servers consistent with the correctness requirements.
     /// > Suspicious operators would set CMIN to ensure multiple redundant servers are available for the
     /// > algorithms to mitigate properly. However, for historic reasons the default value for CMIN is one.
-    #[serde(
-        rename = "minimum-agreeing-peers",
-        default = "default_minimum_agreeing_peers"
-    )]
+    #[serde(default = "default_minimum_agreeing_peers")]
     pub minimum_agreeing_peers: usize,
 
     /// The maximum amount the system clock is allowed to change in a single go
@@ -239,29 +236,22 @@ pub struct SynchronizationConfig {
     ///
     /// Note that this is not used during startup. To limit system clock changes
     /// during startup, use startup_panic_threshold
-    #[serde(
-        rename = "single-step-panic-threshold",
-        default = "default_panic_threshold"
-    )]
-    pub panic_threshold: StepThreshold,
+    #[serde(default = "default_single_step_panic_threshold")]
+    pub single_step_panic_threshold: StepThreshold,
 
     /// The maximum amount the system clock is allowed to change during startup.
     /// This can be used to limit the impact of bad servers if the system clock
     /// is known to be reasonable on startup
-    #[serde(
-        rename = "startup-step-panic-threshold",
-        default = "startup_panic_threshold"
-    )]
-    pub startup_panic_threshold: StepThreshold,
+    #[serde(default = "default_startup_step_panic_threshold")]
+    pub startup_step_panic_threshold: StepThreshold,
 
     /// The maximum amount distributed amongst all steps except at startup the
     /// daemon is allowed to step the system clock.
     #[serde(
-        rename = "accumulated-step-panic-threshold",
-        deserialize_with = "deserialize_option_threshold",
+        deserialize_with = "deserialize_option_accumulated_step_panic_threshold",
         default
     )]
-    pub accumulated_threshold: Option<NtpDuration>,
+    pub accumulated_step_panic_threshold: Option<NtpDuration>,
 
     /// Stratum of the local clock, when not synchronized through ntp. This
     /// can be used in servers to indicate that there are external mechanisms
@@ -275,9 +265,9 @@ impl Default for SynchronizationConfig {
         Self {
             minimum_agreeing_peers: default_minimum_agreeing_peers(),
 
-            panic_threshold: default_panic_threshold(),
-            startup_panic_threshold: startup_panic_threshold(),
-            accumulated_threshold: None,
+            single_step_panic_threshold: default_single_step_panic_threshold(),
+            startup_step_panic_threshold: default_startup_step_panic_threshold(),
+            accumulated_step_panic_threshold: None,
 
             local_stratum: default_local_stratum(),
         }
@@ -288,7 +278,7 @@ fn default_minimum_agreeing_peers() -> usize {
     3
 }
 
-fn default_panic_threshold() -> StepThreshold {
+fn default_single_step_panic_threshold() -> StepThreshold {
     let raw = NtpDuration::from_seconds(1000.);
     StepThreshold {
         forward: Some(raw),
@@ -296,7 +286,7 @@ fn default_panic_threshold() -> StepThreshold {
     }
 }
 
-fn startup_panic_threshold() -> StepThreshold {
+fn default_startup_step_panic_threshold() -> StepThreshold {
     StepThreshold {
         forward: None,
         backward: Some(NtpDuration::from_seconds(1800.)),
