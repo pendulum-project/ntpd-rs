@@ -276,6 +276,7 @@ impl<'a, C: Clock, F: Filter, R: Rng> Port<Running<'a, C, F>, R> {
         let action = match message.body {
             MessageBody::Announce(announce) => {
                 self.bmca.register_announce_message(
+                    &message.header,
                     &announce,
                     self.lifecycle.state.local_clock.borrow().now().into(),
                 );

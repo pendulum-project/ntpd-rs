@@ -5,7 +5,7 @@ use arrayvec::ArrayVec;
 use crate::{
     datastructures::{
         common::{PortIdentity, TimeInterval, WireTimestamp},
-        messages::AnnounceMessage,
+        messages::{AnnounceMessage, Header},
     },
     time::{Duration, Time},
 };
@@ -28,13 +28,27 @@ const MAX_FOREIGN_MASTERS: usize = 8;
 pub struct ForeignMaster {
     foreign_master_port_identity: PortIdentity,
     // Must have a capacity of at least 2
-    announce_messages: ArrayVec<(AnnounceMessage, WireTimestamp), MAX_ANNOUNCE_MESSAGES>,
+    announce_messages: ArrayVec<ForeignAnnounceMessage, MAX_ANNOUNCE_MESSAGES>,
+}
+
+#[derive(Debug)]
+pub(crate) struct ForeignAnnounceMessage {
+    pub(crate) header: Header,
+    pub(crate) message: AnnounceMessage,
+    pub(crate) timestamp: WireTimestamp,
 }
 
 impl ForeignMaster {
-    fn new(announce_message: AnnounceMessage, current_time: WireTimestamp) -> Self {
+    fn new(header: Header, announce_message: AnnounceMessage, current_time: WireTimestamp) -> Self {
+        let message = ForeignAnnounceMessage {
+            header,
+            message: announce_message,
+            timestamp: current_time,
+        };
+
         let mut messages = ArrayVec::<_, MAX_ANNOUNCE_MESSAGES>::new();
-        messages.push((announce_message, current_time));
+        messages.push(message);
+
         Self {
             foreign_master_port_identity: announce_message.header.source_port_identity,
             announce_messages: messages,
@@ -57,27 +71,30 @@ impl ForeignMaster {
         let cutoff_time = Time::from(current_time)
             - Duration::from(announce_interval) * FOREIGN_MASTER_TIME_WINDOW;
         self.announce_messages
-            .retain(|(_, ts)| Time::from(*ts) > cutoff_time);
+            .retain(|m| Time::from(m.timestamp) > cutoff_time);
 
         self.announce_messages.is_empty()
     }
 
     fn register_announce_message(
         &mut self,
+        header: Header,
         announce_message: AnnounceMessage,
         current_time: WireTimestamp,
         announce_interval: TimeInterval,
     ) {
         self.purge_old_messages(current_time, announce_interval);
+
+        let new_message = ForeignAnnounceMessage {
+            header,
+            message: announce_message,
+            timestamp: current_time,
+        };
+
         // Try to add new message; otherwise remove the first message and then add
-        if self
-            .announce_messages
-            .try_push((announce_message, current_time))
-            .is_err()
-        {
+        if let Err(e) = self.announce_messages.try_push(new_message) {
             self.announce_messages.remove(0);
-            self.announce_messages
-                .push((announce_message, current_time));
+            self.announce_messages.push(e.element());
         }
     }
 }
@@ -110,7 +127,7 @@ impl ForeignMasterList {
     pub(crate) fn take_qualified_announce_messages(
         &mut self,
         current_time: WireTimestamp,
-    ) -> impl Iterator<Item = (AnnounceMessage, WireTimestamp)> {
+    ) -> impl Iterator<Item = ForeignAnnounceMessage> {
         let mut qualified_foreign_masters = ArrayVec::<_, MAX_FOREIGN_MASTERS>::new();
 
         for i in (0..self.foreign_masters.len()).rev() {
@@ -141,6 +158,7 @@ impl ForeignMasterList {
 
     pub(crate) fn register_announce_message(
         &mut self,
+        header: &Header,
         announce_message: &AnnounceMessage,
         current_time: WireTimestamp,
     ) {
@@ -157,6 +175,7 @@ impl ForeignMasterList {
         {
             // Yes, so add the announce message to it
             foreign_master.register_announce_message(
+                *header,
                 *announce_message,
                 current_time,
                 port_announce_interval,
@@ -164,8 +183,11 @@ impl ForeignMasterList {
         } else {
             // No, insert a new foreign master, if there is room in the array
             if self.foreign_masters.len() < MAX_FOREIGN_MASTERS {
-                self.foreign_masters
-                    .push(ForeignMaster::new(*announce_message, current_time));
+                self.foreign_masters.push(ForeignMaster::new(
+                    *header,
+                    *announce_message,
+                    current_time,
+                ));
             }
         }
     }
@@ -198,7 +220,7 @@ impl ForeignMasterList {
         // 2. The announce message must be newer than the one(s) we already have
         // We can check the sequence id for that (with some logic for u16 rollover)
         if let Some(foreign_master) = self.get_foreign_master(source_identity) {
-            if let Some((last_announce_message, _)) = foreign_master.announce_messages.last() {
+            if let Some(last_announce_message) = foreign_master.announce_messages.last() {
                 let announce_sequence_id = announce_message.header.sequence_id;
                 let last_sequence_id = last_announce_message.header.sequence_id;
 
