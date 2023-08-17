@@ -277,7 +277,7 @@ pub struct Config {
     #[serde(alias = "server", default)]
     pub servers: Vec<ServerConfig>,
     #[serde(alias = "nts-ke-server", default)]
-    pub nts_ke: Option<NtsKeConfig>,
+    pub nts_ke: Vec<NtsKeConfig>,
     #[serde(default)]
     pub synchronization: CombinedSynchronizationConfig,
     #[serde(default)]

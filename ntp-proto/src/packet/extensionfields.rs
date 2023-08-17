@@ -555,7 +555,7 @@ impl<'a> RawEncryptedField<'a> {
     ) -> Result<Self, ParsingError<std::convert::Infallible>> {
         use ParsingError::*;
 
-        let [ b0, b1, b2, b3, ref rest @ .. ] = message_bytes[..] else {
+        let [b0, b1, b2, b3, ref rest @ ..] = message_bytes[..] else {
             return Err(IncorrectLength);
         };
 
@@ -634,7 +634,7 @@ impl<'a> RawExtensionField<'a> {
     ) -> Result<Self, ParsingError<std::convert::Infallible>> {
         use ParsingError::IncorrectLength;
 
-        let [ b0, b1, b2, b3, .. ] = data[..] else {
+        let [b0, b1, b2, b3, ..] = data[..] else {
             return Err(IncorrectLength);
         };
 
