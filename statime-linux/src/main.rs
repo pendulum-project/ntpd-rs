@@ -228,12 +228,7 @@ async fn actual_main() {
     let time_properties_ds =
         TimePropertiesDS::new_arbitrary_time(false, false, TimeSource::InternalOscillator);
 
-    let instance = PtpInstance::new(
-        config,
-        time_properties_ds,
-        local_clock.clone(),
-        BasicFilter::new(0.25),
-    );
+    let instance = PtpInstance::new(config, time_properties_ds, local_clock.clone());
 
     // borrow instance with the static lifetime
     static INSTANCE: OnceLock<PtpInstance<LinuxClock, BasicFilter>> = OnceLock::new();
@@ -251,10 +246,10 @@ async fn actual_main() {
     };
 
     let rng1 = StdRng::from_entropy();
-    let port_in_bmca1 = instance.add_port(port_config, rng1);
+    let port_in_bmca1 = instance.add_port(port_config, 0.25, local_clock.clone(), rng1);
 
     let rng2 = StdRng::from_entropy();
-    let port_in_bmca2 = instance.add_port(port_config, rng2);
+    let port_in_bmca2 = instance.add_port(port_config, 0.25, local_clock.clone(), rng2);
 
     let ports = vec![port_in_bmca1, port_in_bmca2];
 
@@ -342,7 +337,7 @@ async fn run(
     }
 }
 
-type BmcaPort = Port<InBmca<'static, LinuxClock, BasicFilter>, StdRng>;
+type BmcaPort = Port<InBmca<'static>, StdRng, LinuxClock, BasicFilter>;
 
 // the Port task
 //

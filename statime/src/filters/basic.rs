@@ -25,8 +25,10 @@ pub struct BasicFilter {
     gain: f64,
 }
 
-impl BasicFilter {
-    pub fn new(gain: f64) -> Self {
+impl Filter for BasicFilter {
+    type Config = f64;
+
+    fn new(gain: f64) -> Self {
         Self {
             last_step: None,
             offset_confidence: Duration::from_nanos(1_000_000_000),
@@ -34,9 +36,7 @@ impl BasicFilter {
             gain,
         }
     }
-}
 
-impl Filter for BasicFilter {
     fn absorb(&mut self, measurement: Measurement) -> (Duration, f64) {
         // Reset on too-large difference
         if measurement.master_offset.abs() > Duration::from_nanos(1_000_000_000) {

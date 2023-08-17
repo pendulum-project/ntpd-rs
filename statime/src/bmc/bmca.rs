@@ -144,11 +144,11 @@ impl Bmca {
     ///
     /// If None is returned, then the port should remain in the same state as it
     /// is now.
-    pub(crate) fn calculate_recommended_state(
+    pub(crate) fn calculate_recommended_state<F>(
         own_data: &DefaultDS,
         best_global_announce_message: Option<BestAnnounceMessage>,
         best_port_announce_message: Option<BestAnnounceMessage>,
-        port_state: &PortState,
+        port_state: &PortState<F>,
     ) -> Option<RecommendedState> {
         if best_global_announce_message.is_none() && matches!(port_state, PortState::Listening) {
             None
@@ -415,8 +415,9 @@ mod tests {
         // zero is reserved
         own_data.clock_quality.clock_class = 1;
 
-        let call =
-            |port_state| Bmca::calculate_recommended_state(&own_data, None, None, port_state);
+        let call = |port_state: &PortState<()>| {
+            Bmca::calculate_recommended_state(&own_data, None, None, port_state)
+        };
 
         // when E_best is empty and the port state is listening, it should remain
         // listening
@@ -462,7 +463,7 @@ mod tests {
 
         assert_eq!(
             Some(RecommendedState::M1(own_data)),
-            Bmca::calculate_recommended_state(
+            Bmca::calculate_recommended_state::<()>(
                 &own_data,
                 None,
                 Some(port_message),
@@ -483,7 +484,7 @@ mod tests {
 
         assert_eq!(
             Some(RecommendedState::M1(own_data)),
-            Bmca::calculate_recommended_state(
+            Bmca::calculate_recommended_state::<()>(
                 &own_data,
                 None,
                 Some(port_message),
@@ -511,7 +512,7 @@ mod tests {
 
         assert_eq!(
             Some(RecommendedState::P1(port_message.message)),
-            Bmca::calculate_recommended_state(
+            Bmca::calculate_recommended_state::<()>(
                 &own_data,
                 None,
                 Some(port_message),
@@ -539,7 +540,7 @@ mod tests {
 
         assert_eq!(
             Some(RecommendedState::M2(own_data)),
-            Bmca::calculate_recommended_state(
+            Bmca::calculate_recommended_state::<()>(
                 &own_data,
                 Some(global_message),
                 None,
@@ -560,7 +561,7 @@ mod tests {
 
         assert_eq!(
             Some(RecommendedState::M2(own_data)),
-            Bmca::calculate_recommended_state(
+            Bmca::calculate_recommended_state::<()>(
                 &own_data,
                 Some(global_message),
                 None,
@@ -588,7 +589,7 @@ mod tests {
 
         assert_eq!(
             Some(RecommendedState::S1(global_message.message)),
-            Bmca::calculate_recommended_state(
+            Bmca::calculate_recommended_state::<()>(
                 &own_data,
                 Some(global_message),
                 Some(global_message),
@@ -637,7 +638,7 @@ mod tests {
 
         assert_eq!(
             Some(RecommendedState::M3(global_message.message)),
-            Bmca::calculate_recommended_state(
+            Bmca::calculate_recommended_state::<()>(
                 &own_data,
                 Some(global_message),
                 Some(port_message),
@@ -686,7 +687,7 @@ mod tests {
 
         assert_eq!(
             Some(RecommendedState::M3(global_message.message)),
-            Bmca::calculate_recommended_state(
+            Bmca::calculate_recommended_state::<()>(
                 &own_data,
                 Some(global_message),
                 Some(port_message),

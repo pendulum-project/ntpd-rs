@@ -1,15 +1,13 @@
 use core::fmt::{Display, Formatter};
 
-use atomic_refcell::AtomicRefCell;
 use rand::Rng;
 
-use super::{Measurement, PortActionIterator, TimestampContext};
+use super::{PortActionIterator, TimestampContext};
 use crate::{
-    clock::Clock,
     datastructures::{common::PortIdentity, datasets::DefaultDS, messages::Message},
     ptp_instance::PtpInstanceState,
     time::{Interval, Time},
-    PortConfig,
+    Clock, Filter, PortConfig,
 };
 
 mod master;
@@ -19,25 +17,26 @@ pub(crate) use master::MasterState;
 pub(crate) use slave::SlaveState;
 
 #[derive(Debug, Default)]
-pub(crate) enum PortState {
+pub(crate) enum PortState<F> {
     #[default]
     Listening,
     Master(MasterState),
     Passive,
-    Slave(SlaveState),
+    Slave(SlaveState<F>),
 }
 
-impl PortState {
-    pub(crate) fn handle_timestamp<'a>(
+impl<F: Filter> PortState<F> {
+    pub(crate) fn handle_timestamp<'a, C: Clock>(
         &mut self,
         context: TimestampContext,
         timestamp: Time,
         port_identity: PortIdentity,
         default_ds: &DefaultDS,
+        clock: &mut C,
         buffer: &'a mut [u8],
     ) -> PortActionIterator<'a> {
         match self {
-            PortState::Slave(slave) => slave.handle_timestamp(context, timestamp),
+            PortState::Slave(slave) => slave.handle_timestamp(context, timestamp, clock),
             PortState::Master(master) => {
                 master.handle_timestamp(context, timestamp, port_identity, default_ds, buffer)
             }
@@ -45,12 +44,13 @@ impl PortState {
         }
     }
 
-    pub(crate) fn handle_event_receive<'a>(
+    pub(crate) fn handle_event_receive<'a, C: Clock>(
         &mut self,
         message: Message,
         timestamp: Time,
         min_delay_req_interval: Interval,
         port_identity: PortIdentity,
+        clock: &mut C,
         buffer: &'a mut [u8],
     ) -> PortActionIterator<'a> {
         match self {
@@ -61,26 +61,32 @@ impl PortState {
                 port_identity,
                 buffer,
             ),
-            PortState::Slave(slave) => slave.handle_event_receive(message, timestamp),
+            PortState::Slave(slave) => slave.handle_event_receive(message, timestamp, clock),
             PortState::Listening | PortState::Passive => actions![],
         }
     }
 
-    pub(crate) fn handle_general_receive(&mut self, message: Message, port_identity: PortIdentity) {
+    pub(crate) fn handle_general_receive<C: Clock>(
+        &mut self,
+        message: Message,
+        port_identity: PortIdentity,
+        clock: &mut C,
+    ) {
         match self {
             PortState::Master(_) => {
                 if message.header().source_port_identity != port_identity {
                     log::warn!("Unexpected message {:?}", message);
                 }
             }
-            PortState::Slave(slave) => slave.handle_general_receive(message, port_identity),
+            PortState::Slave(slave) => slave.handle_general_receive(message, port_identity, clock),
             PortState::Listening | PortState::Passive => {}
         }
     }
+}
 
+impl<F> PortState<F> {
     pub(crate) fn send_sync<'a>(
         &mut self,
-        local_clock: &AtomicRefCell<impl Clock>,
         config: &PortConfig,
         port_identity: PortIdentity,
         default_ds: &DefaultDS,
@@ -88,7 +94,7 @@ impl PortState {
     ) -> PortActionIterator<'a> {
         match self {
             PortState::Master(master) => {
-                master.send_sync(local_clock, config, port_identity, default_ds, buffer)
+                master.send_sync(config, port_identity, default_ds, buffer)
             }
             PortState::Slave(_) | PortState::Listening | PortState::Passive => {
                 actions![]
@@ -114,9 +120,9 @@ impl PortState {
         }
     }
 
-    pub(crate) fn send_announce<'a, C: Clock, F>(
+    pub(crate) fn send_announce<'a>(
         &mut self,
-        global: &PtpInstanceState<C, F>,
+        global: &PtpInstanceState,
         config: &PortConfig,
         port_identity: PortIdentity,
         buffer: &'a mut [u8],
@@ -128,16 +134,9 @@ impl PortState {
             PortState::Slave(_) | PortState::Listening | PortState::Passive => actions![],
         }
     }
-
-    pub(crate) fn extract_measurement(&mut self) -> Option<Measurement> {
-        match self {
-            PortState::Slave(slave) => slave.extract_measurement(),
-            PortState::Master(_) | PortState::Listening | PortState::Passive => None,
-        }
-    }
 }
 
-impl Display for PortState {
+impl<F> Display for PortState<F> {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
             PortState::Listening => write!(f, "Listening"),

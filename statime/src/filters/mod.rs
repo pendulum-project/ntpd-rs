@@ -13,6 +13,11 @@ use crate::{port::Measurement, time::Duration};
 /// This crate provides a simple [`BasicFilter`](basic::BasicFilter) which is
 /// suitable for most needs, but users can implement their own if desired.
 pub trait Filter {
+    type Config: Clone;
+
+    /// Create a new instance of the filter.
+    fn new(config: Self::Config) -> Self;
+
     /// Put a new measurement in the filter.
     /// The filter can then do some processing and return what it thinks should
     /// be the offset and frequency multiplier that the clock should be

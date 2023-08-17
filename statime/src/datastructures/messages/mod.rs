@@ -127,7 +127,6 @@ impl Message {
         default_ds: &DefaultDS,
         port_identity: PortIdentity,
         sequence_id: u16,
-        current_time: Time,
     ) -> Self {
         let header = Header {
             two_step_flag: true,
@@ -137,7 +136,7 @@ impl Message {
         Message {
             header,
             body: MessageBody::Sync(SyncMessage {
-                origin_timestamp: current_time.into(),
+                origin_timestamp: Default::default(),
             }),
             suffix: ArrayVec::default(),
         }
@@ -163,11 +162,10 @@ impl Message {
         }
     }
 
-    pub(crate) fn announce<C, F>(
-        global: &PtpInstanceState<C, F>,
+    pub(crate) fn announce(
+        global: &PtpInstanceState,
         port_identity: PortIdentity,
         sequence_id: u16,
-        current_time: Time,
     ) -> Self {
         let time_properties_ds = &global.time_properties_ds;
 
@@ -183,7 +181,7 @@ impl Message {
 
         let body = MessageBody::Announce(AnnounceMessage {
             header,
-            origin_timestamp: current_time.into(),
+            origin_timestamp: Default::default(),
             current_utc_offset: time_properties_ds.current_utc_offset.unwrap_or_default(),
             grandmaster_priority_1: global.parent_ds.grandmaster_priority_1,
             grandmaster_clock_quality: global.parent_ds.grandmaster_clock_quality,
