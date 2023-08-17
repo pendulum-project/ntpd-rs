@@ -3,4 +3,4 @@ mode = "simple"
 address = "example.com"
 
 [synchronization]
-min-intersection-survivors = 3
+minimum-agreeing-peers = 3

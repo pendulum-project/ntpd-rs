@@ -74,7 +74,7 @@ async fn run_nts_ke(
     let cert_chain_file =
         std::fs::File::open(&nts_ke_config.certificate_chain_path).map_err(|e| {
             error(&format!(
-                "error reading cert_chain_path at `{:?}`: {:?}",
+                "error reading certificate_chain_path at `{:?}`: {:?}",
                 nts_ke_config.certificate_chain_path, e
             ))
         })?;
