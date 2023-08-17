@@ -106,8 +106,8 @@ async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
     )
     .await?;
 
-    if let Some(nts_ke_config) = config.nts_ke {
-        let _join_handle = crate::keyexchange::spawn(nts_ke_config, keyset);
+    for nts_ke_config in config.nts_ke {
+        let _join_handle = crate::keyexchange::spawn(nts_ke_config, keyset.clone());
     }
 
     crate::observer::spawn(

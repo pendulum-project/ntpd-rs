@@ -193,7 +193,7 @@ In applying the three client filters (deny, allow and ratelimiting), the server 
 
 #### NTS Server
 
-Servers configured via the `server` section can also support NTS. To enable this, the built-in NTS-KE server needs to be enabled (hosting the NTS-KE server separately is not yet supported). This can be configured through the `nts-ke` section:
+Servers configured via the `server` section can also support NTS. To enable this, the built-in NTS-KE server needs to be enabled (hosting the NTS-KE server separately is not yet supported). This can be configured through the `nts-ke` section, which is a list of NTS-KE server configurations with the fields:
 | Option                  | Default | Description                                                                                                                                                                                  |
 |-------------------------|---------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | certificate-chain-path  |         | Path to the full chain TLS certificate for the server. Note that currently self-signed certificates are not supported.                                                                       |

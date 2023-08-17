@@ -28,6 +28,7 @@ Minor Changes
 - Slight improvements to clock algorithm.
 - Upgraded dependencies.
 - Clock now synchronizes faster on startup.
+- Added support for listening for NTS-KE on multiple ip/port combinations.
 
 Bug fixes
 -----
