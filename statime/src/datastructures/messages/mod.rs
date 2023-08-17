@@ -111,6 +111,94 @@ pub(crate) enum MessageBody {
     Management(ManagementMessage),
 }
 
+impl MessageBody {
+    fn wire_size(&self) -> usize {
+        match &self {
+            MessageBody::Sync(m) => m.content_size(),
+            MessageBody::DelayReq(m) => m.content_size(),
+            MessageBody::PDelayReq(m) => m.content_size(),
+            MessageBody::PDelayResp(m) => m.content_size(),
+            MessageBody::FollowUp(m) => m.content_size(),
+            MessageBody::DelayResp(m) => m.content_size(),
+            MessageBody::PDelayRespFollowUp(m) => m.content_size(),
+            MessageBody::Announce(m) => m.content_size(),
+            MessageBody::Signaling(m) => m.content_size(),
+            MessageBody::Management(m) => m.content_size(),
+        }
+    }
+
+    fn content_type(&self) -> MessageType {
+        match self {
+            MessageBody::Sync(_) => MessageType::Sync,
+            MessageBody::DelayReq(_) => MessageType::DelayReq,
+            MessageBody::PDelayReq(_) => MessageType::PDelayReq,
+            MessageBody::PDelayResp(_) => MessageType::PDelayResp,
+            MessageBody::FollowUp(_) => MessageType::FollowUp,
+            MessageBody::DelayResp(_) => MessageType::DelayResp,
+            MessageBody::PDelayRespFollowUp(_) => MessageType::PDelayRespFollowUp,
+            MessageBody::Announce(_) => MessageType::Announce,
+            MessageBody::Signaling(_) => MessageType::Signaling,
+            MessageBody::Management(_) => MessageType::Management,
+        }
+    }
+
+    pub(crate) fn serialize(&self, buffer: &mut [u8]) -> Result<usize, super::WireFormatError> {
+        match &self {
+            MessageBody::Sync(m) => m.serialize_content(buffer)?,
+            MessageBody::DelayReq(m) => m.serialize_content(buffer)?,
+            MessageBody::PDelayReq(m) => m.serialize_content(buffer)?,
+            MessageBody::PDelayResp(m) => m.serialize_content(buffer)?,
+            MessageBody::FollowUp(m) => m.serialize_content(buffer)?,
+            MessageBody::DelayResp(m) => m.serialize_content(buffer)?,
+            MessageBody::PDelayRespFollowUp(m) => m.serialize_content(buffer)?,
+            MessageBody::Announce(m) => m.serialize_content(buffer)?,
+            MessageBody::Signaling(m) => m.serialize_content(buffer)?,
+            MessageBody::Management(m) => m.serialize_content(buffer)?,
+        }
+
+        Ok(self.wire_size())
+    }
+
+    pub(crate) fn deserialize(
+        message_type: MessageType,
+        header: &Header,
+        buffer: &[u8],
+    ) -> Result<Self, super::WireFormatError> {
+        let body = match message_type {
+            MessageType::Sync => MessageBody::Sync(SyncMessage::deserialize_content(buffer)?),
+            MessageType::DelayReq => {
+                MessageBody::DelayReq(DelayReqMessage::deserialize_content(buffer)?)
+            }
+            MessageType::PDelayReq => {
+                MessageBody::PDelayReq(PDelayReqMessage::deserialize_content(buffer)?)
+            }
+            MessageType::PDelayResp => {
+                MessageBody::PDelayResp(PDelayRespMessage::deserialize_content(buffer)?)
+            }
+            MessageType::FollowUp => {
+                MessageBody::FollowUp(FollowUpMessage::deserialize_content(buffer)?)
+            }
+            MessageType::DelayResp => {
+                MessageBody::DelayResp(DelayRespMessage::deserialize_content(buffer)?)
+            }
+            MessageType::PDelayRespFollowUp => MessageBody::PDelayRespFollowUp(
+                PDelayRespFollowUpMessage::deserialize_content(buffer)?,
+            ),
+            MessageType::Announce => {
+                MessageBody::Announce(AnnounceMessage::deserialize_content(*header, buffer)?)
+            }
+            MessageType::Signaling => {
+                MessageBody::Signaling(SignalingMessage::deserialize_content(buffer)?)
+            }
+            MessageType::Management => {
+                MessageBody::Management(ManagementMessage::deserialize_content(buffer)?)
+            }
+        };
+
+        Ok(body)
+    }
+}
+
 fn base_header(default_ds: &DefaultDS, port_identity: PortIdentity, sequence_id: u16) -> Header {
     Header {
         sdo_id: default_ds.sdo_id,
@@ -249,44 +337,14 @@ impl Message<'_> {
     }
 }
 
-impl Message<'_> {
+impl<'a> Message<'a> {
     pub(crate) fn header(&self) -> &Header {
         &self.header
     }
 
     /// The byte size on the wire of this message
     pub(crate) fn wire_size(&self) -> usize {
-        self.header.wire_size() + self.content_size()
-    }
-
-    fn content_size(&self) -> usize {
-        match &self.body {
-            MessageBody::Sync(m) => m.content_size(),
-            MessageBody::DelayReq(m) => m.content_size(),
-            MessageBody::PDelayReq(m) => m.content_size(),
-            MessageBody::PDelayResp(m) => m.content_size(),
-            MessageBody::FollowUp(m) => m.content_size(),
-            MessageBody::DelayResp(m) => m.content_size(),
-            MessageBody::PDelayRespFollowUp(m) => m.content_size(),
-            MessageBody::Announce(m) => m.content_size(),
-            MessageBody::Signaling(m) => m.content_size(),
-            MessageBody::Management(m) => m.content_size(),
-        }
-    }
-
-    fn content_type(&self) -> MessageType {
-        match self.body {
-            MessageBody::Sync(_) => MessageType::Sync,
-            MessageBody::DelayReq(_) => MessageType::DelayReq,
-            MessageBody::PDelayReq(_) => MessageType::PDelayReq,
-            MessageBody::PDelayResp(_) => MessageType::PDelayResp,
-            MessageBody::FollowUp(_) => MessageType::FollowUp,
-            MessageBody::DelayResp(_) => MessageType::DelayResp,
-            MessageBody::PDelayRespFollowUp(_) => MessageType::PDelayRespFollowUp,
-            MessageBody::Announce(_) => MessageType::Announce,
-            MessageBody::Signaling(_) => MessageType::Signaling,
-            MessageBody::Management(_) => MessageType::Management,
-        }
+        self.header.wire_size() + self.body.wire_size()
     }
 
     /// Serializes the object into the PTP wire format.
@@ -294,22 +352,17 @@ impl Message<'_> {
     /// Returns the used buffer size that contains the message or an error.
     pub(crate) fn serialize(&self, buffer: &mut [u8]) -> Result<usize, super::WireFormatError> {
         let (header, rest) = buffer.split_at_mut(34);
+        let (body, tlv) = rest.split_at_mut(self.body.wire_size());
 
-        self.header
-            .serialize_header(self.content_type(), self.content_size(), header)?;
+        self.header.serialize_header(
+            self.body.content_type(),
+            self.body.wire_size() + self.suffix.wire_size(),
+            header,
+        )?;
 
-        match &self.body {
-            MessageBody::Sync(m) => m.serialize_content(rest)?,
-            MessageBody::DelayReq(m) => m.serialize_content(rest)?,
-            MessageBody::PDelayReq(m) => m.serialize_content(rest)?,
-            MessageBody::PDelayResp(m) => m.serialize_content(rest)?,
-            MessageBody::FollowUp(m) => m.serialize_content(rest)?,
-            MessageBody::DelayResp(m) => m.serialize_content(rest)?,
-            MessageBody::PDelayRespFollowUp(m) => m.serialize_content(rest)?,
-            MessageBody::Announce(m) => m.serialize_content(rest)?,
-            MessageBody::Signaling(m) => m.serialize_content(rest)?,
-            MessageBody::Management(m) => m.serialize_content(rest)?,
-        }
+        self.body.serialize(body)?;
+
+        self.suffix.serialize(tlv)?;
 
         Ok(self.wire_size())
     }
@@ -317,50 +370,27 @@ impl Message<'_> {
     /// Deserializes a message from the PTP wire format.
     ///
     /// Returns the message or an error.
-    pub(crate) fn deserialize(buffer: &[u8]) -> Result<Self, super::WireFormatError> {
+    pub(crate) fn deserialize(buffer: &'a [u8]) -> Result<Self, super::WireFormatError> {
         let header_data = Header::deserialize_header(buffer)?;
 
         // Skip the header bytes and only keep the content
         let content_buffer = &buffer[34..];
 
-        let body = match header_data.message_type {
-            MessageType::Sync => {
-                MessageBody::Sync(SyncMessage::deserialize_content(content_buffer)?)
-            }
-            MessageType::DelayReq => {
-                MessageBody::DelayReq(DelayReqMessage::deserialize_content(content_buffer)?)
-            }
-            MessageType::PDelayReq => {
-                MessageBody::PDelayReq(PDelayReqMessage::deserialize_content(content_buffer)?)
-            }
-            MessageType::PDelayResp => {
-                MessageBody::PDelayResp(PDelayRespMessage::deserialize_content(content_buffer)?)
-            }
-            MessageType::FollowUp => {
-                MessageBody::FollowUp(FollowUpMessage::deserialize_content(content_buffer)?)
-            }
-            MessageType::DelayResp => {
-                MessageBody::DelayResp(DelayRespMessage::deserialize_content(content_buffer)?)
-            }
-            MessageType::PDelayRespFollowUp => MessageBody::PDelayRespFollowUp(
-                PDelayRespFollowUpMessage::deserialize_content(content_buffer)?,
-            ),
-            MessageType::Announce => MessageBody::Announce(AnnounceMessage::deserialize_content(
-                header_data.header,
-                content_buffer,
-            )?),
-            MessageType::Signaling => {
-                MessageBody::Signaling(SignalingMessage::deserialize_content(content_buffer)?)
-            }
-            MessageType::Management => {
-                MessageBody::Management(ManagementMessage::deserialize_content(content_buffer)?)
-            }
-        };
+        let body = MessageBody::deserialize(
+            header_data.message_type,
+            &header_data.header,
+            content_buffer,
+        )?;
+
+        let tlv_buffer = &content_buffer
+            .get(body.wire_size()..)
+            .ok_or(super::WireFormatError::BufferTooShort)?;
+        let suffix = TlvSet::deserialize(tlv_buffer)?;
 
         Ok(Message {
             header: header_data.header,
             body,
-            suffix: TlvSet::default(),
+            suffix,
         })
     }
 }

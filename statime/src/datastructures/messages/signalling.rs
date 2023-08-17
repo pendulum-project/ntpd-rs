@@ -1,21 +1,11 @@
-use arrayvec::ArrayVec;
-
-use crate::datastructures::{
-    common::{PortIdentity, Tlv},
-    WireFormat, WireFormatError,
-};
+use crate::datastructures::{common::PortIdentity, WireFormat, WireFormatError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SignalingMessage {
     pub(super) target_port_identity: PortIdentity,
-
-    pub(super) value: ArrayVec<Tlv, { Self::CAPACITY }>,
 }
 
 impl SignalingMessage {
-    // TODO: determine the best max length value
-    const CAPACITY: usize = 4;
-
     pub(crate) fn content_size(&self) -> usize {
         10
     }
@@ -25,17 +15,9 @@ impl SignalingMessage {
             return Err(WireFormatError::BufferTooShort);
         }
 
-        let (left, mut buffer) = buffer.split_at_mut(10);
+        let (left, _) = buffer.split_at_mut(10);
 
         self.target_port_identity.serialize(left)?;
-
-        for tlv in &self.value {
-            let width = tlv.wire_size();
-
-            tlv.serialize(buffer)?;
-
-            buffer = &mut buffer[width..];
-        }
 
         Ok(())
     }
@@ -44,21 +26,8 @@ impl SignalingMessage {
         let identity_bytes = buffer.get(0..10).ok_or(WireFormatError::BufferTooShort)?;
         let target_port_identity = PortIdentity::deserialize(identity_bytes)?;
 
-        let mut buffer = &buffer[10..];
-
-        let mut tlvs = ArrayVec::<Tlv, { Self::CAPACITY }>::new();
-        while buffer.len() > 4 {
-            let tlv = Tlv::deserialize(buffer)?;
-
-            buffer = &buffer[tlv.wire_size()..];
-
-            tlvs.try_push(tlv)
-                .map_err(|_| WireFormatError::CapacityError)?;
-        }
-
         Ok(Self {
             target_port_identity,
-            value: tlvs,
         })
     }
 }

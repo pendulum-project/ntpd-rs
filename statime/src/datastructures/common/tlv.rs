@@ -1,6 +1,4 @@
-use arrayvec::ArrayVec;
-
-use crate::datastructures::{WireFormat, WireFormatError};
+use crate::datastructures::WireFormatError;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct TlvSet<'a> {
@@ -8,6 +6,13 @@ pub(crate) struct TlvSet<'a> {
 }
 
 impl<'a> TlvSet<'a> {
+    pub(crate) fn wire_size(&self) -> usize {
+        // tlv should be an even number of octets!
+        debug_assert_eq!(self.bytes.len() % 2, 0);
+
+        self.bytes.len()
+    }
+
     pub(crate) fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
         if buffer.len() < self.bytes.len() {
             return Err(WireFormatError::BufferTooShort);
@@ -26,6 +31,10 @@ impl<'a> TlvSet<'a> {
             let _tlv_type = TlvType::from_primitive(u16::from_be_bytes([buffer[0], buffer[1]]));
             let length = u16::from_be_bytes([buffer[2], buffer[3]]) as usize;
 
+            if length % 2 != 0 {
+                return Err(WireFormatError::Invalid);
+            }
+
             buffer = buffer
                 .get(4 + length..)
                 .ok_or(WireFormatError::BufferTooShort)?;
@@ -37,33 +46,51 @@ impl<'a> TlvSet<'a> {
             bytes: &original[..total_length],
         })
     }
+
+    #[allow(unused)]
+    pub fn announce_propagate_tlv(&self) -> impl Iterator<Item = Tlv<'a>> + 'a {
+        self.tlv().filter(|tlv| tlv.tlv_type.announce_propagate())
+    }
+
+    fn tlv(&self) -> impl Iterator<Item = Tlv<'a>> + 'a {
+        let mut buffer = self.bytes;
+
+        std::iter::from_fn(move || {
+            if buffer.len() <= 4 {
+                return None;
+            }
+
+            // we've validated the buffer; this should never fail!
+            let tlv = Tlv::deserialize(buffer).unwrap();
+
+            buffer = &buffer[tlv.wire_size()..];
+
+            Some(tlv)
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Tlv {
+pub(crate) struct Tlv<'a> {
     pub tlv_type: TlvType,
-    pub value: ArrayVec<u8, { Self::CAPACITY }>,
+    pub value: &'a [u8],
 }
 
-impl Tlv {
-    // TODO: Determine the best max value
-    const CAPACITY: usize = 4;
-}
-
-impl WireFormat for Tlv {
+impl<'a> Tlv<'a> {
     fn wire_size(&self) -> usize {
         4 + self.value.len()
     }
 
+    #[allow(unused)]
     fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
         buffer[0..][..2].copy_from_slice(&self.tlv_type.to_primitive().to_be_bytes());
         buffer[2..][..2].copy_from_slice(&(self.value.len() as u16).to_be_bytes());
-        buffer[4..][..self.value.len()].copy_from_slice(&self.value);
+        buffer[4..][..self.value.len()].copy_from_slice(self.value);
 
         Ok(())
     }
 
-    fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
+    fn deserialize(buffer: &'a [u8]) -> Result<Self, WireFormatError> {
         if buffer.len() < 4 {
             return Err(WireFormatError::BufferTooShort);
         }
@@ -76,9 +103,7 @@ impl WireFormat for Tlv {
             return Err(WireFormatError::BufferTooShort);
         }
 
-        let mut value = ArrayVec::<u8, { Self::CAPACITY }>::new();
-        value.try_extend_from_slice(&buffer[4..][..length as usize])?;
-
+        let value = &buffer[4..][..length as usize];
         Ok(Self { tlv_type, value })
     }
 }
@@ -175,5 +200,74 @@ impl TlvType {
             0x8008 => Self::Pad,
             0x8009 => Self::Authentication,
         }
+    }
+
+    // True if this message should be propagated by a boundary clock if it is
+    // attached to an announce message
+    pub fn announce_propagate(self) -> bool {
+        matches!(self.to_primitive(), 0x0008 | 0x0009 | 0x4000..=0x7fff)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serialize_management() {
+        let tlv = Tlv {
+            tlv_type: TlvType::Management,
+            value: &b"hello!"[..],
+        };
+
+        let mut buffer = [0; 256];
+        tlv.serialize(&mut buffer).unwrap();
+
+        let n = tlv.wire_size();
+        assert_eq!(n, 10);
+
+        let decoded = Tlv::deserialize(&buffer[..n]).unwrap();
+
+        assert_eq!(tlv, decoded);
+    }
+
+    #[test]
+    fn parse_announce_propagate_messages() {
+        let mut alloc = [0; 256];
+        let mut buffer = &mut alloc[..];
+
+        let tlv1 = Tlv {
+            tlv_type: TlvType::Management,
+            value: &b"hello!"[..],
+        };
+        tlv1.serialize(&mut buffer).unwrap();
+        buffer = &mut buffer[tlv1.wire_size()..];
+        assert!(!tlv1.tlv_type.announce_propagate());
+
+        let tlv2 = Tlv {
+            tlv_type: TlvType::PathTrace,
+            value: &b"PathTrace!"[..],
+        };
+        tlv2.serialize(&mut buffer).unwrap();
+        buffer = &mut buffer[tlv2.wire_size()..];
+        assert!(tlv2.tlv_type.announce_propagate());
+
+        let tlv3 = Tlv {
+            tlv_type: TlvType::OrganizationExtensionPropagate,
+            value: &b"OrganizationExtensionPropagate"[..],
+        };
+        tlv3.serialize(&mut buffer).unwrap();
+        buffer = &mut buffer[tlv3.wire_size()..];
+        assert!(tlv3.tlv_type.announce_propagate());
+
+        let _ = buffer;
+
+        let buffer = &mut alloc[..tlv1.wire_size() + tlv2.wire_size() + tlv3.wire_size()];
+        let tlv_set = TlvSet::deserialize(buffer).unwrap();
+        let mut it = tlv_set.announce_propagate_tlv();
+
+        assert_eq!(it.next(), Some(tlv2));
+        assert_eq!(it.next(), Some(tlv3));
+        assert_eq!(it.next(), None);
     }
 }

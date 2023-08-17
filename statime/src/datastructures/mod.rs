@@ -13,6 +13,7 @@ pub(crate) enum WireFormatError {
     EnumConversionError,
     BufferTooShort,
     CapacityError,
+    Invalid,
 }
 
 impl core::fmt::Display for WireFormatError {
@@ -21,6 +22,7 @@ impl core::fmt::Display for WireFormatError {
             WireFormatError::EnumConversionError => f.write_str("enum conversion failed"),
             WireFormatError::BufferTooShort => f.write_str("a buffer is too short"),
             WireFormatError::CapacityError => f.write_str("a container has insufficient capacity"),
+            WireFormatError::Invalid => f.write_str("an invariant was violated"),
         }
     }
 }
