@@ -73,13 +73,13 @@ impl TryFrom<u8> for MessageType {
 
 #[cfg(feature = "fuzz")]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FuzzMessage {
-    inner: Message,
+pub struct FuzzMessage<'a> {
+    inner: Message<'a>,
 }
 
 #[cfg(feature = "fuzz")]
-impl FuzzMessage {
-    pub fn deserialize(buffer: &[u8]) -> Result<Self, impl std::error::Error> {
+impl<'a> FuzzMessage<'a> {
+    pub fn deserialize(buffer: &'a [u8]) -> Result<Self, impl std::error::Error> {
         Ok::<FuzzMessage, super::WireFormatError>(FuzzMessage {
             inner: Message::deserialize(buffer)?,
         })
@@ -354,15 +354,17 @@ impl<'a> Message<'a> {
         let (header, rest) = buffer.split_at_mut(34);
         let (body, tlv) = rest.split_at_mut(self.body.wire_size());
 
-        self.header.serialize_header(
-            self.body.content_type(),
-            self.body.wire_size() + self.suffix.wire_size(),
-            header,
-        )?;
+        self.header
+            .serialize_header(
+                self.body.content_type(),
+                self.body.wire_size() + self.suffix.wire_size(),
+                header,
+            )
+            .unwrap();
 
-        self.body.serialize(body)?;
+        self.body.serialize(body).unwrap();
 
-        self.suffix.serialize(tlv)?;
+        self.suffix.serialize(tlv).unwrap();
 
         Ok(self.wire_size())
     }

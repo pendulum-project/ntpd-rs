@@ -11,7 +11,7 @@ impl SignalingMessage {
     }
 
     pub(crate) fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
-        if buffer.len() < 11 {
+        if buffer.len() < 10 {
             return Err(WireFormatError::BufferTooShort);
         }
 
