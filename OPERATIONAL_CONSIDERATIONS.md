@@ -6,7 +6,7 @@ In this document, we provide a basic overview of the operational considerations 
 
 In its operation, NTP requires that a majority of the used servers agree (up to the precision of the measurements) on the current time. However, in this mechanism, any servers that are currently unavailable because of connection issues and the like are completely ignored. As a consequences, the required quorum of agreeing servers may be lower than expected.
 
-To combat this, ntpd-rs provides the `minimum-agreeing-peers` setting to set a minimum number of servers that need to agree on the best time. The NTPv4 standard recommends using a value of at least `3` for `min-intersection-survivors`. When using this recommendation, it is important to configure enough remote servers to ensure the probability of dipping below `3` available servers is low enough.
+To combat this, ntpd-rs provides the `minimum-agreeing-peers` setting to set a minimum number of servers that need to agree on the best time. The NTPv4 standard recommends using a value of at least `3` for `minimum-agreeing-peers`. When using this recommendation, it is important to configure enough remote servers to ensure the probability of dipping below `3` available servers is low enough.
 
 Increasing the `minimum-agreeing-peers` value beyond the default of 3 can help reduce the risk of a bad server affecting the system time. However, keep in mind that larger values may require more servers to be available before the clock can be synchronized, which can reduce availability.
 
