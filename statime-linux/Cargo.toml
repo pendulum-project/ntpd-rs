@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 arrayvec = { version = "0.7.4", default-features = false }
-clap = { version = "4.3.21", features = ["derive"] }
+clap = { version = "4.3.22", features = ["derive"] }
 fern = { version = "0.6.2", features = ["colored"] }
 libc = { version = "0.2.147", features = ["extra_traits"] }
 log = "0.4.20"
