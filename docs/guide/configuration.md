@@ -115,11 +115,12 @@ The ntp-daemon's primary configuration method is through a TOML configuration fi
 #### Peer configuration
 
 Peers are configured in the peers section, which should consist of a list of peers. Per `[[peer]]`, the following options are available:
-| Option       | Default | Description                                                                                                                                                                                                                       |
-|--------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| mode         |         | Type of peer connection to create. Can be any of `simple`, `nts` or `pool` (for meaning of these, see below).                                                                                                                     |
-| address      |         | Address of the server, pool or nts server. The default port (123 for `simple` or `pool`, 4460 for `nts`) is automatically appended if not given.                                                                                  |
-| count        | 4       | Maximum number of peers to create from the pool. (only valid for pools)                                                                                                                                                           |
+
+| Option                | Default | Description                                                                                                                                                                                                                       |
+| --------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| mode                  |         | Type of peer connection to create. Can be any of `simple`, `nts` or `pool` (for meaning of these, see below).                                                                                                                     |
+| address               |         | Address of the server, pool or nts server. The default port (123 for `simple` or `pool`, 4460 for `nts`) is automatically appended if not given.                                                                                  |
+| count                 | 4       | Maximum number of peers to create from the pool. (only valid for pools)                                                                                                                                                           |
 | certificate_authority |         | Path to a pem file containing additional root certificates to accept for the TLS connection to the nts server. In addition to these certificates, the system certificates will also be accepted. (only valid for nts connections) |
 
 ##### Simple peers
@@ -171,7 +172,7 @@ initial-poll-interval = 5
 ```
 
 | Option                | Default               | Description                                                                                                                                                                                                                                |
-|-----------------------|-----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| --------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | poll-interval-limits  | { min = 4, max = 10 } | Limits on the poll interval towards clients. The defaults are fine for most applications. The values are given as the log2 of the number of seconds, so 4 indicates a poll interval of 32 seconds, and 10 a poll interval of 1024 seconds. |
 | initial-poll-interval | 4                     | Initial poll interval used on startup. The value is given as the log2 of the number of seconds, so 4 indicates a poll interval of 32 seconds.                                                                                              |
 
@@ -179,8 +180,9 @@ initial-poll-interval = 5
 #### Server
 
 Interfaces on which to act as a server are configured in the `server` section. Per interface configured, the following options are available:
+
 | Option                   | Default               | Description                                                                                                                                                                                                            |
-|--------------------------|-----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ------------------------ | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | listen                   |                       | Address of the interface to bind to.                                                                                                                                                                                   |
 | allowlist                | ["0.0.0.0/0", "::/0"] | List of IP subnets allowed to contact through this interface.                                                                                                                                                          |
 | allowlist-action         |                       | Action taken when a client's IP is not on the list of allowed clients. Can be `ignore` to ignore packets from such clients, or `deny` to send a deny response to those clients.                                        |
@@ -196,16 +198,18 @@ In applying the three client filters (deny, allow and ratelimiting), the server 
 #### NTS Server
 
 Servers configured via the `server` section can also support NTS. To enable this, the built-in NTS-KE server needs to be enabled (hosting the NTS-KE server separately is not yet supported). This can be configured through the `nts-ke` section, which is a list of NTS-KE server configurations with the fields:
+
 | Option                  | Default | Description                                                                                                                                                                                  |
-|-------------------------|---------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ----------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | certificate-chain-path  |         | Path to the full chain TLS certificate for the server. Note that currently self-signed certificates are not supported.                                                                       |
 | private-key-path        |         | Path to the TLS private key for the server.                                                                                                                                                  |
 | key-exchange-timeout-ms | 1000    | Timeout on NTS-KE sessions, after which the server decides to hang up. This is to prevent large resource utilization from old and or inactive sessions. Timeout duration is in milliseconds. |
 | key-exchange-listen     |         | Address of the interface to bind to for the NTS-KE server.                                                                                                                                   |
 
 Our implementation of NTS follows the recommendations of section 6 in [RFC8915](https://www.rfc-editor.org/rfc/rfc8915.html). Currently, the master keys for encryption of the cookies are generated internally, and their generation can be controlled via the settings in the `keyset` section
+
 | Option                | Default | Description                                                                                                                                               |
-|-----------------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| --------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | stale-key-count       | 7       | Number of old keys to keep valid for existing cookies.                                                                                                    |
 | key-rotation-interval | 86400   | Time (in seconds) between generating new keys.                                                                                                            |
 | key-storage-path      |         | If specified, server keys are saved and restored from this path. This enables reboots of the server without invalidating the cookies of existing clients. |
@@ -225,13 +229,13 @@ The `observability` section contains configuration for setting the logging level
 - The observation socket can be read to obtain information on the current state of the peer connections and clock steering algorithm.
 - The configuration socket can be used to change some configuration options dynamically.
 
-| Option                    | Default | Description                                                                                                   |
-|---------------------------|---------|---------------------------------------------------------------------------------------------------------------|
-| log-level                 | info    | Set the amount of information logged. Available levels: trace, debug, info, warn.                             |
+| Option                  | Default | Description                                                                                                   |
+| ----------------------- | ------- | ------------------------------------------------------------------------------------------------------------- |
+| log-level               | info    | Set the amount of information logged. Available levels: trace, debug, info, warn.                             |
 | observation-path        |         | Path on which the observation socket is exposed. If no path is given, the observation socket is disabled.     |
 | observation-permissions | 0o666   | Permissions with which the socket should be created, given as (octal) integer.                                |
-| configure-path            |         | Path on which the configuration socket is exposed. If no path is given, the configuration socket is disabled. |
-| configure-permissions | 0o660   | Permissions with which the socket should be created, given as (octal) integer.                                |
+| configure-path          |         | Path on which the configuration socket is exposed. If no path is given, the configuration socket is disabled. |
+| configure-permissions   | 0o660   | Permissions with which the socket should be created, given as (octal) integer.                                |
 
 The management and configuration sockets are used by the [management client](MANAGEMENT_CLIENT.md) to display the daemon's state and to allow for dynamic changing of some configuration parameters.
 
@@ -247,7 +251,7 @@ This section servers two practical (advanced and experimental) use cases:
 - enable hardware timestamping (linux only)
 
 | Option                          | Default               | Description                                                  |
-|---------------------------------|-----------------------|--------------------------------------------------------------|
+| ------------------------------- | --------------------- | ------------------------------------------------------------ |
 | clock                           | system realtime clock | Path to a file descriptor that is a clock (e.g. "/dev/ptp0") |
 | interface                       | system default        | Network interface to use for timestamped packets             |
 | enable-timestamping.rx-software | true                  | Enable software receive timestamping                         |
@@ -262,8 +266,9 @@ The default clock on unix systems is `CLOCK_REALTIME`. It is important to synchr
 #### Time synchronization
 
 There are a number of options available to influence how time differences to the various servers are used to synchronize the system clock. All of these are part of the `synchronization` section of the configuration:
+
 | Option                           | Default                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                 |
-|----------------------------------|---------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| -------------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | minimum-agreeing-peers           | 3                               | Minimum number of servers that need to agree on the true time from our perspective for synchronization to start.                                                                                                                                                                                                                                                                                                            |
 | single-step-panic-threshold      | 1800 (symmetric)                | Largest time difference the client is allowed to correct in one go. Differences beyond this cause the client to abort synchronization. Value provided is in seconds, set to "inf" to disable checking of jumps. Setting this to 0 will disable time jumps except at startup.                                                                                                                                                |
 | startup-step-panic-threshold     | No limit forward, 1800 backward | Largest time difference the client is allowed to correct during startup. By default, this is unrestricted as we may be the initial source of time for systems without a hardware backed clock. Value provided is in seconds, set to "inf" to disable checking of jumps.                                                                                                                                                     |
@@ -276,8 +281,9 @@ For panic thresholds, asymmetric thresholds can be configured, allowing a differ
 
 NTPD-rs currently supports a custom, high performance algorithm
 The high performance clock algorithm has quite a few options. Most of these are quite straightforward to understand and can be used to tune the style of time synchronization to the users liking (although the defaults are probably fine for most):
+
 | Option                        | Default | Description                                                                                                                                                                                                                                |
-|-------------------------------|---------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ----------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | steer-offset-threshold        | 2.0     | How far from 0 (in multiples of the uncertainty) should the offset be before we correct. A higher value reduces the amount of steering, but at the cost of a slower synchronization. (standard deviations, 0+)                             |
 | steer-offset-leftover         | 1.0     | How many standard deviations do we leave after offset correction? A higher value decreases the amount of overcorrections at the cost of slower synchronization and more steering. (standard deviations, 0+)                                |
 | jump-threshold                | 10e-3   | From what offset should we jump the clock instead of trying to adjust gradually? (seconds, 0+)                                                                                                                                             |

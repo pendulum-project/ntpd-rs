@@ -21,12 +21,13 @@ markdown_extensions:
   - pymdownx.superfences
 nav:
   - Home: index.md
-  - Manual:
-    - manual/management-client.md
-    - manual/operational-considerations.md
+  - Guide:
+    - guide/configuration.md
+    - guide/management-client.md
+    - guide/operational-considerations.md
   - Examples:
     - examples/run-as-service.md
-  - Man pages:
+  - Man Pages:
     - ntp-daemon(8): man/ntp-daemon.8.md
     - ntp.toml(5): man/ntp.toml.5.md
     - ntp-ctl(8): man/ntp-ctl.8.md
