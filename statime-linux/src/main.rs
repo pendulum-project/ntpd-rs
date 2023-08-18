@@ -358,6 +358,7 @@ async fn port_task(
         port_announce_timer: pin!(Timer::new()),
         port_announce_timeout_timer: pin!(Timer::new()),
         delay_request_timer: pin!(Timer::new()),
+        filter_update_timer: pin!(Timer::new()),
     };
 
     loop {
@@ -411,6 +412,9 @@ async fn port_task(
                 () = &mut timers.delay_request_timer => {
                     port.handle_delay_request_timer()
                 },
+                () = &mut timers.filter_update_timer => {
+                    port.handle_filter_update_timer()
+                },
                 () = bmca_notify.notified() => {
                     break;
                 }
@@ -444,6 +448,7 @@ struct Timers<'a> {
     port_announce_timer: Pin<&'a mut Timer>,
     port_announce_timeout_timer: Pin<&'a mut Timer>,
     delay_request_timer: Pin<&'a mut Timer>,
+    filter_update_timer: Pin<&'a mut Timer>,
 }
 
 async fn handle_actions(
@@ -482,6 +487,9 @@ async fn handle_actions(
             }
             PortAction::ResetAnnounceReceiptTimer { duration } => {
                 timers.port_announce_timeout_timer.as_mut().reset(duration);
+            }
+            PortAction::ResetFilterUpdateTimer { duration } => {
+                timers.filter_update_timer.as_mut().reset(duration);
             }
         }
     }

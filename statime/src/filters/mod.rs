@@ -2,7 +2,12 @@
 
 pub mod basic;
 
-use crate::{port::Measurement, time::Duration};
+use crate::{port::Measurement, Clock, Duration};
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FilterUpdate {
+    pub next_update: Option<core::time::Duration>,
+}
 
 /// A filter for post-processing time measurements.
 ///
@@ -19,12 +24,16 @@ pub trait Filter {
     fn new(config: Self::Config) -> Self;
 
     /// Put a new measurement in the filter.
-    /// The filter can then do some processing and return what it thinks should
-    /// be the offset and frequency multiplier that the clock should be
-    /// adjusted with.
-    ///
-    /// *Note*: The returned values aren't necessarily the 'real' offset from
-    /// the master time. To prevent overshooting, oscillating, etc, the
-    /// filter is allowed to apply some algorithms to prevent that.
-    fn absorb(&mut self, m: Measurement) -> (Duration, f64);
+    /// The filter can then use this to adjust the clock
+    fn measurement<C: Clock>(&mut self, m: Measurement, clock: &mut C) -> FilterUpdate;
+
+    /// Handle a new measurement of the delay to the master.
+    fn delay(&mut self, delay: Duration);
+
+    /// Update initiated through [FilterUpdate::next_update] timeout.
+    fn update<C: Clock>(&mut self, clock: &mut C) -> FilterUpdate;
+
+    /// Handle ending of time synchronization from the source
+    /// associated with this filter.
+    fn demobilize<C: Clock>(&mut self, clock: &mut C);
 }

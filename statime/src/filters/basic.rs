@@ -2,8 +2,8 @@
 
 use fixed::traits::LossyInto;
 
-use super::Filter;
-use crate::{port::Measurement, time::Duration};
+use super::{Filter, FilterUpdate};
+use crate::{port::Measurement, time::Duration, Clock};
 
 #[derive(Debug)]
 struct PrevStepData {
@@ -37,13 +37,17 @@ impl Filter for BasicFilter {
         }
     }
 
-    fn absorb(&mut self, measurement: Measurement) -> (Duration, f64) {
+    fn measurement<C: Clock>(&mut self, measurement: Measurement, clock: &mut C) -> FilterUpdate {
         // Reset on too-large difference
         if measurement.master_offset.abs() > Duration::from_nanos(1_000_000_000) {
             log::debug!("Offset too large, stepping {}", measurement.master_offset);
             self.offset_confidence = Duration::from_nanos(1_000_000_000);
             self.freq_confidence = 1e-4;
-            return (-measurement.master_offset, 1.0);
+
+            if let Err(error) = clock.step_clock(-measurement.master_offset) {
+                log::error!("Could not step clock: {:?}", error);
+            }
+            return Default::default();
         }
 
         // Determine offset
@@ -101,6 +105,26 @@ impl Filter for BasicFilter {
             correction,
         });
 
-        (correction, freq_corr)
+        if let Err(error) = clock.step_clock(correction) {
+            log::error!("Could not step clock: {:?}", error);
+        }
+        if let Err(error) = clock.adjust_frequency(freq_corr) {
+            log::error!("Could not adjust clock frequency: {:?}", error);
+        }
+        Default::default()
+    }
+
+    fn delay(&mut self, _delay: Duration) {
+        // ignore
+    }
+
+    fn demobilize<C: Clock>(&mut self, _clock: &mut C) {
+        // ignore
+        Default::default()
+    }
+
+    fn update<C: Clock>(&mut self, _clock: &mut C) -> FilterUpdate {
+        // ignore
+        Default::default()
     }
 }

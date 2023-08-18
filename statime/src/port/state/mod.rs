@@ -71,15 +71,34 @@ impl<F: Filter> PortState<F> {
         message: Message,
         port_identity: PortIdentity,
         clock: &mut C,
-    ) {
+    ) -> PortActionIterator {
         match self {
             PortState::Master(_) => {
                 if message.header().source_port_identity != port_identity {
                     log::warn!("Unexpected message {:?}", message);
                 }
+                actions![]
             }
             PortState::Slave(slave) => slave.handle_general_receive(message, port_identity, clock),
-            PortState::Listening | PortState::Passive => {}
+            PortState::Listening | PortState::Passive => {
+                actions![]
+            }
+        }
+    }
+
+    pub(crate) fn handle_filter_update<C: Clock>(&mut self, clock: &mut C) -> PortActionIterator {
+        match self {
+            PortState::Slave(slave) => slave.handle_filter_update(clock),
+            PortState::Master(_) | PortState::Listening | PortState::Passive => {
+                actions![]
+            }
+        }
+    }
+
+    pub(crate) fn demobilize_filter<C: Clock>(&mut self, clock: &mut C) {
+        match self {
+            PortState::Slave(slave) => slave.demobilize_filter(clock),
+            PortState::Master(_) | PortState::Listening | PortState::Passive => {}
         }
     }
 }

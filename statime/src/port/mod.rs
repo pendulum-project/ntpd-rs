@@ -16,7 +16,7 @@ use crate::{
         datasets::{CurrentDS, DefaultDS, ParentDS, TimePropertiesDS},
         messages::{Message, MessageBody},
     },
-    filters::Filter,
+    filters::{Filter, FilterUpdate},
     ptp_instance::PtpInstanceState,
     time::Duration,
     Time, MAX_DATA_LEN,
@@ -115,6 +115,9 @@ pub enum PortAction<'a> {
     ResetAnnounceReceiptTimer {
         duration: core::time::Duration,
     },
+    ResetFilterUpdateTimer {
+        duration: core::time::Duration,
+    },
 }
 
 const MAX_ACTIONS: usize = 2;
@@ -122,6 +125,7 @@ const MAX_ACTIONS: usize = 2;
 /// Guarantees to end user: Any set of actions will only ever contain a single
 /// time critical send
 #[derive(Debug)]
+#[must_use]
 pub struct PortActionIterator<'a> {
     internal: <ArrayVec<PortAction<'a>, MAX_ACTIONS> as IntoIterator>::IntoIter,
 }
@@ -130,6 +134,13 @@ impl<'a> PortActionIterator<'a> {
     fn from(list: ArrayVec<PortAction<'a>, MAX_ACTIONS>) -> Self {
         Self {
             internal: list.into_iter(),
+        }
+    }
+    fn from_filter(update: FilterUpdate) -> Self {
+        if let Some(duration) = update.next_update {
+            actions![PortAction::ResetFilterUpdateTimer { duration }]
+        } else {
+            actions![]
         }
     }
 }
@@ -274,14 +285,14 @@ impl<'a, C: Clock, F: Filter, R: Rng> Port<Running<'a>, R, C, F> {
                 }]
             }
             _ => {
-                self.port_state.handle_general_receive(
-                    message,
-                    self.port_identity,
-                    &mut self.clock,
-                );
-                actions![]
+                self.port_state
+                    .handle_general_receive(message, self.port_identity, &mut self.clock)
             }
         }
+    }
+
+    pub fn handle_filter_update_timer(&mut self) -> PortActionIterator {
+        self.port_state.handle_filter_update(&mut self.clock)
     }
 
     // Start a BMCA cycle and ensure this happens instantly from the perspective of
@@ -328,8 +339,9 @@ impl<'a, C, F: Filter, R> Port<InBmca<'a>, R, C, F> {
     }
 }
 
-impl<L, R, C, F: Filter> Port<L, R, C, F> {
+impl<L, R, C: Clock, F: Filter> Port<L, R, C, F> {
     fn set_forced_port_state(&mut self, state: PortState<F>) {
+        self.port_state.demobilize_filter(&mut self.clock);
         log::info!(
             "new state for port {}: {} -> {}",
             self.port_identity.port_number,
@@ -338,7 +350,9 @@ impl<L, R, C, F: Filter> Port<L, R, C, F> {
         );
         self.port_state = state;
     }
+}
 
+impl<L, R, C, F: Filter> Port<L, R, C, F> {
     pub(crate) fn state(&self) -> &PortState<F> {
         &self.port_state
     }
@@ -440,8 +454,6 @@ impl<'a, C: Clock, F: Filter, R: Rng> Port<InBmca<'a>, R, C, F> {
                 debug_assert!(!self.config.master_only);
 
                 let remote_master = announce_message.header.source_port_identity;
-                let state =
-                    PortState::Slave(SlaveState::new(remote_master, self.filter_config.clone()));
 
                 let update_state = match &self.port_state {
                     PortState::Listening | PortState::Master(_) | PortState::Passive => true,
@@ -449,6 +461,10 @@ impl<'a, C: Clock, F: Filter, R: Rng> Port<InBmca<'a>, R, C, F> {
                 };
 
                 if update_state {
+                    let state = PortState::Slave(SlaveState::new(
+                        remote_master,
+                        self.filter_config.clone(),
+                    ));
                     self.set_forced_port_state(state);
 
                     let duration = self.config.announce_duration(&mut self.rng);
