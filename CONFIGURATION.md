@@ -114,24 +114,26 @@ The ntp-daemon's primary configuration method is through a TOML configuration fi
 
 #### Peer configuration
 
-Peers are configured in the peers section, which should consist of a list of peers. Per peer, the following options are available:
+Peers are configured in the peers section, which should consist of a list of peers. Per `[[peer]]`, the following options are available:
 | Option       | Default | Description                                                                                                                                                                                                                       |
 |--------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| mode         | server  | Type of peer connection to create. Can be any of `simple`, `nts` or `pool` (for meaning of these, see below).                                                                                                                     |
+| mode         |         | Type of peer connection to create. Can be any of `simple`, `nts` or `pool` (for meaning of these, see below).                                                                                                                     |
 | address      |         | Address of the server, pool or nts server. The default port (123 for `simple` or `pool`, 4460 for `nts`) is automatically appended if not given.                                                                                  |
 | count        | 4       | Maximum number of peers to create from the pool. (only valid for pools)                                                                                                                                                           |
 | certificate_authority |         | Path to a pem file containing additional root certificates to accept for the TLS connection to the nts server. In addition to these certificates, the system certificates will also be accepted. (only valid for nts connections) |
 
 ##### Simple peers
 
-Simple peers are direct NTP connections to a single remote server. This is the default. To configure multiple servers, add a `[[peers]]` section for each server. For example:
+Simple peers are direct NTP connections to a single remote server. This is the default. To configure multiple servers, add a `[[peer]]` section for each server. For example:
 
 ```
-# Multiple server can be configured by defining multiple `[[peers]]` sections
-[[peers]]
+# Multiple server can be configured by defining multiple `[[peer]]` sections
+[[peer]]
+mode = "simple"
 address = "0.pool.ntp.org:123"
 
-[[peers]]
+[[peer]]
+mode = "simple"
 address = "1.pool.ntp.org:123"
 ```
 
@@ -140,7 +142,7 @@ address = "1.pool.ntp.org:123"
 A peer in `nts` mode will use NTS (Network Times Security) to communicate with its server. The server must support NTS. The configuration requires the address of the Key Exchange server (the address of the actual NTP server that ends up being used may be different). For example:
 
 ```
-[[peers]]
+[[peer]]
 mode = "nts"
 address = "time.cloudflare.com:4460"
 ```
@@ -153,7 +155,7 @@ A peer in `pool` mode will try to acquire `max_peers` addresses of NTP servers f
 
 An example configuration for the ntppool.org ntp pool can look like
 ```
-[[peers]]
+[[peer]]
 address = "pool.ntp.org"
 mode = "pool"
 count = 4
@@ -300,12 +302,13 @@ The high performance clock algorithm has quite a few options. Most of these are 
 # Other values include trace, debug, warn and error
 log-level = "info"
 
-# Or by providing written out configuration
-# [[peers]]
+# [[peer]]
+# mode = "simple"
 # address = "0.pool.ntp.org:123"
 #
 
-# [[peers]]
+# [[peer]]
+# mode = "simple"
 # address = "1.pool.ntp.org:123"
 
 # System parameters used in filtering and steering the clock:

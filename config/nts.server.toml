@@ -3,7 +3,7 @@
 log-level = "info"
 
 # the server will get its time from the NTP pool
-[[peers]]
+[[peer]]
 mode = "pool"
 address = "pool.ntp.org"
 count = 4

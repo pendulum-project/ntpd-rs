@@ -13,14 +13,14 @@ observation-path = "/run/ntpd-rs/observe"
 ## these blocks to add more peers to your configuration.
 ## Our default configuration spawns a pool of peers (by default this attempts
 ## to discover 4 distinct peers).
-[[peers]]
+[[peer]]
 mode = "pool"
 address = "ntpd-rs.pool.ntp.org"
 count = 4
 
 ## If you have an NTS server, you can configure a peer that connects using NTS
 ## by adding a configuration such as the one below
-#[[peers]]
+#[[peer]]
 #mode = "nts"
 # NTS service from NETNOD: https://www.netnod.se/nts/network-time-security
 #address = "nts.netnod.se"
@@ -28,7 +28,7 @@ count = 4
 ## A peer in server mode will only create a single peer in contrast to the
 ## multiple peers of a pool. This is the recommended peer mode if you only
 ## have an IP address for your peer.
-#[[peers]]
+#[[peer]]
 #mode = "simple"
 #address = "ntpd-rs.pool.ntp.org"
 
