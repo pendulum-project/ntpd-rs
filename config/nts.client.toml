@@ -4,7 +4,7 @@ log-level = "info"
 observation-path = "/run/ntpd-rs/observe"
 
 # See CONFIGURATION.md for how to set up certificates
-[[peers]]
+[[peer]]
 mode = "nts"
 address =  "localhost:4460"
 certificate_authority = "path/to/certificate/authority.pem"

@@ -272,11 +272,11 @@ pub struct LoggingObservabilityConfig {
 #[derive(Deserialize, Debug, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Config {
-    #[serde(alias = "peer")]
+    #[serde(rename = "peer")]
     pub peers: Vec<PeerConfig>,
-    #[serde(alias = "server", default)]
+    #[serde(rename = "server", default)]
     pub servers: Vec<ServerConfig>,
-    #[serde(alias = "nts-ke-server", default)]
+    #[serde(rename = "nts-ke-server", default)]
     pub nts_ke: Vec<NtsKeConfig>,
     #[serde(default)]
     pub synchronization: CombinedSynchronizationConfig,
@@ -452,7 +452,7 @@ mod tests {
     #[test]
     fn test_config() {
         let config: Config =
-            toml::from_str("[[peers]]\nmode = \"simple\"\naddress = \"example.com\"").unwrap();
+            toml::from_str("[[peer]]\nmode = \"simple\"\naddress = \"example.com\"").unwrap();
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
@@ -462,7 +462,7 @@ mod tests {
         assert!(config.observability.log_level.is_none());
 
         let config: Config = toml::from_str(
-            "[observability]\nlog-level = \"info\"\n[[peers]]\nmode = \"simple\"\naddress = \"example.com\"",
+            "[observability]\nlog-level = \"info\"\n[[peer]]\nmode = \"simple\"\naddress = \"example.com\"",
         )
             .unwrap();
         assert_eq!(config.observability.log_level, Some(LogLevel::Info));
@@ -474,7 +474,7 @@ mod tests {
         );
 
         let config: Config = toml::from_str(
-            "[[peers]]\nmode = \"simple\"\naddress = \"example.com\"\n[synchronization]\nsingle-step-panic-threshold = 0",
+            "[[peer]]\nmode = \"simple\"\naddress = \"example.com\"\n[synchronization]\nsingle-step-panic-threshold = 0",
         )
             .unwrap();
         assert_eq!(
@@ -501,7 +501,7 @@ mod tests {
         );
 
         let config: Config = toml::from_str(
-            "[[peers]]\nmode = \"simple\"\naddress = \"example.com\"\n[synchronization]\nsingle-step-panic-threshold = \"inf\"",
+            "[[peer]]\nmode = \"simple\"\naddress = \"example.com\"\n[synchronization]\nsingle-step-panic-threshold = \"inf\"",
         )
             .unwrap();
         assert_eq!(
@@ -525,7 +525,7 @@ mod tests {
 
         let config: Config = toml::from_str(
             r#"
-            [[peers]]
+            [[peer]]
             mode = "simple"
             address = "example.com"
             [peer-defaults]
@@ -614,7 +614,8 @@ mod tests {
     fn toml_peers_invalid() {
         let config: Result<Config, _> = toml::from_str(
             r#"
-            [[peers]]
+            [[peer]]
+            mode = "simple"
             address = ":invalid:ipv6:123"
             "#,
         );

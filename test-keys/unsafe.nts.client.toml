@@ -4,7 +4,7 @@ log-level = "info"
 observation-path = "/run/ntpd-rs/observe"
 
 # uses an unsecure certificate!
-[[peers]]
+[[peer]]
 mode = "nts"
 address =  "localhost:4460"
 certificates = "test-keys/testca.pem"

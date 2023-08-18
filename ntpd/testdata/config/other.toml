@@ -1,4 +1,4 @@
-[[peers]]
+[[peer]]
 mode = "simple"
 address = "example.com"
 
