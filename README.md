@@ -61,6 +61,6 @@ The development of Statime is kindly supported by the NGI Assure Fund of the [NL
 <img style="margin: 1rem 5% 1rem 5%;" src="https://nlnet.nl/logo/banner.svg" alt="Logo NLnet"  width="150px" />
 <img style="margin: 1rem 5% 1rem 5%;" src="https://nlnet.nl/image/logos/NGIAssure_tag.svg" alt="Logo NGI Assure" width="150px" />
 
-[SIDN Fonds](https://www.sidnfonds.nl/excerpt) is supporting us with a grant to develop clock devices running Statime and ntpd-rs, in collaboration with SIDN Labs' [TimeNL](https://www.sidnlabs.nl/en/news-and-blogs/an-open-infrastructure-for-sub-millisecond-internet-time).
+[SIDN Fonds](https://www.sidnfonds.nl/excerpt) is supporting us with a grant to develop clock devices running Statime and ntpd-rs, in collaboration with SIDN Labs' [TimeNL](https://www.sidnlabs.nl/en/news-and-blogs/an-open-infrastructure-for-sub-millisecond-internet-time). In August of 2023, Sovereign Tech Fund invested in Pendulum (Statime and ntpd-rs). Read more on [their website](https://sovereigntechfund.de/en/projects/pendulum/).
 
 We seek involvement of interested parties and funding for future work, see [Project Pendulum](https://github.com/pendulum-project).
