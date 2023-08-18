@@ -63,7 +63,7 @@ impl KeySetProvider {
         }
     }
 
-    #[cfg(feature = "fuzz")]
+    #[cfg(feature = "__internal-fuzz")]
     pub fn dangerous_new_deterministic(history: usize) -> Self {
         KeySetProvider {
             current: Arc::new(KeySet {
@@ -160,7 +160,7 @@ pub struct KeySet {
 }
 
 impl KeySet {
-    #[cfg(feature = "fuzz")]
+    #[cfg(feature = "__internal-fuzz")]
     pub fn encode_cookie_pub(&self, cookie: &DecodedServerCookie) -> Vec<u8> {
         self.encode_cookie(cookie)
     }
@@ -191,7 +191,7 @@ impl KeySet {
         output
     }
 
-    #[cfg(feature = "fuzz")]
+    #[cfg(feature = "__internal-fuzz")]
     pub fn decode_cookie_pub(&self, cookie: &[u8]) -> Result<DecodedServerCookie, DecryptError> {
         self.decode_cookie(cookie)
     }
@@ -282,7 +282,7 @@ impl std::fmt::Debug for KeySet {
     }
 }
 
-#[cfg(feature = "fuzz")]
+#[cfg(feature = "__internal-fuzz")]
 pub fn test_cookie() -> DecodedServerCookie {
     DecodedServerCookie {
         algorithm: AeadAlgorithm::AeadAesSivCmac256,

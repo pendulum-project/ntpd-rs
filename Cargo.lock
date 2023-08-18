@@ -372,54 +372,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ntp-ctl"
-version = "0.3.6"
-dependencies = [
- "ntp-daemon",
- "ntp-metrics-exporter",
- "ntp-proto",
- "prometheus-client",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "ntp-daemon"
-version = "0.3.6"
-dependencies = [
- "async-trait",
- "libc",
- "ntp-os-clock",
- "ntp-proto",
- "ntp-udp",
- "rand",
- "rustls",
- "rustls-native-certs",
- "rustls-pemfile",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "ntp-metrics-exporter"
-version = "0.3.6"
-dependencies = [
- "ntp-daemon",
- "ntp-os-clock",
- "ntp-proto",
- "prometheus-client",
- "tokio",
-]
-
-[[package]]
 name = "ntp-os-clock"
 version = "0.3.6"
 dependencies = [
@@ -461,10 +413,23 @@ dependencies = [
 name = "ntpd"
 version = "0.3.6"
 dependencies = [
- "ntp-ctl",
- "ntp-daemon",
- "ntp-metrics-exporter",
+ "async-trait",
+ "libc",
+ "ntp-os-clock",
+ "ntp-proto",
+ "ntp-udp",
+ "prometheus-client",
+ "rand",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-pemfile",
+ "serde",
+ "serde_json",
+ "thiserror",
  "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -860,17 +825,14 @@ name = "test-binaries"
 version = "0.3.6"
 dependencies = [
  "aes-siv",
- "ntp-daemon",
  "ntp-os-clock",
  "ntp-proto",
  "ntp-udp",
  "rustls",
  "rustls-native-certs",
  "rustls-pemfile",
- "serde_json",
  "tokio",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

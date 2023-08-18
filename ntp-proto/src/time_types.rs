@@ -106,7 +106,7 @@ impl NtpTimestamp {
         self - other < NtpDuration::ZERO
     }
 
-    #[cfg(any(test, feature = "fuzz"))]
+    #[cfg(any(test, feature = "__internal-fuzz"))]
     pub(crate) const fn from_fixed_int(timestamp: u64) -> NtpTimestamp {
         NtpTimestamp { timestamp }
     }
@@ -600,7 +600,7 @@ impl Mul<FrequencyTolerance> for NtpDuration {
     }
 }
 
-#[cfg(feature = "fuzz")]
+#[cfg(feature = "__internal-fuzz")]
 pub fn fuzz_duration_from_seconds(v: f64) {
     if v.is_finite() {
         let duration = NtpDuration::from_seconds(v);

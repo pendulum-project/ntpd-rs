@@ -27,32 +27,32 @@ pub use config::{PeerDefaultsConfig, StepThreshold, SynchronizationConfig};
 pub use identifiers::ReferenceId;
 pub use keyset::{DecodedServerCookie, KeySet, KeySetProvider};
 
-#[cfg(feature = "fuzz")]
+#[cfg(feature = "__internal-fuzz")]
 pub use keyset::test_cookie;
-#[cfg(feature = "fuzz")]
+#[cfg(feature = "__internal-fuzz")]
 pub use packet::ExtensionField;
 pub use packet::{
     Cipher, CipherProvider, EncryptResult, NoCipher, NtpAssociationMode, NtpLeapIndicator,
     NtpPacket,
 };
-#[cfg(feature = "fuzz")]
+#[cfg(feature = "__internal-fuzz")]
 pub use peer::fuzz_measurement_from_packet;
-#[cfg(feature = "ext-test")]
+#[cfg(feature = "__internal-test")]
 pub use peer::peer_snapshot;
 pub use peer::{
     AcceptSynchronizationError, IgnoreReason, Measurement, Peer, PeerNtsData, PeerSnapshot,
     PollError, Reach, Update,
 };
 pub use system::{SystemSnapshot, TimeSnapshot};
-#[cfg(feature = "fuzz")]
+#[cfg(feature = "__internal-fuzz")]
 pub use time_types::fuzz_duration_from_seconds;
 pub use time_types::{
     FrequencyTolerance, NtpDuration, NtpInstant, NtpTimestamp, PollInterval, PollIntervalLimits,
 };
 
-#[cfg(feature = "fuzz")]
+#[cfg(feature = "__internal-fuzz")]
 pub use nts_record::fuzz_key_exchange_result_decoder;
-#[cfg(feature = "fuzz")]
+#[cfg(feature = "__internal-fuzz")]
 pub use nts_record::fuzz_key_exchange_server_decoder;
 pub use nts_record::{
     KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, NtsRecord,

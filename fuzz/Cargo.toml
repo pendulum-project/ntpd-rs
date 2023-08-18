@@ -17,11 +17,11 @@ features = ["arbitrary-derive"]
 
 [dependencies.ntp-proto]
 path = "../ntp-proto"
-features = ["fuzz"]
+features = ["__internal-fuzz"]
 
-[dependencies.ntp-daemon]
-path = "../ntp-daemon"
-features = ["fuzz"]
+[dependencies.ntpd]
+path = "../ntpd"
+features = ["__internal-fuzz"]
 
 # Prevent this from interfering with workspaces
 [workspace]

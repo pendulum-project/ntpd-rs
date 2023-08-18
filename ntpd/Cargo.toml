@@ -14,23 +14,50 @@ tag = true
 tag-name = "v{{version}}"
 
 [dependencies]
-ntp-daemon.workspace = true
-ntp-metrics-exporter.workspace = true
-ntp-ctl.workspace = true
+ntp-proto.workspace = true
+ntp-os-clock.workspace = true
+ntp-udp.workspace = true
 
-tokio.workspace = true
+tokio = { workspace = true, features = ["full"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+toml.workspace = true
+thiserror.workspace = true
+rand.workspace = true
+libc.workspace = true
+async-trait.workspace = true
+
+serde.workspace = true
+serde_json.workspace = true
+
+rustls.workspace = true
+rustls-native-certs.workspace = true
+rustls-pemfile.workspace = true
+
+prometheus-client.workspace = true
+
+[dev-dependencies]
+ntp-proto = { workspace = true, features = ["__internal-test"] }
+
+[features]
+hardware-timestamping = []
+__internal-fuzz = []
+
+[lib]
+name = "ntpd"
+path = "src/lib.rs"
 
 [[bin]]
 name = "ntp-daemon"
-path = "src/bin/ntp-daemon.rs"
+path = "bin/ntp-daemon.rs"
 
 [[bin]]
 name = "ntp-ctl"
-path = "src/bin/ntp-ctl.rs"
+path = "bin/ntp-ctl.rs"
 
 [[bin]]
 name = "ntp-metrics-exporter"
-path = "src/bin/ntp-metrics-exporter.rs"
+path = "bin/ntp-metrics-exporter.rs"
 
 [package.metadata.deb]
 name = "ntpd-rs"
