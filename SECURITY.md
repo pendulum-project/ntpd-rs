@@ -2,7 +2,7 @@ Security policy
 ===============
 
 **Do not report security vulnerabilities through public GitHub issues.**
-Instead, you can report security vulnerabilities using [our security page](https://github.com/pendulum-project/ntpd-rs/security),
+Instead, you can report security vulnerabilities using [our security page],
 or send them by email to security+ntpdrs@tweedegolf.com.
 
 Please include as much of the following information as possible:
@@ -20,9 +20,13 @@ We prefer to receive reports in English. If necessary, we also understand Dutch.
 
 ## Disclosure Policy
 
-We adhere to the principle of [responsible disclosure](https://vuls.cert.org/confluence/display/CVD/Executive+Summary).
+We adhere to the principle of [coordinated vulnerability disclosure].
 
 Security Advisories
 ===================
-Security advisories will be published [on GitHub](https://github.com/pendulum-project/ntpd-rs/security/advisories)
-and possibly through other channels.
+Security advisories will be published on our [github advisories page] and
+possibly through other channels.
+
+[our security page]: https://github.com/pendulum-project/ntpd-rs/security
+[coordinated vulnerability disclosure]: https://vuls.cert.org/confluence/display/CVD/Executive+Summary
+[github advisories page]: https://github.com/pendulum-project/ntpd-rs/security/advisories
