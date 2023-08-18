@@ -26,7 +26,7 @@ several concepts of the ntp-daemon are also explained.
 `-c` *path*, `--config`=*path*
 :   The configuration file path for the ntp-daemon where settings for the
     configuration of ntpd-rs are stored. If not specified the default
-    configuration file is `/etc/ntp.toml`.
+    configuration file is `/etc/ntpd-rs/ntp.toml`.
 
 `-h`, `--help`
 :   Display usage instructions.

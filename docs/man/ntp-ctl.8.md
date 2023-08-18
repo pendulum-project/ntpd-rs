@@ -24,7 +24,8 @@ with the daemon.
 
 `-c` *path*, `--config`=*path*
 :   Path to the configuration file from which the observation socket address
-    will be retrieved. If not specified this defaults to `/etc/ntp.toml`.
+    will be retrieved. If not specified this defaults to
+    `/etc/ntpd-rs/ntp.toml`.
 
 `-f` *format*, `--format`=*format*
 :   The output format for the status command. If not specified this defaults to
@@ -45,8 +46,8 @@ with the daemon.
 # COMMANDS
 
 `validate`
-:   Checks if the configuration specified (or `/etc/ntp.toml` by default) is
-    valid.
+:   Checks if the configuration specified (or `/etc/ntpd-rs/ntp.toml` by
+    default) is valid.
 
 `status`
 :   Returns status information about the current state of the ntp-daemon that
