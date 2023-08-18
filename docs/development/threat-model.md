@@ -1,4 +1,4 @@
-# Threat Model ntpd-rs
+# Threat model
 
 This document a threat model, based on the methodology presented by Eleanor Saitta, that we as developers use as a guide in our development process. It may not contain all the context needed to fully understand it, if clarifications are needed please ask us.
 

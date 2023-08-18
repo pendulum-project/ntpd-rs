@@ -1,4 +1,4 @@
-# Management Client
+# Management client
 
 **The management client interface format is unstable! Do you have suggestion for additional values to expose? let us know in an issue!**
 
