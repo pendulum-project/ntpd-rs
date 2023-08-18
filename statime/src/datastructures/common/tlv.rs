@@ -1,8 +1,17 @@
 use crate::datastructures::WireFormatError;
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Clone, PartialEq, Eq, Default)]
 pub(crate) struct TlvSet<'a> {
     bytes: &'a [u8],
+}
+
+impl<'a> core::fmt::Debug for TlvSet<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("TlvSet")
+            .field("wire_size", &self.wire_size())
+            .field("bytes", &self.bytes)
+            .finish()
+    }
 }
 
 impl<'a> TlvSet<'a> {
@@ -14,11 +23,10 @@ impl<'a> TlvSet<'a> {
     }
 
     pub(crate) fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
-        if buffer.len() < self.bytes.len() {
-            return Err(WireFormatError::BufferTooShort);
-        }
-
-        buffer[..self.bytes.len()].copy_from_slice(self.bytes);
+        buffer
+            .get_mut(..self.bytes.len())
+            .ok_or(WireFormatError::BufferTooShort)?
+            .copy_from_slice(self.bytes);
 
         Ok(self.bytes.len())
     }
@@ -32,6 +40,7 @@ impl<'a> TlvSet<'a> {
             let length = u16::from_be_bytes([buffer[2], buffer[3]]) as usize;
 
             if length % 2 != 0 {
+                log::trace!("tlv list has trailing bytes");
                 return Err(WireFormatError::Invalid);
             }
 
@@ -40,6 +49,11 @@ impl<'a> TlvSet<'a> {
                 .ok_or(WireFormatError::BufferTooShort)?;
 
             total_length += 4 + length;
+        }
+
+        if !buffer.is_empty() {
+            log::trace!("tlv list has trailing bytes");
+            return Err(WireFormatError::BufferTooShort);
         }
 
         Ok(Self {
@@ -52,11 +66,12 @@ impl<'a> TlvSet<'a> {
         self.tlv().filter(|tlv| tlv.tlv_type.announce_propagate())
     }
 
-    fn tlv(&self) -> impl Iterator<Item = Tlv<'a>> + 'a {
+    pub(crate) fn tlv(&self) -> impl Iterator<Item = Tlv<'a>> + 'a {
         let mut buffer = self.bytes;
 
         std::iter::from_fn(move || {
             if buffer.len() <= 4 {
+                debug_assert_eq!(buffer.len(), 0);
                 return None;
             }
 

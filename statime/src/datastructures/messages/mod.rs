@@ -72,21 +72,35 @@ impl TryFrom<u8> for MessageType {
 }
 
 #[cfg(feature = "fuzz")]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FuzzMessage<'a> {
-    inner: Message<'a>,
-}
+pub use fuzz::FuzzMessage;
 
 #[cfg(feature = "fuzz")]
-impl<'a> FuzzMessage<'a> {
-    pub fn deserialize(buffer: &'a [u8]) -> Result<Self, impl std::error::Error> {
-        Ok::<FuzzMessage, super::WireFormatError>(FuzzMessage {
-            inner: Message::deserialize(buffer)?,
-        })
+mod fuzz {
+    use super::*;
+    use crate::datastructures::{common::Tlv, WireFormatError};
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct FuzzMessage<'a> {
+        inner: Message<'a>,
     }
 
-    pub fn serialize(&self, buffer: &mut [u8]) -> Result<usize, impl std::error::Error> {
-        self.inner.serialize(buffer)
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct FuzzTlv<'a>(Tlv<'a>);
+
+    impl<'a> FuzzMessage<'a> {
+        pub fn deserialize(buffer: &'a [u8]) -> Result<Self, impl std::error::Error> {
+            Ok::<FuzzMessage, WireFormatError>(FuzzMessage {
+                inner: Message::deserialize(buffer)?,
+            })
+        }
+
+        pub fn serialize(&self, buffer: &mut [u8]) -> Result<usize, impl std::error::Error> {
+            self.inner.serialize(buffer)
+        }
+
+        pub fn tlv(&self) -> impl Iterator<Item = FuzzTlv<'_>> + '_ {
+            self.inner.suffix.tlv().map(FuzzTlv)
+        }
     }
 }
 
@@ -344,7 +358,7 @@ impl<'a> Message<'a> {
 
     /// The byte size on the wire of this message
     pub(crate) fn wire_size(&self) -> usize {
-        self.header.wire_size() + self.body.wire_size()
+        self.header.wire_size() + self.body.wire_size() + self.suffix.wire_size()
     }
 
     /// Serializes the object into the PTP wire format.
