@@ -1,35 +1,56 @@
 # Management client
 
-**The management client interface format is unstable! Do you have suggestion for additional values to expose? let us know in an issue!**
+**The management client interface format is unstable! Do you have suggestion
+for additional values to expose? let us know in an issue!**
 
-ntpd-rs comes with a management client for the daemon. This client can show the current state of the daemon, as well as change the log level and panic thresholds of the daemon.
+ntpd-rs comes with a management client for the daemon. This client can show the
+current state of the daemon, as well as change the log level and panic
+thresholds of the daemon.
 
 ## Enabling the management client
 
-In order to communicate with the daemon, the management client relies on two sockets, an observation socket and a configuration socket, which are disabled by default. To enable use of the client, these sockets should be enabled in [the configuration](CONFIGURATION.md). On Linux, it is common to place these sockets in a subdirectory of `/run` specific to the daemon.
+In order to communicate with the daemon, the management client relies on two
+sockets, an observation socket and a configuration socket, which are disabled
+by default. To enable use of the client, these sockets should be enabled in
+the configuration. On Linux, it is common to place these sockets in a
+subdirectory of `/run` specific to the daemon.
 
-The client can run with only one of the sockets enabled. In that situation, not all functionality is available. The same holds when the currently running user has insufficient permissions for one of the sockets.
+The client can run with only one of the sockets enabled. In that situation, not
+all functionality is available. The same holds when the currently running user
+has insufficient permissions for one of the sockets.
 
-For the configuration socket, default permissions restrict access to the group under which the server is running. Users should be added to this group when they need to be able to change configuration settings of the daemon dynamically.
+For the configuration socket, default permissions restrict access to the group
+under which the server is running. Users should be added to this group when
+they need to be able to change configuration settings of the daemon dynamically.
 
 ## Using the management client
 
 The current client exposes 3 different commands:
- - `ntp-ctl peers` displays information on the currently active peer connections
- - `ntp-ctl system` displays information on the current synchronization state of the system.
- - `ntp-ctl prometheus` combines output of `ntp-ctl peers` and `ntp-ctl system` in the
-   prometheus export format
- - `ntp-ctl config` allows changing of some configuration parameters
+- `ntp-ctl peers` displays information on the currently active peer connections
+- `ntp-ctl system` displays information on the current synchronization state of
+  the system.
+- `ntp-ctl prometheus` combines output of `ntp-ctl peers` and `ntp-ctl system`
+  in the prometheus export format
+- `ntp-ctl config` allows changing of some configuration parameters
 
 ## Available configuration parameters
 
-Currently, only the `log-level` configuration parameter can be set dynamically, through the `--log-level` command line parameter. For information on the allowed values, see [the configuration documentation](CONFIGURATION.md).
+Currently, only the `log-level` configuration parameter can be set dynamically,
+through the `--log-level` command line parameter. For information on the
+allowed values, see the configuration documentation.
 
 ## Specifying socket locations
 
-By default, the management client looks for the daemon's configuration in `/etc/ntpd-rs/ntp.toml` in order to extract the paths of the socket. If this file is not present, or when the socket paths are not configured in these, it defaults to `/run/ntpd-rs/observe` for the observation socket and `/run/ntpd-rs/configure` for the configuration sockets.
+By default, the management client looks for the daemon's configuration in
+`/etc/ntpd-rs/ntp.toml` in order to extract the paths of the socket. If this
+file is not present, or when the socket paths are not configured in these, it
+defaults to `/run/ntpd-rs/observe` for the observation socket and
+`/run/ntpd-rs/configure` for the configuration sockets.
 
-If the client fails to find the correct socket paths using the above process, it can be manually configured to look elsewhere. Most advisable is to point the management client to the configuration file of the server via the `--config` command line flag.
+If the client fails to find the correct socket paths using the above process,
+it can be manually configured to look elsewhere. Most advisable is to point
+the management client to the configuration file of the server via the
+`--config` command line flag.
 
 ## Output format
 

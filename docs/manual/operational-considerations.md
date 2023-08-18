@@ -1,44 +1,99 @@
 # Operational considerations
 
-In this document, we provide a basic overview of the operational considerations that need to be carefully considered when configuring ntpd-rs as the system NTP client, along with our current recommendations.
+In this document, we provide a basic overview of the operational considerations
+that need to be carefully considered when configuring ntpd-rs as the system NTP
+client, along with our current recommendations.
 
 ## Required number of available servers
 
-In its operation, NTP requires that a majority of the used servers agree (up to the precision of the measurements) on the current time. However, in this mechanism, any servers that are currently unavailable because of connection issues and the like are completely ignored. As a consequences, the required quorum of agreeing servers may be lower than expected.
+In its operation, NTP requires that a majority of the used servers agree (up to
+the precision of the measurements) on the current time. However, in this
+mechanism, any servers that are currently unavailable because of connection
+issues and the like are completely ignored. As a consequences, the required
+quorum of agreeing servers may be lower than expected.
 
-To combat this, ntpd-rs provides the `minimum-agreeing-peers` setting to set a minimum number of servers that need to agree on the best time. The NTPv4 standard recommends using a value of at least `3` for `minimum-agreeing-peers`. When using this recommendation, it is important to configure enough remote servers to ensure the probability of dipping below `3` available servers is low enough.
+To combat this, ntpd-rs provides the `minimum-agreeing-peers` setting to set a
+minimum number of servers that need to agree on the best time. The NTPv4
+standard recommends using a value of at least `3` for `minimum-agreeing-peers`.
+When using this recommendation, it is important to configure enough remote
+servers to ensure the probability of dipping below `3` available servers is low
+enough.
 
-Increasing the `minimum-agreeing-peers` value beyond the default of 3 can help reduce the risk of a bad server affecting the system time. However, keep in mind that larger values may require more servers to be available before the clock can be synchronized, which can reduce availability.
-
+Increasing the `minimum-agreeing-peers` value beyond the default of 3 can help
+reduce the risk of a bad server affecting the system time. However, keep in
+mind that larger values may require more servers to be available before the
+clock can be synchronized, which can reduce availability.
 
 ## Maximum clock adjustment boundaries
 
-Although no clock is perfect, a normally functioning wall-time clock in a computer will typically require only relatively small adjustments to stay synchronized to an external clock. As such, it may be desirable to limit the maximum allowed adjustment to the system clock in order to limit the impact of malicious or erroneous servers. ntpd-rs has two options available for this, `single-step-panic-threshold` and `startup-step-panic-threshold`.
+Although no clock is perfect, a normally functioning wall-time clock in a
+computer will typically require only relatively small adjustments to stay
+synchronized to an external clock. As such, it may be desirable to limit the
+maximum allowed adjustment to the system clock in order to limit the impact of
+malicious or erroneous servers. ntpd-rs has two options available for this,
+`single-step-panic-threshold` and `startup-step-panic-threshold`.
 
-The `single-step-panic-threshold` indicates the maximum amount ntpd-rs will adjust the system clock in a single step during normal operations. By default, this is limited to 30 minutes, but this may be lowered in the configuration. If an adjustment larger than `single-step-panic-threshold` is needed, ntpd-rs will throw an error (panic). We advise human intervention in this case: automatically restarting ntpd-rs may cause a panic loop.
+The `single-step-panic-threshold` indicates the maximum amount ntpd-rs will
+adjust the system clock in a single step during normal operations. By default,
+this is limited to 30 minutes, but this may be lowered in the configuration. If
+an adjustment larger than `single-step-panic-threshold` is needed, ntpd-rs will
+throw an error (panic). We advise human intervention in this case:
+automatically restarting ntpd-rs may cause a panic loop.
 
-The `startup-step-panic-threshold` indicates the maximum amount ntpd-rs will adjust the system clock whilst starting up. Because the system may or may not have a hardware backup to use to keep time when shut down, the initial error of the system clock can be significantly larger than what can reasonably occur during normal operations. Therefore, this setting by default imposes no limit. Like `single-step-panic-threshold`, if `startup-step-panic-threshold` is set and exceeded, ntpd-rs will throw an error (panic). We advise human intervention in this case: automatically restarting ntpd-rs may cause a panic loop.
+The `startup-step-panic-threshold` indicates the maximum amount ntpd-rs will
+adjust the system clock whilst starting up. Because the system may or may not
+have a hardware backup to use to keep time when shut down, the initial error of
+the system clock can be significantly larger than what can reasonably occur
+during normal operations. Therefore, this setting by default imposes no limit.
+Like `single-step-panic-threshold`, if `startup-step-panic-threshold` is set
+and exceeded, ntpd-rs will throw an error (panic). We advise human intervention
+in this case: automatically restarting ntpd-rs may cause a panic loop.
 
-Both the `single-step-panic-threshold` and `startup-step-panic-threshold` should be adjusted to achieve the desired mix of availability (avoiding false alarms) and resilience against erroneous servers.
+Both the `single-step-panic-threshold` and `startup-step-panic-threshold`
+should be adjusted to achieve the desired mix of availability (avoiding false
+alarms) and resilience against erroneous servers.
 
 ## Automatic rebooting of the daemon
 
-When ntpd-rs detects abnormal conditions during operation, it will automatically shut down. This is done to avoid poorly steering the clock and potentially inducing large clock errors, as once synchronized, an unsteered clock will keep time better than an actively incorrectly steered clock.
+When ntpd-rs detects abnormal conditions during operation, it will
+automatically shut down. This is done to avoid poorly steering the clock and
+potentially inducing large clock errors, as once synchronized, an unsteered
+clock will keep time better than an actively incorrectly steered clock.
 
 The abnormal conditions resulting in a shutdown include:
 
- - Detection of an abnormally large (exceeds the panic thresholds) change in system time being required.
- - Detection of an inconsistent internal state.
- - Errors whilst trying to adjust the system clock (e.g. insufficient permissions).
+- Detection of an abnormally large (exceeds the panic thresholds) change in
+  system time being required.
+- Detection of an inconsistent internal state.
+- Errors whilst trying to adjust the system clock (e.g. insufficient
+  permissions).
 
-We strongly recommend against automatically restarting the daemon when it exits, as doing so may cause additional incorrect steering of the system clock, resulting in a larger error against UTC than intended. Instead, a human operator should determine the root cause of the shutdown and decide on the proper corrective action to take.
+We strongly recommend against automatically restarting the daemon when it
+exits, as doing so may cause additional incorrect steering of the system clock,
+resulting in a larger error against UTC than intended. Instead, a human
+operator should determine the root cause of the shutdown and decide on the
+proper corrective action to take.
 
-Should it really be desirable to restart the daemon under certain circumstances (such as when killed by the Linux out-of-memory killer), this automatic restart should be configured as restrictive as possible, so as not to trigger outside the intended circumstance. For reboot upon activation of the out-of-memory killer, this could for example be achieved by checking that the exit code is 137 (which is guaranteed never to be used by the daemon itself). Furthermore, it is strongly recommended to reduce the `startup-step-panic-threshold` to match `single-step-panic-threshold`, in order to ensure that automatic restarting of the daemon does not unintentionally induce large corrections to the system clock.
+Should it really be desirable to restart the daemon under certain circumstances
+(such as when killed by the Linux out-of-memory killer), this automatic restart
+should be configured as restrictive as possible, so as not to trigger outside
+the intended circumstance. For reboot upon activation of the out-of-memory
+killer, this could for example be achieved by checking that the exit code is
+137 (which is guaranteed never to be used by the daemon itself). Furthermore,
+it is strongly recommended to reduce the `startup-step-panic-threshold` to
+match `single-step-panic-threshold`, in order to ensure that automatic
+restarting of the daemon does not unintentionally induce large corrections to
+the system clock.
 
 ## Observability and configuration sockets
 
 The ntpd-rs daemon can expose two sockets:
- - The observe socket is read-only and exposes some of the peer and clock algorithm state.
- - The configuration socket accepts commands and allows changing of some of the configuration settings.
+- The observe socket is read-only and exposes some of the peer and clock
+  algorithm state.
+- The configuration socket accepts commands and allows changing of some of the
+  configuration settings.
 
-When enabled, these sockets are by default exposed with quite generous permissions (`0o666` for observation and `0o660` for configuration). You should consider restricting access to these sockets, depending on the other software running on the system, and the techniques used for managing it.
+When enabled, these sockets are by default exposed with quite generous
+permissions (`0o666` for observation and `0o660` for configuration). You should
+consider restricting access to these sockets, depending on the other software
+running on the system, and the techniques used for managing it.

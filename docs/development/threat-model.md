@@ -1,24 +1,33 @@
 # Threat model
 
-This document a threat model, based on the methodology presented by Eleanor Saitta, that we as developers use as a guide in our development process. It may not contain all the context needed to fully understand it, if clarifications are needed please ask us.
+This document a threat model, based on the methodology presented by Eleanor
+Saitta, that we as developers use as a guide in our development process. It may
+not contain all the context needed to fully understand it, if clarifications are
+needed please ask us.
 
 ## Actors, Assets & Actions
 
 ### Actors
 
 We model the following actors:
- - System Admin: Administrator of the system running ntpd-rs
- - System User: Non-administrator user of the system running ntpd-rs
- - Reference Source: A remote time server we use as a source for our time.
- - External Client: A remote user that is allowed to use this instance of ntpd-rs to receive time.
- - Anonymous: Any other party
+
+- System Admin: Administrator of the system running ntpd-rs
+- System User: Non-administrator user of the system running ntpd-rs
+- Reference Source: A remote time server we use as a source for our time.
+- External Client: A remote user that is allowed to use this instance of
+  ntpd-rs to receive time.
+- Anonymous: Any other party
 
 ### Assets
 
 We model the following assets:
- - Clock: The system clock
- - Source configuration: The configuration on which sources to use, including some metadata on the current status of those sources
- - Server configuration: The configuration on which interfaces to provide an NTP server on, and who can use those, including some metadata on the current server status.
+
+- Clock: The system clock
+- Source configuration: The configuration on which sources to use, including
+  some metadata on the current status of those sources
+- Server configuration: The configuration on which interfaces to provide an
+  NTP server on, and who can use those, including some metadata on the current
+  server status.
 
 ### Actions
 
@@ -116,8 +125,10 @@ We model the following assets:
     </tr>
 </table>
 
- - Reference sources may update the Clock only when sufficiently many agree and don't exceed configured adjustment limits.
- - System users may read configuration (both types) only when allowed by system admin.
+- Reference sources may update the Clock only when sufficiently many agree and
+  don't exceed configured adjustment limits.
+- System users may read configuration (both types) only when allowed by system
+  admin.
 
 ## Failure cases
 
@@ -170,17 +181,26 @@ We model the following assets:
 
 ## Security strategy
 
- - If any actor tries to read the clock, the system will not respond with a valid time if the IP address is not on the configured allowlist
- - If any actor tries to update the clock, the system tries to verify consensus among multiple reference sources
- - If any actor tries to update the clock, the system refuses updates beyond a configured limit
- - If the configuration file (used to create the configuration) is world-writable, the system will emit a warning
- - If the configuration socket (used to update the configuration) is world-writable, the system will emit a warning
- - The observability socket (used to read the configuration/status) is a unix socket, which is unreachable over the network by default
- - If any actor tries to read the clock too often, the system will stop responding a valid time to them
+- If any actor tries to read the clock, the system will not respond with a
+  valid time if the IP address is not on the configured allowlist
+- If any actor tries to update the clock, the system tries to verify consensus
+  among multiple reference sources
+- If any actor tries to update the clock, the system refuses updates beyond a
+  configured limit
+- If the configuration file (used to create the configuration) is
+  world-writable, the system will emit a warning
+- If the configuration socket (used to update the configuration) is
+  world-writable, the system will emit a warning
+- The observability socket (used to read the configuration/status) is a unix
+  socket, which is unreachable over the network by default
+- If any actor tries to read the clock too often, the system will stop
+  responding a valid time to them
 
 ## Data flow diagram
 
 ![](flowdiagram.svg)
 
- - The security boundaries between the admin and system users and ntpd-rs run through the unix sockets used for communication.
- - The security boundaries for reference sources and external clients run through the network sockets used for communication.
+- The security boundaries between the admin and system users and ntpd-rs run
+  through the unix sockets used for communication.
+- The security boundaries for reference sources and external clients run
+  through the network sockets used for communication.
