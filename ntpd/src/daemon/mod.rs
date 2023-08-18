@@ -50,9 +50,9 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
-    let mut log_filter = options.log_filter.unwrap_or_default();
+    let mut log_level = options.log_level.unwrap_or_default();
 
-    let config_tracing = self::tracing::tracing_init(log_filter);
+    let config_tracing = self::tracing::tracing_init(log_level);
     let config = ::tracing::subscriber::with_default(config_tracing, || {
         async {
             match Config::from_args(options.config, vec![], vec![]).await {
@@ -67,19 +67,19 @@ async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
     })
     .await;
 
-    if let Some(config_log_filter) = config.observability.log_level {
-        if options.log_filter.is_none() {
-            log_filter = config_log_filter;
+    if let Some(config_log_level) = config.observability.log_level {
+        if options.log_level.is_none() {
+            log_level = config_log_level;
         }
     }
 
     // set a default global subscriber from now on
-    let tracing_inst = self::tracing::tracing_init(log_filter);
+    let tracing_inst = self::tracing::tracing_init(log_level);
     tracing_inst.init();
 
     // give the user a warning that we use the command line option
-    if config.observability.log_level.is_some() && options.log_filter.is_some() {
-        info!("Log filter override from command line arguments is active");
+    if config.observability.log_level.is_some() && options.log_level.is_some() {
+        info!("Log level override from command line arguments is active");
     }
 
     // Warn/error if the config is unreasonable. We do this after finishing

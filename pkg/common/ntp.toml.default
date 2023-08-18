@@ -1,7 +1,6 @@
 [observability]
 # You can configure ntpd-rs with different output levels of logging information
-# Basic values for this are `trace`, `debug`, `info`, `warn`, `error` and `off`.
-# However it is possible to specify more advanced log filters using the
+# Basic values for this are `trace`, `debug`, `info`, `warn` and `error`.
 log-level = "info"
 ## Using the observe socket you can retrieve statistical information about the
 ## daemon while it is running. You can use the `ntp-ctl` or prometheus based

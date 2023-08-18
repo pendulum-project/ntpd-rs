@@ -31,7 +31,7 @@ several concepts of the ntp-daemon are also explained.
 `-h`, `--help`
 :   Display usage instructions.
 
-`-l` *loglevel*, `--log-filter`=*loglevel*
+`-l` *loglevel*, `--log-level`=*loglevel*
 :   Change which log messages are logged to stdout. Available log levels are
     *trace*, *debug*, *info*, *warn* and *error* (from lower to higher
     priority). Only messages with the given priority and higher will be
