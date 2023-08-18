@@ -2,6 +2,8 @@ theme:
   name: material
   features:
     - content.tooltips
+    - content.code.copy
+    - content.code.select
 docs_dir: docs
 site_name: ntpd-rs documentation
 site_dir: target/docs/site
@@ -10,11 +12,20 @@ markdown_extensions:
   - abbr
   - pymdownx.escapeall:
       hardbreak: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
 nav:
   - Home: index.md
   - Manual:
     - manual/management-client.md
     - manual/operational-considerations.md
+  - Examples:
+    - examples/run-as-service.md
   - Man pages:
     - ntp-daemon(8): man/ntp-daemon.8.md
     - ntp.toml(5): man/ntp.toml.5.md
