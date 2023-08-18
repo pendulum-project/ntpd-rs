@@ -283,7 +283,7 @@ pub struct Config {
     #[serde(default)]
     pub peer_defaults: PeerDefaultsConfig,
     #[serde(default)]
-    pub logging_observability: LoggingObservabilityConfig,
+    pub observability: LoggingObservabilityConfig,
     #[serde(default)]
     pub keyset: KeysetConfig,
     #[serde(default)]
@@ -459,13 +459,13 @@ mod tests {
                 address: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
-        assert!(config.logging_observability.log_level.is_none());
+        assert!(config.observability.log_level.is_none());
 
         let config: Config = toml::from_str(
-            "[logging-observability]\nlog-level = \"info\"\n[[peers]]\nmode = \"simple\"\naddress = \"example.com\"",
+            "[observability]\nlog-level = \"info\"\n[[peers]]\nmode = \"simple\"\naddress = \"example.com\"",
         )
             .unwrap();
-        assert_eq!(config.logging_observability.log_level, Some(LogLevel::Info));
+        assert_eq!(config.observability.log_level, Some(LogLevel::Info));
         assert_eq!(
             config.peers,
             vec![PeerConfig::Standard(StandardPeerConfig {
@@ -531,7 +531,7 @@ mod tests {
             [peer-defaults]
             poll-interval-limits = { min = 5, max = 9 }
             initial-poll-interval = 5
-            [logging-observability]
+            [observability]
             log-level = "info"
             observation-path = "/foo/bar/observe"
             observation-permissions = 0o567
@@ -540,25 +540,19 @@ mod tests {
             "#,
         )
         .unwrap();
-        assert!(config.logging_observability.log_level.is_some());
+        assert!(config.observability.log_level.is_some());
 
         assert_eq!(
-            config.logging_observability.observe.observation_path,
+            config.observability.observe.observation_path,
             Some(PathBuf::from("/foo/bar/observe"))
         );
-        assert_eq!(
-            config.logging_observability.observe.observation_permissions,
-            0o567
-        );
+        assert_eq!(config.observability.observe.observation_permissions, 0o567);
 
         assert_eq!(
-            config.logging_observability.configure.configure_path,
+            config.observability.configure.configure_path,
             Some(PathBuf::from("/foo/bar/configure"))
         );
-        assert_eq!(
-            config.logging_observability.configure.configure_permissions,
-            0o123
-        );
+        assert_eq!(config.observability.configure.configure_permissions, 0o123);
 
         assert_eq!(
             config.peers,

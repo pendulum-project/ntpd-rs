@@ -1,4 +1,4 @@
-[logging-observability]
+[observability]
 # You can configure ntpd-rs with different output levels of logging information
 # Basic values for this are `trace`, `debug`, `info`, `warn`, `error` and `off`.
 # However it is possible to specify more advanced log filters using the
