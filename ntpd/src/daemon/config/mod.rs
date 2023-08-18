@@ -30,7 +30,7 @@ const DESCRIPTOR: &str = "ntp-daemon - synchronize system time";
 
 const HELP_MSG: &str = "Options:
   -c, --config=PATH             change the config .toml file
-  -l, --log-filter=LOG_FILTER   change the log filter";
+  -l, --log-level=LOG_LEVEL     change the log level";
 
 pub fn long_help_message() -> String {
     format!("{DESCRIPTOR}\n\n{USAGE_MSG}\n\n{HELP_MSG}")
@@ -40,8 +40,8 @@ pub fn long_help_message() -> String {
 pub(crate) struct NtpDaemonOptions {
     /// Path of the configuration file
     pub config: Option<PathBuf>,
-    /// Filter to apply to log messages
-    pub log_filter: Option<LogLevel>,
+    /// Level for messages to display in logs
+    pub log_level: Option<LogLevel>,
     help: bool,
     version: bool,
     pub action: NtpDaemonAction,
@@ -141,7 +141,7 @@ pub enum NtpDaemonAction {
 }
 
 impl NtpDaemonOptions {
-    const TAKES_ARGUMENT: &[&'static str] = &["--config", "--log-filter"];
+    const TAKES_ARGUMENT: &[&'static str] = &["--config", "--log-level"];
     const TAKES_ARGUMENT_SHORT: &[char] = &['c', 'l'];
 
     /// parse an iterator over command line arguments
@@ -176,8 +176,8 @@ impl NtpDaemonOptions {
                     "-c" | "--config" => {
                         options.config = Some(PathBuf::from(value));
                     }
-                    "-l" | "--log-filter" => match LogLevel::from_str(&value) {
-                        Ok(filter) => options.log_filter = Some(filter),
+                    "-l" | "--log-level" => match LogLevel::from_str(&value) {
+                        Ok(level) => options.log_level = Some(level),
                         Err(_) => return Err("invalid log level".into()),
                     },
                     option => {
@@ -569,45 +569,45 @@ mod tests {
     }
 
     #[test]
-    fn clap_no_arguments() {
+    fn cli_no_arguments() {
         let arguments: [String; 0] = [];
         let parsed_empty = NtpDaemonOptions::try_parse_from(arguments).unwrap();
 
         assert!(parsed_empty.config.is_none());
-        assert!(parsed_empty.log_filter.is_none());
+        assert!(parsed_empty.log_level.is_none());
         assert_eq!(parsed_empty.action, NtpDaemonAction::Run);
     }
 
     #[test]
-    fn clap_external_config() {
+    fn cli_external_config() {
         let arguments = &["/usr/bin/ntp-daemon", "--config", "other.toml"];
         let parsed_empty = NtpDaemonOptions::try_parse_from(arguments).unwrap();
 
         assert_eq!(parsed_empty.config, Some("other.toml".into()));
-        assert!(parsed_empty.log_filter.is_none());
+        assert!(parsed_empty.log_level.is_none());
         assert_eq!(parsed_empty.action, NtpDaemonAction::Run);
 
         let arguments = &["/usr/bin/ntp-daemon", "-c", "other.toml"];
         let parsed_empty = NtpDaemonOptions::try_parse_from(arguments).unwrap();
 
         assert_eq!(parsed_empty.config, Some("other.toml".into()));
-        assert!(parsed_empty.log_filter.is_none());
+        assert!(parsed_empty.log_level.is_none());
         assert_eq!(parsed_empty.action, NtpDaemonAction::Run);
     }
 
     #[test]
-    fn clap_log_filter() {
-        let arguments = &["/usr/bin/ntp-daemon", "--log-filter", "debug"];
+    fn cli_log_level() {
+        let arguments = &["/usr/bin/ntp-daemon", "--log-level", "debug"];
         let parsed_empty = NtpDaemonOptions::try_parse_from(arguments).unwrap();
 
         assert!(parsed_empty.config.is_none());
-        assert_eq!(parsed_empty.log_filter.unwrap(), LogLevel::Debug);
+        assert_eq!(parsed_empty.log_level.unwrap(), LogLevel::Debug);
 
         let arguments = &["/usr/bin/ntp-daemon", "-l", "debug"];
         let parsed_empty = NtpDaemonOptions::try_parse_from(arguments).unwrap();
 
         assert!(parsed_empty.config.is_none());
-        assert_eq!(parsed_empty.log_filter.unwrap(), LogLevel::Debug);
+        assert_eq!(parsed_empty.log_level.unwrap(), LogLevel::Debug);
     }
 
     #[test]
