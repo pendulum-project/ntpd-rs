@@ -34,7 +34,7 @@ impl NtsSpawner {
             match key_exchange_client(
                 self.config.address.server_name.clone(),
                 self.config.address.port,
-                &self.config.certificates,
+                &self.config.certificate_authorities,
             )
             .await
             {
