@@ -30,7 +30,7 @@ pub struct PeerNtsData {
     pub(crate) s2c: Box<dyn Cipher>,
 }
 
-#[cfg(feature = "ext-test")]
+#[cfg(feature = "__internal-test")]
 impl PeerNtsData {
     pub fn get_cookie(&mut self) -> Option<Vec<u8>> {
         self.cookies.get()
@@ -254,7 +254,7 @@ impl PeerSnapshot {
     }
 }
 
-#[cfg(feature = "ext-test")]
+#[cfg(feature = "__internal-test")]
 pub fn peer_snapshot() -> crate::PeerSnapshot {
     let mut reach = crate::peer::Reach::default();
     reach.received_packet();
@@ -536,7 +536,7 @@ impl Peer {
     }
 }
 
-#[cfg(feature = "fuzz")]
+#[cfg(feature = "__internal-fuzz")]
 pub fn fuzz_measurement_from_packet(
     client: u64,
     client_interval: u32,

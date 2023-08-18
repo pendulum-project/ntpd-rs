@@ -324,7 +324,7 @@ impl NtsRecord {
             }
             NtsRecord::Server { name, .. } => {
                 // NOTE: the server name should be ascii
-                #[cfg(not(feature = "fuzz"))]
+                #[cfg(not(feature = "__internal-fuzz"))]
                 debug_assert!(name.is_ascii());
                 let length = name.len() as u16;
                 writer.write_all(&length.to_be_bytes())?;
@@ -345,7 +345,7 @@ impl NtsRecord {
     }
 }
 
-#[cfg(feature = "fuzz")]
+#[cfg(feature = "__internal-fuzz")]
 impl<'a> arbitrary::Arbitrary<'a> for NtsRecord {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let record = u16::arbitrary(u)?;
@@ -1052,7 +1052,7 @@ impl KeyExchangeServer {
     }
 }
 
-#[cfg(feature = "fuzz")]
+#[cfg(feature = "__internal-fuzz")]
 pub fn fuzz_key_exchange_server_decoder(data: &[u8]) {
     // this fuzz harness is inspired by the server_decoder_finds_algorithm() test
     let mut decoder = KeyExchangeServerDecoder::new();
@@ -1073,7 +1073,7 @@ pub fn fuzz_key_exchange_server_decoder(data: &[u8]) {
     let _result = decode_output();
 }
 
-#[cfg(feature = "fuzz")]
+#[cfg(feature = "__internal-fuzz")]
 pub fn fuzz_key_exchange_result_decoder(data: &[u8]) {
     let decoder = KeyExchangeResultDecoder::new();
 

@@ -111,7 +111,7 @@ impl<'a> ExtensionField<'a> {
         }
     }
 
-    #[cfg(feature = "fuzz")]
+    #[cfg(feature = "__internal-fuzz")]
     pub fn serialize_pub<W: std::io::Write>(
         &self,
         w: &mut W,

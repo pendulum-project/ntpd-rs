@@ -14,15 +14,12 @@ release = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ntp-proto = { workspace = true, features = ["ext-test"] }
+ntp-proto = { workspace = true, features = ["__internal-test"] }
 ntp-udp.workspace = true
-ntp-daemon.workspace = true
 ntp-os-clock.workspace = true
 
 tokio.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
-serde_json.workspace = true
 aes-siv.workspace = true
 
 rustls.workspace = true

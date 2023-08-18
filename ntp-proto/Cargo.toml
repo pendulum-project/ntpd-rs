@@ -12,8 +12,8 @@ publish.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-fuzz = ["arbitrary"]
-ext-test = []
+__internal-fuzz = ["arbitrary"]
+__internal-test = []
 
 [dependencies]
 # Note: md5 is needed to calculate ReferenceIDs for IPv6 addresses per RFC5905
