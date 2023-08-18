@@ -22,14 +22,16 @@ pub struct StandardPeerConfig {
 pub struct NtsPeerConfig {
     pub address: NtsKeAddress,
     #[serde(
-        deserialize_with = "deserialize_certificates",
-        default = "default_certificates",
-        rename = "certificate"
+        deserialize_with = "deserialize_certificate_authorities",
+        default = "default_certificate_authorities",
+        rename = "certificate_authority"
     )]
-    pub certificates: Arc<[Certificate]>,
+    pub certificate_authorities: Arc<[Certificate]>,
 }
 
-fn deserialize_certificates<'de, D>(deserializer: D) -> Result<Arc<[Certificate]>, D::Error>
+fn deserialize_certificate_authorities<'de, D>(
+    deserializer: D,
+) -> Result<Arc<[Certificate]>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -44,7 +46,7 @@ where
     }
 }
 
-fn default_certificates() -> Arc<[Certificate]> {
+fn default_certificate_authorities() -> Arc<[Certificate]> {
     Arc::from([])
 }
 
@@ -411,7 +413,7 @@ mod tests {
             r#"
                 [peer]
                 address = "example.com"
-                certificate = "{}"
+                certificate_authority = "{}"
                 mode = "nts"
                 "#,
             path.display()
