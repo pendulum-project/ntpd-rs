@@ -100,5 +100,5 @@ test = false
 doc = false
 
 [patch.crates-io]
-rand = { path="../fuzz_rand_shim" }
+rand = { path="./fuzz_rand_shim" }
 rand_core = { git="https://github.com/rust-random/rand.git", tag="0.8.5" }
