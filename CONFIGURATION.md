@@ -218,7 +218,7 @@ Instructions for how to generate a CA certificate and use it to sign certificate
 
 **The management client interface format is unstable! Would you like to observe additional values? let us know in an issue!**
 
-The `logging-observability` section contains configuration for setting the logging level and exposing sockets for observation and configuration
+The `observability` section contains configuration for setting the logging level and exposing sockets for observation and configuration
 
 - The observation socket can be read to obtain information on the current state of the peer connections and clock steering algorithm.
 - The configuration socket can be used to change some configuration options dynamically.
@@ -296,7 +296,7 @@ The high performance clock algorithm has quite a few options. Most of these are 
 #### Example configuration file:
 
 ```toml
-[logging-observability]
+[observability]
 # Other values include trace, debug, warn and error
 log-level = "info"
 

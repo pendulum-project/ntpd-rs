@@ -185,7 +185,7 @@ pub async fn main() -> std::io::Result<ExitCode> {
             let config = config.unwrap_or_default();
 
             let observation = config
-                .logging_observability
+                .observability
                 .observe
                 .observation_path
                 .unwrap_or_else(|| PathBuf::from("/run/ntpd-rs/observe"));

@@ -1,4 +1,4 @@
-[logging-observability]
+[observability]
 # Other values include trace, debug, warn and error
 log-level = "info"
 observation-path = "/run/ntpd-rs/observe"
