@@ -1,3 +1,8 @@
+# Running as a system service
+
+## Linux - SystemD
+
+```ini
 [Unit]
 Description=Rust Network Time Service
 Documentation=https://github.com/pendulum-project/ntpd-rs
@@ -20,3 +25,32 @@ AmbientCapabilities=CAP_SYS_TIME
 
 [Install]
 WantedBy=multi-user.target
+```
+
+## FreeBSD
+
+```sh
+#!/bin/sh
+
+. /etc/rc.subr
+
+# PROVIDE: ntp_daemon
+# REQUIRE: DAEMON FILESYSTEMS devfs
+# BEFORE:  LOGIN
+# KEYWORD: nojail resume shutdown
+
+name="ntp_daemon"
+rcvar="ntp_daemon_enable"
+
+: ${ntp_daemon_enable:="NO"}
+
+start_precmd="${name}_precmd"
+
+command="/usr/sbin/daemon"
+procname="ntp-daemon"
+pidfile="/var/run/${name}.pid"
+command_args=" -f -o /var/log/ntp_daemon.log -H -P ${pidfile} /usr/local/bin/ntp-daemon --"
+
+load_rc_config $name
+run_rc_command "$1"
+```
