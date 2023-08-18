@@ -237,7 +237,7 @@ where
 }
 
 #[derive(Deserialize, Debug, Copy, Clone, Default)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ClockConfig {
     #[serde(deserialize_with = "deserialize_ntp_clock", default)]
     pub clock: DefaultNtpClock,
