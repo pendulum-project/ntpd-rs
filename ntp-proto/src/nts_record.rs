@@ -1174,9 +1174,10 @@ mod test {
 
     fn roundtrip(records: &[NtsRecord]) -> Result<PartialKeyExchangeData, KeyExchangeError> {
         let mut decoder = KeyExchangeResultDecoder::new();
+        let mut buffer = Vec::with_capacity(1024);
 
         for record in records {
-            let mut buffer = Vec::with_capacity(1024);
+            buffer.clear();
             record.write(&mut buffer).unwrap();
 
             decoder = match decoder.step_with_slice(&buffer) {
@@ -1186,6 +1187,14 @@ mod test {
         }
 
         Err(KeyExchangeError::IncompleteResponse)
+    }
+
+    #[test]
+    fn immediate_end_of_message() {
+        assert!(matches!(
+            roundtrip(&[NtsRecord::EndOfMessage]),
+            Err(KeyExchangeError::NoCookies)
+        ));
     }
 
     #[test]
@@ -1242,6 +1251,78 @@ mod test {
 
         assert_eq!(state.remote, Some(name));
         assert_eq!(state.port, Some(port));
+    }
+
+    const EXAMPLE_COOKIE_DATA: &[u8] = &[
+        178, 15, 188, 164, 68, 107, 175, 34, 77, 63, 18, 34, 122, 22, 95, 242, 175, 224, 29, 173,
+        58, 187, 47, 11, 245, 247, 119, 89, 5, 8, 221, 162, 106, 66, 30, 65, 218, 13, 108, 238, 12,
+        29, 200, 9, 92, 218, 38, 20, 238, 251, 68, 35, 44, 129, 189, 132, 4, 93, 117, 136, 91, 234,
+        58, 195, 223, 171, 207, 247, 172, 128, 5, 219, 97, 21, 128, 107, 96, 220, 189, 53, 223,
+        111, 181, 164, 185, 173, 80, 101, 75, 18, 180, 129, 243, 140, 253, 236, 45, 62, 101, 155,
+        252, 51, 102, 97,
+    ];
+
+    #[test]
+    fn hit_error_record() {
+        let cookie = NtsRecord::NewCookie {
+            cookie_data: EXAMPLE_COOKIE_DATA.to_vec(),
+        };
+
+        // this succeeds on its own
+        let records = [cookie.clone(), NtsRecord::EndOfMessage];
+
+        let state = roundtrip(records.as_slice()).unwrap();
+        assert_eq!(state.cookies.len(), 1);
+
+        // still succeeds if there is a warning
+        let records = [
+            cookie.clone(),
+            NtsRecord::Warning { warningcode: 42 },
+            NtsRecord::EndOfMessage,
+        ];
+
+        let state = roundtrip(records.as_slice()).unwrap();
+        assert_eq!(state.cookies.len(), 1);
+
+        // still succeeds if there is an unknown record
+        let records = [
+            cookie.clone(),
+            NtsRecord::Unknown {
+                record_type: 8,
+                critical: true,
+                data: vec![1, 2, 3],
+            },
+            NtsRecord::EndOfMessage,
+        ];
+
+        let state = roundtrip(records.as_slice()).unwrap();
+        assert_eq!(state.cookies.len(), 1);
+
+        // fails with the expected error if there is an error record
+        let records = [
+            cookie.clone(),
+            NtsRecord::Error { errorcode: 42 },
+            NtsRecord::EndOfMessage,
+        ];
+
+        let error = roundtrip(records.as_slice()).unwrap_err();
+        assert!(matches!(error, KeyExchangeError::UnknownErrorCode(42)));
+
+        let _ = cookie;
+    }
+
+    #[test]
+    fn incomplete_response() {
+        let error = roundtrip(&[]).unwrap_err();
+        assert!(matches!(error, KeyExchangeError::IncompleteResponse));
+
+        // this succeeds on its own
+        let records = [NtsRecord::NewCookie {
+            cookie_data: EXAMPLE_COOKIE_DATA.to_vec(),
+        }];
+
+        let error = roundtrip(records.as_slice()).unwrap_err();
+        assert!(matches!(error, KeyExchangeError::IncompleteResponse));
     }
 
     const NTS_TIME_NL_RESPONSE: &[u8] = &[
@@ -1426,29 +1507,130 @@ mod test {
         assert!(decoder.step().unwrap().is_none());
     }
 
-    #[test]
-    fn server_decoder_finds_algorithm() {
+    fn server_roundtrip(records: &[NtsRecord]) -> Result<ServerKeyExchangeData, KeyExchangeError> {
         let mut bytes = Vec::with_capacity(1024);
-        for record in NtsRecord::client_key_exchange_records() {
+        for record in records {
             record.write(&mut bytes).unwrap();
         }
 
         let mut decoder = KeyExchangeServerDecoder::new();
 
-        let decode_output = || {
-            for chunk in bytes.chunks(24) {
-                decoder = match decoder.step_with_slice(chunk) {
-                    ControlFlow::Continue(d) => d,
-                    ControlFlow::Break(done) => return done,
-                };
-            }
+        for chunk in bytes.chunks(24) {
+            decoder = match decoder.step_with_slice(chunk) {
+                ControlFlow::Continue(d) => d,
+                ControlFlow::Break(done) => return done,
+            };
+        }
 
-            Err(KeyExchangeError::IncompleteResponse)
-        };
+        Err(KeyExchangeError::IncompleteResponse)
+    }
 
-        let result = decode_output().unwrap();
+    #[test]
+    fn server_decoder_finds_algorithm() {
+        let result = server_roundtrip(&NtsRecord::client_key_exchange_records()).unwrap();
 
         assert_eq!(result.algorithm, AeadAlgorithm::AeadAesSivCmac512);
+    }
+
+    #[test]
+    fn server_decoder_ignores_new_cookie() {
+        let mut records = NtsRecord::client_key_exchange_records().to_vec();
+        records.insert(
+            0,
+            NtsRecord::NewCookie {
+                cookie_data: EXAMPLE_COOKIE_DATA.to_vec(),
+            },
+        );
+
+        let result = server_roundtrip(&records).unwrap();
+        assert_eq!(result.algorithm, AeadAlgorithm::AeadAesSivCmac512);
+    }
+
+    #[test]
+    fn server_decoder_ignores_server_and_port_preference() {
+        let mut records = NtsRecord::client_key_exchange_records().to_vec();
+        records.insert(
+            0,
+            NtsRecord::Server {
+                critical: true,
+                name: String::from("example.com"),
+            },
+        );
+
+        records.insert(
+            0,
+            NtsRecord::Port {
+                critical: true,
+                port: 4242,
+            },
+        );
+
+        let result = server_roundtrip(&records).unwrap();
+        assert_eq!(result.algorithm, AeadAlgorithm::AeadAesSivCmac512);
+    }
+
+    #[test]
+    fn server_decoder_ignores_warn() {
+        let mut records = NtsRecord::client_key_exchange_records().to_vec();
+        records.insert(0, NtsRecord::Warning { warningcode: 42 });
+
+        let result = server_roundtrip(&records).unwrap();
+        assert_eq!(result.algorithm, AeadAlgorithm::AeadAesSivCmac512);
+    }
+
+    #[test]
+    fn server_decoder_ignores_unknown() {
+        let mut records = NtsRecord::client_key_exchange_records().to_vec();
+        records.insert(
+            0,
+            NtsRecord::Unknown {
+                record_type: 8,
+                critical: true,
+                data: vec![1, 2, 3],
+            },
+        );
+
+        let result = server_roundtrip(&records).unwrap();
+        assert_eq!(result.algorithm, AeadAlgorithm::AeadAesSivCmac512);
+    }
+
+    #[test]
+    fn server_decoder_reports_error() {
+        let mut records = NtsRecord::client_key_exchange_records().to_vec();
+        records.insert(0, NtsRecord::Error { errorcode: 2 });
+
+        let error = server_roundtrip(&records).unwrap_err();
+        assert!(matches!(error, KeyExchangeError::InternalServerError));
+    }
+
+    #[test]
+    fn server_decoder_no_valid_protocol() {
+        let records = [
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![42],
+            },
+            NtsRecord::EndOfMessage,
+        ];
+
+        let error = server_roundtrip(&records).unwrap_err();
+        assert!(matches!(error, KeyExchangeError::NoValidProtocol));
+    }
+
+    #[test]
+    fn server_decoder_no_valid_algorithm() {
+        let records = [
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            NtsRecord::AeadAlgorithm {
+                critical: false,
+                algorithm_ids: vec![1234],
+            },
+            NtsRecord::EndOfMessage,
+        ];
+
+        let error = server_roundtrip(&records).unwrap_err();
+        assert!(matches!(error, KeyExchangeError::NoValidAlgorithm));
     }
 
     #[test]
