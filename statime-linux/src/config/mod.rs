@@ -3,6 +3,7 @@ use std::{fs::read_to_string, os::unix::fs::PermissionsExt, path::Path};
 use log::warn;
 use serde::Deserialize;
 use statime::{DelayMechanism, Duration, Interval};
+use timestamped_socket::interface::InterfaceName;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -19,7 +20,7 @@ pub struct Config {
 
 #[derive(Deserialize, Debug)]
 pub struct PortConfig {
-    pub interface: String,
+    pub interface: InterfaceName,
     pub announce_interval: i8,
     pub sync_interval: i8,
     pub announce_receipt_timeout: u8,
