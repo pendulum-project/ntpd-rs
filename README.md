@@ -101,3 +101,5 @@ Prossimo funded the initial development of the NTP client and server, and NTS su
 After completion of the initial development, the project's ownership moved from Prossimo to Tweede golf in April 2023. See the announcement [here](https://www.memorysafety.org/blog/ntp-and-nts-have-arrived/).
 
 Tweede golf is the long-term maintainer of ntpd-rs, that is now part of Tweede golf's [Project Pendulum](https://github.com/pendulum-project). Pendulum is building modern, open-source implementations of the Network Time Protocol and the Precision Time Protocol. In August of 2023, Sovereign Tech Fund invested in Pendulum. Read more on [their website](https://sovereigntechfund.de/en/projects/pendulum/).
+
+![STF](https://tweedegolf.nl/images/logo-stf-blank.png)
