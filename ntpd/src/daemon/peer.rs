@@ -125,7 +125,7 @@ where
                 // not exactly a network gone situation, but needs the same response
                 return PollResult::NetworkGone;
             }
-            Err(PollError::Unreachable) => {
+            Err(PollError::PeerUnreachable) => {
                 warn!("Peer is no longer reachable over network, restarting");
                 return PollResult::Unreachable;
             }
