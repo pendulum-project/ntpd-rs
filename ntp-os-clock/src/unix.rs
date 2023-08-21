@@ -312,7 +312,7 @@ fn convert_errno() -> Error {
         // The documentation is a bit unclear if this can happen with
         // non-dynamic clocks like the ntp kapi clock, however lets
         // deal with it just in case.
-        libc::ENODEV => Error::NoDev,
+        libc::ENODEV => Error::NoDevice,
         libc::EOPNOTSUPP => Error::NotSupported,
         libc::EPERM => Error::NoPermission,
         // No other errors should occur (EFAULT is not possible as we always

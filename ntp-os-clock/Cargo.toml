@@ -14,5 +14,4 @@ publish.workspace = true
 [dependencies]
 ntp-proto.workspace = true
 libc.workspace = true
-thiserror.workspace  = true
 tracing.workspace = true
