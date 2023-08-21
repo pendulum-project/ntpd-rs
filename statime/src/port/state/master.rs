@@ -443,7 +443,7 @@ mod tests {
         assert!(actions.next().is_none());
         drop(actions);
 
-        let sync = Message::deserialize(&data).unwrap();
+        let sync = Message::deserialize(data).unwrap();
         let sync_header = sync.header;
 
         let _sync = match sync.body {
@@ -465,7 +465,7 @@ mod tests {
         assert!(actions.next().is_none());
         drop(actions);
 
-        let follow = Message::deserialize(&data).unwrap();
+        let follow = Message::deserialize(data).unwrap();
         let follow_header = follow.header;
 
         let follow = match follow.body {
@@ -500,7 +500,7 @@ mod tests {
         assert!(actions.next().is_none());
         drop(actions);
 
-        let sync2 = Message::deserialize(&data).unwrap();
+        let sync2 = Message::deserialize(data).unwrap();
         let sync2_header = sync2.header;
 
         let _sync2 = match sync2.body {
@@ -521,7 +521,7 @@ mod tests {
         };
         assert!(actions.next().is_none());
 
-        let follow2 = Message::deserialize(&data).unwrap();
+        let follow2 = Message::deserialize(data).unwrap();
         let follow2_header = follow2.header;
 
         let follow2 = match follow2.body {

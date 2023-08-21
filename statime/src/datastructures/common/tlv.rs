@@ -255,7 +255,7 @@ mod tests {
             tlv_type: TlvType::Management,
             value: &b"hello!"[..],
         };
-        tlv1.serialize(&mut buffer).unwrap();
+        tlv1.serialize(buffer).unwrap();
         buffer = &mut buffer[tlv1.wire_size()..];
         assert!(!tlv1.tlv_type.announce_propagate());
 
@@ -263,7 +263,7 @@ mod tests {
             tlv_type: TlvType::PathTrace,
             value: &b"PathTrace!"[..],
         };
-        tlv2.serialize(&mut buffer).unwrap();
+        tlv2.serialize(buffer).unwrap();
         buffer = &mut buffer[tlv2.wire_size()..];
         assert!(tlv2.tlv_type.announce_propagate());
 
@@ -271,7 +271,7 @@ mod tests {
             tlv_type: TlvType::OrganizationExtensionPropagate,
             value: &b"OrganizationExtensionPropagate"[..],
         };
-        tlv3.serialize(&mut buffer).unwrap();
+        tlv3.serialize(buffer).unwrap();
         buffer = &mut buffer[tlv3.wire_size()..];
         assert!(tlv3.tlv_type.announce_propagate());
 

@@ -207,7 +207,7 @@ mod tests {
         );
         assert_eq!(
             Duration::from_secs(-10).nanos(),
-            -10_000_000_000u64.to_fixed::<I96F32>()
+            -(10_000_000_000u64.to_fixed::<I96F32>())
         );
         assert_eq!(
             Duration::from_millis(10).nanos(),

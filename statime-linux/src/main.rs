@@ -1,6 +1,8 @@
 use std::{
     future::Future,
+    path::PathBuf,
     pin::{pin, Pin},
+    str::FromStr,
     sync::OnceLock,
 };
 
@@ -8,12 +10,13 @@ use clap::Parser;
 use fern::colors::Color;
 use rand::{rngs::StdRng, SeedableRng};
 use statime::{
-    BasicFilter, Clock, ClockIdentity, DelayMechanism, Duration, InBmca, InstanceConfig, Interval,
-    Port, PortAction, PortActionIterator, PortConfig, PtpInstance, SdoId, Time, TimePropertiesDS,
-    TimeSource, TimestampContext, MAX_DATA_LEN,
+    BasicFilter, Clock, ClockIdentity, InBmca, InstanceConfig, Port, PortAction,
+    PortActionIterator, PtpInstance, SdoId, Time, TimePropertiesDS, TimeSource, TimestampContext,
+    MAX_DATA_LEN,
 };
 use statime_linux::{
     clock::LinuxClock,
+    config::Config,
     socket::{EventSocket, GeneralSocket},
 };
 use timestamped_socket::{
@@ -30,6 +33,12 @@ use tokio::{
 
 #[derive(Clone, Copy)]
 struct SdoIdParser;
+
+pub struct PortDefinition {
+    port: BmcaPort,
+    interface: InterfaceDescriptor,
+    timestamping_mode: TimestampingMode,
+}
 
 impl clap::builder::TypedValueParser for SdoIdParser {
     type Value = SdoId;
@@ -67,50 +76,11 @@ impl clap::builder::TypedValueParser for SdoIdParser {
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
-struct Args {
-    /// Set desired logging level
-    #[clap(short, long, default_value_t = log::LevelFilter::Info)]
-    loglevel: log::LevelFilter,
-
-    /// Set interface on which to listen to PTP messages
-    #[clap(short, long)]
-    interface: InterfaceDescriptor,
-
-    /// The SDO id of the desired ptp domain
-    #[clap(long, default_value_t = SdoId::default(), value_parser = SdoIdParser)]
-    sdo: SdoId,
-
-    /// The domain number of the desired ptp domain
-    #[clap(long, default_value_t = 0)]
-    domain: u8,
-
-    /// Local clock priority (part 1) used in master clock selection
-    /// Default init value is 128, see: A.9.4.2
-    #[clap(long, default_value_t = 255)]
-    priority_1: u8,
-
-    /// Local clock priority (part 2) used in master clock selection
-    /// Default init value is 128, see: A.9.4.2
-    #[clap(long, default_value_t = 255)]
-    priority_2: u8,
-
-    /// Log value of interval expected between announce messages, see: 7.7.2.2
-    /// Default init value is 1, see: A.9.4.2
-    #[clap(long, default_value_t = 1)]
-    log_announce_interval: i8,
-
+pub struct Args {
     /// Time interval between Sync messages, see: 7.7.2.3
     /// Default init value is 0, see: A.9.4.2
-    #[clap(long, default_value_t = 0)]
-    log_sync_interval: i8,
-
-    /// Default init value is 3, see: A.9.4.2
-    #[clap(long, default_value_t = 3)]
-    announce_receipt_timeout: u8,
-
-    /// Use hardware clock
-    #[clap(long, short = 'c')]
-    hardware_clock: Option<String>,
+    #[clap(long, short = 'c', default_value = "config.toml")]
+    config_file: Option<PathBuf>,
 }
 
 fn setup_logger(level: log::LevelFilter) -> Result<(), fern::InitError> {
@@ -197,77 +167,71 @@ async fn main() {
 async fn actual_main() {
     let args = Args::parse();
 
-    setup_logger(args.loglevel).expect("Could not setup logging");
+    let config = Config::from_file(
+        &args
+            .config_file
+            .expect("could not determine config file path"),
+    )
+    .unwrap_or_else(|e| panic!("error loading config: {e}"));
 
-    let local_clock = if let Some(hardware_clock) = &args.hardware_clock {
-        LinuxClock::open(hardware_clock).expect("Could not open hardware clock")
+    let log_level = log::LevelFilter::from_str(&config.loglevel).unwrap();
+    setup_logger(log_level).expect("could not setup logging");
+
+    let local_clock = if let Some(hardware_clock) = config.hardware_clock {
+        LinuxClock::open(hardware_clock).expect("could not open hardware clock")
     } else {
         LinuxClock::CLOCK_REALTIME
     };
 
-    let timestamping_mode = if args.hardware_clock.is_some() {
-        match args.interface.interface_name {
-            Some(interface_name) => TimestampingMode::Hardware(interface_name),
-            None => panic!("an interface name is required when using hardware timestamping"),
-        }
-    } else {
-        TimestampingMode::Software
-    };
+    let clock_identity = ClockIdentity(get_clock_id().expect("could not get clock identity"));
 
-    let clock_identity = ClockIdentity(get_clock_id().expect("Could not get clock identity"));
-
-    let config = InstanceConfig {
+    let instance_config = InstanceConfig {
         clock_identity,
-        priority_1: args.priority_1,
-        priority_2: args.priority_2,
-        domain_number: args.domain,
+        priority_1: config.priority1,
+        priority_2: config.priority2,
+        domain_number: config.domain,
         slave_only: false,
-        sdo_id: args.sdo,
+        sdo_id: SdoId::new(config.sdo_id).expect("sdo-id should be between 0 and 4095"),
     };
 
     let time_properties_ds =
         TimePropertiesDS::new_arbitrary_time(false, false, TimeSource::InternalOscillator);
 
-    let instance = PtpInstance::new(config, time_properties_ds, local_clock.clone());
+    let instance = PtpInstance::new(instance_config, time_properties_ds, local_clock.clone());
 
     // borrow instance with the static lifetime
     static INSTANCE: OnceLock<PtpInstance<LinuxClock, BasicFilter>> = OnceLock::new();
     let instance = INSTANCE.get_or_init(|| instance);
 
-    let port_config = PortConfig {
-        delay_mechanism: DelayMechanism::E2E {
-            interval: Interval::TWO_SECONDS,
-        },
-        announce_interval: Interval::from_log_2(args.log_announce_interval),
-        announce_receipt_timeout: args.announce_receipt_timeout,
-        sync_interval: Interval::from_log_2(args.log_sync_interval),
-        master_only: false,
-        delay_asymmetry: Duration::ZERO,
-    };
+    // for every port in the config file, create a port definition and add it
+    // to the instance
+    let ports = config.ports.into_iter().map(|port_config| {
+        let interface = InterfaceDescriptor::from_str(port_config.interface.as_str()).unwrap();
+        // NOTE: Hardware timestamping is ignored for now
+        // let timestamping_mode = if config.hardware_clock.is_some() {
+        // match interface_descriptor.interface_name {
+        // Some(interface_name) => TimestampingMode::Hardware(interface_name),
+        // None => panic!("an interface name is required when using hardware
+        // timestamping"), }
+        // } else {
+        // TimestampingMode::Software
+        // };
+        let timestamping_mode = TimestampingMode::Software;
+        let rng = StdRng::from_entropy();
+        let port = instance.add_port(port_config.into(), 0.25, local_clock.clone(), rng);
 
-    let rng1 = StdRng::from_entropy();
-    let port_in_bmca1 = instance.add_port(port_config, 0.25, local_clock.clone(), rng1);
+        PortDefinition {
+            port,
+            interface,
+            timestamping_mode,
+        }
+    });
 
-    let rng2 = StdRng::from_entropy();
-    let port_in_bmca2 = instance.add_port(port_config, 0.25, local_clock.clone(), rng2);
-
-    let ports = vec![port_in_bmca1, port_in_bmca2];
-
-    run(
-        ports,
-        &args.interface,
-        timestamping_mode,
-        &local_clock,
-        instance,
-    )
-    .await
-    .unwrap()
+    run(ports, &local_clock, instance).await.unwrap()
 }
 
 async fn run(
-    ports: Vec<BmcaPort>,
-    interface: &InterfaceDescriptor,
-    timestamping_mode: TimestampingMode,
+    ports: impl Iterator<Item = PortDefinition> + ExactSizeIterator,
     local_clock: &LinuxClock,
     instance: &'static PtpInstance<LinuxClock, BasicFilter>,
 ) -> std::io::Result<()> {
@@ -277,9 +241,13 @@ async fn run(
     let mut main_task_senders = Vec::with_capacity(ports.len());
     let mut main_task_receivers = Vec::with_capacity(ports.len());
 
-    for port in ports.into_iter() {
-        let event_socket = EventSocket::new(interface, timestamping_mode).await?;
-        let general_socket = GeneralSocket::new(interface).await?;
+    for port_definition in ports.into_iter() {
+        let event_socket = EventSocket::new(
+            &port_definition.interface,
+            port_definition.timestamping_mode,
+        )
+        .await?;
+        let general_socket = GeneralSocket::new(&port_definition.interface).await?;
 
         let (main_task_sender, port_task_receiver) = tokio::sync::mpsc::channel(1);
         let (port_task_sender, main_task_receiver) = tokio::sync::mpsc::channel(1);
@@ -294,7 +262,7 @@ async fn run(
         ));
 
         main_task_sender
-            .send(port)
+            .send(port_definition.port)
             .await
             .expect("space in channel buffer");
 
