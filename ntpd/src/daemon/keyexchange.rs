@@ -63,7 +63,7 @@ pub fn spawn(
     })
 }
 
-fn error(msg: &str) -> std::io::Error {
+fn io_error(msg: &str) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::Other, msg)
 }
 
@@ -71,37 +71,35 @@ async fn run_nts_ke(
     nts_ke_config: NtsKeConfig,
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
 ) -> std::io::Result<()> {
-    let cert_chain_file =
-        std::fs::File::open(&nts_ke_config.certificate_chain_path).map_err(|e| {
-            error(&format!(
+    let certificate_chain_file = std::fs::File::open(&nts_ke_config.certificate_chain_path)
+        .map_err(|e| {
+            io_error(&format!(
                 "error reading certificate_chain_path at `{:?}`: {:?}",
                 nts_ke_config.certificate_chain_path, e
             ))
         })?;
-    let key_der_file = std::fs::File::open(&nts_ke_config.private_key_path).map_err(|e| {
-        error(&format!(
+
+    let private_key_file = std::fs::File::open(&nts_ke_config.private_key_path).map_err(|e| {
+        io_error(&format!(
             "error reading key_der_path at `{:?}`: {:?}",
             nts_ke_config.private_key_path, e
         ))
     })?;
 
     let cert_chain: Vec<rustls::Certificate> =
-        rustls_pemfile::certs(&mut std::io::BufReader::new(cert_chain_file))?
+        rustls_pemfile::certs(&mut std::io::BufReader::new(certificate_chain_file))?
             .into_iter()
             .map(rustls::Certificate)
             .collect();
 
-    let mut key_der =
-        rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(key_der_file))?;
-
-    let key = key_der.pop().ok_or(error("could not parse private key"))?;
-    let key_der = rustls::PrivateKey(key);
+    let private_key = private_key_from_bufread(&mut std::io::BufReader::new(private_key_file))?
+        .ok_or(io_error("could not parse private key"))?;
 
     key_exchange_server(
         keyset,
         nts_ke_config.key_exchange_listen,
         cert_chain,
-        key_der,
+        private_key,
         nts_ke_config.key_exchange_timeout_ms,
     )
     .await
@@ -111,7 +109,7 @@ async fn key_exchange_server(
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     address: impl ToSocketAddrs,
     certificate_chain: Vec<Certificate>,
-    key_der: PrivateKey,
+    private_key: PrivateKey,
     timeout_ms: u64,
 ) -> std::io::Result<()> {
     use std::io;
@@ -121,7 +119,7 @@ async fn key_exchange_server(
     let mut config = rustls::ServerConfig::builder()
         .with_safe_defaults()
         .with_no_client_auth()
-        .with_single_cert(certificate_chain, key_der)
+        .with_single_cert(certificate_chain, private_key)
         .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
 
     config.alpn_protocols.clear();
@@ -471,21 +469,33 @@ pub(crate) fn certificates_from_file(path: &Path) -> std::io::Result<Vec<Certifi
     let file = std::fs::File::open(path)?;
     let reader = BufReader::new(file);
 
-    certificates_from_bufread(reader)
+    Ok(certificates_from_bufread(reader))
 }
 
-fn certificates_from_bufread(mut reader: impl BufRead) -> std::io::Result<Vec<Certificate>> {
-    use rustls_pemfile::{read_one, Item};
+fn certificates_from_bufread(mut reader: impl BufRead) -> Vec<Certificate> {
+    rustls_pemfile::certs(&mut reader)
+        .unwrap()
+        .iter()
+        .map(|v| rustls::Certificate(v.clone()))
+        .collect()
+}
 
-    let mut output = Vec::new();
+fn private_key_from_bufread(
+    mut reader: impl BufRead,
+) -> std::io::Result<Option<rustls::PrivateKey>> {
+    use rustls_pemfile::Item;
 
-    for item in std::iter::from_fn(|| read_one(&mut reader).transpose()) {
-        if let Item::X509Certificate(cert) = item? {
-            output.push(Certificate(cert));
+    loop {
+        match rustls_pemfile::read_one(&mut reader)? {
+            Some(Item::RSAKey(key)) => return Ok(Some(rustls::PrivateKey(key))),
+            Some(Item::PKCS8Key(key)) => return Ok(Some(rustls::PrivateKey(key))),
+            Some(Item::ECKey(key)) => return Ok(Some(rustls::PrivateKey(key))),
+            None => break,
+            _ => {}
         }
     }
 
-    Ok(output)
+    Ok(None)
 }
 
 #[cfg(test)]
@@ -499,7 +509,7 @@ mod tests {
     #[test]
     fn nos_nl_pem() {
         let input = include_bytes!("../../testdata/certificates/nos-nl.pem");
-        let certificates = certificates_from_bufread(input.as_slice()).unwrap();
+        let certificates = certificates_from_bufread(input.as_slice());
 
         assert_eq!(certificates.len(), 1);
     }
@@ -507,9 +517,31 @@ mod tests {
     #[test]
     fn nos_nl_chain_pem() {
         let input = include_bytes!("../../testdata/certificates/nos-nl-chain.pem");
-        let certificates = certificates_from_bufread(input.as_slice()).unwrap();
+        let certificates = certificates_from_bufread(input.as_slice());
 
         assert_eq!(certificates.len(), 3);
+    }
+
+    #[test]
+    fn parse_private_keys() {
+        let input = include_bytes!("../../../test-keys/end.key");
+        let _ = private_key_from_bufread(input.as_slice()).unwrap().unwrap();
+
+        let input = include_bytes!("../../../test-keys/testca.key");
+        let _ = private_key_from_bufread(input.as_slice()).unwrap().unwrap();
+
+        // openssl does no longer seem to want to generate this format
+        // so we use https://github.com/rustls/pemfile/blob/main/tests/data/rsa1024.pkcs1.pem
+        let input = include_bytes!("../../../test-keys/rsa_key.pem");
+        let _ = private_key_from_bufread(input.as_slice()).unwrap().unwrap();
+
+        // openssl ecparam -name prime256v1 -genkey -noout -out ec_key.pem
+        let input = include_bytes!("../../../test-keys/ec_key.pem");
+        let _ = private_key_from_bufread(input.as_slice()).unwrap().unwrap();
+
+        // openssl genpkey -algorithm EC -out pkcs8_key.pem -pkeyopt ec_paramgen_curve:prime256v1
+        let input = include_bytes!("../../../test-keys/pkcs8_key.pem");
+        let _ = private_key_from_bufread(input.as_slice()).unwrap().unwrap();
     }
 
     #[tokio::test]
@@ -534,7 +566,7 @@ mod tests {
         let result = key_exchange_client(
             "localhost".to_string(),
             5431,
-            &certificates_from_bufread(BufReader::new(Cursor::new(ca))).unwrap(),
+            &certificates_from_bufread(BufReader::new(Cursor::new(ca))),
         )
         .await
         .unwrap();
