@@ -11,19 +11,38 @@ mod unix;
 #[cfg(unix)]
 pub type DefaultNtpClock = unix::UnixNtpClock;
 
-#[derive(Debug, Copy, Clone, thiserror::Error)]
+/// Errors that can be thrown by modifying a unix clock
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Error {
-    #[error("Insufficient permissions to interact with the clock.")]
+    /// Insufficient permissions to interact with the clock.
     NoPermission,
-    #[error("Invalid operation requested")]
+    /// No access to the clock.
+    NoAccess,
+    /// Invalid operation requested
     Invalid,
-    #[error("Clock device has gone away")]
-    NoDev,
-    #[error("Clock operation requested is not supported by operating system.")]
+    /// Clock device has gone away
+    NoDevice,
+    /// Clock operation requested is not supported by operating system.
     NotSupported,
-    #[error("Invalid clock path")]
-    InvalidClockPath,
 }
+
+impl core::fmt::Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        use Error::*;
+
+        let msg = match self {
+            NoPermission => "Insufficient permissions to interact with the clock.",
+            NoAccess => "No access to the clock.",
+            Invalid => "Invalid operation requested",
+            NoDevice => "Clock device has gone away",
+            NotSupported => "Clock operation requested is not supported by operating system.",
+        };
+
+        f.write_str(msg)
+    }
+}
+
+impl std::error::Error for Error {}
 
 // Unix uses an epoch located at 1/1/1970-00:00h (UTC) and NTP uses 1/1/1900-00:00h.
 // This leads to an offset equivalent to 70 years in seconds

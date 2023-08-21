@@ -380,7 +380,6 @@ version = "0.3.6"
 dependencies = [
  "libc",
  "ntp-proto",
- "thiserror",
  "tracing",
 ]
 
