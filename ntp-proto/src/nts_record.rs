@@ -450,6 +450,17 @@ pub enum KeyExchangeError {
     IncompleteResponse,
 }
 
+impl KeyExchangeError {
+    fn from_error_code(error_code: u16) -> Self {
+        match error_code {
+            0 => Self::UnrecognizedCriticalRecord,
+            1 => Self::BadRequest,
+            2 => Self::InternalServerError,
+            _ => Self::UnknownErrorCode(error_code),
+        }
+    }
+}
+
 /// From https://www.rfc-editor.org/rfc/rfc8915.html#name-network-time-security-next-
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 #[repr(u16)]
@@ -620,14 +631,8 @@ impl KeyExchangeResultDecoder {
                 Continue(state)
             }
             Error { errorcode } => {
-                let error = match errorcode {
-                    0 => UnrecognizedCriticalRecord,
-                    1 => BadRequest,
-                    2 => InternalServerError,
-                    _ => UnknownErrorCode(errorcode),
-                };
-
-                Break(Err(error))
+                //
+                Break(Err(KeyExchangeError::from_error_code(errorcode)))
             }
             Warning { warningcode } => {
                 tracing::warn!(warningcode, "Received key exchange warning code");
@@ -856,14 +861,8 @@ impl KeyExchangeServerDecoder {
                 Continue(state)
             }
             Error { errorcode } => {
-                let error = match errorcode {
-                    0 => UnrecognizedCriticalRecord,
-                    1 => BadRequest,
-                    2 => InternalServerError,
-                    _ => UnknownErrorCode(errorcode),
-                };
-
-                Break(Err(error))
+                //
+                Break(Err(KeyExchangeError::from_error_code(errorcode)))
             }
             Warning { warningcode } => {
                 tracing::debug!(warningcode, "Received key exchange warning code");
@@ -1127,6 +1126,25 @@ mod test {
         );
 
         assert!(decoder.step().unwrap().is_none());
+    }
+
+    #[test]
+    fn encode_decode_server_invalid_utf8() {
+        let buffer = vec![
+            0, 6, // type
+            0, 4, // length
+            0xF8, 0x80, 0x80, 0x80, // content (invalid utf8 sequence)
+        ];
+
+        let record = NtsRecord::Unknown {
+            record_type: 6,
+            critical: false,
+            data: vec![0xF8, 0x80, 0x80, 0x80],
+        };
+
+        let decoded = NtsRecord::read(&mut Cursor::new(buffer)).unwrap();
+
+        assert_eq!(record, decoded);
     }
 
     #[test]
@@ -1631,6 +1649,26 @@ mod test {
 
         let error = server_roundtrip(&records).unwrap_err();
         assert!(matches!(error, KeyExchangeError::NoValidAlgorithm));
+    }
+
+    #[test]
+    fn server_decoder_incomplete_response() {
+        let error = server_roundtrip(&[]).unwrap_err();
+        assert!(matches!(error, KeyExchangeError::IncompleteResponse));
+
+        let records = [
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            NtsRecord::Unknown {
+                record_type: 8,
+                critical: true,
+                data: vec![1, 2, 3],
+            },
+        ];
+
+        let error = server_roundtrip(&records).unwrap_err();
+        assert!(matches!(error, KeyExchangeError::IncompleteResponse));
     }
 
     #[test]
