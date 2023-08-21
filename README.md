@@ -43,7 +43,7 @@ systemctl stop chronyd
 The ntpd-rs daemon requires elevated permissions to change the system clock.
 
 ```sh
-sudo ./target/release/ntp-daemon
+sudo ./target/release/ntp-daemon -c ./ntp.toml
 ```
 
 By default, at least 3 peer servers are needed for the algorithm to change the
