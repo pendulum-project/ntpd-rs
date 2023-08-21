@@ -290,7 +290,7 @@ pub enum PollError {
     #[error("{0}")]
     Io(#[from] std::io::Error),
     #[error("peer unreachable")]
-    Unreachable,
+    PeerUnreachable,
 }
 
 impl Peer {
@@ -354,7 +354,7 @@ impl Peer {
         peer_defaults_config: &PeerDefaultsConfig,
     ) -> Result<&'a [u8], PollError> {
         if !self.reach.is_reachable() && self.tries >= STARTUP_TRIES_THRESHOLD {
-            return Err(PollError::Unreachable);
+            return Err(PollError::PeerUnreachable);
         }
 
         self.reach.poll();
@@ -796,7 +796,7 @@ mod test {
             .is_ok());
         assert!(matches!(
             peer.generate_poll_message(&mut buf, system, &PeerDefaultsConfig::default()),
-            Err(PollError::Unreachable)
+            Err(PollError::PeerUnreachable)
         ));
     }
 
@@ -854,7 +854,7 @@ mod test {
             .is_ok());
         assert!(matches!(
             peer.generate_poll_message(&mut buf, system, &PeerDefaultsConfig::default()),
-            Err(PollError::Unreachable)
+            Err(PollError::PeerUnreachable)
         ));
     }
 
