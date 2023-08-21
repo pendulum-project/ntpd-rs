@@ -58,51 +58,37 @@ impl NtsRecord {
         }
     }
 
-    fn validate(&self) -> std::io::Result<()> {
-        let invalid = || {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                WriteError::Invalid,
-            ))
-        };
-
-        let too_long = || {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                WriteError::TooLong,
-            ))
-        };
-
+    fn validate(&self) -> Result<(), WriteError> {
         match self {
             NtsRecord::Unknown {
                 record_type, data, ..
             } => {
                 if *record_type & 0x8000 != 0 {
-                    return invalid();
+                    return Err(WriteError::Invalid);
                 }
                 if data.len() > u16::MAX as usize {
-                    return too_long();
+                    return Err(WriteError::TooLong);
                 }
             }
             NtsRecord::NextProtocol { protocol_ids } => {
                 if protocol_ids.len() >= (u16::MAX as usize) / 2 {
-                    return too_long();
+                    return Err(WriteError::TooLong);
                 }
             }
 
             NtsRecord::AeadAlgorithm { algorithm_ids, .. } => {
                 if algorithm_ids.len() >= (u16::MAX as usize) / 2 {
-                    return too_long();
+                    return Err(WriteError::TooLong);
                 }
             }
             NtsRecord::NewCookie { cookie_data } => {
                 if cookie_data.len() > u16::MAX as usize {
-                    return too_long();
+                    return Err(WriteError::TooLong);
                 }
             }
             NtsRecord::Server { name, .. } => {
                 if name.as_bytes().len() >= (u16::MAX as usize) {
-                    return too_long();
+                    return Err(WriteError::TooLong);
                 }
             }
 
@@ -277,7 +263,9 @@ impl NtsRecord {
 
     pub fn write<A: Write>(&self, writer: &mut A) -> std::io::Result<()> {
         // error out early when the record is invalid
-        self.validate()?;
+        if let Err(e) = self.validate() {
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, e));
+        }
 
         // all messages start with the record type
         let record_type = self.record_type() | ((self.is_critical() as u16) << 15);
@@ -1085,6 +1073,8 @@ pub fn fuzz_key_exchange_result_decoder(data: &[u8]) {
 
 #[cfg(test)]
 mod test {
+    use std::io::Cursor;
+
     use crate::KeySetProvider;
 
     use super::*;
@@ -1137,6 +1127,49 @@ mod test {
         );
 
         assert!(decoder.step().unwrap().is_none());
+    }
+
+    #[test]
+    fn encode_decode_error_record() {
+        let mut buffer = Vec::new();
+
+        let record = NtsRecord::Error { errorcode: 42 };
+
+        record.write(&mut buffer).unwrap();
+
+        let decoded = NtsRecord::read(&mut Cursor::new(buffer)).unwrap();
+
+        assert_eq!(record, decoded);
+    }
+
+    #[test]
+    fn encode_decode_warning_record() {
+        let mut buffer = Vec::new();
+
+        let record = NtsRecord::Warning { warningcode: 42 };
+
+        record.write(&mut buffer).unwrap();
+
+        let decoded = NtsRecord::read(&mut Cursor::new(buffer)).unwrap();
+
+        assert_eq!(record, decoded);
+    }
+
+    #[test]
+    fn encode_decode_unknown_record() {
+        let mut buffer = Vec::new();
+
+        let record = NtsRecord::Unknown {
+            record_type: 8,
+            critical: true,
+            data: vec![1, 2, 3],
+        };
+
+        record.write(&mut buffer).unwrap();
+
+        let decoded = NtsRecord::read(&mut Cursor::new(buffer)).unwrap();
+
+        assert_eq!(record, decoded);
     }
 
     fn roundtrip(records: &[NtsRecord]) -> Result<PartialKeyExchangeData, KeyExchangeError> {
