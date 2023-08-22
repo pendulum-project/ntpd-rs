@@ -153,7 +153,10 @@ pub unsafe fn sockaddr_to_socket_addr(sockaddr: *const libc::sockaddr) -> Option
     // of the underlying value regardless of platform.
     match unsafe { (*sockaddr).sa_family as libc::c_int } {
         libc::AF_INET => {
-            let inaddr: libc::sockaddr_in = unsafe { *(sockaddr as *const libc::sockaddr_in) };
+            // SAFETY: we cast from a libc::sockaddr (alignment 2) to a libc::sockaddr_in (alignment 4)
+            // that means that the pointer is now potentially unaligned. We must used read_unaligned!
+            let inaddr: libc::sockaddr_in =
+                unsafe { std::ptr::read_unaligned(sockaddr as *const libc::sockaddr_in) };
 
             let socketaddr = std::net::SocketAddrV4::new(
                 std::net::Ipv4Addr::from(inaddr.sin_addr.s_addr.to_ne_bytes()),
@@ -163,7 +166,10 @@ pub unsafe fn sockaddr_to_socket_addr(sockaddr: *const libc::sockaddr) -> Option
             Some(std::net::SocketAddr::V4(socketaddr))
         }
         libc::AF_INET6 => {
-            let inaddr: libc::sockaddr_in6 = unsafe { *(sockaddr as *const libc::sockaddr_in6) };
+            // SAFETY: we cast from a libc::sockaddr (alignment 2) to a libc::sockaddr_in6 (alignment 4)
+            // that means that the pointer is now potentially unaligned. We must used read_unaligned!
+            let inaddr: libc::sockaddr_in6 =
+                unsafe { std::ptr::read_unaligned(sockaddr as *const libc::sockaddr_in6) };
 
             let sin_addr = inaddr.sin6_addr.s6_addr;
             let segment_bytes: [u8; 16] =
