@@ -1,3 +1,15 @@
+Version 0.3.7
+======
+
+Minor Changes
+-----
+- Removed sentry support
+- Upgraded dependencies
+
+Bug fixes
+-----
+- Upgraded webpki to deal with denial of service security issue during startup.
+
 Version 0.3.6
 ======
 
