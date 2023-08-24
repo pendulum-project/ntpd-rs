@@ -1,4 +1,8 @@
-use std::{fs::File, sync::Arc};
+use std::{
+    fs::{File, OpenOptions},
+    os::unix::prelude::{OpenOptionsExt, PermissionsExt},
+    sync::Arc,
+};
 
 use ntp_proto::{KeySet, KeySetProvider};
 use tokio::sync::watch;
@@ -10,6 +14,17 @@ pub async fn spawn(config: KeysetConfig) -> watch::Receiver<Arc<KeySet>> {
     let (mut provider, mut next_interval) = match &config.key_storage_path {
         Some(path) => {
             let path = path.to_owned();
+
+            if let Ok(meta) = std::fs::metadata(&path) {
+                let perm = meta.permissions();
+
+                if perm.mode() as libc::mode_t & (libc::S_IWOTH | libc::S_IROTH | libc::S_IXOTH)
+                    != 0
+                {
+                    warn!("Keyset file permissions: Others can interact with it. This is a potential security issue.");
+                }
+            }
+
             let (provider, time) = tokio::task::spawn_blocking(
                 move || -> std::io::Result<(KeySetProvider, std::time::SystemTime)> {
                     let mut input = File::open(path)?;
@@ -46,7 +61,12 @@ pub async fn spawn(config: KeysetConfig) -> watch::Receiver<Arc<KeySet>> {
         provider.rotate();
         if let Some(path) = &config.key_storage_path {
             if let Err(e) = (|| -> std::io::Result<()> {
-                let mut output = File::create(path)?;
+                let mut output = OpenOptions::new()
+                    .create(true)
+                    .truncate(true)
+                    .write(true)
+                    .mode(0o600)
+                    .open(path)?;
                 provider.store(&mut output)
             })() {
                 warn!(error = ?e, "Could not store nts server keys");
