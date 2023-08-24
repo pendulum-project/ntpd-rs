@@ -540,9 +540,8 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                     if let Some(timedata) = self.controller.peer_snapshot(*index) {
                         ObservablePeerState::Observable {
                             timedata,
-                            reachability: snapshot.reach,
+                            unanswered_polls: snapshot.reach.unanswered_polls(),
                             poll_interval: snapshot.poll_interval,
-                            peer_id: snapshot.peer_id,
                             address: data.peer_address.to_string(),
                         }
                     } else {
