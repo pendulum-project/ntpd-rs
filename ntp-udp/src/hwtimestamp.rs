@@ -77,7 +77,10 @@ mod tests {
         udp_socket.connect(("10.0.0.18", 9001))?;
 
         if let Err(e) = get_hardware_timestamp(&udp_socket) {
-            assert!(e.to_string().contains("Operation not supported"));
+            assert!(
+                e.to_string().contains("Operation not supported")
+                    || e.to_string().contains("Not supported")
+            );
         }
 
         Ok(())
