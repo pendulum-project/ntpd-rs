@@ -13,4 +13,4 @@ certificates = "test-keys/testca.pem"
 [synchronization]
 min-intersection-survivors = 1
 single-step-panic-threshold = 10
-startup-step-panic-threshold = { forward = "inf", backward = 1800 }
+startup-step-panic-threshold = { forward = "inf", backward = 86400 }

@@ -386,7 +386,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
 mod tests {
     use std::cell::RefCell;
 
-    use crate::NtpInstant;
+    use crate::{NtpInstant, StepThreshold};
 
     use super::*;
 
@@ -554,6 +554,10 @@ mod tests {
     fn test_backward_step_panics_before_steer() {
         let synchronization_config = SynchronizationConfig {
             minimum_agreeing_peers: 1,
+            startup_step_panic_threshold: StepThreshold {
+                forward: None,
+                backward: Some(NtpDuration::from_seconds(1800.)),
+            },
             ..SynchronizationConfig::default()
         };
         let algo_config = AlgorithmConfig::default();
