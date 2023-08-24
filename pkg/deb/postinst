@@ -5,13 +5,16 @@ set -e
 NTPDRS_CONF_SRC="/usr/share/doc/ntpd-rs/ntp.toml.default"
 NTPDRS_CONF_DIR="/etc/ntpd-rs"
 NTPDRS_CONF="${NTPDRS_CONF_DIR}/ntp.toml"
-NTPDRS_CONF_PERMS=640
+NTPDRS_CONF_PERMS=644
 NTPDRS_HOME="/var/lib/ntpd-rs/"
 NTPDRS_USER="ntpd-rs"
+NTPDRS_OBSERVE_HOME="/var/lib/ntpd-rs-observe/"
+NTPDRS_OBSERVE_USER="ntpd-rs-observe"
 
 create_user() {
     if id ${NTPDRS_USER} > /dev/null 2>&1; then return; fi
     adduser --system --home "${NTPDRS_HOME}" --group ${NTPDRS_USER}
+    adduser --system --home "${NTPDRS_OBSERVE_HOME}" --group ${NTPDRS_OBSERVE_USER}
 }
 
 create_first_time_configuration() {

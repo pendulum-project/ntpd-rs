@@ -31,6 +31,11 @@ count = 4
 #mode = "simple"
 #address = "ntpd-rs.pool.ntp.org"
 
+## If you want to provide time to other machines, the configuration below
+## enables serving time on port 123 of all network interfaces.
+#[[server]]
+#listen = "[::]:123"
+
 ## Below are configured various thresholds beyond which ntpd-rs will not
 ## change the system clock. CHANGE THESE TO MATCH YOUR SECURITY NEEDS!
 [synchronization]

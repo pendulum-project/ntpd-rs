@@ -4,12 +4,14 @@ post_install_script = '''
 #   - https://docs.fedoraproject.org/en-US/packaging-guidelines/Scriptlets/#_systemd
 #   - https://cgit.freedesktop.org/systemd/systemd/tree/src/core/macros.systemd.in
 NTPDRS_USER=ntpd-rs
+NTPDRS_OBSERVE_USER=ntdp-rs-observe
 NTPDRS_HOME_DIR="/var/lib/ntpd-rs"
+NTPDRS_OBSERVE_HOME_DIR="/var/lib/ntpd-rs-observe"
 NTPDRS_HOME_DIR_PERMS=700
 NTPDRS_CONF_SRC="/usr/share/doc/ntpd-rs/ntp.toml.default"
 NTPDRS_CONF_DIR="/etc/ntpd-rs"
 NTPDRS_CONF="${NTPDRS_CONF_DIR}/ntp.toml"
-NTPDRS_CONF_PERMS=640
+NTPDRS_CONF_PERMS=644
 if [ $EUID -ne 0 ]; then
     echo >&2 "ERROR: RTRTR postinst script must be run as root"
     exit 1
@@ -20,11 +22,14 @@ create_user() {
         # --user-group causes a group by the same name as the user to be created
         # --create-home should force creation of a home dir even for a system account.
         useradd --home-dir ${NTPDRS_HOME_DIR} --system --create-home --user-group ${NTPDRS_USER}
+        useradd --home-dir ${NTPDRS_OBSERVE_HOME_DIR} --system --create-home --user-group ${NTPDRS_OBSERVE_USER}
     fi
     # Ensure that the home directory has the correct ownership
     chown -R ${NTPDRS_USER}:${NTPDRS_USER} ${NTPDRS_HOME_DIR}
+    chown -R ${NTPDRS_OBSERVE_USER}:${NTPDRS_OBSERVE_USER} ${NTPDRS_OBSERVE_HOME_DIR}
     # Ensure that the home directory has the correct permissions
     chmod ${NTPDRS_HOME_DIR_PERMS} ${NTPDRS_HOME_DIR}
+    chmod ${NTPDRS_HOME_DIR_PERMS} ${NTPDRS_OBSERVE_HOME_DIR}
 }
 init_systemd_service() {
     systemctl preset ntpd-rs.service 2>&1 || :
@@ -58,5 +63,6 @@ post_uninstall_script = '''
 systemctl daemon-reload >/dev/null 2>&1 || :
 if [ $1 -ge 1 ] ; then
     systemctl try-restart ntpd-rs.service >/dev/null 2>&1 || :
+    systemctl try-restart ntpd-rs-metrics.service >/dev/null 2>&1 || :
 fi
 '''
