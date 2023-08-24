@@ -220,8 +220,72 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
 
     match print {
         Format::Plain => {
-            // Unwrap here is fine as our serializer is infallible.
-            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            println!("Synchronization status:");
+            println!(
+                "Dispersion: {}s, Delay: {}s",
+                output.system.time_snapshot.root_dispersion.to_seconds(),
+                output.system.time_snapshot.root_delay.to_seconds()
+            );
+            println!(
+                "Desired poll interval: {}s",
+                output
+                    .system
+                    .time_snapshot
+                    .poll_interval
+                    .as_duration()
+                    .to_seconds()
+            );
+            println!("Stratum: {}", output.system.stratum);
+            println!();
+            println!("Peers:");
+            for peer in &output.peers {
+                match peer {
+                    crate::daemon::ObservablePeerState::Nothing => {}
+                    crate::daemon::ObservablePeerState::Observable {
+                        timedata,
+                        unanswered_polls,
+                        poll_interval,
+                        address,
+                    } => {
+                        println!(
+                            "{}: {}±{}(±{})s\n    pollinterval: {}s, missing polls: {}",
+                            address,
+                            timedata.offset.to_seconds(),
+                            timedata.uncertainty.to_seconds(),
+                            timedata.delay.to_seconds(),
+                            poll_interval.as_duration().to_seconds(),
+                            unanswered_polls
+                        );
+                    }
+                }
+            }
+            let in_startup = output
+                .peers
+                .iter()
+                .filter(|peer| matches!(peer, crate::daemon::ObservablePeerState::Nothing))
+                .count();
+            match in_startup {
+                0 => {} // no peers in startup, so no line for that
+                1 => println!("1 peer still in startup"),
+                _ => println!("{} peers still in startup", in_startup),
+            }
+            println!();
+            println!("Servers:");
+            for server in &output.servers {
+                println!(
+                    "{}: received {}, accepted {}, errors {}",
+                    server.address,
+                    server.stats.received_packets.get(),
+                    server.stats.accepted_packets.get(),
+                    server.stats.response_send_errors.get()
+                );
+                println!(
+                    "    denied {}, rate limited {}, ignored {}",
+                    server.stats.denied_packets.get(),
+                    server.stats.rate_limited_packets.get(),
+                    server.stats.ignored_packets.get()
+                );
+            }
         }
         Format::Prometheus => {
             let metrics = Metrics::default();
