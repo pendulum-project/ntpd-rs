@@ -3,7 +3,7 @@ use std::{
     io::{Cursor, Write},
 };
 
-use crate::DecodedServerCookie;
+use crate::keyset::DecodedServerCookie;
 
 use super::{crypto::EncryptResult, error::ParsingError, Cipher, CipherProvider, Mac};
 
@@ -507,7 +507,7 @@ impl<'a> ExtensionFieldData<'a> {
                     // the nonce should always be 16 bytes
                     debug_assert_eq!(encrypted.nonce.len(), 16);
 
-                    efdata.encrypted.extend(encrypted_fields.into_iter());
+                    efdata.encrypted.extend(encrypted_fields);
                     cookie = match cipher {
                         super::crypto::CipherHolder::DecodedServerCookie(cookie) => Some(cookie),
                         super::crypto::CipherHolder::Other(_) => None,

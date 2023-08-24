@@ -1,7 +1,11 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    NtpDuration, NtpLeapIndicator, PeerSnapshot, PollInterval, ReferenceId, SynchronizationConfig,
+    config::SynchronizationConfig,
+    identifiers::ReferenceId,
+    packet::NtpLeapIndicator,
+    peer::PeerSnapshot,
+    time_types::{NtpDuration, PollInterval},
 };
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -73,7 +77,7 @@ impl Default for SystemSnapshot {
 
 #[cfg(test)]
 mod tests {
-    use crate::PollIntervalLimits;
+    use crate::time_types::PollIntervalLimits;
 
     use super::*;
 

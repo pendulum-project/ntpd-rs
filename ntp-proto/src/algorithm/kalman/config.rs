@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use crate::NtpDuration;
+use crate::time_types::NtpDuration;
 
 #[derive(Debug, Copy, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]

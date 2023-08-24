@@ -3,7 +3,7 @@ use rand::Rng;
 use tracing::error;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::DecodedServerCookie;
+use crate::keyset::DecodedServerCookie;
 
 use super::extensionfields::ExtensionField;
 

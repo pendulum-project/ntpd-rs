@@ -8,8 +8,11 @@ use aead::KeySizeUser;
 use aes_siv::{Aes128SivAead, Aes256SivAead};
 
 use crate::{
-    cookiestash::CookieStash, packet::AesSivCmac256, packet::AesSivCmac512, peer::PeerNtsData,
-    Cipher, DecodedServerCookie, KeySet,
+    cookiestash::CookieStash,
+    keyset::{DecodedServerCookie, KeySet},
+    packet::AesSivCmac512,
+    packet::{AesSivCmac256, Cipher},
+    peer::PeerNtsData,
 };
 
 #[derive(Debug)]
@@ -1074,7 +1077,7 @@ pub fn fuzz_key_exchange_result_decoder(data: &[u8]) {
 mod test {
     use std::io::Cursor;
 
-    use crate::KeySetProvider;
+    use crate::keyset::KeySetProvider;
 
     use super::*;
 

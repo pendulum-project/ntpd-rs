@@ -19,46 +19,6 @@ mod peer;
 mod system;
 mod time_types;
 
-pub use algorithm::{
-    DefaultTimeSyncController, ObservablePeerTimedata, StateUpdate, TimeSyncController,
-};
-pub use clock::NtpClock;
-pub use config::{PeerDefaultsConfig, StepThreshold, SynchronizationConfig};
-pub use identifiers::ReferenceId;
-pub use keyset::{DecodedServerCookie, KeySet, KeySetProvider};
-
-#[cfg(feature = "__internal-fuzz")]
-pub use keyset::test_cookie;
-#[cfg(feature = "__internal-fuzz")]
-pub use packet::ExtensionField;
-pub use packet::{
-    Cipher, CipherProvider, EncryptResult, NoCipher, NtpAssociationMode, NtpLeapIndicator,
-    NtpPacket,
-};
-#[cfg(feature = "__internal-fuzz")]
-pub use peer::fuzz_measurement_from_packet;
-#[cfg(feature = "__internal-test")]
-pub use peer::peer_snapshot;
-pub use peer::{
-    AcceptSynchronizationError, IgnoreReason, Measurement, Peer, PeerNtsData, PeerSnapshot,
-    PollError, Reach, Update,
-};
-pub use system::{SystemSnapshot, TimeSnapshot};
-#[cfg(feature = "__internal-fuzz")]
-pub use time_types::fuzz_duration_from_seconds;
-pub use time_types::{
-    FrequencyTolerance, NtpDuration, NtpInstant, NtpTimestamp, PollInterval, PollIntervalLimits,
-};
-
-#[cfg(feature = "__internal-fuzz")]
-pub use nts_record::fuzz_key_exchange_result_decoder;
-#[cfg(feature = "__internal-fuzz")]
-pub use nts_record::fuzz_key_exchange_server_decoder;
-pub use nts_record::{
-    KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, NtsRecord,
-    NtsRecordDecoder, WriteError,
-};
-
 pub(crate) mod exitcode {
     /// An internal software error has been detected.  This
     /// should be limited to non-operating system related
@@ -66,3 +26,51 @@ pub(crate) mod exitcode {
     #[cfg(not(test))]
     pub const SOFTWARE: i32 = 70;
 }
+
+#[cfg(feature = "__internal-api")]
+mod exports {
+    pub use super::algorithm::{
+        DefaultTimeSyncController, ObservablePeerTimedata, StateUpdate, TimeSyncController,
+    };
+    pub use super::clock::NtpClock;
+    pub use super::config::{PeerDefaultsConfig, StepThreshold, SynchronizationConfig};
+    pub use super::identifiers::ReferenceId;
+    pub use super::keyset::{DecodedServerCookie, KeySet, KeySetProvider};
+
+    #[cfg(feature = "__internal-fuzz")]
+    pub use super::keyset::test_cookie;
+    #[cfg(feature = "__internal-fuzz")]
+    pub use super::packet::ExtensionField;
+    pub use super::packet::{
+        Cipher, CipherProvider, EncryptResult, NoCipher, NtpAssociationMode, NtpLeapIndicator,
+        NtpPacket,
+    };
+    #[cfg(feature = "__internal-fuzz")]
+    pub use super::peer::fuzz_measurement_from_packet;
+    #[cfg(feature = "__internal-test")]
+    pub use super::peer::peer_snapshot;
+    pub use super::peer::{
+        AcceptSynchronizationError, IgnoreReason, Measurement, Peer, PeerNtsData, PeerSnapshot,
+        PollError, Reach, Update,
+    };
+    pub use super::system::{SystemSnapshot, TimeSnapshot};
+    #[cfg(feature = "__internal-fuzz")]
+    pub use super::time_types::fuzz_duration_from_seconds;
+    pub use super::time_types::{
+        FrequencyTolerance, NtpDuration, NtpInstant, NtpTimestamp, PollInterval, PollIntervalLimits,
+    };
+
+    #[cfg(feature = "__internal-fuzz")]
+    pub use super::nts_record::fuzz_key_exchange_result_decoder;
+    #[cfg(feature = "__internal-fuzz")]
+    pub use super::nts_record::fuzz_key_exchange_server_decoder;
+    pub use super::nts_record::{
+        KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, NtsRecord,
+        NtsRecordDecoder, WriteError,
+    };
+}
+
+#[cfg(not(feature = "__internal-api"))]
+mod exports {}
+
+pub use exports::*;

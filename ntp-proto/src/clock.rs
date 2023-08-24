@@ -1,4 +1,7 @@
-use crate::{packet::NtpLeapIndicator, time_types::PollInterval, NtpDuration, NtpTimestamp};
+use crate::{
+    packet::NtpLeapIndicator,
+    time_types::{NtpDuration, NtpTimestamp, PollInterval},
+};
 
 /// Interface for a clock settable by the ntp implementation.
 /// This needs to be a trait as a single system can have multiple clocks

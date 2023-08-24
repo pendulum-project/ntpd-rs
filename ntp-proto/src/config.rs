@@ -5,7 +5,7 @@ use serde::{
     Deserialize, Deserializer,
 };
 
-use crate::{time_types::PollIntervalLimits, NtpDuration, PollInterval};
+use crate::time_types::{NtpDuration, PollInterval, PollIntervalLimits};
 
 fn deserialize_option_accumulated_step_panic_threshold<'de, D>(
     deserializer: D,

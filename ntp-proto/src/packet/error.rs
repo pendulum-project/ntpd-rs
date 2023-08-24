@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::NtpPacket;
+use super::NtpPacket;
 
 #[derive(Debug)]
 pub enum ParsingError<T> {

@@ -8,9 +8,9 @@ use aead::{generic_array::GenericArray, KeyInit};
 use crate::{
     nts_record::AeadAlgorithm,
     packet::{
-        AesSivCmac256, AesSivCmac512, CipherHolder, DecryptError, EncryptResult, ExtensionField,
+        AesSivCmac256, AesSivCmac512, Cipher, CipherHolder, CipherProvider, DecryptError,
+        EncryptResult, ExtensionField,
     },
-    Cipher, CipherProvider,
 };
 
 pub struct DecodedServerCookie {
