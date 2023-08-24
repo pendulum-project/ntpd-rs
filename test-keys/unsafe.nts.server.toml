@@ -16,7 +16,7 @@ listen = "0.0.0.0:123"
 [synchronization]
 minimum-agreeing-peers = 1
 single-step-panic-threshold = 10
-startup-step-panic-threshold = { forward = 0, backward = 1800 }
+startup-step-panic-threshold = { forward = 0, backward = 86400 }
 
 # to function as an NTS server, we must also provide key exchange
 # uses an unsecure certificate chain!

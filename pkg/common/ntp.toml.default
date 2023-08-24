@@ -37,7 +37,7 @@ count = 4
 # The maximum step size (in seconds) of a single step during normal operation
 single-step-panic-threshold = 1800
 # On startup a larger jump may occur, this sets limits for that initial jump
-startup-step-panic-threshold = { forward="inf", backward = 1800 }
+startup-step-panic-threshold = { forward="inf", backward = 86400 }
 # If, during the lifetime of the ntp-daemon the combined time of time jumps
 # exceeds this value, then the NTP daemon will stop, this is disabled by default
 #accumulated-threshold = 1800

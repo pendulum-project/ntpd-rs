@@ -13,4 +13,4 @@ certificate_authority = "path/to/certificate/authority.pem"
 [synchronization]
 minimum-agreeing-peers = 1
 single-step-panic-threshold = 10
-startup-step-panic-threshold = { forward = "inf", backward = 1800 }
+startup-step-panic-threshold = { forward = "inf", backward = 86400 }

@@ -289,9 +289,10 @@ fn default_single_step_panic_threshold() -> StepThreshold {
 }
 
 fn default_startup_step_panic_threshold() -> StepThreshold {
+    // No forward limit, backwards max. 1 day
     StepThreshold {
         forward: None,
-        backward: Some(NtpDuration::from_seconds(1800.)),
+        backward: Some(NtpDuration::from_seconds(86400.)),
     }
 }
 
