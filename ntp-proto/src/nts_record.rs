@@ -754,7 +754,8 @@ impl KeyExchangeClient {
         }
     }
 
-    pub fn new(
+    // should only be used in tests!
+    fn new_without_tls_write(
         server_name: String,
         mut tls_config: rustls::ClientConfig,
     ) -> Result<Self, KeyExchangeError> {
@@ -763,10 +764,23 @@ impl KeyExchangeClient {
         tls_config.alpn_protocols.push(b"ntske/1".to_vec());
 
         // TLS only works when the server name is a DNS name; an IP address does not work
-        let mut tls_connection = rustls::ClientConnection::new(
+        let tls_connection = rustls::ClientConnection::new(
             Arc::new(tls_config),
             (server_name.as_ref() as &str).try_into()?,
         )?;
+
+        Ok(KeyExchangeClient {
+            tls_connection,
+            decoder: KeyExchangeResultDecoder::new(),
+            server_name,
+        })
+    }
+
+    pub fn new(
+        server_name: String,
+        tls_config: rustls::ClientConfig,
+    ) -> Result<Self, KeyExchangeError> {
+        let mut client = Self::new_without_tls_write(server_name, tls_config)?;
 
         // Make the request immediately (note, this will only go out to the wire via the write functions above)
         // We use an intermediary buffer to ensure that all records are sent at once.
@@ -775,13 +789,9 @@ impl KeyExchangeClient {
         for record in NtsRecord::client_key_exchange_records() {
             record.write(&mut buffer)?;
         }
-        tls_connection.writer().write_all(&buffer)?;
+        client.tls_connection.writer().write_all(&buffer)?;
 
-        Ok(KeyExchangeClient {
-            tls_connection,
-            decoder: KeyExchangeResultDecoder::new(),
-            server_name,
-        })
+        Ok(client)
     }
 }
 
@@ -982,36 +992,42 @@ impl KeyExchangeServer {
                         }
                     }
                 }
-                Ok(n) => match self.decoder {
-                    Some(decoder) => match decoder.step_with_slice(&buf[..n]) {
-                        ControlFlow::Continue(decoder) => {
-                            self.decoder = Some(decoder);
-                            continue;
+                Ok(n) => {
+                    match self.decoder {
+                        Some(decoder) => match decoder.step_with_slice(&buf[..n]) {
+                            ControlFlow::Continue(decoder) => {
+                                self.decoder = Some(decoder);
+                                continue;
+                            }
+                            ControlFlow::Break(Ok(result)) => {
+                                self.decoder = None;
+                                let algorithm = result.algorithm;
+                                let protocol = result.protocol;
+
+                                tracing::debug!(?algorithm, "selected AEAD algorithm");
+
+                                let keys = match algorithm.extract_nts_keys(&self.tls_connection) {
+                                    Ok(keys) => keys,
+                                    Err(e) => {
+                                        return ControlFlow::Break(Err(KeyExchangeError::Tls(e)))
+                                    }
+                                };
+
+                                return match self.send_response(protocol, algorithm, keys) {
+                                    Err(e) => ControlFlow::Break(Err(KeyExchangeError::Io(e))),
+                                    Ok(()) => ControlFlow::Continue(self),
+                                };
+                            }
+                            ControlFlow::Break(Err(error)) => {
+                                return ControlFlow::Break(Err(error))
+                            }
+                        },
+                        None => {
+                            // client is sending more bytes, but we don't expect any more
+                            return ControlFlow::Break(Err(KeyExchangeError::InternalServerError));
                         }
-                        ControlFlow::Break(Ok(result)) => {
-                            self.decoder = None;
-                            let algorithm = result.algorithm;
-                            let protocol = result.protocol;
-
-                            tracing::debug!(?algorithm, "selected AEAD algorithm");
-
-                            let keys = match algorithm.extract_nts_keys(&self.tls_connection) {
-                                Ok(keys) => keys,
-                                Err(e) => return ControlFlow::Break(Err(KeyExchangeError::Tls(e))),
-                            };
-
-                            return match self.send_response(protocol, algorithm, keys) {
-                                Err(e) => ControlFlow::Break(Err(KeyExchangeError::Io(e))),
-                                Ok(()) => ControlFlow::Continue(self),
-                            };
-                        }
-                        ControlFlow::Break(Err(error)) => return ControlFlow::Break(Err(error)),
-                    },
-                    None => {
-                        // client is sending more bytes, but we don't expect any more
-                        return ControlFlow::Break(Err(KeyExchangeError::InternalServerError));
                     }
-                },
+                }
                 Err(e) => match e.kind() {
                     std::io::ErrorKind::WouldBlock => return ControlFlow::Continue(self),
                     std::io::ErrorKind::UnexpectedEof if self.decoder.is_none() => {
@@ -1239,6 +1255,20 @@ mod test {
             roundtrip(&[algorithm]),
             Err(KeyExchangeError::NoValidAlgorithm)
         ));
+    }
+
+    #[test]
+    fn no_valid_protocol() {
+        let records = [
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![1234],
+            },
+            NtsRecord::EndOfMessage,
+        ];
+
+        let error = roundtrip(&records).unwrap_err();
+
+        assert!(matches!(error, KeyExchangeError::NoValidProtocol))
     }
 
     #[test]
@@ -1748,8 +1778,7 @@ mod test {
         assert_eq!(result.port, 123);
     }
 
-    #[test]
-    fn test_keyexchange_roundtrip() {
+    fn client_server_pair() -> (KeyExchangeClient, KeyExchangeServer) {
         let cert_chain: Vec<rustls::Certificate> =
             rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
                 "../../test-keys/end.fullchain.pem"
@@ -1791,18 +1820,21 @@ mod test {
             .with_no_client_auth();
 
         let keyset = KeySetProvider::new(8).get();
-        let mut server = KeyExchangeServer::new(Arc::new(serverconfig), keyset).unwrap();
-        let mut client = KeyExchangeClient::new("localhost".into(), clientconfig).unwrap();
 
-        let mut bytes = Vec::with_capacity(1024);
-        for record in NtsRecord::client_key_exchange_records() {
-            record.write(&mut bytes).unwrap();
-        }
+        let client =
+            KeyExchangeClient::new_without_tls_write("localhost".into(), clientconfig).unwrap();
+        let server = KeyExchangeServer::new(Arc::new(serverconfig), keyset).unwrap();
 
-        client.tls_connection.writer().write_all(&bytes).unwrap();
+        (client, server)
+    }
 
+    fn keyexchange_loop(
+        mut client: KeyExchangeClient,
+        mut server: KeyExchangeServer,
+    ) -> Result<KeyExchangeResult, KeyExchangeError> {
         let mut buf = [0; 4096];
-        let result = 'result: loop {
+
+        'result: loop {
             while server.wants_write() {
                 let size = server.write_socket(&mut &mut buf[..]).unwrap();
                 let mut offset = 0;
@@ -1828,19 +1860,55 @@ mod test {
                     match server.progress_help() {
                         ControlFlow::Continue(new) => server = new,
                         ControlFlow::Break(result) => {
-                            server = result.unwrap();
+                            server = result?;
 
                             break 'client_write;
                         }
                     }
                 }
             }
+
+            if !server.wants_write() && !client.wants_write() {
+                client.tls_connection.send_close_notify();
+            }
         }
-        .unwrap();
+    }
+
+    #[test]
+    fn test_keyexchange_roundtrip() {
+        let (mut client, server) = client_server_pair();
+
+        let mut buffer = Vec::with_capacity(1024);
+        for record in NtsRecord::client_key_exchange_records() {
+            record.write(&mut buffer).unwrap();
+        }
+        client.tls_connection.writer().write_all(&buffer).unwrap();
+
+        let result = keyexchange_loop(client, server).unwrap();
 
         assert_eq!(&result.remote, "localhost");
         assert_eq!(result.port, 123);
 
         assert_eq!(result.nts.cookies.len(), 8);
+    }
+
+    #[test]
+    fn test_keyexchange_invalid_input() {
+        let mut buffer = Vec::with_capacity(1024);
+        for record in NtsRecord::client_key_exchange_records() {
+            record.write(&mut buffer).unwrap();
+        }
+
+        for n in 0..buffer.len() {
+            let (mut client, server) = client_server_pair();
+            client
+                .tls_connection
+                .writer()
+                .write_all(&buffer[..n])
+                .unwrap();
+
+            let error = keyexchange_loop(client, server).unwrap_err();
+            assert!(matches!(error, KeyExchangeError::IncompleteResponse));
+        }
     }
 }
