@@ -12,7 +12,7 @@ The recommended way of installing ntpd-rs is with the pre-built packages from th
 
 If you want to setup a server using these packages, you will need to uncomment the `server` section of the configuration in `/etc/ntpd-rs/ntp.toml`. To enable a metrics exporter providing prometheus metrics on port `8123`, the systemd unit `ntpd-rs-metrics` needs to be enabled and started.
 
-Alternatively, you can use `cargo install ntpd` or build from source.
+Alternatively, nptd-rs can be installed using `cargo install ntpd` or build from source.
 
 ### Build from source
 
