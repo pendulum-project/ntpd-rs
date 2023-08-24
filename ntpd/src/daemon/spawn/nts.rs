@@ -1,8 +1,9 @@
+use std::net::SocketAddr;
 use std::ops::Deref;
 
 use thiserror::Error;
 use tokio::sync::mpsc;
-use tracing::{debug, warn};
+use tracing::warn;
 
 use super::super::{config::NtsPeerConfig, keyexchange::key_exchange_client};
 
@@ -29,8 +30,44 @@ impl NtsSpawner {
         }
     }
 
+    async fn resolve_addr(&mut self, address: (&str, u16)) -> Option<SocketAddr> {
+        const MAX_RETRIES: usize = 5;
+        const BACKOFF_FACTOR: u32 = 2;
+
+        let mut network_wait = self.network_wait_period;
+
+        for i in 0..MAX_RETRIES {
+            if i != 0 {
+                // Ensure we dont spam dns
+                tokio::time::sleep(network_wait).await;
+                network_wait *= BACKOFF_FACTOR;
+            }
+            match tokio::net::lookup_host(address).await {
+                Ok(mut addresses) => match addresses.next() {
+                    Some(address) => return Some(address),
+                    None => {
+                        warn!("received unknown domain name from NTS-ke");
+                        return None;
+                    }
+                },
+                Err(e) => {
+                    warn!(error = ?e, "error while resolving peer address, retrying");
+                }
+            }
+        }
+
+        warn!("Could not resolve peer address, restarting NTS initialization");
+
+        None
+    }
+
     async fn spawn(&mut self, action_tx: &mpsc::Sender<SpawnEvent>) -> Result<(), NtsSpawnError> {
-        let ke = loop {
+        const MAX_BACKOFF: u32 = 64;
+        const BACKOFF_FACTOR: u32 = 2;
+
+        let mut network_wait = self.network_wait_period;
+
+        loop {
             match key_exchange_client(
                 self.config.address.server_name.clone(),
                 self.config.address.port,
@@ -38,45 +75,33 @@ impl NtsSpawner {
             )
             .await
             {
-                Ok(res) => break res,
+                Ok(ke) => {
+                    if let Some(address) = self.resolve_addr((ke.remote.as_str(), ke.port)).await {
+                        action_tx
+                            .send(SpawnEvent::new(
+                                self.id,
+                                SpawnAction::create(
+                                    PeerId::new(),
+                                    address,
+                                    self.config.address.deref().clone(),
+                                    Some(ke.nts),
+                                ),
+                            ))
+                            .await?;
+                        return Ok(());
+                    }
+                }
                 Err(e) => {
                     warn!(error = ?e, "error while attempting key exchange");
-                    tokio::time::sleep(self.network_wait_period).await;
                 }
             };
-        };
 
-        let addr = loop {
-            let address = (ke.remote.as_str(), ke.port);
-            match tokio::net::lookup_host(address).await {
-                Ok(mut addresses) => match addresses.next() {
-                    None => {
-                        debug!("Could not resolve peer address, retrying");
-                        tokio::time::sleep(self.network_wait_period).await;
-                    }
-                    Some(first) => {
-                        break first;
-                    }
-                },
-                Err(e) => {
-                    warn!(error = ?e, "error while resolving peer address, retrying");
-                    tokio::time::sleep(self.network_wait_period).await;
-                }
-            }
-        };
-
-        action_tx
-            .send(SpawnEvent::new(
-                self.id,
-                SpawnAction::create(
-                    PeerId::new(),
-                    addr,
-                    self.config.address.deref().clone(),
-                    Some(ke.nts),
-                ),
-            ))
-            .await?;
-        Ok(())
+            tokio::time::sleep(network_wait).await;
+            network_wait = std::cmp::min(
+                network_wait * BACKOFF_FACTOR,
+                self.network_wait_period * MAX_BACKOFF,
+            );
+        }
     }
 }
 
