@@ -1,4 +1,4 @@
-use crate::SynchronizationConfig;
+use crate::config::SynchronizationConfig;
 
 use super::{config::AlgorithmConfig, PeerSnapshot};
 
@@ -72,7 +72,10 @@ pub(super) fn select<Index: Copy>(
 
 #[cfg(test)]
 mod tests {
-    use crate::{NtpDuration, NtpTimestamp};
+    use crate::{
+        packet::NtpLeapIndicator,
+        time_types::{NtpDuration, NtpTimestamp},
+    };
 
     use super::super::{
         matrix::{Matrix, Vector},
@@ -89,7 +92,7 @@ mod tests {
             delay,
             peer_uncertainty: NtpDuration::from_seconds(0.01),
             peer_delay: NtpDuration::from_seconds(0.01),
-            leap_indicator: crate::NtpLeapIndicator::NoWarning,
+            leap_indicator: NtpLeapIndicator::NoWarning,
             last_update: NtpTimestamp::from_fixed_int(0),
         }
     }

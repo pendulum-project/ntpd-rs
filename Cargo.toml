@@ -54,7 +54,7 @@ async-trait = "0.1.22"
 
 # our own crates used as dependencies, same version as the workspace version
 ntp-os-clock = { version = "0.3.6", path = "./ntp-os-clock" }
-ntp-proto = { version = "0.3.6", path = "./ntp-proto" }
+ntp-proto = { version = "0.3.6", path = "./ntp-proto", features = ["__internal-api"] }
 ntp-udp = { version = "0.3.6", path = "./ntp-udp" }
 ntpd = { version = "0.3.6", path = "./ntpd" }
 

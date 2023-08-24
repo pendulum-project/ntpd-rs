@@ -3,8 +3,11 @@ use std::{fmt::Debug, hash::Hash};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{
-    config::PeerDefaultsConfig, peer::Measurement, NtpClock, NtpDuration, NtpTimestamp,
-    SynchronizationConfig, TimeSnapshot,
+    clock::NtpClock,
+    config::{PeerDefaultsConfig, SynchronizationConfig},
+    peer::Measurement,
+    system::TimeSnapshot,
+    time_types::{NtpDuration, NtpTimestamp},
 };
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]

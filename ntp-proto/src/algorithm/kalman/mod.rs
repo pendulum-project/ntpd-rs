@@ -3,8 +3,12 @@ use std::{collections::HashMap, fmt::Debug, hash::Hash};
 use tracing::{error, info, instrument};
 
 use crate::{
-    config::PeerDefaultsConfig, Measurement, NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp,
-    ObservablePeerTimedata, StateUpdate, SynchronizationConfig, TimeSnapshot, TimeSyncController,
+    clock::NtpClock,
+    config::{PeerDefaultsConfig, SynchronizationConfig},
+    packet::NtpLeapIndicator,
+    peer::Measurement,
+    system::TimeSnapshot,
+    time_types::{NtpDuration, NtpTimestamp},
 };
 
 use self::{
@@ -13,6 +17,8 @@ use self::{
     matrix::{Matrix, Vector},
     peer::PeerState,
 };
+
+use super::{ObservablePeerTimedata, StateUpdate, TimeSyncController};
 
 mod combiner;
 mod config;
@@ -386,7 +392,8 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
 mod tests {
     use std::cell::RefCell;
 
-    use crate::{NtpInstant, StepThreshold};
+    use crate::config::StepThreshold;
+    use crate::time_types::{NtpInstant, PollInterval};
 
     use super::*;
 
@@ -424,7 +431,7 @@ mod tests {
         fn ntp_algorithm_update(
             &self,
             _offset: NtpDuration,
-            _poll_interval: crate::PollInterval,
+            _poll_interval: PollInterval,
         ) -> Result<(), Self::Error> {
             Ok(())
         }

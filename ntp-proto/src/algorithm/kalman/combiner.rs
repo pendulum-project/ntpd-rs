@@ -1,4 +1,4 @@
-use crate::{NtpDuration, NtpLeapIndicator};
+use crate::{packet::NtpLeapIndicator, time_types::NtpDuration};
 
 use super::{
     config::AlgorithmConfig,
@@ -89,7 +89,7 @@ pub(super) fn combine<Index: Copy>(
 
 #[cfg(test)]
 mod tests {
-    use crate::NtpTimestamp;
+    use crate::time_types::NtpTimestamp;
 
     use super::*;
 
@@ -105,7 +105,7 @@ mod tests {
             delay: 0.0,
             peer_uncertainty: NtpDuration::from_seconds(peer_uncertainty),
             peer_delay: NtpDuration::from_seconds(0.01),
-            leap_indicator: crate::NtpLeapIndicator::NoWarning,
+            leap_indicator: NtpLeapIndicator::NoWarning,
             last_update: NtpTimestamp::from_fixed_int(0),
         }
     }

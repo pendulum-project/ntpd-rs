@@ -3,10 +3,10 @@ use std::io::Cursor;
 use crate::{
     config::PeerDefaultsConfig,
     cookiestash::CookieStash,
-    packet::{Cipher, NtpAssociationMode, RequestIdentifier},
-    time_types::NtpInstant,
-    NtpDuration, NtpLeapIndicator, NtpPacket, NtpTimestamp, PollInterval, ReferenceId,
-    SystemSnapshot,
+    identifiers::ReferenceId,
+    packet::{Cipher, NtpAssociationMode, NtpLeapIndicator, NtpPacket, RequestIdentifier},
+    system::SystemSnapshot,
+    time_types::{NtpDuration, NtpInstant, NtpTimestamp, PollInterval},
 };
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument, trace, warn};
@@ -255,11 +255,11 @@ impl PeerSnapshot {
 }
 
 #[cfg(feature = "__internal-test")]
-pub fn peer_snapshot() -> crate::PeerSnapshot {
+pub fn peer_snapshot() -> PeerSnapshot {
     let mut reach = crate::peer::Reach::default();
     reach.received_packet();
 
-    crate::PeerSnapshot {
+    PeerSnapshot {
         peer_id: ReferenceId::from_int(0),
         stratum: 0,
         reference_id: ReferenceId::from_int(0),

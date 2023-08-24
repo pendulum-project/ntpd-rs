@@ -4,8 +4,11 @@ use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    DecodedServerCookie, KeySet, NtpClock, NtpDuration, NtpTimestamp, PollInterval, ReferenceId,
-    SystemSnapshot,
+    clock::NtpClock,
+    identifiers::ReferenceId,
+    keyset::{DecodedServerCookie, KeySet},
+    system::SystemSnapshot,
+    time_types::{NtpDuration, NtpTimestamp, PollInterval},
 };
 
 use self::{error::ParsingError, extensionfields::ExtensionFieldData, mac::Mac};
@@ -202,7 +205,6 @@ impl NtpHeaderV3V4 {
 
     fn poll_message(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
         let mut packet = Self::new();
-        let poll_interval = poll_interval;
         packet.poll = poll_interval.as_log();
         packet.mode = NtpAssociationMode::Client;
 
@@ -461,7 +463,7 @@ impl<'a> NtpPacket<'a> {
                         .efdata
                         .untrusted
                         .into_iter()
-                        .chain(input.efdata.authenticated.into_iter())
+                        .chain(input.efdata.authenticated)
                         .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
                         .collect(),
                 },
@@ -544,7 +546,7 @@ impl<'a> NtpPacket<'a> {
                         .efdata
                         .untrusted
                         .into_iter()
-                        .chain(packet_from_client.efdata.authenticated.into_iter())
+                        .chain(packet_from_client.efdata.authenticated)
                         .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
                         .collect(),
                 },
@@ -590,7 +592,7 @@ impl<'a> NtpPacket<'a> {
                         .efdata
                         .untrusted
                         .into_iter()
-                        .chain(packet_from_client.efdata.authenticated.into_iter())
+                        .chain(packet_from_client.efdata.authenticated)
                         .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
                         .collect(),
                 },
@@ -857,7 +859,9 @@ impl<'a> Default for NtpPacket<'a> {
 mod tests {
     use std::borrow::Cow;
 
-    use crate::{nts_record::AeadAlgorithm, KeySetProvider, PollIntervalLimits};
+    use crate::{
+        keyset::KeySetProvider, nts_record::AeadAlgorithm, time_types::PollIntervalLimits,
+    };
 
     use super::*;
 

@@ -75,8 +75,9 @@
 use tracing::{debug, info, trace};
 
 use crate::{
-    config::PeerDefaultsConfig, Measurement, NtpDuration, NtpTimestamp, PollInterval,
-    PollIntervalLimits,
+    config::PeerDefaultsConfig,
+    peer::Measurement,
+    time_types::{NtpDuration, NtpTimestamp, PollInterval, PollIntervalLimits},
 };
 
 use super::{
@@ -573,7 +574,7 @@ impl PeerState {
 mod tests {
     use std::panic::catch_unwind;
 
-    use crate::{Measurement, NtpInstant, NtpLeapIndicator, PollIntervalLimits};
+    use crate::{packet::NtpLeapIndicator, time_types::NtpInstant};
 
     use super::*;
 
