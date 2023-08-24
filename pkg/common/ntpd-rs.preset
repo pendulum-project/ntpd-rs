@@ -1,1 +1,2 @@
 enable ntpd-rs.service
+disable ntpd-rs-observe.service

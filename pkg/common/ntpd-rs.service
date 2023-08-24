@@ -13,7 +13,7 @@ Environment="RUST_LOG=info"
 RuntimeDirectory=ntpd-rs
 User=ntpd-rs
 Group=ntpd-rs
-AmbientCapabilities=CAP_SYS_TIME
+AmbientCapabilities=CAP_SYS_TIME CAP_NET_BIND_SERVICE
 
 [Install]
 WantedBy=multi-user.target
