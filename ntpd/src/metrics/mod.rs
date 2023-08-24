@@ -47,15 +47,13 @@ impl EncodeLabelValue for WrappedSocketAddr {
 #[derive(Default)]
 pub struct Metrics {
     system_poll_interval: Gauge<f64, AtomicU64>,
-    system_poll_interval_exp: Gauge,
     system_precision: Gauge<f64, AtomicU64>,
     system_accumulated_steps: Gauge<f64, AtomicU64>,
     system_accumulated_steps_threshold: Gauge<f64, AtomicU64>,
     system_leap_indicator: Gauge,
     peer_last_update: Family<PeerLabels, Gauge<f64, AtomicU64>>,
     peer_poll_interval: Family<PeerLabels, Gauge<f64, AtomicU64>>,
-    peer_poll_interval_exp: Family<PeerLabels, Gauge>,
-    peer_reachability_status: Family<PeerLabels, Gauge>,
+    peer_unanswered_polls: Family<PeerLabels, Gauge>,
     peer_offset: Family<PeerLabels, Gauge<f64, AtomicU64>>,
     peer_uncertainty: Family<PeerLabels, Gauge<f64, AtomicU64>>,
     peer_delay: Family<PeerLabels, Gauge<f64, AtomicU64>>,
@@ -78,8 +76,6 @@ impl Metrics {
                 .as_duration()
                 .to_seconds(),
         );
-        self.system_poll_interval_exp
-            .set(data.system.time_snapshot.poll_interval.as_log() as i64);
         self.system_precision
             .set(data.system.time_snapshot.precision.to_seconds());
         self.system_accumulated_steps
@@ -96,7 +92,7 @@ impl Metrics {
         for peer in &data.peers {
             if let ObservablePeerState::Observable {
                 timedata,
-                reachability,
+                unanswered_polls,
                 poll_interval,
                 address,
                 ..
@@ -113,12 +109,9 @@ impl Metrics {
                 self.peer_poll_interval
                     .get_or_create(&labels)
                     .set(poll_interval.as_duration().to_seconds());
-                self.peer_poll_interval_exp
+                self.peer_unanswered_polls
                     .get_or_create(&labels)
-                    .set(poll_interval.as_log() as i64);
-                self.peer_reachability_status
-                    .get_or_create(&labels)
-                    .set(reachability.reachability_score() as i64);
+                    .set(*unanswered_polls as i64);
                 self.peer_offset
                     .get_or_create(&labels)
                     .set(timedata.offset.to_seconds());
@@ -174,11 +167,6 @@ impl Metrics {
             Unit::Seconds,
             self.system_poll_interval.clone(),
         );
-        system.register(
-            "poll_interval",
-            "Exponent of time between poll intervals",
-            self.system_poll_interval_exp.clone(),
-        );
         system.register_with_unit(
             "precision",
             "Precision of the local clock",
@@ -220,15 +208,9 @@ impl Metrics {
         );
 
         peer.register(
-            "poll_interval",
-            "Exponent of time between polls of the peer",
-            self.peer_poll_interval_exp.clone(),
-        );
-
-        peer.register(
             "reachability_status",
             "Number of polls until the upstream server is unreachable, zero if it is",
-            self.peer_reachability_status.clone(),
+            self.peer_unanswered_polls.clone(),
         );
 
         peer.register_with_unit(

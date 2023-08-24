@@ -165,7 +165,7 @@ impl Reach {
 
     /// Number of polls since the last message we received
     pub fn unanswered_polls(&self) -> u32 {
-        self.0.leading_zeros()
+        self.0.trailing_zeros()
     }
 
     /// Number of polls remaining until unreachable

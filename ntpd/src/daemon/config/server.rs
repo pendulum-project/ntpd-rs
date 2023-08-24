@@ -293,7 +293,7 @@ mod tests {
             allowlist = ["192.168.33.34/24"]
             "#,
         );
-        assert!(matches!(test, Err(_)));
+        assert!(test.is_err());
 
         let test = toml::from_str::<TestConfig>(
             r#"
@@ -302,7 +302,7 @@ mod tests {
             denylist-action = "deny"
             "#,
         );
-        assert!(matches!(test, Err(_)));
+        assert!(test.is_err());
     }
 
     #[test]

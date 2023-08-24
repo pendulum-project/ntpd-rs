@@ -1,6 +1,6 @@
 use super::server::ServerStats;
 use super::{sockets::create_unix_socket, system::ServerData};
-use ntp_proto::{ObservablePeerTimedata, PollInterval, Reach, ReferenceId, SystemSnapshot};
+use ntp_proto::{ObservablePeerTimedata, PollInterval, SystemSnapshot};
 use std::net::SocketAddr;
 use std::os::unix::fs::PermissionsExt;
 use tokio::task::JoinHandle;
@@ -36,9 +36,8 @@ pub enum ObservablePeerState {
     Observable {
         #[serde(flatten)]
         timedata: ObservablePeerTimedata,
-        reachability: Reach,
+        unanswered_polls: u32,
         poll_interval: PollInterval,
-        peer_id: ReferenceId,
         address: String,
     },
 }
@@ -166,9 +165,8 @@ mod tests {
             ObservablePeerState::Nothing,
             ObservablePeerState::Observable {
                 timedata: Default::default(),
-                reachability: Reach::default(),
+                unanswered_polls: Reach::default().unanswered_polls(),
                 poll_interval: PollIntervalLimits::default().min,
-                peer_id: ReferenceId::from_ip("127.0.0.1".parse().unwrap()),
                 address: "127.0.0.3:123".into(),
             },
         ]);
@@ -229,9 +227,8 @@ mod tests {
             ObservablePeerState::Nothing,
             ObservablePeerState::Observable {
                 timedata: Default::default(),
-                reachability: Reach::default(),
+                unanswered_polls: Reach::default().unanswered_polls(),
                 poll_interval: PollIntervalLimits::default().min,
-                peer_id: ReferenceId::from_ip("127.0.0.1".parse().unwrap()),
                 address: "127.0.0.3:123".into(),
             },
         ]);
