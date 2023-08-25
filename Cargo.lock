@@ -812,21 +812,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "test-binaries"
-version = "0.3.6"
-dependencies = [
- "aes-siv",
- "ntp-os-clock",
- "ntp-proto",
- "ntp-udp",
- "rustls",
- "rustls-native-certs",
- "rustls-pemfile",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "thiserror"
 version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"

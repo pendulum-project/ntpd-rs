@@ -82,8 +82,6 @@ Currently, the code is split up into several separate crates:
 
 * `ntp-proto` contains the packet parsing and the algorithms needed for clock
   selection, filtering and steering.
-* `test-binaries` contains a number of simple NTP servers that can be used for
-  testing (see below).
 * `ntp-os-clock` contains the unsafe code needed to interface with system
   clocks.
 * `ntp-udp` contains the unsafe code needed to deal with timestamping on the
@@ -97,14 +95,6 @@ All unsafe code is contained within the `ntp-os-clock` and `ntp-udp` packages,
 which are kept as small as possible. All interfaces exposed by these crates
 should be safe. For a more detailed description of how ntpd-rs is structured,
 see the [development documentation](./docs/development/).
-
-## Test Binaries
-
-This crate contains extremely limited NTP servers for testing purposes
-
-* `demobilize-server` always sends the DENY kiss code, the client must
-  demobilize this association
-* `rate-limit-server` forces an increase of the poll interval to 32 seconds
 
 ## Roadmap
 
