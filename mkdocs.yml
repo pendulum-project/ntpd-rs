@@ -22,6 +22,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Guide:
+    - guide/migrating-chrony.md
     - guide/configuration.md
     - guide/management-client.md
     - guide/operational-considerations.md
