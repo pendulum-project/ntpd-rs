@@ -1,277 +1,290 @@
 pub mod exporter;
 
-use std::{
-    net::SocketAddr,
-    sync::atomic::{AtomicU64, Ordering},
-};
-
 use crate::daemon::{ObservablePeerState, ObservableState};
-use ntp_os_clock::DefaultNtpClock;
-use ntp_proto::NtpClock;
-use prometheus_client::{
-    encoding::{EncodeLabelSet, EncodeLabelValue},
-    metrics::{counter::Counter, family::Family, gauge::Gauge},
-    registry::{Registry, Unit},
-};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EncodeLabelSet)]
-struct PeerLabels {
-    address: String,
+struct Measurement<T> {
+    labels: Vec<(&'static str, String)>,
+    value: T,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EncodeLabelSet)]
-struct ServerLabels {
-    listen_address: WrappedSocketAddr,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct WrappedSocketAddr(SocketAddr);
-
-impl From<SocketAddr> for WrappedSocketAddr {
-    fn from(s: SocketAddr) -> Self {
-        WrappedSocketAddr(s)
+impl<T> Measurement<T> {
+    fn simple(value: T) -> Vec<Measurement<T>> {
+        vec![Measurement {
+            labels: Default::default(),
+            value,
+        }]
     }
 }
 
-impl EncodeLabelValue for WrappedSocketAddr {
-    fn encode(
-        &self,
-        encoder: &mut prometheus_client::encoding::LabelValueEncoder,
-    ) -> Result<(), std::fmt::Error> {
-        use std::fmt::Write;
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum Unit {
+    Seconds,
+}
 
-        encoder.write_fmt(format_args!("{}", &self.0))
+impl Unit {
+    fn as_str(&self) -> &str {
+        "seconds"
     }
 }
 
-#[derive(Default)]
-pub struct Metrics {
-    system_poll_interval: Gauge<f64, AtomicU64>,
-    system_precision: Gauge<f64, AtomicU64>,
-    system_accumulated_steps: Gauge<f64, AtomicU64>,
-    system_accumulated_steps_threshold: Gauge<f64, AtomicU64>,
-    system_leap_indicator: Gauge,
-    peer_last_update: Family<PeerLabels, Gauge<f64, AtomicU64>>,
-    peer_poll_interval: Family<PeerLabels, Gauge<f64, AtomicU64>>,
-    peer_unanswered_polls: Family<PeerLabels, Gauge>,
-    peer_offset: Family<PeerLabels, Gauge<f64, AtomicU64>>,
-    peer_uncertainty: Family<PeerLabels, Gauge<f64, AtomicU64>>,
-    peer_delay: Family<PeerLabels, Gauge<f64, AtomicU64>>,
-    server_received_packets: Family<ServerLabels, Counter>,
-    server_accepted_packets: Family<ServerLabels, Counter>,
-    server_denied_packets: Family<ServerLabels, Counter>,
-    server_ignored_packets: Family<ServerLabels, Counter>,
-    server_rate_limited_packets: Family<ServerLabels, Counter>,
-    server_response_send_errors: Family<ServerLabels, Counter>,
+enum MetricType {
+    Gauge,
+    Counter,
 }
 
-impl Metrics {
-    pub fn fill(&self, data: &ObservableState) {
-        let clock = DefaultNtpClock::realtime();
+impl MetricType {
+    fn as_str(&self) -> &str {
+        match self {
+            MetricType::Gauge => "gauge",
+            MetricType::Counter => "counter",
+        }
+    }
+}
 
-        self.system_poll_interval.set(
-            data.system
+fn format_metric<T: std::fmt::Display>(
+    w: &mut impl std::fmt::Write,
+    name: &str,
+    help: &str,
+    metric_type: MetricType,
+    unit: Option<Unit>,
+    measurements: Vec<Measurement<T>>,
+) -> std::fmt::Result {
+    let name = if let Some(unit) = unit {
+        format!("{}_{}", name, unit.as_str())
+    } else {
+        name.to_owned()
+    };
+
+    // write help text
+    writeln!(w, "# HELP {name} {help}.")?;
+
+    // write type
+    writeln!(w, "# TYPE {name} {}", metric_type.as_str())?;
+
+    // write unit
+    if let Some(unit) = unit {
+        writeln!(w, "# UNIT {name} {}", unit.as_str())?;
+    }
+
+    // write all the measurements
+    for measurement in measurements {
+        w.write_str(&name)?;
+        if !measurement.labels.is_empty() {
+            w.write_str("{")?;
+
+            for (offset, (label, value)) in measurement.labels.iter().enumerate() {
+                let value = value
+                    .replace('\\', "\\\\")
+                    .replace('"', "\\\"")
+                    .replace('\n', "\\n");
+                write!(w, "{label}=\"{value}\"")?;
+                if offset < measurement.labels.len() - 1 {
+                    w.write_str(",")?;
+                }
+            }
+            w.write_str("}")?;
+        }
+        w.write_str(" ")?;
+        write!(w, "{}", measurement.value)?;
+        w.write_str("\n")?;
+    }
+
+    Ok(())
+}
+
+macro_rules! collect_peers {
+    ($from: expr, |$ident: ident| $value: expr $(,)?) => {{
+        let mut data = vec![];
+        for tmp in &$from.peers {
+            if let crate::metrics::ObservablePeerState::Observable($ident) = tmp {
+                let labels = vec![
+                    ("address", $ident.address.clone()),
+                    ("id", format!("{}", $ident.id)),
+                ];
+                let value = $value;
+                data.push(Measurement { labels, value });
+            }
+        }
+        data
+    }};
+}
+
+macro_rules! collect_servers {
+    ($from: expr, |$ident: ident| $value: expr $(,)?) => {{
+        let mut data = vec![];
+        for $ident in &$from.servers {
+            let labels = vec![("listen_address", format!("{}", $ident.address))];
+            let value = $value;
+            data.push(Measurement { labels, value })
+        }
+        data
+    }};
+}
+
+pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> std::fmt::Result {
+    format_metric(
+        w,
+        "ntp_system_poll_interval",
+        "Time between polls of the system",
+        MetricType::Gauge,
+        Some(Unit::Seconds),
+        Measurement::simple(
+            state
+                .system
                 .time_snapshot
                 .poll_interval
                 .as_duration()
                 .to_seconds(),
-        );
-        self.system_precision
-            .set(data.system.time_snapshot.precision.to_seconds());
-        self.system_accumulated_steps
-            .set(data.system.time_snapshot.accumulated_steps.to_seconds());
-        self.system_accumulated_steps_threshold.set(
-            data.system
-                .accumulated_steps_threshold
-                .map(|v| v.to_seconds())
-                .unwrap_or(-1.0),
-        );
-        self.system_leap_indicator
-            .set(data.system.time_snapshot.leap_indicator as i64);
+        ),
+    )?;
 
-        for peer in &data.peers {
-            if let ObservablePeerState::Observable {
-                timedata,
-                unanswered_polls,
-                poll_interval,
-                address,
-                ..
-            } = peer
-            {
-                let labels = PeerLabels {
-                    address: address.clone(),
-                };
-                self.peer_last_update.get_or_create(&labels).set(
-                    (timedata.last_update
-                        - clock.now().expect("Unable to get current system time"))
-                    .to_seconds(),
-                );
-                self.peer_poll_interval
-                    .get_or_create(&labels)
-                    .set(poll_interval.as_duration().to_seconds());
-                self.peer_unanswered_polls
-                    .get_or_create(&labels)
-                    .set(*unanswered_polls as i64);
-                self.peer_offset
-                    .get_or_create(&labels)
-                    .set(timedata.offset.to_seconds());
-                self.peer_delay
-                    .get_or_create(&labels)
-                    .set(timedata.delay.to_seconds());
-                self.peer_uncertainty
-                    .get_or_create(&labels)
-                    .set(timedata.uncertainty.to_seconds());
-            }
-        }
+    format_metric(
+        w,
+        "ntp_system_precision",
+        "Precision of the local clock",
+        MetricType::Gauge,
+        Some(Unit::Seconds),
+        Measurement::simple(state.system.time_snapshot.precision.to_seconds()),
+    )?;
 
-        for server in &data.servers {
-            let labels = ServerLabels {
-                listen_address: WrappedSocketAddr(server.address),
-            };
+    format_metric(
+        w,
+        "ntp_system_accumulated_steps",
+        "Accumulated amount of seconds that the system needed to jump the time",
+        MetricType::Gauge,
+        Some(Unit::Seconds),
+        Measurement::simple(state.system.time_snapshot.accumulated_steps.to_seconds()),
+    )?;
 
-            self.server_received_packets
-                .get_or_create(&labels)
-                .inner()
-                .store(server.stats.received_packets.get(), Ordering::Relaxed);
-            self.server_accepted_packets
-                .get_or_create(&labels)
-                .inner()
-                .store(server.stats.accepted_packets.get(), Ordering::Relaxed);
-            self.server_denied_packets
-                .get_or_create(&labels)
-                .inner()
-                .store(server.stats.denied_packets.get(), Ordering::Relaxed);
-            self.server_ignored_packets
-                .get_or_create(&labels)
-                .inner()
-                .store(server.stats.ignored_packets.get(), Ordering::Relaxed);
-            self.server_rate_limited_packets
-                .get_or_create(&labels)
-                .inner()
-                .store(server.stats.rate_limited_packets.get(), Ordering::Relaxed);
-            self.server_response_send_errors
-                .get_or_create(&labels)
-                .inner()
-                .store(server.stats.response_send_errors.get(), Ordering::Relaxed);
-        }
-    }
+    format_metric(
+        w,
+        "ntp_system_accumulated_steps_threshold",
+        "Threshold for the accumulated step amount at which the NTP daemon will exit (or -1 if no threshold was set)",
+        MetricType::Gauge,
+        Some(Unit::Seconds),
+        Measurement::simple(state.system
+            .accumulated_steps_threshold
+            .map(|v| v.to_seconds())
+            .unwrap_or(-1.0)),
+    )?;
 
-    pub fn registry(&self) -> Registry {
-        let mut registry = <Registry>::with_prefix("ntp");
+    format_metric(
+        w,
+        "ntp_system_leap_indicator",
+        "Indicates that a leap second will take place",
+        MetricType::Gauge,
+        Some(Unit::Seconds),
+        Measurement::simple(state.system.time_snapshot.leap_indicator as i64),
+    )?;
 
-        let system = registry.sub_registry_with_prefix("system");
+    format_metric(
+        w,
+        "ntp_peer_uptime",
+        "Time since the peer was started",
+        MetricType::Gauge,
+        Some(Unit::Seconds),
+        collect_peers!(state, |p| p.poll_interval.as_duration().to_seconds()),
+    )?;
 
-        system.register_with_unit(
-            "poll_interval",
-            "Time between polls of the system",
-            Unit::Seconds,
-            self.system_poll_interval.clone(),
-        );
-        system.register_with_unit(
-            "precision",
-            "Precision of the local clock",
-            Unit::Seconds,
-            self.system_precision.clone(),
-        );
-        system.register_with_unit(
-            "accumulated_steps",
-            "Accumulated amount of seconds that the system needed to jump the time",
-            Unit::Seconds,
-            self.system_accumulated_steps.clone(),
-        );
-        system.register_with_unit(
-            "accumulated_steps_threshold",
-            "Threshold for the accumulated step amount at which the NTP daemon will exit (or -1 if no threshold was set)",
-            Unit::Seconds,
-            self.system_accumulated_steps_threshold.clone(),
-        );
-        system.register(
-            "leap_indicator",
-            "Indicates that a leap second will take place",
-            self.system_leap_indicator.clone(),
-        );
+    format_metric(
+        w,
+        "ntp_peer_poll_interval",
+        "Time between polls of the peer",
+        MetricType::Gauge,
+        Some(Unit::Seconds),
+        collect_peers!(state, |p| p.poll_interval.as_duration().to_seconds()),
+    )?;
 
-        let peer = registry.sub_registry_with_prefix("peer");
+    format_metric(
+        w,
+        "ntp_peer_reachability_status",
+        "Number of polls until the upstream server is unreachable, zero if it is",
+        MetricType::Gauge,
+        None,
+        collect_peers!(state, |p| p.unanswered_polls),
+    )?;
 
-        peer.register_with_unit(
-            "uptime",
-            "Time since the peer was started",
-            Unit::Seconds,
-            self.peer_last_update.clone(),
-        );
+    format_metric(
+        w,
+        "ntp_peer_offset",
+        "Offset between the upstream server and system time",
+        MetricType::Gauge,
+        Some(Unit::Seconds),
+        collect_peers!(state, |p| p.timedata.offset.to_seconds()),
+    )?;
 
-        peer.register_with_unit(
-            "poll_interval",
-            "Time between polls of the peer",
-            Unit::Seconds,
-            self.peer_poll_interval.clone(),
-        );
+    format_metric(
+        w,
+        "ntp_peer_delay",
+        "Current round-trip delay to the upstream server",
+        MetricType::Gauge,
+        Some(Unit::Seconds),
+        collect_peers!(state, |p| p.timedata.delay.to_seconds()),
+    )?;
 
-        peer.register(
-            "reachability_status",
-            "Number of polls until the upstream server is unreachable, zero if it is",
-            self.peer_unanswered_polls.clone(),
-        );
+    format_metric(
+        w,
+        "ntp_peer_uncertainty",
+        "Estimated error of the clock",
+        MetricType::Gauge,
+        Some(Unit::Seconds),
+        collect_peers!(state, |p| p.timedata.uncertainty.to_seconds()),
+    )?;
 
-        peer.register_with_unit(
-            "offset",
-            "Offset between the upstream server and system time",
-            Unit::Seconds,
-            self.peer_offset.clone(),
-        );
+    format_metric(
+        w,
+        "ntp_server_received_packets",
+        "Number of incoming received packets",
+        MetricType::Counter,
+        None,
+        collect_servers!(state, |s| s.stats.received_packets.get()),
+    )?;
 
-        peer.register_with_unit(
-            "delay",
-            "Current round-trip delay to the upstream server",
-            Unit::Seconds,
-            self.peer_delay.clone(),
-        );
+    format_metric(
+        w,
+        "ntp_server_accepted_packets",
+        "Number of packets accepted",
+        MetricType::Counter,
+        None,
+        collect_servers!(state, |s| s.stats.accepted_packets.get()),
+    )?;
 
-        peer.register_with_unit(
-            "uncertainty",
-            "Estimated error of the clock",
-            Unit::Seconds,
-            self.peer_uncertainty.clone(),
-        );
+    format_metric(
+        w,
+        "ntp_server_denied_packets",
+        "Number of denied packets",
+        MetricType::Counter,
+        None,
+        collect_servers!(state, |s| s.stats.denied_packets.get()),
+    )?;
 
-        let server = registry.sub_registry_with_prefix("server");
+    format_metric(
+        w,
+        "ntp_server_ignored_packets",
+        "Number of packets ignored",
+        MetricType::Counter,
+        None,
+        collect_servers!(state, |s| s.stats.ignored_packets.get()),
+    )?;
 
-        server.register(
-            "received_packets",
-            "Number of incoming received packets",
-            self.server_received_packets.clone(),
-        );
+    format_metric(
+        w,
+        "ntp_server_rate_limited_packets",
+        "Number of rate limited packets",
+        MetricType::Counter,
+        None,
+        collect_servers!(state, |s| s.stats.rate_limited_packets.get()),
+    )?;
 
-        server.register(
-            "accepted_packets",
-            "Number of packets accepted",
-            self.server_accepted_packets.clone(),
-        );
+    format_metric(
+        w,
+        "ntp_server_response_send_errors",
+        "Number of packets where there was an error responding",
+        MetricType::Counter,
+        None,
+        collect_servers!(state, |s| s.stats.response_send_errors.get()),
+    )?;
 
-        server.register(
-            "denied_packets",
-            "Number of denied packets",
-            self.server_denied_packets.clone(),
-        );
-
-        server.register(
-            "ignored_packets",
-            "Number of packets ignored",
-            self.server_ignored_packets.clone(),
-        );
-
-        server.register(
-            "rate_limited_packets",
-            "Number of rate limited packets",
-            self.server_rate_limited_packets.clone(),
-        );
-
-        server.register(
-            "response_send_errors",
-            "Number of packets where there was an error responding",
-            self.server_response_send_errors.clone(),
-        );
-
-        registry
-    }
+    w.write_str("# EOF")?;
+    Ok(())
 }

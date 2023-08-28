@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 mod ctl;
 mod daemon;
 mod metrics;

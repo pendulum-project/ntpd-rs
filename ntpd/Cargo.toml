@@ -34,8 +34,6 @@ rustls.workspace = true
 rustls-native-certs.workspace = true
 rustls-pemfile.workspace = true
 
-prometheus-client.workspace = true
-
 [dev-dependencies]
 ntp-proto = { workspace = true, features = ["__internal-test"] }
 

@@ -1,16 +1,6 @@
-//! This crate contains the control interface client for ntpd-rs and is not intended
-//! as a public interface at this time. It follows the same version as the main
-//! ntpd-rs crate, but that version is not intended to give any stability guarantee.
-//! Use at your own risk.
-//!
-//! Please visit the [ntpd-rs](https://github.com/pendulum-project/ntpd-rs) project
-//! for more information.
-#![forbid(unsafe_code)]
-
 use std::{path::PathBuf, process::ExitCode};
 
 use crate::daemon::{config::CliArg, tracing::LogLevel, Config, ObservableState};
-use crate::metrics::Metrics;
 use tracing_subscriber::util::SubscriberInitExt;
 
 const USAGE_MSG: &str = "\
@@ -241,15 +231,19 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
             for peer in &output.peers {
                 match peer {
                     crate::daemon::ObservablePeerState::Nothing => {}
-                    crate::daemon::ObservablePeerState::Observable {
-                        timedata,
-                        unanswered_polls,
-                        poll_interval,
-                        address,
-                    } => {
-                        println!(
-                            "{}: {}±{}(±{})s\n    pollinterval: {}s, missing polls: {}",
+                    crate::daemon::ObservablePeerState::Observable(
+                        crate::daemon::ObservedPeerState {
+                            timedata,
+                            unanswered_polls,
+                            poll_interval,
                             address,
+                            id,
+                        },
+                    ) => {
+                        println!(
+                            "{} ({}): {}±{}(±{})s\n    pollinterval: {}s, missing polls: {}",
+                            address,
+                            id,
                             timedata.offset.to_seconds(),
                             timedata.uncertainty.to_seconds(),
                             timedata.delay.to_seconds(),
@@ -288,12 +282,8 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
             }
         }
         Format::Prometheus => {
-            let metrics = Metrics::default();
-            metrics.fill(&output);
-            let registry = metrics.registry();
             let mut buf = String::new();
-
-            if let Err(e) = prometheus_client::encoding::text::encode(&mut buf, &registry) {
+            if let Err(e) = crate::metrics::format_state(&mut buf, &output) {
                 eprintln!("Failed to encode prometheus data: {e}");
 
                 return Ok(ExitCode::FAILURE);

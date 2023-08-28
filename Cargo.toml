@@ -57,9 +57,6 @@ ntp-proto = { version = "0.3.6", path = "./ntp-proto", features = ["__internal-a
 ntp-udp = { version = "0.3.6", path = "./ntp-udp" }
 ntpd = { version = "0.3.6", path = "./ntpd" }
 
-# prometheus support
-prometheus-client = ">=0.19.0,<0.22.0"
-
 # TLS
 rustls = "0.21.0"
 rustls-pemfile = "1.0"

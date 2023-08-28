@@ -9,7 +9,7 @@ use super::{
         nts::NtsSpawner, pool::PoolSpawner, standard::StandardSpawner, PeerCreateParameters,
         PeerId, PeerRemovalReason, SpawnAction, SpawnEvent, Spawner, SpawnerId, SystemEvent,
     },
-    ObservablePeerState,
+    ObservablePeerState, ObservedPeerState,
 };
 
 use std::{collections::HashMap, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
@@ -538,12 +538,13 @@ impl<C: NtpClock, T: Wait> System<C, T> {
             data.snapshot
                 .map(|snapshot| {
                     if let Some(timedata) = self.controller.peer_snapshot(*index) {
-                        ObservablePeerState::Observable {
+                        ObservablePeerState::Observable(ObservedPeerState {
                             timedata,
                             unanswered_polls: snapshot.reach.unanswered_polls(),
                             poll_interval: snapshot.poll_interval,
                             address: data.peer_address.to_string(),
-                        }
+                            id: data.peer_id,
+                        })
                     } else {
                         ObservablePeerState::Nothing
                     }

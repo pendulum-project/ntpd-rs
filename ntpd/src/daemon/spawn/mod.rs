@@ -1,6 +1,7 @@
 use std::{net::SocketAddr, sync::atomic::AtomicU64};
 
 use ntp_proto::PeerNtsData;
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
 use super::config::NormalizedAddress;
@@ -32,7 +33,7 @@ impl Default for SpawnerId {
 /// Unique identifier for a peer.
 /// This peer id makes sure that even if the network address is the same
 /// that we always know which specific spawned peer we are talking about.
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 pub struct PeerId(u64);
 
 impl PeerId {
@@ -45,6 +46,12 @@ impl PeerId {
 impl Default for PeerId {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl std::fmt::Display for PeerId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
