@@ -357,7 +357,7 @@ impl<'a> ExtensionField<'a> {
         message: &'a [u8],
     ) -> Result<Self, ParsingError<std::convert::Infallible>> {
         if message.iter().any(|b| *b != 0) {
-            Err(ParsingError::IncorrectLength)
+            Err(ParsingError::MalformedCookiePlaceholder)
         } else {
             Ok(ExtensionField::NtsCookiePlaceholder {
                 cookie_length: message.len() as u16,
@@ -756,13 +756,35 @@ mod tests {
 
     #[test]
     fn test_nts_cookie_placeholder() {
+        const COOKIE_LENGTH: usize = 16;
+
         let mut w = vec![];
-        ExtensionField::encode_nts_cookie_placeholder(&mut w, 16, 0).unwrap();
+        ExtensionField::encode_nts_cookie_placeholder(&mut w, COOKIE_LENGTH as u16, 0).unwrap();
 
         assert_eq!(
             w,
             &[3, 4, 0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,]
         );
+
+        let raw = RawExtensionField {
+            type_id: ExtensionFieldTypeId::NtsCookiePlaceholder,
+            message_bytes: &[1; COOKIE_LENGTH],
+        };
+        let output = ExtensionField::decode(raw).unwrap_err();
+
+        assert!(matches!(output, ParsingError::MalformedCookiePlaceholder));
+
+        let raw = RawExtensionField {
+            type_id: ExtensionFieldTypeId::NtsCookiePlaceholder,
+            message_bytes: &[0; COOKIE_LENGTH],
+        };
+        let output = ExtensionField::decode(raw).unwrap();
+
+        let ExtensionField::NtsCookiePlaceholder { cookie_length } = output else {
+            panic!("incorrect variant");
+        };
+
+        assert_eq!(cookie_length, 16);
     }
 
     #[test]
