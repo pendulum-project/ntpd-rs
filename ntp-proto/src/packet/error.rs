@@ -8,31 +8,36 @@ pub enum ParsingError<T> {
     IncorrectLength,
     MalformedNtsExtensionFields,
     MalformedNonce,
+    MalformedCookiePlaceholder,
     DecryptError(T),
 }
 
 impl<T> ParsingError<T> {
     pub(super) fn get_decrypt_error<U>(self) -> Result<T, ParsingError<U>> {
+        use ParsingError::*;
+
         match self {
-            ParsingError::InvalidVersion(v) => Err(ParsingError::InvalidVersion(v)),
-            ParsingError::IncorrectLength => Err(ParsingError::IncorrectLength),
-            ParsingError::MalformedNtsExtensionFields => {
-                Err(ParsingError::MalformedNtsExtensionFields)
-            }
-            ParsingError::MalformedNonce => Err(ParsingError::MalformedNonce),
-            ParsingError::DecryptError(decrypt_error) => Ok(decrypt_error),
+            InvalidVersion(v) => Err(InvalidVersion(v)),
+            IncorrectLength => Err(IncorrectLength),
+            MalformedNtsExtensionFields => Err(MalformedNtsExtensionFields),
+            MalformedNonce => Err(MalformedNonce),
+            MalformedCookiePlaceholder => Err(MalformedCookiePlaceholder),
+            DecryptError(decrypt_error) => Ok(decrypt_error),
         }
     }
 }
 
 impl ParsingError<std::convert::Infallible> {
     pub(super) fn generalize<U>(self) -> ParsingError<U> {
+        use ParsingError::*;
+
         match self {
-            ParsingError::InvalidVersion(v) => ParsingError::InvalidVersion(v),
-            ParsingError::IncorrectLength => ParsingError::IncorrectLength,
-            ParsingError::MalformedNtsExtensionFields => ParsingError::MalformedNtsExtensionFields,
-            ParsingError::MalformedNonce => ParsingError::MalformedNonce,
-            ParsingError::DecryptError(decrypt_error) => match decrypt_error {},
+            InvalidVersion(v) => InvalidVersion(v),
+            IncorrectLength => IncorrectLength,
+            MalformedNtsExtensionFields => MalformedNtsExtensionFields,
+            MalformedNonce => MalformedNonce,
+            MalformedCookiePlaceholder => MalformedCookiePlaceholder,
+            DecryptError(decrypt_error) => match decrypt_error {},
         }
     }
 }
@@ -46,6 +51,7 @@ impl<T> Display for ParsingError<T> {
             Self::IncorrectLength => f.write_str("Incorrect packet length"),
             Self::MalformedNtsExtensionFields => f.write_str("Malformed nts extension fields"),
             Self::MalformedNonce => f.write_str("Malformed nonce (likely invalid length)"),
+            Self::MalformedCookiePlaceholder => f.write_str("Malformed cookie placeholder"),
             Self::DecryptError(_) => f.write_str("Failed to decrypt NTS extension fields"),
         }
     }
