@@ -252,6 +252,15 @@ impl KeySet {
             }
         })
     }
+
+    #[cfg(test)]
+    pub(crate) fn new() -> Self {
+        Self {
+            keys: vec![AesSivCmac512::new(std::iter::repeat(0).take(64).collect())],
+            id_offset: 1,
+            primary: 0,
+        }
+    }
 }
 
 impl CipherProvider for KeySet {
@@ -282,7 +291,7 @@ impl std::fmt::Debug for KeySet {
     }
 }
 
-#[cfg(feature = "__internal-fuzz")]
+#[cfg(any(test, feature = "__internal-fuzz"))]
 pub fn test_cookie() -> DecodedServerCookie {
     DecodedServerCookie {
         algorithm: AeadAlgorithm::AeadAesSivCmac256,

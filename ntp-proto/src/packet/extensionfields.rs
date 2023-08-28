@@ -397,12 +397,14 @@ pub(super) struct ExtensionFieldData<'a> {
     pub(super) untrusted: Vec<ExtensionField<'a>>,
 }
 
+#[derive(Debug)]
 pub(super) struct DeserializedExtensionField<'a> {
     pub(super) efdata: ExtensionFieldData<'a>,
     pub(super) remaining_bytes: &'a [u8],
     pub(super) cookie: Option<DecodedServerCookie>,
 }
 
+#[derive(Debug)]
 pub(super) struct InvalidNtsExtensionField<'a> {
     pub(super) efdata: ExtensionFieldData<'a>,
     pub(super) remaining_bytes: &'a [u8],
@@ -428,7 +430,7 @@ impl<'a> ExtensionFieldData<'a> {
         if !self.authenticated.is_empty() || !self.encrypted.is_empty() {
             let cipher = match cipher.get(&self.authenticated) {
                 Some(cipher) => cipher,
-                None => return Err(std::io::Error::new(std::io::ErrorKind::Other, "")),
+                None => return Err(std::io::Error::new(std::io::ErrorKind::Other, "no cipher")),
             };
 
             // the authenticated extension fields are always followed by the encrypted extension
@@ -684,11 +686,13 @@ impl<'a> Iterator for ExtensionFieldStreamer<'a> {
     type Item = Result<(usize, RawExtensionField<'a>), ParsingError<std::convert::Infallible>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.buffer.len() - self.offset <= self.cutoff {
+        let remaining = &self.buffer.get(self.offset..)?;
+
+        if remaining.len() <= self.cutoff {
             return None;
         }
 
-        match RawExtensionField::deserialize(&self.buffer[self.offset..], self.minimum_size) {
+        match RawExtensionField::deserialize(remaining, self.minimum_size) {
             Ok(field) => {
                 let offset = self.offset;
                 self.offset += field.wire_length();
@@ -718,7 +722,10 @@ const fn next_multiple_of_usize(lhs: usize, rhs: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use crate::packet::{extensionfields::ExtensionFieldTypeId, AesSivCmac256};
+    use crate::{
+        packet::{extensionfields::ExtensionFieldTypeId, AesSivCmac256},
+        KeySet,
+    };
 
     use super::*;
 
@@ -903,5 +910,248 @@ mod tests {
             }
             _ => panic!("invalid"),
         }
+    }
+
+    #[test]
+    fn deserialize_extension_field_data_no_cipher() {
+        let cookie = ExtensionField::NtsCookie(Cow::Borrowed(&[0; 16]));
+        let cipher = crate::packet::crypto::NoCipher;
+
+        // cause an error when the cipher is needed
+        {
+            let data = ExtensionFieldData {
+                authenticated: vec![cookie.clone()],
+                encrypted: vec![],
+                untrusted: vec![],
+            };
+
+            let mut w = [0u8; 128];
+            let mut cursor = Cursor::new(w.as_mut_slice());
+            assert!(data.serialize(&mut cursor, &cipher).is_err());
+        }
+
+        // but succeed when the cipher is not needed
+        {
+            let data = ExtensionFieldData {
+                authenticated: vec![],
+                encrypted: vec![],
+                untrusted: vec![cookie.clone()],
+            };
+
+            let mut w = [0u8; 128];
+            let mut cursor = Cursor::new(w.as_mut_slice());
+            assert!(data.serialize(&mut cursor, &cipher).is_ok());
+        }
+    }
+
+    #[test]
+    fn serialize_untrused_fields() {
+        let cookie = ExtensionField::NtsCookie(Cow::Borrowed(&[0; 16]));
+
+        let data = ExtensionFieldData {
+            authenticated: vec![],
+            encrypted: vec![],
+            untrusted: vec![cookie.clone(), cookie],
+        };
+
+        let nonce_length = 11;
+        let cipher = crate::packet::crypto::IdentityCipher::new(nonce_length);
+
+        let mut w = [0u8; 128];
+        let mut cursor = Cursor::new(w.as_mut_slice());
+        data.serialize(&mut cursor, &cipher).unwrap();
+
+        let n = cursor.position() as usize;
+        let slice = &w.as_slice()[..n];
+
+        // the cookie we provide is `2 + 2 + 16 = 20` bytes
+        let expected_length = Ord::max(20, 28) + Ord::max(20, 16);
+        assert_eq!(slice.len(), expected_length);
+    }
+
+    #[test]
+    fn serialize_untrused_fields_smaller_than_minimum() {
+        let cookie = ExtensionField::NtsCookie(Cow::Borrowed(&[0; 4]));
+
+        let data = ExtensionFieldData {
+            authenticated: vec![],
+            encrypted: vec![],
+            untrusted: vec![cookie.clone(), cookie],
+        };
+
+        let nonce_length = 11;
+        let cipher = crate::packet::crypto::IdentityCipher::new(nonce_length);
+
+        let mut w = [0u8; 128];
+        let mut cursor = Cursor::new(w.as_mut_slice());
+        data.serialize(&mut cursor, &cipher).unwrap();
+
+        let n = cursor.position() as usize;
+        let slice = &w.as_slice()[..n];
+
+        // now we hit the minimum widths of extension fields
+        // let minimum_size = if is_last { 28 } else { 16 };
+        assert_eq!(slice.len(), 28 + 16);
+    }
+
+    #[test]
+    fn deserialize_without_cipher_invalid_length() {
+        // the message will be smaller than the cutoff value of 28
+        let cookie = ExtensionField::NtsCookie(Cow::Borrowed(&[0; 4]));
+
+        let data = ExtensionFieldData {
+            authenticated: vec![],
+            encrypted: vec![cookie],
+            untrusted: vec![],
+        };
+
+        let nonce_length = 11;
+        let cipher = crate::packet::crypto::IdentityCipher::new(nonce_length);
+
+        let mut w = [0u8; 128];
+        let mut cursor = Cursor::new(w.as_mut_slice());
+        data.serialize(&mut cursor, &cipher).unwrap();
+
+        let n = cursor.position() as usize;
+        let slice = &w.as_slice()[..n];
+
+        let cipher = crate::packet::crypto::NoCipher;
+
+        let result = ExtensionFieldData::deserialize(slice, 0, &cipher).unwrap();
+
+        let DeserializedExtensionField {
+            efdata,
+            remaining_bytes,
+            cookie,
+        } = result;
+
+        assert_eq!(efdata.authenticated, &[]);
+        assert_eq!(efdata.encrypted, &[]);
+        assert_eq!(efdata.untrusted, &[]);
+
+        assert_eq!(remaining_bytes, slice);
+
+        assert!(cookie.is_none());
+    }
+
+    #[test]
+    fn deserialize_without_cipher() {
+        let cookie = ExtensionField::NtsCookie(Cow::Borrowed(&[0; 32]));
+
+        let data = ExtensionFieldData {
+            authenticated: vec![],
+            encrypted: vec![cookie],
+            untrusted: vec![],
+        };
+
+        let nonce_length = 11;
+        let cipher = crate::packet::crypto::IdentityCipher::new(nonce_length);
+
+        let mut w = [0u8; 128];
+        let mut cursor = Cursor::new(w.as_mut_slice());
+        data.serialize(&mut cursor, &cipher).unwrap();
+
+        let n = cursor.position() as usize;
+        let slice = &w.as_slice()[..n];
+
+        let cipher = crate::packet::crypto::NoCipher;
+
+        let result = ExtensionFieldData::deserialize(slice, 0, &cipher).unwrap_err();
+
+        let ParsingError::DecryptError(InvalidNtsExtensionField {
+            efdata,
+            remaining_bytes,
+        }) = result
+        else {
+            panic!("invalid variant");
+        };
+
+        let invalid = ExtensionField::InvalidNtsEncryptedField;
+        assert_eq!(efdata.authenticated, &[]);
+        assert_eq!(efdata.encrypted, &[]);
+        assert_eq!(efdata.untrusted, &[invalid]);
+
+        assert_eq!(remaining_bytes, &[]);
+    }
+
+    #[test]
+    fn deserialize_different_cipher() {
+        let cookie = ExtensionField::NtsCookie(Cow::Borrowed(&[0; 32]));
+
+        let data = ExtensionFieldData {
+            authenticated: vec![],
+            encrypted: vec![cookie],
+            untrusted: vec![],
+        };
+
+        let nonce_length = 11;
+        let cipher = crate::packet::crypto::IdentityCipher::new(nonce_length);
+
+        let mut w = [0u8; 128];
+        let mut cursor = Cursor::new(w.as_mut_slice());
+        data.serialize(&mut cursor, &cipher).unwrap();
+
+        let n = cursor.position() as usize;
+        let slice = &w.as_slice()[..n];
+
+        // now use a differnt (valid) cipher for deserialization
+        let c2s = [0; 32];
+        let cipher = AesSivCmac256::new(c2s.into());
+
+        let result = ExtensionFieldData::deserialize(slice, 0, &cipher).unwrap_err();
+
+        let ParsingError::DecryptError(InvalidNtsExtensionField {
+            efdata,
+            remaining_bytes,
+        }) = result
+        else {
+            panic!("invalid variant");
+        };
+
+        let invalid = ExtensionField::InvalidNtsEncryptedField;
+        assert_eq!(efdata.authenticated, &[]);
+        assert_eq!(efdata.encrypted, &[]);
+        assert_eq!(efdata.untrusted, &[invalid]);
+
+        assert_eq!(remaining_bytes, &[]);
+    }
+
+    #[test]
+    fn deserialize_with_keyset() {
+        let keyset = KeySet::new();
+
+        let decoded_server_cookie = crate::keyset::test_cookie();
+        let cookie_data = keyset.encode_cookie(&decoded_server_cookie);
+
+        let cookie = ExtensionField::NtsCookie(Cow::Borrowed(&cookie_data));
+
+        let data = ExtensionFieldData {
+            authenticated: vec![cookie.clone()],
+            encrypted: vec![cookie],
+            untrusted: vec![],
+        };
+
+        let mut w = [0u8; 256];
+        let mut cursor = Cursor::new(w.as_mut_slice());
+        data.serialize(&mut cursor, &keyset).unwrap();
+
+        let n = cursor.position() as usize;
+        let slice = &w.as_slice()[..n];
+
+        let result = ExtensionFieldData::deserialize(slice, 0, &keyset).unwrap();
+
+        let DeserializedExtensionField {
+            efdata,
+            remaining_bytes,
+            cookie,
+        } = result;
+
+        assert_eq!(efdata.authenticated.len(), 1);
+        assert_eq!(efdata.encrypted.len(), 1);
+        assert_eq!(efdata.untrusted, &[]);
+
+        assert_eq!(remaining_bytes, &[]);
+
+        assert!(cookie.is_some());
     }
 }
