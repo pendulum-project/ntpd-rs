@@ -36,3 +36,25 @@ impl<'a> Mac<'a> {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn roundtrip() {
+        let input = Mac {
+            keyid: 42,
+            mac: Cow::Borrowed(&[1, 2, 3, 4, 5, 6, 7, 8]),
+        };
+
+        let input = input.to_owned();
+
+        let mut w = Vec::new();
+        input.serialize(&mut w).unwrap();
+
+        let output = Mac::deserialize(&w).unwrap();
+
+        assert_eq!(input, output);
+    }
+}
