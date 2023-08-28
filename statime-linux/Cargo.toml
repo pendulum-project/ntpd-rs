@@ -12,7 +12,7 @@ fern = { version = "0.6.2", features = ["colored"] }
 libc = { version = "0.2.147", features = ["extra_traits"] }
 log = "0.4.20"
 statime = { path = "../statime" }
-pin-project-lite = "0.2.12"
+pin-project-lite = "0.2.13"
 toml = ">=0.5.0,<0.8.0"
 tokio = { version = "1.32", features = ["net", "rt-multi-thread", "time", "macros", "sync"] }
 rand = { version = "0.8.5", default-features = false, features = ["std", "std_rng"] }
