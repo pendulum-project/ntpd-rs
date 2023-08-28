@@ -539,7 +539,12 @@ mod tests {
         let t2 = t2.unwrap();
         let delta = t2 - t1;
 
-        assert!(delta.to_seconds() > 0.15 && delta.to_seconds() < 0.25);
+        // this can be flaky on freebsd
+        assert!(
+            delta.to_seconds() > 0.15 && delta.to_seconds() < 0.25,
+            "delta was {}s",
+            delta.to_seconds()
+        );
     }
 
     #[tokio::test]
