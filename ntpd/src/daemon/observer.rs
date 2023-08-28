@@ -1,4 +1,5 @@
 use super::server::ServerStats;
+use super::spawn::PeerId;
 use super::{sockets::create_unix_socket, system::ServerData};
 use ntp_proto::{ObservablePeerTimedata, PollInterval, SystemSnapshot};
 use std::net::SocketAddr;
@@ -33,13 +34,17 @@ impl From<&ServerData> for ObservableServerState {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum ObservablePeerState {
     Nothing,
-    Observable {
-        #[serde(flatten)]
-        timedata: ObservablePeerTimedata,
-        unanswered_polls: u32,
-        poll_interval: PollInterval,
-        address: String,
-    },
+    Observable(ObservedPeerState),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ObservedPeerState {
+    #[serde(flatten)]
+    pub timedata: ObservablePeerTimedata,
+    pub unanswered_polls: u32,
+    pub poll_interval: PollInterval,
+    pub address: String,
+    pub id: PeerId,
 }
 
 pub async fn spawn(
@@ -163,12 +168,13 @@ mod tests {
         let (_, peers_reader) = tokio::sync::watch::channel(vec![
             ObservablePeerState::Nothing,
             ObservablePeerState::Nothing,
-            ObservablePeerState::Observable {
+            ObservablePeerState::Observable(ObservedPeerState {
                 timedata: Default::default(),
                 unanswered_polls: Reach::default().unanswered_polls(),
                 poll_interval: PollIntervalLimits::default().min,
                 address: "127.0.0.3:123".into(),
-            },
+                id: PeerId::new(),
+            }),
         ]);
 
         let (_, servers_reader) = tokio::sync::watch::channel(vec![]);
@@ -225,12 +231,13 @@ mod tests {
         let (mut peers_writer, peers_reader) = tokio::sync::watch::channel(vec![
             ObservablePeerState::Nothing,
             ObservablePeerState::Nothing,
-            ObservablePeerState::Observable {
+            ObservablePeerState::Observable(ObservedPeerState {
                 timedata: Default::default(),
                 unanswered_polls: Reach::default().unanswered_polls(),
                 poll_interval: PollIntervalLimits::default().min,
                 address: "127.0.0.3:123".into(),
-            },
+                id: PeerId::new(),
+            }),
         ]);
 
         let (mut server_writer, servers_reader) = tokio::sync::watch::channel(vec![]);

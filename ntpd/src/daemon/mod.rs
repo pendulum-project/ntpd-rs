@@ -1,12 +1,3 @@
-//! This crate contains the main ntp-daemon code for ntpd-rs and is not intended as
-//! a public interface at this time. It follows the same version as the main ntpd-rs
-//! crate, but that version is not intended to give any stability guarantee. Use at
-//! your own risk.
-//!
-//! Please visit the [ntpd-rs](https://github.com/pendulum-project/ntpd-rs) project
-//! for more information.
-#![forbid(unsafe_code)]
-
 pub mod config;
 mod ipfilter;
 pub mod keyexchange;
@@ -25,7 +16,7 @@ use ::tracing::info;
 pub use config::Config;
 #[cfg(feature = "__internal-fuzz")]
 pub use ipfilter::fuzz::fuzz_ipfilter;
-pub use observer::{ObservablePeerState, ObservableState};
+pub use observer::{ObservablePeerState, ObservableState, ObservedPeerState};
 pub use system::spawn;
 use tracing_subscriber::util::SubscriberInitExt;
 

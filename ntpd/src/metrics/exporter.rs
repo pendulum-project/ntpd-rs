@@ -1,13 +1,3 @@
-//! This crate contains the OpenMetrics/Prometheus metrics exporter for ntpd-rs, but
-//! is not intended as a public interface at this time. It follows the same version
-//! as the main ntpd-rs crate, but that version is not intended to give any
-//! stability guarantee. Use at your own risk.
-//!
-//! Please visit the [ntpd-rs](https://github.com/pendulum-project/ntpd-rs) project
-//! for more information.
-#![forbid(unsafe_code)]
-
-use super::Metrics;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 
@@ -181,12 +171,8 @@ async fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::erro
         let mut msg = Vec::with_capacity(16 * 1024);
         let output: ObservableState =
             crate::daemon::sockets::read_json(&mut stream, &mut msg).await?;
-        let metrics = Metrics::default();
-        metrics.fill(&output);
-        let registry = metrics.registry();
-
         let mut content = String::with_capacity(4 * 1024);
-        prometheus_client::encoding::text::encode(&mut content, &registry)?;
+        crate::metrics::format_state(&mut content, &output)?;
 
         let mut buf = String::with_capacity(4 * 1024);
 
