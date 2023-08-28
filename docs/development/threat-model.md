@@ -5,7 +5,8 @@ Saitta, that we as developers use as a guide in our development process. It may
 not contain all the context needed to fully understand it, if clarifications are
 needed please ask us.
 
-The used methodology is entirely manual, but is derived from [Trike](https://www.octotrike.org/)
+The used methodology is entirely manual, but is derived from
+[Trike](https://www.octotrike.org/).
 
 ## Actors, Assets & Actions
 
@@ -30,11 +31,14 @@ We model the following assets:
 - Server configuration: The configuration on which interfaces to provide an
   NTP server on, and who can use those, including some metadata on the current
   server status.
-- Request nonce: The random nonce a client uses for a specific request to the server to match the response to the request.
+- Request nonce: The random nonce a client uses for a specific request to the
+  server to match the response to the request.
 - Client NTS keys: The keys a client uses to communicate with a server.
 - Client NTS cookies: The cookies a client uses to communicate with the server.
-- Server NTS keys: The keys a server uses to communicate with a client (ephemeral).
-- Server NTS cookies: The cookies a server is about to send to a client. (ephemeral)
+- Server NTS keys: The keys a server uses to communicate with a client
+  (ephemeral).
+- Server NTS cookies: The cookies a server is about to send to a client
+  (ephemeral).
 - NTS Cookie keys: The keys a server uses to encrypt cookies.
 
 ### Actions
@@ -261,7 +265,8 @@ We model the following assets:
 
 - Reference sources may update the Clock only when sufficiently many agree and
   don't exceed configured adjustment limits.
-- Reference sources may only know request information related to requests to them.
+- Reference sources may only know request information related to requests to
+  them.
 - System users may read configuration (both types) only when allowed by system
   admin.
 - External clients may know key material and cookies related to their session.
@@ -393,11 +398,14 @@ We model the following assets:
     </tr>
 </table>
 
- - Request nonce: The random nonce a client uses for a specific request to the server to match the response to the request.
+ - Request nonce: The random nonce a client uses for a specific request to the
+   server to match the response to the request.
  - Client NTS keys: The keys a client uses to communicate with a server.
  - Client NTS cookies: The cookies a client uses to communicate with the server.
- - Server NTS keys: The keys a server uses to communicate with a client (ephemeral).
- - Server NTS cookies: The cookies a server is about to send to a client. (ephemeral)
+ - Server NTS keys: The keys a server uses to communicate with a client
+   (ephemeral).
+ - Server NTS cookies: The cookies a server is about to send to a client
+   (ephemeral).
  - NTS Cookie keys: The keys a server uses to encrypt cookies.
 
 ## Security strategy
@@ -416,7 +424,9 @@ We model the following assets:
   socket, which is unreachable over the network by default
 - If any actor tries to read the clock too often, the system will stop
   responding a valid time to them
-- If the nts cookie key storage file is world-readable, the system will emit a warning. The system will never create this file with permissions other than 0600.
+- If the nts cookie key storage file is world-readable, the system will emit a
+  warning. The system will never create this file with permissions other than
+  `0600`.
 
 ## Data flow diagram
 
