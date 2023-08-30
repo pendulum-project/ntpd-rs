@@ -1,8 +1,8 @@
 # Migrating from chrony
 
-Both chrony and ntpd-rs can serve a similar role on Unix systems. This guide is aimed to help those migrating machines currently running chrony to ntpd-rs. We assume here experience with the [chrony configuration format](https://chrony-project.org/doc/4.3/chrony.conf.html). A user with no or little chrony experience may be better of following our [getting started guide](getting-started.md).
+Both chrony and ntpd-rs can serve a similar role on Unix systems. This guide is aimed to help those migrating machines currently running chrony to ntpd-rs. We assume here experience with the [chrony configuration format](https://chrony-project.org/doc/4.3/chrony.conf.html). A user with no or little chrony experience may be better off following our [getting started guide](getting-started.md).
 
-Before we start with the specifics of how to convert individual directives, first a few notes. In contrast with the chrony configuration format, which acts like a list of commands to the client, the ntpd-rs configuration is a toml file. In particular, this means configuration is done by giving values for properties. As such, fields cannot be repeated unless part of a list (such as with the `[[peers]]` sections and `[[server]]` sections). Comments can be added by starting them with a `#`. The remainder of the line is then ignored.
+Before we start with the specifics on how to convert individual directives, first a few notes. In contrast with the chrony configuration format, which acts like a list of commands to the client, the ntpd-rs configuration is a [TOML](https://toml.io/) file. In particular, this means configuration is done by giving values for properties. As such, fields cannot be repeated unless part of a list, such as with the `[[peers]]` sections and `[[server]]` sections. Comments can be added by starting them with a `#`. The remainder of the line is then ignored.
 
 Please note that for some of the settings below, ntpd-rs and chrony do use different defaults. When converting a configuration, please pay extra attention in particular to `minsources`/`minimum-agreeing-peers`, `maxstep` and the corresponding `-panic-thresholds`, and any settings for NTS server functionality. Validation of the resulting ntpd-rs configuration can be done with `ntp-ctl validate -c <path>`, which should at least catch the most egregious errors.
 
@@ -96,7 +96,7 @@ When doing this, it is also important to note a major philosophical difference b
 Server configuration in ntpd-rs works quite a bit differently from chrony. Rather than enabling time server functionality by `allow`ing remote connections to the server, one or more serving instances can be individually configured. Each of these comes with its own allow and deny list:
 ```
 [[server]]
-listen="<ip or [::]>:<port>"
+listen="<IP or [::]>:<port>"
 allowlist = [
     <subnet1>,
     <subnet2>
@@ -113,11 +113,11 @@ The allow and deny list configuration is optional in ntpd-rs. By default, if a s
 NTS can be enabled for a server by simply configuring an NTS key exchange server:
 ```
 [[nts-ke]]
-key-exchange-listen = "<ip or [::]>:<
+key-exchange-listen = "<IP or [::]>:<
 certificate-chain-path = <ntsservercert>
 private-key-path = <ntsserverkey>
 ```
-Here the names of the corresponding chrony directives are used on the right hand side of the assignment. Note that unlike chrony, ntpd-rs does not have a default ip address on which it listens for nts-ke traffic, and this needs to be explicitly provided. The port is optional however and defaults to the standard value 4460.
+Here the names of the corresponding chrony directives are used on the right hand side of the assignment. Note that unlike chrony, ntpd-rs does not have a default IP address on which it listens for nts-ke traffic, and this needs to be explicitly provided. The port is optional however and defaults to the standard value 4460.
 
 The keys used to encrypt the cookies are by default ephemeral. If these should be kept across reboots of the server, the path for storing these can be configured:
 ```
@@ -134,7 +134,7 @@ key-rotation-interval = <rotation interval in seconds>
 ```
 Note that the defaults for these settings mean that, in contrast to the chrony defaults, cookies for the server are only valid for slightly more than 1 week instead of 3.
 
-Sharing the keys with which the nts cookies are encrypted between multiple ntpd-rs servers is not yet supported.
+Sharing the keys, with which the NTS cookies are encrypted between multiple ntpd-rs servers, is not yet supported.
 
 If a local stratum for the server is configured through `local stratum`, this can be configured in ntpd-rs through the `local-stratum` key:
 ```
