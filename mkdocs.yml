@@ -23,9 +23,9 @@ nav:
   - Home: index.md
   - Guide:
     - guide/migrating-chrony.md
+    - guide/security-guidance.md
     - guide/configuration.md
     - guide/management-client.md
-    - guide/operational-considerations.md
   - Examples:
     - examples/run-as-service.md
   - Man Pages:
