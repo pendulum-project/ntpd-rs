@@ -142,7 +142,7 @@ If a local stratum for the server is configured through `local stratum`, this ca
 local-stratum = <stratum>
 ```
 
-Broadcast mode is not currently supported in ntpd-rs. If this is used in your current setup, configuring the ntp server via dhcp instead may be an alternative.
+Broadcast mode is not supported in ntpd-rs. If this is used in your current setup, configuring the NTP server via DHCP instead may be an alternative. Note that using broadcast mode may leave you more vulnerable to security issues.
 
 ## Non-supported features
 
