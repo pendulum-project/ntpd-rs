@@ -293,7 +293,7 @@ pub struct Config {
 
 impl Config {
     async fn from_file(file: impl AsRef<Path>) -> Result<Config, ConfigError> {
-        let meta = std::fs::metadata(&file).unwrap();
+        let meta = std::fs::metadata(&file)?;
         let perm = meta.permissions();
 
         if perm.mode() as libc::mode_t & libc::S_IWOTH != 0 {
@@ -334,7 +334,7 @@ impl Config {
         peers: Vec<PeerConfig>,
         servers: Vec<ServerConfig>,
     ) -> Result<Config, ConfigError> {
-        let mut config = Config::from_first_file(file).await?;
+        let mut config = Config::from_first_file(file.as_ref()).await?;
 
         if !peers.is_empty() {
             if !config.peers.is_empty() {
