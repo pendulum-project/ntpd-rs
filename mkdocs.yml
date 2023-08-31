@@ -30,6 +30,7 @@ nav:
     - guide/exporting-metrics.md
     - guide/migrating-chrony.md
     - guide/migrating-ntpd.md
+    - guide/migrating-ntpsec.md
     - guide/security-guidance.md
   - Man Pages:
     - ntp-daemon(8): man/ntp-daemon.8.md
