@@ -19,4 +19,4 @@ tracing.workspace = true
 serde.workspace = true
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true, features = ["net", "time", "test-util"] }
