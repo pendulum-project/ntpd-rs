@@ -18,9 +18,12 @@ usage: ntp-metrics-exporter [-c PATH] [-o PATH] [-l SOCKET_ADDR]
 const DESCRIPTOR: &str = "ntp-metrics-exporter - serve ntpd-rs openmetrics via http";
 
 const HELP_MSG: &str = "Options:
-  -c, --config=CONFIG                  which configuration file to read the socket paths from
-  -o, --observation-socket=SOCKET      path of the observation socket
-  -l, --listen-socket=SOCKET_ADDR      socket to run the http server on";
+  -c, --config=CONFIG                  ntpd-rs configuration file (default: 
+                                       /etc/ntpd-rs/ntp.toml)
+  -o, --observation-socket=SOCKET      path of the observation socket (default
+                                       is taken from the configuration)
+  -l, --listen-socket=SOCKET_ADDR      address to serve prometheus output on
+                                       (default: 127.0.0.1:9975)";
 
 pub fn long_help_message() -> String {
     format!("{DESCRIPTOR}\n\n{USAGE_MSG}\n\n{HELP_MSG}")

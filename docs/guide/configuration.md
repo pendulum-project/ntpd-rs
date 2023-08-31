@@ -10,7 +10,7 @@ Unlike the ntp reference implementation, ntpd-rs does not support either broadca
 
 The recommended way of installing ntpd-rs is with the pre-built packages from the [releases](https://github.com/pendulum-project/ntpd-rs/releases) page. The installers automatically handle setting up users, permissions and configuration.
 
-If you want to setup a server using these packages, you will need to uncomment the `server` section of the configuration in `/etc/ntpd-rs/ntp.toml`. To enable a metrics exporter providing prometheus metrics on port `8123`, the systemd unit `ntpd-rs-metrics` needs to be enabled and started.
+If you want to setup a server using these packages, you will need to uncomment the `server` section of the configuration in `/etc/ntpd-rs/ntp.toml`. To enable a metrics exporter providing prometheus metrics on port `9975`, the systemd unit `ntpd-rs-metrics` needs to be enabled and started.
 
 Alternatively, nptd-rs can be installed using `cargo install ntpd` or build from source.
 
