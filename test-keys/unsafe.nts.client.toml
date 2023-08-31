@@ -7,7 +7,7 @@ observation-path = "/run/ntpd-rs/observe"
 [[peer]]
 mode = "nts"
 address =  "localhost:4460"
-certificate_authority = "test-keys/testca.pem"
+certificate-authority = "test-keys/testca.pem"
 
 # System parameters used in filtering and steering the clock:
 [synchronization]

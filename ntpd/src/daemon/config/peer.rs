@@ -24,7 +24,7 @@ pub struct NtsPeerConfig {
     #[serde(
         deserialize_with = "deserialize_certificate_authorities",
         default = "default_certificate_authorities",
-        rename = "certificate_authority"
+        rename = "certificate-authority"
     )]
     pub certificate_authorities: Arc<[Certificate]>,
 }
@@ -413,7 +413,7 @@ mod tests {
             r#"
                 [peer]
                 address = "example.com"
-                certificate_authority = "{}"
+                certificate-authority = "{}"
                 mode = "nts"
                 "#,
             path.display()
