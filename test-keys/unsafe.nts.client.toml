@@ -7,10 +7,10 @@ observation-path = "/run/ntpd-rs/observe"
 [[peer]]
 mode = "nts"
 address =  "localhost:4460"
-certificates = "test-keys/testca.pem"
+certificate_authority = "test-keys/testca.pem"
 
 # System parameters used in filtering and steering the clock:
 [synchronization]
-min-intersection-survivors = 1
+minimum-agreeing-peers = 1
 single-step-panic-threshold = 10
 startup-step-panic-threshold = { forward = "inf", backward = 86400 }

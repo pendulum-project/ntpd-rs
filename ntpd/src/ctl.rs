@@ -5,7 +5,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 
 const USAGE_MSG: &str = "\
 usage: ntp-ctl validate [-c PATH]
-       ntp-ctl status [-f FORMAT] [-c PATH] [-o PATH]
+       ntp-ctl status [-f FORMAT] [-c PATH]
        ntp-ctl -h | ntp-ctl -v";
 
 const DESCRIPTOR: &str = "ntp-ctl - ntp-daemon monitoring";
@@ -35,7 +35,7 @@ pub enum NtpCtlAction {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct NtpDaemonOptions {
+pub(crate) struct NtpCtlOptions {
     config: Option<PathBuf>,
     format: Format,
     help: bool,
@@ -45,7 +45,7 @@ pub(crate) struct NtpDaemonOptions {
     action: NtpCtlAction,
 }
 
-impl NtpDaemonOptions {
+impl NtpCtlOptions {
     const TAKES_ARGUMENT: &[&'static str] = &["--config", "--format"];
     const TAKES_ARGUMENT_SHORT: &[char] = &['c', 'f'];
 
@@ -55,21 +55,9 @@ impl NtpDaemonOptions {
         I: IntoIterator<Item = T>,
         T: AsRef<str> + Clone,
     {
-        let mut options = NtpDaemonOptions::default();
+        let mut options = NtpCtlOptions::default();
 
-        let mut it = iter.into_iter().map(|x| x.as_ref().to_string()).peekable();
-
-        match it.peek().map(|x| x.as_str()) {
-            Some("validate") => {
-                let _ = it.next();
-                options.validate = true;
-            }
-            Some("status") => {
-                let _ = it.next();
-                options.status = true;
-            }
-            _ => { /* do nothing */ }
-        };
+        let it = iter.into_iter().map(|x| x.as_ref().to_string());
 
         let arg_iter =
             CliArg::normalize_arguments(Self::TAKES_ARGUMENT, Self::TAKES_ARGUMENT_SHORT, it)?
@@ -102,7 +90,24 @@ impl NtpDaemonOptions {
                         Err(format!("invalid option provided: {option}"))?;
                     }
                 },
-                CliArg::Rest(_rest) => { /* do nothing, drop remaining arguments */ }
+                CliArg::Rest(rest) => {
+                    if rest.len() > 1 {
+                        eprintln!("Warning: Too many commands provided.")
+                    }
+                    for command in rest {
+                        match command.as_str() {
+                            "validate" => {
+                                options.validate = true;
+                            }
+                            "status" => {
+                                options.status = true;
+                            }
+                            unknown => {
+                                eprintln!("Warning: Unknown command {unknown}");
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -150,7 +155,7 @@ async fn validate(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub async fn main() -> std::io::Result<ExitCode> {
-    let options = match NtpDaemonOptions::try_parse_from(std::env::args()) {
+    let options = match NtpCtlOptions::try_parse_from(std::env::args()) {
         Ok(options) => options,
         Err(msg) => return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, msg)),
     };
@@ -198,7 +203,7 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
     };
 
     let mut msg = Vec::with_capacity(16 * 1024);
-    let output =
+    let mut output =
         match crate::daemon::sockets::read_json::<ObservableState>(&mut stream, &mut msg).await {
             Ok(output) => output,
             Err(e) => {
@@ -210,14 +215,23 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
 
     match print {
         Format::Plain => {
+            // Sort peers by address and then id (to deal with pools), servers just by address
+            output.peers.sort_by_key(|p| match p {
+                crate::daemon::ObservablePeerState::Nothing => None,
+                crate::daemon::ObservablePeerState::Observable(s) => {
+                    Some((s.address.clone(), s.id))
+                }
+            });
+            output.servers.sort_by_key(|s| s.address);
+
             println!("Synchronization status:");
             println!(
-                "Dispersion: {}s, Delay: {}s",
+                "Dispersion: {:.6}s, Delay: {:.6}s",
                 output.system.time_snapshot.root_dispersion.to_seconds(),
                 output.system.time_snapshot.root_delay.to_seconds()
             );
             println!(
-                "Desired poll interval: {}s",
+                "Desired poll interval: {:.0}s",
                 output
                     .system
                     .time_snapshot
@@ -241,7 +255,7 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
                         },
                     ) => {
                         println!(
-                            "{} ({}): {}±{}(±{})s\n    pollinterval: {}s, missing polls: {}",
+                            "{} ({}): {:+.6}±{:.6}(±{:.6})s\n    pollinterval: {:.0}s, missing polls: {}",
                             address,
                             id,
                             timedata.offset.to_seconds(),
@@ -411,22 +425,22 @@ mod tests {
         let config = Path::new(config_str);
         let arguments = &[BINARY, "-c", config_str];
 
-        let options = NtpDaemonOptions::try_parse_from(arguments).unwrap();
+        let options = NtpCtlOptions::try_parse_from(arguments).unwrap();
         assert_eq!(options.config.unwrap().as_path(), config);
     }
 
     #[test]
     fn cli_format() {
         let arguments = &[BINARY, "-f", "plain"];
-        let options = NtpDaemonOptions::try_parse_from(arguments).unwrap();
+        let options = NtpCtlOptions::try_parse_from(arguments).unwrap();
         assert_eq!(options.format, Format::Plain);
 
         let arguments = &[BINARY, "-f", "prometheus"];
-        let options = NtpDaemonOptions::try_parse_from(arguments).unwrap();
+        let options = NtpCtlOptions::try_parse_from(arguments).unwrap();
         assert_eq!(options.format, Format::Prometheus);
 
         let arguments = &[BINARY, "-f", "yaml"];
-        let err = NtpDaemonOptions::try_parse_from(arguments).unwrap_err();
+        let err = NtpCtlOptions::try_parse_from(arguments).unwrap_err();
         assert_eq!(err, "invalid format option provided: yaml");
     }
 }
