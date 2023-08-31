@@ -1,6 +1,0 @@
-[[peer]]
-mode = "simple"
-address = "example.com"
-
-[synchronization]
-minimum-agreeing-peers = 2
