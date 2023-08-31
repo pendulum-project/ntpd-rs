@@ -5,7 +5,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 use std::{
     fmt::Write,
     net::{Ipv4Addr, SocketAddr},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use crate::daemon::{config::CliArg, Config, ObservableState};
@@ -194,29 +194,54 @@ async fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::erro
     println!("starting ntp-metrics-exporter on {}", &options.listen_addr);
 
     let listener = TcpListener::bind(options.listen_addr).await?;
+    let mut buf = String::with_capacity(4 * 1024);
 
     loop {
         let (mut tcp_stream, _) = listener.accept().await?;
 
-        let mut stream = tokio::net::UnixStream::connect(&observation_socket_path).await?;
-        let mut msg = Vec::with_capacity(16 * 1024);
-        let output: ObservableState =
-            crate::daemon::sockets::read_json(&mut stream, &mut msg).await?;
-        let mut content = String::with_capacity(4 * 1024);
-        crate::metrics::format_state(&mut content, &output)?;
+        buf.clear();
+        match handler(&mut buf, &observation_socket_path).await {
+            Ok(()) => {
+                tcp_stream.write_all(buf.as_bytes()).await?;
+            }
+            Err(e) => {
+                tracing::warn!("hit an error: {e}");
 
-        let mut buf = String::with_capacity(4 * 1024);
+                const ERROR_REPONSE: &str = concat!(
+                    "HTTP/1.1 500 Internal Server Error\r\n",
+                    "content-type: text/plain\r\n",
+                    "content-length: 0\r\n\r\n",
+                );
 
-        // headers
-        buf.push_str("HTTP/1.1 200 OK\r\n");
-        buf.push_str("content-type: text/plain\r\n");
-        write!(buf, "content-length: {}\r\n\r\n", content.len())?;
-
-        // actual content
-        buf.push_str(&content);
-
-        tcp_stream.write_all(buf.as_bytes()).await?;
+                tcp_stream.write_all(ERROR_REPONSE.as_bytes()).await?;
+            }
+        }
     }
+}
+
+async fn handler(buf: &mut String, observation_socket_path: &Path) -> std::io::Result<()> {
+    let mut stream = tokio::net::UnixStream::connect(observation_socket_path).await?;
+    let mut msg = Vec::with_capacity(16 * 1024);
+    let observable_state: ObservableState =
+        crate::daemon::sockets::read_json(&mut stream, &mut msg).await?;
+
+    format_response(buf, &observable_state)
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "formatting error"))
+}
+
+fn format_response(buf: &mut String, state: &ObservableState) -> std::fmt::Result {
+    let mut content = String::with_capacity(4 * 1024);
+    crate::metrics::format_state(&mut content, state)?;
+
+    // headers
+    buf.write_str("HTTP/1.1 200 OK\r\n")?;
+    buf.write_str("content-type: text/plain\r\n")?;
+    buf.write_fmt(format_args!("content-length: {}\r\n\r\n", content.len()))?;
+
+    // actual content
+    buf.write_str(&content)?;
+
+    Ok(())
 }
 
 #[cfg(test)]
