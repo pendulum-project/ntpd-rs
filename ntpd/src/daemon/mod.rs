@@ -10,7 +10,7 @@ pub mod spawn;
 mod system;
 pub mod tracing;
 
-use std::error::Error;
+use std::{error::Error, path::PathBuf};
 
 use ::tracing::info;
 pub use config::Config;
@@ -21,6 +21,8 @@ pub use system::spawn;
 use tracing_subscriber::util::SubscriberInitExt;
 
 use config::NtpDaemonOptions;
+
+use self::tracing::LogLevel;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -40,13 +42,18 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
-    let mut log_level = options.log_level.unwrap_or_default();
+// initializes the logger so that logs during config parsing are reported. Then it overrides the
+// log level based on the config if required.
+pub(crate) async fn initialize_logging_parse_config(
+    initial_log_level: Option<LogLevel>,
+    config_path: Option<PathBuf>,
+) -> Config {
+    let mut log_level = initial_log_level.unwrap_or_default();
 
-    let config_tracing = self::tracing::tracing_init(log_level);
+    let config_tracing = crate::daemon::tracing::tracing_init(log_level);
     let config = ::tracing::subscriber::with_default(config_tracing, || {
         async {
-            match Config::from_args(options.config, vec![], vec![]).await {
+            match Config::from_args(config_path, vec![], vec![]).await {
                 Ok(c) => c,
                 Err(e) => {
                     // print to stderr because tracing is not yet setup
@@ -59,7 +66,7 @@ async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
     .await;
 
     if let Some(config_log_level) = config.observability.log_level {
-        if options.log_level.is_none() {
+        if initial_log_level.is_none() {
             log_level = config_log_level;
         }
     }
@@ -67,6 +74,12 @@ async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
     // set a default global subscriber from now on
     let tracing_inst = self::tracing::tracing_init(log_level);
     tracing_inst.init();
+
+    config
+}
+
+async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
+    let config = initialize_logging_parse_config(options.log_level, options.config).await;
 
     // give the user a warning that we use the command line option
     if config.observability.log_level.is_some() && options.log_level.is_some() {
