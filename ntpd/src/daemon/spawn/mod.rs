@@ -33,7 +33,7 @@ impl Default for SpawnerId {
 /// Unique identifier for a peer.
 /// This peer id makes sure that even if the network address is the same
 /// that we always know which specific spawned peer we are talking about.
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Serialize, Deserialize)]
 pub struct PeerId(u64);
 
 impl PeerId {

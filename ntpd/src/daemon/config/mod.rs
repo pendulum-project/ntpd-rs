@@ -65,11 +65,12 @@ impl CliArg {
         // the first argument is the sudo command - so we can skip it
         let mut arg_iter = iter.into_iter().skip(1);
         let mut processed = vec![];
+        let mut rest = vec![];
 
         while let Some(arg) = arg_iter.next() {
             match arg.as_str() {
                 "--" => {
-                    processed.push(CliArg::Rest(arg_iter.collect()));
+                    rest.extend(arg_iter);
                     break;
                 }
                 long_arg if long_arg.starts_with("--") => {
@@ -119,13 +120,12 @@ impl CliArg {
                         }
                     }
                 }
-                _argument => {
-                    let mut rest = vec![arg];
-                    rest.extend(arg_iter);
-                    processed.push(CliArg::Rest(rest));
-                    break;
-                }
+                _argument => rest.push(arg),
             }
+        }
+
+        if !rest.is_empty() {
+            processed.push(CliArg::Rest(rest));
         }
 
         Ok(processed)
