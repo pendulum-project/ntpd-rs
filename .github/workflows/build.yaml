@@ -172,6 +172,8 @@ jobs:
         run: cargo run --bin ntp-ctl -- -c ./test-keys/unsafe.nts.client.toml validate
       - name: ./test-keys/unsafe.nts.server.toml
         run: cargo run --bin ntp-ctl -- -c ./test-keys/unsafe.nts.server.toml validate
+      - name: ./config/ntp.demobilize.toml
+        run: cargo run --bin ntp-ctl -- -c ./config/ntp.demobilize.toml validate
 
   format:
     name: Format
