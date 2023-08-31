@@ -3,4 +3,4 @@ mode = "simple"
 address = "example.com"
 
 [synchronization]
-minimum-agreeing-peers = 3
+does-not-exist = 5
