@@ -1,5 +1,6 @@
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
+use tracing_subscriber::util::SubscriberInitExt;
 
 use std::{
     fmt::Write,
@@ -146,14 +147,41 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-async fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::error::Error>> {
-    let config = Config::from_args(options.config, vec![], vec![]).await;
+async fn initialize_logging(config_path: Option<PathBuf>) -> Config {
+    let options_log_level = None;
 
-    if let Err(ref e) = config {
-        println!("Warning: Unable to load configuration file: {e}");
+    let mut log_level = options_log_level.unwrap_or_default();
+
+    let config_tracing = crate::daemon::tracing::tracing_init(log_level);
+    let config = ::tracing::subscriber::with_default(config_tracing, || {
+        async {
+            match Config::from_args(config_path, vec![], vec![]).await {
+                Ok(c) => c,
+                Err(e) => {
+                    // print to stderr because tracing is not yet setup
+                    eprintln!("There was an error loading the config: {e}");
+                    std::process::exit(crate::daemon::exitcode::CONFIG);
+                }
+            }
+        }
+    })
+    .await;
+
+    if let Some(config_log_level) = config.observability.log_level {
+        if options_log_level.is_none() {
+            log_level = config_log_level;
+        }
     }
 
-    let config = config.unwrap_or_default();
+    // set a default global subscriber from now on
+    let tracing_inst = crate::daemon::tracing::tracing_init(log_level);
+    tracing_inst.init();
+
+    config
+}
+
+async fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::error::Error>> {
+    let config = initialize_logging(options.config).await;
 
     let observation_socket_path = match options.observation_socket {
         Some(path) => path,
@@ -182,12 +210,12 @@ async fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::erro
         // headers
         buf.push_str("HTTP/1.1 200 OK\r\n");
         buf.push_str("content-type: text/plain\r\n");
-        write!(buf, "content-length: {}\r\n\r\n", content.len()).unwrap();
+        write!(buf, "content-length: {}\r\n\r\n", content.len())?;
 
         // actual content
         buf.push_str(&content);
 
-        tcp_stream.write_all(buf.as_bytes()).await.unwrap();
+        tcp_stream.write_all(buf.as_bytes()).await?;
     }
 }
 
