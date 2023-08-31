@@ -7,7 +7,11 @@ fn contains_bytes(mut haystack: &[u8], needle: &[u8]) -> bool {
         }
         haystack = &haystack[1..];
     }
+<<<<<<< HEAD
     false
+=======
+    return false;
+>>>>>>> 868a953 (Added integration tests for ntp-ctl.)
 }
 
 #[test]
