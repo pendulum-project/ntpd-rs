@@ -1,8 +1,8 @@
 # Migrating from ntpd
 
-Both ntpd, the NTP reference implementation, and ntpd-rs can serve a similar role on Unix systems. This guide is aimed to help those migrating machines currently running ntpd to ntpd-rs. We assume some experience with the [ntp configuration format](http://www.ntp.org/documentation/4.2.8-series/confopt/). A user with no or little ntpd experience may be better of following our [getting started guide](getting-started.md).
+Both ntpd, the NTP reference implementation, and ntpd-rs can serve a similar role on Unix systems. This is a guide for converting a ntpd configuration into a ntpd-rs configuration. We assume some experience with the [ntp configuration format](http://www.ntp.org/documentation/4.2.8-series/confopt/). A user with no or little ntpd experience may be better of following our [getting started guide](getting-started.md).
 
-**Configuration format:** ntpd uses a custom format that functions as a list of commands. In contrast, `ntpd-rs` uses a configuration file in the `.toml` format that gives values to properties. That means that in most cases fields cannot be repeated. Comments can be added by starting them with a `#`. The remainder of the line is then ignored.
+**Configuration format:** ntpd uses a custom format that functions as a list of commands. In contrast, ntpd-rs uses a configuration file in the `.toml` format that gives values to properties. That means that in most cases fields cannot be repeated. Comments can be added by starting them with a `#`. The remainder of the line is then ignored.
 
 **Defaults:** ntpd and `ntpd-rs` may use different default values for some properties. When migrating, pay particular attention to:
 
@@ -15,27 +15,34 @@ This guide will not go into detail on all of ntpd's configuration directives, bu
 
 ## Time sources
 
-### Server entries
+The `server` and `pool` commands have an equivalent in ntpd-rs
 
-Server entries can be converted to
 ```
 # ntpd
 server 0.pool.ntp.org
 server 1.pool.ntp.org
+pool pool.ntp.org
 
 # ntpd-rs
-[[peer]]
+[[source]]
 mode = "simple"
 address = "0.pool.ntp.org"
 
-[[peer]]
+[[source]]
 mode = "simple"
 address = "1.pool.ntp.org"
+
+[[source]]
+mode = "pool"
+address = "pool.ntp.org"
+count = 4
 ```
 
-If the server directive contains poll limits (`maxpoll` or `minpoll`), these cannot be specified on a per-server basis in ntpd-rs. The best approach is to determine values acceptable for all time sources and apply these via peer defaults:
+A source in `pool` mode explicitly give define a `<count>`, the maximum number of connections from this pool. The ntpd-rs daemon will actively try to keep the pool "filled": new connections will be spun up if a source from the pool is unreachable.
+
+There is no direct equivalent of `maxpoll` and `minpoll` that can be configured on a per-source basis. Instead ntpd-rs defines these properties globally for all time sources:
 ```
-[peer-defaults]
+[source-defaults]
 poll-interval-limits = { min = <minpoll>, max = <maxpoll> }
 initial-poll-interval = <desired initial poll interval>
 ```
@@ -71,9 +78,12 @@ ntpd and `ntpd-rs` use different algorithms for synchronizing the time. This mea
 
 There is a major philosophical difference between ntpd and ntpd-rs. For ntpd, the majority of the algorithm tuning parameters are set on an individual time source. Within ntpd-rs, all control of the filtering is done via global parameters. Although we do not expect this to be the case, should there be specific parameters you would wish to configure on a per-peer basis, please let us know so we can consider this for future releases.
 
-## Server configuration
+## Access Control
 
-Server configuration in ntpd-rs works quite a bit differently from ntpd. Rather than enabling time server functionality by `allow`ing remote connections to the server, one or more serving instances can be individually configured. Each of these comes with its own allow and deny list:
+The [`restrict` command](https://www.ntp.org/documentation/4.2.8-series/accopt/) is used in ntpd to deny requests from a client. In ntpd this is a global setting. A flag configures what happens with connections from this client. For instance, `ignore` will silently ignore the request, while `kod` sends a response to the client that notifies it that its request is denied.
+
+This logic is expressed differently in ntpd-rs. A specific server can be configured to have a `denylist` and an `allowlist`.
+
 ```
 [[server]]
 listen="<ip or [::]>:<port>"
@@ -88,9 +98,12 @@ denylist = [
 ]
 denylist-action = `deny`
 ```
-The allow and deny list configuration is optional in ntpd-rs. By default, if a server is configured it will accept traffic from anywhere. When configuring both allow and deny lists, ntpd-rs will first check if a remote is on the deny list. Only if this is not the case will the allow list be considered. This needs to be taken into account when translating interleaved combinations of ntpd's `allow` and `deny` commands.
+The allow and deny list configuration is optional in ntpd-rs. By default, if a server is configured it will accept traffic from anywhere. When configuring both allow and deny lists, ntpd-rs will first check if a remote is on the deny list. Only if this is not the case will the allow list be considered.
 
-Broadcast mode is not currently supported in ntpd-rs. If this is used in your current setup, configuring the ntp server via dhcp instead may be an alternative.
+The `allowlist-action` and `denylist-action` properties can have two values:
+
+- `ignore` corresponds to ntpd's `ignore` and silently ignores the request
+- `deny` corresponds to ntpd's `kod` and sends a deny kiss-o'-death packet
 
 ## Unsupported features
 
