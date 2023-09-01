@@ -11,7 +11,7 @@ jobs:
         pkg: ntpd-rs
         image:
           - "rockylinux:8"
-          - "ubuntu:jammy"
+          - "ubuntu:xenial"
         target: x86_64
 
       package_test_scripts_path: pkg/test-scripts/test-ntpd-rs.sh
