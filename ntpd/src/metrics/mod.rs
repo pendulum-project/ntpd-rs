@@ -179,8 +179,8 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
 
     format_metric(
         w,
-        "ntp_peer_uptime",
-        "Time since the peer was started",
+        "ntp_source_uptime",
+        "Time since the source was started",
         MetricType::Gauge,
         Some(Unit::Seconds),
         collect_peers!(state, |p| p.poll_interval.as_duration().to_seconds()),
@@ -188,8 +188,8 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
 
     format_metric(
         w,
-        "ntp_peer_poll_interval",
-        "Time between polls of the peer",
+        "ntp_source_poll_interval",
+        "Time between polls of the source",
         MetricType::Gauge,
         Some(Unit::Seconds),
         collect_peers!(state, |p| p.poll_interval.as_duration().to_seconds()),
@@ -197,8 +197,8 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
 
     format_metric(
         w,
-        "ntp_peer_reachability_status",
-        "Number of polls until the upstream server is unreachable, zero if it is",
+        "ntp_source_reachability_status",
+        "Number of polls until the upstream source is unreachable, zero if it is",
         MetricType::Gauge,
         None,
         collect_peers!(state, |p| p.unanswered_polls),
@@ -206,8 +206,8 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
 
     format_metric(
         w,
-        "ntp_peer_offset",
-        "Offset between the upstream server and system time",
+        "ntp_source_offset",
+        "Offset between the upstream source and system time",
         MetricType::Gauge,
         Some(Unit::Seconds),
         collect_peers!(state, |p| p.timedata.offset.to_seconds()),
@@ -215,8 +215,8 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
 
     format_metric(
         w,
-        "ntp_peer_delay",
-        "Current round-trip delay to the upstream server",
+        "ntp_source_delay",
+        "Current round-trip delay to the upstream source",
         MetricType::Gauge,
         Some(Unit::Seconds),
         collect_peers!(state, |p| p.timedata.delay.to_seconds()),
@@ -224,8 +224,8 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
 
     format_metric(
         w,
-        "ntp_peer_uncertainty",
-        "Estimated error of the clock",
+        "ntp_source_uncertainty",
+        "Estimated error of the source clock",
         MetricType::Gauge,
         Some(Unit::Seconds),
         collect_peers!(state, |p| p.timedata.uncertainty.to_seconds()),

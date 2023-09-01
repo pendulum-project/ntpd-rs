@@ -25,13 +25,13 @@ most scenarios.
 
 # CONCEPTS
 
-## Peer
-A peer represents a set of one or more connections to time sources (another
+## Source
+A source represents a set of one or more connections to time sources (another
 NTP server) where the daemon retrieves time information from. The time
-information from these peers are then filtered and combined to update the local
-clock. The daemon can have multiple of these peer sets configured to allow for
-a wider range of time sources. When ntp-daemon is used in a client only
-setup the configuration only contains peer configurations and no server
+information from these sources are then filtered and combined to update the
+local clock. The daemon can have multiple of these sources sets configured to
+allow for a wider range of time sources. When ntp-daemon is used in a client
+only setup the configuration only contains source configurations and no server
 configurations.
 
 ## Server
@@ -39,15 +39,15 @@ A server distributes time information to clients who request it. A server
 listens on a single socket address for client packets and responds to them. The
 daemon can listen on multiple sockets by creating multiple server
 configurations. Generally, when NTP is configured as a server it also has one
-or more peer configurations from where time is retrieved. The daemon currently
-does not have support for local time sources, if no peers are configured, then
+or more source configurations from where time is retrieved. The daemon currently
+does not have support for local time sources, if no sources are configured, then
 another process should be in place to discipline the local system clock.
 
 ## NTS and keysets
 NTS, Network Time Security, is a protocol that uses a TLS handshake to
 exchange secrets to allow verifying that responses from an NTP server have not
 been tampered with. The daemon supports running NTS in both server and client
-(peer) connections. For the server functionality a key exchange server also
+(source) connections. For the server functionality a key exchange server also
 needs to be configured. Currently only an internal key exchange server is
 supported. The NTP server and TLS key exchange server of the ntp-daemon both
 need to be aware of a shared set of keys, these keys are called the keyset.
@@ -66,21 +66,21 @@ our prometheus / openmetrics exporter.
 ## Clocks and synchronization
 Of course the main reason for running an NTP daemon is to get accurate time
 information. This should result in the daemon adjusting your system clock. The
-algorithm that is used to combine the information from several peers and update
-the system clock can be configured using the synchronization section in the
-configuration file.
+algorithm that is used to combine the information from several sources and
+update the system clock can be configured using the synchronization section in
+the configuration file.
 
 # CONFIGURATION
 
-## `[peer_defaults]`
-Some values are shared between all peers in the daemon. You can configure these
-in the `[peer_defaults]` section.
+## `[source-defaults]`
+Some values are shared between all sources in the daemon. You can configure
+these in the `[source-defaults]` section.
 
 `poll-interval-limits` = { `min` = *min*, `max` = *max* } (**{ min = 4, max = 10}**)
-:   Specifies the limit on how often a peer is queried for a new time. For most
-    instances the defaults will be adequate. The min and max are given as the
-    log2 of the number of seconds (i.e. two to the power of the interval). An
-    interval of 4 equates to 32 seconds, 10 results in an interval of 1024
+:   Specifies the limit on how often a source is queried for a new time. For
+    most instances the defaults will be adequate. The min and max are given as
+    the log2 of the number of seconds (i.e. two to the power of the interval).
+    An interval of 4 equates to 32 seconds, 10 results in an interval of 1024
     seconds. If specified, both min and max must be specified.
 
 `initial-poll-interval` = *interval* (**4**)
@@ -88,35 +88,35 @@ in the `[peer_defaults]` section.
     the number of seconds (i.e. two to the power of the interval). The default
     value of 4 results in an interval of 32 seconds.
 
-## `[[peer]]`
-Any number of peers can be configured by repeating a `[[peer]]` section (note
-the double brackets) for as many times as required. Each peer can be configured
-to connect to a specific remote location.
+## `[[source]]`
+Any number of sources can be configured by repeating a `[[source]]` section
+(note the double brackets) for as many times as required. Each source can be
+configured to connect to a specific remote location.
 
 `mode` = *mode*
-:   Specify one of the peer modes that ntpd-rs supports: `simple`, `pool` or
+:   Specify one of the source modes that ntpd-rs supports: `server`, `pool` or
     `nts`.
 
 `address` = *address*
-:   Specify the remote address of the peer. For simple peers this will be the
-    remote address of the NTP server. For pools, this will be the DNS address
-    of the NTP pool and for nts this will be the address of the key exchange
-    server. The server address may include a port number by appending a colon
-    (`:`) followed by a port number. If not specified the daemon will connect
-    to `simple` and `pool` servers via port *123*, for `nts` peers the default
-    port is *4460*.
+:   Specify the remote address of the source. For server sources this will be
+    the remote address of the NTP server. For pools, this will be the DNS
+    address of the NTP pool and for nts this will be the address of the key
+    exchange server. The server address may include a port number by appending a
+    colon (`:`) followed by a port number. If not specified the daemon will
+    connect to `server` and `pool` servers via port *123*, for `nts` sources the
+    default port is *4460*.
 
 `certificate_authority` = *cert*
-:   Can only be set on peers with the `nts` mode. Path to a certificate for an
+:   Can only be set on sources with the `nts` mode. Path to a certificate for an
     additional certificate authority to use, aside from the certificate
     authorities specified by the system configuration. Note that this cannot be
     used to specify a self signed certificate.
 
 `count` = *number* (**4**)
-:   Can only be set on peers with the `pool` mode. Optionally specifies an
-    alternative for the maximum number of peers that will be retrieved from the
-    pool. The daemon will keep retrying to get more peers from the pool when
-    connections are lost, up to the maximum specified by this configuration
+:   Can only be set on sources with the `pool` mode. Optionally specifies an
+    alternative for the maximum number of servers that will be retrieved from
+    the pool. The daemon will keep retrying to get more sources from the pool
+    when connections are lost, up to the maximum specified by this configuration
     value.
 
 ## `[[server]]`

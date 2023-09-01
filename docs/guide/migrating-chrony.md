@@ -2,9 +2,9 @@
 
 Both chrony and ntpd-rs can serve a similar role on Unix systems. This guide aims to help those migrating machines currently running chrony to ntpd-rs. We assume some experience with the [chrony configuration format](https://chrony-project.org/doc/4.3/chrony.conf.html). A user with no or little chrony experience may be better off following our [getting started guide](getting-started.md).
 
-Before we start with the specifics on how to convert individual directives, first a few notes. In contrast with the chrony configuration format, which acts like a list of commands to the client, the ntpd-rs configuration is a [TOML](https://toml.io/) file. In particular, this means configuration is done by giving values for properties. As such, fields cannot be repeated unless they are part of a list, such as with the `[[peers]]` sections and `[[server]]` sections. Comments can be added by starting them with a `#`. The remainder of the line is then ignored.
+Before we start with the specifics on how to convert individual directives, first a few notes. In contrast with the chrony configuration format, which acts like a list of commands to the client, the ntpd-rs configuration is a [TOML](https://toml.io/) file. In particular, this means configuration is done by giving values for properties. As such, fields cannot be repeated unless they are part of a list, such as with the `[[source]]` sections and `[[server]]` sections. Comments can be added by starting them with a `#`. The remainder of the line is then ignored.
 
-Please note that for some of the settings below, ntpd-rs and chrony use different defaults. When converting a configuration, please pay particular attention to `minsources`/`minimum-agreeing-peers`, `maxstep` and the corresponding `-panic-thresholds`, and any settings for NTS server functionality. Validation of the resulting ntpd-rs configuration can be done with `ntp-ctl validate -c <path>`, which should at least catch the most egregious errors.
+Please note that for some of the settings below, ntpd-rs and chrony use different defaults. When converting a configuration, please pay particular attention to `minsources`/`minimum-agreeing-sources`, `maxstep` and the corresponding `-panic-thresholds`, and any settings for NTS server functionality. Validation of the resulting ntpd-rs configuration can be done with `ntp-ctl validate -c <path>`, which should at least catch the most egregious errors.
 
 This guide does not go into detail on all of chrony's configuration directives, but rather focusses on those most important for successful migration. If a directive is not mentioned here, there may still be ntpd-rs options in the [configuration reference](../ntp.toml.5.md) that achieve the desired effect. Note that not all functionality of chrony is currently supported, a short overview of major differences is given [at the end of this document](#non-supported-features)
 
@@ -13,34 +13,34 @@ This guide does not go into detail on all of chrony's configuration directives, 
 ### Server directives
 
 Client-server connections need to be migrated in one of two ways:
-- As a simple peer, if no authentication is used.
-- As an NTS peer, if NTS is enabled (i.e. the NTS option is present in the server directive).
+- As a server source, if no authentication is used.
+- As an NTS source, if NTS is enabled (i.e. the NTS option is present in the server directive).
 
 For server directives with no authentication, these can be converted to
 ```
-[[peer]]
-mode="simple"
+[[source]]
+mode="server"
 address="<address>"
 ```
 where the address is the same as that given in the server directive.
 
 For server directives with NTS, these can be converted to
 ```
-[[peer]]
+[[source]]
 mode="nts"
 address="<address>"
 ```
 
-If the server directive contains poll limits (`maxpoll` or `minpoll`), these cannot be specified on a per-server basis in ntpd-rs. The best approach is to determine values acceptable for all time sources and apply these via peer defaults:
+If the server directive contains poll limits (`maxpoll` or `minpoll`), these cannot be specified on a per-server basis in ntpd-rs. The best approach is to determine values acceptable for all time sources and apply these via source defaults:
 ```
-[peer-defaults]
+[source-defaults]
 poll-interval-limits = { min = <minpoll>, max = <maxpoll> }
 initial-poll-interval = <desired initial poll interval>
 ```
 
 There is no support for bursting in ntpd-rs yet. When any bursting directive (`burst` or `iburst`) is present, these usually can be ignored, although if custom poll limits are in place, these may need to be rethought.
 
-For NTS, if a custom certificate set is configured for a peer via the `certset` directive, these can be provided via the ntpd-rs `certificate_authority` option. This expects a path to a file containing all the accepted root certificates for the peer accepted in addition to the system certificates.
+For NTS, if a custom certificate set is configured for a source via the `certset` directive, these can be provided via the ntpd-rs `certificate_authority` option. This expects a path to a file containing all the accepted root certificates for the source accepted in addition to the system certificates.
 
 ### Pool directives
 
@@ -53,9 +53,9 @@ address="<address>"
 
 If the pool directive specifies `maxsources`, this value can be configured in ntpd-rs via the `count` property. The default (4) is the same between ntpd-rs and chrony.
 
-If the pool directive contains poll limits (`maxpoll` or `minpoll`), these cannot be specified on a per-server basis in ntpd-rs. The best approach is to determine values acceptable for all time sources and apply these via peer defaults:
+If the pool directive contains poll limits (`maxpoll` or `minpoll`), these cannot be specified on a per-server basis in ntpd-rs. The best approach is to determine values acceptable for all time sources and apply these via source defaults:
 ```
-[peer-defaults]
+[source-defaults]
 poll-interval-limits = { min = <minpoll>, max = <maxpoll> }
 initial-poll-interval = <desired initial poll interval>
 ```
@@ -72,10 +72,10 @@ The current version of ntpd-rs does not yet support local reference clocks, but 
 
 ## Time synchronization options
 
-The minimum number of sources needed for time synchronization in ntpd-rs is configured through `minimum-agreeing-peers`:
+The minimum number of sources needed for time synchronization in ntpd-rs is configured through `minimum-agreeing-sources`:
 ```
 [synchronization]
-mininum-agreeing-peers = <minsources>
+mininum-agreeing-sources = <minsources>
 ```
 Note that although the effect of this option is the same as chrony's `minsources`, the default in ntpd-rs is 3, rather than the default 1 source required by chrony. Although 3 is recommended for security, it may not be appropriate for all configurations, particularly configurations where few remote sources are configured.
 
@@ -126,7 +126,7 @@ key-storage-path = <path to key storage>
 ```
 Note that in contrast to chrony's `ntsdumpdir` directive, here the full path needs to be specified, and there is no default path.
 
-The default key rotation interval is daily, and one full week's worth of old keys is retained for serving clients with older cookies. 
+The default key rotation interval is daily, and one full week's worth of old keys is retained for serving clients with older cookies.
 With these defaults, cookies for the server are only valid for slightly more than one week. This is much less than chrony's default of 3 weeks.
 These settings can be configured with the `key-rotation-interval` and `stale-key-count` parameters:
 ```

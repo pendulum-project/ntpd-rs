@@ -15,7 +15,7 @@ use super::{
 use std::{collections::HashMap, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
 
 use ntp_proto::{
-    DefaultTimeSyncController, KeySet, NtpClock, NtpDuration, PeerDefaultsConfig, PeerSnapshot,
+    DefaultTimeSyncController, KeySet, NtpClock, NtpDuration, PeerSnapshot, SourceDefaultsConfig,
     SystemSnapshot, TimeSyncController,
 };
 use ntp_udp::{EnableTimestamps, InterfaceName};
@@ -73,8 +73,8 @@ pub struct DaemonChannels {
     pub synchronization_config_receiver:
         tokio::sync::watch::Receiver<CombinedSynchronizationConfig>,
     pub synchronization_config_sender: tokio::sync::watch::Sender<CombinedSynchronizationConfig>,
-    pub peer_defaults_config_receiver: tokio::sync::watch::Receiver<PeerDefaultsConfig>,
-    pub peer_defaults_config_sender: tokio::sync::watch::Sender<PeerDefaultsConfig>,
+    pub peer_defaults_config_receiver: tokio::sync::watch::Receiver<SourceDefaultsConfig>,
+    pub peer_defaults_config_sender: tokio::sync::watch::Sender<SourceDefaultsConfig>,
     pub peer_snapshots_receiver: tokio::sync::watch::Receiver<Vec<ObservablePeerState>>,
     pub server_data_receiver: tokio::sync::watch::Receiver<Vec<ServerData>>,
     pub system_snapshot_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
@@ -84,7 +84,7 @@ pub struct DaemonChannels {
 /// Spawn the NTP daemon
 pub async fn spawn(
     synchronization_config: CombinedSynchronizationConfig,
-    peer_defaults_config: PeerDefaultsConfig,
+    peer_defaults_config: SourceDefaultsConfig,
     clock_config: ClockConfig,
     peer_configs: &[PeerConfig],
     server_configs: &[ServerConfig],
@@ -135,11 +135,11 @@ struct SystemSpawnerData {
 struct System<C: NtpClock, T: Wait> {
     _wait: PhantomData<SingleshotSleep<T>>,
     synchronization_config: CombinedSynchronizationConfig,
-    peer_defaults_config: PeerDefaultsConfig,
+    peer_defaults_config: SourceDefaultsConfig,
     system: SystemSnapshot,
 
     synchronization_config_receiver: tokio::sync::watch::Receiver<CombinedSynchronizationConfig>,
-    peer_defaults_config_receiver: tokio::sync::watch::Receiver<PeerDefaultsConfig>,
+    peer_defaults_config_receiver: tokio::sync::watch::Receiver<SourceDefaultsConfig>,
     system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
     peer_snapshots_sender: tokio::sync::watch::Sender<Vec<ObservablePeerState>>,
     server_data_sender: tokio::sync::watch::Sender<Vec<ServerData>>,
@@ -172,7 +172,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         interface: Option<InterfaceName>,
         enable_timestamps: EnableTimestamps,
         synchronization_config: CombinedSynchronizationConfig,
-        peer_defaults_config: PeerDefaultsConfig,
+        peer_defaults_config: SourceDefaultsConfig,
         keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     ) -> (Self, DaemonChannels) {
         // Setup system snapshot
@@ -220,7 +220,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                     msg_for_system_sender,
                     system_snapshot_receiver: system_snapshot_receiver.clone(),
                     synchronization_config_receiver: synchronization_config_receiver.clone(),
-                    peer_defaults_config_receiver: peer_defaults_config_receiver.clone(),
+                    source_defaults_config_receiver: peer_defaults_config_receiver.clone(),
                 },
                 clock: clock.clone(),
                 controller: DefaultTimeSyncController::new(
@@ -637,7 +637,7 @@ mod tests {
             InterfaceName::DEFAULT,
             EnableTimestamps::default(),
             CombinedSynchronizationConfig::default(),
-            PeerDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             keyset,
         );
         let wait =

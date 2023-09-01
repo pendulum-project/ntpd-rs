@@ -4,7 +4,7 @@ pub mod subnet;
 
 use ntp_os_clock::DefaultNtpClock;
 use ntp_proto::{
-    DefaultTimeSyncController, PeerDefaultsConfig, SynchronizationConfig, TimeSyncController,
+    DefaultTimeSyncController, SourceDefaultsConfig, SynchronizationConfig, TimeSyncController,
 };
 use ntp_udp::{EnableTimestamps, InterfaceName};
 pub use peer::*;
@@ -272,8 +272,8 @@ pub struct LoggingObservabilityConfig {
 #[derive(Deserialize, Debug, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Config {
-    #[serde(rename = "peer")]
-    pub peers: Vec<PeerConfig>,
+    #[serde(rename = "source")]
+    pub sources: Vec<PeerConfig>,
     #[serde(rename = "server", default)]
     pub servers: Vec<ServerConfig>,
     #[serde(rename = "nts-ke-server", default)]
@@ -281,7 +281,7 @@ pub struct Config {
     #[serde(default)]
     pub synchronization: CombinedSynchronizationConfig,
     #[serde(default)]
-    pub peer_defaults: PeerDefaultsConfig,
+    pub source_defaults: SourceDefaultsConfig,
     #[serde(default)]
     pub observability: LoggingObservabilityConfig,
     #[serde(default)]
@@ -337,10 +337,10 @@ impl Config {
         let mut config = Config::from_first_file(file.as_ref()).await?;
 
         if !peers.is_empty() {
-            if !config.peers.is_empty() {
+            if !config.sources.is_empty() {
                 info!("overriding peers from configuration");
             }
-            config.peers = peers;
+            config.sources = peers;
         }
 
         if !servers.is_empty() {
@@ -356,7 +356,7 @@ impl Config {
     /// Count potential number of peers in configuration
     fn count_peers(&self) -> usize {
         let mut count = 0;
-        for peer in &self.peers {
+        for peer in &self.sources {
             match peer {
                 PeerConfig::Standard(_) => count += 1,
                 PeerConfig::Nts(_) => count += 1,
@@ -375,13 +375,18 @@ impl Config {
         // using those fields should always work. This is also
         // probably a good policy in general (config should always work
         // but we may panic here to protect the user from themselves)
-        if self.peers.is_empty() {
-            warn!("No peers configured. Daemon will not change system time.");
+        if self.sources.is_empty() {
+            warn!("No sources configured. Daemon will not change system time.");
             ok = false;
         }
 
-        if self.count_peers() < self.synchronization.synchronization.minimum_agreeing_peers {
-            warn!("Fewer peers configured than are required to agree on the current time. Daemon will not change system time.");
+        if self.count_peers()
+            < self
+                .synchronization
+                .synchronization
+                .minimum_agreeing_sources
+        {
+            warn!("Fewer sources configured than are required to agree on the current time. Daemon will not change system time.");
             ok = false;
         }
 
@@ -452,9 +457,9 @@ mod tests {
     #[test]
     fn test_config() {
         let config: Config =
-            toml::from_str("[[peer]]\nmode = \"simple\"\naddress = \"example.com\"").unwrap();
+            toml::from_str("[[source]]\nmode = \"server\"\naddress = \"example.com\"").unwrap();
         assert_eq!(
-            config.peers,
+            config.sources,
             vec![PeerConfig::Standard(StandardPeerConfig {
                 address: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
@@ -462,23 +467,23 @@ mod tests {
         assert!(config.observability.log_level.is_none());
 
         let config: Config = toml::from_str(
-            "[observability]\nlog-level = \"info\"\n[[peer]]\nmode = \"simple\"\naddress = \"example.com\"",
+            "[observability]\nlog-level = \"info\"\n[[source]]\nmode = \"server\"\naddress = \"example.com\"",
         )
             .unwrap();
         assert_eq!(config.observability.log_level, Some(LogLevel::Info));
         assert_eq!(
-            config.peers,
+            config.sources,
             vec![PeerConfig::Standard(StandardPeerConfig {
                 address: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
 
         let config: Config = toml::from_str(
-            "[[peer]]\nmode = \"simple\"\naddress = \"example.com\"\n[synchronization]\nsingle-step-panic-threshold = 0",
+            "[[source]]\nmode = \"server\"\naddress = \"example.com\"\n[synchronization]\nsingle-step-panic-threshold = 0",
         )
             .unwrap();
         assert_eq!(
-            config.peers,
+            config.sources,
             vec![PeerConfig::Standard(StandardPeerConfig {
                 address: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
@@ -501,11 +506,11 @@ mod tests {
         );
 
         let config: Config = toml::from_str(
-            "[[peer]]\nmode = \"simple\"\naddress = \"example.com\"\n[synchronization]\nsingle-step-panic-threshold = \"inf\"",
+            "[[source]]\nmode = \"server\"\naddress = \"example.com\"\n[synchronization]\nsingle-step-panic-threshold = \"inf\"",
         )
             .unwrap();
         assert_eq!(
-            config.peers,
+            config.sources,
             vec![PeerConfig::Standard(StandardPeerConfig {
                 address: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
@@ -525,10 +530,10 @@ mod tests {
 
         let config: Config = toml::from_str(
             r#"
-            [[peer]]
-            mode = "simple"
+            [[source]]
+            mode = "server"
             address = "example.com"
-            [peer-defaults]
+            [source-defaults]
             poll-interval-limits = { min = 5, max = 9 }
             initial-poll-interval = 5
             [observability]
@@ -555,17 +560,17 @@ mod tests {
         assert_eq!(config.observability.configure.configure_permissions, 0o123);
 
         assert_eq!(
-            config.peers,
+            config.sources,
             vec![PeerConfig::Standard(StandardPeerConfig {
                 address: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
 
-        let poll_interval_limits = config.peer_defaults.poll_interval_limits;
+        let poll_interval_limits = config.source_defaults.poll_interval_limits;
         assert_eq!(poll_interval_limits.min.as_log(), 5);
         assert_eq!(poll_interval_limits.max.as_log(), 9);
 
-        assert_eq!(config.peer_defaults.initial_poll_interval.as_log(), 5);
+        assert_eq!(config.source_defaults.initial_poll_interval.as_log(), 5);
     }
 
     #[test]
@@ -614,8 +619,8 @@ mod tests {
     fn toml_peers_invalid() {
         let config: Result<Config, _> = toml::from_str(
             r#"
-            [[peer]]
-            mode = "simple"
+            [[source]]
+            mode = "server"
             address = ":invalid:ipv6:123"
             "#,
         );

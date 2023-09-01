@@ -57,8 +57,8 @@ pub struct AlgorithmConfig {
     /// Maximum peer uncertainty before we start disregarding it
     /// Note that this is combined uncertainty due to noise and
     /// possible assymetry error (see also weights below). (seconds)
-    #[serde(default = "default_maximum_peer_uncertainty")]
-    pub maximum_peer_uncertainty: f64,
+    #[serde(default = "default_maximum_source_uncertainty")]
+    pub maximum_source_uncertainty: f64,
     /// Weight of statistical uncertainty when constructing
     /// overlap ranges. (standard deviations, 0+)
     #[serde(default = "default_range_statistical_weight")]
@@ -128,7 +128,7 @@ impl Default for AlgorithmConfig {
             initial_wander: default_initial_wander(),
             initial_frequency_uncertainty: default_initial_frequency_uncertainty(),
 
-            maximum_peer_uncertainty: default_maximum_peer_uncertainty(),
+            maximum_source_uncertainty: default_maximum_source_uncertainty(),
             range_statistical_weight: default_range_statistical_weight(),
             range_delay_weight: default_range_delay_weight(),
 
@@ -193,7 +193,7 @@ fn default_initial_frequency_uncertainty() -> f64 {
     100e-6
 }
 
-fn default_maximum_peer_uncertainty() -> f64 {
+fn default_maximum_source_uncertainty() -> f64 {
     0.250
 }
 

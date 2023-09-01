@@ -66,7 +66,7 @@ fn max_peers_default() -> usize {
 #[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 #[serde(tag = "mode")]
 pub enum PeerConfig {
-    #[serde(rename = "simple")]
+    #[serde(rename = "server")]
     Standard(StandardPeerConfig),
     #[serde(rename = "nts")]
     Nts(NtsPeerConfig),
@@ -325,7 +325,7 @@ mod tests {
         let test: TestConfig = toml::from_str(
             r#"
             [peer]
-            mode = "simple"
+            mode = "server"
             address = "example.com"
             "#,
         )
@@ -336,7 +336,7 @@ mod tests {
         let test: TestConfig = toml::from_str(
             r#"
             [peer]
-            mode = "simple"
+            mode = "server"
             address = "example.com:5678"
             "#,
         )
@@ -347,7 +347,7 @@ mod tests {
         let test: TestConfig = toml::from_str(
             r#"
             [peer]
-            mode = "simple"
+            mode = "server"
             address = "example.com"
             "#,
         )

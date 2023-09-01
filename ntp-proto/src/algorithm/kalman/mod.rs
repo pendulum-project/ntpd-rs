@@ -4,7 +4,7 @@ use tracing::{error, info, instrument};
 
 use crate::{
     clock::NtpClock,
-    config::{PeerDefaultsConfig, SynchronizationConfig},
+    config::{SourceDefaultsConfig, SynchronizationConfig},
     packet::NtpLeapIndicator,
     peer::Measurement,
     system::TimeSnapshot,
@@ -70,7 +70,7 @@ pub struct KalmanClockController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> 
     peers: HashMap<PeerID, (PeerState, bool)>,
     clock: C,
     synchronization_config: SynchronizationConfig,
-    peer_defaults_config: PeerDefaultsConfig,
+    peer_defaults_config: SourceDefaultsConfig,
     algo_config: AlgorithmConfig,
     freq_offset: f64,
     timedata: TimeSnapshot,
@@ -308,7 +308,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
     fn new(
         clock: C,
         synchronization_config: SynchronizationConfig,
-        peer_defaults_config: PeerDefaultsConfig,
+        peer_defaults_config: SourceDefaultsConfig,
         algo_config: Self::AlgorithmConfig,
     ) -> Self {
         // Setup clock
@@ -338,7 +338,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
     fn update_config(
         &mut self,
         synchronization_config: SynchronizationConfig,
-        peer_defaults_config: PeerDefaultsConfig,
+        peer_defaults_config: SourceDefaultsConfig,
         algo_config: Self::AlgorithmConfig,
     ) {
         self.synchronization_config = synchronization_config;
@@ -452,11 +452,11 @@ mod tests {
     #[test]
     fn test_startup_flag_unsets() {
         let synchronization_config = SynchronizationConfig {
-            minimum_agreeing_peers: 1,
+            minimum_agreeing_sources: 1,
             ..SynchronizationConfig::default()
         };
         let algo_config = AlgorithmConfig::default();
-        let peer_defaults_config = PeerDefaultsConfig::default();
+        let peer_defaults_config = SourceDefaultsConfig::default();
         let mut algo = KalmanClockController::new(
             TestClock {
                 has_steered: RefCell::new(false),
@@ -508,11 +508,11 @@ mod tests {
     #[should_panic]
     fn test_large_offset_eventually_panics() {
         let synchronization_config = SynchronizationConfig {
-            minimum_agreeing_peers: 1,
+            minimum_agreeing_sources: 1,
             ..SynchronizationConfig::default()
         };
         let algo_config = AlgorithmConfig::default();
-        let peer_defaults_config = PeerDefaultsConfig::default();
+        let peer_defaults_config = SourceDefaultsConfig::default();
         let mut algo = KalmanClockController::new(
             TestClock {
                 has_steered: RefCell::new(false),
@@ -560,7 +560,7 @@ mod tests {
     #[should_panic]
     fn test_backward_step_panics_before_steer() {
         let synchronization_config = SynchronizationConfig {
-            minimum_agreeing_peers: 1,
+            minimum_agreeing_sources: 1,
             startup_step_panic_threshold: StepThreshold {
                 forward: None,
                 backward: Some(NtpDuration::from_seconds(1800.)),
@@ -568,7 +568,7 @@ mod tests {
             ..SynchronizationConfig::default()
         };
         let algo_config = AlgorithmConfig::default();
-        let peer_defaults_config = PeerDefaultsConfig::default();
+        let peer_defaults_config = SourceDefaultsConfig::default();
         let mut algo = KalmanClockController::new(
             TestClock {
                 has_steered: RefCell::new(false),
