@@ -4,7 +4,7 @@ Documentation=https://github.com/pendulum-project/ntpd-rs
 
 [Service]
 Type=simple
-Restart=yes
+Restart=always
 ExecStart=/usr/bin/ntp-metrics-exporter
 Environment="RUST_LOG=info"
 RuntimeDirectory=ntpd-rs-observe
