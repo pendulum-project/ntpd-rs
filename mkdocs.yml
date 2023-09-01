@@ -28,6 +28,7 @@ nav:
     - guide/installation.md
     - guide/server-setup.md
     - guide/exporting-metrics.md
+    - guide/nts.md
     - guide/migrating-chrony.md
     - guide/migrating-ntpd.md
     - guide/migrating-ntpsec.md
