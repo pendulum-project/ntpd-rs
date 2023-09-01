@@ -22,6 +22,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Guide:
+    - guide/nts.md
     - guide/migrating-chrony.md
     - guide/security-guidance.md
     - guide/configuration.md
