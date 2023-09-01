@@ -38,7 +38,7 @@ The ntpd-rs daemon requires elevated permissions to change the system clock. It 
 sudo ./target/release/ntp-daemon -p pool.ntp.org -p pool.ntp.org -p pool.ntp.org -p pool.ntp.org
 ```
 
-By default, at least 3 peer servers are needed for the algorithm to change the time. After a few minutes you should start to see messages indicating the offset of your machine from the server.
+By default, at least 3 sources are needed for the algorithm to change the time. After a few minutes you should start to see messages indicating the offset of your machine from the server.
 
 ```
 2023-04-11T10:06:24.847375Z  INFO ntp_proto::algorithm::kalman: Offset: 1.7506740305607742+-12.951528666965439ms, frequency: 8.525844072881435+-5.089483351832892ppm
@@ -67,7 +67,7 @@ This installation script makes the following assumptions:
     ```
     Refer to your distribution's documentation for information on how to create such accounts.
 
-Note that because of the aforementioned limitations around peer configuration, this service file requires the network-online target.
+Note that because of the aforementioned limitations around source configuration, this service file requires the network-online target.
 As a result, using this may increase boot times significantly, especially on machines that do not have permanent network connectivity.
 
 This service should not be used at the same time as other NTP services, because they will interfere with each other. The configuration explicitly disables the systemd built-in timesyncd service, but be aware that your operating system may use another NTP service. Note also that the daemon SHOULD NOT be restarted when crashing without human intervention. See our [operational guidance](OPERATIONAL_CONSIDERATIONS.md) for more information.
@@ -103,72 +103,71 @@ The ntp-daemon binary can be configured through two channels: via command line o
 
 The following command line options are available. When an option is not provided, the indicated default is used.
 
-| Option                               | Default                 | Description                                                                                                                                                                                                   |
-|--------------------------------------|-------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `-c <FILE>`, `--config <FILE>`       | `/etc/ntpd-rs/ntp.toml` | Which configuration file to use. When provided, the fallback locations are not used.                                                                                                                          |
-| `-l <LEVEL>`, `--log-level <LEVEL>`  | From configuration file | Override for the configuration file `log-level` parameter, see explanation there.                                                                                                                            |
-| `-p <ADDR>`, `--peer <ADDR>`         |                         | Setup a connection to the given server, overrides the peers in the configuration file. Can be given multiple times to configure multiple servers as reference.                                                |
-| `-s <ADDR>`, `--server <ADDR>`       |                         | Respond as NTP server to packets arriving to the given address, overrides server configuration in the configuration file. Can be given multiple times to attach as NTP server to multiple network interfaces. |
+| Option                              | Default                 | Description                                                                                                                                                                                                   |
+| ----------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-c <FILE>`, `--config <FILE>`      | `/etc/ntpd-rs/ntp.toml` | Which configuration file to use. When provided, the fallback locations are not used.                                                                                                                          |
+| `-l <LEVEL>`, `--log-level <LEVEL>` | From configuration file | Override for the configuration file `log-level` parameter, see explanation there.                                                                                                                             |
+| `-s <ADDR>`, `--server <ADDR>`      |                         | Respond as NTP server to packets arriving to the given address, overrides server configuration in the configuration file. Can be given multiple times to attach as NTP server to multiple network interfaces. |
 
 ### Configuration file
 
 The ntp-daemon's primary configuration method is through a TOML configuration file. By default, this is looked for in the system-wide configuration directories under `/etc/ntpd-rs/ntp.toml`. A non-standard location can be provided via the `-c` or `--config` command line flags.
 
-#### Peer configuration
+#### Source configuration
 
-Peers are configured in the peers section, which should consist of a list of peers. Per `[[peer]]`, the following options are available:
+Sources are configured in the sources section, which should consist of a list of sources. Per `[[source]]`, the following options are available:
 
 | Option                | Default | Description                                                                                                                                                                                                                       |
 | --------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| mode                  |         | Type of peer connection to create. Can be any of `simple`, `nts` or `pool` (for meaning of these, see below).                                                                                                                     |
-| address               |         | Address of the server, pool or nts server. The default port (123 for `simple` or `pool`, 4460 for `nts`) is automatically appended if not given.                                                                                  |
-| count                 | 4       | Maximum number of peers to create from the pool. (only valid for pools)                                                                                                                                                           |
+| mode                  |         | Type of source connection to create. Can be any of `server`, `nts` or `pool` (for meaning of these, see below).                                                                                                                     |
+| address               |         | Address of the server, pool or nts server. The default port (123 for `server` or `pool`, 4460 for `nts`) is automatically appended if not given.                                                                                  |
+| count                 | 4       | Maximum number of sources to create from the pool. (only valid for pools)                                                                                                                                                         |
 | certificate-authority |         | Path to a pem file containing additional root certificates to accept for the TLS connection to the nts server. In addition to these certificates, the system certificates will also be accepted. (only valid for nts connections) |
 
-##### Simple peers
+##### Server sources
 
-Simple peers are direct NTP connections to a single remote server. This is the default. To configure multiple servers, add a `[[peer]]` section for each server. For example:
+Server sources are direct NTP connections to a single remote server. To configure multiple servers, add a `[[source]]` section for each server. For example:
 
 ```
-# Multiple server can be configured by defining multiple `[[peer]]` sections
-[[peer]]
-mode = "simple"
+# Multiple server can be configured by defining multiple `[[source]]` sections
+[[source]]
+mode = "server"
 address = "0.pool.ntp.org:123"
 
-[[peer]]
-mode = "simple"
+[[source]]
+mode = "server"
 address = "1.pool.ntp.org:123"
 ```
 
-##### Nts peers
+##### NTS sources
 
-A peer in `nts` mode will use NTS (Network Times Security) to communicate with its server. The server must support NTS. The configuration requires the address of the Key Exchange server (the address of the actual NTP server that ends up being used may be different). For example:
+A source in `nts` mode will use NTS (Network Times Security) to communicate with its server. The server must support NTS. The configuration requires the address of the Key Exchange server (the address of the actual NTP server that ends up being used may be different). For example:
 
 ```
-[[peer]]
+[[source]]
 mode = "nts"
 address = "time.cloudflare.com:4460"
 ```
 
 ##### Pool
 
-`pool` mode is a convenient way to configure many NTP servers, without having to worry about individual servers' IP addresses.
+`pool` sources are a convenient way to configure many NTP servers, without having to worry about individual servers' IP addresses.
 
-A peer in `pool` mode will try to acquire `max_peers` addresses of NTP servers from the pool. `ntpd-rs` will actively try to keep a pool filled up. For instance if a server cannot be reached, a different server will be picked from the pool.
+A source in `pool` mode will try to acquire `count` addresses of NTP servers from the pool. `ntpd-rs` will actively try to keep a pool filled up. For instance if a server cannot be reached, a different server will be picked from the pool.
 
 An example configuration for the ntppool.org ntp pool can look like
 ```
-[[peer]]
+[[source]]
 address = "pool.ntp.org"
 mode = "pool"
 count = 4
 ```
 
-##### Peer Defaults
+##### Source Defaults
 
-Peer defaults are settings that are the same across all peers. An example configuration for peer defaults can look like
+Souce defaults are settings that are the same across all sources. An example configuration for source defaults can look like
 ```
-[peer-defaults]
+[source-defaults]
 poll-interval-limits = { min = 5, max = 9 }
 initial-poll-interval = 5
 ```
@@ -228,7 +227,7 @@ Instructions for how to generate a CA certificate and use it to sign certificate
 
 The `observability` section contains configuration for setting the logging level and exposing sockets for observation and configuration
 
-- The observation socket can be read to obtain information on the current state of the peer connections and clock steering algorithm.
+- The observation socket can be read to obtain information on the current state of the source connections and clock steering algorithm.
 - The configuration socket can be used to change some configuration options dynamically.
 
 | Option                  | Default | Description                                                                                                   |
@@ -271,7 +270,7 @@ There are a number of options available to influence how time differences to the
 
 | Option                           | Default                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | -------------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| minimum-agreeing-peers           | 3                               | Minimum number of servers that need to agree on the true time from our perspective for synchronization to start.                                                                                                                                                                                                                                                                                                            |
+| minimum-agreeing-sources         | 3                               | Minimum number of servers that need to agree on the true time from our perspective for synchronization to start.                                                                                                                                                                                                                                                                                                            |
 | single-step-panic-threshold      | 1800 (symmetric)                | Largest time difference the client is allowed to correct in one go. Differences beyond this cause the client to abort synchronization. Value provided is in seconds, set to "inf" to disable checking of jumps. Setting this to 0 will disable time jumps except at startup.                                                                                                                                                |
 | startup-step-panic-threshold     | No limit forward, 1800 backward | Largest time difference the client is allowed to correct during startup. By default, this is unrestricted as we may be the initial source of time for systems without a hardware backed clock. Value provided is in seconds, set to "inf" to disable checking of jumps.                                                                                                                                                     |
 | accumulated-step-panic-threshold | Disabled                        | Total amount of time difference the client is allowed to correct using steps whilst running. By default, this is unrestricted. Value provided is in seconds, set to 0 to disable checking of accumulated steps.                                                                                                                                                                                                             |
@@ -284,24 +283,24 @@ For panic thresholds, asymmetric thresholds can be configured, allowing a differ
 NTPD-rs currently supports a custom, high performance algorithm
 The high performance clock algorithm has quite a few options. Most of these are quite straightforward to understand and can be used to tune the style of time synchronization to the users liking (although the defaults are probably fine for most):
 
-| Option                        | Default | Description                                                                                                                                                                                                                                |
-| ----------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| steer-offset-threshold        | 2.0     | How far from 0 (in multiples of the uncertainty) should the offset be before we correct. A higher value reduces the amount of steering, but at the cost of a slower synchronization. (standard deviations, 0+)                             |
-| steer-offset-leftover         | 1.0     | How many standard deviations do we leave after offset correction? A higher value decreases the amount of overcorrections at the cost of slower synchronization and more steering. (standard deviations, 0+)                                |
-| jump-threshold                | 10e-3   | From what offset should we jump the clock instead of trying to adjust gradually? (seconds, 0+)                                                                                                                                             |
-| slew-maximum-frequency-offset | 200e-6  | What is the maximum frequency offset during a slew (a gradual changing of the time). (s/s)                                                                                                                                                 |
-| slew-minimum-duration         | 20.0    | What is the minimum duration of a slew (a gradual changing of the time). Larger values increase the precision of the slew, at the cost of longer time taken per slew. (s)                                                                  |
-| steer-frequency-threshold     | 0.0     | How far from 0 (in multiples of the uncertainty) should the frequency estimate be before we correct. A higher value reduces the amount of steering, but at the cost of a slower synchronization. (standard deviations, 0+)                 |
-| steer-frequency-leftover      | 0.0     | How many standard deviations do we leave after frequency correction? A higher value decreases the amount of overcorrections at the cost of slower synchronization and more steering. (standard deviations, 0+)                             |
-| ignore-server-dispersion      | false   | Ignore a servers advertised dispersion when synchronizing. Can improve synchronization quality with servers reporting overly conservative root dispersion.                                                                                 |
-| range-statistical-weight      | 2.0     | Weight of statistical uncertainty when constructing a peers uncertainty range. This range is used when checking if two peers agree on the same time, and for choosing whether to use a peer for synchronization. (standard deviations, 0+) |
-| range-delay-weight            | 0.25    | Weight of delay uncertainty when constructing overlap ranges. This range is used when checking if two peers agree on the same time, and for choosing whether to use a peer for synchronization. (weight, 0-1)                              |
-| maximum-peer-uncertainty      | 1.0     | Maximum peer uncertainty before we start disregarding it. Note that this is combined uncertainty due to noise and possible asymmetry error (see also weights above). (seconds)                                                             |
-| poll-jump-threshold           | 1e-6    | Probability threshold for when a measurement is considered a significant enough outlier that we decide something weird is going on and we need to immediately decrease the polling interval to quickly correct. (probability, 0-1)         |
-| delay-outlier-threshold       | 5.0     | Threshold (in number of standard deviations) above which measurements with a significantly larger network delay are rejected. (standard deviations, 0+)                                                                                    |
-| initial-wander                | 1e-8    | Initial estimate of the clock wander between our local clock and that of the peer. Increasing this results in better synchronization if the hardware matches it, but at the cost of slower synchronization when overly optimistic. (s/s^2) |
-| initial-frequency-uncertainty | 100e-6  | Initial uncertainty of the frequency difference between our clock and that of the peer. Lower values increase the speed of frequency synchronization when correct, but decrease it when overly optimistic. (s/s)                           |
-| meddling-threshold            | 5.0     | Threshold (in seconds) above which unexpected time differences between the monotonic and system clocks trigger a restart of the synchronization process.                                                                                   |
+| Option                        | Default | Description                                                                                                                                                                                                                                       |
+| ----------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| steer-offset-threshold        | 2.0     | How far from 0 (in multiples of the uncertainty) should the offset be before we correct. A higher value reduces the amount of steering, but at the cost of a slower synchronization. (standard deviations, 0+)                                    |
+| steer-offset-leftover         | 1.0     | How many standard deviations do we leave after offset correction? A higher value decreases the amount of overcorrections at the cost of slower synchronization and more steering. (standard deviations, 0+)                                       |
+| jump-threshold                | 10e-3   | From what offset should we jump the clock instead of trying to adjust gradually? (seconds, 0+)                                                                                                                                                    |
+| slew-maximum-frequency-offset | 200e-6  | What is the maximum frequency offset during a slew (a gradual changing of the time). (s/s)                                                                                                                                                        |
+| slew-minimum-duration         | 20.0    | What is the minimum duration of a slew (a gradual changing of the time). Larger values increase the precision of the slew, at the cost of longer time taken per slew. (s)                                                                         |
+| steer-frequency-threshold     | 0.0     | How far from 0 (in multiples of the uncertainty) should the frequency estimate be before we correct. A higher value reduces the amount of steering, but at the cost of a slower synchronization. (standard deviations, 0+)                        |
+| steer-frequency-leftover      | 0.0     | How many standard deviations do we leave after frequency correction? A higher value decreases the amount of overcorrections at the cost of slower synchronization and more steering. (standard deviations, 0+)                                    |
+| ignore-server-dispersion      | false   | Ignore a servers advertised dispersion when synchronizing. Can improve synchronization quality with servers reporting overly conservative root dispersion.                                                                                        |
+| range-statistical-weight      | 2.0     | Weight of statistical uncertainty when constructing a source's uncertainty range. This range is used when checking if two sources agree on the same time, and for choosing whether to use a source for synchronization. (standard deviations, 0+) |
+| range-delay-weight            | 0.25    | Weight of delay uncertainty when constructing overlap ranges. This range is used when checking if two sources agree on the same time, and for choosing whether to use a source for synchronization. (weight, 0-1)                                 |
+| maximum-source-uncertainty    | 1.0     | Maximum source uncertainty before we start disregarding it. Note that this is combined uncertainty due to noise and possible asymmetry error (see also weights above). (seconds)                                                                  |
+| poll-jump-threshold           | 1e-6    | Probability threshold for when a measurement is considered a significant enough outlier that we decide something weird is going on and we need to immediately decrease the polling interval to quickly correct. (probability, 0-1)                |
+| delay-outlier-threshold       | 5.0     | Threshold (in number of standard deviations) above which measurements with a significantly larger network delay are rejected. (standard deviations, 0+)                                                                                           |
+| initial-wander                | 1e-8    | Initial estimate of the clock wander between our local clock and that of the source. Increasing this results in better synchronization if the hardware matches it, but at the cost of slower synchronization when overly optimistic. (s/s^2)      |
+| initial-frequency-uncertainty | 100e-6  | Initial uncertainty of the frequency difference between our clock and that of the source. Lower values increase the speed of frequency synchronization when correct, but decrease it when overly optimistic. (s/s)                                |
+| meddling-threshold            | 5.0     | Threshold (in seconds) above which unexpected time differences between the monotonic and system clocks trigger a restart of the synchronization process.                                                                                          |
 
 #### Example configuration file:
 
@@ -310,22 +309,22 @@ The high performance clock algorithm has quite a few options. Most of these are 
 # Other values include trace, debug, warn and error
 log-level = "info"
 
-# [[peer]]
-# mode = "simple"
+# [[source]]
+# mode = "server"
 # address = "0.pool.ntp.org:123"
 #
 
-# [[peer]]
-# mode = "simple"
+# [[source]]
+# mode = "server"
 # address = "1.pool.ntp.org:123"
 
 # System parameters used in filtering and steering the clock:
 [synchronization]
-minimum-agreeing-peers = 1
+minimum-agreeing-sources = 1
 single-step-panic-threshold = 10
 startup-step-panic-threshold = { forward = "inf", backward = 1800 }
 
-[peer-defaults]
+[source-defaults]
 poll-limits = { min = 6, max = 10 }
 
 [clock]

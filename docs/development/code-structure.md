@@ -22,13 +22,13 @@ which are purposefully kept small and only offer a safe API.
 The `ntp-proto` crate contains the main NTP protocol implementation. It
 implements:
  - Serialization and deserialization of the on-wire protocol.
- - Packet handling decision logic of the peer.
- - Measurement logic of the peer, including the per-peer filtering.
+ - Packet handling decision logic of the source.
+ - Measurement logic of the source, including the per-source filtering.
  - Clock selection, combination and steering algorithms.
 
 This crate only implements the decision and processing logic. It does not
 perform the actual communication, nor does it do any of the handling needed to
-ensure that peer and steering logic is regularly called.
+ensure that source and steering logic is regularly called.
 
 ### ntp-udp
 
@@ -80,26 +80,26 @@ the definitive logging system. At this point, the main configuration steps are
 completed, and the combined command line and file base configuration is used to
 setup at least these kinds of tasks:
  - The main clock steering task.
- - One peer task per configured peer (remote server).
+ - One source task per configured source (remote server).
  - One server task per configured interface on which to serve time.
  - One task for exposing state for observability.
  - One task for dynamic configuration changes.
 
-### Peer tasks
+### Source tasks
 
-The daemon runs a single peer task per configured peer. This task is responsible
-for managing the network connection with that specific peer, sending the poll
-message to start a clock difference measurement, handling the response, and
-doing an initial filtering step over the measurements.
+The daemon runs a single source task per configured source. This task is
+responsible for managing the network connection with that specific source,
+sending  the poll message to start a clock difference measurement, handling the
+response, and doing an initial filtering step over the measurements.
 
-The main loop of the peer waits on 3 futures concurrently:
+The main loop of the source waits on 3 futures concurrently:
  - A timer, which triggers sending a new poll message.
  - The network socket, receiving a packet here triggers packet processing and
    measurement filtering.
  - A configuration channel, receiving configuration changes.
 
-Should any of these events happen, after handling it the peer task then sends an
-updated version of the sections of its state needed for clock steering to the
+Should any of these events happen, after handling it the source task then sends
+an updated version of the sections of its state needed for clock steering to the
 main clock steering task.
 
 ### Server task
@@ -115,7 +115,7 @@ The main loop of the server waits on 2 futures concurrently:
 
 ### Clock steering task
 
-The clock steering task listens for the messages from the peers with their
+The clock steering task listens for the messages from the sources with their
 updated state. It keeps a local copy of the last received state from each peer,
 and also the state of the clock steering algorithm. Some (but not all) updates
 from a peer indicate that it now has some new measurement data available. If
@@ -128,7 +128,7 @@ insight into the daemon's state. It creates and manages a UNIX socket which can
 be queried for information on the state of the daemon.
 
 Once an external program opens a connection to the UNIX socket, the observation
-daemon makes a copy of the state of all the peers and of the clock steering
+daemon makes a copy of the state of all the sources and of the clock steering
 algorithm (it has access to these through a `RwLock` shared with the clock
 steering task). It then uses this to generate a JSON bytestream with
 information, which it then writes to the connection. Immediately afterwards,

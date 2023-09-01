@@ -5,13 +5,13 @@ observation-path = "/run/ntpd-rs/observe"
 
 # Pool servers from ntppool.org. See http://www.pool.ntp.org/join.html
 # for more information
-[[peer]]
+[[source]]
 mode = "pool"
 address = "ntpd-rs.pool.ntp.org"
 count = 4
 
 # Alternative configuration for IPv6 only machines
-#[[peer]]
+#[[source]]
 #mode = "pool"
 #addr = "2.pool.ntp.org"
 #count = 4

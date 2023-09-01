@@ -33,7 +33,7 @@ mod exports {
         DefaultTimeSyncController, ObservablePeerTimedata, StateUpdate, TimeSyncController,
     };
     pub use super::clock::NtpClock;
-    pub use super::config::{PeerDefaultsConfig, StepThreshold, SynchronizationConfig};
+    pub use super::config::{SourceDefaultsConfig, StepThreshold, SynchronizationConfig};
     pub use super::identifiers::ReferenceId;
     pub use super::keyset::{DecodedServerCookie, KeySet, KeySetProvider};
 

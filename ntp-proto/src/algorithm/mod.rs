@@ -4,7 +4,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{
     clock::NtpClock,
-    config::{PeerDefaultsConfig, SynchronizationConfig},
+    config::{SourceDefaultsConfig, SynchronizationConfig},
     peer::Measurement,
     system::TimeSnapshot,
     time_types::{NtpDuration, NtpTimestamp},
@@ -52,14 +52,14 @@ pub trait TimeSyncController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> {
     fn new(
         clock: C,
         synchronization_config: SynchronizationConfig,
-        peer_defaults_config: PeerDefaultsConfig,
+        peer_defaults_config: SourceDefaultsConfig,
         algorithm_config: Self::AlgorithmConfig,
     ) -> Self;
     /// Update used system config
     fn update_config(
         &mut self,
         synchronization_config: SynchronizationConfig,
-        peer_defaults_config: PeerDefaultsConfig,
+        peer_defaults_config: SourceDefaultsConfig,
         algorithm_config: Self::AlgorithmConfig,
     );
     /// Notify the controller that there is a new peer

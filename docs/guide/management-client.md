@@ -26,10 +26,10 @@ they need to be able to change configuration settings of the daemon dynamically.
 ## Using the management client
 
 The current client exposes 3 different commands:
-- `ntp-ctl peers` displays information on the currently active peer connections
+- `ntp-ctl sources` displays information on the currently active source connections
 - `ntp-ctl system` displays information on the current synchronization state of
   the system.
-- `ntp-ctl prometheus` combines output of `ntp-ctl peers` and `ntp-ctl system`
+- `ntp-ctl prometheus` combines output of `ntp-ctl sources` and `ntp-ctl system`
   in the prometheus export format
 - `ntp-ctl config` allows changing of some configuration parameters
 

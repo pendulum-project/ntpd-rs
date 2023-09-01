@@ -46,9 +46,9 @@ The ntpd-rs daemon requires elevated permissions to change the system clock.
 sudo ./target/release/ntp-daemon -c ./ntp.toml
 ```
 
-By default, at least 3 peer servers are needed for the algorithm to change the
-time. After a few minutes you should start to see messages indicating the offset
-of your machine from the server.
+By default, at least 3 sources are needed for the algorithm to change the time.
+After a few minutes you should start to see messages indicating the offset of
+your machine from the server.
 
 ```
 2023-04-11T10:06:24.847375Z  INFO ntp_proto::algorithm::kalman: Offset: 1.7506740305607742+-12.951528666965439ms, frequency: 8.525844072881435+-5.089483351832892ppm

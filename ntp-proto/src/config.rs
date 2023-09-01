@@ -194,7 +194,7 @@ impl<'de> Deserialize<'de> for StepThreshold {
 
 #[derive(Deserialize, Debug, Clone, Copy)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct PeerDefaultsConfig {
+pub struct SourceDefaultsConfig {
     /// Minima and maxima for the poll interval of clients
     #[serde(default)]
     pub poll_interval_limits: PollIntervalLimits,
@@ -204,7 +204,7 @@ pub struct PeerDefaultsConfig {
     pub initial_poll_interval: PollInterval,
 }
 
-impl Default for PeerDefaultsConfig {
+impl Default for SourceDefaultsConfig {
     fn default() -> Self {
         Self {
             poll_interval_limits: Default::default(),
@@ -228,8 +228,8 @@ pub struct SynchronizationConfig {
     /// > CMIN defines the minimum number of servers consistent with the correctness requirements.
     /// > Suspicious operators would set CMIN to ensure multiple redundant servers are available for the
     /// > algorithms to mitigate properly. However, for historic reasons the default value for CMIN is one.
-    #[serde(default = "default_minimum_agreeing_peers")]
-    pub minimum_agreeing_peers: usize,
+    #[serde(default = "default_minimum_agreeing_sources")]
+    pub minimum_agreeing_sources: usize,
 
     /// The maximum amount the system clock is allowed to change in a single go
     /// before we conclude something is seriously wrong. This is used to limit
@@ -265,7 +265,7 @@ pub struct SynchronizationConfig {
 impl Default for SynchronizationConfig {
     fn default() -> Self {
         Self {
-            minimum_agreeing_peers: default_minimum_agreeing_peers(),
+            minimum_agreeing_sources: default_minimum_agreeing_sources(),
 
             single_step_panic_threshold: default_single_step_panic_threshold(),
             startup_step_panic_threshold: default_startup_step_panic_threshold(),
@@ -276,7 +276,7 @@ impl Default for SynchronizationConfig {
     }
 }
 
-fn default_minimum_agreeing_peers() -> usize {
+fn default_minimum_agreeing_sources() -> usize {
     3
 }
 

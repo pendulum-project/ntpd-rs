@@ -4,7 +4,7 @@
 log-level = "info"
 
 # the server will get its time from the NTP pool
-[[peer]]
+[[source]]
 mode = "pool"
 address = "pool.ntp.org"
 count = 4
@@ -15,6 +15,6 @@ allowlist = []
 allowlist-action = "deny"
 
 # configure the client with
-# [[peer]]
-# mode = "simple"
+# [[source]]
+# mode = "server"
 # address = "0.0.0.0:123"

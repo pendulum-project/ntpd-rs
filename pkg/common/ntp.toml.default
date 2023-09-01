@@ -8,27 +8,27 @@ log-level = "info"
 ## observe socket.
 observation-path = "/run/ntpd-rs/observe"
 
-## The peers section allows configuring peers, you may configure multiple of
-## these blocks to add more peers to your configuration.
-## Our default configuration spawns a pool of peers (by default this attempts
-## to discover 4 distinct peers).
-[[peer]]
+## The sources section allows configuring sources, you may configure multiple of
+## these blocks to add more sources to your configuration.
+## Our default configuration spawns a pool of sources (by default this attempts
+## to discover 4 distinct sources).
+[[source]]
 mode = "pool"
 address = "ntpd-rs.pool.ntp.org"
 count = 4
 
-## If you have an NTS server, you can configure a peer that connects using NTS
+## If you have an NTS server, you can configure a source that connects using NTS
 ## by adding a configuration such as the one below
-#[[peer]]
+#[[source]]
 #mode = "nts"
 # NTS service from NETNOD: https://www.netnod.se/nts/network-time-security
 #address = "nts.netnod.se"
 
-## A peer in server mode will only create a single peer in contrast to the
-## multiple peers of a pool. This is the recommended peer mode if you only
-## have an IP address for your peer.
-#[[peer]]
-#mode = "simple"
+## A source in server mode will only create a single source in contrast to the
+## multiple sources of a pool. This is the recommended source mode if you only
+## have an IP address for your source.
+#[[source]]
+#mode = "server"
 #address = "ntpd-rs.pool.ntp.org"
 
 ## If you want to provide time to other machines, the configuration below

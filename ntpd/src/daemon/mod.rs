@@ -102,9 +102,9 @@ async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
     ::tracing::debug!("Configuration loaded, spawning daemon jobs");
     let (main_loop_handle, channels) = spawn(
         config.synchronization,
-        config.peer_defaults,
+        config.source_defaults,
         clock_config,
-        &config.peers,
+        &config.sources,
         &config.servers,
         keyset.clone(),
     )
