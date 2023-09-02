@@ -1,6 +1,6 @@
 # Hardening ntpd-rs
 
-A correct system clock is critical for both for security as well as the proper functioning of software. For instance, determining the validity of a TLS certificate relies on the system time. Running and debugging a distributed system is much easier, and in some cases only feasible, when the machines are all synchronized. This guide provides some guidance on what to think about when hardening ntpd-rs for your setup.
+A correct system clock is critical for both security and the proper functioning of software. For instance, determining the validity of a TLS certificate relies on the system time. Running and debugging a distributed system is much easier, and in some cases only feasible, when the machines are all synchronized. This guide provides some guidance on what to think about when hardening ntpd-rs for your setup.
 
 ## The Availability - Correctness tradeoff
 
@@ -9,7 +9,7 @@ When hardening ntpd-rs, one of the larger challenges is a fundamental tradeoff b
 - availability of synchronization: ntpd-rs should actively and continually synchronize with external sources
 - risk of missteering: ntpd-rs should not blindly follow external sources: they may be compromised
 
-Many of the measures against missteering increase the risk of unavailability and vice versa. You must decide what the correct balance is for your use case!
+Many of the measures against missteering increase the risk of unavailability and vice versa. You must decide what the correct balance is for your use case.
 
 For instance, the risk of missteering is large if your system deals with public key cryptography. The security of the current web certificate system hinges on having a rough (<1day) consensus on what time it is. Similarly, the security and functioning of your applications may also be affected. A tradeoff that limits the risk of missteering is probably the correct choice.
 
@@ -26,7 +26,7 @@ In its operation, ntpd-rs influences the clock in two ways:
 * **frequency adjustment:** ntdp-rs can adjust the clock frequency to compensate for hardware inaccuracies and to slowly correct small offsets to the system clock. This process can change the clock by in the worst case at most $1000$ microseconds every second, meaning that any incorrect steering of frequency will need at least 1000 days to reach an offset of 1 day.
 * **step adjustment** the second method of steering is stepping the clock. This allows for compensation of larger errors, but also provides more opportunity to an attacker for introducing large errors to the system clock.
 
-Frequency adjustments are essentially impossible to exploit by an attacker. The threat lies in big step adjustments. To prevent incorrect step adjustments, ntpd-rs allows the configuration of step limits. When these limits are exceeded, the daemon assumes that an unrecoverable problem has occurred and aborts. That means no synchronization will occur and the system's time will drift!
+Frequency adjustments are essentially impossible to exploit by an attacker. The threat lies in big step adjustments. To prevent incorrect step adjustments, ntpd-rs allows the configuration of step limits. When these limits are exceeded, the daemon assumes that an unrecoverable problem has occurred and aborts. That means no synchronization will occur and the system's time will drift.
 
 The step limits come in three variants:
 
