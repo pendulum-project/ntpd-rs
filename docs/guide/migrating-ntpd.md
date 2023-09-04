@@ -69,7 +69,7 @@ accumulated-step-panic-threshold = "inf"
 
 ntpd and ntpd-rs use different algorithms for synchronizing the time. This means that options for tuning filtering of the time differ significantly, and we cannot offer precise guidance on how to translate the ntpd parameters to values for ntpd-rs. When migrating a configuration that tunes ntpd's algorithm, one should take the intent of the tuning and use that as guidance when choosing which of ntpd-rs's [time synchronization options](../man/ntp.toml.5.md#synchronization) to change.
 
-## Access Control
+## Server Configuration & Access Control
 
 The [`restrict` command](https://www.ntp.org/documentation/4.2.8-series/accopt/) is used in ntpd to deny requests from a client. In ntpd this is a global setting. A flag configures what happens with connections from this client. For instance, `ignore` will silently ignore the request, while `kod` sends a response to the client that notifies it that its request is denied.
 
@@ -96,13 +96,18 @@ The `allowlist-action` and `denylist-action` properties can have two values:
 - `ignore` corresponds to ntpd's `ignore` and silently ignores the request
 - `deny` corresponds to ntpd's `kod` and sends a deny kiss-o'-death packet
 
+The stratum can can be configured in ntpd-rs with the `local-stratum` key:
+```
+[synchronization]
+local-stratum = <stratum>
+```
+
 ## Unsupported features
 
 Not all functionality in ntpd currently has an equivalent in ntpd-rs. In particular, the following major features currently don't have good alternatives in ntpd-rs:
 - Local hardware devices as time sources.
 - Support for ntp mac authentication.
 - Marking subsets of sources as more trusted than others
-- Acting as a source of leap second data.
 - protocol modes beside server and client
 - bursting
 If any of these features are critical for your use case, ntpd-rs might not be an option for you yet. Please let us know if you miss these features or want to sponsor any of them, as this helps us prioritise our work.
