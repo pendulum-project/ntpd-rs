@@ -1,7 +1,7 @@
+use std::fs::Permissions;
 use std::path::Path;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::UnixListener;
 use tokio::net::UnixStream;
 
 pub async fn write_json<T>(stream: &mut UnixStream, value: &T) -> std::io::Result<()>
@@ -33,7 +33,18 @@ fn other_error<T>(msg: String) -> std::io::Result<T> {
     Err(Error::new(ErrorKind::Other, msg))
 }
 
-pub fn create_unix_socket(path: &Path) -> std::io::Result<UnixListener> {
+pub fn create_unix_socket_with_permissions(
+    path: &Path,
+    permissions: Permissions,
+) -> std::io::Result<tokio::net::UnixListener> {
+    let listener = create_unix_socket(path)?;
+
+    std::fs::set_permissions(path, permissions)?;
+
+    Ok(listener)
+}
+
+fn create_unix_socket(path: &Path) -> std::io::Result<tokio::net::UnixListener> {
     // must unlink path before the bind below (otherwise we get "address already in use")
     if path.exists() {
         use std::os::unix::fs::FileTypeExt;
@@ -47,7 +58,7 @@ pub fn create_unix_socket(path: &Path) -> std::io::Result<UnixListener> {
     }
 
     // OS errors are terrible; let's try to do better
-    let error = match UnixListener::bind(path) {
+    let error = match tokio::net::UnixListener::bind(path) {
         Ok(listener) => return Ok(listener),
         Err(e) => e,
     };

@@ -317,7 +317,7 @@ mod tests {
 
     use crate::daemon::{
         config::ObserveConfig,
-        sockets::{create_unix_socket, write_json},
+        sockets::{create_unix_socket_with_permissions, write_json},
     };
 
     use super::*;
@@ -334,11 +334,10 @@ mod tests {
             std::fs::remove_file(&path).unwrap();
         }
 
-        let peers_listener = create_unix_socket(&path)?;
-
         let permissions: std::fs::Permissions =
             PermissionsExt::from_mode(config.observation_permissions);
-        std::fs::set_permissions(&path, permissions)?;
+
+        let peers_listener = create_unix_socket_with_permissions(&path, permissions)?;
 
         let fut = super::print_state(command, path);
         let handle = tokio::spawn(fut);
@@ -393,11 +392,10 @@ mod tests {
             std::fs::remove_file(&path).unwrap();
         }
 
-        let peers_listener = create_unix_socket(&path)?;
-
         let permissions: std::fs::Permissions =
             PermissionsExt::from_mode(config.observation_permissions);
-        std::fs::set_permissions(&path, permissions)?;
+
+        let peers_listener = create_unix_socket_with_permissions(&path, permissions)?;
 
         let fut = super::print_state(Format::Plain, path);
         let handle = tokio::spawn(fut);
