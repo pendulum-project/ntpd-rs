@@ -89,7 +89,7 @@ accumulated-step-panic-threshold = "inf"
 
 Chrony and ntpd-rs use different algorithms for synchronizing the time. This means that options for tuning filtering of the time differ significantly, and we cannot offer precise guidance on how to translate the chrony parameters to values for ntpd-rs. When migrating a configuration that tunes chrony's algorithm, one should take the intent of the tuning and use that as guidance when choosing which [time synchronization options](../man/ntp.toml.5.md#synchronization) to change.
 
-When doing this, it is also important to note a major philosophical difference between chrony and ntpd-rs. For chrony, the majority of the algorithm tuning parameters are set on an individual time source. Within ntpd-rs, all control of the filtering is done via global parameters. Although we do not expect this to be the case, should there be specific parameters you would wish to configure on a per-peer basis, please let us know so we can consider this for future releases.
+When tuning the synchronization algorithm, it is important to note a major philosophical difference between chrony and ntpd-rs. For chrony, the majority of the algorithm tuning parameters are set on an individual time source. Within ntpd-rs, all control of the filtering is done via global parameters. Although we do not expect this to be the case, should there be specific parameters you would wish to configure on a per-source basis, please let us know so we can consider this for future releases.
 
 ## Server configuration
 
