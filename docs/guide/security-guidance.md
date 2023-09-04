@@ -19,7 +19,7 @@ Since there is no universally best solution to this tradeoff, you as the end use
 
 ## Limiting incorrect steering
 
-Ntpd-rs can query multiple remote time servers for the current time. This allows it to detect and discard outliers that provide an incorrect time. The synchronization algorithm always requires a strict majority of the reachable servers (those that it is able to actively communicate with) to agree on the current time before making adjustments to the clock. Furthermore, to prevent an attacker to just reduce the available servers to only its own through denial of service attacks, the minimum number of agreeing servers can also be configured through `minimum-agreeing-peers`.
+Ntpd-rs can query multiple remote time servers for the current time. This allows it to detect and discard outliers that provide an incorrect time. The synchronization algorithm always requires a strict majority of the reachable servers (those that it is able to actively communicate with) to agree on the current time before making adjustments to the clock. Furthermore, to prevent an attacker to just reduce the available servers to only its own through denial of service attacks, the minimum number of agreeing servers can also be configured through `minimum-agreeing-sources`.
 
 In its operation, ntpd-rs influences the clock in two ways:
 
@@ -46,9 +46,9 @@ For these reasons we recommend to not automatically restart ntpd-rs. Rather, an 
 
 ## Increasing availability
 
-The best way to increase availability of time synchronization is to increase the number of servers ntpd-rs queries for the current time. When combined with a (relatively) small value for `minimum-agreeing-peers`, this will allow ntpd-rs to keep synchronizing the local time even if multiple upstream servers fail.
+The best way to increase availability of time synchronization is to increase the number of servers ntpd-rs queries for the current time. When combined with a (relatively) small value for `minimum-agreeing-sources`, this will allow ntpd-rs to keep synchronizing the local time even if multiple upstream servers fail.
 
-For servers being completely unavailable, this is the difference between the number of configured time sources and `minimum-agreeing-peers`. However, note that at most half the servers can fail with incorrect time information before impacting time synchronization.
+For servers being completely unavailable, this is the difference between the number of configured time sources and `minimum-agreeing-sources`. However, note that at most half the servers can fail with incorrect time information before impacting time synchronization.
 
 The downside of a large number of upstream time servers is that an attacker aimed at missteering your local clock is provided with more avenues to do so, because they will need to compromise a smaller fraction of upstream servers to gain clock control. The attacker can then ensure synchronization with that subset through denial of service attacks on the other upstream servers.
 
@@ -61,7 +61,7 @@ The clock steering is based on the ntpd-rs configuration file. If an attacker ca
 Similarly, for logs it is recommended to restrict who can read the logs. It is also strongly advisable to configure log rotation and limits on the maximum size of the log through the systems logging facilities, to prevent logs from accidentally becoming so large as to impede normal system operation. When configured with a `log-level` of info or higher, the daemon should not log in direct response to random network traffic. However, log output is proportional to the number of remote time sources configured.
 
 Furthermore, the ntpd-rs daemon can be configured to expose two sockets:
-- The observe socket is read-only and exposes some of the peer and clock
+- The observe socket is read-only and exposes some of the source and clock
   algorithm state.
 - The configuration socket accepts commands and allows changing of some of the
   configuration settings.

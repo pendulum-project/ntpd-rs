@@ -34,7 +34,7 @@ pub enum MsgForSystem {
     MustDemobilize(PeerId),
     /// Experienced a network issue and must be restarted
     NetworkIssue(PeerId),
-    /// Peer is unreachable, and should be restarted with new resolved addr.
+    /// Source is unreachable, and should be restarted with new resolved addr.
     Unreachable(PeerId),
     /// Received an acceptable packet and made a new peer snapshot
     /// A new measurement should try to trigger a clock select
@@ -324,14 +324,14 @@ where
                 let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
 
                 // Unwrap should be safe because we know the socket was connected to a remote peer just before
-                let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
+                let source_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
 
                 let local_clock_time = NtpInstant::now();
                 let config_snapshot = *channels.source_defaults_config_receiver.borrow_and_update();
                 let peer = if let Some(nts) = nts {
-                    Peer::new_nts(our_id, peer_id, local_clock_time, config_snapshot, nts)
+                    Peer::new_nts(our_id, source_id, local_clock_time, config_snapshot, nts)
                 } else {
-                    Peer::new(our_id, peer_id, local_clock_time, config_snapshot)
+                    Peer::new(our_id, source_id, local_clock_time, config_snapshot)
                 };
 
                 let poll_wait = tokio::time::sleep(std::time::Duration::default());
@@ -563,7 +563,7 @@ mod tests {
         .await
         .unwrap();
         let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
-        let peer_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
+        let source_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
 
         let (_, system_snapshot_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
         let (_, synchronization_config_receiver) =
@@ -575,7 +575,7 @@ mod tests {
         let local_clock_time = NtpInstant::now();
         let peer = Peer::new(
             our_id,
-            peer_id,
+            source_id,
             local_clock_time,
             *peer_defaults_config_receiver.borrow_and_update(),
         );

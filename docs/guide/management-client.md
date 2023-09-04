@@ -56,7 +56,7 @@ the management client to the configuration file of the server via the
 
 Output is given as formatted json
 
-**peer:**
+**source:**
 ```
 [
   {
@@ -71,7 +71,7 @@ Output is given as formatted json
       },
       "reachability": 255,
       "poll_interval": 4,
-      "peer_id": 89091106,
+      "source_id": 89091106,
       "address": "0.pool.ntp.org:123"
     }
   },
@@ -87,7 +87,7 @@ Output is given as formatted json
       },
       "reachability": 255,
       "poll_interval": 4,
-      "peer_id": 1590075152,
+      "source_id": 1590075152,
       "address": "1.pool.ntp.org:123"
     }
   }
@@ -135,39 +135,39 @@ ntp_system_accumulated_steps_threshold_seconds -1.0
 # HELP ntp_system_leap_indicator Indicates that a leap second will take place.
 # TYPE ntp_system_leap_indicator gauge
 ntp_system_leap_indicator 0
-# HELP ntp_peer_uptime_seconds Time since the peer was started.
-# TYPE ntp_peer_uptime_seconds gauge
-# UNIT ntp_peer_uptime_seconds seconds
-ntp_peer_uptime_seconds{address="1.pool.ntp.org:123"} -10.098467026394435
-ntp_peer_uptime_seconds{address="0.pool.ntp.org:123"} 23.02104354207894
-# HELP ntp_peer_poll_interval_seconds Time between polls of the peer.
-# TYPE ntp_peer_poll_interval_seconds gauge
-# UNIT ntp_peer_poll_interval_seconds seconds
-ntp_peer_poll_interval_seconds{address="0.pool.ntp.org:123"} 16.00000000372529
-ntp_peer_poll_interval_seconds{address="1.pool.ntp.org:123"} 16.00000000372529
-# HELP ntp_peer_poll_interval Exponent of time between polls of the peer.
-# TYPE ntp_peer_poll_interval gauge
-ntp_peer_poll_interval{address="0.pool.ntp.org:123"} 4.0
-ntp_peer_poll_interval{address="1.pool.ntp.org:123"} 4.0
-# HELP ntp_peer_reachability_status Number of polls until the upstream server is unreachable, zero if it is.
-# TYPE ntp_peer_reachability_status gauge
-ntp_peer_reachability_status{address="1.pool.ntp.org:123"} 8
-ntp_peer_reachability_status{address="0.pool.ntp.org:123"} 8
-# HELP ntp_peer_offset_seconds Offset between the upstream server and system time.
-# TYPE ntp_peer_offset_seconds gauge
-# UNIT ntp_peer_offset_seconds seconds
-ntp_peer_offset_seconds{address="0.pool.ntp.org:123"} 0.0038458579228832056
-ntp_peer_offset_seconds{address="1.pool.ntp.org:123"} 0.00432991446096681
-# HELP ntp_peer_delay_seconds Current round-trip delay to the upstream server.
-# TYPE ntp_peer_delay_seconds gauge
-# UNIT ntp_peer_delay_seconds seconds
-ntp_peer_delay_seconds{address="1.pool.ntp.org:123"} 0.010786478875853699
-ntp_peer_delay_seconds{address="0.pool.ntp.org:123"} 0.00760143553083796
-# HELP ntp_peer_uncertainty_seconds Estimated error of the clock.
-# TYPE ntp_peer_uncertainty_seconds gauge
-# UNIT ntp_peer_uncertainty_seconds seconds
-ntp_peer_uncertainty_seconds{address="1.pool.ntp.org:123"} 0.0008779882921087529
-ntp_peer_uncertainty_seconds{address="0.pool.ntp.org:123"} 0.0009309677409313078
+# HELP ntp_source_uptime_seconds Time since the source was started.
+# TYPE ntp_source_uptime_seconds gauge
+# UNIT ntp_source_uptime_seconds seconds
+ntp_source_uptime_seconds{address="1.pool.ntp.org:123"} -10.098467026394435
+ntp_source_uptime_seconds{address="0.pool.ntp.org:123"} 23.02104354207894
+# HELP ntp_source_poll_interval_seconds Time between polls of the source.
+# TYPE ntp_source_poll_interval_seconds gauge
+# UNIT ntp_source_poll_interval_seconds seconds
+ntp_source_poll_interval_seconds{address="0.pool.ntp.org:123"} 16.00000000372529
+ntp_source_poll_interval_seconds{address="1.pool.ntp.org:123"} 16.00000000372529
+# HELP ntp_source_poll_interval Exponent of time between polls of the source.
+# TYPE ntp_source_poll_interval gauge
+ntp_source_poll_interval{address="0.pool.ntp.org:123"} 4.0
+ntp_source_poll_interval{address="1.pool.ntp.org:123"} 4.0
+# HELP ntp_source_reachability_status Number of polls until the upstream server is unreachable, zero if it is.
+# TYPE ntp_source_reachability_status gauge
+ntp_source_reachability_status{address="1.pool.ntp.org:123"} 8
+ntp_source_reachability_status{address="0.pool.ntp.org:123"} 8
+# HELP ntp_source_offset_seconds Offset between the upstream server and system time.
+# TYPE ntp_source_offset_seconds gauge
+# UNIT ntp_source_offset_seconds seconds
+ntp_source_offset_seconds{address="0.pool.ntp.org:123"} 0.0038458579228832056
+ntp_source_offset_seconds{address="1.pool.ntp.org:123"} 0.00432991446096681
+# HELP ntp_source_delay_seconds Current round-trip delay to the upstream server.
+# TYPE ntp_source_delay_seconds gauge
+# UNIT ntp_source_delay_seconds seconds
+ntp_source_delay_seconds{address="1.pool.ntp.org:123"} 0.010786478875853699
+ntp_source_delay_seconds{address="0.pool.ntp.org:123"} 0.00760143553083796
+# HELP ntp_source_uncertainty_seconds Estimated error of the clock.
+# TYPE ntp_source_uncertainty_seconds gauge
+# UNIT ntp_source_uncertainty_seconds seconds
+ntp_source_uncertainty_seconds{address="1.pool.ntp.org:123"} 0.0008779882921087529
+ntp_source_uncertainty_seconds{address="0.pool.ntp.org:123"} 0.0009309677409313078
 # HELP ntp_server_received_packets Number of incoming received packets.
 # TYPE ntp_server_received_packets counter
 # HELP ntp_server_accepted_packets Number of packets accepted.

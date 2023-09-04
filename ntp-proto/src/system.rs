@@ -99,7 +99,7 @@ mod tests {
         system.update_used_peers(
             vec![
                 PeerSnapshot {
-                    peer_id: ReferenceId::KISS_DENY,
+                    source_id: ReferenceId::KISS_DENY,
                     our_id: ReferenceId::NONE,
                     poll_interval: PollIntervalLimits::default().max,
                     reach: Default::default(),
@@ -107,7 +107,7 @@ mod tests {
                     reference_id: ReferenceId::KISS_DENY,
                 },
                 PeerSnapshot {
-                    peer_id: ReferenceId::KISS_RATE,
+                    source_id: ReferenceId::KISS_RATE,
                     our_id: ReferenceId::KISS_RSTR,
                     poll_interval: PollIntervalLimits::default().max,
                     reach: Default::default(),

@@ -1,5 +1,5 @@
 /// This module implements a kalman filter to filter the measurements
-/// provided by the peers.
+/// provided by the sources.
 ///
 /// The filter tracks the time difference between the local and remote
 /// timescales. For ease of implementation, it actually is programmed
@@ -9,7 +9,7 @@
 /// measurements and producing estimation outputs.
 ///
 /// This approach is chosen so that it is possible to line up the filters
-/// from multiple peers (this has no real meaning when using remote
+/// from multiple sources (this has no real meaning when using remote
 /// timescales for that), and makes sure that we control the timescale
 /// used to express the filter in.
 ///

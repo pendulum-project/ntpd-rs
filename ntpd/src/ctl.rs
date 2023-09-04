@@ -216,7 +216,7 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
     match print {
         Format::Plain => {
             // Sort peers by address and then id (to deal with pools), servers just by address
-            output.peers.sort_by_key(|p| match p {
+            output.sources.sort_by_key(|p| match p {
                 crate::daemon::ObservablePeerState::Nothing => None,
                 crate::daemon::ObservablePeerState::Observable(s) => {
                     Some((s.address.clone(), s.id))
@@ -241,8 +241,8 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
             );
             println!("Stratum: {}", output.system.stratum);
             println!();
-            println!("Peers:");
-            for peer in &output.peers {
+            println!("Sources:");
+            for peer in &output.sources {
                 match peer {
                     crate::daemon::ObservablePeerState::Nothing => {}
                     crate::daemon::ObservablePeerState::Observable(
@@ -268,14 +268,14 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
                 }
             }
             let in_startup = output
-                .peers
+                .sources
                 .iter()
                 .filter(|peer| matches!(peer, crate::daemon::ObservablePeerState::Nothing))
                 .count();
             match in_startup {
                 0 => {} // no peers in startup, so no line for that
-                1 => println!("1 peer still in startup"),
-                _ => println!("{} peers still in startup", in_startup),
+                1 => println!("1 source still in startup"),
+                _ => println!("{} sources still in startup", in_startup),
             }
             println!();
             println!("Servers:");
@@ -345,7 +345,7 @@ mod tests {
 
         let value = ObservableState {
             system: Default::default(),
-            peers: vec![],
+            sources: vec![],
             servers: vec![],
         };
 

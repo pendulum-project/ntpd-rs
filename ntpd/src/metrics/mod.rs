@@ -92,10 +92,10 @@ fn format_metric<T: std::fmt::Display>(
     Ok(())
 }
 
-macro_rules! collect_peers {
+macro_rules! collect_sources {
     ($from: expr, |$ident: ident| $value: expr $(,)?) => {{
         let mut data = vec![];
-        for tmp in &$from.peers {
+        for tmp in &$from.sources {
             if let crate::metrics::ObservablePeerState::Observable($ident) = tmp {
                 let labels = vec![
                     ("address", $ident.address.clone()),
@@ -183,7 +183,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
         "Time since the source was started",
         MetricType::Gauge,
         Some(Unit::Seconds),
-        collect_peers!(state, |p| p.poll_interval.as_duration().to_seconds()),
+        collect_sources!(state, |p| p.poll_interval.as_duration().to_seconds()),
     )?;
 
     format_metric(
@@ -192,7 +192,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
         "Time between polls of the source",
         MetricType::Gauge,
         Some(Unit::Seconds),
-        collect_peers!(state, |p| p.poll_interval.as_duration().to_seconds()),
+        collect_sources!(state, |p| p.poll_interval.as_duration().to_seconds()),
     )?;
 
     format_metric(
@@ -201,7 +201,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
         "Number of polls until the upstream source is unreachable, zero if it is",
         MetricType::Gauge,
         None,
-        collect_peers!(state, |p| p.unanswered_polls),
+        collect_sources!(state, |p| p.unanswered_polls),
     )?;
 
     format_metric(
@@ -210,7 +210,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
         "Offset between the upstream source and system time",
         MetricType::Gauge,
         Some(Unit::Seconds),
-        collect_peers!(state, |p| p.timedata.offset.to_seconds()),
+        collect_sources!(state, |p| p.timedata.offset.to_seconds()),
     )?;
 
     format_metric(
@@ -219,7 +219,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
         "Current round-trip delay to the upstream source",
         MetricType::Gauge,
         Some(Unit::Seconds),
-        collect_peers!(state, |p| p.timedata.delay.to_seconds()),
+        collect_sources!(state, |p| p.timedata.delay.to_seconds()),
     )?;
 
     format_metric(
@@ -228,7 +228,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
         "Estimated error of the source clock",
         MetricType::Gauge,
         Some(Unit::Seconds),
-        collect_peers!(state, |p| p.timedata.uncertainty.to_seconds()),
+        collect_sources!(state, |p| p.timedata.uncertainty.to_seconds()),
     )?;
 
     format_metric(
