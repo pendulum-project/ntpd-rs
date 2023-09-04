@@ -1,6 +1,7 @@
 use super::server::ServerStats;
+use super::sockets::create_unix_socket_with_permissions;
 use super::spawn::PeerId;
-use super::{sockets::create_unix_socket, system::ServerData};
+use super::system::ServerData;
 use ntp_proto::{ObservablePeerTimedata, PollInterval, SystemSnapshot};
 use std::net::SocketAddr;
 use std::os::unix::fs::PermissionsExt;
@@ -75,14 +76,13 @@ async fn observer(
         None => return Ok(()),
     };
 
-    let peers_listener = create_unix_socket(&path)?;
-
     // this binary needs to run as root to be able to adjust the system clock.
     // by default, the socket inherits root permissions, but the client should not need
     // elevated permissions to read from the socket. So we explicitly set the permissions
     let permissions: std::fs::Permissions =
         PermissionsExt::from_mode(config.observation_permissions);
-    std::fs::set_permissions(&path, permissions)?;
+
+    let peers_listener = create_unix_socket_with_permissions(&path, permissions)?;
 
     loop {
         let (mut stream, _addr) = peers_listener.accept().await?;
