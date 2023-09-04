@@ -69,7 +69,7 @@ pub struct Peer {
     stratum: u8,
     reference_id: ReferenceId,
 
-    peer_id: ReferenceId,
+    source_id: ReferenceId,
     our_id: ReferenceId,
     reach: Reach,
     tries: usize,
@@ -198,7 +198,7 @@ pub enum IgnoreReason {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PeerSnapshot {
-    pub peer_id: ReferenceId,
+    pub source_id: ReferenceId,
     pub our_id: ReferenceId,
 
     pub poll_interval: PollInterval,
@@ -244,7 +244,7 @@ impl PeerSnapshot {
 
     pub fn from_peer(peer: &Peer) -> Self {
         Self {
-            peer_id: peer.peer_id,
+            source_id: peer.source_id,
             our_id: peer.our_id,
             stratum: peer.stratum,
             reference_id: peer.reference_id,
@@ -260,7 +260,7 @@ pub fn peer_snapshot() -> PeerSnapshot {
     reach.received_packet();
 
     PeerSnapshot {
-        peer_id: ReferenceId::from_int(0),
+        source_id: ReferenceId::from_int(0),
         stratum: 0,
         reference_id: ReferenceId::from_int(0),
 
@@ -297,7 +297,7 @@ impl Peer {
     #[instrument]
     pub fn new(
         our_id: ReferenceId,
-        peer_id: ReferenceId,
+        source_id: ReferenceId,
         local_clock_time: NtpInstant,
         peer_defaults_config: SourceDefaultsConfig,
     ) -> Self {
@@ -310,7 +310,7 @@ impl Peer {
 
             current_request_identifier: None,
             our_id,
-            peer_id,
+            source_id,
             reach: Default::default(),
             tries: 0,
 
@@ -324,14 +324,14 @@ impl Peer {
     #[instrument]
     pub fn new_nts(
         our_id: ReferenceId,
-        peer_id: ReferenceId,
+        source_id: ReferenceId,
         local_clock_time: NtpInstant,
         peer_defaults_config: SourceDefaultsConfig,
         nts: Box<PeerNtsData>,
     ) -> Self {
         Self {
             nts: Some(nts),
-            ..Self::new(our_id, peer_id, local_clock_time, peer_defaults_config)
+            ..Self::new(our_id, source_id, local_clock_time, peer_defaults_config)
         }
     }
 
@@ -384,7 +384,7 @@ impl Peer {
         Ok(result)
     }
 
-    #[instrument(skip(self, system), fields(peer = debug(self.peer_id)))]
+    #[instrument(skip(self, system), fields(peer = debug(self.source_id)))]
     pub fn handle_incoming(
         &mut self,
         system: SystemSnapshot,
@@ -504,12 +504,12 @@ impl Peer {
         Update::NewMeasurement(PeerSnapshot::from_peer(self), measurement)
     }
 
-    #[instrument(level="trace", skip(self), fields(peer = debug(self.peer_id)))]
+    #[instrument(level="trace", skip(self), fields(peer = debug(self.source_id)))]
     pub fn reset(&mut self) {
         // make sure in-flight messages are ignored
         self.current_request_identifier = None;
 
-        info!(our_id = ?self.our_id, peer_id = ?self.peer_id, "Peer reset");
+        info!(our_id = ?self.our_id, source_id = ?self.source_id, "Source reset");
     }
 
     #[cfg(test)]
@@ -523,7 +523,7 @@ impl Peer {
 
             current_request_identifier: None,
 
-            peer_id: ReferenceId::from_int(0),
+            source_id: ReferenceId::from_int(0),
             our_id: ReferenceId::from_int(0),
             reach: Reach::default(),
             tries: 0,

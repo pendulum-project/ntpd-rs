@@ -354,13 +354,13 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         // Restart the peer reusing its configuration.
         let state = self.peers.remove(&index).unwrap();
         let spawner_id = state.spawner_id;
-        let peer_id = state.peer_id;
+        let source_id = state.source_id;
         let opt_spawner = self.spawners.iter().find(|s| s.id == spawner_id);
         if let Some(spawner) = opt_spawner {
             spawner
                 .notify_tx
                 .send(SystemEvent::peer_removed(
-                    peer_id,
+                    source_id,
                     PeerRemovalReason::NetworkIssue,
                 ))
                 .await
@@ -376,13 +376,13 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         // Restart the peer reusing its configuration.
         let state = self.peers.remove(&index).unwrap();
         let spawner_id = state.spawner_id;
-        let peer_id = state.peer_id;
+        let source_id = state.source_id;
         let opt_spawner = self.spawners.iter().find(|s| s.id == spawner_id);
         if let Some(spawner) = opt_spawner {
             spawner
                 .notify_tx
                 .send(SystemEvent::peer_removed(
-                    peer_id,
+                    source_id,
                     PeerRemovalReason::Unreachable,
                 ))
                 .await
@@ -449,13 +449,13 @@ impl<C: NtpClock, T: Wait> System<C, T> {
 
         // Restart the peer reusing its configuration.
         let spawner_id = state.spawner_id;
-        let peer_id = state.peer_id;
+        let source_id = state.source_id;
         let opt_spawner = self.spawners.iter().find(|s| s.id == spawner_id);
         if let Some(spawner) = opt_spawner {
             spawner
                 .notify_tx
                 .send(SystemEvent::peer_removed(
-                    peer_id,
+                    source_id,
                     PeerRemovalReason::Demobilized,
                 ))
                 .await
@@ -468,21 +468,21 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         spawner_id: SpawnerId,
         mut params: PeerCreateParameters,
     ) -> PeerId {
-        let peer_id = params.id;
-        info!(peer_id=?peer_id, addr=?params.addr, spawner=?spawner_id, "new peer");
+        let source_id = params.id;
+        info!(source_id=?source_id, addr=?params.addr, spawner=?spawner_id, "new peer");
         self.peers.insert(
-            peer_id,
+            source_id,
             PeerState {
                 snapshot: None,
                 peer_address: params.normalized_addr.clone(),
-                peer_id,
+                source_id,
                 spawner_id,
             },
         );
-        self.controller.peer_add(peer_id);
+        self.controller.peer_add(source_id);
 
         PeerTask::spawn(
-            peer_id,
+            source_id,
             params.addr,
             self.interface,
             self.clock.clone(),
@@ -504,7 +504,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
             let _ = s.notify_tx.send(SystemEvent::PeerRegistered(params)).await;
         }
 
-        peer_id
+        source_id
     }
 
     async fn handle_spawn_event(&mut self, event: SpawnEvent) {
@@ -543,7 +543,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                             unanswered_polls: snapshot.reach.unanswered_polls(),
                             poll_interval: snapshot.poll_interval,
                             address: data.peer_address.to_string(),
-                            id: data.peer_id,
+                            id: data.source_id,
                         })
                     } else {
                         ObservablePeerState::Nothing
@@ -559,7 +559,7 @@ struct PeerState {
     snapshot: Option<PeerSnapshot>,
     peer_address: NormalizedAddress,
     spawner_id: SpawnerId,
-    peer_id: PeerId,
+    source_id: PeerId,
 }
 
 #[derive(Debug, Clone)]

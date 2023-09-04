@@ -46,15 +46,15 @@ pub struct AlgorithmConfig {
     pub delay_outlier_threshold: f64,
 
     /// Initial estimate of the clock wander of the combination
-    /// of our local clock and that of the peer. (s/s^2)
+    /// of our local clock and that of the source. (s/s^2)
     #[serde(default = "default_initial_wander")]
     pub initial_wander: f64,
     /// Initial uncertainty of the frequency difference between
-    /// our clock and that of the peer. (s/s)
+    /// our clock and that of the source. (s/s)
     #[serde(default = "default_initial_frequency_uncertainty")]
     pub initial_frequency_uncertainty: f64,
 
-    /// Maximum peer uncertainty before we start disregarding it
+    /// Maximum source uncertainty before we start disregarding it
     /// Note that this is combined uncertainty due to noise and
     /// possible assymetry error (see also weights below). (seconds)
     #[serde(default = "default_maximum_source_uncertainty")]

@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ObservableState {
     pub system: SystemSnapshot,
-    pub peers: Vec<ObservablePeerState>,
+    pub sources: Vec<ObservablePeerState>,
     pub servers: Vec<ObservableServerState>,
 }
 
@@ -88,7 +88,7 @@ async fn observer(
         let (mut stream, _addr) = peers_listener.accept().await?;
 
         let observe = ObservableState {
-            peers: peers_reader.borrow().to_owned(),
+            sources: peers_reader.borrow().to_owned(),
             system: *system_reader.borrow(),
             servers: server_reader.borrow().iter().map(|s| s.into()).collect(),
         };
@@ -209,7 +209,7 @@ mod tests {
 
         // Deal with randomized order
         let mut count = 0;
-        for peer in &result.peers {
+        for peer in &result.sources {
             if matches!(peer, ObservablePeerState::Observable { .. }) {
                 count += 1;
             }

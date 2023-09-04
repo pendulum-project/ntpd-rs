@@ -116,10 +116,11 @@ The main loop of the server waits on 2 futures concurrently:
 ### Clock steering task
 
 The clock steering task listens for the messages from the sources with their
-updated state. It keeps a local copy of the last received state from each peer,
-and also the state of the clock steering algorithm. Some (but not all) updates
-from a peer indicate that it now has some new measurement data available. If
-this happens, the clock steering task triggers a clock algorithm update.
+updated state. It keeps a local copy of the last received state from each
+source, and also the state of the clock steering algorithm. Some (but not all)
+updates from a source indicate that it now has some new measurement data
+available. If this happens, the clock steering task triggers a clock algorithm
+update.
 
 ### Observability task
 
