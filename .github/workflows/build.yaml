@@ -37,7 +37,7 @@ jobs:
           toolchain: ${{ matrix.rust }}
           override: true
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@6801bd56b9711500292d943350f0b1f3559d7acb
+        uses: taiki-e/install-action@5692c4095a0678a0783fb9efe3a7fee3df081104
         with:
           tool: cargo-llvm-cov
       - name: cargo build
@@ -147,7 +147,7 @@ jobs:
           toolchain: nightly
           override: true
       - name: Install udeps
-        uses: taiki-e/install-action@6801bd56b9711500292d943350f0b1f3559d7acb
+        uses: taiki-e/install-action@5692c4095a0678a0783fb9efe3a7fee3df081104
         with:
           tool: cargo-udeps
       - name: cargo udeps
@@ -262,7 +262,7 @@ jobs:
         with:
           version: 0.9.0
       - name: Install cargo-zigbuild
-        uses: taiki-e/install-action@6801bd56b9711500292d943350f0b1f3559d7acb
+        uses: taiki-e/install-action@5692c4095a0678a0783fb9efe3a7fee3df081104
         with:
           tool: cargo-zigbuild
       - name: Run clippy
@@ -296,7 +296,7 @@ jobs:
         with:
           version: 0.9.0
       - name: Install cargo-zigbuild
-        uses: taiki-e/install-action@6801bd56b9711500292d943350f0b1f3559d7acb
+        uses: taiki-e/install-action@5692c4095a0678a0783fb9efe3a7fee3df081104
         with:
           tool: cargo-zigbuild
       - name: Run clippy
@@ -330,7 +330,7 @@ jobs:
         with:
           version: 0.9.0
       - name: Install cargo-zigbuild
-        uses: taiki-e/install-action@6801bd56b9711500292d943350f0b1f3559d7acb
+        uses: taiki-e/install-action@5692c4095a0678a0783fb9efe3a7fee3df081104
         with:
           tool: cargo-zigbuild
       - name: Run clippy
@@ -356,7 +356,7 @@ jobs:
           override: true
           default: true
       - name: Install cargo fuzz
-        uses: taiki-e/install-action@6801bd56b9711500292d943350f0b1f3559d7acb
+        uses: taiki-e/install-action@5692c4095a0678a0783fb9efe3a7fee3df081104
         with:
           tool: cargo-fuzz
       - name: Smoke-test fuzz targets
