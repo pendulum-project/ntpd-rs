@@ -1,3 +1,5 @@
+name: packaging
+
 on:
   workflow_dispatch:
 
