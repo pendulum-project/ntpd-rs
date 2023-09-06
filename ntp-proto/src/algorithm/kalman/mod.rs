@@ -177,6 +177,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
 
             if let Some(leap) = combined.leap_indicator {
                 self.clock.status_update(leap).expect("Cannot update clock");
+                self.timedata.leap_indicator = leap;
             }
 
             // After a succesfull measurement we are out of startup.
@@ -502,6 +503,9 @@ mod tests {
         }
 
         assert!(!algo.in_startup);
+        assert_eq!(algo.timedata.leap_indicator, NtpLeapIndicator::NoWarning);
+        assert_ne!(algo.timedata.root_delay, NtpDuration::ZERO);
+        assert_ne!(algo.timedata.root_dispersion, NtpDuration::ZERO);
     }
 
     #[test]

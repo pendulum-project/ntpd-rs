@@ -242,7 +242,8 @@ impl NtpHeaderV3V4 {
             root_dispersion: system.time_snapshot.root_dispersion,
             // Timestamp must be last to make it as accurate as possible.
             transmit_timestamp: clock.now().expect("Failed to read time"),
-            ..Self::new()
+            leap: system.time_snapshot.leap_indicator,
+            reference_timestamp: Default::default(),
         }
     }
 
@@ -860,7 +861,8 @@ mod tests {
     use std::borrow::Cow;
 
     use crate::{
-        keyset::KeySetProvider, nts_record::AeadAlgorithm, time_types::PollIntervalLimits,
+        keyset::KeySetProvider, nts_record::AeadAlgorithm, system::TimeSnapshot,
+        time_types::PollIntervalLimits,
     };
 
     use super::*;
@@ -1272,7 +1274,13 @@ mod tests {
             })
             .unwrap();
         let response = NtpPacket::timestamp_response(
-            &SystemSnapshot::default(),
+            &SystemSnapshot {
+                time_snapshot: TimeSnapshot {
+                    leap_indicator: NtpLeapIndicator::Leap59,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
             packet,
             NtpTimestamp::from_fixed_int(0),
             &TestClock {
@@ -1300,6 +1308,7 @@ mod tests {
             response.transmit_timestamp(),
             NtpTimestamp::from_fixed_int(1)
         );
+        assert_eq!(response.leap(), NtpLeapIndicator::Leap59);
 
         let (mut packet, _) =
             NtpPacket::nts_poll_message(&cookie, 0, PollIntervalLimits::default().min);

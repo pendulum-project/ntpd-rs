@@ -27,7 +27,6 @@ pub(crate) mod exitcode {
     pub const SOFTWARE: i32 = 70;
 }
 
-#[cfg(feature = "__internal-api")]
 mod exports {
     pub use super::algorithm::{
         DefaultTimeSyncController, ObservablePeerTimedata, StateUpdate, TimeSyncController,
@@ -70,7 +69,8 @@ mod exports {
     };
 }
 
-#[cfg(not(feature = "__internal-api"))]
-mod exports {}
-
+#[cfg(feature = "__internal-api")]
 pub use exports::*;
+
+#[cfg(not(feature = "__internal-api"))]
+pub(crate) use exports::*;
