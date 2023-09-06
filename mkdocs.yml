@@ -7,6 +7,8 @@ theme:
 docs_dir: docs
 site_name: ntpd-rs documentation
 site_dir: target/docs/site
+exclude_docs: |
+  /precompiled  # Precompiled assets
 markdown_extensions:
   - def_list
   - abbr

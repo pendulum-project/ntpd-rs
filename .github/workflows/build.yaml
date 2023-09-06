@@ -177,6 +177,19 @@ jobs:
       - name: ./pkg/common/ntp.toml.default
         run: cargo run --bin ntp-ctl -- -c ./pkg/common/ntp.toml.default validate
 
+  man-sync:
+    name: Precompiled man pages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac
+        with:
+          persist-credentials: false
+      - name: Build man pages
+        run: utils/generate-man.sh target/docs/man
+      - name: Compare generated pages with precompiled
+        run: diff -r -s --color "docs/precompiled/man" "target/docs/man"
+
   format:
     name: Format
     runs-on: ubuntu-latest

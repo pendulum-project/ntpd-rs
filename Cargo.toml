@@ -51,12 +51,6 @@ tokio = "1.28"
 toml = ">=0.5.0,<0.8.0"
 async-trait = "0.1.22"
 
-# our own crates used as dependencies, same version as the workspace version
-ntp-os-clock = { version = "0.3.6", path = "./ntp-os-clock" }
-ntp-proto = { version = "0.3.6", path = "./ntp-proto", features = ["__internal-api"] }
-ntp-udp = { version = "0.3.6", path = "./ntp-udp" }
-ntpd = { version = "0.3.6", path = "./ntpd" }
-
 # TLS
 rustls = "0.21.0"
 rustls-pemfile = "1.0"
@@ -68,3 +62,10 @@ aes-siv = "0.7.0"
 # Note: md5 is needed to calculate ReferenceIDs for IPv6 addresses per RFC5905
 md-5 = "0.10.0"
 zeroize = "1.5"
+
+# our own crates used as dependencies, same version as the workspace version
+# NOTE: keep this part at the bottom of the file, do not change this line
+ntp-os-clock = { version = "0.3.6", path = "./ntp-os-clock" }
+ntp-proto = { version = "0.3.6", path = "./ntp-proto", features = ["__internal-api"] }
+ntp-udp = { version = "0.3.6", path = "./ntp-udp" }
+ntpd = { version = "0.3.6", path = "./ntpd" }
