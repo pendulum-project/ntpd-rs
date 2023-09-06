@@ -1,4 +1,4 @@
-Version 0.3.7
+Master
 ======
 
 Major Changes
@@ -9,13 +9,27 @@ Major Changes
 
 Minor Changes
 -----
-- Send software timestamping is now enabled by default
+- Send software timestamping is now enabled by default.
 - Hardware timestamping can now only be configured if ntpd-rs is built with the
   `hardware-timestamping` feature (off by default).
 - Upgraded dependencies.
 
 Bug fixes
 -----
+- Fix bug around handling of leap second indicators.
+- Fixed bug around handling of accumulated step thresholds.
+
+Version 0.3.7
+======
+
+Minor Changes
+-----
+- Removed sentry support
+- Upgraded dependencies
+
+Bug fixes
+-----
+- Upgraded webpki to deal with denial of service security issue during startup.
 
 Version 0.3.6
 ======
