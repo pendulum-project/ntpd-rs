@@ -96,7 +96,7 @@ assets = [
   { source = "../docs/precompiled/man/ntp-ctl.8", dest = "/usr/share/man/man8/ntp-ctl.8", mode = "644", doc = true },
   { source = "../docs/precompiled/man/ntp-daemon.8", dest = "/usr/share/man/man8/ntp-daemon.8", mode = "644", doc = true },
   { source = "../docs/precompiled/man/ntp-metrics-exporter.8", dest = "/usr/share/man/man8/ntp-metrics-exporter.8", mode = "644", doc = true },
-  { source = "../docs/precompiled/man/ntp.toml.5", dest = "/usr/share/man/man5/ntp.toml.5", mode = "644", doc = true },
+  { source = "../docs/precompiled/man/ntp.toml.5", dest = "/usr/share/man/man5/ntp-toml.5", mode = "644", doc = true },
   { source = "../pkg/common/ntp.toml.default", dest = "/usr/share/doc/ntpd-rs/ntp.toml.default", mode = "644", doc = true },
   { source = "../pkg/common/ntpd-rs.service", dest = "/lib/systemd/system/ntpd-rs.service", mode = "644" },
   { source = "../pkg/common/ntpd-rs-metrics.service", dest = "/lib/systemd/system/ntpd-rs-metrics.service", mode = "644" },
