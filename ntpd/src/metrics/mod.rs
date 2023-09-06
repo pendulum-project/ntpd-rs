@@ -140,15 +140,6 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
 
     format_metric(
         w,
-        "ntp_system_precision",
-        "Precision of the local clock",
-        MetricType::Gauge,
-        Some(Unit::Seconds),
-        Measurement::simple(state.system.time_snapshot.precision.to_seconds()),
-    )?;
-
-    format_metric(
-        w,
         "ntp_system_accumulated_steps",
         "Accumulated amount of seconds that the system needed to jump the time",
         MetricType::Gauge,
@@ -173,17 +164,35 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
         "ntp_system_leap_indicator",
         "Indicates that a leap second will take place",
         MetricType::Gauge,
-        Some(Unit::Seconds),
+        None,
         Measurement::simple(state.system.time_snapshot.leap_indicator as i64),
     )?;
 
     format_metric(
         w,
-        "ntp_source_uptime",
-        "Time since the source was started",
+        "ntp_system_root_delay",
+        "Distance to the closest root time source",
         MetricType::Gauge,
         Some(Unit::Seconds),
-        collect_sources!(state, |p| p.poll_interval.as_duration().to_seconds()),
+        Measurement::simple(state.system.time_snapshot.root_delay.to_seconds()),
+    )?;
+
+    format_metric(
+        w,
+        "ntp_system_root_dispersion",
+        "Estimate of how precise our time is",
+        MetricType::Gauge,
+        Some(Unit::Seconds),
+        Measurement::simple(state.system.time_snapshot.root_dispersion.to_seconds()),
+    )?;
+
+    format_metric(
+        w,
+        "ntp_system_stratum",
+        "Stratum of our clock",
+        MetricType::Gauge,
+        None,
+        Measurement::simple(state.system.stratum),
     )?;
 
     format_metric(
