@@ -723,8 +723,8 @@ const fn next_multiple_of_usize(lhs: usize, rhs: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use crate::{
+        keyset::KeySet,
         packet::{extensionfields::ExtensionFieldTypeId, AesSivCmac256},
-        KeySet,
     };
 
     use super::*;
