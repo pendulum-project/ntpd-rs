@@ -23,16 +23,21 @@ The root certificate file provided in the above example configuration should be 
 Currently, ntpd-rs does not support using self-signed certificates. If non public certificates are needed, the best option is to create a private CA locally and use that to sign the server's certificate. Instructions for that are included below in the instructions for configuring ntpd-rs as an NTS server.
 
 ## Configuring ntpd-rs as an NTS server
-
-To configure ntpd-rs as a server, we need to configure three things. First, ntpd-rs needs to be configured to work as a normal NTP server. Second, we need to enable the server components that allow key exchange with clients. Finally, we need to configure storage for internal keys to ensure clients don't need to reconnect on a reboot of the server.
-
 The process of setting up an NTS server is significantly harder than configuring an NTS time source. We assume here some experience with [setting up a non-NTS NTP server](TODO), and will assume you already have that running on the target machine.
 
-Furthermore, NTPD-rs currently does not support running an NTS server on a server without a domain name through which its clients reach it. This can however be a local domain name, such as one configured through `/etc/hosts`.
+Before getting into the weeds with actually setting up the server, we will first need some knowledge of how NTS works. When using NTS, both the client and server sign and partially encrypt the NTP messages they exchange using symmetric key cryptography. For this, the client and server first need to exchange the keys they will use. NTS solves this problem with a separate key exchange.
+
+For the key exchange, the client first contacts the server over a TCP connection secured with Transport Layer Security (TLS), the same protocol also used for secure web browsing. Over this connection, they then decide on which keys to use. Finally, the server provides the client with 8 cookies. These cookies are used by the client to tell the server which keys are in use for the session. The client uses each cookie only once to ensure that a third party cannot track it's connection, and it receives a new cookie with each server response.
+
+These cookies are an opaque bag of bytes for the client, and the server can put in them whatever it finds usefull for identifying the proper keys for that particular client. When used as a server, ntpd-rs puts the symmetric keys for the connection in the cookie, encrypted with cookie keys known only to the server.
+
+Hence, for our server to support NTS, we will need to configure a server endpoint for the key exchange. Second we may also want to configure for the keys used in encrypting cookies to be stored to disk, so that reboots of the server do not disrupt clients.
+
+Please note that NTPD-rs currently does not support running an NTS server on a server without a domain name through which its clients reach it. This can however be a local domain name, such as one configured through `/etc/hosts`. This means that it is not possible to configure NTS with an address for the NTS server of the form `123.45.67.89` or `abcd::1234`. However, assigning a domain name of the type `abcd.local` will work.
 
 ### Certificates
 
-Before setting up the key exchange part of the server, we will first need to create the required key material. We will focus here on locally signing all the certificates for our server. For setting up a public server with NTS support you will need to request a publicly signed certificate. We suggest to use [letsencrypt](https://letsencrypt.org/) for that use case.
+Before setting up the key exchange part of the server, we will first need to create the certificates and keys for the TLS connection. We will focus here on locally signing all the certificates for our server. For setting up a public server with NTS support you will need to request a publicly signed certificate. We suggest to use [letsencrypt](https://letsencrypt.org/) for that use case.
 
 For making our certificates, we will use the OpenSSL key and certificate tools. These are available through most package managers as the `openssl` package.
 
@@ -92,9 +97,9 @@ key-exchange-listen = "[::]:4460"
 certificate-chain-path = "ntpd-rs.test.chain"
 private-key-path = "ntpd-rs.test.key"
 ```
-Note that this needs to listen on its own port. Furthermore, the key exchange happens over a TCP connection rather than over UDP packets.
+Note that this needs to listen on its own port. Furthermore, note that the key exchange happens over TCP rather than over UDP.
 
-When configured as above, it is important to ensure that the TLS private key can only be read by NTP-daemon and trusted system administrators. An attacker can use this key material to compromise all connections to clients.
+When configured as above, it is important to ensure that the TLS private key can only be read by ntpdaemon and trusted system administrators. An attacker can use this key material to compromise all connections to clients.
 
 
 ### Configuring key storage
