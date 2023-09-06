@@ -213,16 +213,16 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
                 panic!("Threshold exceeded");
             }
         } else {
-            self.timedata.accumulated_steps += change;
+            self.timedata.accumulated_steps += change.abs();
             if !self
                 .synchronization_config
                 .single_step_panic_threshold
                 .is_within(change)
-                || !self
+                || self
                     .synchronization_config
                     .accumulated_step_panic_threshold
-                    .map(|v| change.abs() < v)
-                    .unwrap_or(true)
+                    .map(|v| self.timedata.accumulated_steps > v)
+                    .unwrap_or(false)
             {
                 error!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate.");
                 #[cfg(not(test))]
@@ -234,9 +234,9 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
     }
 
     fn steer_offset(&mut self, change: f64, freq_delta: f64) -> Option<NtpTimestamp> {
-        self.check_offset_steer(change);
         if change.abs() > self.algo_config.step_threshold {
             // jump
+            self.check_offset_steer(change);
             self.clock
                 .step_clock(NtpDuration::from_seconds(change))
                 .expect("Cannot adjust clock");
@@ -506,6 +506,65 @@ mod tests {
         assert_eq!(algo.timedata.leap_indicator, NtpLeapIndicator::NoWarning);
         assert_ne!(algo.timedata.root_delay, NtpDuration::ZERO);
         assert_ne!(algo.timedata.root_dispersion, NtpDuration::ZERO);
+    }
+
+    #[test]
+    fn slews_dont_accumulate() {
+        let synchronization_config = SynchronizationConfig {
+            minimum_agreeing_sources: 1,
+            single_step_panic_threshold: StepThreshold {
+                forward: None,
+                backward: None,
+            },
+            ..SynchronizationConfig::default()
+        };
+        let algo_config = AlgorithmConfig {
+            step_threshold: 1800.0,
+            ..Default::default()
+        };
+        let peer_defaults_config = SourceDefaultsConfig::default();
+        let mut algo = KalmanClockController::<_, u32>::new(
+            TestClock {
+                has_steered: RefCell::new(false),
+                current_time: NtpTimestamp::from_fixed_int(0),
+            },
+            synchronization_config,
+            peer_defaults_config,
+            algo_config,
+        );
+
+        algo.in_startup = false;
+        algo.steer_offset(1000.0, 0.0);
+        assert_eq!(algo.timedata.accumulated_steps, NtpDuration::ZERO);
+    }
+
+    #[test]
+    #[should_panic]
+    fn jumps_add_absolutely() {
+        let synchronization_config = SynchronizationConfig {
+            minimum_agreeing_sources: 1,
+            single_step_panic_threshold: StepThreshold {
+                forward: None,
+                backward: None,
+            },
+            accumulated_step_panic_threshold: Some(NtpDuration::from_seconds(1800.0)),
+            ..SynchronizationConfig::default()
+        };
+        let algo_config = AlgorithmConfig::default();
+        let peer_defaults_config = SourceDefaultsConfig::default();
+        let mut algo = KalmanClockController::<_, u32>::new(
+            TestClock {
+                has_steered: RefCell::new(false),
+                current_time: NtpTimestamp::from_fixed_int(0),
+            },
+            synchronization_config,
+            peer_defaults_config,
+            algo_config,
+        );
+
+        algo.in_startup = false;
+        algo.steer_offset(1000.0, 0.0);
+        algo.steer_offset(-1000.0, 0.0);
     }
 
     #[test]
