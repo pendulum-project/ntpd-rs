@@ -152,8 +152,10 @@ Broadcast mode is not supported in ntpd-rs. If this is used in your current setu
 ## Non-supported features
 
 Not all functionality in chrony currently has an equivalent in ntpd-rs. In particular, the following major features currently don't have good alternatives in ntpd-rs:
+
 - Local hardware devices as time sources.
 - Support for ntp mac authentication.
 - Marking subsets of sources as more trusted than others.
 - Acting as a source of leap second data.
+
 If any of these features are critical for your use case, ntpd-rs might not be an option for you yet. Please let us know if you miss these features or want to sponsor any of them, as this helps us prioritise our work.
