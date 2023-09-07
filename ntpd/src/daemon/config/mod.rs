@@ -265,8 +265,6 @@ pub struct LoggingObservabilityConfig {
     pub log_level: Option<LogLevel>,
     #[serde(flatten, default)]
     pub observe: ObserveConfig,
-    #[serde(flatten, default)]
-    pub configure: ConfigureConfig,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -407,33 +405,11 @@ const fn default_observation_permissions() -> u32 {
     0o666
 }
 
-const fn default_configure_permissions() -> u32 {
-    0o660
-}
-
 impl Default for ObserveConfig {
     fn default() -> Self {
         Self {
             observation_path: None,
             observation_permissions: default_observation_permissions(),
-        }
-    }
-}
-
-#[derive(Clone, Deserialize, Debug)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct ConfigureConfig {
-    #[serde(default)]
-    pub configure_path: Option<std::path::PathBuf>,
-    #[serde(default = "default_configure_permissions")]
-    pub configure_permissions: u32,
-}
-
-impl Default for ConfigureConfig {
-    fn default() -> Self {
-        Self {
-            configure_path: None,
-            configure_permissions: default_configure_permissions(),
         }
     }
 }
@@ -540,8 +516,6 @@ mod tests {
             log-level = "info"
             observation-path = "/foo/bar/observe"
             observation-permissions = 0o567
-            configure-path = "/foo/bar/configure"
-            configure-permissions = 0o123
             "#,
         )
         .unwrap();
@@ -552,12 +526,6 @@ mod tests {
             Some(PathBuf::from("/foo/bar/observe"))
         );
         assert_eq!(config.observability.observe.observation_permissions, 0o567);
-
-        assert_eq!(
-            config.observability.configure.configure_path,
-            Some(PathBuf::from("/foo/bar/configure"))
-        );
-        assert_eq!(config.observability.configure.configure_permissions, 0o123);
 
         assert_eq!(
             config.sources,
