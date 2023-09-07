@@ -8,11 +8,11 @@ The recommended way of installing ntpd-rs is through an installer or package man
 
 We recommend the installers from our [installation page](https://github.com/pendulum-project/ntpd-rs/releases). The installer takes care of putting the configuration in the right place and setting up the recommended users and permissions. The default configuration file is located at `/etc/ntpd-rs/ntp.toml`
 
-## FreeBSD
+### FreeBSD
 
 The ntpd-rs binary is available on [ports](https://www.freshports.org/net/ntpd-rs/). The default configuration file is located at `%%ETCDIR%%/ntp.toml`, which typically resolves to `/etc/ntp.toml`.
 
-## macOS
+### macOS
 
 There is no package or installer for macOS at the moment.
 
@@ -47,7 +47,7 @@ main NTP daemon. Expected output looks like this:
 
 To use this binary as your system NTP daemon, some setup is required:
 
-- move to `ntp-daemon` binary to an appropriate location (e.g. `/usr/bin`)
+- move the `ntp-daemon` binary to an appropriate location (e.g. `/usr/bin`)
 - create the path for the observe socket
 - permissions for the binary, config files and observe socket
 
@@ -95,7 +95,7 @@ WantedBy=multi-user.target
 
 #### FreeBSD
 
-This is the [rc script](https://github.com/freebsd/freebsd-ports/blob/main/net/ntpd-rs/files/ntp_daemon.in) used by the FreeBSD port of ntpd-rs.
+This is the [rc script](https://github.com/freebsd/freebsd-ports/blob/main/net/ntpd-rs/files/ntp_daemon.in) used by the [ntpd-rs package on freshports](https://www.freshports.org/net/ntpd-rs/).
 
 ```sh
 #!/bin/sh

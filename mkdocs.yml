@@ -29,8 +29,6 @@ nav:
     - guide/security-guidance.md
     - guide/configuration.md
     - guide/management-client.md
-  - Examples:
-    - examples/run-as-service.md
   - Man Pages:
     - ntp-daemon(8): man/ntp-daemon.8.md
     - ntp.toml(5): man/ntp.toml.5.md
