@@ -18,7 +18,7 @@ usage: ntp-metrics-exporter [-c PATH] [-o PATH] [-l SOCKET_ADDR]
 const DESCRIPTOR: &str = "ntp-metrics-exporter - serve ntpd-rs openmetrics via http";
 
 const HELP_MSG: &str = "Options:
-  -c, --config=CONFIG                  ntpd-rs configuration file (default: 
+  -c, --config=CONFIG                  ntpd-rs configuration file (default:
                                        /etc/ntpd-rs/ntp.toml)
   -o, --observation-socket=SOCKET      path of the observation socket (default
                                        is taken from the configuration)
@@ -153,7 +153,7 @@ async fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::erro
         Some(path) => path,
         None => match config.observability.observe.observation_path {
             Some(path) => path,
-            None => "/run/ntpd-rs/observe".into(),
+            None => "/var/run/ntpd-rs/observe".into(),
         },
     };
 
