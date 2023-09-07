@@ -105,6 +105,7 @@ local-stratum = <stratum>
 ## Unsupported features
 
 Not all functionality in ntpd currently has an equivalent in ntpd-rs. In particular, the following major features currently don't have good alternatives in ntpd-rs:
+
 - Local hardware devices as time sources.
 - Support for ntp mac authentication.
 - Marking subsets of sources as more trusted than others
