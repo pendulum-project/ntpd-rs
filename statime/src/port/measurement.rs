@@ -1,7 +1,7 @@
 use crate::time::{Duration, Time};
 
 /// A single measurement as produced by a PTP port.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Measurement {
     /// Time this measurement was made.
     pub event_time: Time,

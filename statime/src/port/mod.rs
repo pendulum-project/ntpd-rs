@@ -340,15 +340,15 @@ impl<'a, C, F: Filter, R> Port<InBmca<'a>, R, C, F> {
 }
 
 impl<L, R, C: Clock, F: Filter> Port<L, R, C, F> {
-    fn set_forced_port_state(&mut self, state: PortState<F>) {
-        self.port_state.demobilize_filter(&mut self.clock);
+    fn set_forced_port_state(&mut self, mut state: PortState<F>) {
         log::info!(
             "new state for port {}: {} -> {}",
             self.port_identity.port_number,
             self.port_state,
             state
         );
-        self.port_state = state;
+        core::mem::swap(&mut self.port_state, &mut state);
+        state.demobilize_filter(&mut self.clock);
     }
 }
 
@@ -469,7 +469,9 @@ impl<'a, C: Clock, F: Filter, R: Rng> Port<InBmca<'a>, R, C, F> {
 
                     let duration = self.config.announce_duration(&mut self.rng);
                     let reset_announce = PortAction::ResetAnnounceReceiptTimer { duration };
-                    let reset_delay = PortAction::ResetDelayRequestTimer { duration };
+                    let reset_delay = PortAction::ResetDelayRequestTimer {
+                        duration: core::time::Duration::ZERO,
+                    };
                     self.lifecycle.pending_action = actions![reset_announce, reset_delay];
                 }
             }

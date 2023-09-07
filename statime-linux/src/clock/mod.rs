@@ -85,9 +85,10 @@ impl Clock for LinuxClock {
         time_from_timestamp(timestamp)
     }
 
-    fn adjust_frequency(&mut self, freq: f64) -> Result<Time, Self::Error> {
-        log::trace!("Adjusting clock frequency by factor 1 + {:e}x", freq - 1.0);
-        let timestamp = self.clock.adjust_frequency(freq)?;
+    fn set_frequency(&mut self, freq: f64) -> Result<Time, Self::Error> {
+        use clock_steering::Clock;
+        log::trace!("Setting clock frequency to {:e}ppm", freq);
+        let timestamp = self.clock.set_frequency(freq)?;
         Ok(time_from_timestamp(timestamp))
     }
 

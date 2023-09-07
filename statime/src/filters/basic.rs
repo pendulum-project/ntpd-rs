@@ -23,6 +23,8 @@ pub struct BasicFilter {
     freq_confidence: f64,
 
     gain: f64,
+
+    cur_freq: f64,
 }
 
 impl Filter for BasicFilter {
@@ -34,6 +36,7 @@ impl Filter for BasicFilter {
             offset_confidence: Duration::from_nanos(1_000_000_000),
             freq_confidence: 1e-4,
             gain,
+            cur_freq: 0.0,
         }
     }
 
@@ -84,19 +87,22 @@ impl Filter for BasicFilter {
                     (self.freq_confidence - libm::fabs(freq_diff - 1.0)) * self.gain;
             }
 
-            // and decide the correction
-            1.0 + (freq_diff - 1.0) * self.gain * 0.1
+            // and decide the correction (and convert to ppm)
+            -(freq_diff - 1.0) * self.gain * 0.1 * 1e6
         } else {
-            // No data, so no correction
-            1.0
+            // No data, so first run, so initialize
+            if let Err(error) = clock.set_frequency(0.0) {
+                log::error!("Could not initialize clock frequency: {:?}", error);
+            }
+            self.cur_freq = 0.0;
+            0.0
         };
 
         log::info!(
-            "Offset to master: {:e}ns, corrected with phase change {:e}ns and freq change 1 + \
-             {:e}x",
+            "Offset to master: {:e}ns, corrected with phase change {:e}ns and freq change {:e}ppm",
             measurement.master_offset.nanos(),
             correction.nanos(),
-            freq_corr - 1.0
+            freq_corr
         );
 
         // Store data for next time
@@ -108,19 +114,21 @@ impl Filter for BasicFilter {
         if let Err(error) = clock.step_clock(correction) {
             log::error!("Could not step clock: {:?}", error);
         }
-        if let Err(error) = clock.adjust_frequency(freq_corr) {
+        if let Err(error) = clock.set_frequency(self.cur_freq + freq_corr) {
             log::error!("Could not adjust clock frequency: {:?}", error);
+        } else {
+            self.cur_freq += freq_corr;
         }
         Default::default()
     }
 
-    fn delay(&mut self, _delay: Duration) {
-        // ignore
+    fn delay(&mut self, delay: Duration) -> Duration {
+        // We dont filter delays
+        delay
     }
 
-    fn demobilize<C: Clock>(&mut self, _clock: &mut C) {
+    fn demobilize<C: Clock>(self, _clock: &mut C) {
         // ignore
-        Default::default()
     }
 
     fn update<C: Clock>(&mut self, _clock: &mut C) -> FilterUpdate {

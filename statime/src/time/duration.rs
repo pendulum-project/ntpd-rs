@@ -5,6 +5,7 @@ use core::{
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, RemAssign, Sub, SubAssign},
 };
 
+use az::Az;
 use fixed::{
     traits::{LossyInto, ToFixed},
     types::I96F32,
@@ -27,6 +28,12 @@ impl Duration {
     pub const ZERO: Duration = Duration {
         inner: I96F32::ZERO,
     };
+
+    /// Create an instance with the given amount of seconds
+    pub fn from_seconds(secs: f64) -> Self {
+        let inner = secs.az::<I96F32>() * 1_000_000_000.to_fixed::<I96F32>();
+        Self { inner }
+    }
 
     /// Create an instance with the given amount of seconds
     pub fn from_secs(secs: i64) -> Self {
@@ -75,6 +82,11 @@ impl Duration {
     /// Get the total amount of seconds
     pub fn secs(&self) -> i64 {
         (self.inner / 1_000_000_000.to_fixed::<I96F32>()).to_num()
+    }
+
+    /// Get the total amount of seconds
+    pub fn seconds(&self) -> f64 {
+        self.inner.az::<f64>() / 1e9
     }
 
     /// Converts a log interval (as defined by the PTP spec) to a duration

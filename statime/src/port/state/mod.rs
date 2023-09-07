@@ -95,7 +95,7 @@ impl<F: Filter> PortState<F> {
         }
     }
 
-    pub(crate) fn demobilize_filter<C: Clock>(&mut self, clock: &mut C) {
+    pub(crate) fn demobilize_filter<C: Clock>(self, clock: &mut C) {
         match self {
             PortState::Slave(slave) => slave.demobilize_filter(clock),
             PortState::Master(_) | PortState::Listening | PortState::Passive => {}

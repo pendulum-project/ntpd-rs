@@ -31,14 +31,15 @@ pub trait Clock {
     /// applied
     fn step_clock(&mut self, offset: Duration) -> Result<Time, Self::Error>;
 
-    /// Change the frequency of the clock, returning the time
-    /// at which the change was applied.
+    /// Set the frequency of the clock, returning the time
+    /// at which the change was applied. Freq is in ppm
+    /// difference from the clocks base frequency.
     ///
     /// The applied correction should be as close as possible to
     /// the requested correction. The reported time of the change
     /// should be as close as possible to the time the change was
     /// applied
-    fn adjust_frequency(&mut self, freq: f64) -> Result<Time, Self::Error>;
+    fn set_frequency(&mut self, freq: f64) -> Result<Time, Self::Error>;
 
     /// Adjust the timescale properties of the clock, including
     /// things like the leap indicator, to the extend supported by the

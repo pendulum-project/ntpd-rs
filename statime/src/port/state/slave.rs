@@ -182,7 +182,7 @@ impl<F: Filter> SlaveState<F> {
         PortActionIterator::from_filter(self.filter.update(clock))
     }
 
-    pub(crate) fn demobilize_filter<C: Clock>(&mut self, clock: &mut C) {
+    pub(crate) fn demobilize_filter<C: Clock>(self, clock: &mut C) {
         self.filter.demobilize(clock);
     }
 
@@ -399,8 +399,7 @@ impl<F> SlaveState<F> {
             // the interval corresponds to the PortDS logMinDelayReqInterval
             DelayMechanism::E2E { interval } => interval,
         };
-        let log_sync_interval = port_config.sync_interval.as_log_2() as i32;
-        let factor = random * 2.0f64.powi(log_sync_interval + 1);
+        let factor = random * 2.0f64;
         let duration = log_min_delay_req_interval
             .as_core_duration()
             .mul_f64(factor);
@@ -475,12 +474,12 @@ mod tests {
             Default::default()
         }
 
-        fn delay(&mut self, delay: Duration) {
+        fn delay(&mut self, delay: Duration) -> Duration {
             self.last_delay = Some(delay);
-            Default::default()
+            delay
         }
 
-        fn demobilize<C: Clock>(&mut self, _clock: &mut C) {
+        fn demobilize<C: Clock>(self, _clock: &mut C) {
             Default::default()
         }
 
@@ -494,7 +493,7 @@ mod tests {
     impl Clock for TestClock {
         type Error = ();
 
-        fn adjust_frequency(&mut self, _freq: f64) -> Result<Time, Self::Error> {
+        fn set_frequency(&mut self, _freq: f64) -> Result<Time, Self::Error> {
             Ok(Time::default())
         }
 

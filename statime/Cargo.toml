@@ -23,6 +23,7 @@ fuzz = ["std"]
 
 [dependencies]
 arrayvec = { version = "0.7.4", default-features = false }
+az = "1.2.1"
 fixed = "1.23"
 libm = "0.2.7"
 log = { version = "0.4.20", default-features = false }

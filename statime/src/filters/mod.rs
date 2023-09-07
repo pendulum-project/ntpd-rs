@@ -28,12 +28,12 @@ pub trait Filter {
     fn measurement<C: Clock>(&mut self, m: Measurement, clock: &mut C) -> FilterUpdate;
 
     /// Handle a new measurement of the delay to the master.
-    fn delay(&mut self, delay: Duration);
+    fn delay(&mut self, delay: Duration) -> Duration;
 
     /// Update initiated through [FilterUpdate::next_update] timeout.
     fn update<C: Clock>(&mut self, clock: &mut C) -> FilterUpdate;
 
     /// Handle ending of time synchronization from the source
     /// associated with this filter.
-    fn demobilize<C: Clock>(&mut self, clock: &mut C);
+    fn demobilize<C: Clock>(self, clock: &mut C);
 }
