@@ -1,7 +1,7 @@
 [observability]
 # Other values include trace, debug, warn and error
 log-level = "info"
-observation-path = "/run/ntpd-rs/observe"
+observation-path = "/var/run/ntpd-rs/observe"
 
 # uses an unsecure certificate!
 [[source]]

@@ -35,8 +35,8 @@ sed -i 's/^title: NTP-DAEMON(8) ntpd-rs .*/title: NTP-DAEMON(8) ntpd-rs '"$NEW_V
 sed -i 's/^title: NTP-METRICS-EXPORTER(8) ntpd-rs .*/title: NTP-METRICS-EXPORTER(8) ntpd-rs '"$NEW_VERSION"' | ntpd-rs/' "$PROJECT_DIR"/docs/man/ntp-metrics-exporter.8.md
 sed -i 's/^title: NTP.TOML(5) ntpd-rs .*/title: NTP.TOML(5) ntpd-rs '"$NEW_VERSION"' | ntpd-rs/' "$PROJECT_DIR"/docs/man/ntp.toml.5.md
 
-echo "Running cargo update"
-cargo update
+echo "Rebuilding precompiled man pages"
+utils/generate-man.sh
 
 echo "Rebuilding project"
 (cd $PROJECT_DIR && cargo build --release)

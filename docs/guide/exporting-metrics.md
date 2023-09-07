@@ -7,7 +7,7 @@ Ntpd-rs comes with support for exporting key operational metrics to an external 
 Enabling the observability socket requires the following to be present in the configuration:
 ```toml
 [observability]
-observation-path = "/run/ntpd-rs/observe"
+observation-path = "/var/run/ntpd-rs/observe"
 ```
 This line is already present in the default configuration if nptd-rs was installed from our packages.
 

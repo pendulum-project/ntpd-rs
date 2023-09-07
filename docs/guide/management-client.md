@@ -13,7 +13,7 @@ In order to communicate with the daemon, the management client relies on two
 sockets, an observation socket and a configuration socket, which are disabled
 by default. To enable use of the client, these sockets should be enabled in
 the configuration. On Linux, it is common to place these sockets in a
-subdirectory of `/run` specific to the daemon.
+subdirectory of `/var/run` specific to the daemon.
 
 The client can run with only one of the sockets enabled. In that situation, not
 all functionality is available. The same holds when the currently running user
@@ -44,8 +44,8 @@ allowed values, see the configuration documentation.
 By default, the management client looks for the daemon's configuration in
 `/etc/ntpd-rs/ntp.toml` in order to extract the paths of the socket. If this
 file is not present, or when the socket paths are not configured in these, it
-defaults to `/run/ntpd-rs/observe` for the observation socket and
-`/run/ntpd-rs/configure` for the configuration sockets.
+defaults to `/var/run/ntpd-rs/observe` for the observation socket and
+`/var/run/ntpd-rs/configure` for the configuration sockets.
 
 If the client fails to find the correct socket paths using the above process,
 it can be manually configured to look elsewhere. Most advisable is to point
