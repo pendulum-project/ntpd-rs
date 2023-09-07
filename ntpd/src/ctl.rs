@@ -183,7 +183,7 @@ pub async fn main() -> std::io::Result<ExitCode> {
                 .observability
                 .observe
                 .observation_path
-                .unwrap_or_else(|| PathBuf::from("/run/ntpd-rs/observe"));
+                .unwrap_or_else(|| PathBuf::from("/var/run/ntpd-rs/observe"));
 
             match options.format {
                 Format::Plain => print_state(Format::Plain, observation).await,

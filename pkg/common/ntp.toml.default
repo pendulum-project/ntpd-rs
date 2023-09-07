@@ -6,7 +6,7 @@ log-level = "info"
 ## daemon while it is running. You can use the `ntp-ctl` or prometheus based
 ## `ntp-metrics-exporter` binaries for some default options to read from the
 ## observe socket.
-observation-path = "/run/ntpd-rs/observe"
+observation-path = "/var/run/ntpd-rs/observe"
 
 ## The sources section allows configuring sources, you may configure multiple of
 ## these blocks to add more sources to your configuration.

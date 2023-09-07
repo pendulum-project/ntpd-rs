@@ -1,6 +1,9 @@
 name: packaging
 
 on:
+  push:
+    branches:
+      - 'release/**'
   workflow_dispatch:
 
 jobs:
