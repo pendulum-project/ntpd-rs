@@ -87,6 +87,7 @@ systemd-units = [
 ]
 
 [package.metadata.generate-rpm]
+name = "ntpd-rs"
 # See: https://fedoraproject.org/wiki/Licensing:Main?rd=Licensing#Good_Licenses
 license = "MIT or ASL 2.0"
 assets = [
