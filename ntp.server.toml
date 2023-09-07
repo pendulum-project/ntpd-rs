@@ -27,3 +27,11 @@ listen = "[::]:123"
 single-step-panic-threshold = 1800
 startup-step-panic-threshold = { forward="inf", backward = 1800 }
 #accumulated-threshold = 1800
+
+[[nts-ke-server]]
+key-exchange-listen = "[::]:4460"
+certificate-chain-path = "ntpd-rs.test.chain"
+private-key-path = "ntpd-rs.test.key"
+
+[keyset]
+key-storage-path="/tmp/nts-keys.dat"
