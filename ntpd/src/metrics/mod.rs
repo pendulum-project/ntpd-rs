@@ -242,7 +242,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
 
     format_metric(
         w,
-        "ntp_server_received_packets",
+        "ntp_server_received_packets_total",
         "Number of incoming received packets",
         MetricType::Counter,
         None,
@@ -251,7 +251,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
 
     format_metric(
         w,
-        "ntp_server_accepted_packets",
+        "ntp_server_accepted_packets_total",
         "Number of packets accepted",
         MetricType::Counter,
         None,
@@ -260,7 +260,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
 
     format_metric(
         w,
-        "ntp_server_denied_packets",
+        "ntp_server_denied_packets_total",
         "Number of denied packets",
         MetricType::Counter,
         None,
@@ -269,7 +269,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
 
     format_metric(
         w,
-        "ntp_server_ignored_packets",
+        "ntp_server_ignored_packets_total",
         "Number of packets ignored",
         MetricType::Counter,
         None,
@@ -278,7 +278,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
 
     format_metric(
         w,
-        "ntp_server_rate_limited_packets",
+        "ntp_server_rate_limited_packets_total",
         "Number of rate limited packets",
         MetricType::Counter,
         None,
@@ -287,7 +287,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
 
     format_metric(
         w,
-        "ntp_server_response_send_errors",
+        "ntp_server_response_send_errors_total",
         "Number of packets where there was an error responding",
         MetricType::Counter,
         None,
