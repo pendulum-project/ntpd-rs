@@ -97,7 +97,7 @@ async fn run_nts_ke(
 
     key_exchange_server(
         keyset,
-        nts_ke_config.key_exchange_listen,
+        nts_ke_config.listen,
         cert_chain,
         private_key,
         nts_ke_config.key_exchange_timeout_ms,
@@ -554,7 +554,7 @@ mod tests {
             certificate_chain_path: PathBuf::from("../test-keys/end.fullchain.pem"),
             private_key_path: PathBuf::from("../test-keys/end.key"),
             key_exchange_timeout_ms: 1000,
-            key_exchange_listen: "0.0.0.0:5431".parse().unwrap(),
+            listen: "0.0.0.0:5431".parse().unwrap(),
         };
 
         let _join_handle = spawn(nts_ke_config, keyset);

@@ -112,8 +112,8 @@ The allow and deny list configuration is optional in ntpd-rs. By default, a serv
 
 NTS can be enabled for a server by configuring an NTS key exchange server:
 ```
-[[nts-ke]]
-key-exchange-listen = "<IP or [::]>:<
+[[nts-ke-server]]
+listen = "<IP or [::]>:<
 certificate-chain-path = <ntsservercert>
 private-key-path = <ntsserverkey>
 ```
