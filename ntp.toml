@@ -23,3 +23,4 @@ count = 4
 single-step-panic-threshold = 1800
 startup-step-panic-threshold = { forward="inf", backward = 1800 }
 #accumulated-step-panic-threshold = 1800
+#minimum-agreeing-sources = 3
