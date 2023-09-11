@@ -178,7 +178,7 @@ jobs:
       - name: ./config/ntp.demobilize.toml
         run: cargo run --bin ntp-ctl -- -c ./config/ntp.demobilize.toml validate
       - name: ./pkg/common/ntp.toml.default
-        run: cargo run --bin ntp-ctl -- -c ./pkg/common/ntp.toml.default validate
+        run: cargo run --bin ntp-ctl -- -c ./docs/examples/conf/ntp.toml.default validate
 
   man-sync:
     name: Precompiled man pages
