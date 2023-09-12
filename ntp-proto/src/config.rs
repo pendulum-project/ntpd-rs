@@ -5,7 +5,10 @@ use serde::{
     Deserialize, Deserializer,
 };
 
-use crate::time_types::{NtpDuration, PollInterval, PollIntervalLimits};
+use crate::{
+    time_types::{NtpDuration, PollInterval, PollIntervalLimits},
+    AlgorithmConfig,
+};
 
 fn deserialize_option_accumulated_step_panic_threshold<'de, D>(
     deserializer: D,
@@ -260,6 +263,9 @@ pub struct SynchronizationConfig {
     /// synchronizing the clock
     #[serde(default = "default_local_stratum")]
     pub local_stratum: u8,
+
+    #[serde(default)]
+    pub algorithm: AlgorithmConfig,
 }
 
 impl Default for SynchronizationConfig {
@@ -272,6 +278,7 @@ impl Default for SynchronizationConfig {
             accumulated_step_panic_threshold: None,
 
             local_stratum: default_local_stratum(),
+            algorithm: Default::default(),
         }
     }
 }

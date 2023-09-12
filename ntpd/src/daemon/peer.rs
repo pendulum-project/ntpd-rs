@@ -7,7 +7,7 @@ use std::{
 
 use ntp_proto::{
     IgnoreReason, Measurement, NtpClock, NtpInstant, NtpTimestamp, Peer, PeerNtsData, PeerSnapshot,
-    PollError, ReferenceId, SourceDefaultsConfig, SystemSnapshot, Update,
+    PollError, ReferenceId, SourceDefaultsConfig, SynchronizationConfig, SystemSnapshot, Update,
 };
 use ntp_udp::{EnableTimestamps, InterfaceName, UdpSocket};
 use rand::{thread_rng, Rng};
@@ -15,7 +15,7 @@ use tracing::{debug, error, info, instrument, warn, Instrument, Span};
 
 use tokio::time::{Instant, Sleep};
 
-use super::{config::CombinedSynchronizationConfig, exitcode, spawn::PeerId};
+use super::{exitcode, spawn::PeerId};
 
 /// Trait needed to allow injecting of futures other than `tokio::time::Sleep` for testing
 pub trait Wait: Future<Output = ()> {
@@ -48,8 +48,7 @@ pub enum MsgForSystem {
 pub struct PeerChannels {
     pub msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
     pub system_snapshot_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
-    pub synchronization_config_receiver:
-        tokio::sync::watch::Receiver<CombinedSynchronizationConfig>,
+    pub synchronization_config_receiver: tokio::sync::watch::Receiver<SynchronizationConfig>,
     pub source_defaults_config_receiver: tokio::sync::watch::Receiver<SourceDefaultsConfig>,
 }
 
@@ -567,7 +566,7 @@ mod tests {
 
         let (_, system_snapshot_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
         let (_, synchronization_config_receiver) =
-            tokio::sync::watch::channel(CombinedSynchronizationConfig::default());
+            tokio::sync::watch::channel(SynchronizationConfig::default());
         let (_, mut peer_defaults_config_receiver) =
             tokio::sync::watch::channel(SourceDefaultsConfig::default());
         let (msg_for_system_sender, msg_for_system_receiver) = mpsc::channel(1);

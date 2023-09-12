@@ -29,7 +29,8 @@ pub(crate) mod exitcode {
 
 mod exports {
     pub use super::algorithm::{
-        DefaultTimeSyncController, ObservablePeerTimedata, StateUpdate, TimeSyncController,
+        AlgorithmConfig, KalmanClockController, ObservablePeerTimedata, StateUpdate,
+        TimeSyncController,
     };
     pub use super::clock::NtpClock;
     pub use super::config::{SourceDefaultsConfig, StepThreshold, SynchronizationConfig};
