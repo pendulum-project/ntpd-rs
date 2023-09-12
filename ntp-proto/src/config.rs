@@ -179,7 +179,10 @@ impl<'de> Deserialize<'de> for StepThreshold {
                             backward = Some(raw.0);
                         }
                         _ => {
-                            return Err(de::Error::unknown_field(key.as_str(), &["addr", "mode"]));
+                            return Err(de::Error::unknown_field(
+                                key.as_str(),
+                                &["forward", "backward"],
+                            ));
                         }
                     }
                 }

@@ -13,24 +13,24 @@ pub struct AlgorithmConfig {
     /// our precision estimate. (probability, 0-1)
     #[serde(default = "default_precision_high_probability")]
     pub precision_high_probability: f64,
-    /// Ammount of hysteresis in changeing the precision estimate. (count, 1+)
+    /// Amount of hysteresis in changing the precision estimate. (count, 1+)
     #[serde(default = "default_precision_hysteresis")]
     pub precision_hysteresis: i32,
-    /// Lower bound on the ammount of effect our precision estimate
+    /// Lower bound on the amount of effect our precision estimate
     /// has on the total noise estimate before we allow decreasing
     /// of the precision estimate. (weight, 0-1)
     #[serde(default = "default_precision_minimum_weight")]
     pub precision_minimum_weight: f64,
 
-    /// Ammount which a measurement contributes to the state, below
+    /// Amount which a measurement contributes to the state, below
     /// which we start increasing the poll interval. (weight, 0-1)
     #[serde(default = "default_poll_interval_low_weight")]
     pub poll_interval_low_weight: f64,
-    /// Ammount which a measurement contributes to the state, above
+    /// Amount which a measurement contributes to the state, above
     /// which we start decreasing the poll_interval interval. (weight, 0-1)
     #[serde(default = "default_poll_interval_high_weight")]
     pub poll_interval_high_weight: f64,
-    /// Ammount of hysteresis in changeing the poll interval (count, 1+)
+    /// Amount of hysteresis in changing the poll interval (count, 1+)
     #[serde(default = "default_poll_interval_hysteresis")]
     pub poll_interval_hysteresis: i32,
     /// Probability threshold for when a measurement is considered a
