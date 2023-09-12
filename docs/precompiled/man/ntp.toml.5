@@ -34,68 +34,33 @@ configuration setting shown.
 .PP
 For those familiar with the NTP protocol: ntpd-rs only supports unicast
 client-server connections and the concepts in ntpd-rs are all built up
-around that concept.
+around that idea.
 Most NTP traffic, especially across the public internet, almost
 exclusively uses this mode, so it is not considered a practical
 limitation for most scenarios.
-.SH CONCEPTS
-.SS Source
+.SH SOURCE MODES
 .PP
-A source represents a set of one or more connections to time sources
-(another NTP server) where the daemon retrieves time information from.
-The time information from these sources are then filtered and combined
-to update the local clock.
-The daemon can have multiple of these sources sets configured to allow
-for a wider range of time sources.
-When ntp-daemon is used in a client only setup the configuration only
-contains source configurations and no server configurations.
-.SS Server
-.PP
-A server distributes time information to clients who request it.
-A server listens on a single socket address for client packets and
-responds to them.
-The daemon can listen on multiple sockets by creating multiple server
-configurations.
-Generally, when NTP is configured as a server it also has one or more
-source configurations from where time is retrieved.
-The daemon currently does not have support for local time sources, if no
-sources are configured, then another process should be in place to
-discipline the local system clock.
-.SS NTS and keysets
-.PP
-NTS, Network Time Security, is a protocol that uses a TLS handshake to
-exchange secrets to allow verifying that responses from an NTP server
-have not been tampered with.
-The daemon supports running NTS in both server and client (source)
-connections.
-For the server functionality a key exchange server also needs to be
-configured.
-Currently only an internal key exchange server is supported.
-The NTP server and TLS key exchange server of the ntp-daemon both need
-to be aware of a shared set of keys, these keys are called the keyset.
-.SS Logging and observability
-.PP
-The daemon can log messages about how it is operating in different
-logging levels.
-These log messages come in several priorities (from low to high):
-\f[I]trace\f[R], \f[I]debug\f[R], \f[I]info\f[R], \f[I]warn\f[R] and
-\f[I]error\f[R].
-You can use these log messages to monitor the daemon.
-The log messages are outputted on stdout.
-.PP
-Aside from logging, you can use the observability metrics to get
-semi-realtime information about several key metrics for both the client
-and server part of the daemon.
-These metrics are exposed via the \f[V]ntp-ctl\f[R] CLI utility, or by
-using our prometheus / openmetrics exporter.
-.SS Clocks and synchronization
-.PP
-Of course the main reason for running an NTP daemon is to get accurate
-time information.
-This should result in the daemon adjusting your system clock.
-The algorithm that is used to combine the information from several
-sources and update the system clock can be configured using the
-synchronization section in the configuration file.
+Sources (see the section below for details) can be configured any of the
+following modes:
+.TP
+\f[V]server\f[R]
+A server source connects to a single specific NTP server.
+If a connection is lost, attempts will be made to reconnect to the
+source.
+.TP
+\f[V]pool\f[R]
+A pool source retrieves multiple NTP servers by resolving a hostname via
+DNS.
+It then attempts to connect to multiple of these servers at the same
+time.
+If a connection is lost, a new server will be retrieved from the pool.
+.TP
+\f[V]nts\f[R]
+Connect to a single Network Time Security (NTS) source.
+The NTS protocol uses a TLS handshake to exchange secrets with a server
+to allow verifying that NTP messages have not been tampered with.
+Note that the TLS protocol requires that both the client and server have
+a rough idea of the current time.
 .SH CONFIGURATION
 .SS \f[V][source-defaults]\f[R]
 .PP
@@ -118,14 +83,22 @@ the power of the interval).
 The default value of 4 results in an interval of 32 seconds.
 .SS \f[V][[source]]\f[R]
 .PP
+Each \f[V][[source]]\f[R] is a set of one or more time sources for the
+daemon to retrieve time information from.
 Any number of sources can be configured by repeating a
 \f[V][[source]]\f[R] section (note the double brackets) for as many
 times as required.
 Each source can be configured to connect to a specific remote location.
+Multiple modes for connecting to sources are supported.
+If less than \f[V]minimum-agreeing-sources\f[R] time sources have been
+configured, no time will be synchronized to the local clock.
+Note that a pool counts as multiple time sources.
 .TP
 \f[V]mode\f[R] = \f[I]mode\f[R]
 Specify one of the source modes that ntpd-rs supports: \f[V]server\f[R],
 \f[V]pool\f[R] or \f[V]nts\f[R].
+For a description of the different source modes, see the \f[I]SOURCE
+MODES\f[R] section.
 .TP
 \f[V]address\f[R] = \f[I]address\f[R]
 Specify the remote address of the source.
@@ -138,7 +111,7 @@ If not specified the daemon will connect to \f[V]server\f[R] and
 \f[V]pool\f[R] servers via port \f[I]123\f[R], for \f[V]nts\f[R] sources
 the default port is \f[I]4460\f[R].
 .TP
-\f[V]certificate_authority\f[R] = \f[I]cert\f[R]
+\f[V]certificate-authority\f[R] = \f[I]cert\f[R]
 Can only be set on sources with the \f[V]nts\f[R] mode.
 Path to a certificate for an additional certificate authority to use,
 aside from the certificate authorities specified by the system
@@ -147,32 +120,354 @@ Note that this cannot be used to specify a self signed certificate.
 .TP
 \f[V]count\f[R] = \f[I]number\f[R] (\f[B]4\f[R])
 Can only be set on sources with the \f[V]pool\f[R] mode.
-Optionally specifies an alternative for the maximum number of servers
-that will be retrieved from the pool.
+Specifies the maximum number of servers that the daemon will attempt to
+connect to from a pool.
 The daemon will keep retrying to get more sources from the pool when
 connections are lost, up to the maximum specified by this configuration
 value.
 .SS \f[V][[server]]\f[R]
 .PP
-Any number of servers can be configured by repeating a
+The NTP daemon can be configured to distribute time via any number of
+\f[V][[server]]\f[R] sections.
+If no such sections have been defined, the daemon runs in a client only
+mode.
+Any number of servers can be configured by repeating the
 \f[V][[server]]\f[R] section (note the double brackets) for as many
 times as required.
-Each server can serve a specific socket address.
+Each server can serve a specific socket address or listen on all
+available network interfaces on a specific port.
 Servers always serve the system clock time.
 .TP
 \f[V]listen\f[R] = \f[I]socketaddr\f[R]
-Address of a socket on which the server should listen for incoming NTP
-requests.
+Address of a UDP socket on which the server should listen for incoming
+NTP requests.
 Specified as an interface IP address, a colon and a port number.
 Both IPv4 and IPv6 are supported.
 For example to listen on localhost port 123 in IPv4 you can use
 \f[V]127.0.0.1:123\f[R].
 You can listen on all available network interfaces at once using
 \f[V]0.0.0.0:123\f[R] for IPv4 or \f[V][::]:123\f[R] for IPv6.
+.TP
+\f[V]rate-limiting-cache-size\f[R] = \f[I]size\f[R] (\f[B]0\f[R])
+Number of elements in the rate limiting cache.
+At most \f[I]size\f[R] elements are kept in the cache.
+This means that if more than \f[I]size\f[R] different clients attempt to
+connect to the server too frequently, the cache size will have reduced
+functionality, as rate limiting information gets lost when new clients
+connect to the server.
+If set to zero, the cache is unused, this is the default.
+.TP
+\f[V]rate-limiting-cutoff-ms\f[R] = \f[I]cutoff\f[R] (\f[B]0\f[R])
+Minimum time between two requests from the same client, if a request was
+sent sooner than the cutoff time, the client will be asked to slow down
+their requests by the server responding with a packet with the NTP
+\f[V]RATE\f[R] kiss code.
+No actual time measurement will be returned to the client in that case.
+If set to zero, no rate limiting is applied, this is the default.
+.TP
+\f[V]allowlist\f[R] = [ \f[I]subnet\f[R], .. ] (\f[B][\[lq]0.0.0.0/0\[rq], \[lq]::/0\[rq]]\f[R])
+List of subnets in CIDR notation (an IP address followed by a slash and
+the number of masked bits, for example \f[V]127.0.0.1/8\f[R] or
+\f[V]192.168.1.1/24\f[R]).
+Any IP that matches one of the subnets specified is allowed to contact
+this server.
+The \f[V]allowlist-action\f[R] determines which action is taken for IP
+addresses not on the allowlist.
+If no allowlist is specified, then all IP addresses are allowed to
+contact the server.
+If specified, you must also specify the \f[V]allowlist-action\f[R].
+Each subnet must be specified within string quotes.
+.TP
+\f[V]allowlist-action\f[R] = \f[V]\[dq]deny\[dq]\f[R] | \f[V]\[dq]ignore\[dq]\f[R]
+Defines the action that is taken for IP addresses not on the
+\f[V]allowlist\f[R].
+When \f[V]deny\f[R], an explicit packet with the NTP \f[V]DENY\f[R] kiss
+code is returned to the sender indicating that they are not allowed to
+do so.
+When \f[V]ignore\f[R], messages are discarded with no response sent.
+If specified, you must also specify the \f[V]allowlist\f[R].
+.TP
+\f[V]denylist\f[R] = [ \f[I]subnet\f[R], .. ] (\f[B][]\f[R])
+List of subnets in CIDR notation (an IP address followed by a slash and
+the number of masked bits, for example \f[V]127.0.0.1/8\f[R] or
+\f[V]192.168.1.1/24\f[R]).
+Any IP that matches one of the subnets specified is not allowed to
+contact this server.
+The \f[V]denylist-action\f[R] determines which action is taken for IP
+addresses on the denylist.
+If no denylist is specified, then all IP addresses are allowed to
+contact the server.
+If specified, you must also specify the \f[V]denylist-action\f[R].
+Each subnet must be specified within string quotes.
+.TP
+\f[V]denylist-action\f[R] = \f[V]\[dq]deny\[dq]\f[R] | \f[V]\[dq]ignore\[dq]\f[R]
+Defines the action that is taken for IP addresses on the
+\f[V]denylist\f[R].
+When \f[V]deny\f[R], an explicit packet with the NTP \f[V]DENY\f[R] kiss
+code is returned to the sender indicating that they are not allowed to
+do so.
+When \f[V]ignore\f[R], messages are discarded with no response sent.
+If specified, you must also specify the \f[V]denylist\f[R].
 .SS \f[V][observability]\f[R]
-.SS \f[V][synchronization]\f[R]
-.SS \f[V][[nts-ke-server]]\f[R]
+.PP
+Settings in this section configure how you can observe the behavior of
+the daemon.
+Currently the daemon can be observed either through the logs or by
+retrieving several key metrics either through ntp-ctl(8) or through
+ntp-metrics-exporter(8).
+.TP
+\f[V]log-level\f[R] = \f[V]\[dq]trace\[dq]\f[R] | \f[V]\[dq]debug\[dq]\f[R] | \f[V]\[dq]info\[dq]\f[R] | \f[V]\[dq]warn\[dq]\f[R] | \f[V]\[dq]error\[dq]\f[R] (\f[B]unset\f[R])
+Set the logging level for messages printed to stdout.
+The lowest level \f[V]trace\f[R] gives very detailed information about
+anything going on in the daemon, whereas the highest level
+\f[V]error\f[R] only logs error conditions in the daemon.
+Levels higher than the given log level are logged as well.
+If not set (the default), then logging will be completely disabled.
+.TP
+\f[V]observation-path\f[R] = \f[I]path\f[R] (\f[B]unset\f[R])
+Path where the daemon will create an observation unix domain socket.
+This socket is used by \f[V]ntp-ctl\f[R] and
+\f[V]ntp-metrics-exporter\f[R] to read the current status of the daemon.
+If not set (the default) no observation socket will be created and it is
+not possible to use \f[V]ntp-ctl\f[R] or \f[V]ntp-metrics-exporter\f[R]
+to observe the daemon.
+.TP
+\f[V]observation-permissions\f[R] = \f[I]mode\f[R] (\f[B]0o666\f[R])
+The file system permissions with which the observation socket should be
+created.
+Warning: You should always write this number with the octal prefix
+\f[V]0o\f[R], otherwise your permissions might be interpreted wrongly.
+The default should be ok for most applications however.
 .SS \f[V][keyset]\f[R]
+.PP
+The keyset configures the internal key infrastructure for NTS packets.
+Note that this is separate from the TLS certificate and private key, for
+those see the relevant configuration in the \f[V][[nts-ke-server]]\f[R]
+section.
+.TP
+\f[V]stale-key-count\f[R] = \f[I]count\f[R] (\f[B]7\f[R])
+Maximum number of old keys to retain in the cache.
+Whenever keys are rotated the old keys will become invalid, but clients
+may still have NTS cookies encrypted with any of the old keys.
+.TP
+\f[V]key-rotation-interval\f[R] = \f[I]seconds\f[R] (\f[B]86400\f[R])
+Time between key rotation events.
+Every time \f[I]seconds\f[R] elapses, a new internal key will be
+generated for creating NTS cookies.
+By default this is set to a day.
+.TP
+\f[V]key-storage-path\f[R] = \f[I]path\f[R] (\f[B]unset\f[R])
+If set, stores the internal NTS keys in the file indicated by
+\f[I]path\f[R].
+This allows keys to survive a server reboot.
+If not set, clients using NTS may need to redo a key exchange operation
+to get new NTS cookies.
+.SS \f[V][[nts-ke-server]]\f[R]
+.PP
+The daemon can be configured to operate as an NTS key exchange server by
+repeating any number of \f[V][[nts-ke-server]]\f[R] sections.
+If no such sections have been defined, the daemon will offer no NTS key
+exchange services.
+All NTS-KE servers make use of the shared keyset.
+It is the purpose of the key exchange server to distribute cookies to
+clients in a safe way.
+These cookies can then be used in NTP packets with the normal server to
+validate that the traffic was untampered with.
+.TP
+\f[V]listen\f[R] = \f[I]socket\f[R]
+Address of a TCP socket on which the server should listen for incoming
+NTS key exchange requests.
+Specified as an interface IP address, a colon and a port number.
+Both IPv4 and IPv6 are supported.
+For example to listen on localhost port 123 in IPv4 you can use
+\f[V]127.0.0.1:123\f[R].
+You can listen on all available network interfaces at once using
+\f[V]0.0.0.0:123\f[R] for IPv4 or \f[V][::]:123\f[R] for IPv6.
+.TP
+\f[V]certificate-chain-path\f[R] = \f[I]path\f[R]
+Path to a certificate chain for the public certificate that the server
+offers to clients.
+.TP
+\f[V]private-key-path\f[R] = \f[I]path\f[R]
+Path to the private key associated with the server certificate in the
+certificate chain.
+.TP
+\f[V]key-exchange-timeout-ms\f[R] = \f[I]timeout\f[R] (\f[B]1000\f[R])
+Timeout in milliseconds for how long a key exchange may take.
+If the timeout is exceeded the connection will be dropped.
+.SS \f[V][synchronization]\f[R]
+.PP
+This section of the configuration focusses on how the time information
+from the time sources is gathered and applied to the system clock.
+.TP
+\f[V]minimum-agreeing-sources\f[R] = \f[I]count\f[R] (\f[B]3\f[R])
+The minimum number of sources that should agree on the current time
+before the daemon does any steering operation on the clock.
+Note that if you have configured fewer than this amount of sources, this
+may result in the daemon never updating the clock.
+.TP
+\f[V]single-step-panic-threshold\f[R] = \f[I]seconds\f[R] | { \f[V]forward\f[R] = \f[I]forward\f[R], \f[V]backward\f[R] = \f[I]backward\f[R] } (\f[B]1000\f[R])
+The threshold in seconds at which the daemon will completely exit (i.e.
+panic) when a single non-startup step occurs.
+Generally during normal operation the clock on your system should run
+somewhat close to the time it is synchronized to.
+As such, it is highly unlikely that such a large step will take place,
+and the daemon will exit to prevent any accidental mistakes.
+If set to the value \f[V]\[dq]inf\[dq]\f[R], any step will be allowed.
+May either be configured as one number of seconds for both forward and
+backward steps, or separate values for forward and backward steps.
+.TP
+\f[V]startup-step-panic-threshold\f[R] = \f[I]seconds\f[R] | { \f[V]forward\f[R] = \f[I]forward\f[R], \f[V]backward\f[R] = \f[I]backward\f[R] } (\f[B]{ forward = \[lq]inf\[rq], backward = \[lq]86400\[rq] }\f[R])
+The threshold in seconds at which the daemon will completely exit (i.e.
+panic) when a step occurs at startup.
+The default allows any forward step, but prevents backward steps larger
+than a single day.
+Generally computer clocks that are not synchronized will run behind the
+true time, instead of running ahead.
+If a computer is running ahead and steps back a large time this
+generally indicates a problem.
+If set to the value \f[V]\[dq]inf\[dq]\f[R], any step will be allowed.
+May either be configured as one number of seconds for both forward and
+backward steps, or separate values for forward and backward steps.
+.TP
+\f[V]accumulated-step-panic-threshold\f[R] = \f[I]seconds\f[R] (\f[B]unset\f[R])
+Every time the daemon steps the time instead of slowly adjusting the
+clock by using frequency changes, this counter is increased by the
+absolute value of the step (i.e.\ both forward and backward steps are
+counted).
+When this threshold is reached, the daemon will exit immediately
+(i.e.\ panic).
+During normal operation steps are unlikely to occur, and as such, steps
+may indicate that someone or something is triggering illicit steps.
+By default however this panic mechanism is disabled.
+Is disabled if left unset or if set to the value \f[V]0\f[R].
+.TP
+\f[V]local-stratum\f[R] = \f[I]stratum\f[R] (\f[B]16\f[R])
+Sets the NTP clock stratum of the system clock when no NTP time sources
+have been configured, or when the time has not yet been synchronized
+from an NTP time source.
+Can be used in servers to indicate that there are external mechanisms
+synchronizing the clock.
+.SS Algorithm specific \f[V][synchronization]\f[R]
+.PP
+Warning: the algorithm section contains mostly internal algorithm tweaks
+that generally do not need to be changed.
+However, they are offered here for specific use cases.
+These settings are considered implementation details however, and as
+such may change in future ntpd-rs versions.
+.TP
+\f[V]precision-low-probability\f[R] = \f[I]probability\f[R] (\f[B]1/3\f[R])
+Probability bound below which we start moving towards decreasing our
+precision estimate.
+Unit: probability, 0-1
+.TP
+\f[V]precision-high-probability\f[R] = \f[I]probability\f[R] (\f[B]2/3\f[R])
+Probability bound above which we start moving towards increasing our
+precision estimate.
+Unit: probability, 0-1
+.TP
+\f[V]precision-hysteresis\f[R] = \f[I]hysteresis\f[R] (\f[B]16\f[R])
+Amount of hysteresis in changing the precision estimate.
+Unit: count, 1+
+.TP
+\f[V]precision-minimum-weight\f[R] = \f[I]weight\f[R] (\f[B]0.1\f[R])
+Lower bound on the amount of effect our precision estimate has on the
+total noise estimate before we allow decreasing of the precision
+estimate.
+Unit: weight, 0-1
+.TP
+\f[V]poll-interval-low-weight\f[R] = \f[I]weight\f[R] (\f[B]0.4\f[R])
+Amount which a measurement contributes to the state, below which we
+start increasing the poll interval.
+Unit: weight, 0-1
+.TP
+\f[V]poll-interval-high-weight\f[R] = \f[I]weight\f[R] (\f[B]0.6\f[R])
+Amount which a measurement contributes to the state, above which we
+start decreasing the poll-interval interval.
+Unit: weight, 0-1
+.TP
+\f[V]poll-interval-hysteresis\f[R] = \f[I]hysteresis\f[R] (\f[B]16\f[R])
+Amount of hysteresis in changing the poll interval.
+Unit: count, 1+
+.TP
+\f[V]poll-interval-step-threshold\f[R] = \f[I]threshold\f[R] (\f[B]1e-6\f[R])
+Probability threshold for when a measurement is considered a significant
+enough outlier that we decide something weird is going on and we need to
+do more measurements.
+Unit: probability, 0-1
+.TP
+\f[V]delay-outlier-threshold\f[R] = \f[I]threshold\f[R] (\f[B]5.0\f[R])
+Threshold (in number of standard deviations) above which measurements
+with a significantly larger network delay are rejected.
+Unit: standard deviations, 0+
+.TP
+\f[V]initial-wander\f[R] = \f[I]wander\f[R] (\f[B]1e-8\f[R])
+Initial estimate of the clock wander of the combination of our local
+clock and that of the source.
+Unit: s/s\[ha]2
+.TP
+\f[V]initial-frequency-uncertainty\f[R] = \f[I]uncertainty\f[R] (\f[B]100e-6\f[R])
+Initial uncertainty of the frequency difference between our clock and
+that of the source.
+Unit: s/s
+.TP
+\f[V]maximum-source-uncertainty\f[R] = \f[I]uncertainty\f[R] (\f[B]0.25\f[R])
+Maximum source uncertainty before we start disregarding it.
+Note that this is combined uncertainty due to noise and possible
+assymetry error (see also weights below).
+Unit: seconds
+.TP
+\f[V]range-statistical-weight\f[R] = \f[I]weight\f[R] (\f[B]2.0\f[R])
+Weight of statistical uncertainty when constructing overlap ranges.
+Unit: standard deviations, 0+
+.TP
+\f[V]range-delay-weight\f[R] = \f[I]weight\f[R] (\f[B]0.25\f[R])
+Weight of delay uncertainty when constructing overlap ranges.
+Unit: weight, 0-1
+.TP
+\f[V]steer-offset-threshold\f[R] = \f[I]threshold\f[R] (\f[B]2.0\f[R])
+How far from 0 (in multiples of the uncertainty) should the offset be
+before we correct.
+Unit: standard deviations, 0+
+.TP
+\f[V]steer-offset-leftover\f[R] = \f[I]stddev\f[R] (\f[B]1.0\f[R])
+How many standard deviations do we leave after offset correction?
+Unit: standard deviations, 0+
+.TP
+\f[V]steer-frequency-threshold\f[R] = \f[I]threshold\f[R] (\f[B]0.0\f[R])
+How far from 0 (in multiples of the uncertainty) should the frequency
+estimate be before we correct.
+Unit: standard deviations, 0+
+.TP
+\f[V]steer-frequency-leftover\f[R] = \f[I]stddev\f[R] (\f[B]0.0\f[R])
+How many standard deviations do we leave after frequency correction?
+Unit: standard deviations, 0+
+.TP
+\f[V]step-threshold\f[R] = \f[I]threshold\f[R] (\f[B]0.010\f[R])
+From what offset should we step the clock instead of trying to adjust
+gradually?
+Unit: seconds, 0+
+.TP
+\f[V]slew-maximum-frequency-offset\f[R] = \f[I]offset\f[R] (\f[B]200e-6\f[R])
+What is the maximum frequency offset during a slew.
+Unit: s/s
+.TP
+\f[V]slew-minimum-duration\f[R] = \f[I]duration\f[R] (\f[B]495e-6\f[R])
+What is the minimum duration of a slew.
+Unit: seconds
+.TP
+\f[V]maximum-frequency-steer\f[R] = \f[I]frequency\f[R] (\f[B]8.0\f[R])
+Absolute maximum frequency correction.
+Unit: s/s
+.TP
+\f[V]ignore-server-dispersion\f[R] = \f[I]bool\f[R] (\f[B]false\f[R])
+Ignore a servers advertised dispersion when synchronizing.
+Can improve synchronization quality with servers reporting overly
+conservative root dispersion.
+.TP
+\f[V]meddling-threshold\f[R] = \f[I]threshold\f[R] (\f[B]5.0\f[R])
+Threshold for detecting external clock meddling.
+Unit: seconds
 .SH SEE ALSO
 .PP
 ntp-daemon(8), ntp-ctl(8), ntp-metrics-exporter(8)
