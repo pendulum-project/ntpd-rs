@@ -97,16 +97,20 @@ Server configuration in ntpd-rs works quite a bit differently from chrony. Rathe
 ```
 [[server]]
 listen="<IP or [::]>:<port>"
-allowlist = [
-    <subnet1>,
-    <subnet2>
+
+[server.allowlist]
+filter = [
+    "<subnet1>",
+    "<subnet2>"
 ]
-allowlist-action = `ignore`
-denylist = [
-    <subnet3>,
-    <subnet4>
+action = "ignore"
+
+[server.denylist]
+filter = [
+    "<subnet3>",
+    "<subnet4>"
 ]
-denylist-action = `deny`
+action = "deny"
 ```
 The allow and deny list configuration is optional in ntpd-rs. By default, a server accepts traffic from anywhere. When configuring both allow and deny lists, ntpd-rs will first check if a remote is on the deny list. Only if this is not the case will the allow list be considered. This ordering needs to be taken into account when translating interleaved combinations of chrony's `allow` and `deny` commands.
 
