@@ -115,7 +115,7 @@ async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
     }
 
     observer::spawn(
-        &config.observability.observe,
+        &config.observability,
         channels.peer_snapshots_receiver,
         channels.server_data_receiver,
         channels.system_snapshot_receiver,

@@ -151,7 +151,7 @@ async fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::erro
 
     let observation_socket_path = match options.observation_socket {
         Some(path) => path,
-        None => match config.observability.observe.observation_path {
+        None => match config.observability.observation_path {
             Some(path) => path,
             None => "/var/run/ntpd-rs/observe".into(),
         },

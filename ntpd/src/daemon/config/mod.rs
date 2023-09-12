@@ -244,13 +244,29 @@ pub struct ClockConfig {
     pub enable_timestamps: EnableTimestamps,
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct LoggingObservabilityConfig {
+pub struct ObservabilityConfig {
     #[serde(default)]
     pub log_level: Option<LogLevel>,
-    #[serde(flatten, default)]
-    pub observe: ObserveConfig,
+    #[serde(default)]
+    pub observation_path: Option<PathBuf>,
+    #[serde(default = "default_observation_permissions")]
+    pub observation_permissions: u32,
+}
+
+impl Default for ObservabilityConfig {
+    fn default() -> Self {
+        Self {
+            log_level: Default::default(),
+            observation_path: Default::default(),
+            observation_permissions: default_observation_permissions(),
+        }
+    }
+}
+
+const fn default_observation_permissions() -> u32 {
+    0o666
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -267,7 +283,7 @@ pub struct Config {
     #[serde(default)]
     pub source_defaults: SourceDefaultsConfig,
     #[serde(default)]
-    pub observability: LoggingObservabilityConfig,
+    pub observability: ObservabilityConfig,
     #[serde(default)]
     pub keyset: KeysetConfig,
     #[serde(default)]
@@ -373,28 +389,6 @@ impl Config {
     }
 }
 
-#[derive(Clone, Deserialize, Debug)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct ObserveConfig {
-    #[serde(default)]
-    pub observation_path: Option<PathBuf>,
-    #[serde(default = "default_observation_permissions")]
-    pub observation_permissions: u32,
-}
-
-const fn default_observation_permissions() -> u32 {
-    0o666
-}
-
-impl Default for ObserveConfig {
-    fn default() -> Self {
-        Self {
-            observation_path: None,
-            observation_permissions: default_observation_permissions(),
-        }
-    }
-}
-
 #[derive(Error, Debug)]
 pub enum ConfigError {
     #[error("io error while reading config: {0}")]
@@ -493,10 +487,10 @@ mod tests {
         assert!(config.observability.log_level.is_some());
 
         assert_eq!(
-            config.observability.observe.observation_path,
+            config.observability.observation_path,
             Some(PathBuf::from("/foo/bar/observe"))
         );
-        assert_eq!(config.observability.observe.observation_permissions, 0o567);
+        assert_eq!(config.observability.observation_permissions, 0o567);
 
         assert_eq!(
             config.sources,

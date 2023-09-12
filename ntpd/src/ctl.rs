@@ -181,7 +181,6 @@ pub async fn main() -> std::io::Result<ExitCode> {
 
             let observation = config
                 .observability
-                .observe
                 .observation_path
                 .unwrap_or_else(|| PathBuf::from("/var/run/ntpd-rs/observe"));
 
@@ -316,7 +315,7 @@ mod tests {
     use std::path::Path;
 
     use crate::daemon::{
-        config::ObserveConfig,
+        config::ObservabilityConfig,
         sockets::{create_unix_socket_with_permissions, write_json},
     };
 
@@ -326,7 +325,7 @@ mod tests {
         command: Format,
         socket_name: &str,
     ) -> std::io::Result<Result<ExitCode, std::io::Error>> {
-        let config: ObserveConfig = Default::default();
+        let config: ObservabilityConfig = Default::default();
 
         // be careful with copying: tests run concurrently and should use a unique socket name!
         let path = std::env::temp_dir().join(socket_name);
@@ -384,7 +383,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_control_socket_peer_invalid_input() -> std::io::Result<()> {
-        let config: ObserveConfig = Default::default();
+        let config: ObservabilityConfig = Default::default();
 
         // be careful with copying: tests run concurrently and should use a unique socket name!
         let path = std::env::temp_dir().join("ntp-test-stream-10");

@@ -49,7 +49,7 @@ pub struct ObservedPeerState {
 }
 
 pub async fn spawn(
-    config: &super::config::ObserveConfig,
+    config: &super::config::ObservabilityConfig,
     peers_reader: tokio::sync::watch::Receiver<Vec<ObservablePeerState>>,
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
     system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
@@ -66,7 +66,7 @@ pub async fn spawn(
 }
 
 async fn observer(
-    config: super::config::ObserveConfig,
+    config: super::config::ObservabilityConfig,
     peers_reader: tokio::sync::watch::Receiver<Vec<ObservablePeerState>>,
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
     system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
@@ -160,7 +160,8 @@ mod tests {
     async fn test_observation() {
         // be careful with copying: tests run concurrently and should use a unique socket name!
         let path = std::env::temp_dir().join("ntp-test-stream-2");
-        let config = super::super::config::ObserveConfig {
+        let config = super::super::config::ObservabilityConfig {
+            log_level: None,
             observation_path: Some(path.clone()),
             observation_permissions: 0o700,
         };
@@ -223,7 +224,8 @@ mod tests {
     async fn test_block_during_read() {
         // be careful with copying: tests run concurrently and should use a unique socket name!
         let path = std::env::temp_dir().join("ntp-test-stream-3");
-        let config = super::super::config::ObserveConfig {
+        let config = super::super::config::ObservabilityConfig {
+            log_level: None,
             observation_path: Some(path.clone()),
             observation_permissions: 0o700,
         };
