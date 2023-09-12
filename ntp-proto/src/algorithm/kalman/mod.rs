@@ -21,7 +21,7 @@ use self::{
 use super::{ObservablePeerTimedata, StateUpdate, TimeSyncController};
 
 mod combiner;
-mod config;
+pub(super) mod config;
 mod matrix;
 mod peer;
 mod select;

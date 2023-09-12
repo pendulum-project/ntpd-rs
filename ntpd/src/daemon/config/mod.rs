@@ -3,9 +3,7 @@ mod server;
 pub mod subnet;
 
 use ntp_os_clock::DefaultNtpClock;
-use ntp_proto::{
-    DefaultTimeSyncController, SourceDefaultsConfig, SynchronizationConfig, TimeSyncController,
-};
+use ntp_proto::{SourceDefaultsConfig, SynchronizationConfig};
 use ntp_udp::{EnableTimestamps, InterfaceName};
 pub use peer::*;
 use serde::{Deserialize, Deserializer};
@@ -20,7 +18,7 @@ use thiserror::Error;
 use tokio::{fs::read_to_string, io};
 use tracing::{info, warn};
 
-use super::{spawn::PeerId, tracing::LogLevel};
+use super::tracing::LogLevel;
 
 const USAGE_MSG: &str = "\
 usage: ntp-daemon [-c PATH] [-l LOG_LEVEL]
@@ -246,18 +244,6 @@ pub struct ClockConfig {
     pub enable_timestamps: EnableTimestamps,
 }
 
-#[derive(Deserialize, Debug, Default, Clone, Copy)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct CombinedSynchronizationConfig {
-    #[serde(flatten)]
-    pub synchronization: SynchronizationConfig,
-    #[serde(flatten)]
-    pub algorithm: <DefaultTimeSyncController<DefaultNtpClock, PeerId> as TimeSyncController<
-        DefaultNtpClock,
-        PeerId,
-    >>::AlgorithmConfig,
-}
-
 #[derive(Deserialize, Debug, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct LoggingObservabilityConfig {
@@ -277,7 +263,7 @@ pub struct Config {
     #[serde(rename = "nts-ke-server", default)]
     pub nts_ke: Vec<NtsKeConfig>,
     #[serde(default)]
-    pub synchronization: CombinedSynchronizationConfig,
+    pub synchronization: SynchronizationConfig,
     #[serde(default)]
     pub source_defaults: SourceDefaultsConfig,
     #[serde(default)]
@@ -378,12 +364,7 @@ impl Config {
             ok = false;
         }
 
-        if self.count_peers()
-            < self
-                .synchronization
-                .synchronization
-                .minimum_agreeing_sources
-        {
+        if self.count_peers() < self.synchronization.minimum_agreeing_sources {
             warn!("Fewer sources configured than are required to agree on the current time. Daemon will not change system time.");
             ok = false;
         }
@@ -465,19 +446,11 @@ mod tests {
             })]
         );
         assert_eq!(
-            config
-                .synchronization
-                .synchronization
-                .single_step_panic_threshold
-                .forward,
+            config.synchronization.single_step_panic_threshold.forward,
             Some(NtpDuration::from_seconds(0.))
         );
         assert_eq!(
-            config
-                .synchronization
-                .synchronization
-                .single_step_panic_threshold
-                .backward,
+            config.synchronization.single_step_panic_threshold.backward,
             Some(NtpDuration::from_seconds(0.))
         );
 
@@ -493,12 +466,10 @@ mod tests {
         );
         assert!(config
             .synchronization
-            .synchronization
             .single_step_panic_threshold
             .forward
             .is_none());
         assert!(config
-            .synchronization
             .synchronization
             .single_step_panic_threshold
             .backward

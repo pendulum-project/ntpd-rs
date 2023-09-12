@@ -81,5 +81,5 @@ pub trait TimeSyncController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> {
 
 mod kalman;
 
+pub use kalman::config::AlgorithmConfig;
 pub use kalman::KalmanClockController;
-pub type DefaultTimeSyncController<C, PeerID> = kalman::KalmanClockController<C, PeerID>;
