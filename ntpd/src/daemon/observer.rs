@@ -26,7 +26,7 @@ pub struct ObservableServerState {
 impl From<&ServerData> for ObservableServerState {
     fn from(data: &ServerData) -> Self {
         ObservableServerState {
-            address: data.config.addr,
+            address: data.config.listen,
             stats: data.stats.clone(),
         }
     }

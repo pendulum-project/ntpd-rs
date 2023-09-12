@@ -11,8 +11,10 @@ count = 4
 
 [[server]]
 listen = "0.0.0.0:123"
-allowlist = []
-allowlist-action = "deny"
+
+[server.allowlist]
+filter = []
+action = "deny"
 
 # configure the client with
 # [[source]]

@@ -137,19 +137,19 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
     }
 
     fn filter(&self, addr: &IpAddr) -> Option<FilterAction> {
-        if self.config.denylist.is_in(addr) {
+        if self.config.denylist.filter.is_in(addr) {
             // First apply denylist
-            Some(self.config.denylist_action)
-        } else if !self.config.allowlist.is_in(addr) {
+            Some(self.config.denylist.action)
+        } else if !self.config.allowlist.filter.is_in(addr) {
             // Then allowlist
-            Some(self.config.allowlist_action)
+            Some(self.config.allowlist.action)
         } else {
             None
         }
     }
 
     #[instrument(level = "debug", skip(self), fields(
-        addr = debug(self.config.addr),
+        addr = debug(self.config.listen),
     ))]
     async fn serve(&mut self, rate_limiting_cutoff: Duration) {
         let mut cur_socket = None;
@@ -158,10 +158,10 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 socket
             } else {
                 cur_socket = Some(loop {
-                    match UdpSocket::server(self.config.addr, self.interface).await {
+                    match UdpSocket::server(self.config.listen, self.interface).await {
                         Ok(socket) => break socket,
                         Err(error) => {
-                            warn!(?error, ?self.config.addr, ?self.interface, "Could not open server socket");
+                            warn!(?error, ?self.config.listen, ?self.interface, "Could not open server socket");
                             tokio::time::sleep(self.network_wait_period).await;
                         }
                     }
@@ -541,7 +541,7 @@ mod tests {
         ReferenceId,
     };
 
-    use super::super::ipfilter::IpFilter;
+    use crate::daemon::config::FilterList;
 
     use super::*;
 
@@ -613,11 +613,9 @@ mod tests {
     #[tokio::test]
     async fn test_server_filter_allow_ok() {
         let config = ServerConfig {
-            addr: "127.0.0.1:9000".parse().unwrap(),
-            denylist: IpFilter::none(),
-            denylist_action: FilterAction::Ignore,
-            allowlist: IpFilter::new(&["127.0.0.0/24".parse().unwrap()]),
-            allowlist_action: FilterAction::Ignore,
+            listen: "127.0.0.1:9000".parse().unwrap(),
+            denylist: FilterList::default_denylist(),
+            allowlist: FilterList::new(&["127.0.0.0/24".parse().unwrap()], FilterAction::Ignore),
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
         };
@@ -661,11 +659,9 @@ mod tests {
     #[tokio::test]
     async fn test_server_filter_allow_deny() {
         let config = ServerConfig {
-            addr: "127.0.0.1:9002".parse().unwrap(),
-            denylist: IpFilter::none(),
-            denylist_action: FilterAction::Ignore,
-            allowlist: IpFilter::new(&["128.0.0.0/24".parse().unwrap()]),
-            allowlist_action: FilterAction::Deny,
+            listen: "127.0.0.1:9002".parse().unwrap(),
+            denylist: FilterList::default_denylist(),
+            allowlist: FilterList::new(&["128.0.0.0/24".parse().unwrap()], FilterAction::Deny),
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
         };
@@ -710,11 +706,9 @@ mod tests {
     #[tokio::test]
     async fn test_server_filter_allow_ignore() {
         let config = ServerConfig {
-            addr: "127.0.0.1:9004".parse().unwrap(),
-            denylist: IpFilter::none(),
-            denylist_action: FilterAction::Ignore,
-            allowlist: IpFilter::new(&["128.0.0.0/24".parse().unwrap()]),
-            allowlist_action: FilterAction::Ignore,
+            listen: "127.0.0.1:9004".parse().unwrap(),
+            denylist: FilterList::default_denylist(),
+            allowlist: FilterList::new(&["128.0.0.0/24".parse().unwrap()], FilterAction::Ignore),
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
         };
@@ -753,11 +747,9 @@ mod tests {
     #[tokio::test]
     async fn test_server_filter_deny_ok() {
         let config = ServerConfig {
-            addr: "127.0.0.1:9006".parse().unwrap(),
-            denylist: IpFilter::new(&["192.168.0.0/16".parse().unwrap()]),
-            denylist_action: FilterAction::Ignore,
-            allowlist: IpFilter::all(),
-            allowlist_action: FilterAction::Ignore,
+            listen: "127.0.0.1:9006".parse().unwrap(),
+            denylist: FilterList::new(&["192.168.0.0/16".parse().unwrap()], FilterAction::Ignore),
+            allowlist: FilterList::default_allowlist(),
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
         };
@@ -801,11 +793,9 @@ mod tests {
     #[tokio::test]
     async fn test_server_filter_deny_deny() {
         let config = ServerConfig {
-            addr: "127.0.0.1:9008".parse().unwrap(),
-            denylist: IpFilter::new(&["127.0.0.0/24".parse().unwrap()]),
-            denylist_action: FilterAction::Deny,
-            allowlist: IpFilter::all(),
-            allowlist_action: FilterAction::Ignore,
+            listen: "127.0.0.1:9008".parse().unwrap(),
+            denylist: FilterList::new(&["127.0.0.0/24".parse().unwrap()], FilterAction::Deny),
+            allowlist: FilterList::default_allowlist(),
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
         };
@@ -850,11 +840,9 @@ mod tests {
     #[tokio::test]
     async fn test_server_filter_deny_ignore() {
         let config = ServerConfig {
-            addr: "127.0.0.1:9010".parse().unwrap(),
-            denylist: IpFilter::new(&["127.0.0.0/24".parse().unwrap()]),
-            denylist_action: FilterAction::Ignore,
-            allowlist: IpFilter::all(),
-            allowlist_action: FilterAction::Ignore,
+            listen: "127.0.0.1:9010".parse().unwrap(),
+            denylist: FilterList::new(&["127.0.0.0/24".parse().unwrap()], FilterAction::Ignore),
+            allowlist: FilterList::default_allowlist(),
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
         };
@@ -893,11 +881,9 @@ mod tests {
     #[tokio::test]
     async fn test_server_rate_limit() {
         let config = ServerConfig {
-            addr: "127.0.0.1:9012".parse().unwrap(),
-            denylist: IpFilter::none(),
-            denylist_action: FilterAction::Ignore,
-            allowlist: IpFilter::all(),
-            allowlist_action: FilterAction::Ignore,
+            listen: "127.0.0.1:9012".parse().unwrap(),
+            denylist: FilterList::default_denylist(),
+            allowlist: FilterList::default_allowlist(),
             rate_limiting_cutoff: Duration::from_millis(100),
             rate_limiting_cache_size: 32,
         };
@@ -973,11 +959,9 @@ mod tests {
     #[tokio::test]
     async fn test_server_rate_limit_defaults() {
         let config = ServerConfig {
-            addr: "127.0.0.1:9014".parse().unwrap(),
-            denylist: IpFilter::none(),
-            denylist_action: FilterAction::Ignore,
-            allowlist: IpFilter::all(),
-            allowlist_action: FilterAction::Ignore,
+            listen: "127.0.0.1:9014".parse().unwrap(),
+            denylist: FilterList::default_denylist(),
+            allowlist: FilterList::default_allowlist(),
             rate_limiting_cutoff: Duration::default(),
             rate_limiting_cache_size: Default::default(),
         };

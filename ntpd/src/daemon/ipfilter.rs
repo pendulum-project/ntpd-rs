@@ -1,5 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
+use serde::{Deserialize, Deserializer};
+
 use super::config::subnet::IpSubnet;
 
 /// One part of a `BitTree`
@@ -232,6 +234,13 @@ impl IpFilter {
 
     fn is_in6(&self, addr: &Ipv6Addr) -> bool {
         self.ipv6_filter.lookup(u128::from_be_bytes(addr.octets()))
+    }
+}
+
+impl<'de> Deserialize<'de> for IpFilter {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let data = Vec::<IpSubnet>::deserialize(deserializer)?;
+        Ok(IpFilter::new(&data))
     }
 }
 
