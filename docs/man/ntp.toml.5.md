@@ -17,10 +17,9 @@ configuring a separate part of the ntp-daemon process. Each of the secions is
 described in the rest of this document. Many settings will have defaults, which
 will be indicated by each configuration setting shown.
 
-The ntp daemon only supports unicast client-server connections and the concepts
-in ntpd-rs are all built up around that idea. Most NTP traffic, especially
-across the public internet, almost exclusively uses this mode, so it is not
-considered a practical limitation for most scenarios.
+The ntp daemon only supports unicast client-server connections. Most NTP
+traffic, especially across the public internet, almost exclusively uses this
+mode, so it is not considered a practical limitation for most scenarios.
 
 # SOURCE MODES
 Different types of sources (see the section below for details) are supported by
