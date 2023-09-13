@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.0.0-dev.20230907] - 2023-09-07
+## [1.0.0-rc.1] - 2023-09-13
 
 ### Added
 - Man pages have been added to the built packages.
@@ -17,6 +17,7 @@
   `hardware-timestamping` feature (off by default).
 - The default observation socket path was changed to `/var/run/ntpd-rs/observe`.
 - Upgraded dependencies.
+- The command line interface for `ntp-ctl` and `ntp-metrics-exporter` has changed.
 
 ### Fixed
 - Fix bug around handling of leap second indicators.
@@ -139,7 +140,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
-[1.0.0-dev.20230907]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.7...v1.0.0-dev.20230907
+[1.0.0-rc.1]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.7...v1.0.0-rc.1
 [0.3.7]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.3...v0.3.5
