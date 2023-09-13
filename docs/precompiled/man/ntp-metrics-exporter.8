@@ -23,7 +23,6 @@ ntpd-rs daemon
 .SH SYNOPSIS
 .PP
 \f[V]ntp-metrics-exporter\f[R] [\f[V]-c\f[R] \f[I]path\f[R]]
-[\f[V]-o\f[R] \f[I]path\f[R]] [\f[V]-l\f[R] \f[I]socketaddr\f[R]]
 .PD 0
 .P
 .PD
@@ -45,19 +44,6 @@ This defaults to \f[V]/etc/ntpd-rs/ntp.toml\f[R] if not specified.
 .TP
 \f[V]-h\f[R], \f[V]--help\f[R]
 Display usage instructions.
-.TP
-\f[V]-l\f[R] \f[I]socketaddr\f[R], \f[V]--listen-socket\f[R]=\f[I]socketaddr\f[R]
-Specify the socket address on which the prometheus exporter should
-listen for incoming connections.
-The socket address should be specified as a combination of an interface
-IP address and port, separated by a colon.
-This defaults to \f[V]localhost:9975\f[R] if not specified.
-.TP
-\f[V]-o\f[R] \f[I]path\f[R], \f[V]--observation-socket\f[R]=\f[I]path\f[R]
-Direct path to the observation unix socket where the exporter can
-connect to the ntp-daemon.
-If not specified the observation socket path is retrieved from the
-configuration file.
 .TP
 \f[V]-v\f[R], \f[V]--version\f[R]
 Display version information.

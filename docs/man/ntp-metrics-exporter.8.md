@@ -8,7 +8,7 @@ title: NTP-METRICS-EXPORTER(8) ntpd-rs 1.0.0-dev.20230907 | ntpd-rs
 
 # SYNOPSIS
 
-`ntp-metrics-exporter` [`-c` *path*] [`-o` *path*] [`-l` *socketaddr*] \
+`ntp-metrics-exporter` [`-c` *path*] \
 `ntp-metrics-exporter` `-h` \
 `ntp-metrics-exporter` `-v`
 
@@ -26,17 +26,6 @@ via an HTTP socket.
 
 `-h`, `--help`
 :   Display usage instructions.
-
-`-l` *socketaddr*, `--listen-socket`=*socketaddr*
-:   Specify the socket address on which the prometheus exporter should listen
-    for incoming connections. The socket address should be specified as a
-    combination of an interface IP address and port, separated by a colon. This
-    defaults to `localhost:9975` if not specified.
-
-`-o` *path*, `--observation-socket`=*path*
-:   Direct path to the observation unix socket where the exporter can connect to
-    the ntp-daemon. If not specified the observation socket path is retrieved
-    from the configuration file.
 
 `-v`, `--version`
 :   Display version information.

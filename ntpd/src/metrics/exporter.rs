@@ -3,7 +3,6 @@ use tokio::net::TcpListener;
 
 use std::{
     fmt::Write,
-    net::{Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
 };
 
@@ -12,18 +11,14 @@ use crate::daemon::{config::CliArg, initialize_logging_parse_config, ObservableS
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const USAGE_MSG: &str = "\
-usage: ntp-metrics-exporter [-c PATH] [-o PATH] [-l SOCKET_ADDR]
+usage: ntp-metrics-exporter [-c PATH]
        ntp-metrics-exporter -h | ntp-metrics-exporter -v";
 
 const DESCRIPTOR: &str = "ntp-metrics-exporter - serve ntpd-rs openmetrics via http";
 
 const HELP_MSG: &str = "Options:
   -c, --config=CONFIG                  ntpd-rs configuration file (default:
-                                       /etc/ntpd-rs/ntp.toml)
-  -o, --observation-socket=SOCKET      path of the observation socket (default
-                                       is taken from the configuration)
-  -l, --listen-socket=SOCKET_ADDR      address to serve prometheus output on
-                                       (default: 127.0.0.1:9975)";
+                                       /etc/ntpd-rs/ntp.toml)";
 
 pub fn long_help_message() -> String {
     format!("{DESCRIPTOR}\n\n{USAGE_MSG}\n\n{HELP_MSG}")
@@ -37,33 +32,17 @@ pub enum MetricsAction {
     Run,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct NtpMetricsExporterOptions {
     config: Option<PathBuf>,
-    observation_socket: Option<PathBuf>,
-    listen_addr: SocketAddr,
     help: bool,
     version: bool,
     action: MetricsAction,
 }
 
-impl Default for NtpMetricsExporterOptions {
-    fn default() -> Self {
-        Self {
-            config: Default::default(),
-            observation_socket: Default::default(),
-            listen_addr: SocketAddr::from((Ipv4Addr::LOCALHOST, 9975)),
-            help: Default::default(),
-            version: Default::default(),
-            action: Default::default(),
-        }
-    }
-}
-
 impl NtpMetricsExporterOptions {
-    const TAKES_ARGUMENT: &[&'static str] =
-        &["--config", "--observation-socket", "--listen-socket"];
-    const TAKES_ARGUMENT_SHORT: &[char] = &['o', 'c', 'l'];
+    const TAKES_ARGUMENT: &[&'static str] = &["--config"];
+    const TAKES_ARGUMENT_SHORT: &[char] = &['c'];
 
     /// parse an iterator over command line arguments
     pub fn try_parse_from<I, T>(iter: I) -> Result<Self, String>
@@ -98,13 +77,6 @@ impl NtpMetricsExporterOptions {
                     "-c" | "--config" => {
                         options.config = Some(PathBuf::from(value));
                     }
-                    "-o" | "--observation-socket" => {
-                        options.observation_socket = Some(PathBuf::from(value));
-                    }
-                    "-l" | "--listen-socket" => match value.parse() {
-                        Ok(socket_addr) => options.listen_addr = socket_addr,
-                        Err(e) => Err(e.to_string())?,
-                    },
                     option => {
                         Err(format!("invalid option provided: {option}"))?;
                     }
@@ -149,17 +121,20 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::error::Error>> {
     let config = initialize_logging_parse_config(None, options.config).await;
 
-    let observation_socket_path = match options.observation_socket {
+    let observation_socket_path = match config.observability.observation_path {
         Some(path) => path,
-        None => match config.observability.observation_path {
-            Some(path) => path,
-            None => "/var/run/ntpd-rs/observe".into(),
-        },
+        None => {
+            eprintln!("An observation socket path must be configured using the observation-path option in the [observability] section of the configuration");
+            std::process::exit(1);
+        }
     };
 
-    println!("starting ntp-metrics-exporter on {}", &options.listen_addr);
+    println!(
+        "starting ntp-metrics-exporter on {}",
+        &config.observability.metrics_exporter_listen
+    );
 
-    let listener = TcpListener::bind(options.listen_addr).await?;
+    let listener = TcpListener::bind(&config.observability.metrics_exporter_listen).await?;
     let mut buf = String::with_capacity(4 * 1024);
 
     loop {
@@ -226,29 +201,5 @@ mod tests {
 
         let options = NtpMetricsExporterOptions::try_parse_from(arguments).unwrap();
         assert_eq!(options.config.unwrap().as_path(), config);
-    }
-
-    #[test]
-    fn cli_observation_socket() {
-        let observation_str = "/bar/baz";
-        let observation = Path::new(observation_str);
-
-        let arguments = &[BINARY, "-o", observation_str];
-
-        let options = NtpMetricsExporterOptions::try_parse_from(arguments).unwrap();
-
-        assert_eq!(options.observation_socket.unwrap().as_path(), observation);
-    }
-
-    #[test]
-    fn cli_listen_socket() {
-        let listen_str = "127.0.0.1:1234";
-        let listen = SocketAddr::from((Ipv4Addr::LOCALHOST, 1234));
-
-        let arguments = &[BINARY, "-l", listen_str];
-
-        let options = NtpMetricsExporterOptions::try_parse_from(arguments).unwrap();
-
-        assert_eq!(options.listen_addr, listen);
     }
 }

@@ -10,6 +10,7 @@ use serde::{Deserialize, Deserializer};
 pub use server::*;
 use std::{
     io::ErrorKind,
+    net::SocketAddr,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     str::FromStr,
@@ -253,6 +254,8 @@ pub struct ObservabilityConfig {
     pub observation_path: Option<PathBuf>,
     #[serde(default = "default_observation_permissions")]
     pub observation_permissions: u32,
+    #[serde(default = "default_metrics_exporter_listen")]
+    pub metrics_exporter_listen: SocketAddr,
 }
 
 impl Default for ObservabilityConfig {
@@ -261,12 +264,17 @@ impl Default for ObservabilityConfig {
             log_level: Default::default(),
             observation_path: Default::default(),
             observation_permissions: default_observation_permissions(),
+            metrics_exporter_listen: default_metrics_exporter_listen(),
         }
     }
 }
 
 const fn default_observation_permissions() -> u32 {
     0o666
+}
+
+fn default_metrics_exporter_listen() -> SocketAddr {
+    "127.0.0.1:9975".parse().unwrap()
 }
 
 #[derive(Deserialize, Debug, Default)]
