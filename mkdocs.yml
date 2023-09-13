@@ -24,6 +24,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Guide:
+    - guide/getting-started.md
     - guide/installation.md
     - guide/server-setup.md
     - guide/migrating-chrony.md
