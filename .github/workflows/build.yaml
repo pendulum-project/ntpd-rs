@@ -24,7 +24,7 @@ jobs:
         rust:
           - stable
           - beta
-          - 1.65.0
+          - 1.66.0
         target:
           - ""
         features:
