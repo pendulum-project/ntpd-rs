@@ -25,6 +25,7 @@ nav:
   - Home: index.md
   - Guide:
     - guide/installation.md
+    - guide/server-setup.md
     - guide/migrating-chrony.md
     - guide/security-guidance.md
     - guide/configuration.md
