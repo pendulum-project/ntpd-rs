@@ -23,13 +23,16 @@ use super::tracing::LogLevel;
 
 const USAGE_MSG: &str = "\
 usage: ntp-daemon [-c PATH] [-l LOG_LEVEL]
-       ntp-daemon -h";
+       ntp-daemon -h
+       ntp-daemon -v";
 
 const DESCRIPTOR: &str = "ntp-daemon - synchronize system time";
 
 const HELP_MSG: &str = "Options:
   -c, --config=PATH             change the config .toml file
-  -l, --log-level=LOG_LEVEL     change the log level";
+  -l, --log-level=LOG_LEVEL     change the log level
+  -h, --help                    display this help text
+  -v, --version                 display version information";
 
 pub fn long_help_message() -> String {
     format!("{DESCRIPTOR}\n\n{USAGE_MSG}\n\n{HELP_MSG}")
