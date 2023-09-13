@@ -17,15 +17,15 @@ configuring a separate part of the ntp-daemon process. Each of the secions is
 described in the rest of this document. Many settings will have defaults, which
 will be indicated by each configuration setting shown.
 
-For those familiar with the NTP protocol: ntpd-rs only supports unicast
-client-server connections and the concepts in ntpd-rs are all built up around
-that idea. Most NTP traffic, especially across the public internet, almost
-exclusively uses this mode, so it is not considered a practical limitation for
-most scenarios.
+The ntp daemon only supports unicast client-server connections and the concepts
+in ntpd-rs are all built up around that idea. Most NTP traffic, especially
+across the public internet, almost exclusively uses this mode, so it is not
+considered a practical limitation for most scenarios.
 
 # SOURCE MODES
-Sources (see the section below for details) can be configured any of the
-following modes:
+Different types of sources (see the section below for details) are supported by
+the ntp daemon. To set the type of the source, you can configure the mode field
+with any of these options:
 
 `server`
 :   A server source connects to a single specific NTP server. If a connection is
@@ -130,39 +130,31 @@ time.
     kiss code. No actual time measurement will be returned to the client in
     that case. If set to zero, no rate limiting is applied, this is the default.
 
-`allowlist` = [ *subnet*, .. ] (**["0.0.0.0/0", "::/0"]**)
-:   List of subnets in CIDR notation (an IP address followed by a slash and the
-    number of masked bits, for example `127.0.0.1/8` or `192.168.1.1/24`). Any
+`allowlist` = { filter = [ *subnet*, .. ], action = `"deny"` | `"ignore"` } (**unset**)
+:   Only allow any number of filtered *subnets* to connect to the daemon. Any
     IP that matches one of the subnets specified is allowed to contact this
-    server. The `allowlist-action` determines which action is taken for IP
-    addresses not on the allowlist. If no allowlist is specified, then all IP
-    addresses are allowed to contact the server. If specified, you must also
-    specify the `allowlist-action`. Each subnet must be specified within string
-    quotes.
+    server. The subnets must be specified in CIDR notation (an IP address
+    followed by a slash and the number of masked bits, for example `127.0.0.1/8`
+    or `192.168.1.1/24`). The action determines what measure is taken for IP
+    addresses not in any of the specified subnets. When `deny`, an explicit
+    packet with the NTP `DENY` kiss code is returned to the sender indicating
+    that they are not allowed to do so. When `ignore` is specified, messages are
+    discarded with no response sent. The default value is equivalent to allowing
+    any IP address, and would be equivalent to setting the filter to
+    `["0.0.0.0/0", "::/0"]`, with either action.
 
-`allowlist-action` = `"deny"` | `"ignore"`
-:   Defines the action that is taken for IP addresses not on the `allowlist`.
-    When `deny`, an explicit packet with the NTP `DENY` kiss code is returned to
-    the sender indicating that they are not allowed to do so. When `ignore`,
-    messages are discarded with no response sent. If specified, you must also
-    specify the `allowlist`.
-
-`denylist` = [ *subnet*, .. ] (**[]**)
-:   List of subnets in CIDR notation (an IP address followed by a slash and the
-    number of masked bits, for example `127.0.0.1/8` or `192.168.1.1/24`). Any
+`denylist` = { filter = [ *subnet*, .. ], action = `"deny"` | `"ignore"` } (**unset**)
+:   Do not allow any number of filtered *subnets* to connect to the daemon. Any
     IP that matches one of the subnets specified is not allowed to contact this
-    server. The `denylist-action` determines which action is taken for IP
-    addresses on the denylist. If no denylist is specified, then all IP
-    addresses are allowed to contact the server. If specified, you must also
-    specify the `denylist-action`. Each subnet must be specified within string
-    quotes.
-
-`denylist-action` = `"deny"` | `"ignore"`
-:   Defines the action that is taken for IP addresses on the `denylist`. When
-    `deny`, an explicit packet with the NTP `DENY` kiss code is returned to the
-    sender indicating that they are not allowed to do so. When `ignore`,
-    messages are discarded with no response sent. If specified, you must also
-    specify the `denylist`.
+    server. The subnets must be specified in CIDR notation (an IP address
+    followed by a slash and the number of masked bits, for example `127.0.0.1/8`
+    or `192.168.1.1/24`). The action determines what measure is taken for IP
+    addresses in any of the specified subnets. When `deny`, an explicit packet
+    with the NTP `DENY` kiss code is returned to the sender indicating that they
+    are not allowed to do so. When `ignore` is specified, messages are discarded
+    with no response sent. The default value is equivalent to allowing any IP
+    address, and would be equivalent to setting the filter to `[]`, with either
+    action.
 
 ## `[observability]`
 Settings in this section configure how you can observe the behavior of the
@@ -286,7 +278,7 @@ time sources is gathered and applied to the system clock.
     time source. Can be used in servers to indicate that there are external
     mechanisms synchronizing the clock.
 
-## Algorithm specific `[synchronization]`
+## `[synchronization.algorithm]`
 Warning: the algorithm section contains mostly internal algorithm tweaks that
 generally do not need to be changed. However, they are offered here for specific
 use cases. These settings are considered implementation details however, and as
