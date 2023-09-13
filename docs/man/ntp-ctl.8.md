@@ -9,7 +9,7 @@ title: NTP-CTL(8) ntpd-rs 1.0.0-dev.20230907 | ntpd-rs
 # SYNOPSIS
 
 `ntp-ctl` validate [`-c` *path*] \
-`ntp-ctl` status [`-f` *format*] [`-c` *path*] [`-o` *path*] \
+`ntp-ctl` status [`-f` *format*] [`-c` *path*] \
 `ntp-ctl` `-h` \
 `ntp-ctl` `-v`
 
@@ -34,11 +34,6 @@ with the daemon.
 
 `-h`, `--help`
 :   Display usage instructions.
-
-`-o` *path*, `--observation-socket`=*path*
-:   Direct path to the observation unix socket where the client can connect to
-    the ntp-daemon. If not specified the observation socket path is retrieved
-    from the configuration file.
 
 `-v`, `--version`
 :   Display version information.
