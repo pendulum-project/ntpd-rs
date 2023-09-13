@@ -32,16 +32,17 @@ Each of the secions is described in the rest of this document.
 Many settings will have defaults, which will be indicated by each
 configuration setting shown.
 .PP
-For those familiar with the NTP protocol: ntpd-rs only supports unicast
-client-server connections and the concepts in ntpd-rs are all built up
-around that idea.
+The ntp daemon only supports unicast client-server connections and the
+concepts in ntpd-rs are all built up around that idea.
 Most NTP traffic, especially across the public internet, almost
 exclusively uses this mode, so it is not considered a practical
 limitation for most scenarios.
 .SH SOURCE MODES
 .PP
-Sources (see the section below for details) can be configured any of the
-following modes:
+Different types of sources (see the section below for details) are
+supported by the ntp daemon.
+To set the type of the source, you can configure the mode field with any
+of these options:
 .TP
 \f[V]server\f[R]
 A server source connects to a single specific NTP server.
@@ -165,49 +166,42 @@ their requests by the server responding with a packet with the NTP
 No actual time measurement will be returned to the client in that case.
 If set to zero, no rate limiting is applied, this is the default.
 .TP
-\f[V]allowlist\f[R] = [ \f[I]subnet\f[R], .. ] (\f[B][\[lq]0.0.0.0/0\[rq], \[lq]::/0\[rq]]\f[R])
-List of subnets in CIDR notation (an IP address followed by a slash and
-the number of masked bits, for example \f[V]127.0.0.1/8\f[R] or
-\f[V]192.168.1.1/24\f[R]).
+\f[V]allowlist\f[R] = { filter = [ \f[I]subnet\f[R], .. ], action = \f[V]\[dq]deny\[dq]\f[R] | \f[V]\[dq]ignore\[dq]\f[R] } (\f[B]unset\f[R])
+Only allow any number of filtered \f[I]subnets\f[R] to connect to the
+daemon.
 Any IP that matches one of the subnets specified is allowed to contact
 this server.
-The \f[V]allowlist-action\f[R] determines which action is taken for IP
-addresses not on the allowlist.
-If no allowlist is specified, then all IP addresses are allowed to
-contact the server.
-If specified, you must also specify the \f[V]allowlist-action\f[R].
-Each subnet must be specified within string quotes.
-.TP
-\f[V]allowlist-action\f[R] = \f[V]\[dq]deny\[dq]\f[R] | \f[V]\[dq]ignore\[dq]\f[R]
-Defines the action that is taken for IP addresses not on the
-\f[V]allowlist\f[R].
+The subnets must be specified in CIDR notation (an IP address followed
+by a slash and the number of masked bits, for example
+\f[V]127.0.0.1/8\f[R] or \f[V]192.168.1.1/24\f[R]).
+The action determines what measure is taken for IP addresses not in any
+of the specified subnets.
 When \f[V]deny\f[R], an explicit packet with the NTP \f[V]DENY\f[R] kiss
 code is returned to the sender indicating that they are not allowed to
 do so.
-When \f[V]ignore\f[R], messages are discarded with no response sent.
-If specified, you must also specify the \f[V]allowlist\f[R].
+When \f[V]ignore\f[R] is specified, messages are discarded with no
+response sent.
+The default value is equivalent to allowing any IP address, and would be
+equivalent to setting the filter to
+\f[V][\[dq]0.0.0.0/0\[dq], \[dq]::/0\[dq]]\f[R], with either action.
 .TP
-\f[V]denylist\f[R] = [ \f[I]subnet\f[R], .. ] (\f[B][]\f[R])
-List of subnets in CIDR notation (an IP address followed by a slash and
-the number of masked bits, for example \f[V]127.0.0.1/8\f[R] or
-\f[V]192.168.1.1/24\f[R]).
+\f[V]denylist\f[R] = { filter = [ \f[I]subnet\f[R], .. ], action = \f[V]\[dq]deny\[dq]\f[R] | \f[V]\[dq]ignore\[dq]\f[R] } (\f[B]unset\f[R])
+Do not allow any number of filtered \f[I]subnets\f[R] to connect to the
+daemon.
 Any IP that matches one of the subnets specified is not allowed to
 contact this server.
-The \f[V]denylist-action\f[R] determines which action is taken for IP
-addresses on the denylist.
-If no denylist is specified, then all IP addresses are allowed to
-contact the server.
-If specified, you must also specify the \f[V]denylist-action\f[R].
-Each subnet must be specified within string quotes.
-.TP
-\f[V]denylist-action\f[R] = \f[V]\[dq]deny\[dq]\f[R] | \f[V]\[dq]ignore\[dq]\f[R]
-Defines the action that is taken for IP addresses on the
-\f[V]denylist\f[R].
+The subnets must be specified in CIDR notation (an IP address followed
+by a slash and the number of masked bits, for example
+\f[V]127.0.0.1/8\f[R] or \f[V]192.168.1.1/24\f[R]).
+The action determines what measure is taken for IP addresses in any of
+the specified subnets.
 When \f[V]deny\f[R], an explicit packet with the NTP \f[V]DENY\f[R] kiss
 code is returned to the sender indicating that they are not allowed to
 do so.
-When \f[V]ignore\f[R], messages are discarded with no response sent.
-If specified, you must also specify the \f[V]denylist\f[R].
+When \f[V]ignore\f[R] is specified, messages are discarded with no
+response sent.
+The default value is equivalent to allowing any IP address, and would be
+equivalent to setting the filter to \f[V][]\f[R], with either action.
 .SS \f[V][observability]\f[R]
 .PP
 Settings in this section configure how you can observe the behavior of
@@ -348,7 +342,7 @@ have been configured, or when the time has not yet been synchronized
 from an NTP time source.
 Can be used in servers to indicate that there are external mechanisms
 synchronizing the clock.
-.SS Algorithm specific \f[V][synchronization]\f[R]
+.SS \f[V][synchronization.algorithm]\f[R]
 .PP
 Warning: the algorithm section contains mostly internal algorithm tweaks
 that generally do not need to be changed.
