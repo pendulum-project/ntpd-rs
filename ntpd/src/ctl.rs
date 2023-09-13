@@ -12,7 +12,9 @@ const DESCRIPTOR: &str = "ntp-ctl - ntp-daemon monitoring";
 
 const HELP_MSG: &str = "Options:
   -f, --format=FORMAT                  which format to use for printing statistics [plain, prometheus]
-  -c, --config=CONFIG                  which configuration file to read the socket paths from";
+  -c, --config=CONFIG                  which configuration file to read the socket paths from
+  -h, --help                           display this help text
+  -v, --version                        display version information";
 
 pub fn long_help_message() -> String {
     format!("{DESCRIPTOR}\n\n{USAGE_MSG}\n\n{HELP_MSG}")

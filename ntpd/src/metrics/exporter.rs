@@ -18,7 +18,9 @@ const DESCRIPTOR: &str = "ntp-metrics-exporter - serve ntpd-rs openmetrics via h
 
 const HELP_MSG: &str = "Options:
   -c, --config=CONFIG                  ntpd-rs configuration file (default:
-                                       /etc/ntpd-rs/ntp.toml)";
+                                       /etc/ntpd-rs/ntp.toml)
+  -h, --help                           display this help text
+  -v, --version                        display version information";
 
 pub fn long_help_message() -> String {
     format!("{DESCRIPTOR}\n\n{USAGE_MSG}\n\n{HELP_MSG}")
