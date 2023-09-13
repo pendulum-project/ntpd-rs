@@ -8,4 +8,4 @@ if [ "$#" -gt 0 ]; then
     fi
 fi
 
-exec docker run --rm -it "${bind_port_arg[@]}" -v "${PWD}:/docs" -u "$(id -u):$(id -g)" squidfunk/mkdocs-material "$@"
+exec docker run --rm "${bind_port_arg[@]}" -v "${PWD}:/docs" -u "$(id -u):$(id -g)" squidfunk/mkdocs-material "$@"
