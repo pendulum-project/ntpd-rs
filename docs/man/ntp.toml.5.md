@@ -181,6 +181,9 @@ ntp-metrics-exporter(8).
     `0o`, otherwise your permissions might be interpreted wrongly. The default
     should be ok for most applications however.
 
+`metrics-exporter-listen` = *socketaddr* (**127.0.0.1:9975**)
+:   The listen address that is used for the ntp-metrics-exporter(8).
+
 ## `[keyset]`
 The keyset configures the internal key infrastructure for NTS packets. Note that
 this is separate from the TLS certificate and private key, for those see the

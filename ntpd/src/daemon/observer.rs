@@ -164,6 +164,7 @@ mod tests {
             log_level: None,
             observation_path: Some(path.clone()),
             observation_permissions: 0o700,
+            ..Default::default()
         };
 
         let (_, peers_reader) = tokio::sync::watch::channel(vec![
@@ -228,6 +229,7 @@ mod tests {
             log_level: None,
             observation_path: Some(path.clone()),
             observation_permissions: 0o700,
+            ..Default::default()
         };
 
         let (mut peers_writer, peers_reader) = tokio::sync::watch::channel(vec![
