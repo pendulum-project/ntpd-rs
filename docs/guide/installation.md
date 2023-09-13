@@ -6,7 +6,17 @@ The recommended way of installing ntpd-rs is through an installer or package man
 
 ### Linux
 
-We recommend the installers from our [installation page](https://github.com/pendulum-project/ntpd-rs/releases). The installer takes care of putting the configuration in the right place and setting up the recommended users and permissions. The default configuration file is located at `/etc/ntpd-rs/ntp.toml`
+We recommend the packages from our [release page](https://github.com/pendulum-project/ntpd-rs/releases). The package takes care of putting the configuration in the right place and setting up the recommended users and permissions. The default configuration file is located at `/etc/ntpd-rs/ntp.toml`
+
+On a debian based linux, the `.deb` package can be installed with
+```
+sudo dpkg -i /path/to/deb/file.deb
+```
+
+On an red hat based linux, the `.rpm` package can be installed with
+```
+sudo rpm -ivh /path/to/rpm/file.rpm
+```
 
 ### FreeBSD
 
@@ -29,7 +39,7 @@ cargo build --release
 ```
 
 This produces a `ntp-daemon` binary at `target/release/ntp-daemon`, which is the
-main NTP daemon. Expected output looks like this:
+main NTP daemon. Running it from the command line to test it should provide output like:
 
 ```
 > sudo target/release/ntp-daemon -c pkg/common/ntp.toml.default
@@ -45,16 +55,14 @@ main NTP daemon. Expected output looks like this:
 2023-09-04T12:01:44.087846Z  INFO ntp_proto::algorithm::kalman: Offset: 2.7204471636925773+-61.339759726948046ms, frequency: 0+-5000000.000000001ppm
 ```
 
-To use this binary as your system NTP daemon, some setup is required:
+To use this binary as your system NTP daemon, you must also:
 
-- move the `ntp-daemon` binary to an appropriate location (e.g. `/usr/bin`)
-- create the path for the observe socket
-- permissions for the binary, config files and observe socket
-
-Then you must configure ntpd-rs as a system service.
+- move the `ntp-daemon` binary to an appropriate location (e.g. `/usr/bin`),
+- set up a configuration in `/etc/ntpd-rs/ntp.toml` (we suggest copying the configuration under `docs/examples/ntp.toml.default`),
+- set permissions for the binary and config file for the binary to be able to run and read the configuration,
+- configure the binary to be run as a system service.
 
 ### Running as a system service
-
 
 It is by far the easiest to have your operating system and standard tools take care of the details like:
 
@@ -91,6 +99,21 @@ AmbientCapabilities=CAP_SYS_TIME
 
 [Install]
 WantedBy=multi-user.target
+```
+
+Note that this requires an ntpd-rs user to be present on the system, which can be created with
+```
+sudo adduser --system --home /var/lib/ntpd-rs/ --group ntpd-rs
+```
+or if your system doesn't have adduser
+```
+sudo useradd --home-dir /var/lib/ntpd-rs --system --create-home --user-group ntpd-rs
+```
+
+This user must have access to the configuration folder:
+```
+sudo chown ntpd-rs:ntpd-rs /etc/ntpd-rs/ntp.toml
+sudo chmod 0644 /etc/ntpd-rs/ntp.toml
 ```
 
 #### FreeBSD
