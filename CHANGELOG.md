@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.0.0-rc.2] - 2023-09-14
 
 ### Changed
 - The copyright from the project changed from 'Internet Security Research Group
@@ -9,6 +9,8 @@
   now managed by their respective package managers. This may result in your
   config file being overwritten initially, but future upgrades should be handled
   gracefully.
+- Added actual ip address of ntp server to observable data. The address field has
+  been renamed for this.
 
 ## [1.0.0-rc.1] - 2023-09-13
 
@@ -150,6 +152,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
+[1.0.0-rc.2]: https://github.com/pendulum-project/ntpd-rs/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.7...v1.0.0-rc.1
 [0.3.7]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.5...v0.3.6
