@@ -17,20 +17,9 @@ create_user() {
     adduser --system --home "${NTPDRS_OBSERVE_HOME}" --group ${NTPDRS_OBSERVE_USER}
 }
 
-create_first_time_configuration() {
-    if [ ! -f "${NTPDRS_CONF}" ]; then
-        mkdir -p "${NTPDRS_CONF_DIR}"
-        cp "${NTPDRS_CONF_SRC}" "${NTPDRS_CONF}"
-        chown "${NTPDRS_USER}:${NTPDRS_USER}" "${NTPDRS_CONF_DIR}"
-        chown "${NTPDRS_USER}:${NTPDRS_USER}" "${NTPDRS_CONF}"
-        chmod "${NTPDRS_CONF_PERMS}" "${NTPDRS_CONF}"
-    fi
-}
-
 case "$1" in
 configure)
     create_user
-    create_first_time_configuration
     ;;
 esac
 
