@@ -102,16 +102,16 @@ WantedBy=multi-user.target
 ```
 
 Note that this requires an ntpd-rs user to be present on the system, which can be created with
-```
+```sh
 sudo adduser --system --home /var/lib/ntpd-rs/ --group ntpd-rs
 ```
 or if your system doesn't have adduser
-```
+```sh
 sudo useradd --home-dir /var/lib/ntpd-rs --system --create-home --user-group ntpd-rs
 ```
 
 This user must have access to the configuration folder:
-```
+```sh
 sudo chown ntpd-rs:ntpd-rs /etc/ntpd-rs/ntp.toml
 sudo chmod 0644 /etc/ntpd-rs/ntp.toml
 ```

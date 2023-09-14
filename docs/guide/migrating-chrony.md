@@ -6,7 +6,7 @@ Before we start with the specifics on how to convert individual directives, firs
 
 Please note that for some of the settings below, ntpd-rs and chrony use different defaults. When converting a configuration, please pay particular attention to `minsources`/`minimum-agreeing-sources`, `maxstep` and the corresponding `-panic-thresholds`, and any settings for NTS server functionality. Validation of the resulting ntpd-rs configuration can be done with `ntp-ctl validate -c <path>`, which should at least catch the most egregious errors.
 
-This guide does not go into detail on all of chrony's configuration directives, but rather focusses on those most important for successful migration. If a directive is not mentioned here, there may still be ntpd-rs options in the [configuration reference](../ntp.toml.5.md) that achieve the desired effect. Note that not all functionality of chrony is currently supported, a short overview of major differences is given [at the end of this document](#non-supported-features)
+This guide does not go into detail on all of chrony's configuration directives, but rather focusses on those most important for successful migration. If a directive is not mentioned here, there may still be ntpd-rs options in the [configuration reference](../man/ntp.toml.5.md) that achieve the desired effect. Note that not all functionality of chrony is currently supported, a short overview of major differences is given [at the end of this document](#non-supported-features)
 
 ## Time sources
 
@@ -17,7 +17,7 @@ Client-server connections need to be migrated in one of two ways:
 - As an NTS source, if NTS is enabled (i.e. the NTS option is present in the server directive).
 
 For server directives with no authentication, these can be converted to
-```
+```toml
 [[source]]
 mode="server"
 address="<address>"
@@ -25,14 +25,14 @@ address="<address>"
 where the address is the same as that given in the server directive.
 
 For server directives with NTS, these can be converted to
-```
+```toml
 [[source]]
 mode="nts"
 address="<address>"
 ```
 
 If the server directive contains poll limits (`maxpoll` or `minpoll`), these cannot be specified on a per-server basis in ntpd-rs. The best approach is to determine values acceptable for all time sources and apply these via source defaults:
-```
+```toml
 [source-defaults]
 poll-interval-limits = { min = <minpoll>, max = <maxpoll> }
 initial-poll-interval = <desired initial poll interval>
@@ -45,7 +45,7 @@ For NTS, if a custom certificate set is configured for a source via the `certset
 ### Pool directives
 
 Pools configured via the pool directive can be added to the ntpd-rs configuration via
-```
+```toml
 [[pool]]
 mode="pool"
 address="<address>"
@@ -54,7 +54,7 @@ address="<address>"
 If the pool directive specifies `maxsources`, this value can be configured in ntpd-rs via the `count` property. The default (4) is the same between ntpd-rs and chrony.
 
 If the pool directive contains poll limits (`maxpoll` or `minpoll`), these cannot be specified on a per-server basis in ntpd-rs. The best approach is to determine values acceptable for all time sources and apply these via source defaults:
-```
+```toml
 [source-defaults]
 poll-interval-limits = { min = <minpoll>, max = <maxpoll> }
 initial-poll-interval = <desired initial poll interval>
@@ -73,14 +73,14 @@ The current version of ntpd-rs does not yet support local reference clocks, but 
 ## Time synchronization options
 
 The minimum number of sources needed for time synchronization in ntpd-rs is configured through `minimum-agreeing-sources`:
-```
+```toml
 [synchronization]
 mininum-agreeing-sources = <minsources>
 ```
 Note that although the effect of this option is the same as chrony's `minsources`, the default in ntpd-rs is 3, rather than the default 1 source required by chrony. Although 3 is recommended for security, it may not be appropriate for all configurations, particularly configurations where few remote sources are configured.
 
 Chrony can limit the maximum time change with the `maxchange` directive. ntpd-rs allows similar restrictions to be enforced through a number of panic thresholds. Steps at startup are controlled through the `startup-panic-threshold`, whilst steps during normal operation are controlled with `single-step-panic-threshold` and `accumulated-step-panic-threshold`. In contrast to chrony, these do not allow ignoring of the first few occurrences, and more importantly, have finite default values:
-```
+```toml
 [synchronization]
 single-step-panic-threshold = 1000
 startup-step-panic-threshold = { forward="inf", backward = 86400 }
@@ -94,7 +94,7 @@ When tuning the synchronization algorithm, it is important to note a major philo
 ## Server configuration
 
 Server configuration in ntpd-rs works quite a bit differently from chrony. Rather than enabling time server functionality by `allow`ing remote connections to the server, one or more serving instances can be individually configured. Each of these comes with its own allow and deny list:
-```
+```toml
 [[server]]
 listen="<IP or [::]>:<port>"
 
@@ -115,16 +115,16 @@ action = "deny"
 The allow and deny list configuration is optional in ntpd-rs. By default, a server accepts traffic from anywhere. When configuring both allow and deny lists, ntpd-rs will first check if a remote is on the deny list. Only if this is not the case will the allow list be considered. This ordering needs to be taken into account when translating interleaved combinations of chrony's `allow` and `deny` commands.
 
 NTS can be enabled for a server by configuring an NTS key exchange server:
-```
+```toml
 [[nts-ke-server]]
-listen = "<IP or [::]>:<
+listen = "<IP or [::]>:4460"
 certificate-chain-path = <ntsservercert>
 private-key-path = <ntsserverkey>
 ```
 Here the names of the corresponding chrony directives are used on the right hand side of the assignment. Note that unlike chrony, ntpd-rs does not have a default IP address on which it listens for nts-ke traffic: this need to be provided explicitly. The port is optional however and defaults to the standard value 4460.
 
 The keys used to encrypt the cookies are ephemeral by default. If these should be kept across reboots of the server, the path for storing these can be configured:
-```
+```toml
 [keyset]
 key-storage-path = <path to key storage>
 ```
@@ -133,7 +133,7 @@ Note that in contrast to chrony's `ntsdumpdir` directive, here the full path nee
 The default key rotation interval is daily, and one full week's worth of old keys is retained for serving clients with older cookies.
 With these defaults, cookies for the server are only valid for slightly more than one week. This is much less than chrony's default of 3 weeks.
 These settings can be configured with the `key-rotation-interval` and `stale-key-count` parameters:
-```
+```toml
 [keyset]
 stale-key-count = <number of old keys to keep>
 key-rotation-interval = <rotation interval in seconds>
@@ -142,7 +142,7 @@ key-rotation-interval = <rotation interval in seconds>
 Sharing the keys with which the NTS cookies are encrypted between multiple ntpd-rs servers is not yet supported.
 
 If a local stratum for the server is configured through `local stratum`, this can be configured in ntpd-rs through the `local-stratum` key:
-```
+```toml
 [synchronization]
 local-stratum = <stratum>
 ```
