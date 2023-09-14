@@ -34,19 +34,6 @@ create_user() {
 init_systemd_service() {
     systemctl preset ntpd-rs.service 2>&1 || :
 }
-create_first_time_configuration() {
-    if [ ! -f "${NTPDRS_CONF}" ]; then
-        mkdir -p "${NTPDRS_CONF_DIR}"
-        cp "${NTPDRS_CONF_SRC}" "${NTPDRS_CONF}"
-
-        # Ensure that the config file has the correct ownership
-        chown ${NTPDRS_USER}:${NTPDRS_USER} ${NTPDRS_CONF}
-        chown ${NTPDRS_USER}:${NTPDRS_USER} ${NTPDRS_CONF_DIR}
-
-        # Ensure that the config file has the correct permissions
-        chmod ${NTPDRS_CONF_PERMS} ${NTPDRS_CONF}
-    fi
-}
 link_man_page() {
     if [ ! -f "/usr/share/man/man5/ntp.toml.5" ]; then
         (cd "/usr/share/man/man5" && ln -s "ntp-toml.5" "ntp.toml.5")
@@ -56,7 +43,6 @@ if [ $1 -eq 1 ] ; then
     # Initial installation
     create_user
     init_systemd_service
-    create_first_time_configuration
     link_man_page
 fi
 '''

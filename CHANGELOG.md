@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+- The copyright from the project changed from 'Internet Security Research Group
+  and Contributors' to 'Tweede Golf and Contributors'
+- The `/etc/ntpd-rs/ntp.toml` file in the deb and rpm packages provided by us is
+  now managed by their respective package managers. This may result in your
+  config file being overwritten initially, but future upgrades should be handled
+  gracefully.
+
 ## [1.0.0-rc.1] - 2023-09-13
 
 ### Added
