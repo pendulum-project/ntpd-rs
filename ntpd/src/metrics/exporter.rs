@@ -43,8 +43,8 @@ pub(crate) struct NtpMetricsExporterOptions {
 }
 
 impl NtpMetricsExporterOptions {
-    const TAKES_ARGUMENT: &[&'static str] = &["--config"];
-    const TAKES_ARGUMENT_SHORT: &[char] = &['c'];
+    const TAKES_ARGUMENT: &'static [&'static str] = &["--config"];
+    const TAKES_ARGUMENT_SHORT: &'static [char] = &['c'];
 
     /// parse an iterator over command line arguments
     pub fn try_parse_from<I, T>(iter: I) -> Result<Self, String>

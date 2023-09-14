@@ -7,7 +7,7 @@ use std::{
 
 use ntp_proto::{
     IgnoreReason, Measurement, NtpClock, NtpInstant, NtpTimestamp, Peer, PeerNtsData, PeerSnapshot,
-    PollError, ReferenceId, SourceDefaultsConfig, SynchronizationConfig, SystemSnapshot, Update,
+    PollError, SourceDefaultsConfig, SynchronizationConfig, SystemSnapshot, Update,
 };
 use ntp_udp::{EnableTimestamps, InterfaceName, UdpSocket};
 use rand::{thread_rng, Rng};
@@ -320,17 +320,23 @@ where
                     }
                 };
                 // Unwrap should be safe because we know the socket was bound to a local addres just before
-                let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
+                let our_addr = socket.as_ref().local_addr().unwrap();
 
                 // Unwrap should be safe because we know the socket was connected to a remote peer just before
-                let source_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
+                let source_addr = socket.as_ref().peer_addr().unwrap();
 
                 let local_clock_time = NtpInstant::now();
                 let config_snapshot = *channels.source_defaults_config_receiver.borrow_and_update();
                 let peer = if let Some(nts) = nts {
-                    Peer::new_nts(our_id, source_id, local_clock_time, config_snapshot, nts)
+                    Peer::new_nts(
+                        our_addr,
+                        source_addr,
+                        local_clock_time,
+                        config_snapshot,
+                        nts,
+                    )
                 } else {
-                    Peer::new(our_id, source_id, local_clock_time, config_snapshot)
+                    Peer::new(our_addr, source_addr, local_clock_time, config_snapshot)
                 };
 
                 let poll_wait = tokio::time::sleep(std::time::Duration::default());
@@ -561,8 +567,8 @@ mod tests {
         )
         .await
         .unwrap();
-        let our_id = ReferenceId::from_ip(socket.as_ref().local_addr().unwrap().ip());
-        let source_id = ReferenceId::from_ip(socket.as_ref().peer_addr().unwrap().ip());
+        let our_addr = socket.as_ref().local_addr().unwrap();
+        let source_addr = socket.as_ref().peer_addr().unwrap();
 
         let (_, system_snapshot_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
         let (_, synchronization_config_receiver) =
@@ -573,8 +579,8 @@ mod tests {
 
         let local_clock_time = NtpInstant::now();
         let peer = Peer::new(
-            our_id,
-            source_id,
+            our_addr,
+            source_addr,
             local_clock_time,
             *peer_defaults_config_receiver.borrow_and_update(),
         );

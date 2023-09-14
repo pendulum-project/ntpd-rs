@@ -48,8 +48,8 @@ pub(crate) struct NtpCtlOptions {
 }
 
 impl NtpCtlOptions {
-    const TAKES_ARGUMENT: &[&'static str] = &["--config", "--format"];
-    const TAKES_ARGUMENT_SHORT: &[char] = &['c', 'f'];
+    const TAKES_ARGUMENT: &'static [&'static str] = &["--config", "--format"];
+    const TAKES_ARGUMENT_SHORT: &'static [char] = &['c', 'f'];
 
     /// parse an iterator over command line arguments
     pub fn try_parse_from<I, T>(iter: I) -> Result<Self, String>
@@ -219,9 +219,7 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
             // Sort peers by address and then id (to deal with pools), servers just by address
             output.sources.sort_by_key(|p| match p {
                 crate::daemon::ObservablePeerState::Nothing => None,
-                crate::daemon::ObservablePeerState::Observable(s) => {
-                    Some((s.address.clone(), s.id))
-                }
+                crate::daemon::ObservablePeerState::Observable(s) => Some((s.name.clone(), s.id)),
             });
             output.servers.sort_by_key(|s| s.address);
 
@@ -251,13 +249,15 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
                             timedata,
                             unanswered_polls,
                             poll_interval,
-                            address,
+                            name: address,
+                            address: ip,
                             id,
                         },
                     ) => {
                         println!(
-                            "{} ({}): {:+.6}±{:.6}(±{:.6})s\n    pollinterval: {:.0}s, missing polls: {}",
+                            "{}/{} ({}): {:+.6}±{:.6}(±{:.6})s\n    pollinterval: {:.0}s, missing polls: {}",
                             address,
+                            ip,
                             id,
                             timedata.offset.to_seconds(),
                             timedata.uncertainty.to_seconds(),

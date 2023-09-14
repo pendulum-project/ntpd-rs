@@ -77,6 +77,8 @@ impl Default for SystemSnapshot {
 
 #[cfg(test)]
 mod tests {
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
     use crate::time_types::PollIntervalLimits;
 
     use super::*;
@@ -99,6 +101,7 @@ mod tests {
         system.update_used_peers(
             vec![
                 PeerSnapshot {
+                    source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
                     source_id: ReferenceId::KISS_DENY,
                     our_id: ReferenceId::NONE,
                     poll_interval: PollIntervalLimits::default().max,
@@ -107,6 +110,7 @@ mod tests {
                     reference_id: ReferenceId::KISS_DENY,
                 },
                 PeerSnapshot {
+                    source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
                     source_id: ReferenceId::KISS_RATE,
                     our_id: ReferenceId::KISS_RSTR,
                     poll_interval: PollIntervalLimits::default().max,

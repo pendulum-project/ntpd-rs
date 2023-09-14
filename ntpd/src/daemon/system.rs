@@ -539,7 +539,8 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                             timedata,
                             unanswered_polls: snapshot.reach.unanswered_polls(),
                             poll_interval: snapshot.poll_interval,
-                            address: data.peer_address.to_string(),
+                            name: data.peer_address.to_string(),
+                            address: snapshot.source_addr.to_string(),
                             id: data.source_id,
                         })
                     } else {
