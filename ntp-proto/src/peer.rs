@@ -1,4 +1,4 @@
-use std::io::Cursor;
+use std::{io::Cursor, net::SocketAddr};
 
 use crate::{
     config::SourceDefaultsConfig,
@@ -69,6 +69,7 @@ pub struct Peer {
     stratum: u8,
     reference_id: ReferenceId,
 
+    source_addr: SocketAddr,
     source_id: ReferenceId,
     our_id: ReferenceId,
     reach: Reach,
@@ -198,6 +199,8 @@ pub enum IgnoreReason {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PeerSnapshot {
+    pub source_addr: SocketAddr,
+
     pub source_id: ReferenceId,
     pub our_id: ReferenceId,
 
@@ -244,6 +247,7 @@ impl PeerSnapshot {
 
     pub fn from_peer(peer: &Peer) -> Self {
         Self {
+            source_addr: peer.source_addr,
             source_id: peer.source_id,
             our_id: peer.our_id,
             stratum: peer.stratum,
@@ -256,10 +260,13 @@ impl PeerSnapshot {
 
 #[cfg(feature = "__internal-test")]
 pub fn peer_snapshot() -> PeerSnapshot {
+    use std::net::{IpAddr, Ipv4Addr};
+
     let mut reach = crate::peer::Reach::default();
     reach.received_packet();
 
     PeerSnapshot {
+        source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
         source_id: ReferenceId::from_int(0),
         stratum: 0,
         reference_id: ReferenceId::from_int(0),
@@ -296,8 +303,8 @@ pub enum PollError {
 impl Peer {
     #[instrument]
     pub fn new(
-        our_id: ReferenceId,
-        source_id: ReferenceId,
+        our_addr: SocketAddr,
+        source_addr: SocketAddr,
         local_clock_time: NtpInstant,
         peer_defaults_config: SourceDefaultsConfig,
     ) -> Self {
@@ -309,8 +316,9 @@ impl Peer {
             remote_min_poll_interval: peer_defaults_config.poll_interval_limits.min,
 
             current_request_identifier: None,
-            our_id,
-            source_id,
+            our_id: ReferenceId::from_ip(our_addr.ip()),
+            source_id: ReferenceId::from_ip(source_addr.ip()),
+            source_addr,
             reach: Default::default(),
             tries: 0,
 
@@ -323,15 +331,20 @@ impl Peer {
 
     #[instrument]
     pub fn new_nts(
-        our_id: ReferenceId,
-        source_id: ReferenceId,
+        our_addr: SocketAddr,
+        source_addr: SocketAddr,
         local_clock_time: NtpInstant,
         peer_defaults_config: SourceDefaultsConfig,
         nts: Box<PeerNtsData>,
     ) -> Self {
         Self {
             nts: Some(nts),
-            ..Self::new(our_id, source_id, local_clock_time, peer_defaults_config)
+            ..Self::new(
+                our_addr,
+                source_addr,
+                local_clock_time,
+                peer_defaults_config,
+            )
         }
     }
 
@@ -514,6 +527,8 @@ impl Peer {
 
     #[cfg(test)]
     pub(crate) fn test_peer() -> Self {
+        use std::net::{IpAddr, Ipv4Addr};
+
         Peer {
             nts: None,
 
@@ -523,6 +538,7 @@ impl Peer {
 
             current_request_identifier: None,
 
+            source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
             source_id: ReferenceId::from_int(0),
             our_id: ReferenceId::from_int(0),
             reach: Reach::default(),

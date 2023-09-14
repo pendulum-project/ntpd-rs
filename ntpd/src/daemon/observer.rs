@@ -44,6 +44,7 @@ pub struct ObservedPeerState {
     pub timedata: ObservablePeerTimedata,
     pub unanswered_polls: u32,
     pub poll_interval: PollInterval,
+    pub name: String,
     pub address: String,
     pub id: PeerId,
 }
@@ -174,6 +175,7 @@ mod tests {
                 timedata: Default::default(),
                 unanswered_polls: Reach::default().unanswered_polls(),
                 poll_interval: PollIntervalLimits::default().min,
+                name: "127.0.0.3:123".into(),
                 address: "127.0.0.3:123".into(),
                 id: PeerId::new(),
             }),
@@ -239,6 +241,7 @@ mod tests {
                 timedata: Default::default(),
                 unanswered_polls: Reach::default().unanswered_polls(),
                 poll_interval: PollIntervalLimits::default().min,
+                name: "127.0.0.3:123".into(),
                 address: "127.0.0.3:123".into(),
                 id: PeerId::new(),
             }),

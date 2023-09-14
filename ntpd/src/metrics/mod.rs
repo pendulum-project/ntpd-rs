@@ -98,6 +98,7 @@ macro_rules! collect_sources {
         for tmp in &$from.sources {
             if let crate::metrics::ObservablePeerState::Observable($ident) = tmp {
                 let labels = vec![
+                    ("name", $ident.name.clone()),
                     ("address", $ident.address.clone()),
                     ("id", format!("{}", $ident.id)),
                 ];

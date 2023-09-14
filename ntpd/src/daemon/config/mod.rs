@@ -143,8 +143,8 @@ pub enum NtpDaemonAction {
 }
 
 impl NtpDaemonOptions {
-    const TAKES_ARGUMENT: &[&'static str] = &["--config", "--log-level"];
-    const TAKES_ARGUMENT_SHORT: &[char] = &['c', 'l'];
+    const TAKES_ARGUMENT: &'static [&'static str] = &["--config", "--log-level"];
+    const TAKES_ARGUMENT_SHORT: &'static [char] = &['c', 'l'];
 
     /// parse an iterator over command line arguments
     pub fn try_parse_from<I, T>(iter: I) -> Result<Self, String>
