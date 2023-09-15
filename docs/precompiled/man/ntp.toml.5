@@ -142,6 +142,7 @@ Servers always serve the system clock time.
 Address of a UDP socket on which the server should listen for incoming
 NTP requests.
 Specified as an interface IP address, a colon and a port number.
+The standard port number for NTP is UDP port 123.
 Both IPv4 and IPv6 are supported.
 For example to listen on localhost port 123 in IPv4 you can use
 \f[V]127.0.0.1:123\f[R].
@@ -274,11 +275,13 @@ validate that the traffic was untampered with.
 Address of a TCP socket on which the server should listen for incoming
 NTS key exchange requests.
 Specified as an interface IP address, a colon and a port number.
+The standard port number for an NTS key exchange server is TCP port
+4460.
 Both IPv4 and IPv6 are supported.
-For example to listen on localhost port 123 in IPv4 you can use
-\f[V]127.0.0.1:123\f[R].
+For example to listen on localhost port 4460 in IPv4 you can use
+\f[V]127.0.0.1:4460\f[R].
 You can listen on all available network interfaces at once using
-\f[V]0.0.0.0:123\f[R] for IPv4 or \f[V][::]:123\f[R] for IPv6.
+\f[V]0.0.0.0:4460\f[R] for IPv4 or \f[V][::]:4460\f[R] for IPv6.
 .TP
 \f[V]certificate-chain-path\f[R] = \f[I]path\f[R]
 Path to a certificate chain for the public certificate that the server
