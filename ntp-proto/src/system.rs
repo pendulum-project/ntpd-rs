@@ -59,7 +59,7 @@ impl SystemSnapshot {
     pub fn update_used_peers(&mut self, mut used_peers: impl Iterator<Item = PeerSnapshot>) {
         if let Some(system_peer_snapshot) = used_peers.next() {
             self.stratum = system_peer_snapshot.stratum.saturating_add(1);
-            self.reference_id = system_peer_snapshot.reference_id;
+            self.reference_id = system_peer_snapshot.source_id;
         }
     }
 }
@@ -107,7 +107,7 @@ mod tests {
                     poll_interval: PollIntervalLimits::default().max,
                     reach: Default::default(),
                     stratum: 2,
-                    reference_id: ReferenceId::KISS_DENY,
+                    reference_id: ReferenceId::NONE,
                 },
                 PeerSnapshot {
                     source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
