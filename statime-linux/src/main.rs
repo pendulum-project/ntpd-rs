@@ -24,10 +24,7 @@ use timestamped_socket::{
     raw_udp_socket::TimestampingMode,
 };
 use tokio::{
-    sync::{
-        mpsc::{Receiver, Sender},
-        Notify,
-    },
+    sync::mpsc::{Receiver, Sender},
     time::Sleep,
 };
 
@@ -235,8 +232,7 @@ async fn run(
     local_clock: &LinuxClock,
     instance: &'static PtpInstance<LinuxClock, BasicFilter>,
 ) -> std::io::Result<()> {
-    static BMCA_NOTIFY: OnceLock<Notify> = OnceLock::new();
-    let bmca_notify = BMCA_NOTIFY.get_or_init(Notify::new);
+    let (bmca_notify_sender, bmca_notify_receiver) = tokio::sync::watch::channel(false);
 
     let mut main_task_senders = Vec::with_capacity(ports.len());
     let mut main_task_receivers = Vec::with_capacity(ports.len());
@@ -258,7 +254,7 @@ async fn run(
             event_socket,
             general_socket,
             local_clock.clone(),
-            bmca_notify,
+            bmca_notify_receiver.clone(),
         ));
 
         main_task_sender
@@ -282,7 +278,9 @@ async fn run(
         bmca_timer.as_mut().await;
 
         // notify all the ports that they need to stop what they're doing
-        bmca_notify.notify_waiters();
+        bmca_notify_sender
+            .send(true)
+            .expect("Bmca notification failed");
 
         let mut bmca_ports = Vec::with_capacity(main_task_receivers.len());
         let mut mut_bmca_ports = Vec::with_capacity(main_task_receivers.len());
@@ -290,6 +288,11 @@ async fn run(
         for receiver in main_task_receivers.iter_mut() {
             bmca_ports.push(receiver.recv().await.unwrap());
         }
+
+        // have all ports so deassert stop
+        bmca_notify_sender
+            .send(false)
+            .expect("Bmca notification failed");
 
         for mut_bmca_port in bmca_ports.iter_mut() {
             mut_bmca_ports.push(mut_bmca_port);
@@ -319,7 +322,7 @@ async fn port_task(
     mut event_socket: EventSocket,
     mut general_socket: GeneralSocket,
     local_clock: LinuxClock,
-    bmca_notify: &Notify,
+    mut bmca_notify: tokio::sync::watch::Receiver<bool>,
 ) {
     let mut timers = Timers {
         port_sync_timer: pin!(Timer::new()),
@@ -383,8 +386,9 @@ async fn port_task(
                 () = &mut timers.filter_update_timer => {
                     port.handle_filter_update_timer()
                 },
-                () = bmca_notify.notified() => {
-                    break;
+                result = bmca_notify.wait_for(|v| *v) => match result {
+                    Ok(_) => break,
+                    Err(error) => panic!("Error on bmca notify: {error:?}"),
                 }
             };
 
