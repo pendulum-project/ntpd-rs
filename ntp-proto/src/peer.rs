@@ -168,11 +168,6 @@ impl Reach {
     pub fn unanswered_polls(&self) -> u32 {
         self.0.trailing_zeros()
     }
-
-    /// Number of polls remaining until unreachable
-    pub fn reachability_score(&self) -> u32 {
-        8 - self.0.trailing_zeros()
-    }
 }
 
 #[derive(Debug)]
