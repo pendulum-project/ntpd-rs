@@ -194,11 +194,12 @@ async fn actual_main() {
     let time_properties_ds =
         TimePropertiesDS::new_arbitrary_time(false, false, TimeSource::InternalOscillator);
 
-    let instance = PtpInstance::new(instance_config, time_properties_ds, local_clock.clone());
-
-    // borrow instance with the static lifetime
-    static INSTANCE: OnceLock<PtpInstance<LinuxClock, BasicFilter>> = OnceLock::new();
-    let instance = INSTANCE.get_or_init(|| instance);
+    // Leak to get a static reference, the ptp instance will be around for the rest
+    // of the program anyway
+    let instance = Box::leak(Box::new(PtpInstance::new(
+        instance_config,
+        time_properties_ds,
+    )));
 
     // for every port in the config file, create a port definition and add it
     // to the instance
@@ -230,7 +231,7 @@ async fn actual_main() {
 async fn run(
     ports: impl Iterator<Item = PortDefinition> + ExactSizeIterator,
     local_clock: &LinuxClock,
-    instance: &'static PtpInstance<LinuxClock, BasicFilter>,
+    instance: &'static PtpInstance<BasicFilter>,
 ) -> std::io::Result<()> {
     let (bmca_notify_sender, bmca_notify_receiver) = tokio::sync::watch::channel(false);
 

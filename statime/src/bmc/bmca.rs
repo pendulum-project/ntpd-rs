@@ -8,11 +8,12 @@ use super::{
 };
 use crate::{
     datastructures::{
-        common::{PortIdentity, TimeInterval, WireTimestamp},
+        common::{PortIdentity, TimeInterval},
         datasets::DefaultDS,
         messages::{AnnounceMessage, Header},
     },
     port::state::PortState,
+    Duration,
 };
 
 /// Object implementing the Best Master Clock Algorithm
@@ -48,40 +49,51 @@ impl Bmca {
         }
     }
 
+    pub(crate) fn step_age(&mut self, step: Duration) {
+        self.foreign_master_list.step_age(step);
+    }
+
     /// Register a received announce message to the BMC algorithm
     pub(crate) fn register_announce_message(
         &mut self,
         header: &Header,
         announce_message: &AnnounceMessage,
-        current_time: WireTimestamp,
     ) {
         // Ignore messages comming from the same port
         if announce_message.header.source_port_identity != self.own_port_identity {
             self.foreign_master_list.register_announce_message(
                 header,
                 announce_message,
-                current_time,
+                Duration::ZERO,
             );
         }
     }
 
-    /// Takes the Erbest from this port
-    pub(crate) fn take_best_port_announce_message(
+    pub(crate) fn reregister_announce_message(
         &mut self,
-        current_time: WireTimestamp,
-    ) -> Option<BestAnnounceMessage> {
+        header: &Header,
+        announce_message: &AnnounceMessage,
+        age: Duration,
+    ) {
+        // Ignore messages comming from the same port
+        if announce_message.header.source_port_identity != self.own_port_identity {
+            self.foreign_master_list
+                .register_announce_message(header, announce_message, age);
+        }
+    }
+
+    /// Takes the Erbest from this port
+    pub(crate) fn take_best_port_announce_message(&mut self) -> Option<BestAnnounceMessage> {
         // Find the announce message we want to use from each foreign master that has
         // qualified messages
-        let announce_messages = self
-            .foreign_master_list
-            .take_qualified_announce_messages(current_time);
+        let announce_messages = self.foreign_master_list.take_qualified_announce_messages();
 
         // The best of the foreign master messages is our erbest
         let erbest = Self::find_best_announce_message(announce_messages.map(|message| {
             BestAnnounceMessage {
                 header: message.header,
                 message: message.message,
-                timestamp: message.timestamp,
+                age: message.age,
                 identity: self.own_port_identity,
             }
         }));
@@ -90,7 +102,7 @@ impl Bmca {
             // All messages that were considered have been removed from the
             // foreignmasterlist. However, the one that has been selected as the
             // Erbest must not be removed, so let's just reregister it.
-            self.register_announce_message(&best.header, &best.message, best.timestamp);
+            self.reregister_announce_message(&best.header, &best.message, best.age);
         }
 
         erbest
@@ -202,7 +214,7 @@ impl Bmca {
         global_message: BestAnnounceMessage,
         port_message: BestAnnounceMessage,
     ) -> RecommendedState {
-        if global_message.timestamp == port_message.timestamp {
+        if global_message == port_message {
             // effectively, E_best == E_rbest
             RecommendedState::S1(global_message.message)
         } else {
@@ -233,18 +245,18 @@ enum MessageComparison {
     Worse(BestAnnounceMessage),
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct BestAnnounceMessage {
     header: Header,
     message: AnnounceMessage,
-    timestamp: WireTimestamp,
+    age: Duration,
     identity: PortIdentity,
 }
 
 impl BestAnnounceMessage {
     fn compare(&self, other: &Self) -> Ordering {
-        // use the timestamp as a tie-break if needed (prefer newer messages)
-        let tie_break = self.timestamp.cmp(&other.timestamp);
+        // use the age as a tie-break if needed (prefer newer messages)
+        let tie_break = other.age.cmp(&self.age);
         self.compare_dataset(other).as_ordering().then(tie_break)
     }
 
@@ -318,11 +330,6 @@ mod tests {
         let header = default_announce_message_header();
         let message = default_announce_message();
 
-        let timestamp = WireTimestamp {
-            seconds: 0,
-            nanos: 0,
-        };
-
         let identity = PortIdentity {
             clock_identity: ClockIdentity([0; 8]),
             port_number: 0,
@@ -331,7 +338,7 @@ mod tests {
         BestAnnounceMessage {
             header,
             message,
-            timestamp,
+            age: Duration::ZERO,
             identity,
         }
     }
@@ -371,17 +378,11 @@ mod tests {
         let mut message1 = default_best_announce_message();
         let mut message2 = default_best_announce_message();
 
-        message1.timestamp = WireTimestamp {
-            seconds: 1_000_000,
-            nanos: 1001,
-        };
-        message2.timestamp = WireTimestamp {
-            seconds: 1_000_001,
-            nanos: 1000,
-        };
+        message1.age = Duration::from_micros(2);
+        message2.age = Duration::from_micros(1);
 
         // the newest message should be preferred
-        assert!(message2.timestamp > message1.timestamp);
+        assert!(message2.age < message1.age);
 
         let ordering = message1.compare_dataset(&message2).as_ordering();
         assert_eq!(ordering, Ordering::Equal);
@@ -614,14 +615,8 @@ mod tests {
 
         let mut port_message = global_message;
 
-        global_message.timestamp = WireTimestamp {
-            seconds: 1,
-            nanos: 2,
-        };
-        port_message.timestamp = WireTimestamp {
-            seconds: 3,
-            nanos: 4,
-        };
+        global_message.age = Duration::from_micros(4);
+        port_message.age = Duration::from_micros(2);
 
         let ebest = ComparisonDataset::from_announce_message(
             &global_message.message,
@@ -663,14 +658,8 @@ mod tests {
 
         let mut port_message = global_message;
 
-        global_message.timestamp = WireTimestamp {
-            seconds: 1,
-            nanos: 2,
-        };
-        port_message.timestamp = WireTimestamp {
-            seconds: 3,
-            nanos: 4,
-        };
+        global_message.age = Duration::from_micros(4);
+        port_message.age = Duration::from_micros(2);
 
         let ebest = ComparisonDataset::from_announce_message(
             &global_message.message,

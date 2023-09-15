@@ -1,6 +1,5 @@
 use core::{
     marker::PhantomData,
-    ops::DerefMut,
     sync::atomic::{AtomicI8, Ordering},
 };
 
@@ -63,10 +62,9 @@ use crate::{
 ///
 /// instance.run(&TimerImpl).await;
 /// ```
-pub struct PtpInstance<C, F> {
+pub struct PtpInstance<F> {
     state: AtomicRefCell<PtpInstanceState>,
     log_bmca_interval: AtomicI8,
-    clock: AtomicRefCell<C>,
     _filter: PhantomData<F>,
 }
 
@@ -81,14 +79,13 @@ pub(crate) struct PtpInstanceState {
 impl PtpInstanceState {
     fn bmca<C: Clock, F: Filter, R: Rng>(
         &mut self,
-        clock: &mut C,
         ports: &mut [&mut Port<InBmca<'_>, R, C, F>],
+        bmca_interval: crate::Duration,
     ) {
         debug_assert_eq!(self.default_ds.number_ports as usize, ports.len());
-        let current_time = clock.now().into();
 
         for port in ports.iter_mut() {
-            port.calculate_best_local_announce_message(current_time)
+            port.calculate_best_local_announce_message()
         }
 
         let ebest = Bmca::find_best_announce_message(
@@ -117,15 +114,19 @@ impl PtpInstanceState {
                     &mut self.current_ds,
                     &mut self.parent_ds,
                     &self.default_ds,
-                    clock,
                 );
             }
+        }
+
+        // And update announce message ages
+        for port in ports.iter_mut() {
+            port.step_announce_age(bmca_interval);
         }
     }
 }
 
-impl<C: Clock, F> PtpInstance<C, F> {
-    pub fn new(config: InstanceConfig, time_properties_ds: TimePropertiesDS, clock: C) -> Self {
+impl<F> PtpInstance<F> {
+    pub fn new(config: InstanceConfig, time_properties_ds: TimePropertiesDS) -> Self {
         let default_ds = DefaultDS::new(config);
         Self {
             state: AtomicRefCell::new(PtpInstanceState {
@@ -135,13 +136,12 @@ impl<C: Clock, F> PtpInstance<C, F> {
                 time_properties_ds,
             }),
             log_bmca_interval: AtomicI8::new(i8::MAX),
-            clock: AtomicRefCell::new(clock),
             _filter: PhantomData,
         }
     }
 }
 
-impl<C: Clock, F: Filter> PtpInstance<C, F> {
+impl<F: Filter> PtpInstance<F> {
     /// Add and initialize this port
     ///
     /// We start in the BMCA state because that is convenient
@@ -150,7 +150,7 @@ impl<C: Clock, F: Filter> PtpInstance<C, F> {
     /// the caller is responsible for propagating any property changes to this
     /// clock, and for synchronizing this clock with the instance clock as
     /// appropriate based on the ports state.
-    pub fn add_port<R: Rng>(
+    pub fn add_port<C, R: Rng>(
         &self,
         config: PortConfig,
         filter_config: F::Config,
@@ -175,10 +175,13 @@ impl<C: Clock, F: Filter> PtpInstance<C, F> {
         )
     }
 
-    pub fn bmca<R: Rng>(&self, ports: &mut [&mut Port<InBmca<'_>, R, C, F>]) {
-        self.state
-            .borrow_mut()
-            .bmca(self.clock.borrow_mut().deref_mut(), ports)
+    pub fn bmca<C: Clock, R: Rng>(&self, ports: &mut [&mut Port<InBmca<'_>, R, C, F>]) {
+        self.state.borrow_mut().bmca(
+            ports,
+            crate::Duration::from_seconds(
+                2f64.powi(self.log_bmca_interval.load(Ordering::Relaxed) as i32),
+            ),
+        )
     }
 
     pub fn bmca_interval(&self) -> core::time::Duration {

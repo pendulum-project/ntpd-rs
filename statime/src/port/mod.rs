@@ -12,7 +12,7 @@ use crate::{
     clock::Clock,
     config::PortConfig,
     datastructures::{
-        common::{LeapIndicator, PortIdentity, TimeSource, WireTimestamp},
+        common::{LeapIndicator, PortIdentity, TimeSource},
         datasets::{CurrentDS, DefaultDS, ParentDS, TimePropertiesDS},
         messages::{Message, MessageBody},
     },
@@ -275,11 +275,8 @@ impl<'a, C: Clock, F: Filter, R: Rng> Port<Running<'a>, R, C, F> {
 
         match message.body {
             MessageBody::Announce(announce) => {
-                self.bmca.register_announce_message(
-                    &message.header,
-                    &announce,
-                    self.clock.now().into(),
-                );
+                self.bmca
+                    .register_announce_message(&message.header, &announce);
                 actions![PortAction::ResetAnnounceReceiptTimer {
                     duration: self.config.announce_duration(&mut self.rng),
                 }]
@@ -363,8 +360,12 @@ impl<L, R, C, F: Filter> Port<L, R, C, F> {
 }
 
 impl<'a, C: Clock, F: Filter, R: Rng> Port<InBmca<'a>, R, C, F> {
-    pub(crate) fn calculate_best_local_announce_message(&mut self, current_time: WireTimestamp) {
-        self.lifecycle.local_best = self.bmca.take_best_port_announce_message(current_time)
+    pub(crate) fn calculate_best_local_announce_message(&mut self) {
+        self.lifecycle.local_best = self.bmca.take_best_port_announce_message()
+    }
+
+    pub(crate) fn step_announce_age(&mut self, step: Duration) {
+        self.bmca.step_age(step);
     }
 
     pub(crate) fn best_local_announce_message(&self) -> Option<BestAnnounceMessage> {
@@ -385,7 +386,6 @@ impl<'a, C: Clock, F: Filter, R: Rng> Port<InBmca<'a>, R, C, F> {
         current_ds: &mut CurrentDS,
         parent_ds: &mut ParentDS,
         default_ds: &DefaultDS,
-        clock: &mut C,
     ) {
         self.set_recommended_port_state(&recommended_state, default_ds);
 
@@ -427,7 +427,7 @@ impl<'a, C: Clock, F: Filter, R: Rng> Port<InBmca<'a>, R, C, F> {
 
                 *time_properties_ds = announce_message.time_properties();
 
-                if let Err(error) = clock.set_properties(time_properties_ds) {
+                if let Err(error) = self.clock.set_properties(time_properties_ds) {
                     log::error!("Could not update clock: {:?}", error);
                 }
             }
