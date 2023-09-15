@@ -3,11 +3,12 @@
 use fixed::traits::LossyInto;
 
 use super::{Filter, FilterUpdate};
-use crate::{port::Measurement, time::Duration, Clock};
+use crate::{port::Measurement, time::Duration, Clock, Time};
 
 #[derive(Debug)]
 struct PrevStepData {
-    measurement: Measurement,
+    event_time: Time,
+    offset: Duration,
     correction: Duration,
 }
 
@@ -41,39 +42,50 @@ impl Filter for BasicFilter {
     }
 
     fn measurement<C: Clock>(&mut self, measurement: Measurement, clock: &mut C) -> FilterUpdate {
+        let mut update = FilterUpdate::default();
+
+        if let Some(delay) = measurement.delay {
+            update.mean_delay = Some(delay);
+        }
+
+        let Some(offset) = measurement.offset else {
+            // No measurement, so no further actions
+            return update;
+        };
+
         // Reset on too-large difference
-        if measurement.master_offset.abs() > Duration::from_nanos(1_000_000_000) {
-            log::debug!("Offset too large, stepping {}", measurement.master_offset);
+        if offset.abs() > Duration::from_nanos(1_000_000_000) {
+            log::debug!("Offset too large, stepping {}", offset);
             self.offset_confidence = Duration::from_nanos(1_000_000_000);
             self.freq_confidence = 1e-4;
 
-            if let Err(error) = clock.step_clock(-measurement.master_offset) {
+            if let Err(error) = clock.step_clock(-offset) {
                 log::error!("Could not step clock: {:?}", error);
             }
-            return Default::default();
+            return update;
         }
 
         // Determine offset
-        let mut offset = measurement.master_offset;
+        let mut clamped_offset = offset;
         if offset.abs() > self.offset_confidence {
-            offset = offset.clamp(-self.offset_confidence, self.offset_confidence);
+            clamped_offset = offset.clamp(-self.offset_confidence, self.offset_confidence);
             self.offset_confidence *= 2i32;
         } else {
             self.offset_confidence -= (self.offset_confidence - offset.abs()) * self.gain;
         }
 
         // And decide it's correction
-        let correction = -offset * self.gain;
+        let correction = -clamped_offset * self.gain;
 
         let freq_corr = if let Some(last_step) = &self.last_step {
             // Calculate interval for us
             let interval_local: f64 =
-                (measurement.event_time - last_step.measurement.event_time - last_step.correction)
+                (measurement.event_time - last_step.event_time - last_step.correction)
                     .nanos()
                     .lossy_into();
             // and for the master
-            let interval_master: f64 = ((measurement.event_time - measurement.master_offset)
-                - (last_step.measurement.event_time - last_step.measurement.master_offset))
+            let interval_master: f64 = ((measurement.event_time - offset)
+                - (last_step.event_time - last_step.offset))
                 .nanos()
                 .lossy_into();
 
@@ -98,16 +110,18 @@ impl Filter for BasicFilter {
             0.0
         };
 
+        // unwrap is ok here since we always have an offset
         log::info!(
             "Offset to master: {:e}ns, corrected with phase change {:e}ns and freq change {:e}ppm",
-            measurement.master_offset.nanos(),
+            offset.nanos(),
             correction.nanos(),
             freq_corr
         );
 
         // Store data for next time
         self.last_step = Some(PrevStepData {
-            measurement,
+            event_time: measurement.event_time,
+            offset,
             correction,
         });
 
@@ -119,12 +133,7 @@ impl Filter for BasicFilter {
         } else {
             self.cur_freq += freq_corr;
         }
-        Default::default()
-    }
-
-    fn delay(&mut self, delay: Duration) -> Duration {
-        // We dont filter delays
-        delay
+        update
     }
 
     fn demobilize<C: Clock>(self, _clock: &mut C) {

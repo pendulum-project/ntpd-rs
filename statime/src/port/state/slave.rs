@@ -22,11 +22,10 @@ pub(crate) struct SlaveState<F> {
     delay_state: DelayState,
 
     mean_delay: Option<Duration>,
-    last_raw_offset: Option<Duration>,
+    last_raw_sync_offset: Option<Duration>,
 
     delay_req_ids: SequenceIdGenerator,
 
-    next_delay_measurement: Option<Time>,
     filter: F,
 }
 
@@ -36,7 +35,7 @@ impl<F> SlaveState<F> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SyncState {
     Empty,
     Measuring {
@@ -46,7 +45,7 @@ enum SyncState {
     },
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DelayState {
     Empty,
     Measuring {
@@ -63,9 +62,8 @@ impl<F: Filter> SlaveState<F> {
             sync_state: SyncState::Empty,
             delay_state: DelayState::Empty,
             mean_delay: None,
-            last_raw_offset: None,
+            last_raw_sync_offset: None,
             delay_req_ids: SequenceIdGenerator::new(),
-            next_delay_measurement: None,
             filter: F::new(filter_config),
         }
     }
@@ -74,7 +72,11 @@ impl<F: Filter> SlaveState<F> {
         if let Some(measurement) = self.extract_measurement() {
             // If the received message allowed the (slave) state to calculate its offset
             // from the master, update the local clock
-            PortActionIterator::from_filter(self.filter.measurement(measurement, clock))
+            let filter_updates = self.filter.measurement(measurement, clock);
+            if let Some(mean_delay) = filter_updates.mean_delay {
+                self.mean_delay = Some(mean_delay);
+            }
+            PortActionIterator::from_filter(filter_updates)
         } else {
             actions![]
         }
@@ -216,7 +218,6 @@ impl<F: Filter> SlaveState<F> {
                     ..
                 } if id == header.sequence_id => {
                     *recv_time = Some(corrected_recv_time);
-                    self.update_last_raw_offset();
                     self.handle_time_measurement(clock)
                 }
                 _ => {
@@ -241,7 +242,6 @@ impl<F: Filter> SlaveState<F> {
                         send_time: Some(Time::from(message.origin_timestamp)),
                         recv_time: Some(corrected_recv_time),
                     };
-                    self.update_last_raw_offset();
                     self.handle_time_measurement(clock)
                 }
             }
@@ -275,7 +275,6 @@ impl<F: Filter> SlaveState<F> {
                 ..
             } if id == header.sequence_id => {
                 *send_time = Some(packet_send_time);
-                self.update_last_raw_offset();
                 self.handle_time_measurement(clock)
             }
             _ => {
@@ -284,7 +283,6 @@ impl<F: Filter> SlaveState<F> {
                     send_time: Some(packet_send_time),
                     recv_time: None,
                 };
-                self.update_last_raw_offset();
                 self.handle_time_measurement(clock)
             }
         }
@@ -320,12 +318,6 @@ impl<F: Filter> SlaveState<F> {
                 *recv_time = Some(
                     Time::from(message.receive_timestamp) - Duration::from(header.correction_field),
                 );
-                self.next_delay_measurement = Some(
-                    *recv_time.as_ref().unwrap()
-                        + Duration::from_log_interval(header.log_message_interval)
-                        - Duration::from_fixed_nanos(0.1f64),
-                );
-                self.try_finish_delay_measurement();
                 self.handle_time_measurement(clock)
             }
             _ => {
@@ -333,35 +325,6 @@ impl<F: Filter> SlaveState<F> {
                 // Ignore the Delay response
                 actions![]
             }
-        }
-    }
-
-    fn update_last_raw_offset(&mut self) {
-        if let SyncState::Measuring {
-            send_time: Some(send_time),
-            recv_time: Some(recv_time),
-            ..
-        } = self.sync_state
-        {
-            self.last_raw_offset = Some(recv_time - send_time);
-            self.try_finish_delay_measurement()
-        }
-    }
-
-    fn try_finish_delay_measurement(&mut self) {
-        if let (
-            DelayState::Measuring {
-                send_time: Some(send_time),
-                recv_time: Some(recv_time),
-                ..
-            },
-            Some(last_raw_offset),
-        ) = (&self.delay_state, self.last_raw_offset)
-        {
-            let mean_delay = ((*recv_time - *send_time) + last_raw_offset) / 2;
-            self.mean_delay = Some(mean_delay);
-            self.delay_state = DelayState::Empty;
-            self.filter.delay(mean_delay);
         }
     }
 }
@@ -416,28 +379,47 @@ impl<F> SlaveState<F> {
     }
 
     fn extract_measurement(&mut self) -> Option<Measurement> {
-        match (&self.sync_state, self.mean_delay) {
-            (
-                SyncState::Measuring {
-                    send_time: Some(send_time),
-                    recv_time: Some(recv_time),
-                    ..
-                },
-                Some(mean_delay),
-            ) => {
-                let result = Measurement {
-                    master_offset: *recv_time - *send_time - mean_delay,
-                    event_time: *recv_time,
-                };
+        let mut result = Measurement::default();
 
-                self.sync_state = SyncState::Empty;
+        if let SyncState::Measuring {
+            send_time: Some(send_time),
+            recv_time: Some(recv_time),
+            ..
+        } = self.sync_state
+        {
+            let raw_sync_offset = recv_time - send_time;
+            result.event_time = recv_time;
+            result.raw_sync_offset = Some(raw_sync_offset);
 
-                log::debug!("Extracted measurement {:?}", result);
-
-                Some(result)
+            if let Some(mean_delay) = self.mean_delay {
+                result.offset = Some(raw_sync_offset - mean_delay);
             }
-            _ => None,
+
+            self.last_raw_sync_offset = Some(raw_sync_offset);
+            self.sync_state = SyncState::Empty;
+
+            log::debug!("Raw sync measurement {:?}", result.raw_sync_offset);
+        } else if let DelayState::Measuring {
+            send_time: Some(send_time),
+            recv_time: Some(recv_time),
+            ..
+        } = self.delay_state
+        {
+            let raw_delay_offset = send_time - recv_time;
+            result.event_time = send_time;
+            result.raw_delay_offset = Some(raw_delay_offset);
+
+            if let Some(raw_sync_offset) = self.last_raw_sync_offset {
+                result.delay = Some((raw_sync_offset - raw_delay_offset) / 2);
+            }
+
+            self.delay_state = DelayState::Empty;
+        } else {
+            // No measurement
+            return None;
         }
+
+        Some(result)
     }
 }
 
@@ -456,7 +438,6 @@ mod tests {
 
     struct TestFilter {
         last_measurement: Option<Measurement>,
-        last_delay: Option<Duration>,
     }
 
     impl Filter for TestFilter {
@@ -465,18 +446,19 @@ mod tests {
         fn new(_config: Self::Config) -> Self {
             Self {
                 last_measurement: None,
-                last_delay: None,
             }
         }
 
         fn measurement<C: Clock>(&mut self, m: Measurement, _clock: &mut C) -> FilterUpdate {
             self.last_measurement = Some(m);
-            Default::default()
-        }
-
-        fn delay(&mut self, delay: Duration) -> Duration {
-            self.last_delay = Some(delay);
-            delay
+            if let Some(delay) = m.delay {
+                FilterUpdate {
+                    next_update: None,
+                    mean_delay: Some(delay),
+                }
+            } else {
+                Default::default()
+            }
         }
 
         fn demobilize<C: Clock>(self, _clock: &mut C) {
@@ -517,7 +499,6 @@ mod tests {
     fn test_sync_without_delay_msg() {
         let mut state = SlaveState::<TestFilter>::new(Default::default(), ());
         state.mean_delay = Some(Duration::from_micros(100));
-        state.next_delay_measurement = Some(Time::from_secs(10));
 
         let header = Header {
             two_step_flag: false,
@@ -541,12 +522,14 @@ mod tests {
 
         assert!(action.next().is_none());
         drop(action);
-        assert_eq!(state.filter.last_delay.take(), None);
         assert_eq!(
             state.filter.last_measurement.take(),
             Some(Measurement {
                 event_time: Time::from_micros(49),
-                master_offset: Duration::from_micros(-51)
+                offset: Some(Duration::from_micros(-51)),
+                delay: None,
+                raw_sync_offset: Some(Duration::from_micros(49)),
+                raw_delay_offset: None,
             })
         );
 
@@ -570,7 +553,6 @@ mod tests {
         );
 
         assert!(action.next().is_none());
-        assert_eq!(state.filter.last_delay.take(), None);
         assert_eq!(state.filter.last_measurement.take(), None);
 
         let header = Header {
@@ -594,12 +576,14 @@ mod tests {
         assert!(action.next().is_none());
         drop(action);
 
-        assert_eq!(state.filter.last_delay.take(), None);
         assert_eq!(
             state.filter.last_measurement.take(),
             Some(Measurement {
                 event_time: Time::from_micros(1049),
-                master_offset: Duration::from_micros(-53)
+                offset: Some(Duration::from_micros(-53)),
+                delay: None,
+                raw_sync_offset: Some(Duration::from_micros(47)),
+                raw_delay_offset: None,
             })
         );
     }
@@ -607,26 +591,6 @@ mod tests {
     #[test]
     fn test_sync_with_delay() {
         let mut state = SlaveState::<TestFilter>::new(Default::default(), ());
-
-        let header = Header {
-            two_step_flag: false,
-            correction_field: TimeInterval(1000.into()),
-            ..Default::default()
-        };
-
-        let mut action = state.handle_event_receive(
-            Message {
-                header,
-                body: MessageBody::Sync(SyncMessage {
-                    origin_timestamp: Time::from_micros(0).into(),
-                }),
-                suffix: TlvSet::default(),
-            },
-            Time::from_micros(50),
-            &mut TestClock,
-        );
-
-        assert!(action.next().is_none());
 
         let mut buffer = [0u8; MAX_DATA_LEN];
         let default_ds = DefaultDS::new(InstanceConfig {
@@ -652,6 +616,36 @@ mod tests {
             delay_asymmetry: Default::default(),
         };
 
+        let header = Header {
+            two_step_flag: false,
+            correction_field: TimeInterval(1000.into()),
+            ..Default::default()
+        };
+
+        let mut action = state.handle_event_receive(
+            Message {
+                header,
+                body: MessageBody::Sync(SyncMessage {
+                    origin_timestamp: Time::from_micros(0).into(),
+                }),
+                suffix: TlvSet::default(),
+            },
+            Time::from_micros(50),
+            &mut TestClock,
+        );
+
+        assert!(action.next().is_none());
+        assert_eq!(
+            state.filter.last_measurement.take(),
+            Some(Measurement {
+                event_time: Time::from_micros(49),
+                offset: None,
+                delay: None,
+                raw_sync_offset: Some(Duration::from_micros(49)),
+                raw_delay_offset: None,
+            })
+        );
+
         let mut action = state.send_delay_request(
             &mut rng,
             &port_config,
@@ -669,7 +663,6 @@ mod tests {
         };
         assert!(action.next().is_none());
         drop(action);
-        assert_eq!(state.filter.last_delay.take(), None);
         assert_eq!(state.filter.last_measurement.take(), None);
 
         let req = Message::deserialize(data).unwrap();
@@ -683,7 +676,7 @@ mod tests {
         let mut action = state.handle_timestamp(context, Time::from_micros(100), &mut TestClock);
         assert!(action.next().is_none());
         drop(action);
-        assert_eq!(state.filter.last_delay.take(), None);
+        assert_eq!(state.filter.last_measurement.take(), None);
 
         let header = Header {
             correction_field: TimeInterval(2000.into()),
@@ -711,14 +704,13 @@ mod tests {
 
         assert_eq!(state.mean_delay, Some(Duration::from_micros(100)));
         assert_eq!(
-            state.filter.last_delay.take(),
-            Some(Duration::from_micros(100))
-        );
-        assert_eq!(
             state.filter.last_measurement.take(),
             Some(Measurement {
-                event_time: Time::from_micros(49),
-                master_offset: Duration::from_micros(-51)
+                event_time: Time::from_micros(100),
+                offset: None,
+                delay: Some(Duration::from_micros(100)),
+                raw_sync_offset: None,
+                raw_delay_offset: Some(Duration::from_micros(-151)),
             })
         );
 
@@ -743,6 +735,7 @@ mod tests {
         );
 
         assert!(action.next().is_none());
+        assert_eq!(state.filter.last_measurement.take(), None);
 
         let mut action = state.send_delay_request(
             &mut rng,
@@ -761,6 +754,7 @@ mod tests {
         };
         assert!(action.next().is_none());
         drop(action);
+        assert_eq!(state.filter.last_measurement.take(), None);
 
         let req = Message::deserialize(data).unwrap();
         let req_header = req.header;
@@ -772,7 +766,6 @@ mod tests {
 
         let mut action = state.handle_timestamp(context, Time::from_micros(1100), &mut TestClock);
         assert!(action.next().is_none());
-        assert_eq!(state.filter.last_delay.take(), None);
         assert_eq!(state.filter.last_measurement.take(), None);
 
         let mut action = state.handle_general_receive(
@@ -792,6 +785,16 @@ mod tests {
 
         assert!(action.next().is_none());
         drop(action);
+        assert_eq!(
+            state.filter.last_measurement.take(),
+            Some(Measurement {
+                event_time: Time::from_micros(1049),
+                offset: None,
+                delay: None,
+                raw_sync_offset: Some(Duration::from_micros(47)),
+                raw_delay_offset: None,
+            })
+        );
 
         let mut action = state.handle_general_receive(
             Message {
@@ -815,14 +818,13 @@ mod tests {
 
         assert_eq!(state.mean_delay, Some(Duration::from_micros(100)));
         assert_eq!(
-            state.filter.last_delay.take(),
-            Some(Duration::from_micros(100))
-        );
-        assert_eq!(
             state.filter.last_measurement.take(),
             Some(Measurement {
-                event_time: Time::from_micros(1049),
-                master_offset: Duration::from_micros(-53)
+                event_time: Time::from_micros(1100),
+                offset: None,
+                delay: Some(Duration::from_micros(100)),
+                raw_sync_offset: None,
+                raw_delay_offset: Some(Duration::from_micros(-153)),
             })
         );
     }
@@ -831,7 +833,6 @@ mod tests {
     fn test_follow_up_before_sync() {
         let mut state = SlaveState::<TestFilter>::new(Default::default(), ());
         state.mean_delay = Some(Duration::from_micros(100));
-        state.next_delay_measurement = Some(Time::from_secs(10));
 
         let mut action = state.handle_general_receive(
             Message {
@@ -852,7 +853,6 @@ mod tests {
         assert!(action.next().is_none());
         drop(action);
 
-        assert_eq!(state.filter.last_delay.take(), None);
         assert_eq!(state.filter.last_measurement.take(), None);
 
         let mut action = state.handle_event_receive(
@@ -873,12 +873,14 @@ mod tests {
         );
 
         assert!(action.next().is_none());
-        assert_eq!(state.filter.last_delay.take(), None);
         assert_eq!(
             state.filter.last_measurement.take(),
             Some(Measurement {
                 event_time: Time::from_micros(49),
-                master_offset: Duration::from_micros(-63)
+                offset: Some(Duration::from_micros(-63)),
+                delay: None,
+                raw_sync_offset: Some(Duration::from_micros(37)),
+                raw_delay_offset: None,
             })
         );
     }
@@ -887,7 +889,6 @@ mod tests {
     fn test_old_followup_during() {
         let mut state = SlaveState::<TestFilter>::new(Default::default(), ());
         state.mean_delay = Some(Duration::from_micros(100));
-        state.next_delay_measurement = Some(Time::from_secs(10));
 
         let mut action = state.handle_event_receive(
             Message {
@@ -907,7 +908,6 @@ mod tests {
         );
 
         assert!(action.next().is_none());
-        assert_eq!(state.filter.last_delay.take(), None);
         assert_eq!(state.filter.last_measurement.take(), None);
 
         let mut action = state.handle_general_receive(
@@ -929,7 +929,6 @@ mod tests {
         assert!(action.next().is_none());
         drop(action);
 
-        assert_eq!(state.filter.last_delay.take(), None);
         assert_eq!(state.filter.last_measurement.take(), None);
 
         let mut action = state.handle_general_receive(
@@ -951,7 +950,6 @@ mod tests {
         assert!(action.next().is_none());
         drop(action);
 
-        assert_eq!(state.filter.last_delay.take(), None);
         assert_eq!(state.filter.last_measurement.take(), None);
     }
 
@@ -959,7 +957,6 @@ mod tests {
     fn test_reset_after_missing_followup() {
         let mut state = SlaveState::<TestFilter>::new(Default::default(), ());
         state.mean_delay = Some(Duration::from_micros(100));
-        state.next_delay_measurement = Some(Time::from_secs(10));
 
         let mut action = state.handle_event_receive(
             Message {
@@ -980,7 +977,6 @@ mod tests {
 
         assert!(action.next().is_none());
         drop(action);
-        assert_eq!(state.filter.last_delay.take(), None);
         assert_eq!(state.filter.last_measurement.take(), None);
 
         let mut action = state.handle_event_receive(
@@ -1001,7 +997,6 @@ mod tests {
         );
 
         assert!(action.next().is_none());
-        assert_eq!(state.filter.last_delay.take(), None);
         assert_eq!(state.filter.last_measurement.take(), None);
 
         let mut action = state.handle_general_receive(
@@ -1023,12 +1018,14 @@ mod tests {
         assert!(action.next().is_none());
         drop(action);
 
-        assert_eq!(state.filter.last_delay.take(), None);
         assert_eq!(
             state.filter.last_measurement.take(),
             Some(Measurement {
                 event_time: Time::from_micros(1049),
-                master_offset: Duration::from_micros(-53)
+                offset: Some(Duration::from_micros(-53)),
+                delay: None,
+                raw_sync_offset: Some(Duration::from_micros(47)),
+                raw_delay_offset: None,
             })
         );
     }
@@ -1036,26 +1033,6 @@ mod tests {
     #[test]
     fn test_ignore_unrelated_delayresp() {
         let mut state = SlaveState::<TestFilter>::new(Default::default(), ());
-
-        let mut action = state.handle_event_receive(
-            Message {
-                header: Header {
-                    two_step_flag: false,
-                    correction_field: TimeInterval(1000.into()),
-                    ..Default::default()
-                },
-                body: MessageBody::Sync(SyncMessage {
-                    origin_timestamp: Time::from_micros(0).into(),
-                }),
-                suffix: TlvSet::default(),
-            },
-            Time::from_micros(50),
-            &mut TestClock,
-        );
-
-        // DelayReq is sent independently
-        assert!(action.next().is_none());
-
         let mut buffer = [0u8; MAX_DATA_LEN];
 
         let default_ds = DefaultDS::new(InstanceConfig {
@@ -1081,6 +1058,36 @@ mod tests {
             delay_asymmetry: Default::default(),
         };
 
+        let mut action = state.handle_event_receive(
+            Message {
+                header: Header {
+                    two_step_flag: false,
+                    correction_field: TimeInterval(1000.into()),
+                    ..Default::default()
+                },
+                body: MessageBody::Sync(SyncMessage {
+                    origin_timestamp: Time::from_micros(0).into(),
+                }),
+                suffix: TlvSet::default(),
+            },
+            Time::from_micros(50),
+            &mut TestClock,
+        );
+
+        // DelayReq is sent independently
+        assert!(action.next().is_none());
+        drop(action);
+        assert_eq!(
+            state.filter.last_measurement.take(),
+            Some(Measurement {
+                event_time: Time::from_micros(49),
+                offset: None,
+                delay: None,
+                raw_sync_offset: Some(Duration::from_micros(49)),
+                raw_delay_offset: None,
+            })
+        );
+
         let mut action = state.send_delay_request(
             &mut rng,
             &port_config,
@@ -1100,7 +1107,6 @@ mod tests {
         let mut action = state.handle_timestamp(context, Time::from_micros(100), &mut TestClock);
 
         assert!(action.next().is_none());
-        assert_eq!(state.filter.last_delay.take(), None);
         assert_eq!(state.filter.last_measurement.take(), None);
 
         let req = Message::deserialize(data).unwrap();
@@ -1134,7 +1140,6 @@ mod tests {
         assert!(action.next().is_none());
         drop(action);
 
-        assert_eq!(state.filter.last_delay.take(), None);
         assert_eq!(state.filter.last_measurement.take(), None);
 
         let mut action = state.handle_general_receive(
@@ -1157,7 +1162,6 @@ mod tests {
         assert!(action.next().is_none());
         drop(action);
 
-        assert_eq!(state.filter.last_delay.take(), None);
         assert_eq!(state.filter.last_measurement.take(), None);
 
         let mut action = state.handle_general_receive(
@@ -1182,14 +1186,13 @@ mod tests {
 
         assert_eq!(state.mean_delay, Some(Duration::from_micros(100)));
         assert_eq!(
-            state.filter.last_delay.take(),
-            Some(Duration::from_micros(100))
-        );
-        assert_eq!(
             state.filter.last_measurement.take(),
             Some(Measurement {
-                event_time: Time::from_micros(49),
-                master_offset: Duration::from_micros(-51)
+                event_time: Time::from_micros(100),
+                offset: None,
+                delay: Some(Duration::from_micros(100)),
+                raw_sync_offset: None,
+                raw_delay_offset: Some(Duration::from_micros(-151)),
             })
         );
     }

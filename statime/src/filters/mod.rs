@@ -7,6 +7,7 @@ use crate::{port::Measurement, Clock, Duration};
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FilterUpdate {
     pub next_update: Option<core::time::Duration>,
+    pub mean_delay: Option<Duration>,
 }
 
 /// A filter for post-processing time measurements.
@@ -26,9 +27,6 @@ pub trait Filter {
     /// Put a new measurement in the filter.
     /// The filter can then use this to adjust the clock
     fn measurement<C: Clock>(&mut self, m: Measurement, clock: &mut C) -> FilterUpdate;
-
-    /// Handle a new measurement of the delay to the master.
-    fn delay(&mut self, delay: Duration) -> Duration;
 
     /// Update initiated through [FilterUpdate::next_update] timeout.
     fn update<C: Clock>(&mut self, clock: &mut C) -> FilterUpdate;
