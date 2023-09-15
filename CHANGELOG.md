@@ -1,5 +1,10 @@
 # Changelog
 
+## [unreleased]
+
+### Fixed
+- Fixed incorrect reference id being used by server.
+
 ## [1.0.0-rc.2] - 2023-09-14
 
 ### Changed
@@ -152,6 +157,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
+[unreleased]: https://github.com/pendulum-project/ntpd-rs/compare/v1.0.0-rc.2...main
 [1.0.0-rc.2]: https://github.com/pendulum-project/ntpd-rs/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.7...v1.0.0-rc.1
 [0.3.7]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.6...v0.3.7
