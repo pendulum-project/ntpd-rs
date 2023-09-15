@@ -109,10 +109,10 @@ time.
 `listen` = *socketaddr*
 :   Address of a UDP socket on which the server should listen for incoming NTP
     requests. Specified as an interface IP address, a colon and a port number.
-    Both IPv4 and IPv6 are supported. For example to listen on localhost port
-    123 in IPv4 you can use `127.0.0.1:123`. You can listen on all available
-    network interfaces at once using `0.0.0.0:123` for IPv4 or `[::]:123` for
-    IPv6.
+    The standard port number for NTP is UDP port 123. Both IPv4 and IPv6 are
+    supported. For example to listen on localhost port 123 in IPv4 you can use
+    `127.0.0.1:123`. You can listen on all available network interfaces at once
+    using `0.0.0.0:123` for IPv4 or `[::]:123` for IPv6.
 
 `rate-limiting-cache-size` = *size* (**0**)
 :   Number of elements in the rate limiting cache. At most *size* elements are
@@ -216,10 +216,11 @@ untampered with.
 `listen` = *socket*
 :   Address of a TCP socket on which the server should listen for incoming NTS
     key exchange requests. Specified as an interface IP address, a colon and a
-    port number. Both IPv4 and IPv6 are supported. For example to listen on
-    localhost port 123 in IPv4 you can use `127.0.0.1:123`. You can listen on
-    all available network interfaces at once using `0.0.0.0:123` for IPv4 or
-    `[::]:123` for IPv6.
+    port number. The standard port number for an NTS key exchange server is TCP
+    port 4460. Both IPv4 and IPv6 are supported. For example to listen on
+    localhost port 4460 in IPv4 you can use `127.0.0.1:4460`. You can listen on
+    all available network interfaces at once using `0.0.0.0:4460` for IPv4 or
+    `[::]:4460` for IPv6.
 
 `certificate-chain-path` = *path*
 :   Path to a certificate chain for the public certificate that the server
