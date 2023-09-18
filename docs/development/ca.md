@@ -71,7 +71,7 @@ certificate will be used, to do this, create a file called `ntpd-rs.ext` with
 the following contents, replacing the `ntpd-rs.test` domain name with your own
 domain name.
 
-```ini
+```ini title="/path/to/some/ca-data/ntpd-rs.ext"
 authorityKeyIdentifier=keyid,issuer
 basicConstraints=CA:FALSE
 keyUsage = keyEncipherment
@@ -105,11 +105,15 @@ We are now ready to configure the key exchange part of NTS with our generated
 certificate. Simply update your `/etc/ntpd-rs/ntp.toml` configuration with the
 following `[[nts-ke-server]]` section (or update an existing section):
 
-```toml
+```toml title="/etc/ntpd-rs/ntp.toml"
+# ...
+
 [[nts-ke-server]]
 key-exchange-listen = "[::]:4460"
 certificate-chain-path = "/path/to/some/ca-data/ntpd-rs.test.chain.pem"
 private-key-path = "/path/to/some/ca-data/ntpd-rs.test.key"
+
+# ...
 ```
 
 Finally, restart your ntpd-rs daemon by running `systemctl restart ntpd-rs`.
@@ -120,3 +124,38 @@ Your server should now be ready to handle NTS!
     When configured as above, it is important to ensure that the TLS private key
     can only be read by ntpdaemon and trusted system administrators. An attacker
     can use this key material to compromise all connections to clients.
+
+## Client setup
+Once your server was setup, you will need to distribute the certificate
+authority root certificate to clients that will be using the NTS server. Note
+that you should only ever share the `ca.pem` file and never the `ca.key` file!
+
+In your client, now you will need to make sure that the domain name under which
+you reach the server is the same as the domain name for which you configured
+the server certificate. In our example above we used the domain name
+`ntpd-rs.test`. If we wanted the server to be able to reach itself, we can
+simply add a `/etc/hosts` entry for this, like such:
+
+```txt title="/etc/hosts" hl_lines="3"
+...
+127.0.0.1   localhost
+127.0.0.1   ntpd-rs.test
+...
+```
+
+Now in your client configuration, you can setup a NTS source with our private
+CA root certificate:
+
+```toml title="/etc/ntpd-rs/ntp.toml"
+# ...
+
+[[source]]
+mode = "nts"
+address = "ntpd-rs.test"
+certificate-authority = "/path/to/some/ca-data/ca.pem"
+
+# ...
+```
+
+Of course, if you are setting up another client, do not forget to copy the
+`ca.pem` file to that client!
