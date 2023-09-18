@@ -33,7 +33,7 @@ address = "pool.ntp.org"
 count = 4
 ```
 
-A source in `pool` mode must explicitly give define an integer `count`, the maximum number of connections from this pool. The ntpd-rs daemon will actively try to keep the pool "filled": new connections will be spun up if a source from the pool is unreachable.
+A source in `pool` mode must explicitly define an integer `count`, the maximum number of connections from this pool. The ntpd-rs daemon will actively try to keep the pool "filled": new connections will be spun up if a source from the pool is unreachable.
 
 The symmetric and broadcasting association modes are deliberately not supported in ntpd-rs because these modes have security issues. The `peer` command can be substituted with a standard `server` source. For the `broadcast` command, configuring the NTP server via DHCP instead may be an alternative
 
@@ -44,9 +44,9 @@ poll-interval-limits = { min = <minpoll>, max = <maxpoll> }
 initial-poll-interval = <desired initial poll interval>
 ```
 
-There is no support for bursting in ntpd-rs yet, but the ntpd-rs algorithm is able to synchronize much more quickly (with fewer measurements) than ntpd's algorithm. Therefore, if any bursting directive (`burst` or `iburst`) is present, these usually can be ignored when translating configurations. In some cases, if strict custom poll limits are in place, these may need to be relaxed.  
+There is no support for bursting in ntpd-rs yet, but the ntpd-rs algorithm is able to synchronize much more quickly (with fewer measurements) than ntpd's algorithm. Therefore, if any bursting directive (`burst` or `iburst`) is present, these usually can be ignored when translating configurations. In some cases, if strict custom poll limits are in place, these may need to be relaxed.
 
-### Reference clocks 
+### Reference clocks
 
 The current version of ntpd-rs does not yet support local reference clocks, but this feature is on our roadmap. If you are interested in migrating a configuration using local reference clocks, we would be interested in hearing the details. This information will help guide our implementation effort.
 
