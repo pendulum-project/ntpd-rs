@@ -9,10 +9,14 @@ site_name: ntpd-rs documentation
 site_dir: target/docs/site
 exclude_docs: |
   /precompiled  # Precompiled assets
+  /includes     # Only included indirectly
 markdown_extensions:
   - def_list
   - abbr
-  - pymdownx.snippets
+  - attr_list
+  - admonition
+  - pymdownx.snippets:
+      auto_append: [./docs/includes/glossary.md]
   - pymdownx.escapeall:
       hardbreak: true
   - pymdownx.highlight:
@@ -20,6 +24,7 @@ markdown_extensions:
       line_spans: __span
       pygments_lang_class: true
   - pymdownx.inlinehilite
+  - pymdownx.details
   - pymdownx.superfences
 nav:
   - Home: index.md
@@ -41,4 +46,5 @@ nav:
   - Development:
     - development/code-structure.md
     - development/threat-model.md
+    - development/ca.md
     - development/audits.md
