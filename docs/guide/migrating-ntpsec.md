@@ -35,7 +35,11 @@ address = "pool.ntp.org"
 count = 4
 ```
 
-A source in `pool` mode must explicitly give define an integer `count`, the maximum number of connections from this pool. The ntpd-rs daemon will actively try to keep the pool "filled": new connections will be spun up if a source from the pool is unreachable.
+A source in `pool` mode must explicitly define an integer `count`, the maximum number of connections from this pool. The ntpd-rs daemon will actively try to keep the pool "filled": new connections will be spun up if a source from the pool is unreachable.
+
+<!-- "broadcast" is mentioned in the docs but never defined. Maybe this is an error in their docs?
+Like ntpsec, ntpd-rs deliberately does not support symmetric and broadcasting association modes because these modes have security issues.
+-->
 
 For server directives with NTS, these can be converted to
 ```
@@ -54,16 +58,16 @@ address="ntp.example.com"
 certificate_authority = "path/to/certificate/authority.pem"
 ```
 
-There is no direct equivalent of ntpd's `maxpoll` and `minpoll` flags that can be configured on a per-source basis. Instead ntpd-rs defines poll interval bounds globally for all time sources:
+There is no direct equivalent of ntpsec's `maxpoll` and `minpoll` flags that can be configured on a per-source basis. Instead ntpd-rs defines poll interval bounds globally for all time sources:
 ```
 [source-defaults]
 poll-interval-limits = { min = <minpoll>, max = <maxpoll> }
 initial-poll-interval = <desired initial poll interval>
 ```
 
-There is no support for bursting in ntpd-rs yet, but the ntpd-rs algorithm is able to synchronize much more quickly (with fewer measurements) than ntpd's algorithm. Therefore, if any bursting directive (`burst` or `iburst`) is present, these usually can be ignored when translating configurations. In some cases, if strict custom poll limits are in place, these may need to be relaxed.  
+There is no support for bursting in ntpd-rs yet, but the ntpd-rs algorithm is able to synchronize much more quickly (with fewer measurements) than ntpsec's algorithm. Therefore, if any bursting directive (`burst` or `iburst`) is present, these usually can be ignored when translating configurations. In some cases, if strict custom poll limits are in place, these may need to be relaxed.
 
-### Reference clocks 
+### Reference clocks
 
 The current version of ntpd-rs does not yet support local reference clocks, but this feature is on our roadmap. If you are interested in migrating a configuration using local reference clocks, we would be interested in hearing the details. This information will help guide our implementation effort.
 
@@ -84,11 +88,11 @@ startup-step-panic-threshold = { forward="inf", backward = 86400 }
 accumulated-step-panic-threshold = "inf"
 ```
 
-ntpsec and ntpd-rs use different algorithms for synchronizing the time. This means that options for tuning filtering of the time differ significantly, and we cannot offer precise guidance on how to translate the ntpsec parameters to values for ntpd-rs. When migrating a configuration that tunes ntpd's algorithm, one should take the intent of the tuning and use that as guidance when choosing which of ntpd-rs's [time synchronization options](../man/ntp.toml.5.md#synchronization) to change.
+ntpsec and ntpd-rs use different algorithms for synchronizing the time. This means that options for tuning filtering of the time differ significantly, and we cannot offer precise guidance on how to translate the ntpsec parameters to values for ntpd-rs. When migrating a configuration that tunes ntpsec's algorithm, one should take the intent of the tuning and use that as guidance when choosing which of ntpd-rs's [time synchronization options](../man/ntp.toml.5.md#synchronization) to change.
 
 ## Server Configuration & Access Control
 
-The [`restrict` command](https://www.ntp.org/documentation/4.2.8-series/accopt/) is used in ntpd to deny requests from a client. In ntpd this is a global setting. A flag configures what happens with connections from this client. For instance, `ignore` will silently ignore the request, while `kod` sends a response to the client that notifies it that its request is denied.
+The `restrict` command is used in ntpsec to deny requests from a client. In ntpsec this is a global setting. A flag configures what happens with connections from this client. For instance, `ignore` will silently ignore the request, while `kod` sends a response to the client that notifies it that its request is denied.
 
 This logic is expressed differently in ntpd-rs. A specific server can be configured to have a `denylist` and an `allowlist`.
 ```
@@ -109,8 +113,8 @@ The allow and deny list configuration is optional in ntpd-rs. By default, if a s
 
 The `allowlist-action` and `denylist-action` properties can have two values:
 
-- `ignore` corresponds to ntpd's `ignore` and silently ignores the request
-- `deny` corresponds to ntpd's `kod` and sends a deny kiss-o'-death packet
+- `ignore` corresponds to ntpsec's `ignore` and silently ignores the request
+- `deny` corresponds to ntpsec's `kod` and sends a deny kiss-o'-death packet
 
 The stratum can can be configured in ntpd-rs with the `local-stratum` key:
 ```
@@ -157,7 +161,7 @@ Keys are rotated to limit the damage when a key is leaked. By default, this occu
 stale-key-count = <number of old keys to keep>
 key-rotation-interval = <rotation interval in seconds>
 ```
-Note that the defaults for these settings mean that cookies for the server are only valid for slightly more than 1 week. 
+Note that the defaults for these settings mean that cookies for the server are only valid for slightly more than 1 week.
 
 Sharing the keys with which the nts cookies are encrypted between multiple ntpd-rs servers is not yet supported.
 
