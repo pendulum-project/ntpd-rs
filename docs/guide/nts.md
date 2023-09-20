@@ -16,28 +16,6 @@ information itself is considered public information and as such is not
 encrypted. Third parties can thus see what the exchanged time information was,
 but they cannot modify it.
 
-## NTS protocol
-When using NTS, both the client and server sign and partially encrypt the NTP
-messages they exchange using symmetric key cryptography. For this, the client
-and server first need to exchange the keys they will use. NTS solves this
-problem with a separate key exchange.
-
-For the key exchange, the client first contacts the server over a TCP connection
-secured with TLS, the same protocol also used for secure web browsing. Over this
-connection, they then decide on which keys to use. Finally, the server provides
-the client with eight cookies. These cookies are used by the client to tell the
-server which keys are in use for the session. The client uses each cookie only
-once to ensure that a third party cannot track its connection, and it receives a
-new cookie with each server response.
-
-These cookies are an opaque bag of bytes for the client, and the server can put
-in them whatever it finds usefull for identifying the proper keys for that
-particular client. Cookies do however have to be unique, a cookie cannot be
-reused once a message with it was sent. If the client ever runs out of cookies
-(a cookie is lost whenever an NTP message or the response to that message got
-lost) or if the server somehow no longer understands the cookies it receives
-from clients, the server and client will have to redo the key exchange.
-
 ## Using an NTS source
 You can use existing public NTS servers with ntpd-rs by simply adding a source
 with mode `nts`. For example, [netnod] has public NTS servers, to use them you
@@ -70,6 +48,28 @@ certificate-authority = "/path/to/certificate/authority.pem"
     only have a self-signed certificate cannot be used. Either setup a private
     certificate authority and use that CA to sign the certificate for the
     server, or choose an alternative NTS server.
+
+## NTS protocol
+When using NTS, both the client and server sign and partially encrypt the NTP
+messages they exchange using symmetric key cryptography. For this, the client
+and server first need to exchange the keys they will use. NTS solves this
+problem with a separate key exchange.
+
+For the key exchange, the client first contacts the server over a TCP connection
+secured with TLS, the same protocol also used for secure web browsing. Over this
+connection, they then decide on which keys to use. Finally, the server provides
+the client with eight cookies. These cookies are used by the client to tell the
+server which keys are in use for the session. The client uses each cookie only
+once to ensure that a third party cannot track its connection, and it receives a
+new cookie with each server response.
+
+These cookies are an opaque bag of bytes for the client, and the server can put
+in them whatever it finds usefull for identifying the proper keys for that
+particular client. Cookies do however have to be unique, a cookie cannot be
+reused once a message with it was sent. If the client ever runs out of cookies
+(a cookie is lost whenever an NTP message or the response to that message got
+lost) or if the server somehow no longer understands the cookies it receives
+from clients, the server and client will have to redo the key exchange.
 
 ## Setting up an NTS server
 Setting up an NTS server involves several steps. Before you get started, make
