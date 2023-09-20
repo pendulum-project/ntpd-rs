@@ -266,6 +266,16 @@ impl NtpHeaderV3V4 {
             ..Self::new()
         }
     }
+
+    fn nts_nak_response(packet_from_client: Self) -> Self {
+        Self {
+            mode: NtpAssociationMode::Server,
+            stratum: 0,
+            reference_id: ReferenceId::KISS_NTSN,
+            origin_timestamp: packet_from_client.transmit_timestamp,
+            ..Self::new()
+        }
+    }
 }
 
 impl<'a> NtpPacket<'a> {
@@ -616,6 +626,27 @@ impl<'a> NtpPacket<'a> {
                         .collect(),
                     encrypted: vec![],
                     untrusted: vec![],
+                },
+                mac: None,
+            },
+        }
+    }
+
+    pub fn nts_nak_response(packet_from_client: Self) -> Self {
+        match packet_from_client.header {
+            NtpHeader::V3(_) => unreachable!("NTS shouldn't work with NTPv3"),
+            NtpHeader::V4(header) => NtpPacket {
+                header: NtpHeader::V4(NtpHeaderV3V4::nts_nak_response(header)),
+                efdata: ExtensionFieldData {
+                    authenticated: vec![],
+                    encrypted: vec![],
+                    untrusted: packet_from_client
+                        .efdata
+                        .untrusted
+                        .into_iter()
+                        .chain(packet_from_client.efdata.authenticated)
+                        .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
+                        .collect(),
                 },
                 mac: None,
             },

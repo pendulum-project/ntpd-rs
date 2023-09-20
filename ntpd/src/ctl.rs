@@ -289,8 +289,9 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
                     server.stats.response_send_errors.get()
                 );
                 println!(
-                    "    denied {}, rate limited {}, ignored {}",
+                    "    denied {}, nts nak {}, rate limited {}, ignored {}",
                     server.stats.denied_packets.get(),
+                    server.stats.nts_nak_packets.get(),
                     server.stats.rate_limited_packets.get(),
                     server.stats.ignored_packets.get()
                 );

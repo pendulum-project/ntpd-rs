@@ -270,6 +270,15 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
 
     format_metric(
         w,
+        "ntp_server_nts_nak_packets_total",
+        "Number of nts nak responses to packets",
+        MetricType::Counter,
+        None,
+        collect_servers!(state, |s| s.stats.nts_nak_packets.get()),
+    )?;
+
+    format_metric(
+        w,
         "ntp_server_ignored_packets_total",
         "Number of packets ignored",
         MetricType::Counter,

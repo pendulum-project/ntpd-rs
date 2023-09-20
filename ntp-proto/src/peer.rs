@@ -374,7 +374,15 @@ impl Peer {
                 let cookie = nts.cookies.get().ok_or_else(|| {
                     std::io::Error::new(std::io::ErrorKind::Other, NtsError::OutOfCookies)
                 })?;
-                NtpPacket::nts_poll_message(&cookie, nts.cookies.gap(), poll_interval)
+                // Do ensure we don't exceed the buffer size
+                // when requesting new cookies. We keep 350
+                // bytes of margin for header, ids, extension
+                // field headers and signature.
+                let new_cookies = nts
+                    .cookies
+                    .gap()
+                    .min(((buf.len() - 300) / cookie.len()).min(u8::MAX as usize) as u8);
+                NtpPacket::nts_poll_message(&cookie, new_cookies, poll_interval)
             }
             None => NtpPacket::poll_message(poll_interval),
         };
