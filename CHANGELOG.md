@@ -1,5 +1,11 @@
 # Changelog
 
+## [unreleased]
+
+### Fixed
+- Fixed peer trying to request more cookies than it can encode in it's packet buffer.
+- Fixed server not sending nts naks when receiving nts packets it can't decrypt.
+
 ## [1.0.0-rc.3] - 2023-09-20
 
 ### Fixed
@@ -158,6 +164,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
+[unreleased]: https://github.com/pendulum-project/ntpd-rs/compare/v1.0.0-rc.3...main
 [1.0.0-rc.3]: https://github.com/pendulum-project/ntpd-rs/compare/v1.0.0-rc.2...v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/pendulum-project/ntpd-rs/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.7...v1.0.0-rc.1

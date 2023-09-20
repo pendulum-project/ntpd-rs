@@ -12,12 +12,12 @@ use std::{
 
 use ntp_proto::{
     DecodedServerCookie, KeySet, NoCipher, NtpAssociationMode, NtpClock, NtpPacket, NtpTimestamp,
-    SystemSnapshot,
+    PacketParsingError, SystemSnapshot,
 };
 use ntp_udp::{InterfaceName, UdpSocket};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tokio::task::JoinHandle;
-use tracing::{debug, info, instrument, trace, warn};
+use tracing::{debug, instrument, trace, warn};
 
 use super::config::{FilterAction, ServerConfig};
 
@@ -29,6 +29,7 @@ pub struct ServerStats {
     pub received_packets: Counter,
     pub accepted_packets: Counter,
     pub denied_packets: Counter,
+    pub nts_nak_packets: Counter,
     pub ignored_packets: Counter,
     pub rate_limited_packets: Counter,
     pub response_send_errors: Counter,
@@ -100,6 +101,11 @@ enum AcceptResult<'a> {
         packet: NtpPacket<'a>,
         max_response_size: usize,
         decoded_cookie: Option<DecodedServerCookie>,
+        peer_addr: SocketAddr,
+    },
+    CryptoNak {
+        packet: NtpPacket<'a>,
+        max_response_size: usize,
         peer_addr: SocketAddr,
     },
     NetworkGone,
@@ -258,7 +264,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             } => {
                 self.stats.denied_packets.inc();
 
-                let mut buf = [0; 48];
+                let mut buf = [0; MAX_PACKET_SIZE];
                 let mut cursor = Cursor::new(buf.as_mut_slice());
                 let serialize_result = match decoded_cookie {
                     Some(decoded_cookie) => {
@@ -290,6 +296,35 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     warn!(error=?send_err, "Could not send deny packet");
                 }
             }
+            AcceptResult::CryptoNak {
+                packet,
+                max_response_size,
+                peer_addr,
+            } => {
+                self.stats.nts_nak_packets.inc();
+
+                let mut buf = [0; MAX_PACKET_SIZE];
+                let mut cursor = Cursor::new(buf.as_mut_slice());
+                let response = NtpPacket::nts_nak_response(packet);
+                if let Err(serialize_err) = response.serialize(&mut cursor, &NoCipher) {
+                    self.stats.response_send_errors.inc();
+                    warn!(error=?serialize_err, "Could not serialize response");
+                    return true;
+                }
+
+                if cursor.position() as usize > max_response_size {
+                    warn!("Generated response that was larger than the request. This is a bug!");
+                    return true;
+                }
+
+                if let Err(send_err) = socket
+                    .send_to(&cursor.get_ref()[0..cursor.position() as usize], peer_addr)
+                    .await
+                {
+                    self.stats.response_send_errors.inc();
+                    warn!(error=?send_err, "Could not send nts nak packet");
+                }
+            }
             AcceptResult::NetworkGone => {
                 warn!("Server connection gone");
                 return false;
@@ -302,7 +337,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             } => {
                 self.stats.rate_limited_packets.inc();
 
-                let mut buf = [0; 48];
+                let mut buf = [0; MAX_PACKET_SIZE];
                 let mut cursor = Cursor::new(buf.as_mut_slice());
                 let serialize_result = match decoded_cookie {
                     Some(decoded_cookie) => {
@@ -458,8 +493,16 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     AcceptResult::Ignore
                 }
             },
+            Err(PacketParsingError::DecryptError(packet)) => {
+                debug!("received packet with invalid nts cookie");
+                AcceptResult::CryptoNak {
+                    packet,
+                    max_response_size: buf.len(),
+                    peer_addr,
+                }
+            }
             Err(e) => {
-                info!("received invalid packet: {e}");
+                debug!("received invalid packet: {e}");
                 AcceptResult::Ignore
             }
         }
