@@ -4,7 +4,7 @@ post_install_script = '''
 #   - https://docs.fedoraproject.org/en-US/packaging-guidelines/Scriptlets/#_systemd
 #   - https://cgit.freedesktop.org/systemd/systemd/tree/src/core/macros.systemd.in
 NTPDRS_USER=ntpd-rs
-NTPDRS_OBSERVE_USER=ntdp-rs-observe
+NTPDRS_OBSERVE_USER=ntpd-rs-observe
 NTPDRS_HOME_DIR="/var/lib/ntpd-rs"
 NTPDRS_OBSERVE_HOME_DIR="/var/lib/ntpd-rs-observe"
 NTPDRS_HOME_DIR_PERMS=700
@@ -22,6 +22,8 @@ create_user() {
         # --user-group causes a group by the same name as the user to be created
         # --create-home should force creation of a home dir even for a system account.
         useradd --home-dir ${NTPDRS_HOME_DIR} --system --create-home --user-group ${NTPDRS_USER}
+    fi
+    if ! id ${NTPDRS_OBSERVE_USER} > /dev/null 2>&1; then
         useradd --home-dir ${NTPDRS_OBSERVE_HOME_DIR} --system --create-home --user-group ${NTPDRS_OBSERVE_USER}
     fi
     # Ensure that the home directory has the correct ownership
