@@ -12,9 +12,12 @@ NTPDRS_OBSERVE_HOME="/var/lib/ntpd-rs-observe/"
 NTPDRS_OBSERVE_USER="ntpd-rs-observe"
 
 create_user() {
-    if id ${NTPDRS_USER} > /dev/null 2>&1; then return; fi
-    adduser --system --home "${NTPDRS_HOME}" --group ${NTPDRS_USER}
-    adduser --system --home "${NTPDRS_OBSERVE_HOME}" --group ${NTPDRS_OBSERVE_USER}
+    if ! id ${NTPDRS_USER} > /dev/null 2>&1; then
+        adduser --system --home "${NTPDRS_HOME}" --group ${NTPDRS_USER}
+    fi
+    if ! id ${NTPDRS_OBSERVE_USER} > /dev/null 2>&1; then
+        adduser --system --home "${NTPDRS_OBSERVE_HOME}" --group ${NTPDRS_OBSERVE_USER}
+    fi
 }
 
 case "$1" in
