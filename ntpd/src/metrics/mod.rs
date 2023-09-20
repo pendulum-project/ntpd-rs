@@ -244,7 +244,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
     format_metric(
         w,
         "ntp_server_received_packets_total",
-        "Number of incoming received packets",
+        "Number of incoming packets",
         MetricType::Counter,
         None,
         collect_servers!(state, |s| s.stats.received_packets.get()),
@@ -266,15 +266,6 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
         MetricType::Counter,
         None,
         collect_servers!(state, |s| s.stats.denied_packets.get()),
-    )?;
-
-    format_metric(
-        w,
-        "ntp_server_nts_nak_packets_total",
-        "Number of nts nak responses to packets",
-        MetricType::Counter,
-        None,
-        collect_servers!(state, |s| s.stats.nts_nak_packets.get()),
     )?;
 
     format_metric(
@@ -302,6 +293,51 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
         MetricType::Counter,
         None,
         collect_servers!(state, |s| s.stats.response_send_errors.get()),
+    )?;
+
+    format_metric(
+        w,
+        "ntp_server_nts_received_packets_total",
+        "Number of incoming NTS packets",
+        MetricType::Counter,
+        None,
+        collect_servers!(state, |s| s.stats.nts_received_packets.get()),
+    )?;
+
+    format_metric(
+        w,
+        "ntp_server_nts_accepted_packets_total",
+        "Number of NTS packets accepted",
+        MetricType::Counter,
+        None,
+        collect_servers!(state, |s| s.stats.nts_accepted_packets.get()),
+    )?;
+
+    format_metric(
+        w,
+        "ntp_server_nts_denied_packets_total",
+        "Number of denied NTS packets",
+        MetricType::Counter,
+        None,
+        collect_servers!(state, |s| s.stats.nts_denied_packets.get()),
+    )?;
+
+    format_metric(
+        w,
+        "ntp_server_nts_rate_limited_packets_total",
+        "Number of rate limited NTS packets",
+        MetricType::Counter,
+        None,
+        collect_servers!(state, |s| s.stats.nts_rate_limited_packets.get()),
+    )?;
+
+    format_metric(
+        w,
+        "ntp_server_nts_nak_packets_total",
+        "Number of NTS nak responses to packets",
+        MetricType::Counter,
+        None,
+        collect_servers!(state, |s| s.stats.nts_nak_packets.get()),
     )?;
 
     w.write_str("# EOF")?;

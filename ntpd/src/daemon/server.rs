@@ -29,10 +29,14 @@ pub struct ServerStats {
     pub received_packets: Counter,
     pub accepted_packets: Counter,
     pub denied_packets: Counter,
-    pub nts_nak_packets: Counter,
     pub ignored_packets: Counter,
     pub rate_limited_packets: Counter,
     pub response_send_errors: Counter,
+    pub nts_received_packets: Counter,
+    pub nts_accepted_packets: Counter,
+    pub nts_denied_packets: Counter,
+    pub nts_rate_limited_packets: Counter,
+    pub nts_nak_packets: Counter,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -217,6 +221,8 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 let mut cursor = Cursor::new(buf.as_mut_slice());
                 let serialize_result = match decoded_cookie {
                     Some(decoded_cookie) => {
+                        self.stats.nts_received_packets.inc();
+                        self.stats.nts_accepted_packets.inc();
                         let response = NtpPacket::nts_timestamp_response(
                             &self.system,
                             packet,
@@ -268,6 +274,8 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 let mut cursor = Cursor::new(buf.as_mut_slice());
                 let serialize_result = match decoded_cookie {
                     Some(decoded_cookie) => {
+                        self.stats.nts_received_packets.inc();
+                        self.stats.nts_denied_packets.inc();
                         let response = NtpPacket::nts_deny_response(packet);
                         response.serialize(&mut cursor, decoded_cookie.s2c.as_ref())
                     }
@@ -301,6 +309,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 max_response_size,
                 peer_addr,
             } => {
+                self.stats.nts_received_packets.inc();
                 self.stats.nts_nak_packets.inc();
 
                 let mut buf = [0; MAX_PACKET_SIZE];
@@ -341,6 +350,8 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 let mut cursor = Cursor::new(buf.as_mut_slice());
                 let serialize_result = match decoded_cookie {
                     Some(decoded_cookie) => {
+                        self.stats.nts_received_packets.inc();
+                        self.stats.nts_rate_limited_packets.inc();
                         let response = NtpPacket::nts_rate_limit_response(packet);
                         response.serialize(&mut cursor, decoded_cookie.s2c.as_ref())
                     }
