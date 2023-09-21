@@ -350,6 +350,10 @@ impl<L, R, C: Clock, F: Filter> Port<L, R, C, F> {
 }
 
 impl<L, R, C, F: Filter> Port<L, R, C, F> {
+    pub fn is_steering(&self) -> bool {
+        matches!(self.port_state, PortState::Slave(_))
+    }
+
     pub(crate) fn state(&self) -> &PortState<F> {
         &self.port_state
     }

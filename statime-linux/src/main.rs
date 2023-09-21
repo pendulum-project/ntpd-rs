@@ -3,7 +3,6 @@ use std::{
     path::PathBuf,
     pin::{pin, Pin},
     str::FromStr,
-    sync::OnceLock,
 };
 
 use clap::Parser;
