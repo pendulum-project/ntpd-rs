@@ -255,7 +255,7 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
                         },
                     ) => {
                         println!(
-                            "{}/{} ({}): {:+.6}±{:.6}(±{:.6})s\n    pollinterval: {:.0}s, missing polls: {}",
+                            "{}/{} ({}): {:+.6}±{:.6}(±{:.6})s\n    pollinterval: {:.0}s, missing polls: {}\n    root dispersion: {:.6}s, root delay:{:.6}s",
                             address,
                             ip,
                             id,
@@ -263,7 +263,9 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
                             timedata.uncertainty.to_seconds(),
                             timedata.delay.to_seconds(),
                             poll_interval.as_duration().to_seconds(),
-                            unanswered_polls
+                            unanswered_polls,
+                            timedata.remote_uncertainty.to_seconds(),
+                            timedata.remote_delay.to_seconds(),
                         );
                     }
                 }
