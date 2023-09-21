@@ -4,6 +4,7 @@
 
 ### Added
 - Added metrics for NTS packets processed in the server
+- Exposed root dispersion and root delay reported by time source as metrics.
 
 ### Fixed
 - Fixed peer trying to request more cookies than it can encode in it's packet buffer.
