@@ -101,12 +101,12 @@ see the [development documentation](./docs/development/).
 In Q1 2023 we completed our work on NTS. Our implementation is now
 full-featured, it supports NTP client and server with NTS.
 
-Our roadmap for 2023:
+Our roadmap for 2023-2024:
 
-* Q2 2023: Adoption work, improved packaging, FreeBSD support
-* Q3 2023: Stable release (pending funding)
-* Q4 2023: Development work on experimental features, NTS pool, NTPv5 (pending
-  funding)
+* Q3 2023: Stable release
+* Q4 2023: Experimental features, NTS pool, NTPv5
+* Q4 2023 / Q1 2024: Packaging for Linux distributions
+* Q1-Q4 2024: Packaging and industry adoption, maintenance & community work
 
 We seek sponsorship for features and maintenance to continue our work. Contact
 us via pendulum@tweedegolf.com if you are interested!
@@ -131,7 +131,9 @@ information.
 
 Tweede golf is the long-term maintainer of ntpd-rs, that is now part of Tweede
 golf's [Project Pendulum]. Pendulum is building modern, open-source
-implementations of the Network Time Protocol and the Precision Time Protocol.
+implementations of the Network Time Protocol (ntpd-rs) and the Precision Time Protocol (Statime).
+
+In July of 2023 the [Sovereign Tech Fund] invested in Pendulum, securing ntpd-rs development and maintenance in 2023, and maintenance and adoption work in 2024.
 
 ![STF](https://tweedegolf.nl/images/logo-stf-blank.png)
 
@@ -141,3 +143,4 @@ implementations of the Network Time Protocol and the Precision Time Protocol.
 [NTP initiative page]: https://www.memorysafety.org/initiative/ntp
 [NTP announcement]: https://www.memorysafety.org/blog/ntp-and-nts-have-arrived/
 [Project Pendulum]: https://github.com/pendulum-project
+[Sovereign Tech Fund]: https://sovereigntechfund.de/en/
