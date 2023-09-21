@@ -2,6 +2,9 @@
 
 ## [unreleased]
 
+### Added
+- Added metrics for NTS packets processed in the server
+
 ### Fixed
 - Fixed peer trying to request more cookies than it can encode in it's packet buffer.
 - Fixed server not sending nts naks when receiving nts packets it can't decrypt.
