@@ -125,6 +125,22 @@ macro_rules! collect_servers {
 pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> std::fmt::Result {
     format_metric(
         w,
+        "ntp_uptime",
+        "Time that the ntp daemon is running",
+        MetricType::Gauge,
+        Some(Unit::Seconds),
+        vec![Measurement {
+            labels: vec![
+                ("version", state.program.version.clone()),
+                ("build_commit", state.program.build_commit.clone()),
+                ("build_commit_date", state.program.build_commit_date.clone()),
+            ],
+            value: state.program.uptime_seconds,
+        }],
+    )?;
+
+    format_metric(
+        w,
         "ntp_system_poll_interval",
         "Time between polls of the system",
         MetricType::Gauge,

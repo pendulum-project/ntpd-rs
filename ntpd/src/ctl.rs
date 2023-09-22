@@ -347,6 +347,7 @@ mod tests {
         let handle = tokio::spawn(fut);
 
         let value = ObservableState {
+            program: Default::default(),
             system: Default::default(),
             sources: vec![],
             servers: vec![],
