@@ -1,4 +1,4 @@
-# Getting started with ntpd-rs
+# Getting started
 
 Ntpd-rs is an implementation of the NTP protocol. It aims to synchronize your system's clock to time received from the internet. It can also, when [configured as server](server-setup.md), provide time to other machines on the network.
 
