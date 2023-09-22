@@ -3,8 +3,8 @@ use super::sockets::create_unix_socket_with_permissions;
 use super::spawn::PeerId;
 use super::system::ServerData;
 use ntp_proto::{ObservablePeerTimedata, PollInterval, SystemSnapshot};
-use std::net::SocketAddr;
 use std::os::unix::fs::PermissionsExt;
+use std::{net::SocketAddr, time::Instant};
 use tokio::task::JoinHandle;
 use tracing::warn;
 
@@ -12,9 +12,38 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ObservableState {
+    pub program: ProgramData,
     pub system: SystemSnapshot,
     pub sources: Vec<ObservablePeerState>,
     pub servers: Vec<ObservableServerState>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProgramData {
+    pub version: String,
+    pub build_commit: String,
+    pub build_commit_date: String,
+    pub uptime_seconds: f64,
+}
+
+impl ProgramData {
+    pub fn with_uptime(uptime_seconds: f64) -> ProgramData {
+        ProgramData {
+            uptime_seconds,
+            ..Default::default()
+        }
+    }
+}
+
+impl Default for ProgramData {
+    fn default() -> Self {
+        Self {
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+            build_commit: env!("NTP_GIT_REV").to_owned(),
+            build_commit_date: env!("NTP_GIT_DATE").to_owned(),
+            uptime_seconds: 0.0,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -72,6 +101,8 @@ async fn observer(
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
     system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
 ) -> std::io::Result<()> {
+    let start_time = Instant::now();
+
     let path = match config.observation_path {
         Some(path) => path,
         None => return Ok(()),
@@ -89,6 +120,7 @@ async fn observer(
         let (mut stream, _addr) = peers_listener.accept().await?;
 
         let observe = ObservableState {
+            program: ProgramData::with_uptime(start_time.elapsed().as_secs_f64()),
             sources: peers_reader.borrow().to_owned(),
             system: *system_reader.borrow(),
             servers: server_reader.borrow().iter().map(|s| s.into()).collect(),
