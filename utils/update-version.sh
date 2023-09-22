@@ -39,6 +39,6 @@ echo "Rebuilding precompiled man pages"
 utils/generate-man.sh
 
 echo "Rebuilding project"
-(cd $PROJECT_DIR && cargo build --release)
+(cd $PROJECT_DIR && cargo clean && cargo build --release)
 
 echo "!!! Version changes complete, make sure that the changelog is synchronized"

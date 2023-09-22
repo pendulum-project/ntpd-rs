@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.0-rc.5] - 2023-09-22
+
+### Added
+- Added `ntp_uptime_seconds` metric, which also includes the software version
+
 ## [1.0.0-rc.4] - 2023-09-21
 
 ### Added
@@ -168,6 +173,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
+[1.0.0-rc.5]: https://github.com/pendulum-project/ntpd-rs/compare/v1.0.0-rc.4...v1.0.0-rc.5
 [1.0.0-rc.4]: https://github.com/pendulum-project/ntpd-rs/compare/v1.0.0-rc.3...v1.0.0-rc.4
 [1.0.0-rc.3]: https://github.com/pendulum-project/ntpd-rs/compare/v1.0.0-rc.2...v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/pendulum-project/ntpd-rs/compare/v1.0.0-rc.1...v1.0.0-rc.2
