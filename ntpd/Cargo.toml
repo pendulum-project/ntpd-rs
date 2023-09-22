@@ -1,12 +1,12 @@
 [package]
 name = "ntpd"
+readme = "README.md"
 description.workspace = true
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-readme.workspace = true
 publish.workspace = true
 rust-version.workspace = true
 
