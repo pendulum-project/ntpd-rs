@@ -47,5 +47,11 @@ find "$TARGET_DIR" -mindepth 2 -type f -exec mv -t "$TARGET_DIR" -i '{}' +
 echo "Remove old directories"
 rm -R -- "$TARGET_DIR/"*/
 
+echo "Fixing tilde character for github"
+for f in $(find "$TARGET_DIR" -type f); do
+    newf=$(echo "$f" | sed 's/~/-/g')
+    mv "$f" "$newf"
+done
+
 echo "Create SHA256SUMS"
 (cd "$TARGET_DIR" && sha256sum -b * > "SHA256SUMS")
