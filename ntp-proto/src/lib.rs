@@ -6,7 +6,6 @@
 //! Please visit the [ntpd-rs](https://github.com/pendulum-project/ntpd-rs) project
 //! for more information.
 #![forbid(unsafe_code)]
-
 #![cfg_attr(not(feature = "__internal-api"), allow(unused))]
 
 mod algorithm;
