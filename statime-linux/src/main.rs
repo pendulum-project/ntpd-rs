@@ -9,18 +9,21 @@ use clap::Parser;
 use fern::colors::Color;
 use rand::{rngs::StdRng, SeedableRng};
 use statime::{
-    BasicFilter, Clock, ClockIdentity, InBmca, InstanceConfig, Port, PortAction,
-    PortActionIterator, PtpInstance, SdoId, Time, TimePropertiesDS, TimeSource, TimestampContext,
-    MAX_DATA_LEN,
+    BasicFilter, ClockIdentity, InBmca, InstanceConfig, Port, PortAction, PortActionIterator,
+    PtpInstance, SdoId, Time, TimePropertiesDS, TimeSource, TimestampContext, MAX_DATA_LEN,
 };
 use statime_linux::{
     clock::LinuxClock,
     config::Config,
-    socket::{EventSocket, GeneralSocket},
+    socket::{
+        open_ipv4_event_socket, open_ipv4_general_socket, open_ipv6_event_socket,
+        open_ipv6_general_socket, timestamp_to_time, PtpTargetAddress,
+    },
 };
 use timestamped_socket::{
-    interface::{InterfaceDescriptor, InterfaceIterator},
-    raw_udp_socket::TimestampingMode,
+    interface::InterfaceIterator,
+    networkaddress::NetworkAddress,
+    socket::{Open, Socket},
 };
 use tokio::{
     sync::mpsc::{Receiver, Sender},
@@ -29,12 +32,6 @@ use tokio::{
 
 #[derive(Clone, Copy)]
 struct SdoIdParser;
-
-pub struct PortDefinition {
-    port: BmcaPort,
-    interface: InterfaceDescriptor,
-    timestamping_mode: TimestampingMode,
-}
 
 impl clap::builder::TypedValueParser for SdoIdParser {
     type Value = SdoId;
@@ -200,72 +197,75 @@ async fn actual_main() {
         time_properties_ds,
     )));
 
-    // for every port in the config file, create a port definition and add it
-    // to the instance
-    let ports = config.ports.into_iter().map(|port_config| {
-        let interface = InterfaceDescriptor::from_str(port_config.interface.as_str()).unwrap();
-        // NOTE: Hardware timestamping is ignored for now
-        // let timestamping_mode = if config.hardware_clock.is_some() {
-        // match interface_descriptor.interface_name {
-        // Some(interface_name) => TimestampingMode::Hardware(interface_name),
-        // None => panic!("an interface name is required when using hardware
-        // timestamping"), }
-        // } else {
-        // TimestampingMode::Software
-        // };
-        let timestamping_mode = TimestampingMode::Software;
-        let rng = StdRng::from_entropy();
-        let port = instance.add_port(port_config.into(), 0.25, local_clock.clone(), rng);
-
-        PortDefinition {
-            port,
-            interface,
-            timestamping_mode,
-        }
-    });
-
-    run(ports, &local_clock, instance).await.unwrap()
-}
-
-async fn run(
-    ports: impl Iterator<Item = PortDefinition> + ExactSizeIterator,
-    local_clock: &LinuxClock,
-    instance: &'static PtpInstance<BasicFilter>,
-) -> std::io::Result<()> {
     let (bmca_notify_sender, bmca_notify_receiver) = tokio::sync::watch::channel(false);
 
-    let mut main_task_senders = Vec::with_capacity(ports.len());
-    let mut main_task_receivers = Vec::with_capacity(ports.len());
+    let mut main_task_senders = Vec::with_capacity(config.ports.len());
+    let mut main_task_receivers = Vec::with_capacity(config.ports.len());
 
-    for port_definition in ports.into_iter() {
-        let event_socket = EventSocket::new(
-            &port_definition.interface,
-            port_definition.timestamping_mode,
-        )
-        .await?;
-        let general_socket = GeneralSocket::new(&port_definition.interface).await?;
+    for port_config in config.ports {
+        let interface = port_config.interface;
+        let network_mode = port_config.network_mode;
+        let rng = StdRng::from_entropy();
+        let port = instance.add_port(port_config.into(), 0.25, local_clock.clone(), rng);
 
         let (main_task_sender, port_task_receiver) = tokio::sync::mpsc::channel(1);
         let (port_task_sender, main_task_receiver) = tokio::sync::mpsc::channel(1);
 
-        tokio::spawn(port_task(
-            port_task_receiver,
-            port_task_sender,
-            event_socket,
-            general_socket,
-            local_clock.clone(),
-            bmca_notify_receiver.clone(),
-        ));
-
         main_task_sender
-            .send(port_definition.port)
+            .send(port)
             .await
             .expect("space in channel buffer");
 
         main_task_senders.push(main_task_sender);
         main_task_receivers.push(main_task_receiver);
+
+        match network_mode {
+            statime_linux::config::NetworkMode::Ipv4 => {
+                let event_socket =
+                    open_ipv4_event_socket(interface).expect("Could not open event socket");
+                let general_socket =
+                    open_ipv4_general_socket(interface).expect("Could not open general socket");
+
+                tokio::spawn(port_task(
+                    port_task_receiver,
+                    port_task_sender,
+                    event_socket,
+                    general_socket,
+                    bmca_notify_receiver.clone(),
+                ));
+            }
+            statime_linux::config::NetworkMode::Ipv6 => {
+                let event_socket =
+                    open_ipv6_event_socket(interface).expect("Could not open event socket");
+                let general_socket =
+                    open_ipv6_general_socket(interface).expect("Could not open general socket");
+
+                tokio::spawn(port_task(
+                    port_task_receiver,
+                    port_task_sender,
+                    event_socket,
+                    general_socket,
+                    bmca_notify_receiver.clone(),
+                ));
+            }
+        }
     }
 
+    run(
+        instance,
+        bmca_notify_sender,
+        main_task_receivers,
+        main_task_senders,
+    )
+    .await
+}
+
+async fn run(
+    instance: &'static PtpInstance<BasicFilter>,
+    bmca_notify_sender: tokio::sync::watch::Sender<bool>,
+    mut main_task_receivers: Vec<Receiver<Port<InBmca<'static>, StdRng, LinuxClock, BasicFilter>>>,
+    main_task_senders: Vec<Sender<Port<InBmca<'static>, StdRng, LinuxClock, BasicFilter>>>,
+) -> ! {
     // run bmca over all of the ports at the same time. The ports don't perform
     // their normal actions at this time: bmca is stop-the-world!
     let mut bmca_timer = pin!(Timer::new());
@@ -316,12 +316,11 @@ type BmcaPort = Port<InBmca<'static>, StdRng, LinuxClock, BasicFilter>;
 // It will then move the port into the running state, and process actions. When
 // the task is notified of a BMCA, it will stop running, move the port into the
 // bmca state, and send it on its Sender
-async fn port_task(
+async fn port_task<A: NetworkAddress + PtpTargetAddress>(
     mut port_task_receiver: Receiver<BmcaPort>,
     port_task_sender: Sender<BmcaPort>,
-    mut event_socket: EventSocket,
-    mut general_socket: GeneralSocket,
-    local_clock: LinuxClock,
+    mut event_socket: Socket<A, Open>,
+    mut general_socket: Socket<A, Open>,
     mut bmca_notify: tokio::sync::watch::Receiver<bool>,
 ) {
     let mut timers = Timers {
@@ -338,14 +337,8 @@ async fn port_task(
         // handle post-bmca actions
         let (mut port, actions) = port_in_bmca.end_bmca();
 
-        let mut pending_timestamp = handle_actions(
-            actions,
-            &mut event_socket,
-            &mut general_socket,
-            &mut timers,
-            &local_clock,
-        )
-        .await;
+        let mut pending_timestamp =
+            handle_actions(actions, &mut event_socket, &mut general_socket, &mut timers).await;
 
         while let Some((context, timestamp)) = pending_timestamp {
             pending_timestamp = handle_actions(
@@ -353,7 +346,6 @@ async fn port_task(
                 &mut event_socket,
                 &mut general_socket,
                 &mut timers,
-                &local_clock,
             )
             .await;
         }
@@ -363,12 +355,12 @@ async fn port_task(
 
         loop {
             let mut actions = tokio::select! {
-                result = event_socket.recv(&local_clock, &mut event_buffer) => match result {
-                    Ok(packet) => port.handle_timecritical_receive(packet.data, packet.timestamp),
+                result = event_socket.recv(&mut event_buffer) => match result {
+                    Ok(packet) => port.handle_timecritical_receive(&event_buffer[..packet.bytes_read], timestamp_to_time(packet.timestamp.expect("Missing timestamp on recv"))),
                     Err(error) => panic!("Error receiving: {error:?}"),
                 },
                 result = general_socket.recv(&mut general_buffer) => match result {
-                    Ok(packet) => port.handle_general_receive(packet.data),
+                    Ok(packet) => port.handle_general_receive(&general_buffer[..packet.bytes_read]),
                     Err(error) => panic!("Error receiving: {error:?}"),
                 },
                 () = &mut timers.port_announce_timer => {
@@ -393,14 +385,9 @@ async fn port_task(
             };
 
             loop {
-                let pending_timestamp = handle_actions(
-                    actions,
-                    &mut event_socket,
-                    &mut general_socket,
-                    &mut timers,
-                    &local_clock,
-                )
-                .await;
+                let pending_timestamp =
+                    handle_actions(actions, &mut event_socket, &mut general_socket, &mut timers)
+                        .await;
 
                 // there might be more actions to handle based on the current action
                 actions = match pending_timestamp {
@@ -423,12 +410,11 @@ struct Timers<'a> {
     filter_update_timer: Pin<&'a mut Timer>,
 }
 
-async fn handle_actions(
+async fn handle_actions<A: NetworkAddress + PtpTargetAddress>(
     actions: PortActionIterator<'_>,
-    event_socket: &mut EventSocket,
-    general_socket: &mut GeneralSocket,
+    event_socket: &mut Socket<A, Open>,
+    general_socket: &mut Socket<A, Open>,
     timers: &mut Timers<'_>,
-    local_clock: &LinuxClock,
 ) -> Option<(TimestampContext, Time)> {
     let mut pending_timestamp = None;
 
@@ -437,16 +423,19 @@ async fn handle_actions(
             PortAction::SendTimeCritical { context, data } => {
                 // send timestamp of the send
                 let time = event_socket
-                    .send(data)
+                    .send_to(data, A::PRIMARY_EVENT)
                     .await
                     .unwrap()
-                    .unwrap_or(local_clock.now());
+                    .unwrap();
 
                 // anything we send later will have a later pending (send) timestamp
-                pending_timestamp = Some((context, time));
+                pending_timestamp = Some((context, timestamp_to_time(time)));
             }
             PortAction::SendGeneral { data } => {
-                general_socket.send(data).await.unwrap();
+                general_socket
+                    .send_to(data, A::PRIMARY_GENERAL)
+                    .await
+                    .unwrap();
             }
             PortAction::ResetAnnounceTimer { duration } => {
                 timers.port_announce_timer.as_mut().reset(duration);

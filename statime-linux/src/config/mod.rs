@@ -5,7 +5,7 @@ use serde::Deserialize;
 use statime::{DelayMechanism, Duration, Interval};
 use timestamped_socket::interface::InterfaceName;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Config {
     pub loglevel: String,
@@ -18,12 +18,15 @@ pub struct Config {
     pub ports: Vec<PortConfig>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct PortConfig {
     pub interface: InterfaceName,
+    #[serde(default)]
+    pub network_mode: NetworkMode,
     pub announce_interval: i8,
     pub sync_interval: i8,
     pub announce_receipt_timeout: u8,
+    #[serde(default)]
     pub master_only: bool,
     pub delay_asymetry: i64,
     pub delay_mechanism: i8,
@@ -44,11 +47,12 @@ impl From<PortConfig> for statime::PortConfig {
     }
 }
 
-#[derive(Deserialize, Debug)]
-pub enum PtpMode {
-    Ordinary,
-    Boundary,
-    Transparant,
+#[derive(Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum NetworkMode {
+    #[default]
+    Ipv4,
+    Ipv6,
 }
 
 impl Config {

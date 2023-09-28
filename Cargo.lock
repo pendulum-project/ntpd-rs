@@ -522,9 +522,8 @@ dependencies = [
 [[package]]
 name = "timestamped-socket"
 version = "0.1.0"
-source = "git+https://github.com/pendulum-project/timestamped-socket.git?rev=95c2472#95c2472bf3f5599f33b5d31c7808e5d3d601771f"
+source = "git+https://github.com/pendulum-project/timestamped-socket.git?rev=b98af7e#b98af7ed28dfe7d1b32345a9460dd86b8e509150"
 dependencies = [
- "clock-steering",
  "libc",
  "serde",
  "tokio",
@@ -599,6 +598,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ce8c33a8d48bd45d624a6e523445fd21ec13d3653cd51f681abf67418f54eb8"
 dependencies = [
  "cfg-if",
+ "log",
  "pin-project-lite",
  "tracing-core",
 ]
