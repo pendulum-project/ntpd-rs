@@ -2,99 +2,41 @@
 [![codecov](https://codecov.io/gh/pendulum-project/ntpd-rs/branch/main/graph/badge.svg?token=WES1JIYUJH)](https://codecov.io/gh/pendulum-project/ntpd-rs)
 [![Crates.io](https://img.shields.io/crates/v/ntpd.svg)](https://crates.io/crates/ntpd)
 
-
 # ntpd-rs
 
-ntpd-rs is an NTP implementation written in Rust, with a focus on security and
-stability. It includes client and server functionality and supports NTS.
+nptd-rs is a tool for synchronizing your computer's clock. Implementing the NTP and NTS protocols, it is written in Rust, with a focus on security and stability. It includes both client and server support.
 
 If a feature you need is missing please let us know by opening an issue.
 
-## Installation
+## Use
 
-The recommended way of installing ntpd-rs is with the pre-built packages from
-the [releases page]. The installers automatically handle setting up users,
-permissions and configuration. Alternatively, you can use `cargo install ntpd`
-or build from source by cloning the repository yourself.
+After installing the packages from the [releases page], ntpd-rs will by default synchronize your computers clock to servers from the [NTP pool]. When installed, you can check the synchronization status through
+```console
+$ ntp-ctl status
+Synchronization status:
+Dispersion: 0.000299s, Delay: 0.007637s
+Desired poll interval: 16s
+Stratum: 4
 
-### Build from source
+Sources:
+ntpd-rs.pool.ntp.org:123/77.171.247.180:123 (1): +0.000024±0.000137(±0.016886)s
+    pollinterval: 16s, missing polls: 0
+    root dispersion: 0.005905s, root delay:0.016190s
+ntpd-rs.pool.ntp.org:123/45.137.101.154:123 (2): +0.000022±0.000081(±0.007414)s
+    pollinterval: 16s, missing polls: 0
+    root dispersion: 0.004517s, root delay:0.005051s
+ntpd-rs.pool.ntp.org:123/178.215.228.24:123 (3): +0.000117±0.000091(±0.009162)s
+    pollinterval: 16s, missing polls: 0
+    root dispersion: 0.000549s, root delay:0.004318s
+ntpd-rs.pool.ntp.org:123/162.159.200.123:123 (4): +0.000111±0.000076(±0.004066)s
+    pollinterval: 16s, missing polls: 0
+    root dispersion: 0.000351s, root delay:0.003571s
 
-Currently, ntpd-rs only supports Linux-based operating systems. Our current
-testing only targets Linux kernels after version 5.0.0, older kernels may work
-but this is not guaranteed.
-
-ntpd-rs is written in rust. We strongly recommend using [rustup] to install a
-rust toolchain, because the version provided by system package managers tends to
-be out of date. Be sure to use a recent version of the rust compiler. To build
-ntpd-rs run
-
-```sh
-cargo build --release
+Servers:
 ```
+The top part shows the overal quality of the time synchronization, and the time sources section shows which servers are used as well as offsets and uncertainties of those individual servers.
 
-This produces a `ntp-daemon` binary at `target/release/ntp-daemon`, which is the
-main NTP daemon. Before running the ntpd-rs daemon, make sure that no other NTP
-daemons are running. E.g. when chrony is running
-
-```sh
-systemctl stop chronyd
-```
-
-The ntpd-rs daemon requires elevated permissions to change the system clock.
-
-```sh
-sudo ./target/release/ntp-daemon -c ./ntp.toml
-```
-
-By default, at least 3 sources are needed for the algorithm to change the time.
-After a few minutes you should start to see messages indicating the offset of
-your machine from the server.
-
-```
-2023-04-11T10:06:24.847375Z  INFO ntp_proto::algorithm::kalman: Offset: 1.7506740305607742+-12.951528666965439ms, frequency: 8.525844072881435+-5.089483351832892ppm
-2023-04-11T10:06:25.443852Z  INFO ntp_proto::algorithm::kalman: Offset: 1.8947020578044949+-12.981792974220694ms, frequency: 7.654657944152439+-3.3911904299378386ppm
-2023-04-11T10:06:25.443979Z  INFO ntp_proto::algorithm::kalman: Changed frequency, current steer 4.26346751414286ppm, desired freq 0ppm
-```
-
-A complete description of how the daemon can be configured can be found in the
-documentation found in the [documentation](./docs/).
-
-## Minimum supported rust version
-
-We make no guarantees about supporting older versions of rust. When building
-from source (either manually or with `cargo install`) use the latest rust
-version to prevent issues.
-
-We are committed to keep ntpd-rs working on at least the latest stable and beta
-compilers. Beyond this, we keep track of the current minimum rust version needed
-to compile our code for purposes of documentation. However, right now we do not
-have a policy guaranteeing a minimum amount of time we will support a stable
-rust release beyond the 6 weeks during which it is the latest stable version.
-
-Please note that the Rust project only supports the latest stable rust release.
-As this is the only release that will receive any security updates, we STRONGLY
-recommend using the latest stable rust version for compiling ntpd-rs for daily
-use.
-
-## Package substructure
-
-Currently, the code is split up into several separate crates:
-
-* `ntp-proto` contains the packet parsing and the algorithms needed for clock
-  selection, filtering and steering.
-* `ntp-os-clock` contains the unsafe code needed to interface with system
-  clocks.
-* `ntp-udp` contains the unsafe code needed to deal with timestamping on the
-  network layer.
-* `ntpd` contains the entrypoints for all our binaries and the code for the
-  daemon (`ntp-daemon`), control client (`ntp-ctl`) and OpenMetrics/prometheus
-  exporter (`ntp-metrics-exporter`).
-
-
-All unsafe code is contained within the `ntp-os-clock` and `ntp-udp` packages,
-which are kept as small as possible. All interfaces exposed by these crates
-should be safe. For a more detailed description of how ntpd-rs is structured,
-see the [development documentation](./docs/development/).
+For more details on how to install and use ntpd-rs, see our [documentation website].
 
 ## Roadmap
 
@@ -138,7 +80,8 @@ In July of 2023 the [Sovereign Tech Fund] invested in Pendulum, securing ntpd-rs
 ![STF](https://tweedegolf.nl/images/logo-stf-blank.png)
 
 [releases page]: https://github.com/pendulum-project/ntpd-rs/releases
-[rustup]: https://rustup.rs
+[NTP pool]: https://www.ntppool.org
+[documentation website]: https://docs.ntpd-rs.pendulum-project.org/
 [Prossimo]: https://www.memorysafety.org
 [NTP initiative page]: https://www.memorysafety.org/initiative/ntp
 [NTP announcement]: https://www.memorysafety.org/blog/ntp-and-nts-have-arrived/
