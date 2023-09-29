@@ -12,7 +12,7 @@ This guide will not go into detail on all of ntpd's configuration directives, bu
 
 The `server` and `pool` commands have a direct equivalent in ntpd-rs:
 
-```
+```toml
 # ntpd
 server 0.pool.ntp.org
 server 1.pool.ntp.org
@@ -38,7 +38,7 @@ A source in `pool` mode must explicitly define an integer `count`, the maximum n
 The symmetric and broadcasting association modes are deliberately not supported in ntpd-rs because these modes have security issues. The `peer` command can be substituted with a standard `server` source. For the `broadcast` command, configuring the NTP server via DHCP instead may be an alternative
 
 There is no direct equivalent of ntpd's `maxpoll` and `minpoll` flags that can be configured on a per-source basis. Instead ntpd-rs defines poll interval bounds globally for all time sources:
-```
+```toml
 [source-defaults]
 poll-interval-limits = { min = <minpoll>, max = <maxpoll> }
 initial-poll-interval = <desired initial poll interval>
@@ -53,14 +53,14 @@ The current version of ntpd-rs does not yet support local reference clocks, but 
 ## Time synchronization options
 
 The minimum number of time sources needed for time synchronization in ntpd-rs is configured through `minimum-agreeing-sources`:
-```
+```toml
 [synchronization]
 mininum-agreeing-sources = <minsources>
 ```
 If fewer agreeing source are available, no synchronization is performed and the clock will drift. This option is a combination of ntpd's `minclock` and `minsane`. Its default value is 3, the recommended value from a security perspective. In ntpd, a default of 3 is used for `minclock` and 1 for `minsane`.
 
 Through the `tinker` command's `step` and `stepout` flags, ntpd allows limiting of the maximum change in time made. Although not entirely the same in functionality, ntpd-rs allows similar restrictions to be enforced through a number of panic thresholds. Steps at startup are controlled through the `startup-panic-threshold`, whilst steps during normal operation are controlled with `single-step-panic-threshold` and `accumulated-step-panic-threshold`.
-```
+```toml
 [synchronization]
 single-step-panic-threshold = 1000
 startup-step-panic-threshold = { forward="inf", backward = 86400 }
@@ -75,7 +75,7 @@ The [`restrict` command](https://www.ntp.org/documentation/4.2.8-series/accopt/)
 
 This logic is expressed differently in ntpd-rs. A specific server can be configured to have a `denylist` and an `allowlist`.
 
-```
+```toml
 [[server]]
 listen="<ip or [::]>:<port>"
 allowlist = [
@@ -97,7 +97,7 @@ The `allowlist-action` and `denylist-action` properties can have two values:
 - `deny` corresponds to ntpd's `kod` and sends a deny kiss-o'-death packet
 
 The stratum can can be configured in ntpd-rs with the `local-stratum` key:
-```
+```toml
 [synchronization]
 local-stratum = <stratum>
 ```
