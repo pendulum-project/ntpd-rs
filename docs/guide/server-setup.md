@@ -9,9 +9,10 @@ listen = "0.0.0.0:123"
 ```
 This will cause ntpd-rs to listen on all network interfaces on udp port 123 for
 ntp client requests. If you only want to listen on a specific network
-interface, change `0.0.0.0` to the ip address of that interface. You can now
-configure a different machine to use your new server by adding to its
-configuration:
+interface, change `0.0.0.0` to the ip address of that interface.
+
+You can now configure a different machine to use your new server by adding to
+its configuration:
 ```toml
 [[source]]
 mode = "server"
