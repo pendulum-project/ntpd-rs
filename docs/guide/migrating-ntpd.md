@@ -6,7 +6,7 @@ Configuration for ntpd uses a custom format that functions as a list of commands
 
 An `ntpd-rs` configuration can be validated with `ntp-ctl validate -c <path>`. This will check all field names, and in some cases validates that a value is within the range of valid values for that property.
 
-This guide will not go into detail on all of ntpd's configuration directives, but rather focus on those most important for successful migration. If a particular directive is not mentioned here, there may still be ntpd-rs options in the [configuration reference](../ntp.toml.5.md) that achieve the desired effect. Note that not all functionality of ntpd is currently supported, a short overview of major differences is given [at the end of this document](#unsupported-features).
+This guide will not go into detail on all of ntpd's configuration directives, but rather focus on those most important for successful migration. If a particular directive is not mentioned here, there may still be ntpd-rs options in the [configuration reference](../man/ntp.toml.5.md) that achieve the desired effect. Note that not all functionality of ntpd is currently supported, a short overview of major differences is given [at the end of this document](#unsupported-features).
 
 ## Time sources
 
