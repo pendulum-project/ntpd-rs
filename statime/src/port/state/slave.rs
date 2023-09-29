@@ -397,8 +397,6 @@ impl<F> SlaveState<F> {
 
             self.last_raw_sync_offset = Some(raw_sync_offset);
             self.sync_state = SyncState::Empty;
-
-            log::debug!("Raw sync measurement {:?}", result.raw_sync_offset);
         } else if let DelayState::Measuring {
             send_time: Some(send_time),
             recv_time: Some(recv_time),
@@ -418,6 +416,8 @@ impl<F> SlaveState<F> {
             // No measurement
             return None;
         }
+
+        log::info!("Measurement: {:?}", result);
 
         Some(result)
     }

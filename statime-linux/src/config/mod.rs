@@ -13,7 +13,6 @@ pub struct Config {
     pub domain: u8,
     pub priority1: u8,
     pub priority2: u8,
-    pub hardware_clock: Option<String>,
     #[serde(rename = "port")]
     pub ports: Vec<PortConfig>,
 }
@@ -21,6 +20,8 @@ pub struct Config {
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct PortConfig {
     pub interface: InterfaceName,
+    #[serde(default)]
+    pub hardware_clock: Option<String>,
     #[serde(default)]
     pub network_mode: NetworkMode,
     pub announce_interval: i8,

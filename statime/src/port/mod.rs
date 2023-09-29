@@ -131,6 +131,11 @@ pub struct PortActionIterator<'a> {
 }
 
 impl<'a> PortActionIterator<'a> {
+    pub fn empty() -> Self {
+        Self {
+            internal: ArrayVec::new().into_iter(),
+        }
+    }
     fn from(list: ArrayVec<PortAction<'a>, MAX_ACTIONS>) -> Self {
         Self {
             internal: list.into_iter(),

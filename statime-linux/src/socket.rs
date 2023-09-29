@@ -42,8 +42,9 @@ impl PtpTargetAddress for SocketAddrV6 {
 
 pub fn open_ipv4_event_socket(
     interface: InterfaceName,
+    timestamping: InterfaceTimestampMode,
 ) -> std::io::Result<Socket<SocketAddrV4, Open>> {
-    let socket = open_interface_udp4(interface, EVENT_PORT, InterfaceTimestampMode::SoftwareAll)?;
+    let socket = open_interface_udp4(interface, EVENT_PORT, timestamping)?;
     socket.join_multicast(SocketAddrV4::new(IPV4_PRIMARY_MULTICAST, 0), interface)?;
     socket.join_multicast(SocketAddrV4::new(IPV4_PDELAY_MULTICAST, 0), interface)?;
     Ok(socket)
@@ -60,8 +61,9 @@ pub fn open_ipv4_general_socket(
 
 pub fn open_ipv6_event_socket(
     interface: InterfaceName,
+    timestamping: InterfaceTimestampMode,
 ) -> std::io::Result<Socket<SocketAddrV6, Open>> {
-    let socket = open_interface_udp6(interface, EVENT_PORT, InterfaceTimestampMode::SoftwareAll)?;
+    let socket = open_interface_udp6(interface, EVENT_PORT, timestamping)?;
     socket.join_multicast(
         SocketAddrV6::new(IPV6_PRIMARY_MULTICAST, 0, 0, 0),
         interface,

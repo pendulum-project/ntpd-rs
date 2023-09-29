@@ -7,7 +7,7 @@ use statime::{Clock, Duration, Time, TimePropertiesDS};
 
 #[derive(Debug, Clone)]
 pub struct LinuxClock {
-    clock: clock_steering::unix::UnixClock,
+    pub clock: clock_steering::unix::UnixClock,
 }
 
 impl LinuxClock {
@@ -19,16 +19,6 @@ impl LinuxClock {
         let clock = UnixClock::open(path)?;
 
         Ok(Self { clock })
-    }
-
-    pub fn timespec(&self) -> std::io::Result<libc::timespec> {
-        use clock_steering::Clock;
-
-        let now = self.clock.now()?;
-        Ok(libc::timespec {
-            tv_sec: now.seconds,
-            tv_nsec: now.nanos as _,
-        })
     }
 }
 
@@ -68,8 +58,10 @@ impl clock_steering::Clock for LinuxClock {
     }
 }
 
-fn time_from_timestamp(timestamp: clock_steering::Timestamp) -> Time {
-    let seconds: u64 = timestamp.seconds.try_into().unwrap();
+fn time_from_timestamp(timestamp: clock_steering::Timestamp, fallback: Time) -> Time {
+    let Ok(seconds): Result<u64, _> = timestamp.seconds.try_into() else {
+        return fallback;
+    };
 
     let nanos = seconds * 1_000_000_000 + timestamp.nanos as u64;
     Time::from_nanos_subnanos(nanos, 0)
@@ -82,14 +74,14 @@ impl Clock for LinuxClock {
         use clock_steering::Clock;
 
         let timestamp = self.clock.now().unwrap();
-        time_from_timestamp(timestamp)
+        time_from_timestamp(timestamp, Time::from_fixed_nanos(0))
     }
 
     fn set_frequency(&mut self, freq: f64) -> Result<Time, Self::Error> {
         use clock_steering::Clock;
         log::trace!("Setting clock frequency to {:e}ppm", freq);
         let timestamp = self.clock.set_frequency(freq)?;
-        Ok(time_from_timestamp(timestamp))
+        Ok(time_from_timestamp(timestamp, statime::Clock::now(self)))
     }
 
     fn step_clock(&mut self, time_offset: Duration) -> Result<Time, Self::Error> {
@@ -112,21 +104,11 @@ impl Clock for LinuxClock {
         );
 
         let timestamp = self.clock.step_clock(offset)?;
-        Ok(time_from_timestamp(timestamp))
+        Ok(time_from_timestamp(timestamp, statime::Clock::now(self)))
     }
 
-    fn set_properties(&mut self, time_properties: &TimePropertiesDS) -> Result<(), Self::Error> {
-        use clock_steering::Clock;
-
-        let leap_indicator = match time_properties.leap_indicator() {
-            statime::LeapIndicator::NoLeap => clock_steering::LeapIndicator::NoWarning,
-            statime::LeapIndicator::Leap61 => clock_steering::LeapIndicator::Leap61,
-            statime::LeapIndicator::Leap59 => clock_steering::LeapIndicator::Leap59,
-        };
-
-        if time_properties.is_ptp() {
-            self.clock.set_leap_seconds(leap_indicator)?;
-        }
+    fn set_properties(&mut self, _time_properties: &TimePropertiesDS) -> Result<(), Self::Error> {
+        // For now just ignore these
 
         Ok(())
     }
