@@ -22,16 +22,16 @@ Stratum: 3
 
 Sources:
 ntpd-rs.pool.ntp.org:123/20.101.57.9:123 (1): -0.022944±0.000218(±0.004720)s
-    pollinterval: 16s, missing polls: 0
+    poll interval: 16s, missing polls: 0
     root dispersion: 0.103531s, root delay:0.001434s
 ntpd-rs.pool.ntp.org:123/35.204.193.221:123 (2): +0.000564±0.000138(±0.007323)s
-    pollinterval: 16s, missing polls: 0
+    poll interval: 16s, missing polls: 0
     root dispersion: 0.000000s, root delay:0.007538s
 ntpd-rs.pool.ntp.org:123/94.198.159.15:123 (3): +0.000140±0.000202(±0.005725)s
-    pollinterval: 16s, missing polls: 0
+    poll interval: 16s, missing polls: 0
     root dispersion: 0.000015s, root delay:0.000015s
 ntpd-rs.pool.ntp.org:123/95.211.123.72:123 (4): +0.000052±0.000189(±0.005118)s
-    pollinterval: 16s, missing polls: 0
+    poll interval: 16s, missing polls: 0
     root dispersion: 0.039536s, root delay:0.021667s
 
 Servers:
@@ -63,22 +63,22 @@ Stratum: 2
 
 Sources:
 ntp.time.nl:123/94.198.159.10:123 (1): +0.000380±0.000249(±0.005496)s
-    pollinterval: 16s, missing polls: 0
+    poll interval: 16s, missing polls: 0
     root dispersion: 0.000122s, root delay:0.000000s
 ntp.time.nl:123/94.198.159.14:123 (2): -0.000046±0.000154(±0.005520)s
-    pollinterval: 16s, missing polls: 0
+    poll interval: 16s, missing polls: 0
     root dispersion: 0.000122s, root delay:0.000000s
 ntpd-rs.pool.ntp.org:123/84.245.9.254:123 (3): -0.000288±0.000698(±0.008572)s
-    pollinterval: 16s, missing polls: 0
+    poll interval: 16s, missing polls: 0
     root dispersion: 0.000305s, root delay:0.006226s
 ntpd-rs.pool.ntp.org:123/83.98.155.30:123 (4): +0.000000±0.000163(±0.005186)s
-    pollinterval: 16s, missing polls: 0
+    poll interval: 16s, missing polls: 0
     root dispersion: 0.005020s, root delay:0.004898s
 ntpd-rs.pool.ntp.org:123/162.159.200.123:123 (5): -0.000380±0.000140(±0.004535)s
-    pollinterval: 16s, missing polls: 0
+    poll interval: 16s, missing polls: 0
     root dispersion: 0.000259s, root delay:0.003662s
 ntpd-rs.pool.ntp.org:123/5.255.99.180:123 (6): +0.000193±0.000203(±0.005414)s
-    pollinterval: 16s, missing polls: 0
+    poll interval: 16s, missing polls: 0
     root dispersion: 0.008499s, root delay:0.005661s
 
 Servers:
