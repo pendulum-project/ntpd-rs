@@ -255,7 +255,11 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
                         },
                     ) => {
                         println!(
-                            "{}/{} ({}): {:+.6}±{:.6}(±{:.6})s\n    pollinterval: {:.0}s, missing polls: {}\n    root dispersion: {:.6}s, root delay:{:.6}s",
+                            concat!(
+                                "{}/{} ({}): {:+.6}±{:.6}(±{:.6})s\n",
+                                "    poll interval: {:.0}s, missing polls: {}\n",
+                                "    root dispersion: {:.6}s, root delay:{:.6}s"
+                            ),
                             address,
                             ip,
                             id,
