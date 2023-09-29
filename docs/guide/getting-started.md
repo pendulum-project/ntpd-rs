@@ -4,7 +4,7 @@ Ntpd-rs is an implementation of the NTP protocol. It aims to synchronize your sy
 
 ## Installation
 
-Installation instructions for your system can be found in the [installation guide](installation.md). For first time users, we strongly recommend using either your OS package repository packages, or the packages we redistribute. If you have installed ntpd-rs from source, and you have installed files in different locations than the default, you may need to modify the instructions below.
+Installation instructions for your system can be found in the [installation guide](installation.md). For first time users, we strongly recommend using either your OS package repository packages, or the packages we provide. If you have installed ntpd-rs from source, and you have installed files in different locations than the default, you may need to modify the instructions below.
 
 ## Checking the synchronization.
 

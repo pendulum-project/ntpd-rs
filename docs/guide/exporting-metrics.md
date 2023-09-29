@@ -1,15 +1,6 @@
 # Exporting metrics
 
-Ntpd-rs comes with support for exporting key operational metrics to an external prometheus instance. Configuring this requires two things:
-- Enabling the observability socket in the ntpd-rs configuration.
-- Configure the system to run ntp-metrics-exporter as a service.
-
-Enabling the observability socket requires the following to be present in the configuration:
-```toml
-[observability]
-observation-path = "/var/run/ntpd-rs/observe"
-```
-This line is already present in the default configuration if nptd-rs was installed from our packages.
+Ntpd-rs supports exporting key operational metrics to an external prometheus instance.
 
 ## Installed from package
 
@@ -22,7 +13,18 @@ After enabling the metrics exporter, a prometheus metrics dataset will be served
 
 ## Installed through cargo or from source
 
-When installed through cargo or from source, you will have to manually configure your system to run the ntp-metrics-exporter binary as a service. For systemd based systems, an example is provided below.
+When installed through cargo or from source, two things need to be configured manually: 
+
+- Enable the observability socket in the ntpd-rs configuration.
+- Configure the system to run ntp-metrics-exporter as a service.
+
+The observability socket can be enabled by adding the following to the configuration:
+```toml
+[observability]
+observation-path = "/var/run/ntpd-rs/observe"
+```
+
+Next, configure your system to run the ntp-metrics-exporter binary as a service. For systemd based systems, an example is provided below.
 ```ini
 [Unit]
 Description=Network Time Service (ntpd-rs) metrics exporter
