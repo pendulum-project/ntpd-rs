@@ -95,23 +95,31 @@ ntpsec and ntpd-rs use different algorithms for synchronizing the time. This mea
 The `restrict` command is used in ntpsec to deny requests from a client. In ntpsec this is a global setting. A flag configures what happens with connections from this client. For instance, `ignore` will silently ignore the request, while `kod` sends a response to the client that notifies it that its request is denied.
 
 This logic is expressed differently in ntpd-rs. A specific server can be configured to have a `denylist` and an `allowlist`.
+The subnets to allow or deny must be specified in CIDR notation
+(an IP address followed by a slash and the number of masked bits, for example `127.0.0.1/8` or `192.168.1.1/24`)
+
 ```toml
 [[server]]
 listen="<ip or [::]>:<port>"
-allowlist = [
-    <subnet1>,
-    <subnet2>
+
+[server.allowlist]
+filter = [
+    "<subnet1>",
+    "<subnet2>",
 ]
-allowlist-action = `ignore`
-denylist = [
-    <subnet3>,
-    <subnet4>
+action = "ignore"
+
+[server.denylist]
+filter = [
+    "<subnet3>",
+    "<subnet4>",
 ]
-denylist-action = `deny`
+action = "deny"
 ```
+
 The allow and deny list configuration is optional in ntpd-rs. By default, if a server is configured it will accept traffic from anywhere. When configuring both allow and deny lists, ntpd-rs will first check if a remote is on the deny list. Only if this is not the case will the allow list be considered.
 
-The `allowlist-action` and `denylist-action` properties can have two values:
+The `allowlist.action` and `denylist.action` properties can have two values:
 
 - `ignore` corresponds to ntpsec's `ignore` and silently ignores the request
 - `deny` corresponds to ntpsec's `kod` and sends a deny kiss-o'-death packet

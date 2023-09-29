@@ -93,25 +93,29 @@ When tuning the synchronization algorithm, it is important to note a major philo
 
 ## Server configuration
 
-Server configuration in ntpd-rs works quite a bit differently from chrony. Rather than enabling time server functionality by `allow`ing remote connections to the server, one or more serving instances can be individually configured. Each of these comes with its own allow and deny list:
+Server configuration in ntpd-rs works quite a bit differently from chrony. Rather than enabling time server functionality by `allow`ing remote connections to the server, one or more serving instances can be individually configured. Each of these comes with its own allow and deny list.
+The subnets to allow or deny must be specified in CIDR notation
+(an IP address followed by a slash and the number of masked bits, for example `127.0.0.1/8` or `192.168.1.1/24`)
+
 ```toml
 [[server]]
-listen="<IP or [::]>:<port>"
+listen="<ip or [::]>:<port>"
 
 [server.allowlist]
 filter = [
     "<subnet1>",
-    "<subnet2>"
+    "<subnet2>",
 ]
 action = "ignore"
 
 [server.denylist]
 filter = [
     "<subnet3>",
-    "<subnet4>"
+    "<subnet4>",
 ]
 action = "deny"
 ```
+
 The allow and deny list configuration is optional in ntpd-rs. By default, a server accepts traffic from anywhere. When configuring both allow and deny lists, ntpd-rs will first check if a remote is on the deny list. Only if this is not the case will the allow list be considered. This ordering needs to be taken into account when translating interleaved combinations of chrony's `allow` and `deny` commands.
 
 NTS can be enabled for a server by configuring an NTS key exchange server:
