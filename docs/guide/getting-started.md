@@ -92,7 +92,7 @@ You now have a working NTP client, can check its status, and if desired modify
 the sources it uses for time. There are multiple directions to go from here.
 
 If you want more certainty around the authenticity of your time sources, you
-can take a look at [using NTS](TODO).
+can take a look at [using NTS](nts.md).
 
 Setting up your own time server is explained in our [server setup guide](server-setup.md).
 
