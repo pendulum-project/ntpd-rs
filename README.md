@@ -51,8 +51,8 @@ where `<INTERFACE>` is the network interface you want ptpd to use. Here `-n` dis
 # Roadmap
 
 - Q2 2023: PTP master, boundary clock
-- Q3 2023: NTP/PTP clock device + development of PTP for Linux (pending funding)
-- Q4 2023: Completion of PTP for Linux (pending funding)
+- Q3 2023: NTP/PTP clock device + development of PTP for Linux 
+- Q4 2023: Completion of PTP for Linux + R&D fieldtest TimeNL
 
 # Support our work
 
@@ -61,8 +61,10 @@ The development of Statime is kindly supported by the NGI Assure Fund of the [NL
 <img style="margin: 1rem 5% 1rem 5%;" src="https://nlnet.nl/logo/banner.svg" alt="Logo NLnet"  width="150px" />
 <img style="margin: 1rem 5% 1rem 5%;" src="https://nlnet.nl/image/logos/NGIAssure_tag.svg" alt="Logo NGI Assure" width="150px" />
 
-[SIDN Fonds](https://www.sidnfonds.nl/excerpt) is supporting us with a grant to develop clock devices running Statime and ntpd-rs, in collaboration with SIDN Labs' [TimeNL](https://www.sidnlabs.nl/en/news-and-blogs/an-open-infrastructure-for-sub-millisecond-internet-time). In August of 2023, Sovereign Tech Fund invested in Pendulum (Statime and ntpd-rs). Read more on [their website](https://sovereigntechfund.de/en/projects/pendulum/).
+[SIDN Fonds](https://www.sidnfonds.nl/excerpt) is supporting us with a grant to develop clock devices running Statime and ntpd-rs, in collaboration with SIDN Labs' [TimeNL](https://www.sidnlabs.nl/en/news-and-blogs/an-open-infrastructure-for-sub-millisecond-internet-time). 
+
+In August of 2023, Sovereign Tech Fund invested in Pendulum (Statime and ntpd-rs). Read more on [their website](https://sovereigntechfund.de/en/projects/pendulum/).
 
 <img style="margin: 1rem 5% 1rem 5%;" src="https://tweedegolf.nl/images/logo-stf-blank.png" alt="Logo STF" width="250px" />
 
-We seek involvement of interested parties and funding for future work, see [Project Pendulum](https://github.com/pendulum-project).
+We continuously seek the involvement of interested parties and funding for future work. See [Project Pendulum](https://github.com/pendulum-project) or reach out to pendulum@tweedegolf.com.
