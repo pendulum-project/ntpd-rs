@@ -12,9 +12,22 @@ If a feature you need is missing please let us know by opening an issue.
 
 Be sure to check out the [documentation website] as it includes guides on getting started, installation and migration, as well as a high-level overview of the code structure.
 
-## Use
+## Usage
 
-After installing the packages from the [releases page], ntpd-rs will by default synchronize your computers clock to servers from the [NTP pool]. When installed, you can check the synchronization status with
+You can install the packages from the [releases page]. These packages configure ntpd-rs to synchronize your computers clock to servers from the [NTP pool]. After installation, check the status of the ntpd-rs daemon with
+
+```console
+$ sudo systemctl status ntpd-rs
+```
+
+If ntpd-rs was not started automatically, you can do so now with
+
+```console
+$ sudo systemctl start ntpd-rs
+```
+
+You should now be able to check the synchronization status with
+
 ```console
 $ ntp-ctl status
 Synchronization status:
