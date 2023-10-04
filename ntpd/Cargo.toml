@@ -78,6 +78,8 @@ assets = [
   ["docs/examples/conf/ntp.toml.default", "/usr/share/doc/ntpd-rs/ntp.toml.default", "644"],
   ["docs/examples/conf/ntp.toml.default", "/etc/ntpd-rs/ntp.toml", "644"],
   ["docs/examples/conf/ntpd-rs.preset", "/lib/systemd/system-preset/50-ntpd-rs.preset", "644"],
+  ["docs/examples/conf/ntpd-rs.service", "/lib/systemd/system/ntpd-rs.service", "644"],
+  ["docs/examples/conf/ntpd-rs-metrics.service", "/lib/systemd/system/ntpd-rs-metrics.service", "644"],
   ["docs/examples/conf/ntp.toml.default", "/usr/share/doc/ntpd-rs/ntp.toml.default", "644"],
   ["../COPYRIGHT", "/usr/share/doc/ntpd-rs/COPYRIGHT", "644"],
   ["../LICENSE-APACHE", "/usr/share/doc/ntpd-rs/LICENSE-APACHE", "644"],
@@ -87,10 +89,6 @@ assets = [
 ]
 conf-files = [
   "/etc/ntpd-rs/ntp.toml",
-]
-systemd-units = [
-  { unit-name = "ntpd-rs", unit-scripts = "docs/examples/conf", enable = true },
-  { unit-name = "ntpd-rs-metrics", unit-scripts = "docs/examples/conf", enable = false },
 ]
 
 [package.metadata.generate-rpm]

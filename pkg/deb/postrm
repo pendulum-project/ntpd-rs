@@ -11,9 +11,28 @@ purge)
     if [ -d ${NTPDRS_CONF_DIR} ]; then
         rm -r ${NTPDRS_CONF_DIR}
     fi
-
-
     ;;
 esac
+
+if [ -d /run/systemd/system ]; then
+	systemctl --system daemon-reload >/dev/null || true
+fi
+
+if [ "$1" = "remove" ]; then
+    if [ -x "/usr/bin/deb-systemd-helper" ]; then
+        deb-systemd-helper mask ntpd-rs.service >/dev/null || true
+        deb-systemd-helper mask ntpd-rs-metrics.service >/dev/null || true
+    fi
+fi
+
+if [ "$1" = "purge" ]; then
+    if [ -x "/usr/bin/deb-systemd-helper" ]; then
+        deb-systemd-helper purge ntpd-rs.service >/dev/null || true
+        deb-systemd-helper unmask ntpd-rs.service >/dev/null || true
+
+        deb-systemd-helper purge ntpd-rs-metrics.service >/dev/null || true
+        deb-systemd-helper unmask ntpd-rs-metrics.service >/dev/null || true
+    fi
+fi
 
 #DEBHELPER#
