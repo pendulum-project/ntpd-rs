@@ -39,8 +39,8 @@ impl Default for ProgramData {
     fn default() -> Self {
         Self {
             version: env!("CARGO_PKG_VERSION").to_owned(),
-            build_commit: env!("NTP_GIT_REV").to_owned(),
-            build_commit_date: env!("NTP_GIT_DATE").to_owned(),
+            build_commit: env!("NTPD_RS_GIT_REV").to_owned(),
+            build_commit_date: env!("NTPD_RS_GIT_DATE").to_owned(),
             uptime_seconds: 0.0,
         }
     }
