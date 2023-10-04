@@ -14,6 +14,13 @@ fn main() {
     // use environment variable for the git commit rev if set
     let git_rev = std::env::var("NTPD_RS_GIT_REV").ok();
 
+    // allow usage of the GITHUB_SHA environment variable during CI
+    let git_rev = if let Some(gr) = git_rev {
+        Some(gr)
+    } else {
+        std::env::var("GITHUB_SHA").ok()
+    };
+
     // determine the git commit (if there is any)
     let git_rev = if let Some(gr) = git_rev {
         Some(gr)
