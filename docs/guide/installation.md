@@ -9,13 +9,14 @@ The recommended way of installing ntpd-rs is through an installer or package man
 We recommend the packages from our [release page](https://github.com/pendulum-project/ntpd-rs/releases). The package takes care of putting the configuration in the right place and setting up the recommended users and permissions. The default configuration file is located at `/etc/ntpd-rs/ntp.toml`
 
 On a debian based linux, the `.deb` package can be installed with
-```
-sudo dpkg -i /path/to/deb/file.deb
+```console
+$ sudo dpkg -i /path/to/deb/file.deb
 ```
 
-On an red hat based linux, the `.rpm` package can be installed with
-```
-sudo rpm -ivh /path/to/rpm/file.rpm
+On a red hat based linux, the `.rpm` package can be installed with
+```console
+$ sudo rpm -ivh /path/to/rpm/file.rpm
+$ sudo systemctl start ntpd-rs
 ```
 
 ### FreeBSD
@@ -68,7 +69,7 @@ It is by far the easiest to have your operating system and standard tools take c
 
 - ensure that no competing NTP daemon is running
 - ensure that the daemon is started on startup
-- handling the ntpd-rs logs 
+- handling the ntpd-rs logs
 
 Below are configurations for linux (using `SystemD`) and FreeBSD (using a .rc file).
 
