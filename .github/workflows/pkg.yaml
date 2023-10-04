@@ -22,3 +22,6 @@ jobs:
       package_test_scripts_path: pkg/test-scripts/test-ntpd-rs.sh
 
       rpm_scriptlets_path: pkg/rpm/scriptlets.toml
+
+      rpm_extra_build_packages: git
+      deb_extra_build_packages: git

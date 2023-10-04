@@ -11,19 +11,38 @@ fn main() {
         false
     };
 
+    // use environment variable for the git commit rev if set
+    let git_rev = std::env::var("NTPD_RS_GIT_REV").ok();
+
+    // allow usage of the GITHUB_SHA environment variable during CI
+    let git_rev = if let Some(gr) = git_rev {
+        Some(gr)
+    } else {
+        std::env::var("GITHUB_SHA").ok()
+    };
+
     // determine the git commit (if there is any)
-    let git_rev = run_command_out("git", &["rev-parse", "HEAD"])
-        .ok()
-        .map(|rev| {
-            if is_dirty {
-                format!("{}-dirty", rev)
-            } else {
-                rev
-            }
-        });
+    let git_rev = if let Some(gr) = git_rev {
+        Some(gr)
+    } else {
+        run_command_out("git", &["rev-parse", "HEAD"])
+            .ok()
+            .map(|rev| {
+                if is_dirty {
+                    format!("{}-dirty", rev)
+                } else {
+                    rev
+                }
+            })
+    };
+
+    // use environment variable for the git commit date if set
+    let git_date = std::env::var("NTPD_RS_GIT_DATE").ok();
 
     // determine the date of the git commit (if there is any)
-    let git_date = if let Some(hash) = &git_rev {
+    let git_date = if let Some(gd) = git_date {
+        Some(gd)
+    } else if let Some(hash) = &git_rev {
         if is_dirty {
             run_command_out("date", &["-u", "+%Y-%m-%d"]).ok()
         } else {
@@ -45,11 +64,11 @@ fn main() {
     };
 
     println!(
-        "cargo:rustc-env=NTP_GIT_REV={}",
+        "cargo:rustc-env=NTPD_RS_GIT_REV={}",
         git_rev.unwrap_or("-".to_owned())
     );
     println!(
-        "cargo:rustc-env=NTP_GIT_DATE={}",
+        "cargo:rustc-env=NTPD_RS_GIT_DATE={}",
         git_date.unwrap_or("-".to_owned())
     );
     println!("cargo:rustc-rerun-if-changed=.git/HEAD");
