@@ -14,5 +14,11 @@ case $1 in
       echo -e "\nNTPD-RS HELP OUTPUT:"
       /usr/bin/ntp-daemon --help
       /usr/bin/ntp-ctl validate
+
+      # Ensure that the systemd service is running
+      systemctl is-active ntpd-rs.service --quiet
+
+      # Ensure that the metrics systemd service is not running
+      ! systemctl is-active ntpd-rs-metrics.service --quiet
     ;;
 esac
