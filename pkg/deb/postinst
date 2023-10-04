@@ -66,9 +66,8 @@ if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-decon
 		else
 			_dh_action=start
 		fi
-		deb-systemd-invoke $_dh_action ntpd-rs.service >/dev/null || true
+		deb-systemd-invoke $_dh_action ntpd-rs.service ntpd-rs-metrics.service >/dev/null || true
 	fi
 fi
-
 
 #DEBHELPER#
