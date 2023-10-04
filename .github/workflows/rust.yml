@@ -13,22 +13,26 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     steps:
-      -   name: Checkout sources
-          uses: actions/checkout@v4
+      - name: Checkout sources
+        uses: actions/checkout@v4
 
-      -   name: Install rust
-          uses: actions-rs/toolchain@v1
-          with:
-            toolchain: stable
-            override: true
+      - name: Install rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
 
-      -   name: Build no-std
-          uses: actions-rs/cargo@v1
-          with:
-            command: build
-            toolchain: stable
-            args: --no-default-features
+      - name: Build no-std
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          toolchain: stable
+          args: --no-default-features
 
+      - name: Build stm32
+        working-directory: statime-stm32
+        run: cargo build
+    
       # Build std is handled by test job
 
   test:

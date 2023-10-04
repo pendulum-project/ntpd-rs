@@ -1,0 +1,35 @@
+[package]
+edition = "2021"
+name = "statime-stm32"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+rtic = { version = "2.0.1", features = ["thumbv7-backend"] }
+rtic-monotonics = { version = "1.2.0", features = ["cortex-m-systick", "systick-64bit"] }
+rtic-sync = "1.0.2"
+embassy-sync = "0.3"
+
+cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
+critical-section = "1.1.2"
+stm32f7xx-hal = { version = "0.7.0", features = ["stm32f767", "rt"] }
+stm32-eth = { version = "0.5.2", features = ["smoltcp-phy", "async-await", "stm32f767"] }
+ieee802_3_miim = "0.8.0"
+smoltcp = { version = "0.10.0", default-features = false, features = ["defmt", "medium-ethernet", "proto-ipv4", "proto-ipv6", "proto-igmp", "socket-dhcpv4", "socket-udp", "async"] }
+
+defmt = "0.3.5"
+defmt-rtt = "0.4"
+panic-probe = { version = "0.3", features = ["print-defmt"] }
+
+futures = { version = "0.3.28", default-features = false, features = ["async-await"] }
+
+statime = { path = "../statime", default-features = false }
+fixed = "1.23.1"
+az = "1.2"
+static_cell = "1.2.0"
+log-to-defmt = "0.1.0"
+adler = { version = "1.0.2", default-features = false }
+
+[profile.release]
+debug = 2
+lto = "fat"

@@ -69,7 +69,7 @@ impl<'a> TlvSet<'a> {
     pub(crate) fn tlv(&self) -> impl Iterator<Item = Tlv<'a>> + 'a {
         let mut buffer = self.bytes;
 
-        std::iter::from_fn(move || {
+        core::iter::from_fn(move || {
             if buffer.len() <= 4 {
                 debug_assert_eq!(buffer.len(), 0);
                 return None;

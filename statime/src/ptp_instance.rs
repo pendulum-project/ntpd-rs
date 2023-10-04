@@ -179,14 +179,20 @@ impl<F: Filter> PtpInstance<F> {
         self.state.borrow_mut().bmca(
             ports,
             crate::Duration::from_seconds(
+                #[cfg(feature = "std")]
                 2f64.powi(self.log_bmca_interval.load(Ordering::Relaxed) as i32),
+                #[cfg(not(feature = "std"))]
+                libm::pow(2f64, self.log_bmca_interval.load(Ordering::Relaxed) as f64),
             ),
         )
     }
 
     pub fn bmca_interval(&self) -> core::time::Duration {
         core::time::Duration::from_secs_f64(
+            #[cfg(feature = "std")]
             2f64.powi(self.log_bmca_interval.load(Ordering::Relaxed) as i32),
+            #[cfg(not(feature = "std"))]
+            libm::pow(2f64, self.log_bmca_interval.load(Ordering::Relaxed) as f64),
         )
     }
 }

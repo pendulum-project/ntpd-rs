@@ -30,12 +30,12 @@ impl Interval {
         core::time::Duration::from_secs_f64(self.seconds())
     }
 
-    #[cfg(no_std)]
+    #[cfg(not(feature = "std"))]
     pub fn as_f64(self) -> f64 {
-        libm::pow(2.0f64, log_interval as f64)
+        libm::pow(2.0f64, self.0 as f64)
     }
 
-    #[cfg(not(no_std))]
+    #[cfg(feature = "std")]
     pub fn as_f64(self) -> f64 {
         2.0f64.powi(self.0 as i32)
     }
