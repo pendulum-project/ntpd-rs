@@ -4,13 +4,17 @@
 
 # ntpd-rs
 
-nptd-rs is a tool for synchronizing your computer's clock. Implementing the NTP and NTS protocols, it is written in Rust, with a focus on security and stability. It includes both client and server support.
+nptd-rs is a tool for synchronizing your computer's clock, implementing the NTP and NTS protocols. It is written in Rust, with a focus on security and stability. It includes both client and server support.
 
 If a feature you need is missing please let us know by opening an issue.
 
+## Documentation
+
+Be sure to check out the [documentation website] as it includes guides on getting started, installation and migration, as well as a high-level overview of the code structure.
+
 ## Use
 
-After installing the packages from the [releases page], ntpd-rs will by default synchronize your computers clock to servers from the [NTP pool]. When installed, you can check the synchronization status through
+After installing the packages from the [releases page], ntpd-rs will by default synchronize your computers clock to servers from the [NTP pool]. When installed, you can check the synchronization status with
 ```console
 $ ntp-ctl status
 Synchronization status:
@@ -20,16 +24,16 @@ Stratum: 4
 
 Sources:
 ntpd-rs.pool.ntp.org:123/77.171.247.180:123 (1): +0.000024±0.000137(±0.016886)s
-    pollinterval: 16s, missing polls: 0
+    poll interval: 16s, missing polls: 0
     root dispersion: 0.005905s, root delay:0.016190s
 ntpd-rs.pool.ntp.org:123/45.137.101.154:123 (2): +0.000022±0.000081(±0.007414)s
-    pollinterval: 16s, missing polls: 0
+    poll interval: 16s, missing polls: 0
     root dispersion: 0.004517s, root delay:0.005051s
 ntpd-rs.pool.ntp.org:123/178.215.228.24:123 (3): +0.000117±0.000091(±0.009162)s
-    pollinterval: 16s, missing polls: 0
+    poll interval: 16s, missing polls: 0
     root dispersion: 0.000549s, root delay:0.004318s
 ntpd-rs.pool.ntp.org:123/162.159.200.123:123 (4): +0.000111±0.000076(±0.004066)s
-    pollinterval: 16s, missing polls: 0
+    poll interval: 16s, missing polls: 0
     root dispersion: 0.000351s, root delay:0.003571s
 
 Servers:
