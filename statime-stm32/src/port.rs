@@ -19,7 +19,7 @@ use crate::{
     ptp_clock::PtpClock,
 };
 
-type StmPort<State> = statime::Port<State, Rng, &'static PtpClock, BasicFilter>;
+type StmPort<State> = statime::Port<State, (), Rng, &'static PtpClock, BasicFilter>;
 
 pub struct Port {
     timer_sender: Sender<'static, (TimerName, core::time::Duration), 4>,
@@ -281,6 +281,7 @@ pub fn setup_statime(
     let ptp_instance = &*PTP_INSTANCE.init(PtpInstance::new(instance_config, time_properties_ds));
 
     let port_config = PortConfig {
+        acceptable_master_list: (),
         delay_mechanism: statime::DelayMechanism::E2E {
             interval: Interval::from_log_2(-2),
         },

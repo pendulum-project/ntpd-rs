@@ -18,7 +18,8 @@ pub enum DelayMechanism {
 /// Configuration items of the PTP PortDS dataset. Dynamical fields are kept
 /// as part of [crate::port::Port].
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct PortConfig {
+pub struct PortConfig<A> {
+    pub acceptable_master_list: A,
     pub delay_mechanism: DelayMechanism,
     pub announce_interval: Interval,
     // more like announce_message_retries. Specifies how many announce_intervals to wait until the
@@ -32,7 +33,7 @@ pub struct PortConfig {
     // Version is always 2.1, so not stored (versionNumber, minorVersionNumber)
 }
 
-impl PortConfig {
+impl<A> PortConfig<A> {
     pub fn min_delay_req_interval(&self) -> Interval {
         match self.delay_mechanism {
             DelayMechanism::E2E { interval } => interval,

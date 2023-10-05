@@ -106,7 +106,7 @@ impl<F: Filter> PortState<F> {
 impl<F> PortState<F> {
     pub(crate) fn send_sync<'a>(
         &mut self,
-        config: &PortConfig,
+        config: &PortConfig<()>,
         port_identity: PortIdentity,
         default_ds: &DefaultDS,
         buffer: &'a mut [u8],
@@ -124,7 +124,7 @@ impl<F> PortState<F> {
     pub(crate) fn send_delay_request<'a>(
         &mut self,
         rng: &mut impl Rng,
-        port_config: &PortConfig,
+        port_config: &PortConfig<()>,
         port_identity: PortIdentity,
         default_ds: &DefaultDS,
         buffer: &'a mut [u8],
@@ -142,7 +142,7 @@ impl<F> PortState<F> {
     pub(crate) fn send_announce<'a>(
         &mut self,
         global: &PtpInstanceState,
-        config: &PortConfig,
+        config: &PortConfig<()>,
         port_identity: PortIdentity,
         buffer: &'a mut [u8],
     ) -> PortActionIterator<'a> {

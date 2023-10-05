@@ -75,7 +75,7 @@ impl MasterState {
 
     pub(crate) fn send_sync<'a>(
         &mut self,
-        config: &PortConfig,
+        config: &PortConfig<()>,
         port_identity: PortIdentity,
         default_ds: &DefaultDS,
         buffer: &'a mut [u8],
@@ -108,7 +108,7 @@ impl MasterState {
     pub(crate) fn send_announce<'a>(
         &mut self,
         global: &PtpInstanceState,
-        config: &PortConfig,
+        config: &PortConfig<()>,
         port_identity: PortIdentity,
         buffer: &'a mut [u8],
     ) -> PortActionIterator<'a> {
@@ -348,6 +348,7 @@ mod tests {
         };
 
         let config = PortConfig {
+            acceptable_master_list: (),
             delay_mechanism: crate::DelayMechanism::E2E {
                 interval: Interval::TWO_SECONDS,
             },
@@ -410,6 +411,7 @@ mod tests {
     fn test_sync() {
         let mut buffer = [0u8; MAX_DATA_LEN];
         let config = PortConfig {
+            acceptable_master_list: (),
             delay_mechanism: crate::DelayMechanism::E2E {
                 interval: Interval::TWO_SECONDS,
             },

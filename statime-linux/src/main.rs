@@ -383,8 +383,8 @@ async fn actual_main() {
 async fn run(
     instance: &'static PtpInstance<BasicFilter>,
     bmca_notify_sender: tokio::sync::watch::Sender<bool>,
-    mut main_task_receivers: Vec<Receiver<Port<InBmca<'static>, StdRng, LinuxClock, BasicFilter>>>,
-    main_task_senders: Vec<Sender<Port<InBmca<'static>, StdRng, LinuxClock, BasicFilter>>>,
+    mut main_task_receivers: Vec<Receiver<BmcaPort>>,
+    main_task_senders: Vec<Sender<BmcaPort>>,
     internal_sync_senders: Vec<tokio::sync::watch::Sender<ClockSyncMode>>,
     clock_port_map: Vec<Option<usize>>,
 ) -> ! {
@@ -442,7 +442,7 @@ async fn run(
     }
 }
 
-type BmcaPort = Port<InBmca<'static>, StdRng, LinuxClock, BasicFilter>;
+type BmcaPort = Port<InBmca<'static>, Option<Vec<ClockIdentity>>, StdRng, LinuxClock, BasicFilter>;
 
 // the Port task
 //

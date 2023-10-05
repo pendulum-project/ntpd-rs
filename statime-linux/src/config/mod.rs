@@ -1,8 +1,8 @@
 use std::{fs::read_to_string, os::unix::fs::PermissionsExt, path::Path};
 
 use log::warn;
-use serde::Deserialize;
-use statime::{DelayMechanism, Duration, Interval};
+use serde::{Deserialize, Deserializer};
+use statime::{ClockIdentity, DelayMechanism, Duration, Interval};
 use timestamped_socket::interface::InterfaceName;
 
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -20,6 +20,8 @@ pub struct Config {
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct PortConfig {
     pub interface: InterfaceName,
+    #[serde(default, deserialize_with = "deserialize_acceptable_master_list")]
+    pub acceptable_master_list: Option<Vec<ClockIdentity>>,
     #[serde(default)]
     pub hardware_clock: Option<String>,
     #[serde(default)]
@@ -33,9 +35,31 @@ pub struct PortConfig {
     pub delay_mechanism: i8,
 }
 
-impl From<PortConfig> for statime::PortConfig {
+fn deserialize_acceptable_master_list<'de, D>(
+    deserializer: D,
+) -> Result<Option<Vec<ClockIdentity>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use hex::FromHex;
+    use serde::de::Error;
+
+    let raw: Vec<&str> = Deserialize::deserialize(deserializer)?;
+    let mut result = Vec::with_capacity(raw.len());
+
+    for identity in raw {
+        result.push(ClockIdentity(<[u8; 8]>::from_hex(identity).map_err(
+            |e| D::Error::custom(format!("Invalid clock identifier: {}", e)),
+        )?));
+    }
+
+    Ok(Some(result))
+}
+
+impl From<PortConfig> for statime::PortConfig<Option<Vec<ClockIdentity>>> {
     fn from(pc: PortConfig) -> Self {
         Self {
+            acceptable_master_list: pc.acceptable_master_list,
             announce_interval: Interval::from_log_2(pc.announce_interval),
             sync_interval: Interval::from_log_2(pc.sync_interval),
             announce_receipt_timeout: pc.announce_receipt_timeout,

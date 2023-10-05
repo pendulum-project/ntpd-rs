@@ -3,6 +3,7 @@
 use core::cmp::Ordering;
 
 use super::{
+    acceptable_master::AcceptableMasterList,
     dataset_comparison::{ComparisonDataset, DatasetOrdering},
     foreign_master::ForeignMasterList,
 };
@@ -30,13 +31,15 @@ use crate::{
 /// - Then to get the recommended state for each port,
 ///   [Bmca::calculate_recommended_state] needs to be called
 #[derive(Debug)]
-pub(crate) struct Bmca {
+pub(crate) struct Bmca<A> {
     foreign_master_list: ForeignMasterList,
+    acceptable_master_list: A,
     own_port_identity: PortIdentity,
 }
 
-impl Bmca {
+impl<A> Bmca<A> {
     pub(crate) fn new(
+        acceptable_master_list: A,
         own_port_announce_interval: TimeInterval,
         own_port_identity: PortIdentity,
     ) -> Self {
@@ -45,67 +48,13 @@ impl Bmca {
                 own_port_announce_interval,
                 own_port_identity,
             ),
+            acceptable_master_list,
             own_port_identity,
         }
     }
 
     pub(crate) fn step_age(&mut self, step: Duration) {
         self.foreign_master_list.step_age(step);
-    }
-
-    /// Register a received announce message to the BMC algorithm
-    pub(crate) fn register_announce_message(
-        &mut self,
-        header: &Header,
-        announce_message: &AnnounceMessage,
-    ) {
-        // Ignore messages comming from the same port
-        if announce_message.header.source_port_identity != self.own_port_identity {
-            self.foreign_master_list.register_announce_message(
-                header,
-                announce_message,
-                Duration::ZERO,
-            );
-        }
-    }
-
-    pub(crate) fn reregister_announce_message(
-        &mut self,
-        header: &Header,
-        announce_message: &AnnounceMessage,
-        age: Duration,
-    ) {
-        // Ignore messages comming from the same port
-        if announce_message.header.source_port_identity != self.own_port_identity {
-            self.foreign_master_list
-                .register_announce_message(header, announce_message, age);
-        }
-    }
-
-    /// Takes the Erbest from this port
-    pub(crate) fn take_best_port_announce_message(&mut self) -> Option<BestAnnounceMessage> {
-        // Find the announce message we want to use from each foreign master that has
-        // qualified messages
-        let announce_messages = self.foreign_master_list.take_qualified_announce_messages();
-
-        // The best of the foreign master messages is our erbest
-        let erbest = Self::find_best_announce_message(announce_messages.map(|message| {
-            BestAnnounceMessage {
-                header: message.header,
-                message: message.message,
-                age: message.age,
-                identity: self.own_port_identity,
-            }
-        }));
-
-        if let Some(best) = &erbest {
-            // All messages that were considered have been removed from the
-            // foreignmasterlist. However, the one that has been selected as the
-            // Erbest must not be removed, so let's just reregister it.
-            self.reregister_announce_message(&best.header, &best.message, best.age);
-        }
-
-        erbest
     }
 
     /// Finds the best announce message in the given iterator.
@@ -238,6 +187,71 @@ impl Bmca {
     }
 }
 
+impl<A: AcceptableMasterList> Bmca<A> {
+    /// Register a received announce message to the BMC algorithm
+    pub(crate) fn register_announce_message(
+        &mut self,
+        header: &Header,
+        announce_message: &AnnounceMessage,
+    ) {
+        // Ignore messages comming from the same port
+        if announce_message.header.source_port_identity != self.own_port_identity
+            && self
+                .acceptable_master_list
+                .is_acceptable(announce_message.header.source_port_identity.clock_identity)
+        {
+            self.foreign_master_list.register_announce_message(
+                header,
+                announce_message,
+                Duration::ZERO,
+            );
+        }
+    }
+
+    pub(crate) fn reregister_announce_message(
+        &mut self,
+        header: &Header,
+        announce_message: &AnnounceMessage,
+        age: Duration,
+    ) {
+        // Ignore messages comming from the same port
+        if announce_message.header.source_port_identity != self.own_port_identity
+            && self
+                .acceptable_master_list
+                .is_acceptable(announce_message.header.source_port_identity.clock_identity)
+        {
+            self.foreign_master_list
+                .register_announce_message(header, announce_message, age);
+        }
+    }
+
+    /// Takes the Erbest from this port
+    pub(crate) fn take_best_port_announce_message(&mut self) -> Option<BestAnnounceMessage> {
+        // Find the announce message we want to use from each foreign master that has
+        // qualified messages
+        let announce_messages = self.foreign_master_list.take_qualified_announce_messages();
+
+        // The best of the foreign master messages is our erbest
+        let erbest = Self::find_best_announce_message(announce_messages.map(|message| {
+            BestAnnounceMessage {
+                header: message.header,
+                message: message.message,
+                age: message.age,
+                identity: self.own_port_identity,
+            }
+        }));
+
+        if let Some(best) = &erbest {
+            // All messages that were considered have been removed from the
+            // foreignmasterlist. However, the one that has been selected as the
+            // Erbest must not be removed, so let's just reregister it.
+            self.reregister_announce_message(&best.header, &best.message, best.age);
+        }
+
+        erbest
+    }
+}
+
 #[derive(Debug)]
 enum MessageComparison {
     Better,
@@ -344,6 +358,37 @@ mod tests {
     }
 
     #[test]
+    fn test_master_registration() {
+        let mut bmca = Bmca::new((), TimeInterval(100.into()), PortIdentity::default());
+        let mut announce = default_announce_message();
+        announce.header.source_port_identity.clock_identity.0 = [1, 2, 3, 4, 5, 6, 7, 8];
+
+        bmca.register_announce_message(&announce.header, &announce);
+        bmca.register_announce_message(&announce.header, &announce);
+        bmca.register_announce_message(&announce.header, &announce);
+
+        assert!(bmca.take_best_port_announce_message().is_some());
+        assert!(bmca.take_best_port_announce_message().is_some());
+    }
+
+    #[test]
+    fn test_acceptable_master_filter() {
+        let mut bmca = Bmca::new(
+            std::vec![],
+            TimeInterval(100.into()),
+            PortIdentity::default(),
+        );
+        let mut announce = default_announce_message();
+        announce.header.source_port_identity.clock_identity.0 = [1, 2, 3, 4, 5, 6, 7, 8];
+
+        bmca.register_announce_message(&announce.header, &announce);
+        bmca.register_announce_message(&announce.header, &announce);
+        bmca.register_announce_message(&announce.header, &announce);
+
+        assert!(bmca.take_best_port_announce_message().is_none());
+    }
+
+    #[test]
     fn best_announce_message_compare_equal() {
         let message1 = default_best_announce_message();
         let message2 = default_best_announce_message();
@@ -417,7 +462,7 @@ mod tests {
         own_data.clock_quality.clock_class = 1;
 
         let call = |port_state: &PortState<()>| {
-            Bmca::calculate_recommended_state(&own_data, None, None, port_state)
+            Bmca::<()>::calculate_recommended_state(&own_data, None, None, port_state)
         };
 
         // when E_best is empty and the port state is listening, it should remain
@@ -458,13 +503,13 @@ mod tests {
         let port_message = default_best_announce_message();
 
         assert!(matches!(
-            Bmca::compare_d0_best(&d0, Some(port_message)),
+            Bmca::<()>::compare_d0_best(&d0, Some(port_message)),
             MessageComparison::Same
         ));
 
         assert_eq!(
             Some(RecommendedState::M1(own_data)),
-            Bmca::calculate_recommended_state::<()>(
+            Bmca::<()>::calculate_recommended_state::<()>(
                 &own_data,
                 None,
                 Some(port_message),
@@ -479,13 +524,13 @@ mod tests {
         port_message.identity.port_number = 1;
 
         assert!(matches!(
-            Bmca::compare_d0_best(&d0, Some(port_message)),
+            Bmca::<()>::compare_d0_best(&d0, Some(port_message)),
             MessageComparison::Better
         ));
 
         assert_eq!(
             Some(RecommendedState::M1(own_data)),
-            Bmca::calculate_recommended_state::<()>(
+            Bmca::<()>::calculate_recommended_state::<()>(
                 &own_data,
                 None,
                 Some(port_message),
@@ -507,13 +552,13 @@ mod tests {
         let d0 = ComparisonDataset::from_own_data(&own_data);
 
         assert!(matches!(
-            Bmca::compare_d0_best(&d0, Some(port_message)),
+            Bmca::<()>::compare_d0_best(&d0, Some(port_message)),
             MessageComparison::Worse(_)
         ));
 
         assert_eq!(
             Some(RecommendedState::P1(port_message.message)),
-            Bmca::calculate_recommended_state::<()>(
+            Bmca::<()>::calculate_recommended_state::<()>(
                 &own_data,
                 None,
                 Some(port_message),
@@ -535,13 +580,13 @@ mod tests {
         let global_message = default_best_announce_message();
 
         assert!(matches!(
-            Bmca::compare_d0_best(&d0, Some(global_message)),
+            Bmca::<()>::compare_d0_best(&d0, Some(global_message)),
             MessageComparison::Same
         ));
 
         assert_eq!(
             Some(RecommendedState::M2(own_data)),
-            Bmca::calculate_recommended_state::<()>(
+            Bmca::<()>::calculate_recommended_state::<()>(
                 &own_data,
                 Some(global_message),
                 None,
@@ -556,13 +601,13 @@ mod tests {
         global_message.identity.port_number = 1;
 
         assert!(matches!(
-            Bmca::compare_d0_best(&d0, Some(global_message)),
+            Bmca::<()>::compare_d0_best(&d0, Some(global_message)),
             MessageComparison::Better
         ));
 
         assert_eq!(
             Some(RecommendedState::M2(own_data)),
-            Bmca::calculate_recommended_state::<()>(
+            Bmca::<()>::calculate_recommended_state::<()>(
                 &own_data,
                 Some(global_message),
                 None,
@@ -584,13 +629,13 @@ mod tests {
         let d0 = ComparisonDataset::from_own_data(&own_data);
 
         assert!(matches!(
-            Bmca::compare_d0_best(&d0, Some(global_message)),
+            Bmca::<()>::compare_d0_best(&d0, Some(global_message)),
             MessageComparison::Worse(_)
         ));
 
         assert_eq!(
             Some(RecommendedState::S1(global_message.message)),
-            Bmca::calculate_recommended_state::<()>(
+            Bmca::<()>::calculate_recommended_state::<()>(
                 &own_data,
                 Some(global_message),
                 Some(global_message),
@@ -633,7 +678,7 @@ mod tests {
 
         assert_eq!(
             Some(RecommendedState::M3(global_message.message)),
-            Bmca::calculate_recommended_state::<()>(
+            Bmca::<()>::calculate_recommended_state::<()>(
                 &own_data,
                 Some(global_message),
                 Some(port_message),
@@ -676,7 +721,7 @@ mod tests {
 
         assert_eq!(
             Some(RecommendedState::M3(global_message.message)),
-            Bmca::calculate_recommended_state::<()>(
+            Bmca::<()>::calculate_recommended_state::<()>(
                 &own_data,
                 Some(global_message),
                 Some(port_message),

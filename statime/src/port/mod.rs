@@ -8,7 +8,10 @@ use state::{MasterState, PortState};
 
 use self::state::SlaveState;
 use crate::{
-    bmc::bmca::{BestAnnounceMessage, Bmca, RecommendedState},
+    bmc::{
+        acceptable_master::AcceptableMasterList,
+        bmca::{BestAnnounceMessage, Bmca, RecommendedState},
+    },
     clock::Clock,
     config::PortConfig,
     datastructures::{
@@ -54,15 +57,15 @@ pub(crate) mod state;
 ///
 /// One of these needs to be created per port of the PTP instance.
 #[derive(Debug)]
-pub struct Port<L, R, C, F: Filter> {
-    config: PortConfig,
+pub struct Port<L, A, R, C, F: Filter> {
+    config: PortConfig<()>,
     filter_config: F::Config,
     clock: C,
     // PortDS port_identity
     pub(crate) port_identity: PortIdentity,
     // Corresponds with PortDS port_state and enabled
     port_state: PortState<F>,
-    bmca: Bmca,
+    bmca: Bmca<A>,
     packet_buffer: [u8; MAX_DATA_LEN],
     lifecycle: L,
     rng: R,
@@ -158,7 +161,7 @@ impl<'a> Iterator for PortActionIterator<'a> {
     }
 }
 
-impl<'a, C: Clock, F: Filter, R: Rng> Port<Running<'a>, R, C, F> {
+impl<'a, A, C: Clock, F: Filter, R: Rng> Port<Running<'a>, A, R, C, F> {
     // Send timestamp for last timecritical message became available
     pub fn handle_send_timestamp(
         &mut self,
@@ -228,6 +231,32 @@ impl<'a, C: Clock, F: Filter, R: Rng> Port<Running<'a>, R, C, F> {
         ]
     }
 
+    pub fn handle_filter_update_timer(&mut self) -> PortActionIterator {
+        self.port_state.handle_filter_update(&mut self.clock)
+    }
+
+    // Start a BMCA cycle and ensure this happens instantly from the perspective of
+    // the port
+    pub fn start_bmca(self) -> Port<InBmca<'a>, A, R, C, F> {
+        Port {
+            port_state: self.port_state,
+            config: self.config,
+            filter_config: self.filter_config,
+            clock: self.clock,
+            port_identity: self.port_identity,
+            bmca: self.bmca,
+            rng: self.rng,
+            packet_buffer: [0; MAX_DATA_LEN],
+            lifecycle: InBmca {
+                pending_action: actions![],
+                local_best: None,
+                state_refcell: self.lifecycle.state_refcell,
+            },
+        }
+    }
+}
+
+impl<'a, A: AcceptableMasterList, C: Clock, F: Filter, R: Rng> Port<Running<'a>, A, R, C, F> {
     // Handle a message over the timecritical channel
     pub fn handle_timecritical_receive(
         &mut self,
@@ -298,35 +327,11 @@ impl<'a, C: Clock, F: Filter, R: Rng> Port<Running<'a>, R, C, F> {
             }
         }
     }
-
-    pub fn handle_filter_update_timer(&mut self) -> PortActionIterator {
-        self.port_state.handle_filter_update(&mut self.clock)
-    }
-
-    // Start a BMCA cycle and ensure this happens instantly from the perspective of
-    // the port
-    pub fn start_bmca(self) -> Port<InBmca<'a>, R, C, F> {
-        Port {
-            port_state: self.port_state,
-            config: self.config,
-            filter_config: self.filter_config,
-            clock: self.clock,
-            port_identity: self.port_identity,
-            bmca: self.bmca,
-            rng: self.rng,
-            packet_buffer: [0; MAX_DATA_LEN],
-            lifecycle: InBmca {
-                pending_action: actions![],
-                local_best: None,
-                state_refcell: self.lifecycle.state_refcell,
-            },
-        }
-    }
 }
 
-impl<'a, C, F: Filter, R> Port<InBmca<'a>, R, C, F> {
+impl<'a, A, C, F: Filter, R> Port<InBmca<'a>, A, R, C, F> {
     // End a BMCA cycle and make the port available again
-    pub fn end_bmca(self) -> (Port<Running<'a>, R, C, F>, PortActionIterator<'static>) {
+    pub fn end_bmca(self) -> (Port<Running<'a>, A, R, C, F>, PortActionIterator<'static>) {
         (
             Port {
                 port_state: self.port_state,
@@ -347,7 +352,7 @@ impl<'a, C, F: Filter, R> Port<InBmca<'a>, R, C, F> {
     }
 }
 
-impl<L, R, C: Clock, F: Filter> Port<L, R, C, F> {
+impl<L, A, R, C: Clock, F: Filter> Port<L, A, R, C, F> {
     fn set_forced_port_state(&mut self, mut state: PortState<F>) {
         log::info!(
             "new state for port {}: {} -> {}",
@@ -360,7 +365,7 @@ impl<L, R, C: Clock, F: Filter> Port<L, R, C, F> {
     }
 }
 
-impl<L, R, C, F: Filter> Port<L, R, C, F> {
+impl<L, A, R, C, F: Filter> Port<L, A, R, C, F> {
     pub fn is_steering(&self) -> bool {
         matches!(self.port_state, PortState::Slave(_))
     }
@@ -374,11 +379,13 @@ impl<L, R, C, F: Filter> Port<L, R, C, F> {
     }
 }
 
-impl<'a, C: Clock, F: Filter, R: Rng> Port<InBmca<'a>, R, C, F> {
+impl<'a, A: AcceptableMasterList, C: Clock, F: Filter, R: Rng> Port<InBmca<'a>, A, R, C, F> {
     pub(crate) fn calculate_best_local_announce_message(&mut self) {
         self.lifecycle.local_best = self.bmca.take_best_port_announce_message()
     }
+}
 
+impl<'a, A, C: Clock, F: Filter, R: Rng> Port<InBmca<'a>, A, R, C, F> {
     pub(crate) fn step_announce_age(&mut self, step: Duration) {
         self.bmca.step_age(step);
     }
@@ -534,22 +541,33 @@ impl<'a, C: Clock, F: Filter, R: Rng> Port<InBmca<'a>, R, C, F> {
     }
 }
 
-impl<'a, C, F: Filter, R: Rng> Port<InBmca<'a>, R, C, F> {
+impl<'a, A, C, F: Filter, R: Rng> Port<InBmca<'a>, A, R, C, F> {
     /// Create a new port from a port dataset on a given interface.
     pub(crate) fn new(
         state_refcell: &'a AtomicRefCell<PtpInstanceState>,
-        config: PortConfig,
+        config: PortConfig<A>,
         filter_config: F::Config,
         clock: C,
         port_identity: PortIdentity,
         mut rng: R,
     ) -> Self {
-        let bmca = Bmca::new(config.announce_interval.as_duration().into(), port_identity);
-
         let duration = config.announce_duration(&mut rng);
+        let bmca = Bmca::new(
+            config.acceptable_master_list,
+            config.announce_interval.as_duration().into(),
+            port_identity,
+        );
 
         Port {
-            config,
+            config: PortConfig {
+                acceptable_master_list: (),
+                delay_mechanism: config.delay_mechanism,
+                announce_interval: config.announce_interval,
+                announce_receipt_timeout: config.announce_receipt_timeout,
+                sync_interval: config.sync_interval,
+                master_only: config.master_only,
+                delay_asymmetry: config.delay_asymmetry,
+            },
             filter_config,
             clock,
             port_identity,
@@ -657,9 +675,10 @@ mod tests {
             time_properties_ds: Default::default(),
         });
 
-        let port = Port::<_, _, _, BasicFilter>::new(
+        let port = Port::<_, _, _, _, BasicFilter>::new(
             &state,
             PortConfig {
+                acceptable_master_list: (),
                 delay_mechanism: DelayMechanism::E2E {
                     interval: Interval::from_log_2(1),
                 },
@@ -734,9 +753,10 @@ mod tests {
             time_properties_ds: Default::default(),
         });
 
-        let port = Port::<_, _, _, BasicFilter>::new(
+        let port = Port::<_, _, _, _, BasicFilter>::new(
             &state,
             PortConfig {
+                acceptable_master_list: (),
                 delay_mechanism: DelayMechanism::E2E {
                     interval: Interval::from_log_2(1),
                 },

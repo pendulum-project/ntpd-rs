@@ -333,7 +333,7 @@ impl<F> SlaveState<F> {
     pub(crate) fn send_delay_request<'a>(
         &mut self,
         rng: &mut impl Rng,
-        port_config: &PortConfig,
+        port_config: &PortConfig<()>,
         port_identity: PortIdentity,
         default_ds: &DefaultDS,
         buffer: &'a mut [u8],
@@ -606,6 +606,7 @@ mod tests {
         let mut rng = rand::rngs::mock::StepRng::new(2, 1);
         let port_identity = Default::default();
         let port_config = PortConfig {
+            acceptable_master_list: (),
             delay_mechanism: DelayMechanism::E2E {
                 interval: Interval::ONE_SECOND,
             },
@@ -1048,6 +1049,7 @@ mod tests {
         let mut rng = rand::rngs::mock::StepRng::new(2, 1);
         let port_identity = Default::default();
         let port_config = PortConfig {
+            acceptable_master_list: (),
             delay_mechanism: DelayMechanism::E2E {
                 interval: Interval::ONE_SECOND,
             },
