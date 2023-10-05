@@ -111,6 +111,21 @@ pub(crate) struct Message<'a> {
     pub(crate) suffix: TlvSet<'a>,
 }
 
+impl<'a> Message<'a> {
+    pub(crate) fn is_event(&self) -> bool {
+        use MessageBody::*;
+        match self.body {
+            Sync(_) | DelayReq(_) | PDelayReq(_) | PDelayResp(_) => true,
+            FollowUp(_)
+            | DelayResp(_)
+            | PDelayRespFollowUp(_)
+            | Announce(_)
+            | Signaling(_)
+            | Management(_) => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum MessageBody {
     Sync(SyncMessage),
