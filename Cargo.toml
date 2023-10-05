@@ -13,7 +13,7 @@ resolver = "2"
 
 # Global settings for our crates
 [workspace.package]
-version = "1.0.0-rc.5"
+version = "1.0.0"
 edition = "2021"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/pendulum-project/ntpd-rs"
@@ -66,7 +66,7 @@ zeroize = "1.5"
 
 # our own crates used as dependencies, same version as the workspace version
 # NOTE: keep this part at the bottom of the file, do not change this line
-ntp-os-clock = { version = "1.0.0-rc.5", path = "./ntp-os-clock" }
-ntp-proto = { version = "1.0.0-rc.5", path = "./ntp-proto", features = ["__internal-api"] }
-ntp-udp = { version = "1.0.0-rc.5", path = "./ntp-udp" }
-ntpd = { version = "1.0.0-rc.5", path = "./ntpd" }
+ntp-os-clock = { version = "1.0.0", path = "./ntp-os-clock" }
+ntp-proto = { version = "1.0.0", path = "./ntp-proto", features = ["__internal-api"] }
+ntp-udp = { version = "1.0.0", path = "./ntp-udp" }
+ntpd = { version = "1.0.0", path = "./ntpd" }

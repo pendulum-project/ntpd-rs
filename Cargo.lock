@@ -355,7 +355,7 @@ dependencies = [
 
 [[package]]
 name = "ntp-os-clock"
-version = "1.0.0-rc.5"
+version = "1.0.0"
 dependencies = [
  "libc",
  "ntp-proto",
@@ -364,7 +364,7 @@ dependencies = [
 
 [[package]]
 name = "ntp-proto"
-version = "1.0.0-rc.5"
+version = "1.0.0"
 dependencies = [
  "aead",
  "aes-siv",
@@ -381,7 +381,7 @@ dependencies = [
 
 [[package]]
 name = "ntp-udp"
-version = "1.0.0-rc.5"
+version = "1.0.0"
 dependencies = [
  "libc",
  "ntp-proto",
@@ -392,7 +392,7 @@ dependencies = [
 
 [[package]]
 name = "ntpd"
-version = "1.0.0-rc.5"
+version = "1.0.0"
 dependencies = [
  "async-trait",
  "libc",
