@@ -50,7 +50,10 @@ rm -R -- "$TARGET_DIR/"*/
 echo "Fixing tilde character for github"
 for f in $(find "$TARGET_DIR" -type f); do
     newf=$(echo "$f" | sed 's/~/-/g')
-    mv "$f" "$newf"
+    if [ "$f" != "$newf" ]; then
+        mv "$f" "$newf"
+    fi
+
 done
 
 echo "Create SHA256SUMS"
