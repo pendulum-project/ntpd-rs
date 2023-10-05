@@ -283,7 +283,7 @@ fn default_metrics_exporter_listen() -> SocketAddr {
 #[derive(Deserialize, Debug, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Config {
-    #[serde(rename = "source")]
+    #[serde(rename = "source", default)]
     pub sources: Vec<PeerConfig>,
     #[serde(rename = "server", default)]
     pub servers: Vec<ServerConfig>,
@@ -387,11 +387,12 @@ impl Config {
         // probably a good policy in general (config should always work
         // but we may panic here to protect the user from themselves)
         if self.sources.is_empty() {
-            warn!("No sources configured. Daemon will not change system time.");
-            ok = false;
+            info!("No sources configured. Daemon will not change system time.");
         }
 
-        if self.count_peers() < self.synchronization.minimum_agreeing_sources {
+        if !self.sources.is_empty()
+            && self.count_peers() < self.synchronization.minimum_agreeing_sources
+        {
             warn!("Fewer sources configured than are required to agree on the current time. Daemon will not change system time.");
             ok = false;
         }
@@ -570,6 +571,19 @@ mod tests {
         );
 
         assert!(config.is_err());
+    }
+
+    #[test]
+    fn toml_allow_no_peers() {
+        let config: Result<Config, _> = toml::from_str(
+            r#"
+            [[server]]
+            listen = "[::]:123"
+            "#,
+        );
+
+        assert!(config.is_ok());
+        assert!(config.unwrap().check());
     }
 
     #[test]

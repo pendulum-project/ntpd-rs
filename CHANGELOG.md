@@ -1,5 +1,12 @@
 # Changelog
 
+## [unreleased]
+
+### Changed
+- The sources section can be left out of the configuration now.
+- When no sources are configured, the daemon will merely state it won't change 
+  system time, rather than warn
+
 ## [1.0.0] - 2023-10-05
 
 ### Added
@@ -156,6 +163,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
+[unreleased]: https://github.com/pendulum-project/ntpd-rs/compare/v1.0.0...main
 [1.0.0]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.7...v1.0.0
 [0.3.7]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.5...v0.3.6
