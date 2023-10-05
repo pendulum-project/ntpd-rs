@@ -397,6 +397,9 @@ impl Peer {
         let used = cursor.position();
         let result = &cursor.into_inner()[..used as usize];
 
+        // update the poll interval
+        self.last_poll_interval = poll_interval;
+
         Ok(result)
     }
 
@@ -993,7 +996,6 @@ mod test {
             Err(IgnoreReason::KissDemobilize)
         ));
 
-        let old_poll_interval = peer.last_poll_interval;
         let old_remote_interval = peer.remote_min_poll_interval;
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
@@ -1008,10 +1010,8 @@ mod test {
                 NtpTimestamp::from_fixed_int(100)
             )
             .is_err());
-        assert_eq!(peer.remote_min_poll_interval, old_poll_interval);
         assert_eq!(peer.remote_min_poll_interval, old_remote_interval);
 
-        let old_poll_interval = peer.last_poll_interval;
         let old_remote_interval = peer.remote_min_poll_interval;
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
@@ -1032,7 +1032,6 @@ mod test {
                 NtpTimestamp::from_fixed_int(100)
             )
             .is_err());
-        assert!(peer.remote_min_poll_interval > old_poll_interval);
         assert!(peer.remote_min_poll_interval >= old_remote_interval);
     }
 }
