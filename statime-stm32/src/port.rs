@@ -24,7 +24,7 @@ type StmPort<State> = statime::Port<State, (), Rng, &'static PtpClock, BasicFilt
 pub struct Port {
     timer_sender: Sender<'static, (TimerName, core::time::Duration), 4>,
     packet_id_sender: Sender<'static, (statime::TimestampContext, PacketId), 16>,
-    time_critical_socket: SocketHandle,
+    event_socket: SocketHandle,
     general_socket: SocketHandle,
     state: PortState,
 }
@@ -33,27 +33,27 @@ impl Port {
     pub fn new(
         timer_sender: Sender<'static, (TimerName, core::time::Duration), 4>,
         packet_id_sender: Sender<'static, (statime::TimestampContext, PacketId), 16>,
-        time_critical_socket: SocketHandle,
+        event_socket: SocketHandle,
         general_socket: SocketHandle,
         state: StmPort<InBmca<'static>>,
     ) -> Self {
         Self {
             timer_sender,
             packet_id_sender,
-            time_critical_socket,
+            event_socket,
             general_socket,
             state: PortState::InBmca(state),
         }
     }
 
-    pub fn handle_timecritical_receive(
+    pub fn handle_event_receive(
         &mut self,
         data: &[u8],
         timestamp: statime::Time,
         net: &mut impl Mutex<T = NetworkStack>,
     ) {
         let mut running_port_state = self.state.take_running();
-        let actions = running_port_state.handle_timecritical_receive(data, timestamp);
+        let actions = running_port_state.handle_event_receive(data, timestamp);
         self.handle_port_actions(actions, net);
         self.state.set_running(running_port_state);
     }
@@ -111,15 +111,15 @@ impl Port {
 
         for action in actions {
             match action {
-                PortAction::SendTimeCritical { context, data } => {
+                PortAction::SendEvent { context, data } => {
                     const TO: IpEndpoint = IpEndpoint {
                         addr: IpAddress::v4(224, 0, 1, 129),
                         port: 319,
                     };
-                    match send(net, self.time_critical_socket, &TO, data) {
+                    match send(net, self.event_socket, &TO, data) {
                         Ok(pid) => unwrap!(self.packet_id_sender.try_send((context, pid)).ok()),
                         Err(e) => {
-                            defmt::error!("Failed to send time critical packet, because: {}", e)
+                            defmt::error!("Failed to send event packet, because: {}", e)
                         }
                     }
                 }
@@ -164,8 +164,8 @@ impl Port {
         }
     }
 
-    pub fn time_critical_socket(&self) -> SocketHandle {
-        self.time_critical_socket
+    pub fn event_socket(&self) -> SocketHandle {
+        self.event_socket
     }
 
     pub fn general_socket(&self) -> SocketHandle {

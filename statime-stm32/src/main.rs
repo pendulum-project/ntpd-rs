@@ -162,7 +162,7 @@ mod app {
         // Create sockets
         let [tc_res, g_res] = cx.local.udp_resources;
 
-        let time_critical_socket = crate::ethernet::setup_udp_socket(&mut sockets, tc_res, 319);
+        let event_socket = crate::ethernet::setup_udp_socket(&mut sockets, tc_res, 319);
         let general_socket = crate::ethernet::setup_udp_socket(&mut sockets, g_res, 320);
 
         // Setup DHCP
@@ -189,7 +189,7 @@ mod app {
         let ptp_port = port::Port::new(
             timer_sender,
             packet_id_sender,
-            time_critical_socket,
+            event_socket,
             general_socket,
             ptp_port,
         );
@@ -200,8 +200,7 @@ mod app {
             blinky::spawn(led_pin).unwrap_or_else(|_| defmt::panic!("Failed to start blinky"));
 
             // Listen on sockets
-            time_critical_listen::spawn()
-                .unwrap_or_else(|_| defmt::panic!("Failed to start time_critical_listen"));
+            event_listen::spawn().unwrap_or_else(|_| defmt::panic!("Failed to start event_listen"));
             general_listen::spawn()
                 .unwrap_or_else(|_| defmt::panic!("Failed to start general_listen"));
 
@@ -381,13 +380,10 @@ mod app {
         }
     }
 
-    /// Listen for packets on the time critical udp socket
+    /// Listen for packets on the event udp socket
     #[task(shared = [net, ptp_port], priority = 1)]
-    async fn time_critical_listen(mut cx: time_critical_listen::Context) {
-        let socket = cx
-            .shared
-            .ptp_port
-            .lock(|ptp_port| ptp_port.time_critical_socket());
+    async fn event_listen(mut cx: event_listen::Context) {
+        let socket = cx.shared.ptp_port.lock(|ptp_port| ptp_port.event_socket());
 
         listen_and_handle::<true>(&mut cx.shared.net, socket, &mut cx.shared.ptp_port).await
     }
@@ -405,10 +401,10 @@ mod app {
 
     /// Listen for packets on the given socket
     ///
-    /// The handling for both time critical and general sockets is basically the
+    /// The handling for both event and general sockets is basically the
     /// same and only differs in which `handle_*` function needs to be
     /// called.
-    async fn listen_and_handle<const IS_TIME_CRITICAL: bool>(
+    async fn listen_and_handle<const IS_EVENT: bool>(
         net: &mut impl Mutex<T = NetworkStack>,
         socket: SocketHandle,
         port: &mut impl Mutex<T = port::Port>,
@@ -430,8 +426,8 @@ mod app {
 
             // Inform statime about the new packet
             port.lock(|port| {
-                if IS_TIME_CRITICAL {
-                    port.handle_timecritical_receive(data, stm_time_to_statime(timestamp), net);
+                if IS_EVENT {
+                    port.handle_event_receive(data, stm_time_to_statime(timestamp), net);
                 } else {
                     port.handle_general_receive(data, net);
                 };

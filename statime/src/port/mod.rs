@@ -85,7 +85,7 @@ pub struct InBmca<'a> {
 }
 
 // Making this non-copy and non-clone ensures a single handle_send_timestamp
-// per SendTimeCritical
+// per SendEvent
 #[derive(Debug)]
 pub struct TimestampContext {
     inner: TimestampContextInner,
@@ -99,7 +99,7 @@ enum TimestampContextInner {
 
 #[derive(Debug)]
 pub enum PortAction<'a> {
-    SendTimeCritical {
+    SendEvent {
         context: TimestampContext,
         data: &'a [u8],
     },
@@ -126,7 +126,7 @@ pub enum PortAction<'a> {
 const MAX_ACTIONS: usize = 2;
 
 /// Guarantees to end user: Any set of actions will only ever contain a single
-/// time critical send
+/// event send
 #[derive(Debug)]
 #[must_use]
 pub struct PortActionIterator<'a> {
@@ -161,8 +161,8 @@ impl<'a> Iterator for PortActionIterator<'a> {
     }
 }
 
-impl<'a, A, C: Clock, F: Filter, R: Rng> Port<Running<'a>, A, R, C, F> {
-    // Send timestamp for last timecritical message became available
+impl<'a, A: AcceptableMasterList, C: Clock, F: Filter, R: Rng> Port<Running<'a>, A, R, C, F> {
+    // Send timestamp for last event message became available
     pub fn handle_send_timestamp(
         &mut self,
         context: TimestampContext,
@@ -254,15 +254,9 @@ impl<'a, A, C: Clock, F: Filter, R: Rng> Port<Running<'a>, A, R, C, F> {
             },
         }
     }
-}
 
-impl<'a, A: AcceptableMasterList, C: Clock, F: Filter, R: Rng> Port<Running<'a>, A, R, C, F> {
-    // Handle a message over the timecritical channel
-    pub fn handle_timecritical_receive(
-        &mut self,
-        data: &[u8],
-        timestamp: Time,
-    ) -> PortActionIterator {
+    // Handle a message over the event channel
+    pub fn handle_event_receive(&mut self, data: &[u8], timestamp: Time) -> PortActionIterator {
         let message = match Message::deserialize(data) {
             Ok(message) => message,
             Err(error) => {
@@ -734,7 +728,7 @@ mod tests {
     }
 
     #[test]
-    fn test_announce_receive_via_timecritical() {
+    fn test_announce_receive_via_event() {
         let default_ds = DefaultDS::new(InstanceConfig {
             clock_identity: Default::default(),
             priority_1: 255,
@@ -785,21 +779,21 @@ mod tests {
         let packet_len = announce_message.serialize(&mut packet).unwrap();
         let packet = &packet[..packet_len];
 
-        let mut actions = port.handle_timecritical_receive(packet, Time::from_micros(1));
+        let mut actions = port.handle_event_receive(packet, Time::from_micros(1));
         let Some(PortAction::ResetAnnounceReceiptTimer { .. }) = actions.next() else {
             panic!("Unexpected action");
         };
         assert!(actions.next().is_none());
         drop(actions);
 
-        let mut actions = port.handle_timecritical_receive(packet, Time::from_micros(2));
+        let mut actions = port.handle_event_receive(packet, Time::from_micros(2));
         let Some(PortAction::ResetAnnounceReceiptTimer { .. }) = actions.next() else {
             panic!("Unexpected action");
         };
         assert!(actions.next().is_none());
         drop(actions);
 
-        let mut actions = port.handle_timecritical_receive(packet, Time::from_micros(3));
+        let mut actions = port.handle_event_receive(packet, Time::from_micros(3));
         let Some(PortAction::ResetAnnounceReceiptTimer { .. }) = actions.next() else {
             panic!("Unexpected action");
         };

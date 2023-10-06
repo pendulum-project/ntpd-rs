@@ -493,7 +493,7 @@ async fn port_task<A: NetworkAddress + PtpTargetAddress>(
                     Ok(packet) => {
                         if let Some(timestamp) = packet.timestamp {
                             log::trace!("Recv timestamp: {:?}", packet.timestamp);
-                            port.handle_timecritical_receive(&event_buffer[..packet.bytes_read], timestamp_to_time(timestamp))
+                            port.handle_event_receive(&event_buffer[..packet.bytes_read], timestamp_to_time(timestamp))
                         } else {
                             log::error!("Missing recv timestamp");
                             PortActionIterator::empty()
@@ -562,7 +562,7 @@ async fn handle_actions<A: NetworkAddress + PtpTargetAddress>(
 
     for action in actions {
         match action {
-            PortAction::SendTimeCritical { context, data } => {
+            PortAction::SendEvent { context, data } => {
                 // send timestamp of the send
                 let time = event_socket
                     .send_to(data, A::PRIMARY_EVENT)
