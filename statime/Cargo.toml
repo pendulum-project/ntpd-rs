@@ -25,7 +25,7 @@ fuzz = ["std"]
 arrayvec = { version = "0.7.4", default-features = false }
 az = "1.2.1"
 fixed = "1.24"
-libm = "0.2.7"
+libm = "0.2.8"
 log = { version = "0.4.20", default-features = false }
 rand = { version = "0.8.5", default-features = false }
 atomic_refcell = "0.1.12"
