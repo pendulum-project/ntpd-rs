@@ -1,6 +1,8 @@
 [Unit]
 Description=Network Time Service (ntpd-rs) metrics exporter
 Documentation=https://github.com/pendulum-project/ntpd-rs
+After=ntpd-rs.service
+Wants=ntpd-rs.service
 
 [Service]
 Type=simple
