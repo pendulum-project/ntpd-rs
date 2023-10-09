@@ -2,7 +2,7 @@ use crate::packet::error::ParsingError;
 use crate::{NtpDuration, NtpLeapIndicator, NtpTimestamp};
 
 #[repr(u8)]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum NtpMode {
     Request = 3,
     Response = 4,
@@ -27,8 +27,8 @@ impl NtpMode {
 }
 
 #[repr(u8)]
-#[derive(Debug, PartialEq, Eq)]
-enum NtpTimescale {
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+pub enum NtpTimescale {
     Utc = 0,
     Tai = 1,
     Ut1 = 2,
@@ -48,10 +48,10 @@ impl NtpTimescale {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-struct NtpEra(pub u8);
+pub struct NtpEra(pub u8);
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-struct NtpFlags(u16);
+pub struct NtpFlags(u16);
 
 impl NtpFlags {
     fn from_bits(bits: [u8; 2]) -> Self {
@@ -68,41 +68,43 @@ impl NtpFlags {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-struct NtpServerCookie([u8; 8]);
+pub struct NtpServerCookie([u8; 8]);
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-struct NtpClientCookie([u8; 8]);
+pub struct NtpClientCookie([u8; 8]);
 
-#[derive(Debug)]
-struct NtpHeaderV5 {
-    leap: NtpLeapIndicator,
-    mode: NtpMode,
-    stratum: u8,
-    poll: i8,
-    precision: i8,
-    timescale: NtpTimescale,
-    era: NtpEra,
-    flags: NtpFlags,
-    root_delay: NtpDuration,
-    root_dispersion: NtpDuration,
-    server_cookie: NtpServerCookie,
-    client_cookie: NtpClientCookie,
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct NtpHeaderV5 {
+    pub leap: NtpLeapIndicator,
+    pub mode: NtpMode,
+    pub stratum: u8,
+    pub poll: i8,
+    pub precision: i8,
+    pub timescale: NtpTimescale,
+    pub era: NtpEra,
+    pub flags: NtpFlags,
+    pub root_delay: NtpDuration,
+    pub root_dispersion: NtpDuration,
+    pub server_cookie: NtpServerCookie,
+    pub client_cookie: NtpClientCookie,
     /// Time at the server when the request arrived from the client
-    receive_timestamp: NtpTimestamp,
+    pub receive_timestamp: NtpTimestamp,
     /// Time at the server when the response left for the client
-    transmit_timestamp: NtpTimestamp,
+    pub transmit_timestamp: NtpTimestamp,
 }
 
 impl NtpHeaderV5 {
     const LENGTH: usize = 48;
 
-    fn deserialize(data: &[u8]) -> Result<(Self, usize), ParsingError<std::convert::Infallible>> {
+    pub(crate) fn deserialize(
+        data: &[u8],
+    ) -> Result<(Self, usize), ParsingError<std::convert::Infallible>> {
         if data.len() < Self::LENGTH {
             return Err(ParsingError::IncorrectLength);
         }
 
         let version = (data[0] >> 3) & 0b111;
-        if version != 5  {
+        if version != 5 {
             return Err(ParsingError::InvalidVersion(version));
         }
 
@@ -131,6 +133,7 @@ impl NtpHeaderV5 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{NoCipher, NtpPacket};
 
     #[test]
     fn round_trip_timescale() {
@@ -210,7 +213,10 @@ mod tests {
         assert_eq!(parsed.root_delay, NtpDuration::from_seconds(0.0));
         assert_eq!(parsed.root_dispersion, NtpDuration::from_seconds(0.0));
         assert_eq!(parsed.server_cookie, NtpServerCookie([0x0; 8]));
-        assert_eq!(parsed.client_cookie, NtpClientCookie([0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01]));
+        assert_eq!(
+            parsed.client_cookie,
+            NtpClientCookie([0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01])
+        );
         assert_eq!(parsed.receive_timestamp, NtpTimestamp::from_fixed_int(0x0));
         assert_eq!(parsed.transmit_timestamp, NtpTimestamp::from_fixed_int(0x0));
     }
@@ -261,11 +267,38 @@ mod tests {
         assert!(parsed.flags.interleaved_mode());
         assert!(!parsed.flags.unknown_leap());
         assert!(parsed.flags.interleaved_mode());
-        assert_eq!(parsed.root_delay, NtpDuration::from_seconds(0.00877380371298031));
-        assert_eq!(parsed.root_dispersion, NtpDuration::from_seconds(0.001007080078359479));
-        assert_eq!(parsed.server_cookie, NtpServerCookie([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]));
-        assert_eq!(parsed.client_cookie, NtpClientCookie([0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01]));
-        assert_eq!(parsed.receive_timestamp, NtpTimestamp::from_fixed_int(0x1111111111111111));
-        assert_eq!(parsed.transmit_timestamp, NtpTimestamp::from_fixed_int(0x2222222222222222));
+        assert_eq!(
+            parsed.root_delay,
+            NtpDuration::from_seconds(0.00877380371298031)
+        );
+        assert_eq!(
+            parsed.root_dispersion,
+            NtpDuration::from_seconds(0.001007080078359479)
+        );
+        assert_eq!(
+            parsed.server_cookie,
+            NtpServerCookie([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08])
+        );
+        assert_eq!(
+            parsed.client_cookie,
+            NtpClientCookie([0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01])
+        );
+        assert_eq!(
+            parsed.receive_timestamp,
+            NtpTimestamp::from_fixed_int(0x1111111111111111)
+        );
+        assert_eq!(
+            parsed.transmit_timestamp,
+            NtpTimestamp::from_fixed_int(0x2222222222222222)
+        );
+    }
+
+    #[test]
+    fn deserialize_v5() {
+        let mut packet = [0u8; 48];
+        // Alter       LI VN  Mode
+        packet[0] = 0b_00_101_011;
+
+        NtpPacket::deserialize(&packet, &NoCipher).unwrap();
     }
 }
