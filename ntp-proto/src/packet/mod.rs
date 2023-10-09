@@ -18,6 +18,9 @@ mod error;
 mod extensionfields;
 mod mac;
 
+#[cfg(feature = "ntpv5")]
+mod v5;
+
 pub use crypto::{
     AesSivCmac256, AesSivCmac512, Cipher, CipherHolder, CipherProvider, DecryptError,
     EncryptResult, NoCipher,
