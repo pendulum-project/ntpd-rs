@@ -13,7 +13,11 @@ enum ExtensionFieldTypeId {
     NtsCookie,
     NtsCookiePlaceholder,
     NtsEncryptedField,
-    Unknown { type_id: u16 },
+    Unknown {
+        type_id: u16,
+    },
+    #[cfg(feature = "ntpv5")]
+    DraftIdentification,
 }
 
 impl ExtensionFieldTypeId {
@@ -23,6 +27,8 @@ impl ExtensionFieldTypeId {
             0x204 => Self::NtsCookie,
             0x304 => Self::NtsCookiePlaceholder,
             0x404 => Self::NtsEncryptedField,
+            #[cfg(feature = "ntpv5")]
+            0xF5FF => Self::DraftIdentification,
             _ => Self::Unknown { type_id },
         }
     }
@@ -33,6 +39,8 @@ impl ExtensionFieldTypeId {
             ExtensionFieldTypeId::NtsCookie => 0x204,
             ExtensionFieldTypeId::NtsCookiePlaceholder => 0x304,
             ExtensionFieldTypeId::NtsEncryptedField => 0x404,
+            #[cfg(feature = "ntpv5")]
+            ExtensionFieldTypeId::DraftIdentification => 0xF5FF,
             ExtensionFieldTypeId::Unknown { type_id } => type_id,
         }
     }
@@ -42,9 +50,16 @@ impl ExtensionFieldTypeId {
 pub enum ExtensionField<'a> {
     UniqueIdentifier(Cow<'a, [u8]>),
     NtsCookie(Cow<'a, [u8]>),
-    NtsCookiePlaceholder { cookie_length: u16 },
+    NtsCookiePlaceholder {
+        cookie_length: u16,
+    },
     InvalidNtsEncryptedField,
-    Unknown { type_id: u16, data: Cow<'a, [u8]> },
+    #[cfg(feature = "ntpv5")]
+    DraftIdentification(Cow<'a, str>),
+    Unknown {
+        type_id: u16,
+        data: Cow<'a, [u8]>,
+    },
 }
 
 impl<'a> std::fmt::Debug for ExtensionField<'a> {
@@ -59,6 +74,10 @@ impl<'a> std::fmt::Debug for ExtensionField<'a> {
                 .field("body_length", body_length)
                 .finish(),
             Self::InvalidNtsEncryptedField => f.debug_struct("InvalidNtsEncryptedField").finish(),
+            #[cfg(feature = "ntpv5")]
+            Self::DraftIdentification(arg0) => {
+                f.debug_tuple("DraftIdentification").field(arg0).finish()
+            }
             Self::Unknown {
                 type_id: typeid,
                 data,
@@ -92,6 +111,8 @@ impl<'a> ExtensionField<'a> {
                 cookie_length: body_length,
             },
             InvalidNtsEncryptedField => InvalidNtsEncryptedField,
+            #[cfg(feature = "ntpv5")]
+            DraftIdentification(data) => DraftIdentification(Cow::Owned(data.into_owned())),
         }
     }
 
@@ -108,6 +129,8 @@ impl<'a> ExtensionField<'a> {
                 cookie_length: body_length,
             } => Self::encode_nts_cookie_placeholder(w, *body_length, minimum_size),
             InvalidNtsEncryptedField => Err(std::io::ErrorKind::Other.into()),
+            #[cfg(feature = "ntpv5")]
+            DraftIdentification(data) => Self::encode_draft_identification(w, data, minimum_size),
         }
     }
 
@@ -335,6 +358,26 @@ impl<'a> ExtensionField<'a> {
         Ok(())
     }
 
+    #[cfg(feature = "ntpv5")]
+    fn encode_draft_identification(
+        w: &mut impl Write,
+        data: &str,
+        minimum_size: u16,
+    ) -> std::io::Result<()> {
+        Self::encode_framing(
+            w,
+            ExtensionFieldTypeId::DraftIdentification,
+            data.len(),
+            minimum_size,
+        )?;
+
+        w.write_all(data.as_bytes())?;
+
+        Self::encode_padding(w, data.len(), minimum_size)?;
+
+        Ok(())
+    }
+
     fn decode_unique_identifier(
         message: &'a [u8],
     ) -> Result<Self, ParsingError<std::convert::Infallible>> {
@@ -375,6 +418,28 @@ impl<'a> ExtensionField<'a> {
         })
     }
 
+    #[cfg(feature = "ntpv5")]
+    fn decode_draft_identification(
+        message: &'a [u8],
+    ) -> Result<Self, ParsingError<std::convert::Infallible>> {
+        let msg = message[..].into();
+
+        let new_msg = match msg {
+            Cow::Borrowed(slice) => std::str::from_utf8(slice).ok().map(Cow::Borrowed),
+            Cow::Owned(vec) => String::from_utf8(vec).ok().map(Cow::Owned),
+        };
+
+        let Some(new_msg) = new_msg else {
+            return Err(ParsingError::InvalidDraftIdentification);
+        };
+
+        if !new_msg.is_ascii() {
+            return Err(ParsingError::InvalidDraftIdentification);
+        }
+
+        Ok(ExtensionField::DraftIdentification(new_msg))
+    }
+
     fn decode(raw: RawExtensionField<'a>) -> Result<Self, ParsingError<std::convert::Infallible>> {
         type EF<'a> = ExtensionField<'a>;
         type TypeId = ExtensionFieldTypeId;
@@ -385,6 +450,8 @@ impl<'a> ExtensionField<'a> {
             TypeId::UniqueIdentifier => EF::decode_unique_identifier(message),
             TypeId::NtsCookie => EF::decode_nts_cookie(message),
             TypeId::NtsCookiePlaceholder => EF::decode_nts_cookie_placeholder(message),
+            #[cfg(feature = "ntpv5")]
+            TypeId::DraftIdentification => EF::decode_draft_identification(message),
             type_id => EF::decode_unknown(type_id.to_type_id(), message),
         }
     }
@@ -804,6 +871,32 @@ mod tests {
             w,
             &[0, 42, 0, 20, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
         );
+    }
+
+    #[cfg(feature = "ntpv5")]
+    #[test]
+    fn draft_identification() {
+        let test_id = "draft-ietf-ntp-ntpv5-00\0";
+        let len = u16::try_from(4 + test_id.len()).unwrap();
+        let mut data = vec![];
+        data.extend_from_slice(&[0xF5, 0xFF]);
+        data.extend_from_slice(&len.to_be_bytes());
+        data.extend_from_slice(test_id.as_bytes());
+
+        let raw = RawExtensionField::deserialize(&data, 0).unwrap();
+        let ef = ExtensionField::decode(raw).unwrap();
+
+        match ef {
+            ExtensionField::DraftIdentification(ref data) => {
+                assert_eq!(data, test_id);
+            }
+            _ => panic!("Unexpected extensionfield {ef:?}"),
+        }
+
+        let mut out = vec![];
+        ef.serialize(&mut out, len).unwrap();
+
+        assert_eq!(&out, &data);
     }
 
     #[test]

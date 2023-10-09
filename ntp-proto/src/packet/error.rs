@@ -10,6 +10,8 @@ pub enum ParsingError<T> {
     MalformedNonce,
     MalformedCookiePlaceholder,
     DecryptError(T),
+    #[cfg(feature = "ntpv5")]
+    InvalidDraftIdentification,
 }
 
 impl<T> ParsingError<T> {
@@ -22,6 +24,8 @@ impl<T> ParsingError<T> {
             MalformedNtsExtensionFields => Err(MalformedNtsExtensionFields),
             MalformedNonce => Err(MalformedNonce),
             MalformedCookiePlaceholder => Err(MalformedCookiePlaceholder),
+            #[cfg(feature = "ntpv5")]
+            InvalidDraftIdentification => Err(InvalidDraftIdentification),
             DecryptError(decrypt_error) => Ok(decrypt_error),
         }
     }
@@ -37,6 +41,8 @@ impl ParsingError<std::convert::Infallible> {
             MalformedNtsExtensionFields => MalformedNtsExtensionFields,
             MalformedNonce => MalformedNonce,
             MalformedCookiePlaceholder => MalformedCookiePlaceholder,
+            #[cfg(feature = "ntpv5")]
+            InvalidDraftIdentification => InvalidDraftIdentification,
             DecryptError(decrypt_error) => match decrypt_error {},
         }
     }
@@ -52,6 +58,8 @@ impl<T> Display for ParsingError<T> {
             Self::MalformedNtsExtensionFields => f.write_str("Malformed nts extension fields"),
             Self::MalformedNonce => f.write_str("Malformed nonce (likely invalid length)"),
             Self::MalformedCookiePlaceholder => f.write_str("Malformed cookie placeholder"),
+            #[cfg(feature = "ntpv5")]
+            Self::InvalidDraftIdentification => f.write_str("Draft Identification invalid"),
             Self::DecryptError(_) => f.write_str("Failed to decrypt NTS extension fields"),
         }
     }
