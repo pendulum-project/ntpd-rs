@@ -121,6 +121,8 @@ pub struct NtpPacket<'a> {
 enum NtpHeader {
     V3(NtpHeaderV3V4),
     V4(NtpHeaderV3V4),
+    #[cfg(feature = "ntpv5")]
+    V5(v5::NtpHeaderV5),
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -357,6 +359,46 @@ impl<'a> NtpPacket<'a> {
                     }
                 }
             }
+            #[cfg(feature = "ntpv5")]
+            5 => {
+                let (header, header_size) =
+                    v5::NtpHeaderV5::deserialize(data).map_err(|e| e.generalize())?;
+
+                let contruct_packet = |remaining_bytes: &'a [u8], efdata| {
+                    let mac = if !remaining_bytes.is_empty() {
+                        Some(Mac::deserialize(remaining_bytes)?)
+                    } else {
+                        None
+                    };
+
+                    let packet = NtpPacket {
+                        header: NtpHeader::V5(header),
+                        efdata,
+                        mac,
+                    };
+
+                    Ok::<_, ParsingError<std::convert::Infallible>>(packet)
+                };
+
+                // TODO: Check extension field handling in V5
+                match ExtensionFieldData::deserialize(data, header_size, cipher) {
+                    Ok(decoded) => {
+                        let packet = contruct_packet(decoded.remaining_bytes, decoded.efdata)
+                            .map_err(|e| e.generalize())?;
+
+                        Ok((packet, decoded.cookie))
+                    }
+                    Err(e) => {
+                        // return early if it is anything but a decrypt error
+                        let invalid = e.get_decrypt_error()?;
+
+                        let packet = contruct_packet(invalid.remaining_bytes, invalid.efdata)
+                            .map_err(|e| e.generalize())?;
+
+                        Err(ParsingError::DecryptError(packet))
+                    }
+                }
+            }
             _ => Err(PacketParsingError::InvalidVersion(version)),
         }
     }
@@ -382,11 +424,15 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(header) => header.serialize(w, 3)?,
             NtpHeader::V4(header) => header.serialize(w, 4)?,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         };
 
         match self.header {
             NtpHeader::V3(_) => { /* No extension fields in V3 */ }
             NtpHeader::V4(_) => self.efdata.serialize(w, cipher)?,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         }
 
         if let Some(ref mac) = self.mac {
@@ -483,6 +529,8 @@ impl<'a> NtpPacket<'a> {
                 },
                 mac: None,
             },
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         }
     }
 
@@ -540,6 +588,8 @@ impl<'a> NtpPacket<'a> {
                 },
                 mac: None,
             },
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         }
     }
 
@@ -566,6 +616,8 @@ impl<'a> NtpPacket<'a> {
                 },
                 mac: None,
             },
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         }
     }
 
@@ -586,6 +638,8 @@ impl<'a> NtpPacket<'a> {
                 },
                 mac: None,
             },
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         }
     }
 
@@ -612,6 +666,8 @@ impl<'a> NtpPacket<'a> {
                 },
                 mac: None,
             },
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         }
     }
 
@@ -632,6 +688,8 @@ impl<'a> NtpPacket<'a> {
                 },
                 mac: None,
             },
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         }
     }
 
@@ -653,6 +711,8 @@ impl<'a> NtpPacket<'a> {
                 },
                 mac: None,
             },
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         }
     }
 }
@@ -669,6 +729,8 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(header) => header.leap,
             NtpHeader::V4(header) => header.leap,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(header) => header.leap,
         }
     }
 
@@ -676,6 +738,8 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(header) => header.mode,
             NtpHeader::V4(header) => header.mode,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         }
     }
 
@@ -683,6 +747,8 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(header) => header.stratum,
             NtpHeader::V4(header) => header.stratum,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(header) => header.stratum,
         }
     }
 
@@ -690,6 +756,8 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(header) => header.precision,
             NtpHeader::V4(header) => header.precision,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(header) => header.precision,
         }
     }
 
@@ -697,6 +765,8 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(header) => header.root_delay,
             NtpHeader::V4(header) => header.root_delay,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(header) => header.root_delay,
         }
     }
 
@@ -704,6 +774,8 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(header) => header.root_dispersion,
             NtpHeader::V4(header) => header.root_dispersion,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(header) => header.root_dispersion,
         }
     }
 
@@ -711,6 +783,8 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(header) => header.receive_timestamp,
             NtpHeader::V4(header) => header.receive_timestamp,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(header) => header.receive_timestamp,
         }
     }
 
@@ -718,6 +792,8 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(header) => header.transmit_timestamp,
             NtpHeader::V4(header) => header.transmit_timestamp,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(header) => header.transmit_timestamp,
         }
     }
 
@@ -725,6 +801,8 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(header) => header.reference_id,
             NtpHeader::V4(header) => header.reference_id,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         }
     }
 
@@ -732,6 +810,8 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(header) => header.stratum == 0,
             NtpHeader::V4(header) => header.stratum == 0,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         }
     }
 
@@ -777,6 +857,8 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V4(header) => {
                 header.origin_timestamp == identifier.expected_origin_timestamp
             }
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         }
     }
 }
@@ -813,6 +895,8 @@ impl<'a> NtpPacket<'a> {
         match &mut self.header {
             NtpHeader::V3(ref mut header) => header.mode = mode,
             NtpHeader::V4(ref mut header) => header.mode = mode,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         }
     }
 
@@ -820,6 +904,8 @@ impl<'a> NtpPacket<'a> {
         match &mut self.header {
             NtpHeader::V3(ref mut header) => header.origin_timestamp = timestamp,
             NtpHeader::V4(ref mut header) => header.origin_timestamp = timestamp,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         }
     }
 
@@ -827,6 +913,8 @@ impl<'a> NtpPacket<'a> {
         match &mut self.header {
             NtpHeader::V3(ref mut header) => header.transmit_timestamp = timestamp,
             NtpHeader::V4(ref mut header) => header.transmit_timestamp = timestamp,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         }
     }
 
@@ -834,6 +922,8 @@ impl<'a> NtpPacket<'a> {
         match &mut self.header {
             NtpHeader::V3(ref mut header) => header.receive_timestamp = timestamp,
             NtpHeader::V4(ref mut header) => header.receive_timestamp = timestamp,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         }
     }
 
@@ -841,6 +931,8 @@ impl<'a> NtpPacket<'a> {
         match &mut self.header {
             NtpHeader::V3(ref mut header) => header.precision = precision,
             NtpHeader::V4(ref mut header) => header.precision = precision,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         }
     }
 
@@ -848,6 +940,8 @@ impl<'a> NtpPacket<'a> {
         match &mut self.header {
             NtpHeader::V3(ref mut header) => header.leap = leap,
             NtpHeader::V4(ref mut header) => header.leap = leap,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         }
     }
 
@@ -855,6 +949,8 @@ impl<'a> NtpPacket<'a> {
         match &mut self.header {
             NtpHeader::V3(ref mut header) => header.stratum = stratum,
             NtpHeader::V4(ref mut header) => header.stratum = stratum,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         }
     }
 
@@ -862,6 +958,8 @@ impl<'a> NtpPacket<'a> {
         match &mut self.header {
             NtpHeader::V3(ref mut header) => header.reference_id = reference_id,
             NtpHeader::V4(ref mut header) => header.reference_id = reference_id,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         }
     }
 
@@ -869,6 +967,8 @@ impl<'a> NtpPacket<'a> {
         match &mut self.header {
             NtpHeader::V3(ref mut header) => header.root_delay = root_delay,
             NtpHeader::V4(ref mut header) => header.root_delay = root_delay,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         }
     }
 
@@ -876,6 +976,8 @@ impl<'a> NtpPacket<'a> {
         match &mut self.header {
             NtpHeader::V3(ref mut header) => header.root_dispersion = root_dispersion,
             NtpHeader::V4(ref mut header) => header.root_dispersion = root_dispersion,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_header) => todo!(),
         }
     }
 }
