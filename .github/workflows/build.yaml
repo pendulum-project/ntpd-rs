@@ -29,7 +29,7 @@ jobs:
           - ""
         features:
           - ""
-          - "ntpv5"
+          - "--features ntpv5"
     steps:
       - name: Checkout sources
         uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
@@ -68,7 +68,7 @@ jobs:
         os: [ubuntu-latest]
         features:
           - ""
-          - "ntpv5"
+          - "--features ntpv5"
     steps:
       - name: Checkout sources
         uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
@@ -98,7 +98,7 @@ jobs:
           - ""
         features:
           - ""
-          - "ntpv5"
+          - "--features ntpv5"
     steps:
       - name: Checkout sources
         uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
