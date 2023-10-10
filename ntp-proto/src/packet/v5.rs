@@ -9,11 +9,11 @@ pub enum NtpMode {
 }
 
 impl NtpMode {
-    fn from_bits(bits: u8) -> Option<Self> {
-        Some(match bits {
+    fn from_bits(bits: u8) -> Result<Self, ParsingError<std::convert::Infallible>> {
+        Ok(match bits {
             3 => Self::Request,
             4 => Self::Response,
-            _ => return None,
+            _ => return Err(ParsingError::MalformedMode),
         })
     }
 
@@ -24,10 +24,12 @@ impl NtpMode {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn is_request(&self) -> bool {
         self == &Self::Request
     }
 
+    #[allow(dead_code)]
     pub(crate) fn is_response(&self) -> bool {
         self == &Self::Response
     }
@@ -43,13 +45,13 @@ pub enum NtpTimescale {
 }
 
 impl NtpTimescale {
-    fn from_bits(bits: u8) -> Option<Self> {
-        Some(match bits {
+    fn from_bits(bits: u8) -> Result<Self, ParsingError<std::convert::Infallible>> {
+        Ok(match bits {
             0 => Self::Utc,
             1 => Self::Tai,
             2 => Self::Ut1,
             3 => Self::LeadSmearedUtc,
-            _ => return None,
+            _ => return Err(ParsingError::MalformedTimescale),
         })
     }
 
@@ -73,22 +75,26 @@ pub struct NtpFlags {
 }
 
 impl NtpFlags {
-    fn from_bits(bits: [u8; 2]) -> Self {
-        Self {
+    fn from_bits(bits: [u8; 2]) -> Result<Self, ParsingError<std::convert::Infallible>> {
+        if bits[0] != 0x00 || bits[1] & 0xFC != 0 {
+            return Err(ParsingError::InvalidFlags);
+        }
+
+        Ok(Self {
             unknown_leap: bits[1] & 0x01 != 0,
             interleaved_mode: bits[1] & 0x02 != 0,
-        }
+        })
     }
 
-    fn to_bits(&self) -> [u8; 2] {
+    fn as_bits(&self) -> [u8; 2] {
         let mut flags: u16 = 0;
 
         if self.unknown_leap {
-            flags = flags | 0x01;
+            flags |= 0x01;
         }
 
         if self.interleaved_mode {
-            flags = flags | 0x02;
+            flags |= 0x02;
         }
 
         flags.to_be_bytes()
@@ -139,13 +145,13 @@ impl NtpHeaderV5 {
         Ok((
             Self {
                 leap: NtpLeapIndicator::from_bits((data[0] & 0xC0) >> 6),
-                mode: NtpMode::from_bits(data[0] & 0x07).unwrap(),
+                mode: NtpMode::from_bits(data[0] & 0x07)?,
                 stratum: data[1],
                 poll: data[2] as i8,
                 precision: data[3] as i8,
-                timescale: NtpTimescale::from_bits(data[4]).unwrap(),
+                timescale: NtpTimescale::from_bits(data[4])?,
                 era: NtpEra(data[5]),
-                flags: NtpFlags::from_bits(data[6..8].try_into().unwrap()),
+                flags: NtpFlags::from_bits(data[6..8].try_into().unwrap())?,
                 root_delay: NtpDuration::from_bits_short(data[8..12].try_into().unwrap()),
                 root_dispersion: NtpDuration::from_bits_short(data[12..16].try_into().unwrap()),
                 server_cookie: NtpServerCookie(data[16..24].try_into().unwrap()),
@@ -157,12 +163,13 @@ impl NtpHeaderV5 {
         ))
     }
 
+    #[allow(dead_code)]
     pub(crate) fn serialize<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
         w.write_all(&[(self.leap.to_bits() << 6) | (5 << 3) | self.mode.to_bits()])?;
         w.write_all(&[self.stratum, self.poll as u8, self.precision as u8])?;
         w.write_all(&[self.timescale.to_bits()])?;
         w.write_all(&[self.era.0])?;
-        w.write_all(&self.flags.to_bits())?;
+        w.write_all(&self.flags.as_bits())?;
         w.write_all(&self.root_delay.to_bits_short())?;
         w.write_all(&self.root_dispersion.to_bits_short())?;
         w.write_all(&self.server_cookie.0)?;
@@ -175,35 +182,33 @@ impl NtpHeaderV5 {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
-
     use super::*;
+    use std::io::Cursor;
 
     #[test]
     fn round_trip_timescale() {
         for i in 0..=u8::MAX {
-            match NtpTimescale::from_bits(i) {
-                None => {}
-                Some(ts) => assert_eq!(ts as u8, i),
+            if let Ok(ts) = NtpTimescale::from_bits(i) {
+                assert_eq!(ts as u8, i);
             }
         }
     }
 
     #[test]
     fn flags() {
-        let flags = NtpFlags::from_bits([0x00, 0x00]);
+        let flags = NtpFlags::from_bits([0x00, 0x00]).unwrap();
         assert_eq!(flags.unknown_leap, false);
         assert_eq!(flags.interleaved_mode, false);
 
-        let flags = NtpFlags::from_bits([0x00, 0x01]);
+        let flags = NtpFlags::from_bits([0x00, 0x01]).unwrap();
         assert_eq!(flags.unknown_leap, true);
         assert_eq!(flags.interleaved_mode, false);
 
-        let flags = NtpFlags::from_bits([0x00, 0x02]);
+        let flags = NtpFlags::from_bits([0x00, 0x02]).unwrap();
         assert_eq!(flags.unknown_leap, false);
         assert_eq!(flags.interleaved_mode, true);
 
-        let flags = NtpFlags::from_bits([0x00, 0x03]);
+        let flags = NtpFlags::from_bits([0x00, 0x03]).unwrap();
         assert_eq!(flags.unknown_leap, true);
         assert_eq!(flags.interleaved_mode, true);
     }
