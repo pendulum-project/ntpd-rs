@@ -17,11 +17,18 @@ impl NtpMode {
         })
     }
 
-    pub fn is_request(&self) -> bool {
+    fn to_bits(self) -> u8 {
+        match self {
+            Self::Request => 3,
+            Self::Response => 4,
+        }
+    }
+
+    pub(crate) fn is_request(&self) -> bool {
         self == &Self::Request
     }
 
-    pub fn is_response(&self) -> bool {
+    pub(crate) fn is_response(&self) -> bool {
         self == &Self::Response
     }
 }
@@ -45,25 +52,46 @@ impl NtpTimescale {
             _ => return None,
         })
     }
+
+    fn to_bits(self) -> u8 {
+        match self {
+            Self::Utc => 0,
+            Self::Tai => 1,
+            Self::Ut1 => 2,
+            Self::LeadSmearedUtc => 3,
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct NtpEra(pub u8);
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct NtpFlags(u16);
+pub struct NtpFlags {
+    unknown_leap: bool,
+    interleaved_mode: bool,
+}
 
 impl NtpFlags {
     fn from_bits(bits: [u8; 2]) -> Self {
-        Self(u16::from_be_bytes(bits))
+        Self {
+            unknown_leap: bits[1] & 0x01 != 0,
+            interleaved_mode: bits[1] & 0x02 != 0,
+        }
     }
 
-    pub fn unknown_leap(&self) -> bool {
-        self.0 & 0x01 != 0
-    }
+    fn to_bits(&self) -> [u8; 2] {
+        let mut flags: u16 = 0;
 
-    pub fn interleaved_mode(&self) -> bool {
-        self.0 & 0x02 != 0
+        if self.unknown_leap {
+            flags = flags | 0x01;
+        }
+
+        if self.interleaved_mode {
+            flags = flags | 0x02;
+        }
+
+        flags.to_be_bytes()
     }
 }
 
@@ -128,12 +156,28 @@ impl NtpHeaderV5 {
             Self::LENGTH,
         ))
     }
+
+    pub(crate) fn serialize<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
+        w.write_all(&[(self.leap.to_bits() << 6) | (5 << 3) | self.mode.to_bits()])?;
+        w.write_all(&[self.stratum, self.poll as u8, self.precision as u8])?;
+        w.write_all(&[self.timescale.to_bits()])?;
+        w.write_all(&[self.era.0])?;
+        w.write_all(&self.flags.to_bits())?;
+        w.write_all(&self.root_delay.to_bits_short())?;
+        w.write_all(&self.root_dispersion.to_bits_short())?;
+        w.write_all(&self.server_cookie.0)?;
+        w.write_all(&self.client_cookie.0)?;
+        w.write_all(&self.receive_timestamp.to_bits())?;
+        w.write_all(&self.transmit_timestamp.to_bits())?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
     use super::*;
-    use crate::{NoCipher, NtpPacket};
 
     #[test]
     fn round_trip_timescale() {
@@ -147,21 +191,21 @@ mod tests {
 
     #[test]
     fn flags() {
-        let flags = NtpFlags(0x00);
-        assert!(!flags.unknown_leap());
-        assert!(!flags.interleaved_mode());
+        let flags = NtpFlags::from_bits([0x00, 0x00]);
+        assert_eq!(flags.unknown_leap, false);
+        assert_eq!(flags.interleaved_mode, false);
 
-        let flags = NtpFlags(0x01);
-        assert!(flags.unknown_leap());
-        assert!(!flags.interleaved_mode());
+        let flags = NtpFlags::from_bits([0x00, 0x01]);
+        assert_eq!(flags.unknown_leap, true);
+        assert_eq!(flags.interleaved_mode, false);
 
-        let flags = NtpFlags(0x02);
-        assert!(!flags.unknown_leap());
-        assert!(flags.interleaved_mode());
+        let flags = NtpFlags::from_bits([0x00, 0x02]);
+        assert_eq!(flags.unknown_leap, false);
+        assert_eq!(flags.interleaved_mode, true);
 
-        let flags = NtpFlags(0x03);
-        assert!(flags.unknown_leap());
-        assert!(flags.interleaved_mode());
+        let flags = NtpFlags::from_bits([0x00, 0x03]);
+        assert_eq!(flags.unknown_leap, true);
+        assert_eq!(flags.interleaved_mode, true);
     }
 
     #[test]
@@ -208,9 +252,9 @@ mod tests {
         assert_eq!(parsed.precision, 0);
         assert_eq!(parsed.timescale, NtpTimescale::Ut1);
         assert_eq!(parsed.era, NtpEra(0));
-        assert!(parsed.flags.interleaved_mode());
-        assert!(!parsed.flags.unknown_leap());
-        assert!(parsed.flags.interleaved_mode());
+        assert!(parsed.flags.interleaved_mode);
+        assert!(!parsed.flags.unknown_leap);
+        assert!(parsed.flags.interleaved_mode);
         assert_eq!(parsed.root_delay, NtpDuration::from_seconds(0.0));
         assert_eq!(parsed.root_dispersion, NtpDuration::from_seconds(0.0));
         assert_eq!(parsed.server_cookie, NtpServerCookie([0x0; 8]));
@@ -220,6 +264,12 @@ mod tests {
         );
         assert_eq!(parsed.receive_timestamp, NtpTimestamp::from_fixed_int(0x0));
         assert_eq!(parsed.transmit_timestamp, NtpTimestamp::from_fixed_int(0x0));
+
+        let mut buffer: [u8; 48] = [0u8; 48];
+        let mut cursor = Cursor::new(buffer.as_mut_slice());
+        parsed.serialize(&mut cursor).unwrap();
+
+        assert_eq!(data, buffer);
     }
 
     #[test]
@@ -266,9 +316,9 @@ mod tests {
         assert_eq!(parsed.precision, 6);
         assert_eq!(parsed.timescale, NtpTimescale::Tai);
         assert_eq!(parsed.era, NtpEra(7));
-        assert!(parsed.flags.interleaved_mode());
-        assert!(!parsed.flags.unknown_leap());
-        assert!(parsed.flags.interleaved_mode());
+        assert!(parsed.flags.interleaved_mode);
+        assert!(!parsed.flags.unknown_leap);
+        assert!(parsed.flags.interleaved_mode);
         assert_eq!(
             parsed.root_delay,
             NtpDuration::from_seconds(0.00877380371298031)
@@ -293,18 +343,65 @@ mod tests {
             parsed.transmit_timestamp,
             NtpTimestamp::from_fixed_int(0x2222222222222222)
         );
+
+        let mut buffer: [u8; 48] = [0u8; 48];
+        let mut cursor = Cursor::new(buffer.as_mut_slice());
+        parsed.serialize(&mut cursor).unwrap();
+
+        assert_eq!(data, buffer);
     }
 
     #[test]
-    fn deserialize_v5() {
-        let mut packet = [0u8; 48];
+    fn test_encode_decode_roundtrip() {
+        for i in 0..=u8::MAX {
+            let header = NtpHeaderV5 {
+                leap: NtpLeapIndicator::from_bits(i % 4),
+                mode: NtpMode::from_bits(3 + (i % 2)).unwrap(),
+                stratum: i.wrapping_add(1),
+                poll: i.wrapping_add(3) as i8,
+                precision: i.wrapping_add(4) as i8,
+                timescale: NtpTimescale::from_bits(i % 4).unwrap(),
+                era: NtpEra(i.wrapping_add(6)),
+                flags: NtpFlags {
+                    unknown_leap: i % 3 == 0,
+                    interleaved_mode: i % 4 == 0,
+                },
+                root_delay: NtpDuration::from_bits_short([i; 4]),
+                root_dispersion: NtpDuration::from_bits_short([i.wrapping_add(1); 4]),
+                server_cookie: NtpServerCookie([i.wrapping_add(2); 8]),
+                client_cookie: NtpClientCookie([i.wrapping_add(3); 8]),
+                receive_timestamp: NtpTimestamp::from_bits([i.wrapping_add(4); 8]),
+                transmit_timestamp: NtpTimestamp::from_bits([i.wrapping_add(5); 8]),
+            };
 
-        #[allow(clippy::unusual_byte_groupings)] // Bits are grouped by fields
-        {
-            // Alter       LI VN  Mode
-            packet[0] = 0b_00_101_011;
+            let mut buffer: [u8; 48] = [0u8; 48];
+            let mut cursor = Cursor::new(buffer.as_mut_slice());
+            header.serialize(&mut cursor).unwrap();
+
+            let (parsed, _) = NtpHeaderV5::deserialize(&buffer).unwrap();
+
+            assert_eq!(header, parsed);
         }
+    }
 
-        NtpPacket::deserialize(&packet, &NoCipher).unwrap();
+    #[test]
+    fn fail_on_incorrect_length() {
+        let data: [u8; 47] = [0u8; 47];
+
+        assert!(matches!(
+            NtpHeaderV5::deserialize(&data),
+            Err(ParsingError::IncorrectLength)
+        ));
+    }
+
+    #[test]
+    fn fail_on_incorrect_version() {
+        let mut data: [u8; 48] = [0u8; 48];
+        data[0] = 0b_00_111_100;
+
+        assert!(matches!(
+            NtpHeaderV5::deserialize(&data),
+            Err(ParsingError::InvalidVersion(7))
+        ));
     }
 }
