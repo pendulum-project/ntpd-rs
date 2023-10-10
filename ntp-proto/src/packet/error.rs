@@ -12,6 +12,12 @@ pub enum ParsingError<T> {
     DecryptError(T),
     #[cfg(feature = "ntpv5")]
     InvalidDraftIdentification,
+    #[cfg(feature = "ntpv5")]
+    MalformedTimescale,
+    #[cfg(feature = "ntpv5")]
+    MalformedMode,
+    #[cfg(feature = "ntpv5")]
+    InvalidFlags,
 }
 
 impl<T> ParsingError<T> {
@@ -24,9 +30,15 @@ impl<T> ParsingError<T> {
             MalformedNtsExtensionFields => Err(MalformedNtsExtensionFields),
             MalformedNonce => Err(MalformedNonce),
             MalformedCookiePlaceholder => Err(MalformedCookiePlaceholder),
+            DecryptError(decrypt_error) => Ok(decrypt_error),
             #[cfg(feature = "ntpv5")]
             InvalidDraftIdentification => Err(InvalidDraftIdentification),
-            DecryptError(decrypt_error) => Ok(decrypt_error),
+            #[cfg(feature = "ntpv5")]
+            MalformedTimescale => Err(MalformedTimescale),
+            #[cfg(feature = "ntpv5")]
+            MalformedMode => Err(MalformedMode),
+            #[cfg(feature = "ntpv5")]
+            InvalidFlags => Err(InvalidFlags),
         }
     }
 }
@@ -41,9 +53,15 @@ impl ParsingError<std::convert::Infallible> {
             MalformedNtsExtensionFields => MalformedNtsExtensionFields,
             MalformedNonce => MalformedNonce,
             MalformedCookiePlaceholder => MalformedCookiePlaceholder,
+            DecryptError(decrypt_error) => match decrypt_error {},
             #[cfg(feature = "ntpv5")]
             InvalidDraftIdentification => InvalidDraftIdentification,
-            DecryptError(decrypt_error) => match decrypt_error {},
+            #[cfg(feature = "ntpv5")]
+            MalformedTimescale => MalformedTimescale,
+            #[cfg(feature = "ntpv5")]
+            MalformedMode => MalformedMode,
+            #[cfg(feature = "ntpv5")]
+            InvalidFlags => InvalidFlags,
         }
     }
 }
@@ -58,9 +76,15 @@ impl<T> Display for ParsingError<T> {
             Self::MalformedNtsExtensionFields => f.write_str("Malformed nts extension fields"),
             Self::MalformedNonce => f.write_str("Malformed nonce (likely invalid length)"),
             Self::MalformedCookiePlaceholder => f.write_str("Malformed cookie placeholder"),
+            Self::DecryptError(_) => f.write_str("Failed to decrypt NTS extension fields"),
             #[cfg(feature = "ntpv5")]
             Self::InvalidDraftIdentification => f.write_str("Draft Identification invalid"),
-            Self::DecryptError(_) => f.write_str("Failed to decrypt NTS extension fields"),
+            #[cfg(feature = "ntpv5")]
+            Self::MalformedTimescale => f.write_str("Malformed timescale"),
+            #[cfg(feature = "ntpv5")]
+            Self::MalformedMode => f.write_str("Malformed mode"),
+            #[cfg(feature = "ntpv5")]
+            Self::InvalidFlags => f.write_str("Invalid flags specified"),
         }
     }
 }
