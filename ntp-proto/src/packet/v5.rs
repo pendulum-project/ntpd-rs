@@ -166,6 +166,7 @@ mod tests {
 
     #[test]
     fn parse_request() {
+        #[allow(clippy::unusual_byte_groupings)] // Bits are grouped by fields
         #[rustfmt::skip]
         let data = [
             // LI VN  Mode
@@ -223,6 +224,7 @@ mod tests {
 
     #[test]
     fn parse_resonse() {
+        #[allow(clippy::unusual_byte_groupings)] // Bits are grouped by fields
         #[rustfmt::skip]
         let data = [
             // LI VN  Mode
@@ -296,8 +298,12 @@ mod tests {
     #[test]
     fn deserialize_v5() {
         let mut packet = [0u8; 48];
-        // Alter       LI VN  Mode
-        packet[0] = 0b_00_101_011;
+
+        #[allow(clippy::unusual_byte_groupings)] // Bits are grouped by fields
+        {
+            // Alter       LI VN  Mode
+            packet[0] = 0b_00_101_011;
+        }
 
         NtpPacket::deserialize(&packet, &NoCipher).unwrap();
     }

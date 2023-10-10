@@ -738,8 +738,13 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(header) => header.mode,
             NtpHeader::V4(header) => header.mode,
+
+            // FIXME long term the return type should change to capture both mode types
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!(),
+            NtpHeader::V5(header) => match header.mode {
+                v5::NtpMode::Request => NtpAssociationMode::Client,
+                v5::NtpMode::Response => NtpAssociationMode::Server,
+            },
         }
     }
 
