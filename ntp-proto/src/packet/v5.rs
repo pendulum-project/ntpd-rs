@@ -87,17 +87,10 @@ impl NtpFlags {
     }
 
     fn as_bits(&self) -> [u8; 2] {
-        let mut flags: u16 = 0;
+        let mut flags = self.unknown_leap as u8;
+        flags |= 0x02 * self.interleaved_mode as u8;
 
-        if self.unknown_leap {
-            flags |= 0x01;
-        }
-
-        if self.interleaved_mode {
-            flags |= 0x02;
-        }
-
-        flags.to_be_bytes()
+        [0x00, flags]
     }
 }
 
@@ -197,20 +190,23 @@ mod tests {
     #[test]
     fn flags() {
         let flags = NtpFlags::from_bits([0x00, 0x00]).unwrap();
-        assert_eq!(flags.unknown_leap, false);
-        assert_eq!(flags.interleaved_mode, false);
+        assert!(!flags.unknown_leap);
+        assert!(!flags.interleaved_mode);
 
         let flags = NtpFlags::from_bits([0x00, 0x01]).unwrap();
-        assert_eq!(flags.unknown_leap, true);
-        assert_eq!(flags.interleaved_mode, false);
+        assert!(flags.unknown_leap);
+        assert!(!flags.interleaved_mode);
 
         let flags = NtpFlags::from_bits([0x00, 0x02]).unwrap();
-        assert_eq!(flags.unknown_leap, false);
-        assert_eq!(flags.interleaved_mode, true);
+        assert!(!flags.unknown_leap);
+        assert!(flags.interleaved_mode);
 
         let flags = NtpFlags::from_bits([0x00, 0x03]).unwrap();
-        assert_eq!(flags.unknown_leap, true);
-        assert_eq!(flags.interleaved_mode, true);
+        assert!(flags.unknown_leap);
+        assert!(flags.interleaved_mode);
+
+        let result = NtpFlags::from_bits([0xFF, 0xFF]);
+        assert!(matches!(result, Err(ParsingError::InvalidFlags)));
     }
 
     #[test]
@@ -400,6 +396,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::unusual_byte_groupings)] // Bits are grouped by fields
     fn fail_on_incorrect_version() {
         let mut data: [u8; 48] = [0u8; 48];
         data[0] = 0b_00_111_100;
