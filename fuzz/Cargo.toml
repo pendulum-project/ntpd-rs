@@ -8,6 +8,9 @@ publish = false
 [package.metadata]
 cargo-fuzz = true
 
+[features]
+ntpv5 = ["ntp-proto/ntpv5"]
+
 [dependencies]
 rand = "0.8.5"
 

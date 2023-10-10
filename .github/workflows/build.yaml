@@ -29,6 +29,7 @@ jobs:
           - ""
         features:
           - ""
+          - "--features ntpv5"
     steps:
       - name: Checkout sources
         uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
@@ -67,6 +68,7 @@ jobs:
         os: [ubuntu-latest]
         features:
           - ""
+          - "--features ntpv5"
     steps:
       - name: Checkout sources
         uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
@@ -96,6 +98,7 @@ jobs:
           - ""
         features:
           - ""
+          - "--features ntpv5"
     steps:
       - name: Checkout sources
         uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
@@ -243,7 +246,7 @@ jobs:
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
         with:
           command: clippy
-          args: --workspace --all-targets -- -D warnings
+          args: --workspace --all-targets --all-features -- -D warnings
       - name: Run clippy (fuzzers)
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
         with:
@@ -287,7 +290,7 @@ jobs:
           TARGET_CC: "/home/runner/.cargo/bin/cargo-zigbuild zig cc -- -target arm-linux-gnueabihf -mcpu=generic+v7a+vfp3-d32+thumb2-neon -g"
         with:
           command: clippy
-          args: --target armv7-unknown-linux-gnueabihf --workspace --all-targets -- -D warnings
+          args: --target armv7-unknown-linux-gnueabihf --workspace --all-targets --all-features -- -D warnings
 
   clippy-macos:
     name: ClippyMacOS
@@ -321,7 +324,7 @@ jobs:
           TARGET_CC: "/home/runner/.cargo/bin/cargo-zigbuild zig cc -- -target x86_64-macos-gnu -g"
         with:
           command: clippy
-          args: --target x86_64-apple-darwin --workspace --all-targets -- -D warnings
+          args: --target x86_64-apple-darwin --workspace --all-targets --all-features -- -D warnings
 
   clippy-musl:
     name: ClippyMusl
@@ -355,7 +358,7 @@ jobs:
           TARGET_CC: "/home/runner/.cargo/bin/cargo-zigbuild zig cc -- -target x86_64-linux-musl"
         with:
           command: clippy
-          args: --target x86_64-unknown-linux-musl --workspace --all-targets -- -D warnings
+          args: --target x86_64-unknown-linux-musl --workspace --all-targets --all-features -- -D warnings
 
   fuzz:
     name: Smoke-test fuzzing targets
