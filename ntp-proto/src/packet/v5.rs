@@ -148,20 +148,20 @@ mod tests {
     #[test]
     fn flags() {
         let flags = NtpFlags(0x00);
-        assert_eq!(flags.unknown_leap(), false);
-        assert_eq!(flags.interleaved_mode(), false);
+        assert!(!flags.unknown_leap());
+        assert!(!flags.interleaved_mode());
 
         let flags = NtpFlags(0x01);
-        assert_eq!(flags.unknown_leap(), true);
-        assert_eq!(flags.interleaved_mode(), false);
+        assert!(flags.unknown_leap());
+        assert!(!flags.interleaved_mode());
 
         let flags = NtpFlags(0x02);
-        assert_eq!(flags.unknown_leap(), false);
-        assert_eq!(flags.interleaved_mode(), true);
+        assert!(!flags.unknown_leap());
+        assert!(flags.interleaved_mode());
 
         let flags = NtpFlags(0x03);
-        assert_eq!(flags.unknown_leap(), true);
-        assert_eq!(flags.interleaved_mode(), true);
+        assert!(flags.unknown_leap());
+        assert!(flags.interleaved_mode());
     }
 
     #[test]
