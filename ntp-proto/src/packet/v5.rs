@@ -148,24 +148,25 @@ mod tests {
     #[test]
     fn flags() {
         let flags = NtpFlags(0x00);
-        assert_eq!(flags.unknown_leap(), false);
-        assert_eq!(flags.interleaved_mode(), false);
+        assert!(!flags.unknown_leap());
+        assert!(!flags.interleaved_mode());
 
         let flags = NtpFlags(0x01);
-        assert_eq!(flags.unknown_leap(), true);
-        assert_eq!(flags.interleaved_mode(), false);
+        assert!(flags.unknown_leap());
+        assert!(!flags.interleaved_mode());
 
         let flags = NtpFlags(0x02);
-        assert_eq!(flags.unknown_leap(), false);
-        assert_eq!(flags.interleaved_mode(), true);
+        assert!(!flags.unknown_leap());
+        assert!(flags.interleaved_mode());
 
         let flags = NtpFlags(0x03);
-        assert_eq!(flags.unknown_leap(), true);
-        assert_eq!(flags.interleaved_mode(), true);
+        assert!(flags.unknown_leap());
+        assert!(flags.interleaved_mode());
     }
 
     #[test]
     fn parse_request() {
+        #[allow(clippy::unusual_byte_groupings)] // Bits are grouped by fields
         #[rustfmt::skip]
         let data = [
             // LI VN  Mode
@@ -223,6 +224,7 @@ mod tests {
 
     #[test]
     fn parse_resonse() {
+        #[allow(clippy::unusual_byte_groupings)] // Bits are grouped by fields
         #[rustfmt::skip]
         let data = [
             // LI VN  Mode
@@ -296,8 +298,12 @@ mod tests {
     #[test]
     fn deserialize_v5() {
         let mut packet = [0u8; 48];
-        // Alter       LI VN  Mode
-        packet[0] = 0b_00_101_011;
+
+        #[allow(clippy::unusual_byte_groupings)] // Bits are grouped by fields
+        {
+            // Alter       LI VN  Mode
+            packet[0] = 0b_00_101_011;
+        }
 
         NtpPacket::deserialize(&packet, &NoCipher).unwrap();
     }
