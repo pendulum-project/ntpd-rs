@@ -21,7 +21,7 @@ $ sudo systemctl start ntpd-rs
 
 ### FreeBSD
 
-The ntpd-rs binary is available on [ports](https://www.freshports.org/net/ntpd-rs/). The default configuration file is located at `%%ETCDIR%%/ntp.toml`, which typically resolves to `/etc/ntp.toml`.
+The ntpd-rs binary is available on [ports](https://www.freshports.org/net/ntpd-rs/). The default configuration file is located at `%%ETCDIR%%/ntp.toml`, which typically resolves to `/usr/local/etc/ntpd-rs/ntp.toml`.
 
 ### macOS
 
