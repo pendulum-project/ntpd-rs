@@ -11,6 +11,8 @@ pub struct Config {
     pub loglevel: String,
     pub sdo_id: u16,
     pub domain: u8,
+    #[serde(default, deserialize_with = "deserialize_clock_identity")]
+    pub identity: Option<ClockIdentity>,
     pub priority1: u8,
     pub priority2: u8,
     #[serde(rename = "port")]
@@ -54,6 +56,18 @@ where
     }
 
     Ok(Some(result))
+}
+
+fn deserialize_clock_identity<'de, D>(deserializer: D) -> Result<Option<ClockIdentity>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use hex::FromHex;
+    use serde::de::Error;
+    let raw: &str = Deserialize::deserialize(deserializer)?;
+    Ok(Some(ClockIdentity(<[u8; 8]>::from_hex(raw).map_err(
+        |e| D::Error::custom(format!("Invalid clock identifier: {}", e)),
+    )?)))
 }
 
 impl From<PortConfig> for statime::PortConfig<Option<Vec<ClockIdentity>>> {

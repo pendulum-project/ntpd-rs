@@ -268,7 +268,9 @@ async fn actual_main() {
     let log_level = log::LevelFilter::from_str(&config.loglevel).unwrap();
     setup_logger(log_level).expect("could not setup logging");
 
-    let clock_identity = ClockIdentity(get_clock_id().expect("could not get clock identity"));
+    let clock_identity = config.identity.unwrap_or(ClockIdentity(
+        get_clock_id().expect("could not get clock identity"),
+    ));
 
     let instance_config = InstanceConfig {
         clock_identity,
