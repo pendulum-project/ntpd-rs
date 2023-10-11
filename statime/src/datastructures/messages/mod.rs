@@ -14,6 +14,7 @@ use self::{
 use super::{
     common::{PortIdentity, TimeInterval, TlvSet, WireTimestamp},
     datasets::DefaultDS,
+    WireFormatError,
 };
 use crate::{ptp_instance::PtpInstanceState, Interval, LeapIndicator, Time};
 
@@ -404,8 +405,15 @@ impl<'a> Message<'a> {
     pub(crate) fn deserialize(buffer: &'a [u8]) -> Result<Self, super::WireFormatError> {
         let header_data = Header::deserialize_header(buffer)?;
 
+        if header_data.message_length < 34 {
+            return Err(WireFormatError::Invalid);
+        }
+
+        // Ensure we have the entire message and ignore potential padding
         // Skip the header bytes and only keep the content
-        let content_buffer = &buffer[34..];
+        let content_buffer = buffer
+            .get(34..(header_data.message_length as usize))
+            .ok_or(WireFormatError::BufferTooShort)?;
 
         let body = MessageBody::deserialize(
             header_data.message_type,

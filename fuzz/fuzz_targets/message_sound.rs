@@ -20,7 +20,7 @@ fuzz_target!(|data: Vec<u8>| {
         }
 
         let written = a.serialize(&mut buf1).unwrap();
-        assert_eq!(data.len(), written);
+        assert!(data.len() >= written);
 
         let b = FuzzMessage::deserialize(&data).unwrap();
         b.serialize(&mut buf2).unwrap();

@@ -92,6 +92,7 @@ pub enum NetworkMode {
     #[default]
     Ipv4,
     Ipv6,
+    Ethernet,
 }
 
 impl Config {

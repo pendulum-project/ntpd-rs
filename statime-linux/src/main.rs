@@ -18,13 +18,13 @@ use statime_linux::{
     clock::LinuxClock,
     config::Config,
     socket::{
-        open_ipv4_event_socket, open_ipv4_general_socket, open_ipv6_event_socket,
-        open_ipv6_general_socket, timestamp_to_time, PtpTargetAddress,
+        open_ethernet_socket, open_ipv4_event_socket, open_ipv4_general_socket,
+        open_ipv6_event_socket, open_ipv6_general_socket, timestamp_to_time, PtpTargetAddress,
     },
 };
 use timestamped_socket::{
     interface::InterfaceIterator,
-    networkaddress::NetworkAddress,
+    networkaddress::{EthernetAddress, NetworkAddress},
     socket::{InterfaceTimestampMode, Open, Socket},
 };
 use tokio::{
@@ -370,6 +370,20 @@ async fn actual_main() {
                     bmca_notify_receiver.clone(),
                 ));
             }
+            statime_linux::config::NetworkMode::Ethernet => {
+                let socket =
+                    open_ethernet_socket(interface, timestamping).expect("Could not open socket");
+
+                tokio::spawn(ethernet_port_task(
+                    port_task_receiver,
+                    port_task_sender,
+                    interface
+                        .get_index()
+                        .expect("Unable to get network interface index") as _,
+                    socket,
+                    bmca_notify_receiver.clone(),
+                ));
+            }
         }
     }
 
@@ -548,6 +562,99 @@ async fn port_task<A: NetworkAddress + PtpTargetAddress>(
     }
 }
 
+// the Port task for ethernet transport
+//
+// This task waits for a new port (in the bmca state) to arrive on its Receiver.
+// It will then move the port into the running state, and process actions. When
+// the task is notified of a BMCA, it will stop running, move the port into the
+// bmca state, and send it on its Sender
+async fn ethernet_port_task(
+    mut port_task_receiver: Receiver<BmcaPort>,
+    port_task_sender: Sender<BmcaPort>,
+    interface: libc::c_int,
+    mut socket: Socket<EthernetAddress, Open>,
+    mut bmca_notify: tokio::sync::watch::Receiver<bool>,
+) {
+    let mut timers = Timers {
+        port_sync_timer: pin!(Timer::new()),
+        port_announce_timer: pin!(Timer::new()),
+        port_announce_timeout_timer: pin!(Timer::new()),
+        delay_request_timer: pin!(Timer::new()),
+        filter_update_timer: pin!(Timer::new()),
+    };
+
+    loop {
+        let port_in_bmca = port_task_receiver.recv().await.unwrap();
+
+        // handle post-bmca actions
+        let (mut port, actions) = port_in_bmca.end_bmca();
+
+        let mut pending_timestamp =
+            handle_actions_ethernet(actions, interface, &mut socket, &mut timers).await;
+
+        while let Some((context, timestamp)) = pending_timestamp {
+            pending_timestamp = handle_actions_ethernet(
+                port.handle_send_timestamp(context, timestamp),
+                interface,
+                &mut socket,
+                &mut timers,
+            )
+            .await;
+        }
+
+        let mut event_buffer = [0; MAX_DATA_LEN];
+
+        loop {
+            let mut actions = tokio::select! {
+                result = socket.recv(&mut event_buffer) => match result {
+                    Ok(packet) => {
+                        if let Some(timestamp) = packet.timestamp {
+                            log::trace!("Recv timestamp: {:?}", packet.timestamp);
+                            port.handle_event_receive(&event_buffer[..packet.bytes_read], timestamp_to_time(timestamp))
+                        } else {
+                            port.handle_general_receive(&event_buffer[..packet.bytes_read])
+                        }
+                    }
+                    Err(error) => panic!("Error receiving: {error:?}"),
+                },
+                () = &mut timers.port_announce_timer => {
+                    port.handle_announce_timer()
+                },
+                () = &mut timers.port_sync_timer => {
+                    port.handle_sync_timer()
+                },
+                () = &mut timers.port_announce_timeout_timer => {
+                    port.handle_announce_receipt_timer()
+                },
+                () = &mut timers.delay_request_timer => {
+                    port.handle_delay_request_timer()
+                },
+                () = &mut timers.filter_update_timer => {
+                    port.handle_filter_update_timer()
+                },
+                result = bmca_notify.wait_for(|v| *v) => match result {
+                    Ok(_) => break,
+                    Err(error) => panic!("Error on bmca notify: {error:?}"),
+                }
+            };
+
+            loop {
+                let pending_timestamp =
+                    handle_actions_ethernet(actions, interface, &mut socket, &mut timers).await;
+
+                // there might be more actions to handle based on the current action
+                actions = match pending_timestamp {
+                    Some((context, timestamp)) => port.handle_send_timestamp(context, timestamp),
+                    None => break,
+                };
+            }
+        }
+
+        let port_in_bmca = port.start_bmca();
+        port_task_sender.send(port_in_bmca).await.unwrap();
+    }
+}
+
 struct Timers<'a> {
     port_sync_timer: Pin<&'a mut Timer>,
     port_announce_timer: Pin<&'a mut Timer>,
@@ -584,6 +691,72 @@ async fn handle_actions<A: NetworkAddress + PtpTargetAddress>(
             PortAction::SendGeneral { data } => {
                 general_socket
                     .send_to(data, A::PRIMARY_GENERAL)
+                    .await
+                    .expect("Failed to send general message");
+            }
+            PortAction::ResetAnnounceTimer { duration } => {
+                timers.port_announce_timer.as_mut().reset(duration);
+            }
+            PortAction::ResetSyncTimer { duration } => {
+                timers.port_sync_timer.as_mut().reset(duration);
+            }
+            PortAction::ResetDelayRequestTimer { duration } => {
+                timers.delay_request_timer.as_mut().reset(duration);
+            }
+            PortAction::ResetAnnounceReceiptTimer { duration } => {
+                timers.port_announce_timeout_timer.as_mut().reset(duration);
+            }
+            PortAction::ResetFilterUpdateTimer { duration } => {
+                timers.filter_update_timer.as_mut().reset(duration);
+            }
+        }
+    }
+
+    pending_timestamp
+}
+
+async fn handle_actions_ethernet(
+    actions: PortActionIterator<'_>,
+    interface: libc::c_int,
+    socket: &mut Socket<EthernetAddress, Open>,
+    timers: &mut Timers<'_>,
+) -> Option<(TimestampContext, Time)> {
+    let mut pending_timestamp = None;
+
+    for action in actions {
+        match action {
+            PortAction::SendEvent { context, data } => {
+                // send timestamp of the send
+                let time = socket
+                    .send_to(
+                        data,
+                        EthernetAddress::new(
+                            EthernetAddress::PRIMARY_EVENT.protocol(),
+                            EthernetAddress::PRIMARY_EVENT.mac(),
+                            interface,
+                        ),
+                    )
+                    .await
+                    .expect("Failed to send event message");
+
+                // anything we send later will have a later pending (send) timestamp
+                if let Some(time) = time {
+                    log::trace!("Send timestamp {:?}", time);
+                    pending_timestamp = Some((context, timestamp_to_time(time)));
+                } else {
+                    log::error!("Missing send timestamp");
+                }
+            }
+            PortAction::SendGeneral { data } => {
+                socket
+                    .send_to(
+                        data,
+                        EthernetAddress::new(
+                            EthernetAddress::PRIMARY_GENERAL.protocol(),
+                            EthernetAddress::PRIMARY_GENERAL.mac(),
+                            interface,
+                        ),
+                    )
                     .await
                     .expect("Failed to send general message");
             }

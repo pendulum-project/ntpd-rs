@@ -21,4 +21,4 @@ serde = { version = "1.0.189", features = ["derive"] }
 
 
 clock-steering = { git = "https://github.com/pendulum-project/clock-steering.git", rev = "8ca7481" }
-timestamped-socket = { git =  "https://github.com/pendulum-project/timestamped-socket.git", rev = "b98af7e", features = ["serde"] }
+timestamped-socket = { git =  "https://github.com/pendulum-project/timestamped-socket.git", rev = "d0e4ed7", features = ["serde"] }

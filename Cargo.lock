@@ -529,7 +529,7 @@ dependencies = [
 [[package]]
 name = "timestamped-socket"
 version = "0.1.0"
-source = "git+https://github.com/pendulum-project/timestamped-socket.git?rev=b98af7e#b98af7ed28dfe7d1b32345a9460dd86b8e509150"
+source = "git+https://github.com/pendulum-project/timestamped-socket.git?rev=d0e4ed7#d0e4ed7fa43dbcf665e39437de3ebf91923e7d30"
 dependencies = [
  "libc",
  "serde",
