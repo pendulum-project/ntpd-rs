@@ -272,6 +272,8 @@ async fn actual_main() {
         get_clock_id().expect("could not get clock identity"),
     ));
 
+    log::info!("Clock identity: {}", hex::encode(clock_identity.0));
+
     let instance_config = InstanceConfig {
         clock_identity,
         priority_1: config.priority1,
