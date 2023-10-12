@@ -7,55 +7,55 @@ use statime::{Clock, Duration, Time, TimePropertiesDS};
 
 #[derive(Debug, Clone)]
 pub struct LinuxClock {
-    pub clock: clock_steering::unix::UnixClock,
+    clock: clock_steering::unix::UnixClock,
+    is_tai: bool,
 }
 
 impl LinuxClock {
-    pub const CLOCK_REALTIME: Self = Self {
-        clock: UnixClock::CLOCK_REALTIME,
+    pub const CLOCK_TAI: Self = Self {
+        clock: UnixClock::CLOCK_TAI,
+        is_tai: true,
     };
 
     pub fn open(path: impl AsRef<Path>) -> std::io::Result<Self> {
         let clock = UnixClock::open(path)?;
 
-        Ok(Self { clock })
+        Ok(Self {
+            clock,
+            is_tai: false,
+        })
+    }
+
+    /// Return three timestamps t1 t2 and t3 minted in that order.
+    /// T1 and T3 are minted using the system TAI clock and T2 by the hardware
+    /// clock
+    pub fn system_offset(&self) -> Result<(Time, Time, Time), clock_steering::unix::Error> {
+        // The clock crate's system offset gives the T1 and T3 timestamps on the
+        // CLOCK_REALTIME timescale which is UTC, not TAI, so we need to correct
+        // here.
+        self.clock.system_offset().map(|(mut t1, t2, mut t3)| {
+            let tai_offset = UnixClock::CLOCK_REALTIME.get_tai().unwrap();
+            t1.seconds += tai_offset as libc::time_t;
+            t3.seconds += tai_offset as libc::time_t;
+            (
+                clock_timestamp_to_time(t1),
+                clock_timestamp_to_time(t2),
+                clock_timestamp_to_time(t3),
+            )
+        })
+    }
+
+    pub fn get_tai_offset(&self) -> Result<i32, clock_steering::unix::Error> {
+        if self.is_tai {
+            UnixClock::CLOCK_REALTIME.get_tai()
+        } else {
+            self.clock.get_tai()
+        }
     }
 }
 
-impl clock_steering::Clock for LinuxClock {
-    type Error = clock_steering::unix::Error;
-
-    fn now(&self) -> Result<clock_steering::Timestamp, Self::Error> {
-        self.clock.now()
-    }
-
-    fn resolution(&self) -> Result<clock_steering::Timestamp, Self::Error> {
-        self.clock.resolution()
-    }
-
-    fn set_frequency(&self, frequency: f64) -> Result<clock_steering::Timestamp, Self::Error> {
-        self.clock.set_frequency(frequency)
-    }
-
-    fn step_clock(&self, offset: TimeOffset) -> Result<clock_steering::Timestamp, Self::Error> {
-        self.clock.step_clock(offset)
-    }
-
-    fn set_leap_seconds(
-        &self,
-        leap_status: clock_steering::LeapIndicator,
-    ) -> Result<(), Self::Error> {
-        self.clock.set_leap_seconds(leap_status)
-    }
-
-    fn error_estimate_update(
-        &self,
-        estimated_error: std::time::Duration,
-        maximum_error: std::time::Duration,
-    ) -> Result<(), Self::Error> {
-        self.clock
-            .error_estimate_update(estimated_error, maximum_error)
-    }
+fn clock_timestamp_to_time(t: clock_steering::Timestamp) -> statime::Time {
+    Time::from_nanos((t.seconds as u64) * 1_000_000_000 + (t.nanos as u64))
 }
 
 fn time_from_timestamp(timestamp: clock_steering::Timestamp, fallback: Time) -> Time {
@@ -80,7 +80,15 @@ impl Clock for LinuxClock {
     fn set_frequency(&mut self, freq: f64) -> Result<Time, Self::Error> {
         use clock_steering::Clock;
         log::trace!("Setting clock frequency to {:e}ppm", freq);
-        let timestamp = self.clock.set_frequency(freq)?;
+        let timestamp = if self.is_tai {
+            // Clock tai can't directly adjust frequency, so drive this through
+            // clock_realtime and adjust the received timestamp
+            let mut ts = UnixClock::CLOCK_REALTIME.set_frequency(freq)?;
+            ts.seconds += UnixClock::CLOCK_REALTIME.get_tai()? as libc::time_t;
+            ts
+        } else {
+            self.clock.set_frequency(freq)?
+        };
         Ok(time_from_timestamp(timestamp, statime::Clock::now(self)))
     }
 
@@ -103,12 +111,32 @@ impl Clock for LinuxClock {
             (offset.seconds as f64) * 1e9 + (offset.nanos as f64)
         );
 
-        let timestamp = self.clock.step_clock(offset)?;
+        let timestamp = if self.is_tai {
+            // Clock tai can't directly step, so drive this through clock_realtime
+            // and adjust the received timestamp
+            let mut ts = UnixClock::CLOCK_REALTIME.step_clock(offset)?;
+            ts.seconds += UnixClock::CLOCK_REALTIME.get_tai()? as libc::time_t;
+            ts
+        } else {
+            self.clock.step_clock(offset)?
+        };
         Ok(time_from_timestamp(timestamp, statime::Clock::now(self)))
     }
 
-    fn set_properties(&mut self, _time_properties: &TimePropertiesDS) -> Result<(), Self::Error> {
-        // For now just ignore these
+    fn set_properties(&mut self, time_properties: &TimePropertiesDS) -> Result<(), Self::Error> {
+        use clock_steering::Clock;
+
+        // These properties should always be communicated to the system clock.
+
+        if let Some(offset) = time_properties.utc_offset() {
+            UnixClock::CLOCK_REALTIME.set_tai(offset as _)?;
+        }
+
+        UnixClock::CLOCK_REALTIME.set_leap_seconds(match time_properties.leap_indicator() {
+            statime::LeapIndicator::NoLeap => clock_steering::LeapIndicator::NoWarning,
+            statime::LeapIndicator::Leap61 => clock_steering::LeapIndicator::Leap61,
+            statime::LeapIndicator::Leap59 => clock_steering::LeapIndicator::Leap59,
+        })?;
 
         Ok(())
     }

@@ -71,4 +71,8 @@ impl TimePropertiesDS {
     pub fn leap_indicator(&self) -> LeapIndicator {
         self.leap_indicator
     }
+
+    pub fn utc_offset(&self) -> Option<i16> {
+        self.current_utc_offset
+    }
 }

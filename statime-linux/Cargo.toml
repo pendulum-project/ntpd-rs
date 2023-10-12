@@ -20,5 +20,5 @@ rand = { version = "0.8.5", default-features = false, features = ["std", "std_rn
 serde = { version = "1.0.189", features = ["derive"] }
 
 
-clock-steering = { git = "https://github.com/pendulum-project/clock-steering.git", rev = "8ca7481" }
+clock-steering = { git = "https://github.com/pendulum-project/clock-steering.git", rev = "716a540" }
 timestamped-socket = { git =  "https://github.com/pendulum-project/timestamped-socket.git", rev = "d0e4ed7", features = ["serde"] }

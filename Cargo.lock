@@ -170,7 +170,7 @@ checksum = "2da6da31387c7e4ef160ffab6d5e7f00c42626fe39aea70a7b0f1773f7dd6c1b"
 [[package]]
 name = "clock-steering"
 version = "0.1.0"
-source = "git+https://github.com/pendulum-project/clock-steering.git?rev=8ca7481#8ca748164fab25c709eb7f93af75a0ea915dba69"
+source = "git+https://github.com/pendulum-project/clock-steering.git?rev=716a540#716a540af0678a5aeaee21509d490bbfb19263fb"
 dependencies = [
  "libc",
 ]

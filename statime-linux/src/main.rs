@@ -169,10 +169,6 @@ fn start_clock_task(clock: LinuxClock) -> tokio::sync::watch::Sender<ClockSyncMo
     mode_sender
 }
 
-fn clock_timestamp_to_time(t: clock_steering::Timestamp) -> statime::Time {
-    Time::from_nanos((t.seconds as u64) * 1_000_000_000 + (t.nanos as u64))
-}
-
 async fn clock_task(
     clock: LinuxClock,
     mut mode_receiver: tokio::sync::watch::Receiver<ClockSyncMode>,
@@ -187,15 +183,12 @@ async fn clock_task(
     let mut current_mode = *mode_receiver.borrow_and_update();
     let mut filter_clock = match current_mode {
         ClockSyncMode::FromSystem => clock.clone(),
-        ClockSyncMode::ToSystem => LinuxClock::CLOCK_REALTIME,
+        ClockSyncMode::ToSystem => LinuxClock::CLOCK_TAI,
     };
     loop {
         tokio::select! {
             () = &mut measurement_timer => {
-                let (t1, t2, t3) = clock.clock.system_offset().expect("Unable to determine offset from system clock");
-                let t1 = clock_timestamp_to_time(t1);
-                let t2 = clock_timestamp_to_time(t2);
-                let t3 = clock_timestamp_to_time(t3);
+                let (t1, t2, t3) = clock.system_offset().expect("Unable to determine offset from system clock");
 
                 log::debug!("Interclock measurement: {} {} {}", t1, t2, t3);
 
@@ -241,7 +234,7 @@ async fn clock_task(
                     new_filter.demobilize(&mut filter_clock);
                     match new_mode {
                         ClockSyncMode::FromSystem => filter_clock = clock.clone(),
-                        ClockSyncMode::ToSystem => filter_clock = LinuxClock::CLOCK_REALTIME,
+                        ClockSyncMode::ToSystem => filter_clock = LinuxClock::CLOCK_TAI,
                     }
                     current_mode = new_mode;
                 }
@@ -321,14 +314,11 @@ async fn actual_main() {
             }
             None => {
                 clock_port_map.push(None);
-                (
-                    LinuxClock::CLOCK_REALTIME,
-                    InterfaceTimestampMode::SoftwareAll,
-                )
+                (LinuxClock::CLOCK_TAI, InterfaceTimestampMode::SoftwareAll)
             }
         };
         let rng = StdRng::from_entropy();
-        let port = instance.add_port(port_config.into(), 0.25, port_clock, rng);
+        let port = instance.add_port(port_config.into(), 0.25, port_clock.clone(), rng);
 
         let (main_task_sender, port_task_receiver) = tokio::sync::mpsc::channel(1);
         let (port_task_sender, main_task_receiver) = tokio::sync::mpsc::channel(1);
@@ -354,6 +344,7 @@ async fn actual_main() {
                     event_socket,
                     general_socket,
                     bmca_notify_receiver.clone(),
+                    port_clock,
                 ));
             }
             statime_linux::config::NetworkMode::Ipv6 => {
@@ -368,6 +359,7 @@ async fn actual_main() {
                     event_socket,
                     general_socket,
                     bmca_notify_receiver.clone(),
+                    port_clock,
                 ));
             }
             statime_linux::config::NetworkMode::Ethernet => {
@@ -382,6 +374,7 @@ async fn actual_main() {
                         .expect("Unable to get network interface index") as _,
                     socket,
                     bmca_notify_receiver.clone(),
+                    port_clock,
                 ));
             }
         }
@@ -474,6 +467,7 @@ async fn port_task<A: NetworkAddress + PtpTargetAddress>(
     mut event_socket: Socket<A, Open>,
     mut general_socket: Socket<A, Open>,
     mut bmca_notify: tokio::sync::watch::Receiver<bool>,
+    clock: LinuxClock,
 ) {
     let mut timers = Timers {
         port_sync_timer: pin!(Timer::new()),
@@ -489,8 +483,14 @@ async fn port_task<A: NetworkAddress + PtpTargetAddress>(
         // handle post-bmca actions
         let (mut port, actions) = port_in_bmca.end_bmca();
 
-        let mut pending_timestamp =
-            handle_actions(actions, &mut event_socket, &mut general_socket, &mut timers).await;
+        let mut pending_timestamp = handle_actions(
+            actions,
+            &mut event_socket,
+            &mut general_socket,
+            &mut timers,
+            &clock,
+        )
+        .await;
 
         while let Some((context, timestamp)) = pending_timestamp {
             pending_timestamp = handle_actions(
@@ -498,6 +498,7 @@ async fn port_task<A: NetworkAddress + PtpTargetAddress>(
                 &mut event_socket,
                 &mut general_socket,
                 &mut timers,
+                &clock,
             )
             .await;
         }
@@ -509,7 +510,10 @@ async fn port_task<A: NetworkAddress + PtpTargetAddress>(
             let mut actions = tokio::select! {
                 result = event_socket.recv(&mut event_buffer) => match result {
                     Ok(packet) => {
-                        if let Some(timestamp) = packet.timestamp {
+                        if let Some(mut timestamp) = packet.timestamp {
+                            // get_tai gives zero if this is a hardware clock, and the needed
+                            // correction when this port uses software timestamping
+                            timestamp.seconds += clock.get_tai_offset().expect("Unable to get tai offset") as libc::time_t;
                             log::trace!("Recv timestamp: {:?}", packet.timestamp);
                             port.handle_event_receive(&event_buffer[..packet.bytes_read], timestamp_to_time(timestamp))
                         } else {
@@ -545,9 +549,14 @@ async fn port_task<A: NetworkAddress + PtpTargetAddress>(
             };
 
             loop {
-                let pending_timestamp =
-                    handle_actions(actions, &mut event_socket, &mut general_socket, &mut timers)
-                        .await;
+                let pending_timestamp = handle_actions(
+                    actions,
+                    &mut event_socket,
+                    &mut general_socket,
+                    &mut timers,
+                    &clock,
+                )
+                .await;
 
                 // there might be more actions to handle based on the current action
                 actions = match pending_timestamp {
@@ -574,6 +583,7 @@ async fn ethernet_port_task(
     interface: libc::c_int,
     mut socket: Socket<EthernetAddress, Open>,
     mut bmca_notify: tokio::sync::watch::Receiver<bool>,
+    clock: LinuxClock,
 ) {
     let mut timers = Timers {
         port_sync_timer: pin!(Timer::new()),
@@ -590,7 +600,7 @@ async fn ethernet_port_task(
         let (mut port, actions) = port_in_bmca.end_bmca();
 
         let mut pending_timestamp =
-            handle_actions_ethernet(actions, interface, &mut socket, &mut timers).await;
+            handle_actions_ethernet(actions, interface, &mut socket, &mut timers, &clock).await;
 
         while let Some((context, timestamp)) = pending_timestamp {
             pending_timestamp = handle_actions_ethernet(
@@ -598,6 +608,7 @@ async fn ethernet_port_task(
                 interface,
                 &mut socket,
                 &mut timers,
+                &clock,
             )
             .await;
         }
@@ -608,7 +619,10 @@ async fn ethernet_port_task(
             let mut actions = tokio::select! {
                 result = socket.recv(&mut event_buffer) => match result {
                     Ok(packet) => {
-                        if let Some(timestamp) = packet.timestamp {
+                        if let Some(mut timestamp) = packet.timestamp {
+                            // get_tai gives zero if this is a hardware clock, and the needed
+                            // correction when this port uses software timestamping
+                            timestamp.seconds += clock.get_tai_offset().expect("Unable to get tai offset") as libc::time_t;
                             log::trace!("Recv timestamp: {:?}", packet.timestamp);
                             port.handle_event_receive(&event_buffer[..packet.bytes_read], timestamp_to_time(timestamp))
                         } else {
@@ -640,7 +654,8 @@ async fn ethernet_port_task(
 
             loop {
                 let pending_timestamp =
-                    handle_actions_ethernet(actions, interface, &mut socket, &mut timers).await;
+                    handle_actions_ethernet(actions, interface, &mut socket, &mut timers, &clock)
+                        .await;
 
                 // there might be more actions to handle based on the current action
                 actions = match pending_timestamp {
@@ -668,6 +683,7 @@ async fn handle_actions<A: NetworkAddress + PtpTargetAddress>(
     event_socket: &mut Socket<A, Open>,
     general_socket: &mut Socket<A, Open>,
     timers: &mut Timers<'_>,
+    clock: &LinuxClock,
 ) -> Option<(TimestampContext, Time)> {
     let mut pending_timestamp = None;
 
@@ -681,7 +697,11 @@ async fn handle_actions<A: NetworkAddress + PtpTargetAddress>(
                     .expect("Failed to send event message");
 
                 // anything we send later will have a later pending (send) timestamp
-                if let Some(time) = time {
+                if let Some(mut time) = time {
+                    // get_tai gives zero if this is a hardware clock, and the needed
+                    // correction when this port uses software timestamping
+                    time.seconds +=
+                        clock.get_tai_offset().expect("Unable to get tai offset") as libc::time_t;
                     log::trace!("Send timestamp {:?}", time);
                     pending_timestamp = Some((context, timestamp_to_time(time)));
                 } else {
@@ -720,6 +740,7 @@ async fn handle_actions_ethernet(
     interface: libc::c_int,
     socket: &mut Socket<EthernetAddress, Open>,
     timers: &mut Timers<'_>,
+    clock: &LinuxClock,
 ) -> Option<(TimestampContext, Time)> {
     let mut pending_timestamp = None;
 
@@ -740,7 +761,11 @@ async fn handle_actions_ethernet(
                     .expect("Failed to send event message");
 
                 // anything we send later will have a later pending (send) timestamp
-                if let Some(time) = time {
+                if let Some(mut time) = time {
+                    // get_tai gives zero if this is a hardware clock, and the needed
+                    // correction when this port uses software timestamping
+                    time.seconds +=
+                        clock.get_tai_offset().expect("Unable to get tai offset") as libc::time_t;
                     log::trace!("Send timestamp {:?}", time);
                     pending_timestamp = Some((context, timestamp_to_time(time)));
                 } else {
