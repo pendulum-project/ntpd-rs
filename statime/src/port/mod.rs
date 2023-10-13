@@ -309,11 +309,16 @@ impl<'a, A: AcceptableMasterList, C: Clock, F: Filter, R: Rng> Port<Running<'a>,
     fn handle_general_internal(&mut self, message: Message<'_>) -> PortActionIterator<'_> {
         match message.body {
             MessageBody::Announce(announce) => {
-                self.bmca
-                    .register_announce_message(&message.header, &announce);
-                actions![PortAction::ResetAnnounceReceiptTimer {
-                    duration: self.config.announce_duration(&mut self.rng),
-                }]
+                if self
+                    .bmca
+                    .register_announce_message(&message.header, &announce)
+                {
+                    actions![PortAction::ResetAnnounceReceiptTimer {
+                        duration: self.config.announce_duration(&mut self.rng),
+                    }]
+                } else {
+                    actions![]
+                }
             }
             _ => {
                 self.port_state
@@ -384,15 +389,24 @@ impl<'a, A, C: Clock, F: Filter, R: Rng> Port<InBmca<'a>, A, R, C, F> {
         self.bmca.step_age(step);
     }
 
-    pub(crate) fn best_local_announce_message(&self) -> Option<BestAnnounceMessage> {
+    pub(crate) fn best_local_announce_message_for_bmca(&self) -> Option<BestAnnounceMessage> {
         // Announce messages received on a masterOnly PTP Port shall not be considered
-        // in the operation of the best master clock algorithm or in the update
-        // of data sets.
+        // in the global operation of the best master clock algorithm or in the update
+        // of data sets. We still need them during the calculation of the recommended
+        // port state though to avoid getting multiple masters in the segment.
         if self.config.master_only {
             None
         } else {
             self.lifecycle.local_best
         }
+    }
+
+    pub(crate) fn best_local_announce_message_for_state(&self) -> Option<BestAnnounceMessage> {
+        // Announce messages received on a masterOnly PTP Port shall not be considered
+        // in the global operation of the best master clock algorithm or in the update
+        // of data sets. We still need them during the calculation of the recommended
+        // port state though to avoid getting multiple masters in the segment.
+        self.lifecycle.local_best
     }
 
     pub(crate) fn set_recommended_state(
@@ -724,7 +738,7 @@ mod tests {
 
         let mut port = port.start_bmca();
         port.calculate_best_local_announce_message();
-        assert!(port.best_local_announce_message().is_some());
+        assert!(port.best_local_announce_message_for_bmca().is_some());
     }
 
     #[test]
@@ -802,6 +816,6 @@ mod tests {
 
         let mut port = port.start_bmca();
         port.calculate_best_local_announce_message();
-        assert!(port.best_local_announce_message().is_some());
+        assert!(port.best_local_announce_message_for_bmca().is_some());
     }
 }

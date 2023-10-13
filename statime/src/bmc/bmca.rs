@@ -193,7 +193,7 @@ impl<A: AcceptableMasterList> Bmca<A> {
         &mut self,
         header: &Header,
         announce_message: &AnnounceMessage,
-    ) {
+    ) -> bool {
         // Ignore messages comming from the same port
         if announce_message.header.source_port_identity != self.own_port_identity
             && self
@@ -205,6 +205,9 @@ impl<A: AcceptableMasterList> Bmca<A> {
                 announce_message,
                 Duration::ZERO,
             );
+            true
+        } else {
+            false
         }
     }
 

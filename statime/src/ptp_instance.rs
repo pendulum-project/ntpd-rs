@@ -91,14 +91,14 @@ impl PtpInstanceState {
         let ebest = Bmca::<()>::find_best_announce_message(
             ports
                 .iter()
-                .filter_map(|port| port.best_local_announce_message()),
+                .filter_map(|port| port.best_local_announce_message_for_bmca()),
         );
 
         for port in ports.iter_mut() {
             let recommended_state = Bmca::<()>::calculate_recommended_state(
                 &self.default_ds,
                 ebest,
-                port.best_local_announce_message(), // erbest
+                port.best_local_announce_message_for_state(), // erbest
                 port.state(),
             );
 
