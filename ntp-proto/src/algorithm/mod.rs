@@ -45,7 +45,7 @@ impl<PeerID: Eq + Copy + Debug> Default for StateUpdate<PeerID> {
     }
 }
 
-pub trait TimeSyncController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> {
+pub trait TimeSyncController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug>: Sized {
     type AlgorithmConfig: Debug + Copy + DeserializeOwned;
 
     /// Create a new clock controller controling the given clock
@@ -54,7 +54,7 @@ pub trait TimeSyncController<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> {
         synchronization_config: SynchronizationConfig,
         peer_defaults_config: SourceDefaultsConfig,
         algorithm_config: Self::AlgorithmConfig,
-    ) -> Self;
+    ) -> Result<Self, C::Error>;
     /// Update used system config
     fn update_config(
         &mut self,

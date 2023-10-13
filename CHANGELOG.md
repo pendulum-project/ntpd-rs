@@ -2,6 +2,10 @@
 
 ## [unreleased]
 
+### Added
+- Server can now be run without permission to change the system clock so long
+  as no time sources are configured.
+
 ### Changed
 - The sources section can be left out of the configuration now.
 - When no sources are configured, the daemon will merely state it won't change 
