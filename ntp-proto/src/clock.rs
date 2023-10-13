@@ -7,7 +7,7 @@ use crate::{
 /// This needs to be a trait as a single system can have multiple clocks
 /// which need different implementation for steering and/or now.
 pub trait NtpClock: Clone + Send + 'static {
-    type Error: std::error::Error;
+    type Error: std::error::Error + Send + Sync;
 
     // Get current time
     fn now(&self) -> Result<NtpTimestamp, Self::Error>;

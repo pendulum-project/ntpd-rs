@@ -311,19 +311,13 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
         synchronization_config: SynchronizationConfig,
         peer_defaults_config: SourceDefaultsConfig,
         algo_config: Self::AlgorithmConfig,
-    ) -> Self {
+    ) -> Result<Self, C::Error> {
         // Setup clock
-        clock
-            .disable_ntp_algorithm()
-            .expect("Unable to change system time");
-        clock
-            .status_update(NtpLeapIndicator::Unknown)
-            .expect("Unable to update clock");
-        clock
-            .set_frequency(0.0)
-            .expect("Unable to set system clock frequency");
+        clock.disable_ntp_algorithm()?;
+        clock.status_update(NtpLeapIndicator::Unknown)?;
+        clock.set_frequency(0.0)?;
 
-        KalmanClockController {
+        Ok(KalmanClockController {
             peers: HashMap::new(),
             clock,
             synchronization_config,
@@ -333,7 +327,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> TimeSyncController<C, PeerID
             desired_freq: 0.0,
             timedata: TimeSnapshot::default(),
             in_startup: true,
-        }
+        })
     }
 
     fn update_config(
@@ -466,7 +460,8 @@ mod tests {
             synchronization_config,
             peer_defaults_config,
             algo_config,
-        );
+        )
+        .unwrap();
         let mut cur_instant = NtpInstant::now();
 
         // ignore startup steer of frequency.
@@ -531,7 +526,8 @@ mod tests {
             synchronization_config,
             peer_defaults_config,
             algo_config,
-        );
+        )
+        .unwrap();
 
         algo.in_startup = false;
         algo.steer_offset(1000.0, 0.0);
@@ -560,7 +556,8 @@ mod tests {
             synchronization_config,
             peer_defaults_config,
             algo_config,
-        );
+        )
+        .unwrap();
 
         algo.in_startup = false;
         algo.steer_offset(1000.0, 0.0);
@@ -584,7 +581,8 @@ mod tests {
             synchronization_config,
             peer_defaults_config,
             algo_config,
-        );
+        )
+        .unwrap();
         let mut cur_instant = NtpInstant::now();
 
         // ignore startup steer of frequency.
@@ -640,7 +638,8 @@ mod tests {
             synchronization_config,
             peer_defaults_config,
             algo_config,
-        );
+        )
+        .unwrap();
         let mut cur_instant = NtpInstant::now();
 
         // ignore startup steer of frequency.

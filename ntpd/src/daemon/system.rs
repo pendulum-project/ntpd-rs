@@ -97,15 +97,35 @@ pub async fn spawn(
     );
 
     for peer_config in peer_configs {
+        // Force early clock controller initialization when peers are configured
+        system.clock_controller().map_err(|e| {
+            tracing::error!("Could not start clock controller: {}", e);
+            std::io::Error::new(std::io::ErrorKind::Other, e)
+        })?;
         match peer_config {
             PeerConfig::Standard(cfg) => {
-                system.add_spawner(StandardSpawner::new(cfg.clone(), NETWORK_WAIT_PERIOD));
+                system
+                    .add_spawner(StandardSpawner::new(cfg.clone(), NETWORK_WAIT_PERIOD))
+                    .map_err(|e| {
+                        tracing::error!("Could not spawn peer: {}", e);
+                        std::io::Error::new(std::io::ErrorKind::Other, e)
+                    })?;
             }
             PeerConfig::Nts(cfg) => {
-                system.add_spawner(NtsSpawner::new(cfg.clone(), NETWORK_WAIT_PERIOD));
+                system
+                    .add_spawner(NtsSpawner::new(cfg.clone(), NETWORK_WAIT_PERIOD))
+                    .map_err(|e| {
+                        tracing::error!("Could not spawn peer: {}", e);
+                        std::io::Error::new(std::io::ErrorKind::Other, e)
+                    })?;
             }
             PeerConfig::Pool(cfg) => {
-                system.add_spawner(PoolSpawner::new(cfg.clone(), NETWORK_WAIT_PERIOD));
+                system
+                    .add_spawner(PoolSpawner::new(cfg.clone(), NETWORK_WAIT_PERIOD))
+                    .map_err(|e| {
+                        tracing::error!("Could not spawn peer: {}", e);
+                        std::io::Error::new(std::io::ErrorKind::Other, e)
+                    })?;
             }
         }
     }
@@ -153,7 +173,7 @@ struct System<C: NtpClock, T: Wait> {
     peer_channels: PeerChannels,
 
     clock: C,
-    controller: KalmanClockController<C, PeerId>,
+    controller: Option<KalmanClockController<C, PeerId>>,
 
     // which timestamps to use (this is a hint, OS or hardware may ignore)
     enable_timestamps: EnableTimestamps,
@@ -219,13 +239,8 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                     synchronization_config_receiver: synchronization_config_receiver.clone(),
                     source_defaults_config_receiver: peer_defaults_config_receiver.clone(),
                 },
-                clock: clock.clone(),
-                controller: KalmanClockController::new(
-                    clock,
-                    synchronization_config,
-                    peer_defaults_config,
-                    synchronization_config.algorithm,
-                ),
+                clock,
+                controller: None,
                 enable_timestamps,
                 interface,
             },
@@ -242,7 +257,23 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         )
     }
 
-    fn add_spawner(&mut self, spawner: impl Spawner + Send + Sync + 'static) -> SpawnerId {
+    fn clock_controller(&mut self) -> Result<&mut KalmanClockController<C, PeerId>, C::Error> {
+        if self.controller.is_none() {
+            self.controller = Some(KalmanClockController::new(
+                self.clock.clone(),
+                self.synchronization_config,
+                self.peer_defaults_config,
+                self.synchronization_config.algorithm,
+            )?);
+        }
+        // Won't panic as the above if ensures controller contains something
+        Ok(self.controller.as_mut().unwrap())
+    }
+
+    fn add_spawner(
+        &mut self,
+        spawner: impl Spawner + Send + Sync + 'static,
+    ) -> Result<SpawnerId, C::Error> {
         let (notify_tx, notify_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
         let id = spawner.get_id();
         let spawner_data = SystemSpawnerData { id, notify_tx };
@@ -250,7 +281,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         self.spawners.push(spawner_data);
         let spawn_tx = self.spawn_tx.clone();
         tokio::spawn(async move { spawner.run(spawn_tx, notify_rx).await });
-        id
+        Ok(id)
     }
 
     async fn run(&mut self, mut wait: Pin<&mut SingleshotSleep<T>>) -> std::io::Result<()> {
@@ -275,7 +306,9 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                             tracing::warn!(msg);
                         }
                         Some(spawn_event) => {
-                            self.handle_spawn_event(spawn_event).await;
+                            if let Err(e) = self.handle_spawn_event(spawn_event).await {
+                                tracing::error!("Could not spawn peer: {}", e);
+                            }
                         }
                     }
                 }
@@ -295,11 +328,13 @@ impl<C: NtpClock, T: Wait> System<C, T> {
     fn handle_config_update(&mut self) {
         let synchronization_config = *self.synchronization_config_receiver.borrow_and_update();
         let peer_defaults_config = *self.peer_defaults_config_receiver.borrow_and_update();
-        self.controller.update_config(
-            synchronization_config,
-            peer_defaults_config,
-            synchronization_config.algorithm,
-        );
+        if let Some(controller) = self.controller.as_mut() {
+            controller.update_config(
+                synchronization_config,
+                peer_defaults_config,
+                synchronization_config.algorithm,
+            );
+        }
         self.synchronization_config = synchronization_config;
         self.peer_defaults_config = peer_defaults_config;
     }
@@ -307,8 +342,10 @@ impl<C: NtpClock, T: Wait> System<C, T> {
     fn handle_timer(&mut self, wait: &mut Pin<&mut SingleshotSleep<T>>) {
         tracing::debug!("Timer expired");
         // note: local needed for borrow checker
-        let update = self.controller.time_update();
-        self.handle_algorithm_state_update(update, wait);
+        if let Some(controller) = self.controller.as_mut() {
+            let update = controller.time_update();
+            self.handle_algorithm_state_update(update, wait);
+        }
     }
 
     async fn handle_peer_update(
@@ -320,13 +357,19 @@ impl<C: NtpClock, T: Wait> System<C, T> {
 
         match msg {
             MsgForSystem::MustDemobilize(index) => {
-                self.handle_peer_demobilize(index).await;
+                if let Err(e) = self.handle_peer_demobilize(index).await {
+                    unreachable!("Could not demobilize peer: {}", e);
+                };
             }
             MsgForSystem::NewMeasurement(index, snapshot, measurement) => {
-                self.handle_peer_measurement(index, snapshot, measurement, wait);
+                if let Err(e) = self.handle_peer_measurement(index, snapshot, measurement, wait) {
+                    unreachable!("Could not process peer measurement: {}", e);
+                }
             }
             MsgForSystem::UpdatedSnapshot(index, snapshot) => {
-                self.handle_peer_snapshot(index, snapshot);
+                if let Err(e) = self.handle_peer_snapshot(index, snapshot) {
+                    unreachable!("Could not update peer snapshot: {}", e);
+                }
             }
             MsgForSystem::NetworkIssue(index) => {
                 self.handle_peer_network_issue(index).await?;
@@ -346,7 +389,9 @@ impl<C: NtpClock, T: Wait> System<C, T> {
     }
 
     async fn handle_peer_network_issue(&mut self, index: PeerId) -> std::io::Result<()> {
-        self.controller.peer_remove(index);
+        self.clock_controller()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
+            .peer_remove(index);
 
         // Restart the peer reusing its configuration.
         let state = self.peers.remove(&index).unwrap();
@@ -368,7 +413,9 @@ impl<C: NtpClock, T: Wait> System<C, T> {
     }
 
     async fn handle_peer_unreachable(&mut self, index: PeerId) -> std::io::Result<()> {
-        self.controller.peer_remove(index);
+        self.clock_controller()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
+            .peer_remove(index);
 
         // Restart the peer reusing its configuration.
         let state = self.peers.remove(&index).unwrap();
@@ -389,14 +436,17 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         Ok(())
     }
 
-    fn handle_peer_snapshot(&mut self, index: PeerId, snapshot: PeerSnapshot) {
-        self.controller.peer_update(
-            index,
-            snapshot
-                .accept_synchronization(self.synchronization_config.local_stratum)
-                .is_ok(),
-        );
+    fn handle_peer_snapshot(
+        &mut self,
+        index: PeerId,
+        snapshot: PeerSnapshot,
+    ) -> Result<(), C::Error> {
+        let usable = snapshot
+            .accept_synchronization(self.synchronization_config.local_stratum)
+            .is_ok();
+        self.clock_controller()?.peer_update(index, usable);
         self.peers.get_mut(&index).unwrap().snapshot = Some(snapshot);
+        Ok(())
     }
 
     fn handle_peer_measurement(
@@ -405,11 +455,16 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         snapshot: PeerSnapshot,
         measurement: ntp_proto::Measurement,
         wait: &mut Pin<&mut SingleshotSleep<T>>,
-    ) {
-        self.handle_peer_snapshot(index, snapshot);
+    ) -> Result<(), C::Error> {
+        if let Err(e) = self.handle_peer_snapshot(index, snapshot) {
+            panic!("Could not handle peer snapshot: {}", e);
+        }
         // note: local needed for borrow checker
-        let update = self.controller.peer_measurement(index, measurement);
+        let update = self
+            .clock_controller()?
+            .peer_measurement(index, measurement);
         self.handle_algorithm_state_update(update, wait);
+        Ok(())
     }
 
     fn handle_algorithm_state_update(
@@ -440,8 +495,8 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         }
     }
 
-    async fn handle_peer_demobilize(&mut self, index: PeerId) {
-        self.controller.peer_remove(index);
+    async fn handle_peer_demobilize(&mut self, index: PeerId) -> Result<(), C::Error> {
+        self.clock_controller()?.peer_remove(index);
         let state = self.peers.remove(&index).unwrap();
 
         // Restart the peer reusing its configuration.
@@ -458,13 +513,14 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                 .await
                 .expect("Could not notify spawner");
         }
+        Ok(())
     }
 
     async fn create_peer(
         &mut self,
         spawner_id: SpawnerId,
         mut params: PeerCreateParameters,
-    ) -> PeerId {
+    ) -> Result<PeerId, C::Error> {
         let source_id = params.id;
         info!(source_id=?source_id, addr=?params.addr, spawner=?spawner_id, "new peer");
         self.peers.insert(
@@ -476,7 +532,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                 spawner_id,
             },
         );
-        self.controller.peer_add(source_id);
+        self.clock_controller()?.peer_add(source_id);
 
         PeerTask::spawn(
             source_id,
@@ -501,15 +557,16 @@ impl<C: NtpClock, T: Wait> System<C, T> {
             let _ = s.notify_tx.send(SystemEvent::PeerRegistered(params)).await;
         }
 
-        source_id
+        Ok(source_id)
     }
 
-    async fn handle_spawn_event(&mut self, event: SpawnEvent) {
+    async fn handle_spawn_event(&mut self, event: SpawnEvent) -> Result<(), C::Error> {
         match event.action {
             SpawnAction::Create(params) => {
-                self.create_peer(event.id, params).await;
+                self.create_peer(event.id, params).await?;
             }
         }
+        Ok(())
     }
 
     async fn add_server(&mut self, config: ServerConfig) {
@@ -534,7 +591,11 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         self.peers.iter().map(|(index, data)| {
             data.snapshot
                 .map(|snapshot| {
-                    if let Some(timedata) = self.controller.peer_snapshot(*index) {
+                    if let Some(timedata) = self
+                        .controller
+                        .as_ref()
+                        .and_then(|c| c.peer_snapshot(*index))
+                    {
                         ObservablePeerState::Observable(ObservedPeerState {
                             timedata,
                             unanswered_polls: snapshot.reach.unanswered_polls(),
@@ -642,7 +703,7 @@ mod tests {
             SingleshotSleep::new_disabled(tokio::time::sleep(std::time::Duration::from_secs(0)));
         tokio::pin!(wait);
 
-        let id = system.add_spawner(DummySpawner::empty());
+        let id = system.add_spawner(DummySpawner::empty()).unwrap();
 
         let mut indices = vec![];
 
@@ -653,7 +714,8 @@ mod tests {
                         id,
                         PeerCreateParameters::from_new_ip_and_port(format!("127.0.0.{i}"), 123),
                     )
-                    .await,
+                    .await
+                    .unwrap(),
             );
         }
 
