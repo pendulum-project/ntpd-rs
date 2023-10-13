@@ -46,7 +46,7 @@ where
     use hex::FromHex;
     use serde::de::Error;
 
-    let raw: Vec<&str> = Deserialize::deserialize(deserializer)?;
+    let raw: Vec<String> = Deserialize::deserialize(deserializer)?;
     let mut result = Vec::with_capacity(raw.len());
 
     for identity in raw {
@@ -64,7 +64,7 @@ where
 {
     use hex::FromHex;
     use serde::de::Error;
-    let raw: &str = Deserialize::deserialize(deserializer)?;
+    let raw: String = Deserialize::deserialize(deserializer)?;
     Ok(Some(ClockIdentity(<[u8; 8]>::from_hex(raw).map_err(
         |e| D::Error::custom(format!("Invalid clock identifier: {}", e)),
     )?)))
