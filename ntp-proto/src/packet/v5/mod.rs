@@ -1,8 +1,11 @@
-use crate::packet::error::ParsingError;
 use crate::{NtpDuration, NtpLeapIndicator, NtpTimestamp};
 
+mod error;
 #[allow(dead_code)]
 pub mod extension_fields;
+
+use crate::packet::error::ParsingError;
+pub use error::V5Error;
 
 #[repr(u8)]
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -16,7 +19,7 @@ impl NtpMode {
         Ok(match bits {
             3 => Self::Request,
             4 => Self::Response,
-            _ => return Err(ParsingError::MalformedMode),
+            _ => return Err(V5Error::MalformedMode.into()),
         })
     }
 
@@ -54,7 +57,7 @@ impl NtpTimescale {
             1 => Self::Tai,
             2 => Self::Ut1,
             3 => Self::LeadSmearedUtc,
-            _ => return Err(ParsingError::MalformedTimescale),
+            _ => return Err(V5Error::MalformedTimescale.into()),
         })
     }
 
@@ -80,7 +83,7 @@ pub struct NtpFlags {
 impl NtpFlags {
     fn from_bits(bits: [u8; 2]) -> Result<Self, ParsingError<std::convert::Infallible>> {
         if bits[0] != 0x00 || bits[1] & 0xFC != 0 {
-            return Err(ParsingError::InvalidFlags);
+            return Err(V5Error::InvalidFlags.into());
         }
 
         Ok(Self {
@@ -216,7 +219,10 @@ mod tests {
         assert!(flags.interleaved_mode);
 
         let result = NtpFlags::from_bits([0xFF, 0xFF]);
-        assert!(matches!(result, Err(ParsingError::InvalidFlags)));
+        assert!(matches!(
+            result,
+            Err(ParsingError::V5(V5Error::InvalidFlags))
+        ));
     }
 
     #[test]
