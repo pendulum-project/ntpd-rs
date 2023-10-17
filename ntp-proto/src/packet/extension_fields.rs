@@ -705,7 +705,7 @@ impl<'a> RawExtensionField<'a> {
             debug_assert_eq!(length % 4, 0);
         }
 
-        length.next_multiple_of(4)
+        next_multiple_of_usize(length, 4)
     }
 
     fn deserialize(
