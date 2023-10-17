@@ -87,8 +87,8 @@ impl NtpFlags {
         }
 
         Ok(Self {
-            unknown_leap: bits[1] & 0x01 != 0,
-            interleaved_mode: bits[1] & 0x02 != 0,
+            unknown_leap: bits[1] & 0b01 != 0,
+            interleaved_mode: bits[1] & 0b10 != 0,
         })
     }
 
@@ -96,11 +96,11 @@ impl NtpFlags {
         let mut flags: u8 = 0;
 
         if self.unknown_leap {
-            flags |= 0x01;
+            flags |= 0b01;
         }
 
         if self.interleaved_mode {
-            flags |= 0x02;
+            flags |= 0b10;
         }
 
         [0x00, flags]
