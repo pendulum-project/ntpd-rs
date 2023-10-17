@@ -363,6 +363,11 @@ jobs:
   fuzz:
     name: Smoke-test fuzzing targets
     runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        features:
+          - ""
+          - "--features ntpv5"
     steps:
       - name: Checkout sources
         uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
@@ -380,9 +385,9 @@ jobs:
           tool: cargo-fuzz
       - name: Smoke-test fuzz targets
         run: |
-          cargo fuzz build
-          for target in $(cargo fuzz list) ; do
-            cargo fuzz run $target -- -max_total_time=10
+          cargo fuzz build ${{ matrix.features }}
+          for target in $(cargo fuzz list ${{ matrix.features }}) ; do
+            cargo fuzz run ${{ matrix.features }} $target -- -max_total_time=10
           done
 
   audit-dependencies:
