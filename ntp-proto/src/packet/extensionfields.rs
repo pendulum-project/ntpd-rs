@@ -870,9 +870,9 @@ mod tests {
         let test_id = "draft-ietf-ntp-ntpv5-00\0";
         let len = u16::try_from(4 + test_id.len()).unwrap();
         let mut data = vec![];
-        data.extend_from_slice(&[0xF5, 0xFF]);
-        data.extend_from_slice(&len.to_be_bytes());
-        data.extend_from_slice(test_id.as_bytes());
+        data.extend(&[0xF5, 0xFF]);
+        data.extend(&len.to_be_bytes());
+        data.extend(test_id.as_bytes());
 
         let raw = RawExtensionField::deserialize(&data, 0).unwrap();
         let ef = ExtensionField::decode(raw).unwrap();
