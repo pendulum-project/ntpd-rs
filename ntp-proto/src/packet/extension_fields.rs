@@ -116,21 +116,30 @@ impl<'a> ExtensionField<'a> {
         }
     }
 
-    fn serialize<W: std::io::Write>(&self, w: &mut W, minimum_size: u16) -> std::io::Result<()> {
+    fn serialize<W: std::io::Write>(
+        &self,
+        w: &mut W,
+        minimum_size: u16,
+        version: ExtensionHeaderVersion,
+    ) -> std::io::Result<()> {
         use ExtensionField::*;
 
         match self {
-            Unknown { type_id, data } => Self::encode_unknown(w, *type_id, data, minimum_size),
-            UniqueIdentifier(identifier) => {
-                Self::encode_unique_identifier(w, identifier, minimum_size)
+            Unknown { type_id, data } => {
+                Self::encode_unknown(w, *type_id, data, minimum_size, version)
             }
-            NtsCookie(cookie) => Self::encode_nts_cookie(w, cookie, minimum_size),
+            UniqueIdentifier(identifier) => {
+                Self::encode_unique_identifier(w, identifier, minimum_size, version)
+            }
+            NtsCookie(cookie) => Self::encode_nts_cookie(w, cookie, minimum_size, version),
             NtsCookiePlaceholder {
                 cookie_length: body_length,
-            } => Self::encode_nts_cookie_placeholder(w, *body_length, minimum_size),
+            } => Self::encode_nts_cookie_placeholder(w, *body_length, minimum_size, version),
             InvalidNtsEncryptedField => Err(std::io::ErrorKind::Other.into()),
             #[cfg(feature = "ntpv5")]
-            DraftIdentification(data) => Self::encode_draft_identification(w, data, minimum_size),
+            DraftIdentification(data) => {
+                Self::encode_draft_identification(w, data, minimum_size, version)
+            }
         }
     }
 
@@ -148,6 +157,7 @@ impl<'a> ExtensionField<'a> {
         ef_id: ExtensionFieldTypeId,
         data_length: usize,
         minimum_size: u16,
+        version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
         if data_length > u16::MAX as usize - 4 {
             return Err(std::io::Error::new(
@@ -158,9 +168,12 @@ impl<'a> ExtensionField<'a> {
 
         // u16 for the type_id, u16 for the length
         let header_width = 4;
+        let mut actual_length = (data_length as u16 + header_width).max(minimum_size);
 
-        let actual_length =
-            next_multiple_of_u16((data_length as u16 + header_width).max(minimum_size), 4);
+        if version == ExtensionHeaderVersion::V4 {
+            actual_length = next_multiple_of_u16(actual_length, 4)
+        }
+
         w.write_all(&ef_id.to_type_id().to_be_bytes())?;
         w.write_all(&actual_length.to_be_bytes())
     }
@@ -203,12 +216,14 @@ impl<'a> ExtensionField<'a> {
         w: &mut W,
         identifier: &[u8],
         minimum_size: u16,
+        version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
         Self::encode_framing(
             w,
             ExtensionFieldTypeId::UniqueIdentifier,
             identifier.len(),
             minimum_size,
+            version,
         )?;
         w.write_all(identifier)?;
         Self::encode_padding(w, identifier.len(), minimum_size)
@@ -218,12 +233,14 @@ impl<'a> ExtensionField<'a> {
         w: &mut W,
         cookie: &[u8],
         minimum_size: u16,
+        version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
         Self::encode_framing(
             w,
             ExtensionFieldTypeId::NtsCookie,
             cookie.len(),
             minimum_size,
+            version,
         )?;
 
         w.write_all(cookie)?;
@@ -237,12 +254,14 @@ impl<'a> ExtensionField<'a> {
         w: &mut W,
         cookie_length: u16,
         minimum_size: u16,
+        version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
         Self::encode_framing(
             w,
             ExtensionFieldTypeId::NtsCookiePlaceholder,
             cookie_length as usize,
             minimum_size,
+            version,
         )?;
 
         Self::write_zeros(w, cookie_length)?;
@@ -257,12 +276,14 @@ impl<'a> ExtensionField<'a> {
         type_id: u16,
         data: &[u8],
         minimum_size: u16,
+        version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
         Self::encode_framing(
             w,
             ExtensionFieldTypeId::Unknown { type_id },
             data.len(),
             minimum_size,
+            version,
         )?;
 
         w.write_all(data)?;
@@ -276,6 +297,7 @@ impl<'a> ExtensionField<'a> {
         w: &mut Cursor<&mut [u8]>,
         fields_to_encrypt: &[ExtensionField],
         cipher: &dyn Cipher,
+        version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
         let padding = [0; 4];
 
@@ -294,7 +316,7 @@ impl<'a> ExtensionField<'a> {
             // RFC 8915, section 5.5: contrary to the RFC 7822 requirement that fields have a minimum length of 16 or 28 octets,
             // encrypted extension fields MAY be arbitrarily short (but still MUST be a multiple of 4 octets in length)
             let minimum_size = 0;
-            field.serialize(w, minimum_size)?;
+            field.serialize(w, minimum_size, version)?;
         }
 
         let plaintext_length = w.position() - plaintext_start;
@@ -363,12 +385,14 @@ impl<'a> ExtensionField<'a> {
         w: &mut impl Write,
         data: &str,
         minimum_size: u16,
+        version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
         Self::encode_framing(
             w,
             ExtensionFieldTypeId::DraftIdentification,
             data.len(),
             minimum_size,
+            version,
         )?;
 
         w.write_all(data.as_bytes())?;
@@ -485,6 +509,7 @@ impl<'a> ExtensionFieldData<'a> {
         &self,
         w: &mut Cursor<&mut [u8]>,
         cipher: &(impl CipherProvider + ?Sized),
+        version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
         if !self.authenticated.is_empty() || !self.encrypted.is_empty() {
             let cipher = match cipher.get(&self.authenticated) {
@@ -497,13 +522,13 @@ impl<'a> ExtensionFieldData<'a> {
             let minimum_size = 16;
 
             for field in &self.authenticated {
-                field.serialize(w, minimum_size)?;
+                field.serialize(w, minimum_size, version)?;
             }
 
             // RFC 8915, section 5.5: contrary to the RFC 7822 requirement that fields have a minimum length of 16 or 28 octets,
             // encrypted extension fields MAY be arbitrarily short (but still MUST be a multiple of 4 octets in length)
             // hence we don't provide a minimum size here
-            ExtensionField::encode_encrypted(w, &self.encrypted, cipher.as_ref())?;
+            ExtensionField::encode_encrypted(w, &self.encrypted, cipher.as_ref(), version)?;
         }
 
         // per RFC 7822, section 7.5.1.4.
@@ -511,7 +536,7 @@ impl<'a> ExtensionFieldData<'a> {
         while let Some(field) = it.next() {
             let is_last = it.peek().is_none();
             let minimum_size = if is_last { 28 } else { 16 };
-            field.serialize(w, minimum_size)?;
+            field.serialize(w, minimum_size, version)?;
         }
 
         Ok(())
@@ -828,7 +853,13 @@ mod tests {
     fn test_unique_identifier() {
         let identifier: Vec<_> = (0..16).collect();
         let mut w = vec![];
-        ExtensionField::encode_unique_identifier(&mut w, &identifier, 0).unwrap();
+        ExtensionField::encode_unique_identifier(
+            &mut w,
+            &identifier,
+            0,
+            ExtensionHeaderVersion::V4,
+        )
+        .unwrap();
 
         assert_eq!(
             w,
@@ -840,7 +871,7 @@ mod tests {
     fn test_nts_cookie() {
         let cookie: Vec<_> = (0..16).collect();
         let mut w = vec![];
-        ExtensionField::encode_nts_cookie(&mut w, &cookie, 0).unwrap();
+        ExtensionField::encode_nts_cookie(&mut w, &cookie, 0, ExtensionHeaderVersion::V4).unwrap();
 
         assert_eq!(
             w,
@@ -853,7 +884,13 @@ mod tests {
         const COOKIE_LENGTH: usize = 16;
 
         let mut w = vec![];
-        ExtensionField::encode_nts_cookie_placeholder(&mut w, COOKIE_LENGTH as u16, 0).unwrap();
+        ExtensionField::encode_nts_cookie_placeholder(
+            &mut w,
+            COOKIE_LENGTH as u16,
+            0,
+            ExtensionHeaderVersion::V4,
+        )
+        .unwrap();
 
         assert_eq!(
             w,
@@ -885,7 +922,7 @@ mod tests {
     fn test_unknown() {
         let data: Vec<_> = (0..16).collect();
         let mut w = vec![];
-        ExtensionField::encode_unknown(&mut w, 42, &data, 0).unwrap();
+        ExtensionField::encode_unknown(&mut w, 42, &data, 0, ExtensionHeaderVersion::V4).unwrap();
 
         assert_eq!(
             w,
@@ -914,9 +951,37 @@ mod tests {
         }
 
         let mut out = vec![];
-        ef.serialize(&mut out, len).unwrap();
+        ef.serialize(&mut out, len, ExtensionHeaderVersion::V4)
+            .unwrap();
 
         assert_eq!(&out, &data);
+    }
+
+    #[cfg(feature = "ntpv5")]
+    #[test]
+    fn extension_field_length() {
+        let data: Vec<_> = (0..21).collect();
+        let mut w = vec![];
+        ExtensionField::encode_unknown(&mut w, 42, &data, 16, ExtensionHeaderVersion::V4).unwrap();
+        let raw: RawExtensionField<'_> =
+            RawExtensionField::deserialize(&w, 16, ExtensionHeaderVersion::V4).unwrap();
+
+        // v4 extension field header length includes padding bytes
+        assert_eq!(w[3], 28);
+        assert_eq!(w.len(), 28);
+        assert_eq!(raw.message_bytes.len(), 24);
+        assert_eq!(raw.wire_length(ExtensionHeaderVersion::V4), 28);
+
+        let mut w = vec![];
+        ExtensionField::encode_unknown(&mut w, 42, &data, 16, ExtensionHeaderVersion::V5).unwrap();
+        let raw: RawExtensionField<'_> =
+            RawExtensionField::deserialize(&w, 16, ExtensionHeaderVersion::V5).unwrap();
+
+        // v5 extension field header length does not include padding bytes
+        assert_eq!(w[3], 25);
+        assert_eq!(w.len(), 28);
+        assert_eq!(raw.message_bytes.len(), 21);
+        assert_eq!(raw.wire_length(ExtensionHeaderVersion::V5), 28);
     }
 
     #[test]
@@ -926,20 +991,33 @@ mod tests {
         let data: Vec<_> = (0..16).collect();
 
         let mut w = vec![];
-        ExtensionField::encode_unique_identifier(&mut w, &data, minimum_size).unwrap();
+        ExtensionField::encode_unique_identifier(
+            &mut w,
+            &data,
+            minimum_size,
+            ExtensionHeaderVersion::V4,
+        )
+        .unwrap();
         assert_eq!(w.len(), expected_size);
 
         let mut w = vec![];
-        ExtensionField::encode_nts_cookie(&mut w, &data, minimum_size).unwrap();
-        assert_eq!(w.len(), expected_size);
-
-        let mut w = vec![];
-        ExtensionField::encode_nts_cookie_placeholder(&mut w, data.len() as u16, minimum_size)
+        ExtensionField::encode_nts_cookie(&mut w, &data, minimum_size, ExtensionHeaderVersion::V4)
             .unwrap();
         assert_eq!(w.len(), expected_size);
 
         let mut w = vec![];
-        ExtensionField::encode_unknown(&mut w, 42, &data, minimum_size).unwrap();
+        ExtensionField::encode_nts_cookie_placeholder(
+            &mut w,
+            data.len() as u16,
+            minimum_size,
+            ExtensionHeaderVersion::V4,
+        )
+        .unwrap();
+        assert_eq!(w.len(), expected_size);
+
+        let mut w = vec![];
+        ExtensionField::encode_unknown(&mut w, 42, &data, minimum_size, ExtensionHeaderVersion::V4)
+            .unwrap();
         assert_eq!(w.len(), expected_size);
 
         // NOTE: encryped fields do not have a minimum_size
@@ -952,20 +1030,33 @@ mod tests {
         let data: Vec<_> = (0..15).collect(); // 15 bytes, so padding is needed
 
         let mut w = vec![];
-        ExtensionField::encode_unique_identifier(&mut w, &data, minimum_size).unwrap();
+        ExtensionField::encode_unique_identifier(
+            &mut w,
+            &data,
+            minimum_size,
+            ExtensionHeaderVersion::V4,
+        )
+        .unwrap();
         assert_eq!(w.len(), expected_size);
 
         let mut w = vec![];
-        ExtensionField::encode_nts_cookie(&mut w, &data, minimum_size).unwrap();
-        assert_eq!(w.len(), expected_size);
-
-        let mut w = vec![];
-        ExtensionField::encode_nts_cookie_placeholder(&mut w, data.len() as u16, minimum_size)
+        ExtensionField::encode_nts_cookie(&mut w, &data, minimum_size, ExtensionHeaderVersion::V4)
             .unwrap();
         assert_eq!(w.len(), expected_size);
 
         let mut w = vec![];
-        ExtensionField::encode_unknown(&mut w, 42, &data, minimum_size).unwrap();
+        ExtensionField::encode_nts_cookie_placeholder(
+            &mut w,
+            data.len() as u16,
+            minimum_size,
+            ExtensionHeaderVersion::V4,
+        )
+        .unwrap();
+        assert_eq!(w.len(), expected_size);
+
+        let mut w = vec![];
+        ExtensionField::encode_unknown(&mut w, 42, &data, minimum_size, ExtensionHeaderVersion::V4)
+            .unwrap();
         assert_eq!(w.len(), expected_size);
 
         let mut w = [0u8; 128];
@@ -975,7 +1066,13 @@ mod tests {
         let fields_to_encrypt = [ExtensionField::UniqueIdentifier(Cow::Borrowed(
             data.as_slice(),
         ))];
-        ExtensionField::encode_encrypted(&mut cursor, &fields_to_encrypt, &cipher).unwrap();
+        ExtensionField::encode_encrypted(
+            &mut cursor,
+            &fields_to_encrypt,
+            &cipher,
+            ExtensionHeaderVersion::V4,
+        )
+        .unwrap();
         assert_eq!(
             cursor.position() as usize,
             2 + 6 + c2s.len() + expected_size
@@ -998,7 +1095,13 @@ mod tests {
 
         let mut w = [0u8; 128];
         let mut cursor = Cursor::new(w.as_mut_slice());
-        ExtensionField::encode_encrypted(&mut cursor, &fields_to_encrypt, &cipher).unwrap();
+        ExtensionField::encode_encrypted(
+            &mut cursor,
+            &fields_to_encrypt,
+            &cipher,
+            ExtensionHeaderVersion::V4,
+        )
+        .unwrap();
 
         let expected_length = 2 + 6 + next_multiple_of_usize(nonce_length, 4) + plaintext_length;
         assert_eq!(cursor.position() as usize, expected_length,);
@@ -1047,7 +1150,9 @@ mod tests {
 
             let mut w = [0u8; 128];
             let mut cursor = Cursor::new(w.as_mut_slice());
-            assert!(data.serialize(&mut cursor, &cipher).is_err());
+            assert!(data
+                .serialize(&mut cursor, &cipher, ExtensionHeaderVersion::V4)
+                .is_err());
         }
 
         // but succeed when the cipher is not needed
@@ -1060,7 +1165,9 @@ mod tests {
 
             let mut w = [0u8; 128];
             let mut cursor = Cursor::new(w.as_mut_slice());
-            assert!(data.serialize(&mut cursor, &cipher).is_ok());
+            assert!(data
+                .serialize(&mut cursor, &cipher, ExtensionHeaderVersion::V4)
+                .is_ok());
         }
     }
 
@@ -1079,7 +1186,8 @@ mod tests {
 
         let mut w = [0u8; 128];
         let mut cursor = Cursor::new(w.as_mut_slice());
-        data.serialize(&mut cursor, &cipher).unwrap();
+        data.serialize(&mut cursor, &cipher, ExtensionHeaderVersion::V4)
+            .unwrap();
 
         let n = cursor.position() as usize;
         let slice = &w.as_slice()[..n];
@@ -1104,7 +1212,8 @@ mod tests {
 
         let mut w = [0u8; 128];
         let mut cursor = Cursor::new(w.as_mut_slice());
-        data.serialize(&mut cursor, &cipher).unwrap();
+        data.serialize(&mut cursor, &cipher, ExtensionHeaderVersion::V4)
+            .unwrap();
 
         let n = cursor.position() as usize;
         let slice = &w.as_slice()[..n];
@@ -1130,7 +1239,8 @@ mod tests {
 
         let mut w = [0u8; 128];
         let mut cursor = Cursor::new(w.as_mut_slice());
-        data.serialize(&mut cursor, &cipher).unwrap();
+        data.serialize(&mut cursor, &cipher, ExtensionHeaderVersion::V4)
+            .unwrap();
 
         let n = cursor.position() as usize;
         let slice = &w.as_slice()[..n];
@@ -1170,7 +1280,8 @@ mod tests {
 
         let mut w = [0u8; 128];
         let mut cursor = Cursor::new(w.as_mut_slice());
-        data.serialize(&mut cursor, &cipher).unwrap();
+        data.serialize(&mut cursor, &cipher, ExtensionHeaderVersion::V4)
+            .unwrap();
 
         let n = cursor.position() as usize;
         let slice = &w.as_slice()[..n];
@@ -1211,7 +1322,8 @@ mod tests {
 
         let mut w = [0u8; 128];
         let mut cursor = Cursor::new(w.as_mut_slice());
-        data.serialize(&mut cursor, &cipher).unwrap();
+        data.serialize(&mut cursor, &cipher, ExtensionHeaderVersion::V4)
+            .unwrap();
 
         let n = cursor.position() as usize;
         let slice = &w.as_slice()[..n];
@@ -1256,7 +1368,8 @@ mod tests {
 
         let mut w = [0u8; 256];
         let mut cursor = Cursor::new(w.as_mut_slice());
-        data.serialize(&mut cursor, &keyset).unwrap();
+        data.serialize(&mut cursor, &keyset, ExtensionHeaderVersion::V4)
+            .unwrap();
 
         let n = cursor.position() as usize;
         let slice = &w.as_slice()[..n];

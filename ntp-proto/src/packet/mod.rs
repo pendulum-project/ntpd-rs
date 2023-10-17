@@ -441,9 +441,13 @@ impl<'a> NtpPacket<'a> {
 
         match self.header {
             NtpHeader::V3(_) => { /* No extension fields in V3 */ }
-            NtpHeader::V4(_) => self.efdata.serialize(w, cipher)?,
+            NtpHeader::V4(_) => self
+                .efdata
+                .serialize(w, cipher, ExtensionHeaderVersion::V4)?,
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_) => self.efdata.serialize(w, cipher)?,
+            NtpHeader::V5(_) => self
+                .efdata
+                .serialize(w, cipher, ExtensionHeaderVersion::V5)?,
         }
 
         if let Some(ref mac) = self.mac {
