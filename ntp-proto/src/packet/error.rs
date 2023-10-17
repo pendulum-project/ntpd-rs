@@ -11,13 +11,7 @@ pub enum ParsingError<T> {
     MalformedCookiePlaceholder,
     DecryptError(T),
     #[cfg(feature = "ntpv5")]
-    InvalidDraftIdentification,
-    #[cfg(feature = "ntpv5")]
-    MalformedTimescale,
-    #[cfg(feature = "ntpv5")]
-    MalformedMode,
-    #[cfg(feature = "ntpv5")]
-    InvalidFlags,
+    V5(super::v5::V5Error),
 }
 
 impl<T> ParsingError<T> {
@@ -32,13 +26,7 @@ impl<T> ParsingError<T> {
             MalformedCookiePlaceholder => Err(MalformedCookiePlaceholder),
             DecryptError(decrypt_error) => Ok(decrypt_error),
             #[cfg(feature = "ntpv5")]
-            InvalidDraftIdentification => Err(InvalidDraftIdentification),
-            #[cfg(feature = "ntpv5")]
-            MalformedTimescale => Err(MalformedTimescale),
-            #[cfg(feature = "ntpv5")]
-            MalformedMode => Err(MalformedMode),
-            #[cfg(feature = "ntpv5")]
-            InvalidFlags => Err(InvalidFlags),
+            V5(e) => Err(V5(e)),
         }
     }
 }
@@ -55,13 +43,7 @@ impl ParsingError<std::convert::Infallible> {
             MalformedCookiePlaceholder => MalformedCookiePlaceholder,
             DecryptError(decrypt_error) => match decrypt_error {},
             #[cfg(feature = "ntpv5")]
-            InvalidDraftIdentification => InvalidDraftIdentification,
-            #[cfg(feature = "ntpv5")]
-            MalformedTimescale => MalformedTimescale,
-            #[cfg(feature = "ntpv5")]
-            MalformedMode => MalformedMode,
-            #[cfg(feature = "ntpv5")]
-            InvalidFlags => InvalidFlags,
+            V5(e) => V5(e),
         }
     }
 }
@@ -78,13 +60,7 @@ impl<T> Display for ParsingError<T> {
             Self::MalformedCookiePlaceholder => f.write_str("Malformed cookie placeholder"),
             Self::DecryptError(_) => f.write_str("Failed to decrypt NTS extension fields"),
             #[cfg(feature = "ntpv5")]
-            Self::InvalidDraftIdentification => f.write_str("Draft Identification invalid"),
-            #[cfg(feature = "ntpv5")]
-            Self::MalformedTimescale => f.write_str("Malformed timescale"),
-            #[cfg(feature = "ntpv5")]
-            Self::MalformedMode => f.write_str("Malformed mode"),
-            #[cfg(feature = "ntpv5")]
-            Self::InvalidFlags => f.write_str("Invalid flags specified"),
+            Self::V5(e) => Display::fmt(e, f),
         }
     }
 }
