@@ -90,8 +90,15 @@ impl NtpFlags {
     }
 
     fn as_bits(&self) -> [u8; 2] {
-        let mut flags = self.unknown_leap as u8;
-        flags |= 0x02 * self.interleaved_mode as u8;
+        let mut flags: u8 = 0;
+
+        if self.unknown_leap {
+            flags |= 0x01;
+        }
+
+        if self.interleaved_mode {
+            flags |= 0x02;
+        }
 
         [0x00, flags]
     }

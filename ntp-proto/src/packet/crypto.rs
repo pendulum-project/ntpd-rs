@@ -5,7 +5,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::keyset::DecodedServerCookie;
 
-use super::extensionfields::ExtensionField;
+use super::extension_fields::ExtensionField;
 
 #[derive(Debug, thiserror::Error)]
 #[error("Could not decrypt ciphertext")]
