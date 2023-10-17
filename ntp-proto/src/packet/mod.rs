@@ -325,7 +325,7 @@ impl<'a> NtpPacket<'a> {
                 let (header, header_size) =
                     NtpHeaderV3V4::deserialize(data).map_err(|e| e.generalize())?;
 
-                let contruct_packet = |remaining_bytes: &'a [u8], efdata| {
+                let construct_packet = |remaining_bytes: &'a [u8], efdata| {
                     let mac = if !remaining_bytes.is_empty() {
                         Some(Mac::deserialize(remaining_bytes)?)
                     } else {
@@ -343,7 +343,7 @@ impl<'a> NtpPacket<'a> {
 
                 match ExtensionFieldData::deserialize(data, header_size, cipher) {
                     Ok(decoded) => {
-                        let packet = contruct_packet(decoded.remaining_bytes, decoded.efdata)
+                        let packet = construct_packet(decoded.remaining_bytes, decoded.efdata)
                             .map_err(|e| e.generalize())?;
 
                         Ok((packet, decoded.cookie))
@@ -352,7 +352,7 @@ impl<'a> NtpPacket<'a> {
                         // return early if it is anything but a decrypt error
                         let invalid = e.get_decrypt_error()?;
 
-                        let packet = contruct_packet(invalid.remaining_bytes, invalid.efdata)
+                        let packet = construct_packet(invalid.remaining_bytes, invalid.efdata)
                             .map_err(|e| e.generalize())?;
 
                         Err(ParsingError::DecryptError(packet))
@@ -364,7 +364,7 @@ impl<'a> NtpPacket<'a> {
                 let (header, header_size) =
                     v5::NtpHeaderV5::deserialize(data).map_err(|e| e.generalize())?;
 
-                let contruct_packet = |remaining_bytes: &'a [u8], efdata| {
+                let construct_packet = |remaining_bytes: &'a [u8], efdata| {
                     let mac = if !remaining_bytes.is_empty() {
                         Some(Mac::deserialize(remaining_bytes)?)
                     } else {
@@ -383,7 +383,7 @@ impl<'a> NtpPacket<'a> {
                 // TODO: Check extension field handling in V5
                 match ExtensionFieldData::deserialize(data, header_size, cipher) {
                     Ok(decoded) => {
-                        let packet = contruct_packet(decoded.remaining_bytes, decoded.efdata)
+                        let packet = construct_packet(decoded.remaining_bytes, decoded.efdata)
                             .map_err(|e| e.generalize())?;
 
                         Ok((packet, decoded.cookie))
@@ -392,7 +392,7 @@ impl<'a> NtpPacket<'a> {
                         // return early if it is anything but a decrypt error
                         let invalid = e.get_decrypt_error()?;
 
-                        let packet = contruct_packet(invalid.remaining_bytes, invalid.efdata)
+                        let packet = construct_packet(invalid.remaining_bytes, invalid.efdata)
                             .map_err(|e| e.generalize())?;
 
                         Err(ParsingError::DecryptError(packet))
@@ -1187,6 +1187,7 @@ mod tests {
 
         #[cfg(not(feature = "ntpv5"))]
         {
+            // Version 5 packet should not parse without the ntpv5 feature
             let packet = b"\x2C\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
             assert!(NtpPacket::deserialize(packet, &NoCipher).is_err());
         }
