@@ -11,11 +11,11 @@ use crate::{
     time_types::{NtpDuration, NtpTimestamp, PollInterval},
 };
 
-use self::{error::ParsingError, extensionfields::ExtensionFieldData, mac::Mac};
+use self::{error::ParsingError, extension_fields::ExtensionFieldData, mac::Mac};
 
 mod crypto;
 mod error;
-mod extensionfields;
+mod extension_fields;
 mod mac;
 
 #[cfg(feature = "ntpv5")]
@@ -26,7 +26,7 @@ pub use crypto::{
     EncryptResult, NoCipher,
 };
 pub use error::PacketParsingError;
-pub use extensionfields::ExtensionField;
+pub use extension_fields::ExtensionField;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NtpLeapIndicator {
