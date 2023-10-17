@@ -148,8 +148,9 @@ impl<'a> ExtensionField<'a> {
         &self,
         w: &mut W,
         minimum_size: u16,
+        version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
-        self.serialize(w, minimum_size)
+        self.serialize(w, minimum_size, version)
     }
 
     fn encode_framing<W: std::io::Write>(
@@ -702,7 +703,7 @@ impl<'a> RawEncryptedField<'a> {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(super) enum ExtensionHeaderVersion {
+pub enum ExtensionHeaderVersion {
     V4,
     #[cfg(feature = "ntpv5")]
     V5,
