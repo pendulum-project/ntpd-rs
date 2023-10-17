@@ -1,6 +1,9 @@
 use crate::packet::error::ParsingError;
 use crate::{NtpDuration, NtpLeapIndicator, NtpTimestamp};
 
+#[allow(dead_code)]
+pub mod extension_fields;
+
 #[repr(u8)]
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum NtpMode {
