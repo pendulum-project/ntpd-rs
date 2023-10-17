@@ -6,7 +6,9 @@ use std::{
 };
 
 use libfuzzer_sys::fuzz_target;
-use ntp_proto::{test_cookie, EncryptResult, ExtensionField, ExtensionHeaderVersion, KeySetProvider, NtpPacket};
+use ntp_proto::{
+    test_cookie, EncryptResult, ExtensionField, ExtensionHeaderVersion, KeySetProvider, NtpPacket,
+};
 use rand::{rngs::StdRng, set_thread_rng, SeedableRng};
 
 const fn next_multiple_of(lhs: u16, rhs: u16) -> u16 {
@@ -16,7 +18,14 @@ const fn next_multiple_of(lhs: u16, rhs: u16) -> u16 {
     }
 }
 
-fuzz_target!(|parts: (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, u64, ExtensionHeaderVersion)| {
+fuzz_target!(|parts: (
+    Vec<u8>,
+    Vec<u8>,
+    Vec<u8>,
+    Vec<u8>,
+    u64,
+    ExtensionHeaderVersion
+)| {
     set_thread_rng(StdRng::seed_from_u64(parts.4));
 
     // Can't test reencoding because of the keyset
@@ -29,7 +38,11 @@ fuzz_target!(|parts: (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, u64, ExtensionHeaderVe
     let _ = cursor.write_all(&parts.0);
     let cookie = test_cookie();
     let enc_cookie = keyset.encode_cookie_pub(&cookie);
-    let _ = ExtensionField::NtsCookie(Cow::Borrowed(&enc_cookie)).serialize_pub(&mut cursor, 4, parts.5);
+    let _ = ExtensionField::NtsCookie(Cow::Borrowed(&enc_cookie)).serialize_pub(
+        &mut cursor,
+        4,
+        parts.5,
+    );
     let _ = cursor.write_all(&parts.1);
 
     let mut ciphertext = parts.2.clone();
