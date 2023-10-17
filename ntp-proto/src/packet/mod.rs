@@ -10,6 +10,7 @@ use crate::{
     system::SystemSnapshot,
     time_types::{NtpDuration, NtpTimestamp, PollInterval},
 };
+use extension_fields::ExtensionHeaderVersion;
 
 use self::{error::ParsingError, extension_fields::ExtensionFieldData, mac::Mac};
 
@@ -341,7 +342,12 @@ impl<'a> NtpPacket<'a> {
                     Ok::<_, ParsingError<std::convert::Infallible>>(packet)
                 };
 
-                match ExtensionFieldData::deserialize(data, header_size, cipher) {
+                match ExtensionFieldData::deserialize(
+                    data,
+                    header_size,
+                    cipher,
+                    ExtensionHeaderVersion::V4,
+                ) {
                     Ok(decoded) => {
                         let packet = construct_packet(decoded.remaining_bytes, decoded.efdata)
                             .map_err(|e| e.generalize())?;
@@ -381,7 +387,12 @@ impl<'a> NtpPacket<'a> {
                 };
 
                 // TODO: Check extension field handling in V5
-                match ExtensionFieldData::deserialize(data, header_size, cipher) {
+                match ExtensionFieldData::deserialize(
+                    data,
+                    header_size,
+                    cipher,
+                    ExtensionHeaderVersion::V5,
+                ) {
                     Ok(decoded) => {
                         let packet = construct_packet(decoded.remaining_bytes, decoded.efdata)
                             .map_err(|e| e.generalize())?;

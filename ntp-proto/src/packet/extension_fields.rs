@@ -521,6 +521,7 @@ impl<'a> ExtensionFieldData<'a> {
         data: &'a [u8],
         header_size: usize,
         cipher: &impl CipherProvider,
+        version: ExtensionHeaderVersion,
     ) -> Result<DeserializedExtensionField<'a>, ParsingError<InvalidNtsExtensionField<'a>>> {
         use ExtensionField::InvalidNtsEncryptedField;
 
@@ -533,9 +534,10 @@ impl<'a> ExtensionFieldData<'a> {
             &data[header_size..],
             Mac::MAXIMUM_SIZE,
             RawExtensionField::V4_UNENCRYPTED_MINIMUM_SIZE,
+            version,
         ) {
             let (offset, field) = field.map_err(|e| e.generalize())?;
-            size = offset + field.wire_length();
+            size = offset + field.wire_length(version);
             match field.type_id {
                 ExtensionFieldTypeId::NtsEncryptedField => {
                     let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)
@@ -550,18 +552,21 @@ impl<'a> ExtensionFieldData<'a> {
                         }
                     };
 
-                    let encrypted_fields =
-                        match encrypted.decrypt(cipher.as_ref(), &data[..header_size + offset]) {
-                            Ok(encrypted_fields) => encrypted_fields,
-                            Err(e) => {
-                                // early return if it's anything but a decrypt error
-                                e.get_decrypt_error()?;
+                    let encrypted_fields = match encrypted.decrypt(
+                        cipher.as_ref(),
+                        &data[..header_size + offset],
+                        version,
+                    ) {
+                        Ok(encrypted_fields) => encrypted_fields,
+                        Err(e) => {
+                            // early return if it's anything but a decrypt error
+                            e.get_decrypt_error()?;
 
-                                efdata.untrusted.push(InvalidNtsEncryptedField);
-                                is_valid_nts = false;
-                                continue;
-                            }
-                        };
+                            efdata.untrusted.push(InvalidNtsEncryptedField);
+                            is_valid_nts = false;
+                            continue;
+                        }
+                    };
 
                     // for the current ciphers we allow in non-test code,
                     // the nonce should always be 16 bytes
@@ -638,6 +643,7 @@ impl<'a> RawEncryptedField<'a> {
         &self,
         cipher: &dyn Cipher,
         aad: &[u8],
+        version: ExtensionHeaderVersion,
     ) -> Result<Vec<ExtensionField<'a>>, ParsingError<ExtensionField<'a>>> {
         let plaintext = match cipher.decrypt(self.nonce, self.ciphertext, aad) {
             Ok(plain) => plain,
@@ -648,20 +654,32 @@ impl<'a> RawEncryptedField<'a> {
             }
         };
 
-        RawExtensionField::deserialize_sequence(&plaintext, 0, RawExtensionField::BARE_MINIMUM_SIZE)
-            .map(|encrypted_field| {
-                let encrypted_field = encrypted_field.map_err(|e| e.generalize())?.1;
-                if encrypted_field.type_id == ExtensionFieldTypeId::NtsEncryptedField {
-                    // TODO: Discuss whether we want this check
-                    Err(ParsingError::MalformedNtsExtensionFields)
-                } else {
-                    Ok(ExtensionField::decode(encrypted_field)
-                        .map_err(|e| e.generalize())?
-                        .into_owned())
-                }
-            })
-            .collect()
+        RawExtensionField::deserialize_sequence(
+            &plaintext,
+            0,
+            RawExtensionField::BARE_MINIMUM_SIZE,
+            version,
+        )
+        .map(|encrypted_field| {
+            let encrypted_field = encrypted_field.map_err(|e| e.generalize())?.1;
+            if encrypted_field.type_id == ExtensionFieldTypeId::NtsEncryptedField {
+                // TODO: Discuss whether we want this check
+                Err(ParsingError::MalformedNtsExtensionFields)
+            } else {
+                Ok(ExtensionField::decode(encrypted_field)
+                    .map_err(|e| e.generalize())?
+                    .into_owned())
+            }
+        })
+        .collect()
     }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(super) enum ExtensionHeaderVersion {
+    V4,
+    #[cfg(feature = "ntpv5")]
+    V5,
 }
 
 #[derive(Debug)]
@@ -676,21 +694,24 @@ impl<'a> RawExtensionField<'a> {
     const BARE_MINIMUM_SIZE: usize = 4;
     const V4_UNENCRYPTED_MINIMUM_SIZE: usize = 4;
 
-    fn wire_length(&self) -> usize {
+    fn wire_length(&self, version: ExtensionHeaderVersion) -> usize {
         // field type + length + value + padding
         let length = 2 + 2 + self.message_bytes.len();
 
-        // All extension fields are zero-padded to a word (four octets) boundary.
-        //
-        // message_bytes should include this padding, so this should already be true
-        debug_assert_eq!(length % 4, 0);
+        if version == ExtensionHeaderVersion::V4 {
+            // All extension fields are zero-padded to a word (four octets) boundary.
+            //
+            // message_bytes should include this padding, so this should already be true
+            debug_assert_eq!(length % 4, 0);
+        }
 
-        next_multiple_of_usize(length, 4)
+        length.next_multiple_of(4)
     }
 
     fn deserialize(
         data: &'a [u8],
         minimum_size: usize,
+        version: ExtensionHeaderVersion,
     ) -> Result<Self, ParsingError<std::convert::Infallible>> {
         use ParsingError::IncorrectLength;
 
@@ -704,9 +725,13 @@ impl<'a> RawExtensionField<'a> {
         // the entire extension field in octets, including the Padding field.
         let field_length = u16::from_be_bytes([b2, b3]) as usize;
 
-        // padding is up to a multiple of 4 bytes, so a valid field length is divisible by 4
-        if field_length < minimum_size || field_length % 4 != 0 {
-            return Err(ParsingError::IncorrectLength);
+        if field_length < minimum_size {
+            return Err(IncorrectLength);
+        }
+
+        // In NTPv4: padding is up to a multiple of 4 bytes, so a valid field length is divisible by 4
+        if version == ExtensionHeaderVersion::V4 && field_length % 4 != 0 {
+            return Err(IncorrectLength);
         }
 
         // because the field length includes padding, the message bytes may not exactly match the input
@@ -722,6 +747,7 @@ impl<'a> RawExtensionField<'a> {
         buffer: &'a [u8],
         cutoff: usize,
         minimum_size: usize,
+        version: ExtensionHeaderVersion,
     ) -> impl Iterator<
         Item = Result<(usize, RawExtensionField<'a>), ParsingError<std::convert::Infallible>>,
     > + 'a {
@@ -730,6 +756,7 @@ impl<'a> RawExtensionField<'a> {
             cutoff,
             minimum_size,
             offset: 0,
+            version,
         }
     }
 }
@@ -738,6 +765,7 @@ struct ExtensionFieldStreamer<'a> {
     cutoff: usize,
     minimum_size: usize,
     offset: usize,
+    version: ExtensionHeaderVersion,
 }
 
 impl<'a> Iterator for ExtensionFieldStreamer<'a> {
@@ -750,10 +778,10 @@ impl<'a> Iterator for ExtensionFieldStreamer<'a> {
             return None;
         }
 
-        match RawExtensionField::deserialize(remaining, self.minimum_size) {
+        match RawExtensionField::deserialize(remaining, self.minimum_size, self.version) {
             Ok(field) => {
                 let offset = self.offset;
-                self.offset += field.wire_length();
+                self.offset += field.wire_length(self.version);
                 Some(Ok((offset, field)))
             }
             Err(error) => {
@@ -874,7 +902,7 @@ mod tests {
         data.extend(&len.to_be_bytes());
         data.extend(test_id.as_bytes());
 
-        let raw = RawExtensionField::deserialize(&data, 0).unwrap();
+        let raw = RawExtensionField::deserialize(&data, 0, ExtensionHeaderVersion::V5).unwrap();
         let ef = ExtensionField::decode(raw).unwrap();
 
         match ef {
@@ -976,7 +1004,12 @@ mod tests {
 
         let message_bytes = &w.as_ref()[..expected_length];
 
-        let mut it = RawExtensionField::deserialize_sequence(message_bytes, 0, 0);
+        let mut it = RawExtensionField::deserialize_sequence(
+            message_bytes,
+            0,
+            0,
+            ExtensionHeaderVersion::V4,
+        );
         let field = it.next().unwrap().unwrap();
         assert!(it.next().is_none());
 
@@ -989,7 +1022,9 @@ mod tests {
                 },
             ) => {
                 let raw = RawEncryptedField::from_message_bytes(message_bytes).unwrap();
-                let decrypted_fields = raw.decrypt(&cipher, &[]).unwrap();
+                let decrypted_fields = raw
+                    .decrypt(&cipher, &[], ExtensionHeaderVersion::V4)
+                    .unwrap();
                 assert_eq!(decrypted_fields, fields_to_encrypt);
             }
             _ => panic!("invalid"),
@@ -1101,7 +1136,8 @@ mod tests {
 
         let cipher = crate::packet::crypto::NoCipher;
 
-        let result = ExtensionFieldData::deserialize(slice, 0, &cipher).unwrap();
+        let result =
+            ExtensionFieldData::deserialize(slice, 0, &cipher, ExtensionHeaderVersion::V4).unwrap();
 
         let DeserializedExtensionField {
             efdata,
@@ -1140,7 +1176,8 @@ mod tests {
 
         let cipher = crate::packet::crypto::NoCipher;
 
-        let result = ExtensionFieldData::deserialize(slice, 0, &cipher).unwrap_err();
+        let result = ExtensionFieldData::deserialize(slice, 0, &cipher, ExtensionHeaderVersion::V4)
+            .unwrap_err();
 
         let ParsingError::DecryptError(InvalidNtsExtensionField {
             efdata,
@@ -1182,7 +1219,8 @@ mod tests {
         let c2s = [0; 32];
         let cipher = AesSivCmac256::new(c2s.into());
 
-        let result = ExtensionFieldData::deserialize(slice, 0, &cipher).unwrap_err();
+        let result = ExtensionFieldData::deserialize(slice, 0, &cipher, ExtensionHeaderVersion::V4)
+            .unwrap_err();
 
         let ParsingError::DecryptError(InvalidNtsExtensionField {
             efdata,
@@ -1222,7 +1260,8 @@ mod tests {
         let n = cursor.position() as usize;
         let slice = &w.as_slice()[..n];
 
-        let result = ExtensionFieldData::deserialize(slice, 0, &keyset).unwrap();
+        let result =
+            ExtensionFieldData::deserialize(slice, 0, &keyset, ExtensionHeaderVersion::V4).unwrap();
 
         let DeserializedExtensionField {
             efdata,
