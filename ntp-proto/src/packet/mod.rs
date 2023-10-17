@@ -545,7 +545,28 @@ impl<'a> NtpPacket<'a> {
                 mac: None,
             },
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!(),
+            NtpHeader::V5(header) => NtpPacket {
+                // TODO deduplicate extension handling with V4
+                header: NtpHeader::V5(v5::NtpHeaderV5::timestamp_response(
+                    system,
+                    header,
+                    recv_timestamp,
+                    clock,
+                )),
+                efdata: ExtensionFieldData {
+                    authenticated: vec![],
+                    encrypted: vec![],
+                    // Ignore encrypted so as not to accidentaly leak anything
+                    untrusted: input
+                        .efdata
+                        .untrusted
+                        .into_iter()
+                        .chain(input.efdata.authenticated)
+                        .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
+                        .collect(),
+                },
+                mac: None,
+            },
         }
     }
 
@@ -604,7 +625,7 @@ impl<'a> NtpPacket<'a> {
                 mac: None,
             },
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!(),
+            NtpHeader::V5(_header) => todo!("No NTS support for V5 yet"),
         }
     }
 
@@ -632,7 +653,7 @@ impl<'a> NtpPacket<'a> {
                 mac: None,
             },
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!(),
+            NtpHeader::V5(_header) => todo!("NTPv5 does not have KISS codes yet"),
         }
     }
 
@@ -654,7 +675,7 @@ impl<'a> NtpPacket<'a> {
                 mac: None,
             },
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!(),
+            NtpHeader::V5(_header) => todo!("No NTS support yet"),
         }
     }
 
@@ -682,7 +703,7 @@ impl<'a> NtpPacket<'a> {
                 mac: None,
             },
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!(),
+            NtpHeader::V5(_header) => todo!("NTPv5 does not have KISS codes yet"),
         }
     }
 
@@ -704,7 +725,7 @@ impl<'a> NtpPacket<'a> {
                 mac: None,
             },
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!(),
+            NtpHeader::V5(_header) => todo!("No NTS support for NTPv5 yet"),
         }
     }
 
@@ -727,7 +748,7 @@ impl<'a> NtpPacket<'a> {
                 mac: None,
             },
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!(),
+            NtpHeader::V5(_header) => todo!("No NTS support for NTPv5 yet"),
         }
     }
 }
@@ -822,7 +843,7 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V3(header) => header.reference_id,
             NtpHeader::V4(header) => header.reference_id,
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!(),
+            NtpHeader::V5(_header) => todo!("NTPv5 does not have reference IDs"),
         }
     }
 
@@ -831,7 +852,8 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V3(header) => header.stratum == 0,
             NtpHeader::V4(header) => header.stratum == 0,
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!(),
+            // TODO NTPv5 does not have kiss codes yet
+            NtpHeader::V5(_header) => false,
         }
     }
 
@@ -878,7 +900,10 @@ impl<'a> NtpPacket<'a> {
                 header.origin_timestamp == identifier.expected_origin_timestamp
             }
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!(),
+            NtpHeader::V5(header) => {
+                header.client_cookie
+                    == v5::NtpClientCookie::from_ntp_timestamp(identifier.expected_origin_timestamp)
+            }
         }
     }
 }
@@ -916,7 +941,13 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V3(ref mut header) => header.mode = mode,
             NtpHeader::V4(ref mut header) => header.mode = mode,
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!(),
+            NtpHeader::V5(ref mut header) => {
+                header.mode = match mode {
+                    NtpAssociationMode::Client => v5::NtpMode::Request,
+                    NtpAssociationMode::Server => v5::NtpMode::Response,
+                    _ => todo!("NTPv5 can only handle client-server"),
+                }
+            }
         }
     }
 
@@ -925,7 +956,10 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V3(ref mut header) => header.origin_timestamp = timestamp,
             NtpHeader::V4(ref mut header) => header.origin_timestamp = timestamp,
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!(),
+            // TODO can we just reuse the cookie as the origin timestamp?
+            NtpHeader::V5(ref mut header) => {
+                header.client_cookie = v5::NtpClientCookie::from_ntp_timestamp(timestamp)
+            }
         }
     }
 
@@ -934,7 +968,7 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V3(ref mut header) => header.transmit_timestamp = timestamp,
             NtpHeader::V4(ref mut header) => header.transmit_timestamp = timestamp,
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!(),
+            NtpHeader::V5(ref mut header) => header.transmit_timestamp = timestamp,
         }
     }
 
@@ -943,7 +977,7 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V3(ref mut header) => header.receive_timestamp = timestamp,
             NtpHeader::V4(ref mut header) => header.receive_timestamp = timestamp,
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!(),
+            NtpHeader::V5(ref mut header) => header.receive_timestamp = timestamp,
         }
     }
 
@@ -952,7 +986,7 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V3(ref mut header) => header.precision = precision,
             NtpHeader::V4(ref mut header) => header.precision = precision,
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!(),
+            NtpHeader::V5(ref mut header) => header.precision = precision,
         }
     }
 
@@ -961,7 +995,7 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V3(ref mut header) => header.leap = leap,
             NtpHeader::V4(ref mut header) => header.leap = leap,
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!(),
+            NtpHeader::V5(ref mut header) => header.leap = leap,
         }
     }
 
@@ -970,7 +1004,7 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V3(ref mut header) => header.stratum = stratum,
             NtpHeader::V4(ref mut header) => header.stratum = stratum,
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!(),
+            NtpHeader::V5(ref mut header) => header.stratum = stratum,
         }
     }
 
@@ -979,7 +1013,7 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V3(ref mut header) => header.reference_id = reference_id,
             NtpHeader::V4(ref mut header) => header.reference_id = reference_id,
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!(),
+            NtpHeader::V5(_header) => todo!("NTPv5 does not have refernce IDs"),
         }
     }
 
@@ -988,7 +1022,7 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V3(ref mut header) => header.root_delay = root_delay,
             NtpHeader::V4(ref mut header) => header.root_delay = root_delay,
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!(),
+            NtpHeader::V5(ref mut header) => header.root_delay = root_delay,
         }
     }
 
@@ -997,7 +1031,7 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V3(ref mut header) => header.root_dispersion = root_dispersion,
             NtpHeader::V4(ref mut header) => header.root_dispersion = root_dispersion,
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!(),
+            NtpHeader::V5(ref mut header) => header.root_dispersion = root_dispersion,
         }
     }
 }
