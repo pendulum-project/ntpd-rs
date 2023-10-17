@@ -13,7 +13,7 @@ count = 4
 # Alternative configuration for IPv6 only machines
 #[[source]]
 #mode = "pool"
-#addr = "2.pool.ntp.org"
+#address = "2.pool.ntp.org"
 #count = 4
 
 # Serve NTP on any interface (requires permissions to use udp port 123)
