@@ -10,7 +10,6 @@ use crate::{
     system::SystemSnapshot,
     time_types::{NtpDuration, NtpTimestamp, PollInterval},
 };
-use extension_fields::ExtensionHeaderVersion;
 
 use self::{error::ParsingError, extension_fields::ExtensionFieldData, mac::Mac};
 
@@ -27,7 +26,7 @@ pub use crypto::{
     EncryptResult, NoCipher,
 };
 pub use error::PacketParsingError;
-pub use extension_fields::ExtensionField;
+pub use extension_fields::{ExtensionField, ExtensionHeaderVersion};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NtpLeapIndicator {

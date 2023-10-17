@@ -703,6 +703,7 @@ impl<'a> RawEncryptedField<'a> {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "__internal-fuzz", derive(arbitrary::Arbitrary))]
 pub enum ExtensionHeaderVersion {
     V4,
     #[cfg(feature = "ntpv5")]
