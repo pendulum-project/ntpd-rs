@@ -422,9 +422,10 @@ impl<'a> ExtensionField<'a> {
     fn decode_draft_identification(
         message: &'a [u8],
     ) -> Result<Self, ParsingError<std::convert::Infallible>> {
+        let err = Err(super::v5::V5Error::InvalidDraftIdentification.into());
         let di = match core::str::from_utf8(message) {
-            Err(_) => return Err(ParsingError::InvalidDraftIdentification),
-            Ok(di) if !di.is_ascii() => return Err(ParsingError::InvalidDraftIdentification),
+            Err(_) => return err,
+            Ok(di) if !di.is_ascii() => return err,
             Ok(di) => di,
         };
 
