@@ -1,4 +1,5 @@
-use crate::{NtpDuration, NtpLeapIndicator, NtpTimestamp};
+use crate::{NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, SystemSnapshot};
+use rand::random;
 
 mod error;
 #[allow(dead_code)]
@@ -108,10 +109,23 @@ impl NtpFlags {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct NtpServerCookie([u8; 8]);
+pub struct NtpServerCookie(pub [u8; 8]);
+
+impl NtpServerCookie {
+    fn new_random() -> NtpServerCookie {
+        // TODO does this match entropy handling of the rest of the system?
+        Self(random())
+    }
+}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct NtpClientCookie([u8; 8]);
+pub struct NtpClientCookie(pub [u8; 8]);
+
+impl NtpClientCookie {
+    pub fn from_ntp_timestamp(ts: NtpTimestamp) -> Self {
+        Self(ts.to_bits())
+    }
+}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct NtpHeaderV5 {
@@ -131,6 +145,39 @@ pub struct NtpHeaderV5 {
     pub receive_timestamp: NtpTimestamp,
     /// Time at the server when the response left for the client
     pub transmit_timestamp: NtpTimestamp,
+}
+
+impl NtpHeaderV5 {
+    pub(crate) fn timestamp_response<C: NtpClock>(
+        system: &SystemSnapshot,
+        input: Self,
+        recv_timestamp: NtpTimestamp,
+        clock: &C,
+    ) -> Self {
+        Self {
+            leap: system.time_snapshot.leap_indicator,
+            mode: NtpMode::Response,
+            stratum: system.stratum,
+            // TODO this changed in NTPv5
+            poll: input.poll,
+            precision: system.time_snapshot.precision.log2(),
+            // TODO this is new in NTPv5
+            timescale: NtpTimescale::Utc,
+            // TODO this is new in NTPv5
+            era: NtpEra(0),
+            // TODO this is new in NTPv5
+            flags: NtpFlags {
+                unknown_leap: false,
+                interleaved_mode: false,
+            },
+            root_delay: system.time_snapshot.root_delay,
+            root_dispersion: system.time_snapshot.root_dispersion,
+            server_cookie: NtpServerCookie::new_random(),
+            client_cookie: input.client_cookie,
+            receive_timestamp: recv_timestamp,
+            transmit_timestamp: clock.now().expect("Failed to read time"),
+        }
+    }
 }
 
 impl NtpHeaderV5 {
