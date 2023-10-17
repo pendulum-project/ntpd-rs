@@ -703,11 +703,27 @@ impl<'a> RawEncryptedField<'a> {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "__internal-fuzz", derive(arbitrary::Arbitrary))]
 pub enum ExtensionHeaderVersion {
     V4,
     #[cfg(feature = "ntpv5")]
     V5,
+}
+
+#[cfg(feature = "__internal-fuzz")]
+impl<'a> arbitrary::Arbitrary<'a> for ExtensionHeaderVersion {
+    #[cfg(not(feature = "ntpv5"))]
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self::V4)
+    }
+
+    #[cfg(feature = "ntpv5")]
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(if bool::arbitrary(u)? {
+            Self::V4
+        } else {
+            Self::V5
+        })
+    }
 }
 
 #[derive(Debug)]
