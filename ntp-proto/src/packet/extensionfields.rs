@@ -422,22 +422,13 @@ impl<'a> ExtensionField<'a> {
     fn decode_draft_identification(
         message: &'a [u8],
     ) -> Result<Self, ParsingError<std::convert::Infallible>> {
-        let msg = message[..].into();
-
-        let new_msg = match msg {
-            Cow::Borrowed(slice) => std::str::from_utf8(slice).ok().map(Cow::Borrowed),
-            Cow::Owned(vec) => String::from_utf8(vec).ok().map(Cow::Owned),
+        let di = match core::str::from_utf8(message) {
+            Err(_) => return Err(ParsingError::InvalidDraftIdentification),
+            Ok(di) if !di.is_ascii() => return Err(ParsingError::InvalidDraftIdentification),
+            Ok(di) => di,
         };
 
-        let Some(new_msg) = new_msg else {
-            return Err(ParsingError::InvalidDraftIdentification);
-        };
-
-        if !new_msg.is_ascii() {
-            return Err(ParsingError::InvalidDraftIdentification);
-        }
-
-        Ok(ExtensionField::DraftIdentification(new_msg))
+        Ok(ExtensionField::DraftIdentification(Cow::Borrowed(di)))
     }
 
     fn decode(raw: RawExtensionField<'a>) -> Result<Self, ParsingError<std::convert::Infallible>> {
