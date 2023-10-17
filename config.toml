@@ -2,7 +2,7 @@ loglevel = "info" # Other values include trace, debug, warn and error
 
 #mode = "Transparant" # Ordinary, Boundary, Transparent (not currently supported)
 
-sdo-id = "0"
+sdo-id = 0
 domain = 0
 priority1 = 255
 priority2 = 255
