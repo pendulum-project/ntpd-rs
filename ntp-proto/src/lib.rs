@@ -43,8 +43,8 @@ mod exports {
     #[cfg(feature = "__internal-fuzz")]
     pub use super::packet::ExtensionField;
     pub use super::packet::{
-        Cipher, CipherProvider, EncryptResult, NoCipher, NtpAssociationMode, NtpLeapIndicator,
-        NtpPacket, PacketParsingError,
+        Cipher, CipherProvider, EncryptResult, ExtensionHeaderVersion, NoCipher,
+        NtpAssociationMode, NtpLeapIndicator, NtpPacket, PacketParsingError,
     };
     #[cfg(feature = "__internal-fuzz")]
     pub use super::peer::fuzz_measurement_from_packet;
