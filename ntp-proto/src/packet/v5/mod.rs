@@ -9,6 +9,7 @@ pub mod extension_fields;
 use crate::packet::error::ParsingError;
 pub use error::V5Error;
 
+#[allow(dead_code)]
 pub(crate) const DRAFT_VERSION: &str = "draft-ietf-ntp-ntpv5-00";
 
 #[repr(u8)]
