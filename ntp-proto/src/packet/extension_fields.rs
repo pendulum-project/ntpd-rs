@@ -836,7 +836,6 @@ const fn next_multiple_of_usize(lhs: usize, rhs: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use crate::packet::error::ParsingError::IncorrectLength;
     use crate::{
         keyset::KeySet,
         packet::{extension_fields::ExtensionFieldTypeId, AesSivCmac256},
@@ -993,7 +992,7 @@ mod tests {
 
         assert!(matches!(
             RawExtensionField::deserialize(&data, 4, ProtocolVersion::V5),
-            Err(IncorrectLength)
+            Err(ParsingError::IncorrectLength)
         ));
     }
 

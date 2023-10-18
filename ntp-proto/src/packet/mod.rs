@@ -994,15 +994,14 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    pub(crate) fn set_client_reference(&mut self, client_ref: u64) {
+    #[cfg(feature = "__internal-fuzz")]
+    pub(crate) fn set_client_reference(&mut self, client_ref: [u8; 8]) {
         match &mut self.header {
             NtpHeader::V3(ref mut header) | NtpHeader::V4(ref mut header) => {
-                header.origin_timestamp = NtpTimestamp::from_fixed_int(client_ref)
+                header.origin_timestamp = NtpTimestamp::from_bits(client_ref)
             }
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(ref mut header) => {
-                header.client_cookie = v5::NtpClientCookie(client_ref.to_be_bytes())
-            }
+            NtpHeader::V5(ref mut header) => header.client_cookie = v5::NtpClientCookie(client_ref),
         }
     }
 

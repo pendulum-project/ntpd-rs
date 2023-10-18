@@ -579,7 +579,7 @@ pub fn fuzz_measurement_from_packet(
     version: ProtocolVersion,
 ) {
     let mut packet = NtpPacket::test(version);
-    packet.set_client_reference(client);
+    packet.set_client_reference(client.to_be_bytes());
     packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(server));
     packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(
         server.wrapping_add(server_interval as u64),
