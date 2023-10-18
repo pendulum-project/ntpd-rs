@@ -7,6 +7,7 @@ use crate::{
     packet::{Cipher, NtpAssociationMode, NtpLeapIndicator, NtpPacket, RequestIdentifier},
     system::SystemSnapshot,
     time_types::{NtpDuration, NtpInstant, NtpTimestamp, PollInterval},
+    ProtocolVersion,
 };
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument, trace, warn};
@@ -76,9 +77,11 @@ pub struct Peer {
     tries: usize,
 
     peer_defaults_config: SourceDefaultsConfig,
+
+    protocol_version: ProtocolVersion,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct Measurement {
     pub delay: NtpDuration,
     pub offset: NtpDuration,
@@ -130,7 +133,7 @@ impl Measurement {
 /// As valid packets arrive, the rightmost bit is set to one.
 /// If the register contains any nonzero bits, the server is considered reachable;
 /// otherwise, it is unreachable.
-#[derive(Default, Clone, Copy, Serialize, Deserialize)]
+#[derive(Default, Clone, Copy, Serialize, Deserialize, Eq, PartialEq)]
 pub struct Reach(u8);
 
 impl std::fmt::Debug for Reach {
@@ -170,7 +173,7 @@ impl Reach {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum IgnoreReason {
     /// The packet doesn't parse
     InvalidPacket,
@@ -192,7 +195,7 @@ pub enum IgnoreReason {
     TooOld,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct PeerSnapshot {
     pub source_addr: SocketAddr,
 
@@ -281,7 +284,7 @@ pub enum AcceptSynchronizationError {
     Stratum,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Update {
     BareUpdate(PeerSnapshot),
     NewMeasurement(PeerSnapshot, Measurement),
@@ -321,6 +324,9 @@ impl Peer {
             reference_id: ReferenceId::NONE,
 
             peer_defaults_config,
+
+            // TODO make configurable
+            protocol_version: ProtocolVersion::V4,
         }
     }
 
@@ -384,7 +390,7 @@ impl Peer {
                     .min(((buf.len() - 300) / cookie.len()).min(u8::MAX as usize) as u8);
                 NtpPacket::nts_poll_message(&cookie, new_cookies, poll_interval)
             }
-            None => NtpPacket::poll_message(poll_interval),
+            None => NtpPacket::poll_message(poll_interval, self.protocol_version),
         };
         self.current_request_identifier = Some((identifier, NtpInstant::now() + POLL_WINDOW));
 
@@ -490,6 +496,8 @@ impl Peer {
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
     ) -> Update {
+        // TODO check that the version had the expected version
+
         trace!("Packet accepted for processing");
         // For reachability, mark that we have had a response
         self.reach.received_packet();
@@ -532,7 +540,7 @@ impl Peer {
     }
 
     #[cfg(test)]
-    pub(crate) fn test_peer() -> Self {
+    pub(crate) fn test_peer(version: ProtocolVersion) -> Self {
         use std::net::{IpAddr, Ipv4Addr};
 
         Peer {
@@ -554,6 +562,8 @@ impl Peer {
             reference_id: ReferenceId::from_int(0),
 
             peer_defaults_config: SourceDefaultsConfig::default(),
+
+            protocol_version: version,
         }
     }
 }
@@ -566,9 +576,10 @@ pub fn fuzz_measurement_from_packet(
     server_interval: u32,
     client_precision: i8,
     server_precision: i8,
+    version: ProtocolVersion,
 ) {
-    let mut packet = NtpPacket::test();
-    packet.set_origin_timestamp(NtpTimestamp::from_fixed_int(client));
+    let mut packet = NtpPacket::test(version);
+    packet.set_client_reference(client);
     packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(server));
     packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(
         server.wrapping_add(server_interval as u64),
@@ -594,10 +605,20 @@ mod test {
     use std::time::Duration;
 
     #[test]
-    fn test_measurement_from_packet() {
+    fn test_measurement_from_packet_v4() {
+        test_measurement_from_packet(ProtocolVersion::V4)
+    }
+
+    #[test]
+    #[cfg(feature = "ntpv5")]
+    fn test_measurement_from_packet_v5() {
+        test_measurement_from_packet(ProtocolVersion::V5)
+    }
+
+    fn test_measurement_from_packet(version: ProtocolVersion) {
         let instant = NtpInstant::now();
 
-        let mut packet = NtpPacket::test();
+        let mut packet = NtpPacket::test(version);
         packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(1));
         packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(2));
         let result = Measurement::from_packet(
@@ -666,10 +687,20 @@ mod test {
     }
 
     #[test]
-    fn test_accept_synchronization() {
+    fn test_accept_synchronization_v4() {
+        test_accept_synchronization(ProtocolVersion::V4)
+    }
+
+    #[test]
+    #[cfg(feature = "ntpv5")]
+    fn test_accept_synchronization_v5() {
+        test_accept_synchronization(ProtocolVersion::V5)
+    }
+
+    fn test_accept_synchronization(version: ProtocolVersion) {
         use AcceptSynchronizationError::*;
 
-        let mut peer = Peer::test_peer();
+        let mut peer = Peer::test_peer(version);
 
         macro_rules! accept {
             () => {{
@@ -694,9 +725,20 @@ mod test {
     }
 
     #[test]
-    fn test_poll_interval() {
+    fn test_poll_interval_v4() {
+        test_poll_interval(ProtocolVersion::V4)
+    }
+
+    // TODO reenable after implementing poll handling
+    // #[test]
+    // #[cfg(feature = "ntpv5")]
+    // fn test_poll_interval_v5() {
+    //     test_poll_interval(ProtocolVersion::V5)
+    // }
+
+    fn test_poll_interval(version: ProtocolVersion) {
         let base = NtpInstant::now();
-        let mut peer = Peer::test_peer();
+        let mut peer = Peer::test_peer(version);
         let mut system = SystemSnapshot::default();
 
         assert!(peer.current_poll_interval(system) >= peer.remote_min_poll_interval);
@@ -722,10 +764,10 @@ mod test {
             .unwrap();
         let packet = NtpPacket::deserialize(packetbuf, &NoCipher).unwrap().0;
         assert!(peer.current_poll_interval(system) > prev);
-        let mut response = NtpPacket::test();
+        let mut response = NtpPacket::test(version);
         response.set_mode(NtpAssociationMode::Server);
         response.set_stratum(1);
-        response.set_origin_timestamp(packet.transmit_timestamp());
+        response.set_client_reference_from_other(&packet);
         assert!(peer
             .handle_incoming(
                 system,
@@ -744,10 +786,10 @@ mod test {
             .unwrap();
         let packet = NtpPacket::deserialize(packetbuf, &NoCipher).unwrap().0;
         assert!(peer.current_poll_interval(system) > prev);
-        let mut response = NtpPacket::test();
+        let mut response = NtpPacket::test(version);
         response.set_mode(NtpAssociationMode::Server);
         response.set_stratum(0);
-        response.set_origin_timestamp(packet.transmit_timestamp());
+        response.set_client_reference_from_other(&packet);
         response.set_reference_id(ReferenceId::KISS_RATE);
         assert!(peer
             .handle_incoming(
@@ -763,9 +805,19 @@ mod test {
     }
 
     #[test]
-    fn test_handle_incoming() {
+    fn test_handle_incoming_v4() {
+        test_handle_incoming(ProtocolVersion::V4)
+    }
+
+    #[test]
+    #[cfg(feature = "ntpv5")]
+    fn test_handle_incoming_v5() {
+        test_handle_incoming(ProtocolVersion::V5)
+    }
+
+    fn test_handle_incoming(version: ProtocolVersion) {
         let base = NtpInstant::now();
-        let mut peer = Peer::test_peer();
+        let mut peer = Peer::test_peer(version);
 
         let system = SystemSnapshot::default();
         let mut buf = [0; 1024];
@@ -773,11 +825,11 @@ mod test {
             .generate_poll_message(&mut buf, system, &SourceDefaultsConfig::default())
             .unwrap();
         let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
-        let mut packet = NtpPacket::test();
+        let mut packet = NtpPacket::test(version);
         let system = SystemSnapshot::default();
         packet.set_stratum(1);
         packet.set_mode(NtpAssociationMode::Server);
-        packet.set_origin_timestamp(outgoing.transmit_timestamp());
+        packet.set_client_reference_from_other(&outgoing);
         packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(100));
         packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(200));
 
@@ -803,8 +855,18 @@ mod test {
     }
 
     #[test]
-    fn test_startup_unreachable() {
-        let mut peer = Peer::test_peer();
+    fn test_startup_unreachable_v4() {
+        test_startup_unreachable(ProtocolVersion::V4)
+    }
+
+    #[test]
+    #[cfg(feature = "ntpv5")]
+    fn test_startup_unreachable_v5() {
+        test_startup_unreachable(ProtocolVersion::V5)
+    }
+
+    fn test_startup_unreachable(version: ProtocolVersion) {
+        let mut peer = Peer::test_peer(version);
         let system = SystemSnapshot::default();
         let mut buf = [0; 1024];
         assert!(peer
@@ -823,9 +885,19 @@ mod test {
     }
 
     #[test]
-    fn test_running_unreachable() {
+    fn test_running_unreachable_v4() {
+        test_running_unreachable(ProtocolVersion::V4)
+    }
+
+    #[test]
+    #[cfg(feature = "ntpv5")]
+    fn test_running_unreachable_v5() {
+        test_running_unreachable(ProtocolVersion::V5)
+    }
+
+    fn test_running_unreachable(version: ProtocolVersion) {
         let base = NtpInstant::now();
-        let mut peer = Peer::test_peer();
+        let mut peer = Peer::test_peer(version);
 
         let system = SystemSnapshot::default();
         let mut buf = [0; 1024];
@@ -833,11 +905,11 @@ mod test {
             .generate_poll_message(&mut buf, system, &SourceDefaultsConfig::default())
             .unwrap();
         let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
-        let mut packet = NtpPacket::test();
+        let mut packet = NtpPacket::test(version);
         let system = SystemSnapshot::default();
         packet.set_stratum(1);
         packet.set_mode(NtpAssociationMode::Server);
-        packet.set_origin_timestamp(outgoing.transmit_timestamp());
+        packet.set_client_reference_from_other(&outgoing);
         packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(100));
         packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(200));
         assert!(peer
@@ -881,9 +953,19 @@ mod test {
     }
 
     #[test]
-    fn test_stratum_checks() {
+    fn test_stratum_checks_v4() {
+        test_stratum_checks(ProtocolVersion::V4)
+    }
+
+    #[test]
+    #[cfg(feature = "ntpv5")]
+    fn test_stratum_checks_v5() {
+        test_stratum_checks(ProtocolVersion::V5)
+    }
+
+    fn test_stratum_checks(version: ProtocolVersion) {
         let base = NtpInstant::now();
-        let mut peer = Peer::test_peer();
+        let mut peer = Peer::test_peer(version);
 
         let system = SystemSnapshot::default();
         let mut buf = [0; 1024];
@@ -891,41 +973,44 @@ mod test {
             .generate_poll_message(&mut buf, system, &SourceDefaultsConfig::default())
             .unwrap();
         let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
-        let mut packet = NtpPacket::test();
+        let mut packet = NtpPacket::test(version);
         let system = SystemSnapshot::default();
         packet.set_stratum(MAX_STRATUM + 1);
         packet.set_mode(NtpAssociationMode::Server);
-        packet.set_origin_timestamp(outgoing.transmit_timestamp());
+        packet.set_client_reference_from_other(&outgoing);
         packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(100));
         packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(200));
-        assert!(peer
-            .handle_incoming(
+        assert_eq!(
+            peer.handle_incoming(
                 system,
                 &packet.serialize_without_encryption_vec().unwrap(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(500)
-            )
-            .is_err());
+            ),
+            Err(IgnoreReason::InvalidStratum)
+        );
 
         packet.set_stratum(0);
-        assert!(peer
-            .handle_incoming(
+        assert_eq!(
+            peer.handle_incoming(
                 system,
                 &packet.serialize_without_encryption_vec().unwrap(),
                 base + Duration::from_secs(1),
                 NtpTimestamp::from_fixed_int(0),
                 NtpTimestamp::from_fixed_int(500)
-            )
-            .is_err());
+            ),
+            Err(IgnoreReason::KissIgnore) // Stratum 0 indicates a KISS code, but reference id is 0 so it will be recognized as `other`
+        );
     }
 
+    // TODO add NTPv5 kiss of death test
     #[test]
     fn test_handle_kod() {
         let base = NtpInstant::now();
-        let mut peer = Peer::test_peer();
+        let mut peer = Peer::test_peer(ProtocolVersion::V4);
 
-        let mut packet = NtpPacket::test();
+        let mut packet = NtpPacket::test(ProtocolVersion::V4);
         let system = SystemSnapshot::default();
         packet.set_reference_id(ReferenceId::KISS_RSTR);
         packet.set_mode(NtpAssociationMode::Server);
@@ -940,7 +1025,7 @@ mod test {
             Err(IgnoreReason::KissDemobilize)
         ));
 
-        let mut packet = NtpPacket::test();
+        let mut packet = NtpPacket::test(ProtocolVersion::V4);
         let system = SystemSnapshot::default();
         let mut buf = [0; 1024];
         let outgoingbuf = peer
@@ -948,7 +1033,7 @@ mod test {
             .unwrap();
         let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
         packet.set_reference_id(ReferenceId::KISS_RSTR);
-        packet.set_origin_timestamp(outgoing.transmit_timestamp());
+        packet.set_client_reference_from_other(&outgoing);
         packet.set_mode(NtpAssociationMode::Server);
         assert!(matches!(
             peer.handle_incoming(
@@ -961,7 +1046,7 @@ mod test {
             Err(IgnoreReason::KissDemobilize)
         ));
 
-        let mut packet = NtpPacket::test();
+        let mut packet = NtpPacket::test(ProtocolVersion::V4);
         let system = SystemSnapshot::default();
         packet.set_reference_id(ReferenceId::KISS_DENY);
         packet.set_mode(NtpAssociationMode::Server);
@@ -976,14 +1061,14 @@ mod test {
             Err(IgnoreReason::KissDemobilize)
         ));
 
-        let mut packet = NtpPacket::test();
+        let mut packet = NtpPacket::test(ProtocolVersion::V4);
         let system = SystemSnapshot::default();
         let outgoingbuf = peer
             .generate_poll_message(&mut buf, system, &SourceDefaultsConfig::default())
             .unwrap();
         let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
         packet.set_reference_id(ReferenceId::KISS_DENY);
-        packet.set_origin_timestamp(outgoing.transmit_timestamp());
+        packet.set_client_reference_from_other(&outgoing);
         packet.set_mode(NtpAssociationMode::Server);
         assert!(matches!(
             peer.handle_incoming(
@@ -997,7 +1082,7 @@ mod test {
         ));
 
         let old_remote_interval = peer.remote_min_poll_interval;
-        let mut packet = NtpPacket::test();
+        let mut packet = NtpPacket::test(ProtocolVersion::V4);
         let system = SystemSnapshot::default();
         packet.set_reference_id(ReferenceId::KISS_RATE);
         packet.set_mode(NtpAssociationMode::Server);
@@ -1013,7 +1098,7 @@ mod test {
         assert_eq!(peer.remote_min_poll_interval, old_remote_interval);
 
         let old_remote_interval = peer.remote_min_poll_interval;
-        let mut packet = NtpPacket::test();
+        let mut packet = NtpPacket::test(ProtocolVersion::V4);
         let system = SystemSnapshot::default();
         let mut buf = [0; 1024];
         let outgoingbuf = peer
@@ -1021,7 +1106,7 @@ mod test {
             .unwrap();
         let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
         packet.set_reference_id(ReferenceId::KISS_RATE);
-        packet.set_origin_timestamp(outgoing.transmit_timestamp());
+        packet.set_client_reference_from_other(&outgoing);
         packet.set_mode(NtpAssociationMode::Server);
         assert!(peer
             .handle_incoming(

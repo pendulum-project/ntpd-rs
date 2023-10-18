@@ -37,14 +37,15 @@ mod exports {
     pub use super::config::{SourceDefaultsConfig, StepThreshold, SynchronizationConfig};
     pub use super::identifiers::ReferenceId;
     pub use super::keyset::{DecodedServerCookie, KeySet, KeySetProvider};
+    pub use crate::packet::ProtocolVersion;
 
     #[cfg(feature = "__internal-fuzz")]
     pub use super::keyset::test_cookie;
     #[cfg(feature = "__internal-fuzz")]
     pub use super::packet::ExtensionField;
     pub use super::packet::{
-        Cipher, CipherProvider, EncryptResult, ExtensionHeaderVersion, NoCipher,
-        NtpAssociationMode, NtpLeapIndicator, NtpPacket, PacketParsingError,
+        Cipher, CipherProvider, EncryptResult, NoCipher, NtpAssociationMode, NtpLeapIndicator,
+        NtpPacket, PacketParsingError,
     };
     #[cfg(feature = "__internal-fuzz")]
     pub use super::peer::fuzz_measurement_from_packet;

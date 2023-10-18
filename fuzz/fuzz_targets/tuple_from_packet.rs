@@ -3,7 +3,7 @@ use libfuzzer_sys::{
     arbitrary::{self, Arbitrary},
     fuzz_target,
 };
-use ntp_proto::fuzz_measurement_from_packet;
+use ntp_proto::{fuzz_measurement_from_packet, ProtocolVersion};
 
 #[derive(Debug, Clone, Arbitrary)]
 struct InputData {
@@ -13,6 +13,7 @@ struct InputData {
     server_interval: u32,
     client_precision: i8,
     server_precision: i8,
+    version: ProtocolVersion,
 }
 
 fuzz_target!(|input: InputData| {
@@ -23,5 +24,6 @@ fuzz_target!(|input: InputData| {
         input.server_interval,
         input.client_precision,
         input.server_precision,
+        input.version,
     );
 });

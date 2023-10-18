@@ -5,7 +5,9 @@ use std::{
 
 use crate::keyset::DecodedServerCookie;
 
-use super::{crypto::EncryptResult, error::ParsingError, Cipher, CipherProvider, Mac};
+use super::{
+    crypto::EncryptResult, error::ParsingError, Cipher, CipherProvider, Mac, ProtocolVersion,
+};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum ExtensionFieldTypeId {
@@ -120,7 +122,7 @@ impl<'a> ExtensionField<'a> {
         &self,
         w: &mut W,
         minimum_size: u16,
-        version: ExtensionHeaderVersion,
+        version: ProtocolVersion,
     ) -> std::io::Result<()> {
         use ExtensionField::*;
 
@@ -148,7 +150,7 @@ impl<'a> ExtensionField<'a> {
         &self,
         w: &mut W,
         minimum_size: u16,
-        version: ExtensionHeaderVersion,
+        version: ProtocolVersion,
     ) -> std::io::Result<()> {
         self.serialize(w, minimum_size, version)
     }
@@ -158,7 +160,7 @@ impl<'a> ExtensionField<'a> {
         ef_id: ExtensionFieldTypeId,
         data_length: usize,
         minimum_size: u16,
-        version: ExtensionHeaderVersion,
+        version: ProtocolVersion,
     ) -> std::io::Result<()> {
         if data_length > u16::MAX as usize - 4 {
             return Err(std::io::Error::new(
@@ -171,7 +173,7 @@ impl<'a> ExtensionField<'a> {
         let header_width = 4;
         let mut actual_length = (data_length as u16 + header_width).max(minimum_size);
 
-        if version == ExtensionHeaderVersion::V4 {
+        if version == ProtocolVersion::V4 {
             actual_length = next_multiple_of_u16(actual_length, 4)
         }
 
@@ -217,7 +219,7 @@ impl<'a> ExtensionField<'a> {
         w: &mut W,
         identifier: &[u8],
         minimum_size: u16,
-        version: ExtensionHeaderVersion,
+        version: ProtocolVersion,
     ) -> std::io::Result<()> {
         Self::encode_framing(
             w,
@@ -234,7 +236,7 @@ impl<'a> ExtensionField<'a> {
         w: &mut W,
         cookie: &[u8],
         minimum_size: u16,
-        version: ExtensionHeaderVersion,
+        version: ProtocolVersion,
     ) -> std::io::Result<()> {
         Self::encode_framing(
             w,
@@ -255,7 +257,7 @@ impl<'a> ExtensionField<'a> {
         w: &mut W,
         cookie_length: u16,
         minimum_size: u16,
-        version: ExtensionHeaderVersion,
+        version: ProtocolVersion,
     ) -> std::io::Result<()> {
         Self::encode_framing(
             w,
@@ -277,7 +279,7 @@ impl<'a> ExtensionField<'a> {
         type_id: u16,
         data: &[u8],
         minimum_size: u16,
-        version: ExtensionHeaderVersion,
+        version: ProtocolVersion,
     ) -> std::io::Result<()> {
         Self::encode_framing(
             w,
@@ -298,7 +300,7 @@ impl<'a> ExtensionField<'a> {
         w: &mut Cursor<&mut [u8]>,
         fields_to_encrypt: &[ExtensionField],
         cipher: &dyn Cipher,
-        version: ExtensionHeaderVersion,
+        version: ProtocolVersion,
     ) -> std::io::Result<()> {
         let padding = [0; 4];
 
@@ -386,7 +388,7 @@ impl<'a> ExtensionField<'a> {
         w: &mut impl Write,
         data: &str,
         minimum_size: u16,
-        version: ExtensionHeaderVersion,
+        version: ProtocolVersion,
     ) -> std::io::Result<()> {
         Self::encode_framing(
             w,
@@ -508,7 +510,7 @@ impl<'a> ExtensionFieldData<'a> {
         &self,
         w: &mut Cursor<&mut [u8]>,
         cipher: &(impl CipherProvider + ?Sized),
-        version: ExtensionHeaderVersion,
+        version: ProtocolVersion,
     ) -> std::io::Result<()> {
         if !self.authenticated.is_empty() || !self.encrypted.is_empty() {
             let cipher = match cipher.get(&self.authenticated) {
@@ -546,7 +548,7 @@ impl<'a> ExtensionFieldData<'a> {
         data: &'a [u8],
         header_size: usize,
         cipher: &impl CipherProvider,
-        version: ExtensionHeaderVersion,
+        version: ProtocolVersion,
     ) -> Result<DeserializedExtensionField<'a>, ParsingError<InvalidNtsExtensionField<'a>>> {
         use ExtensionField::InvalidNtsEncryptedField;
 
@@ -668,7 +670,7 @@ impl<'a> RawEncryptedField<'a> {
         &self,
         cipher: &dyn Cipher,
         aad: &[u8],
-        version: ExtensionHeaderVersion,
+        version: ProtocolVersion,
     ) -> Result<Vec<ExtensionField<'a>>, ParsingError<ExtensionField<'a>>> {
         let plaintext = match cipher.decrypt(self.nonce, self.ciphertext, aad) {
             Ok(plain) => plain,
@@ -700,30 +702,6 @@ impl<'a> RawEncryptedField<'a> {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ExtensionHeaderVersion {
-    V4,
-    #[cfg(feature = "ntpv5")]
-    V5,
-}
-
-#[cfg(feature = "__internal-fuzz")]
-impl<'a> arbitrary::Arbitrary<'a> for ExtensionHeaderVersion {
-    #[cfg(not(feature = "ntpv5"))]
-    fn arbitrary(_u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        Ok(Self::V4)
-    }
-
-    #[cfg(feature = "ntpv5")]
-    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        Ok(if bool::arbitrary(u)? {
-            Self::V4
-        } else {
-            Self::V5
-        })
-    }
-}
-
 #[derive(Debug)]
 struct RawExtensionField<'a> {
     type_id: ExtensionFieldTypeId,
@@ -736,11 +714,11 @@ impl<'a> RawExtensionField<'a> {
     const BARE_MINIMUM_SIZE: usize = 4;
     const V4_UNENCRYPTED_MINIMUM_SIZE: usize = 4;
 
-    fn wire_length(&self, version: ExtensionHeaderVersion) -> usize {
+    fn wire_length(&self, version: ProtocolVersion) -> usize {
         // field type + length + value + padding
         let length = 2 + 2 + self.message_bytes.len();
 
-        if version == ExtensionHeaderVersion::V4 {
+        if version == ProtocolVersion::V4 {
             // All extension fields are zero-padded to a word (four octets) boundary.
             //
             // message_bytes should include this padding, so this should already be true
@@ -753,7 +731,7 @@ impl<'a> RawExtensionField<'a> {
     fn deserialize(
         data: &'a [u8],
         minimum_size: usize,
-        version: ExtensionHeaderVersion,
+        version: ProtocolVersion,
     ) -> Result<Self, ParsingError<std::convert::Infallible>> {
         use ParsingError::IncorrectLength;
 
@@ -772,8 +750,16 @@ impl<'a> RawExtensionField<'a> {
         }
 
         // In NTPv4: padding is up to a multiple of 4 bytes, so a valid field length is divisible by 4
-        if version == ExtensionHeaderVersion::V4 && field_length % 4 != 0 {
+        if version == ProtocolVersion::V4 && field_length % 4 != 0 {
             return Err(IncorrectLength);
+        }
+
+        #[cfg(feature = "ntpv5")]
+        {
+            // In NTPv5: padding is not included in the header but has to be part of the packet
+            if data.len() < next_multiple_of_usize(field_length, 4) {
+                return Err(IncorrectLength);
+            }
         }
 
         // because the field length includes padding, the message bytes may not exactly match the input
@@ -789,7 +775,7 @@ impl<'a> RawExtensionField<'a> {
         buffer: &'a [u8],
         cutoff: usize,
         minimum_size: usize,
-        version: ExtensionHeaderVersion,
+        version: ProtocolVersion,
     ) -> impl Iterator<
         Item = Result<(usize, RawExtensionField<'a>), ParsingError<std::convert::Infallible>>,
     > + 'a {
@@ -807,7 +793,7 @@ struct ExtensionFieldStreamer<'a> {
     cutoff: usize,
     minimum_size: usize,
     offset: usize,
-    version: ExtensionHeaderVersion,
+    version: ProtocolVersion,
 }
 
 impl<'a> Iterator for ExtensionFieldStreamer<'a> {
@@ -850,6 +836,7 @@ const fn next_multiple_of_usize(lhs: usize, rhs: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use crate::packet::error::ParsingError::IncorrectLength;
     use crate::{
         keyset::KeySet,
         packet::{extension_fields::ExtensionFieldTypeId, AesSivCmac256},
@@ -869,13 +856,8 @@ mod tests {
     fn test_unique_identifier() {
         let identifier: Vec<_> = (0..16).collect();
         let mut w = vec![];
-        ExtensionField::encode_unique_identifier(
-            &mut w,
-            &identifier,
-            0,
-            ExtensionHeaderVersion::V4,
-        )
-        .unwrap();
+        ExtensionField::encode_unique_identifier(&mut w, &identifier, 0, ProtocolVersion::V4)
+            .unwrap();
 
         assert_eq!(
             w,
@@ -887,7 +869,7 @@ mod tests {
     fn test_nts_cookie() {
         let cookie: Vec<_> = (0..16).collect();
         let mut w = vec![];
-        ExtensionField::encode_nts_cookie(&mut w, &cookie, 0, ExtensionHeaderVersion::V4).unwrap();
+        ExtensionField::encode_nts_cookie(&mut w, &cookie, 0, ProtocolVersion::V4).unwrap();
 
         assert_eq!(
             w,
@@ -904,7 +886,7 @@ mod tests {
             &mut w,
             COOKIE_LENGTH as u16,
             0,
-            ExtensionHeaderVersion::V4,
+            ProtocolVersion::V4,
         )
         .unwrap();
 
@@ -938,7 +920,7 @@ mod tests {
     fn test_unknown() {
         let data: Vec<_> = (0..16).collect();
         let mut w = vec![];
-        ExtensionField::encode_unknown(&mut w, 42, &data, 0, ExtensionHeaderVersion::V4).unwrap();
+        ExtensionField::encode_unknown(&mut w, 42, &data, 0, ProtocolVersion::V4).unwrap();
 
         assert_eq!(
             w,
@@ -957,7 +939,7 @@ mod tests {
         data.extend(test_id.as_bytes()); // Payload
         data.extend(&[0]); // Padding
 
-        let raw = RawExtensionField::deserialize(&data, 4, ExtensionHeaderVersion::V5).unwrap();
+        let raw = RawExtensionField::deserialize(&data, 4, ProtocolVersion::V5).unwrap();
         let ef = ExtensionField::decode(raw).unwrap();
 
         let ExtensionField::DraftIdentification(ref parsed) = ef else {
@@ -967,8 +949,7 @@ mod tests {
         assert_eq!(parsed, test_id);
 
         let mut out = vec![];
-        ef.serialize(&mut out, 4, ExtensionHeaderVersion::V5)
-            .unwrap();
+        ef.serialize(&mut out, 4, ProtocolVersion::V5).unwrap();
 
         assert_eq!(&out, &data);
     }
@@ -978,26 +959,42 @@ mod tests {
     fn extension_field_length() {
         let data: Vec<_> = (0..21).collect();
         let mut w = vec![];
-        ExtensionField::encode_unknown(&mut w, 42, &data, 16, ExtensionHeaderVersion::V4).unwrap();
+        ExtensionField::encode_unknown(&mut w, 42, &data, 16, ProtocolVersion::V4).unwrap();
         let raw: RawExtensionField<'_> =
-            RawExtensionField::deserialize(&w, 16, ExtensionHeaderVersion::V4).unwrap();
+            RawExtensionField::deserialize(&w, 16, ProtocolVersion::V4).unwrap();
 
         // v4 extension field header length includes padding bytes
         assert_eq!(w[3], 28);
         assert_eq!(w.len(), 28);
         assert_eq!(raw.message_bytes.len(), 24);
-        assert_eq!(raw.wire_length(ExtensionHeaderVersion::V4), 28);
+        assert_eq!(raw.wire_length(ProtocolVersion::V4), 28);
 
         let mut w = vec![];
-        ExtensionField::encode_unknown(&mut w, 42, &data, 16, ExtensionHeaderVersion::V5).unwrap();
+        ExtensionField::encode_unknown(&mut w, 42, &data, 16, ProtocolVersion::V5).unwrap();
         let raw: RawExtensionField<'_> =
-            RawExtensionField::deserialize(&w, 16, ExtensionHeaderVersion::V5).unwrap();
+            RawExtensionField::deserialize(&w, 16, ProtocolVersion::V5).unwrap();
 
         // v5 extension field header length does not include padding bytes
         assert_eq!(w[3], 25);
         assert_eq!(w.len(), 28);
         assert_eq!(raw.message_bytes.len(), 21);
-        assert_eq!(raw.wire_length(ExtensionHeaderVersion::V5), 28);
+        assert_eq!(raw.wire_length(ProtocolVersion::V5), 28);
+    }
+
+    #[cfg(feature = "ntpv5")]
+    #[test]
+    fn extension_field_padding_deserialization_v5() {
+        let data = [
+            0, 0, // Type
+            0, 7, // Length
+            1, 2, 3, // Data
+               // Missing padding byte
+        ];
+
+        assert!(matches!(
+            RawExtensionField::deserialize(&data, 4, ProtocolVersion::V5),
+            Err(IncorrectLength)
+        ));
     }
 
     #[test]
@@ -1007,17 +1004,12 @@ mod tests {
         let data: Vec<_> = (0..16).collect();
 
         let mut w = vec![];
-        ExtensionField::encode_unique_identifier(
-            &mut w,
-            &data,
-            minimum_size,
-            ExtensionHeaderVersion::V4,
-        )
-        .unwrap();
+        ExtensionField::encode_unique_identifier(&mut w, &data, minimum_size, ProtocolVersion::V4)
+            .unwrap();
         assert_eq!(w.len(), expected_size);
 
         let mut w = vec![];
-        ExtensionField::encode_nts_cookie(&mut w, &data, minimum_size, ExtensionHeaderVersion::V4)
+        ExtensionField::encode_nts_cookie(&mut w, &data, minimum_size, ProtocolVersion::V4)
             .unwrap();
         assert_eq!(w.len(), expected_size);
 
@@ -1026,13 +1018,13 @@ mod tests {
             &mut w,
             data.len() as u16,
             minimum_size,
-            ExtensionHeaderVersion::V4,
+            ProtocolVersion::V4,
         )
         .unwrap();
         assert_eq!(w.len(), expected_size);
 
         let mut w = vec![];
-        ExtensionField::encode_unknown(&mut w, 42, &data, minimum_size, ExtensionHeaderVersion::V4)
+        ExtensionField::encode_unknown(&mut w, 42, &data, minimum_size, ProtocolVersion::V4)
             .unwrap();
         assert_eq!(w.len(), expected_size);
 
@@ -1040,24 +1032,27 @@ mod tests {
     }
 
     #[test]
-    fn extension_field_padding() {
+    fn extension_field_padding_v4() {
+        extension_field_padding(ProtocolVersion::V4)
+    }
+
+    #[test]
+    #[cfg(feature = "ntpv5")]
+    fn extension_field_padding_v5() {
+        extension_field_padding(ProtocolVersion::V5)
+    }
+
+    fn extension_field_padding(version: ProtocolVersion) {
         let minimum_size = 0;
         let expected_size = 20;
         let data: Vec<_> = (0..15).collect(); // 15 bytes, so padding is needed
 
         let mut w = vec![];
-        ExtensionField::encode_unique_identifier(
-            &mut w,
-            &data,
-            minimum_size,
-            ExtensionHeaderVersion::V4,
-        )
-        .unwrap();
+        ExtensionField::encode_unique_identifier(&mut w, &data, minimum_size, version).unwrap();
         assert_eq!(w.len(), expected_size);
 
         let mut w = vec![];
-        ExtensionField::encode_nts_cookie(&mut w, &data, minimum_size, ExtensionHeaderVersion::V4)
-            .unwrap();
+        ExtensionField::encode_nts_cookie(&mut w, &data, minimum_size, version).unwrap();
         assert_eq!(w.len(), expected_size);
 
         let mut w = vec![];
@@ -1065,14 +1060,13 @@ mod tests {
             &mut w,
             data.len() as u16,
             minimum_size,
-            ExtensionHeaderVersion::V4,
+            version,
         )
         .unwrap();
         assert_eq!(w.len(), expected_size);
 
         let mut w = vec![];
-        ExtensionField::encode_unknown(&mut w, 42, &data, minimum_size, ExtensionHeaderVersion::V4)
-            .unwrap();
+        ExtensionField::encode_unknown(&mut w, 42, &data, minimum_size, version).unwrap();
         assert_eq!(w.len(), expected_size);
 
         let mut w = [0u8; 128];
@@ -1082,13 +1076,8 @@ mod tests {
         let fields_to_encrypt = [ExtensionField::UniqueIdentifier(Cow::Borrowed(
             data.as_slice(),
         ))];
-        ExtensionField::encode_encrypted(
-            &mut cursor,
-            &fields_to_encrypt,
-            &cipher,
-            ExtensionHeaderVersion::V4,
-        )
-        .unwrap();
+        ExtensionField::encode_encrypted(&mut cursor, &fields_to_encrypt, &cipher, version)
+            .unwrap();
         assert_eq!(
             cursor.position() as usize,
             2 + 6 + c2s.len() + expected_size
@@ -1115,7 +1104,7 @@ mod tests {
             &mut cursor,
             &fields_to_encrypt,
             &cipher,
-            ExtensionHeaderVersion::V4,
+            ProtocolVersion::V4,
         )
         .unwrap();
 
@@ -1124,12 +1113,8 @@ mod tests {
 
         let message_bytes = &w.as_ref()[..expected_length];
 
-        let mut it = RawExtensionField::deserialize_sequence(
-            message_bytes,
-            0,
-            0,
-            ExtensionHeaderVersion::V4,
-        );
+        let mut it =
+            RawExtensionField::deserialize_sequence(message_bytes, 0, 0, ProtocolVersion::V4);
         let field = it.next().unwrap().unwrap();
         assert!(it.next().is_none());
 
@@ -1142,9 +1127,7 @@ mod tests {
                 },
             ) => {
                 let raw = RawEncryptedField::from_message_bytes(message_bytes).unwrap();
-                let decrypted_fields = raw
-                    .decrypt(&cipher, &[], ExtensionHeaderVersion::V4)
-                    .unwrap();
+                let decrypted_fields = raw.decrypt(&cipher, &[], ProtocolVersion::V4).unwrap();
                 assert_eq!(decrypted_fields, fields_to_encrypt);
             }
             _ => panic!("invalid"),
@@ -1167,7 +1150,7 @@ mod tests {
             let mut w = [0u8; 128];
             let mut cursor = Cursor::new(w.as_mut_slice());
             assert!(data
-                .serialize(&mut cursor, &cipher, ExtensionHeaderVersion::V4)
+                .serialize(&mut cursor, &cipher, ProtocolVersion::V4)
                 .is_err());
         }
 
@@ -1182,7 +1165,7 @@ mod tests {
             let mut w = [0u8; 128];
             let mut cursor = Cursor::new(w.as_mut_slice());
             assert!(data
-                .serialize(&mut cursor, &cipher, ExtensionHeaderVersion::V4)
+                .serialize(&mut cursor, &cipher, ProtocolVersion::V4)
                 .is_ok());
         }
     }
@@ -1202,7 +1185,7 @@ mod tests {
 
         let mut w = [0u8; 128];
         let mut cursor = Cursor::new(w.as_mut_slice());
-        data.serialize(&mut cursor, &cipher, ExtensionHeaderVersion::V4)
+        data.serialize(&mut cursor, &cipher, ProtocolVersion::V4)
             .unwrap();
 
         let n = cursor.position() as usize;
@@ -1228,7 +1211,7 @@ mod tests {
 
         let mut w = [0u8; 128];
         let mut cursor = Cursor::new(w.as_mut_slice());
-        data.serialize(&mut cursor, &cipher, ExtensionHeaderVersion::V4)
+        data.serialize(&mut cursor, &cipher, ProtocolVersion::V4)
             .unwrap();
 
         let n = cursor.position() as usize;
@@ -1255,7 +1238,7 @@ mod tests {
 
         let mut w = [0u8; 128];
         let mut cursor = Cursor::new(w.as_mut_slice());
-        data.serialize(&mut cursor, &cipher, ExtensionHeaderVersion::V4)
+        data.serialize(&mut cursor, &cipher, ProtocolVersion::V4)
             .unwrap();
 
         let n = cursor.position() as usize;
@@ -1264,7 +1247,7 @@ mod tests {
         let cipher = crate::packet::crypto::NoCipher;
 
         let result =
-            ExtensionFieldData::deserialize(slice, 0, &cipher, ExtensionHeaderVersion::V4).unwrap();
+            ExtensionFieldData::deserialize(slice, 0, &cipher, ProtocolVersion::V4).unwrap();
 
         let DeserializedExtensionField {
             efdata,
@@ -1296,7 +1279,7 @@ mod tests {
 
         let mut w = [0u8; 128];
         let mut cursor = Cursor::new(w.as_mut_slice());
-        data.serialize(&mut cursor, &cipher, ExtensionHeaderVersion::V4)
+        data.serialize(&mut cursor, &cipher, ProtocolVersion::V4)
             .unwrap();
 
         let n = cursor.position() as usize;
@@ -1304,8 +1287,8 @@ mod tests {
 
         let cipher = crate::packet::crypto::NoCipher;
 
-        let result = ExtensionFieldData::deserialize(slice, 0, &cipher, ExtensionHeaderVersion::V4)
-            .unwrap_err();
+        let result =
+            ExtensionFieldData::deserialize(slice, 0, &cipher, ProtocolVersion::V4).unwrap_err();
 
         let ParsingError::DecryptError(InvalidNtsExtensionField {
             efdata,
@@ -1338,7 +1321,7 @@ mod tests {
 
         let mut w = [0u8; 128];
         let mut cursor = Cursor::new(w.as_mut_slice());
-        data.serialize(&mut cursor, &cipher, ExtensionHeaderVersion::V4)
+        data.serialize(&mut cursor, &cipher, ProtocolVersion::V4)
             .unwrap();
 
         let n = cursor.position() as usize;
@@ -1348,8 +1331,8 @@ mod tests {
         let c2s = [0; 32];
         let cipher = AesSivCmac256::new(c2s.into());
 
-        let result = ExtensionFieldData::deserialize(slice, 0, &cipher, ExtensionHeaderVersion::V4)
-            .unwrap_err();
+        let result =
+            ExtensionFieldData::deserialize(slice, 0, &cipher, ProtocolVersion::V4).unwrap_err();
 
         let ParsingError::DecryptError(InvalidNtsExtensionField {
             efdata,
@@ -1384,14 +1367,14 @@ mod tests {
 
         let mut w = [0u8; 256];
         let mut cursor = Cursor::new(w.as_mut_slice());
-        data.serialize(&mut cursor, &keyset, ExtensionHeaderVersion::V4)
+        data.serialize(&mut cursor, &keyset, ProtocolVersion::V4)
             .unwrap();
 
         let n = cursor.position() as usize;
         let slice = &w.as_slice()[..n];
 
         let result =
-            ExtensionFieldData::deserialize(slice, 0, &keyset, ExtensionHeaderVersion::V4).unwrap();
+            ExtensionFieldData::deserialize(slice, 0, &keyset, ProtocolVersion::V4).unwrap();
 
         let DeserializedExtensionField {
             efdata,

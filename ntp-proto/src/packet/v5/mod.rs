@@ -1,12 +1,15 @@
 #![warn(clippy::missing_const_for_fn)]
-use crate::{NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, SystemSnapshot};
-use rand::random;
+
+use crate::{NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, PollInterval, SystemSnapshot};
+use rand::distributions::{Distribution, Standard};
+use rand::{random, Rng};
 
 mod error;
 #[allow(dead_code)]
 pub mod extension_fields;
 
 use crate::packet::error::ParsingError;
+use crate::packet::RequestIdentifier;
 pub use error::V5Error;
 
 #[allow(dead_code)]
@@ -71,7 +74,7 @@ impl NtpTimescale {
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct NtpEra(pub u8);
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Default)]
 pub struct NtpFlags {
     unknown_leap: bool,
     interleaved_mode: bool,
@@ -104,22 +107,33 @@ impl NtpFlags {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Default)]
 pub struct NtpServerCookie(pub [u8; 8]);
 
-impl NtpServerCookie {
-    fn new_random() -> NtpServerCookie {
-        // TODO does this match entropy handling of the rest of the system?
-        Self(random())
+// Allow thread_rng().gen() for NtpServerCookie
+impl Distribution<NtpServerCookie> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> NtpServerCookie {
+        NtpServerCookie(rng.gen())
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Default)]
 pub struct NtpClientCookie(pub [u8; 8]);
 
 impl NtpClientCookie {
     pub const fn from_ntp_timestamp(ts: NtpTimestamp) -> Self {
         Self(ts.to_bits())
+    }
+
+    pub const fn into_ntp_timestamp(self) -> NtpTimestamp {
+        NtpTimestamp::from_bits(self.0)
+    }
+}
+
+// Allow thread_rng().gen() for NtpClientCookie
+impl Distribution<NtpClientCookie> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> NtpClientCookie {
+        NtpClientCookie(rng.gen())
     }
 }
 
@@ -144,6 +158,42 @@ pub struct NtpHeaderV5 {
 }
 
 impl NtpHeaderV5 {
+    /// A new, empty NtpHeader
+    pub fn new() -> Self {
+        Self {
+            leap: NtpLeapIndicator::NoWarning,
+            mode: NtpMode::Request,
+            stratum: 0,
+            poll: 0,
+            precision: 0,
+            timescale: NtpTimescale::Utc,
+            era: NtpEra(0),
+            flags: NtpFlags::default(),
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            server_cookie: NtpServerCookie::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            transmit_timestamp: NtpTimestamp::default(),
+            client_cookie: NtpClientCookie::default(),
+        }
+    }
+
+    pub(crate) fn poll_message(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
+        let mut packet = Self::new();
+        packet.poll = poll_interval.as_log();
+        packet.mode = NtpMode::Request;
+
+        let client_cookie = random();
+        packet.client_cookie = client_cookie;
+
+        (
+            packet,
+            RequestIdentifier {
+                expected_origin_timestamp: client_cookie.into_ntp_timestamp(),
+                uid: None,
+            },
+        )
+    }
     pub(crate) fn timestamp_response<C: NtpClock>(
         system: &SystemSnapshot,
         input: Self,
@@ -168,7 +218,7 @@ impl NtpHeaderV5 {
             },
             root_delay: system.time_snapshot.root_delay,
             root_dispersion: system.time_snapshot.root_dispersion,
-            server_cookie: NtpServerCookie::new_random(),
+            server_cookie: random(),
             client_cookie: input.client_cookie,
             receive_timestamp: recv_timestamp,
             transmit_timestamp: clock.now().expect("Failed to read time"),

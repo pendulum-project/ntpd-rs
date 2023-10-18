@@ -592,7 +592,7 @@ mod tests {
 
     use ntp_proto::{
         KeySetProvider, NtpDuration, NtpLeapIndicator, PollInterval, PollIntervalLimits,
-        ReferenceId,
+        ProtocolVersion, ReferenceId,
     };
 
     use crate::daemon::config::FilterList;
@@ -693,7 +693,8 @@ mod tests {
         )
         .await
         .unwrap();
-        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let (packet, id) =
+            NtpPacket::poll_message(PollIntervalLimits::default().min, ProtocolVersion::V4);
 
         let serialized = serialize_packet_unencryped(&packet);
         socket.send(&serialized).await.unwrap();
@@ -739,7 +740,8 @@ mod tests {
         )
         .await
         .unwrap();
-        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let (packet, id) =
+            NtpPacket::poll_message(PollIntervalLimits::default().min, ProtocolVersion::V4);
 
         let serialized = serialize_packet_unencryped(&packet);
         socket.send(&serialized).await.unwrap();
@@ -786,7 +788,8 @@ mod tests {
         )
         .await
         .unwrap();
-        let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let (packet, _) =
+            NtpPacket::poll_message(PollIntervalLimits::default().min, ProtocolVersion::V4);
 
         let serialized = serialize_packet_unencryped(&packet);
         socket.send(&serialized).await.unwrap();
@@ -827,7 +830,8 @@ mod tests {
         )
         .await
         .unwrap();
-        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let (packet, id) =
+            NtpPacket::poll_message(PollIntervalLimits::default().min, ProtocolVersion::V4);
 
         let serialized = serialize_packet_unencryped(&packet);
         socket.send(&serialized).await.unwrap();
@@ -873,7 +877,8 @@ mod tests {
         )
         .await
         .unwrap();
-        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let (packet, id) =
+            NtpPacket::poll_message(PollIntervalLimits::default().min, ProtocolVersion::V4);
 
         let serialized = serialize_packet_unencryped(&packet);
         socket.send(&serialized).await.unwrap();
@@ -920,7 +925,8 @@ mod tests {
         )
         .await
         .unwrap();
-        let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let (packet, _) =
+            NtpPacket::poll_message(PollIntervalLimits::default().min, ProtocolVersion::V4);
 
         let serialized = serialize_packet_unencryped(&packet);
         socket.send(&serialized).await.unwrap();
@@ -962,7 +968,8 @@ mod tests {
         .await
         .unwrap();
 
-        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let (packet, id) =
+            NtpPacket::poll_message(PollIntervalLimits::default().min, ProtocolVersion::V4);
 
         let serialized = serialize_packet_unencryped(&packet);
         socket.send(&serialized).await.unwrap();
@@ -978,7 +985,8 @@ mod tests {
 
         tokio::time::sleep(std::time::Duration::from_millis(120)).await;
 
-        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let (packet, id) =
+            NtpPacket::poll_message(PollIntervalLimits::default().min, ProtocolVersion::V4);
 
         let serialized = serialize_packet_unencryped(&packet);
         socket.send(&serialized).await.unwrap();
@@ -992,7 +1000,8 @@ mod tests {
         assert_ne!(packet.stratum(), 0);
         assert!(packet.valid_server_response(id, false));
 
-        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let (packet, id) =
+            NtpPacket::poll_message(PollIntervalLimits::default().min, ProtocolVersion::V4);
 
         let serialized = serialize_packet_unencryped(&packet);
         socket.send(&serialized).await.unwrap();
@@ -1040,7 +1049,8 @@ mod tests {
         .await
         .unwrap();
 
-        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let (packet, id) =
+            NtpPacket::poll_message(PollIntervalLimits::default().min, ProtocolVersion::V4);
 
         let serialized = serialize_packet_unencryped(&packet);
         socket.send(&serialized).await.unwrap();
