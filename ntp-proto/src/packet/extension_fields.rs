@@ -447,11 +447,9 @@ impl<'a> ExtensionField<'a> {
     fn decode_draft_identification(
         message: &'a [u8],
     ) -> Result<Self, ParsingError<std::convert::Infallible>> {
-        let err = Err(super::v5::V5Error::InvalidDraftIdentification.into());
         let di = match core::str::from_utf8(message) {
-            Err(_) => return err,
-            Ok(di) if !di.is_ascii() => return err,
-            Ok(di) => di,
+            Ok(di) if di.is_ascii() => di,
+            _ => return Err(super::v5::V5Error::InvalidDraftIdentification.into()),
         };
 
         Ok(ExtensionField::DraftIdentification(Cow::Borrowed(di)))
@@ -951,25 +949,25 @@ mod tests {
     #[cfg(feature = "ntpv5")]
     #[test]
     fn draft_identification() {
-        let test_id = "draft-ietf-ntp-ntpv5-00\0";
+        let test_id = crate::packet::v5::DRAFT_VERSION;
         let len = u16::try_from(4 + test_id.len()).unwrap();
         let mut data = vec![];
-        data.extend(&[0xF5, 0xFF]);
-        data.extend(&len.to_be_bytes());
-        data.extend(test_id.as_bytes());
+        data.extend(&[0xF5, 0xFF]); // Type
+        data.extend(&len.to_be_bytes()); // Length
+        data.extend(test_id.as_bytes()); // Payload
+        data.extend(&[0]); // Padding
 
-        let raw = RawExtensionField::deserialize(&data, 0, ExtensionHeaderVersion::V5).unwrap();
+        let raw = RawExtensionField::deserialize(&data, 4, ExtensionHeaderVersion::V5).unwrap();
         let ef = ExtensionField::decode(raw).unwrap();
 
-        match ef {
-            ExtensionField::DraftIdentification(ref data) => {
-                assert_eq!(data, test_id);
-            }
-            _ => panic!("Unexpected extensionfield {ef:?}"),
-        }
+        let ExtensionField::DraftIdentification(ref parsed) = ef else {
+            panic!("Unexpected extensionfield {ef:?}... expected DraftIdentification");
+        };
+
+        assert_eq!(parsed, test_id);
 
         let mut out = vec![];
-        ef.serialize(&mut out, len, ExtensionHeaderVersion::V4)
+        ef.serialize(&mut out, 4, ExtensionHeaderVersion::V5)
             .unwrap();
 
         assert_eq!(&out, &data);
