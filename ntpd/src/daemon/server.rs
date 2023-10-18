@@ -114,11 +114,58 @@ enum AcceptResult<'a> {
     },
 }
 
+impl AcceptResult<'_> {
+    fn apply_deny(self) -> Self {
+        // We should send deny messages only to reasonable requests
+        // otherwise two servers could end up in a loop of sending
+        // deny's to each other.
+        match self {
+            AcceptResult::Accept {
+                packet,
+                max_response_size,
+                decoded_cookie,
+                peer_addr,
+                ..
+            } => AcceptResult::Deny {
+                packet,
+                max_response_size,
+                decoded_cookie,
+                peer_addr,
+            },
+            other => other,
+        }
+    }
+
+    fn apply_rate_limit(self) -> Self {
+        match self {
+            AcceptResult::Accept {
+                packet,
+                max_response_size,
+                decoded_cookie,
+                peer_addr,
+                ..
+            } => AcceptResult::RateLimit {
+                packet,
+                max_response_size,
+                decoded_cookie,
+                peer_addr,
+            },
+            other => other,
+        }
+    }
+}
+
 #[must_use]
 #[derive(Debug, Clone, Copy)]
 enum SocketConnection {
     KeepAlive,
     Reconnect,
+}
+
+enum FilterReason {
+    Deny,
+    Ignore,
+    RateLimit,
 }
 
 impl<C: 'static + NtpClock + Send> ServerTask<C> {
@@ -206,6 +253,25 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         }
     }
 
+    fn check_filters(
+        &mut self,
+        peer_addr: SocketAddr,
+        cutoff: Duration,
+    ) -> Result<(), FilterReason> {
+        match self.filter(&peer_addr.ip()) {
+            Some(FilterAction::Deny) => Err(FilterReason::Deny),
+            Some(FilterAction::Ignore) => Err(FilterReason::Ignore),
+            None => {
+                let now = Instant::now();
+                if self.client_cache.is_allowed(peer_addr.ip(), now, cutoff) {
+                    Ok(())
+                } else {
+                    Err(FilterReason::RateLimit)
+                }
+            }
+        }
+    }
+
     async fn handle_receive(
         &mut self,
         socket: &ntp_udp::UdpSocket,
@@ -233,9 +299,17 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     }
                 }
             }
-            Ok(recv) => {
-                self.serve_packet(socket, buf, recv, rate_limiting_cutoff)
-                    .await;
+            Ok((length, peer_addr, opt_timestamp)) => {
+                let filter_result = self.check_filters(peer_addr, rate_limiting_cutoff);
+
+                self.serve_packet(
+                    socket,
+                    &buf[..length],
+                    peer_addr,
+                    opt_timestamp,
+                    filter_result,
+                )
+                .await;
 
                 SocketConnection::KeepAlive
             }
@@ -246,11 +320,12 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         &mut self,
         socket: &ntp_udp::UdpSocket,
         buf: &[u8],
-        recv: (usize, SocketAddr, Option<NtpTimestamp>),
-        rate_limiting_cutoff: Duration,
+        socket_addr: SocketAddr,
+        opt_timestamp: Option<NtpTimestamp>,
+        filter_result: Result<(), FilterReason>,
     ) {
         self.stats.received_packets.inc();
-        let accept_result = self.accept_packet(rate_limiting_cutoff, recv, buf);
+        let accept_result = self.accept_packet(buf, socket_addr, opt_timestamp, filter_result);
 
         match accept_result {
             AcceptResult::Accept {
@@ -429,75 +504,40 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
     }
 
     fn accept_packet<'a>(
-        &mut self,
-        rate_limiting_cutoff: Duration,
-        result: (usize, SocketAddr, Option<NtpTimestamp>),
+        &self,
         buf: &'a [u8],
+        peer_addr: SocketAddr,
+        opt_timestamp: Option<NtpTimestamp>,
+        filter_result: Result<(), FilterReason>,
     ) -> AcceptResult<'a> {
-        match result {
-            (size, peer_addr, Some(recv_timestamp)) if size >= 48 => {
-                // Note: packets are allowed to be bigger when including extensions.
-                // we don't expect many, but the client may still send them. We try
-                // to see if the message still makes sense with some bytes dropped.
-                // Messages of fewer than 48 bytes are skipped entirely
-                match self.filter(&peer_addr.ip()) {
-                    Some(FilterAction::Deny) => {
-                        match self.accept_data(&buf[..size], peer_addr, recv_timestamp) {
-                            // We should send deny messages only to reasonable requests
-                            // otherwise two servers could end up in a loop of sending
-                            // deny's to each other.
-                            AcceptResult::Accept {
-                                packet,
-                                max_response_size,
-                                decoded_cookie,
-                                peer_addr,
-                                ..
-                            } => AcceptResult::Deny {
-                                packet,
-                                max_response_size,
-                                decoded_cookie,
-                                peer_addr,
-                            },
-                            v => v,
-                        }
-                    }
-                    Some(FilterAction::Ignore) => AcceptResult::Ignore,
-                    None => {
-                        let timestamp = Instant::now();
-                        let cutoff = rate_limiting_cutoff;
-                        let too_soon =
-                            !self
-                                .client_cache
-                                .is_allowed(peer_addr.ip(), timestamp, cutoff);
+        let size = buf.len();
 
-                        match self.accept_data(&buf[..size], peer_addr, recv_timestamp) {
-                            AcceptResult::Accept {
-                                packet,
-                                max_response_size,
-                                decoded_cookie,
-                                peer_addr,
-                                ..
-                            } if too_soon => AcceptResult::RateLimit {
-                                packet,
-                                max_response_size,
-                                decoded_cookie,
-                                peer_addr,
-                            },
-                            accept_result => accept_result,
-                        }
-                    }
-                }
-            }
-            (size, _, Some(_)) => {
-                debug!(expected = 48, actual = size, "received packet is too small");
+        // Note: packets are allowed to be bigger when including extensions.
+        // we don't expect many, but the client may still send them. We try
+        // to see if the message still makes sense with some bytes dropped.
+        // Messages of fewer than 48 bytes are skipped entirely
+        if buf.len() < 48 {
+            debug!(expected = 48, actual = size, "received packet is too small");
+            return AcceptResult::Ignore;
+        }
 
-                AcceptResult::Ignore
-            }
-            (size, _, None) => {
-                debug!(?size, "received a packet without a timestamp");
+        let Some(recv_timestamp) = opt_timestamp else {
+            debug!(size, "received a packet without a timestamp");
+            return AcceptResult::Ignore;
+        };
 
-                AcceptResult::Ignore
-            }
+        if let Err(FilterReason::Ignore) = filter_result {
+            return AcceptResult::Ignore;
+        }
+
+        // actually parse the packet
+        let accept_data = self.accept_data(buf, peer_addr, recv_timestamp);
+
+        match filter_result {
+            Ok(_) => accept_data,
+            Err(FilterReason::Ignore) => unreachable!(),
+            Err(FilterReason::Deny) => accept_data.apply_deny(),
+            Err(FilterReason::RateLimit) => accept_data.apply_rate_limit(),
         }
     }
 
