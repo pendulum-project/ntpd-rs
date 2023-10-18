@@ -112,7 +112,13 @@ enum AcceptResult<'a> {
         max_response_size: usize,
         peer_addr: SocketAddr,
     },
-    NetworkGone,
+}
+
+#[must_use]
+#[derive(Debug, Clone, Copy)]
+enum SocketConnection {
+    KeepAlive,
+    Reconnect,
 }
 
 impl<C: 'static + NtpClock + Send> ServerTask<C> {
@@ -164,29 +170,33 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
     async fn serve(&mut self, rate_limiting_cutoff: Duration) {
         let mut cur_socket = None;
         loop {
-            let socket = if let Some(ref socket) = cur_socket {
-                socket
-            } else {
-                cur_socket = Some(loop {
-                    match UdpSocket::server(self.config.listen, self.interface).await {
-                        Ok(socket) => break socket,
-                        Err(error) => {
-                            warn!(?error, ?self.config.listen, ?self.interface, "Could not open server socket");
-                            tokio::time::sleep(self.network_wait_period).await;
+            // open socket if it is not already open
+            let socket = match &cur_socket {
+                Some(socket) => socket,
+                None => {
+                    let new_socket = loop {
+                        match UdpSocket::server(self.config.listen, self.interface).await {
+                            Ok(socket) => break socket,
+                            Err(error) => {
+                                warn!(?error, ?self.config.listen, ?self.interface, "Could not open server socket");
+                                tokio::time::sleep(self.network_wait_period).await;
+                            }
                         }
-                    }
-                });
-                // system may now be wildly out of date, ensure it is always updated.
-                self.system = *self.system_receiver.borrow_and_update();
+                    };
 
-                cur_socket.as_ref().unwrap()
+                    // system may now be wildly out of date, ensure it is always updated.
+                    self.system = *self.system_receiver.borrow_and_update();
+
+                    cur_socket.insert(new_socket)
+                }
             };
 
             let mut buf = [0_u8; MAX_PACKET_SIZE];
             tokio::select! {
                 recv_res = socket.recv(&mut buf) => {
-                    if !self.serve_packet(socket, &buf, recv_res, rate_limiting_cutoff).await {
-                        cur_socket = None;
+                    match self.handle_receive(socket, &buf, recv_res, rate_limiting_cutoff).await {
+                        SocketConnection::KeepAlive => { /* do nothing */ }
+                        SocketConnection::Reconnect => { cur_socket = None }
                     }
                 },
                 _ = self.system_receiver.changed(), if self.system_receiver.has_changed().is_ok() => {
@@ -196,15 +206,51 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         }
     }
 
-    async fn serve_packet(
+    async fn handle_receive(
         &mut self,
-        socket: &UdpSocket,
+        socket: &ntp_udp::UdpSocket,
         buf: &[u8],
         recv_res: std::io::Result<(usize, SocketAddr, Option<NtpTimestamp>)>,
         rate_limiting_cutoff: Duration,
-    ) -> bool {
+    ) -> SocketConnection {
+        match recv_res {
+            Err(receive_error) => {
+                warn!(?receive_error, "could not receive packet");
+
+                // For a server, we only trigger NetworkGone restarts
+                // on ENETDOWN. ENETUNREACH, EHOSTDOWN and EHOSTUNREACH
+                // do not signal restart-worthy conditions for the a
+                // server (they essentially indicate problems with the
+                // remote network/host, which is not relevant for a server).
+                // Furthermore, they can conceivably be triggered by a
+                // malicious third party, and triggering restart on them
+                // would then result in a denial-of-service.
+                match receive_error.raw_os_error() {
+                    Some(libc::ENETDOWN) => SocketConnection::Reconnect,
+                    _ => {
+                        self.stats.ignored_packets.inc();
+                        SocketConnection::KeepAlive
+                    }
+                }
+            }
+            Ok(recv) => {
+                self.serve_packet(socket, buf, recv, rate_limiting_cutoff)
+                    .await;
+
+                SocketConnection::KeepAlive
+            }
+        }
+    }
+
+    async fn serve_packet(
+        &mut self,
+        socket: &ntp_udp::UdpSocket,
+        buf: &[u8],
+        recv: (usize, SocketAddr, Option<NtpTimestamp>),
+        rate_limiting_cutoff: Duration,
+    ) {
         self.stats.received_packets.inc();
-        let accept_result = self.accept_packet(rate_limiting_cutoff, recv_res, buf);
+        let accept_result = self.accept_packet(rate_limiting_cutoff, recv, buf);
 
         match accept_result {
             AcceptResult::Accept {
@@ -246,12 +292,12 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
 
                 if let Err(serialize_err) = serialize_result {
                     warn!(error=?serialize_err, "Could not serialize response");
-                    return true;
+                    return;
                 }
 
                 if cursor.position() as usize > max_response_size {
                     warn!("Generated response that was larger than the request. This is a bug!");
-                    return true;
+                    return;
                 }
 
                 if let Err(send_err) = socket
@@ -288,12 +334,12 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 if let Err(serialize_err) = serialize_result {
                     self.stats.response_send_errors.inc();
                     warn!(error=?serialize_err, "Could not serialize response");
-                    return true;
+                    return;
                 }
 
                 if cursor.position() as usize > max_response_size {
                     warn!("Generated response that was larger than the request. This is a bug!");
-                    return true;
+                    return;
                 }
 
                 if let Err(send_err) = socket
@@ -318,12 +364,12 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 if let Err(serialize_err) = response.serialize(&mut cursor, &NoCipher) {
                     self.stats.response_send_errors.inc();
                     warn!(error=?serialize_err, "Could not serialize response");
-                    return true;
+                    return;
                 }
 
                 if cursor.position() as usize > max_response_size {
                     warn!("Generated response that was larger than the request. This is a bug!");
-                    return true;
+                    return;
                 }
 
                 if let Err(send_err) = socket
@@ -333,10 +379,6 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     self.stats.response_send_errors.inc();
                     warn!(error=?send_err, "Could not send nts nak packet");
                 }
-            }
-            AcceptResult::NetworkGone => {
-                warn!("Server connection gone");
-                return false;
             }
             AcceptResult::RateLimit {
                 packet,
@@ -364,12 +406,12 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 if let Err(serialize_err) = serialize_result {
                     self.stats.response_send_errors.inc();
                     warn!(error=?serialize_err, "Could not serialize response");
-                    return true;
+                    return;
                 }
 
                 if cursor.position() as usize > max_response_size {
                     warn!("Generated response that was larger than the request. This is a bug!");
-                    return true;
+                    return;
                 }
 
                 if let Err(send_err) = socket
@@ -384,17 +426,16 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 self.stats.ignored_packets.inc();
             }
         }
-        true
     }
 
     fn accept_packet<'a>(
         &mut self,
         rate_limiting_cutoff: Duration,
-        result: Result<(usize, SocketAddr, Option<NtpTimestamp>), std::io::Error>,
+        result: (usize, SocketAddr, Option<NtpTimestamp>),
         buf: &'a [u8],
     ) -> AcceptResult<'a> {
         match result {
-            Ok((size, peer_addr, Some(recv_timestamp))) if size >= 48 => {
+            (size, peer_addr, Some(recv_timestamp)) if size >= 48 => {
                 // Note: packets are allowed to be bigger when including extensions.
                 // we don't expect many, but the client may still send them. We try
                 // to see if the message still makes sense with some bytes dropped.
@@ -447,31 +488,15 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     }
                 }
             }
-            Ok((size, _, Some(_))) => {
+            (size, _, Some(_)) => {
                 debug!(expected = 48, actual = size, "received packet is too small");
 
                 AcceptResult::Ignore
             }
-            Ok((size, _, None)) => {
+            (size, _, None) => {
                 debug!(?size, "received a packet without a timestamp");
 
                 AcceptResult::Ignore
-            }
-            Err(receive_error) => {
-                warn!(?receive_error, "could not receive packet");
-
-                match receive_error.raw_os_error() {
-                    // For a server, we only trigger NetworkGone restarts
-                    // on ENETDOWN. ENETUNREACH, EHOSTDOWN and EHOSTUNREACH
-                    // do not signal restart-worthy conditions for the a
-                    // server (they essentially indicate problems with the
-                    // remote network/host, which is not relevant for a server).
-                    // Furthermore, they can conceivably be triggered by a
-                    // malicious third party, and triggering restart on them
-                    // would then result in a denial-of-service.
-                    Some(libc::ENETDOWN) => AcceptResult::NetworkGone,
-                    _ => AcceptResult::Ignore,
-                }
             }
         }
     }
