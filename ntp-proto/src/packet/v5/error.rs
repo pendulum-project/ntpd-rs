@@ -1,3 +1,4 @@
+use crate::packet::error::ParsingError;
 use std::fmt::{Display, Formatter};
 
 #[derive(Debug)]
@@ -6,6 +7,13 @@ pub enum V5Error {
     MalformedTimescale,
     MalformedMode,
     InvalidFlags,
+}
+
+impl V5Error {
+    /// `const` alternative to `.into()`
+    pub const fn into_parse_err(self) -> ParsingError<std::convert::Infallible> {
+        ParsingError::V5(self)
+    }
 }
 
 impl Display for V5Error {

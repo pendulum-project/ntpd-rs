@@ -1,3 +1,4 @@
+#![warn(clippy::missing_const_for_fn)]
 use crate::{NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, SystemSnapshot};
 use rand::random;
 
@@ -8,6 +9,9 @@ pub mod extension_fields;
 use crate::packet::error::ParsingError;
 pub use error::V5Error;
 
+#[allow(dead_code)]
+pub(crate) const DRAFT_VERSION: &str = "draft-ietf-ntp-ntpv5-00";
+
 #[repr(u8)]
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum NtpMode {
@@ -16,29 +20,26 @@ pub enum NtpMode {
 }
 
 impl NtpMode {
-    fn from_bits(bits: u8) -> Result<Self, ParsingError<std::convert::Infallible>> {
+    const fn from_bits(bits: u8) -> Result<Self, ParsingError<std::convert::Infallible>> {
         Ok(match bits {
             3 => Self::Request,
             4 => Self::Response,
-            _ => return Err(V5Error::MalformedMode.into()),
+            _ => return Err(V5Error::MalformedMode.into_parse_err()),
         })
     }
 
-    fn to_bits(self) -> u8 {
-        match self {
-            Self::Request => 3,
-            Self::Response => 4,
-        }
+    const fn to_bits(self) -> u8 {
+        self as u8
     }
 
     #[allow(dead_code)]
-    pub(crate) fn is_request(&self) -> bool {
-        self == &Self::Request
+    pub(crate) const fn is_request(self) -> bool {
+        matches!(self, Self::Request)
     }
 
     #[allow(dead_code)]
-    pub(crate) fn is_response(&self) -> bool {
-        self == &Self::Response
+    pub(crate) const fn is_response(self) -> bool {
+        matches!(self, Self::Response)
     }
 }
 
@@ -48,27 +49,22 @@ pub enum NtpTimescale {
     Utc = 0,
     Tai = 1,
     Ut1 = 2,
-    LeadSmearedUtc = 3,
+    LeapSmearedUtc = 3,
 }
 
 impl NtpTimescale {
-    fn from_bits(bits: u8) -> Result<Self, ParsingError<std::convert::Infallible>> {
+    const fn from_bits(bits: u8) -> Result<Self, ParsingError<std::convert::Infallible>> {
         Ok(match bits {
             0 => Self::Utc,
             1 => Self::Tai,
             2 => Self::Ut1,
-            3 => Self::LeadSmearedUtc,
-            _ => return Err(V5Error::MalformedTimescale.into()),
+            3 => Self::LeapSmearedUtc,
+            _ => return Err(V5Error::MalformedTimescale.into_parse_err()),
         })
     }
 
-    fn to_bits(self) -> u8 {
-        match self {
-            Self::Utc => 0,
-            Self::Tai => 1,
-            Self::Ut1 => 2,
-            Self::LeadSmearedUtc => 3,
-        }
+    const fn to_bits(self) -> u8 {
+        self as u8
     }
 }
 
@@ -82,9 +78,9 @@ pub struct NtpFlags {
 }
 
 impl NtpFlags {
-    fn from_bits(bits: [u8; 2]) -> Result<Self, ParsingError<std::convert::Infallible>> {
-        if bits[0] != 0x00 || bits[1] & 0xFC != 0 {
-            return Err(V5Error::InvalidFlags.into());
+    const fn from_bits(bits: [u8; 2]) -> Result<Self, ParsingError<std::convert::Infallible>> {
+        if bits[0] != 0x00 || bits[1] & 0b1111_1100 != 0 {
+            return Err(V5Error::InvalidFlags.into_parse_err());
         }
 
         Ok(Self {
@@ -93,7 +89,7 @@ impl NtpFlags {
         })
     }
 
-    fn as_bits(&self) -> [u8; 2] {
+    const fn as_bits(self) -> [u8; 2] {
         let mut flags: u8 = 0;
 
         if self.unknown_leap {
@@ -122,7 +118,7 @@ impl NtpServerCookie {
 pub struct NtpClientCookie(pub [u8; 8]);
 
 impl NtpClientCookie {
-    pub fn from_ntp_timestamp(ts: NtpTimestamp) -> Self {
+    pub const fn from_ntp_timestamp(ts: NtpTimestamp) -> Self {
         Self(ts.to_bits())
     }
 }
@@ -181,12 +177,13 @@ impl NtpHeaderV5 {
 }
 
 impl NtpHeaderV5 {
-    const LENGTH: usize = 48;
+    const WIRE_LENGTH: usize = 48;
+    const VERSION: u8 = 5;
 
     pub(crate) fn deserialize(
         data: &[u8],
     ) -> Result<(Self, usize), ParsingError<std::convert::Infallible>> {
-        if data.len() < Self::LENGTH {
+        if data.len() < Self::WIRE_LENGTH {
             return Err(ParsingError::IncorrectLength);
         }
 
@@ -212,13 +209,13 @@ impl NtpHeaderV5 {
                 receive_timestamp: NtpTimestamp::from_bits(data[32..40].try_into().unwrap()),
                 transmit_timestamp: NtpTimestamp::from_bits(data[40..48].try_into().unwrap()),
             },
-            Self::LENGTH,
+            Self::WIRE_LENGTH,
         ))
     }
 
     #[allow(dead_code)]
     pub(crate) fn serialize<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
-        w.write_all(&[(self.leap.to_bits() << 6) | (5 << 3) | self.mode.to_bits()])?;
+        w.write_all(&[(self.leap.to_bits() << 6) | (Self::VERSION << 3) | self.mode.to_bits()])?;
         w.write_all(&[self.stratum, self.poll as u8, self.precision as u8])?;
         w.write_all(&[self.timescale.to_bits()])?;
         w.write_all(&[self.era.0])?;

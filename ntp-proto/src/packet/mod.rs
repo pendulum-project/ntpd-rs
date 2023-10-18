@@ -151,7 +151,7 @@ pub struct RequestIdentifier {
 }
 
 impl NtpHeaderV3V4 {
-    const LENGTH: usize = 48;
+    const WIRE_LENGTH: usize = 48;
 
     /// A new, empty NtpHeader
     fn new() -> Self {
@@ -172,7 +172,7 @@ impl NtpHeaderV3V4 {
     }
 
     fn deserialize(data: &[u8]) -> Result<(Self, usize), ParsingError<std::convert::Infallible>> {
-        if data.len() < Self::LENGTH {
+        if data.len() < Self::WIRE_LENGTH {
             return Err(ParsingError::IncorrectLength);
         }
 
@@ -191,7 +191,7 @@ impl NtpHeaderV3V4 {
                 receive_timestamp: NtpTimestamp::from_bits(data[32..40].try_into().unwrap()),
                 transmit_timestamp: NtpTimestamp::from_bits(data[40..48].try_into().unwrap()),
             },
-            Self::LENGTH,
+            Self::WIRE_LENGTH,
         ))
     }
 
@@ -851,8 +851,7 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V3(header) => header.stratum == 0,
             NtpHeader::V4(header) => header.stratum == 0,
             #[cfg(feature = "ntpv5")]
-            // TODO NTPv5 does not have kiss codes yet
-            NtpHeader::V5(_header) => false,
+            NtpHeader::V5(_header) => todo!("NTPv5 does not have kiss codes yet"),
         }
     }
 
@@ -1012,7 +1011,7 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V3(ref mut header) => header.reference_id = reference_id,
             NtpHeader::V4(ref mut header) => header.reference_id = reference_id,
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!("NTPv5 does not have refernce IDs"),
+            NtpHeader::V5(_header) => todo!("NTPv5 does not have reference IDs"),
         }
     }
 
