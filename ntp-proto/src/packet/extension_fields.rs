@@ -710,7 +710,7 @@ pub enum ExtensionHeaderVersion {
 #[cfg(feature = "__internal-fuzz")]
 impl<'a> arbitrary::Arbitrary<'a> for ExtensionHeaderVersion {
     #[cfg(not(feature = "ntpv5"))]
-    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+    fn arbitrary(_u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         Ok(Self::V4)
     }
 
