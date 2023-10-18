@@ -14,7 +14,7 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn from_bits(bits: u16) -> Self {
+    pub const fn from_bits(bits: u16) -> Self {
         match bits {
             0xF5FF => Self::DraftIdentification,
             0xF501 => Self::Padding,
@@ -30,7 +30,7 @@ impl Type {
         }
     }
 
-    pub fn to_bits(self) -> u16 {
+    pub const fn to_bits(self) -> u16 {
         match self {
             Self::DraftIdentification => 0xF5FF,
             Self::Padding => 0xF501,
@@ -60,8 +60,7 @@ impl Type {
             Self::MonotonicReceiveTimestamp,
             Self::SecondaryReceiveTimestamp,
         ]
-        .iter()
-        .copied()
+        .into_iter()
     }
 }
 
