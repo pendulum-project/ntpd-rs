@@ -200,7 +200,7 @@ loglevel = "info" # Other values include trace, debug, warn and error
 [[port]]
 interface = "enp0s31f6"
 "#;
-        
+
         let expected_port = crate::config::PortConfig {
             interface: InterfaceName::from_str("enp0s31f6").unwrap(),
             acceptable_master_list: None,
@@ -211,9 +211,9 @@ interface = "enp0s31f6"
             announce_receipt_timeout: 3,
             master_only: false,
             delay_asymmetry: 0,
-            delay_mechanism: 0
+            delay_mechanism: 0,
         };
-        
+
         let expected = crate::config::Config {
             loglevel: "info".to_string(),
             sdo_id: 0x000,
@@ -222,10 +222,10 @@ interface = "enp0s31f6"
             priority1: 128,
             priority2: 128,
             ports: vec![expected_port],
-        }; 
+        };
 
         let actual = toml::from_str(MINIMAL_CONFIG).unwrap();
-        
+
         assert_eq!(expected, actual);
     }
 }
