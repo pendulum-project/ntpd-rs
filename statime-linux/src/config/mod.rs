@@ -9,11 +9,15 @@ use timestamped_socket::interface::InterfaceName;
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Config {
     pub loglevel: String,
+    #[serde(default = "default_sdo_id")]
     pub sdo_id: u16,
+    #[serde(default = "default_domain")]
     pub domain: u8,
     #[serde(default, deserialize_with = "deserialize_clock_identity")]
     pub identity: Option<ClockIdentity>,
+    #[serde(default = "default_priority1")]
     pub priority1: u8,
+    #[serde(default = "default_priority2")]
     pub priority2: u8,
     #[serde(rename = "port")]
     pub ports: Vec<PortConfig>,
@@ -28,12 +32,17 @@ pub struct PortConfig {
     pub hardware_clock: Option<String>,
     #[serde(default)]
     pub network_mode: NetworkMode,
+    #[serde(default = "default_announce_interval")]
     pub announce_interval: i8,
+    #[serde(default = "default_sync_interval")]
     pub sync_interval: i8,
+    #[serde(default = "default_announce_receipt_timeout")]
     pub announce_receipt_timeout: u8,
     #[serde(default)]
     pub master_only: bool,
-    pub delay_asymetry: i64,
+    #[serde(default = "default_delay_asymmetry")]
+    pub delay_asymmetry: i64,
+    #[serde(default = "default_delay_mechanism")]
     pub delay_mechanism: i8,
 }
 
@@ -78,7 +87,7 @@ impl From<PortConfig> for statime::PortConfig<Option<Vec<ClockIdentity>>> {
             sync_interval: Interval::from_log_2(pc.sync_interval),
             announce_receipt_timeout: pc.announce_receipt_timeout,
             master_only: pc.master_only,
-            delay_asymmetry: Duration::from_nanos(pc.delay_asymetry),
+            delay_asymmetry: Duration::from_nanos(pc.delay_asymmetry),
             delay_mechanism: DelayMechanism::E2E {
                 interval: Interval::from_log_2(pc.delay_mechanism),
             },
@@ -139,3 +148,84 @@ impl std::fmt::Display for ConfigError {
 }
 
 impl std::error::Error for ConfigError {}
+
+fn default_domain() -> u8 {
+    0
+}
+
+fn default_sdo_id() -> u16 {
+    0x000
+}
+
+fn default_announce_interval() -> i8 {
+    1
+}
+
+fn default_sync_interval() -> i8 {
+    0
+}
+
+fn default_announce_receipt_timeout() -> u8 {
+    3
+}
+
+fn default_priority1() -> u8 {
+    128
+}
+
+fn default_priority2() -> u8 {
+    128
+}
+
+fn default_delay_asymmetry() -> i64 {
+    0
+}
+
+fn default_delay_mechanism() -> i8 {
+    0
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use timestamped_socket::interface::InterfaceName;
+
+    // Minimal amount of config results in default values
+    #[test]
+    fn minimal_config() {
+        const MINIMAL_CONFIG: &str = r#"
+loglevel = "info" # Other values include trace, debug, warn and error
+
+[[port]]
+interface = "enp0s31f6"
+"#;
+        
+        let expected_port = crate::config::PortConfig {
+            interface: InterfaceName::from_str("enp0s31f6").unwrap(),
+            acceptable_master_list: None,
+            hardware_clock: None,
+            network_mode: crate::config::NetworkMode::Ipv4,
+            announce_interval: 1,
+            sync_interval: 0,
+            announce_receipt_timeout: 3,
+            master_only: false,
+            delay_asymmetry: 0,
+            delay_mechanism: 0
+        };
+        
+        let expected = crate::config::Config {
+            loglevel: "info".to_string(),
+            sdo_id: 0x000,
+            domain: 0,
+            identity: None,
+            priority1: 128,
+            priority2: 128,
+            ports: vec![expected_port],
+        }; 
+
+        let actual = toml::from_str(MINIMAL_CONFIG).unwrap();
+        
+        assert_eq!(expected, actual);
+    }
+}
