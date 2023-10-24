@@ -39,6 +39,34 @@ pub struct ServerStats {
     pub nts_nak_packets: Counter,
 }
 
+impl ServerStats {
+    fn update_from(&self, res: &AcceptResult<'_>) {
+        use AcceptResult::{Accept, CryptoNak, Deny, Ignore, RateLimit};
+
+        self.received_packets.inc();
+
+        match res {
+            Accept { .. } => self.accepted_packets.inc(),
+            Ignore => self.ignored_packets.inc(),
+            Deny { .. } => self.denied_packets.inc(),
+            RateLimit { .. } => self.rate_limited_packets.inc(),
+            CryptoNak { .. } => self.nts_nak_packets.inc(),
+        };
+
+        if res.is_nts() {
+            self.nts_received_packets.inc();
+            match res {
+                Accept { .. } => self.nts_accepted_packets.inc(),
+                Deny { .. } => self.nts_denied_packets.inc(),
+                RateLimit { .. } => self.nts_rate_limited_packets.inc(),
+                CryptoNak { .. } | Ignore => {
+                    0 /* counted above */
+                }
+            };
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Counter {
     value: Arc<AtomicU64>,
@@ -325,30 +353,6 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         }
     }
 
-    fn update_stats(&self, res: &AcceptResult<'_>) {
-        use AcceptResult::{Accept, CryptoNak, Deny, Ignore, RateLimit};
-
-        self.stats.received_packets.inc();
-
-        match res {
-            Accept { .. } => self.stats.accepted_packets.inc(),
-            Ignore => self.stats.ignored_packets.inc(),
-            Deny { .. } => self.stats.denied_packets.inc(),
-            RateLimit { .. } => self.stats.rate_limited_packets.inc(),
-            CryptoNak { .. } => self.stats.nts_nak_packets.inc(),
-        }
-
-        if res.is_nts() {
-            self.stats.nts_received_packets.inc();
-            match res {
-                Accept { .. } => self.stats.nts_accepted_packets.inc(),
-                Deny { .. } => self.stats.nts_denied_packets.inc(),
-                RateLimit { .. } => self.stats.nts_rate_limited_packets.inc(),
-                CryptoNak { .. } | Ignore => { /* counted above */ }
-            }
-        }
-    }
-
     fn handle_packet<'buf>(
         &mut self,
         request_buf: &[u8],
@@ -361,7 +365,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         let accept_result =
             self.accept_packet(request_buf, peer_addr, opt_timestamp, filter_result);
 
-        self.update_stats(&accept_result);
+        self.stats.update_from(&accept_result);
 
         self.generate_response(accept_result, response_buf)
     }
