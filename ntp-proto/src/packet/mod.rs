@@ -505,6 +505,18 @@ impl<'a> NtpPacket<'a> {
         )
     }
 
+    // pub fn poll_message_v5(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
+    //     let (header, id) = NtpHeaderV5::poll_message(poll_interval);
+    //     (
+    //         NtpPacket {
+    //             header: NtpHeader::V5(header),
+    //             efdata: Default::default(),
+    //             mac: None,
+    //         },
+    //         id,
+    //     )
+    // }
+
     pub fn timestamp_response<C: NtpClock>(
         system: &SystemSnapshot,
         input: Self,

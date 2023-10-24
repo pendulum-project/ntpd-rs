@@ -1,6 +1,9 @@
 #![warn(clippy::missing_const_for_fn)]
-use crate::{NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, SystemSnapshot};
-use rand::random;
+use crate::{
+    NtpAssociationMode, NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, PollInterval,
+    SystemSnapshot,
+};
+use rand::{random, thread_rng, Rng};
 
 mod error;
 #[allow(dead_code)]
@@ -8,6 +11,8 @@ pub mod extension_fields;
 
 use crate::packet::error::ParsingError;
 pub use error::V5Error;
+
+use super::RequestIdentifier;
 
 #[allow(dead_code)]
 pub(crate) const DRAFT_VERSION: &str = "draft-ietf-ntp-ntpv5-00";
@@ -144,6 +149,28 @@ pub struct NtpHeaderV5 {
 }
 
 impl NtpHeaderV5 {
+    fn new() -> Self {
+        Self {
+            leap: NtpLeapIndicator::NoWarning,
+            mode: NtpMode::Request,
+            stratum: 0,
+            poll: 0,
+            precision: 0,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            transmit_timestamp: NtpTimestamp::default(),
+            timescale: NtpTimescale::Utc,
+            era: NtpEra(0),
+            flags: NtpFlags {
+                unknown_leap: false,
+                interleaved_mode: false,
+            },
+            server_cookie: NtpServerCookie([0; 8]),
+            client_cookie: NtpClientCookie([0; 8]),
+        }
+    }
+
     pub(crate) fn timestamp_response<C: NtpClock>(
         system: &SystemSnapshot,
         input: Self,
@@ -174,9 +201,7 @@ impl NtpHeaderV5 {
             transmit_timestamp: clock.now().expect("Failed to read time"),
         }
     }
-}
 
-impl NtpHeaderV5 {
     const WIRE_LENGTH: usize = 48;
     const VERSION: u8 = 5;
 
@@ -227,6 +252,23 @@ impl NtpHeaderV5 {
         w.write_all(&self.receive_timestamp.to_bits())?;
         w.write_all(&self.transmit_timestamp.to_bits())?;
         Ok(())
+    }
+
+    pub fn poll_message(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
+        let mut packet = Self::new();
+        packet.poll = poll_interval.as_log();
+        packet.mode = NtpMode::Request;
+
+        let transmit_timestamp = thread_rng().gen();
+        packet.transmit_timestamp = transmit_timestamp;
+
+        (
+            packet,
+            RequestIdentifier {
+                expected_origin_timestamp: transmit_timestamp,
+                uid: None,
+            },
+        )
     }
 }
 
