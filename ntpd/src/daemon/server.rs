@@ -11,8 +11,8 @@ use std::{
 };
 
 use ntp_proto::{
-    DecodedServerCookie, KeySet, NtpAssociationMode, NtpClock, NtpPacket, NtpTimestamp,
-    PacketParsingError, SystemSnapshot,
+    Cipher, DecodedServerCookie, KeySet, NoCipher, NtpAssociationMode, NtpClock, NtpPacket,
+    NtpTimestamp, PacketParsingError, SystemSnapshot,
 };
 use ntp_udp::{InterfaceName, UdpSocket};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -330,7 +330,6 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             }
             Ok((length, peer_addr, opt_timestamp)) => {
                 // FIXME: maybe perform min length and '%4' checks here to reduce work for those packets?
-
                 let request_buf = &buf[..length];
                 let mut response_buf = [0; MAX_PACKET_SIZE];
                 let response_buf = response_buf.as_mut_slice();
@@ -361,14 +360,20 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         opt_timestamp: Option<NtpTimestamp>,
         rate_limiting_cutoff: Duration,
     ) -> Option<&'buf [u8]> {
+        let size = request_buf.len();
+
         let Some(timestamp) = opt_timestamp else {
-            let size = request_buf.len();
             debug!(size, "received a packet without a timestamp");
             self.stats.update_from(&AcceptResult::Ignore);
             return None;
         };
 
-        if Self::pre_checks(request_buf).is_err() {
+        // Note: packets are allowed to be bigger when including extensions.
+        // we don't expect many, but the client may still send them. We try
+        // to see if the message still makes sense with some bytes dropped.
+        // Messages of fewer than 48 bytes are skipped entirely
+        if size < 48 {
+            debug!(actual = size, "received packet is too small");
             self.stats.update_from(&AcceptResult::Ignore);
             return None;
         }
@@ -379,83 +384,105 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             return None;
         }
 
-        let accept_result = self.accept_packet(request_buf, peer_addr, timestamp, filter_result);
+        // actually parse the packet
+        let accept_data = self.accept_data(request_buf, timestamp);
 
+        // apply filters
+        let accept_result = match filter_result {
+            Ok(_) => accept_data,
+            Err(FilterReason::Ignore) => AcceptResult::Ignore,
+            Err(FilterReason::Deny) => accept_data.apply_deny(),
+            Err(FilterReason::RateLimit) => accept_data.apply_rate_limit(),
+        };
+
+        // update statistics
         self.stats.update_from(&accept_result);
 
-        self.generate_response(accept_result, response_buf)
+        let (packet, opt_cipher) = self.generate_response(accept_result)?;
+        Self::serialize_response(response_buf, packet, opt_cipher)
     }
 
-    /// Build a response to the given packet
-    fn generate_response<'buf>(
+    fn generate_response<'a>(
         &self,
-        accept_result: AcceptResult<'_>,
-        response_buf: &'buf mut [u8],
-    ) -> Option<&'buf [u8]> {
+        accept_result: AcceptResult<'a>,
+    ) -> Option<(NtpPacket<'a>, Option<Box<dyn Cipher>>)> {
         let (packet, cipher) = match accept_result {
-            AcceptResult::Accept {
-                packet,
-                decoded_cookie: Some(cookie),
-                recv_timestamp,
-            } => {
-                let keyset = self.keyset.borrow().clone();
-                let response = NtpPacket::nts_timestamp_response(
-                    &self.system,
-                    packet,
-                    recv_timestamp,
-                    &self.clock,
-                    &cookie,
-                    &keyset,
-                );
-                (response, Some(cookie.s2c))
-            }
-            AcceptResult::Accept {
-                packet,
-                decoded_cookie: None,
-                recv_timestamp,
-            } => (
-                NtpPacket::timestamp_response(&self.system, packet, recv_timestamp, &self.clock),
-                None,
-            ),
-
-            AcceptResult::Deny {
-                packet,
-                decoded_cookie: Some(cookie),
-            } => (NtpPacket::nts_deny_response(packet), Some(cookie.s2c)),
-            AcceptResult::Deny {
-                packet,
-                decoded_cookie: None,
-            } => (NtpPacket::deny_response(packet), None),
-
-            AcceptResult::CryptoNak { packet } => (NtpPacket::nts_nak_response(packet), None),
-
-            AcceptResult::RateLimit {
-                packet,
-                decoded_cookie: Some(cookie),
-            } => (NtpPacket::nts_rate_limit_response(packet), Some(cookie.s2c)),
-            AcceptResult::RateLimit {
-                packet,
-                decoded_cookie: None,
-            } => (NtpPacket::rate_limit_response(packet), None),
-
             AcceptResult::Ignore => {
                 return None;
             }
+
+            AcceptResult::Accept {
+                packet,
+                decoded_cookie,
+                recv_timestamp,
+            } => match decoded_cookie {
+                Some(cookie) => {
+                    let keyset = self.keyset.borrow().clone();
+                    let response = NtpPacket::nts_timestamp_response(
+                        &self.system,
+                        packet,
+                        recv_timestamp,
+                        &self.clock,
+                        &cookie,
+                        &keyset,
+                    );
+                    (response, Some(cookie.s2c))
+                }
+                None => (
+                    NtpPacket::timestamp_response(
+                        &self.system,
+                        packet,
+                        recv_timestamp,
+                        &self.clock,
+                    ),
+                    None,
+                ),
+            },
+
+            AcceptResult::CryptoNak { packet } => (NtpPacket::nts_nak_response(packet), None),
+
+            AcceptResult::Deny {
+                packet,
+                decoded_cookie,
+            } => match decoded_cookie {
+                Some(cookie) => (NtpPacket::nts_deny_response(packet), Some(cookie.s2c)),
+                None => (NtpPacket::deny_response(packet), None),
+            },
+
+            AcceptResult::RateLimit {
+                packet,
+                decoded_cookie,
+            } => match decoded_cookie {
+                Some(cookie) => (NtpPacket::nts_rate_limit_response(packet), Some(cookie.s2c)),
+                None => (NtpPacket::rate_limit_response(packet), None),
+            },
         };
 
+        Some((packet, cipher))
+    }
+
+    /// Build a response to the given packet
+    fn serialize_response<'buf>(
+        response_buf: &'buf mut [u8],
+        packet: NtpPacket<'_>,
+        opt_cipher: Option<Box<dyn Cipher>>,
+    ) -> Option<&'buf [u8]> {
         let mut cursor = Cursor::new(response_buf);
 
-        let serialize_result = packet.serialize(&mut cursor, &cipher);
+        let serialize_result = match opt_cipher {
+            Some(cipher) => packet.serialize(&mut cursor, cipher.as_ref()),
+            None => packet.serialize(&mut cursor, &NoCipher),
+        };
 
         if let Err(serialize_err) = serialize_result {
             warn!(error=?serialize_err, "Could not serialize response");
             return None;
         }
 
-        let end = usize::try_from(cursor.position()).expect(
-            "cursor.position() is always less then usize::MAX, \
-            since &[u8] can be at most usize::MAX bytes",
-        );
+        let end = usize::try_from(cursor.position()).expect(concat!(
+            "cursor.position() is always less then usize::MAX, ",
+            "since &[u8] can be at most usize::MAX bytes",
+        ));
         let response_buf = cursor.into_inner();
 
         Some(&response_buf[..end])
@@ -479,63 +506,16 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         }
     }
 
-    /// Checks if the buf can be a valid NTP packet
-    ///
-    /// For now only checks if the packet size is large enough.
-    fn pre_checks(buf: &[u8]) -> Result<(), ()> {
-        let size = buf.len();
-
-        // Note: packets are allowed to be bigger when including extensions.
-        // we don't expect many, but the client may still send them. We try
-        // to see if the message still makes sense with some bytes dropped.
-        // Messages of fewer than 48 bytes are skipped entirely
-        if size < 48 {
-            debug!(expected = 48, actual = size, "received packet is too small");
-            return Err(());
-        }
-
-        // TODO: add a check for size%4
-
-        Ok(())
-    }
-
-    /// Check if we can accept the packet
-    /// - Check length and timestamp
-    /// - let [`Self::accept_data`] decide if the packet can be parsed
-    /// - decide on a response including the `filter_result`
-    fn accept_packet<'a>(
-        &self,
-        buf: &'a [u8],
-        peer_addr: SocketAddr,
-        recv_timestamp: NtpTimestamp,
-        filter_result: Result<(), FilterReason>,
-    ) -> AcceptResult<'a> {
-        // actually parse the packet
-        let accept_data = self.accept_data(buf, peer_addr, recv_timestamp);
-
-        match filter_result {
-            Ok(_) => accept_data,
-            Err(FilterReason::Ignore) => AcceptResult::Ignore,
-            Err(FilterReason::Deny) => accept_data.apply_deny(),
-            Err(FilterReason::RateLimit) => accept_data.apply_rate_limit(),
-        }
-    }
-
     /// Deserialize the packet and decide what our response should be
     /// - check if the packet can even be deserialized
     /// - check if it was successfully decrypted (and authenticated)
     /// - check if it was a request packet (`Client` prior to NTPv5)
-    fn accept_data<'a>(
-        &self,
-        buf: &'a [u8],
-        peer_addr: SocketAddr,
-        recv_timestamp: NtpTimestamp,
-    ) -> AcceptResult<'a> {
+    fn accept_data<'a>(&self, buf: &'a [u8], recv_timestamp: NtpTimestamp) -> AcceptResult<'a> {
         let keyset = self.keyset.borrow().clone();
         match NtpPacket::deserialize(buf, keyset.as_ref()) {
             Ok((packet, decoded_cookie)) => match packet.mode() {
                 NtpAssociationMode::Client => {
-                    trace!("NTP client request accepted from {}", peer_addr); // TODO: move peer_addr to a tracing::span
+                    trace!("NTP client request accepted");
                     AcceptResult::Accept {
                         packet,
                         decoded_cookie,
@@ -543,11 +523,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     }
                 }
                 _ => {
-                    trace!(
-                        "NTP packet with unknown mode {:?} ignored from {}",
-                        packet.mode(),
-                        peer_addr
-                    );
+                    trace!("NTP packet with unknown mode {:?} ignored", packet.mode());
                     AcceptResult::Ignore
                 }
             },
