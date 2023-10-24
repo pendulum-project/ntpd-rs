@@ -375,54 +375,55 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         let (packet, cipher) = match accept_result {
             AcceptResult::Accept {
                 packet,
-                decoded_cookie,
+                decoded_cookie: Some(decoded_cookie),
                 recv_timestamp,
             } => {
-                let keyset = self.keyset.borrow().clone(); // FIXME: why is this taken before the match?
-                match decoded_cookie {
-                    Some(decoded_cookie) => {
-                        let response = NtpPacket::nts_timestamp_response(
-                            &self.system,
-                            packet,
-                            recv_timestamp,
-                            &self.clock,
-                            &decoded_cookie,
-                            &keyset,
-                        );
-                        (response, Some(decoded_cookie.s2c))
-                    }
-                    None => (
-                        NtpPacket::timestamp_response(
-                            &self.system,
-                            packet,
-                            recv_timestamp,
-                            &self.clock,
-                        ),
-                        None,
-                    ),
-                }
+                let keyset = self.keyset.borrow().clone();
+                let response = NtpPacket::nts_timestamp_response(
+                    &self.system,
+                    packet,
+                    recv_timestamp,
+                    &self.clock,
+                    &decoded_cookie,
+                    &keyset,
+                );
+                (response, Some(decoded_cookie.s2c))
             }
+            AcceptResult::Accept {
+                packet,
+                decoded_cookie: None,
+                recv_timestamp,
+            } => (
+                NtpPacket::timestamp_response(&self.system, packet, recv_timestamp, &self.clock),
+                None,
+            ),
+
             AcceptResult::Deny {
                 packet,
-                decoded_cookie,
-            } => match decoded_cookie {
-                Some(decoded_cookie) => (
-                    NtpPacket::nts_deny_response(packet),
-                    Some(decoded_cookie.s2c),
-                ),
-                None => (NtpPacket::deny_response(packet), None),
-            },
+                decoded_cookie: Some(decoded_cookie),
+            } => (
+                NtpPacket::nts_deny_response(packet),
+                Some(decoded_cookie.s2c),
+            ),
+            AcceptResult::Deny {
+                packet,
+                decoded_cookie: None,
+            } => (NtpPacket::deny_response(packet), None),
+
             AcceptResult::CryptoNak { packet } => (NtpPacket::nts_nak_response(packet), None),
+
             AcceptResult::RateLimit {
                 packet,
-                decoded_cookie,
-            } => match decoded_cookie {
-                Some(decoded_cookie) => (
-                    NtpPacket::nts_rate_limit_response(packet),
-                    Some(decoded_cookie.s2c),
-                ),
-                None => (NtpPacket::rate_limit_response(packet), None),
-            },
+                decoded_cookie: Some(decoded_cookie),
+            } => (
+                NtpPacket::nts_rate_limit_response(packet),
+                Some(decoded_cookie.s2c),
+            ),
+            AcceptResult::RateLimit {
+                packet,
+                decoded_cookie: None,
+            } => (NtpPacket::rate_limit_response(packet), None),
+
             AcceptResult::Ignore => {
                 return None;
             }
