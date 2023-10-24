@@ -253,7 +253,9 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         }
     }
 
-    fn check_filters(
+    /// Checks if the address of the sender is on the allow or deny list and if the address already
+    /// did perform a request within the last `cutoff` interval
+    fn check_and_update_filters(
         &mut self,
         peer_addr: SocketAddr,
         cutoff: Duration,
@@ -272,6 +274,11 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         }
     }
 
+    /// Handle the result of the `recv` call
+    /// - decide if an IO error warrants reopening the socket
+    /// - check if the sender address matches any of the allow, deny, or rate-limit filters
+    ///
+    /// -> call [`Self::serve_packet`] to further process the packet
     async fn handle_receive(
         &mut self,
         socket: &ntp_udp::UdpSocket,
@@ -300,7 +307,9 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 }
             }
             Ok((length, peer_addr, opt_timestamp)) => {
-                let filter_result = self.check_filters(peer_addr, rate_limiting_cutoff);
+                // FIXME: maybe perform min length and '%4' checks here to reduce work for those packets?
+
+                let filter_result = self.check_and_update_filters(peer_addr, rate_limiting_cutoff);
 
                 self.serve_packet(
                     socket,
@@ -316,6 +325,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         }
     }
 
+    /// Build and send a response to the given packet
     async fn serve_packet(
         &mut self,
         socket: &ntp_udp::UdpSocket,
@@ -324,6 +334,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         opt_timestamp: Option<NtpTimestamp>,
         filter_result: Result<(), FilterReason>,
     ) {
+        // TODO: both of these lines could move up the callstack
         self.stats.received_packets.inc();
         let accept_result = self.accept_packet(buf, socket_addr, opt_timestamp, filter_result);
 
@@ -503,6 +514,10 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         }
     }
 
+    /// Check if we can accept the packet
+    /// - Check length and timestamp
+    /// - let [`Self::accept_data`] decide if the packet can be parsed
+    /// - decide on a response including the `filter_result`
     fn accept_packet<'a>(
         &self,
         buf: &'a [u8],
@@ -541,6 +556,10 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         }
     }
 
+    /// Deserialize the packet and decide what our response should be
+    /// - check if the packet can even be deserialized
+    /// - check if it was successfully decrypted (and authenticated)
+    /// - check if it was a request packet (`Client` prior to NTPv5)
     fn accept_data<'a>(
         &self,
         buf: &'a [u8],
