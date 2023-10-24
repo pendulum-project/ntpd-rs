@@ -364,7 +364,8 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         }
     }
 
-    #[instrument(level = "debug", skip_all, fields(peer_addr, size = request_buf.len(), opt_timestamp))]
+    // TODO: this instrument breaks coverage collection for some reason...
+    // #[instrument(level = "debug", skip_all, fields(peer_addr, size = request_buf.len(), opt_timestamp))]
     fn handle_packet<'buf>(
         &mut self,
         request_buf: &[u8],
