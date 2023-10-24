@@ -262,7 +262,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
     /// - decide if an IO error warrants reopening the socket
     /// - check if the sender address matches any of the allow, deny, or rate-limit filters
     ///
-    /// -> call [`Self::serve_packet`] to further process the packet
+    /// -> call [`Self::generate_response`] to further process the packet
     async fn handle_receive(
         &mut self,
         socket: &ntp_udp::UdpSocket,
@@ -295,14 +295,20 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
 
                 let filter_result = self.check_and_update_filters(peer_addr, rate_limiting_cutoff);
 
-                self.serve_packet(
-                    socket,
-                    &buf[..length],
-                    peer_addr,
-                    opt_timestamp,
-                    filter_result,
-                )
-                .await;
+                let request_buf = &buf[..length];
+                let mut response_buf = [0; MAX_PACKET_SIZE];
+                let response_buf = response_buf.as_mut_slice();
+
+                self.stats.received_packets.inc();
+                let accept_result =
+                    self.accept_packet(request_buf, peer_addr, opt_timestamp, filter_result);
+
+                let Some(response) = self.generate_response(accept_result, response_buf) else {
+                    return SocketConnection::KeepAlive;
+                };
+
+                self.send_response(socket, peer_addr, response, request_buf.len())
+                    .await;
 
                 SocketConnection::KeepAlive
             }
@@ -310,19 +316,11 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
     }
 
     /// Build and send a response to the given packet
-    async fn serve_packet(
+    fn generate_response<'buf>(
         &mut self,
-        socket: &ntp_udp::UdpSocket,
-        request_buf: &[u8],
-        peer_addr: SocketAddr,
-        opt_timestamp: Option<NtpTimestamp>,
-        filter_result: Result<(), FilterReason>,
-    ) {
-        // TODO: both of these lines could move up the callstack
-        self.stats.received_packets.inc();
-        let accept_result =
-            self.accept_packet(request_buf, peer_addr, opt_timestamp, filter_result);
-
+        accept_result: AcceptResult<'_>,
+        response_buf: &'buf mut [u8],
+    ) -> Option<&'buf [u8]> {
         let (packet, cipher) = match accept_result {
             AcceptResult::Accept {
                 packet,
@@ -400,29 +398,39 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             }
             AcceptResult::Ignore => {
                 self.stats.ignored_packets.inc();
-                return;
+                return None;
             }
         };
 
-        let mut response_buf = [0; MAX_PACKET_SIZE];
-        let mut cursor = Cursor::new(response_buf.as_mut_slice());
+        let mut cursor = Cursor::new(response_buf);
 
         let serialize_result = packet.serialize(&mut cursor, &cipher);
 
         if let Err(serialize_err) = serialize_result {
             warn!(error=?serialize_err, "Could not serialize response");
-            return;
+            return None;
         }
 
-        if cursor.position() as usize > request_buf.len() {
+        let end = usize::try_from(cursor.position())
+            .expect("cursor.position() is always less then usize::MAX, since &[u8] can be max usize::MAX bytes");
+        let response_buf = cursor.into_inner();
+
+        Some(&response_buf[..end])
+    }
+
+    async fn send_response(
+        &mut self,
+        socket: &UdpSocket,
+        peer_addr: SocketAddr,
+        response: &[u8],
+        request_len: usize,
+    ) {
+        if response.len() > request_len {
             warn!("Generated response that was larger than the request. This is a bug!");
             return;
         }
 
-        if let Err(send_err) = socket
-            .send_to(&cursor.get_ref()[0..cursor.position() as usize], peer_addr)
-            .await
-        {
+        if let Err(send_err) = socket.send_to(response, peer_addr).await {
             self.stats.response_send_errors.inc();
             debug!(error=?send_err, "Could not send response packet");
         }
@@ -493,7 +501,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 }
                 _ => {
                     trace!(
-                        "NTP packet with unkown mode {:?} ignored from {}",
+                        "NTP packet with unknown mode {:?} ignored from {}",
                         packet.mode(),
                         peer_addr
                     );
