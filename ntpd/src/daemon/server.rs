@@ -1108,18 +1108,14 @@ mod tests {
         let mut s = test_server();
         let mut resp_buf = [0; MAX_PACKET_SIZE];
 
-        let mut req_buf = [0; MAX_PACKET_SIZE];
         let (req, _) = NtpPacket::poll_message(PollInterval::default());
-        let mut buf = Cursor::new(req_buf.as_mut_slice());
-        req.serialize(&mut buf, &NoCipher).unwrap();
-        let end = buf.position() as usize;
-        let poll_packet = &req_buf[..end];
+        let req = serialize_packet_unencryped(&req);
 
         // No timestamp
         s.stats = ServerStats::default();
         assert_eq!(
             s.handle_packet(
-                poll_packet,
+                req.as_slice(),
                 &mut resp_buf,
                 "127.0.0.1:1337".parse().unwrap(),
                 None,
