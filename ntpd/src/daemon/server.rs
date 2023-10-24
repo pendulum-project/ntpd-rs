@@ -293,17 +293,17 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             Ok((length, peer_addr, opt_timestamp)) => {
                 // FIXME: maybe perform min length and '%4' checks here to reduce work for those packets?
 
-                let filter_result = self.check_and_update_filters(peer_addr, rate_limiting_cutoff);
-
                 let request_buf = &buf[..length];
                 let mut response_buf = [0; MAX_PACKET_SIZE];
                 let response_buf = response_buf.as_mut_slice();
 
-                self.stats.received_packets.inc();
-                let accept_result =
-                    self.accept_packet(request_buf, peer_addr, opt_timestamp, filter_result);
-
-                let Some(response) = self.generate_response(accept_result, response_buf) else {
+                let Some(response) = self.handle_packet(
+                    request_buf,
+                    response_buf,
+                    peer_addr,
+                    opt_timestamp,
+                    rate_limiting_cutoff,
+                ) else {
                     return SocketConnection::KeepAlive;
                 };
 
@@ -315,9 +315,25 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         }
     }
 
+    fn handle_packet<'buf>(
+        &mut self,
+        request_buf: &[u8],
+        response_buf: &'buf mut [u8],
+        peer_addr: SocketAddr,
+        opt_timestamp: Option<NtpTimestamp>,
+        rate_limiting_cutoff: Duration,
+    ) -> Option<&'buf [u8]> {
+        let filter_result = self.check_and_update_filters(peer_addr, rate_limiting_cutoff);
+        self.stats.received_packets.inc();
+        let accept_result =
+            self.accept_packet(request_buf, peer_addr, opt_timestamp, filter_result);
+
+        self.generate_response(accept_result, response_buf)
+    }
+
     /// Build and send a response to the given packet
     fn generate_response<'buf>(
-        &mut self,
+        &self,
         accept_result: AcceptResult<'_>,
         response_buf: &'buf mut [u8],
     ) -> Option<&'buf [u8]> {
