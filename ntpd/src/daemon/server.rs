@@ -361,9 +361,25 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         opt_timestamp: Option<NtpTimestamp>,
         rate_limiting_cutoff: Duration,
     ) -> Option<&'buf [u8]> {
+        let Some(timestamp) = opt_timestamp else {
+            let size = request_buf.len();
+            debug!(size, "received a packet without a timestamp");
+            self.stats.update_from(&AcceptResult::Ignore);
+            return None;
+        };
+
+        if Self::pre_checks(request_buf).is_err() {
+            self.stats.update_from(&AcceptResult::Ignore);
+            return None;
+        }
+
         let filter_result = self.check_and_update_filters(peer_addr, rate_limiting_cutoff);
-        let accept_result =
-            self.accept_packet(request_buf, peer_addr, opt_timestamp, filter_result);
+        if let Err(FilterReason::Ignore) = filter_result {
+            self.stats.update_from(&AcceptResult::Ignore);
+            return None;
+        }
+
+        let accept_result = self.accept_packet(request_buf, peer_addr, timestamp, filter_result);
 
         self.stats.update_from(&accept_result);
 
@@ -469,6 +485,23 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         }
     }
 
+    fn pre_checks(buf: &[u8]) -> Result<(), ()> {
+        let size = buf.len();
+
+        // Note: packets are allowed to be bigger when including extensions.
+        // we don't expect many, but the client may still send them. We try
+        // to see if the message still makes sense with some bytes dropped.
+        // Messages of fewer than 48 bytes are skipped entirely
+        if size < 48 {
+            debug!(expected = 48, actual = size, "received packet is too small");
+            return Err(());
+        }
+
+        // TODO: add a check for size%4
+
+        Ok(())
+    }
+
     /// Check if we can accept the packet
     /// - Check length and timestamp
     /// - let [`Self::accept_data`] decide if the packet can be parsed
@@ -477,35 +510,15 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         &self,
         buf: &'a [u8],
         peer_addr: SocketAddr,
-        opt_timestamp: Option<NtpTimestamp>,
+        recv_timestamp: NtpTimestamp,
         filter_result: Result<(), FilterReason>,
     ) -> AcceptResult<'a> {
-        let size = buf.len();
-
-        // Note: packets are allowed to be bigger when including extensions.
-        // we don't expect many, but the client may still send them. We try
-        // to see if the message still makes sense with some bytes dropped.
-        // Messages of fewer than 48 bytes are skipped entirely
-        if buf.len() < 48 {
-            debug!(expected = 48, actual = size, "received packet is too small");
-            return AcceptResult::Ignore;
-        }
-
-        let Some(recv_timestamp) = opt_timestamp else {
-            debug!(size, "received a packet without a timestamp");
-            return AcceptResult::Ignore;
-        };
-
-        if let Err(FilterReason::Ignore) = filter_result {
-            return AcceptResult::Ignore;
-        }
-
         // actually parse the packet
         let accept_data = self.accept_data(buf, peer_addr, recv_timestamp);
 
         match filter_result {
             Ok(_) => accept_data,
-            Err(FilterReason::Ignore) => unreachable!(),
+            Err(FilterReason::Ignore) => AcceptResult::Ignore,
             Err(FilterReason::Deny) => accept_data.apply_deny(),
             Err(FilterReason::RateLimit) => accept_data.apply_rate_limit(),
         }
