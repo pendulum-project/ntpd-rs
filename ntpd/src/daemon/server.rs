@@ -386,7 +386,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         self.generate_response(accept_result, response_buf)
     }
 
-    /// Build and send a response to the given packet
+    /// Build a response to the given packet
     fn generate_response<'buf>(
         &self,
         accept_result: AcceptResult<'_>,
@@ -395,7 +395,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         let (packet, cipher) = match accept_result {
             AcceptResult::Accept {
                 packet,
-                decoded_cookie: Some(decoded_cookie),
+                decoded_cookie: Some(cookie),
                 recv_timestamp,
             } => {
                 let keyset = self.keyset.borrow().clone();
@@ -404,10 +404,10 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     packet,
                     recv_timestamp,
                     &self.clock,
-                    &decoded_cookie,
+                    &cookie,
                     &keyset,
                 );
-                (response, Some(decoded_cookie.s2c))
+                (response, Some(cookie.s2c))
             }
             AcceptResult::Accept {
                 packet,
@@ -420,11 +420,8 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
 
             AcceptResult::Deny {
                 packet,
-                decoded_cookie: Some(decoded_cookie),
-            } => (
-                NtpPacket::nts_deny_response(packet),
-                Some(decoded_cookie.s2c),
-            ),
+                decoded_cookie: Some(cookie),
+            } => (NtpPacket::nts_deny_response(packet), Some(cookie.s2c)),
             AcceptResult::Deny {
                 packet,
                 decoded_cookie: None,
@@ -434,11 +431,8 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
 
             AcceptResult::RateLimit {
                 packet,
-                decoded_cookie: Some(decoded_cookie),
-            } => (
-                NtpPacket::nts_rate_limit_response(packet),
-                Some(decoded_cookie.s2c),
-            ),
+                decoded_cookie: Some(cookie),
+            } => (NtpPacket::nts_rate_limit_response(packet), Some(cookie.s2c)),
             AcceptResult::RateLimit {
                 packet,
                 decoded_cookie: None,
@@ -485,6 +479,9 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         }
     }
 
+    /// Checks if the buf can be a valid NTP packet
+    ///
+    /// For now only checks if the packet size is large enough.
     fn pre_checks(buf: &[u8]) -> Result<(), ()> {
         let size = buf.len();
 
