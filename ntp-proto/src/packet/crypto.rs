@@ -121,6 +121,12 @@ impl CipherProvider for Option<&dyn Cipher> {
     }
 }
 
+impl CipherProvider for Option<Box<dyn Cipher>> {
+    fn get(&self, _context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
+        self.as_deref().map(CipherHolder::Other)
+    }
+}
+
 impl<C: Cipher> CipherProvider for C {
     fn get(&self, _context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
         Some(CipherHolder::Other(self))
