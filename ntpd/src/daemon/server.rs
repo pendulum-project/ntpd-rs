@@ -396,8 +396,9 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             return None;
         }
 
-        // actually parse the packet
-        let accept_result = self.accept_data(request_buf, timestamp);
+        // actually parse the packet. KeySet is cloned to not take a lock
+        let keyset = self.keyset.borrow().clone();
+        let accept_result = Self::accept_data(request_buf, keyset.as_ref(), timestamp);
 
         // apply filters
         let accept_result = match filter_result {
@@ -514,9 +515,12 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
     /// - check if the packet can even be deserialized
     /// - check if it was successfully decrypted (and authenticated)
     /// - check if it was a request packet (`Client` prior to NTPv5)
-    fn accept_data<'a>(&self, buf: &'a [u8], recv_timestamp: NtpTimestamp) -> AcceptResult<'a> {
-        let keyset = self.keyset.borrow().clone();
-        match NtpPacket::deserialize(buf, keyset.as_ref()) {
+    fn accept_data<'a>(
+        buf: &'a [u8],
+        keyset: &KeySet,
+        recv_timestamp: NtpTimestamp,
+    ) -> AcceptResult<'a> {
+        match NtpPacket::deserialize(buf, keyset) {
             Ok((packet, decoded_cookie)) => match packet.mode() {
                 NtpAssociationMode::Client => {
                     trace!("NTP client request accepted");
