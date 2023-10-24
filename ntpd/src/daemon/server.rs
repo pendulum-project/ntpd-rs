@@ -59,9 +59,7 @@ impl ServerStats {
                 Accept { .. } => self.nts_accepted_packets.inc(),
                 Deny { .. } => self.nts_denied_packets.inc(),
                 RateLimit { .. } => self.nts_rate_limited_packets.inc(),
-                CryptoNak { .. } | Ignore => {
-                    0 /* counted above */
-                }
+                CryptoNak { .. } | Ignore => { /* counted above */ }
             };
         }
     }
@@ -73,8 +71,8 @@ pub struct Counter {
 }
 
 impl Counter {
-    fn inc(&self) -> u64 {
-        self.value.fetch_add(1, Ordering::Relaxed)
+    fn inc(&self) {
+        self.value.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn get(&self) -> u64 {
