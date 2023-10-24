@@ -171,8 +171,8 @@ impl AcceptResult<'_> {
             AcceptResult::Accept { decoded_cookie, .. }
             | AcceptResult::Deny { decoded_cookie, .. }
             | AcceptResult::RateLimit { decoded_cookie, .. } => decoded_cookie.is_some(),
-            AcceptResult::CryptoNak { .. } => return true,
-            AcceptResult::Ignore => return false,
+            AcceptResult::CryptoNak { .. } => true,
+            AcceptResult::Ignore => false,
         }
     }
 }
