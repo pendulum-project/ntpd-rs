@@ -173,6 +173,16 @@ impl AcceptResult<'_> {
             AcceptResult::Ignore => false,
         }
     }
+
+    fn kind_name(&self) -> &'static str {
+        match self {
+            AcceptResult::Accept { .. } => "Accept",
+            AcceptResult::Ignore => "Ignore",
+            AcceptResult::Deny { .. } => "Deny",
+            AcceptResult::RateLimit { .. } => "RateLimit",
+            AcceptResult::CryptoNak { .. } => "CryptoNak",
+        }
+    }
 }
 
 #[must_use]
@@ -354,6 +364,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         }
     }
 
+    #[tracing::instrument(skip_all, fields(peer_addr, size = request_buf.len(), opt_timestamp))]
     fn handle_packet<'buf>(
         &mut self,
         request_buf: &[u8],
@@ -362,10 +373,8 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         opt_timestamp: Option<NtpTimestamp>,
         rate_limiting_cutoff: Duration,
     ) -> Option<&'buf [u8]> {
-        let size = request_buf.len();
-
         let Some(timestamp) = opt_timestamp else {
-            debug!(size, "received a packet without a timestamp");
+            debug!("received a packet without a timestamp");
             self.stats.update_from(&AcceptResult::Ignore);
             return None;
         };
@@ -374,35 +383,38 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         // we don't expect many, but the client may still send them. We try
         // to see if the message still makes sense with some bytes dropped.
         // Messages of fewer than 48 bytes are skipped entirely
-        if size < 48 {
-            debug!(actual = size, "received packet is too small");
+        if request_buf.len() < 48 {
+            debug!("received packet is too small");
             self.stats.update_from(&AcceptResult::Ignore);
             return None;
         }
 
         let filter_result = self.check_and_update_filters(peer_addr, rate_limiting_cutoff);
         if let Err(FilterReason::Ignore) = filter_result {
+            debug!("filters decided to ignore");
             self.stats.update_from(&AcceptResult::Ignore);
             return None;
         }
 
         // actually parse the packet
-        let accept_data = self.accept_data(request_buf, timestamp);
+        let accept_result = self.accept_data(request_buf, timestamp);
 
         // apply filters
         let accept_result = match filter_result {
-            Ok(_) => accept_data,
+            Ok(_) => accept_result,
             Err(FilterReason::Ignore) => AcceptResult::Ignore,
-            Err(FilterReason::Deny) => accept_data.apply_deny(),
-            Err(FilterReason::RateLimit) => accept_data.apply_rate_limit(),
+            Err(FilterReason::Deny) => accept_result.apply_deny(),
+            Err(FilterReason::RateLimit) => accept_result.apply_rate_limit(),
         };
 
         // update statistics
         self.stats.update_from(&accept_result);
+        debug!(kind = accept_result.kind_name(), "Decided response");
 
         let (packet, opt_cipher) = self.generate_response(accept_result)?;
         let response_buf = Self::serialize_response(response_buf, packet, opt_cipher)?;
 
+        debug!(response_size = response_buf.len(), "Generated response");
         if response_buf.len() > request_buf.len() {
             debug_assert!(false, "Generated response that was larger than the request");
             warn!("Generated response that was larger than the request. This is a bug!");
