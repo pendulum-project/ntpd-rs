@@ -315,6 +315,50 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         }
     }
 
+    fn update_stats(&self, res: &AcceptResult<'_>) {
+        self.stats.received_packets.inc();
+
+        match res {
+            AcceptResult::Accept { decoded_cookie, .. } => {
+                self.stats.accepted_packets.inc();
+                match decoded_cookie {
+                    Some(_) => {
+                        self.stats.nts_received_packets.inc();
+                        self.stats.nts_accepted_packets.inc();
+                    }
+                    None => {}
+                }
+            }
+            AcceptResult::Ignore => {
+                self.stats.ignored_packets.inc();
+            }
+            AcceptResult::Deny { decoded_cookie, .. } => {
+                self.stats.denied_packets.inc();
+                match decoded_cookie {
+                    Some(_) => {
+                        self.stats.nts_received_packets.inc();
+                        self.stats.nts_denied_packets.inc();
+                    }
+                    None => {}
+                }
+            }
+            AcceptResult::RateLimit { decoded_cookie, .. } => {
+                self.stats.rate_limited_packets.inc();
+                match decoded_cookie {
+                    Some(_) => {
+                        self.stats.nts_received_packets.inc();
+                        self.stats.nts_rate_limited_packets.inc();
+                    }
+                    None => {}
+                }
+            }
+            AcceptResult::CryptoNak { .. } => {
+                self.stats.nts_received_packets.inc();
+                self.stats.nts_nak_packets.inc();
+            }
+        }
+    }
+
     fn handle_packet<'buf>(
         &mut self,
         request_buf: &[u8],
@@ -324,9 +368,10 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         rate_limiting_cutoff: Duration,
     ) -> Option<&'buf [u8]> {
         let filter_result = self.check_and_update_filters(peer_addr, rate_limiting_cutoff);
-        self.stats.received_packets.inc();
         let accept_result =
             self.accept_packet(request_buf, peer_addr, opt_timestamp, filter_result);
+
+        self.update_stats(&accept_result);
 
         self.generate_response(accept_result, response_buf)
     }
@@ -343,12 +388,9 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 decoded_cookie,
                 recv_timestamp,
             } => {
-                self.stats.accepted_packets.inc();
                 let keyset = self.keyset.borrow().clone(); // FIXME: why is this taken before the match?
                 match decoded_cookie {
                     Some(decoded_cookie) => {
-                        self.stats.nts_received_packets.inc();
-                        self.stats.nts_accepted_packets.inc();
                         let response = NtpPacket::nts_timestamp_response(
                             &self.system,
                             packet,
@@ -373,47 +415,25 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             AcceptResult::Deny {
                 packet,
                 decoded_cookie,
-            } => {
-                self.stats.denied_packets.inc();
-
-                match decoded_cookie {
-                    Some(decoded_cookie) => {
-                        self.stats.nts_received_packets.inc();
-                        self.stats.nts_denied_packets.inc();
-                        (
-                            NtpPacket::nts_deny_response(packet),
-                            Some(decoded_cookie.s2c),
-                        )
-                    }
-                    None => (NtpPacket::deny_response(packet), None),
-                }
-            }
-            AcceptResult::CryptoNak { packet } => {
-                self.stats.nts_received_packets.inc();
-                self.stats.nts_nak_packets.inc();
-
-                (NtpPacket::nts_nak_response(packet), None)
-            }
+            } => match decoded_cookie {
+                Some(decoded_cookie) => (
+                    NtpPacket::nts_deny_response(packet),
+                    Some(decoded_cookie.s2c),
+                ),
+                None => (NtpPacket::deny_response(packet), None),
+            },
+            AcceptResult::CryptoNak { packet } => (NtpPacket::nts_nak_response(packet), None),
             AcceptResult::RateLimit {
                 packet,
                 decoded_cookie,
-            } => {
-                self.stats.rate_limited_packets.inc();
-
-                match decoded_cookie {
-                    Some(decoded_cookie) => {
-                        self.stats.nts_received_packets.inc();
-                        self.stats.nts_rate_limited_packets.inc();
-                        (
-                            NtpPacket::nts_rate_limit_response(packet),
-                            Some(decoded_cookie.s2c),
-                        )
-                    }
-                    None => (NtpPacket::rate_limit_response(packet), None),
-                }
-            }
+            } => match decoded_cookie {
+                Some(decoded_cookie) => (
+                    NtpPacket::nts_rate_limit_response(packet),
+                    Some(decoded_cookie.s2c),
+                ),
+                None => (NtpPacket::rate_limit_response(packet), None),
+            },
             AcceptResult::Ignore => {
-                self.stats.ignored_packets.inc();
                 return None;
             }
         };
@@ -427,8 +447,10 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             return None;
         }
 
-        let end = usize::try_from(cursor.position())
-            .expect("cursor.position() is always less then usize::MAX, since &[u8] can be max usize::MAX bytes");
+        let end = usize::try_from(cursor.position()).expect(
+            "cursor.position() is always less then usize::MAX, \
+            since &[u8] can be at most usize::MAX bytes",
+        );
         let response_buf = cursor.into_inner();
 
         Some(&response_buf[..end])
