@@ -1079,6 +1079,71 @@ mod tests {
 
         server.abort();
     }
+
+    fn test_server() -> ServerTask<TestClock> {
+        let (_, system_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
+        let (_, keyset) = tokio::sync::watch::channel(KeySetProvider::new(1).get());
+
+        ServerTask {
+            config: ServerConfig {
+                listen: "0.0.0.0:123".parse().unwrap(),
+                denylist: FilterList::default_denylist(),
+                allowlist: FilterList::default_allowlist(),
+                rate_limiting_cache_size: 0,
+                rate_limiting_cutoff: Default::default(),
+            },
+            network_wait_period: Default::default(),
+            system_receiver,
+            keyset,
+            system: Default::default(),
+            client_cache: TimestampedCache::new(10),
+            clock: TestClock {},
+            interface: None,
+            stats: Default::default(),
+        }
+    }
+
+    #[test]
+    fn early_fails() {
+        let mut s = test_server();
+        let mut resp_buf = [0; MAX_PACKET_SIZE];
+
+        let mut req_buf = [0; MAX_PACKET_SIZE];
+        let (req, _) = NtpPacket::poll_message(PollInterval::default());
+        let mut buf = Cursor::new(req_buf.as_mut_slice());
+        req.serialize(&mut buf, &NoCipher).unwrap();
+        let end = buf.position() as usize;
+        let poll_packet = &req_buf[..end];
+
+        // No timestamp
+        s.stats = ServerStats::default();
+        assert_eq!(
+            s.handle_packet(
+                poll_packet,
+                &mut resp_buf,
+                "127.0.0.1:1337".parse().unwrap(),
+                None,
+                s.config.rate_limiting_cutoff,
+            ),
+            None
+        );
+        assert_eq!(s.stats.ignored_packets.get(), 1);
+        assert_eq!(s.stats.received_packets.get(), 1);
+
+        // Too short
+        s.stats = ServerStats::default();
+        assert!(s
+            .handle_packet(
+                &[0; 23],
+                &mut resp_buf,
+                "127.0.0.1:1337".parse().unwrap(),
+                Some(NtpTimestamp::default()),
+                s.config.rate_limiting_cutoff,
+            )
+            .is_none());
+        assert_eq!(s.stats.ignored_packets.get(), 1);
+        assert_eq!(s.stats.received_packets.get(), 1);
+    }
 }
 
 #[cfg(test)]
