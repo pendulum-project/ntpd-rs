@@ -329,8 +329,10 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 }
             }
             Ok((length, peer_addr, opt_timestamp)) => {
-                // FIXME: maybe perform min length and '%4' checks here to reduce work for those packets?
-                let request_buf = &buf[..length];
+                let Some(request_buf) = buf.get(..length) else {
+                    warn!("length from socket is out of bounds. This is a bug!");
+                    return SocketConnection::Reconnect;
+                };
                 let mut response_buf = [0; MAX_PACKET_SIZE];
                 let response_buf = response_buf.as_mut_slice();
 
@@ -344,8 +346,10 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     return SocketConnection::KeepAlive;
                 };
 
-                self.send_response(socket, peer_addr, response, request_buf.len())
-                    .await;
+                if let Err(send_err) = socket.send_to(response, peer_addr).await {
+                    self.stats.response_send_errors.inc();
+                    debug!(error=?send_err, "Could not send response packet");
+                }
 
                 SocketConnection::KeepAlive
             }
@@ -399,7 +403,15 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         self.stats.update_from(&accept_result);
 
         let (packet, opt_cipher) = self.generate_response(accept_result)?;
-        Self::serialize_response(response_buf, packet, opt_cipher)
+        let response_buf = Self::serialize_response(response_buf, packet, opt_cipher)?;
+
+        if response_buf.len() > request_buf.len() {
+            debug_assert!(false, "Generated response that was larger than the request");
+            warn!("Generated response that was larger than the request. This is a bug!");
+            return None;
+        }
+
+        Some(response_buf)
     }
 
     fn generate_response<'a>(
@@ -486,24 +498,6 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         let response_buf = cursor.into_inner();
 
         Some(&response_buf[..end])
-    }
-
-    async fn send_response(
-        &mut self,
-        socket: &UdpSocket,
-        peer_addr: SocketAddr,
-        response: &[u8],
-        request_len: usize,
-    ) {
-        if response.len() > request_len {
-            warn!("Generated response that was larger than the request. This is a bug!");
-            return;
-        }
-
-        if let Err(send_err) = socket.send_to(response, peer_addr).await {
-            self.stats.response_send_errors.inc();
-            debug!(error=?send_err, "Could not send response packet");
-        }
     }
 
     /// Deserialize the packet and decide what our response should be
