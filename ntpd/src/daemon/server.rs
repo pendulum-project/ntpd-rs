@@ -137,6 +137,16 @@ impl AcceptResult<'_> {
             other => other,
         }
     }
+
+    fn is_nts(&self) -> bool {
+        match self {
+            AcceptResult::Accept { decoded_cookie, .. }
+            | AcceptResult::Deny { decoded_cookie, .. }
+            | AcceptResult::RateLimit { decoded_cookie, .. } => decoded_cookie.is_some(),
+            AcceptResult::CryptoNak { .. } => return true,
+            AcceptResult::Ignore => return false,
+        }
+    }
 }
 
 #[must_use]
@@ -316,45 +326,25 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
     }
 
     fn update_stats(&self, res: &AcceptResult<'_>) {
+        use AcceptResult::{Accept, CryptoNak, Deny, Ignore, RateLimit};
+
         self.stats.received_packets.inc();
 
         match res {
-            AcceptResult::Accept { decoded_cookie, .. } => {
-                self.stats.accepted_packets.inc();
-                match decoded_cookie {
-                    Some(_) => {
-                        self.stats.nts_received_packets.inc();
-                        self.stats.nts_accepted_packets.inc();
-                    }
-                    None => {}
-                }
-            }
-            AcceptResult::Ignore => {
-                self.stats.ignored_packets.inc();
-            }
-            AcceptResult::Deny { decoded_cookie, .. } => {
-                self.stats.denied_packets.inc();
-                match decoded_cookie {
-                    Some(_) => {
-                        self.stats.nts_received_packets.inc();
-                        self.stats.nts_denied_packets.inc();
-                    }
-                    None => {}
-                }
-            }
-            AcceptResult::RateLimit { decoded_cookie, .. } => {
-                self.stats.rate_limited_packets.inc();
-                match decoded_cookie {
-                    Some(_) => {
-                        self.stats.nts_received_packets.inc();
-                        self.stats.nts_rate_limited_packets.inc();
-                    }
-                    None => {}
-                }
-            }
-            AcceptResult::CryptoNak { .. } => {
-                self.stats.nts_received_packets.inc();
-                self.stats.nts_nak_packets.inc();
+            Accept { .. } => self.stats.accepted_packets.inc(),
+            Ignore => self.stats.ignored_packets.inc(),
+            Deny { .. } => self.stats.denied_packets.inc(),
+            RateLimit { .. } => self.stats.rate_limited_packets.inc(),
+            CryptoNak { .. } => self.stats.nts_nak_packets.inc(),
+        }
+
+        if res.is_nts() {
+            self.stats.nts_received_packets.inc();
+            match res {
+                Accept { .. } => self.stats.nts_accepted_packets.inc(),
+                Deny { .. } => self.stats.nts_denied_packets.inc(),
+                RateLimit { .. } => self.stats.nts_rate_limited_packets.inc(),
+                CryptoNak { .. } | Ignore => { /* counted above */ }
             }
         }
     }
