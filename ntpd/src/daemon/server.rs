@@ -40,12 +40,12 @@ pub struct ServerStats {
 }
 
 impl ServerStats {
-    fn update_from(&self, res: &AcceptResult<'_>) {
+    fn update_from(&self, accept_result: &AcceptResult<'_>) {
         use AcceptResult::{Accept, CryptoNak, Deny, Ignore, RateLimit};
 
         self.received_packets.inc();
 
-        match res {
+        match accept_result {
             Accept { .. } => self.accepted_packets.inc(),
             Ignore => self.ignored_packets.inc(),
             Deny { .. } => self.denied_packets.inc(),
@@ -53,9 +53,9 @@ impl ServerStats {
             CryptoNak { .. } => self.nts_nak_packets.inc(),
         };
 
-        if res.is_nts() {
+        if accept_result.is_nts() {
             self.nts_received_packets.inc();
-            match res {
+            match accept_result {
                 Accept { .. } => self.nts_accepted_packets.inc(),
                 Deny { .. } => self.nts_denied_packets.inc(),
                 RateLimit { .. } => self.nts_rate_limited_packets.inc(),
