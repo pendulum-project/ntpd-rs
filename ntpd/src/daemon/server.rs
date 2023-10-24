@@ -11,7 +11,7 @@ use std::{
 };
 
 use ntp_proto::{
-    DecodedServerCookie, KeySet, NoCipher, NtpAssociationMode, NtpClock, NtpPacket, NtpTimestamp,
+    DecodedServerCookie, KeySet, NtpAssociationMode, NtpClock, NtpPacket, NtpTimestamp,
     PacketParsingError, SystemSnapshot,
 };
 use ntp_udp::{InterfaceName, UdpSocket};
@@ -89,28 +89,20 @@ pub struct ServerTask<C: 'static + NtpClock + Send> {
 enum AcceptResult<'a> {
     Accept {
         packet: NtpPacket<'a>,
-        max_response_size: usize,
         decoded_cookie: Option<DecodedServerCookie>,
-        peer_addr: SocketAddr,
         recv_timestamp: NtpTimestamp,
     },
     Ignore,
     Deny {
         packet: NtpPacket<'a>,
-        max_response_size: usize,
         decoded_cookie: Option<DecodedServerCookie>,
-        peer_addr: SocketAddr,
     },
     RateLimit {
         packet: NtpPacket<'a>,
-        max_response_size: usize,
         decoded_cookie: Option<DecodedServerCookie>,
-        peer_addr: SocketAddr,
     },
     CryptoNak {
         packet: NtpPacket<'a>,
-        max_response_size: usize,
-        peer_addr: SocketAddr,
     },
 }
 
@@ -122,15 +114,11 @@ impl AcceptResult<'_> {
         match self {
             AcceptResult::Accept {
                 packet,
-                max_response_size,
                 decoded_cookie,
-                peer_addr,
                 ..
             } => AcceptResult::Deny {
                 packet,
-                max_response_size,
                 decoded_cookie,
-                peer_addr,
             },
             other => other,
         }
@@ -140,15 +128,11 @@ impl AcceptResult<'_> {
         match self {
             AcceptResult::Accept {
                 packet,
-                max_response_size,
                 decoded_cookie,
-                peer_addr,
                 ..
             } => AcceptResult::RateLimit {
                 packet,
-                max_response_size,
                 decoded_cookie,
-                peer_addr,
             },
             other => other,
         }
@@ -329,29 +313,25 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
     async fn serve_packet(
         &mut self,
         socket: &ntp_udp::UdpSocket,
-        buf: &[u8],
-        socket_addr: SocketAddr,
+        request_buf: &[u8],
+        peer_addr: SocketAddr,
         opt_timestamp: Option<NtpTimestamp>,
         filter_result: Result<(), FilterReason>,
     ) {
         // TODO: both of these lines could move up the callstack
         self.stats.received_packets.inc();
-        let accept_result = self.accept_packet(buf, socket_addr, opt_timestamp, filter_result);
+        let accept_result =
+            self.accept_packet(request_buf, peer_addr, opt_timestamp, filter_result);
 
-        match accept_result {
+        let (packet, cipher) = match accept_result {
             AcceptResult::Accept {
                 packet,
-                max_response_size,
                 decoded_cookie,
-                peer_addr,
                 recv_timestamp,
             } => {
                 self.stats.accepted_packets.inc();
-
-                let keyset = self.keyset.borrow().clone();
-                let mut buf = [0; MAX_PACKET_SIZE];
-                let mut cursor = Cursor::new(buf.as_mut_slice());
-                let serialize_result = match decoded_cookie {
+                let keyset = self.keyset.borrow().clone(); // FIXME: why is this taken before the match?
+                match decoded_cookie {
                     Some(decoded_cookie) => {
                         self.stats.nts_received_packets.inc();
                         self.stats.nts_accepted_packets.inc();
@@ -363,154 +343,88 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                             &decoded_cookie,
                             &keyset,
                         );
-                        response.serialize(&mut cursor, decoded_cookie.s2c.as_ref())
+                        (response, Some(decoded_cookie.s2c))
                     }
-                    None => {
-                        let response = NtpPacket::timestamp_response(
+                    None => (
+                        NtpPacket::timestamp_response(
                             &self.system,
                             packet,
                             recv_timestamp,
                             &self.clock,
-                        );
-                        response.serialize(&mut cursor, &NoCipher)
-                    }
-                };
-
-                if let Err(serialize_err) = serialize_result {
-                    warn!(error=?serialize_err, "Could not serialize response");
-                    return;
-                }
-
-                if cursor.position() as usize > max_response_size {
-                    warn!("Generated response that was larger than the request. This is a bug!");
-                    return;
-                }
-
-                if let Err(send_err) = socket
-                    .send_to(&cursor.get_ref()[0..cursor.position() as usize], peer_addr)
-                    .await
-                {
-                    self.stats.response_send_errors.inc();
-                    debug!(error=?send_err, "Could not send response packet");
+                        ),
+                        None,
+                    ),
                 }
             }
             AcceptResult::Deny {
                 packet,
-                max_response_size,
                 decoded_cookie,
-                peer_addr,
             } => {
                 self.stats.denied_packets.inc();
 
-                let mut buf = [0; MAX_PACKET_SIZE];
-                let mut cursor = Cursor::new(buf.as_mut_slice());
-                let serialize_result = match decoded_cookie {
+                match decoded_cookie {
                     Some(decoded_cookie) => {
                         self.stats.nts_received_packets.inc();
                         self.stats.nts_denied_packets.inc();
-                        let response = NtpPacket::nts_deny_response(packet);
-                        response.serialize(&mut cursor, decoded_cookie.s2c.as_ref())
+                        (
+                            NtpPacket::nts_deny_response(packet),
+                            Some(decoded_cookie.s2c),
+                        )
                     }
-                    None => {
-                        let response = NtpPacket::deny_response(packet);
-                        response.serialize(&mut cursor, &NoCipher)
-                    }
-                };
-
-                if let Err(serialize_err) = serialize_result {
-                    self.stats.response_send_errors.inc();
-                    warn!(error=?serialize_err, "Could not serialize response");
-                    return;
-                }
-
-                if cursor.position() as usize > max_response_size {
-                    warn!("Generated response that was larger than the request. This is a bug!");
-                    return;
-                }
-
-                if let Err(send_err) = socket
-                    .send_to(&cursor.get_ref()[0..cursor.position() as usize], peer_addr)
-                    .await
-                {
-                    self.stats.response_send_errors.inc();
-                    warn!(error=?send_err, "Could not send deny packet");
+                    None => (NtpPacket::deny_response(packet), None),
                 }
             }
-            AcceptResult::CryptoNak {
-                packet,
-                max_response_size,
-                peer_addr,
-            } => {
+            AcceptResult::CryptoNak { packet } => {
                 self.stats.nts_received_packets.inc();
                 self.stats.nts_nak_packets.inc();
 
-                let mut buf = [0; MAX_PACKET_SIZE];
-                let mut cursor = Cursor::new(buf.as_mut_slice());
-                let response = NtpPacket::nts_nak_response(packet);
-                if let Err(serialize_err) = response.serialize(&mut cursor, &NoCipher) {
-                    self.stats.response_send_errors.inc();
-                    warn!(error=?serialize_err, "Could not serialize response");
-                    return;
-                }
-
-                if cursor.position() as usize > max_response_size {
-                    warn!("Generated response that was larger than the request. This is a bug!");
-                    return;
-                }
-
-                if let Err(send_err) = socket
-                    .send_to(&cursor.get_ref()[0..cursor.position() as usize], peer_addr)
-                    .await
-                {
-                    self.stats.response_send_errors.inc();
-                    warn!(error=?send_err, "Could not send nts nak packet");
-                }
+                (NtpPacket::nts_nak_response(packet), None)
             }
             AcceptResult::RateLimit {
                 packet,
-                max_response_size,
                 decoded_cookie,
-                peer_addr,
             } => {
                 self.stats.rate_limited_packets.inc();
 
-                let mut buf = [0; MAX_PACKET_SIZE];
-                let mut cursor = Cursor::new(buf.as_mut_slice());
-                let serialize_result = match decoded_cookie {
+                match decoded_cookie {
                     Some(decoded_cookie) => {
                         self.stats.nts_received_packets.inc();
                         self.stats.nts_rate_limited_packets.inc();
-                        let response = NtpPacket::nts_rate_limit_response(packet);
-                        response.serialize(&mut cursor, decoded_cookie.s2c.as_ref())
+                        (
+                            NtpPacket::nts_rate_limit_response(packet),
+                            Some(decoded_cookie.s2c),
+                        )
                     }
-                    None => {
-                        let response = NtpPacket::rate_limit_response(packet);
-                        response.serialize(&mut cursor, &NoCipher)
-                    }
-                };
-
-                if let Err(serialize_err) = serialize_result {
-                    self.stats.response_send_errors.inc();
-                    warn!(error=?serialize_err, "Could not serialize response");
-                    return;
-                }
-
-                if cursor.position() as usize > max_response_size {
-                    warn!("Generated response that was larger than the request. This is a bug!");
-                    return;
-                }
-
-                if let Err(send_err) = socket
-                    .send_to(&cursor.get_ref()[0..cursor.position() as usize], peer_addr)
-                    .await
-                {
-                    self.stats.response_send_errors.inc();
-                    debug!(error=?send_err, "Could not send response packet");
+                    None => (NtpPacket::rate_limit_response(packet), None),
                 }
             }
             AcceptResult::Ignore => {
                 self.stats.ignored_packets.inc();
+                return;
             }
+        };
+
+        let mut response_buf = [0; MAX_PACKET_SIZE];
+        let mut cursor = Cursor::new(response_buf.as_mut_slice());
+
+        let serialize_result = packet.serialize(&mut cursor, &cipher);
+
+        if let Err(serialize_err) = serialize_result {
+            warn!(error=?serialize_err, "Could not serialize response");
+            return;
+        }
+
+        if cursor.position() as usize > request_buf.len() {
+            warn!("Generated response that was larger than the request. This is a bug!");
+            return;
+        }
+
+        if let Err(send_err) = socket
+            .send_to(&cursor.get_ref()[0..cursor.position() as usize], peer_addr)
+            .await
+        {
+            self.stats.response_send_errors.inc();
+            debug!(error=?send_err, "Could not send response packet");
         }
     }
 
@@ -570,12 +484,10 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         match NtpPacket::deserialize(buf, keyset.as_ref()) {
             Ok((packet, decoded_cookie)) => match packet.mode() {
                 NtpAssociationMode::Client => {
-                    trace!("NTP client request accepted from {}", peer_addr);
+                    trace!("NTP client request accepted from {}", peer_addr); // TODO: move peer_addr to a tracing::span
                     AcceptResult::Accept {
                         packet,
-                        max_response_size: buf.len(),
                         decoded_cookie,
-                        peer_addr,
                         recv_timestamp,
                     }
                 }
@@ -590,11 +502,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             },
             Err(PacketParsingError::DecryptError(packet)) => {
                 debug!("received packet with invalid nts cookie");
-                AcceptResult::CryptoNak {
-                    packet,
-                    max_response_size: buf.len(),
-                    peer_addr,
-                }
+                AcceptResult::CryptoNak { packet }
             }
             Err(e) => {
                 debug!("received invalid packet: {e}");
@@ -675,7 +583,7 @@ mod tests {
     use std::time::Duration;
 
     use ntp_proto::{
-        KeySetProvider, NtpDuration, NtpLeapIndicator, PollInterval, PollIntervalLimits,
+        KeySetProvider, NoCipher, NtpDuration, NtpLeapIndicator, PollInterval, PollIntervalLimits,
         ReferenceId,
     };
 
