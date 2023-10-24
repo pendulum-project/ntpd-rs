@@ -1144,6 +1144,28 @@ mod tests {
         assert_eq!(s.stats.ignored_packets.get(), 1);
         assert_eq!(s.stats.received_packets.get(), 1);
     }
+
+    #[test]
+    fn invalid_packet() {
+        let mut s = test_server();
+        let mut resp_buf = [0; MAX_PACKET_SIZE];
+
+        let (req, _) = NtpPacket::poll_message(PollInterval::default());
+        let mut req = serialize_packet_unencryped(&req);
+        req[0] = 0;
+
+        assert!(s
+            .handle_packet(
+                &req,
+                &mut resp_buf,
+                "127.0.0.1:1337".parse().unwrap(),
+                Some(NtpTimestamp::default()),
+                s.config.rate_limiting_cutoff,
+            )
+            .is_none());
+        assert_eq!(s.stats.ignored_packets.get(), 1);
+        assert_eq!(s.stats.received_packets.get(), 1);
+    }
 }
 
 #[cfg(test)]
