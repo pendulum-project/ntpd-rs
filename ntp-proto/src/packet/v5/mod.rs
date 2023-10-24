@@ -1,8 +1,5 @@
 #![warn(clippy::missing_const_for_fn)]
-use crate::{
-    NtpAssociationMode, NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, PollInterval,
-    SystemSnapshot,
-};
+use crate::{NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, PollInterval, SystemSnapshot};
 use rand::{random, thread_rng, Rng};
 
 mod error;

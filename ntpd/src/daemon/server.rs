@@ -1142,6 +1142,47 @@ mod tests {
         assert_eq!(response, None);
     }
 
+
+    #[cfg(feature = "ntpv5")]
+    #[test]
+    fn test_handle_v5_packet() {
+        let mut server = default_server_task();
+        let mut response_buf = [0; MAX_PACKET_SIZE];
+        let opt_timestamp = Some(NtpTimestamp::from_seconds_nanos_since_ntp_era(1, 0));
+
+        let (packet, _id) = NtpPacket::poll_message_v5(PollIntervalLimits::default().min);
+        let serialized = serialize_packet_unencryped(&packet);
+
+        let response = server
+            .handle_packet(
+                &serialized,
+                response_buf.as_mut_slice(),
+                "127.0.0.1:9001".parse().unwrap(),
+                opt_timestamp,
+            )
+            .unwrap();
+
+        let response = NtpPacket::deserialize(response, &NoCipher).unwrap().0;
+
+        assert_eq!(response.stratum(), 16);
+        // TODO check for valid_server_response
+
+        let (packet, _id) = NtpPacket::poll_message_v5(PollIntervalLimits::default().min);
+        let mut serialized = serialize_packet_unencryped(&packet);
+
+        // corrupt the package
+        serialized[0] = 42;
+
+        let response = server.handle_packet(
+            &serialized,
+            response_buf.as_mut_slice(),
+            "127.0.0.1:9001".parse().unwrap(),
+            opt_timestamp,
+        );
+
+        assert_eq!(response, None);
+    }
+
     fn test_server() -> ServerTask<TestClock> {
         let (_, system_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
         let (_, keyset) = tokio::sync::watch::channel(KeySetProvider::new(1).get());
