@@ -1107,7 +1107,7 @@ mod tests {
     fn test_handle_v4_packet() {
         let mut server = default_server_task();
         let mut response_buf = [0; MAX_PACKET_SIZE];
-        let opt_timestamp = Some(NtpTimestamp::from_seconds_nanos_since_ntp_era(1, 0));
+        let timestamp = NtpTimestamp::from_seconds_nanos_since_ntp_era(1, 0);
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
         let serialized = serialize_packet_unencryped(&packet);
@@ -1117,7 +1117,7 @@ mod tests {
                 &serialized,
                 response_buf.as_mut_slice(),
                 "127.0.0.1:9001".parse().unwrap(),
-                opt_timestamp,
+                Some(timestamp),
             )
             .unwrap();
 
@@ -1127,7 +1127,7 @@ mod tests {
         assert_eq!(response.stratum(), 16);
         assert!(response.valid_server_response(id, false));
         assert!(response.transmit_timestamp() != NtpTimestamp::default());
-        assert_eq!(response.receive_timestamp(), opt_timestamp.unwrap());
+        assert_eq!(response.receive_timestamp(), timestamp);
 
         let (packet, _id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
         let mut serialized = serialize_packet_unencryped(&packet);
@@ -1139,7 +1139,7 @@ mod tests {
             &serialized,
             response_buf.as_mut_slice(),
             "127.0.0.1:9001".parse().unwrap(),
-            opt_timestamp,
+            Some(timestamp),
         );
 
         assert_eq!(response, None);
@@ -1150,7 +1150,7 @@ mod tests {
     fn test_handle_v5_packet() {
         let mut server = default_server_task();
         let mut response_buf = [0; MAX_PACKET_SIZE];
-        let opt_timestamp = Some(NtpTimestamp::from_seconds_nanos_since_ntp_era(1, 0));
+        let timestamp = NtpTimestamp::from_seconds_nanos_since_ntp_era(1, 0);
 
         let (packet, id) = NtpPacket::poll_message_v5(PollIntervalLimits::default().min);
         let serialized = serialize_packet_unencryped(&packet);
@@ -1160,7 +1160,7 @@ mod tests {
                 &serialized,
                 response_buf.as_mut_slice(),
                 "127.0.0.1:9001".parse().unwrap(),
-                opt_timestamp,
+                Some(timestamp),
             )
             .unwrap();
 
@@ -1170,7 +1170,7 @@ mod tests {
         assert_eq!(response.stratum(), 16);
         assert!(response.valid_server_response(id, false));
         assert!(response.transmit_timestamp() != NtpTimestamp::default());
-        assert_eq!(response.receive_timestamp(), opt_timestamp.unwrap());
+        assert_eq!(response.receive_timestamp(), timestamp);
 
         let (packet, _id) = NtpPacket::poll_message_v5(PollIntervalLimits::default().min);
         let mut serialized = serialize_packet_unencryped(&packet);
@@ -1182,7 +1182,7 @@ mod tests {
             &serialized,
             response_buf.as_mut_slice(),
             "127.0.0.1:9001".parse().unwrap(),
-            opt_timestamp,
+            Some(timestamp),
         );
 
         assert_eq!(response, None);
