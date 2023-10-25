@@ -13,6 +13,7 @@ use super::RequestIdentifier;
 
 #[allow(dead_code)]
 pub(crate) const DRAFT_VERSION: &str = "draft-ietf-ntp-ntpv5-00";
+pub(crate) const UPGRADE_TIMESTAMP: NtpTimestamp = NtpTimestamp::from_bits(*b"NTP5NTP5");
 
 #[repr(u8)]
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]

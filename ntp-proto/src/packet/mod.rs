@@ -235,6 +235,12 @@ impl NtpHeaderV3V4 {
         recv_timestamp: NtpTimestamp,
         clock: &C,
     ) -> Self {
+        let reference_timestamp = match input.reference_timestamp {
+            #[cfg(feature = "ntpv5")]
+            v5::UPGRADE_TIMESTAMP => v5::UPGRADE_TIMESTAMP,
+            _ => Default::default(),
+        };
+
         Self {
             mode: NtpAssociationMode::Server,
             stratum: system.stratum,
@@ -248,7 +254,7 @@ impl NtpHeaderV3V4 {
             // Timestamp must be last to make it as accurate as possible.
             transmit_timestamp: clock.now().expect("Failed to read time"),
             leap: system.time_snapshot.leap_indicator,
-            reference_timestamp: Default::default(),
+            reference_timestamp,
         }
     }
 
@@ -1491,6 +1497,36 @@ mod tests {
 
         assert!(!response.valid_server_response(id, false));
         assert!(!response.valid_server_response(id, true));
+    }
+
+    #[test]
+    fn v5_upgrade_packet() {
+        let (mut packet, _) = NtpPacket::poll_message(PollInterval::default());
+        let NtpHeader::V4(header) = &mut packet.header else {
+            panic!("wrong version");
+        };
+        header.reference_timestamp = NtpTimestamp::from_fixed_int(0x4E5450354E545035);
+
+        let response = NtpPacket::timestamp_response(
+            &SystemSnapshot::default(),
+            packet,
+            NtpTimestamp::from_fixed_int(0),
+            &TestClock {
+                now: NtpTimestamp::from_fixed_int(1),
+            },
+        );
+
+        let NtpHeader::V4(header) = response.header else {
+            panic!("wrong version");
+        };
+
+        let expect = if cfg!(feature = "ntpv5") {
+            NtpTimestamp::from_fixed_int(0x4E5450354E545035)
+        } else {
+            NtpTimestamp::from_fixed_int(0)
+        };
+
+        assert_eq!(header.reference_timestamp, expect);
     }
 
     #[test]
