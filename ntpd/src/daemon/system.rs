@@ -258,16 +258,16 @@ impl<C: NtpClock, T: Wait> System<C, T> {
     }
 
     fn clock_controller(&mut self) -> Result<&mut KalmanClockController<C, PeerId>, C::Error> {
-        if self.controller.is_none() {
-            self.controller = Some(KalmanClockController::new(
+        let controller = match self.controller.take() {
+            Some(controller) => controller,
+            None => KalmanClockController::new(
                 self.clock.clone(),
                 self.synchronization_config,
                 self.peer_defaults_config,
                 self.synchronization_config.algorithm,
-            )?);
-        }
-        // Won't panic as the above if ensures controller contains something
-        Ok(self.controller.as_mut().unwrap())
+            )?,
+        };
+        Ok(self.controller.insert(controller))
     }
 
     fn add_spawner(
