@@ -786,6 +786,10 @@ impl<'a> RawExtensionField<'a> {
             return Err(IncorrectLength);
         }
 
+        // In NTPv5: There must still be enough room in the packet for data + padding
+        data.get(4..next_multiple_of_usize(field_length, 4))
+            .ok_or(IncorrectLength)?;
+
         // because the field length includes padding, the message bytes may not exactly match the input
         let message_bytes = data.get(4..field_length).ok_or(IncorrectLength)?;
 

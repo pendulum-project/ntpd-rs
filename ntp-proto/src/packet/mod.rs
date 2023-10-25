@@ -2116,4 +2116,22 @@ mod tests {
         ];
         assert!(NtpPacket::deserialize(&input, &NoCipher).is_err());
     }
+
+    #[cfg(feature = "ntpv5")]
+    #[test]
+    fn ef_with_missing_padding_v5() {
+        let (packet, _) = NtpPacket::poll_message_v5(PollInterval::default());
+        let mut data = packet.serialize_without_encryption_vec().unwrap();
+        data.extend([
+            0, 0, // Type = Unknown
+            0, 6, // Length = 5
+            1, 2, // Data
+               // Missing 2 padding bytes
+        ]);
+
+        assert!(matches!(
+            NtpPacket::deserialize(&data, &NoCipher),
+            Err(ParsingError::IncorrectLength)
+        ));
+    }
 }
