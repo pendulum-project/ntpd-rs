@@ -1,4 +1,4 @@
-use std::{fs::read_to_string, os::unix::fs::PermissionsExt, path::Path};
+use std::{fs::read_to_string, os::unix::fs::PermissionsExt, path::Path, str::FromStr};
 
 use log::warn;
 use serde::{Deserialize, Deserializer};
@@ -8,7 +8,11 @@ use timestamped_socket::interface::InterfaceName;
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Config {
-    pub loglevel: String,
+    #[serde(
+        default = "default_loglevel",
+        deserialize_with = "deserialize_loglevel"
+    )]
+    pub loglevel: log::LevelFilter,
     #[serde(default = "default_sdo_id")]
     pub sdo_id: u16,
     #[serde(default = "default_domain")]
@@ -44,6 +48,16 @@ pub struct PortConfig {
     pub delay_asymmetry: i64,
     #[serde(default = "default_delay_mechanism")]
     pub delay_mechanism: i8,
+}
+
+fn deserialize_loglevel<'de, D>(deserializer: D) -> Result<log::LevelFilter, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::Error;
+    let raw: &str = Deserialize::deserialize(deserializer)?;
+    log::LevelFilter::from_str(raw)
+        .map_err(|e| D::Error::custom(format!("Invalid loglevel: {}", e)))
 }
 
 fn deserialize_acceptable_master_list<'de, D>(
@@ -149,6 +163,10 @@ impl std::fmt::Display for ConfigError {
 
 impl std::error::Error for ConfigError {}
 
+fn default_loglevel() -> log::LevelFilter {
+    log::LevelFilter::Info
+}
+
 fn default_domain() -> u8 {
     0
 }
@@ -195,8 +213,6 @@ mod tests {
     #[test]
     fn minimal_config() {
         const MINIMAL_CONFIG: &str = r#"
-loglevel = "info" # Other values include trace, debug, warn and error
-
 [[port]]
 interface = "enp0s31f6"
 "#;
@@ -215,7 +231,7 @@ interface = "enp0s31f6"
         };
 
         let expected = crate::config::Config {
-            loglevel: "info".to_string(),
+            loglevel: log::LevelFilter::Info,
             sdo_id: 0x000,
             domain: 0,
             identity: None,

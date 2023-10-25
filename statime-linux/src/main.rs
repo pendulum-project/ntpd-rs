@@ -3,7 +3,6 @@ use std::{
     future::Future,
     path::PathBuf,
     pin::{pin, Pin},
-    str::FromStr,
 };
 
 use clap::Parser;
@@ -258,8 +257,7 @@ async fn actual_main() {
     )
     .unwrap_or_else(|e| panic!("error loading config: {e}"));
 
-    let log_level = log::LevelFilter::from_str(&config.loglevel).unwrap();
-    setup_logger(log_level).expect("could not setup logging");
+    setup_logger(config.loglevel).expect("could not setup logging");
 
     let clock_identity = config.identity.unwrap_or(ClockIdentity(
         get_clock_id().expect("could not get clock identity"),
