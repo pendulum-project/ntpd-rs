@@ -1,6 +1,6 @@
 #![warn(clippy::missing_const_for_fn)]
 use crate::{NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, PollInterval, SystemSnapshot};
-use rand::{random, thread_rng, Rng};
+use rand::random;
 
 mod error;
 #[allow(dead_code)]
@@ -110,7 +110,7 @@ impl NtpFlags {
 pub struct NtpServerCookie(pub [u8; 8]);
 
 impl NtpServerCookie {
-    fn new_random() -> NtpServerCookie {
+    fn new_random() -> Self {
         // TODO does this match entropy handling of the rest of the system?
         Self(random())
     }
@@ -120,8 +120,17 @@ impl NtpServerCookie {
 pub struct NtpClientCookie(pub [u8; 8]);
 
 impl NtpClientCookie {
+    fn new_random() -> Self {
+        // TODO does this match entropy handling of the rest of the system?
+        Self(random())
+    }
+
     pub const fn from_ntp_timestamp(ts: NtpTimestamp) -> Self {
         Self(ts.to_bits())
+    }
+
+    pub const fn into_ntp_timestamp(self) -> NtpTimestamp {
+        NtpTimestamp::from_bits(self.0)
     }
 }
 
@@ -256,13 +265,13 @@ impl NtpHeaderV5 {
         packet.poll = poll_interval.as_log();
         packet.mode = NtpMode::Request;
 
-        let transmit_timestamp = thread_rng().gen();
-        packet.transmit_timestamp = transmit_timestamp;
+        let client_cookie = NtpClientCookie::new_random();
+        packet.client_cookie = client_cookie;
 
         (
             packet,
             RequestIdentifier {
-                expected_origin_timestamp: transmit_timestamp,
+                expected_origin_timestamp: client_cookie.into_ntp_timestamp(),
                 uid: None,
             },
         )

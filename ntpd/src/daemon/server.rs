@@ -673,13 +673,13 @@ mod tests {
         }
     }
 
-    fn serialize_packet_unencryped(send_packet: &NtpPacket) -> [u8; 48] {
-        let mut buf = [0; 48];
+    fn serialize_packet_unencryped(send_packet: &NtpPacket) -> Vec<u8> {
+        let mut buf = vec![0; MAX_PACKET_SIZE];
         let mut cursor = Cursor::new(buf.as_mut_slice());
         send_packet.serialize(&mut cursor, &NoCipher).unwrap();
 
-        assert_eq!(cursor.position(), 48);
-
+        let end = cursor.position() as usize;
+        buf.truncate(end);
         buf
     }
 
@@ -1123,8 +1123,11 @@ mod tests {
 
         let response = NtpPacket::deserialize(response, &NoCipher).unwrap().0;
 
+        assert_eq!(response.version(), 4);
         assert_eq!(response.stratum(), 16);
         assert!(response.valid_server_response(id, false));
+        assert!(response.transmit_timestamp() != NtpTimestamp::default());
+        assert_eq!(response.receive_timestamp(), opt_timestamp.unwrap());
 
         let (packet, _id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
         let mut serialized = serialize_packet_unencryped(&packet);
@@ -1142,7 +1145,6 @@ mod tests {
         assert_eq!(response, None);
     }
 
-
     #[cfg(feature = "ntpv5")]
     #[test]
     fn test_handle_v5_packet() {
@@ -1150,7 +1152,7 @@ mod tests {
         let mut response_buf = [0; MAX_PACKET_SIZE];
         let opt_timestamp = Some(NtpTimestamp::from_seconds_nanos_since_ntp_era(1, 0));
 
-        let (packet, _id) = NtpPacket::poll_message_v5(PollIntervalLimits::default().min);
+        let (packet, id) = NtpPacket::poll_message_v5(PollIntervalLimits::default().min);
         let serialized = serialize_packet_unencryped(&packet);
 
         let response = server
@@ -1164,8 +1166,11 @@ mod tests {
 
         let response = NtpPacket::deserialize(response, &NoCipher).unwrap().0;
 
+        assert_eq!(response.version(), 5);
         assert_eq!(response.stratum(), 16);
-        // TODO check for valid_server_response
+        assert!(response.valid_server_response(id, false));
+        assert!(response.transmit_timestamp() != NtpTimestamp::default());
+        assert_eq!(response.receive_timestamp(), opt_timestamp.unwrap());
 
         let (packet, _id) = NtpPacket::poll_message_v5(PollIntervalLimits::default().min);
         let mut serialized = serialize_packet_unencryped(&packet);
@@ -1183,32 +1188,9 @@ mod tests {
         assert_eq!(response, None);
     }
 
-    fn test_server() -> ServerTask<TestClock> {
-        let (_, system_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
-        let (_, keyset) = tokio::sync::watch::channel(KeySetProvider::new(1).get());
-
-        ServerTask {
-            config: ServerConfig {
-                listen: "0.0.0.0:123".parse().unwrap(),
-                denylist: FilterList::default_denylist(),
-                allowlist: FilterList::default_allowlist(),
-                rate_limiting_cache_size: 0,
-                rate_limiting_cutoff: Default::default(),
-            },
-            network_wait_period: Default::default(),
-            system_receiver,
-            keyset,
-            system: Default::default(),
-            client_cache: TimestampedCache::new(10),
-            clock: TestClock {},
-            interface: None,
-            stats: Default::default(),
-        }
-    }
-
     #[test]
     fn early_fails() {
-        let mut s = test_server();
+        let mut s = default_server_task();
         let mut resp_buf = [0; MAX_PACKET_SIZE];
 
         let (req, _) = NtpPacket::poll_message(PollInterval::default());
@@ -1244,7 +1226,7 @@ mod tests {
 
     #[test]
     fn invalid_packet() {
-        let mut s = test_server();
+        let mut s = default_server_task();
         let mut resp_buf = [0; MAX_PACKET_SIZE];
 
         let (req, _) = NtpPacket::poll_message(PollInterval::default());

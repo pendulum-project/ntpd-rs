@@ -386,7 +386,7 @@ impl<'a> NtpPacket<'a> {
                 };
 
                 // TODO: Check extension field handling in V5
-                match ExtensionFieldData::deserialize(
+                let res_packet = match ExtensionFieldData::deserialize(
                     data,
                     header_size,
                     cipher,
@@ -406,6 +406,25 @@ impl<'a> NtpPacket<'a> {
                             .map_err(|e| e.generalize())?;
 
                         Err(ParsingError::DecryptError(packet))
+                    }
+                };
+
+                let (packet, cookie) = res_packet?;
+                let draft_id = packet.efdata.untrusted.iter().find_map(|ef| match ef {
+                    ExtensionField::DraftIdentification(id) => Some(id),
+                    _ => None,
+                });
+
+                match draft_id {
+                    Some(id) if id == v5::DRAFT_VERSION => Ok((packet, cookie)),
+                    received @ (Some(_) | None) => {
+                        let received: Option<&str> = received.map(|cow| &**cow);
+                        tracing::error!(
+                            expected = v5::DRAFT_VERSION,
+                            received,
+                            "Mismatched draft ID ignoring packet!"
+                        );
+                        Err(ParsingError::V5(v5::V5Error::InvalidDraftIdentification))
                     }
                 }
             }
@@ -508,10 +527,17 @@ impl<'a> NtpPacket<'a> {
     #[cfg(feature = "ntpv5")]
     pub fn poll_message_v5(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
         let (header, id) = v5::NtpHeaderV5::poll_message(poll_interval);
+
+        let draft_id = ExtensionField::DraftIdentification(Cow::Borrowed(v5::DRAFT_VERSION));
+
         (
             NtpPacket {
                 header: NtpHeader::V5(header),
-                efdata: Default::default(),
+                efdata: ExtensionFieldData {
+                    authenticated: vec![],
+                    encrypted: vec![],
+                    untrusted: vec![draft_id],
+                },
                 mac: None,
             },
             id,
@@ -575,6 +601,9 @@ impl<'a> NtpPacket<'a> {
                         .into_iter()
                         .chain(input.efdata.authenticated)
                         .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
+                        .chain(std::iter::once(ExtensionField::DraftIdentification(
+                            Cow::Borrowed(v5::DRAFT_VERSION),
+                        )))
                         .collect(),
                 },
                 mac: None,
@@ -771,6 +800,15 @@ impl<'a> NtpPacket<'a> {
             ExtensionField::NtsCookie(cookie) => Some(cookie.to_vec()),
             _ => None,
         })
+    }
+
+    pub fn version(&self) -> u8 {
+        match self.header {
+            NtpHeader::V3(_) => 3,
+            NtpHeader::V4(_) => 4,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(_) => 5,
+        }
     }
 
     pub fn leap(&self) -> NtpLeapIndicator {
