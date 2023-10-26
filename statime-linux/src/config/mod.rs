@@ -55,8 +55,8 @@ where
     D: Deserializer<'de>,
 {
     use serde::de::Error;
-    let raw: &str = Deserialize::deserialize(deserializer)?;
-    log::LevelFilter::from_str(raw)
+    let raw: String = Deserialize::deserialize(deserializer)?;
+    log::LevelFilter::from_str(&raw)
         .map_err(|e| D::Error::custom(format!("Invalid loglevel: {}", e)))
 }
 
