@@ -341,8 +341,11 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     warn!("length from socket is out of bounds. This is a bug!");
                     return SocketConnection::Reconnect;
                 };
+
+                // The response buffer gets the same size as the request was so we can never send
+                // a response that is longer than the request
                 let mut response_buf = [0; MAX_PACKET_SIZE];
-                let response_buf = response_buf.as_mut_slice();
+                let response_buf = &mut response_buf[..length];
 
                 let Some(response) = self.handle_packet(
                     request_buf,
@@ -364,8 +367,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         }
     }
 
-    // TODO: this instrument breaks coverage collection for some reason...
-    // #[instrument(level = "debug", skip_all, fields(peer_addr, size = request_buf.len(), opt_timestamp))]
+    #[instrument(level = "debug", skip_all, fields(peer_addr, size = request_buf.len(), opt_timestamp))]
     fn handle_packet<'buf>(
         &mut self,
         request_buf: &[u8],
@@ -417,11 +419,6 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         let response_buf = Self::serialize_response(response_buf, packet, opt_cipher)?;
 
         debug!(response_size = response_buf.len(), "Generated response");
-        if response_buf.len() > request_buf.len() {
-            debug_assert!(false, "Generated response that was larger than the request");
-            warn!("Generated response that was larger than the request. This is a bug!");
-            return None;
-        }
 
         Some(response_buf)
     }
