@@ -1145,7 +1145,7 @@ mod tests {
         assert_eq!(response, None);
     }
 
-    #[cfg(feature = "ntpv5")]
+    #[cfg(feature = "unstable_ntpv5")]
     #[test]
     fn test_handle_v5_packet() {
         let mut server = default_server_task();

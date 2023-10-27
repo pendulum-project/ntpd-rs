@@ -42,7 +42,7 @@ ntp-proto = { workspace = true, features = ["__internal-test",] }
 [features]
 hardware-timestamping = []
 __internal-fuzz = []
-ntpv5 = ["ntp-proto/ntpv5"]
+unstable_ntpv5 = ["ntp-proto/ntpv5"]
 
 [lib]
 name = "ntpd"
