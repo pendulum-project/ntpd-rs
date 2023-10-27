@@ -235,12 +235,6 @@ impl NtpHeaderV3V4 {
         recv_timestamp: NtpTimestamp,
         clock: &C,
     ) -> Self {
-        let reference_timestamp = match input.reference_timestamp {
-            #[cfg(feature = "ntpv5")]
-            v5::UPGRADE_TIMESTAMP => v5::UPGRADE_TIMESTAMP,
-            _ => Default::default(),
-        };
-
         Self {
             mode: NtpAssociationMode::Server,
             stratum: system.stratum,
@@ -254,7 +248,7 @@ impl NtpHeaderV3V4 {
             // Timestamp must be last to make it as accurate as possible.
             transmit_timestamp: clock.now().expect("Failed to read time"),
             leap: system.time_snapshot.leap_indicator,
-            reference_timestamp,
+            reference_timestamp: Default::default(),
         }
     }
 
@@ -416,15 +410,10 @@ impl<'a> NtpPacket<'a> {
                 };
 
                 let (packet, cookie) = res_packet?;
-                let draft_id = packet.efdata.untrusted.iter().find_map(|ef| match ef {
-                    ExtensionField::DraftIdentification(id) => Some(id),
-                    _ => None,
-                });
 
-                match draft_id {
+                match packet.draft_id() {
                     Some(id) if id == v5::DRAFT_VERSION => Ok((packet, cookie)),
                     received @ (Some(_) | None) => {
-                        let received: Option<&str> = received.map(|cow| &**cow);
                         tracing::error!(
                             expected = v5::DRAFT_VERSION,
                             received,
@@ -550,6 +539,7 @@ impl<'a> NtpPacket<'a> {
         )
     }
 
+    #[cfg_attr(not(feature = "ntpv5"), allow(unused_mut))]
     pub fn timestamp_response<C: NtpClock>(
         system: &SystemSnapshot,
         input: Self,
@@ -567,27 +557,38 @@ impl<'a> NtpPacket<'a> {
                 efdata: Default::default(),
                 mac: None,
             },
-            NtpHeader::V4(header) => NtpPacket {
-                header: NtpHeader::V4(NtpHeaderV3V4::timestamp_response(
-                    system,
-                    header,
-                    recv_timestamp,
-                    clock,
-                )),
-                efdata: ExtensionFieldData {
-                    authenticated: vec![],
-                    encrypted: vec![],
-                    // Ignore encrypted so as not to accidentaly leak anything
-                    untrusted: input
-                        .efdata
-                        .untrusted
-                        .into_iter()
-                        .chain(input.efdata.authenticated)
-                        .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
-                        .collect(),
-                },
-                mac: None,
-            },
+            NtpHeader::V4(header) => {
+                let mut response_header =
+                    NtpHeaderV3V4::timestamp_response(system, header, recv_timestamp, clock);
+
+                #[cfg(feature = "ntpv5")]
+                {
+                    // Respond with the upgrade timestamp (NTP5NTP5) iff the input had it and the packet
+                    // had the correct draft identification
+                    if let (v5::UPGRADE_TIMESTAMP, Some(v5::DRAFT_VERSION)) =
+                        (header.reference_timestamp, input.draft_id())
+                    {
+                        response_header.reference_timestamp = v5::UPGRADE_TIMESTAMP;
+                    };
+                }
+
+                NtpPacket {
+                    header: NtpHeader::V4(response_header),
+                    efdata: ExtensionFieldData {
+                        authenticated: vec![],
+                        encrypted: vec![],
+                        // Ignore encrypted so as not to accidentally leak anything
+                        untrusted: input
+                            .efdata
+                            .untrusted
+                            .into_iter()
+                            .chain(input.efdata.authenticated)
+                            .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
+                            .collect(),
+                    },
+                    mac: None,
+                }
+            }
             #[cfg(feature = "ntpv5")]
             NtpHeader::V5(header) => NtpPacket {
                 // TODO deduplicate extension handling with V4
@@ -600,7 +601,7 @@ impl<'a> NtpPacket<'a> {
                 efdata: ExtensionFieldData {
                     authenticated: vec![],
                     encrypted: vec![],
-                    // Ignore encrypted so as not to accidentaly leak anything
+                    // Ignore encrypted so as not to accidentally leak anything
                     untrusted: input
                         .efdata
                         .untrusted
@@ -615,6 +616,14 @@ impl<'a> NtpPacket<'a> {
                 mac: None,
             },
         }
+    }
+
+    #[cfg(feature = "ntpv5")]
+    fn draft_id(&self) -> Option<&'_ str> {
+        self.efdata.untrusted.iter().find_map(|ef| match ef {
+            ExtensionField::DraftIdentification(id) => Some(&**id),
+            _ => None,
+        })
     }
 
     pub fn nts_timestamp_response<C: NtpClock>(
@@ -1506,6 +1515,14 @@ mod tests {
             panic!("wrong version");
         };
         header.reference_timestamp = NtpTimestamp::from_fixed_int(0x4E5450354E545035);
+
+        #[cfg(feature = "ntpv5")]
+        packet
+            .efdata
+            .untrusted
+            .push(ExtensionField::DraftIdentification(Cow::Borrowed(
+                v5::DRAFT_VERSION,
+            )));
 
         let response = NtpPacket::timestamp_response(
             &SystemSnapshot::default(),
