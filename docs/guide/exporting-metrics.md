@@ -1,6 +1,6 @@
 # Exporting metrics
 
-Ntpd-rs supports exporting key operational metrics to an external prometheus instance.
+Ntpd-rs supports exporting key operational metrics to an external [prometheus](https://prometheus.io/) instance.
 
 ## Installed from package
 
