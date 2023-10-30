@@ -15,21 +15,48 @@ on:
     - cron: '0 4 * * *'
 
 jobs:
-  build-ubuntu:
-    name: Build+test ubuntu
-    runs-on: ${{ matrix.os }}
+  build:
+    name: Build and test
+    runs-on: "${{ matrix.os }}"
     strategy:
       matrix:
-        os: [ubuntu-latest]
-        rust:
-          - stable
-          - beta
-          - 1.66.0
-        target:
-          - ""
-        features:
-          - ""
-          - "--features ntpv5"
+        include:
+          - os: ubuntu-latest
+            rust: stable
+            features: ""
+            target: ""
+          - os: ubuntu-latest
+            rust: beta
+            features: ""
+            target: ""
+          - os: ubuntu-latest
+            rust: "1.66.0"
+            features: ""
+            target: ""
+          - os: ubuntu-latest
+            rust: "stable"
+            features: ""
+            target: "x86_64-unknown-linux-musl"
+          - os: macos-latest
+            rust: "stable"
+            features: ""
+            target: ""
+          - os: ubuntu-latest
+            rust: "stable"
+            features: "--features ntpv5"
+            target: ""
+          - os: ubuntu-latest
+            rust: "1.66.0"
+            features: "--features ntpv5"
+            target: ""
+          - os: ubuntu-latest
+            rust: "stable"
+            features: "--features ntpv5"
+            target: "x86_64-unknown-linux-musl"
+          - os: macos-latest
+            rust: "stable"
+            features: "--features ntpv5"
+            target: ""
     steps:
       - name: Checkout sources
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
@@ -39,6 +66,7 @@ jobs:
         uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
         with:
           toolchain: ${{ matrix.rust }}
+          target: "${{ matrix.target }}"
           override: true
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@ac89944b5b150d78567ab6c02badfbe48b0b55aa
@@ -56,92 +84,8 @@ jobs:
           files: lcov.info
           fail_ci_if_error: false
 
-  build-musl:
-    name: Build+test-musl
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        rust:
-          - stable
-        target:
-          - "x86_64-unknown-linux-musl"
-        os: [ubuntu-latest]
-        features:
-          - ""
-          - "--features ntpv5"
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
-        with:
-          persist-credentials: false
-      - name: Install ${{ matrix.rust }} toolchain
-        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
-        with:
-          toolchain: ${{ matrix.rust }}
-          override: true
-      - name: cargo build
-        run: cargo build ${{ matrix.features }}
-      - name: cargo test
-        run: cargo test
-        env:
-          RUST_BACKTRACE: 1
-
-  build-macos:
-    name: Build+test macos
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [macos-latest]
-        rust:
-          - stable
-        target:
-          - ""
-        features:
-          - ""
-          - "--features ntpv5"
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
-        with:
-          persist-credentials: false
-      - name: Install ${{ matrix.rust }} toolchain
-        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
-        with:
-          toolchain: ${{ matrix.rust }}
-          override: true
-      - name: cargo build
-        run: cargo build ${{ matrix.features }}
-      - name: cargo test
-        run: cargo test
-        env:
-          RUST_BACKTRACE: 1
-
-  test-freebsd:
-  # see https://github.com/actions/runner/issues/385
-  # use https://github.com/vmactions/freebsd-vm for now
-    name: test on freebsd
-    runs-on: macos-12
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
-      - name: test on freebsd
-        uses: vmactions/freebsd-vm@v0
-        with:
-          usesh: true
-          mem: 4096
-          copyback: false
-          prepare: |
-            pkg install -y curl
-            curl https://sh.rustup.rs -sSf --output rustup.sh
-            sh rustup.sh -y --profile default --default-toolchain stable # cannot use `--profile minimal` because of clippy
-            echo "~~~~ rustc --version ~~~~"
-            $HOME/.cargo/bin/rustc --version
-            echo "~~~~ freebsd-version ~~~~"
-            freebsd-version
-          run: $HOME/.cargo/bin/cargo clippy --workspace --all-targets -- -D warnings && $HOME/.cargo/bin/cargo build --all-targets && $HOME/.cargo/bin/cargo test
-
   unused:
-    name: Unused dependencies
+    name: Check unused dependencies
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
@@ -185,7 +129,7 @@ jobs:
         run: cargo run --bin ntp-ctl -- -c ./docs/examples/conf/ntp.toml.default validate
 
   man-sync:
-    name: Precompiled man pages
+    name: Validate man pages
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
@@ -230,6 +174,21 @@ jobs:
 
   clippy:
     name: Clippy
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            use_zig: false
+            zig_args: ""
+          - target: armv7-unknown-linux-gnueabihf
+            use_zig: true
+            zig_args: "-target arm-linux-gnueabihf -mcpu=generic+v7a+vfp3-d32+thumb2-neon -g"
+          - target: x86_64-unknown-linux-musl
+            use_zig: true
+            zig_args: "-target x86_64-linux-musl"
+          - target: x86_64-apple-darwin
+            use_zig: true
+            zig_args: "-target x86_64-macos-gnu -g"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
@@ -243,123 +202,39 @@ jobs:
           override: true
           default: true
           components: clippy
+          target: ${{matrix.target}}
+      # Use zig as our C compiler for convenient cross-compilation. We run into rustls having a dependency on `ring`.
+      # This crate uses C and assembly code, and because of its build scripts, `cargo clippy` needs to be able to compile
+      # that code for our target.
+      - uses: goto-bus-stop/setup-zig@6fede2f0550d71291c0accf2834b216e69a2d67a
+        with:
+          version: 0.11.0
+        if: ${{matrix.use_zig}}
+      - name: Install cargo-zigbuild
+        uses: taiki-e/install-action@347bed327eb126943543a5e1634a6863a7bc88ab
+        with:
+          tool: cargo-zigbuild
+        if: ${{matrix.use_zig}}
+
+      - name: Set TARGET_CC for zig
+        run: echo "TARGET_CC=\"/home/runner/.cargo/bin/cargo-zigbuild zig cc -- ${{matrix.zig_args}}\"" >> $GITHUB_ENV
+        if: ${{matrix.use_zig}}
+
       - name: Run clippy
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
         with:
           command: clippy
-          args: --workspace --all-targets --all-features -- -D warnings
+          args: --target ${{matrix.target}} --workspace --all-targets --all-features -- -D warnings
       - name: Run clippy (fuzzers)
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
         with:
           command: clippy
-          args: --manifest-path ./fuzz/Cargo.toml --all-targets -- -D warnings
+          args: --target ${{matrix.target}} --manifest-path ./fuzz/Cargo.toml --all-targets -- -D warnings
       - name: Run clippy (fuzz_rand_shim)
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
         with:
           command: clippy
-          args: --manifest-path ./fuzz/fuzz_rand_shim/Cargo.toml --all-targets -- -D warnings
-
-  clippy-raspberry-pi:
-    name: ClippyRaspberryPi
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
-        with:
-          persist-credentials: false
-      - name: Install rust toolchain
-        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
-        with:
-          toolchain: stable
-          override: true
-          default: true
-          components: clippy
-          target: armv7-unknown-linux-gnueabihf
-      # Use zig as our C compiler for convenient cross-compilation. We run into rustls having a dependency on `ring`.
-      # This crate uses C and assembly code, and because of its build scripts, `cargo clippy` needs to be able to compile
-      # that code for our target.
-      - uses: goto-bus-stop/setup-zig@6fede2f0550d71291c0accf2834b216e69a2d67a
-        with:
-          version: 0.9.0
-      - name: Install cargo-zigbuild
-        uses: taiki-e/install-action@ac89944b5b150d78567ab6c02badfbe48b0b55aa
-        with:
-          tool: cargo-zigbuild
-      - name: Run clippy
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
-        env:
-          TARGET_CC: "/home/runner/.cargo/bin/cargo-zigbuild zig cc -- -target arm-linux-gnueabihf -mcpu=generic+v7a+vfp3-d32+thumb2-neon -g"
-        with:
-          command: clippy
-          args: --target armv7-unknown-linux-gnueabihf --workspace --all-targets --all-features -- -D warnings
-
-  clippy-macos:
-    name: ClippyMacOS
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
-        with:
-          persist-credentials: false
-      - name: Install rust toolchain
-        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
-        with:
-          toolchain: stable
-          override: true
-          default: true
-          components: clippy
-          target: x86_64-apple-darwin
-      # Use zig as our C compiler for convenient cross-compilation. We run into rustls having a dependency on `ring`.
-      # This crate uses C and assembly code, and because of its build scripts, `cargo clippy` needs to be able to compile
-      # that code for our target.
-      - uses: goto-bus-stop/setup-zig@6fede2f0550d71291c0accf2834b216e69a2d67a
-        with:
-          version: 0.9.0
-      - name: Install cargo-zigbuild
-        uses: taiki-e/install-action@ac89944b5b150d78567ab6c02badfbe48b0b55aa
-        with:
-          tool: cargo-zigbuild
-      - name: Run clippy
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
-        env:
-          TARGET_CC: "/home/runner/.cargo/bin/cargo-zigbuild zig cc -- -target x86_64-macos-gnu -g"
-        with:
-          command: clippy
-          args: --target x86_64-apple-darwin --workspace --all-targets --all-features -- -D warnings
-
-  clippy-musl:
-    name: ClippyMusl
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
-        with:
-          persist-credentials: false
-      - name: Install rust toolchain
-        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
-        with:
-          toolchain: stable
-          override: true
-          default: true
-          components: clippy
-          target: x86_64-unknown-linux-musl
-      # Use zig as our C compiler for convenient cross-compilation. We run into rustls having a dependency on `ring`.
-      # This crate uses C and assembly code, and because of its build scripts, `cargo clippy` needs to be able to compile
-      # that code for our target.
-      - uses: goto-bus-stop/setup-zig@6fede2f0550d71291c0accf2834b216e69a2d67a
-        with:
-          version: 0.9.0
-      - name: Install cargo-zigbuild
-        uses: taiki-e/install-action@ac89944b5b150d78567ab6c02badfbe48b0b55aa
-        with:
-          tool: cargo-zigbuild
-      - name: Run clippy
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
-        env:
-          TARGET_CC: "/home/runner/.cargo/bin/cargo-zigbuild zig cc -- -target x86_64-linux-musl"
-        with:
-          command: clippy
-          args: --target x86_64-unknown-linux-musl --workspace --all-targets --all-features -- -D warnings
+          args: --target ${{matrix.target}} --manifest-path ./fuzz/fuzz_rand_shim/Cargo.toml --all-targets -- -D warnings
 
   fuzz:
     name: Smoke-test fuzzing targets
