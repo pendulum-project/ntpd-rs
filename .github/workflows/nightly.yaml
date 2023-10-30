@@ -1,0 +1,36 @@
+name: nightly
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - 'release/**'
+  schedule:
+    - cron: '0 4 * * *'
+
+jobs:
+  test-freebsd:
+    # see https://github.com/actions/runner/issues/385
+    # use https://github.com/vmactions/freebsd-vm for now
+    name: test on freebsd
+    runs-on: macos-12
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+      - name: test on freebsd
+        uses: vmactions/freebsd-vm@v0
+        with:
+          usesh: true
+          mem: 4096
+          copyback: false
+          prepare: |
+            pkg install -y curl
+            curl https://sh.rustup.rs -sSf --output rustup.sh
+            sh rustup.sh -y --profile default --default-toolchain stable # cannot use `--profile minimal` because of clippy
+            echo "~~~~ rustc --version ~~~~"
+            $HOME/.cargo/bin/rustc --version
+            echo "~~~~ freebsd-version ~~~~"
+            freebsd-version
+            run: $HOME/.cargo/bin/cargo clippy --workspace --all-targets -- -D warnings && $HOME/.cargo/bin/cargo build --all-targets && $HOME/.cargo/bin/cargo test
