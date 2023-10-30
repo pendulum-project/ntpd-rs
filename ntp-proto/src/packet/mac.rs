@@ -9,7 +9,11 @@ pub(super) struct Mac<'a> {
 }
 
 impl<'a> Mac<'a> {
-    pub(super) const MAXIMUM_SIZE: usize = 28;
+    // As per RFC7822:
+    // If a MAC is used, it resides at the end of the packet.  This field
+    // can be either 24 octets long, 20 octets long, or a 4-octet
+    // crypto-NAK.
+    pub(super) const MAXIMUM_SIZE: usize = 24;
 
     pub(super) fn into_owned(self) -> Mac<'static> {
         Mac {

@@ -2134,6 +2134,28 @@ mod tests {
         assert!(NtpPacket::deserialize(&input, &NoCipher).is_err());
     }
 
+    #[test]
+    fn round_trip_with_ef() {
+        let (mut p, _) = NtpPacket::poll_message(PollInterval::default());
+        p.efdata.untrusted.push(ExtensionField::Unknown {
+            type_id: 0x42,
+            data: vec![].into(),
+        });
+
+        let serialized = p.serialize_without_encryption_vec().unwrap();
+
+        let (mut out, _) = NtpPacket::deserialize(&serialized, &NoCipher).unwrap();
+
+        // Strip any padding
+        let ExtensionField::Unknown { data, .. } = &mut out.efdata.untrusted[0] else {
+            panic!("wrong ef");
+        };
+        assert!(data.iter().all(|&e| e == 0));
+        *data = vec![].into();
+
+        assert_eq!(p, out);
+    }
+
     #[cfg(feature = "ntpv5")]
     #[test]
     fn ef_with_missing_padding_v5() {

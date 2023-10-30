@@ -1254,48 +1254,6 @@ mod tests {
     }
 
     #[test]
-    fn deserialize_without_cipher_invalid_length() {
-        // the message will be smaller than the cutoff value of 28
-        let cookie = ExtensionField::NtsCookie(Cow::Borrowed(&[0; 4]));
-
-        let data = ExtensionFieldData {
-            authenticated: vec![],
-            encrypted: vec![cookie],
-            untrusted: vec![],
-        };
-
-        let nonce_length = 11;
-        let cipher = crate::packet::crypto::IdentityCipher::new(nonce_length);
-
-        let mut w = [0u8; 128];
-        let mut cursor = Cursor::new(w.as_mut_slice());
-        data.serialize(&mut cursor, &cipher, ExtensionHeaderVersion::V4)
-            .unwrap();
-
-        let n = cursor.position() as usize;
-        let slice = &w.as_slice()[..n];
-
-        let cipher = crate::packet::crypto::NoCipher;
-
-        let result =
-            ExtensionFieldData::deserialize(slice, 0, &cipher, ExtensionHeaderVersion::V4).unwrap();
-
-        let DeserializedExtensionField {
-            efdata,
-            remaining_bytes,
-            cookie,
-        } = result;
-
-        assert_eq!(efdata.authenticated, &[]);
-        assert_eq!(efdata.encrypted, &[]);
-        assert_eq!(efdata.untrusted, &[]);
-
-        assert_eq!(remaining_bytes, slice);
-
-        assert!(cookie.is_none());
-    }
-
-    #[test]
     fn deserialize_without_cipher() {
         let cookie = ExtensionField::NtsCookie(Cow::Borrowed(&[0; 32]));
 
