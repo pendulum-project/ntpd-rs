@@ -1,0 +1,287 @@
+name: checks
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - main
+      - 'release/**'
+  pull_request:
+    branches-ignore:
+      - 'release/**'
+  schedule:
+    - cron: '0 4 * * *'
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: "${{ matrix.os }}"
+    strategy:
+      matrix:
+        include:
+          - rust: stable
+            os: ubuntu-latest
+            features: ""
+            target: "x86_64-unknown-linux-gnu"
+          - rust: beta
+            os: ubuntu-latest
+            features: ""
+            target: "x86_64-unknown-linux-gnu"
+          - rust: "1.66.0"
+            os: ubuntu-latest
+            features: ""
+            target: "x86_64-unknown-linux-gnu"
+          - rust: "stable"
+            os: ubuntu-latest
+            features: ""
+            target: "x86_64-unknown-linux-musl"
+          - rust: "stable"
+            os: macos-latest
+            features: ""
+            target: "x86_64-apple-darwin"
+          - rust: "stable"
+            os: ubuntu-latest
+            features: "--features ntpv5"
+            target: "x86_64-unknown-linux-gnu"
+          - rust: "1.66.0"
+            os: ubuntu-latest
+            features: "--features ntpv5"
+            target: "x86_64-unknown-linux-gnu"
+          - rust: "stable"
+            os: ubuntu-latest
+            features: "--features ntpv5"
+            target: "x86_64-unknown-linux-musl"
+          - rust: "stable"
+            os: macos-latest
+            features: "--features ntpv5"
+            target: "x86_64-apple-darwin"
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          persist-credentials: false
+      - name: Install ${{ matrix.rust }} toolchain
+        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
+        with:
+          toolchain: ${{ matrix.rust }}
+          target: "${{ matrix.target }}"
+          override: true
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@ac89944b5b150d78567ab6c02badfbe48b0b55aa
+        with:
+          tool: cargo-llvm-cov
+      - name: Rust cache
+        uses: Swatinem/rust-cache@a95ba195448af2da9b00fb742d14ffaaf3c21f43
+        with:
+            shared-key: "${{matrix.rust}}-${{matrix.target}}"
+      - name: cargo build
+        run: cargo build ${{ matrix.features }}
+      - name: cargo test
+        run: cargo llvm-cov ${{ matrix.features }} --lcov --output-path lcov.info
+        env:
+          RUST_BACKTRACE: 1
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@eaaf4bedf32dbdc6b720b63067d99c4d77d6047d
+        with:
+          files: lcov.info
+          fail_ci_if_error: false
+
+  unused:
+    name: Check unused dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          persist-credentials: false
+      - name: Install nightly toolchain
+        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
+        with:
+          toolchain: nightly
+          override: true
+      - name: Install udeps
+        uses: taiki-e/install-action@ac89944b5b150d78567ab6c02badfbe48b0b55aa
+        with:
+          tool: cargo-udeps
+      - name: cargo udeps
+        run: cargo udeps --workspace --all-targets
+      - name: cargo udeps (fuzzer)
+        run: cargo udeps --manifest-path ./fuzz/Cargo.toml --all-targets
+
+  #note: can't validate config/nts.*.toml because of intentionally missing files
+  validate:
+    name: Validate configs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          persist-credentials: false
+      - name: ./ntp.toml
+        run: cargo run --bin ntp-ctl -- -c ./ntp.toml validate
+      - name: ./ntp.server.toml
+        run: cargo run --bin ntp-ctl -- -c ./ntp.server.toml validate
+      - name: ./test-keys/unsafe.nts.client.toml
+        run: cargo run --bin ntp-ctl -- -c ./test-keys/unsafe.nts.client.toml validate
+      - name: ./test-keys/unsafe.nts.server.toml
+        run: cargo run --bin ntp-ctl -- -c ./test-keys/unsafe.nts.server.toml validate
+      - name: ./config/ntp.demobilize.toml
+        run: cargo run --bin ntp-ctl -- -c ./config/ntp.demobilize.toml validate
+      - name: ./pkg/common/ntp.toml.default
+        run: cargo run --bin ntp-ctl -- -c ./docs/examples/conf/ntp.toml.default validate
+
+  man-sync:
+    name: Validate man pages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          persist-credentials: false
+      - name: Build man pages
+        run: utils/generate-man.sh target/docs/man
+      - name: Compare generated pages with precompiled
+        run: diff -r -s --color "docs/precompiled/man" "target/docs/man"
+
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          persist-credentials: false
+      - name: Install rust toolchain
+        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
+        with:
+          toolchain: stable
+          override: true
+          default: true
+          components: rustfmt
+      - name: Check formatting
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
+        with:
+          command: fmt
+          args: --all --check
+      - name: Check formatting (fuzzers)
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
+        with:
+          command: fmt
+          args: --manifest-path ./fuzz/Cargo.toml --all --check
+      - name: Check formatting (fuzz_rand_shim)
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
+        with:
+          command: fmt
+          args: --manifest-path ./fuzz/fuzz_rand_shim/Cargo.toml --all --check
+
+  clippy:
+    name: Clippy
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            use_zig: false
+            zig_args: ""
+          - target: armv7-unknown-linux-gnueabihf
+            use_zig: true
+            zig_args: "-target arm-linux-gnueabihf -mcpu=generic+v7a+vfp3-d32+thumb2-neon -g"
+          - target: x86_64-unknown-linux-musl
+            use_zig: true
+            zig_args: "-target x86_64-linux-musl"
+          - target: x86_64-apple-darwin
+            use_zig: true
+            zig_args: "-target x86_64-macos-gnu -g"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          persist-credentials: false
+      - name: Install rust toolchain
+        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
+        with:
+          toolchain: stable
+          override: true
+          default: true
+          components: clippy
+          target: ${{matrix.target}}
+      # Use zig as our C compiler for convenient cross-compilation. We run into rustls having a dependency on `ring`.
+      # This crate uses C and assembly code, and because of its build scripts, `cargo clippy` needs to be able to compile
+      # that code for our target.
+      - uses: goto-bus-stop/setup-zig@6fede2f0550d71291c0accf2834b216e69a2d67a
+        with:
+          version: 0.9.0
+        if: ${{matrix.use_zig}}
+      - name: Install cargo-zigbuild
+        uses: taiki-e/install-action@347bed327eb126943543a5e1634a6863a7bc88ab
+        with:
+          tool: cargo-zigbuild
+        if: ${{matrix.use_zig}}
+
+      - name: Set TARGET_CC for zig
+        run: echo "TARGET_CC=/home/runner/.cargo/bin/cargo-zigbuild zig cc -- ${{matrix.zig_args}}" >> $GITHUB_ENV
+        if: ${{matrix.use_zig}}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@a95ba195448af2da9b00fb742d14ffaaf3c21f43
+        with:
+            shared-key: "stable-${{matrix.target}}"
+
+      - name: Run clippy
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
+        with:
+          command: clippy
+          args: --target ${{matrix.target}} --workspace --all-targets --all-features -- -D warnings
+      - name: Run clippy (fuzzers)
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
+        with:
+          command: clippy
+          args: --target ${{matrix.target}} --manifest-path ./fuzz/Cargo.toml --all-targets -- -D warnings
+      - name: Run clippy (fuzz_rand_shim)
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
+        with:
+          command: clippy
+          args: --target ${{matrix.target}} --manifest-path ./fuzz/fuzz_rand_shim/Cargo.toml --all-targets -- -D warnings
+
+  fuzz:
+    name: Smoke-test fuzzing targets
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        features:
+          - ""
+          - "--features ntpv5"
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          persist-credentials: false
+      - name: Install nightly toolchain
+        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af
+        with:
+          toolchain: nightly
+          override: true
+          default: true
+      - name: Install cargo fuzz
+        uses: taiki-e/install-action@ac89944b5b150d78567ab6c02badfbe48b0b55aa
+        with:
+          tool: cargo-fuzz
+      - name: Smoke-test fuzz targets
+        run: |
+          cargo fuzz build ${{ matrix.features }}
+          for target in $(cargo fuzz list ${{ matrix.features }}) ; do
+            cargo fuzz run ${{ matrix.features }} $target -- -max_total_time=10
+          done
+
+  audit-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+    - uses: EmbarkStudios/cargo-deny-action@1e59595bed8fc55c969333d08d7817b36888f0c5
+      with:
+        arguments: --workspace --all-features
+    - uses: EmbarkStudios/cargo-deny-action@1e59595bed8fc55c969333d08d7817b36888f0c5
+      with:
+        arguments: --manifest-path ./fuzz/Cargo.toml --all-features
