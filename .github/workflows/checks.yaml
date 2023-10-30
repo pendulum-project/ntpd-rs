@@ -183,15 +183,19 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             use_zig: false
+            fuzzer: true
             zig_args: ""
           - target: armv7-unknown-linux-gnueabihf
             use_zig: true
+            fuzzer: false
             zig_args: "-target arm-linux-gnueabihf -mcpu=generic+v7a+vfp3-d32+thumb2-neon -g"
           - target: x86_64-unknown-linux-musl
             use_zig: true
+            fuzzer: false
             zig_args: "-target x86_64-linux-musl"
           - target: x86_64-apple-darwin
             use_zig: true
+            fuzzer: false
             zig_args: "-target x86_64-macos-gnu -g"
     runs-on: ubuntu-latest
     steps:
@@ -239,11 +243,13 @@ jobs:
         with:
           command: clippy
           args: --target ${{matrix.target}} --manifest-path ./fuzz/Cargo.toml --all-targets -- -D warnings
+        if: ${{matrix.fuzzer}}
       - name: Run clippy (fuzz_rand_shim)
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
         with:
           command: clippy
           args: --target ${{matrix.target}} --manifest-path ./fuzz/fuzz_rand_shim/Cargo.toml --all-targets -- -D warnings
+        if: ${{matrix.fuzzer}}
 
   fuzz:
     name: Smoke-test fuzzing targets
