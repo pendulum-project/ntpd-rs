@@ -212,7 +212,7 @@ jobs:
       # that code for our target.
       - uses: goto-bus-stop/setup-zig@6fede2f0550d71291c0accf2834b216e69a2d67a
         with:
-          version: 0.11.0
+          version: 0.9.0
         if: ${{matrix.use_zig}}
       - name: Install cargo-zigbuild
         uses: taiki-e/install-action@347bed327eb126943543a5e1634a6863a7bc88ab
