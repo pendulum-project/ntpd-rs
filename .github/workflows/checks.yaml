@@ -21,42 +21,42 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
-            rust: stable
+          - rust: stable
+            os: ubuntu-latest
             features: ""
-            target: ""
-          - os: ubuntu-latest
-            rust: beta
+            target: "x86_64-unknown-linux-gnu"
+          - rust: beta
+            os: ubuntu-latest
             features: ""
-            target: ""
-          - os: ubuntu-latest
-            rust: "1.66.0"
+            target: "x86_64-unknown-linux-gnu"
+          - rust: "1.66.0"
+            os: ubuntu-latest
             features: ""
-            target: ""
-          - os: ubuntu-latest
-            rust: "stable"
+            target: "x86_64-unknown-linux-gnu"
+          - rust: "stable"
+            os: ubuntu-latest
             features: ""
             target: "x86_64-unknown-linux-musl"
-          - os: macos-latest
-            rust: "stable"
+          - rust: "stable"
+            os: macos-latest
             features: ""
-            target: ""
-          - os: ubuntu-latest
-            rust: "stable"
+            target: "x86_64-apple-darwin"
+          - rust: "stable"
+            os: ubuntu-latest
             features: "--features ntpv5"
-            target: ""
-          - os: ubuntu-latest
-            rust: "1.66.0"
+            target: "x86_64-unknown-linux-gnu"
+          - rust: "1.66.0"
+            os: ubuntu-latest
             features: "--features ntpv5"
-            target: ""
-          - os: ubuntu-latest
-            rust: "stable"
+            target: "x86_64-unknown-linux-gnu"
+          - rust: "stable"
+            os: ubuntu-latest
             features: "--features ntpv5"
             target: "x86_64-unknown-linux-musl"
-          - os: macos-latest
-            rust: "stable"
+          - rust: "stable"
+            os: macos-latest
             features: "--features ntpv5"
-            target: ""
+            target: "x86_64-apple-darwin"
     steps:
       - name: Checkout sources
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
@@ -72,6 +72,10 @@ jobs:
         uses: taiki-e/install-action@ac89944b5b150d78567ab6c02badfbe48b0b55aa
         with:
           tool: cargo-llvm-cov
+      - name: Rust cache
+        uses: Swatinem/rust-cache@a95ba195448af2da9b00fb742d14ffaaf3c21f43
+        with:
+            shared-key: "${{matrix.rust}}-${{matrix.target}}"
       - name: cargo build
         run: cargo build ${{ matrix.features }}
       - name: cargo test
@@ -217,8 +221,13 @@ jobs:
         if: ${{matrix.use_zig}}
 
       - name: Set TARGET_CC for zig
-        run: echo "TARGET_CC=\"/home/runner/.cargo/bin/cargo-zigbuild zig cc -- ${{matrix.zig_args}}\"" >> $GITHUB_ENV
+        run: echo "TARGET_CC=/home/runner/.cargo/bin/cargo-zigbuild zig cc -- ${{matrix.zig_args}}" >> $GITHUB_ENV
         if: ${{matrix.use_zig}}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@a95ba195448af2da9b00fb742d14ffaaf3c21f43
+        with:
+            shared-key: "stable-${{matrix.target}}"
 
       - name: Run clippy
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505
