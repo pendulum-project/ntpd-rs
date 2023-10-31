@@ -63,7 +63,7 @@ pub enum ExtensionField<'a> {
     #[cfg(feature = "ntpv5")]
     DraftIdentification(Cow<'a, str>),
     #[cfg(feature = "ntpv5")]
-    Padding(u16),
+    Padding(usize),
     Unknown {
         type_id: u16,
         data: Cow<'a, [u8]>,
@@ -102,6 +102,8 @@ impl<'a> std::fmt::Debug for ExtensionField<'a> {
 }
 
 impl<'a> ExtensionField<'a> {
+    const HEADER_LENGTH: usize = 4;
+
     pub fn into_owned(self) -> ExtensionField<'static> {
         use ExtensionField::*;
 
@@ -126,6 +128,22 @@ impl<'a> ExtensionField<'a> {
             #[cfg(feature = "ntpv5")]
             Padding(len) => Padding(len),
         }
+    }
+
+    pub fn byte_length(&self) -> usize {
+        let length = match self {
+            ExtensionField::Unknown { type_id: _, data } => data.len(),
+            ExtensionField::UniqueIdentifier(id) => id.len(),
+            ExtensionField::NtsCookie(cookie) => cookie.len(),
+            ExtensionField::NtsCookiePlaceholder { cookie_length } => *cookie_length as usize,
+            ExtensionField::InvalidNtsEncryptedField => 0,
+            #[cfg(feature = "ntpv5")]
+            ExtensionField::DraftIdentification(data) => data.len(),
+            #[cfg(feature = "ntpv5")]
+            ExtensionField::Padding(len) => *len,
+        };
+
+        Self::HEADER_LENGTH + next_multiple_of_usize(length, 4)
     }
 
     fn serialize<W: std::io::Write>(
@@ -209,19 +227,19 @@ impl<'a> ExtensionField<'a> {
         let header_width = 4;
 
         let actual_length =
-            next_multiple_of_u16((data_length as u16 + header_width).max(minimum_size), 4);
+            next_multiple_of_usize((data_length + header_width).max(minimum_size as usize), 4);
 
-        Self::write_zeros(w, actual_length - (data_length as u16) - 4)
+        Self::write_zeros(w, actual_length - data_length - 4)
     }
 
-    fn write_zeros(w: &mut impl std::io::Write, n: u16) -> std::io::Result<()> {
+    fn write_zeros(w: &mut impl std::io::Write, n: usize) -> std::io::Result<()> {
         let mut remaining = n;
         let padding_bytes = [0_u8; 32];
         while remaining > 0 {
-            let added = usize::min(remaining as usize, padding_bytes.len());
+            let added = usize::min(remaining, padding_bytes.len());
             w.write_all(&padding_bytes[..added])?;
 
-            remaining -= added as u16;
+            remaining -= added;
         }
 
         Ok(())
@@ -279,7 +297,7 @@ impl<'a> ExtensionField<'a> {
             version,
         )?;
 
-        Self::write_zeros(w, cookie_length)?;
+        Self::write_zeros(w, cookie_length as usize)?;
 
         Self::encode_padding(w, cookie_length as usize, minimum_size)?;
 
@@ -420,20 +438,20 @@ impl<'a> ExtensionField<'a> {
     #[cfg(feature = "ntpv5")]
     pub fn encode_padding_field(
         w: &mut impl Write,
-        length: u16,
+        length: usize,
         minimum_size: u16,
         version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
         Self::encode_framing(
             w,
             ExtensionFieldTypeId::DraftIdentification,
-            length as usize,
+            length,
             minimum_size,
             version,
         )?;
 
-        Self::write_zeros(w, length)?;
-        Self::encode_padding(w, length as usize, minimum_size)?;
+        Self::write_zeros(w, length - Self::HEADER_LENGTH)?;
+        Self::encode_padding(w, length, minimum_size)?;
 
         Ok(())
     }
