@@ -446,16 +446,26 @@ impl<'a> ExtensionField<'a> {
     #[cfg(feature = "ntpv5")]
     fn decode_draft_identification(
         message: &'a [u8],
+        extension_header_version: ExtensionHeaderVersion,
     ) -> Result<Self, ParsingError<std::convert::Infallible>> {
         let di = match core::str::from_utf8(message) {
             Ok(di) if di.is_ascii() => di,
             _ => return Err(super::v5::V5Error::InvalidDraftIdentification.into()),
         };
 
+        let di = match extension_header_version {
+            ExtensionHeaderVersion::V4 => di.trim_end_matches('\0'),
+            ExtensionHeaderVersion::V5 => di,
+        };
+
         Ok(ExtensionField::DraftIdentification(Cow::Borrowed(di)))
     }
 
-    fn decode(raw: RawExtensionField<'a>) -> Result<Self, ParsingError<std::convert::Infallible>> {
+    fn decode(
+        raw: RawExtensionField<'a>,
+        #[cfg_attr(not(feature = "ntpv5"), allow(unused_variables))]
+        extension_header_version: ExtensionHeaderVersion,
+    ) -> Result<Self, ParsingError<std::convert::Infallible>> {
         type EF<'a> = ExtensionField<'a>;
         type TypeId = ExtensionFieldTypeId;
 
@@ -466,7 +476,9 @@ impl<'a> ExtensionField<'a> {
             TypeId::NtsCookie => EF::decode_nts_cookie(message),
             TypeId::NtsCookiePlaceholder => EF::decode_nts_cookie_placeholder(message),
             #[cfg(feature = "ntpv5")]
-            TypeId::DraftIdentification => EF::decode_draft_identification(message),
+            TypeId::DraftIdentification => {
+                EF::decode_draft_identification(message, extension_header_version)
+            }
             type_id => EF::decode_unknown(type_id.to_type_id(), message),
         }
     }
@@ -617,7 +629,8 @@ impl<'a> ExtensionFieldData<'a> {
                     efdata.authenticated.append(&mut efdata.untrusted);
                 }
                 _ => {
-                    let field = ExtensionField::decode(field).map_err(|e| e.generalize())?;
+                    let field =
+                        ExtensionField::decode(field, version).map_err(|e| e.generalize())?;
                     efdata.untrusted.push(field);
                 }
             }
@@ -701,7 +714,7 @@ impl<'a> RawEncryptedField<'a> {
                 // TODO: Discuss whether we want this check
                 Err(ParsingError::MalformedNtsExtensionFields)
             } else {
-                Ok(ExtensionField::decode(encrypted_field)
+                Ok(ExtensionField::decode(encrypted_field, version)
                     .map_err(|e| e.generalize())?
                     .into_owned())
             }
@@ -931,7 +944,7 @@ mod tests {
             type_id: ExtensionFieldTypeId::NtsCookiePlaceholder,
             message_bytes: &[1; COOKIE_LENGTH],
         };
-        let output = ExtensionField::decode(raw).unwrap_err();
+        let output = ExtensionField::decode(raw, ExtensionHeaderVersion::V4).unwrap_err();
 
         assert!(matches!(output, ParsingError::MalformedCookiePlaceholder));
 
@@ -939,7 +952,7 @@ mod tests {
             type_id: ExtensionFieldTypeId::NtsCookiePlaceholder,
             message_bytes: &[0; COOKIE_LENGTH],
         };
-        let output = ExtensionField::decode(raw).unwrap();
+        let output = ExtensionField::decode(raw, ExtensionHeaderVersion::V4).unwrap();
 
         let ExtensionField::NtsCookiePlaceholder { cookie_length } = output else {
             panic!("incorrect variant");
@@ -972,7 +985,7 @@ mod tests {
         data.extend(&[0]); // Padding
 
         let raw = RawExtensionField::deserialize(&data, 4, ExtensionHeaderVersion::V5).unwrap();
-        let ef = ExtensionField::decode(raw).unwrap();
+        let ef = ExtensionField::decode(raw, ExtensionHeaderVersion::V4).unwrap();
 
         let ExtensionField::DraftIdentification(ref parsed) = ef else {
             panic!("Unexpected extensionfield {ef:?}... expected DraftIdentification");

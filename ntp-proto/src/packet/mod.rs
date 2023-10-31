@@ -520,6 +520,27 @@ impl<'a> NtpPacket<'a> {
     }
 
     #[cfg(feature = "ntpv5")]
+    pub fn poll_message_upgrade_request(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
+        let (mut header, id) = NtpHeaderV3V4::poll_message(poll_interval);
+
+        header.reference_timestamp = v5::UPGRADE_TIMESTAMP;
+        let draft_id = ExtensionField::DraftIdentification(Cow::Borrowed(v5::DRAFT_VERSION));
+
+        (
+            NtpPacket {
+                header: NtpHeader::V4(header),
+                efdata: ExtensionFieldData {
+                    authenticated: vec![],
+                    encrypted: vec![],
+                    untrusted: vec![draft_id],
+                },
+                mac: None,
+            },
+            id,
+        )
+    }
+
+    #[cfg(feature = "ntpv5")]
     pub fn poll_message_v5(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
         let (header, id) = v5::NtpHeaderV5::poll_message(poll_interval);
 
@@ -560,6 +581,7 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V4(header) => {
                 let mut response_header =
                     NtpHeaderV3V4::timestamp_response(system, header, recv_timestamp, clock);
+                let mut extra_ef = None;
 
                 #[cfg(feature = "ntpv5")]
                 {
@@ -569,6 +591,9 @@ impl<'a> NtpPacket<'a> {
                         (header.reference_timestamp, input.draft_id())
                     {
                         response_header.reference_timestamp = v5::UPGRADE_TIMESTAMP;
+                        extra_ef = Some(ExtensionField::DraftIdentification(Cow::Borrowed(
+                            v5::DRAFT_VERSION,
+                        )));
                     };
                 }
 
@@ -584,6 +609,7 @@ impl<'a> NtpPacket<'a> {
                             .into_iter()
                             .chain(input.efdata.authenticated)
                             .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
+                            .chain(extra_ef)
                             .collect(),
                     },
                     mac: None,
@@ -935,6 +961,20 @@ impl<'a> NtpPacket<'a> {
 
     pub fn is_kiss_ntsn(&self) -> bool {
         self.is_kiss() && self.reference_id().is_ntsn()
+    }
+
+    #[cfg(feature = "ntpv5")]
+    pub fn is_upgrade(&self) -> bool {
+        match (self.header, self.draft_id()) {
+            (
+                NtpHeader::V4(NtpHeaderV3V4 {
+                    reference_timestamp: v5::UPGRADE_TIMESTAMP,
+                    ..
+                }),
+                Some(v5::DRAFT_VERSION),
+            ) => true,
+            _ => false,
+        }
     }
 
     pub fn valid_server_response(&self, identifier: RequestIdentifier, nts_enabled: bool) -> bool {
@@ -1508,21 +1548,10 @@ mod tests {
         assert!(!response.valid_server_response(id, true));
     }
 
+    #[cfg(feature = "ntpv5")]
     #[test]
     fn v5_upgrade_packet() {
-        let (mut packet, _) = NtpPacket::poll_message(PollInterval::default());
-        let NtpHeader::V4(header) = &mut packet.header else {
-            panic!("wrong version");
-        };
-        header.reference_timestamp = NtpTimestamp::from_fixed_int(0x4E5450354E545035);
-
-        #[cfg(feature = "ntpv5")]
-        packet
-            .efdata
-            .untrusted
-            .push(ExtensionField::DraftIdentification(Cow::Borrowed(
-                v5::DRAFT_VERSION,
-            )));
+        let (packet, _) = NtpPacket::poll_message_upgrade_request(PollInterval::default());
 
         let response = NtpPacket::timestamp_response(
             &SystemSnapshot::default(),
@@ -1537,13 +1566,10 @@ mod tests {
             panic!("wrong version");
         };
 
-        let expect = if cfg!(feature = "ntpv5") {
+        assert_eq!(
+            header.reference_timestamp,
             NtpTimestamp::from_fixed_int(0x4E5450354E545035)
-        } else {
-            NtpTimestamp::from_fixed_int(0)
-        };
-
-        assert_eq!(header.reference_timestamp, expect);
+        );
     }
 
     #[test]
