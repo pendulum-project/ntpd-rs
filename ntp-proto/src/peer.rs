@@ -572,6 +572,21 @@ impl Peer {
         self.stratum = message.stratum();
         self.reference_id = message.reference_id();
 
+        // Handle new requested poll interval
+        #[cfg(feature = "ntpv5")]
+        if message.version() == 5 {
+            let requested_poll = message.poll();
+
+            if requested_poll > self.remote_min_poll_interval {
+                debug!(
+                    ?requested_poll,
+                    ?self.remote_min_poll_interval,
+                    "Adapting to longer poll interval requested by server"
+                );
+                self.remote_min_poll_interval = requested_poll;
+            }
+        }
+
         // generate a measurement
         let measurement = Measurement::from_packet(
             &message,

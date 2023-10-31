@@ -130,7 +130,7 @@ struct NtpHeaderV3V4 {
     leap: NtpLeapIndicator,
     mode: NtpAssociationMode,
     stratum: u8,
-    poll: i8,
+    poll: PollInterval,
     precision: i8,
     root_delay: NtpDuration,
     root_dispersion: NtpDuration,
@@ -159,7 +159,7 @@ impl NtpHeaderV3V4 {
             leap: NtpLeapIndicator::NoWarning,
             mode: NtpAssociationMode::Client,
             stratum: 0,
-            poll: 0,
+            poll: PollInterval::from_byte(0),
             precision: 0,
             root_delay: NtpDuration::default(),
             root_dispersion: NtpDuration::default(),
@@ -181,7 +181,7 @@ impl NtpHeaderV3V4 {
                 leap: NtpLeapIndicator::from_bits((data[0] & 0xC0) >> 6),
                 mode: NtpAssociationMode::from_bits(data[0] & 0x07),
                 stratum: data[1],
-                poll: data[2] as i8,
+                poll: PollInterval::from_byte(data[2]),
                 precision: data[3] as i8,
                 root_delay: NtpDuration::from_bits_short(data[4..8].try_into().unwrap()),
                 root_dispersion: NtpDuration::from_bits_short(data[8..12].try_into().unwrap()),
@@ -197,7 +197,7 @@ impl NtpHeaderV3V4 {
 
     fn serialize<W: std::io::Write>(&self, w: &mut W, version: u8) -> std::io::Result<()> {
         w.write_all(&[(self.leap.to_bits() << 6) | (version << 3) | self.mode.to_bits()])?;
-        w.write_all(&[self.stratum, self.poll as u8, self.precision as u8])?;
+        w.write_all(&[self.stratum, self.poll.as_byte(), self.precision as u8])?;
         w.write_all(&self.root_delay.to_bits_short())?;
         w.write_all(&self.root_dispersion.to_bits_short())?;
         w.write_all(&self.reference_id.to_bytes())?;
@@ -210,7 +210,7 @@ impl NtpHeaderV3V4 {
 
     fn poll_message(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
         let mut packet = Self::new();
-        packet.poll = poll_interval.as_log();
+        packet.poll = poll_interval;
         packet.mode = NtpAssociationMode::Client;
 
         // In order to increase the entropy of the transmit timestamp
@@ -875,6 +875,14 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    pub fn poll(&self) -> PollInterval {
+        match self.header {
+            NtpHeader::V3(h) | NtpHeader::V4(h) => h.poll,
+            #[cfg(feature = "ntpv5")]
+            NtpHeader::V5(h) => h.poll,
+        }
+    }
+
     pub fn stratum(&self) -> u8 {
         match self.header {
             NtpHeader::V3(header) => header.stratum,
@@ -965,16 +973,16 @@ impl<'a> NtpPacket<'a> {
 
     #[cfg(feature = "ntpv5")]
     pub fn is_upgrade(&self) -> bool {
-        match (self.header, self.draft_id()) {
+        matches!(
+            (self.header, self.draft_id()),
             (
                 NtpHeader::V4(NtpHeaderV3V4 {
                     reference_timestamp: v5::UPGRADE_TIMESTAMP,
                     ..
                 }),
                 Some(v5::DRAFT_VERSION),
-            ) => true,
-            _ => false,
-        }
+            )
+        )
     }
 
     pub fn valid_server_response(&self, identifier: RequestIdentifier, nts_enabled: bool) -> bool {
@@ -1240,7 +1248,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 mode: NtpAssociationMode::Client,
                 stratum: 2,
-                poll: 6,
+                poll: PollInterval::from_byte(6),
                 precision: -24,
                 root_delay: NtpDuration::from_fixed_int(1023 << 16),
                 root_dispersion: NtpDuration::from_fixed_int(893 << 16),
@@ -1269,7 +1277,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 mode: NtpAssociationMode::Client,
                 stratum: 2,
-                poll: 6,
+                poll: PollInterval::from_byte(6),
                 precision: -24,
                 root_delay: NtpDuration::from_fixed_int(1023 << 16),
                 root_dispersion: NtpDuration::from_fixed_int(893 << 16),
@@ -1301,7 +1309,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 mode: NtpAssociationMode::Server,
                 stratum: 2,
-                poll: 6,
+                poll: PollInterval::from_byte(6),
                 precision: -23,
                 root_delay: NtpDuration::from_fixed_int(566 << 16),
                 root_dispersion: NtpDuration::from_fixed_int(951 << 16),

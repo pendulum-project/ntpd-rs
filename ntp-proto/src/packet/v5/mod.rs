@@ -140,7 +140,7 @@ pub struct NtpHeaderV5 {
     pub leap: NtpLeapIndicator,
     pub mode: NtpMode,
     pub stratum: u8,
-    pub poll: i8,
+    pub poll: PollInterval,
     pub precision: i8,
     pub timescale: NtpTimescale,
     pub era: NtpEra,
@@ -161,7 +161,7 @@ impl NtpHeaderV5 {
             leap: NtpLeapIndicator::NoWarning,
             mode: NtpMode::Request,
             stratum: 0,
-            poll: 0,
+            poll: PollInterval::from_byte(0),
             precision: 0,
             root_delay: NtpDuration::default(),
             root_dispersion: NtpDuration::default(),
@@ -229,7 +229,7 @@ impl NtpHeaderV5 {
                 leap: NtpLeapIndicator::from_bits((data[0] & 0xC0) >> 6),
                 mode: NtpMode::from_bits(data[0] & 0x07)?,
                 stratum: data[1],
-                poll: data[2] as i8,
+                poll: PollInterval::from_byte(data[2]),
                 precision: data[3] as i8,
                 timescale: NtpTimescale::from_bits(data[4])?,
                 era: NtpEra(data[5]),
@@ -248,7 +248,7 @@ impl NtpHeaderV5 {
     #[allow(dead_code)]
     pub(crate) fn serialize<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
         w.write_all(&[(self.leap.to_bits() << 6) | (Self::VERSION << 3) | self.mode.to_bits()])?;
-        w.write_all(&[self.stratum, self.poll as u8, self.precision as u8])?;
+        w.write_all(&[self.stratum, self.poll.as_byte(), self.precision as u8])?;
         w.write_all(&[self.timescale.to_bits()])?;
         w.write_all(&[self.era.0])?;
         w.write_all(&self.flags.as_bits())?;
@@ -263,7 +263,7 @@ impl NtpHeaderV5 {
 
     pub fn poll_message(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
         let mut packet = Self::new();
-        packet.poll = poll_interval.as_log();
+        packet.poll = poll_interval;
         packet.mode = NtpMode::Request;
 
         let client_cookie = NtpClientCookie::new_random();
@@ -358,7 +358,7 @@ mod tests {
         assert_eq!(parsed.leap, NtpLeapIndicator::NoWarning);
         assert!(parsed.mode.is_request());
         assert_eq!(parsed.stratum, 0);
-        assert_eq!(parsed.poll, 5);
+        assert_eq!(parsed.poll, PollInterval::from_byte(5));
         assert_eq!(parsed.precision, 0);
         assert_eq!(parsed.timescale, NtpTimescale::Ut1);
         assert_eq!(parsed.era, NtpEra(0));
@@ -422,7 +422,7 @@ mod tests {
         assert_eq!(parsed.leap, NtpLeapIndicator::NoWarning);
         assert!(parsed.mode.is_response());
         assert_eq!(parsed.stratum, 4);
-        assert_eq!(parsed.poll, 5);
+        assert_eq!(parsed.poll, PollInterval::from_byte(5));
         assert_eq!(parsed.precision, 6);
         assert_eq!(parsed.timescale, NtpTimescale::Tai);
         assert_eq!(parsed.era, NtpEra(7));
@@ -468,7 +468,7 @@ mod tests {
                 leap: NtpLeapIndicator::from_bits(i % 4),
                 mode: NtpMode::from_bits(3 + (i % 2)).unwrap(),
                 stratum: i.wrapping_add(1),
-                poll: i.wrapping_add(3) as i8,
+                poll: PollInterval::from_byte(i.wrapping_add(3)),
                 precision: i.wrapping_add(4) as i8,
                 timescale: NtpTimescale::from_bits(i % 4).unwrap(),
                 era: NtpEra(i.wrapping_add(6)),
