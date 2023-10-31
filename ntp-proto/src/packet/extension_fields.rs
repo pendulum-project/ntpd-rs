@@ -18,6 +18,8 @@ enum ExtensionFieldTypeId {
     },
     #[cfg(feature = "ntpv5")]
     DraftIdentification,
+    #[cfg(feature = "ntpv5")]
+    Padding,
 }
 
 impl ExtensionFieldTypeId {
@@ -29,6 +31,8 @@ impl ExtensionFieldTypeId {
             0x404 => Self::NtsEncryptedField,
             #[cfg(feature = "ntpv5")]
             0xF5FF => Self::DraftIdentification,
+            #[cfg(feature = "ntpv5")]
+            0xF501 => Self::Padding,
             _ => Self::Unknown { type_id },
         }
     }
@@ -41,6 +45,8 @@ impl ExtensionFieldTypeId {
             ExtensionFieldTypeId::NtsEncryptedField => 0x404,
             #[cfg(feature = "ntpv5")]
             ExtensionFieldTypeId::DraftIdentification => 0xF5FF,
+            #[cfg(feature = "ntpv5")]
+            ExtensionFieldTypeId::Padding => 0xF501,
             ExtensionFieldTypeId::Unknown { type_id } => type_id,
         }
     }
@@ -56,6 +62,8 @@ pub enum ExtensionField<'a> {
     InvalidNtsEncryptedField,
     #[cfg(feature = "ntpv5")]
     DraftIdentification(Cow<'a, str>),
+    #[cfg(feature = "ntpv5")]
+    Padding(u16),
     Unknown {
         type_id: u16,
         data: Cow<'a, [u8]>,
@@ -78,6 +86,8 @@ impl<'a> std::fmt::Debug for ExtensionField<'a> {
             Self::DraftIdentification(arg0) => {
                 f.debug_tuple("DraftIdentification").field(arg0).finish()
             }
+            #[cfg(feature = "ntpv5")]
+            Self::Padding(len) => f.debug_struct("Padding").field("length", &len).finish(),
             Self::Unknown {
                 type_id: typeid,
                 data,
@@ -113,6 +123,8 @@ impl<'a> ExtensionField<'a> {
             InvalidNtsEncryptedField => InvalidNtsEncryptedField,
             #[cfg(feature = "ntpv5")]
             DraftIdentification(data) => DraftIdentification(Cow::Owned(data.into_owned())),
+            #[cfg(feature = "ntpv5")]
+            Padding(len) => Padding(len),
         }
     }
 
@@ -140,6 +152,8 @@ impl<'a> ExtensionField<'a> {
             DraftIdentification(data) => {
                 Self::encode_draft_identification(w, data, minimum_size, version)
             }
+            #[cfg(feature = "ntpv5")]
+            Padding(len) => Self::encode_padding_field(w, *len, minimum_size, version),
         }
     }
 
@@ -399,6 +413,27 @@ impl<'a> ExtensionField<'a> {
         w.write_all(data.as_bytes())?;
 
         Self::encode_padding(w, data.len(), minimum_size)?;
+
+        Ok(())
+    }
+
+    #[cfg(feature = "ntpv5")]
+    pub fn encode_padding_field(
+        w: &mut impl Write,
+        length: u16,
+        minimum_size: u16,
+        version: ExtensionHeaderVersion,
+    ) -> std::io::Result<()> {
+        Self::encode_framing(
+            w,
+            ExtensionFieldTypeId::DraftIdentification,
+            length as usize,
+            minimum_size,
+            version,
+        )?;
+
+        Self::write_zeros(w, length)?;
+        Self::encode_padding(w, length as usize, minimum_size)?;
 
         Ok(())
     }
