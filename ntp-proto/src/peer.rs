@@ -76,6 +76,8 @@ pub struct Peer {
     tries: usize,
 
     peer_defaults_config: SourceDefaultsConfig,
+
+    protocol_version: ProtocolVersion,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -295,6 +297,41 @@ pub enum PollError {
     PeerUnreachable,
 }
 
+#[derive(Debug, Copy, Clone)]
+pub enum ProtocolVersion {
+    V4,
+    #[cfg(feature = "ntpv5")]
+    V4UpgradingToV5 {
+        tries_left: u8,
+    },
+    #[cfg(feature = "ntpv5")]
+    V5,
+}
+
+impl ProtocolVersion {
+    pub fn expected_incoming_version(&self) -> u8 {
+        match self {
+            ProtocolVersion::V4 => 4,
+            #[cfg(feature = "ntpv5")]
+            ProtocolVersion::V4UpgradingToV5 { .. } => 4,
+            #[cfg(feature = "ntpv5")]
+            ProtocolVersion::V5 => 5,
+        }
+    }
+}
+
+impl Default for ProtocolVersion {
+    #[cfg(feature = "ntpv5")]
+    fn default() -> Self {
+        Self::V4UpgradingToV5 { tries_left: 8 }
+    }
+
+    #[cfg(not(feature = "ntpv5"))]
+    fn default() -> Self {
+        Self::V4
+    }
+}
+
 impl Peer {
     #[instrument]
     pub fn new(
@@ -321,6 +358,8 @@ impl Peer {
             reference_id: ReferenceId::NONE,
 
             peer_defaults_config,
+
+            protocol_version: Default::default(), // TODO make this configurable
         }
     }
 
@@ -384,7 +423,15 @@ impl Peer {
                     .min(((buf.len() - 300) / cookie.len()).min(u8::MAX as usize) as u8);
                 NtpPacket::nts_poll_message(&cookie, new_cookies, poll_interval)
             }
-            None => NtpPacket::poll_message(poll_interval),
+            None => match self.protocol_version {
+                ProtocolVersion::V4 => NtpPacket::poll_message(poll_interval),
+                #[cfg(feature = "ntpv5")]
+                ProtocolVersion::V4UpgradingToV5 { .. } => {
+                    NtpPacket::poll_message_upgrade_request(poll_interval)
+                }
+                #[cfg(feature = "ntpv5")]
+                ProtocolVersion::V5 => NtpPacket::poll_message_v5(poll_interval),
+            },
         };
         self.current_request_identifier = Some((identifier, NtpInstant::now() + POLL_WINDOW));
 
@@ -421,6 +468,10 @@ impl Peer {
                 }
             };
 
+        if message.version() != self.protocol_version.expected_incoming_version() {
+            return Err(IgnoreReason::InvalidVersion);
+        }
+
         let request_identifier = match self.current_request_identifier {
             Some((next_expected_origin, validity)) if validity >= NtpInstant::now() => {
                 next_expected_origin
@@ -430,6 +481,23 @@ impl Peer {
                 return Err(IgnoreReason::InvalidPacketTime);
             }
         };
+
+        #[cfg(feature = "ntpv5")]
+        if message.valid_server_response(request_identifier, self.nts.is_some()) {
+            if let ProtocolVersion::V4UpgradingToV5 { tries_left } = self.protocol_version {
+                let tries_left = tries_left.saturating_sub(1);
+                if message.is_upgrade() {
+                    info!("Received a valid upgrade response, switching to NTPv5!");
+                    self.protocol_version = ProtocolVersion::V5;
+                } else if tries_left == 0 {
+                    info!("Server does not support NTPv5, stopping the upgrade process");
+                    self.protocol_version = ProtocolVersion::V4;
+                } else {
+                    debug!(tries_left, "Server did not yet responde with upgrade code");
+                    self.protocol_version = ProtocolVersion::V4UpgradingToV5 { tries_left };
+                };
+            }
+        }
 
         if !message.valid_server_response(request_identifier, self.nts.is_some()) {
             // Packets should be a response to a previous request from us,
@@ -554,6 +622,8 @@ impl Peer {
             reference_id: ReferenceId::from_int(0),
 
             peer_defaults_config: SourceDefaultsConfig::default(),
+
+            protocol_version: Default::default(),
         }
     }
 }
@@ -588,10 +658,63 @@ pub fn fuzz_measurement_from_packet(
 
 #[cfg(test)]
 mod test {
-    use crate::{packet::NoCipher, time_types::PollIntervalLimits};
+    use crate::{packet::NoCipher, time_types::PollIntervalLimits, NtpClock};
 
     use super::*;
     use std::time::Duration;
+
+    #[derive(Debug, Clone, Default)]
+    struct TestClock {}
+    const EPOCH_OFFSET: u32 = (70 * 365 + 17) * 86400;
+    impl NtpClock for TestClock {
+        type Error = std::time::SystemTimeError;
+
+        fn now(&self) -> std::result::Result<NtpTimestamp, Self::Error> {
+            let cur =
+                std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH)?;
+
+            Ok(NtpTimestamp::from_seconds_nanos_since_ntp_era(
+                EPOCH_OFFSET.wrapping_add(cur.as_secs() as u32),
+                cur.subsec_nanos(),
+            ))
+        }
+
+        fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
+            panic!("Shouldn't be called by peer");
+        }
+
+        fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
+            panic!("Shouldn't be called by peer");
+        }
+
+        fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
+            panic!("Shouldn't be called by peer");
+        }
+
+        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
+            panic!("Shouldn't be called by peer");
+        }
+
+        fn ntp_algorithm_update(
+            &self,
+            _offset: NtpDuration,
+            _poll_interval: PollInterval,
+        ) -> Result<(), Self::Error> {
+            panic!("Shouldn't be called by peer");
+        }
+
+        fn error_estimate_update(
+            &self,
+            _est_error: NtpDuration,
+            _max_error: NtpDuration,
+        ) -> Result<(), Self::Error> {
+            panic!("Shouldn't be called by peer");
+        }
+
+        fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
+            panic!("Shouldn't be called by peer");
+        }
+    }
 
     #[test]
     fn test_measurement_from_packet() {
@@ -1033,5 +1156,98 @@ mod test {
             )
             .is_err());
         assert!(peer.remote_min_poll_interval >= old_remote_interval);
+    }
+
+    #[cfg(feature = "ntpv5")]
+    #[test]
+    fn upgrade_state_machine_does_stop() {
+        let mut peer = Peer::test_peer();
+        let mut buf = [0; 1024];
+        let system = SystemSnapshot::default();
+        let peer_defaults_config = SourceDefaultsConfig::default();
+        let clock = TestClock {};
+
+        assert!(matches!(
+            peer.protocol_version,
+            ProtocolVersion::V4UpgradingToV5 { .. }
+        ));
+
+        for _ in 0..8 {
+            let poll = peer
+                .generate_poll_message(&mut buf, system, &peer_defaults_config)
+                .unwrap();
+
+            let (poll, _) = NtpPacket::deserialize(poll, &NoCipher).unwrap();
+            assert_eq!(poll.version(), 4);
+            assert!(poll.is_upgrade());
+
+            let response =
+                NtpPacket::timestamp_response(&system, poll, NtpTimestamp::default(), &clock);
+            let mut response = response.serialize_without_encryption_vec().unwrap();
+
+            // Kill the reference timestamp
+            response[16] = 0;
+
+            peer.handle_incoming(
+                system,
+                &response,
+                NtpInstant::now(),
+                NtpTimestamp::default(),
+                NtpTimestamp::default(),
+            )
+            .unwrap();
+        }
+
+        let poll = peer
+            .generate_poll_message(&mut buf, system, &peer_defaults_config)
+            .unwrap();
+        let (poll, _) = NtpPacket::deserialize(poll, &NoCipher).unwrap();
+        assert_eq!(poll.version(), 4);
+        assert!(!poll.is_upgrade());
+    }
+
+    #[cfg(feature = "ntpv5")]
+    #[test]
+    fn upgrade_state_machine_does_upgrade() {
+        let mut peer = Peer::test_peer();
+        let mut buf = [0; 1024];
+        let system = SystemSnapshot::default();
+        let peer_defaults_config = SourceDefaultsConfig::default();
+        let clock = TestClock {};
+
+        assert!(matches!(
+            peer.protocol_version,
+            ProtocolVersion::V4UpgradingToV5 { .. }
+        ));
+
+        let poll = peer
+            .generate_poll_message(&mut buf, system, &peer_defaults_config)
+            .unwrap();
+
+        let (poll, _) = NtpPacket::deserialize(poll, &NoCipher).unwrap();
+        assert_eq!(poll.version(), 4);
+        assert!(poll.is_upgrade());
+
+        let response =
+            NtpPacket::timestamp_response(&system, poll, NtpTimestamp::default(), &clock);
+        let response = response.serialize_without_encryption_vec().unwrap();
+
+        peer.handle_incoming(
+            system,
+            &response,
+            NtpInstant::now(),
+            NtpTimestamp::default(),
+            NtpTimestamp::default(),
+        )
+        .unwrap();
+
+        // We should have received a upgrade response and updated to NTPv5
+        assert!(matches!(peer.protocol_version, ProtocolVersion::V5));
+
+        let poll = peer
+            .generate_poll_message(&mut buf, system, &peer_defaults_config)
+            .unwrap();
+        let (poll, _) = NtpPacket::deserialize(poll, &NoCipher).unwrap();
+        assert_eq!(poll.version(), 5);
     }
 }
