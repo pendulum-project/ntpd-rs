@@ -209,9 +209,8 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         network_wait_period: Duration,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
-            let rate_limiting_cutoff = config.rate_limiting_cutoff;
             let rate_limiting_cache_size = config.rate_limiting_cache_size;
-            let system = *system_receiver.borrow_and_update();
+            let system: SystemSnapshot = *system_receiver.borrow_and_update();
 
             let mut process = ServerTask {
                 config,
@@ -225,7 +224,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 stats,
             };
 
-            process.serve(rate_limiting_cutoff).await;
+            process.serve().await;
         })
     }
 
@@ -244,7 +243,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
     #[instrument(level = "debug", skip(self), fields(
         addr = debug(self.config.listen),
     ))]
-    async fn serve(&mut self, rate_limiting_cutoff: Duration) {
+    async fn serve(&mut self) {
         let mut cur_socket = None;
         loop {
             // open socket if it is not already open
@@ -271,7 +270,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             let mut buf = [0_u8; MAX_PACKET_SIZE];
             tokio::select! {
                 recv_res = socket.recv(&mut buf) => {
-                    match self.handle_receive(socket, &buf, recv_res, rate_limiting_cutoff).await {
+                    match self.handle_receive(socket, &buf, recv_res).await {
                         SocketConnection::KeepAlive => { /* do nothing */ }
                         SocketConnection::Reconnect => { cur_socket = None }
                     }
@@ -314,7 +313,6 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         socket: &ntp_udp::UdpSocket,
         buf: &[u8],
         recv_res: std::io::Result<(usize, SocketAddr, Option<NtpTimestamp>)>,
-        rate_limiting_cutoff: Duration,
     ) -> SocketConnection {
         match recv_res {
             Err(receive_error) => {
@@ -347,13 +345,9 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 let mut response_buf = [0; MAX_PACKET_SIZE];
                 let response_buf = &mut response_buf[..length];
 
-                let Some(response) = self.handle_packet(
-                    request_buf,
-                    response_buf,
-                    peer_addr,
-                    opt_timestamp,
-                    rate_limiting_cutoff,
-                ) else {
+                let Some(response) =
+                    self.handle_packet(request_buf, response_buf, peer_addr, opt_timestamp)
+                else {
                     return SocketConnection::KeepAlive;
                 };
 
@@ -374,7 +368,6 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         response_buf: &'buf mut [u8],
         peer_addr: SocketAddr,
         opt_timestamp: Option<NtpTimestamp>,
-        rate_limiting_cutoff: Duration,
     ) -> Option<&'buf [u8]> {
         let Some(timestamp) = opt_timestamp else {
             debug!("received a packet without a timestamp");
@@ -392,7 +385,8 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
             return None;
         }
 
-        let filter_result = self.check_and_update_filters(peer_addr, rate_limiting_cutoff);
+        let filter_result =
+            self.check_and_update_filters(peer_addr, self.config.rate_limiting_cutoff);
         if let Err(FilterReason::Ignore) = filter_result {
             debug!("filters decided to ignore");
             self.stats.update_from(&AcceptResult::Ignore);
@@ -679,14 +673,41 @@ mod tests {
         }
     }
 
-    fn serialize_packet_unencryped(send_packet: &NtpPacket) -> [u8; 48] {
-        let mut buf = [0; 48];
+    fn serialize_packet_unencryped(send_packet: &NtpPacket) -> Vec<u8> {
+        let mut buf = vec![0; MAX_PACKET_SIZE];
         let mut cursor = Cursor::new(buf.as_mut_slice());
         send_packet.serialize(&mut cursor, &NoCipher).unwrap();
 
-        assert_eq!(cursor.position(), 48);
-
+        let end = cursor.position() as usize;
+        buf.truncate(end);
         buf
+    }
+
+    fn default_server_task() -> ServerTask<TestClock> {
+        let config = ServerConfig {
+            listen: "127.0.0.1:9000".parse().unwrap(),
+            denylist: FilterList::default_denylist(),
+            allowlist: FilterList::default_allowlist(),
+            rate_limiting_cutoff: Duration::from_secs(0),
+            rate_limiting_cache_size: 32,
+        };
+        let (_, mut system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
+        let clock = TestClock {};
+        let (_, keyset) = tokio::sync::watch::channel(KeySetProvider::new(1).get());
+        let rate_limiting_cache_size = config.rate_limiting_cache_size;
+        let system: SystemSnapshot = *system_snapshots.borrow_and_update();
+
+        ServerTask {
+            config,
+            network_wait_period: Default::default(),
+            keyset,
+            system,
+            system_receiver: system_snapshots,
+            client_cache: TimestampedCache::new(rate_limiting_cache_size),
+            clock,
+            interface: InterfaceName::DEFAULT,
+            stats: Default::default(),
+        }
     }
 
     #[tokio::test]
@@ -1082,32 +1103,94 @@ mod tests {
         server.abort();
     }
 
-    fn test_server() -> ServerTask<TestClock> {
-        let (_, system_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
-        let (_, keyset) = tokio::sync::watch::channel(KeySetProvider::new(1).get());
+    #[test]
+    fn test_handle_v4_packet() {
+        let mut server = default_server_task();
+        let mut response_buf = [0; MAX_PACKET_SIZE];
+        let timestamp = NtpTimestamp::from_seconds_nanos_since_ntp_era(1, 0);
 
-        ServerTask {
-            config: ServerConfig {
-                listen: "0.0.0.0:123".parse().unwrap(),
-                denylist: FilterList::default_denylist(),
-                allowlist: FilterList::default_allowlist(),
-                rate_limiting_cache_size: 0,
-                rate_limiting_cutoff: Default::default(),
-            },
-            network_wait_period: Default::default(),
-            system_receiver,
-            keyset,
-            system: Default::default(),
-            client_cache: TimestampedCache::new(10),
-            clock: TestClock {},
-            interface: None,
-            stats: Default::default(),
-        }
+        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let serialized = serialize_packet_unencryped(&packet);
+
+        let response = server
+            .handle_packet(
+                &serialized,
+                response_buf.as_mut_slice(),
+                "127.0.0.1:9001".parse().unwrap(),
+                Some(timestamp),
+            )
+            .unwrap();
+
+        let response = NtpPacket::deserialize(response, &NoCipher).unwrap().0;
+
+        assert_eq!(response.version(), 4);
+        assert_eq!(response.stratum(), 16);
+        assert!(response.valid_server_response(id, false));
+        assert!(response.transmit_timestamp() != NtpTimestamp::default());
+        assert_eq!(response.receive_timestamp(), timestamp);
+
+        let (packet, _id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let mut serialized = serialize_packet_unencryped(&packet);
+
+        // corrupt the package
+        serialized[0] = 42;
+
+        let response = server.handle_packet(
+            &serialized,
+            response_buf.as_mut_slice(),
+            "127.0.0.1:9001".parse().unwrap(),
+            Some(timestamp),
+        );
+
+        assert_eq!(response, None);
+    }
+
+    #[cfg(feature = "unstable_ntpv5")]
+    #[test]
+    fn test_handle_v5_packet() {
+        let mut server = default_server_task();
+        let mut response_buf = [0; MAX_PACKET_SIZE];
+        let timestamp = NtpTimestamp::from_seconds_nanos_since_ntp_era(1, 0);
+
+        let (packet, id) = NtpPacket::poll_message_v5(PollIntervalLimits::default().min);
+        let serialized = serialize_packet_unencryped(&packet);
+
+        let response = server
+            .handle_packet(
+                &serialized,
+                response_buf.as_mut_slice(),
+                "127.0.0.1:9001".parse().unwrap(),
+                Some(timestamp),
+            )
+            .unwrap();
+
+        let response = NtpPacket::deserialize(response, &NoCipher).unwrap().0;
+
+        assert_eq!(response.version(), 5);
+        assert_eq!(response.stratum(), 16);
+        assert!(response.valid_server_response(id, false));
+        assert!(response.transmit_timestamp() != NtpTimestamp::default());
+        assert_eq!(response.receive_timestamp(), timestamp);
+
+        let (packet, _id) = NtpPacket::poll_message_v5(PollIntervalLimits::default().min);
+        let mut serialized = serialize_packet_unencryped(&packet);
+
+        // corrupt the package
+        serialized[0] = 42;
+
+        let response = server.handle_packet(
+            &serialized,
+            response_buf.as_mut_slice(),
+            "127.0.0.1:9001".parse().unwrap(),
+            Some(timestamp),
+        );
+
+        assert_eq!(response, None);
     }
 
     #[test]
     fn early_fails() {
-        let mut s = test_server();
+        let mut s = default_server_task();
         let mut resp_buf = [0; MAX_PACKET_SIZE];
 
         let (req, _) = NtpPacket::poll_message(PollInterval::default());
@@ -1121,7 +1204,6 @@ mod tests {
                 &mut resp_buf,
                 "127.0.0.1:1337".parse().unwrap(),
                 None,
-                s.config.rate_limiting_cutoff,
             ),
             None
         );
@@ -1136,7 +1218,6 @@ mod tests {
                 &mut resp_buf,
                 "127.0.0.1:1337".parse().unwrap(),
                 Some(NtpTimestamp::default()),
-                s.config.rate_limiting_cutoff,
             )
             .is_none());
         assert_eq!(s.stats.ignored_packets.get(), 1);
@@ -1145,7 +1226,7 @@ mod tests {
 
     #[test]
     fn invalid_packet() {
-        let mut s = test_server();
+        let mut s = default_server_task();
         let mut resp_buf = [0; MAX_PACKET_SIZE];
 
         let (req, _) = NtpPacket::poll_message(PollInterval::default());
@@ -1158,7 +1239,6 @@ mod tests {
                 &mut resp_buf,
                 "127.0.0.1:1337".parse().unwrap(),
                 Some(NtpTimestamp::default()),
-                s.config.rate_limiting_cutoff,
             )
             .is_none());
         assert_eq!(s.stats.ignored_packets.get(), 1);

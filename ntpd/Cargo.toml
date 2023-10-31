@@ -37,11 +37,12 @@ rustls-native-certs.workspace = true
 rustls-pemfile.workspace = true
 
 [dev-dependencies]
-ntp-proto = { workspace = true, features = ["__internal-test"] }
+ntp-proto = { workspace = true, features = ["__internal-test",] }
 
 [features]
 hardware-timestamping = []
 __internal-fuzz = []
+unstable_ntpv5 = ["ntp-proto/ntpv5"]
 
 [lib]
 name = "ntpd"

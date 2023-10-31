@@ -534,7 +534,12 @@ impl<'a> ExtensionFieldData<'a> {
         let mut it = self.untrusted.iter().peekable();
         while let Some(field) = it.next() {
             let is_last = it.peek().is_none();
-            let minimum_size = if is_last { 28 } else { 16 };
+            let minimum_size = match version {
+                ExtensionHeaderVersion::V4 if is_last => 28,
+                ExtensionHeaderVersion::V4 => 16,
+                #[cfg(feature = "ntpv5")]
+                ExtensionHeaderVersion::V5 => 4,
+            };
             field.serialize(w, minimum_size, version)?;
         }
 
@@ -554,10 +559,15 @@ impl<'a> ExtensionFieldData<'a> {
         let mut size = 0;
         let mut is_valid_nts = true;
         let mut cookie = None;
+        let mac_size = match version {
+            ExtensionHeaderVersion::V4 => Mac::MAXIMUM_SIZE,
+            #[cfg(feature = "ntpv5")]
+            ExtensionHeaderVersion::V5 => 0,
+        };
 
         for field in RawExtensionField::deserialize_sequence(
             &data[header_size..],
-            Mac::MAXIMUM_SIZE,
+            mac_size,
             RawExtensionField::V4_UNENCRYPTED_MINIMUM_SIZE,
             version,
         ) {
@@ -775,6 +785,10 @@ impl<'a> RawExtensionField<'a> {
         if version == ExtensionHeaderVersion::V4 && field_length % 4 != 0 {
             return Err(IncorrectLength);
         }
+
+        // In NTPv5: There must still be enough room in the packet for data + padding
+        data.get(4..next_multiple_of_usize(field_length, 4))
+            .ok_or(IncorrectLength)?;
 
         // because the field length includes padding, the message bytes may not exactly match the input
         let message_bytes = data.get(4..field_length).ok_or(IncorrectLength)?;
