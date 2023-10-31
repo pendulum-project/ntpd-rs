@@ -440,6 +440,16 @@ impl<'a> NtpPacket<'a> {
         Ok(buffer)
     }
 
+    pub fn byte_length(&self) -> usize {
+        NtpHeaderV3V4::WIRE_LENGTH
+            + self
+                .efdata
+                .untrusted
+                .iter()
+                .map(|ev| ev.byte_length())
+                .sum::<usize>()
+    }
+
     pub fn serialize(
         &self,
         w: &mut Cursor<&mut [u8]>,
@@ -567,11 +577,11 @@ impl<'a> NtpPacket<'a> {
         recv_timestamp: NtpTimestamp,
         clock: &C,
     ) -> Self {
-        match input.header {
+        match &input.header {
             NtpHeader::V3(header) => NtpPacket {
                 header: NtpHeader::V3(NtpHeaderV3V4::timestamp_response(
                     system,
-                    header,
+                    *header,
                     recv_timestamp,
                     clock,
                 )),
@@ -580,7 +590,7 @@ impl<'a> NtpPacket<'a> {
             },
             NtpHeader::V4(header) => {
                 let mut response_header =
-                    NtpHeaderV3V4::timestamp_response(system, header, recv_timestamp, clock);
+                    NtpHeaderV3V4::timestamp_response(system, *header, recv_timestamp, clock);
                 let mut extra_ef = None;
 
                 #[cfg(feature = "ntpv5")]
@@ -616,31 +626,36 @@ impl<'a> NtpPacket<'a> {
                 }
             }
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(header) => NtpPacket {
-                // TODO deduplicate extension handling with V4
-                header: NtpHeader::V5(v5::NtpHeaderV5::timestamp_response(
-                    system,
-                    header,
-                    recv_timestamp,
-                    clock,
-                )),
-                efdata: ExtensionFieldData {
-                    authenticated: vec![],
-                    encrypted: vec![],
-                    // Ignore encrypted so as not to accidentally leak anything
-                    untrusted: input
-                        .efdata
-                        .untrusted
-                        .into_iter()
-                        .chain(input.efdata.authenticated)
-                        .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
-                        .chain(std::iter::once(ExtensionField::DraftIdentification(
-                            Cow::Borrowed(v5::DRAFT_VERSION),
-                        )))
-                        .collect(),
-                },
-                mac: None,
-            },
+            NtpHeader::V5(header) => {
+                let input_byte_length = input.byte_length();
+
+                NtpPacket {
+                    // TODO deduplicate extension handling with V4
+                    header: NtpHeader::V5(v5::NtpHeaderV5::timestamp_response(
+                        system,
+                        *header,
+                        recv_timestamp,
+                        clock,
+                    )),
+                    efdata: ExtensionFieldData {
+                        authenticated: vec![],
+                        encrypted: vec![],
+                        // Ignore encrypted so as not to accidentally leak anything
+                        untrusted: input
+                            .efdata
+                            .untrusted
+                            .into_iter()
+                            .chain(input.efdata.authenticated)
+                            .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
+                            .chain(std::iter::once(ExtensionField::DraftIdentification(
+                                Cow::Borrowed(v5::DRAFT_VERSION),
+                            )))
+                            .collect(),
+                    },
+                    mac: None,
+                }
+                .append_padding(input_byte_length)
+            }
         }
     }
 
@@ -650,6 +665,17 @@ impl<'a> NtpPacket<'a> {
             ExtensionField::DraftIdentification(id) => Some(&**id),
             _ => None,
         })
+    }
+
+    #[cfg(feature = "ntpv5")]
+    fn append_padding(mut self, input_byte_length: usize) -> NtpPacket<'a> {
+        if input_byte_length % 4 == 0 && self.byte_length() < input_byte_length {
+            self.efdata.untrusted.push(ExtensionField::Padding(
+                input_byte_length - self.byte_length(),
+            ));
+        }
+
+        self
     }
 
     pub fn nts_timestamp_response<C: NtpClock>(
@@ -2208,5 +2234,19 @@ mod tests {
             NtpPacket::deserialize(&data, &NoCipher),
             Err(ParsingError::IncorrectLength)
         ));
+    }
+
+    #[cfg(feature = "ntpv5")]
+    #[test]
+    fn padding_v5() {
+        for i in 10..40 {
+            let packet = NtpPacket::poll_message_v5(PollInterval::default())
+                .0
+                .append_padding(i * 4);
+
+            let data = packet.serialize_without_encryption_vec().unwrap();
+
+            assert_eq!(data.len(), 76.max(i * 4));
+        }
     }
 }
