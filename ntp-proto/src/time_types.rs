@@ -539,6 +539,14 @@ impl PollInterval {
         Self(value)
     }
 
+    pub fn from_byte(value: u8) -> Self {
+        Self(value as i8)
+    }
+
+    pub fn as_byte(self) -> u8 {
+        self.0 as u8
+    }
+
     #[must_use]
     pub fn inc(self, limits: PollIntervalLimits) -> Self {
         Self(self.0 + 1).min(limits.max)
