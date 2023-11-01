@@ -482,11 +482,12 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         packet: NtpPacket<'_>,
         opt_cipher: Option<Box<dyn Cipher>>,
     ) -> Option<&'buf [u8]> {
+        let desired_size = Some(response_buf.len());
         let mut cursor = Cursor::new(response_buf);
 
         let serialize_result = match opt_cipher {
-            Some(cipher) => packet.serialize(&mut cursor, cipher.as_ref()),
-            None => packet.serialize(&mut cursor, &NoCipher),
+            Some(cipher) => packet.serialize(&mut cursor, cipher.as_ref(), desired_size),
+            None => packet.serialize(&mut cursor, &NoCipher, desired_size),
         };
 
         if let Err(serialize_err) = serialize_result {
@@ -676,7 +677,7 @@ mod tests {
     fn serialize_packet_unencryped(send_packet: &NtpPacket) -> Vec<u8> {
         let mut buf = vec![0; MAX_PACKET_SIZE];
         let mut cursor = Cursor::new(buf.as_mut_slice());
-        send_packet.serialize(&mut cursor, &NoCipher).unwrap();
+        send_packet.serialize(&mut cursor, &NoCipher, None).unwrap();
 
         let end = cursor.position() as usize;
         buf.truncate(end);

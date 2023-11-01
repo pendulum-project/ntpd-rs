@@ -428,11 +428,14 @@ impl<'a> NtpPacket<'a> {
     }
 
     #[cfg(test)]
-    pub fn serialize_without_encryption_vec(&self) -> std::io::Result<Vec<u8>> {
+    pub fn serialize_without_encryption_vec(
+        &self,
+        #[cfg_attr(not(feature = "nptv5"), allow(unused_variables))] desired_size: Option<usize>,
+    ) -> std::io::Result<Vec<u8>> {
         let mut buffer = vec![0u8; 1024];
         let mut cursor = Cursor::new(buffer.as_mut_slice());
 
-        self.serialize(&mut cursor, &NoCipher)?;
+        self.serialize(&mut cursor, &NoCipher, desired_size)?;
 
         let length = cursor.position() as usize;
         let buffer = cursor.into_inner()[..length].to_vec();
@@ -440,21 +443,15 @@ impl<'a> NtpPacket<'a> {
         Ok(buffer)
     }
 
-    pub fn byte_length(&self) -> usize {
-        NtpHeaderV3V4::WIRE_LENGTH
-            + self
-                .efdata
-                .untrusted
-                .iter()
-                .map(|ev| ev.byte_length())
-                .sum::<usize>()
-    }
-
     pub fn serialize(
         &self,
         w: &mut Cursor<&mut [u8]>,
         cipher: &(impl CipherProvider + ?Sized),
+        #[cfg_attr(not(feature = "ntpv5"), allow(unused_variables))] desired_size: Option<usize>,
     ) -> std::io::Result<()> {
+        #[cfg(feature = "ntpv5")]
+        let start = w.position();
+
         match self.header {
             NtpHeader::V3(header) => header.serialize(w, 3)?,
             NtpHeader::V4(header) => header.serialize(w, 4)?,
@@ -475,6 +472,18 @@ impl<'a> NtpPacket<'a> {
 
         if let Some(ref mac) = self.mac {
             mac.serialize(w)?;
+        }
+
+        #[cfg(feature = "ntpv5")]
+        if let Some(desired_size) = desired_size {
+            let written = (w.position() - start) as usize;
+            if desired_size > written {
+                ExtensionField::Padding(desired_size - written).serialize(
+                    w,
+                    4,
+                    ExtensionHeaderVersion::V5,
+                )?;
+            }
         }
 
         Ok(())
@@ -626,36 +635,31 @@ impl<'a> NtpPacket<'a> {
                 }
             }
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(header) => {
-                let input_byte_length = input.byte_length();
-
-                NtpPacket {
-                    // TODO deduplicate extension handling with V4
-                    header: NtpHeader::V5(v5::NtpHeaderV5::timestamp_response(
-                        system,
-                        *header,
-                        recv_timestamp,
-                        clock,
-                    )),
-                    efdata: ExtensionFieldData {
-                        authenticated: vec![],
-                        encrypted: vec![],
-                        // Ignore encrypted so as not to accidentally leak anything
-                        untrusted: input
-                            .efdata
-                            .untrusted
-                            .into_iter()
-                            .chain(input.efdata.authenticated)
-                            .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
-                            .chain(std::iter::once(ExtensionField::DraftIdentification(
-                                Cow::Borrowed(v5::DRAFT_VERSION),
-                            )))
-                            .collect(),
-                    },
-                    mac: None,
-                }
-                .append_padding(input_byte_length)
-            }
+            NtpHeader::V5(header) => NtpPacket {
+                // TODO deduplicate extension handling with V4
+                header: NtpHeader::V5(v5::NtpHeaderV5::timestamp_response(
+                    system,
+                    *header,
+                    recv_timestamp,
+                    clock,
+                )),
+                efdata: ExtensionFieldData {
+                    authenticated: vec![],
+                    encrypted: vec![],
+                    // Ignore encrypted so as not to accidentally leak anything
+                    untrusted: input
+                        .efdata
+                        .untrusted
+                        .into_iter()
+                        .chain(input.efdata.authenticated)
+                        .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
+                        .chain(std::iter::once(ExtensionField::DraftIdentification(
+                            Cow::Borrowed(v5::DRAFT_VERSION),
+                        )))
+                        .collect(),
+                },
+                mac: None,
+            },
         }
     }
 
@@ -665,17 +669,6 @@ impl<'a> NtpPacket<'a> {
             ExtensionField::DraftIdentification(id) => Some(&**id),
             _ => None,
         })
-    }
-
-    #[cfg(feature = "ntpv5")]
-    fn append_padding(mut self, input_byte_length: usize) -> NtpPacket<'a> {
-        if input_byte_length % 4 == 0 && self.byte_length() < input_byte_length {
-            self.efdata.untrusted.push(ExtensionField::Padding(
-                input_byte_length - self.byte_length(),
-            ));
-        }
-
-        self
     }
 
     pub fn nts_timestamp_response<C: NtpClock>(
@@ -1294,7 +1287,7 @@ mod tests {
             reference,
             NtpPacket::deserialize(packet, &NoCipher).unwrap().0
         );
-        match reference.serialize_without_encryption_vec() {
+        match reference.serialize_without_encryption_vec(None) {
             Ok(buf) => assert_eq!(packet[..], buf[..]),
             Err(e) => panic!("{e:?}"),
         }
@@ -1323,7 +1316,7 @@ mod tests {
             reference,
             NtpPacket::deserialize(packet, &NoCipher).unwrap().0
         );
-        match reference.serialize_without_encryption_vec() {
+        match reference.serialize_without_encryption_vec(None) {
             Ok(buf) => assert_eq!(packet[..], buf[..]),
             Err(e) => panic!("{e:?}"),
         }
@@ -1355,7 +1348,7 @@ mod tests {
             reference,
             NtpPacket::deserialize(packet, &NoCipher).unwrap().0
         );
-        match reference.serialize_without_encryption_vec() {
+        match reference.serialize_without_encryption_vec(None) {
             Ok(buf) => assert_eq!(packet[..], buf[..]),
             Err(e) => panic!("{e:?}"),
         }
@@ -1393,7 +1386,7 @@ mod tests {
                 header.set_leap(NtpLeapIndicator::from_bits(leap_type));
                 header.set_mode(NtpAssociationMode::from_bits(mode));
 
-                let data = header.serialize_without_encryption_vec().unwrap();
+                let data = header.serialize_without_encryption_vec(None).unwrap();
                 let copy = NtpPacket::deserialize(&data, &NoCipher).unwrap().0;
                 assert_eq!(header, copy);
             }
@@ -1404,7 +1397,7 @@ mod tests {
             packet[0] = i;
 
             if let Ok((a, _)) = NtpPacket::deserialize(&packet, &NoCipher) {
-                let b = a.serialize_without_encryption_vec().unwrap();
+                let b = a.serialize_without_encryption_vec(None).unwrap();
                 assert_eq!(packet[..], b[..]);
             }
         }
@@ -1419,7 +1412,7 @@ mod tests {
 
         let mut buffer = [0u8; 2048];
         let mut cursor = Cursor::new(buffer.as_mut());
-        packet1.serialize(&mut cursor, &cipher).unwrap();
+        packet1.serialize(&mut cursor, &cipher, None).unwrap();
         let (packet2, _) =
             NtpPacket::deserialize(&cursor.get_ref()[..cursor.position() as usize], &cipher)
                 .unwrap();
@@ -2204,7 +2197,7 @@ mod tests {
             data: vec![].into(),
         });
 
-        let serialized = p.serialize_without_encryption_vec().unwrap();
+        let serialized = p.serialize_without_encryption_vec(None).unwrap();
 
         let (mut out, _) = NtpPacket::deserialize(&serialized, &NoCipher).unwrap();
 
@@ -2222,7 +2215,7 @@ mod tests {
     #[test]
     fn ef_with_missing_padding_v5() {
         let (packet, _) = NtpPacket::poll_message_v5(PollInterval::default());
-        let mut data = packet.serialize_without_encryption_vec().unwrap();
+        let mut data = packet.serialize_without_encryption_vec(None).unwrap();
         data.extend([
             0, 0, // Type = Unknown
             0, 6, // Length = 5
@@ -2240,11 +2233,11 @@ mod tests {
     #[test]
     fn padding_v5() {
         for i in 10..40 {
-            let packet = NtpPacket::poll_message_v5(PollInterval::default())
-                .0
-                .append_padding(i * 4);
+            let packet = NtpPacket::poll_message_v5(PollInterval::default()).0;
 
-            let data = packet.serialize_without_encryption_vec().unwrap();
+            let data = packet
+                .serialize_without_encryption_vec(Some(4 * i))
+                .unwrap();
 
             assert_eq!(data.len(), 76.max(i * 4));
         }
