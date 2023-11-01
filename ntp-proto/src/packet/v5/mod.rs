@@ -5,6 +5,7 @@ use rand::random;
 mod error;
 #[allow(dead_code)]
 pub mod extension_fields;
+pub mod server_reference_id;
 
 use crate::packet::error::ParsingError;
 pub use error::V5Error;
