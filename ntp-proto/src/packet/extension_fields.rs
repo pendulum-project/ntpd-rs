@@ -130,23 +130,7 @@ impl<'a> ExtensionField<'a> {
         }
     }
 
-    pub fn byte_length(&self) -> usize {
-        let length = match self {
-            ExtensionField::Unknown { type_id: _, data } => data.len(),
-            ExtensionField::UniqueIdentifier(id) => id.len(),
-            ExtensionField::NtsCookie(cookie) => cookie.len(),
-            ExtensionField::NtsCookiePlaceholder { cookie_length } => *cookie_length as usize,
-            ExtensionField::InvalidNtsEncryptedField => 0,
-            #[cfg(feature = "ntpv5")]
-            ExtensionField::DraftIdentification(data) => data.len(),
-            #[cfg(feature = "ntpv5")]
-            ExtensionField::Padding(len) => *len,
-        };
-
-        Self::HEADER_LENGTH + next_multiple_of_usize(length, 4)
-    }
-
-    fn serialize<W: std::io::Write>(
+    pub(crate) fn serialize<W: std::io::Write>(
         &self,
         w: &mut W,
         minimum_size: u16,
@@ -192,7 +176,7 @@ impl<'a> ExtensionField<'a> {
         minimum_size: u16,
         version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
-        if data_length > u16::MAX as usize - 4 {
+        if data_length > u16::MAX as usize - ExtensionField::HEADER_LENGTH {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "Extension field too long",
@@ -200,8 +184,8 @@ impl<'a> ExtensionField<'a> {
         }
 
         // u16 for the type_id, u16 for the length
-        let header_width = 4;
-        let mut actual_length = (data_length as u16 + header_width).max(minimum_size);
+        let mut actual_length =
+            (data_length as u16 + ExtensionField::HEADER_LENGTH as u16).max(minimum_size);
 
         if version == ExtensionHeaderVersion::V4 {
             actual_length = next_multiple_of_u16(actual_length, 4)
@@ -216,20 +200,22 @@ impl<'a> ExtensionField<'a> {
         data_length: usize,
         minimum_size: u16,
     ) -> std::io::Result<()> {
-        if data_length > u16::MAX as usize - 4 {
+        if data_length > u16::MAX as usize - ExtensionField::HEADER_LENGTH {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "Extension field too long",
             ));
         }
 
-        // u16 for the type_id, u16 for the length
-        let header_width = 4;
+        let actual_length = next_multiple_of_usize(
+            (data_length + ExtensionField::HEADER_LENGTH).max(minimum_size as usize),
+            4,
+        );
 
-        let actual_length =
-            next_multiple_of_usize((data_length + header_width).max(minimum_size as usize), 4);
-
-        Self::write_zeros(w, actual_length - data_length - 4)
+        Self::write_zeros(
+            w,
+            actual_length - data_length - ExtensionField::HEADER_LENGTH,
+        )
     }
 
     fn write_zeros(w: &mut impl std::io::Write, n: usize) -> std::io::Result<()> {

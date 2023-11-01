@@ -628,7 +628,7 @@ mod tests {
     fn serialize_packet_unencryped(send_packet: &NtpPacket) -> [u8; 48] {
         let mut buf = [0; 48];
         let mut cursor = Cursor::new(buf.as_mut_slice());
-        send_packet.serialize(&mut cursor, &NoCipher).unwrap();
+        send_packet.serialize(&mut cursor, &NoCipher, None).unwrap();
 
         assert_eq!(cursor.position(), 48);
 
