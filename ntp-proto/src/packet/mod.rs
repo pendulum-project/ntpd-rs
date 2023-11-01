@@ -942,7 +942,8 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V3(header) => header.reference_id,
             NtpHeader::V4(header) => header.reference_id,
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!("NTPv5 does not have reference IDs"),
+            // TODO NTPv5 does not have reference IDs so this should always be None for now
+            NtpHeader::V5(_header) => ReferenceId::NONE,
         }
     }
 
@@ -951,7 +952,8 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V3(header) => header.stratum == 0,
             NtpHeader::V4(header) => header.stratum == 0,
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!("NTPv5 does not have kiss codes yet"),
+            // TODO NTPv5 does not have Kiss codes so we pretend everything is always fine
+            NtpHeader::V5(_header) => false,
         }
     }
 
