@@ -13,8 +13,8 @@ use super::{
 use std::{collections::HashMap, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
 
 use ntp_proto::{
-    KalmanClockController, KeySet, NtpClock, NtpDuration, PeerSnapshot, SourceDefaultsConfig,
-    SynchronizationConfig, SystemSnapshot, TimeSyncController,
+    KalmanClockController, KeySet, NtpClock, NtpDuration, NtpLeapIndicator, PeerSnapshot,
+    SourceDefaultsConfig, SynchronizationConfig, SystemSnapshot, TimeSyncController,
 };
 use ntp_udp::{EnableTimestamps, InterfaceName};
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -193,10 +193,15 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     ) -> (Self, DaemonChannels) {
         // Setup system snapshot
-        let system = SystemSnapshot {
+        let mut system = SystemSnapshot {
             stratum: synchronization_config.local_stratum,
             ..Default::default()
         };
+
+        if synchronization_config.local_stratum == 1 {
+            // We are a stratum 1 server so mark our selves synchronized.
+            system.time_snapshot.leap_indicator = NtpLeapIndicator::NoWarning;
+        }
 
         // Create communication channels
         let (synchronization_config_sender, synchronization_config_receiver) =
