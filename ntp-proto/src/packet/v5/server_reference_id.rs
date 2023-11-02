@@ -1,8 +1,9 @@
 use crate::packet::v5::extension_fields::{ReferenceIdRequest, ReferenceIdResponse};
 use crate::packet::v5::NtpClientCookie;
 use rand::distributions::{Distribution, Standard};
-use rand::Rng;
+use rand::{thread_rng, Rng};
 use std::array::from_fn;
+use std::fmt::{Debug, Formatter};
 
 #[derive(Copy, Clone, Debug)]
 struct U12(u16);
@@ -41,7 +42,7 @@ impl TryFrom<u16> for U12 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct ServerId([U12; 10]);
 
 impl ServerId {
@@ -54,7 +55,13 @@ impl ServerId {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+impl Default for ServerId {
+    fn default() -> Self {
+        Self::new(&mut thread_rng())
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub struct BloomFilter([u8; Self::BYTES]);
 impl BloomFilter {
     pub const BYTES: usize = 512;
@@ -107,6 +114,25 @@ impl BloomFilter {
 impl<'a> FromIterator<&'a BloomFilter> for BloomFilter {
     fn from_iter<T: IntoIterator<Item = &'a BloomFilter>>(iter: T) -> Self {
         Self::union(iter.into_iter())
+    }
+}
+
+impl Default for BloomFilter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Debug for BloomFilter {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let str: String = self
+            .0
+            .chunks_exact(32)
+            .map(|chunk| chunk.iter().fold(0, |acc, b| acc | b))
+            .map(|b| char::from_u32(0x2800 + b as u32).unwrap())
+            .collect();
+
+        f.debug_tuple("BloomFilter").field(&str).finish()
     }
 }
 
@@ -167,7 +193,7 @@ impl RemoteBloomFilter {
     pub fn handle_response(
         &mut self,
         cookie: NtpClientCookie,
-        response: ReferenceIdResponse,
+        response: &ReferenceIdResponse,
     ) -> Result<(), ResponseHandlingError> {
         let Some((offset, expected_cookie)) = self.last_requested else {
             return Err(ResponseHandlingError::NotAwaitingResponse);
@@ -196,6 +222,17 @@ impl RemoteBloomFilter {
             // We made the round at least once... so we must be fully filled
             self.is_filled = true;
         }
+    }
+}
+
+impl Debug for RemoteBloomFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RemoteBloomFilter")
+            .field("chunk_size", &self.chunk_size)
+            .field("last_requested", &self.last_requested)
+            .field("next_to_request", &self.next_to_request)
+            .field("is_filled", &self.is_filled)
+            .finish()
     }
 }
 
@@ -285,7 +322,7 @@ mod tests {
         assert!(matches!(
             bf.handle_response(
                 NtpClientCookie::new_random(),
-                ReferenceIdResponse::new(&[0u8; 16]).unwrap()
+                &ReferenceIdResponse::new(&[0u8; 16]).unwrap()
             ),
             Err(NotAwaitingResponse)
         ));
@@ -296,18 +333,18 @@ mod tests {
         assert_eq!(req.payload_len(), chunk_size);
 
         assert!(matches!(
-            bf.handle_response(cookie, ReferenceIdResponse::new(&[0; 24]).unwrap()),
+            bf.handle_response(cookie, &ReferenceIdResponse::new(&[0; 24]).unwrap()),
             Err(MismatchedLength)
         ));
 
         let mut wrong_cookie = cookie;
         wrong_cookie.0[0] ^= 0xFF; // Flip all bits in first byte
         assert!(matches!(
-            bf.handle_response(wrong_cookie, ReferenceIdResponse::new(&[0; 16]).unwrap()),
+            bf.handle_response(wrong_cookie, &ReferenceIdResponse::new(&[0; 16]).unwrap()),
             Err(MismatchedCookie)
         ));
 
-        bf.handle_response(cookie, ReferenceIdResponse::new(&[1; 16]).unwrap())
+        bf.handle_response(cookie, &ReferenceIdResponse::new(&[1; 16]).unwrap())
             .unwrap();
         assert_eq!(bf.next_to_request, 16);
         assert_eq!(bf.last_requested, None);
@@ -323,7 +360,7 @@ mod tests {
             assert!(bf.full_filter().is_none());
             let bytes: Vec<_> = (0..req.payload_len()).map(|_| chunk as u8 + 1).collect();
             let response = ReferenceIdResponse::new(&bytes).unwrap();
-            bf.handle_response(cookie, response).unwrap();
+            bf.handle_response(cookie, &response).unwrap();
         }
 
         assert_eq!(bf.next_to_request, 0);
@@ -346,7 +383,7 @@ mod tests {
                 let cookie = NtpClientCookie::new_random();
                 let request = bf.next_request(cookie);
                 let response = request.to_response(&target_filter).unwrap();
-                bf.handle_response(cookie, response).unwrap();
+                bf.handle_response(cookie, &response).unwrap();
             }
 
             let result_filter = bf.full_filter().unwrap();

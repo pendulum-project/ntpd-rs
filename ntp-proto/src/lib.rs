@@ -69,6 +69,11 @@ mod exports {
         KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, NtsRecord,
         NtsRecordDecoder, WriteError,
     };
+
+    #[cfg(feature = "ntpv5")]
+    pub mod v5 {
+        pub use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
+    }
 }
 
 #[cfg(feature = "__internal-api")]
