@@ -99,17 +99,17 @@ impl ComparisonDataset {
                 &self.identity_of_receiver.clock_identity,
                 &self.identity_of_senders,
             ) {
-                Ordering::Less => DatasetOrdering::Better,
+                Ordering::Less => DatasetOrdering::Worse,
                 Ordering::Equal => DatasetOrdering::Error1,
-                Ordering::Greater => DatasetOrdering::BetterByTopology,
+                Ordering::Greater => DatasetOrdering::WorseByTopology,
             },
             -1 => match Ord::cmp(
                 &other.identity_of_receiver.clock_identity,
                 &other.identity_of_senders,
             ) {
-                Ordering::Less => DatasetOrdering::Worse,
+                Ordering::Less => DatasetOrdering::Better,
                 Ordering::Equal => DatasetOrdering::Error1,
-                Ordering::Greater => DatasetOrdering::WorseByTopology,
+                Ordering::Greater => DatasetOrdering::BetterByTopology,
             },
             0 => {
                 let senders = self.identity_of_senders.cmp(&other.identity_of_senders);
@@ -248,15 +248,15 @@ mod tests {
         a.identity_of_receiver.clock_identity = IDENTITY_B;
         b.identity_of_receiver.clock_identity = IDENTITY_C;
 
-        assert_eq!(a.compare(&b), DatasetOrdering::WorseByTopology);
-        assert_eq!(b.compare(&a), DatasetOrdering::BetterByTopology);
+        assert_eq!(a.compare(&b), DatasetOrdering::BetterByTopology);
+        assert_eq!(b.compare(&a), DatasetOrdering::WorseByTopology);
 
         // the inverse of the identity_of_senders
         a.identity_of_receiver.clock_identity = IDENTITY_B;
         b.identity_of_receiver.clock_identity = IDENTITY_A;
 
-        assert_eq!(a.compare(&b), DatasetOrdering::Worse);
-        assert_eq!(b.compare(&a), DatasetOrdering::Better);
+        assert_eq!(a.compare(&b), DatasetOrdering::Better);
+        assert_eq!(b.compare(&a), DatasetOrdering::Worse);
 
         a.steps_removed = 0;
         b.steps_removed = 2;
