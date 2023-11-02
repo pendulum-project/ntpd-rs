@@ -1,5 +1,3 @@
-#[cfg(feature = "ntpv5")]
-use rand::thread_rng;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "ntpv5")]
@@ -69,10 +67,24 @@ impl SystemSnapshot {
         self.accumulated_steps_threshold = config.accumulated_step_panic_threshold;
     }
 
-    pub fn update_used_peers(&mut self, mut used_peers: impl Iterator<Item = PeerSnapshot>) {
-        if let Some(system_peer_snapshot) = used_peers.next() {
+    pub fn update_used_peers(&mut self, used_peers: impl Iterator<Item = PeerSnapshot>) {
+        let mut used_peers = used_peers.peekable();
+        if let Some(system_peer_snapshot) = used_peers.peek() {
             self.stratum = system_peer_snapshot.stratum.saturating_add(1);
             self.reference_id = system_peer_snapshot.source_id;
+        }
+
+        #[cfg(feature = "ntpv5")]
+        {
+            self.bloom_filter = BloomFilter::new();
+            for peer in used_peers {
+                if let Some(bf) = &peer.bloom_filter {
+                    self.bloom_filter.add(bf);
+                } else {
+                    tracing::warn!("Using peer without a bloom filter!");
+                }
+            }
+            self.bloom_filter.add_id(&self.server_id);
         }
     }
 }
@@ -87,7 +99,7 @@ impl Default for SystemSnapshot {
             #[cfg(feature = "ntpv5")]
             bloom_filter: BloomFilter::new(),
             #[cfg(feature = "ntpv5")]
-            server_id: ServerId::new(&mut thread_rng()),
+            server_id: ServerId::new(&mut rand::thread_rng()),
         }
     }
 }

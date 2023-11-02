@@ -1,6 +1,6 @@
 use crate::packet::error::ParsingError;
 use crate::packet::v5::server_reference_id::BloomFilter;
-use crate::ExtensionField;
+use crate::packet::ExtensionField;
 use std::borrow::Cow;
 use std::convert::Infallible;
 use std::io::Write;
@@ -100,12 +100,7 @@ impl ReferenceIdRequest {
         let offset = usize::from(self.offset);
         let payload_len = usize::from(self.payload_len);
 
-        let bytes = filter
-            .as_bytes()
-            .as_slice()
-            .get(offset..)?
-            .get(..payload_len)?
-            .into();
+        let bytes = filter.as_bytes().get(offset..)?.get(..payload_len)?.into();
 
         Some(ReferenceIdResponse { bytes })
     }

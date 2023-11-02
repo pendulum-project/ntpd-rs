@@ -1054,6 +1054,10 @@ impl<'a> NtpPacket<'a> {
     pub fn untrusted_extension_fields(&self) -> impl Iterator<Item = &ExtensionField> {
         self.efdata.untrusted.iter()
     }
+
+    pub fn push_untrusted(&mut self, ef: ExtensionField<'static>) {
+        self.efdata.untrusted.push(ef);
+    }
 }
 
 // Returns whether all uid extension fields found match the given uid, or
@@ -1181,10 +1185,6 @@ impl<'a> NtpPacket<'a> {
             #[cfg(feature = "ntpv5")]
             NtpHeader::V5(ref mut header) => header.root_dispersion = root_dispersion,
         }
-    }
-
-    pub fn push_untrusted(&mut self, ef: ExtensionField<'static>) {
-        self.efdata.untrusted.push(ef);
     }
 }
 
