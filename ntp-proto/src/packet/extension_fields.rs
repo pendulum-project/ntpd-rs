@@ -20,6 +20,10 @@ enum ExtensionFieldTypeId {
     DraftIdentification,
     #[cfg(feature = "ntpv5")]
     Padding,
+    #[cfg(feature = "ntpv5")]
+    ReferenceIdRequest,
+    #[cfg(feature = "ntpv5")]
+    ReferenceIdResponse,
 }
 
 impl ExtensionFieldTypeId {
@@ -33,6 +37,10 @@ impl ExtensionFieldTypeId {
             0xF5FF => Self::DraftIdentification,
             #[cfg(feature = "ntpv5")]
             0xF501 => Self::Padding,
+            #[cfg(feature = "ntpv5")]
+            0xF503 => Self::ReferenceIdRequest,
+            #[cfg(feature = "ntpv5")]
+            0xF504 => Self::ReferenceIdResponse,
             _ => Self::Unknown { type_id },
         }
     }
@@ -47,6 +55,10 @@ impl ExtensionFieldTypeId {
             ExtensionFieldTypeId::DraftIdentification => 0xF5FF,
             #[cfg(feature = "ntpv5")]
             ExtensionFieldTypeId::Padding => 0xF501,
+            #[cfg(feature = "ntpv5")]
+            ExtensionFieldTypeId::ReferenceIdRequest => 0xF503,
+            #[cfg(feature = "ntpv5")]
+            ExtensionFieldTypeId::ReferenceIdResponse => 0xF504,
             ExtensionFieldTypeId::Unknown { type_id } => type_id,
         }
     }
@@ -64,6 +76,10 @@ pub enum ExtensionField<'a> {
     DraftIdentification(Cow<'a, str>),
     #[cfg(feature = "ntpv5")]
     Padding(usize),
+    #[cfg(feature = "ntpv5")]
+    ReferenceIdRequest(super::v5::extension_fields::ReferenceIdRequest),
+    #[cfg(feature = "ntpv5")]
+    ReferenceIdResponse(super::v5::extension_fields::ReferenceIdResponse<'a>),
     Unknown {
         type_id: u16,
         data: Cow<'a, [u8]>,
@@ -88,6 +104,14 @@ impl<'a> std::fmt::Debug for ExtensionField<'a> {
             }
             #[cfg(feature = "ntpv5")]
             Self::Padding(len) => f.debug_struct("Padding").field("length", &len).finish(),
+            #[cfg(feature = "ntpv5")]
+            Self::ReferenceIdRequest(r) => {
+                f.debug_tuple("ReferenceIdRequest").field(r).finish()
+            }
+            #[cfg(feature = "ntpv5")]
+            Self::ReferenceIdResponse(r) => {
+                f.debug_tuple("ReferenceIdResponse").field(r).finish()
+            }
             Self::Unknown {
                 type_id: typeid,
                 data,
@@ -127,6 +151,10 @@ impl<'a> ExtensionField<'a> {
             DraftIdentification(data) => DraftIdentification(Cow::Owned(data.into_owned())),
             #[cfg(feature = "ntpv5")]
             Padding(len) => Padding(len),
+            #[cfg(feature = "ntpv5")]
+            ReferenceIdRequest(req) => ReferenceIdRequest(req),
+            #[cfg(feature = "ntpv5")]
+            ReferenceIdResponse(res) => ReferenceIdResponse(res.into_owned()),
         }
     }
 
@@ -156,6 +184,10 @@ impl<'a> ExtensionField<'a> {
             }
             #[cfg(feature = "ntpv5")]
             Padding(len) => Self::encode_padding_field(w, *len, minimum_size, version),
+            #[cfg(feature = "ntpv5")]
+            ReferenceIdRequest(req) => req.serialize(w),
+            #[cfg(feature = "ntpv5")]
+            ReferenceIdResponse(res) => res.serialize(w),
         }
     }
 

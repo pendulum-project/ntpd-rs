@@ -1,3 +1,4 @@
+use crate::packet::v5::extension_fields::{ReferenceIdRequest, ReferenceIdResponse};
 use crate::packet::v5::NtpClientCookie;
 use rand::distributions::{Distribution, Standard};
 use rand::Rng;
@@ -159,10 +160,8 @@ impl RemoteBloomFilter {
             // TODO log something about never got a response
         }
 
-        ReferenceIdRequest {
-            payload_len: self.chunk_size,
-            offset,
-        }
+        ReferenceIdRequest::new(self.chunk_size, offset)
+            .expect("We ensure that our request always falls within the BloomFilter")
     }
 
     pub fn handle_response(
@@ -178,12 +177,12 @@ impl RemoteBloomFilter {
             return Err(ResponseHandlingError::MismatchedCookie);
         }
 
-        if response.bytes.len() != self.chunk_size as usize {
+        if response.bytes().len() != self.chunk_size as usize {
             return Err(ResponseHandlingError::MismatchedLength);
         }
 
         self.filter.0[(offset as usize)..][..(self.chunk_size as usize)]
-            .copy_from_slice(response.bytes);
+            .copy_from_slice(response.bytes());
         self.advance_next_to_request();
         self.last_requested = None;
 
@@ -205,33 +204,6 @@ pub enum ResponseHandlingError {
     NotAwaitingResponse,
     MismatchedCookie,
     MismatchedLength,
-}
-
-pub struct ReferenceIdRequest {
-    pub payload_len: u16,
-    pub offset: u16,
-}
-
-impl ReferenceIdRequest {
-    pub fn to_response<'filter>(
-        &self,
-        filter: &'filter BloomFilter,
-    ) -> Option<ReferenceIdResponse<'filter>> {
-        let offset = usize::from(self.offset);
-        let payload_len = usize::from(self.payload_len);
-
-        let bytes = filter
-            .as_bytes()
-            .as_slice()
-            .get(offset..)?
-            .get(..payload_len)?;
-
-        Some(ReferenceIdResponse { bytes })
-    }
-}
-
-pub struct ReferenceIdResponse<'a> {
-    pub bytes: &'a [u8],
 }
 
 #[cfg(test)]
@@ -313,29 +285,29 @@ mod tests {
         assert!(matches!(
             bf.handle_response(
                 NtpClientCookie::new_random(),
-                ReferenceIdResponse { bytes: &[0; 16] }
+                ReferenceIdResponse::new(&[0u8; 16]).unwrap()
             ),
             Err(NotAwaitingResponse)
         ));
 
         let cookie = NtpClientCookie::new_random();
         let req = bf.next_request(cookie);
-        assert_eq!(req.offset, 0);
-        assert_eq!(req.payload_len, chunk_size);
+        assert_eq!(req.offset(), 0);
+        assert_eq!(req.payload_len(), chunk_size);
 
         assert!(matches!(
-            bf.handle_response(cookie, ReferenceIdResponse { bytes: &[0; 24] }),
+            bf.handle_response(cookie, ReferenceIdResponse::new(&[0; 24]).unwrap()),
             Err(MismatchedLength)
         ));
 
         let mut wrong_cookie = cookie;
         wrong_cookie.0[0] ^= 0xFF; // Flip all bits in first byte
         assert!(matches!(
-            bf.handle_response(wrong_cookie, ReferenceIdResponse { bytes: &[0; 16] }),
+            bf.handle_response(wrong_cookie, ReferenceIdResponse::new(&[0; 16]).unwrap()),
             Err(MismatchedCookie)
         ));
 
-        bf.handle_response(cookie, ReferenceIdResponse { bytes: &[1; 16] })
+        bf.handle_response(cookie, ReferenceIdResponse::new(&[1; 16]).unwrap())
             .unwrap();
         assert_eq!(bf.next_to_request, 16);
         assert_eq!(bf.last_requested, None);
@@ -347,10 +319,10 @@ mod tests {
         for chunk in 1..(512 / chunk_size) {
             let cookie = NtpClientCookie::new_random();
             let req = bf.next_request(cookie);
-            assert_eq!(req.offset, chunk * chunk_size);
+            assert_eq!(req.offset(), chunk * chunk_size);
             assert!(bf.full_filter().is_none());
-            let bytes: Vec<_> = (0..req.payload_len).map(|_| chunk as u8 + 1).collect();
-            let response = ReferenceIdResponse { bytes: &bytes };
+            let bytes: Vec<_> = (0..req.payload_len()).map(|_| chunk as u8 + 1).collect();
+            let response = ReferenceIdResponse::new(&bytes).unwrap();
             bf.handle_response(cookie, response).unwrap();
         }
 
