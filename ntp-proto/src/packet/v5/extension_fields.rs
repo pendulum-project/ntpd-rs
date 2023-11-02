@@ -1,5 +1,8 @@
+use crate::packet::error::ParsingError;
 use crate::packet::v5::server_reference_id::BloomFilter;
+use crate::ExtensionField;
 use std::borrow::Cow;
+use std::convert::Infallible;
 use std::io::Write;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -108,12 +111,17 @@ impl ReferenceIdRequest {
     }
 
     pub fn serialize(&self, mut writer: impl Write) -> std::io::Result<()> {
+        let payload_len = self.payload_len;
+        let ef_len: u16 = payload_len + 4;
+
         writer.write_all(&Type::ReferenceIdRequest.to_bits().to_be_bytes())?;
+        writer.write_all(&ef_len.to_be_bytes())?;
         writer.write_all(&self.offset.to_be_bytes())?;
         writer.write_all(&[0; 2])?;
 
-        let words = self.payload_len / 4;
-        assert_eq!(self.payload_len % 4, 0);
+        let words = payload_len / 4;
+        assert_eq!(payload_len % 4, 0);
+
         for _ in 1..words {
             writer.write_all(&[0; 4])?;
         }
@@ -121,11 +129,22 @@ impl ReferenceIdRequest {
         Ok(())
     }
 
-    pub(crate) fn offset(&self) -> u16 {
+    pub fn decode(msg: &[u8]) -> Result<Self, ParsingError<Infallible>> {
+        let payload_len =
+            u16::try_from(msg.len()).expect("NTP fields can not be longer than u16::MAX");
+        let offset_bytes: [u8; 2] = msg[0..2].try_into().unwrap();
+
+        Ok(Self {
+            payload_len,
+            offset: u16::from_be_bytes(offset_bytes),
+        })
+    }
+
+    pub fn offset(&self) -> u16 {
         self.offset
     }
 
-    pub(crate) fn payload_len(&self) -> u16 {
+    pub fn payload_len(&self) -> u16 {
         self.payload_len
     }
 }
@@ -168,8 +187,26 @@ impl<'a> ReferenceIdResponse<'a> {
         Ok(())
     }
 
+    pub fn decode(bytes: &'a [u8]) -> Self {
+        Self {
+            bytes: Cow::Borrowed(bytes),
+        }
+    }
+
     pub fn bytes(&self) -> &[u8] {
         &*self.bytes
+    }
+}
+
+impl From<ReferenceIdRequest> for ExtensionField<'static> {
+    fn from(value: ReferenceIdRequest) -> Self {
+        Self::ReferenceIdRequest(value)
+    }
+}
+
+impl<'a> From<ReferenceIdResponse<'a>> for ExtensionField<'a> {
+    fn from(value: ReferenceIdResponse<'a>) -> Self {
+        Self::ReferenceIdResponse(value)
     }
 }
 

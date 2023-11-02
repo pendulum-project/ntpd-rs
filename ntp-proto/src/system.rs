@@ -1,5 +1,9 @@
+#[cfg(feature = "ntpv5")]
+use rand::thread_rng;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "ntpv5")]
+use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::{
     config::SynchronizationConfig,
     identifiers::ReferenceId,
@@ -48,6 +52,15 @@ pub struct SystemSnapshot {
     /// Timekeeping data
     #[serde(flatten)]
     pub time_snapshot: TimeSnapshot,
+
+    #[cfg(feature = "ntpv5")]
+    /// Bloom filter that contains all currently used time sources
+    #[serde(skip)]
+    pub bloom_filter: BloomFilter,
+    #[cfg(feature = "ntpv5")]
+    /// NTPv5 reference ID for this instance
+    #[serde(skip)]
+    pub server_id: ServerId,
 }
 
 impl SystemSnapshot {
@@ -71,6 +84,10 @@ impl Default for SystemSnapshot {
             reference_id: ReferenceId::NONE,
             accumulated_steps_threshold: None,
             time_snapshot: TimeSnapshot::default(),
+            #[cfg(feature = "ntpv5")]
+            bloom_filter: BloomFilter::new(),
+            #[cfg(feature = "ntpv5")]
+            server_id: ServerId::new(&mut thread_rng()),
         }
     }
 }
@@ -108,6 +125,8 @@ mod tests {
                     reach: Default::default(),
                     stratum: 2,
                     reference_id: ReferenceId::NONE,
+                    #[cfg(feature = "ntpv5")]
+                    bloom_filter: None,
                 },
                 PeerSnapshot {
                     source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
@@ -117,6 +136,8 @@ mod tests {
                     reach: Default::default(),
                     stratum: 3,
                     reference_id: ReferenceId::NONE,
+                    #[cfg(feature = "ntpv5")]
+                    bloom_filter: None,
                 },
             ]
             .into_iter(),

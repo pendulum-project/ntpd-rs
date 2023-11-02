@@ -5,6 +5,9 @@ use std::{
 
 use crate::keyset::DecodedServerCookie;
 
+#[cfg(feature = "ntpv5")]
+use crate::packet::v5::extension_fields::{ReferenceIdRequest, ReferenceIdResponse};
+
 use super::{crypto::EncryptResult, error::ParsingError, Cipher, CipherProvider, Mac};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -550,6 +553,10 @@ impl<'a> ExtensionField<'a> {
             TypeId::DraftIdentification => {
                 EF::decode_draft_identification(message, extension_header_version)
             }
+            #[cfg(feature = "ntpv5")]
+            TypeId::ReferenceIdRequest => Ok(ReferenceIdRequest::decode(message)?.into()),
+            #[cfg(feature = "ntpv5")]
+            TypeId::ReferenceIdResponse => Ok(ReferenceIdResponse::decode(message).into()),
             type_id => EF::decode_unknown(type_id.to_type_id(), message),
         }
     }

@@ -19,7 +19,7 @@ mod extension_fields;
 mod mac;
 
 #[cfg(feature = "ntpv5")]
-mod v5;
+pub mod v5;
 
 pub use crypto::{
     AesSivCmac256, AesSivCmac512, Cipher, CipherHolder, CipherProvider, DecryptError,
@@ -118,7 +118,7 @@ pub struct NtpPacket<'a> {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-enum NtpHeader {
+pub enum NtpHeader {
     V3(NtpHeaderV3V4),
     V4(NtpHeaderV3V4),
     #[cfg(feature = "ntpv5")]
@@ -126,7 +126,7 @@ enum NtpHeader {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-struct NtpHeaderV3V4 {
+pub struct NtpHeaderV3V4 {
     leap: NtpLeapIndicator,
     mode: NtpAssociationMode,
     stratum: u8,
@@ -652,7 +652,14 @@ impl<'a> NtpPacket<'a> {
                         .untrusted
                         .into_iter()
                         .chain(input.efdata.authenticated)
-                        .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
+                        .filter_map(|ef| match ef {
+                            uid @ ExtensionField::UniqueIdentifier(_) => Some(uid),
+                            ExtensionField::ReferenceIdRequest(req) => {
+                                let response = req.to_response(&system.bloom_filter)?;
+                                Some(ExtensionField::ReferenceIdResponse(response).into_owned())
+                            }
+                            _ => None,
+                        })
                         .chain(std::iter::once(ExtensionField::DraftIdentification(
                             Cow::Borrowed(v5::DRAFT_VERSION),
                         )))
@@ -871,6 +878,10 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    pub fn header(&self) -> NtpHeader {
+        self.header
+    }
+
     pub fn leap(&self) -> NtpLeapIndicator {
         match self.header {
             NtpHeader::V3(header) => header.leap,
@@ -1039,6 +1050,10 @@ impl<'a> NtpPacket<'a> {
             }
         }
     }
+
+    pub fn untrusted_extension_fields(&self) -> impl Iterator<Item = &ExtensionField> {
+        self.efdata.untrusted.iter()
+    }
 }
 
 // Returns whether all uid extension fields found match the given uid, or
@@ -1166,6 +1181,10 @@ impl<'a> NtpPacket<'a> {
             #[cfg(feature = "ntpv5")]
             NtpHeader::V5(ref mut header) => header.root_dispersion = root_dispersion,
         }
+    }
+
+    pub fn push_untrusted(&mut self, ef: ExtensionField<'static>) {
+        self.efdata.untrusted.push(ef);
     }
 }
 

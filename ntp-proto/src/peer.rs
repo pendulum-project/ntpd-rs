@@ -1,5 +1,6 @@
-use std::{io::Cursor, net::SocketAddr};
-
+#[cfg(feature = "ntpv5")]
+use crate::packet::v5::server_reference_id::{BloomFilter, RemoteBloomFilter};
+use crate::packet::NtpHeader;
 use crate::{
     config::SourceDefaultsConfig,
     cookiestash::CookieStash,
@@ -7,8 +8,10 @@ use crate::{
     packet::{Cipher, NtpAssociationMode, NtpLeapIndicator, NtpPacket, RequestIdentifier},
     system::SystemSnapshot,
     time_types::{NtpDuration, NtpInstant, NtpTimestamp, PollInterval},
+    ExtensionField,
 };
 use serde::{Deserialize, Serialize};
+use std::{io::Cursor, net::SocketAddr};
 use tracing::{debug, info, instrument, trace, warn};
 
 const MAX_STRATUM: u8 = 16;
@@ -78,6 +81,9 @@ pub struct Peer {
     peer_defaults_config: SourceDefaultsConfig,
 
     protocol_version: ProtocolVersion,
+
+    #[cfg(feature = "ntpv5")]
+    bloom_filter: Option<RemoteBloomFilter>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -206,6 +212,9 @@ pub struct PeerSnapshot {
 
     pub stratum: u8,
     pub reference_id: ReferenceId,
+
+    #[cfg(feature = "ntpv5")]
+    pub bloom_filter: Option<BloomFilter>,
 }
 
 impl PeerSnapshot {
@@ -251,6 +260,11 @@ impl PeerSnapshot {
             reference_id: peer.reference_id,
             reach: peer.reach,
             poll_interval: peer.last_poll_interval,
+            #[cfg(feature = "ntpv5")]
+            bloom_filter: peer
+                .bloom_filter
+                .as_ref()
+                .and_then(|bf| bf.full_filter().copied()),
         }
     }
 }
@@ -271,6 +285,8 @@ pub fn peer_snapshot() -> PeerSnapshot {
         our_id: ReferenceId::from_int(1),
         reach,
         poll_interval: crate::time_types::PollIntervalLimits::default().min,
+        #[cfg(feature = "ntpv5")]
+        bloom_filter: None,
     }
 }
 
@@ -360,6 +376,9 @@ impl Peer {
             peer_defaults_config,
 
             protocol_version: Default::default(), // TODO make this configurable
+
+            #[cfg(feature = "ntpv5")]
+            bloom_filter: None,
         }
     }
 
@@ -394,6 +413,7 @@ impl Peer {
             .max(self.remote_min_poll_interval)
     }
 
+    #[cfg_attr(not(feature = "ntpv5"), allow(unused_mut))]
     pub fn generate_poll_message<'a>(
         &mut self,
         buf: &'a mut [u8],
@@ -408,7 +428,7 @@ impl Peer {
         self.tries = self.tries.saturating_add(1);
 
         let poll_interval = self.current_poll_interval(system);
-        let (packet, identifier) = match &mut self.nts {
+        let (mut packet, identifier) = match &mut self.nts {
             Some(nts) => {
                 let cookie = nts.cookies.get().ok_or_else(|| {
                     std::io::Error::new(std::io::ErrorKind::Other, NtsError::OutOfCookies)
@@ -437,6 +457,14 @@ impl Peer {
 
         // Ensure we don't spam the remote with polls if it is not reachable
         self.backoff_interval = poll_interval.inc(peer_defaults_config.poll_interval_limits);
+
+        #[cfg(feature = "ntpv5")]
+        if let NtpHeader::V5(header) = packet.header() {
+            if let Some(ref mut filter) = self.bloom_filter {
+                let req_ef = filter.next_request(header.client_cookie);
+                packet.push_untrusted(ExtensionField::ReferenceIdRequest(req_ef));
+            }
+        }
 
         // Write packet to buffer
         let mut cursor = Cursor::new(buf);
@@ -576,11 +604,10 @@ impl Peer {
         self.stratum = message.stratum();
         self.reference_id = message.reference_id();
 
-        // Handle new requested poll interval
         #[cfg(feature = "ntpv5")]
-        if message.version() == 5 {
+        if let NtpHeader::V5(header) = message.header() {
+            // Handle new requested poll interval
             let requested_poll = message.poll();
-
             if requested_poll > self.remote_min_poll_interval {
                 debug!(
                     ?requested_poll,
@@ -588,6 +615,24 @@ impl Peer {
                     "Adapting to longer poll interval requested by server"
                 );
                 self.remote_min_poll_interval = requested_poll;
+            }
+
+            // Update our bloom filter
+            if let Some(filter) = &mut self.bloom_filter {
+                let bloom_responses =
+                    message
+                        .untrusted_extension_fields()
+                        .filter_map(|ef| match ef {
+                            ExtensionField::ReferenceIdResponse(response) => Some(response),
+                            _ => None,
+                        });
+
+                for ref_id in bloom_responses {
+                    let result = filter.handle_response(header.client_cookie, ref_id);
+                    if let Err(err) = result {
+                        info!(?err, "Invalid ReferenceIdResponse from peer, ignoring...")
+                    }
+                }
             }
         }
 
@@ -643,6 +688,9 @@ impl Peer {
             peer_defaults_config: SourceDefaultsConfig::default(),
 
             protocol_version: Default::default(),
+
+            #[cfg(feature = "ntpv5")]
+            bloom_filter: Some(RemoteBloomFilter::new(16).unwrap()),
         }
     }
 }
@@ -680,6 +728,10 @@ mod test {
     use crate::{packet::NoCipher, time_types::PollIntervalLimits, NtpClock};
 
     use super::*;
+    #[cfg(feature = "ntpv5")]
+    use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
+    #[cfg(feature = "ntpv5")]
+    use rand::thread_rng;
     use std::time::Duration;
 
     #[derive(Debug, Clone, Default)]
@@ -1274,5 +1326,59 @@ mod test {
             .unwrap();
         let (poll, _) = NtpPacket::deserialize(poll, &NoCipher).unwrap();
         assert_eq!(poll.version(), 5);
+    }
+
+    #[cfg(feature = "ntpv5")]
+    #[test]
+    fn bloom_filters_will_synchronize_at_some_point() {
+        let mut server_filter = BloomFilter::new();
+        server_filter.add_id(&ServerId::new(&mut thread_rng()));
+
+        let mut client = Peer::test_peer();
+        client.protocol_version = ProtocolVersion::V5;
+
+        let clock = TestClock::default();
+        let system = SystemSnapshot::default();
+
+        let mut server_system = SystemSnapshot::default();
+        server_system.bloom_filter = server_filter.clone();
+
+        let mut tries = 0;
+
+        while client
+            .bloom_filter
+            .as_ref()
+            .unwrap()
+            .full_filter()
+            .is_none()
+            && tries < 100
+        {
+            let mut buf = [0; 1024];
+            let req = client
+                .generate_poll_message(&mut buf, system, &SourceDefaultsConfig::default())
+                .unwrap();
+
+            let (req, _) = NtpPacket::deserialize(req, &NoCipher).unwrap();
+            let response =
+                NtpPacket::timestamp_response(&server_system, req, NtpTimestamp::default(), &clock);
+            let resp_bytes = response.serialize_without_encryption_vec().unwrap();
+
+            client
+                .handle_incoming(
+                    system,
+                    &resp_bytes,
+                    NtpInstant::now(),
+                    NtpTimestamp::default(),
+                    NtpTimestamp::default(),
+                )
+                .unwrap();
+
+            tries += 1;
+        }
+
+        assert_eq!(
+            Some(&server_filter),
+            client.bloom_filter.unwrap().full_filter()
+        );
     }
 }
