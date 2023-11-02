@@ -447,7 +447,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
         snapshot: PeerSnapshot,
     ) -> Result<(), C::Error> {
         let usable = snapshot
-            .accept_synchronization(self.synchronization_config.local_stratum)
+            .accept_synchronization(self.synchronization_config.local_stratum, &self.system)
             .is_ok();
         self.clock_controller()?.peer_update(index, usable);
         self.peers.get_mut(&index).unwrap().snapshot = Some(snapshot);

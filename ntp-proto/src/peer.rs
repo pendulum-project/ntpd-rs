@@ -1,6 +1,8 @@
 #[cfg(feature = "ntpv5")]
-use crate::packet::v5::server_reference_id::{BloomFilter, RemoteBloomFilter};
-use crate::packet::NtpHeader;
+use crate::packet::{
+    v5::server_reference_id::{BloomFilter, RemoteBloomFilter},
+    ExtensionField, NtpHeader,
+};
 use crate::{
     config::SourceDefaultsConfig,
     cookiestash::CookieStash,
@@ -8,7 +10,6 @@ use crate::{
     packet::{Cipher, NtpAssociationMode, NtpLeapIndicator, NtpPacket, RequestIdentifier},
     system::SystemSnapshot,
     time_types::{NtpDuration, NtpInstant, NtpTimestamp, PollInterval},
-    ExtensionField,
 };
 use serde::{Deserialize, Serialize};
 use std::{io::Cursor, net::SocketAddr};
@@ -221,6 +222,7 @@ impl PeerSnapshot {
     pub fn accept_synchronization(
         &self,
         local_stratum: u8,
+        system: &SystemSnapshot,
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
 
@@ -238,8 +240,17 @@ impl PeerSnapshot {
         // Note, this can only ever be an issue if the peer is not using
         // hardware as its source, so ignore reference_id if stratum is 1.
         if self.stratum != 1 && self.reference_id == self.our_id {
-            info!("Peer rejected because of detected synchornization loop");
+            info!("Peer rejected because of detected synchronization loop (ref id)");
             return Err(Loop);
+        }
+
+        #[cfg(feature = "ntpv5")]
+        match self.bloom_filter {
+            Some(filter) if filter.contains_id(&system.server_id) => {
+                info!("Peer rejected because of detected synchronization loop (bloom filter)");
+                return Err(Loop);
+            }
+            _ => {}
         }
 
         // An unreachable error occurs if the server is unreachable.
@@ -865,10 +876,17 @@ mod test {
 
         let mut peer = Peer::test_peer();
 
+        #[cfg(feature = "ntpv5")]
+        let server_id = ServerId::new(&mut rand::thread_rng());
+
         macro_rules! accept {
             () => {{
                 let snapshot = PeerSnapshot::from_peer(&peer);
-                snapshot.accept_synchronization(16)
+                snapshot.accept_synchronization(
+                    16,
+                    #[cfg(feature = "ntpv5")]
+                    &server_id,
+                )
             }};
         }
 

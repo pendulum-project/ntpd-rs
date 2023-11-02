@@ -80,13 +80,17 @@ impl BloomFilter {
         }
     }
 
+    pub fn add(&mut self, other: &BloomFilter) {
+        for (ours, theirs) in self.0.iter_mut().zip(other.0.iter()) {
+            *ours |= theirs;
+        }
+    }
+
     pub fn union<'a>(others: impl Iterator<Item = &'a BloomFilter>) -> Self {
         let mut union = Self::new();
 
         for other in others {
-            for (ours, theirs) in union.0.iter_mut().zip(other.0.iter()) {
-                *ours |= theirs;
-            }
+            union.add(other);
         }
 
         union
