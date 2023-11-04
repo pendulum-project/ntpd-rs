@@ -43,19 +43,19 @@ jobs:
             target: "x86_64-apple-darwin"
           - rust: "stable"
             os: ubuntu-latest
-            features: "--features ntpv5"
+            features: "--all-features"
             target: "x86_64-unknown-linux-gnu"
           - rust: "1.66.0"
             os: ubuntu-latest
-            features: "--features ntpv5"
+            features: "--all-features"
             target: "x86_64-unknown-linux-gnu"
           - rust: "stable"
             os: ubuntu-latest
-            features: "--features ntpv5"
+            features: "--all-features"
             target: "x86_64-unknown-linux-musl"
           - rust: "stable"
             os: macos-latest
-            features: "--features ntpv5"
+            features: "--all-features"
             target: "x86_64-apple-darwin"
     steps:
       - name: Checkout sources
@@ -238,7 +238,7 @@ jobs:
       matrix:
         features:
           - ""
-          - "--features ntpv5"
+          - "--all-features"
     steps:
       - name: Checkout sources
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
