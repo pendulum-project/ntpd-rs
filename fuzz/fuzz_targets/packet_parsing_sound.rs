@@ -12,12 +12,12 @@ fuzz_target!(|data: Vec<u8>| {
     // We test here without ciphers, as that is required to make reencoding work.
     if let Ok((a, _)) = NtpPacket::deserialize(&data, &NoCipher) {
         let mut cursor = Cursor::new(buf.as_mut_slice());
-        a.serialize(&mut cursor, &NoCipher).unwrap();
+        a.serialize(&mut cursor, &NoCipher, None).unwrap();
         let used = cursor.position();
         let slice = &buf[..used as usize];
         let b = NtpPacket::deserialize(&data, &NoCipher).unwrap().0;
         let mut cursor = Cursor::new(buf2.as_mut_slice());
-        b.serialize(&mut cursor, &NoCipher).unwrap();
+        b.serialize(&mut cursor, &NoCipher, None).unwrap();
         let used = cursor.position();
         let slice2 = &buf2[..used as usize];
         assert_eq!(slice, slice2);
