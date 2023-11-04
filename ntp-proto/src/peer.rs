@@ -326,7 +326,7 @@ pub enum PollError {
     PeerUnreachable,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ProtocolVersion {
     V4,
     #[cfg(feature = "ntpv5")]
@@ -368,6 +368,7 @@ impl Peer {
         source_addr: SocketAddr,
         local_clock_time: NtpInstant,
         peer_defaults_config: SourceDefaultsConfig,
+        protocol_version: ProtocolVersion,
     ) -> Self {
         Self {
             nts: None,
@@ -388,7 +389,7 @@ impl Peer {
 
             peer_defaults_config,
 
-            protocol_version: Default::default(), // TODO make this configurable
+            protocol_version, // TODO make this configurable
 
             #[cfg(feature = "ntpv5")]
             bloom_filter: RemoteBloomFilter::new(16).expect("16 is a valid chunk size"),
@@ -401,16 +402,17 @@ impl Peer {
         source_addr: SocketAddr,
         local_clock_time: NtpInstant,
         peer_defaults_config: SourceDefaultsConfig,
+        protocol_version: ProtocolVersion,
         nts: Box<PeerNtsData>,
     ) -> Self {
         Self {
             nts: Some(nts),
-            protocol_version: ProtocolVersion::V4,
             ..Self::new(
                 our_addr,
                 source_addr,
                 local_clock_time,
                 peer_defaults_config,
+                protocol_version,
             )
         }
     }
@@ -455,9 +457,17 @@ impl Peer {
                     .cookies
                     .gap()
                     .min(((buf.len() - 300) / cookie.len()).min(u8::MAX as usize) as u8);
-                NtpPacket::nts_poll_message(&cookie, new_cookies, poll_interval)
+                match self.protocol_version {
+                    ProtocolVersion::V4 => {
+                        NtpPacket::nts_poll_message(&cookie, new_cookies, poll_interval)
+                    }
+                    #[cfg(feature = "ntpv5")]
+                    ProtocolVersion::V4UpgradingToV5 { .. } | ProtocolVersion::V5 => {
+                        NtpPacket::nts_poll_message_v5(&cookie, new_cookies, poll_interval)
+                    }
+                }
             }
-            None => match self.protocol_version {
+            None => match dbg!(self.protocol_version) {
                 ProtocolVersion::V4 => NtpPacket::poll_message(poll_interval),
                 #[cfg(feature = "ntpv5")]
                 ProtocolVersion::V4UpgradingToV5 { .. } => {
@@ -475,7 +485,7 @@ impl Peer {
         #[cfg(feature = "ntpv5")]
         if let NtpHeader::V5(header) = packet.header() {
             let req_ef = self.bloom_filter.next_request(header.client_cookie);
-            packet.push_untrusted(ExtensionField::ReferenceIdRequest(req_ef));
+            packet.push_additional(ExtensionField::ReferenceIdRequest(req_ef));
         }
 
         // Write packet to buffer
@@ -629,15 +639,26 @@ impl Peer {
                 self.remote_min_poll_interval = requested_poll;
             }
 
-            // Update our bloom filter
-            let bloom_responses = message
-                .untrusted_extension_fields()
-                .filter_map(|ef| match ef {
-                    ExtensionField::ReferenceIdResponse(response) => Some(response),
-                    _ => None,
-                });
+            // Update our bloom filter (we need separate branches due to types
+            let bloom_responses = if self.nts.is_some() {
+                message
+                    .authenticated_extension_fields()
+                    .filter_map(|ef| match ef {
+                        ExtensionField::ReferenceIdResponse(response) => Some(response),
+                        _ => None,
+                    })
+                    .next()
+            } else {
+                message
+                    .untrusted_extension_fields()
+                    .filter_map(|ef| match ef {
+                        ExtensionField::ReferenceIdResponse(response) => Some(response),
+                        _ => None,
+                    })
+                    .next()
+            };
 
-            for ref_id in bloom_responses {
+            if let Some(ref_id) = bloom_responses {
                 let result = self
                     .bloom_filter
                     .handle_response(header.client_cookie, ref_id);

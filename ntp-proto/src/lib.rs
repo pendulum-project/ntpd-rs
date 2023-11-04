@@ -52,7 +52,7 @@ mod exports {
     pub use super::peer::peer_snapshot;
     pub use super::peer::{
         AcceptSynchronizationError, IgnoreReason, Measurement, Peer, PeerNtsData, PeerSnapshot,
-        PollError, Reach, Update,
+        PollError, ProtocolVersion, Reach, Update,
     };
     pub use super::system::{SystemSnapshot, TimeSnapshot};
     #[cfg(feature = "__internal-fuzz")]

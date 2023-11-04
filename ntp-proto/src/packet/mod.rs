@@ -526,6 +526,47 @@ impl<'a> NtpPacket<'a> {
         )
     }
 
+    #[cfg(feature = "ntpv5")]
+    pub fn nts_poll_message_v5(
+        cookie: &'a [u8],
+        new_cookies: u8,
+        poll_interval: PollInterval,
+    ) -> (NtpPacket<'static>, RequestIdentifier) {
+        let (header, id) = v5::NtpHeaderV5::poll_message(poll_interval);
+
+        let identifier: [u8; 32] = rand::thread_rng().gen();
+
+        let mut authenticated = vec![
+            ExtensionField::UniqueIdentifier(identifier.to_vec().into()),
+            ExtensionField::NtsCookie(cookie.to_vec().into()),
+        ];
+
+        for _ in 1..new_cookies {
+            authenticated.push(ExtensionField::NtsCookiePlaceholder {
+                cookie_length: cookie.len() as u16,
+            });
+        }
+
+        let draft_id = ExtensionField::DraftIdentification(Cow::Borrowed(v5::DRAFT_VERSION));
+        authenticated.push(draft_id);
+
+        (
+            NtpPacket {
+                header: NtpHeader::V5(header),
+                efdata: ExtensionFieldData {
+                    authenticated,
+                    encrypted: vec![],
+                    untrusted: vec![],
+                },
+                mac: None,
+            },
+            RequestIdentifier {
+                uid: Some(identifier),
+                ..id
+            },
+        )
+    }
+
     pub fn poll_message(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
         let (header, id) = NtpHeaderV3V4::poll_message(poll_interval);
         (
@@ -672,10 +713,14 @@ impl<'a> NtpPacket<'a> {
 
     #[cfg(feature = "ntpv5")]
     fn draft_id(&self) -> Option<&'_ str> {
-        self.efdata.untrusted.iter().find_map(|ef| match ef {
-            ExtensionField::DraftIdentification(id) => Some(&**id),
-            _ => None,
-        })
+        self.efdata
+            .untrusted
+            .iter()
+            .chain(self.efdata.authenticated.iter())
+            .find_map(|ef| match ef {
+                ExtensionField::DraftIdentification(id) => Some(&**id),
+                _ => None,
+            })
     }
 
     pub fn nts_timestamp_response<C: NtpClock>(
@@ -733,7 +778,59 @@ impl<'a> NtpPacket<'a> {
                 mac: None,
             },
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!("No NTS support for V5 yet"),
+            NtpHeader::V5(header) => NtpPacket {
+                header: NtpHeader::V5(v5::NtpHeaderV5::timestamp_response(
+                    system,
+                    header,
+                    recv_timestamp,
+                    clock,
+                )),
+                efdata: ExtensionFieldData {
+                    encrypted: input
+                        .efdata
+                        .authenticated
+                        .iter()
+                        .chain(input.efdata.encrypted.iter())
+                        .filter_map(|f| match f {
+                            ExtensionField::NtsCookiePlaceholder { cookie_length } => {
+                                let new_cookie = keyset.encode_cookie(cookie);
+                                if new_cookie.len() > *cookie_length as usize {
+                                    None
+                                } else {
+                                    Some(ExtensionField::NtsCookie(Cow::Owned(new_cookie)))
+                                }
+                            }
+                            ExtensionField::NtsCookie(old_cookie) => {
+                                let new_cookie = keyset.encode_cookie(cookie);
+                                if new_cookie.len() > old_cookie.len() {
+                                    None
+                                } else {
+                                    Some(ExtensionField::NtsCookie(Cow::Owned(new_cookie)))
+                                }
+                            }
+                            _ => None,
+                        })
+                        .collect(),
+                    authenticated: input
+                        .efdata
+                        .authenticated
+                        .into_iter()
+                        .filter_map(|ef| match ef {
+                            uid @ ExtensionField::UniqueIdentifier(_) => Some(uid),
+                            ExtensionField::ReferenceIdRequest(req) => {
+                                let response = req.to_response(&system.bloom_filter)?;
+                                Some(ExtensionField::ReferenceIdResponse(response).into_owned())
+                            }
+                            _ => None,
+                        })
+                        .chain(std::iter::once(ExtensionField::DraftIdentification(
+                            Cow::Borrowed(v5::DRAFT_VERSION),
+                        )))
+                        .collect(),
+                    untrusted: vec![],
+                },
+                mac: None,
+            },
         }
     }
 
@@ -1055,8 +1152,16 @@ impl<'a> NtpPacket<'a> {
         self.efdata.untrusted.iter()
     }
 
-    pub fn push_untrusted(&mut self, ef: ExtensionField<'static>) {
-        self.efdata.untrusted.push(ef);
+    pub fn authenticated_extension_fields(&self) -> impl Iterator<Item = &ExtensionField> {
+        self.efdata.authenticated.iter()
+    }
+
+    pub fn push_additional(&mut self, ef: ExtensionField<'static>) {
+        if !self.efdata.authenticated.is_empty() || !self.efdata.encrypted.is_empty() {
+            self.efdata.authenticated.push(ef);
+        } else {
+            self.efdata.untrusted.push(ef);
+        }
     }
 }
 
@@ -2259,6 +2364,8 @@ mod tests {
                 .unwrap();
 
             assert_eq!(data.len(), 76.max(i * 4));
+
+            assert!(NtpPacket::deserialize(&data, &NoCipher).is_ok());
         }
     }
 }

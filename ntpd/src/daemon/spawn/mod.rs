@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, sync::atomic::AtomicU64};
 
-use ntp_proto::PeerNtsData;
+use ntp_proto::{PeerNtsData, ProtocolVersion};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
@@ -112,12 +112,14 @@ impl SpawnAction {
         id: PeerId,
         addr: SocketAddr,
         normalized_addr: NormalizedAddress,
+        protocol_version: ProtocolVersion,
         nts: Option<Box<PeerNtsData>>,
     ) -> SpawnAction {
         SpawnAction::Create(PeerCreateParameters {
             id,
             addr,
             normalized_addr,
+            protocol_version,
             nts,
         })
     }
@@ -128,6 +130,7 @@ pub struct PeerCreateParameters {
     pub id: PeerId,
     pub addr: SocketAddr,
     pub normalized_addr: NormalizedAddress,
+    pub protocol_version: ProtocolVersion,
     pub nts: Option<Box<PeerNtsData>>,
 }
 
@@ -147,6 +150,7 @@ impl PeerCreateParameters {
                 addr.port()
             ))
             .unwrap(),
+            protocol_version: ProtocolVersion::default(),
             nts: None,
         }
     }

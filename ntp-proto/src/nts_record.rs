@@ -12,7 +12,7 @@ use crate::{
     keyset::{DecodedServerCookie, KeySet},
     packet::AesSivCmac512,
     packet::{AesSivCmac256, Cipher},
-    peer::PeerNtsData,
+    peer::{PeerNtsData, ProtocolVersion},
 };
 
 #[derive(Debug)]
@@ -43,6 +43,8 @@ impl NtsRecord {
             NtsRecord::NewCookie { .. } => 5,
             NtsRecord::Server { .. } => 6,
             NtsRecord::Port { .. } => 7,
+            #[cfg(feature = "ntpv5")]
+            NtsRecord::DraftId { .. } => 0x4008,
             NtsRecord::Unknown { record_type, .. } => record_type & !0x8000,
         }
     }
@@ -57,6 +59,8 @@ impl NtsRecord {
             NtsRecord::NewCookie { .. } => false,
             NtsRecord::Server { critical, .. } => *critical,
             NtsRecord::Port { critical, .. } => *critical,
+            #[cfg(feature = "ntpv5")]
+            NtsRecord::DraftId { .. } => false,
             NtsRecord::Unknown { critical, .. } => *critical,
         }
     }
@@ -134,6 +138,10 @@ pub enum NtsRecord {
         critical: bool,
         data: Vec<u8>,
     },
+    #[cfg(feature = "ntpv5")]
+    DraftId {
+        data: Vec<u8>,
+    },
 }
 
 fn read_u16_be(reader: &mut impl Read) -> std::io::Result<u16> {
@@ -155,10 +163,19 @@ fn read_bytes_exact(reader: &mut impl Read, length: usize) -> std::io::Result<Ve
 }
 
 impl NtsRecord {
-    pub fn client_key_exchange_records() -> [NtsRecord; 3] {
+    pub fn client_key_exchange_records() -> [NtsRecord; if cfg!(feature = "ntpv5") { 4 } else { 3 }]
+    {
         [
+            #[cfg(feature = "ntpv5")]
+            NtsRecord::DraftId {
+                data: crate::packet::v5::DRAFT_VERSION.as_bytes().into(),
+            },
             NtsRecord::NextProtocol {
-                protocol_ids: vec![0],
+                protocol_ids: vec![
+                    #[cfg(feature = "ntpv5")]
+                    0x8001,
+                    0,
+                ],
             },
             NtsRecord::AeadAlgorithm {
                 critical: false,
@@ -256,6 +273,10 @@ impl NtsRecord {
                 critical,
                 port: read_u16_be(reader)?,
             },
+            #[cfg(feature = "ntpv5")]
+            0x4008 => NtsRecord::DraftId {
+                data: read_bytes_exact(reader, record_len)?,
+            },
             _ => NtsRecord::Unknown {
                 record_type,
                 critical,
@@ -325,6 +346,11 @@ impl NtsRecord {
             NtsRecord::Port { port, .. } => {
                 writer.write_all(&size_of_u16.to_be_bytes())?;
                 writer.write_all(&port.to_be_bytes())?;
+            }
+            #[cfg(feature = "ntpv5")]
+            NtsRecord::DraftId { data } => {
+                writer.write_all(&(data.len() as u16).to_be_bytes())?;
+                writer.write_all(data)?;
             }
         }
 
@@ -470,14 +496,30 @@ impl KeyExchangeError {
 pub enum ProtocolId {
     #[default]
     NtpV4 = 0,
+
+    #[cfg(feature = "ntpv5")]
+    NtpV5 = 0x8001,
 }
 
 impl ProtocolId {
-    const IN_ORDER_OF_PREFERENCE: &'static [Self] = &[Self::NtpV4];
+    const IN_ORDER_OF_PREFERENCE: &'static [Self] = &[
+        #[cfg(feature = "ntpv5")]
+        Self::NtpV5,
+        Self::NtpV4,
+    ];
 
     pub const fn try_deserialize(number: u16) -> Option<Self> {
         match number {
             0 => Some(Self::NtpV4),
+            _ => None,
+        }
+    }
+
+    #[cfg(feature = "ntpv5")]
+    pub const fn try_deserialize_v5(number: u16) -> Option<Self> {
+        match number {
+            0 => Some(Self::NtpV4),
+            0x8001 => Some(Self::NtpV5),
             _ => None,
         }
     }
@@ -494,15 +536,27 @@ pub enum AeadAlgorithm {
 
 impl AeadAlgorithm {
     // per https://www.rfc-editor.org/rfc/rfc8915.html#section-5.1
-    pub const fn c2s_context(self) -> [u8; 5] {
+    pub const fn c2s_context(self, protocol: ProtocolId) -> [u8; 5] {
         // The final octet SHALL be 0x00 for the C2S key
-        [0, 0, (self as u16 >> 8) as u8, self as u8, 0]
+        [
+            (protocol as u16 >> 8) as u8,
+            protocol as u8,
+            (self as u16 >> 8) as u8,
+            self as u8,
+            0,
+        ]
     }
 
     // per https://www.rfc-editor.org/rfc/rfc8915.html#section-5.1
-    pub const fn s2c_context(self) -> [u8; 5] {
+    pub const fn s2c_context(self, protocol: ProtocolId) -> [u8; 5] {
         // The final octet SHALL be 0x01 for the S2C key
-        [0, 0, (self as u16 >> 8) as u8, self as u8, 1]
+        [
+            (protocol as u16 >> 8) as u8,
+            protocol as u8,
+            (self as u16 >> 8) as u8,
+            self as u8,
+            1,
+        ]
     }
 
     pub const fn try_deserialize(number: u16) -> Option<AeadAlgorithm> {
@@ -518,12 +572,19 @@ impl AeadAlgorithm {
 
     fn extract_nts_keys<ConnectionData>(
         &self,
+        protocol: ProtocolId,
         tls_connection: &rustls::ConnectionCommon<ConnectionData>,
     ) -> Result<NtsKeys, rustls::Error> {
         match self {
             AeadAlgorithm::AeadAesSivCmac256 => {
-                let c2s = extract_nts_key::<Aes128SivAead, _>(tls_connection, self.c2s_context())?;
-                let s2c = extract_nts_key::<Aes128SivAead, _>(tls_connection, self.s2c_context())?;
+                let c2s = extract_nts_key::<Aes128SivAead, _>(
+                    tls_connection,
+                    self.c2s_context(protocol),
+                )?;
+                let s2c = extract_nts_key::<Aes128SivAead, _>(
+                    tls_connection,
+                    self.s2c_context(protocol),
+                )?;
 
                 let c2s = Box::new(AesSivCmac256::new(c2s));
                 let s2c = Box::new(AesSivCmac256::new(s2c));
@@ -531,8 +592,14 @@ impl AeadAlgorithm {
                 Ok(NtsKeys { c2s, s2c })
             }
             AeadAlgorithm::AeadAesSivCmac512 => {
-                let c2s = extract_nts_key::<Aes256SivAead, _>(tls_connection, self.c2s_context())?;
-                let s2c = extract_nts_key::<Aes256SivAead, _>(tls_connection, self.s2c_context())?;
+                let c2s = extract_nts_key::<Aes256SivAead, _>(
+                    tls_connection,
+                    self.c2s_context(protocol),
+                )?;
+                let s2c = extract_nts_key::<Aes256SivAead, _>(
+                    tls_connection,
+                    self.s2c_context(protocol),
+                )?;
 
                 let c2s = Box::new(AesSivCmac512::new(c2s));
                 let s2c = Box::new(AesSivCmac512::new(s2c));
@@ -566,6 +633,7 @@ fn extract_nts_key<T: KeySizeUser, ConnectionData>(
 struct PartialKeyExchangeData {
     remote: Option<String>,
     port: Option<u16>,
+    protocol: Option<ProtocolId>,
     algorithm: Option<AeadAlgorithm>,
     cookies: CookieStash,
 }
@@ -616,10 +684,16 @@ impl KeyExchangeResultDecoder {
                     Break(Ok(PartialKeyExchangeData {
                         remote: state.remote,
                         port: state.port,
+                        protocol: state.protocol,
                         algorithm: state.algorithm,
                         cookies: state.cookies,
                     }))
                 }
+            }
+            #[cfg(feature = "ntpv5")]
+            DraftId { .. } => {
+                tracing::warn!("Unexpected draft id");
+                Continue(state)
             }
             NewCookie { cookie_data } => {
                 state.cookies.store(cookie_data);
@@ -681,6 +755,7 @@ pub struct KeyExchangeResult {
     pub remote: String,
     pub port: u16,
     pub nts: Box<PeerNtsData>,
+    pub protocol_version: ProtocolVersion,
 }
 
 pub struct KeyExchangeClient {
@@ -722,11 +797,28 @@ impl KeyExchangeClient {
                     self.decoder = match self.decoder.step_with_slice(&buf[..n]) {
                         ControlFlow::Continue(decoder) => decoder,
                         ControlFlow::Break(Ok(result)) => {
-                            let algorithm = result.algorithm.unwrap_or_default();
+                            let algorithm = match result.algorithm {
+                                Some(algorithm) => algorithm,
+                                None => {
+                                    return ControlFlow::Break(Err(
+                                        KeyExchangeError::NoValidAlgorithm,
+                                    ))
+                                }
+                            };
+                            let protocol = match result.protocol {
+                                Some(protocol) => protocol,
+                                None => {
+                                    return ControlFlow::Break(Err(
+                                        KeyExchangeError::NoValidProtocol,
+                                    ))
+                                }
+                            };
 
                             tracing::debug!(?algorithm, "selected AEAD algorithm");
 
-                            let keys = match algorithm.extract_nts_keys(&self.tls_connection) {
+                            let keys = match algorithm
+                                .extract_nts_keys(protocol, &self.tls_connection)
+                            {
                                 Ok(keys) => keys,
                                 Err(e) => return ControlFlow::Break(Err(KeyExchangeError::Tls(e))),
                             };
@@ -739,6 +831,11 @@ impl KeyExchangeClient {
 
                             return ControlFlow::Break(Ok(KeyExchangeResult {
                                 remote: result.remote.unwrap_or(self.server_name),
+                                protocol_version: match protocol {
+                                    ProtocolId::NtpV4 => ProtocolVersion::V4,
+                                    #[cfg(feature = "ntpv5")]
+                                    ProtocolId::NtpV5 => ProtocolVersion::V5,
+                                },
                                 port: result.port.unwrap_or(Self::NTP_DEFAULT_PORT),
                                 nts,
                             }));
@@ -804,6 +901,9 @@ struct KeyExchangeServerDecoder {
     algorithm: AeadAlgorithm,
     /// Protocol (NTP version) that is supported by both client and server
     protocol: ProtocolId,
+
+    #[cfg(feature = "ntpv5")]
+    allow_v5: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -849,6 +949,13 @@ impl KeyExchangeServerDecoder {
 
                 Break(Ok(result))
             }
+            #[cfg(feature = "ntpv5")]
+            DraftId { data } => {
+                if data == crate::packet::v5::DRAFT_VERSION.as_bytes() {
+                    state.allow_v5 = true;
+                }
+                Continue(state)
+            }
             NewCookie { .. } => {
                 // > Clients MUST NOT send records of this type
                 //
@@ -883,6 +990,20 @@ impl KeyExchangeServerDecoder {
                 Continue(state)
             }
             NextProtocol { protocol_ids } => {
+                #[cfg(feature = "ntpv5")]
+                let selected = if state.allow_v5 {
+                    protocol_ids
+                        .iter()
+                        .copied()
+                        .find_map(ProtocolId::try_deserialize_v5)
+                } else {
+                    protocol_ids
+                        .iter()
+                        .copied()
+                        .find_map(ProtocolId::try_deserialize)
+                };
+
+                #[cfg(not(feature = "ntpv5"))]
                 let selected = protocol_ids
                     .iter()
                     .copied()
@@ -1006,7 +1127,9 @@ impl KeyExchangeServer {
 
                                 tracing::debug!(?algorithm, "selected AEAD algorithm");
 
-                                let keys = match algorithm.extract_nts_keys(&self.tls_connection) {
+                                let keys = match algorithm
+                                    .extract_nts_keys(protocol, &self.tls_connection)
+                                {
                                     Ok(keys) => keys,
                                     Err(e) => {
                                         return ControlFlow::Break(Err(KeyExchangeError::Tls(e)))
@@ -1115,6 +1238,7 @@ mod test {
         }
     }
 
+    #[cfg(not(feature = "ntpv5"))]
     #[test]
     fn test_client_key_exchange_records() {
         let mut buffer = Vec::with_capacity(1024);
@@ -1128,6 +1252,7 @@ mod test {
         );
     }
 
+    #[cfg(not(feature = "ntpv5"))]
     #[test]
     fn test_decode_client_key_exchange_records() {
         let bytes = [128, 1, 0, 2, 0, 0, 0, 4, 0, 4, 0, 17, 0, 15, 128, 0, 0, 0];
@@ -1890,6 +2015,9 @@ mod test {
         assert_eq!(result.port, 123);
 
         assert_eq!(result.nts.cookies.len(), 8);
+
+        #[cfg(feature = "ntpv5")]
+        assert_eq!(result.protocol_version, ProtocolVersion::V5);
     }
 
     #[test]

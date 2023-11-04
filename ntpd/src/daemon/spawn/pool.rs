@@ -1,5 +1,6 @@
 use std::{net::SocketAddr, ops::Deref};
 
+use ntp_proto::ProtocolVersion;
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tracing::warn;
@@ -69,8 +70,13 @@ impl PoolSpawner {
                 if let Some(addr) = self.known_ips.pop() {
                     let id = PeerId::new();
                     self.current_peers.push(PoolPeer { id, addr });
-                    let action =
-                        SpawnAction::create(id, addr, self.config.addr.deref().clone(), None);
+                    let action = SpawnAction::create(
+                        id,
+                        addr,
+                        self.config.addr.deref().clone(),
+                        ProtocolVersion::default(),
+                        None,
+                    );
                     tracing::debug!(?action, "intending to spawn new pool peer at");
 
                     action_tx

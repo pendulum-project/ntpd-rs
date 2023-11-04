@@ -462,13 +462,13 @@ impl<'a> ExtensionField<'a> {
         Self::encode_framing(
             w,
             ExtensionFieldTypeId::DraftIdentification,
-            length,
+            length - Self::HEADER_LENGTH,
             minimum_size,
             version,
         )?;
 
         Self::write_zeros(w, length - Self::HEADER_LENGTH)?;
-        Self::encode_padding(w, length, minimum_size)?;
+        Self::encode_padding(w, length - Self::HEADER_LENGTH, minimum_size)?;
 
         Ok(())
     }
