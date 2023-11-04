@@ -215,6 +215,8 @@ pub struct PeerSnapshot {
     pub stratum: u8,
     pub reference_id: ReferenceId,
 
+    pub protocol_version: ProtocolVersion,
+
     #[cfg(feature = "ntpv5")]
     pub bloom_filter: Option<BloomFilter>,
 }
@@ -272,6 +274,7 @@ impl PeerSnapshot {
             reference_id: peer.reference_id,
             reach: peer.reach,
             poll_interval: peer.last_poll_interval,
+            protocol_version: peer.protocol_version,
             #[cfg(feature = "ntpv5")]
             bloom_filter: peer.bloom_filter.full_filter().copied(),
         }
@@ -294,6 +297,7 @@ pub fn peer_snapshot() -> PeerSnapshot {
         our_id: ReferenceId::from_int(1),
         reach,
         poll_interval: crate::time_types::PollIntervalLimits::default().min,
+        protocol_version: Default::default(),
         #[cfg(feature = "ntpv5")]
         bloom_filter: None,
     }
@@ -401,6 +405,7 @@ impl Peer {
     ) -> Self {
         Self {
             nts: Some(nts),
+            protocol_version: ProtocolVersion::V4,
             ..Self::new(
                 our_addr,
                 source_addr,

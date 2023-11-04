@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "ntpv5")]
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
+#[cfg(feature = "ntpv5")]
+use crate::peer::ProtocolVersion;
 use crate::{
     config::SynchronizationConfig,
     identifiers::ReferenceId,
@@ -80,8 +82,8 @@ impl SystemSnapshot {
             for peer in used_peers {
                 if let Some(bf) = &peer.bloom_filter {
                     self.bloom_filter.add(bf);
-                } else {
-                    tracing::warn!("Using peer without a bloom filter!");
+                } else if let ProtocolVersion::V5 = peer.protocol_version {
+                    tracing::warn!("Using NTPv5 peer without a bloom filter!");
                 }
             }
             self.bloom_filter.add_id(&self.server_id);
@@ -137,6 +139,7 @@ mod tests {
                     reach: Default::default(),
                     stratum: 2,
                     reference_id: ReferenceId::NONE,
+                    protocol_version: Default::default(),
                     #[cfg(feature = "ntpv5")]
                     bloom_filter: None,
                 },
@@ -148,6 +151,7 @@ mod tests {
                     reach: Default::default(),
                     stratum: 3,
                     reference_id: ReferenceId::NONE,
+                    protocol_version: Default::default(),
                     #[cfg(feature = "ntpv5")]
                     bloom_filter: None,
                 },
