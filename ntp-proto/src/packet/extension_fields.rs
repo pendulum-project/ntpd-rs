@@ -108,13 +108,9 @@ impl<'a> std::fmt::Debug for ExtensionField<'a> {
             #[cfg(feature = "ntpv5")]
             Self::Padding(len) => f.debug_struct("Padding").field("length", &len).finish(),
             #[cfg(feature = "ntpv5")]
-            Self::ReferenceIdRequest(r) => {
-                f.debug_tuple("ReferenceIdRequest").field(r).finish()
-            }
+            Self::ReferenceIdRequest(r) => f.debug_tuple("ReferenceIdRequest").field(r).finish(),
             #[cfg(feature = "ntpv5")]
-            Self::ReferenceIdResponse(r) => {
-                f.debug_tuple("ReferenceIdResponse").field(r).finish()
-            }
+            Self::ReferenceIdResponse(r) => f.debug_tuple("ReferenceIdResponse").field(r).finish(),
             Self::Unknown {
                 type_id: typeid,
                 data,
