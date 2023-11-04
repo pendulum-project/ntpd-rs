@@ -7,7 +7,8 @@ use std::{
 
 use ntp_proto::{
     IgnoreReason, Measurement, NtpClock, NtpInstant, NtpTimestamp, Peer, PeerNtsData, PeerSnapshot,
-    PollError, SourceDefaultsConfig, SynchronizationConfig, SystemSnapshot, Update,
+    PollError, ProtocolVersion, SourceDefaultsConfig, SynchronizationConfig, SystemSnapshot,
+    Update,
 };
 use ntp_udp::{EnableTimestamps, InterfaceName, UdpSocket};
 use rand::{thread_rng, Rng};
@@ -295,6 +296,7 @@ where
         enable_timestamps: EnableTimestamps,
         network_wait_period: std::time::Duration,
         mut channels: PeerChannels,
+        protocol_version: ProtocolVersion,
         nts: Option<Box<PeerNtsData>>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(
@@ -333,10 +335,17 @@ where
                         source_addr,
                         local_clock_time,
                         config_snapshot,
+                        protocol_version,
                         nts,
                     )
                 } else {
-                    Peer::new(our_addr, source_addr, local_clock_time, config_snapshot)
+                    Peer::new(
+                        our_addr,
+                        source_addr,
+                        local_clock_time,
+                        config_snapshot,
+                        protocol_version,
+                    )
                 };
 
                 let poll_wait = tokio::time::sleep(std::time::Duration::default());
@@ -583,6 +592,7 @@ mod tests {
             source_addr,
             local_clock_time,
             *peer_defaults_config_receiver.borrow_and_update(),
+            ProtocolVersion::default(),
         );
 
         let process = PeerTask {

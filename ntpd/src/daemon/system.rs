@@ -547,6 +547,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
             self.enable_timestamps,
             NETWORK_WAIT_PERIOD,
             self.peer_channels.clone(),
+            params.protocol_version,
             params.nts.take(),
         );
 

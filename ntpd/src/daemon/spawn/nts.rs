@@ -84,6 +84,7 @@ impl NtsSpawner {
                                     PeerId::new(),
                                     address,
                                     self.config.address.deref().clone(),
+                                    ke.protocol_version,
                                     Some(ke.nts),
                                 ),
                             ))

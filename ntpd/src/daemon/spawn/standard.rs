@@ -1,5 +1,6 @@
 use std::{net::SocketAddr, ops::Deref};
 
+use ntp_proto::ProtocolVersion;
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tracing::warn;
@@ -74,6 +75,7 @@ impl StandardSpawner {
                     PeerId::new(),
                     addr,
                     self.config.address.deref().clone(),
+                    ProtocolVersion::default(),
                     None,
                 ),
             ))
