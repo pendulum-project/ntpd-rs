@@ -78,7 +78,7 @@ pub struct ReferenceIdRequest {
 }
 
 impl ReferenceIdRequest {
-    pub fn new(payload_len: u16, offset: u16) -> Option<Self> {
+    pub const fn new(payload_len: u16, offset: u16) -> Option<Self> {
         if payload_len % 4 != 0 {
             return None;
         }
@@ -93,10 +93,7 @@ impl ReferenceIdRequest {
         })
     }
 
-    pub fn to_response<'filter>(
-        &self,
-        filter: &'filter BloomFilter,
-    ) -> Option<ReferenceIdResponse<'filter>> {
+    pub fn to_response(self, filter: &BloomFilter) -> Option<ReferenceIdResponse> {
         let offset = usize::from(self.offset);
         let payload_len = usize::from(self.payload_len);
 
@@ -135,11 +132,11 @@ impl ReferenceIdRequest {
         })
     }
 
-    pub fn offset(&self) -> u16 {
+    pub const fn offset(&self) -> u16 {
         self.offset
     }
 
-    pub fn payload_len(&self) -> u16 {
+    pub const fn payload_len(&self) -> u16 {
         self.payload_len
     }
 }
@@ -150,7 +147,7 @@ pub struct ReferenceIdResponse<'a> {
 }
 
 impl<'a> ReferenceIdResponse<'a> {
-    pub fn new(bytes: &'a [u8]) -> Option<Self> {
+    pub const fn new(bytes: &'a [u8]) -> Option<Self> {
         if bytes.len() % 4 != 0 {
             return None;
         }
@@ -182,14 +179,14 @@ impl<'a> ReferenceIdResponse<'a> {
         Ok(())
     }
 
-    pub fn decode(bytes: &'a [u8]) -> Self {
+    pub const fn decode(bytes: &'a [u8]) -> Self {
         Self {
             bytes: Cow::Borrowed(bytes),
         }
     }
 
     pub fn bytes(&self) -> &[u8] {
-        &*self.bytes
+        &self.bytes
     }
 }
 

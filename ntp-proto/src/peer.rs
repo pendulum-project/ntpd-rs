@@ -84,7 +84,8 @@ pub struct Peer {
     protocol_version: ProtocolVersion,
 
     #[cfg(feature = "ntpv5")]
-    bloom_filter: Option<RemoteBloomFilter>,
+    // TODO we only need this if we run as a server
+    bloom_filter: RemoteBloomFilter,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -222,7 +223,7 @@ impl PeerSnapshot {
     pub fn accept_synchronization(
         &self,
         local_stratum: u8,
-        system: &SystemSnapshot,
+        #[cfg_attr(not(feature = "ntpv5"), allow(unused_variables))] system: &SystemSnapshot,
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
 
@@ -272,10 +273,7 @@ impl PeerSnapshot {
             reach: peer.reach,
             poll_interval: peer.last_poll_interval,
             #[cfg(feature = "ntpv5")]
-            bloom_filter: peer
-                .bloom_filter
-                .as_ref()
-                .and_then(|bf| bf.full_filter().copied()),
+            bloom_filter: peer.bloom_filter.full_filter().copied(),
         }
     }
 }
@@ -389,7 +387,7 @@ impl Peer {
             protocol_version: Default::default(), // TODO make this configurable
 
             #[cfg(feature = "ntpv5")]
-            bloom_filter: None,
+            bloom_filter: RemoteBloomFilter::new(16).expect("16 is a valid chunk size"),
         }
     }
 
@@ -471,10 +469,8 @@ impl Peer {
 
         #[cfg(feature = "ntpv5")]
         if let NtpHeader::V5(header) = packet.header() {
-            if let Some(ref mut filter) = self.bloom_filter {
-                let req_ef = filter.next_request(header.client_cookie);
-                packet.push_untrusted(ExtensionField::ReferenceIdRequest(req_ef));
-            }
+            let req_ef = self.bloom_filter.next_request(header.client_cookie);
+            packet.push_untrusted(ExtensionField::ReferenceIdRequest(req_ef));
         }
 
         // Write packet to buffer
@@ -629,20 +625,19 @@ impl Peer {
             }
 
             // Update our bloom filter
-            if let Some(filter) = &mut self.bloom_filter {
-                let bloom_responses =
-                    message
-                        .untrusted_extension_fields()
-                        .filter_map(|ef| match ef {
-                            ExtensionField::ReferenceIdResponse(response) => Some(response),
-                            _ => None,
-                        });
+            let bloom_responses = message
+                .untrusted_extension_fields()
+                .filter_map(|ef| match ef {
+                    ExtensionField::ReferenceIdResponse(response) => Some(response),
+                    _ => None,
+                });
 
-                for ref_id in bloom_responses {
-                    let result = filter.handle_response(header.client_cookie, ref_id);
-                    if let Err(err) = result {
-                        info!(?err, "Invalid ReferenceIdResponse from peer, ignoring...")
-                    }
+            for ref_id in bloom_responses {
+                let result = self
+                    .bloom_filter
+                    .handle_response(header.client_cookie, ref_id);
+                if let Err(err) = result {
+                    info!(?err, "Invalid ReferenceIdResponse from peer, ignoring...")
                 }
             }
         }
@@ -701,7 +696,7 @@ impl Peer {
             protocol_version: Default::default(),
 
             #[cfg(feature = "ntpv5")]
-            bloom_filter: Some(RemoteBloomFilter::new(16).unwrap()),
+            bloom_filter: RemoteBloomFilter::new(16).unwrap(),
         }
     }
 }
@@ -876,17 +871,18 @@ mod test {
 
         let mut peer = Peer::test_peer();
 
+        #[cfg_attr(not(feature = "ntpv5"), allow(unused_mut))]
+        let mut system = SystemSnapshot::default();
+
         #[cfg(feature = "ntpv5")]
-        let server_id = ServerId::new(&mut rand::thread_rng());
+        {
+            system.server_id = ServerId::new(&mut rand::thread_rng());
+        }
 
         macro_rules! accept {
             () => {{
                 let snapshot = PeerSnapshot::from_peer(&peer);
-                snapshot.accept_synchronization(
-                    16,
-                    #[cfg(feature = "ntpv5")]
-                    &server_id,
-                )
+                snapshot.accept_synchronization(16, &system)
             }};
         }
 
@@ -1358,19 +1354,14 @@ mod test {
         let clock = TestClock::default();
         let system = SystemSnapshot::default();
 
-        let mut server_system = SystemSnapshot::default();
-        server_system.bloom_filter = server_filter.clone();
+        let server_system = SystemSnapshot {
+            bloom_filter: server_filter,
+            ..Default::default()
+        };
 
         let mut tries = 0;
 
-        while client
-            .bloom_filter
-            .as_ref()
-            .unwrap()
-            .full_filter()
-            .is_none()
-            && tries < 100
-        {
+        while client.bloom_filter.full_filter().is_none() && tries < 100 {
             let mut buf = [0; 1024];
             let req = client
                 .generate_poll_message(&mut buf, system, &SourceDefaultsConfig::default())
@@ -1394,9 +1385,6 @@ mod test {
             tries += 1;
         }
 
-        assert_eq!(
-            Some(&server_filter),
-            client.bloom_filter.unwrap().full_filter()
-        );
+        assert_eq!(Some(&server_filter), client.bloom_filter.full_filter());
     }
 }
