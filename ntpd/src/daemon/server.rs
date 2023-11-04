@@ -482,7 +482,10 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         packet: NtpPacket<'_>,
         opt_cipher: Option<Box<dyn Cipher>>,
     ) -> Option<&'buf [u8]> {
-        let desired_size = Some(response_buf.len());
+        let desired_size = match packet.version() {
+            5 => Some(response_buf.len()),
+            _ => None,
+        };
         let mut cursor = Cursor::new(response_buf);
 
         let serialize_result = match opt_cipher {
@@ -1159,7 +1162,7 @@ mod tests {
         let response = server
             .handle_packet(
                 &serialized,
-                response_buf.as_mut_slice(),
+                &mut response_buf[..serialized.len()],
                 "127.0.0.1:9001".parse().unwrap(),
                 Some(timestamp),
             )
