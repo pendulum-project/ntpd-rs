@@ -1370,7 +1370,7 @@ mod test {
             let (req, _) = NtpPacket::deserialize(req, &NoCipher).unwrap();
             let response =
                 NtpPacket::timestamp_response(&server_system, req, NtpTimestamp::default(), &clock);
-            let resp_bytes = response.serialize_without_encryption_vec().unwrap();
+            let resp_bytes = response.serialize_without_encryption_vec(None).unwrap();
 
             client
                 .handle_incoming(
