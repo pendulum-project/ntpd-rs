@@ -467,7 +467,7 @@ impl Peer {
                     }
                 }
             }
-            None => match dbg!(self.protocol_version) {
+            None => match self.protocol_version {
                 ProtocolVersion::V4 => NtpPacket::poll_message(poll_interval),
                 #[cfg(feature = "ntpv5")]
                 ProtocolVersion::V4UpgradingToV5 { .. } => {
