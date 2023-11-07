@@ -9,18 +9,19 @@ on:
       - 'release/**'
   schedule:
     - cron: '0 4 * * *'
+  workflow_dispatch: {}
 
 jobs:
   test-freebsd:
     # see https://github.com/actions/runner/issues/385
     # use https://github.com/vmactions/freebsd-vm for now
     name: test on freebsd
-    runs-on: macos-12
-    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
       - name: test on freebsd
-        uses: vmactions/freebsd-vm@v0
+        uses: vmactions/freebsd-vm@d44bf830e7d850111d27aa120d468c905e5980f4
         with:
           usesh: true
           mem: 4096
@@ -28,9 +29,15 @@ jobs:
           prepare: |
             pkg install -y curl
             curl https://sh.rustup.rs -sSf --output rustup.sh
-            sh rustup.sh -y --profile default --default-toolchain stable # cannot use `--profile minimal` because of clippy
+            sh rustup.sh -y --profile minimal --default-toolchain stable
+            . "$HOME/.cargo/env"
+            rustup component add clippy
             echo "~~~~ rustc --version ~~~~"
-            $HOME/.cargo/bin/rustc --version
+            rustc --version
             echo "~~~~ freebsd-version ~~~~"
             freebsd-version
-            run: $HOME/.cargo/bin/cargo clippy --workspace --all-targets -- -D warnings && $HOME/.cargo/bin/cargo build --all-targets && $HOME/.cargo/bin/cargo test
+          run: |
+            . "$HOME/.cargo/env"
+            cargo clippy --workspace --all-targets -- -D warnings &&
+            cargo build --all-targets &&
+            cargo test
