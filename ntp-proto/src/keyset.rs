@@ -8,8 +8,8 @@ use aead::{generic_array::GenericArray, KeyInit};
 use crate::{
     nts_record::AeadAlgorithm,
     packet::{
-        AesSivCmac256, AesSivCmac512, Cipher, CipherHolder, CipherProvider, DecryptError,
-        EncryptResult, ExtensionField,
+        AesSivCmac256, AesSivCmac512, Cipher, CipherHolder, CipherProvider, CipherType,
+        DecryptError, EncryptResult, ExtensionField,
     },
 };
 
@@ -264,20 +264,24 @@ impl KeySet {
 }
 
 impl CipherProvider for KeySet {
-    fn get(&self, context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
-        let mut decoded = None;
+    fn get(&self, etype: CipherType, context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
+        match etype {
+            CipherType::Nts => {
+                let mut decoded = None;
 
-        for ef in context {
-            if let ExtensionField::NtsCookie(cookie) = ef {
-                if decoded.is_some() {
-                    // more than one cookie, abort
-                    return None;
+                for ef in context {
+                    if let ExtensionField::NtsCookie(cookie) = ef {
+                        if decoded.is_some() {
+                            // more than one cookie, abort
+                            return None;
+                        }
+                        decoded = Some(self.decode_cookie(cookie).ok()?);
+                    }
                 }
-                decoded = Some(self.decode_cookie(cookie).ok()?);
+
+                decoded.map(CipherHolder::DecodedServerCookie)
             }
         }
-
-        decoded.map(CipherHolder::DecodedServerCookie)
     }
 }
 

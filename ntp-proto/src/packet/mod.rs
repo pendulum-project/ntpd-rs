@@ -22,7 +22,7 @@ mod mac;
 pub mod v5;
 
 pub use crypto::{
-    AesSivCmac256, AesSivCmac512, Cipher, CipherHolder, CipherProvider, DecryptError,
+    AesSivCmac256, AesSivCmac512, Cipher, CipherHolder, CipherProvider, CipherType, DecryptError,
     EncryptResult, NoCipher,
 };
 pub use error::PacketParsingError;

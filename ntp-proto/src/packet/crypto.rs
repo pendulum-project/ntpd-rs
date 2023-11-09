@@ -59,9 +59,19 @@ pub struct EncryptResult {
     pub ciphertext_length: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CipherType {
+    Nts,
+}
+
 pub trait Cipher: Sync + Send + ZeroizeOnDrop + 'static {
+    /// Type of encryption for which the cipher provides
+    /// services.
+    fn etype(&self) -> CipherType;
+
     /// encrypts the plaintext present in the buffer
     ///
+    /// For NTS type ciphers it should:
     /// - encrypts `plaintext_length` bytes from the buffer
     /// - puts the nonce followed by the ciphertext into the buffer
     /// - returns the size of the nonce and ciphertext
@@ -98,38 +108,52 @@ impl<'a> AsRef<dyn Cipher> for CipherHolder<'a> {
 }
 
 pub trait CipherProvider {
-    fn get(&self, context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>>;
+    fn get(&self, etype: CipherType, context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>>;
 }
 
 pub struct NoCipher;
 
 impl CipherProvider for NoCipher {
-    fn get<'a>(&self, _context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
+    fn get<'a>(
+        &self,
+        _etype: CipherType,
+        _context: &[ExtensionField<'_>],
+    ) -> Option<CipherHolder<'_>> {
         None
     }
 }
 
 impl CipherProvider for dyn Cipher {
-    fn get(&self, _context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
-        Some(CipherHolder::Other(self))
+    fn get(&self, etype: CipherType, _context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
+        if self.etype() == etype {
+            Some(CipherHolder::Other(self))
+        } else {
+            None
+        }
     }
 }
 
 impl CipherProvider for Option<&dyn Cipher> {
-    fn get(&self, _context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
-        self.map(CipherHolder::Other)
+    fn get(&self, etype: CipherType, _context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
+        self.filter(|c| c.etype() == etype).map(CipherHolder::Other)
     }
 }
 
 impl<C: Cipher> CipherProvider for C {
-    fn get(&self, _context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
-        Some(CipherHolder::Other(self))
+    fn get(&self, etype: CipherType, _context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
+        if self.etype() == etype {
+            Some(CipherHolder::Other(self))
+        } else {
+            None
+        }
     }
 }
 
 impl<C: Cipher> CipherProvider for Option<C> {
-    fn get(&self, _context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
-        self.as_ref().map(|v| CipherHolder::Other(v))
+    fn get(&self, etype: CipherType, _context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
+        self.as_ref()
+            .filter(|c| c.etype() == etype)
+            .map(|v| CipherHolder::Other(v))
     }
 }
 
@@ -154,6 +178,10 @@ impl Drop for AesSivCmac256 {
 }
 
 impl Cipher for AesSivCmac256 {
+    fn etype(&self) -> CipherType {
+        CipherType::Nts
+    }
+
     fn encrypt(
         &self,
         buffer: &mut [u8],
@@ -228,6 +256,10 @@ impl Drop for AesSivCmac512 {
 }
 
 impl Cipher for AesSivCmac512 {
+    fn etype(&self) -> CipherType {
+        CipherType::Nts
+    }
+
     fn encrypt(
         &self,
         buffer: &mut [u8],
@@ -298,6 +330,10 @@ impl ZeroizeOnDrop for IdentityCipher {}
 
 #[cfg(test)]
 impl Cipher for IdentityCipher {
+    fn etype(&self) -> CipherType {
+        CipherType::Nts
+    }
+
     fn encrypt(
         &self,
         buffer: &mut [u8],

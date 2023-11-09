@@ -8,7 +8,11 @@ use crate::keyset::DecodedServerCookie;
 #[cfg(feature = "ntpv5")]
 use crate::packet::v5::extension_fields::{ReferenceIdRequest, ReferenceIdResponse};
 
-use super::{crypto::EncryptResult, error::ParsingError, Cipher, CipherProvider, Mac};
+use super::{
+    crypto::{CipherType, EncryptResult},
+    error::ParsingError,
+    Cipher, CipherProvider, Mac,
+};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum ExtensionFieldTypeId {
@@ -597,7 +601,7 @@ impl<'a> ExtensionFieldData<'a> {
         version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
         if !self.authenticated.is_empty() || !self.encrypted.is_empty() {
-            let cipher = match cipher.get(&self.authenticated) {
+            let cipher = match cipher.get(CipherType::Nts, &self.authenticated) {
                 Some(cipher) => cipher,
                 None => return Err(std::io::Error::new(std::io::ErrorKind::Other, "no cipher")),
             };
@@ -664,7 +668,7 @@ impl<'a> ExtensionFieldData<'a> {
                     let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)
                         .map_err(|e| e.generalize())?;
 
-                    let cipher = match cipher.get(&efdata.untrusted) {
+                    let cipher = match cipher.get(CipherType::Nts, &efdata.untrusted) {
                         Some(cipher) => cipher,
                         None => {
                             efdata.untrusted.push(InvalidNtsEncryptedField);
