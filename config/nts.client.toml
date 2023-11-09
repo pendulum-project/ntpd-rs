@@ -3,7 +3,7 @@
 log-level = "info"
 observation-path = "/var/run/ntpd-rs/observe"
 
-# See CONFIGURATION.md for how to set up certificates
+# See https://docs.ntpd-rs.pendulum-project.org/man/ntp.toml.5/ on how to set up certificates
 [[source]]
 mode = "nts"
 address =  "localhost:4460"
