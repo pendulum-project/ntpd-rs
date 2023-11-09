@@ -76,6 +76,7 @@ impl PoolSpawner {
                         self.config.addr.deref().clone(),
                         ProtocolVersion::default(),
                         None,
+                        None,
                     );
                     tracing::debug!(?action, "intending to spawn new pool peer at");
 

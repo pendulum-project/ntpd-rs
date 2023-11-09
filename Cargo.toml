@@ -51,6 +51,7 @@ libc = "0.2.145"
 tokio = "1.28"
 toml = ">=0.5.0,<0.8.0"
 async-trait = "0.1.22"
+hex = "0.4.3"
 
 # TLS
 rustls = "0.21.0"
@@ -60,6 +61,7 @@ rustls-native-certs = "0.6.0"
 # crypto
 aead = "0.5.0"
 aes-siv = "0.7.0"
+ed25519-dalek = { version = "2.0.0", features = ["rand_core"] }
 # Note: md5 is needed to calculate ReferenceIDs for IPv6 addresses per RFC5905
 md-5 = "0.10.0"
 zeroize = "1.5"

@@ -6,6 +6,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use ntp_proto::Ed25519Public;
 use rustls::Certificate;
 use serde::{de, Deserialize, Deserializer};
 
@@ -15,6 +16,21 @@ use super::super::keyexchange::certificates_from_file;
 #[serde(deny_unknown_fields)]
 pub struct StandardPeerConfig {
     pub address: NtpAddress,
+}
+
+#[derive(Debug, PartialEq, Eq, Deserialize, Clone)]
+pub struct Ed25519PeerConfig {
+    pub address: NtpAddress,
+    #[serde(deserialize_with = "deserialize_ed25519_public")]
+    pub key: Ed25519Public,
+}
+
+fn deserialize_ed25519_public<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Ed25519Public, D::Error> {
+    let key = String::deserialize(deserializer)?;
+    let key_bytes = hex::decode(key).unwrap();
+    Ok(Ed25519Public::new(key_bytes.try_into().unwrap()).unwrap())
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
@@ -70,6 +86,8 @@ pub enum PeerConfig {
     Standard(StandardPeerConfig),
     #[serde(rename = "nts")]
     Nts(NtsPeerConfig),
+    #[serde(rename = "ed")]
+    Ed(Ed25519PeerConfig),
     #[serde(rename = "pool")]
     Pool(PoolPeerConfig),
     // Consul(ConsulPeerConfig),
@@ -311,6 +329,7 @@ mod tests {
         match config {
             PeerConfig::Standard(c) => c.address.to_string(),
             PeerConfig::Nts(c) => c.address.to_string(),
+            PeerConfig::Ed(c) => c.address.to_string(),
             PeerConfig::Pool(c) => c.addr.to_string(),
         }
     }

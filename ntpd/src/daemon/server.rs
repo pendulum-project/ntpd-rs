@@ -443,15 +443,29 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     );
                     (response, Some(cookie.s2c))
                 }
-                None => (
-                    NtpPacket::timestamp_response(
+                None => {
+                    let cipher = if packet.has_valid_ed25519_request() {
+                        self.config
+                            .ed25519_key
+                            .as_ref()
+                            .map(|c| Box::new(c.clone()) as Box<dyn Cipher>)
+                    } else {
+                        None
+                    };
+
+                    let mut response_packet = NtpPacket::timestamp_response(
                         &self.system,
                         packet,
                         recv_timestamp,
                         &self.clock,
-                    ),
-                    None,
-                ),
+                    );
+
+                    if cipher.is_some() {
+                        response_packet.upgrade_to_authenticated();
+                    }
+
+                    (response_packet, cipher)
+                }
             },
 
             AcceptResult::CryptoNak { packet } => (NtpPacket::nts_nak_response(packet), None),
@@ -694,6 +708,7 @@ mod tests {
             allowlist: FilterList::default_allowlist(),
             rate_limiting_cutoff: Duration::from_secs(0),
             rate_limiting_cache_size: 32,
+            ed25519_key: None,
         };
         let (_, mut system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
@@ -722,6 +737,7 @@ mod tests {
             allowlist: FilterList::new(&["127.0.0.0/24".parse().unwrap()], FilterAction::Ignore),
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
+            ed25519_key: None,
         };
         let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
@@ -768,6 +784,7 @@ mod tests {
             allowlist: FilterList::new(&["128.0.0.0/24".parse().unwrap()], FilterAction::Deny),
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
+            ed25519_key: None,
         };
         let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
@@ -815,6 +832,7 @@ mod tests {
             allowlist: FilterList::new(&["128.0.0.0/24".parse().unwrap()], FilterAction::Ignore),
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
+            ed25519_key: None,
         };
         let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
@@ -856,6 +874,7 @@ mod tests {
             allowlist: FilterList::default_allowlist(),
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
+            ed25519_key: None,
         };
         let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
@@ -902,6 +921,7 @@ mod tests {
             allowlist: FilterList::default_allowlist(),
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
+            ed25519_key: None,
         };
         let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
@@ -949,6 +969,7 @@ mod tests {
             allowlist: FilterList::default_allowlist(),
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 32,
+            ed25519_key: None,
         };
         let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
@@ -990,6 +1011,7 @@ mod tests {
             allowlist: FilterList::default_allowlist(),
             rate_limiting_cutoff: Duration::from_millis(100),
             rate_limiting_cache_size: 32,
+            ed25519_key: None,
         };
         let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};
@@ -1068,6 +1090,7 @@ mod tests {
             allowlist: FilterList::default_allowlist(),
             rate_limiting_cutoff: Duration::default(),
             rate_limiting_cache_size: Default::default(),
+            ed25519_key: None,
         };
         let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
         let clock = TestClock {};

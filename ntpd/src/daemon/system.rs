@@ -1,5 +1,5 @@
 use super::{
-    config::{ClockConfig, NormalizedAddress, PeerConfig, ServerConfig},
+    config::{ClockConfig, NormalizedAddress, PeerConfig, ServerConfig, StandardPeerConfig},
     peer::{MsgForSystem, PeerChannels},
     peer::{PeerTask, Wait},
     server::{ServerStats, ServerTask},
@@ -106,6 +106,20 @@ pub async fn spawn(
             PeerConfig::Standard(cfg) => {
                 system
                     .add_spawner(StandardSpawner::new(cfg.clone(), NETWORK_WAIT_PERIOD))
+                    .map_err(|e| {
+                        tracing::error!("Could not spawn peer: {}", e);
+                        std::io::Error::new(std::io::ErrorKind::Other, e)
+                    })?;
+            }
+            PeerConfig::Ed(cfg) => {
+                system
+                    .add_spawner(StandardSpawner::new_ed25519(
+                        StandardPeerConfig {
+                            address: cfg.address.clone(),
+                        },
+                        NETWORK_WAIT_PERIOD,
+                        cfg.key.clone(),
+                    ))
                     .map_err(|e| {
                         tracing::error!("Could not spawn peer: {}", e);
                         std::io::Error::new(std::io::ErrorKind::Other, e)
@@ -549,6 +563,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
             self.peer_channels.clone(),
             params.protocol_version,
             params.nts.take(),
+            params.ed25519_pk.take(),
         );
 
         // Don't care if there is no receiver

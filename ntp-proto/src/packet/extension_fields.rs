@@ -3,7 +3,7 @@ use std::{
     io::{Cursor, Write},
 };
 
-use crate::keyset::DecodedServerCookie;
+use crate::{keyset::DecodedServerCookie, NtpTimestamp};
 
 #[cfg(feature = "ntpv5")]
 use crate::packet::v5::extension_fields::{ReferenceIdRequest, ReferenceIdResponse};
@@ -31,6 +31,8 @@ enum ExtensionFieldTypeId {
     ReferenceIdRequest,
     #[cfg(feature = "ntpv5")]
     ReferenceIdResponse,
+    Ed25519Request,
+    Ed25519Response,
 }
 
 impl ExtensionFieldTypeId {
@@ -48,6 +50,8 @@ impl ExtensionFieldTypeId {
             0xF503 => Self::ReferenceIdRequest,
             #[cfg(feature = "ntpv5")]
             0xF504 => Self::ReferenceIdResponse,
+            0xFE00 => Self::Ed25519Request,
+            0xFE01 => Self::Ed25519Response,
             _ => Self::Unknown { type_id },
         }
     }
@@ -66,6 +70,8 @@ impl ExtensionFieldTypeId {
             ExtensionFieldTypeId::ReferenceIdRequest => 0xF503,
             #[cfg(feature = "ntpv5")]
             ExtensionFieldTypeId::ReferenceIdResponse => 0xF504,
+            ExtensionFieldTypeId::Ed25519Request => 0xFE00,
+            ExtensionFieldTypeId::Ed25519Response => 0xFE01,
             ExtensionFieldTypeId::Unknown { type_id } => type_id,
         }
     }
@@ -87,6 +93,9 @@ pub enum ExtensionField<'a> {
     ReferenceIdRequest(super::v5::extension_fields::ReferenceIdRequest),
     #[cfg(feature = "ntpv5")]
     ReferenceIdResponse(super::v5::extension_fields::ReferenceIdResponse<'a>),
+    Ed25519Request {
+        placeholder_size: u16,
+    },
     Unknown {
         type_id: u16,
         data: Cow<'a, [u8]>,
@@ -115,6 +124,10 @@ impl<'a> std::fmt::Debug for ExtensionField<'a> {
             Self::ReferenceIdRequest(r) => f.debug_tuple("ReferenceIdRequest").field(r).finish(),
             #[cfg(feature = "ntpv5")]
             Self::ReferenceIdResponse(r) => f.debug_tuple("ReferenceIdResponse").field(r).finish(),
+            Self::Ed25519Request { placeholder_size } => f
+                .debug_struct("Ed25519Request")
+                .field("placeholder_size", placeholder_size)
+                .finish(),
             Self::Unknown {
                 type_id: typeid,
                 data,
@@ -158,6 +171,7 @@ impl<'a> ExtensionField<'a> {
             ReferenceIdRequest(req) => ReferenceIdRequest(req),
             #[cfg(feature = "ntpv5")]
             ReferenceIdResponse(res) => ReferenceIdResponse(res.into_owned()),
+            Ed25519Request { placeholder_size } => Ed25519Request { placeholder_size },
         }
     }
 
@@ -191,6 +205,9 @@ impl<'a> ExtensionField<'a> {
             ReferenceIdRequest(req) => req.serialize(w),
             #[cfg(feature = "ntpv5")]
             ReferenceIdResponse(res) => res.serialize(w),
+            Ed25519Request { placeholder_size } => {
+                Self::encode_ed25519_request(w, *placeholder_size, minimum_size, version)
+            }
         }
     }
 
@@ -325,6 +342,27 @@ impl<'a> ExtensionField<'a> {
         Ok(())
     }
 
+    fn encode_ed25519_request<W: std::io::Write>(
+        w: &mut W,
+        placeholder_size: u16,
+        minimum_size: u16,
+        version: ExtensionHeaderVersion,
+    ) -> std::io::Result<()> {
+        Self::encode_framing(
+            w,
+            ExtensionFieldTypeId::Ed25519Request,
+            placeholder_size as usize,
+            minimum_size,
+            version,
+        )?;
+
+        Self::write_zeros(w, placeholder_size as usize)?;
+
+        Self::encode_padding(w, placeholder_size as usize, minimum_size)?;
+
+        Ok(())
+    }
+
     fn encode_unknown<W: std::io::Write>(
         w: &mut W,
         type_id: u16,
@@ -347,10 +385,29 @@ impl<'a> ExtensionField<'a> {
         Ok(())
     }
 
+    fn encode_ed25519(
+        w: &mut Cursor<&mut [u8]>,
+        cipher: &(impl Cipher + ?Sized),
+        version: ExtensionHeaderVersion,
+    ) -> std::io::Result<()> {
+        let header_start = w.position();
+
+        Self::encode_framing(w, ExtensionFieldTypeId::Ed25519Response, 168, 4, version)?;
+
+        let (packet_so_far, cur_extension_field) = w.get_mut().split_at_mut(header_start as usize);
+        cipher.encrypt(&mut cur_extension_field[4..172], 0, packet_so_far)?;
+
+        w.set_position(w.position() + 168);
+
+        Self::encode_padding(w, 168, 4)?;
+
+        Ok(())
+    }
+
     fn encode_encrypted(
         w: &mut Cursor<&mut [u8]>,
         fields_to_encrypt: &[ExtensionField],
-        cipher: &dyn Cipher,
+        cipher: &(impl Cipher + ?Sized),
         version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
         let padding = [0; 4];
@@ -507,6 +564,14 @@ impl<'a> ExtensionField<'a> {
         }
     }
 
+    fn decode_ed25519_request(
+        message: &'a [u8],
+    ) -> Result<Self, ParsingError<std::convert::Infallible>> {
+        Ok(ExtensionField::Ed25519Request {
+            placeholder_size: message.len() as u16,
+        })
+    }
+
     fn decode_unknown(
         type_id: u16,
         message: &'a [u8],
@@ -557,6 +622,7 @@ impl<'a> ExtensionField<'a> {
             TypeId::ReferenceIdRequest => Ok(ReferenceIdRequest::decode(message)?.into()),
             #[cfg(feature = "ntpv5")]
             TypeId::ReferenceIdResponse => Ok(ReferenceIdResponse::decode(message).into()),
+            TypeId::Ed25519Request => EF::decode_ed25519_request(message),
             type_id => EF::decode_unknown(type_id.to_type_id(), message),
         }
     }
@@ -597,15 +663,10 @@ impl<'a> ExtensionFieldData<'a> {
     pub(super) fn serialize(
         &self,
         w: &mut Cursor<&mut [u8]>,
-        cipher: &(impl CipherProvider + ?Sized),
+        cipher: &(impl Cipher + ?Sized),
         version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
         if !self.authenticated.is_empty() || !self.encrypted.is_empty() {
-            let cipher = match cipher.get(CipherType::Nts, &self.authenticated) {
-                Some(cipher) => cipher,
-                None => return Err(std::io::Error::new(std::io::ErrorKind::Other, "no cipher")),
-            };
-
             // the authenticated extension fields are always followed by the encrypted extension
             // field. We don't (currently) encode a MAC, so the minimum size per RFC 7822 is 16 octecs
             let minimum_size = 16;
@@ -613,11 +674,23 @@ impl<'a> ExtensionFieldData<'a> {
             for field in &self.authenticated {
                 field.serialize(w, minimum_size, version)?;
             }
-
-            // RFC 8915, section 5.5: contrary to the RFC 7822 requirement that fields have a minimum length of 16 or 28 octets,
-            // encrypted extension fields MAY be arbitrarily short (but still MUST be a multiple of 4 octets in length)
-            // hence we don't provide a minimum size here
-            ExtensionField::encode_encrypted(w, &self.encrypted, cipher.as_ref(), version)?;
+            match cipher.etype() {
+                CipherType::None => {
+                    return Err(std::io::Error::new(std::io::ErrorKind::Other, "no cipher"))
+                }
+                CipherType::Nts => {
+                    ExtensionField::encode_encrypted(w, &self.encrypted, cipher, version)?;
+                }
+                CipherType::Ed25519 => {
+                    if !self.encrypted.is_empty() {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            "encrypted extensions not support for Ed25519 signing",
+                        ));
+                    }
+                    ExtensionField::encode_ed25519(w, cipher, version)?;
+                }
+            }
         }
 
         // per RFC 7822, section 7.5.1.4.
@@ -642,6 +715,7 @@ impl<'a> ExtensionFieldData<'a> {
         header_size: usize,
         cipher: &impl CipherProvider,
         version: ExtensionHeaderVersion,
+        transmit_timestamp: NtpTimestamp,
     ) -> Result<DeserializedExtensionField<'a>, ParsingError<InvalidNtsExtensionField<'a>>> {
         use ExtensionField::InvalidNtsEncryptedField;
 
@@ -664,6 +738,41 @@ impl<'a> ExtensionFieldData<'a> {
             let (offset, field) = field.map_err(|e| e.generalize())?;
             size = offset + field.wire_length(version);
             match field.type_id {
+                ExtensionFieldTypeId::Ed25519Response => {
+                    let cipher = match cipher.get(CipherType::Ed25519, &efdata.untrusted) {
+                        Some(cipher) => cipher,
+                        None => {
+                            // Ignore ed25519 signatures if we aren't configured to verify them
+                            println!("missing cipher");
+                            continue;
+                        }
+                    };
+
+                    let Some(nonce) = field.message_bytes.get(0..104) else {
+                        is_valid_nts = false;
+                        continue;
+                    };
+                    let Some(ciphertext) = field.message_bytes.get(104..168) else {
+                        is_valid_nts = false;
+                        continue;
+                    };
+
+                    if cipher
+                        .as_ref()
+                        .decrypt(
+                            nonce,
+                            ciphertext,
+                            &data[..header_size + offset],
+                            transmit_timestamp,
+                        )
+                        .is_err()
+                    {
+                        is_valid_nts = false;
+                        continue;
+                    }
+
+                    efdata.authenticated.append(&mut efdata.untrusted);
+                }
                 ExtensionFieldTypeId::NtsEncryptedField => {
                     let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)
                         .map_err(|e| e.generalize())?;
@@ -681,6 +790,7 @@ impl<'a> ExtensionFieldData<'a> {
                         cipher.as_ref(),
                         &data[..header_size + offset],
                         version,
+                        transmit_timestamp,
                     ) {
                         Ok(encrypted_fields) => encrypted_fields,
                         Err(e) => {
@@ -770,8 +880,9 @@ impl<'a> RawEncryptedField<'a> {
         cipher: &dyn Cipher,
         aad: &[u8],
         version: ExtensionHeaderVersion,
+        transmit_timestamp: NtpTimestamp,
     ) -> Result<Vec<ExtensionField<'a>>, ParsingError<ExtensionField<'a>>> {
-        let plaintext = match cipher.decrypt(self.nonce, self.ciphertext, aad) {
+        let plaintext = match cipher.decrypt(self.nonce, self.ciphertext, aad, transmit_timestamp) {
             Ok(plain) => plain,
             Err(_) => {
                 return Err(ParsingError::DecryptError(
@@ -1248,7 +1359,12 @@ mod tests {
             ) => {
                 let raw = RawEncryptedField::from_message_bytes(message_bytes).unwrap();
                 let decrypted_fields = raw
-                    .decrypt(&cipher, &[], ExtensionHeaderVersion::V4)
+                    .decrypt(
+                        &cipher,
+                        &[],
+                        ExtensionHeaderVersion::V4,
+                        NtpTimestamp::default(),
+                    )
                     .unwrap();
                 assert_eq!(decrypted_fields, fields_to_encrypt);
             }
@@ -1367,8 +1483,14 @@ mod tests {
 
         let cipher = crate::packet::crypto::NoCipher;
 
-        let result = ExtensionFieldData::deserialize(slice, 0, &cipher, ExtensionHeaderVersion::V4)
-            .unwrap_err();
+        let result = ExtensionFieldData::deserialize(
+            slice,
+            0,
+            &cipher,
+            ExtensionHeaderVersion::V4,
+            NtpTimestamp::default(),
+        )
+        .unwrap_err();
 
         let ParsingError::DecryptError(InvalidNtsExtensionField {
             efdata,
@@ -1411,8 +1533,14 @@ mod tests {
         let c2s = [0; 32];
         let cipher = AesSivCmac256::new(c2s.into());
 
-        let result = ExtensionFieldData::deserialize(slice, 0, &cipher, ExtensionHeaderVersion::V4)
-            .unwrap_err();
+        let result = ExtensionFieldData::deserialize(
+            slice,
+            0,
+            &cipher,
+            ExtensionHeaderVersion::V4,
+            NtpTimestamp::default(),
+        )
+        .unwrap_err();
 
         let ParsingError::DecryptError(InvalidNtsExtensionField {
             efdata,
@@ -1447,14 +1575,24 @@ mod tests {
 
         let mut w = [0u8; 256];
         let mut cursor = Cursor::new(w.as_mut_slice());
-        data.serialize(&mut cursor, &keyset, ExtensionHeaderVersion::V4)
-            .unwrap();
+        data.serialize(
+            &mut cursor,
+            decoded_server_cookie.c2s.as_ref(),
+            ExtensionHeaderVersion::V4,
+        )
+        .unwrap();
 
         let n = cursor.position() as usize;
         let slice = &w.as_slice()[..n];
 
-        let result =
-            ExtensionFieldData::deserialize(slice, 0, &keyset, ExtensionHeaderVersion::V4).unwrap();
+        let result = ExtensionFieldData::deserialize(
+            slice,
+            0,
+            &keyset,
+            ExtensionHeaderVersion::V4,
+            NtpTimestamp::default(),
+        )
+        .unwrap();
 
         let DeserializedExtensionField {
             efdata,

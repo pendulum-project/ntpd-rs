@@ -7,9 +7,12 @@ use crate::{
     config::SourceDefaultsConfig,
     cookiestash::CookieStash,
     identifiers::ReferenceId,
-    packet::{Cipher, NtpAssociationMode, NtpLeapIndicator, NtpPacket, RequestIdentifier},
+    packet::{
+        Cipher, Ed25519Public, NtpAssociationMode, NtpLeapIndicator, NtpPacket, RequestIdentifier,
+    },
     system::SystemSnapshot,
     time_types::{NtpDuration, NtpInstant, NtpTimestamp, PollInterval},
+    NoCipher,
 };
 use serde::{Deserialize, Serialize};
 use std::{io::Cursor, net::SocketAddr};
@@ -56,6 +59,8 @@ impl std::fmt::Debug for PeerNtsData {
 #[derive(Debug)]
 pub struct Peer {
     nts: Option<Box<PeerNtsData>>,
+
+    ed25519_pk: Option<Ed25519Public>,
 
     // Poll interval dictated by unreachability backoff
     backoff_interval: PollInterval,
@@ -372,6 +377,7 @@ impl Peer {
     ) -> Self {
         Self {
             nts: None,
+            ed25519_pk: None,
 
             last_poll_interval: peer_defaults_config.poll_interval_limits.min,
             backoff_interval: peer_defaults_config.poll_interval_limits.min,
@@ -417,6 +423,27 @@ impl Peer {
         }
     }
 
+    #[instrument]
+    pub fn new_ed25519(
+        our_addr: SocketAddr,
+        source_addr: SocketAddr,
+        local_clock_time: NtpInstant,
+        peer_defaults_config: SourceDefaultsConfig,
+        protocol_version: ProtocolVersion,
+        ed25519_pk: Ed25519Public,
+    ) -> Self {
+        Self {
+            ed25519_pk: Some(ed25519_pk),
+            ..Self::new(
+                our_addr,
+                source_addr,
+                local_clock_time,
+                peer_defaults_config,
+                protocol_version,
+            )
+        }
+    }
+
     pub fn update_config(&mut self, peer_defaults_config: SourceDefaultsConfig) {
         self.peer_defaults_config = peer_defaults_config;
     }
@@ -444,7 +471,7 @@ impl Peer {
         self.tries = self.tries.saturating_add(1);
 
         let poll_interval = self.current_poll_interval(system);
-        let (mut packet, identifier) = match &mut self.nts {
+        let (mut packet, mut identifier) = match &mut self.nts {
             Some(nts) => {
                 let cookie = nts.cookies.get().ok_or_else(|| {
                     std::io::Error::new(std::io::ErrorKind::Other, NtsError::OutOfCookies)
@@ -477,6 +504,10 @@ impl Peer {
                 ProtocolVersion::V5 => NtpPacket::poll_message_v5(poll_interval),
             },
         };
+
+        if self.ed25519_pk.is_some() {
+            packet.extend_with_ed25519_request(&mut identifier);
+        }
         self.current_request_identifier = Some((identifier, NtpInstant::now() + POLL_WINDOW));
 
         // Ensure we don't spam the remote with polls if it is not reachable
@@ -490,11 +521,11 @@ impl Peer {
 
         // Write packet to buffer
         let mut cursor = Cursor::new(buf);
-        packet.serialize(
-            &mut cursor,
-            &self.nts.as_ref().map(|nts| nts.c2s.as_ref()),
-            None,
-        )?;
+        if let Some(nts) = self.nts.as_ref() {
+            packet.serialize(&mut cursor, nts.c2s.as_ref(), None)?;
+        } else {
+            packet.serialize(&mut cursor, &NoCipher, None)?;
+        }
         let used = cursor.position();
         let result = &cursor.into_inner()[..used as usize];
 
@@ -513,14 +544,20 @@ impl Peer {
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
     ) -> Result<Update, IgnoreReason> {
-        let message =
-            match NtpPacket::deserialize(message, &self.nts.as_ref().map(|nts| nts.s2c.as_ref())) {
-                Ok((packet, _)) => packet,
-                Err(e) => {
-                    warn!("received invalid packet: {}", e);
-                    return Err(IgnoreReason::InvalidPacket);
-                }
-            };
+        let message = match NtpPacket::deserialize(
+            message,
+            &self
+                .nts
+                .as_ref()
+                .map(|nts| nts.s2c.as_ref())
+                .or(self.ed25519_pk.as_ref().map(|c| c as &dyn Cipher)),
+        ) {
+            Ok((packet, _)) => packet,
+            Err(e) => {
+                warn!("received invalid packet: {}", e);
+                return Err(IgnoreReason::InvalidPacket);
+            }
+        };
 
         if message.version() != self.protocol_version.expected_incoming_version() {
             return Err(IgnoreReason::InvalidVersion);
@@ -553,7 +590,10 @@ impl Peer {
             }
         }
 
-        if !message.valid_server_response(request_identifier, self.nts.is_some()) {
+        if !message.valid_server_response(
+            request_identifier,
+            self.nts.is_some() || self.ed25519_pk.is_some(),
+        ) {
             // Packets should be a response to a previous request from us,
             // if not just ignore. Note that this might also happen when
             // we reset between sending the request and receiving the response.
@@ -701,6 +741,7 @@ impl Peer {
 
         Peer {
             nts: None,
+            ed25519_pk: None,
 
             last_poll_interval: PollInterval::default(),
             backoff_interval: PollInterval::default(),

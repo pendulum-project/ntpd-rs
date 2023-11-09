@@ -11,6 +11,7 @@ use crate::{
         AesSivCmac256, AesSivCmac512, Cipher, CipherHolder, CipherProvider, CipherType,
         DecryptError, EncryptResult, ExtensionField,
     },
+    NtpTimestamp,
 };
 
 pub struct DecodedServerCookie {
@@ -210,7 +211,7 @@ impl KeySet {
 
         let nonce = &cookie[6..22];
         let ciphertext = cookie[22..].get(..cipher_text_length).ok_or(DecryptError)?;
-        let plaintext = key.decrypt(nonce, ciphertext, &[])?;
+        let plaintext = key.decrypt(nonce, ciphertext, &[], NtpTimestamp::default())?;
 
         let [b0, b1, ref key_bytes @ ..] = plaintext[..] else {
             return Err(DecryptError);
@@ -266,6 +267,7 @@ impl KeySet {
 impl CipherProvider for KeySet {
     fn get(&self, etype: CipherType, context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
         match etype {
+            CipherType::None => None,
             CipherType::Nts => {
                 let mut decoded = None;
 
@@ -281,6 +283,7 @@ impl CipherProvider for KeySet {
 
                 decoded.map(CipherHolder::DecodedServerCookie)
             }
+            CipherType::Ed25519 => None,
         }
     }
 }

@@ -370,6 +370,7 @@ impl Config {
         for peer in &self.sources {
             match peer {
                 PeerConfig::Standard(_) => count += 1,
+                PeerConfig::Ed(_) => count += 1,
                 PeerConfig::Nts(_) => count += 1,
                 PeerConfig::Pool(config) => count += config.max_peers,
             }

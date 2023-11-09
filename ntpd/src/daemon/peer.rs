@@ -6,9 +6,9 @@ use std::{
 };
 
 use ntp_proto::{
-    IgnoreReason, Measurement, NtpClock, NtpInstant, NtpTimestamp, Peer, PeerNtsData, PeerSnapshot,
-    PollError, ProtocolVersion, SourceDefaultsConfig, SynchronizationConfig, SystemSnapshot,
-    Update,
+    Ed25519Public, IgnoreReason, Measurement, NtpClock, NtpInstant, NtpTimestamp, Peer,
+    PeerNtsData, PeerSnapshot, PollError, ProtocolVersion, SourceDefaultsConfig,
+    SynchronizationConfig, SystemSnapshot, Update,
 };
 use ntp_udp::{EnableTimestamps, InterfaceName, UdpSocket};
 use rand::{thread_rng, Rng};
@@ -298,6 +298,7 @@ where
         mut channels: PeerChannels,
         protocol_version: ProtocolVersion,
         nts: Option<Box<PeerNtsData>>,
+        ed25519_pk: Option<Ed25519Public>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(
             (async move {
@@ -337,6 +338,15 @@ where
                         config_snapshot,
                         protocol_version,
                         nts,
+                    )
+                } else if let Some(ed25519_pk) = ed25519_pk {
+                    Peer::new_ed25519(
+                        our_addr,
+                        source_addr,
+                        local_clock_time,
+                        config_snapshot,
+                        protocol_version,
+                        ed25519_pk,
                     )
                 } else {
                     Peer::new(

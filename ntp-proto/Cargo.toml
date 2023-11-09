@@ -30,6 +30,7 @@ thiserror.workspace = true
 aead.workspace = true
 aes-siv.workspace = true
 zeroize.workspace = true
+ed25519-dalek.workspace = true
 
 [dev-dependencies]
 rustls-pemfile.workspace = true

@@ -23,7 +23,7 @@ pub mod v5;
 
 pub use crypto::{
     AesSivCmac256, AesSivCmac512, Cipher, CipherHolder, CipherProvider, CipherType, DecryptError,
-    EncryptResult, NoCipher,
+    Ed25519Private, Ed25519Public, EncryptResult, NoCipher,
 };
 pub use error::PacketParsingError;
 pub use extension_fields::{ExtensionField, ExtensionHeaderVersion};
@@ -346,6 +346,7 @@ impl<'a> NtpPacket<'a> {
                     header_size,
                     cipher,
                     ExtensionHeaderVersion::V4,
+                    header.transmit_timestamp,
                 ) {
                     Ok(decoded) => {
                         let packet = construct_packet(decoded.remaining_bytes, decoded.efdata)
@@ -446,7 +447,7 @@ impl<'a> NtpPacket<'a> {
     pub fn serialize(
         &self,
         w: &mut Cursor<&mut [u8]>,
-        cipher: &(impl CipherProvider + ?Sized),
+        cipher: &(impl Cipher + ?Sized),
         #[cfg_attr(not(feature = "ntpv5"), allow(unused_variables))] desired_size: Option<usize>,
     ) -> std::io::Result<()> {
         #[cfg(feature = "ntpv5")]
@@ -618,6 +619,27 @@ impl<'a> NtpPacket<'a> {
             },
             id,
         )
+    }
+
+    pub fn extend_with_ed25519_request(&mut self, req_id: &mut RequestIdentifier) {
+        if req_id.uid.is_none() {
+            let identifier: [u8; 32] = rand::thread_rng().gen();
+            self.efdata
+                .untrusted
+                .push(ExtensionField::UniqueIdentifier(identifier.to_vec().into()));
+            req_id.uid = Some(identifier);
+        }
+        self.efdata.untrusted.push(ExtensionField::Ed25519Request {
+            placeholder_size: 168,
+        });
+    }
+
+    pub fn has_valid_ed25519_request(&self) -> bool {
+        self.efdata.untrusted.iter().find(|p| matches!(p, ExtensionField::Ed25519Request {placeholder_size} if *placeholder_size >= 168)).is_some()
+    }
+
+    pub fn upgrade_to_authenticated(&mut self) {
+        self.efdata.authenticated.append(&mut self.efdata.untrusted);
     }
 
     #[cfg_attr(not(feature = "ntpv5"), allow(unused_mut))]
