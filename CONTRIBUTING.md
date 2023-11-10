@@ -17,7 +17,7 @@ new contributions!
   request with your fix, no accompanying bug report is needed. Please combine
   multiple typos into a single pull request as much as possible.
 * For other bugs, please open a bug report first, this allows us to discuss the
-  best way to solve the problem and prevents and duplicated effort.
+  best way to solve the problem and prevents duplicated effort.
 
 #### Want to write a new feature?
 * Check if there is an existing issue on our issue tracker that already concerns
@@ -27,7 +27,7 @@ new contributions!
   proceed.
 
 #### Do you have any questions about ntpd-rs?
-* See our discussions page instead and avoid the issue tracker
+* See our [discussions] page instead and avoid the issue tracker
 
 ## Developing and building
 Our project mostly is a standard rust project so you should be able to use the
@@ -38,11 +38,11 @@ those two things.
 
 ## Dependencies and MSRV
 As ntpd-rs is intended to be packaged for multiple operating systems, we try to
-be conservative in our minimum supported rust version and the versions of our
-dependencies. Only add a new dependency if absolutely necessary. Please refrain
-from using newer compiler features or using the latest crate features. If that
-would however result in lots of duplicated effort, let us know so we can see if
-incrementing a crate version or increasing the MSRV is justified.
+be conservative in our minimum supported rust version (MSRV) and the versions of
+our dependencies. Only add a new dependency if absolutely necessary. Please
+refrain from using newer compiler features or using the latest crate features.
+If that would however result in lots of duplicated effort, let us know so we can
+see if incrementing a crate version or increasing the MSRV is justified.
 
 ## Documentation
 Our end-user documentation is written in mkdocs and can be ran locally using the
@@ -74,3 +74,4 @@ files (such as our documentation) we ask that you follow the conventions from
 other files, but we have no strict requirements.
 
 [security policy]: ./SECURITY.md
+[discussions]: https://github.com/pendulum-project/ntpd-rs/discussions
