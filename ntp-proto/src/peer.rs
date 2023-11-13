@@ -34,7 +34,7 @@ pub struct PeerNtsData {
     pub(crate) s2c: Box<dyn Cipher>,
 }
 
-#[cfg(feature = "__internal-test")]
+#[cfg(any(test, feature = "__internal-test"))]
 impl PeerNtsData {
     pub fn get_cookie(&mut self) -> Option<Vec<u8>> {
         self.cookies.get()
