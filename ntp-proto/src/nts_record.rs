@@ -43,6 +43,14 @@ impl NtsRecord {
             NtsRecord::NewCookie { .. } => 5,
             NtsRecord::Server { .. } => 6,
             NtsRecord::Port { .. } => 7,
+            #[cfg(feature = "nts-pool")]
+            NtsRecord::KeepAlive { .. } => 0x4000,
+            #[cfg(feature = "nts-pool")]
+            NtsRecord::SupportedProtocolList { .. } => 0x4001,
+            #[cfg(feature = "nts-pool")]
+            NtsRecord::FixedKeyRequest { .. } => 0x4002,
+            #[cfg(feature = "nts-pool")]
+            NtsRecord::NtpServerDeny { .. } => 0x4003,
             #[cfg(feature = "ntpv5")]
             NtsRecord::DraftId { .. } => 0x4008,
             NtsRecord::Unknown { record_type, .. } => record_type & !0x8000,
@@ -59,6 +67,14 @@ impl NtsRecord {
             NtsRecord::NewCookie { .. } => false,
             NtsRecord::Server { critical, .. } => *critical,
             NtsRecord::Port { critical, .. } => *critical,
+            #[cfg(feature = "nts-pool")]
+            NtsRecord::KeepAlive { .. } => false,
+            #[cfg(feature = "nts-pool")]
+            NtsRecord::SupportedProtocolList { .. } => true,
+            #[cfg(feature = "nts-pool")]
+            NtsRecord::FixedKeyRequest { .. } => true,
+            #[cfg(feature = "nts-pool")]
+            NtsRecord::NtpServerDeny { .. } => false,
             #[cfg(feature = "ntpv5")]
             NtsRecord::DraftId { .. } => false,
             NtsRecord::Unknown { critical, .. } => *critical,
@@ -142,6 +158,21 @@ pub enum NtsRecord {
     DraftId {
         data: Vec<u8>,
     },
+    #[cfg(feature = "nts-pool")]
+    KeepAlive,
+    #[cfg(feature = "nts-pool")]
+    SupportedProtocolList {
+        supported_protocols: Vec<(u16, u16)>,
+    },
+    #[cfg(feature = "nts-pool")]
+    FixedKeyRequest {
+        c2s: Vec<u8>,
+        s2c: Vec<u8>,
+    },
+    #[cfg(feature = "nts-pool")]
+    NtpServerDeny {
+        denied: String,
+    },
 }
 
 fn read_u16_be(reader: &mut impl Read) -> std::io::Result<u16> {
@@ -153,6 +184,13 @@ fn read_u16_be(reader: &mut impl Read) -> std::io::Result<u16> {
 
 fn read_u16s_be(reader: &mut impl Read, length: usize) -> std::io::Result<Vec<u16>> {
     (0..length).map(|_| read_u16_be(reader)).collect()
+}
+
+#[cfg(feature = "nts-pool")]
+fn read_u16_tuples_be(reader: &mut impl Read, length: usize) -> std::io::Result<Vec<(u16, u16)>> {
+    (0..length)
+        .map(|_| Ok((read_u16_be(reader)?, read_u16_be(reader)?)))
+        .collect()
 }
 
 fn read_bytes_exact(reader: &mut impl Read, length: usize) -> std::io::Result<Vec<u8>> {
@@ -273,6 +311,40 @@ impl NtsRecord {
                 critical,
                 port: read_u16_be(reader)?,
             },
+            #[cfg(feature = "nts-pool")]
+            0x4000 if !critical => NtsRecord::KeepAlive,
+            #[cfg(feature = "nts-pool")]
+            0x4001 if record_len % 4 == 0 && critical => {
+                let n_protocols = record_len / 4; // 4 bytes per element
+                let supported_protocols = read_u16_tuples_be(reader, n_protocols)?;
+
+                NtsRecord::SupportedProtocolList {
+                    supported_protocols,
+                }
+            }
+            #[cfg(feature = "nts-pool")]
+            0x4002 if record_len % 2 == 0 && critical => {
+                let mut c2s = vec![0; record_len / 2];
+                let mut s2c = vec![0; record_len / 2];
+
+                reader.read_exact(&mut c2s)?;
+                reader.read_exact(&mut s2c)?;
+
+                NtsRecord::FixedKeyRequest { c2s, s2c }
+            }
+            #[cfg(feature = "nts-pool")]
+            0x4003 => {
+                // NOTE: the string data should be ascii (not utf8) but we don't enforce that here
+                let str_data = read_bytes_exact(reader, record_len)?;
+                match String::from_utf8(str_data) {
+                    Ok(denied) => NtsRecord::NtpServerDeny { denied },
+                    Err(e) => NtsRecord::Unknown {
+                        record_type,
+                        critical,
+                        data: e.into_bytes(),
+                    },
+                }
+            }
             #[cfg(feature = "ntpv5")]
             0x4008 => NtsRecord::DraftId {
                 data: read_bytes_exact(reader, record_len)?,
@@ -346,6 +418,44 @@ impl NtsRecord {
             NtsRecord::Port { port, .. } => {
                 writer.write_all(&size_of_u16.to_be_bytes())?;
                 writer.write_all(&port.to_be_bytes())?;
+            }
+            #[cfg(feature = "nts-pool")]
+            NtsRecord::KeepAlive => {
+                // nothing to encode; there is no payload
+                let length = 0u16;
+                writer.write_all(&length.to_be_bytes())?;
+            }
+            #[cfg(feature = "nts-pool")]
+            NtsRecord::SupportedProtocolList {
+                supported_protocols,
+            } => {
+                let length = size_of_u16 * 2 * supported_protocols.len() as u16;
+                writer.write_all(&length.to_be_bytes())?;
+
+                for (aead_protocol_id, key_length) in supported_protocols {
+                    writer.write_all(&aead_protocol_id.to_be_bytes())?;
+                    writer.write_all(&key_length.to_be_bytes())?;
+                }
+            }
+            #[cfg(feature = "nts-pool")]
+            NtsRecord::FixedKeyRequest { c2s, s2c } => {
+                debug_assert_eq!(c2s.len(), s2c.len());
+
+                let length = (c2s.len() + s2c.len()) as u16;
+                writer.write_all(&length.to_be_bytes())?;
+
+                writer.write_all(c2s)?;
+                writer.write_all(s2c)?;
+            }
+            #[cfg(feature = "nts-pool")]
+            NtsRecord::NtpServerDeny { denied: name } => {
+                // NOTE: the server name should be ascii
+                #[cfg(not(feature = "__internal-fuzz"))]
+                debug_assert!(name.is_ascii());
+                let length = name.len() as u16;
+                writer.write_all(&length.to_be_bytes())?;
+
+                writer.write_all(name.as_bytes())?;
             }
             #[cfg(feature = "ntpv5")]
             NtsRecord::DraftId { data } => {
@@ -646,6 +756,9 @@ struct KeyExchangeResultDecoder {
     algorithm: Option<AeadAlgorithm>,
     protocol: Option<ProtocolId>,
     cookies: CookieStash,
+
+    #[cfg(feature = "nts-pool")]
+    keep_alive: bool,
 }
 
 impl KeyExchangeResultDecoder {
@@ -742,6 +855,29 @@ impl KeyExchangeResultDecoder {
             }
 
             Unknown { .. } => Continue(state),
+            #[cfg(feature = "nts-pool")]
+            KeepAlive => {
+                state.keep_alive = true;
+                Continue(state)
+            }
+            #[cfg(feature = "nts-pool")]
+            SupportedProtocolList { .. } => {
+                // a client should never receive a SupportedProtocolList
+                tracing::warn!("Unexpected supported protocol list");
+                Continue(state)
+            }
+            #[cfg(feature = "nts-pool")]
+            FixedKeyRequest { .. } => {
+                // a client should never receive a FixedKeyRequest
+                tracing::warn!("Unexpected fixed key request");
+                Continue(state)
+            }
+            #[cfg(feature = "nts-pool")]
+            NtpServerDeny { .. } => {
+                // a client should never receive a NtpServerDeny
+                tracing::warn!("Unexpected ntp server deny");
+                Continue(state)
+            }
         }
     }
 
@@ -904,6 +1040,15 @@ struct KeyExchangeServerDecoder {
 
     #[cfg(feature = "ntpv5")]
     allow_v5: bool,
+
+    #[cfg(feature = "nts-pool")]
+    keep_alive: Option<bool>,
+    #[cfg(feature = "nts-pool")]
+    supported_protocols: Option<Vec<(AeadAlgorithm, u16)>>,
+    #[cfg(feature = "nts-pool")]
+    fixed_key_request: Option<(Vec<u8>, Vec<u8>)>,
+    #[cfg(feature = "nts-pool")]
+    server_deny: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1030,6 +1175,40 @@ impl KeyExchangeServerDecoder {
                         Continue(state)
                     }
                 }
+            }
+
+            #[cfg(feature = "nts-pool")]
+            KeepAlive => {
+                state.keep_alive = Some(true);
+                Continue(state)
+            }
+            #[cfg(feature = "nts-pool")]
+            SupportedProtocolList {
+                supported_protocols,
+            } => {
+                use self::AeadAlgorithm;
+
+                let supported_protocols = supported_protocols
+                    .into_iter()
+                    .filter_map(|(aead_protocol_id, key_length)| {
+                        let aead_algorithm = AeadAlgorithm::try_deserialize(aead_protocol_id)?;
+                        Some((aead_algorithm, key_length))
+                    })
+                    .collect();
+
+                state.supported_protocols = Some(supported_protocols);
+
+                Continue(state)
+            }
+            #[cfg(feature = "nts-pool")]
+            FixedKeyRequest { c2s, s2c } => {
+                state.fixed_key_request = Some((c2s, s2c));
+                Continue(state)
+            }
+            #[cfg(feature = "nts-pool")]
+            NtpServerDeny { denied } => {
+                state.server_deny = Some(denied);
+                Continue(state)
             }
 
             Unknown { .. } => Continue(state),
@@ -1328,6 +1507,94 @@ mod test {
         };
 
         record.write(&mut buffer).unwrap();
+
+        let decoded = NtsRecord::read(&mut Cursor::new(buffer)).unwrap();
+
+        assert_eq!(record, decoded);
+    }
+
+    #[test]
+    #[cfg(feature = "nts-pool")]
+    fn encode_decode_keep_alive_record() {
+        let mut buffer = Vec::new();
+
+        let record = NtsRecord::KeepAlive;
+
+        record.write(&mut buffer).unwrap();
+
+        let decoded = NtsRecord::read(&mut Cursor::new(buffer)).unwrap();
+
+        assert_eq!(record, decoded);
+    }
+
+    #[test]
+    #[cfg(feature = "nts-pool")]
+    fn encode_decode_supported_protocol_list_record() {
+        let mut buffer = Vec::new();
+
+        let record = NtsRecord::SupportedProtocolList {
+            supported_protocols: vec![
+                (AeadAlgorithm::AeadAesSivCmac256 as u16, 256),
+                (AeadAlgorithm::AeadAesSivCmac512 as u16, 512),
+            ],
+        };
+
+        record.write(&mut buffer).unwrap();
+
+        let decoded = NtsRecord::read(&mut Cursor::new(buffer)).unwrap();
+
+        assert_eq!(record, decoded);
+    }
+
+    #[test]
+    #[cfg(feature = "nts-pool")]
+    fn encode_decode_fixed_key_request_record() {
+        let mut buffer = Vec::new();
+
+        let c2s: Vec<_> = (0..).take(8).collect();
+        let s2c: Vec<_> = (0..).skip(8).take(8).collect();
+
+        let record = NtsRecord::FixedKeyRequest { c2s, s2c };
+
+        record.write(&mut buffer).unwrap();
+
+        let decoded = NtsRecord::read(&mut Cursor::new(buffer)).unwrap();
+
+        assert_eq!(record, decoded);
+    }
+
+    #[test]
+    #[cfg(feature = "nts-pool")]
+    fn encode_decode_server_deny_record() {
+        let mut buffer = Vec::new();
+
+        let record = NtsRecord::NtpServerDeny {
+            denied: String::from("a string"),
+        };
+
+        record.write(&mut buffer).unwrap();
+
+        let decoded = NtsRecord::read(&mut Cursor::new(buffer)).unwrap();
+
+        assert_eq!(record, decoded);
+    }
+
+    #[test]
+    #[cfg(feature = "nts-pool")]
+    fn encode_decode_server_deny_invalid_utf8() {
+        let [a, b] = 0x4003u16.to_be_bytes();
+
+        let buffer = vec![
+            a, b, // type
+            0, 4, // length
+            0xF8, 0x80, 0x80, 0x80, // content (invalid utf8 sequence)
+        ];
+
+        let record = NtsRecord::Unknown {
+            record_type: 0x4003,
+            critical: false,
+            data: vec![0xF8, 0x80, 0x80, 0x80],
+        };
 
         let decoded = NtsRecord::read(&mut Cursor::new(buffer)).unwrap();
 
