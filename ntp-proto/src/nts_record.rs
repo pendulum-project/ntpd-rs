@@ -759,6 +759,9 @@ struct KeyExchangeResultDecoder {
 
     #[cfg(feature = "nts-pool")]
     keep_alive: bool,
+
+    #[cfg(feature = "nts-pool")]
+    supported_protocols: Vec<(AeadAlgorithm, u16)>,
 }
 
 impl KeyExchangeResultDecoder {
@@ -861,9 +864,21 @@ impl KeyExchangeResultDecoder {
                 Continue(state)
             }
             #[cfg(feature = "nts-pool")]
-            SupportedProtocolList { .. } => {
-                // a client should never receive a SupportedProtocolList
-                tracing::warn!("Unexpected supported protocol list");
+            SupportedProtocolList {
+                supported_protocols,
+            } => {
+                use self::AeadAlgorithm;
+
+                let supported_protocols = supported_protocols
+                    .into_iter()
+                    .filter_map(|(aead_protocol_id, key_length)| {
+                        let aead_algorithm = AeadAlgorithm::try_deserialize(aead_protocol_id)?;
+                        Some((aead_algorithm, key_length))
+                    })
+                    .collect();
+
+                state.supported_protocols = supported_protocols;
+
                 Continue(state)
             }
             #[cfg(feature = "nts-pool")]
@@ -1044,7 +1059,7 @@ struct KeyExchangeServerDecoder {
     #[cfg(feature = "nts-pool")]
     keep_alive: Option<bool>,
     #[cfg(feature = "nts-pool")]
-    supported_protocols: Option<Vec<(AeadAlgorithm, u16)>>,
+    send_supported_protocols: bool,
     #[cfg(feature = "nts-pool")]
     fixed_key_request: Option<(Vec<u8>, Vec<u8>)>,
     #[cfg(feature = "nts-pool")]
@@ -1186,17 +1201,9 @@ impl KeyExchangeServerDecoder {
             SupportedProtocolList {
                 supported_protocols,
             } => {
-                use self::AeadAlgorithm;
+                debug_assert_eq!(supported_protocols, &[]);
 
-                let supported_protocols = supported_protocols
-                    .into_iter()
-                    .filter_map(|(aead_protocol_id, key_length)| {
-                        let aead_algorithm = AeadAlgorithm::try_deserialize(aead_protocol_id)?;
-                        Some((aead_algorithm, key_length))
-                    })
-                    .collect();
-
-                state.supported_protocols = Some(supported_protocols);
+                state.send_supported_protocols = true;
 
                 Continue(state)
             }
