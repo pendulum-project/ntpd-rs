@@ -1405,28 +1405,22 @@ impl KeyExchangeServer {
                                 );
 
                                 let keys = if let Some(keys) = key_method.fixed_keys {
-                                    match algorithm.try_into_nts_keys(keys) {
-                                        Some(keys) => keys,
-                                        None => {
-                                            return ControlFlow::Break(Err(
-                                                KeyExchangeError::InvalidFixedKeyLength,
-                                            ))
-                                        }
-                                    }
+                                    algorithm
+                                        .try_into_nts_keys(keys)
+                                        .ok_or(KeyExchangeError::InvalidFixedKeyLength)
                                 } else {
-                                    match algorithm.extract_nts_keys(protocol, &self.tls_connection)
-                                    {
-                                        Ok(keys) => keys,
-                                        Err(e) => {
-                                            return ControlFlow::Break(Err(KeyExchangeError::Tls(
-                                                e,
-                                            )))
-                                        }
-                                    }
+                                    algorithm
+                                        .extract_nts_keys(protocol, &self.tls_connection)
+                                        .map_err(KeyExchangeError::Tls)
                                 };
 
-                                return match self.send_response(protocol, algorithm, keys) {
-                                    Err(e) => ControlFlow::Break(Err(KeyExchangeError::Io(e))),
+                                let send_response = || -> Result<(), KeyExchangeError> {
+                                    self.send_response(protocol, algorithm, keys?)
+                                        .map_err(KeyExchangeError::Io)
+                                };
+
+                                return match send_response() {
+                                    Err(e) => ControlFlow::Break(Err(e)),
                                     Ok(()) => ControlFlow::Continue(self),
                                 };
                             }
