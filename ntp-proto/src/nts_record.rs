@@ -1089,9 +1089,15 @@ struct KeyExchangeServerDecoder {
     #[cfg(feature = "nts-pool")]
     send_supported_algorithms: bool,
     #[cfg(feature = "nts-pool")]
-    fixed_key_request: Option<(Vec<u8>, Vec<u8>)>,
+    fixed_key_request: Option<RequestedKeys>,
     #[cfg(feature = "nts-pool")]
     server_deny: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct RequestedKeys {
+    c2s: Vec<u8>,
+    s2c: Vec<u8>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1107,8 +1113,7 @@ enum KeyMethod {
     /// Use these fixed keys
     Fixed {
         algorithm: AeadAlgorithm,
-        c2s: Vec<u8>,
-        s2c: Vec<u8>,
+        keys: RequestedKeys,
     },
 }
 
@@ -1163,11 +1168,7 @@ impl KeyExchangeServerDecoder {
 
                     match fixed_key_request {
                         None => KeyMethod::KeyExtraction { algorithm },
-                        Some((c2s, s2c)) => KeyMethod::Fixed {
-                            algorithm,
-                            c2s,
-                            s2c,
-                        },
+                        Some(keys) => KeyMethod::Fixed { algorithm, keys },
                     }
                 };
 
@@ -1278,7 +1279,7 @@ impl KeyExchangeServerDecoder {
             }
             #[cfg(feature = "nts-pool")]
             FixedKeyRequest { c2s, s2c } => {
-                state.fixed_key_request = Some((c2s, s2c));
+                state.fixed_key_request = Some(RequestedKeys { c2s, s2c });
                 Continue(state)
             }
             #[cfg(feature = "nts-pool")]
@@ -1412,8 +1413,7 @@ impl KeyExchangeServer {
                                     }
                                     KeyMethod::Fixed {
                                         algorithm,
-                                        c2s,
-                                        s2c,
+                                        keys: RequestedKeys { c2s, s2c },
                                     } => match algorithm {
                                         AeadAlgorithm::AeadAesSivCmac256 => {
                                             const KEY_WIDTH: usize =
