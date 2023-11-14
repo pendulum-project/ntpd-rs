@@ -748,6 +748,41 @@ impl AeadAlgorithm {
             }
         }
     }
+
+    fn try_parse_nts_keys(&self, RequestedKeys { c2s, s2c }: RequestedKeys) -> Option<NtsKeys> {
+        match self {
+            AeadAlgorithm::AeadAesSivCmac256 => {
+                const KEY_WIDTH: usize = std::mem::size_of::<aead::Key<Aes128SivAead>>();
+
+                if c2s.len() != KEY_WIDTH || s2c.len() != KEY_WIDTH {
+                    return None;
+                }
+
+                let c2s = *aead::Key::<Aes128SivAead>::from_slice(&c2s);
+                let s2c = *aead::Key::<Aes128SivAead>::from_slice(&s2c);
+
+                let c2s = Box::new(AesSivCmac256::new(c2s));
+                let s2c = Box::new(AesSivCmac256::new(s2c));
+
+                Some(NtsKeys { c2s, s2c })
+            }
+            AeadAlgorithm::AeadAesSivCmac512 => {
+                const KEY_WIDTH: usize = std::mem::size_of::<aead::Key<Aes256SivAead>>();
+
+                if c2s.len() != KEY_WIDTH || s2c.len() != KEY_WIDTH {
+                    return None;
+                }
+
+                let c2s = *aead::Key::<Aes256SivAead>::from_slice(&c2s);
+                let s2c = *aead::Key::<Aes256SivAead>::from_slice(&s2c);
+
+                let c2s = Box::new(AesSivCmac512::new(c2s));
+                let s2c = Box::new(AesSivCmac512::new(s2c));
+
+                Some(NtsKeys { c2s, s2c })
+            }
+        }
+    }
 }
 
 pub struct NtsKeys {
@@ -1107,24 +1142,10 @@ struct ServerKeyExchangeData {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum KeyMethod {
-    /// Perform key extraction to acquire the c2s and s2c keys
-    KeyExtraction { algorithm: AeadAlgorithm },
-    /// Use these fixed keys
-    Fixed {
-        algorithm: AeadAlgorithm,
-        keys: RequestedKeys,
-    },
-}
-
-impl KeyMethod {
-    #[cfg(test)]
-    fn algorithm(&self) -> AeadAlgorithm {
-        match self {
-            KeyMethod::KeyExtraction { algorithm } => *algorithm,
-            KeyMethod::Fixed { algorithm, .. } => *algorithm,
-        }
-    }
+struct KeyMethod {
+    algorithm: AeadAlgorithm,
+    /// By default, perform key extraction to acquire the c2s and s2c keys; otherwise, use the fixed keys.
+    fixed_keys: Option<RequestedKeys>,
 }
 
 impl KeyExchangeServerDecoder {
@@ -1159,16 +1180,16 @@ impl KeyExchangeServerDecoder {
             EndOfMessage => {
                 let key_method = {
                     #[cfg(feature = "nts-pool")]
-                    let fixed_key_request = state.fixed_key_request;
+                    let fixed_keys = state.fixed_key_request;
 
                     #[cfg(not(feature = "nts-pool"))]
-                    let fixed_key_request = None;
+                    let fixed_keys = None;
 
                     let algorithm = state.algorithm;
 
-                    match fixed_key_request {
-                        None => KeyMethod::KeyExtraction { algorithm },
-                        Some(keys) => KeyMethod::Fixed { algorithm, keys },
+                    KeyMethod {
+                        algorithm,
+                        fixed_keys,
                     }
                 };
 
@@ -1381,77 +1402,38 @@ impl KeyExchangeServer {
                                 let key_method = result.key_method;
                                 let protocol = result.protocol;
 
-                                let algorithm = match key_method {
-                                    KeyMethod::KeyExtraction { algorithm } => {
-                                        tracing::debug!(
-                                            ?algorithm,
-                                            "selected AEAD algorithm for key extraction"
-                                        );
-                                        algorithm
+                                let algorithm = key_method.algorithm;
+                                tracing::debug!(
+                                    ?algorithm,
+                                    "{}",
+                                    if key_method.fixed_keys.is_none() {
+                                        "selected AEAD algorithm for key extraction"
+                                    } else {
+                                        "using fixed keys with AEAD algorithm"
                                     }
-                                    KeyMethod::Fixed { algorithm, .. } => {
-                                        tracing::debug!(
-                                            ?algorithm,
-                                            "using fixed keys with AEAD algorithm"
-                                        );
-                                        algorithm
-                                    }
-                                };
+                                );
 
-                                let keys = match key_method {
-                                    KeyMethod::KeyExtraction { algorithm } => {
-                                        match algorithm
-                                            .extract_nts_keys(protocol, &self.tls_connection)
-                                        {
-                                            Ok(keys) => keys,
-                                            Err(e) => {
-                                                return ControlFlow::Break(Err(
-                                                    KeyExchangeError::Tls(e),
-                                                ))
-                                            }
+                                let keys = if let Some(RequestedKeys { c2s, s2c }) =
+                                    key_method.fixed_keys
+                                {
+                                    match algorithm.try_parse_nts_keys(RequestedKeys { c2s, s2c }) {
+                                        Some(keys) => keys,
+                                        None => {
+                                            return ControlFlow::Break(Err(
+                                                KeyExchangeError::InvalidFixedKeyLength,
+                                            ))
                                         }
                                     }
-                                    KeyMethod::Fixed {
-                                        algorithm,
-                                        keys: RequestedKeys { c2s, s2c },
-                                    } => match algorithm {
-                                        AeadAlgorithm::AeadAesSivCmac256 => {
-                                            const KEY_WIDTH: usize =
-                                                std::mem::size_of::<aead::Key<Aes128SivAead>>();
-
-                                            if c2s.len() != KEY_WIDTH || s2c.len() != KEY_WIDTH {
-                                                return ControlFlow::Break(Err(
-                                                    KeyExchangeError::InvalidFixedKeyLength,
-                                                ));
-                                            }
-
-                                            let c2s = *aead::Key::<Aes128SivAead>::from_slice(&c2s);
-                                            let s2c = *aead::Key::<Aes128SivAead>::from_slice(&s2c);
-
-                                            let c2s = Box::new(AesSivCmac256::new(c2s));
-                                            let s2c = Box::new(AesSivCmac256::new(s2c));
-
-                                            NtsKeys { c2s, s2c }
+                                } else {
+                                    match algorithm.extract_nts_keys(protocol, &self.tls_connection)
+                                    {
+                                        Ok(keys) => keys,
+                                        Err(e) => {
+                                            return ControlFlow::Break(Err(KeyExchangeError::Tls(
+                                                e,
+                                            )))
                                         }
-                                        AeadAlgorithm::AeadAesSivCmac512 => {
-                                            const KEY_WIDTH: usize =
-                                                std::mem::size_of::<aead::Key<Aes256SivAead>>();
-
-                                            if c2s.len() != KEY_WIDTH || s2c.len() != KEY_WIDTH {
-                                                return ControlFlow::Break(Err(
-                                                    KeyExchangeError::InvalidFixedKeyLength,
-                                                ));
-                                            }
-
-                                            let c2s = *aead::Key::<Aes256SivAead>::from_slice(&c2s);
-                                            let s2c = *aead::Key::<Aes256SivAead>::from_slice(&s2c);
-
-                                            let c2s = Box::new(AesSivCmac512::new(c2s));
-                                            let s2c = Box::new(AesSivCmac512::new(s2c));
-
-                                            NtsKeys { c2s, s2c }
-                                        }
-                                    },
+                                    }
                                 };
 
                                 return match self.send_response(protocol, algorithm, keys) {
@@ -2112,7 +2094,7 @@ mod test {
         let result = server_roundtrip(&NtsRecord::client_key_exchange_records()).unwrap();
 
         assert_eq!(
-            result.key_method.algorithm(),
+            result.key_method.algorithm,
             AeadAlgorithm::AeadAesSivCmac512
         );
     }
@@ -2129,7 +2111,7 @@ mod test {
 
         let result = server_roundtrip(&records).unwrap();
         assert_eq!(
-            result.key_method.algorithm(),
+            result.key_method.algorithm,
             AeadAlgorithm::AeadAesSivCmac512
         );
     }
@@ -2155,7 +2137,7 @@ mod test {
 
         let result = server_roundtrip(&records).unwrap();
         assert_eq!(
-            result.key_method.algorithm(),
+            result.key_method.algorithm,
             AeadAlgorithm::AeadAesSivCmac512
         );
     }
@@ -2167,7 +2149,7 @@ mod test {
 
         let result = server_roundtrip(&records).unwrap();
         assert_eq!(
-            result.key_method.algorithm(),
+            result.key_method.algorithm,
             AeadAlgorithm::AeadAesSivCmac512
         );
     }
@@ -2186,7 +2168,7 @@ mod test {
 
         let result = server_roundtrip(&records).unwrap();
         assert_eq!(
-            result.key_method.algorithm(),
+            result.key_method.algorithm,
             AeadAlgorithm::AeadAesSivCmac512
         );
     }
