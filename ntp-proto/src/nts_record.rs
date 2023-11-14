@@ -749,17 +749,14 @@ impl AeadAlgorithm {
         }
     }
 
-    fn try_parse_nts_keys(&self, RequestedKeys { c2s, s2c }: RequestedKeys) -> Option<NtsKeys> {
+    fn try_into_nts_keys(&self, RequestedKeys { c2s, s2c }: RequestedKeys) -> Option<NtsKeys> {
+        fn try_from_slice<T: KeySizeUser>(key_material: &[u8]) -> Option<&aead::Key<T>> {
+            (key_material.len() == T::key_size()).then(|| aead::Key::<T>::from_slice(key_material))
+        }
         match self {
             AeadAlgorithm::AeadAesSivCmac256 => {
-                const KEY_WIDTH: usize = std::mem::size_of::<aead::Key<Aes128SivAead>>();
-
-                if c2s.len() != KEY_WIDTH || s2c.len() != KEY_WIDTH {
-                    return None;
-                }
-
-                let c2s = *aead::Key::<Aes128SivAead>::from_slice(&c2s);
-                let s2c = *aead::Key::<Aes128SivAead>::from_slice(&s2c);
+                let c2s = *try_from_slice::<Aes128SivAead>(&c2s)?;
+                let s2c = *try_from_slice::<Aes128SivAead>(&s2c)?;
 
                 let c2s = Box::new(AesSivCmac256::new(c2s));
                 let s2c = Box::new(AesSivCmac256::new(s2c));
@@ -767,14 +764,8 @@ impl AeadAlgorithm {
                 Some(NtsKeys { c2s, s2c })
             }
             AeadAlgorithm::AeadAesSivCmac512 => {
-                const KEY_WIDTH: usize = std::mem::size_of::<aead::Key<Aes256SivAead>>();
-
-                if c2s.len() != KEY_WIDTH || s2c.len() != KEY_WIDTH {
-                    return None;
-                }
-
-                let c2s = *aead::Key::<Aes256SivAead>::from_slice(&c2s);
-                let s2c = *aead::Key::<Aes256SivAead>::from_slice(&s2c);
+                let c2s = *try_from_slice::<Aes256SivAead>(&c2s)?;
+                let s2c = *try_from_slice::<Aes256SivAead>(&s2c)?;
 
                 let c2s = Box::new(AesSivCmac512::new(c2s));
                 let s2c = Box::new(AesSivCmac512::new(s2c));
@@ -1413,10 +1404,8 @@ impl KeyExchangeServer {
                                     }
                                 );
 
-                                let keys = if let Some(RequestedKeys { c2s, s2c }) =
-                                    key_method.fixed_keys
-                                {
-                                    match algorithm.try_parse_nts_keys(RequestedKeys { c2s, s2c }) {
+                                let keys = if let Some(keys) = key_method.fixed_keys {
+                                    match algorithm.try_into_nts_keys(keys) {
                                         Some(keys) => keys,
                                         None => {
                                             return ControlFlow::Break(Err(
