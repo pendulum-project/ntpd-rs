@@ -13,6 +13,9 @@ on:
       - 'release/**'
   schedule:
     - cron: '0 4 * * *'
+  merge_group:
+    branches:
+      - main
 
 jobs:
   build:
