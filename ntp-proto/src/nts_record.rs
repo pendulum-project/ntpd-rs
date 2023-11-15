@@ -1281,9 +1281,10 @@ impl KeyExchangeServerDecoder {
             }
             #[cfg(feature = "nts-pool")]
             SupportedAlgorithmList {
-                supported_algorithms,
+                supported_algorithms: _supported_algorithms,
             } => {
-                debug_assert_eq!(supported_algorithms, &[]);
+                #[cfg(not(feature = "__internal-fuzz"))]
+                debug_assert_eq!(_supported_algorithms, &[]);
 
                 state.send_supported_algorithms = true;
 
