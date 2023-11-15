@@ -3,6 +3,7 @@
 [![Crates.io](https://img.shields.io/crates/v/ntpd.svg)](https://crates.io/crates/ntpd)
 [![Docs](https://img.shields.io/badge/ntpd--rs-blue?label=docs)](https://docs.ntpd-rs.pendulum-project.org/)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/8054/badge)](https://www.bestpractices.dev/projects/8054)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/pendulum-project/ntpd-rs/badge)](https://securityscorecards.dev/viewer/?uri=github.com/pendulum-project/ntpd-rs)
 
 # ntpd-rs
 
