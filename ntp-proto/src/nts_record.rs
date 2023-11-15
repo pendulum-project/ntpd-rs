@@ -46,7 +46,7 @@ impl NtsRecord {
             #[cfg(feature = "nts-pool")]
             NtsRecord::KeepAlive { .. } => 0x4000,
             #[cfg(feature = "nts-pool")]
-            NtsRecord::SupportedProtocolList { .. } => 0x4001,
+            NtsRecord::SupportedAlgorithmList { .. } => 0x4001,
             #[cfg(feature = "nts-pool")]
             NtsRecord::FixedKeyRequest { .. } => 0x4002,
             #[cfg(feature = "nts-pool")]
@@ -70,7 +70,7 @@ impl NtsRecord {
             #[cfg(feature = "nts-pool")]
             NtsRecord::KeepAlive { .. } => false,
             #[cfg(feature = "nts-pool")]
-            NtsRecord::SupportedProtocolList { .. } => true,
+            NtsRecord::SupportedAlgorithmList { .. } => true,
             #[cfg(feature = "nts-pool")]
             NtsRecord::FixedKeyRequest { .. } => true,
             #[cfg(feature = "nts-pool")]
@@ -161,8 +161,8 @@ pub enum NtsRecord {
     #[cfg(feature = "nts-pool")]
     KeepAlive,
     #[cfg(feature = "nts-pool")]
-    SupportedProtocolList {
-        supported_protocols: Vec<(u16, u16)>,
+    SupportedAlgorithmList {
+        supported_algorithms: Vec<(u16, u16)>,
     },
     #[cfg(feature = "nts-pool")]
     FixedKeyRequest {
@@ -315,11 +315,11 @@ impl NtsRecord {
             0x4000 if !critical => NtsRecord::KeepAlive,
             #[cfg(feature = "nts-pool")]
             0x4001 if record_len % 4 == 0 && critical => {
-                let n_protocols = record_len / 4; // 4 bytes per element
-                let supported_protocols = read_u16_tuples_be(reader, n_protocols)?;
+                let n_algorithms = record_len / 4; // 4 bytes per element
+                let supported_algorithms = read_u16_tuples_be(reader, n_algorithms)?;
 
-                NtsRecord::SupportedProtocolList {
-                    supported_protocols,
+                NtsRecord::SupportedAlgorithmList {
+                    supported_algorithms,
                 }
             }
             #[cfg(feature = "nts-pool")]
@@ -426,14 +426,14 @@ impl NtsRecord {
                 writer.write_all(&length.to_be_bytes())?;
             }
             #[cfg(feature = "nts-pool")]
-            NtsRecord::SupportedProtocolList {
-                supported_protocols,
+            NtsRecord::SupportedAlgorithmList {
+                supported_algorithms,
             } => {
-                let length = size_of_u16 * 2 * supported_protocols.len() as u16;
+                let length = size_of_u16 * 2 * supported_algorithms.len() as u16;
                 writer.write_all(&length.to_be_bytes())?;
 
-                for (aead_protocol_id, key_length) in supported_protocols {
-                    writer.write_all(&aead_protocol_id.to_be_bytes())?;
+                for (algorithm_id, key_length) in supported_algorithms {
+                    writer.write_all(&algorithm_id.to_be_bytes())?;
                     writer.write_all(&key_length.to_be_bytes())?;
                 }
             }
@@ -761,7 +761,7 @@ struct KeyExchangeResultDecoder {
     keep_alive: bool,
 
     #[cfg(feature = "nts-pool")]
-    supported_protocols: Vec<(AeadAlgorithm, u16)>,
+    supported_algorithms: Vec<(AeadAlgorithm, u16)>,
 }
 
 impl KeyExchangeResultDecoder {
@@ -864,20 +864,18 @@ impl KeyExchangeResultDecoder {
                 Continue(state)
             }
             #[cfg(feature = "nts-pool")]
-            SupportedProtocolList {
-                supported_protocols,
+            SupportedAlgorithmList {
+                supported_algorithms,
             } => {
                 use self::AeadAlgorithm;
 
-                let supported_protocols = supported_protocols
+                state.supported_algorithms = supported_algorithms
                     .into_iter()
                     .filter_map(|(aead_protocol_id, key_length)| {
                         let aead_algorithm = AeadAlgorithm::try_deserialize(aead_protocol_id)?;
                         Some((aead_algorithm, key_length))
                     })
                     .collect();
-
-                state.supported_protocols = supported_protocols;
 
                 Continue(state)
             }
@@ -1059,7 +1057,7 @@ struct KeyExchangeServerDecoder {
     #[cfg(feature = "nts-pool")]
     keep_alive: Option<bool>,
     #[cfg(feature = "nts-pool")]
-    send_supported_protocols: bool,
+    send_supported_algorithms: bool,
     #[cfg(feature = "nts-pool")]
     fixed_key_request: Option<(Vec<u8>, Vec<u8>)>,
     #[cfg(feature = "nts-pool")]
@@ -1198,12 +1196,12 @@ impl KeyExchangeServerDecoder {
                 Continue(state)
             }
             #[cfg(feature = "nts-pool")]
-            SupportedProtocolList {
-                supported_protocols,
+            SupportedAlgorithmList {
+                supported_algorithms,
             } => {
-                debug_assert_eq!(supported_protocols, &[]);
+                debug_assert_eq!(supported_algorithms, &[]);
 
-                state.send_supported_protocols = true;
+                state.send_supported_algorithms = true;
 
                 Continue(state)
             }
@@ -1539,8 +1537,8 @@ mod test {
     fn encode_decode_supported_protocol_list_record() {
         let mut buffer = Vec::new();
 
-        let record = NtsRecord::SupportedProtocolList {
-            supported_protocols: vec![
+        let record = NtsRecord::SupportedAlgorithmList {
+            supported_algorithms: vec![
                 (AeadAlgorithm::AeadAesSivCmac256 as u16, 256),
                 (AeadAlgorithm::AeadAesSivCmac512 as u16, 512),
             ],
