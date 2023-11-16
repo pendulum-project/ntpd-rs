@@ -130,6 +130,8 @@ impl TryFrom<&str> for ServerConfig {
 pub struct NtsKeConfig {
     pub certificate_chain_path: PathBuf,
     pub private_key_path: PathBuf,
+    #[serde(default)]
+    pub authorized_pool_server_certificates: Vec<PathBuf>,
     #[serde(default = "default_nts_ke_timeout")]
     pub key_exchange_timeout_ms: u64,
     pub listen: SocketAddr,
@@ -252,6 +254,7 @@ mod tests {
             listen = "0.0.0.0:4460"
             certificate-chain-path = "/foo/bar/baz.pem"
             private-key-path = "spam.der"
+            authorized-pool-server-certificates = [ "foo.pem", "bar.pem" ]
             "#,
         )
         .unwrap();
@@ -261,6 +264,10 @@ mod tests {
         assert_eq!(
             test.nts_ke_server.private_key_path,
             PathBuf::from("spam.der")
+        );
+        assert_eq!(
+            test.nts_ke_server.authorized_pool_server_certificates,
+            vec![PathBuf::from("foo.pem"), PathBuf::from("bar.pem")]
         );
         assert_eq!(test.nts_ke_server.key_exchange_timeout_ms, 1000,);
         assert_eq!(test.nts_ke_server.listen, "0.0.0.0:4460".parse().unwrap(),);

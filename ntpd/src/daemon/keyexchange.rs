@@ -92,6 +92,26 @@ async fn run_nts_ke(
             .map(rustls::Certificate)
             .collect();
 
+    let mut pool_certs: Vec<rustls::Certificate> = Vec::new();
+    for client_cert in nts_ke_config.authorized_pool_server_certificates {
+        let pool_certificate_file = std::fs::File::open(&client_cert).map_err(|e| {
+            io_error(&format!(
+                "error reading authorized-pool-server-certificate at `{:?}`: {:?}",
+                client_cert, e
+            ))
+        })?;
+        let mut certs = rustls_pemfile::certs(&mut std::io::BufReader::new(pool_certificate_file))?;
+        // forbid certificate chains at this point
+        if certs.len() == 1 {
+            pool_certs.push(rustls::Certificate(certs.pop().unwrap()))
+        } else {
+            return Err(io_error(&format!(
+                "pool certificate file at `{:?}` should contain exactly one certificate",
+                client_cert
+            )));
+        }
+    }
+
     let private_key = private_key_from_bufread(&mut std::io::BufReader::new(private_key_file))?
         .ok_or(io_error("could not parse private key"))?;
 
@@ -99,6 +119,7 @@ async fn run_nts_ke(
         keyset,
         nts_ke_config.listen,
         cert_chain,
+        pool_certs,
         private_key,
         nts_ke_config.key_exchange_timeout_ms,
     )
@@ -109,6 +130,7 @@ async fn key_exchange_server(
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     address: impl ToSocketAddrs,
     certificate_chain: Vec<Certificate>,
+    pool_certs: Vec<Certificate>,
     private_key: PrivateKey,
     timeout_ms: u64,
 ) -> std::io::Result<()> {
@@ -126,14 +148,16 @@ async fn key_exchange_server(
     config.alpn_protocols.push(b"ntske/1".to_vec());
 
     let config = Arc::new(config);
+    let pool_certs = Arc::new(pool_certs);
 
     loop {
         let (stream, peer_addr) = listener.accept().await?;
         let config = config.clone();
         let keyset = keyset.borrow().clone();
+        let pool_certs = pool_certs.clone();
 
         let fut = async move {
-            BoundKeyExchangeServer::run(stream, config, keyset)
+            BoundKeyExchangeServer::run(stream, config, keyset, &pool_certs)
                 .await
                 .map_err(|ke_error| std::io::Error::new(std::io::ErrorKind::Other, ke_error))
         };
@@ -293,10 +317,11 @@ where
         io: IO,
         config: Arc<rustls::ServerConfig>,
         keyset: Arc<KeySet>,
+        pool_certs: &[rustls::Certificate],
     ) -> Result<Self, KeyExchangeError> {
         let data = BoundKeyExchangeServerData {
             io,
-            server: KeyExchangeServer::new(config, keyset)?,
+            server: KeyExchangeServer::new(config, keyset, pool_certs)?,
             need_flush: false,
         };
 
@@ -307,8 +332,9 @@ where
         io: IO,
         config: Arc<rustls::ServerConfig>,
         keyset: Arc<KeySet>,
+        pool_certs: &[rustls::Certificate],
     ) -> Result<(), KeyExchangeError> {
-        let this = Self::new(io, config, keyset)?;
+        let this = Self::new(io, config, keyset, pool_certs)?;
 
         this.await
     }
@@ -553,6 +579,7 @@ mod tests {
         let nts_ke_config = NtsKeConfig {
             certificate_chain_path: PathBuf::from("test-keys/end.fullchain.pem"),
             private_key_path: PathBuf::from("test-keys/end.key"),
+            authorized_pool_server_certificates: Vec::new(),
             key_exchange_timeout_ms: 1000,
             listen: "0.0.0.0:5431".parse().unwrap(),
         };

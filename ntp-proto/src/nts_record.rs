@@ -1456,6 +1456,7 @@ impl KeyExchangeServer {
     pub fn new(
         tls_config: Arc<rustls::ServerConfig>,
         keyset: Arc<KeySet>,
+        pool_certificates: &[rustls::Certificate],
     ) -> Result<Self, KeyExchangeError> {
         // Ensure we send only ntske/1 as alpn
         debug_assert_eq!(tls_config.alpn_protocols, &[b"ntske/1".to_vec()]);
@@ -1463,7 +1464,17 @@ impl KeyExchangeServer {
         // TLS only works when the server name is a DNS name; an IP address does not work
         let tls_connection = rustls::ServerConnection::new(tls_config)?;
 
-        // TODO: check tls_connection against allowlist
+        #[cfg(feature = "nts-pool")]
+        let privileged_connection = tls_connection
+            .peer_certificates()
+            .and_then(|cert_chain| cert_chain.first())
+            .and_then(|cert| {
+                pool_certificates
+                    .iter()
+                    .find(|&allowed_cert| allowed_cert == cert)
+            })
+            .is_some();
+        #[cfg(not(feature = "nts-pool"))]
         let privileged_connection = false;
 
         Ok(Self {
@@ -2343,7 +2354,7 @@ mod test {
 
         let client =
             KeyExchangeClient::new_without_tls_write("localhost".into(), clientconfig).unwrap();
-        let server = KeyExchangeServer::new(Arc::new(serverconfig), keyset).unwrap();
+        let server = KeyExchangeServer::new(Arc::new(serverconfig), keyset, &[]).unwrap();
 
         (client, server)
     }
