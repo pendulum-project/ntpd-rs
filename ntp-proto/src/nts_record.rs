@@ -1131,13 +1131,8 @@ struct RequestedKeys {
 
 #[derive(Debug, PartialEq, Eq)]
 struct ServerKeyExchangeData {
-    key_method: KeyMethod,
-    protocol: ProtocolId,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-struct KeyMethod {
     algorithm: AeadAlgorithm,
+    protocol: ProtocolId,
     /// By default, perform key extraction to acquire the c2s and s2c keys; otherwise, use the fixed keys.
     #[cfg(feature = "nts-pool")]
     fixed_keys: Option<RequestedKeys>,
@@ -1173,22 +1168,11 @@ impl KeyExchangeServerDecoder {
 
         match record {
             EndOfMessage => {
-                let key_method = {
-                    #[cfg(feature = "nts-pool")]
-                    let fixed_keys = state.fixed_key_request;
-
-                    let algorithm = state.algorithm;
-
-                    KeyMethod {
-                        algorithm,
-                        #[cfg(feature = "nts-pool")]
-                        fixed_keys,
-                    }
-                };
-
                 let result = ServerKeyExchangeData {
-                    key_method,
+                    algorithm: state.algorithm,
                     protocol: state.protocol,
+                    #[cfg(feature = "nts-pool")]
+                    fixed_keys: state.fixed_key_request,
                 };
 
                 Break(Ok(result))
@@ -1395,14 +1379,13 @@ impl KeyExchangeServer {
                             }
                             ControlFlow::Break(Ok(result)) => {
                                 self.decoder = None;
-                                let key_method = result.key_method;
+                                let algorithm = result.algorithm;
                                 let protocol = result.protocol;
 
-                                let algorithm = key_method.algorithm;
                                 tracing::debug!(?algorithm, "selected AEAD algorithm",);
 
                                 #[cfg(feature = "nts-pool")]
-                                let keys = if let Some(keys) = key_method.fixed_keys {
+                                let keys = if let Some(keys) = result.fixed_keys {
                                     if self.privileged_connection {
                                         tracing::debug!("using fixed keys for AEAD algorithm");
                                         algorithm
@@ -2102,10 +2085,7 @@ mod test {
     fn server_decoder_finds_algorithm() {
         let result = server_roundtrip(&NtsRecord::client_key_exchange_records()).unwrap();
 
-        assert_eq!(
-            result.key_method.algorithm,
-            AeadAlgorithm::AeadAesSivCmac512
-        );
+        assert_eq!(result.algorithm, AeadAlgorithm::AeadAesSivCmac512);
     }
 
     #[test]
@@ -2119,10 +2099,7 @@ mod test {
         );
 
         let result = server_roundtrip(&records).unwrap();
-        assert_eq!(
-            result.key_method.algorithm,
-            AeadAlgorithm::AeadAesSivCmac512
-        );
+        assert_eq!(result.algorithm, AeadAlgorithm::AeadAesSivCmac512);
     }
 
     #[test]
@@ -2145,10 +2122,7 @@ mod test {
         );
 
         let result = server_roundtrip(&records).unwrap();
-        assert_eq!(
-            result.key_method.algorithm,
-            AeadAlgorithm::AeadAesSivCmac512
-        );
+        assert_eq!(result.algorithm, AeadAlgorithm::AeadAesSivCmac512);
     }
 
     #[test]
@@ -2157,10 +2131,7 @@ mod test {
         records.insert(0, NtsRecord::Warning { warningcode: 42 });
 
         let result = server_roundtrip(&records).unwrap();
-        assert_eq!(
-            result.key_method.algorithm,
-            AeadAlgorithm::AeadAesSivCmac512
-        );
+        assert_eq!(result.algorithm, AeadAlgorithm::AeadAesSivCmac512);
     }
 
     #[test]
@@ -2176,10 +2147,7 @@ mod test {
         );
 
         let result = server_roundtrip(&records).unwrap();
-        assert_eq!(
-            result.key_method.algorithm,
-            AeadAlgorithm::AeadAesSivCmac512
-        );
+        assert_eq!(result.algorithm, AeadAlgorithm::AeadAesSivCmac512);
     }
 
     #[test]
