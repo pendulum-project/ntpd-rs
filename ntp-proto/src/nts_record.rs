@@ -2427,8 +2427,30 @@ mod test {
     }
 
     #[test]
-    fn test_keyexchange_roundtrip_fixed() {
+    fn test_keyexchange_roundtrip_fixed_not_authorized() {
         let (mut client, server) = client_server_pair();
+
+        let c2s: Vec<_> = (0..).take(64).collect();
+        let s2c: Vec<_> = (0..).skip(64).take(64).collect();
+
+        let mut buffer = Vec::with_capacity(1024);
+        for record in NtsRecord::client_key_exchange_records_fixed(c2s.clone(), s2c.clone()) {
+            record.write(&mut buffer).unwrap();
+        }
+        client.tls_connection.writer().write_all(&buffer).unwrap();
+
+        let result = keyexchange_loop(client, server);
+
+        matches!(
+            result.unwrap_err(),
+            KeyExchangeError::UnrecognizedCriticalRecord
+        );
+    }
+
+    #[test]
+    fn test_keyexchange_roundtrip_fixed_authorized() {
+        let (mut client, mut server) = client_server_pair();
+        server.privileged_connection = true;
 
         let c2s: Vec<_> = (0..).take(64).collect();
         let s2c: Vec<_> = (0..).skip(64).take(64).collect();
