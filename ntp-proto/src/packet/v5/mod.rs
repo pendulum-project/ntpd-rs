@@ -77,19 +77,21 @@ pub struct NtpEra(pub u8);
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct NtpFlags {
-    unknown_leap: bool,
-    interleaved_mode: bool,
+    pub unknown_leap: bool,
+    pub interleaved_mode: bool,
+    pub status_message: bool,
 }
 
 impl NtpFlags {
     const fn from_bits(bits: [u8; 2]) -> Result<Self, ParsingError<std::convert::Infallible>> {
-        if bits[0] != 0x00 || bits[1] & 0b1111_1100 != 0 {
+        if bits[0] != 0x00 || bits[1] & 0b1111_1000 != 0 {
             return Err(V5Error::InvalidFlags.into_parse_err());
         }
 
         Ok(Self {
             unknown_leap: bits[1] & 0b01 != 0,
             interleaved_mode: bits[1] & 0b10 != 0,
+            status_message: bits[1] & 0b100 != 0,
         })
     }
 
@@ -102,6 +104,10 @@ impl NtpFlags {
 
         if self.interleaved_mode {
             flags |= 0b10;
+        }
+
+        if self.status_message {
+            flags |= 0b100;
         }
 
         [0x00, flags]
@@ -173,6 +179,7 @@ impl NtpHeaderV5 {
             flags: NtpFlags {
                 unknown_leap: false,
                 interleaved_mode: false,
+                status_message: false,
             },
             server_cookie: NtpServerCookie([0; 8]),
             client_cookie: NtpClientCookie([0; 8]),
@@ -200,6 +207,7 @@ impl NtpHeaderV5 {
             flags: NtpFlags {
                 unknown_leap: false,
                 interleaved_mode: false,
+                status_message: false,
             },
             root_delay: system.time_snapshot.root_delay,
             root_dispersion: system.time_snapshot.root_dispersion,
@@ -208,6 +216,35 @@ impl NtpHeaderV5 {
             receive_timestamp: recv_timestamp,
             transmit_timestamp: clock.now().expect("Failed to read time"),
         }
+    }
+
+    fn kiss_response(packet_from_client: Self, code: [u8; 4]) -> Self {
+        Self {
+            mode: NtpMode::Response,
+            flags: NtpFlags {
+                unknown_leap: false,
+                interleaved_mode: false,
+                status_message: true,
+            },
+            server_cookie: NtpServerCookie([code[0], code[1], code[2], code[3], 0, 0, 0, 0]),
+            client_cookie: packet_from_client.client_cookie,
+            ..Self::new()
+        }
+    }
+
+    pub(crate) fn rate_limit_response(packet_from_client: Self) -> Self {
+        Self {
+            poll: packet_from_client.poll.force_inc(),
+            ..Self::kiss_response(packet_from_client, *b"RATE")
+        }
+    }
+
+    pub(crate) fn deny_response(packet_from_client: Self) -> Self {
+        Self::kiss_response(packet_from_client, *b"DENY")
+    }
+
+    pub(crate) fn nts_nak_response(packet_from_client: Self) -> Self {
+        Self::kiss_response(packet_from_client, *b"NTSN")
     }
 
     const WIRE_LENGTH: usize = 48;
@@ -476,6 +513,7 @@ mod tests {
                 flags: NtpFlags {
                     unknown_leap: i % 3 == 0,
                     interleaved_mode: i % 4 == 0,
+                    status_message: i % 5 == 0,
                 },
                 root_delay: NtpDuration::from_bits_short([i; 4]),
                 root_dispersion: NtpDuration::from_bits_short([i.wrapping_add(1); 4]),
