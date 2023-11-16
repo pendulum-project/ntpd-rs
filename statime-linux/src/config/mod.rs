@@ -1,4 +1,9 @@
-use std::{fs::read_to_string, os::unix::fs::PermissionsExt, path::Path, str::FromStr};
+use std::{
+    fs::read_to_string,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use log::warn;
 use serde::{Deserialize, Deserializer};
@@ -33,7 +38,7 @@ pub struct PortConfig {
     #[serde(default, deserialize_with = "deserialize_acceptable_master_list")]
     pub acceptable_master_list: Option<Vec<ClockIdentity>>,
     #[serde(default)]
-    pub hardware_clock: Option<String>,
+    pub hardware_clock: Option<PathBuf>,
     #[serde(default)]
     pub network_mode: NetworkMode,
     #[serde(default = "default_announce_interval")]
