@@ -1,0 +1,25 @@
+[package]
+name = "nts-pool-ke"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "io-util", "io-std", "fs", "sync", "net", "macros", "time"] }
+toml.workspace = true 
+tracing.workspace = true 
+tracing-subscriber = { version = "0.3.0", default-features = false, features = ["std", "fmt", "ansi"] }
+rustls.workspace = true
+rustls-pemfile.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[[bin]]
+name = "nts-pool-ke"
+path = "bin/nts-pool-ke.rs"
