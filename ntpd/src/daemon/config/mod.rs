@@ -64,7 +64,7 @@ impl CliArg {
     where
         I: IntoIterator<Item = String>,
     {
-        // the first argument is the sudo command - so we can skip it
+        // the first argument is the ntp-daemon command - so we can skip it
         let mut arg_iter = iter.into_iter().skip(1);
         let mut processed = vec![];
         let mut rest = vec![];
