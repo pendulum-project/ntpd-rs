@@ -858,7 +858,25 @@ impl<'a> NtpPacket<'a> {
                 mac: None,
             },
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!("NTPv5 does not have KISS codes yet"),
+            NtpHeader::V5(header) => NtpPacket {
+                header: NtpHeader::V5(v5::NtpHeaderV5::rate_limit_response(header)),
+                efdata: ExtensionFieldData {
+                    authenticated: vec![],
+                    encrypted: vec![],
+                    // Ignore encrypted so as not to accidentaly leak anything
+                    untrusted: packet_from_client
+                        .efdata
+                        .untrusted
+                        .into_iter()
+                        .chain(packet_from_client.efdata.authenticated)
+                        .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
+                        .chain(std::iter::once(ExtensionField::DraftIdentification(
+                            Cow::Borrowed(v5::DRAFT_VERSION),
+                        )))
+                        .collect(),
+                },
+                mac: None,
+            },
         }
     }
 
@@ -880,7 +898,23 @@ impl<'a> NtpPacket<'a> {
                 mac: None,
             },
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!("No NTS support yet"),
+            NtpHeader::V5(header) => NtpPacket {
+                header: NtpHeader::V5(v5::NtpHeaderV5::rate_limit_response(header)),
+                efdata: ExtensionFieldData {
+                    authenticated: packet_from_client
+                        .efdata
+                        .authenticated
+                        .into_iter()
+                        .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
+                        .chain(std::iter::once(ExtensionField::DraftIdentification(
+                            Cow::Borrowed(v5::DRAFT_VERSION),
+                        )))
+                        .collect(),
+                    encrypted: vec![],
+                    untrusted: vec![],
+                },
+                mac: None,
+            },
         }
     }
 
@@ -908,7 +942,25 @@ impl<'a> NtpPacket<'a> {
                 mac: None,
             },
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!("NTPv5 does not have KISS codes yet"),
+            NtpHeader::V5(header) => NtpPacket {
+                header: NtpHeader::V5(v5::NtpHeaderV5::deny_response(header)),
+                efdata: ExtensionFieldData {
+                    authenticated: vec![],
+                    encrypted: vec![],
+                    // Ignore encrypted so as not to accidentaly leak anything
+                    untrusted: packet_from_client
+                        .efdata
+                        .untrusted
+                        .into_iter()
+                        .chain(packet_from_client.efdata.authenticated)
+                        .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
+                        .chain(std::iter::once(ExtensionField::DraftIdentification(
+                            Cow::Borrowed(v5::DRAFT_VERSION),
+                        )))
+                        .collect(),
+                },
+                mac: None,
+            },
         }
     }
 
@@ -930,7 +982,23 @@ impl<'a> NtpPacket<'a> {
                 mac: None,
             },
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!("No NTS support for NTPv5 yet"),
+            NtpHeader::V5(header) => NtpPacket {
+                header: NtpHeader::V5(v5::NtpHeaderV5::deny_response(header)),
+                efdata: ExtensionFieldData {
+                    authenticated: packet_from_client
+                        .efdata
+                        .authenticated
+                        .into_iter()
+                        .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
+                        .chain(std::iter::once(ExtensionField::DraftIdentification(
+                            Cow::Borrowed(v5::DRAFT_VERSION),
+                        )))
+                        .collect(),
+                    encrypted: vec![],
+                    untrusted: vec![],
+                },
+                mac: None,
+            },
         }
     }
 
@@ -953,7 +1021,24 @@ impl<'a> NtpPacket<'a> {
                 mac: None,
             },
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_header) => todo!("No NTS support for NTPv5 yet"),
+            NtpHeader::V5(header) => NtpPacket {
+                header: NtpHeader::V5(v5::NtpHeaderV5::nts_nak_response(header)),
+                efdata: ExtensionFieldData {
+                    authenticated: vec![],
+                    encrypted: vec![],
+                    untrusted: packet_from_client
+                        .efdata
+                        .untrusted
+                        .into_iter()
+                        .chain(packet_from_client.efdata.authenticated)
+                        .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
+                        .chain(std::iter::once(ExtensionField::DraftIdentification(
+                            Cow::Borrowed(v5::DRAFT_VERSION),
+                        )))
+                        .collect(),
+                },
+                mac: None,
+            },
         }
     }
 }
@@ -1074,30 +1159,41 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    fn kiss_code(&self) -> ReferenceId {
+        match self.header {
+            NtpHeader::V3(header) => header.reference_id,
+            NtpHeader::V4(header) => header.reference_id,
+            #[cfg(feature = "ntpv5")]
+            // Kiss code in ntpv5 is the first four bytes of the server cookie
+            NtpHeader::V5(header) => {
+                ReferenceId::from_bytes(header.server_cookie.0[..4].try_into().unwrap())
+            }
+        }
+    }
+
     pub fn is_kiss(&self) -> bool {
         match self.header {
             NtpHeader::V3(header) => header.stratum == 0,
             NtpHeader::V4(header) => header.stratum == 0,
             #[cfg(feature = "ntpv5")]
-            // TODO NTPv5 does not have Kiss codes so we pretend everything is always fine
-            NtpHeader::V5(_header) => false,
+            NtpHeader::V5(header) => header.flags.status_message,
         }
     }
 
     pub fn is_kiss_deny(&self) -> bool {
-        self.is_kiss() && self.reference_id().is_deny()
+        self.is_kiss() && self.kiss_code().is_deny()
     }
 
     pub fn is_kiss_rate(&self) -> bool {
-        self.is_kiss() && self.reference_id().is_rate()
+        self.is_kiss() && self.kiss_code().is_rate()
     }
 
     pub fn is_kiss_rstr(&self) -> bool {
-        self.is_kiss() && self.reference_id().is_rstr()
+        self.is_kiss() && self.kiss_code().is_rstr()
     }
 
     pub fn is_kiss_ntsn(&self) -> bool {
-        self.is_kiss() && self.reference_id().is_ntsn()
+        self.is_kiss() && self.kiss_code().is_ntsn()
     }
 
     #[cfg(feature = "ntpv5")]

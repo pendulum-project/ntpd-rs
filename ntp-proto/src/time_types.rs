@@ -553,6 +553,11 @@ impl PollInterval {
     }
 
     #[must_use]
+    pub fn force_inc(self) -> Self {
+        Self(self.0.saturating_add(1))
+    }
+
+    #[must_use]
     pub fn dec(self, limits: PollIntervalLimits) -> Self {
         Self(self.0 - 1).max(limits.min)
     }
