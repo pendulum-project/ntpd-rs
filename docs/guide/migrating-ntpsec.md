@@ -143,7 +143,7 @@ nts cert /etc/letsencrypt/live/ntp.example.com/fullchain.pem
 
 # ntpd-rs
 [[nts-ke-server]]
-key-exchange-listen = "<ip or [::]>:<port>
+listen = "<ip or [::]>:<port>
 certificate-chain-path = "/etc/letsencrypt/live/ntp.example.com/fullchain.pem"
 private-key-path = "/etc/letsencrypt/live/ntp.example.com/privkey.pem"
 ```
