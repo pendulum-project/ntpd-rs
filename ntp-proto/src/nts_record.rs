@@ -226,6 +226,7 @@ impl NtsRecord {
         ]
     }
 
+    #[cfg(feature = "nts-pool")]
     pub fn client_key_exchange_records_fixed(
         c2s: Vec<u8>,
         s2c: Vec<u8>,
@@ -249,6 +250,7 @@ impl NtsRecord {
                     .map(|algorithm| *algorithm as u16)
                     .collect(),
             },
+            #[cfg(feature = "nts-pool")]
             NtsRecord::FixedKeyRequest { c2s, s2c },
             NtsRecord::EndOfMessage,
         ]
@@ -749,6 +751,7 @@ impl AeadAlgorithm {
         }
     }
 
+    #[cfg(feature = "nts-pool")]
     fn try_into_nts_keys(&self, RequestedKeys { c2s, s2c }: RequestedKeys) -> Option<NtsKeys> {
         fn try_from_slice<T: KeySizeUser>(key_material: &[u8]) -> Option<&aead::Key<T>> {
             (key_material.len() == T::key_size()).then(|| aead::Key::<T>::from_slice(key_material))
@@ -1136,6 +1139,7 @@ struct ServerKeyExchangeData {
 struct KeyMethod {
     algorithm: AeadAlgorithm,
     /// By default, perform key extraction to acquire the c2s and s2c keys; otherwise, use the fixed keys.
+    #[cfg(feature = "nts-pool")]
     fixed_keys: Option<RequestedKeys>,
 }
 
@@ -1173,13 +1177,11 @@ impl KeyExchangeServerDecoder {
                     #[cfg(feature = "nts-pool")]
                     let fixed_keys = state.fixed_key_request;
 
-                    #[cfg(not(feature = "nts-pool"))]
-                    let fixed_keys = None;
-
                     let algorithm = state.algorithm;
 
                     KeyMethod {
                         algorithm,
+                        #[cfg(feature = "nts-pool")]
                         fixed_keys,
                     }
                 };
@@ -1397,29 +1399,32 @@ impl KeyExchangeServer {
                                 let protocol = result.protocol;
 
                                 let algorithm = key_method.algorithm;
-                                tracing::debug!(
-                                    ?algorithm,
-                                    "{}",
-                                    if key_method.fixed_keys.is_none() {
-                                        "selected AEAD algorithm for key extraction"
-                                    } else {
-                                        "using fixed keys with AEAD algorithm"
-                                    }
-                                );
+                                tracing::debug!(?algorithm, "selected AEAD algorithm",);
 
+                                #[cfg(feature = "nts-pool")]
                                 let keys = if let Some(keys) = key_method.fixed_keys {
                                     if self.privileged_connection {
+                                        tracing::debug!("using fixed keys for AEAD algorithm");
                                         algorithm
                                             .try_into_nts_keys(keys)
                                             .ok_or(KeyExchangeError::InvalidFixedKeyLength)
                                     } else {
+                                        tracing::debug!("refused fixed key request due to improper authorization");
                                         Err(KeyExchangeError::UnrecognizedCriticalRecord)
                                     }
                                 } else {
+                                    tracing::debug!(
+                                        "using AEAD keys extracted from TLS connection"
+                                    );
                                     algorithm
                                         .extract_nts_keys(protocol, &self.tls_connection)
                                         .map_err(KeyExchangeError::Tls)
                                 };
+
+                                #[cfg(not(feature = "nts-pool"))]
+                                let keys = algorithm
+                                    .extract_nts_keys(protocol, &self.tls_connection)
+                                    .map_err(KeyExchangeError::Tls);
 
                                 let send_response = || -> Result<(), KeyExchangeError> {
                                     self.send_response(protocol, algorithm, keys?)
@@ -1474,11 +1479,10 @@ impl KeyExchangeServer {
                     .find(|&allowed_cert| allowed_cert == cert)
             })
             .is_some();
-        #[cfg(not(feature = "nts-pool"))]
-        let privileged_connection = false;
 
         Ok(Self {
             tls_connection,
+            #[cfg(feature = "nts-pool")]
             privileged_connection,
             decoder: Some(KeyExchangeServerDecoder::new()),
             keyset,
@@ -2427,6 +2431,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "nts-pool")]
     fn test_keyexchange_roundtrip_fixed_not_authorized() {
         let (mut client, server) = client_server_pair();
 
@@ -2448,6 +2453,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "nts-pool")]
     fn test_keyexchange_roundtrip_fixed_authorized() {
         let (mut client, mut server) = client_server_pair();
         server.privileged_connection = true;
