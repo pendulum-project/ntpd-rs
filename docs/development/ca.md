@@ -109,7 +109,7 @@ following `[[nts-ke-server]]` section (or update an existing section):
 # ...
 
 [[nts-ke-server]]
-key-exchange-listen = "[::]:4460"
+listen = "[::]:4460"
 certificate-chain-path = "/path/to/some/ca-data/ntpd-rs.test.chain.pem"
 private-key-path = "/path/to/some/ca-data/ntpd-rs.test.key"
 
