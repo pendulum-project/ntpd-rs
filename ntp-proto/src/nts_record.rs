@@ -1313,6 +1313,8 @@ impl KeyExchangeServerDecoder {
 #[derive(Debug)]
 pub struct KeyExchangeServer {
     tls_connection: rustls::ServerConnection,
+    #[cfg(feature = "nts-pool")]
+    privileged_connection: bool,
     decoder: Option<KeyExchangeServerDecoder>,
     keyset: Arc<KeySet>,
 }
@@ -1406,9 +1408,13 @@ impl KeyExchangeServer {
                                 );
 
                                 let keys = if let Some(keys) = key_method.fixed_keys {
-                                    algorithm
-                                        .try_into_nts_keys(keys)
-                                        .ok_or(KeyExchangeError::InvalidFixedKeyLength)
+                                    if self.privileged_connection {
+                                        algorithm
+                                            .try_into_nts_keys(keys)
+                                            .ok_or(KeyExchangeError::InvalidFixedKeyLength)
+                                    } else {
+                                        Err(KeyExchangeError::UnrecognizedCriticalRecord)
+                                    }
                                 } else {
                                     algorithm
                                         .extract_nts_keys(protocol, &self.tls_connection)
@@ -1457,8 +1463,12 @@ impl KeyExchangeServer {
         // TLS only works when the server name is a DNS name; an IP address does not work
         let tls_connection = rustls::ServerConnection::new(tls_config)?;
 
+        // TODO: check tls_connection against allowlist
+        let privileged_connection = false;
+
         Ok(Self {
             tls_connection,
+            privileged_connection,
             decoder: Some(KeyExchangeServerDecoder::new()),
             keyset,
         })
