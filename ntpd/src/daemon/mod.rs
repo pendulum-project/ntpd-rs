@@ -91,7 +91,9 @@ async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
     config.check();
 
     // we always generate the keyset (even if NTS is not used)
-    let keyset = nts_key_provider::spawn(config.keyset).await;
+    let keyset = tokio::task::spawn_blocking(move || nts_key_provider::spawn(config.keyset))
+        .await
+        .expect("nts_key_provider::spawn should not panic");
 
     #[cfg(feature = "hardware-timestamping")]
     let clock_config = config.clock;
