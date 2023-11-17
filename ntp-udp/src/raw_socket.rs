@@ -528,66 +528,6 @@ pub(crate) mod timestamping_config {
     }
 }
 
-#[cfg(target_os = "linux")]
-pub(crate) mod err_queue_waiter {
-
-    use std::os::unix::prelude::{AsRawFd, RawFd};
-
-    use tokio::io::{unix::AsyncFd, Interest};
-
-    use crate::raw_socket::cerr;
-
-    pub struct ErrQueueWaiter {
-        epoll_fd: AsyncFd<RawFd>,
-    }
-
-    fn create_error(inner: std::io::Error) -> std::io::Error {
-        std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("could not create error queue waiter epoll socket: {inner:?}"),
-        )
-    }
-
-    impl ErrQueueWaiter {
-        pub fn new(source: &impl AsRawFd) -> std::io::Result<Self> {
-            // Safety: safe to call with
-            let epoll = cerr(unsafe { libc::epoll_create(1) }).map_err(create_error)?;
-
-            let mut ev = libc::epoll_event {
-                events: libc::EPOLLERR as _,
-                u64: 0,
-            };
-
-            cerr(unsafe {
-                libc::epoll_ctl(
-                    epoll,
-                    libc::EPOLL_CTL_ADD,
-                    source.as_raw_fd(),
-                    &mut ev as *mut _,
-                )
-            })
-            .map_err(create_error)?;
-
-            Ok(Self {
-                epoll_fd: AsyncFd::new(epoll)?,
-            })
-        }
-
-        pub async fn wait(&self) -> std::io::Result<()> {
-            self.epoll_fd
-                .async_io(Interest::READABLE, |fd| {
-                    let mut ev = libc::epoll_event { events: 0, u64: 0 };
-
-                    match unsafe { libc::epoll_wait(*fd, &mut ev as *mut _, 1, 0) } {
-                        0 => Err(std::io::ErrorKind::WouldBlock.into()),
-                        _ => Ok(()),
-                    }
-                })
-                .await
-        }
-    }
-}
-
 pub(crate) mod interface_iterator {
     use crate::interface::{sockaddr_to_socket_addr, InterfaceData, InterfaceName};
     use std::str::FromStr;

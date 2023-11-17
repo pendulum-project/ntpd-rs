@@ -15,13 +15,8 @@ use crate::{
     EnableTimestamps,
 };
 
-#[cfg(target_os = "linux")]
-use crate::raw_socket::err_queue_waiter::ErrQueueWaiter;
-
 pub struct UdpSocket {
     io: AsyncFd<std::net::UdpSocket>,
-    #[cfg(target_os = "linux")]
-    err_queue_waiter: ErrQueueWaiter,
     send_counter: u32,
     timestamping: EnableTimestamps,
 }
@@ -92,8 +87,6 @@ impl UdpSocket {
         set_timestamping_options(&socket, method, timestamping)?;
 
         Ok(UdpSocket {
-            #[cfg(target_os = "linux")]
-            err_queue_waiter: ErrQueueWaiter::new(&socket)?,
             io: AsyncFd::new(socket)?,
             send_counter: 0,
             timestamping,
@@ -132,8 +125,6 @@ impl UdpSocket {
         set_timestamping_options(&socket, DEFAULT_TIMESTAMP_METHOD, timestamping)?;
 
         Ok(UdpSocket {
-            #[cfg(target_os = "linux")]
-            err_queue_waiter: ErrQueueWaiter::new(&socket)?,
             io: AsyncFd::new(socket)?,
             send_counter: 0,
             timestamping,
@@ -202,31 +193,16 @@ impl UdpSocket {
         let msg = "waiting for timestamp socket to become readable to fetch a send timestamp";
         tracing::trace!(msg);
 
-        // Send timestamps are sent to the udp socket's error queue. Sadly, tokio does not
-        // currently support awaiting whether there is something in the error queue
-        // see https://github.com/tokio-rs/tokio/issues/4885.
-        //
-        // Therefore, we manually configure an extra file descriptor to listen for POLLPRI on
-        // the main udp socket. This `exceptional_condition` file descriptor becomes readable
-        // when there is something in the error queue.
-        loop {
-            // Send timestamps are sent to the udp socket's error queue. Sadly, tokio does not
-            // currently support awaiting whether there is something in the error queue
-            // see https://github.com/tokio-rs/tokio/issues/4885.
-            self.err_queue_waiter.wait().await?;
+        let try_read = |udp_socket: &std::net::UdpSocket| {
+            fetch_send_timestamp_help(udp_socket, expected_counter)
+        };
 
-            match fetch_send_timestamp_help(self.io.get_ref(), expected_counter) {
-                Ok(Some(send_timestamp)) => {
-                    return Ok(send_timestamp);
-                }
-                Ok(None) => {
-                    continue;
-                }
-                Err(e) => {
-                    tracing::warn!(error = ?&e, "Error fetching timestamp");
-                    return Err(e);
-                }
-            }
+        loop {
+            // the timestamp being available triggers the error interest
+            match self.io.async_io(Interest::ERROR, try_read).await? {
+                Some(timestamp) => return Ok(timestamp),
+                None => continue,
+            };
         }
     }
 
