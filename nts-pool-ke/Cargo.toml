@@ -19,6 +19,7 @@ rustls.workspace = true
 rustls-pemfile.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+ntp-proto.workspace = true
 
 [[bin]]
 name = "nts-pool-ke"

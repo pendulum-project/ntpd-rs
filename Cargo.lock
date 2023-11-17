@@ -402,6 +402,7 @@ dependencies = [
 name = "nts-pool-ke"
 version = "1.1.0-alpha.20231123"
 dependencies = [
+ "ntp-proto",
  "rustls",
  "rustls-pemfile",
  "serde",

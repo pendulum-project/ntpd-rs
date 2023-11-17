@@ -791,6 +791,15 @@ pub struct NtsKeys {
     s2c: Box<dyn Cipher>,
 }
 
+impl std::fmt::Debug for NtsKeys {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NtsKeys")
+            .field("c2s", &"<opaque>")
+            .field("s2c", &"<opaque>")
+            .finish()
+    }
+}
+
 fn extract_nts_key<T: Default + AsMut<[u8]>, ConnectionData>(
     tls_connection: &rustls::ConnectionCommon<ConnectionData>,
     context: [u8; 5],
@@ -1659,6 +1668,176 @@ impl KeyExchangeServer {
             keyset,
             #[cfg(feature = "nts-pool")]
             pool_certificates,
+        })
+    }
+}
+
+/// The NTS pool key exchange server. It receives messages from an NTS client that wants to connect
+/// to a NTS server in the pool.
+#[derive(Debug)]
+pub struct PoolKeyExchangeServer {
+    tls_connection: rustls::ServerConnection,
+    state: State,
+}
+
+#[derive(Debug)]
+enum State {
+    InProgress { decoder: KeyExchangeServerDecoder },
+    Done { data: ClientPoolConnectionData },
+}
+
+#[derive(Debug)]
+struct ClientPoolConnectionData {
+    algorithm: AeadAlgorithm,
+    protocol: ProtocolId,
+    /// TLS keys extracted from the session between NTS client and Pool KE server
+    keys: NtsKeys,
+}
+
+#[derive(Debug)]
+struct ClientPoolConnection {
+    tls_connection: rustls::ServerConnection,
+    data: ClientPoolConnectionData,
+}
+
+impl PoolKeyExchangeServer {
+    pub fn wants_read(&self) -> bool {
+        self.tls_connection.wants_read()
+    }
+
+    pub fn read_socket(&mut self, rd: &mut dyn Read) -> std::io::Result<usize> {
+        self.tls_connection.read_tls(rd)
+    }
+
+    pub fn wants_write(&self) -> bool {
+        self.tls_connection.wants_write()
+    }
+
+    pub fn write_socket(&mut self, wr: &mut dyn Write) -> std::io::Result<usize> {
+        self.tls_connection.write_tls(wr)
+    }
+
+    fn send_response(&mut self, records: &[NtsRecord]) -> std::io::Result<()> {
+        let mut buffer = Vec::with_capacity(1024);
+        for record in records.into_iter() {
+            record.write(&mut buffer)?;
+        }
+
+        self.tls_connection.writer().write_all(&buffer)?;
+        self.tls_connection.send_close_notify();
+
+        Ok(())
+    }
+
+    pub fn progress(self) -> ControlFlow<Result<(), KeyExchangeError>, Self> {
+        match self.progress_help() {
+            ControlFlow::Continue(c) => ControlFlow::Continue(c),
+            ControlFlow::Break(b) => ControlFlow::Break(b.map(drop)),
+        }
+    }
+
+    fn progress_help(
+        mut self,
+    ) -> ControlFlow<Result<ClientPoolConnection, KeyExchangeError>, Self> {
+        // Move any received data from tls to decoder
+        let mut buf = [0; 128];
+        loop {
+            if let Err(e) = self.tls_connection.process_new_packets() {
+                return ControlFlow::Break(Err(e.into()));
+            }
+            let read_result = self.tls_connection.reader().read(&mut buf);
+            match read_result {
+                Ok(0) => {
+                    match self.state {
+                        State::InProgress { .. } => {
+                            // there are no more client bytes, but decoding was not finished yet
+                            return ControlFlow::Break(Err(KeyExchangeError::IncompleteResponse));
+                        }
+                        State::Done { data } => {
+                            // we're all done
+                            let connection = ClientPoolConnection {
+                                tls_connection: self.tls_connection,
+                                data,
+                            };
+
+                            return ControlFlow::Break(Ok(connection));
+                        }
+                    }
+                }
+                Ok(n) => match self.state {
+                    State::InProgress { decoder } => match decoder.step_with_slice(&buf[..n]) {
+                        ControlFlow::Continue(decoder) => {
+                            self.state = State::InProgress { decoder };
+                            continue;
+                        }
+                        ControlFlow::Break(Ok(result)) => {
+                            let algorithm = result.algorithm;
+                            let protocol = result.protocol;
+
+                            tracing::debug!(?algorithm, "selected AEAD algorithm");
+
+                            let keys = match algorithm
+                                .extract_nts_keys(protocol, &self.tls_connection)
+                            {
+                                Ok(keys) => keys,
+                                Err(e) => return ControlFlow::Break(Err(KeyExchangeError::Tls(e))),
+                            };
+
+                            let data = ClientPoolConnectionData {
+                                algorithm,
+                                protocol,
+                                keys,
+                            };
+
+                            self.state = State::Done { data };
+
+                            return ControlFlow::Continue(self);
+                        }
+                        ControlFlow::Break(Err(error)) => return ControlFlow::Break(Err(error)),
+                    },
+                    State::Done { .. } => {
+                        // client is sending more bytes, but we don't expect any more
+                        return ControlFlow::Break(Err(KeyExchangeError::InternalServerError));
+                    }
+                },
+                Err(e) => match e.kind() {
+                    std::io::ErrorKind::WouldBlock => return ControlFlow::Continue(self),
+                    std::io::ErrorKind::UnexpectedEof => {
+                        // something we need in practice. If we're already done, an EOF is fine
+                        match self.state {
+                            State::InProgress { .. } => {
+                                // there are no more client bytes, but decoding was not finished yet
+                                return ControlFlow::Break(Err(e.into()));
+                            }
+                            State::Done { data } => {
+                                // we're all done
+                                let connection = ClientPoolConnection {
+                                    tls_connection: self.tls_connection,
+                                    data,
+                                };
+
+                                return ControlFlow::Break(Ok(connection));
+                            }
+                        }
+                    }
+                    _ => return ControlFlow::Break(Err(e.into())),
+                },
+            }
+        }
+    }
+
+    pub fn new(tls_config: Arc<rustls::ServerConfig>) -> Result<Self, KeyExchangeError> {
+        // Ensure we send only ntske/1 as alpn
+        debug_assert_eq!(tls_config.alpn_protocols, &[b"ntske/1".to_vec()]);
+
+        // TLS only works when the server name is a DNS name; an IP address does not work
+        let tls_connection = rustls::ServerConnection::new(tls_config)?;
+
+        Ok(Self {
+            tls_connection,
+            state: State::InProgress {
+                decoder: KeyExchangeServerDecoder::new(),
+            },
         })
     }
 }
