@@ -574,12 +574,13 @@ mod tests {
     async fn key_exchange_roundtrip() {
         let provider = KeySetProvider::new(1);
         let keyset = provider.get();
+        let pool_certs = ["testdata/certificates/nos-nl.pem"];
 
         let (_sender, keyset) = tokio::sync::watch::channel(keyset);
         let nts_ke_config = NtsKeConfig {
             certificate_chain_path: PathBuf::from("test-keys/end.fullchain.pem"),
             private_key_path: PathBuf::from("test-keys/end.key"),
-            authorized_pool_server_certificates: Vec::new(),
+            authorized_pool_server_certificates: pool_certs.iter().map(PathBuf::from).collect(),
             key_exchange_timeout_ms: 1000,
             listen: "0.0.0.0:5431".parse().unwrap(),
         };
@@ -600,6 +601,33 @@ mod tests {
 
         assert_eq!(result.remote, "localhost");
         assert_eq!(result.port, 123);
+    }
+
+    #[tokio::test]
+    async fn key_exchange_refusal_due_to_invalid_config() {
+        let cert_path = "testdata/certificates/nos-nl-chain.pem";
+        let certs = [cert_path];
+
+        let provider = KeySetProvider::new(1);
+        let keyset = provider.get();
+
+        let (_sender, keyset) = tokio::sync::watch::channel(keyset);
+        let nts_ke_config = NtsKeConfig {
+            certificate_chain_path: PathBuf::from("../test-keys/end.fullchain.pem"),
+            private_key_path: PathBuf::from("../test-keys/end.key"),
+            authorized_pool_server_certificates: certs.iter().map(PathBuf::from).collect(),
+            key_exchange_timeout_ms: 1000,
+            listen: "0.0.0.0:5431".parse().unwrap(),
+        };
+
+        let Err(io_error) = run_nts_ke(nts_ke_config, keyset).await else {
+            panic!("nts server started normally, this should not happen");
+        };
+
+        let expected_error_msg = format!(
+            "pool certificate file at `\"{cert_path}\"` should contain exactly one certificate"
+        );
+        assert_eq!(io_error.to_string(), expected_error_msg);
     }
 
     #[tokio::test]

@@ -2414,10 +2414,10 @@ mod test {
 
         let result = keyexchange_loop(client, server);
 
-        matches!(
-            result.unwrap_err(),
-            KeyExchangeError::UnrecognizedCriticalRecord
-        );
+        assert!(matches!(
+            result,
+            Err(KeyExchangeError::UnrecognizedCriticalRecord)
+        ));
     }
 
     #[test]
