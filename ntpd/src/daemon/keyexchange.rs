@@ -48,7 +48,7 @@ pub(crate) async fn key_exchange_client(
     let socket = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
     let config = build_client_config(extra_certificates)?;
 
-    BoundKeyExchangeClient::new(socket, server_name, config)?.await
+    dbg!(BoundKeyExchangeClient::new(socket, server_name, config)?.await)
 }
 
 pub fn spawn(
@@ -273,7 +273,7 @@ where
                     Poll::Ready(Ok(_)) => {
                         this.need_flush = true;
                     }
-                    Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),
+                    Poll::Ready(Err(e)) => return Poll::Ready(Err(dbg!(e.into()))),
                     Poll::Pending => {
                         write_blocks = true;
                         break;
@@ -286,7 +286,7 @@ where
                     Poll::Ready(Ok(())) => {
                         this.need_flush = false;
                     }
-                    Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),
+                    Poll::Ready(Err(e)) => return Poll::Ready(Err(dbg!(e.into()))),
                     Poll::Pending => {
                         write_blocks = true;
                     }
@@ -298,10 +298,10 @@ where
                     Poll::Ready(Ok(_)) => {
                         this.client = match this.client.progress() {
                             ControlFlow::Continue(client) => client,
-                            ControlFlow::Break(result) => return Poll::Ready(result),
+                            ControlFlow::Break(result) => return Poll::Ready(dbg!(result)),
                         }
                     }
-                    Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),
+                    Poll::Ready(Err(e)) => return Poll::Ready(Err(dbg!(e.into()))),
                     Poll::Pending => {
                         read_blocks = true;
                         break;

@@ -4,10 +4,17 @@ mod config;
 mod bound_keyexchange;
 mod tracing;
 
-use std::{io::BufRead, path::PathBuf, sync::Arc};
+use std::{
+    io::BufRead,
+    net::{Ipv4Addr, SocketAddr},
+    path::PathBuf,
+    sync::Arc,
+};
 
+use bound_keyexchange::{BoundClientToPool, BoundPoolToServer};
 use cli::NtsPoolKeOptions;
 use config::{Config, NtsPoolKeConfig};
+use ntp_proto::KeyExchangeError;
 use tokio::net::{TcpListener, ToSocketAddrs};
 
 use crate::tracing as daemon_tracing;
@@ -168,19 +175,13 @@ async fn pool_key_exchange_server(
     let config = Arc::new(config);
 
     loop {
-        let (stream, peer_address) = listener.accept().await?;
+        let (client_stream, peer_address) = listener.accept().await?;
 
-        let config = config.clone();
+        dbg!("new client");
 
-        let fut = async move {
-            //            BoundKeyExchangeServer::run(stream, config)
-            //                .await
-            //                .map_err(|ke_error| std::io::Error::new(std::io::ErrorKind::Other, ke_error))
-            let _ = stream;
-            let _ = config;
+        let client_to_pool_config = config.clone();
 
-            std::io::Result::Ok(())
-        };
+        let fut = foo(client_stream, client_to_pool_config);
 
         tokio::spawn(async move {
             let timeout = std::time::Duration::from_millis(timeout_ms);
@@ -191,6 +192,59 @@ async fn pool_key_exchange_server(
             }
         });
     }
+}
+
+async fn foo(
+    client_stream: tokio::net::TcpStream,
+    config: Arc<rustls::ServerConfig>,
+) -> Result<(), KeyExchangeError> {
+    // handle the initial client to pool
+    let client_connection = dbg!(BoundClientToPool::run(client_stream, config).await)?;
+
+    dbg!(&client_connection.records);
+
+    // next we should pick a server that satisfies the algorithm used and is not denied by the
+    // client. But this server hardcoded for now.
+    let server_name = String::from("127.0.0.1");
+    let port = 8080;
+    let server_stream = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
+
+    let mut roots = rustls::RootCertStore::empty();
+    for cert in rustls_native_certs::load_native_certs()? {
+        let cert = rustls::Certificate(cert.0);
+        roots.add(&cert).map_err(KeyExchangeError::Certificate)?;
+    }
+
+    let extra_certificates = [];
+    for cert in extra_certificates {
+        roots.add(cert).map_err(KeyExchangeError::Certificate)?;
+    }
+
+    let config = rustls::ClientConfig::builder()
+        .with_safe_defaults()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+
+    // already has the FixedKeyRequest record
+    let records_for_server = &client_connection.records;
+
+    let server_connection =
+        BoundPoolToServer::new(server_stream, server_name, config, records_for_server)?.await?;
+
+    // now we just forward the response
+    let mut buffer = Vec::with_capacity(1024);
+    for record in server_connection.records {
+        record.write(&mut buffer)?;
+    }
+
+    use std::io::Write;
+    let mut client_connection = client_connection;
+    client_connection
+        .tls_connection
+        .writer()
+        .write_all(&buffer)?;
+
+    Ok(())
 }
 
 fn private_key_from_bufread(

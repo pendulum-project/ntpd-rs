@@ -1066,7 +1066,7 @@ impl KeyExchangeClient {
                 return ControlFlow::Break(Err(e.into()));
             }
             let read_result = self.tls_connection.reader().read(&mut buf);
-            match read_result {
+            match dbg!(read_result) {
                 Ok(0) => return ControlFlow::Break(Err(KeyExchangeError::IncompleteResponse)),
                 Ok(n) => {
                     self.decoder = match self.decoder.step_with_slice(&buf[..n]) {
@@ -1413,6 +1413,276 @@ impl KeyExchangeServerDecoder {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct ClientToPoolDecoder {
+    decoder: NtsRecordDecoder,
+    /// AEAD algorithm that the client is able to use and that we support
+    /// it may be that the server and client supported algorithms have no
+    /// intersection!
+    algorithm: AeadAlgorithm,
+    /// Protocol (NTP version) that is supported by both client and server
+    protocol: ProtocolId,
+
+    records: Vec<NtsRecord>,
+    denied_servers: Vec<String>,
+}
+
+pub struct ClientToPoolData {
+    algorithm: AeadAlgorithm,
+    protocol: ProtocolId,
+    records: Vec<NtsRecord>,
+    denied_servers: Vec<String>,
+}
+
+impl ClientToPoolDecoder {
+    pub fn step_with_slice(
+        mut self,
+        bytes: &[u8],
+    ) -> ControlFlow<Result<ClientToPoolData, KeyExchangeError>, Self> {
+        self.decoder.extend(bytes.iter().copied());
+
+        loop {
+            match self.decoder.step() {
+                Err(e) => return ControlFlow::Break(Err(e.into())),
+                Ok(Some(record)) => self = self.step_with_record(record)?,
+                Ok(None) => return ControlFlow::Continue(self),
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn step_with_record(
+        self,
+        record: NtsRecord,
+    ) -> ControlFlow<Result<ClientToPoolData, KeyExchangeError>, Self> {
+        use self::AeadAlgorithm as Algorithm;
+        use ControlFlow::{Break, Continue};
+        use KeyExchangeError::*;
+        use NtsRecord::*;
+
+        let mut state = self;
+
+        match record {
+            EndOfMessage => {
+                state.records.push(EndOfMessage);
+
+                let result = ClientToPoolData {
+                    algorithm: state.algorithm,
+                    protocol: state.protocol,
+                    records: state.records,
+                    denied_servers: state.denied_servers,
+                };
+
+                Break(Ok(result))
+            }
+            Error { errorcode } => {
+                //
+                Break(Err(KeyExchangeError::from_error_code(errorcode)))
+            }
+            Warning { warningcode } => {
+                tracing::debug!(warningcode, "Received key exchange warning code");
+
+                state.records.push(record);
+                Continue(state)
+            }
+            NextProtocol { protocol_ids } => {
+                #[cfg(feature = "ntpv5")]
+                let selected = if state.allow_v5 {
+                    protocol_ids
+                        .iter()
+                        .copied()
+                        .find_map(ProtocolId::try_deserialize_v5)
+                } else {
+                    protocol_ids
+                        .iter()
+                        .copied()
+                        .find_map(ProtocolId::try_deserialize)
+                };
+
+                #[cfg(not(feature = "ntpv5"))]
+                let selected = protocol_ids
+                    .iter()
+                    .copied()
+                    .find_map(ProtocolId::try_deserialize);
+
+                match selected {
+                    None => Break(Err(NoValidProtocol)),
+                    Some(protocol) => {
+                        state.protocol = protocol;
+                        Continue(state)
+                    }
+                }
+            }
+            AeadAlgorithm { algorithm_ids, .. } => {
+                let selected = algorithm_ids
+                    .iter()
+                    .copied()
+                    .find_map(Algorithm::try_deserialize);
+
+                match selected {
+                    None => Break(Err(NoValidAlgorithm)),
+                    Some(algorithm) => {
+                        state.algorithm = algorithm;
+                        Continue(state)
+                    }
+                }
+            }
+
+            #[cfg(feature = "nts-pool")]
+            NtpServerDeny { _denied } => {
+                state.denied_servers.push(_denied);
+                Continue(state)
+            }
+
+            other => {
+                // just forward other records blindly
+                state.records.push(other);
+                Continue(state)
+            }
+        }
+    }
+
+    fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct PoolToServerDecoder {
+    decoder: NtsRecordDecoder,
+    /// AEAD algorithm that the client is able to use and that we support
+    /// it may be that the server and client supported algorithms have no
+    /// intersection!
+    algorithm: AeadAlgorithm,
+    /// Protocol (NTP version) that is supported by both client and server
+    protocol: ProtocolId,
+
+    records: Vec<NtsRecord>,
+    supported_algorithms: Vec<(u16, u16)>,
+}
+
+pub struct PoolToServerData {
+    algorithm: AeadAlgorithm,
+    protocol: ProtocolId,
+    records: Vec<NtsRecord>,
+    supported_algorithms: Vec<(u16, u16)>,
+}
+
+impl PoolToServerDecoder {
+    pub fn step_with_slice(
+        mut self,
+        bytes: &[u8],
+    ) -> ControlFlow<Result<PoolToServerData, KeyExchangeError>, Self> {
+        self.decoder.extend(bytes.iter().copied());
+
+        loop {
+            match self.decoder.step() {
+                Err(e) => return ControlFlow::Break(Err(e.into())),
+                Ok(Some(record)) => self = self.step_with_record(record)?,
+                Ok(None) => return ControlFlow::Continue(self),
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn step_with_record(
+        self,
+        record: NtsRecord,
+    ) -> ControlFlow<Result<PoolToServerData, KeyExchangeError>, Self> {
+        use self::AeadAlgorithm as Algorithm;
+        use ControlFlow::{Break, Continue};
+        use KeyExchangeError::*;
+        use NtsRecord::*;
+
+        let mut state = self;
+
+        match record {
+            EndOfMessage => {
+                state.records.push(EndOfMessage);
+
+                let result = PoolToServerData {
+                    algorithm: state.algorithm,
+                    protocol: state.protocol,
+                    records: state.records,
+                    supported_algorithms: state.supported_algorithms,
+                };
+
+                Break(Ok(result))
+            }
+            Error { errorcode } => {
+                //
+                Break(Err(KeyExchangeError::from_error_code(errorcode)))
+            }
+            Warning { warningcode } => {
+                tracing::debug!(warningcode, "Received key exchange warning code");
+
+                state.records.push(record);
+                Continue(state)
+            }
+            NextProtocol { protocol_ids } => {
+                #[cfg(feature = "ntpv5")]
+                let selected = if state.allow_v5 {
+                    protocol_ids
+                        .iter()
+                        .copied()
+                        .find_map(ProtocolId::try_deserialize_v5)
+                } else {
+                    protocol_ids
+                        .iter()
+                        .copied()
+                        .find_map(ProtocolId::try_deserialize)
+                };
+
+                #[cfg(not(feature = "ntpv5"))]
+                let selected = protocol_ids
+                    .iter()
+                    .copied()
+                    .find_map(ProtocolId::try_deserialize);
+
+                match selected {
+                    None => Break(Err(NoValidProtocol)),
+                    Some(protocol) => {
+                        state.protocol = protocol;
+                        Continue(state)
+                    }
+                }
+            }
+            AeadAlgorithm { algorithm_ids, .. } => {
+                let selected = algorithm_ids
+                    .iter()
+                    .copied()
+                    .find_map(Algorithm::try_deserialize);
+
+                match selected {
+                    None => Break(Err(NoValidAlgorithm)),
+                    Some(algorithm) => {
+                        state.algorithm = algorithm;
+                        Continue(state)
+                    }
+                }
+            }
+
+            #[cfg(feature = "nts-pool")]
+            SupportedAlgorithmList {
+                supported_algorithms,
+            } => {
+                state.supported_algorithms.extend(supported_algorithms);
+                Continue(state)
+            }
+
+            other => {
+                // just forward other records blindly
+                state.records.push(other);
+                Continue(state)
+            }
+        }
+    }
+
+    fn new() -> Self {
+        Self::default()
+    }
+}
+
 #[derive(Debug)]
 pub struct KeyExchangeServer {
     tls_connection: rustls::ServerConnection,
@@ -1675,127 +1945,140 @@ impl KeyExchangeServer {
 /// The NTS pool key exchange server. It receives messages from an NTS client that wants to connect
 /// to a NTS server in the pool.
 #[derive(Debug)]
-pub struct PoolKeyExchangeServer {
-    tls_connection: rustls::ServerConnection,
-    state: State,
+pub enum ClientToPool {
+    InProgress {
+        tls_connection: rustls::ServerConnection,
+        decoder: ClientToPoolDecoder,
+    },
+    Done {
+        connection: ClientToPoolConnection,
+    },
 }
 
 #[derive(Debug)]
-enum State {
-    InProgress { decoder: KeyExchangeServerDecoder },
-    Done { data: ClientPoolConnectionData },
+#[cfg(feature = "nts-pool")]
+pub struct ClientToPoolConnection {
+    pub tls_connection: rustls::ServerConnection,
+    pub records: Vec<NtsRecord>,
+    pub denied_servers: Vec<String>,
 }
 
-#[derive(Debug)]
-struct ClientPoolConnectionData {
-    algorithm: AeadAlgorithm,
-    protocol: ProtocolId,
-    /// TLS keys extracted from the session between NTS client and Pool KE server
-    keys: NtsKeys,
-}
+#[cfg(feature = "nts-pool")]
+impl ClientToPool {
+    fn tls_connection(&self) -> &rustls::ServerConnection {
+        match self {
+            ClientToPool::InProgress { tls_connection, .. } => tls_connection,
+            ClientToPool::Done { connection } => &connection.tls_connection,
+        }
+    }
 
-#[derive(Debug)]
-struct ClientPoolConnection {
-    tls_connection: rustls::ServerConnection,
-    data: ClientPoolConnectionData,
-}
+    fn tls_connection_mut(&mut self) -> &mut rustls::ServerConnection {
+        match self {
+            ClientToPool::InProgress { tls_connection, .. } => tls_connection,
+            ClientToPool::Done { connection } => &mut connection.tls_connection,
+        }
+    }
 
-impl PoolKeyExchangeServer {
     pub fn wants_read(&self) -> bool {
-        self.tls_connection.wants_read()
+        self.tls_connection().wants_read()
     }
 
     pub fn read_socket(&mut self, rd: &mut dyn Read) -> std::io::Result<usize> {
-        self.tls_connection.read_tls(rd)
+        self.tls_connection_mut().read_tls(rd)
     }
 
     pub fn wants_write(&self) -> bool {
-        self.tls_connection.wants_write()
+        self.tls_connection().wants_write()
     }
 
     pub fn write_socket(&mut self, wr: &mut dyn Write) -> std::io::Result<usize> {
-        self.tls_connection.write_tls(wr)
+        self.tls_connection_mut().write_tls(wr)
     }
 
-    fn send_response(&mut self, records: &[NtsRecord]) -> std::io::Result<()> {
-        let mut buffer = Vec::with_capacity(1024);
-        for record in records.into_iter() {
-            record.write(&mut buffer)?;
-        }
-
-        self.tls_connection.writer().write_all(&buffer)?;
-        self.tls_connection.send_close_notify();
-
-        Ok(())
-    }
-
-    pub fn progress(self) -> ControlFlow<Result<(), KeyExchangeError>, Self> {
-        match self.progress_help() {
-            ControlFlow::Continue(c) => ControlFlow::Continue(c),
-            ControlFlow::Break(b) => ControlFlow::Break(b.map(drop)),
-        }
-    }
-
-    fn progress_help(
+    pub fn progress(
         mut self,
-    ) -> ControlFlow<Result<ClientPoolConnection, KeyExchangeError>, Self> {
+    ) -> ControlFlow<Result<ClientToPoolConnection, KeyExchangeError>, Self> {
         // Move any received data from tls to decoder
         let mut buf = [0; 128];
         loop {
-            if let Err(e) = self.tls_connection.process_new_packets() {
+            if let Err(e) = self.tls_connection_mut().process_new_packets() {
                 return ControlFlow::Break(Err(e.into()));
             }
-            let read_result = self.tls_connection.reader().read(&mut buf);
-            match read_result {
+            let read_result = self.tls_connection_mut().reader().read(&mut buf);
+            match dbg!(read_result) {
                 Ok(0) => {
-                    match self.state {
-                        State::InProgress { .. } => {
+                    match self {
+                        Self::InProgress { .. } => {
                             // there are no more client bytes, but decoding was not finished yet
                             return ControlFlow::Break(Err(KeyExchangeError::IncompleteResponse));
                         }
-                        State::Done { data } => {
-                            // we're all done
-                            let connection = ClientPoolConnection {
-                                tls_connection: self.tls_connection,
-                                data,
-                            };
-
+                        Self::Done { connection } => {
                             return ControlFlow::Break(Ok(connection));
                         }
                     }
                 }
-                Ok(n) => match self.state {
-                    State::InProgress { decoder } => match decoder.step_with_slice(&buf[..n]) {
+                Ok(n) => match self {
+                    Self::InProgress {
+                        tls_connection,
+                        decoder,
+                    } => match decoder.step_with_slice(&buf[..n]) {
                         ControlFlow::Continue(decoder) => {
-                            self.state = State::InProgress { decoder };
+                            self = Self::InProgress {
+                                tls_connection,
+                                decoder,
+                            };
                             continue;
                         }
-                        ControlFlow::Break(Ok(result)) => {
-                            let algorithm = result.algorithm;
-                            let protocol = result.protocol;
-
+                        ControlFlow::Break(Ok(ClientToPoolData {
+                            algorithm,
+                            protocol,
+                            mut records,
+                            denied_servers,
+                        })) => {
                             tracing::debug!(?algorithm, "selected AEAD algorithm");
 
-                            let keys = match algorithm
-                                .extract_nts_keys(protocol, &self.tls_connection)
+                            let nts_keys = match algorithm
+                                .extract_nts_keys(protocol, &tls_connection)
                             {
                                 Ok(keys) => keys,
                                 Err(e) => return ControlFlow::Break(Err(KeyExchangeError::Tls(e))),
                             };
 
-                            let data = ClientPoolConnectionData {
-                                algorithm,
-                                protocol,
-                                keys,
+                            let end_of_message = records.pop();
+                            debug_assert!(matches!(end_of_message, Some(NtsRecord::EndOfMessage)));
+
+                            records.extend([
+                                NtsRecord::NextProtocol {
+                                    protocol_ids: match protocol {
+                                        ProtocolId::NtpV4 => vec![0],
+                                        #[cfg(feature = "ntpv5")]
+                                        ProtocolId::NtpV5 => vec![0x8001, 0],
+                                    },
+                                },
+                                NtsRecord::AeadAlgorithm {
+                                    critical: false,
+                                    algorithm_ids: vec![algorithm as u16],
+                                },
+                                NtsRecord::FixedKeyRequest {
+                                    c2s: nts_keys.c2s.key_bytes().to_vec(),
+                                    s2c: nts_keys.s2c.key_bytes().to_vec(),
+                                },
+                                NtsRecord::EndOfMessage,
+                            ]);
+
+                            self = Self::Done {
+                                connection: ClientToPoolConnection {
+                                    tls_connection,
+                                    records,
+                                    denied_servers,
+                                },
                             };
 
-                            self.state = State::Done { data };
-
-                            return ControlFlow::Continue(self);
+                            continue;
                         }
                         ControlFlow::Break(Err(error)) => return ControlFlow::Break(Err(error)),
                     },
-                    State::Done { .. } => {
+                    Self::Done { .. } => {
                         // client is sending more bytes, but we don't expect any more
                         return ControlFlow::Break(Err(KeyExchangeError::InternalServerError));
                     }
@@ -1803,20 +2086,14 @@ impl PoolKeyExchangeServer {
                 Err(e) => match e.kind() {
                     std::io::ErrorKind::WouldBlock => return ControlFlow::Continue(self),
                     std::io::ErrorKind::UnexpectedEof => {
-                        // something we need in practice. If we're already done, an EOF is fine
-                        match self.state {
-                            State::InProgress { .. } => {
+                        match self {
+                            Self::Done { connection } => {
+                                // something we need in practice. If we're already done, an EOF is fine
+                                return ControlFlow::Break(Ok(connection));
+                            }
+                            Self::InProgress { .. } => {
                                 // there are no more client bytes, but decoding was not finished yet
                                 return ControlFlow::Break(Err(e.into()));
-                            }
-                            State::Done { data } => {
-                                // we're all done
-                                let connection = ClientPoolConnection {
-                                    tls_connection: self.tls_connection,
-                                    data,
-                                };
-
-                                return ControlFlow::Break(Ok(connection));
                             }
                         }
                     }
@@ -1833,12 +2110,115 @@ impl PoolKeyExchangeServer {
         // TLS only works when the server name is a DNS name; an IP address does not work
         let tls_connection = rustls::ServerConnection::new(tls_config)?;
 
-        Ok(Self {
+        Ok(Self::InProgress {
             tls_connection,
-            state: State::InProgress {
-                decoder: KeyExchangeServerDecoder::new(),
-            },
+            decoder: ClientToPoolDecoder::new(),
         })
+    }
+}
+
+pub struct PoolToServer {
+    tls_connection: rustls::ClientConnection,
+    decoder: PoolToServerDecoder,
+    server_name: String,
+}
+
+pub struct PoolToServerConnection {
+    pub records: Vec<NtsRecord>,
+}
+
+impl PoolToServer {
+    const NTP_DEFAULT_PORT: u16 = 123;
+
+    pub fn wants_read(&self) -> bool {
+        self.tls_connection.wants_read()
+    }
+
+    pub fn read_socket(&mut self, rd: &mut dyn Read) -> std::io::Result<usize> {
+        self.tls_connection.read_tls(rd)
+    }
+
+    pub fn wants_write(&self) -> bool {
+        self.tls_connection.wants_write()
+    }
+
+    pub fn write_socket(&mut self, wr: &mut dyn Write) -> std::io::Result<usize> {
+        self.tls_connection.write_tls(wr)
+    }
+
+    pub fn progress(
+        mut self,
+    ) -> ControlFlow<Result<PoolToServerConnection, KeyExchangeError>, Self> {
+        // Move any received data from tls to decoder
+        let mut buf = [0; 128];
+        loop {
+            if let Err(e) = self.tls_connection.process_new_packets() {
+                return ControlFlow::Break(Err(e.into()));
+            }
+            let read_result = self.tls_connection.reader().read(&mut buf);
+            match read_result {
+                Ok(0) => return ControlFlow::Break(Err(KeyExchangeError::IncompleteResponse)),
+                Ok(n) => {
+                    self.decoder = match self.decoder.step_with_slice(&buf[..n]) {
+                        ControlFlow::Continue(decoder) => decoder,
+                        ControlFlow::Break(Ok(PoolToServerData {
+                            algorithm,
+                            protocol,
+                            records,
+                            supported_algorithms,
+                        })) => {
+                            return ControlFlow::Break(Ok(PoolToServerConnection { records }));
+                        }
+                        ControlFlow::Break(Err(error)) => return ControlFlow::Break(Err(error)),
+                    }
+                }
+                Err(e) => match e.kind() {
+                    std::io::ErrorKind::WouldBlock => return ControlFlow::Continue(self),
+                    _ => return ControlFlow::Break(Err(e.into())),
+                },
+            }
+        }
+    }
+
+    // should only be used in tests!
+    fn new_without_tls_write(
+        server_name: String,
+        mut tls_config: rustls::ClientConfig,
+    ) -> Result<Self, KeyExchangeError> {
+        // Ensure we send only ntske/1 as alpn
+        tls_config.alpn_protocols.clear();
+        tls_config.alpn_protocols.push(b"ntske/1".to_vec());
+
+        // TLS only works when the server name is a DNS name; an IP address does not work
+        let tls_connection = rustls::ClientConnection::new(
+            Arc::new(tls_config),
+            (server_name.as_ref() as &str).try_into()?,
+        )?;
+
+        Ok(PoolToServer {
+            tls_connection,
+            decoder: PoolToServerDecoder::new(),
+            server_name,
+        })
+    }
+
+    pub fn new(
+        server_name: String,
+        tls_config: rustls::ClientConfig,
+        nts_records: &[NtsRecord],
+    ) -> Result<Self, KeyExchangeError> {
+        let mut client = Self::new_without_tls_write(server_name, tls_config)?;
+
+        // Make the request immediately (note, this will only go out to the wire via the write functions above)
+        // We use an intermediary buffer to ensure that all records are sent at once.
+        // This should not be needed, but works around issues in some NTS-ke server implementations
+        let mut buffer = Vec::with_capacity(1024);
+        for record in nts_records {
+            record.write(&mut buffer)?;
+        }
+        client.tls_connection.writer().write_all(&buffer)?;
+
+        Ok(client)
     }
 }
 

@@ -17,6 +17,7 @@ tracing.workspace = true
 tracing-subscriber = { version = "0.3.0", default-features = false, features = ["std", "fmt", "ansi"] }
 rustls.workspace = true
 rustls-pemfile.workspace = true
+rustls-native-certs.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 ntp-proto.workspace = true
