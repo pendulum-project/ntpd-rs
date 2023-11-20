@@ -524,23 +524,23 @@ mod tests {
 
     #[test]
     fn parse_private_keys() {
-        let input = include_bytes!("../../../test-keys/end.key");
+        let input = include_bytes!("../../test-keys/end.key");
         let _ = private_key_from_bufread(input.as_slice()).unwrap().unwrap();
 
-        let input = include_bytes!("../../../test-keys/testca.key");
+        let input = include_bytes!("../../test-keys/testca.key");
         let _ = private_key_from_bufread(input.as_slice()).unwrap().unwrap();
 
         // openssl does no longer seem to want to generate this format
         // so we use https://github.com/rustls/pemfile/blob/main/tests/data/rsa1024.pkcs1.pem
-        let input = include_bytes!("../../../test-keys/rsa_key.pem");
+        let input = include_bytes!("../../test-keys/rsa_key.pem");
         let _ = private_key_from_bufread(input.as_slice()).unwrap().unwrap();
 
         // openssl ecparam -name prime256v1 -genkey -noout -out ec_key.pem
-        let input = include_bytes!("../../../test-keys/ec_key.pem");
+        let input = include_bytes!("../../test-keys/ec_key.pem");
         let _ = private_key_from_bufread(input.as_slice()).unwrap().unwrap();
 
         // openssl genpkey -algorithm EC -out pkcs8_key.pem -pkeyopt ec_paramgen_curve:prime256v1
-        let input = include_bytes!("../../../test-keys/pkcs8_key.pem");
+        let input = include_bytes!("../../test-keys/pkcs8_key.pem");
         let _ = private_key_from_bufread(input.as_slice()).unwrap().unwrap();
     }
 
@@ -551,8 +551,8 @@ mod tests {
 
         let (_sender, keyset) = tokio::sync::watch::channel(keyset);
         let nts_ke_config = NtsKeConfig {
-            certificate_chain_path: PathBuf::from("../test-keys/end.fullchain.pem"),
-            private_key_path: PathBuf::from("../test-keys/end.key"),
+            certificate_chain_path: PathBuf::from("test-keys/end.fullchain.pem"),
+            private_key_path: PathBuf::from("test-keys/end.key"),
             key_exchange_timeout_ms: 1000,
             listen: "0.0.0.0:5431".parse().unwrap(),
         };
@@ -562,7 +562,7 @@ mod tests {
         // give the server some time to make the port available
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-        let ca = include_bytes!("../../../test-keys/testca.pem");
+        let ca = include_bytes!("../../test-keys/testca.pem");
         let result = key_exchange_client(
             "localhost".to_string(),
             5431,
