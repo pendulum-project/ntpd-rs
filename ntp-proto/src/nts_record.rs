@@ -1066,7 +1066,7 @@ impl KeyExchangeClient {
                 return ControlFlow::Break(Err(e.into()));
             }
             let read_result = self.tls_connection.reader().read(&mut buf);
-            match read_result {
+            match dbg!(read_result) {
                 Ok(0) => return ControlFlow::Break(Err(KeyExchangeError::IncompleteResponse)),
                 Ok(n) => {
                     self.decoder = match self.decoder.step_with_slice(&buf[..n]) {
@@ -2013,7 +2013,8 @@ impl ClientToPool2 {
                             // there are no more client bytes, but decoding was not finished yet
                             return ControlFlow::Break(Err(KeyExchangeError::IncompleteResponse));
                         }
-                        Self::Done { connection } => {
+                        Self::Done { mut connection } => {
+                            dbg!("here");
                             return ControlFlow::Break(Ok(connection));
                         }
                     }
@@ -2064,12 +2065,24 @@ impl ClientToPool2 {
                                 NtsRecord::EndOfMessage,
                             ]);
 
+                            let mut tls_connection = tls_connection;
+
+                            let mut buffer = Vec::with_capacity(1024);
+                            for record in [NtsRecord::Warning { warningcode: 42 }] {
+                                record.write(&mut buffer).unwrap()
+                            }
+                            tls_connection.writer().write_all(&buffer).unwrap();
+
+                            // tls_connection.send_close_notify();
+
                             dbg!("should be done now");
-                            return ControlFlow::Break(Ok(ClientToPoolConnection {
-                                tls_connection,
-                                records,
-                                denied_servers,
-                            }));
+                            return ControlFlow::Continue(Self::Done {
+                                connection: ClientToPoolConnection {
+                                    tls_connection,
+                                    records,
+                                    denied_servers,
+                                },
+                            });
                         }
                         ControlFlow::Break(Err(error)) => return ControlFlow::Break(Err(error)),
                     },
@@ -2084,6 +2097,7 @@ impl ClientToPool2 {
                         match self {
                             Self::Done { connection } => {
                                 // something we need in practice. If we're already done, an EOF is fine
+                                dbg!("here");
                                 return ControlFlow::Break(Ok(connection));
                             }
                             Self::InProgress { .. } => {

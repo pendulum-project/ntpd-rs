@@ -192,6 +192,10 @@ where
         };
 
         dbg!("write socket");
+        println!(
+            "Custom backtrace: {}",
+            std::backtrace::Backtrace::force_capture()
+        );
         match self.server.write_socket(&mut writer) {
             Err(ref err) if err.kind() == std::io::ErrorKind::WouldBlock => Poll::Pending,
             result => Poll::Ready(result),
@@ -254,10 +258,10 @@ where
                 }
             }
 
-            while !read_blocks && this.server.wants_read() {
-                match this.do_read(cx) {
+            while dbg!(!read_blocks && this.server.wants_read()) {
+                match dbg!(this.do_read(cx)) {
                     Poll::Ready(Ok(_)) => {
-                        this.server = match this.server.progress() {
+                        this.server = match dbg!(this.server.progress()) {
                             ControlFlow::Continue(client) => client,
                             ControlFlow::Break(Ok(x)) => return Poll::Ready(Ok(x)),
                             ControlFlow::Break(Err(e)) => return Poll::Ready(Err(e)),
