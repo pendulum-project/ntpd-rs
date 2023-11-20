@@ -4,14 +4,9 @@ mod config;
 mod bound_keyexchange;
 mod tracing;
 
-use std::{
-    io::BufRead,
-    net::{Ipv4Addr, SocketAddr},
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{io::BufRead, path::PathBuf, sync::Arc};
 
-use bound_keyexchange::{BoundClientToPool, BoundPoolToServer};
+use bound_keyexchange::BoundPoolToServer;
 use cli::NtsPoolKeOptions;
 use config::{Config, NtsPoolKeConfig};
 use ntp_proto::KeyExchangeError;
@@ -199,21 +194,30 @@ async fn foo(
     config: Arc<rustls::ServerConfig>,
 ) -> Result<(), KeyExchangeError> {
     // handle the initial client to pool
-    let client_connection = dbg!(BoundClientToPool::run(client_stream, config).await)?;
+    let client_connection =
+        bound_keyexchange::BoundClientToPool::run(client_stream, config).await?;
 
-    dbg!(&client_connection.records);
+    dbg!("done with client?");
 
     // next we should pick a server that satisfies the algorithm used and is not denied by the
     // client. But this server hardcoded for now.
-    let server_name = String::from("127.0.0.1");
+    let server_name = String::from("localhost");
     let port = 8080;
     let server_stream = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
+    dbg!("server stream");
 
     let mut roots = rustls::RootCertStore::empty();
     for cert in rustls_native_certs::load_native_certs()? {
         let cert = rustls::Certificate(cert.0);
         roots.add(&cert).map_err(KeyExchangeError::Certificate)?;
     }
+
+    roots.add_parsable_certificates(
+        &rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
+            "../../test-keys/testca.pem"
+        ) as &[u8]))
+        .unwrap(),
+    );
 
     let extra_certificates = [];
     for cert in extra_certificates {
@@ -228,8 +232,10 @@ async fn foo(
     // already has the FixedKeyRequest record
     let records_for_server = &client_connection.records;
 
+    // let server_connection = BoundPoolToServer::new(server_stream, server_name, config, records_for_server)?.await?;
     let server_connection =
-        BoundPoolToServer::new(server_stream, server_name, config, records_for_server)?.await?;
+        BoundPoolToServer::new(server_stream, &server_name, config, records_for_server)?.await?;
+    dbg!("post server stream");
 
     // now we just forward the response
     let mut buffer = Vec::with_capacity(1024);
@@ -242,7 +248,12 @@ async fn foo(
     client_connection
         .tls_connection
         .writer()
-        .write_all(&buffer)?;
+        .write_all(&buffer)
+        .unwrap();
+
+    client_connection.tls_connection.send_close_notify();
+
+    dbg!("all done");
 
     Ok(())
 }
