@@ -22,7 +22,7 @@ homepage = "https://github.com/pendulum-project/ntpd-rs"
 readme = "./README.md"
 description = "Full-featured implementation of NTP with NTS support"
 publish = true
-rust-version = "1.67.0" # MSRV
+rust-version = "1.67" # MSRV
 
 [workspace.metadata.release]
 sign-commit = true
