@@ -2103,17 +2103,16 @@ mod test {
 
     #[test]
     fn test_keyexchange_client() {
-        let cert_chain: Vec<rustls::Certificate> =
-            rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
-                "../../test-keys/end.fullchain.pem"
-            ) as &[u8]))
-            .unwrap()
-            .into_iter()
-            .map(rustls::Certificate)
-            .collect();
+        let cert_chain: Vec<rustls::Certificate> = rustls_pemfile::certs(
+            &mut std::io::BufReader::new(include_bytes!("../test-keys/end.fullchain.pem") as &[u8]),
+        )
+        .unwrap()
+        .into_iter()
+        .map(rustls::Certificate)
+        .collect();
         let key_der = rustls::PrivateKey(
             rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(include_bytes!(
-                "../../test-keys/end.key"
+                "../test-keys/end.key"
             )
                 as &[u8]))
             .unwrap()
@@ -2129,7 +2128,7 @@ mod test {
         let mut root_store = rustls::RootCertStore::empty();
         root_store.add_parsable_certificates(
             &rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
-                "../../test-keys/testca.pem"
+                "../test-keys/testca.pem"
             ) as &[u8]))
             .unwrap(),
         );
@@ -2176,17 +2175,16 @@ mod test {
     }
 
     fn client_server_pair() -> (KeyExchangeClient, KeyExchangeServer) {
-        let cert_chain: Vec<rustls::Certificate> =
-            rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
-                "../../test-keys/end.fullchain.pem"
-            ) as &[u8]))
-            .unwrap()
-            .into_iter()
-            .map(rustls::Certificate)
-            .collect();
+        let cert_chain: Vec<rustls::Certificate> = rustls_pemfile::certs(
+            &mut std::io::BufReader::new(include_bytes!("../test-keys/end.fullchain.pem") as &[u8]),
+        )
+        .unwrap()
+        .into_iter()
+        .map(rustls::Certificate)
+        .collect();
         let key_der = rustls::PrivateKey(
             rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(include_bytes!(
-                "../../test-keys/end.key"
+                "../test-keys/end.key"
             )
                 as &[u8]))
             .unwrap()
@@ -2206,7 +2204,7 @@ mod test {
         let mut root_store = rustls::RootCertStore::empty();
         root_store.add_parsable_certificates(
             &rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
-                "../../test-keys/testca.pem"
+                "../test-keys/testca.pem"
             ) as &[u8]))
             .unwrap(),
         );
