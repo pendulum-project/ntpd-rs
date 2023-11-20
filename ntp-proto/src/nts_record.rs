@@ -1066,7 +1066,7 @@ impl KeyExchangeClient {
                 return ControlFlow::Break(Err(e.into()));
             }
             let read_result = self.tls_connection.reader().read(&mut buf);
-            match dbg!(read_result) {
+            match read_result {
                 Ok(0) => return ControlFlow::Break(Err(KeyExchangeError::IncompleteResponse)),
                 Ok(n) => {
                     self.decoder = match self.decoder.step_with_slice(&buf[..n]) {
@@ -1427,6 +1427,7 @@ pub struct ClientToPoolDecoder {
     denied_servers: Vec<String>,
 }
 
+#[derive(Debug)]
 pub struct ClientToPoolData {
     algorithm: AeadAlgorithm,
     protocol: ProtocolId,
@@ -1464,7 +1465,7 @@ impl ClientToPoolDecoder {
 
         match record {
             EndOfMessage => {
-                state.records.push(EndOfMessage);
+                // NOTE EndOfMessage not pushed onto the vector
 
                 let result = ClientToPoolData {
                     algorithm: state.algorithm,
@@ -1945,7 +1946,7 @@ impl KeyExchangeServer {
 /// The NTS pool key exchange server. It receives messages from an NTS client that wants to connect
 /// to a NTS server in the pool.
 #[derive(Debug)]
-pub enum ClientToPool {
+pub enum ClientToPool2 {
     InProgress {
         tls_connection: rustls::ServerConnection,
         decoder: ClientToPoolDecoder,
@@ -1964,18 +1965,18 @@ pub struct ClientToPoolConnection {
 }
 
 #[cfg(feature = "nts-pool")]
-impl ClientToPool {
+impl ClientToPool2 {
     fn tls_connection(&self) -> &rustls::ServerConnection {
         match self {
-            ClientToPool::InProgress { tls_connection, .. } => tls_connection,
-            ClientToPool::Done { connection } => &connection.tls_connection,
+            Self::InProgress { tls_connection, .. } => tls_connection,
+            Self::Done { connection } => &connection.tls_connection,
         }
     }
 
     fn tls_connection_mut(&mut self) -> &mut rustls::ServerConnection {
         match self {
-            ClientToPool::InProgress { tls_connection, .. } => tls_connection,
-            ClientToPool::Done { connection } => &mut connection.tls_connection,
+            Self::InProgress { tls_connection, .. } => tls_connection,
+            Self::Done { connection } => &mut connection.tls_connection,
         }
     }
 
@@ -2005,7 +2006,7 @@ impl ClientToPool {
                 return ControlFlow::Break(Err(e.into()));
             }
             let read_result = self.tls_connection_mut().reader().read(&mut buf);
-            match dbg!(read_result) {
+            match read_result {
                 Ok(0) => {
                     match self {
                         Self::InProgress { .. } => {
@@ -2044,9 +2045,6 @@ impl ClientToPool {
                                 Err(e) => return ControlFlow::Break(Err(KeyExchangeError::Tls(e))),
                             };
 
-                            let end_of_message = records.pop();
-                            debug_assert!(matches!(end_of_message, Some(NtsRecord::EndOfMessage)));
-
                             records.extend([
                                 NtsRecord::NextProtocol {
                                     protocol_ids: match protocol {
@@ -2066,15 +2064,12 @@ impl ClientToPool {
                                 NtsRecord::EndOfMessage,
                             ]);
 
-                            self = Self::Done {
-                                connection: ClientToPoolConnection {
-                                    tls_connection,
-                                    records,
-                                    denied_servers,
-                                },
-                            };
-
-                            continue;
+                            dbg!("should be done now");
+                            return ControlFlow::Break(Ok(ClientToPoolConnection {
+                                tls_connection,
+                                records,
+                                denied_servers,
+                            }));
                         }
                         ControlFlow::Break(Err(error)) => return ControlFlow::Break(Err(error)),
                     },
@@ -2117,10 +2112,11 @@ impl ClientToPool {
     }
 }
 
+pub type ClientToPool = ClientToPool2;
+
 pub struct PoolToServer {
     tls_connection: rustls::ClientConnection,
     decoder: PoolToServerDecoder,
-    server_name: String,
 }
 
 pub struct PoolToServerConnection {
@@ -2128,8 +2124,6 @@ pub struct PoolToServerConnection {
 }
 
 impl PoolToServer {
-    const NTP_DEFAULT_PORT: u16 = 123;
-
     pub fn wants_read(&self) -> bool {
         self.tls_connection.wants_read()
     }
@@ -2162,10 +2156,10 @@ impl PoolToServer {
                     self.decoder = match self.decoder.step_with_slice(&buf[..n]) {
                         ControlFlow::Continue(decoder) => decoder,
                         ControlFlow::Break(Ok(PoolToServerData {
-                            algorithm,
-                            protocol,
+                            algorithm: _,
+                            protocol: _,
                             records,
-                            supported_algorithms,
+                            supported_algorithms: _,
                         })) => {
                             return ControlFlow::Break(Ok(PoolToServerConnection { records }));
                         }
@@ -2182,7 +2176,7 @@ impl PoolToServer {
 
     // should only be used in tests!
     fn new_without_tls_write(
-        server_name: String,
+        server_name: &str,
         mut tls_config: rustls::ClientConfig,
     ) -> Result<Self, KeyExchangeError> {
         // Ensure we send only ntske/1 as alpn
@@ -2190,20 +2184,17 @@ impl PoolToServer {
         tls_config.alpn_protocols.push(b"ntske/1".to_vec());
 
         // TLS only works when the server name is a DNS name; an IP address does not work
-        let tls_connection = rustls::ClientConnection::new(
-            Arc::new(tls_config),
-            (server_name.as_ref() as &str).try_into()?,
-        )?;
+        let tls_connection =
+            rustls::ClientConnection::new(Arc::new(tls_config), server_name.try_into()?)?;
 
-        Ok(PoolToServer {
+        Ok(Self {
             tls_connection,
             decoder: PoolToServerDecoder::new(),
-            server_name,
         })
     }
 
     pub fn new(
-        server_name: String,
+        server_name: &str,
         tls_config: rustls::ClientConfig,
         nts_records: &[NtsRecord],
     ) -> Result<Self, KeyExchangeError> {
