@@ -1299,10 +1299,10 @@ impl KeyExchangeServerDecoder {
 #[derive(Debug)]
 pub struct KeyExchangeServer {
     tls_connection: rustls::ServerConnection,
-    #[cfg(feature = "nts-pool")]
-    privileged_connection: bool,
     decoder: Option<KeyExchangeServerDecoder>,
     keyset: Arc<KeySet>,
+    #[cfg(feature = "nts-pool")]
+    pool_certificates: Arc<Vec<rustls::Certificate>>,
 }
 
 impl KeyExchangeServer {
@@ -1386,7 +1386,7 @@ impl KeyExchangeServer {
 
                                 #[cfg(feature = "nts-pool")]
                                 let keys = if let Some(keys) = result.fixed_keys {
-                                    if self.privileged_connection {
+                                    if self.privileged_connection() {
                                         tracing::debug!("using fixed keys for AEAD algorithm");
                                         algorithm
                                             .try_into_nts_keys(keys)
@@ -1441,10 +1441,23 @@ impl KeyExchangeServer {
         }
     }
 
+    #[cfg(feature = "nts-pool")]
+    pub fn privileged_connection(&self) -> bool {
+        self.tls_connection
+            .peer_certificates()
+            .and_then(|cert_chain| cert_chain.first())
+            .map(|cert| {
+                self.pool_certificates
+                    .iter()
+                    .any(|allowed_cert| allowed_cert == cert)
+            })
+            .unwrap_or(false)
+    }
+
     pub fn new(
         tls_config: Arc<rustls::ServerConfig>,
         keyset: Arc<KeySet>,
-        pool_certificates: &[rustls::Certificate],
+        pool_certificates: Arc<Vec<rustls::Certificate>>,
     ) -> Result<Self, KeyExchangeError> {
         // Ensure we send only ntske/1 as alpn
         debug_assert_eq!(tls_config.alpn_protocols, &[b"ntske/1".to_vec()]);
@@ -1452,23 +1465,12 @@ impl KeyExchangeServer {
         // TLS only works when the server name is a DNS name; an IP address does not work
         let tls_connection = rustls::ServerConnection::new(tls_config)?;
 
-        #[cfg(feature = "nts-pool")]
-        let privileged_connection = tls_connection
-            .peer_certificates()
-            .and_then(|cert_chain| cert_chain.first())
-            .and_then(|cert| {
-                pool_certificates
-                    .iter()
-                    .find(|&allowed_cert| allowed_cert == cert)
-            })
-            .is_some();
-
         Ok(Self {
             tls_connection,
-            #[cfg(feature = "nts-pool")]
-            privileged_connection,
             decoder: Some(KeyExchangeServerDecoder::new()),
             keyset,
+            #[cfg(feature = "nts-pool")]
+            pool_certificates,
         })
     }
 }
@@ -2326,7 +2328,8 @@ mod test {
 
         let client =
             KeyExchangeClient::new_without_tls_write("localhost".into(), clientconfig).unwrap();
-        let server = KeyExchangeServer::new(Arc::new(serverconfig), keyset, &[]).unwrap();
+        let server =
+            KeyExchangeServer::new(Arc::new(serverconfig), keyset, Arc::default()).unwrap();
 
         (client, server)
     }
@@ -2334,7 +2337,7 @@ mod test {
     fn keyexchange_loop(
         mut client: KeyExchangeClient,
         mut server: KeyExchangeServer,
-    ) -> Result<KeyExchangeResult, KeyExchangeError> {
+    ) -> Result<(KeyExchangeResult, KeyExchangeServer), KeyExchangeError> {
         let mut buf = [0; 4096];
 
         'result: loop {
@@ -2349,7 +2352,7 @@ mod test {
                     offset += cur;
                     client = match client.progress() {
                         ControlFlow::Continue(client) => client,
-                        ControlFlow::Break(result) => break 'result result,
+                        ControlFlow::Break(result) => break 'result result.map(|x| (x, server)),
                     }
                 }
             }
@@ -2387,7 +2390,7 @@ mod test {
         }
         client.tls_connection.writer().write_all(&buffer).unwrap();
 
-        let result = keyexchange_loop(client, server).unwrap();
+        let (result, _server) = keyexchange_loop(client, server).unwrap();
 
         assert_eq!(&result.remote, "localhost");
         assert_eq!(result.port, 123);
@@ -2412,10 +2415,10 @@ mod test {
         }
         client.tls_connection.writer().write_all(&buffer).unwrap();
 
-        let result = keyexchange_loop(client, server);
+        let error = keyexchange_loop(client, server);
 
         assert!(matches!(
-            result,
+            error,
             Err(KeyExchangeError::UnrecognizedCriticalRecord)
         ));
     }
@@ -2423,8 +2426,7 @@ mod test {
     #[test]
     #[cfg(feature = "nts-pool")]
     fn test_keyexchange_roundtrip_fixed_authorized() {
-        let (mut client, mut server) = client_server_pair();
-        server.privileged_connection = true;
+        let (mut client, server) = client_server_pair();
 
         let c2s: Vec<_> = (0..).take(64).collect();
         let s2c: Vec<_> = (0..).skip(64).take(64).collect();
@@ -2436,7 +2438,7 @@ mod test {
         client.tls_connection.writer().write_all(&buffer).unwrap();
 
         let keyset = server.keyset.clone();
-        let mut result = keyexchange_loop(client, server).unwrap();
+        let (mut result, _server) = keyexchange_loop(client, server).unwrap();
 
         assert_eq!(&result.remote, "localhost");
         assert_eq!(result.port, 123);
@@ -2484,7 +2486,7 @@ mod test {
         let mut serverconfig = rustls::ServerConfig::builder()
             .with_safe_defaults()
             .with_client_cert_verifier(Arc::new(
-                rustls::server::AllowAnyAnonymousOrAuthenticatedClient::new(root_store.clone()),
+                rustls::server::AllowAnyAnonymousOrAuthenticatedClient::new(root_store),
             ))
             .with_single_cert(cert_chain.clone(), key_der.clone())
             .unwrap();
@@ -2520,7 +2522,7 @@ mod test {
         let mut client =
             KeyExchangeClient::new_without_tls_write("localhost".into(), clientconfig).unwrap();
         let server =
-            KeyExchangeServer::new(Arc::new(serverconfig), keyset, &pool_cert[..1]).unwrap();
+            KeyExchangeServer::new(Arc::new(serverconfig), keyset, Arc::new(pool_cert)).unwrap();
 
         let mut buffer = Vec::with_capacity(1024);
         for record in NtsRecord::client_key_exchange_records() {
@@ -2528,9 +2530,9 @@ mod test {
         }
         client.tls_connection.writer().write_all(&buffer).unwrap();
 
-        let result = keyexchange_loop(client, server).unwrap();
+        let (_result, server) = keyexchange_loop(client, server).unwrap();
 
-        assert!(server.privileged_connection);
+        assert_eq!(server.privileged_connection(), true);
     }
 
     #[test]
