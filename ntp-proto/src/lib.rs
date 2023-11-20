@@ -77,6 +77,11 @@ mod exports {
     pub mod v5 {
         pub use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
     }
+
+    #[cfg(feature = "nts-pool")]
+    pub use super::nts_record::{
+        ClientToPool, ClientToPoolConnection, PoolToServer, PoolToServerConnection,
+    };
 }
 
 #[cfg(feature = "__internal-api")]
