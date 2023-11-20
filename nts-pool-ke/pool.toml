@@ -1,0 +1,4 @@
+[nts-pool-ke-server]
+listen = "0.0.0.0:4460"
+certificate-chain-path = "/home/folkertdev/tg/ntp/ntpd-rs/test-keys/end.fullchain.pem"
+private-key-path = "/home/folkertdev/tg/ntp/ntpd-rs/test-keys/end.key"

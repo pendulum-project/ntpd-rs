@@ -1,0 +1,27 @@
+[observability]
+# Other values include trace, debug, warn and error
+log-level = "info"
+observation-path = "/var/run/ntpd-rs/observe"
+
+# the server will get its time from the NTP pool
+[[source]]
+mode = "pool"
+address = "pool.ntp.org"
+count = 4
+
+[[server]]
+listen = "0.0.0.0:123"
+
+# System parameters used in filtering and steering the clock:
+[synchronization]
+minimum-agreeing-sources = 1
+single-step-panic-threshold = 10
+startup-step-panic-threshold = { forward = 0, backward = 86400 }
+
+# to function as an NTS server, we must also provide key exchange
+# uses an unsecure certificate chain!
+[[nts-ke-server]]
+listen = "0.0.0.0:8080"
+certificate-chain-path = "/home/folkertdev/tg/ntp/ntpd-rs/test-keys/end.fullchain.pem"
+private-key-path = "/home/folkertdev/tg/ntp/ntpd-rs/test-keys/end.key"
+key-exchange-timeout-ms = 1000
