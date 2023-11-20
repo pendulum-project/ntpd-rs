@@ -194,9 +194,13 @@ async fn foo(
     config: Arc<rustls::ServerConfig>,
 ) -> Result<(), KeyExchangeError> {
     // handle the initial client to pool
-    let client_connection =
+    let mut client_connection =
         bound_keyexchange::BoundClientToPool::run(client_stream, config).await?;
 
+    dbg!("all done");
+    client_connection.tls_connection.send_close_notify();
+
+    /*
     dbg!("done with client?");
 
     // next we should pick a server that satisfies the algorithm used and is not denied by the
@@ -254,6 +258,7 @@ async fn foo(
     client_connection.tls_connection.send_close_notify();
 
     dbg!("all done");
+    */
 
     Ok(())
 }
