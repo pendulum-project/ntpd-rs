@@ -1,0 +1,16 @@
+[observability]
+# Other values include trace, debug, warn and error
+log-level = "info"
+observation-path = "/var/run/ntpd-rs/observe"
+
+# See https://docs.ntpd-rs.pendulum-project.org/man/ntp.toml.5/ on how to set up certificates
+[[source]]
+mode = "nts"
+address =  "localhost:4460"
+certificate-authority = "/home/folkertdev/tg/ntp/ntpd-rs/test-keys/testca.pem"
+
+# System parameters used in filtering and steering the clock:
+[synchronization]
+minimum-agreeing-sources = 1
+single-step-panic-threshold = 10
+startup-step-panic-threshold = { forward = "inf", backward = 86400 }
