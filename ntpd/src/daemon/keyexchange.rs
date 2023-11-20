@@ -157,7 +157,7 @@ async fn key_exchange_server(
         let pool_certs = pool_certs.clone();
 
         let fut = async move {
-            BoundKeyExchangeServer::run(stream, config, keyset, &pool_certs)
+            BoundKeyExchangeServer::run(stream, config, keyset, pool_certs)
                 .await
                 .map_err(|ke_error| std::io::Error::new(std::io::ErrorKind::Other, ke_error))
         };
@@ -317,7 +317,7 @@ where
         io: IO,
         config: Arc<rustls::ServerConfig>,
         keyset: Arc<KeySet>,
-        pool_certs: &[rustls::Certificate],
+        pool_certs: Arc<Vec<rustls::Certificate>>,
     ) -> Result<Self, KeyExchangeError> {
         let data = BoundKeyExchangeServerData {
             io,
@@ -332,7 +332,7 @@ where
         io: IO,
         config: Arc<rustls::ServerConfig>,
         keyset: Arc<KeySet>,
-        pool_certs: &[rustls::Certificate],
+        pool_certs: Arc<Vec<rustls::Certificate>>,
     ) -> Result<(), KeyExchangeError> {
         let this = Self::new(io, config, keyset, pool_certs)?;
 
