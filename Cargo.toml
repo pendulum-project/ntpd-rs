@@ -24,13 +24,6 @@ description = "Full-featured implementation of NTP with NTS support"
 publish = true
 rust-version = "1.67" # MSRV
 
-[workspace.metadata.release]
-sign-commit = true
-sign-tag = true
-shared-version = true
-consolidate-commits = true
-tag = false
-
 # Because of the async runtime, we really want panics to cause an abort, otherwise
 # the binary can keep on running as a ghost
 [profile.dev]
@@ -70,4 +63,3 @@ zeroize = "1.5"
 ntp-os-clock = { version = "1.0.0", path = "./ntp-os-clock" }
 ntp-proto = { version = "1.0.0", path = "./ntp-proto", features = ["__internal-api"] }
 ntp-udp = { version = "1.0.0", path = "./ntp-udp" }
-ntpd = { version = "1.0.0", path = "./ntpd" }

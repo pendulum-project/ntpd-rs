@@ -11,10 +11,6 @@ publish.workspace = true
 rust-version.workspace = true
 build = "build.rs"
 
-[package.metadata.release]
-tag = true
-tag-name = "v{{version}}"
-
 [dependencies]
 ntp-proto.workspace = true
 ntp-os-clock.workspace = true
@@ -81,7 +77,6 @@ assets = [
   ["docs/examples/conf/ntpd-rs.preset", "/lib/systemd/system-preset/50-ntpd-rs.preset", "644"],
   ["docs/examples/conf/ntpd-rs.service", "/lib/systemd/system/ntpd-rs.service", "644"],
   ["docs/examples/conf/ntpd-rs-metrics.service", "/lib/systemd/system/ntpd-rs-metrics.service", "644"],
-  ["docs/examples/conf/ntp.toml.default", "/usr/share/doc/ntpd-rs/ntp.toml.default", "644"],
   ["../COPYING", "/usr/share/doc/ntpd-rs/COPYING", "644"],
   ["../LICENSE-APACHE", "/usr/share/doc/ntpd-rs/LICENSE-APACHE", "644"],
   ["../LICENSE-MIT", "/usr/share/doc/ntpd-rs/LICENSE-MIT", "644"],
