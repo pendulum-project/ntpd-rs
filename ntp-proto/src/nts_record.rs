@@ -171,7 +171,7 @@ pub enum NtsRecord {
     },
     #[cfg(feature = "nts-pool")]
     NtpServerDeny {
-        denied: String,
+        _denied: String,
     },
 }
 
@@ -371,7 +371,7 @@ impl NtsRecord {
                 // NOTE: the string data should be ascii (not utf8) but we don't enforce that here
                 let str_data = read_bytes_exact(reader, record_len)?;
                 match String::from_utf8(str_data) {
-                    Ok(denied) => NtsRecord::NtpServerDeny { denied },
+                    Ok(_denied) => NtsRecord::NtpServerDeny { _denied },
                     Err(e) => NtsRecord::Unknown {
                         record_type,
                         critical,
@@ -482,7 +482,7 @@ impl NtsRecord {
                 writer.write_all(s2c)?;
             }
             #[cfg(feature = "nts-pool")]
-            NtsRecord::NtpServerDeny { denied: name } => {
+            NtsRecord::NtpServerDeny { _denied: name } => {
                 // NOTE: the server name should be ascii
                 #[cfg(not(feature = "__internal-fuzz"))]
                 debug_assert!(name.is_ascii());
@@ -1123,8 +1123,6 @@ struct KeyExchangeServerDecoder {
     send_supported_algorithms: bool,
     #[cfg(feature = "nts-pool")]
     fixed_key_request: Option<RequestedKeys>,
-    #[cfg(feature = "nts-pool")]
-    server_deny: Option<String>,
 }
 
 #[cfg(feature = "nts-pool")]
@@ -1287,8 +1285,8 @@ impl KeyExchangeServerDecoder {
                 Continue(state)
             }
             #[cfg(feature = "nts-pool")]
-            NtpServerDeny { denied } => {
-                state.server_deny = Some(denied);
+            NtpServerDeny { _denied } => {
+                // we are not a NTS pool server, so we ignore this record
                 Continue(state)
             }
 
@@ -1760,7 +1758,7 @@ mod test {
         let mut buffer = Vec::new();
 
         let record = NtsRecord::NtpServerDeny {
-            denied: String::from("a string"),
+            _denied: String::from("a string"),
         };
 
         record.write(&mut buffer).unwrap();
