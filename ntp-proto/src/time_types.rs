@@ -235,6 +235,27 @@ impl NtpDuration {
         .to_be_bytes()
     }
 
+    #[cfg(feature = "ntpv5")]
+    pub(crate) const fn from_bits_time32(bits: [u8; 4]) -> Self {
+        NtpDuration {
+            duration: (u32::from_be_bytes(bits) as i64) << 4,
+        }
+    }
+
+    #[cfg(feature = "ntpv5")]
+    pub(crate) fn to_bits_time32(self) -> [u8; 4] {
+        // serializing negative durations should never happen
+        // and indicates a programming error elsewhere.
+        // as for duration that are too large, saturating is
+        // the safe option.
+        assert!(self.duration >= 0);
+
+        // On overflow we just saturate to the maximum 16s
+        u32::try_from(self.duration >> 4)
+            .unwrap_or(u32::MAX)
+            .to_be_bytes()
+    }
+
     /// Convert to an f64; required for statistical calculations
     /// (e.g. in clock filtering)
     pub fn to_seconds(self) -> f64 {
@@ -842,5 +863,34 @@ mod tests {
             NtpDuration::from_seconds(1.0),
             NtpDuration::from_seconds(1.0) * FrequencyTolerance::ppm(1_000_000),
         );
+    }
+
+    #[test]
+    #[cfg(feature = "ntpv5")]
+    fn time32() {
+        type D = NtpDuration;
+        assert_eq!(D::from_bits_time32([0, 0, 0, 0]), D::ZERO);
+        assert_eq!(D::from_bits_time32([0x10, 0, 0, 0]), D::from_seconds(1.0));
+        assert_eq!(D::from_bits_time32([0, 0, 0, 1]).as_seconds_nanos(), (0, 3));
+        assert_eq!(
+            D::from_bits_time32([0, 0, 0, 10]).as_seconds_nanos(),
+            (0, 37)
+        );
+
+        assert_eq!(D::from_seconds(16.0).to_bits_time32(), [0xFF; 4]);
+        assert_eq!(D { duration: 0xF }.to_bits_time32(), [0; 4]);
+        assert_eq!(D { duration: 0x1F }.to_bits_time32(), [0, 0, 0, 1]);
+
+        for i in 0..u8::MAX {
+            let mut bits = [i, i, i, i];
+            for (idx, b) in bits.iter_mut().enumerate() {
+                *b = b.wrapping_add(idx as u8);
+            }
+
+            let d = D::from_bits_time32(bits);
+            let out_bits = d.to_bits_time32();
+
+            assert_eq!(bits, out_bits);
+        }
     }
 }

@@ -272,8 +272,8 @@ impl NtpHeaderV5 {
                 timescale: NtpTimescale::from_bits(data[4])?,
                 era: NtpEra(data[5]),
                 flags: NtpFlags::from_bits(data[6..8].try_into().unwrap())?,
-                root_delay: NtpDuration::from_bits_short(data[8..12].try_into().unwrap()),
-                root_dispersion: NtpDuration::from_bits_short(data[12..16].try_into().unwrap()),
+                root_delay: NtpDuration::from_bits_time32(data[8..12].try_into().unwrap()),
+                root_dispersion: NtpDuration::from_bits_time32(data[12..16].try_into().unwrap()),
                 server_cookie: NtpServerCookie(data[16..24].try_into().unwrap()),
                 client_cookie: NtpClientCookie(data[24..32].try_into().unwrap()),
                 receive_timestamp: NtpTimestamp::from_bits(data[32..40].try_into().unwrap()),
@@ -290,8 +290,8 @@ impl NtpHeaderV5 {
         w.write_all(&[self.timescale.to_bits()])?;
         w.write_all(&[self.era.0])?;
         w.write_all(&self.flags.as_bits())?;
-        w.write_all(&self.root_delay.to_bits_short())?;
-        w.write_all(&self.root_dispersion.to_bits_short())?;
+        w.write_all(&self.root_delay.to_bits_time32())?;
+        w.write_all(&self.root_dispersion.to_bits_time32())?;
         w.write_all(&self.server_cookie.0)?;
         w.write_all(&self.client_cookie.0)?;
         w.write_all(&self.receive_timestamp.to_bits())?;
@@ -421,7 +421,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_resonse() {
+    fn parse_response() {
         #[allow(clippy::unusual_byte_groupings)] // Bits are grouped by fields
         #[rustfmt::skip]
         let data = [
@@ -441,9 +441,9 @@ mod tests {
             0x00,
             0b0000_00_1_0,
             // Root Delay
-            0x00, 0x00, 0x02, 0x3f,
+            0x10, 0x00, 0x00, 0x00,
             // Root Dispersion
-            0x00, 0x00, 0x00, 0x42,
+            0x20, 0x00, 0x00, 0x00,
             // Server Cookie
             0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
             // Client Cookie
@@ -467,14 +467,8 @@ mod tests {
         assert!(parsed.flags.interleaved_mode);
         assert!(!parsed.flags.unknown_leap);
         assert!(parsed.flags.interleaved_mode);
-        assert_eq!(
-            parsed.root_delay,
-            NtpDuration::from_seconds(0.00877380371298031)
-        );
-        assert_eq!(
-            parsed.root_dispersion,
-            NtpDuration::from_seconds(0.001007080078359479)
-        );
+        assert_eq!(parsed.root_delay, NtpDuration::from_seconds(1.0));
+        assert_eq!(parsed.root_dispersion, NtpDuration::from_seconds(2.0));
         assert_eq!(
             parsed.server_cookie,
             NtpServerCookie([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08])
@@ -515,8 +509,8 @@ mod tests {
                     interleaved_mode: i % 4 == 0,
                     status_message: i % 5 == 0,
                 },
-                root_delay: NtpDuration::from_bits_short([i; 4]),
-                root_dispersion: NtpDuration::from_bits_short([i.wrapping_add(1); 4]),
+                root_delay: NtpDuration::from_bits_time32([i; 4]),
+                root_dispersion: NtpDuration::from_bits_time32([i.wrapping_add(1); 4]),
                 server_cookie: NtpServerCookie([i.wrapping_add(2); 8]),
                 client_cookie: NtpClientCookie([i.wrapping_add(3); 8]),
                 receive_timestamp: NtpTimestamp::from_bits([i.wrapping_add(4); 8]),
