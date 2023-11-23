@@ -2321,7 +2321,10 @@ mod test {
         let mut serverconfig = rustls::ServerConfig::builder()
             .with_safe_defaults()
             .with_client_cert_verifier(Arc::new(
-                rustls::server::AllowAnyAnonymousOrAuthenticatedClient::new(root_store.clone()),
+                #[cfg(not(feature = "nts-pool"))]
+                rustls::server::NoClientAuth,
+                #[cfg(feature = "nts-pool")]
+                crate::tls_utils::AllowAnyAnonymousOrCertificateBearingClient,
             ))
             .with_single_cert(cert_chain.clone(), key_der.clone())
             .unwrap();

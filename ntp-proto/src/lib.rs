@@ -20,6 +20,9 @@ mod peer;
 mod system;
 mod time_types;
 
+#[cfg(feature = "nts-pool")]
+pub mod tls_utils;
+
 pub(crate) mod exitcode {
     /// An internal software error has been detected.  This
     /// should be limited to non-operating system related
