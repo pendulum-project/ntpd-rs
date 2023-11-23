@@ -1,15 +1,18 @@
 # Changelog
 
-## [unreleased]
+## [1.1.0-alpha.20231123] - 2023-11-23
 
 ### Added
 - Server can now be run without permission to change the system clock so long
   as no time sources are configured.
+- Experimental NTPv5 draft support was added behind a feature flag (disabled by
+  default)
 
 ### Changed
 - The sources section can be left out of the configuration now.
-- When no sources are configured, the daemon will merely state it won't change 
+- When no sources are configured, the daemon will merely state it won't change
   system time, rather than warn
+- The MSRV was raised to 1.67
 
 ## [1.0.0] - 2023-10-05
 
@@ -167,7 +170,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
-[unreleased]: https://github.com/pendulum-project/ntpd-rs/compare/v1.0.0...main
+[1.1.0-alpha.20231123]: https://github.com/pendulum-project/ntpd-rs/compare/v1.0.0...v1.1.0-alpha.20231123
 [1.0.0]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.7...v1.0.0
 [0.3.7]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.5...v0.3.6
