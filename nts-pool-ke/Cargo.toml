@@ -20,7 +20,7 @@ rustls-pemfile.workspace = true
 rustls-native-certs.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-ntp-proto.workspace = true
+ntp-proto = { workspace = true, features = ["nts-pool"] }
 tokio-rustls = "0.24.1"
 
 [[bin]]

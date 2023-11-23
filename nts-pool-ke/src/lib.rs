@@ -204,7 +204,10 @@ async fn foo(
     let acceptor = tokio_rustls::TlsAcceptor::from(config);
     let mut client_stream = acceptor.accept(client_stream).await?;
 
+    // read all records from the client
     let client_data = client_to_pool_request(&mut client_stream).await?;
+
+    dbg!("got the client data");
 
     // next we should pick a server that satisfies the algorithm used and is not denied by the
     // client. But this server hardcoded for now.
@@ -213,11 +216,11 @@ async fn foo(
     let domain = rustls::ServerName::try_from(server_name.as_str())
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid dnsname"))?;
 
-    let server_stream = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
-
     let connector = pool_to_server_connector(&[])?;
+    let server_stream = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
     let mut server_stream = connector.connect(domain, server_stream).await?;
 
+    /*
     let supported_algorithms = supported_algorithms_request(&mut server_stream).await?;
 
     if !supported_algorithms
@@ -226,9 +229,14 @@ async fn foo(
     {
         todo!("algorithm not supported");
     }
+    */
 
-    let records_for_server = prepare_records_for_server(&mut client_stream, client_data)?;
+    let records_for_server = prepare_records_for_server(&client_stream, client_data)?;
+    dbg!(records_for_server.len());
+    dbg!(&records_for_server);
     let records_for_client = cookie_request(server_stream, &records_for_server).await?;
+
+    dbg!(records_for_client.len());
 
     // now we just forward the response
     let mut buffer = Vec::with_capacity(1024);
@@ -243,21 +251,23 @@ async fn foo(
 }
 
 fn prepare_records_for_server(
-    client_stream: &mut tokio_rustls::server::TlsStream<tokio::net::TcpStream>,
+    client_stream: &tokio_rustls::server::TlsStream<tokio::net::TcpStream>,
     client_data: ClientToPoolData,
 ) -> Result<Vec<NtsRecord>, KeyExchangeError> {
-    let nts_keys = match client_data
+    let nts_keys = client_data
         .algorithm
         .extract_nts_keys(client_data.protocol, client_stream.get_ref().1)
-    {
-        Ok(keys) => keys,
-        Err(e) => return Err(KeyExchangeError::Tls(e)),
-    };
+        .map_err(KeyExchangeError::Tls)?;
 
     let mut records_for_server = client_data.records;
     records_for_server.extend([
         NtsRecord::NextProtocol {
             protocol_ids: vec![0],
+        },
+        NtsRecord::Unknown {
+            record_type: 1234,
+            critical: true,
+            data: vec![],
         },
         NtsRecord::AeadAlgorithm {
             critical: false,
@@ -310,6 +320,7 @@ async fn client_to_pool_request(
         let n = stream.read(&mut buf).await?;
 
         if n == 0 {
+            dbg!("eof");
             break Err(KeyExchangeError::IncompleteResponse);
         }
 
@@ -330,19 +341,24 @@ async fn cookie_request(
         record.write(&mut buf)?;
     }
 
-    stream.write_all(&buf).await.unwrap();
+    dbg!("pre write");
+    stream.write_all(&buf).await?;
+    dbg!("post write");
 
     let mut buf = [0; 1024];
     let mut decoder = PoolToServerDecoder::default();
 
     loop {
+        dbg!("pre read");
         let n = stream.read(&mut buf).await?;
+        dbg!("post read");
 
         if n == 0 {
+            dbg!(" incompete");
             break Err(KeyExchangeError::IncompleteResponse);
         }
 
-        decoder = match decoder.step_with_slice(&buf[..n]) {
+        decoder = match dbg!(decoder.step_with_slice(&buf[..n])) {
             ControlFlow::Continue(decoder) => decoder,
             ControlFlow::Break(Ok(PoolToServerData {
                 records,
