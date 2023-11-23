@@ -18,7 +18,6 @@ jobs:
       package_build_rules: |
         pkg: ntpd-rs
         image:
-          - "rockylinux:9"
           - "ubuntu:xenial"
         target: x86_64
 
