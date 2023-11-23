@@ -22,6 +22,6 @@ startup-step-panic-threshold = { forward = 0, backward = 86400 }
 # uses an unsecure certificate chain!
 [[nts-ke-server]]
 listen = "0.0.0.0:8080"
-certificate-chain-path = "/home/folkertdev/tg/ntp/ntpd-rs/test-keys/end.fullchain.pem"
-private-key-path = "/home/folkertdev/tg/ntp/ntpd-rs/test-keys/end.key"
+certificate-chain-path = "/home/folkert/tg/ntpd-rs/test-keys/end.fullchain.pem"
+private-key-path = "/home/folkert/tg/ntpd-rs/test-keys/end.key"
 key-exchange-timeout-ms = 1000
