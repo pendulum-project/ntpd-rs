@@ -92,7 +92,9 @@ async fn run_nts_ke(
             .map(rustls::Certificate)
             .collect();
 
+    #[cfg_attr(not(feature = "unstable_nts-pool"), allow(unused_mut))]
     let mut pool_certs: Vec<rustls::Certificate> = Vec::new();
+    #[cfg(feature = "unstable_nts-pool")]
     for client_cert in nts_ke_config.authorized_pool_server_certificates {
         let pool_certificate_file = std::fs::File::open(&client_cert).map_err(|e| {
             io_error(&format!(
@@ -580,6 +582,7 @@ mod tests {
         let nts_ke_config = NtsKeConfig {
             certificate_chain_path: PathBuf::from("test-keys/end.fullchain.pem"),
             private_key_path: PathBuf::from("test-keys/end.key"),
+            #[cfg(feature = "unstable_nts-pool")]
             authorized_pool_server_certificates: pool_certs.iter().map(PathBuf::from).collect(),
             key_exchange_timeout_ms: 1000,
             listen: "0.0.0.0:5431".parse().unwrap(),
@@ -603,6 +606,7 @@ mod tests {
         assert_eq!(result.port, 123);
     }
 
+    #[cfg(feature = "unstable_nts-pool")]
     #[tokio::test]
     async fn key_exchange_refusal_due_to_invalid_config() {
         let cert_path = "testdata/certificates/nos-nl-chain.pem";
