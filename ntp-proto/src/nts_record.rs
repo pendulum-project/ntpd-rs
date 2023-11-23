@@ -1123,6 +1123,7 @@ struct KeyExchangeServerDecoder {
     server_deny: Option<String>,
 }
 
+#[cfg(feature = "nts-pool")]
 #[derive(Debug, PartialEq, Eq)]
 struct RequestedKeys {
     c2s: Vec<u8>,
@@ -1382,7 +1383,7 @@ impl KeyExchangeServer {
                                 let algorithm = result.algorithm;
                                 let protocol = result.protocol;
 
-                                tracing::debug!(?algorithm, "selected AEAD algorithm",);
+                                tracing::debug!(?algorithm, "selected AEAD algorithm");
 
                                 #[cfg(feature = "nts-pool")]
                                 let keys = if let Some(keys) = result.fixed_keys {
@@ -1409,12 +1410,10 @@ impl KeyExchangeServer {
                                     .extract_nts_keys(protocol, &self.tls_connection)
                                     .map_err(KeyExchangeError::Tls);
 
-                                let send_response = || -> Result<(), KeyExchangeError> {
-                                    self.send_response(protocol, algorithm, keys?)
+                                return match keys.and_then(|keys| {
+                                    self.send_response(protocol, algorithm, keys)
                                         .map_err(KeyExchangeError::Io)
-                                };
-
-                                return match send_response() {
+                                }) {
                                     Err(e) => ControlFlow::Break(Err(e)),
                                     Ok(()) => ControlFlow::Continue(self),
                                 };
@@ -1464,6 +1463,9 @@ impl KeyExchangeServer {
 
         // TLS only works when the server name is a DNS name; an IP address does not work
         let tls_connection = rustls::ServerConnection::new(tls_config)?;
+
+        #[cfg(not(feature = "nts-pool"))]
+        let _ = pool_certificates;
 
         Ok(Self {
             tls_connection,
@@ -2284,6 +2286,7 @@ mod test {
         assert_eq!(result.port, 123);
     }
 
+    #[allow(dead_code)]
     enum ClientType {
         Uncertified,
         Certified,
