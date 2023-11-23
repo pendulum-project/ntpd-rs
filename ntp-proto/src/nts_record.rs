@@ -1571,6 +1571,7 @@ pub struct PoolToServerDecoder {
     supported_algorithms: Vec<(u16, u16)>,
 }
 
+#[derive(Debug)]
 pub struct PoolToServerData {
     pub algorithm: AeadAlgorithm,
     pub protocol: ProtocolId,
