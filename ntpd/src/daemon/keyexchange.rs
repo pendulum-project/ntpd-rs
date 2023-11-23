@@ -139,7 +139,12 @@ fn build_server_config(
 ) -> std::io::Result<Arc<rustls::ServerConfig>> {
     let mut config = rustls::ServerConfig::builder()
         .with_safe_defaults()
-        .with_no_client_auth()
+        .with_client_cert_verifier(Arc::new(
+            #[cfg(not(feature = "unstable_nts-pool"))]
+            rustls::server::NoClientAuth,
+            #[cfg(feature = "unstable_nts-pool")]
+            ntp_proto::tls_utils::AllowAnyAnonymousOrCertificateBearingClient,
+        ))
         .with_single_cert(certificate_chain, private_key)
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
 
