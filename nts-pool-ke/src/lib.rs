@@ -4,13 +4,20 @@ mod config;
 mod bound_keyexchange;
 mod tracing;
 
-use std::{io::BufRead, path::PathBuf, sync::Arc};
+use std::{io::BufRead, ops::ControlFlow, path::PathBuf, sync::Arc};
 
 use bound_keyexchange::BoundPoolToServer;
 use cli::NtsPoolKeOptions;
 use config::{Config, NtsPoolKeConfig};
-use ntp_proto::KeyExchangeError;
-use tokio::net::{TcpListener, ToSocketAddrs};
+use ntp_proto::{
+    ClientToPoolData, KeyExchangeError, KeyExchangeResultDecoder, NtsRecord,
+    PartialKeyExchangeData, PoolToServerData, PoolToServerDecoder,
+};
+use rustls::Certificate;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, ToSocketAddrs},
+};
 
 use crate::tracing as daemon_tracing;
 use daemon_tracing::LogLevel;
@@ -194,22 +201,78 @@ async fn foo(
     config: Arc<rustls::ServerConfig>,
 ) -> Result<(), KeyExchangeError> {
     // handle the initial client to pool
-    let mut client_connection =
-        bound_keyexchange::BoundClientToPool::run(client_stream, config).await?;
+    let acceptor = tokio_rustls::TlsAcceptor::from(config);
+    let mut client_stream = acceptor.accept(client_stream).await?;
 
-    dbg!("all done");
-    client_connection.tls_connection.send_close_notify();
-
-    /*
-    dbg!("done with client?");
+    let client_data = client_to_pool_request(&mut client_stream).await?;
 
     // next we should pick a server that satisfies the algorithm used and is not denied by the
     // client. But this server hardcoded for now.
     let server_name = String::from("localhost");
     let port = 8080;
-    let server_stream = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
-    dbg!("server stream");
+    let domain = rustls::ServerName::try_from(server_name.as_str())
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid dnsname"))?;
 
+    let server_stream = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
+
+    let connector = pool_to_server_connector(&[])?;
+    let mut server_stream = connector.connect(domain, server_stream).await?;
+
+    let supported_algorithms = supported_algorithms_request(&mut server_stream).await?;
+
+    if !supported_algorithms
+        .iter()
+        .any(|(algorithm_id, _)| *algorithm_id == client_data.algorithm as u16)
+    {
+        todo!("algorithm not supported");
+    }
+
+    let records_for_server = prepare_records_for_server(&mut client_stream, client_data)?;
+    let records_for_client = cookie_request(server_stream, &records_for_server).await?;
+
+    // now we just forward the response
+    let mut buffer = Vec::with_capacity(1024);
+    for record in records_for_client {
+        record.write(&mut buffer)?;
+    }
+
+    client_stream.write_all(&buffer).await?;
+    client_stream.shutdown().await?;
+
+    Ok(())
+}
+
+fn prepare_records_for_server(
+    client_stream: &mut tokio_rustls::server::TlsStream<tokio::net::TcpStream>,
+    client_data: ClientToPoolData,
+) -> Result<Vec<NtsRecord>, KeyExchangeError> {
+    let nts_keys = match client_data
+        .algorithm
+        .extract_nts_keys(client_data.protocol, client_stream.get_ref().1)
+    {
+        Ok(keys) => keys,
+        Err(e) => return Err(KeyExchangeError::Tls(e)),
+    };
+
+    let mut records_for_server = client_data.records;
+    records_for_server.extend([
+        NtsRecord::NextProtocol {
+            protocol_ids: vec![0],
+        },
+        NtsRecord::AeadAlgorithm {
+            critical: false,
+            algorithm_ids: vec![client_data.algorithm as u16],
+        },
+        nts_keys.as_fixed_key_request(),
+        NtsRecord::EndOfMessage,
+    ]);
+
+    Ok(records_for_server)
+}
+
+fn pool_to_server_connector(
+    extra_certificates: &[Certificate],
+) -> Result<tokio_rustls::TlsConnector, KeyExchangeError> {
     let mut roots = rustls::RootCertStore::empty();
     for cert in rustls_native_certs::load_native_certs()? {
         let cert = rustls::Certificate(cert.0);
@@ -223,7 +286,6 @@ async fn foo(
         .unwrap(),
     );
 
-    let extra_certificates = [];
     for cert in extra_certificates {
         roots.add(cert).map_err(KeyExchangeError::Certificate)?;
     }
@@ -234,33 +296,92 @@ async fn foo(
         .with_no_client_auth();
 
     // already has the FixedKeyRequest record
-    let records_for_server = &client_connection.records;
+    Ok(tokio_rustls::TlsConnector::from(Arc::new(config)))
+}
 
-    // let server_connection = BoundPoolToServer::new(server_stream, server_name, config, records_for_server)?.await?;
-    let server_connection =
-        BoundPoolToServer::new(server_stream, &server_name, config, records_for_server)?.await?;
-    dbg!("post server stream");
+async fn client_to_pool_request(
+    stream: &mut tokio_rustls::server::TlsStream<tokio::net::TcpStream>,
+) -> Result<ClientToPoolData, KeyExchangeError> {
+    let mut decoder = ntp_proto::ClientToPoolDecoder::default();
 
+    let mut buf = [0; 1024];
+
+    loop {
+        let n = stream.read(&mut buf).await?;
+
+        if n == 0 {
+            break Err(KeyExchangeError::IncompleteResponse);
+        }
+
+        decoder = match decoder.step_with_slice(&buf[..n]) {
+            ControlFlow::Continue(decoder) => decoder,
+            ControlFlow::Break(done) => break done,
+        };
+    }
+}
+
+async fn cookie_request(
+    mut stream: tokio_rustls::client::TlsStream<tokio::net::TcpStream>,
+    nts_records: &[NtsRecord],
+) -> Result<Vec<NtsRecord>, KeyExchangeError> {
     // now we just forward the response
-    let mut buffer = Vec::with_capacity(1024);
-    for record in server_connection.records {
-        record.write(&mut buffer)?;
+    let mut buf = Vec::with_capacity(1024);
+    for record in nts_records {
+        record.write(&mut buf)?;
     }
 
-    use std::io::Write;
-    let mut client_connection = client_connection;
-    client_connection
-        .tls_connection
-        .writer()
-        .write_all(&buffer)
-        .unwrap();
+    stream.write_all(&buf).await.unwrap();
 
-    client_connection.tls_connection.send_close_notify();
+    let mut buf = [0; 1024];
+    let mut decoder = PoolToServerDecoder::default();
 
-    dbg!("all done");
-    */
+    loop {
+        let n = stream.read(&mut buf).await?;
 
-    Ok(())
+        if n == 0 {
+            break Err(KeyExchangeError::IncompleteResponse);
+        }
+
+        decoder = match decoder.step_with_slice(&buf[..n]) {
+            ControlFlow::Continue(decoder) => decoder,
+            ControlFlow::Break(Ok(PoolToServerData {
+                records,
+                algorithm: _,
+                protocol: _,
+                supported_algorithms: _,
+            })) => {
+                stream.shutdown().await?;
+                break Ok(records);
+            }
+            ControlFlow::Break(Err(error)) => break Err(error),
+        };
+    }
+}
+
+async fn supported_algorithms_request(
+    stream: &mut tokio_rustls::client::TlsStream<tokio::net::TcpStream>,
+) -> Result<Vec<(u16, u16)>, KeyExchangeError> {
+    let mut buf = [0; 1024];
+    let mut decoder = KeyExchangeResultDecoder::default();
+
+    loop {
+        let n = stream.read(&mut buf).await?;
+
+        if n == 0 {
+            break Err(KeyExchangeError::IncompleteResponse);
+        }
+
+        decoder = match decoder.step_with_slice(&buf[..n]) {
+            ControlFlow::Continue(decoder) => decoder,
+            ControlFlow::Break(Ok(PartialKeyExchangeData {
+                supported_algorithms,
+                ..
+            })) => {
+                break Ok(supported_algorithms);
+            }
+            ControlFlow::Break(Err(error)) => break Err(error),
+        };
+    }
 }
 
 fn private_key_from_bufread(

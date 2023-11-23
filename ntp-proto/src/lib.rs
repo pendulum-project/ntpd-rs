@@ -80,7 +80,9 @@ mod exports {
 
     #[cfg(feature = "nts-pool")]
     pub use super::nts_record::{
-        ClientToPool, ClientToPoolConnection, PoolToServer, PoolToServerConnection,
+        AeadAlgorithm, ClientToPool, ClientToPoolConnection, ClientToPoolData, ClientToPoolDecoder,
+        KeyExchangeResultDecoder, PartialKeyExchangeData, PoolToServer, PoolToServerConnection,
+        PoolToServerData, PoolToServerDecoder,
     };
 }
 

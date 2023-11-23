@@ -732,7 +732,7 @@ impl AeadAlgorithm {
     const IN_ORDER_OF_PREFERENCE: &'static [Self] =
         &[Self::AeadAesSivCmac512, Self::AeadAesSivCmac256];
 
-    fn extract_nts_keys<ConnectionData>(
+    pub fn extract_nts_keys<ConnectionData>(
         &self,
         protocol: ProtocolId,
         tls_connection: &rustls::ConnectionCommon<ConnectionData>,
@@ -791,6 +791,15 @@ pub struct NtsKeys {
     s2c: Box<dyn Cipher>,
 }
 
+impl NtsKeys {
+    pub fn as_fixed_key_request(self) -> NtsRecord {
+        NtsRecord::FixedKeyRequest {
+            c2s: dbg!(self.c2s.key_bytes().to_vec()),
+            s2c: dbg!(self.s2c.key_bytes().to_vec()),
+        }
+    }
+}
+
 impl std::fmt::Debug for NtsKeys {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NtsKeys")
@@ -815,7 +824,7 @@ fn extract_nts_key<T: Default + AsMut<[u8]>, ConnectionData>(
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct PartialKeyExchangeData {
+pub struct PartialKeyExchangeData {
     remote: Option<String>,
     port: Option<u16>,
     protocol: ProtocolId,
@@ -826,7 +835,7 @@ struct PartialKeyExchangeData {
 }
 
 #[derive(Debug, Default)]
-struct KeyExchangeResultDecoder {
+pub struct KeyExchangeResultDecoder {
     decoder: NtsRecordDecoder,
     remote: Option<String>,
     port: Option<u16>,
@@ -1429,10 +1438,10 @@ pub struct ClientToPoolDecoder {
 
 #[derive(Debug)]
 pub struct ClientToPoolData {
-    algorithm: AeadAlgorithm,
-    protocol: ProtocolId,
-    records: Vec<NtsRecord>,
-    denied_servers: Vec<String>,
+    pub algorithm: AeadAlgorithm,
+    pub protocol: ProtocolId,
+    pub records: Vec<NtsRecord>,
+    pub denied_servers: Vec<String>,
 }
 
 impl ClientToPoolDecoder {
@@ -1563,10 +1572,10 @@ pub struct PoolToServerDecoder {
 }
 
 pub struct PoolToServerData {
-    algorithm: AeadAlgorithm,
-    protocol: ProtocolId,
-    records: Vec<NtsRecord>,
-    supported_algorithms: Vec<(u16, u16)>,
+    pub algorithm: AeadAlgorithm,
+    pub protocol: ProtocolId,
+    pub records: Vec<NtsRecord>,
+    pub supported_algorithms: Vec<(u16, u16)>,
 }
 
 impl PoolToServerDecoder {
@@ -1597,7 +1606,7 @@ impl PoolToServerDecoder {
 
         let mut state = self;
 
-        match record {
+        match &record {
             EndOfMessage => {
                 state.records.push(EndOfMessage);
 
@@ -1612,7 +1621,7 @@ impl PoolToServerDecoder {
             }
             Error { errorcode } => {
                 //
-                Break(Err(KeyExchangeError::from_error_code(errorcode)))
+                Break(Err(KeyExchangeError::from_error_code(*errorcode)))
             }
             Warning { warningcode } => {
                 tracing::debug!(warningcode, "Received key exchange warning code");
@@ -1640,6 +1649,8 @@ impl PoolToServerDecoder {
                     .copied()
                     .find_map(ProtocolId::try_deserialize);
 
+                state.records.push(record);
+
                 match selected {
                     None => Break(Err(NoValidProtocol)),
                     Some(protocol) => {
@@ -1653,6 +1664,8 @@ impl PoolToServerDecoder {
                     .iter()
                     .copied()
                     .find_map(Algorithm::try_deserialize);
+
+                state.records.push(record);
 
                 match selected {
                     None => Break(Err(NoValidAlgorithm)),
@@ -1671,9 +1684,9 @@ impl PoolToServerDecoder {
                 Continue(state)
             }
 
-            other => {
+            _other => {
                 // just forward other records blindly
-                state.records.push(other);
+                state.records.push(record);
                 Continue(state)
             }
         }
@@ -2072,17 +2085,14 @@ impl ClientToPool2 {
                                 record.write(&mut buffer).unwrap()
                             }
                             tls_connection.writer().write_all(&buffer).unwrap();
-
-                            // tls_connection.send_close_notify();
+                            tls_connection.send_close_notify();
 
                             dbg!("should be done now");
-                            return ControlFlow::Continue(Self::Done {
-                                connection: ClientToPoolConnection {
-                                    tls_connection,
-                                    records,
-                                    denied_servers,
-                                },
-                            });
+                            return ControlFlow::Break(Ok(ClientToPoolConnection {
+                                tls_connection,
+                                records,
+                                denied_servers,
+                            }));
                         }
                         ControlFlow::Break(Err(error)) => return ControlFlow::Break(Err(error)),
                     },

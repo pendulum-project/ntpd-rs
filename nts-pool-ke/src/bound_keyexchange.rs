@@ -233,7 +233,7 @@ where
 
         loop {
             println!("running");
-            while !write_blocks && this.server.wants_write() {
+            while dbg!(!write_blocks && this.server.wants_write()) {
                 match this.do_write(cx) {
                     Poll::Ready(Ok(_)) => {
                         this.need_flush = true;
@@ -246,7 +246,7 @@ where
                 }
             }
 
-            if !write_blocks && this.need_flush {
+            if dbg!(!write_blocks && this.need_flush) {
                 match Pin::new(&mut this.io).poll_flush(cx) {
                     Poll::Ready(Ok(())) => {
                         this.need_flush = false;
