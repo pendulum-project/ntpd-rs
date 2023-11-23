@@ -1288,7 +1288,13 @@ impl KeyExchangeServerDecoder {
                 Continue(state)
             }
 
-            Unknown { .. } => Continue(state),
+            Unknown { critical, .. } => {
+                if critical {
+                    Break(Err(KeyExchangeError::UnrecognizedCriticalRecord))
+                } else {
+                    Continue(state)
+                }
+            }
         }
     }
 
@@ -1297,13 +1303,27 @@ impl KeyExchangeServerDecoder {
     }
 }
 
-#[derive(Debug)]
 pub struct KeyExchangeServer {
     tls_connection: rustls::ServerConnection,
-    decoder: Option<KeyExchangeServerDecoder>,
     keyset: Arc<KeySet>,
-    #[cfg(feature = "nts-pool")]
-    pool_certificates: Arc<Vec<rustls::Certificate>>,
+    state: State,
+}
+
+enum State {
+    Active {
+        decoder: KeyExchangeServerDecoder,
+        #[cfg(feature = "nts-pool")]
+        pool_certificates: Arc<Vec<rustls::Certificate>>,
+    },
+    Done {
+        done: KeyExchangeServerDone,
+    },
+}
+
+struct KeyExchangeServerDone {
+    protocol: ProtocolId,
+    algorithm: AeadAlgorithm,
+    keys: NtsKeys,
 }
 
 impl KeyExchangeServer {
@@ -1323,63 +1343,120 @@ impl KeyExchangeServer {
         self.tls_connection.write_tls(wr)
     }
 
-    fn send_response(
-        &mut self,
-        protocol: ProtocolId,
-        algorithm: AeadAlgorithm,
-        keys: NtsKeys,
+    fn send_records(
+        tls_connection: &mut rustls::ServerConnection,
+        records: &[NtsRecord],
     ) -> std::io::Result<()> {
-        let records =
-            NtsRecord::server_key_exchange_records(protocol, algorithm, &self.keyset, keys);
-
         let mut buffer = Vec::with_capacity(1024);
-        for record in records.into_iter() {
+        for record in records.iter() {
             record.write(&mut buffer)?;
         }
 
-        self.tls_connection.writer().write_all(&buffer)?;
-        self.tls_connection.send_close_notify();
+        tls_connection.writer().write_all(&buffer)?;
+        tls_connection.send_close_notify();
 
         Ok(())
     }
 
-    pub fn progress(self) -> ControlFlow<Result<(), KeyExchangeError>, Self> {
-        match self.progress_help() {
-            ControlFlow::Continue(c) => ControlFlow::Continue(c),
-            ControlFlow::Break(b) => ControlFlow::Break(b.map(drop)),
+    pub fn progress(mut self) -> ControlFlow<Result<(), KeyExchangeError>, Self> {
+        match Self::progress_help(&mut self.tls_connection, self.state) {
+            ControlFlow::Continue(state) => {
+                self.state = state;
+                ControlFlow::Continue(self)
+            }
+            ControlFlow::Break(Ok(KeyExchangeServerDone {
+                protocol,
+                algorithm,
+                keys,
+            })) => {
+                let sent = Self::send_records(
+                    &mut self.tls_connection,
+                    &NtsRecord::server_key_exchange_records(
+                        protocol,
+                        algorithm,
+                        &self.keyset,
+                        keys,
+                    ),
+                );
+
+                match sent {
+                    Ok(()) => ControlFlow::Break(Ok(())),
+                    Err(e) => ControlFlow::Break(Err(e.into())),
+                }
+            }
+            ControlFlow::Break(Err(e)) => {
+                const UNRECOGNIZED_CRITICAL_RECORD: u16 = 0;
+                const BAD_REQUEST: u16 = 1;
+                const INTERNAL_SERVER_ERROR: u16 = 2;
+
+                let errorcode = match e {
+                    KeyExchangeError::UnrecognizedCriticalRecord => UNRECOGNIZED_CRITICAL_RECORD,
+                    KeyExchangeError::BadRequest => BAD_REQUEST,
+                    KeyExchangeError::InternalServerError => INTERNAL_SERVER_ERROR,
+                    KeyExchangeError::UnknownErrorCode(_) => BAD_REQUEST,
+                    KeyExchangeError::NoValidProtocol => BAD_REQUEST,
+                    KeyExchangeError::NoValidAlgorithm => BAD_REQUEST,
+                    KeyExchangeError::InvalidFixedKeyLength => BAD_REQUEST,
+                    KeyExchangeError::NoCookies => BAD_REQUEST,
+                    KeyExchangeError::Io(_) => INTERNAL_SERVER_ERROR,
+                    KeyExchangeError::Tls(_) => BAD_REQUEST,
+                    KeyExchangeError::Certificate(_) => BAD_REQUEST,
+                    KeyExchangeError::DnsName(_) => BAD_REQUEST,
+                    KeyExchangeError::IncompleteResponse => BAD_REQUEST,
+                };
+
+                match Self::send_records(
+                    &mut self.tls_connection,
+                    &[NtsRecord::Error { errorcode }],
+                ) {
+                    Ok(()) => ControlFlow::Break(Err(e)),
+                    Err(_) => ControlFlow::Break(Err(e)),
+                }
+            }
         }
     }
 
-    fn progress_help(mut self) -> ControlFlow<Result<Self, KeyExchangeError>, Self> {
+    fn progress_help(
+        tls_connection: &mut rustls::ServerConnection,
+        mut state: State,
+    ) -> ControlFlow<Result<KeyExchangeServerDone, KeyExchangeError>, State> {
         // Move any received data from tls to decoder
         let mut buf = [0; 128];
         loop {
-            if let Err(e) = self.tls_connection.process_new_packets() {
+            if let Err(e) = tls_connection.process_new_packets() {
                 return ControlFlow::Break(Err(e.into()));
             }
-            let read_result = self.tls_connection.reader().read(&mut buf);
+            let read_result = tls_connection.reader().read(&mut buf);
             match read_result {
                 Ok(0) => {
-                    match self.decoder {
-                        Some(_) => {
+                    match state {
+                        State::Active { .. } => {
                             // there are no more client bytes, but decoding was not finished yet
                             return ControlFlow::Break(Err(KeyExchangeError::IncompleteResponse));
                         }
-                        None => {
+                        State::Done { done } => {
                             // we're all done
-                            return ControlFlow::Break(Ok(self));
+                            return ControlFlow::Break(Ok(done));
                         }
                     }
                 }
                 Ok(n) => {
-                    match self.decoder {
-                        Some(decoder) => match decoder.step_with_slice(&buf[..n]) {
+                    match state {
+                        State::Active {
+                            decoder,
+                            #[cfg(feature = "nts-pool")]
+                            pool_certificates,
+                        } => match decoder.step_with_slice(&buf[..n]) {
                             ControlFlow::Continue(decoder) => {
-                                self.decoder = Some(decoder);
+                                state = State::Active {
+                                    decoder,
+                                    #[cfg(feature = "nts-pool")]
+                                    pool_certificates,
+                                };
+
                                 continue;
                             }
                             ControlFlow::Break(Ok(result)) => {
-                                self.decoder = None;
                                 let algorithm = result.algorithm;
                                 let protocol = result.protocol;
 
@@ -1407,32 +1484,42 @@ impl KeyExchangeServer {
 
                                 #[cfg(not(feature = "nts-pool"))]
                                 let keys = algorithm
-                                    .extract_nts_keys(protocol, &self.tls_connection)
+                                    .extract_nts_keys(protocol, tls_connection)
                                     .map_err(KeyExchangeError::Tls);
 
-                                return match keys.and_then(|keys| {
-                                    self.send_response(protocol, algorithm, keys)
-                                        .map_err(KeyExchangeError::Io)
-                                }) {
-                                    Err(e) => ControlFlow::Break(Err(e)),
-                                    Ok(()) => ControlFlow::Continue(self),
-                                };
+                                match keys {
+                                    Ok(keys) => {
+                                        let done = KeyExchangeServerDone {
+                                            protocol,
+                                            algorithm,
+                                            keys,
+                                        };
+
+                                        return ControlFlow::Continue(State::Done { done });
+                                    }
+                                    Err(error) => return ControlFlow::Break(Err(error)),
+                                }
                             }
                             ControlFlow::Break(Err(error)) => {
                                 return ControlFlow::Break(Err(error))
                             }
                         },
-                        None => {
+                        State::Done { .. } => {
                             // client is sending more bytes, but we don't expect any more
                             return ControlFlow::Break(Err(KeyExchangeError::InternalServerError));
                         }
                     }
                 }
                 Err(e) => match e.kind() {
-                    std::io::ErrorKind::WouldBlock => return ControlFlow::Continue(self),
-                    std::io::ErrorKind::UnexpectedEof if self.decoder.is_none() => {
+                    std::io::ErrorKind::WouldBlock => return ControlFlow::Continue(state),
+                    std::io::ErrorKind::UnexpectedEof => {
                         // something we need in practice. If we're already done, an EOF is fine
-                        return ControlFlow::Break(Ok(self));
+                        match state {
+                            State::Done { done } => return ControlFlow::Break(Ok(done)),
+                            State::Active { .. } => {
+                                return ControlFlow::Break(Err(e.into()));
+                            }
+                        };
                     }
                     _ => return ControlFlow::Break(Err(e.into())),
                 },
@@ -1469,10 +1556,12 @@ impl KeyExchangeServer {
 
         Ok(Self {
             tls_connection,
-            decoder: Some(KeyExchangeServerDecoder::new()),
             keyset,
-            #[cfg(feature = "nts-pool")]
-            pool_certificates,
+            state: State::Active {
+                decoder: KeyExchangeServerDecoder::new(),
+                #[cfg(feature = "nts-pool")]
+                pool_certificates,
+            },
         })
     }
 }
