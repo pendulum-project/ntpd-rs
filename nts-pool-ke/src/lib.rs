@@ -242,10 +242,7 @@ fn prepare_records_for_server(
     client_stream: &tokio_rustls::server::TlsStream<tokio::net::TcpStream>,
     client_data: ClientToPoolData,
 ) -> Result<Vec<NtsRecord>, KeyExchangeError> {
-    let nts_keys = client_data
-        .algorithm
-        .extract_nts_keys(client_data.protocol, client_stream.get_ref().1)
-        .map_err(KeyExchangeError::Tls)?;
+    let nts_keys = client_data.extract_nts_keys(client_stream.get_ref().1)?;
 
     let mut records_for_server = client_data.records;
     records_for_server.extend([

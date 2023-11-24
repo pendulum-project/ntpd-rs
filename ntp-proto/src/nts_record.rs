@@ -732,7 +732,7 @@ impl AeadAlgorithm {
     const IN_ORDER_OF_PREFERENCE: &'static [Self] =
         &[Self::AeadAesSivCmac512, Self::AeadAesSivCmac256];
 
-    pub fn extract_nts_keys<ConnectionData>(
+    pub(crate) fn extract_nts_keys<ConnectionData>(
         &self,
         protocol: ProtocolId,
         tls_connection: &rustls::ConnectionCommon<ConnectionData>,
@@ -1442,6 +1442,17 @@ pub struct ClientToPoolData {
     pub protocol: ProtocolId,
     pub records: Vec<NtsRecord>,
     pub denied_servers: Vec<String>,
+}
+
+impl ClientToPoolData {
+    pub fn extract_nts_keys<ConnectionData>(
+        &self,
+        stream: &rustls::ConnectionCommon<ConnectionData>,
+    ) -> Result<NtsKeys, KeyExchangeError> {
+        self.algorithm
+            .extract_nts_keys(self.protocol, stream)
+            .map_err(KeyExchangeError::Tls)
+    }
 }
 
 impl ClientToPoolDecoder {
