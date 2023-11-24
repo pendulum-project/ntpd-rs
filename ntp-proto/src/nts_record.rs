@@ -1353,11 +1353,13 @@ impl KeyExchangeServer {
     pub fn progress(self) -> ControlFlow<Result<rustls::ServerConnection, KeyExchangeError>, Self> {
         match self.progress_help() {
             ControlFlow::Continue(c) => ControlFlow::Continue(c),
-            ControlFlow::Break(b) => ControlFlow::Break(b.map(|x| x.tls_connection)),
+            ControlFlow::Break(b) => ControlFlow::Break(b),
         }
     }
 
-    fn progress_help(mut self) -> ControlFlow<Result<Self, KeyExchangeError>, Self> {
+    fn progress_help(
+        mut self,
+    ) -> ControlFlow<Result<rustls::ServerConnection, KeyExchangeError>, Self> {
         // Move any received data from tls to decoder
         let mut buf = [0; 128];
         loop {
@@ -1374,7 +1376,7 @@ impl KeyExchangeServer {
                         }
                         State::Done => {
                             // we're all done
-                            return ControlFlow::Break(Ok(self));
+                            return ControlFlow::Break(Ok(self.tls_connection));
                         }
                     }
                 }
@@ -1447,7 +1449,7 @@ impl KeyExchangeServer {
                     std::io::ErrorKind::WouldBlock => return ControlFlow::Continue(self),
                     std::io::ErrorKind::UnexpectedEof if matches!(self.state, State::Done) => {
                         // something we need in practice. If we're already done, an EOF is fine
-                        return ControlFlow::Break(Ok(self));
+                        return ControlFlow::Break(Ok(self.tls_connection));
                     }
                     _ => return ControlFlow::Break(Err(e.into())),
                 },
