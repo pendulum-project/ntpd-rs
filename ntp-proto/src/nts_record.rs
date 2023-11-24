@@ -1352,7 +1352,7 @@ impl KeyExchangeServer {
 
     fn send_error_record(
         tls_connection: &mut rustls::ServerConnection,
-        error: KeyExchangeError,
+        error: &KeyExchangeError,
     ) -> std::io::Result<()> {
         use KeyExchangeError::*;
 
@@ -1413,55 +1413,12 @@ impl KeyExchangeServer {
                         State::Active { decoder } => match decoder.step_with_slice(&buf[..n]) {
                             ControlFlow::Continue(decoder) => {
                                 self.state = State::Active { decoder };
-                                continue;
+                                return ControlFlow::Continue(self);
                             }
-                            ControlFlow::Break(Ok(result)) => {
-                                let algorithm = result.algorithm;
-                                let protocol = result.protocol;
-
-                                tracing::debug!(?algorithm, "selected AEAD algorithm");
-
-                                #[cfg(feature = "nts-pool")]
-                                let keys = if let Some(keys) = result.fixed_keys {
-                                    if self.privileged_connection() {
-                                        tracing::debug!("using fixed keys for AEAD algorithm");
-                                        algorithm
-                                            .try_into_nts_keys(keys)
-                                            .ok_or(KeyExchangeError::InvalidFixedKeyLength)
-                                    } else {
-                                        tracing::debug!("refused fixed key request due to improper authorization");
-                                        Err(KeyExchangeError::UnrecognizedCriticalRecord)
-                                    }
-                                } else {
-                                    tracing::debug!(
-                                        "using AEAD keys extracted from TLS connection"
-                                    );
-                                    algorithm
-                                        .extract_nts_keys(protocol, &self.tls_connection)
-                                        .map_err(KeyExchangeError::Tls)
-                                };
-
-                                #[cfg(not(feature = "nts-pool"))]
-                                let keys = algorithm
-                                    .extract_nts_keys(protocol, &self.tls_connection)
-                                    .map_err(KeyExchangeError::Tls);
-
+                            ControlFlow::Break(Ok(data)) => {
                                 self.state = State::Done;
 
-                                let keys = keys.unwrap();
-
-                                let records = NtsRecord::server_key_exchange_records(
-                                    protocol,
-                                    algorithm,
-                                    &self.keyset,
-                                    keys,
-                                );
-
-                                return match Self::send_records(&mut self.tls_connection, &records)
-                                {
-                                    Err(e) => ControlFlow::Break(Err(KeyExchangeError::Io(e))),
-                                    Ok(()) => ControlFlow::Continue(self),
-                                };
+                                return self.decoder_done(data);
                             }
                             ControlFlow::Break(Err(error)) => {
                                 return ControlFlow::Break(Err(error))
@@ -1496,6 +1453,71 @@ impl KeyExchangeServer {
                     .any(|allowed_cert| allowed_cert == cert)
             })
             .unwrap_or(false)
+    }
+
+    #[cfg(feature = "nts-pool")]
+    fn extract_nts_keys(&self, data: ServerKeyExchangeData) -> Result<NtsKeys, KeyExchangeError> {
+        if let Some(keys) = data.fixed_keys {
+            if self.privileged_connection() {
+                tracing::debug!("using fixed keys for AEAD algorithm");
+                data.algorithm
+                    .try_into_nts_keys(keys)
+                    .ok_or(KeyExchangeError::InvalidFixedKeyLength)
+            } else {
+                tracing::debug!("refused fixed key request due to improper authorization");
+                Err(KeyExchangeError::UnrecognizedCriticalRecord)
+            }
+        } else {
+            self.extract_nts_keys_tls(data)
+        }
+    }
+
+    #[cfg(not(feature = "nts-pool"))]
+    fn extract_nts_keys(&self, data: ServerKeyExchangeData) -> Result<NtsKeys, KeyExchangeError> {
+        self.extract_nts_keys_tls(data)
+    }
+
+    fn extract_nts_keys_tls(
+        &self,
+        data: ServerKeyExchangeData,
+    ) -> Result<NtsKeys, KeyExchangeError> {
+        tracing::debug!("using AEAD keys extracted from TLS connection");
+
+        data.algorithm
+            .extract_nts_keys(data.protocol, &self.tls_connection)
+            .map_err(KeyExchangeError::Tls)
+    }
+
+    fn decoder_done(
+        mut self,
+        data: ServerKeyExchangeData,
+    ) -> ControlFlow<Result<rustls::ServerConnection, KeyExchangeError>, Self> {
+        let algorithm = data.algorithm;
+        let protocol = data.protocol;
+
+        tracing::debug!(?algorithm, "selected AEAD algorithm");
+
+        match self.extract_nts_keys(data) {
+            Ok(keys) => {
+                let records =
+                    NtsRecord::server_key_exchange_records(protocol, algorithm, &self.keyset, keys);
+
+                match Self::send_records(&mut self.tls_connection, &records) {
+                    Err(e) => ControlFlow::Break(Err(KeyExchangeError::Io(e))),
+                    Ok(()) => ControlFlow::Continue(self),
+                }
+            }
+            Err(key_extract_error) => {
+                // ignore IO error at this point; the connection might be broken
+                if let Err(io_error) =
+                    Self::send_error_record(&mut self.tls_connection, &key_extract_error)
+                {
+                    tracing::debug!(?key_extract_error, ?io_error, "sending error record failed");
+                }
+
+                ControlFlow::Break(Err(key_extract_error))
+            }
+        }
     }
 
     pub fn new(
