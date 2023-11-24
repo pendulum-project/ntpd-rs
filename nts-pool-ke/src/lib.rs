@@ -176,12 +176,9 @@ async fn pool_key_exchange_server(
 
     loop {
         let (client_stream, peer_address) = listener.accept().await?;
-
-        dbg!("new client");
-
         let client_to_pool_config = config.clone();
 
-        let fut = foo(client_stream, client_to_pool_config);
+        let fut = handle_client(client_stream, client_to_pool_config);
 
         tokio::spawn(async move {
             let timeout = std::time::Duration::from_millis(timeout_ms);
@@ -194,7 +191,7 @@ async fn pool_key_exchange_server(
     }
 }
 
-async fn foo(
+async fn handle_client(
     client_stream: tokio::net::TcpStream,
     config: Arc<rustls::ServerConfig>,
 ) -> Result<(), KeyExchangeError> {
@@ -204,8 +201,6 @@ async fn foo(
 
     // read all records from the client
     let client_data = client_to_pool_request(&mut client_stream).await?;
-
-    dbg!("got the client data");
 
     // next we should pick a server that satisfies the algorithm used and is not denied by the
     // client. But this server hardcoded for now.
@@ -227,12 +222,9 @@ async fn foo(
     //        todo!("algorithm not supported");
     //    }
 
+    // get the cookies from the NTS KE server
     let records_for_server = prepare_records_for_server(&client_stream, client_data)?;
-    dbg!(records_for_server.len());
-    dbg!(&records_for_server);
     let records_for_client = cookie_request(server_stream, &records_for_server).await?;
-
-    dbg!(records_for_client.len());
 
     // now we just forward the response
     let mut buffer = Vec::with_capacity(1024);
@@ -259,11 +251,6 @@ fn prepare_records_for_server(
     records_for_server.extend([
         NtsRecord::NextProtocol {
             protocol_ids: vec![0],
-        },
-        NtsRecord::Unknown {
-            record_type: 1234,
-            critical: true,
-            data: vec![],
         },
         NtsRecord::AeadAlgorithm {
             critical: false,
@@ -316,7 +303,6 @@ async fn client_to_pool_request(
         let n = stream.read(&mut buf).await?;
 
         if n == 0 {
-            dbg!("eof");
             break Err(KeyExchangeError::IncompleteResponse);
         }
 
@@ -337,20 +323,15 @@ async fn cookie_request(
         record.write(&mut buf)?;
     }
 
-    dbg!("pre write");
     stream.write_all(&buf).await?;
-    dbg!("post write");
 
     let mut buf = [0; 1024];
     let mut decoder = PoolToServerDecoder::default();
 
     loop {
-        dbg!("pre read");
         let n = stream.read(&mut buf).await?;
-        dbg!("post read");
 
         if n == 0 {
-            dbg!(" incompete");
             break Err(KeyExchangeError::IncompleteResponse);
         }
 

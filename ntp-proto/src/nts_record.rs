@@ -1074,8 +1074,8 @@ impl KeyExchangeClient {
             if let Err(e) = self.tls_connection.process_new_packets() {
                 return ControlFlow::Break(Err(e.into()));
             }
-            let read_result = self.tls_connection.reader().read(&mut buf);
-            match dbg!(read_result) {
+
+            match self.tls_connection.reader().read(&mut buf) {
                 Ok(0) => return ControlFlow::Break(Err(KeyExchangeError::IncompleteResponse)),
                 Ok(n) => {
                     self.decoder = match self.decoder.step_with_slice(&buf[..n]) {

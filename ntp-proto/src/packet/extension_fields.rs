@@ -668,13 +668,10 @@ impl<'a> ExtensionFieldData<'a> {
                         Some(cipher) => cipher,
                         None => {
                             efdata.untrusted.push(InvalidNtsEncryptedField);
-                            dbg!("false 2");
                             is_valid_nts = false;
                             continue;
                         }
                     };
-
-                    dbg!(cipher.as_ref().key_bytes());
 
                     let encrypted_fields = match encrypted.decrypt(
                         cipher.as_ref(),
@@ -687,7 +684,6 @@ impl<'a> ExtensionFieldData<'a> {
                             e.get_decrypt_error()?;
 
                             efdata.untrusted.push(InvalidNtsEncryptedField);
-                            dbg!("false 2");
                             is_valid_nts = false;
                             continue;
                         }
@@ -716,7 +712,7 @@ impl<'a> ExtensionFieldData<'a> {
 
         let remaining_bytes = &data[header_size + size..];
 
-        if dbg!(is_valid_nts) {
+        if is_valid_nts {
             let result = DeserializedExtensionField {
                 efdata,
                 remaining_bytes,
@@ -730,7 +726,6 @@ impl<'a> ExtensionFieldData<'a> {
                 remaining_bytes,
             };
 
-            dbg!(" here");
             Err(ParsingError::DecryptError(result))
         }
     }
@@ -772,11 +767,9 @@ impl<'a> RawEncryptedField<'a> {
         aad: &[u8],
         version: ExtensionHeaderVersion,
     ) -> Result<Vec<ExtensionField<'a>>, ParsingError<ExtensionField<'a>>> {
-        dbg!(cipher.key_bytes());
         let plaintext = match cipher.decrypt(self.nonce, self.ciphertext, aad) {
             Ok(plain) => plain,
             Err(_) => {
-                dbg!(" here");
                 return Err(ParsingError::DecryptError(
                     ExtensionField::InvalidNtsEncryptedField,
                 ));
