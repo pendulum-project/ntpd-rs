@@ -1306,10 +1306,16 @@ impl KeyExchangeServerDecoder {
 #[derive(Debug)]
 pub struct KeyExchangeServer {
     tls_connection: rustls::ServerConnection,
-    decoder: Option<KeyExchangeServerDecoder>,
+    state: State,
     keyset: Arc<KeySet>,
     #[cfg(feature = "nts-pool")]
     pool_certificates: Arc<Vec<rustls::Certificate>>,
+}
+
+#[derive(Debug)]
+enum State {
+    Active { decoder: KeyExchangeServerDecoder },
+    Done,
 }
 
 impl KeyExchangeServer {
@@ -1366,26 +1372,25 @@ impl KeyExchangeServer {
             let read_result = self.tls_connection.reader().read(&mut buf);
             match read_result {
                 Ok(0) => {
-                    match self.decoder {
-                        Some(_) => {
+                    match self.state {
+                        State::Active { .. } => {
                             // there are no more client bytes, but decoding was not finished yet
                             return ControlFlow::Break(Err(KeyExchangeError::IncompleteResponse));
                         }
-                        None => {
+                        State::Done => {
                             // we're all done
                             return ControlFlow::Break(Ok(self));
                         }
                     }
                 }
                 Ok(n) => {
-                    match self.decoder {
-                        Some(decoder) => match decoder.step_with_slice(&buf[..n]) {
+                    match self.state {
+                        State::Active { decoder } => match decoder.step_with_slice(&buf[..n]) {
                             ControlFlow::Continue(decoder) => {
-                                self.decoder = Some(decoder);
+                                self.state = State::Active { decoder };
                                 continue;
                             }
                             ControlFlow::Break(Ok(result)) => {
-                                self.decoder = None;
                                 let algorithm = result.algorithm;
                                 let protocol = result.protocol;
 
@@ -1416,6 +1421,8 @@ impl KeyExchangeServer {
                                     .extract_nts_keys(protocol, &self.tls_connection)
                                     .map_err(KeyExchangeError::Tls);
 
+                                self.state = State::Done;
+
                                 return match keys.and_then(|keys| {
                                     self.send_response(protocol, algorithm, keys)
                                         .map_err(KeyExchangeError::Io)
@@ -1428,7 +1435,7 @@ impl KeyExchangeServer {
                                 return ControlFlow::Break(Err(error))
                             }
                         },
-                        None => {
+                        State::Done => {
                             // client is sending more bytes, but we don't expect any more
                             return ControlFlow::Break(Err(KeyExchangeError::InternalServerError));
                         }
@@ -1436,7 +1443,7 @@ impl KeyExchangeServer {
                 }
                 Err(e) => match e.kind() {
                     std::io::ErrorKind::WouldBlock => return ControlFlow::Continue(self),
-                    std::io::ErrorKind::UnexpectedEof if self.decoder.is_none() => {
+                    std::io::ErrorKind::UnexpectedEof if matches!(self.state, State::Done) => {
                         // something we need in practice. If we're already done, an EOF is fine
                         return ControlFlow::Break(Ok(self));
                     }
@@ -1475,7 +1482,9 @@ impl KeyExchangeServer {
 
         Ok(Self {
             tls_connection,
-            decoder: Some(KeyExchangeServerDecoder::new()),
+            state: State::Active {
+                decoder: KeyExchangeServerDecoder::new(),
+            },
             keyset,
             #[cfg(feature = "nts-pool")]
             pool_certificates,
