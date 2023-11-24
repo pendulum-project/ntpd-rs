@@ -1350,10 +1350,7 @@ impl KeyExchangeServer {
         Ok(())
     }
 
-    fn send_error_record(
-        tls_connection: &mut rustls::ServerConnection,
-        error: &KeyExchangeError,
-    ) -> std::io::Result<()> {
+    fn send_error_record(tls_connection: &mut rustls::ServerConnection, error: &KeyExchangeError) {
         use KeyExchangeError::*;
 
         const UNRECOGNIZED_CRITICAL_RECORD: u16 = 0;
@@ -1375,69 +1372,81 @@ impl KeyExchangeServer {
             | IncompleteResponse => BAD_REQUEST,
         };
 
-        Self::send_records(tls_connection, &[NtsRecord::Error { errorcode }])
-    }
-
-    pub fn progress(self) -> ControlFlow<Result<rustls::ServerConnection, KeyExchangeError>, Self> {
-        match self.progress_help() {
-            ControlFlow::Continue(c) => ControlFlow::Continue(c),
-            ControlFlow::Break(b) => ControlFlow::Break(b),
+        if let Err(io) = Self::send_records(tls_connection, &[NtsRecord::Error { errorcode }]) {
+            tracing::debug!(key_exchange_error = ?error, io_error = ?io, "sending error record failed");
         }
     }
 
-    fn progress_help(
+    pub fn progress(
         mut self,
     ) -> ControlFlow<Result<rustls::ServerConnection, KeyExchangeError>, Self> {
         // Move any received data from tls to decoder
-        let mut buf = [0; 128];
-        loop {
-            if let Err(e) = self.tls_connection.process_new_packets() {
-                return ControlFlow::Break(Err(e.into()));
-            }
-            let read_result = self.tls_connection.reader().read(&mut buf);
-            match read_result {
-                Ok(0) => {
-                    match self.state {
-                        State::Active { .. } => {
-                            // there are no more client bytes, but decoding was not finished yet
-                            return ControlFlow::Break(Err(KeyExchangeError::IncompleteResponse));
-                        }
-                        State::Done => {
-                            // we're all done
-                            return ControlFlow::Break(Ok(self.tls_connection));
-                        }
-                    }
-                }
-                Ok(n) => {
-                    match self.state {
-                        State::Active { decoder } => match decoder.step_with_slice(&buf[..n]) {
-                            ControlFlow::Continue(decoder) => {
-                                self.state = State::Active { decoder };
-                                return ControlFlow::Continue(self);
-                            }
-                            ControlFlow::Break(Ok(data)) => {
-                                self.state = State::Done;
+        if let Err(e) = self.tls_connection.process_new_packets() {
+            return ControlFlow::Break(Err(e.into()));
+        }
 
-                                return self.decoder_done(data);
-                            }
-                            ControlFlow::Break(Err(error)) => {
-                                return ControlFlow::Break(Err(error))
-                            }
-                        },
-                        State::Done => {
-                            // client is sending more bytes, but we don't expect any more
-                            return ControlFlow::Break(Err(KeyExchangeError::InternalServerError));
+        let mut buf = [0; 128];
+        match self.tls_connection.reader().read(&mut buf) {
+            Ok(0) => {
+                // the connection was closed cleanly by the client
+                // see https://docs.rs/rustls/latest/rustls/struct.Reader.html#method.read
+                ControlFlow::Break(self.end_of_file())
+            }
+            Ok(n) => {
+                match self.state {
+                    State::Active { decoder } => match decoder.step_with_slice(&buf[..n]) {
+                        ControlFlow::Continue(decoder) => {
+                            // more bytes are needed
+                            self.state = State::Active { decoder };
+                            ControlFlow::Continue(self)
                         }
+                        ControlFlow::Break(Ok(data)) => {
+                            // all records have been decoded; send a response
+                            // continues for a clean shutdown of the connection by the client
+                            self.state = State::Done;
+                            self.decoder_done(data)
+                        }
+                        ControlFlow::Break(Err(error)) => {
+                            Self::send_error_record(&mut self.tls_connection, &error);
+                            ControlFlow::Break(Err(error))
+                        }
+                    },
+                    State::Done => {
+                        // client is sending more bytes, but we don't expect any more
+                        let error = KeyExchangeError::InternalServerError;
+                        Self::send_error_record(&mut self.tls_connection, &error);
+                        ControlFlow::Break(Err(error))
                     }
                 }
-                Err(e) => match e.kind() {
-                    std::io::ErrorKind::WouldBlock => return ControlFlow::Continue(self),
-                    std::io::ErrorKind::UnexpectedEof if matches!(self.state, State::Done) => {
-                        // something we need in practice. If we're already done, an EOF is fine
-                        return ControlFlow::Break(Ok(self.tls_connection));
-                    }
-                    _ => return ControlFlow::Break(Err(e.into())),
-                },
+            }
+            Err(e) => match e.kind() {
+                std::io::ErrorKind::WouldBlock => {
+                    // basically an await; give other tasks a chance
+                    ControlFlow::Continue(self)
+                }
+                std::io::ErrorKind::UnexpectedEof => {
+                    // the connection was closed uncleanly by the client
+                    // see https://docs.rs/rustls/latest/rustls/struct.Reader.html#method.read
+                    ControlFlow::Break(self.end_of_file())
+                }
+                _ => {
+                    let error = KeyExchangeError::Io(e);
+                    Self::send_error_record(&mut self.tls_connection, &error);
+                    ControlFlow::Break(Err(error))
+                }
+            },
+        }
+    }
+
+    fn end_of_file(self) -> Result<rustls::ServerConnection, KeyExchangeError> {
+        match self.state {
+            State::Active { .. } => {
+                // there are no more client bytes, but decoding was not finished yet
+                Err(KeyExchangeError::IncompleteResponse)
+            }
+            State::Done => {
+                // we're all done
+                Ok(self.tls_connection)
             }
         }
     }
@@ -1495,7 +1504,7 @@ impl KeyExchangeServer {
         let algorithm = data.algorithm;
         let protocol = data.protocol;
 
-        tracing::debug!(?algorithm, "selected AEAD algorithm");
+        tracing::debug!(?protocol, ?algorithm, "selected AEAD algorithm");
 
         match self.extract_nts_keys(data) {
             Ok(keys) => {
@@ -1508,13 +1517,7 @@ impl KeyExchangeServer {
                 }
             }
             Err(key_extract_error) => {
-                // ignore IO error at this point; the connection might be broken
-                if let Err(io_error) =
-                    Self::send_error_record(&mut self.tls_connection, &key_extract_error)
-                {
-                    tracing::debug!(?key_extract_error, ?io_error, "sending error record failed");
-                }
-
+                Self::send_error_record(&mut self.tls_connection, &key_extract_error);
                 ControlFlow::Break(Err(key_extract_error))
             }
         }
