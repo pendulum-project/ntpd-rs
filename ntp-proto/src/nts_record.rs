@@ -1335,22 +1335,17 @@ impl KeyExchangeServer {
         self.tls_connection.write_tls(wr)
     }
 
-    fn send_response(
-        &mut self,
-        protocol: ProtocolId,
-        algorithm: AeadAlgorithm,
-        keys: NtsKeys,
+    fn send_records(
+        tls_connection: &mut rustls::ServerConnection,
+        records: &[NtsRecord],
     ) -> std::io::Result<()> {
-        let records =
-            NtsRecord::server_key_exchange_records(protocol, algorithm, &self.keyset, keys);
-
         let mut buffer = Vec::with_capacity(1024);
-        for record in records.into_iter() {
+        for record in records.iter() {
             record.write(&mut buffer)?;
         }
 
-        self.tls_connection.writer().write_all(&buffer)?;
-        self.tls_connection.send_close_notify();
+        tls_connection.writer().write_all(&buffer)?;
+        tls_connection.send_close_notify();
 
         Ok(())
     }
@@ -1423,11 +1418,18 @@ impl KeyExchangeServer {
 
                                 self.state = State::Done;
 
-                                return match keys.and_then(|keys| {
-                                    self.send_response(protocol, algorithm, keys)
-                                        .map_err(KeyExchangeError::Io)
-                                }) {
-                                    Err(e) => ControlFlow::Break(Err(e)),
+                                let keys = keys.unwrap();
+
+                                let records = NtsRecord::server_key_exchange_records(
+                                    protocol,
+                                    algorithm,
+                                    &self.keyset,
+                                    keys,
+                                );
+
+                                return match Self::send_records(&mut self.tls_connection, &records)
+                                {
+                                    Err(e) => ControlFlow::Break(Err(KeyExchangeError::Io(e))),
                                     Ok(()) => ControlFlow::Continue(self),
                                 };
                             }
