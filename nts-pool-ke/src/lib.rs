@@ -1,12 +1,10 @@
 mod cli;
 mod config;
 
-mod bound_keyexchange;
 mod tracing;
 
 use std::{io::BufRead, ops::ControlFlow, path::PathBuf, sync::Arc};
 
-use bound_keyexchange::BoundPoolToServer;
 use cli::NtsPoolKeOptions;
 use config::{Config, NtsPoolKeConfig};
 use ntp_proto::{
@@ -218,18 +216,16 @@ async fn foo(
 
     let connector = pool_to_server_connector(&[])?;
     let server_stream = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
-    let mut server_stream = connector.connect(domain, server_stream).await?;
+    let server_stream = connector.connect(domain, server_stream).await?;
 
-    /*
-    let supported_algorithms = supported_algorithms_request(&mut server_stream).await?;
-
-    if !supported_algorithms
-        .iter()
-        .any(|(algorithm_id, _)| *algorithm_id == client_data.algorithm as u16)
-    {
-        todo!("algorithm not supported");
-    }
-    */
+    //    let supported_algorithms = supported_algorithms_request(&mut server_stream).await?;
+    //
+    //    if !supported_algorithms
+    //        .iter()
+    //        .any(|(algorithm_id, _)| *algorithm_id == client_data.algorithm as u16)
+    //    {
+    //        todo!("algorithm not supported");
+    //    }
 
     let records_for_server = prepare_records_for_server(&client_stream, client_data)?;
     dbg!(records_for_server.len());
