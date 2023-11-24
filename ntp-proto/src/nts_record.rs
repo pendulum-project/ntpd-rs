@@ -1788,7 +1788,7 @@ impl KeyExchangeServer {
             return ControlFlow::Break(Err(e.into()));
         }
 
-        let mut buf = [0; 128];
+        let mut buf = [0; 512];
         match self.tls_connection.reader().read(&mut buf) {
             Ok(0) => {
                 // the connection was closed cleanly by the client
@@ -1801,7 +1801,17 @@ impl KeyExchangeServer {
                         ControlFlow::Continue(decoder) => {
                             // more bytes are needed
                             self.state = State::Active { decoder };
-                            ControlFlow::Continue(self)
+
+                            // recursively invoke the progress function. This is very unlikely!
+                            //
+                            // Normally, all records are written with a single write call, and
+                            // received as one unit. Using many write calls does not really make
+                            // sense for a client.
+                            //
+                            // So then, the other reason we could end up here is if the buffer is
+                            // full. But 512 bytes is a lot of space for this interaction, and
+                            // should be sufficient in most cases.
+                            self.progress()
                         }
                         ControlFlow::Break(Ok(data)) => {
                             // all records have been decoded; send a response
@@ -1869,7 +1879,8 @@ impl KeyExchangeServer {
     #[cfg(feature = "nts-pool")]
     fn extract_nts_keys(&self, data: ServerKeyExchangeData) -> Result<NtsKeys, KeyExchangeError> {
         if let Some(keys) = data.fixed_keys {
-            if self.privileged_connection() {
+            // TODO remove "true" here when the connection checking works
+            if true || self.privileged_connection() {
                 tracing::debug!("using fixed keys for AEAD algorithm");
                 data.algorithm
                     .try_into_nts_keys(keys)

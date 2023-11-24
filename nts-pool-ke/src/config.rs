@@ -62,6 +62,7 @@ pub struct ObservabilityConfig {
 #[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct NtsPoolKeConfig {
+    pub certificate_authority_path: PathBuf,
     pub certificate_chain_path: PathBuf,
     pub private_key_path: PathBuf,
     #[serde(default = "default_nts_ke_timeout")]
@@ -83,18 +84,22 @@ mod tests {
             r#"
             [nts-pool-ke-server]
             listen = "0.0.0.0:4460"
+            certificate-authority = "/foo/bar/ca.pem"
             certificate-chain-path = "/foo/bar/baz.pem"
             private-key-path = "spam.der"
             "#,
         )
         .unwrap();
 
-        let pem = PathBuf::from("/foo/bar/baz.pem");
-        assert_eq!(test.nts_pool_ke_server.certificate_chain_path, pem);
-        assert_eq!(
-            test.nts_pool_ke_server.private_key_path,
-            PathBuf::from("spam.der")
-        );
+        let ca = PathBuf::from("/foo/bar/ca.pem");
+        assert_eq!(test.nts_pool_ke_server.certificate_authority_path, ca);
+
+        let chain = PathBuf::from("/foo/bar/baz.pem");
+        assert_eq!(test.nts_pool_ke_server.certificate_chain_path, chain);
+
+        let private_key = PathBuf::from("spam.der");
+        assert_eq!(test.nts_pool_ke_server.private_key_path, private_key);
+
         assert_eq!(test.nts_pool_ke_server.key_exchange_timeout_ms, 1000,);
         assert_eq!(
             test.nts_pool_ke_server.listen,

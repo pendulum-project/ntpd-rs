@@ -5,6 +5,7 @@ mod tracing;
 
 use std::{io::BufRead, ops::ControlFlow, path::PathBuf, sync::Arc};
 
+use ::tracing::info;
 use cli::NtsPoolKeOptions;
 use config::{Config, NtsPoolKeConfig};
 use ntp_proto::{
@@ -117,6 +118,14 @@ async fn run(options: NtsPoolKeOptions) -> Result<(), Box<dyn std::error::Error>
 }
 
 async fn run_nts_pool_ke(nts_pool_ke_config: NtsPoolKeConfig) -> std::io::Result<()> {
+    let certificate_authority_file =
+        std::fs::File::open(&nts_pool_ke_config.certificate_authority_path).map_err(|e| {
+            io_error(&format!(
+                "error reading certificate_authority_path at `{:?}`: {:?}",
+                nts_pool_ke_config.certificate_authority_path, e
+            ))
+        })?;
+
     let certificate_chain_file = std::fs::File::open(&nts_pool_ke_config.certificate_chain_path)
         .map_err(|e| {
             io_error(&format!(
@@ -133,7 +142,13 @@ async fn run_nts_pool_ke(nts_pool_ke_config: NtsPoolKeConfig) -> std::io::Result
             ))
         })?;
 
-    let cert_chain: Vec<rustls::Certificate> =
+    let certificate_authority: Arc<[rustls::Certificate]> =
+        rustls_pemfile::certs(&mut std::io::BufReader::new(certificate_authority_file))?
+            .into_iter()
+            .map(rustls::Certificate)
+            .collect();
+
+    let certificate_chain: Vec<rustls::Certificate> =
         rustls_pemfile::certs(&mut std::io::BufReader::new(certificate_chain_file))?
             .into_iter()
             .map(rustls::Certificate)
@@ -144,7 +159,8 @@ async fn run_nts_pool_ke(nts_pool_ke_config: NtsPoolKeConfig) -> std::io::Result
 
     pool_key_exchange_server(
         nts_pool_ke_config.listen,
-        cert_chain,
+        certificate_authority,
+        certificate_chain,
         private_key,
         nts_pool_ke_config.key_exchange_timeout_ms,
     )
@@ -157,6 +173,7 @@ fn io_error(msg: &str) -> std::io::Error {
 
 async fn pool_key_exchange_server(
     address: impl ToSocketAddrs,
+    certificate_authority: Arc<[rustls::Certificate]>,
     certificate_chain: Vec<rustls::Certificate>,
     private_key: rustls::PrivateKey,
     timeout_ms: u64,
@@ -178,7 +195,8 @@ async fn pool_key_exchange_server(
         let (client_stream, peer_address) = listener.accept().await?;
         let client_to_pool_config = config.clone();
 
-        let fut = handle_client(client_stream, client_to_pool_config);
+        let certificate_authority = certificate_authority.clone();
+        let fut = handle_client(client_stream, client_to_pool_config, certificate_authority);
 
         tokio::spawn(async move {
             let timeout = std::time::Duration::from_millis(timeout_ms);
@@ -194,6 +212,7 @@ async fn pool_key_exchange_server(
 async fn handle_client(
     client_stream: tokio::net::TcpStream,
     config: Arc<rustls::ServerConfig>,
+    certificate_authority: Arc<[rustls::Certificate]>,
 ) -> Result<(), KeyExchangeError> {
     // handle the initial client to pool
     let acceptor = tokio_rustls::TlsAcceptor::from(config);
@@ -202,6 +221,8 @@ async fn handle_client(
     // read all records from the client
     let client_data = client_to_pool_request(&mut client_stream).await?;
 
+    info!("received records from the client",);
+
     // next we should pick a server that satisfies the algorithm used and is not denied by the
     // client. But this server hardcoded for now.
     let server_name = String::from("localhost");
@@ -209,9 +230,11 @@ async fn handle_client(
     let domain = rustls::ServerName::try_from(server_name.as_str())
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid dnsname"))?;
 
-    let connector = pool_to_server_connector(&[])?;
+    let connector = pool_to_server_connector(&certificate_authority)?;
     let server_stream = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
     let server_stream = connector.connect(domain, server_stream).await?;
+
+    info!("established connection to the server");
 
     //    let supported_algorithms = supported_algorithms_request(&mut server_stream).await?;
     //
@@ -226,6 +249,8 @@ async fn handle_client(
     let records_for_server = prepare_records_for_server(&client_stream, client_data)?;
     let records_for_client = cookie_request(server_stream, &records_for_server).await?;
 
+    info!("received cookies from the NTS KE server");
+
     // now we just forward the response
     let mut buffer = Vec::with_capacity(1024);
     for record in records_for_client {
@@ -234,6 +259,8 @@ async fn handle_client(
 
     client_stream.write_all(&buffer).await?;
     client_stream.shutdown().await?;
+
+    info!("wrote records for client");
 
     Ok(())
 }
@@ -268,13 +295,6 @@ fn pool_to_server_connector(
         let cert = rustls::Certificate(cert.0);
         roots.add(&cert).map_err(KeyExchangeError::Certificate)?;
     }
-
-    roots.add_parsable_certificates(
-        &rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
-            "../../test-keys/testca.pem"
-        ) as &[u8]))
-        .unwrap(),
-    );
 
     for cert in extra_certificates {
         roots.add(cert).map_err(KeyExchangeError::Certificate)?;
@@ -332,7 +352,7 @@ async fn cookie_request(
             break Err(KeyExchangeError::IncompleteResponse);
         }
 
-        decoder = match dbg!(decoder.step_with_slice(&buf[..n])) {
+        decoder = match decoder.step_with_slice(&buf[..n]) {
             ControlFlow::Continue(decoder) => decoder,
             ControlFlow::Break(Ok(PoolToServerData {
                 records,
