@@ -1350,6 +1350,34 @@ impl KeyExchangeServer {
         Ok(())
     }
 
+    fn send_error_record(
+        tls_connection: &mut rustls::ServerConnection,
+        error: KeyExchangeError,
+    ) -> std::io::Result<()> {
+        use KeyExchangeError::*;
+
+        const UNRECOGNIZED_CRITICAL_RECORD: u16 = 0;
+        const BAD_REQUEST: u16 = 1;
+        const INTERNAL_SERVER_ERROR: u16 = 2;
+
+        let errorcode = match error {
+            UnrecognizedCriticalRecord => UNRECOGNIZED_CRITICAL_RECORD,
+            BadRequest => BAD_REQUEST,
+            InternalServerError | Io(_) => INTERNAL_SERVER_ERROR,
+            UnknownErrorCode(_)
+            | NoValidProtocol
+            | NoValidAlgorithm
+            | InvalidFixedKeyLength
+            | NoCookies
+            | Tls(_)
+            | Certificate(_)
+            | DnsName(_)
+            | IncompleteResponse => BAD_REQUEST,
+        };
+
+        Self::send_records(tls_connection, &[NtsRecord::Error { errorcode }])
+    }
+
     pub fn progress(self) -> ControlFlow<Result<rustls::ServerConnection, KeyExchangeError>, Self> {
         match self.progress_help() {
             ControlFlow::Continue(c) => ControlFlow::Continue(c),
