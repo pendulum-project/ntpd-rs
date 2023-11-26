@@ -248,7 +248,8 @@ async fn handle_client(
     }
 
     // this is inefficient of course, but spec-compliant: the TLS connection is closed when the server
-    // receives a EndOfMessage record, so we have to establish a new one.
+    // receives a EndOfMessage record, so we have to establish a new one. re-using the TCP
+    // connection runs into issues (seems to leave the server in an invalid state).
     let server_stream = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
     let server_stream = connector.connect(domain, server_stream).await?;
 
