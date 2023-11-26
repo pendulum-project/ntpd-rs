@@ -4,6 +4,10 @@ use std::{
     sync::Arc,
 };
 
+use aead::KeySizeUser;
+use aes_siv::{Aes128SivAead, Aes256SivAead};
+use tracing::debug;
+
 use crate::{
     cookiestash::CookieStash,
     keyset::{DecodedServerCookie, KeySet},
@@ -760,7 +764,11 @@ impl AeadAlgorithm {
     }
 
     #[cfg(feature = "nts-pool")]
-    fn try_into_nts_keys(&self, RequestedKeys { c2s, s2c }: RequestedKeys) -> Option<NtsKeys> {
+    fn try_into_nts_keys(&self, RequestedKeys { c2s, s2c }: &RequestedKeys) -> Option<NtsKeys> {
+        fn try_from_slice<T: KeySizeUser>(key_material: &[u8]) -> Option<&aead::Key<T>> {
+            (key_material.len() == T::key_size()).then(|| aead::Key::<T>::from_slice(key_material))
+        }
+
         match self {
             AeadAlgorithm::AeadAesSivCmac256 => {
                 let c2s = Box::new(AesSivCmac256::from_key_bytes(&c2s).ok()?);
@@ -1028,6 +1036,60 @@ impl KeyExchangeResultDecoder {
 
     fn new() -> Self {
         Self::default()
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct SupportedAlgorithmsDecoder {
+    decoder: NtsRecordDecoder,
+    supported_algorithms: Vec<(u16, u16)>,
+}
+
+impl SupportedAlgorithmsDecoder {
+    pub fn step_with_slice(
+        mut self,
+        bytes: &[u8],
+    ) -> ControlFlow<Result<Vec<(u16, u16)>, KeyExchangeError>, Self> {
+        self.decoder.extend(bytes.iter().copied());
+
+        loop {
+            match self.decoder.step() {
+                Err(e) => return ControlFlow::Break(Err(e.into())),
+                Ok(Some(record)) => self = self.step_with_record(record)?,
+                Ok(None) => return ControlFlow::Continue(self),
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn step_with_record(
+        self,
+        record: NtsRecord,
+    ) -> ControlFlow<Result<Vec<(u16, u16)>, KeyExchangeError>, Self> {
+        use ControlFlow::{Break, Continue};
+        use NtsRecord::*;
+
+        let mut state = self;
+
+        match record {
+            EndOfMessage => Break(Ok(state.supported_algorithms)),
+            Error { errorcode } => Break(Err(KeyExchangeError::from_error_code(errorcode))),
+            Warning { warningcode } => {
+                tracing::warn!(warningcode, "Received key exchange warning code");
+
+                Continue(state)
+            }
+            #[cfg(feature = "nts-pool")]
+            SupportedAlgorithmList {
+                supported_algorithms,
+            } => {
+                state.supported_algorithms = supported_algorithms;
+
+                Continue(state)
+            }
+
+            _ => Continue(state),
+        }
     }
 }
 
@@ -1877,10 +1939,10 @@ impl KeyExchangeServer {
     }
 
     #[cfg(feature = "nts-pool")]
-    fn extract_nts_keys(&self, data: ServerKeyExchangeData) -> Result<NtsKeys, KeyExchangeError> {
-        if let Some(keys) = data.fixed_keys {
+    fn extract_nts_keys(&self, data: &ServerKeyExchangeData) -> Result<NtsKeys, KeyExchangeError> {
+        if let Some(keys) = &data.fixed_keys {
             // TODO remove "true" here when the connection checking works
-            if true || self.privileged_connection() {
+            if self.privileged_connection() {
                 tracing::debug!("using fixed keys for AEAD algorithm");
                 data.algorithm
                     .try_into_nts_keys(keys)
@@ -1895,13 +1957,13 @@ impl KeyExchangeServer {
     }
 
     #[cfg(not(feature = "nts-pool"))]
-    fn extract_nts_keys(&self, data: ServerKeyExchangeData) -> Result<NtsKeys, KeyExchangeError> {
+    fn extract_nts_keys(&self, data: &ServerKeyExchangeData) -> Result<NtsKeys, KeyExchangeError> {
         self.extract_nts_keys_tls(data)
     }
 
     fn extract_nts_keys_tls(
         &self,
-        data: ServerKeyExchangeData,
+        data: &ServerKeyExchangeData,
     ) -> Result<NtsKeys, KeyExchangeError> {
         tracing::debug!("using AEAD keys extracted from TLS connection");
 
@@ -1922,7 +1984,7 @@ impl KeyExchangeServer {
 
         tracing::debug!(?protocol, ?algorithm, "selected AEAD algorithm");
 
-        match self.extract_nts_keys(data) {
+        match self.extract_nts_keys(&data) {
             Ok(keys) => {
                 let records = NtsRecord::server_key_exchange_records(
                     protocol,
