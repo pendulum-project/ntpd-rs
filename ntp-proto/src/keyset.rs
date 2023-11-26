@@ -165,14 +165,6 @@ impl KeySet {
         self.encode_cookie(cookie)
     }
 
-    pub fn dummy() -> Self {
-        KeySet {
-            keys: vec![AesSivCmac512::new(std::iter::repeat(0).take(64).collect())],
-            id_offset: 1,
-            primary: 0,
-        }
-    }
-
     pub(crate) fn encode_cookie(&self, cookie: &DecodedServerCookie) -> Vec<u8> {
         let mut output = cookie.plaintext();
         let plaintext_length = output.as_slice().len();
