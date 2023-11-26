@@ -9,8 +9,8 @@ use ::tracing::info;
 use cli::NtsPoolKeOptions;
 use config::{Config, NtsPoolKeConfig};
 use ntp_proto::{
-    ClientToPoolData, KeyExchangeError, KeyExchangeResultDecoder, NtsRecord,
-    PartialKeyExchangeData, PoolToServerData, PoolToServerDecoder, SupportedAlgorithmsDecoder,
+    ClientToPoolData, KeyExchangeError, NtsRecord, PoolToServerData, PoolToServerDecoder,
+    SupportedAlgorithmsDecoder,
 };
 use rustls::Certificate;
 use tokio::{

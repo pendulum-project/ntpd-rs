@@ -765,20 +765,16 @@ impl AeadAlgorithm {
 
     #[cfg(feature = "nts-pool")]
     fn try_into_nts_keys(&self, RequestedKeys { c2s, s2c }: &RequestedKeys) -> Option<NtsKeys> {
-        fn try_from_slice<T: KeySizeUser>(key_material: &[u8]) -> Option<&aead::Key<T>> {
-            (key_material.len() == T::key_size()).then(|| aead::Key::<T>::from_slice(key_material))
-        }
-
         match self {
             AeadAlgorithm::AeadAesSivCmac256 => {
-                let c2s = Box::new(AesSivCmac256::from_key_bytes(&c2s).ok()?);
-                let s2c = Box::new(AesSivCmac256::from_key_bytes(&s2c).ok()?);
+                let c2s = Box::new(AesSivCmac256::from_key_bytes(c2s).ok()?);
+                let s2c = Box::new(AesSivCmac256::from_key_bytes(s2c).ok()?);
 
                 Some(NtsKeys { c2s, s2c })
             }
             AeadAlgorithm::AeadAesSivCmac512 => {
-                let c2s = Box::new(AesSivCmac512::from_key_bytes(&c2s).ok()?);
-                let s2c = Box::new(AesSivCmac512::from_key_bytes(&s2c).ok()?);
+                let c2s = Box::new(AesSivCmac512::from_key_bytes(c2s).ok()?);
+                let s2c = Box::new(AesSivCmac512::from_key_bytes(s2c).ok()?);
 
                 Some(NtsKeys { c2s, s2c })
             }
