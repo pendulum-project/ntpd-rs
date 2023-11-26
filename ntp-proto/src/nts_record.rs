@@ -1492,6 +1492,9 @@ pub struct ClientToPoolDecoder {
 
     records: Vec<NtsRecord>,
     denied_servers: Vec<String>,
+
+    #[cfg(feature = "ntpv5")]
+    allow_v5: bool,
 }
 
 #[derive(Debug)]
@@ -1564,6 +1567,13 @@ impl ClientToPoolDecoder {
                 state.records.push(record);
                 Continue(state)
             }
+            #[cfg(feature = "ntpv5")]
+            DraftId { data } => {
+                if data == crate::packet::v5::DRAFT_VERSION.as_bytes() {
+                    state.allow_v5 = true;
+                }
+                Continue(state)
+            }
             NextProtocol { protocol_ids } => {
                 #[cfg(feature = "ntpv5")]
                 let selected = if state.allow_v5 {
@@ -1634,6 +1644,9 @@ pub struct PoolToServerDecoder {
 
     records: Vec<NtsRecord>,
     supported_algorithms: Vec<(u16, u16)>,
+
+    #[cfg(feature = "ntpv5")]
+    allow_v5: bool,
 }
 
 #[derive(Debug)]
@@ -1693,6 +1706,13 @@ impl PoolToServerDecoder {
                 tracing::debug!(warningcode, "Received key exchange warning code");
 
                 state.records.push(record);
+                Continue(state)
+            }
+            #[cfg(feature = "ntpv5")]
+            DraftId { data } => {
+                if data == crate::packet::v5::DRAFT_VERSION.as_bytes() {
+                    state.allow_v5 = true;
+                }
                 Continue(state)
             }
             NextProtocol { protocol_ids } => {
