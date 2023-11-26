@@ -10,7 +10,7 @@ use cli::NtsPoolKeOptions;
 use config::{Config, NtsPoolKeConfig};
 use ntp_proto::{
     ClientToPoolData, KeyExchangeError, KeyExchangeResultDecoder, NtsRecord,
-    PartialKeyExchangeData, PoolToServerData, PoolToServerDecoder,
+    PartialKeyExchangeData, PoolToServerData, PoolToServerDecoder, SupportedAlgorithmsDecoder,
 };
 use rustls::Certificate;
 use tokio::{
@@ -232,18 +232,25 @@ async fn handle_client(
 
     let connector = pool_to_server_connector(&certificate_authority)?;
     let server_stream = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
-    let server_stream = connector.connect(domain, server_stream).await?;
+    let mut server_stream = connector.connect(domain.clone(), server_stream).await?;
 
     info!("established connection to the server");
 
-    //    let supported_algorithms = supported_algorithms_request(&mut server_stream).await?;
-    //
-    //    if !supported_algorithms
-    //        .iter()
-    //        .any(|(algorithm_id, _)| *algorithm_id == client_data.algorithm as u16)
-    //    {
-    //        todo!("algorithm not supported");
-    //    }
+    let supported_algorithms = supported_algorithms_request(&mut server_stream).await?;
+
+    info!("received supported algorithms from the NTS KE server");
+
+    if !supported_algorithms
+        .iter()
+        .any(|(algorithm_id, _)| *algorithm_id == client_data.algorithm as u16)
+    {
+        unreachable!("the default algorithm must be supported by all clients and servers");
+    }
+
+    // this is inefficient of course, but spec-compliant: the TLS connection is closed when the server
+    // receives a EndOfMessage record, so we have to establish a new one.
+    let server_stream = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
+    let server_stream = connector.connect(domain, server_stream).await?;
 
     // get the cookies from the NTS KE server
     let records_for_server = prepare_records_for_server(&client_stream, client_data)?;
@@ -371,8 +378,23 @@ async fn cookie_request(
 async fn supported_algorithms_request(
     stream: &mut tokio_rustls::client::TlsStream<tokio::net::TcpStream>,
 ) -> Result<Vec<(u16, u16)>, KeyExchangeError> {
+    let nts_records = [
+        NtsRecord::SupportedAlgorithmList {
+            supported_algorithms: vec![],
+        },
+        NtsRecord::EndOfMessage,
+    ];
+
+    // now we just forward the response
+    let mut buf = Vec::with_capacity(1024);
+    for record in nts_records {
+        record.write(&mut buf)?;
+    }
+
+    stream.write_all(&buf).await?;
+
     let mut buf = [0; 1024];
-    let mut decoder = KeyExchangeResultDecoder::default();
+    let mut decoder = SupportedAlgorithmsDecoder::default();
 
     loop {
         let n = stream.read(&mut buf).await?;
@@ -383,13 +405,7 @@ async fn supported_algorithms_request(
 
         decoder = match decoder.step_with_slice(&buf[..n]) {
             ControlFlow::Continue(decoder) => decoder,
-            ControlFlow::Break(Ok(PartialKeyExchangeData {
-                supported_algorithms,
-                ..
-            })) => {
-                break Ok(supported_algorithms);
-            }
-            ControlFlow::Break(Err(error)) => break Err(error),
+            ControlFlow::Break(result) => break result,
         };
     }
 }
