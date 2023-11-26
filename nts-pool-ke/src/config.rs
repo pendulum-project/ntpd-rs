@@ -84,7 +84,7 @@ mod tests {
             r#"
             [nts-pool-ke-server]
             listen = "0.0.0.0:4460"
-            certificate-authority = "/foo/bar/ca.pem"
+            certificate-authority-path = "/foo/bar/ca.pem"
             certificate-chain-path = "/foo/bar/baz.pem"
             private-key-path = "spam.der"
             "#,
