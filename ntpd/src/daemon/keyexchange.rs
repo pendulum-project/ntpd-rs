@@ -956,13 +956,8 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
 
         tokio::spawn(async move {
-            // give the server some time to make the port available
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-
             // create the stream, then shut it down without sending anything
             let stream = client_tls_stream("localhost", port).await;
-
-            // "dirty" shutdown
             stream.into_inner().0.shutdown().await.unwrap();
         });
 
