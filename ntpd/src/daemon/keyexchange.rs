@@ -832,6 +832,30 @@ mod tests {
         assert!(matches!(error, KeyExchangeError::NoCookies));
     }
 
+    async fn client_error_record(errorcode: u16) -> KeyExchangeError {
+        let result = send_records_to_client(vec![
+            NtsRecord::Error { errorcode },
+            NtsRecord::EndOfMessage,
+        ])
+        .await;
+
+        result.unwrap_err()
+    }
+
+    #[tokio::test]
+    async fn client_receives_error_record() {
+        use KeyExchangeError as KEE;
+
+        let error = client_error_record(NtsRecord::UNRECOGNIZED_CRITICAL_RECORD).await;
+        assert!(matches!(error, KEE::UnrecognizedCriticalRecord));
+
+        let error = client_error_record(NtsRecord::BAD_REQUEST).await;
+        assert!(matches!(error, KEE::BadRequest));
+
+        let error = client_error_record(NtsRecord::INTERNAL_SERVER_ERROR).await;
+        assert!(matches!(error, KEE::InternalServerError));
+    }
+
     #[tokio::test]
     async fn server_expected_client_records() {
         let records = NtsRecord::client_key_exchange_records().to_vec();
@@ -891,11 +915,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn unrecognized_critical_record() {
+        let records = vec![
+            NtsRecord::Unknown {
+                record_type: 1234,
+                critical: true,
+                data: vec![],
+            },
+            NtsRecord::EndOfMessage,
+        ];
+        let result = send_records_to_server(records).await;
+
+        assert!(matches!(
+            result,
+            Err(KeyExchangeError::UnrecognizedCriticalRecord)
+        ));
+    }
+
+    #[tokio::test]
     async fn client_sends_no_records_clean_shutdown() {
         let listener = TcpListener::bind(&("localhost", 0)).await.unwrap();
         let port = listener.local_addr().unwrap().port();
 
         tokio::spawn(async move {
+            // give the server some time to make the port available
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
             // create the stream, then shut it down without sending anything
             let mut stream = client_tls_stream("localhost", port).await;
             stream.shutdown().await.unwrap();
@@ -903,5 +948,49 @@ mod tests {
 
         let result = run_server(listener).await;
         assert!(matches!(result, Err(KeyExchangeError::IncompleteResponse)));
+    }
+
+    #[tokio::test]
+    async fn client_sends_no_records_dirty_shutdown() {
+        let listener = TcpListener::bind(&("localhost", 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        tokio::spawn(async move {
+            // give the server some time to make the port available
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+            // create the stream, then shut it down without sending anything
+            let stream = client_tls_stream("localhost", port).await;
+
+            // "dirty" shutdown
+            stream.into_inner().0.shutdown().await.unwrap();
+        });
+
+        let result = run_server(listener).await;
+        assert!(matches!(result, Err(KeyExchangeError::IncompleteResponse)));
+    }
+
+    async fn server_error_record(errorcode: u16) -> KeyExchangeError {
+        let result = send_records_to_server(vec![
+            NtsRecord::Error { errorcode },
+            NtsRecord::EndOfMessage,
+        ])
+        .await;
+
+        result.unwrap_err()
+    }
+
+    #[tokio::test]
+    async fn server_receives_error_record() {
+        use KeyExchangeError as KEE;
+
+        let error = server_error_record(NtsRecord::UNRECOGNIZED_CRITICAL_RECORD).await;
+        assert!(matches!(error, KEE::UnrecognizedCriticalRecord));
+
+        let error = server_error_record(NtsRecord::BAD_REQUEST).await;
+        assert!(matches!(error, KEE::BadRequest));
+
+        let error = server_error_record(NtsRecord::INTERNAL_SERVER_ERROR).await;
+        assert!(matches!(error, KEE::InternalServerError));
     }
 }
