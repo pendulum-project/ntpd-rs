@@ -265,7 +265,8 @@ impl NtsRecord {
         algorithm: AeadAlgorithm,
         keyset: &KeySet,
         keys: NtsKeys,
-    ) -> [NtsRecord; 11] {
+        #[cfg(feature = "nts-pool")] send_supported_algorithms: bool,
+    ) -> Box<[NtsRecord]> {
         let cookie = DecodedServerCookie {
             algorithm,
             s2c: keys.s2c,
@@ -278,7 +279,21 @@ impl NtsRecord {
             }
         };
 
-        [
+        let mut response = Vec::new();
+        //Probably, a NTS request should not send this record while attempting
+        //to negotiate a "standard key exchange" at the same time. The current spec
+        //does not outright say this, however, so we will add it whenever requested.
+        #[cfg(feature = "nts-pool")]
+        if send_supported_algorithms {
+            response.push(NtsRecord::SupportedAlgorithmList {
+                supported_algorithms: crate::nts_record::AeadAlgorithm::IN_ORDER_OF_PREFERENCE
+                    .iter()
+                    .map(|&algo| (algo as u16, algo.key_size()))
+                    .collect(),
+            })
+        }
+
+        response.extend(vec![
             NtsRecord::NextProtocol {
                 protocol_ids: vec![protocol as u16],
             },
@@ -295,7 +310,9 @@ impl NtsRecord {
             next_cookie(),
             next_cookie(),
             NtsRecord::EndOfMessage,
-        ]
+        ]);
+
+        response.into_boxed_slice()
     }
 
     pub fn read<A: Read>(reader: &mut A) -> std::io::Result<NtsRecord> {
@@ -781,6 +798,20 @@ impl AeadAlgorithm {
             }
         }
     }
+
+    #[cfg(feature = "nts-pool")]
+    fn key_size(&self) -> u16 {
+        // because this would be error-prone, we don't hardcode the key size here, but
+        // trust the compiler to optimise things away
+        match self {
+            AeadAlgorithm::AeadAesSivCmac256 => {
+                AesSivCmac256::new(Default::default()).key_bytes().len() as u16
+            }
+            AeadAlgorithm::AeadAesSivCmac512 => {
+                AesSivCmac512::new(Default::default()).key_bytes().len() as u16
+            }
+        }
+    }
 }
 
 pub struct NtsKeys {
@@ -1120,7 +1151,7 @@ struct KeyExchangeServerDecoder {
     #[cfg(feature = "nts-pool")]
     keep_alive: Option<bool>,
     #[cfg(feature = "nts-pool")]
-    send_supported_algorithms: bool,
+    requested_supported_algorithms: bool,
     #[cfg(feature = "nts-pool")]
     fixed_key_request: Option<RequestedKeys>,
 }
@@ -1139,6 +1170,8 @@ struct ServerKeyExchangeData {
     /// By default, perform key extraction to acquire the c2s and s2c keys; otherwise, use the fixed keys.
     #[cfg(feature = "nts-pool")]
     fixed_keys: Option<RequestedKeys>,
+    #[cfg(feature = "nts-pool")]
+    requested_supported_algorithms: bool,
 }
 
 impl KeyExchangeServerDecoder {
@@ -1176,6 +1209,8 @@ impl KeyExchangeServerDecoder {
                     protocol: state.protocol,
                     #[cfg(feature = "nts-pool")]
                     fixed_keys: state.fixed_key_request,
+                    #[cfg(feature = "nts-pool")]
+                    requested_supported_algorithms: state.requested_supported_algorithms,
                 };
 
                 Break(Ok(result))
@@ -1275,7 +1310,7 @@ impl KeyExchangeServerDecoder {
                 #[cfg(not(feature = "__internal-fuzz"))]
                 debug_assert_eq!(_supported_algorithms, &[]);
 
-                state.send_supported_algorithms = true;
+                state.requested_supported_algorithms = true;
 
                 Continue(state)
             }
@@ -1503,13 +1538,22 @@ impl KeyExchangeServer {
     ) -> ControlFlow<Result<rustls::ServerConnection, KeyExchangeError>, Self> {
         let algorithm = data.algorithm;
         let protocol = data.protocol;
+        //TODO: see comment in fn server_key_exchange_records()
+        #[cfg(feature = "nts-pool")]
+        let send_algorithm_list = data.requested_supported_algorithms;
 
         tracing::debug!(?protocol, ?algorithm, "selected AEAD algorithm");
 
         match self.extract_nts_keys(data) {
             Ok(keys) => {
-                let records =
-                    NtsRecord::server_key_exchange_records(protocol, algorithm, &self.keyset, keys);
+                let records = NtsRecord::server_key_exchange_records(
+                    protocol,
+                    algorithm,
+                    &self.keyset,
+                    keys,
+                    #[cfg(feature = "nts-pool")]
+                    send_algorithm_list,
+                );
 
                 match Self::send_records(&mut self.tls_connection, &records) {
                     Err(e) => ControlFlow::Break(Err(KeyExchangeError::Io(e))),
@@ -1723,8 +1767,8 @@ mod test {
 
         let record = NtsRecord::SupportedAlgorithmList {
             supported_algorithms: vec![
-                (AeadAlgorithm::AeadAesSivCmac256 as u16, 256),
-                (AeadAlgorithm::AeadAesSivCmac512 as u16, 512),
+                (AeadAlgorithm::AeadAesSivCmac256 as u16, 256 / 8),
+                (AeadAlgorithm::AeadAesSivCmac512 as u16, 512 / 8),
             ],
         };
 
