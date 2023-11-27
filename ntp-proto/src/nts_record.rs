@@ -840,6 +840,8 @@ struct PartialKeyExchangeData {
     protocol: Option<ProtocolId>,
     algorithm: Option<AeadAlgorithm>,
     cookies: CookieStash,
+    #[cfg(feature = "nts-pool")]
+    supported_algorithms: Option<Box<[(AeadAlgorithm, u16)]>>,
 }
 
 #[derive(Debug, Default)]
@@ -855,7 +857,7 @@ struct KeyExchangeResultDecoder {
     keep_alive: bool,
 
     #[cfg(feature = "nts-pool")]
-    supported_algorithms: Vec<(AeadAlgorithm, u16)>,
+    supported_algorithms: Option<Box<[(AeadAlgorithm, u16)]>>,
 }
 
 impl KeyExchangeResultDecoder {
@@ -897,6 +899,8 @@ impl KeyExchangeResultDecoder {
                         protocol: state.protocol,
                         algorithm: state.algorithm,
                         cookies: state.cookies,
+                        #[cfg(feature = "nts-pool")]
+                        supported_algorithms: state.supported_algorithms,
                     }))
                 }
             }
@@ -963,13 +967,16 @@ impl KeyExchangeResultDecoder {
             } => {
                 use self::AeadAlgorithm;
 
-                state.supported_algorithms = supported_algorithms
-                    .into_iter()
-                    .filter_map(|(aead_protocol_id, key_length)| {
-                        let aead_algorithm = AeadAlgorithm::try_deserialize(aead_protocol_id)?;
-                        Some((aead_algorithm, key_length))
-                    })
-                    .collect();
+                state.supported_algorithms = Some(
+                    supported_algorithms
+                        .into_iter()
+                        .filter_map(|(aead_protocol_id, key_length)| {
+                            let aead_algorithm = AeadAlgorithm::try_deserialize(aead_protocol_id)?;
+                            Some((aead_algorithm, key_length))
+                        })
+                        .collect::<Vec<_>>()
+                        .into_boxed_slice(),
+                );
 
                 Continue(state)
             }
@@ -999,6 +1006,9 @@ pub struct KeyExchangeResult {
     pub port: u16,
     pub nts: Box<PeerNtsData>,
     pub protocol_version: ProtocolVersion,
+
+    #[cfg(feature = "nts-pool")]
+    pub algorithms_reported_by_server: Option<Box<[(AeadAlgorithm, u16)]>>,
 }
 
 pub struct KeyExchangeClient {
@@ -1081,6 +1091,8 @@ impl KeyExchangeClient {
                                 },
                                 port: result.port.unwrap_or(Self::NTP_DEFAULT_PORT),
                                 nts,
+                                #[cfg(feature = "nts-pool")]
+                                algorithms_reported_by_server: result.supported_algorithms,
                             }));
                         }
                         ControlFlow::Break(Err(error)) => return ControlFlow::Break(Err(error)),
@@ -2582,6 +2594,10 @@ mod test {
 
         #[cfg(feature = "ntpv5")]
         assert_eq!(result.protocol_version, ProtocolVersion::V5);
+
+        // test that the supported algorithms record is not provided "unasked for"
+        #[cfg(feature = "nts-pool")]
+        assert!(result.algorithms_reported_by_server.is_none());
     }
 
     #[test]
@@ -2634,6 +2650,29 @@ mod test {
 
         #[cfg(feature = "ntpv5")]
         assert_eq!(result.protocol_version, ProtocolVersion::V5);
+    }
+
+    #[cfg(feature = "nts-pool")]
+    #[test]
+    fn test_supported_algos_roundtrip() {
+        let (mut client, server) = client_server_pair(ClientType::Uncertified);
+
+        let mut buffer = Vec::with_capacity(1024);
+        for record in [
+            NtsRecord::SupportedAlgorithmList {
+                supported_algorithms: vec![],
+            },
+            NtsRecord::EndOfMessage,
+        ] {
+            record.write(&mut buffer).unwrap();
+        }
+        client.tls_connection.writer().write_all(&buffer).unwrap();
+
+        let result = keyexchange_loop(client, server).unwrap();
+
+        let algos = result.algorithms_reported_by_server.unwrap();
+        assert!(algos.contains(&(AeadAlgorithm::AeadAesSivCmac512, 64)));
+        assert!(algos.contains(&(AeadAlgorithm::AeadAesSivCmac256, 32)));
     }
 
     #[test]
