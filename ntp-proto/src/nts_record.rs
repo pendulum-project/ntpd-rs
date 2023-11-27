@@ -774,25 +774,16 @@ impl AeadAlgorithm {
 
     #[cfg(feature = "nts-pool")]
     fn try_into_nts_keys(&self, RequestedKeys { c2s, s2c }: RequestedKeys) -> Option<NtsKeys> {
-        fn try_from_slice<T: KeySizeUser>(key_material: &[u8]) -> Option<&aead::Key<T>> {
-            (key_material.len() == T::key_size()).then(|| aead::Key::<T>::from_slice(key_material))
-        }
         match self {
             AeadAlgorithm::AeadAesSivCmac256 => {
-                let c2s = *try_from_slice::<Aes128SivAead>(&c2s)?;
-                let s2c = *try_from_slice::<Aes128SivAead>(&s2c)?;
-
-                let c2s = Box::new(AesSivCmac256::new(c2s));
-                let s2c = Box::new(AesSivCmac256::new(s2c));
+                let c2s = Box::new(AesSivCmac256::from_key_bytes(&c2s).ok()?);
+                let s2c = Box::new(AesSivCmac256::from_key_bytes(&s2c).ok()?);
 
                 Some(NtsKeys { c2s, s2c })
             }
             AeadAlgorithm::AeadAesSivCmac512 => {
-                let c2s = *try_from_slice::<Aes256SivAead>(&c2s)?;
-                let s2c = *try_from_slice::<Aes256SivAead>(&s2c)?;
-
-                let c2s = Box::new(AesSivCmac512::new(c2s));
-                let s2c = Box::new(AesSivCmac512::new(s2c));
+                let c2s = Box::new(AesSivCmac512::from_key_bytes(&c2s).ok()?);
+                let s2c = Box::new(AesSivCmac512::from_key_bytes(&s2c).ok()?);
 
                 Some(NtsKeys { c2s, s2c })
             }
@@ -801,15 +792,9 @@ impl AeadAlgorithm {
 
     #[cfg(feature = "nts-pool")]
     fn key_size(&self) -> u16 {
-        // because this would be error-prone, we don't hardcode the key size here, but
-        // trust the compiler to optimise things away
         match self {
-            AeadAlgorithm::AeadAesSivCmac256 => {
-                AesSivCmac256::new(Default::default()).key_bytes().len() as u16
-            }
-            AeadAlgorithm::AeadAesSivCmac512 => {
-                AesSivCmac512::new(Default::default()).key_bytes().len() as u16
-            }
+            AeadAlgorithm::AeadAesSivCmac256 => AesSivCmac256::key_size() as u16,
+            AeadAlgorithm::AeadAesSivCmac512 => AesSivCmac512::key_size() as u16,
         }
     }
 }

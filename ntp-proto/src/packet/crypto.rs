@@ -11,6 +11,10 @@ use super::extension_fields::ExtensionField;
 #[error("Could not decrypt ciphertext")]
 pub struct DecryptError;
 
+#[derive(Debug, thiserror::Error)]
+#[error("Invalid key")]
+pub struct KeyError;
+
 struct Buffer<'a> {
     buffer: &'a mut [u8],
     valid: usize,
@@ -145,6 +149,17 @@ impl AesSivCmac256 {
     pub fn new(key: Key<Aes128Siv>) -> Self {
         AesSivCmac256 { key }
     }
+
+    pub fn key_size() -> usize {
+        // prefer trust in compiler optimisation over trust in mental arithmetic
+        Self::new(Default::default()).key.len()
+    }
+
+    pub fn from_key_bytes(key_bytes: &[u8]) -> Result<Self, KeyError> {
+        (key_bytes.len() == Self::key_size())
+            .then(|| Self::new(*aead::Key::<Aes128Siv>::from_slice(key_bytes)))
+            .ok_or(KeyError)
+    }
 }
 
 impl Drop for AesSivCmac256 {
@@ -216,6 +231,17 @@ pub struct AesSivCmac512 {
 impl AesSivCmac512 {
     pub fn new(key: Key<Aes256Siv>) -> Self {
         AesSivCmac512 { key }
+    }
+
+    pub fn key_size() -> usize {
+        // prefer trust in compiler optimisation over trust in mental arithmetic
+        Self::new(Default::default()).key.len()
+    }
+
+    pub fn from_key_bytes(key_bytes: &[u8]) -> Result<Self, KeyError> {
+        (key_bytes.len() == Self::key_size())
+            .then(|| Self::new(*aead::Key::<Aes256Siv>::from_slice(key_bytes)))
+            .ok_or(KeyError)
     }
 }
 
@@ -433,5 +459,27 @@ mod tests {
             )
             .unwrap();
         assert_eq!(result, (0..16).collect::<Vec<u8>>());
+    }
+
+    #[test]
+    fn key_functions_correctness() {
+        use aead::KeySizeUser;
+        assert_eq!(Aes128Siv::key_size(), AesSivCmac256::key_size());
+        assert_eq!(Aes256Siv::key_size(), AesSivCmac512::key_size());
+
+        let key_bytes = (1..=64).collect::<Vec<u8>>();
+        assert!(AesSivCmac256::from_key_bytes(&key_bytes).is_err());
+
+        let slice = &key_bytes[..AesSivCmac256::key_size()];
+        assert_eq!(
+            AesSivCmac256::from_key_bytes(slice).unwrap().key_bytes(),
+            slice
+        );
+
+        let slice = &key_bytes[..AesSivCmac512::key_size()];
+        assert_eq!(
+            AesSivCmac512::from_key_bytes(slice).unwrap().key_bytes(),
+            slice
+        );
     }
 }
