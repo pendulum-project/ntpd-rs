@@ -617,7 +617,7 @@ mod tests {
     #[tokio::test]
     async fn test_poll_sends_state_update_and_packet() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, socket, _) = test_startup(8004).await;
+        let (mut process, socket, _) = test_startup(8006).await;
 
         let (poll_wait, poll_send) = TestWait::new();
 

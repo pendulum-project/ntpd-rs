@@ -50,6 +50,7 @@ async-trait = "0.1.22"
 rustls = "0.21.0"
 rustls-pemfile = "1.0"
 rustls-native-certs = "0.6.0"
+tokio-rustls = "0.24.1" # testing only
 
 # crypto
 aead = "0.5.0"

@@ -21,13 +21,9 @@ use tokio::{
 use super::config::NtsKeConfig;
 use super::exitcode;
 
-pub(crate) async fn key_exchange_client(
-    server_name: String,
-    port: u16,
+fn build_client_config(
     extra_certificates: &[Certificate],
-) -> Result<KeyExchangeResult, KeyExchangeError> {
-    let socket = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
-
+) -> Result<rustls::ClientConfig, KeyExchangeError> {
     let mut roots = rustls::RootCertStore::empty();
     for cert in rustls_native_certs::load_native_certs()? {
         let cert = rustls::Certificate(cert.0);
@@ -38,10 +34,19 @@ pub(crate) async fn key_exchange_client(
         roots.add(cert).map_err(KeyExchangeError::Certificate)?;
     }
 
-    let config = rustls::ClientConfig::builder()
+    Ok(rustls::ClientConfig::builder()
         .with_safe_defaults()
         .with_root_certificates(roots)
-        .with_no_client_auth();
+        .with_no_client_auth())
+}
+
+pub(crate) async fn key_exchange_client(
+    server_name: String,
+    port: u16,
+    extra_certificates: &[Certificate],
+) -> Result<KeyExchangeResult, KeyExchangeError> {
+    let socket = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
+    let config = build_client_config(extra_certificates)?;
 
     BoundKeyExchangeClient::new(socket, server_name, config)?.await
 }
@@ -128,6 +133,22 @@ async fn run_nts_ke(
     .await
 }
 
+fn build_server_config(
+    certificate_chain: Vec<Certificate>,
+    private_key: PrivateKey,
+) -> std::io::Result<Arc<rustls::ServerConfig>> {
+    let mut config = rustls::ServerConfig::builder()
+        .with_safe_defaults()
+        .with_no_client_auth()
+        .with_single_cert(certificate_chain, private_key)
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
+
+    config.alpn_protocols.clear();
+    config.alpn_protocols.push(b"ntske/1".to_vec());
+
+    Ok(Arc::new(config))
+}
+
 async fn key_exchange_server(
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     address: impl ToSocketAddrs,
@@ -136,20 +157,9 @@ async fn key_exchange_server(
     private_key: PrivateKey,
     timeout_ms: u64,
 ) -> std::io::Result<()> {
-    use std::io;
-
     let listener = TcpListener::bind(&address).await?;
 
-    let mut config = rustls::ServerConfig::builder()
-        .with_safe_defaults()
-        .with_no_client_auth()
-        .with_single_cert(certificate_chain, private_key)
-        .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
-
-    config.alpn_protocols.clear();
-    config.alpn_protocols.push(b"ntske/1".to_vec());
-
-    let config = Arc::new(config);
+    let config = build_server_config(certificate_chain, private_key)?;
     let pool_certs = Arc::new(pool_certs);
 
     loop {
@@ -424,7 +434,8 @@ where
                     Poll::Ready(Ok(_)) => {
                         this.server = match this.server.progress() {
                             ControlFlow::Continue(client) => client,
-                            ControlFlow::Break(result) => return Poll::Ready(result),
+                            ControlFlow::Break(Err(e)) => return Poll::Ready(Err(e)),
+                            ControlFlow::Break(Ok(_)) => return Poll::Ready(Ok(())),
                         }
                     }
                     Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),
@@ -530,7 +541,8 @@ fn private_key_from_bufread(
 mod tests {
     use std::{io::Cursor, path::PathBuf};
 
-    use ntp_proto::KeySetProvider;
+    use ntp_proto::{KeySetProvider, NtsRecord};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use super::*;
 
@@ -576,6 +588,7 @@ mod tests {
     async fn key_exchange_roundtrip() {
         let provider = KeySetProvider::new(1);
         let keyset = provider.get();
+        #[cfg(feature = "unstable_nts-pool")]
         let pool_certs = ["testdata/certificates/nos-nl.pem"];
 
         let (_sender, keyset) = tokio::sync::watch::channel(keyset);
@@ -591,7 +604,7 @@ mod tests {
         let _join_handle = spawn(nts_ke_config, keyset);
 
         // give the server some time to make the port available
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
 
         let ca = include_bytes!("../../test-keys/testca.pem");
         let result = key_exchange_client(
@@ -646,5 +659,244 @@ mod tests {
             }
             _ => panic!(),
         }
+    }
+
+    fn client_key_exchange_message_length() -> usize {
+        let mut buffer = Vec::with_capacity(1024);
+        for record in ntp_proto::NtsRecord::client_key_exchange_records() {
+            record.write(&mut buffer).unwrap();
+        }
+
+        buffer.len()
+    }
+
+    async fn send_records_to_client(
+        records: Vec<NtsRecord>,
+    ) -> Result<KeyExchangeResult, KeyExchangeError> {
+        let listener = tokio::net::TcpListener::bind(("localhost", 0))
+            .await
+            .unwrap();
+        let port = listener.local_addr()?.port();
+
+        tokio::spawn(async move {
+            let cc = include_bytes!("../../test-keys/end.fullchain.pem");
+            let certificate_chain = certificates_from_bufread(BufReader::new(Cursor::new(cc)));
+
+            let pk = include_bytes!("../../test-keys/end.key");
+            let private_key = private_key_from_bufread(pk.as_slice()).unwrap().unwrap();
+
+            let config = build_server_config(certificate_chain, private_key).unwrap();
+
+            let (stream, _) = listener.accept().await.unwrap();
+
+            let acceptor = tokio_rustls::TlsAcceptor::from(config);
+            let mut stream = acceptor.accept(stream).await.unwrap();
+
+            // so that we could in theory handle multiple write calls
+            let mut buf = vec![0; client_key_exchange_message_length()];
+            stream.read_exact(&mut buf).await.unwrap();
+
+            for record in records {
+                let mut buffer = Vec::with_capacity(1024);
+                record.write(&mut buffer).unwrap();
+
+                stream.write_all(&buffer).await.unwrap();
+            }
+        });
+
+        let ca = include_bytes!("../../test-keys/testca.pem");
+        let extra_certificates = &certificates_from_bufread(BufReader::new(Cursor::new(ca)));
+
+        key_exchange_client("localhost".to_string(), port, extra_certificates).await
+    }
+
+    async fn run_server(listener: tokio::net::TcpListener) -> Result<(), KeyExchangeError> {
+        let cc = include_bytes!("../../test-keys/end.fullchain.pem");
+        let certificate_chain = certificates_from_bufread(BufReader::new(Cursor::new(cc)));
+
+        let pk = include_bytes!("../../test-keys/end.key");
+        let private_key = private_key_from_bufread(pk.as_slice()).unwrap().unwrap();
+
+        let config = build_server_config(certificate_chain, private_key).unwrap();
+        let pool_certs = Arc::new(vec![]);
+
+        let (stream, _) = listener.accept().await.unwrap();
+
+        let provider = KeySetProvider::new(0);
+        let keyset = provider.get();
+
+        BoundKeyExchangeServer::run(stream, config, keyset, pool_certs).await
+    }
+
+    async fn client_tls_stream(
+        server_name: &str,
+        port: u16,
+    ) -> tokio_rustls::client::TlsStream<tokio::net::TcpStream> {
+        let stream = tokio::net::TcpStream::connect((server_name, port))
+            .await
+            .unwrap();
+
+        let ca = include_bytes!("../../test-keys/testca.pem");
+        let extra_certificates = &certificates_from_bufread(BufReader::new(Cursor::new(ca)));
+
+        let config = build_client_config(extra_certificates).unwrap();
+
+        let domain = rustls::ServerName::try_from(server_name)
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid dnsname"))
+            .unwrap();
+
+        let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
+        connector.connect(domain, stream).await.unwrap()
+    }
+
+    async fn send_records_to_server(records: Vec<NtsRecord>) -> Result<(), KeyExchangeError> {
+        let listener = TcpListener::bind(&("localhost", 0)).await?;
+        let port = listener.local_addr()?.port();
+
+        tokio::spawn(async move {
+            let mut stream = client_tls_stream("localhost", port).await;
+
+            for record in records {
+                let mut buffer = Vec::with_capacity(1024);
+                record.write(&mut buffer).unwrap();
+
+                stream.write_all(&buffer).await.unwrap();
+            }
+
+            let mut buf = [0; 1024];
+            loop {
+                match stream.read(&mut buf).await.unwrap() {
+                    0 => break,
+                    _ => continue,
+                }
+            }
+        });
+
+        run_server(listener).await
+    }
+
+    #[tokio::test]
+    async fn receive_cookies() {
+        let result = send_records_to_client(vec![
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            NtsRecord::AeadAlgorithm {
+                critical: false,
+                algorithm_ids: vec![15],
+            },
+            NtsRecord::NewCookie {
+                cookie_data: vec![1, 2, 3],
+            },
+            NtsRecord::EndOfMessage,
+        ])
+        .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn records_after_end_are_ignored() {
+        let result = send_records_to_client(vec![
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            NtsRecord::AeadAlgorithm {
+                critical: false,
+                algorithm_ids: vec![15],
+            },
+            NtsRecord::NewCookie {
+                cookie_data: vec![1, 2, 3],
+            },
+            NtsRecord::EndOfMessage,
+            NtsRecord::NewCookie {
+                cookie_data: vec![1, 2, 3],
+            },
+        ])
+        .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn no_cookies() {
+        let result = send_records_to_client(vec![NtsRecord::EndOfMessage]).await;
+
+        let error = result.unwrap_err();
+
+        assert!(matches!(error, KeyExchangeError::NoCookies));
+    }
+
+    #[tokio::test]
+    async fn server_expected_client_records() {
+        let records = NtsRecord::client_key_exchange_records().to_vec();
+        let result = send_records_to_server(records).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn immediate_end_of_message() {
+        let records = vec![NtsRecord::EndOfMessage];
+        let result = send_records_to_server(records).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn double_end_of_message() {
+        let records = vec![NtsRecord::EndOfMessage, NtsRecord::EndOfMessage];
+        let result = send_records_to_server(records).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn client_no_valid_algorithm() {
+        let records = vec![
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            NtsRecord::AeadAlgorithm {
+                critical: false,
+                algorithm_ids: vec![],
+            },
+            NtsRecord::EndOfMessage,
+        ];
+        let result = send_records_to_server(records).await;
+
+        assert!(matches!(result, Err(KeyExchangeError::NoValidAlgorithm)));
+    }
+
+    #[tokio::test]
+    async fn client_no_valid_protocol() {
+        let records = vec![
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![],
+            },
+            NtsRecord::AeadAlgorithm {
+                critical: false,
+                algorithm_ids: vec![15],
+            },
+            NtsRecord::EndOfMessage,
+        ];
+        let result = send_records_to_server(records).await;
+
+        assert!(matches!(result, Err(KeyExchangeError::NoValidProtocol)));
+    }
+
+    #[tokio::test]
+    async fn client_sends_no_records_clean_shutdown() {
+        let listener = TcpListener::bind(&("localhost", 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        tokio::spawn(async move {
+            // create the stream, then shut it down without sending anything
+            let mut stream = client_tls_stream("localhost", port).await;
+            stream.shutdown().await.unwrap();
+        });
+
+        let result = run_server(listener).await;
+        assert!(matches!(result, Err(KeyExchangeError::IncompleteResponse)));
     }
 }
