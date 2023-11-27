@@ -68,10 +68,18 @@ pub struct NtsPoolKeConfig {
     #[serde(default = "default_nts_ke_timeout")]
     pub key_exchange_timeout_ms: u64,
     pub listen: SocketAddr,
+    pub key_exchange_servers: Vec<KeyExchangeServer>,
 }
 
 fn default_nts_ke_timeout() -> u64 {
     1000
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct KeyExchangeServer {
+    pub domain: String,
+    pub port: u16,
 }
 
 #[cfg(test)]
@@ -87,6 +95,10 @@ mod tests {
             certificate-authority-path = "/foo/bar/ca.pem"
             certificate-chain-path = "/foo/bar/baz.pem"
             private-key-path = "spam.der"
+            key-exchange-servers = [
+                { domain = "foo.bar", port = 1234 },
+                { domain = "bar.foo", port = 4321 },
+            ]
             "#,
         )
         .unwrap();
@@ -104,6 +116,20 @@ mod tests {
         assert_eq!(
             test.nts_pool_ke_server.listen,
             "0.0.0.0:4460".parse().unwrap(),
+        );
+
+        assert_eq!(
+            test.nts_pool_ke_server.key_exchange_servers,
+            vec![
+                KeyExchangeServer {
+                    domain: String::from("foo.bar"),
+                    port: 1234
+                },
+                KeyExchangeServer {
+                    domain: String::from("bar.foo"),
+                    port: 4321
+                },
+            ]
         );
     }
 }
