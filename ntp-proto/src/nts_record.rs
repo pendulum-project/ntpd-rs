@@ -4,9 +4,6 @@ use std::{
     sync::Arc,
 };
 
-use aead::KeySizeUser;
-use aes_siv::{Aes128SivAead, Aes256SivAead};
-
 use crate::{
     cookiestash::CookieStash,
     keyset::{DecodedServerCookie, KeySet},
@@ -740,14 +737,8 @@ impl AeadAlgorithm {
     ) -> Result<NtsKeys, rustls::Error> {
         match self {
             AeadAlgorithm::AeadAesSivCmac256 => {
-                let c2s = extract_nts_key::<Aes128SivAead, _>(
-                    tls_connection,
-                    self.c2s_context(protocol),
-                )?;
-                let s2c = extract_nts_key::<Aes128SivAead, _>(
-                    tls_connection,
-                    self.s2c_context(protocol),
-                )?;
+                let c2s = extract_nts_key(tls_connection, self.c2s_context(protocol))?;
+                let s2c = extract_nts_key(tls_connection, self.s2c_context(protocol))?;
 
                 let c2s = Box::new(AesSivCmac256::new(c2s));
                 let s2c = Box::new(AesSivCmac256::new(s2c));
@@ -755,14 +746,8 @@ impl AeadAlgorithm {
                 Ok(NtsKeys { c2s, s2c })
             }
             AeadAlgorithm::AeadAesSivCmac512 => {
-                let c2s = extract_nts_key::<Aes256SivAead, _>(
-                    tls_connection,
-                    self.c2s_context(protocol),
-                )?;
-                let s2c = extract_nts_key::<Aes256SivAead, _>(
-                    tls_connection,
-                    self.s2c_context(protocol),
-                )?;
+                let c2s = extract_nts_key(tls_connection, self.c2s_context(protocol))?;
+                let s2c = extract_nts_key(tls_connection, self.s2c_context(protocol))?;
 
                 let c2s = Box::new(AesSivCmac512::new(c2s));
                 let s2c = Box::new(AesSivCmac512::new(s2c));
@@ -804,11 +789,11 @@ pub struct NtsKeys {
     s2c: Box<dyn Cipher>,
 }
 
-fn extract_nts_key<T: KeySizeUser, ConnectionData>(
+fn extract_nts_key<T: Default + AsMut<[u8]>, ConnectionData>(
     tls_connection: &rustls::ConnectionCommon<ConnectionData>,
     context: [u8; 5],
-) -> Result<aead::Key<T>, rustls::Error> {
-    let mut key: aead::Key<T> = Default::default();
+) -> Result<T, rustls::Error> {
+    let mut key = T::default();
     tls_connection.export_keying_material(
         &mut key,
         b"EXPORTER-network-time-security",
