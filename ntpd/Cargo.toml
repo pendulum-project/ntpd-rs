@@ -34,6 +34,7 @@ rustls-pemfile.workspace = true
 
 [dev-dependencies]
 ntp-proto = { workspace = true, features = ["__internal-test",] }
+tokio-rustls.workspace = true
 
 [features]
 hardware-timestamping = []
