@@ -201,6 +201,10 @@ fn read_bytes_exact(reader: &mut impl Read, length: usize) -> std::io::Result<Ve
 }
 
 impl NtsRecord {
+    pub const UNRECOGNIZED_CRITICAL_RECORD: u16 = 0;
+    pub const BAD_REQUEST: u16 = 1;
+    pub const INTERNAL_SERVER_ERROR: u16 = 2;
+
     pub fn client_key_exchange_records() -> [NtsRecord; if cfg!(feature = "ntpv5") { 4 } else { 3 }]
     {
         [
@@ -1353,14 +1357,10 @@ impl KeyExchangeServer {
     fn send_error_record(tls_connection: &mut rustls::ServerConnection, error: &KeyExchangeError) {
         use KeyExchangeError::*;
 
-        const UNRECOGNIZED_CRITICAL_RECORD: u16 = 0;
-        const BAD_REQUEST: u16 = 1;
-        const INTERNAL_SERVER_ERROR: u16 = 2;
-
         let errorcode = match error {
-            UnrecognizedCriticalRecord => UNRECOGNIZED_CRITICAL_RECORD,
-            BadRequest => BAD_REQUEST,
-            InternalServerError | Io(_) => INTERNAL_SERVER_ERROR,
+            UnrecognizedCriticalRecord => NtsRecord::UNRECOGNIZED_CRITICAL_RECORD,
+            BadRequest => NtsRecord::BAD_REQUEST,
+            InternalServerError | Io(_) => NtsRecord::INTERNAL_SERVER_ERROR,
             UnknownErrorCode(_)
             | NoValidProtocol
             | NoValidAlgorithm
@@ -1369,7 +1369,7 @@ impl KeyExchangeServer {
             | Tls(_)
             | Certificate(_)
             | DnsName(_)
-            | IncompleteResponse => BAD_REQUEST,
+            | IncompleteResponse => NtsRecord::BAD_REQUEST,
         };
 
         if let Err(io) = Self::send_records(tls_connection, &[NtsRecord::Error { errorcode }]) {
