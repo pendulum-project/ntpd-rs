@@ -127,27 +127,27 @@ pub enum NtpHeader {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct NtpHeaderV3V4 {
-    leap: NtpLeapIndicator,
-    mode: NtpAssociationMode,
-    stratum: u8,
-    poll: PollInterval,
-    precision: i8,
-    root_delay: NtpDuration,
-    root_dispersion: NtpDuration,
-    reference_id: ReferenceId,
-    reference_timestamp: NtpTimestamp,
+    pub leap: NtpLeapIndicator,
+    pub mode: NtpAssociationMode,
+    pub stratum: u8,
+    pub poll: PollInterval,
+    pub precision: i8,
+    pub root_delay: NtpDuration,
+    pub root_dispersion: NtpDuration,
+    pub reference_id: ReferenceId,
+    pub reference_timestamp: NtpTimestamp,
     /// Time at the client when the request departed for the server
-    origin_timestamp: NtpTimestamp,
+    pub origin_timestamp: NtpTimestamp,
     /// Time at the server when the request arrived from the client
-    receive_timestamp: NtpTimestamp,
+    pub receive_timestamp: NtpTimestamp,
     /// Time at the server when the response left for the client
-    transmit_timestamp: NtpTimestamp,
+    pub transmit_timestamp: NtpTimestamp,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct RequestIdentifier {
-    expected_origin_timestamp: NtpTimestamp,
-    uid: Option<[u8; 32]>,
+    pub expected_origin_timestamp: NtpTimestamp,
+    pub uid: Option<[u8; 32]>,
 }
 
 impl NtpHeaderV3V4 {
