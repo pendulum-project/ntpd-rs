@@ -45,7 +45,7 @@ mod exports {
 
     #[cfg(feature = "__internal-fuzz")]
     pub use super::keyset::test_cookie;
-    #[cfg(feature = "__internal-fuzz")]
+    #[cfg(any(feature = "__internal-fuzz", feature = "__internal-test"))]
     pub use super::packet::ExtensionField;
     pub use super::packet::{
         Cipher, CipherProvider, EncryptResult, ExtensionHeaderVersion, NoCipher,
