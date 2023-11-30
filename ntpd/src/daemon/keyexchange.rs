@@ -825,7 +825,17 @@ mod tests {
 
     #[tokio::test]
     async fn no_cookies() {
-        let result = send_records_to_client(vec![NtsRecord::EndOfMessage]).await;
+        let result = send_records_to_client(vec![
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            NtsRecord::AeadAlgorithm {
+                critical: false,
+                algorithm_ids: vec![15],
+            },
+            NtsRecord::EndOfMessage,
+        ])
+        .await;
 
         let error = result.unwrap_err();
 
