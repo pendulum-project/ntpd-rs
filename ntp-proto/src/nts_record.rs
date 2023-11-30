@@ -1328,7 +1328,7 @@ pub struct KeyExchangeServer {
     state: State,
     keyset: Arc<KeySet>,
     #[cfg(feature = "nts-pool")]
-    pool_certificates: Arc<Vec<rustls::Certificate>>,
+    pool_certificates: Arc<[rustls::Certificate]>,
 }
 
 #[derive(Debug)]
@@ -1552,7 +1552,7 @@ impl KeyExchangeServer {
     pub fn new(
         tls_config: Arc<rustls::ServerConfig>,
         keyset: Arc<KeySet>,
-        pool_certificates: Arc<Vec<rustls::Certificate>>,
+        pool_certificates: Arc<[rustls::Certificate]>,
     ) -> Result<Self, KeyExchangeError> {
         // Ensure we send only ntske/1 as alpn
         debug_assert_eq!(tls_config.alpn_protocols, &[b"ntske/1".to_vec()]);
@@ -2475,7 +2475,7 @@ mod test {
         let client =
             KeyExchangeClient::new_without_tls_write("localhost".into(), clientconfig).unwrap();
         let server =
-            KeyExchangeServer::new(Arc::new(serverconfig), keyset, Arc::new(pool_cert)).unwrap();
+            KeyExchangeServer::new(Arc::new(serverconfig), keyset, pool_cert.into()).unwrap();
 
         (client, server)
     }
