@@ -1199,6 +1199,55 @@ impl KeyExchangeServerDecoder {
         }
     }
 
+    fn validate(self) -> Result<ServerKeyExchangeData, KeyExchangeError> {
+        let Some(protocol) = self.protocol else {
+            // The NTS Next Protocol Negotiation record [..] MUST occur exactly once in every NTS-KE request and response.
+            return Err(KeyExchangeError::NoValidProtocol);
+        };
+
+        let Some(algorithm) = self.algorithm else {
+            // for the protocol ids we support, the AeadAlgorithm record must be present
+            return Err(KeyExchangeError::NoValidAlgorithm);
+        };
+
+        let result = ServerKeyExchangeData {
+            algorithm,
+            protocol,
+            #[cfg(feature = "nts-pool")]
+            fixed_keys: self.fixed_key_request,
+            #[cfg(feature = "nts-pool")]
+            requested_supported_algorithms: self.requested_supported_algorithms,
+        };
+
+        Ok(result)
+    }
+
+    #[cfg(feature = "nts-pool")]
+    fn done(self) -> Result<ServerKeyExchangeData, KeyExchangeError> {
+        if self.requested_supported_algorithms {
+            let protocol = self.protocol.unwrap_or_default();
+            let algorithm = self.algorithm.unwrap_or_default();
+
+            let result = ServerKeyExchangeData {
+                algorithm,
+                protocol,
+                #[cfg(feature = "nts-pool")]
+                fixed_keys: self.fixed_key_request,
+                #[cfg(feature = "nts-pool")]
+                requested_supported_algorithms: self.requested_supported_algorithms,
+            };
+
+            Ok(result)
+        } else {
+            self.validate()
+        }
+    }
+
+    #[cfg(not(feature = "nts-pool"))]
+    fn done(self) -> Result<ServerKeyExchangeData, KeyExchangeError> {
+        self.validate()
+    }
+
     #[inline(always)]
     fn step_with_record(
         self,
@@ -1213,26 +1262,8 @@ impl KeyExchangeServerDecoder {
 
         match record {
             EndOfMessage => {
-                let Some(protocol) = state.protocol else {
-                    // The NTS Next Protocol Negotiation record [..] MUST occur exactly once in every NTS-KE request and response.
-                    return Break(Err(KeyExchangeError::NoValidProtocol));
-                };
-
-                let Some(algorithm) = state.algorithm else {
-                    // for the protocol ids we support, the AeadAlgorithm record must be present
-                    return Break(Err(KeyExchangeError::NoValidAlgorithm));
-                };
-
-                let result = ServerKeyExchangeData {
-                    algorithm,
-                    protocol,
-                    #[cfg(feature = "nts-pool")]
-                    fixed_keys: state.fixed_key_request,
-                    #[cfg(feature = "nts-pool")]
-                    requested_supported_algorithms: state.requested_supported_algorithms,
-                };
-
-                Break(Ok(result))
+                // perform a final validation step: did we receive everything that we should?
+                Break(state.done())
             }
             #[cfg(feature = "ntpv5")]
             DraftId { data } => {
@@ -2603,6 +2634,43 @@ mod test {
 
         let error = server_decode_records(&records).unwrap_err();
         assert!(matches!(error, KeyExchangeError::IncompleteResponse));
+    }
+
+    #[test]
+    #[cfg(feature = "nts-pool")]
+    fn server_decoder_supported_algorithms() {
+        let records = vec![
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            NtsRecord::AeadAlgorithm {
+                critical: true,
+                algorithm_ids: vec![15],
+            },
+            NtsRecord::SupportedAlgorithmList {
+                supported_algorithms: vec![],
+            },
+            NtsRecord::NewCookie {
+                cookie_data: vec![],
+            },
+            NtsRecord::EndOfMessage,
+        ];
+
+        let data = server_decode_records(records.as_slice()).unwrap();
+        assert!(data.requested_supported_algorithms);
+
+        let records = vec![
+            NtsRecord::SupportedAlgorithmList {
+                supported_algorithms: vec![],
+            },
+            NtsRecord::NewCookie {
+                cookie_data: vec![],
+            },
+            NtsRecord::EndOfMessage,
+        ];
+
+        let data = server_decode_records(records.as_slice()).unwrap();
+        assert!(data.requested_supported_algorithms);
     }
 
     #[test]
