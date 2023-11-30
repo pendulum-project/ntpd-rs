@@ -1,3 +1,5 @@
+#[cfg(feature = "unstable_nts-pool")]
+use super::spawn::nts_pool::NtsPoolSpawner;
 use super::{
     config::{ClockConfig, NormalizedAddress, PeerConfig, ServerConfig},
     peer::{MsgForSystem, PeerChannels},
@@ -122,6 +124,15 @@ pub async fn spawn(
             PeerConfig::Pool(cfg) => {
                 system
                     .add_spawner(PoolSpawner::new(cfg.clone(), NETWORK_WAIT_PERIOD))
+                    .map_err(|e| {
+                        tracing::error!("Could not spawn peer: {}", e);
+                        std::io::Error::new(std::io::ErrorKind::Other, e)
+                    })?;
+            }
+            #[cfg(feature = "unstable_nts-pool")]
+            PeerConfig::NtsPool(cfg) => {
+                system
+                    .add_spawner(NtsPoolSpawner::new(cfg.clone(), NETWORK_WAIT_PERIOD))
                     .map_err(|e| {
                         tracing::error!("Could not spawn peer: {}", e);
                         std::io::Error::new(std::io::ErrorKind::Other, e)

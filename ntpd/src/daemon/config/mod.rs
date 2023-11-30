@@ -372,6 +372,8 @@ impl Config {
                 PeerConfig::Standard(_) => count += 1,
                 PeerConfig::Nts(_) => count += 1,
                 PeerConfig::Pool(config) => count += config.max_peers,
+                #[cfg(feature = "unstable_nts-pool")]
+                PeerConfig::NtsPool(config) => count += config.max_peers,
             }
         }
         count

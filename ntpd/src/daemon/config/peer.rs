@@ -63,6 +63,22 @@ fn max_peers_default() -> usize {
     4
 }
 
+#[cfg(feature = "unstable_nts-pool")]
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct NtsPoolPeerConfig {
+    #[serde(rename = "address")]
+    pub addr: NtsKeAddress,
+    #[serde(
+        deserialize_with = "deserialize_certificate_authorities",
+        default = "default_certificate_authorities",
+        rename = "certificate-authority"
+    )]
+    pub certificate_authorities: Arc<[Certificate]>,
+    #[serde(rename = "count", default = "max_peers_default")]
+    pub max_peers: usize,
+}
+
 #[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 #[serde(tag = "mode")]
 pub enum PeerConfig {
@@ -73,6 +89,9 @@ pub enum PeerConfig {
     #[serde(rename = "pool")]
     Pool(PoolPeerConfig),
     // Consul(ConsulPeerConfig),
+    #[cfg(feature = "unstable_nts-pool")]
+    #[serde(rename = "nts-pool")]
+    NtsPool(NtsPoolPeerConfig),
 }
 
 /// A normalized address has a host and a port part. However, the host may be
@@ -312,6 +331,8 @@ mod tests {
             PeerConfig::Standard(c) => c.address.to_string(),
             PeerConfig::Nts(c) => c.address.to_string(),
             PeerConfig::Pool(c) => c.addr.to_string(),
+            #[cfg(feature = "unstable_nts-pool")]
+            PeerConfig::NtsPool(c) => c.addr.to_string(),
         }
     }
 
@@ -395,6 +416,22 @@ mod tests {
         assert!(matches!(test.peer, PeerConfig::Nts(_)));
         if let PeerConfig::Nts(config) = test.peer {
             assert_eq!(config.address.to_string(), "example.com:4460");
+        }
+
+        #[cfg(feature = "unstable_nts-pool")]
+        {
+            let test: TestConfig = toml::from_str(
+                r#"
+            [peer]
+            address = "example.com"
+            mode = "nts-pool"
+            "#,
+            )
+            .unwrap();
+            assert!(matches!(test.peer, PeerConfig::NtsPool(_)));
+            if let PeerConfig::Nts(config) = test.peer {
+                assert_eq!(config.address.to_string(), "example.com:4460");
+            }
         }
     }
 
