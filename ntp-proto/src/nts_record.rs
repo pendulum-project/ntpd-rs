@@ -1415,7 +1415,7 @@ impl KeyExchangeServer {
                     },
                     State::Done => {
                         // client is sending more bytes, but we don't expect any more
-                        let error = KeyExchangeError::InternalServerError;
+                        let error = KeyExchangeError::BadRequest;
                         Self::send_error_record(&mut self.tls_connection, &error);
                         ControlFlow::Break(Err(error))
                     }
