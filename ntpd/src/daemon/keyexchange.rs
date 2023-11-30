@@ -869,15 +869,23 @@ mod tests {
         let records = vec![NtsRecord::EndOfMessage];
         let result = send_records_to_server(records).await;
 
-        assert!(result.is_ok());
+        assert!(matches!(result, Err(KeyExchangeError::NoValidProtocol)));
     }
 
     #[tokio::test]
-    async fn double_end_of_message() {
-        let records = vec![NtsRecord::EndOfMessage, NtsRecord::EndOfMessage];
+    async fn double_next_protocol() {
+        let records = vec![
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            NtsRecord::EndOfMessage,
+        ];
         let result = send_records_to_server(records).await;
 
-        assert!(result.is_ok());
+        assert!(matches!(result, Err(KeyExchangeError::BadRequest)));
     }
 
     #[tokio::test]

@@ -905,11 +905,18 @@ impl KeyExchangeResultDecoder {
                     .iter()
                     .find_map(|proto| protocol_ids.contains(&(*proto as u16)).then_some(*proto));
 
-                state.protocol = selected;
-
-                match state.protocol {
+                match selected {
                     None => Break(Err(NoValidProtocol)),
-                    Some(_) => Continue(state),
+                    Some(protocol) => {
+                        // The NTS Next Protocol Negotiation record [..] MUST occur exactly once in every NTS-KE request and response.
+                        match state.protocol {
+                            None => {
+                                state.protocol = Some(protocol);
+                                Continue(state)
+                            }
+                            Some(_) => Break(Err(KeyExchangeError::NoValidProtocol)),
+                        }
+                    }
                 }
             }
             AeadAlgorithm { algorithm_ids, .. } => {
@@ -1125,7 +1132,7 @@ struct KeyExchangeServerDecoder {
     /// intersection!
     algorithm: AeadAlgorithm,
     /// Protocol (NTP version) that is supported by both client and server
-    protocol: ProtocolId,
+    protocol: Option<ProtocolId>,
 
     #[cfg(feature = "ntpv5")]
     allow_v5: bool,
@@ -1185,18 +1192,24 @@ impl KeyExchangeServerDecoder {
         let mut state = self;
 
         match record {
-            EndOfMessage => {
-                let result = ServerKeyExchangeData {
-                    algorithm: state.algorithm,
-                    protocol: state.protocol,
-                    #[cfg(feature = "nts-pool")]
-                    fixed_keys: state.fixed_key_request,
-                    #[cfg(feature = "nts-pool")]
-                    requested_supported_algorithms: state.requested_supported_algorithms,
-                };
+            EndOfMessage => match state.protocol {
+                Some(protocol) => {
+                    let result = ServerKeyExchangeData {
+                        algorithm: state.algorithm,
+                        protocol,
+                        #[cfg(feature = "nts-pool")]
+                        fixed_keys: state.fixed_key_request,
+                        #[cfg(feature = "nts-pool")]
+                        requested_supported_algorithms: state.requested_supported_algorithms,
+                    };
 
-                Break(Ok(result))
-            }
+                    Break(Ok(result))
+                }
+                None => {
+                    // The NTS Next Protocol Negotiation record [..] MUST occur exactly once in every NTS-KE request and response.
+                    Break(Err(KeyExchangeError::NoValidProtocol))
+                }
+            },
             #[cfg(feature = "ntpv5")]
             DraftId { data } => {
                 if data == crate::packet::v5::DRAFT_VERSION.as_bytes() {
@@ -1260,8 +1273,14 @@ impl KeyExchangeServerDecoder {
                 match selected {
                     None => Break(Err(NoValidProtocol)),
                     Some(protocol) => {
-                        state.protocol = protocol;
-                        Continue(state)
+                        // The NTS Next Protocol Negotiation record [..] MUST occur exactly once in every NTS-KE request and response.
+                        match state.protocol {
+                            None => {
+                                state.protocol = Some(protocol);
+                                Continue(state)
+                            }
+                            Some(_) => Break(Err(KeyExchangeError::BadRequest)),
+                        }
                     }
                 }
             }
