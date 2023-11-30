@@ -807,8 +807,8 @@ fn extract_nts_key<T: Default + AsMut<[u8]>, ConnectionData>(
 struct PartialKeyExchangeData {
     remote: Option<String>,
     port: Option<u16>,
-    protocol: Option<ProtocolId>,
-    algorithm: Option<AeadAlgorithm>,
+    protocol: ProtocolId,
+    algorithm: AeadAlgorithm,
     cookies: CookieStash,
     #[cfg(feature = "nts-pool")]
     supported_algorithms: Option<Box<[(AeadAlgorithm, u16)]>>,
@@ -860,14 +860,28 @@ impl KeyExchangeResultDecoder {
 
         match record {
             EndOfMessage => {
+                let Some(protocol) = state.protocol else {
+                    return ControlFlow::Break(Err(KeyExchangeError::NoValidProtocol));
+                };
+
+                // the spec notes
+                //
+                // > If the NTS Next Protocol Negotiation record offers Protocol ID 0 (for NTPv4),
+                // > then this record MUST be included exactly once. Other protocols MAY require it as well.
+                //
+                // but we only support Protocol ID 0 (and assume ntpv5 behaves like ntpv4 in this regard)
+                let Some(algorithm) = state.algorithm else {
+                    return ControlFlow::Break(Err(KeyExchangeError::NoValidAlgorithm));
+                };
+
                 if state.cookies.is_empty() {
                     Break(Err(KeyExchangeError::NoCookies))
                 } else {
                     Break(Ok(PartialKeyExchangeData {
                         remote: state.remote,
                         port: state.port,
-                        protocol: state.protocol,
-                        algorithm: state.algorithm,
+                        protocol,
+                        algorithm,
                         cookies: state.cookies,
                         #[cfg(feature = "nts-pool")]
                         supported_algorithms: state.supported_algorithms,
@@ -1027,22 +1041,8 @@ impl KeyExchangeClient {
                     self.decoder = match self.decoder.step_with_slice(&buf[..n]) {
                         ControlFlow::Continue(decoder) => decoder,
                         ControlFlow::Break(Ok(result)) => {
-                            let algorithm = match result.algorithm {
-                                Some(algorithm) => algorithm,
-                                None => {
-                                    return ControlFlow::Break(Err(
-                                        KeyExchangeError::NoValidAlgorithm,
-                                    ))
-                                }
-                            };
-                            let protocol = match result.protocol {
-                                Some(protocol) => protocol,
-                                None => {
-                                    return ControlFlow::Break(Err(
-                                        KeyExchangeError::NoValidProtocol,
-                                    ))
-                                }
-                            };
+                            let algorithm = result.algorithm;
+                            let protocol = result.protocol;
 
                             tracing::debug!(?algorithm, "selected AEAD algorithm");
 
@@ -1853,22 +1853,54 @@ mod test {
     }
 
     #[test]
-    fn immediate_end_of_message() {
+    fn immediate_next_protocol_end_of_message() {
         assert!(matches!(
-            roundtrip(&[NtsRecord::EndOfMessage]),
+            roundtrip(&[
+                NtsRecord::NextProtocol {
+                    protocol_ids: vec![0]
+                },
+                NtsRecord::AeadAlgorithm {
+                    critical: true,
+                    algorithm_ids: vec![15],
+                },
+                NtsRecord::EndOfMessage
+            ]),
             Err(KeyExchangeError::NoCookies)
         ));
     }
 
     #[test]
+    fn immediate_end_of_message() {
+        assert!(matches!(
+            roundtrip(&[NtsRecord::EndOfMessage]),
+            Err(KeyExchangeError::NoValidProtocol)
+        ));
+    }
+
+    #[test]
     fn no_valid_algorithm() {
+        assert!(matches!(
+            roundtrip(&[
+                NtsRecord::NextProtocol {
+                    protocol_ids: vec![0]
+                },
+                NtsRecord::EndOfMessage
+            ]),
+            Err(KeyExchangeError::NoValidAlgorithm)
+        ));
+
         let algorithm = NtsRecord::AeadAlgorithm {
             critical: true,
             algorithm_ids: vec![],
         };
 
         assert!(matches!(
-            roundtrip(&[algorithm]),
+            roundtrip(&[
+                NtsRecord::NextProtocol {
+                    protocol_ids: vec![0]
+                },
+                algorithm
+            ]),
             Err(KeyExchangeError::NoValidAlgorithm)
         ));
 
@@ -1903,6 +1935,13 @@ mod test {
         let port = 4567;
 
         let records = [
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            NtsRecord::AeadAlgorithm {
+                critical: true,
+                algorithm_ids: vec![15],
+            },
             NtsRecord::Server {
                 critical: true,
                 name: name.clone(),
@@ -1945,40 +1984,62 @@ mod test {
             cookie_data: EXAMPLE_COOKIE_DATA.to_vec(),
         };
 
-        // this succeeds on its own
-        let records = [cookie.clone(), NtsRecord::EndOfMessage];
-
-        let state = roundtrip(records.as_slice()).unwrap();
-        assert_eq!(state.cookies.len(), 1);
-
-        // still succeeds if there is a warning
+        // this fails. In theory it's allright if the protocol ID is not 0,
+        // but we do not support any. (we assume ntpv5 has the same behavior as ntpv4 here)
         let records = [
             cookie.clone(),
-            NtsRecord::Warning { warningcode: 42 },
-            NtsRecord::EndOfMessage,
-        ];
-
-        let state = roundtrip(records.as_slice()).unwrap();
-        assert_eq!(state.cookies.len(), 1);
-
-        // still succeeds if there is an unknown record
-        let records = [
-            cookie.clone(),
-            NtsRecord::Unknown {
-                record_type: 8,
-                critical: true,
-                data: vec![1, 2, 3],
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
             },
             NtsRecord::EndOfMessage,
         ];
 
-        let state = roundtrip(records.as_slice()).unwrap();
-        assert_eq!(state.cookies.len(), 1);
+        assert!(matches!(
+            roundtrip(records.as_slice()),
+            Err(KeyExchangeError::NoValidAlgorithm)
+        ));
+
+        // a warning does not change the outcome
+        let records = [
+            cookie.clone(),
+            NtsRecord::Warning { warningcode: 42 },
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            NtsRecord::EndOfMessage,
+        ];
+
+        assert!(matches!(
+            roundtrip(records.as_slice()),
+            Err(KeyExchangeError::NoValidAlgorithm)
+        ));
+
+        // an error does not change the outcome
+        let records = [
+            cookie.clone(),
+            NtsRecord::Unknown {
+                record_type: 8,
+                critical: false,
+                data: vec![1, 2, 3],
+            },
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            NtsRecord::EndOfMessage,
+        ];
+
+        assert!(matches!(
+            roundtrip(records.as_slice()),
+            Err(KeyExchangeError::NoValidAlgorithm)
+        ));
 
         // fails with the expected error if there is an error record
         let records = [
             cookie.clone(),
             NtsRecord::Error { errorcode: 42 },
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
             NtsRecord::EndOfMessage,
         ];
 
