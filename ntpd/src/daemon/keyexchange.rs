@@ -165,7 +165,7 @@ async fn key_exchange_server(
     let listener = TcpListener::bind(&address).await?;
 
     let config = build_server_config(certificate_chain, private_key)?;
-    let pool_certs = Arc::new(pool_certs);
+    let pool_certs = Arc::<[_]>::from(pool_certs);
 
     loop {
         let (stream, peer_addr) = listener.accept().await?;
@@ -334,7 +334,7 @@ where
         io: IO,
         config: Arc<rustls::ServerConfig>,
         keyset: Arc<KeySet>,
-        pool_certs: Arc<Vec<rustls::Certificate>>,
+        pool_certs: Arc<[rustls::Certificate]>,
     ) -> Result<Self, KeyExchangeError> {
         let data = BoundKeyExchangeServerData {
             io,
@@ -349,7 +349,7 @@ where
         io: IO,
         config: Arc<rustls::ServerConfig>,
         keyset: Arc<KeySet>,
-        pool_certs: Arc<Vec<rustls::Certificate>>,
+        pool_certs: Arc<[rustls::Certificate]>,
     ) -> Result<(), KeyExchangeError> {
         let this = Self::new(io, config, keyset, pool_certs)?;
 
@@ -723,7 +723,7 @@ mod tests {
         let private_key = private_key_from_bufread(pk.as_slice()).unwrap().unwrap();
 
         let config = build_server_config(certificate_chain, private_key).unwrap();
-        let pool_certs = Arc::new(vec![]);
+        let pool_certs = Arc::<[_]>::from(vec![]);
 
         let (stream, _) = listener.accept().await.unwrap();
 
