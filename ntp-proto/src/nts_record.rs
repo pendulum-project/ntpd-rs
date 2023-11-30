@@ -1372,7 +1372,9 @@ impl KeyExchangeServer {
             | IncompleteResponse => NtsRecord::BAD_REQUEST,
         };
 
-        if let Err(io) = Self::send_records(tls_connection, &[NtsRecord::Error { errorcode }]) {
+        let error_records = [NtsRecord::Error { errorcode }, NtsRecord::EndOfMessage];
+
+        if let Err(io) = Self::send_records(tls_connection, &error_records) {
             tracing::debug!(key_exchange_error = ?error, io_error = ?io, "sending error record failed");
         }
     }
