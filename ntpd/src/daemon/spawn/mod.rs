@@ -9,6 +9,8 @@ use super::config::NormalizedAddress;
 #[cfg(test)]
 pub mod dummy;
 pub mod nts;
+#[cfg(feature = "unstable_nts-pool")]
+pub mod nts_pool;
 pub mod pool;
 pub mod standard;
 
