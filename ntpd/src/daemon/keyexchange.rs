@@ -899,6 +899,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn records_after_end_of_message() {
+        let records = vec![
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            NtsRecord::AeadAlgorithm {
+                critical: false,
+                algorithm_ids: vec![15],
+            },
+            NtsRecord::EndOfMessage,
+            NtsRecord::EndOfMessage,
+        ];
+
+        let result = send_records_to_server(records).await;
+
+        // records after the first EndOfMessage are ignored
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
     async fn client_no_valid_algorithm() {
         let records = vec![
             NtsRecord::NextProtocol {
