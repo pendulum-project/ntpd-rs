@@ -928,21 +928,35 @@ impl KeyExchangeResultDecoder {
                                 state.protocol = Some(protocol);
                                 Continue(state)
                             }
-                            Some(_) => Break(Err(KeyExchangeError::NoValidProtocol)),
+                            Some(_) => Break(Err(KeyExchangeError::BadRequest)),
                         }
                     }
                 }
             }
             AeadAlgorithm { algorithm_ids, .. } => {
+                // it MUST include at most one
+                let algorithm_id = match algorithm_ids[..] {
+                    [] => return Break(Err(NoValidAlgorithm)),
+                    [algorithm_id] => algorithm_id,
+                    _ => return Break(Err(BadRequest)),
+                };
+
                 let selected = Algorithm::IN_ORDER_OF_PREFERENCE
                     .iter()
-                    .find_map(|algo| algorithm_ids.contains(&(*algo as u16)).then_some(*algo));
+                    .find(|algo| (algorithm_id == (**algo as u16)));
 
-                state.algorithm = selected;
-
-                match state.algorithm {
+                match selected {
                     None => Break(Err(NoValidAlgorithm)),
-                    Some(_) => Continue(state),
+                    Some(algorithm) => {
+                        // for the protocol ids we support, the AeadAlgorithm record must be present
+                        match state.algorithm {
+                            None => {
+                                state.algorithm = Some(*algorithm);
+                                Continue(state)
+                            }
+                            Some(_) => Break(Err(KeyExchangeError::BadRequest)),
+                        }
+                    }
                 }
             }
 
@@ -1136,7 +1150,7 @@ struct KeyExchangeServerDecoder {
     /// AEAD algorithm that the client is able to use and that we support
     /// it may be that the server and client supported algorithms have no
     /// intersection!
-    algorithm: AeadAlgorithm,
+    algorithm: Option<AeadAlgorithm>,
     /// Protocol (NTP version) that is supported by both client and server
     protocol: Option<ProtocolId>,
 
@@ -1198,24 +1212,28 @@ impl KeyExchangeServerDecoder {
         let mut state = self;
 
         match record {
-            EndOfMessage => match state.protocol {
-                Some(protocol) => {
-                    let result = ServerKeyExchangeData {
-                        algorithm: state.algorithm,
-                        protocol,
-                        #[cfg(feature = "nts-pool")]
-                        fixed_keys: state.fixed_key_request,
-                        #[cfg(feature = "nts-pool")]
-                        requested_supported_algorithms: state.requested_supported_algorithms,
-                    };
-
-                    Break(Ok(result))
-                }
-                None => {
+            EndOfMessage => {
+                let Some(protocol) = state.protocol else {
                     // The NTS Next Protocol Negotiation record [..] MUST occur exactly once in every NTS-KE request and response.
-                    Break(Err(KeyExchangeError::NoValidProtocol))
-                }
-            },
+                    return Break(Err(KeyExchangeError::NoValidProtocol));
+                };
+
+                let Some(algorithm) = state.algorithm else {
+                    // for the protocol ids we support, the AeadAlgorithm record must be present
+                    return Break(Err(KeyExchangeError::NoValidAlgorithm));
+                };
+
+                let result = ServerKeyExchangeData {
+                    algorithm,
+                    protocol,
+                    #[cfg(feature = "nts-pool")]
+                    fixed_keys: state.fixed_key_request,
+                    #[cfg(feature = "nts-pool")]
+                    requested_supported_algorithms: state.requested_supported_algorithms,
+                };
+
+                Break(Ok(result))
+            }
             #[cfg(feature = "ntpv5")]
             DraftId { data } => {
                 if data == crate::packet::v5::DRAFT_VERSION.as_bytes() {
@@ -1299,8 +1317,14 @@ impl KeyExchangeServerDecoder {
                 match selected {
                     None => Break(Err(NoValidAlgorithm)),
                     Some(algorithm) => {
-                        state.algorithm = algorithm;
-                        Continue(state)
+                        // for the protocol ids we support, the AeadAlgorithm record must be present
+                        match state.algorithm {
+                            None => {
+                                state.algorithm = Some(algorithm);
+                                Continue(state)
+                            }
+                            Some(_) => Break(Err(KeyExchangeError::BadRequest)),
+                        }
                     }
                 }
             }
@@ -1412,7 +1436,13 @@ impl KeyExchangeServer {
             | IncompleteResponse => NtsRecord::BAD_REQUEST,
         };
 
-        let error_records = [NtsRecord::Error { errorcode }, NtsRecord::EndOfMessage];
+        let error_records = [
+            NtsRecord::Error { errorcode },
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![ProtocolId::NtpV4 as u16],
+            },
+            NtsRecord::EndOfMessage,
+        ];
 
         if let Err(io) = Self::send_records(tls_connection, &error_records) {
             tracing::debug!(key_exchange_error = ?error, io_error = ?io, "sending error record failed");
@@ -1455,9 +1485,8 @@ impl KeyExchangeServer {
                     },
                     State::Done => {
                         // client is sending more bytes, but we don't expect any more
-                        let error = KeyExchangeError::BadRequest;
-                        Self::send_error_record(&mut self.tls_connection, &error);
-                        ControlFlow::Break(Err(error))
+                        // these extra bytes are ignored
+                        ControlFlow::Continue(self)
                     }
                 }
             }
@@ -1841,7 +1870,9 @@ mod test {
         assert_eq!(record, decoded);
     }
 
-    fn roundtrip(records: &[NtsRecord]) -> Result<PartialKeyExchangeData, KeyExchangeError> {
+    fn client_decode_records(
+        records: &[NtsRecord],
+    ) -> Result<PartialKeyExchangeData, KeyExchangeError> {
         let mut decoder = KeyExchangeResultDecoder::new();
         let mut buffer = Vec::with_capacity(1024);
 
@@ -1859,9 +1890,9 @@ mod test {
     }
 
     #[test]
-    fn immediate_next_protocol_end_of_message() {
+    fn client_decoder_immediate_next_protocol_end_of_message() {
         assert!(matches!(
-            roundtrip(&[
+            client_decode_records(&[
                 NtsRecord::NextProtocol {
                     protocol_ids: vec![0]
                 },
@@ -1876,17 +1907,17 @@ mod test {
     }
 
     #[test]
-    fn immediate_end_of_message() {
+    fn client_decoder_immediate_end_of_message() {
         assert!(matches!(
-            roundtrip(&[NtsRecord::EndOfMessage]),
+            client_decode_records(&[NtsRecord::EndOfMessage]),
             Err(KeyExchangeError::NoValidProtocol)
         ));
     }
 
     #[test]
-    fn no_valid_algorithm() {
+    fn client_decoder_missing_aead_algorithm_record() {
         assert!(matches!(
-            roundtrip(&[
+            client_decode_records(&[
                 NtsRecord::NextProtocol {
                     protocol_ids: vec![0]
                 },
@@ -1894,35 +1925,44 @@ mod test {
             ]),
             Err(KeyExchangeError::NoValidAlgorithm)
         ));
+    }
 
-        let algorithm = NtsRecord::AeadAlgorithm {
-            critical: true,
-            algorithm_ids: vec![],
-        };
-
+    #[test]
+    fn client_decoder_empty_aead_algorithm_list() {
         assert!(matches!(
-            roundtrip(&[
+            client_decode_records(&[
+                NtsRecord::AeadAlgorithm {
+                    critical: true,
+                    algorithm_ids: vec![],
+                },
                 NtsRecord::NextProtocol {
                     protocol_ids: vec![0]
                 },
-                algorithm
+                NtsRecord::EndOfMessage,
             ]),
-            Err(KeyExchangeError::NoValidAlgorithm)
-        ));
-
-        let algorithm = NtsRecord::AeadAlgorithm {
-            critical: true,
-            algorithm_ids: vec![42],
-        };
-
-        assert!(matches!(
-            roundtrip(&[algorithm]),
             Err(KeyExchangeError::NoValidAlgorithm)
         ));
     }
 
     #[test]
-    fn no_valid_protocol() {
+    fn client_decoder_invalid_aead_algorithm_id() {
+        assert!(matches!(
+            client_decode_records(&[
+                NtsRecord::AeadAlgorithm {
+                    critical: true,
+                    algorithm_ids: vec![42],
+                },
+                NtsRecord::NextProtocol {
+                    protocol_ids: vec![0]
+                },
+                NtsRecord::EndOfMessage,
+            ]),
+            Err(KeyExchangeError::NoValidAlgorithm)
+        ));
+    }
+
+    #[test]
+    fn client_decoder_no_valid_protocol() {
         let records = [
             NtsRecord::NextProtocol {
                 protocol_ids: vec![1234],
@@ -1930,9 +1970,46 @@ mod test {
             NtsRecord::EndOfMessage,
         ];
 
-        let error = roundtrip(&records).unwrap_err();
+        let error = client_decode_records(&records).unwrap_err();
 
         assert!(matches!(error, KeyExchangeError::NoValidProtocol))
+    }
+
+    #[test]
+    fn client_decoder_double_next_protocol() {
+        let records = vec![
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            NtsRecord::EndOfMessage,
+        ];
+
+        let error = client_decode_records(records.as_slice()).unwrap_err();
+        assert!(matches!(error, KeyExchangeError::BadRequest));
+    }
+
+    #[test]
+    fn client_decoder_double_aead_algorithm() {
+        let records = vec![
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            NtsRecord::AeadAlgorithm {
+                critical: true,
+                algorithm_ids: vec![15],
+            },
+            NtsRecord::AeadAlgorithm {
+                critical: true,
+                algorithm_ids: vec![15],
+            },
+            NtsRecord::EndOfMessage,
+        ];
+
+        let error = client_decode_records(records.as_slice()).unwrap_err();
+        assert!(matches!(error, KeyExchangeError::BadRequest));
     }
 
     #[test]
@@ -1969,7 +2046,7 @@ mod test {
             NtsRecord::EndOfMessage,
         ];
 
-        let state = roundtrip(records.as_slice()).unwrap();
+        let state = client_decode_records(records.as_slice()).unwrap();
 
         assert_eq!(state.remote, Some(name));
         assert_eq!(state.port, Some(port));
@@ -2001,7 +2078,7 @@ mod test {
         ];
 
         assert!(matches!(
-            roundtrip(records.as_slice()),
+            client_decode_records(records.as_slice()),
             Err(KeyExchangeError::NoValidAlgorithm)
         ));
 
@@ -2016,7 +2093,7 @@ mod test {
         ];
 
         assert!(matches!(
-            roundtrip(records.as_slice()),
+            client_decode_records(records.as_slice()),
             Err(KeyExchangeError::NoValidAlgorithm)
         ));
 
@@ -2035,7 +2112,7 @@ mod test {
         ];
 
         assert!(matches!(
-            roundtrip(records.as_slice()),
+            client_decode_records(records.as_slice()),
             Err(KeyExchangeError::NoValidAlgorithm)
         ));
 
@@ -2049,7 +2126,7 @@ mod test {
             NtsRecord::EndOfMessage,
         ];
 
-        let error = roundtrip(records.as_slice()).unwrap_err();
+        let error = client_decode_records(records.as_slice()).unwrap_err();
         assert!(matches!(error, KeyExchangeError::UnknownErrorCode(42)));
 
         let _ = cookie;
@@ -2071,14 +2148,14 @@ mod test {
         ];
 
         assert!(matches!(
-            roundtrip(records.as_slice()),
+            client_decode_records(records.as_slice()),
             Err(KeyExchangeError::UnrecognizedCriticalRecord)
         ));
     }
 
     #[test]
     fn incomplete_response() {
-        let error = roundtrip(&[]).unwrap_err();
+        let error = client_decode_records(&[]).unwrap_err();
         assert!(matches!(error, KeyExchangeError::IncompleteResponse));
 
         // this succeeds on its own
@@ -2086,7 +2163,7 @@ mod test {
             cookie_data: EXAMPLE_COOKIE_DATA.to_vec(),
         }];
 
-        let error = roundtrip(records.as_slice()).unwrap_err();
+        let error = client_decode_records(records.as_slice()).unwrap_err();
         assert!(matches!(error, KeyExchangeError::IncompleteResponse));
     }
 
@@ -2238,7 +2315,7 @@ mod test {
 
     #[test]
     fn test_nts_time_nl_response() {
-        let state = roundtrip(nts_time_nl_records().as_slice()).unwrap();
+        let state = client_decode_records(nts_time_nl_records().as_slice()).unwrap();
 
         assert_eq!(state.remote, None);
         assert_eq!(state.port, None);
@@ -2272,7 +2349,9 @@ mod test {
         assert!(decoder.step().unwrap().is_none());
     }
 
-    fn server_roundtrip(records: &[NtsRecord]) -> Result<ServerKeyExchangeData, KeyExchangeError> {
+    fn server_decode_records(
+        records: &[NtsRecord],
+    ) -> Result<ServerKeyExchangeData, KeyExchangeError> {
         let mut bytes = Vec::with_capacity(1024);
         for record in records {
             record.write(&mut bytes).unwrap();
@@ -2291,8 +2370,63 @@ mod test {
     }
 
     #[test]
+    fn server_decoder_immediate_end_of_message() {
+        assert!(matches!(
+            server_decode_records(&[NtsRecord::EndOfMessage]),
+            Err(KeyExchangeError::NoValidProtocol)
+        ));
+    }
+
+    #[test]
+    fn server_decoder_missing_aead_algorithm_record() {
+        assert!(matches!(
+            server_decode_records(&[
+                NtsRecord::NextProtocol {
+                    protocol_ids: vec![0]
+                },
+                NtsRecord::EndOfMessage
+            ]),
+            Err(KeyExchangeError::NoValidAlgorithm)
+        ));
+    }
+
+    #[test]
+    fn server_decoder_empty_aead_algorithm_list() {
+        assert!(matches!(
+            server_decode_records(&[
+                NtsRecord::AeadAlgorithm {
+                    critical: true,
+                    algorithm_ids: vec![],
+                },
+                NtsRecord::NextProtocol {
+                    protocol_ids: vec![0]
+                },
+                NtsRecord::EndOfMessage,
+            ]),
+            Err(KeyExchangeError::NoValidAlgorithm)
+        ));
+    }
+
+    #[test]
+    fn server_decoder_invalid_aead_algorithm_id() {
+        assert!(matches!(
+            server_decode_records(&[
+                NtsRecord::AeadAlgorithm {
+                    critical: true,
+                    algorithm_ids: vec![42],
+                },
+                NtsRecord::NextProtocol {
+                    protocol_ids: vec![0]
+                },
+                NtsRecord::EndOfMessage,
+            ]),
+            Err(KeyExchangeError::NoValidAlgorithm)
+        ));
+    }
+
+    #[test]
     fn server_decoder_finds_algorithm() {
-        let result = server_roundtrip(&NtsRecord::client_key_exchange_records()).unwrap();
+        let result = server_decode_records(&NtsRecord::client_key_exchange_records()).unwrap();
 
         assert_eq!(result.algorithm, AeadAlgorithm::AeadAesSivCmac512);
     }
@@ -2307,7 +2441,7 @@ mod test {
             },
         );
 
-        let result = server_roundtrip(&records).unwrap();
+        let result = server_decode_records(&records).unwrap();
         assert_eq!(result.algorithm, AeadAlgorithm::AeadAesSivCmac512);
     }
 
@@ -2330,7 +2464,7 @@ mod test {
             },
         );
 
-        let result = server_roundtrip(&records).unwrap();
+        let result = server_decode_records(&records).unwrap();
         assert_eq!(result.algorithm, AeadAlgorithm::AeadAesSivCmac512);
     }
 
@@ -2339,7 +2473,7 @@ mod test {
         let mut records = NtsRecord::client_key_exchange_records().to_vec();
         records.insert(0, NtsRecord::Warning { warningcode: 42 });
 
-        let result = server_roundtrip(&records).unwrap();
+        let result = server_decode_records(&records).unwrap();
         assert_eq!(result.algorithm, AeadAlgorithm::AeadAesSivCmac512);
     }
 
@@ -2355,7 +2489,7 @@ mod test {
             },
         );
 
-        let result = server_roundtrip(&records).unwrap();
+        let result = server_decode_records(&records).unwrap();
         assert_eq!(result.algorithm, AeadAlgorithm::AeadAesSivCmac512);
     }
 
@@ -2371,7 +2505,7 @@ mod test {
             },
         );
 
-        let result = server_roundtrip(&records).unwrap_err();
+        let result = server_decode_records(&records).unwrap_err();
         assert!(matches!(
             result,
             KeyExchangeError::UnrecognizedCriticalRecord
@@ -2383,7 +2517,7 @@ mod test {
         let mut records = NtsRecord::client_key_exchange_records().to_vec();
         records.insert(0, NtsRecord::Error { errorcode: 2 });
 
-        let error = server_roundtrip(&records).unwrap_err();
+        let error = server_decode_records(&records).unwrap_err();
         assert!(matches!(error, KeyExchangeError::InternalServerError));
     }
 
@@ -2396,8 +2530,42 @@ mod test {
             NtsRecord::EndOfMessage,
         ];
 
-        let error = server_roundtrip(&records).unwrap_err();
+        let error = server_decode_records(&records).unwrap_err();
         assert!(matches!(error, KeyExchangeError::NoValidProtocol));
+    }
+
+    #[test]
+    fn server_decoder_double_next_protocol() {
+        let records = [
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![42],
+            },
+            NtsRecord::EndOfMessage,
+        ];
+
+        let error = server_decode_records(&records).unwrap_err();
+        assert!(matches!(error, KeyExchangeError::NoValidProtocol));
+    }
+
+    #[test]
+    fn server_decoder_double_aead_algorithm() {
+        let records = vec![
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            NtsRecord::AeadAlgorithm {
+                critical: true,
+                algorithm_ids: vec![15],
+            },
+            NtsRecord::AeadAlgorithm {
+                critical: true,
+                algorithm_ids: vec![15],
+            },
+            NtsRecord::EndOfMessage,
+        ];
+
+        let error = server_decode_records(records.as_slice()).unwrap_err();
+        assert!(matches!(error, KeyExchangeError::BadRequest));
     }
 
     #[test]
@@ -2413,13 +2581,13 @@ mod test {
             NtsRecord::EndOfMessage,
         ];
 
-        let error = server_roundtrip(&records).unwrap_err();
+        let error = server_decode_records(&records).unwrap_err();
         assert!(matches!(error, KeyExchangeError::NoValidAlgorithm));
     }
 
     #[test]
     fn server_decoder_incomplete_response() {
-        let error = server_roundtrip(&[]).unwrap_err();
+        let error = server_decode_records(&[]).unwrap_err();
         assert!(matches!(error, KeyExchangeError::IncompleteResponse));
 
         let records = [
@@ -2433,7 +2601,7 @@ mod test {
             },
         ];
 
-        let error = server_roundtrip(&records).unwrap_err();
+        let error = server_decode_records(&records).unwrap_err();
         assert!(matches!(error, KeyExchangeError::IncompleteResponse));
     }
 
