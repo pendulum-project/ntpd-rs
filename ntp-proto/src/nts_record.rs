@@ -946,7 +946,13 @@ impl KeyExchangeResultDecoder {
                 }
             }
 
-            Unknown { .. } => Continue(state),
+            Unknown { critical, .. } => {
+                if critical {
+                    Break(Err(KeyExchangeError::UnrecognizedCriticalRecord))
+                } else {
+                    Continue(state)
+                }
+            }
             #[cfg(feature = "nts-pool")]
             KeepAlive => {
                 state.keep_alive = true;
@@ -2014,7 +2020,7 @@ mod test {
             Err(KeyExchangeError::NoValidAlgorithm)
         ));
 
-        // an error does not change the outcome
+        // an unknown non-critical does not change the outcome
         let records = [
             cookie.clone(),
             NtsRecord::Unknown {
@@ -2047,6 +2053,27 @@ mod test {
         assert!(matches!(error, KeyExchangeError::UnknownErrorCode(42)));
 
         let _ = cookie;
+    }
+
+    #[test]
+    fn client_critical_unknown_record() {
+        // an unknown non-critical does not change the outcome
+        let records = [
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            NtsRecord::Unknown {
+                record_type: 8,
+                critical: true,
+                data: vec![1, 2, 3],
+            },
+            NtsRecord::EndOfMessage,
+        ];
+
+        assert!(matches!(
+            roundtrip(records.as_slice()),
+            Err(KeyExchangeError::UnrecognizedCriticalRecord)
+        ));
     }
 
     #[test]
