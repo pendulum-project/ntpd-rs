@@ -4,10 +4,6 @@ use std::{
     sync::Arc,
 };
 
-use aead::KeySizeUser;
-use aes_siv::{Aes128SivAead, Aes256SivAead};
-use tracing::debug;
-
 use crate::{
     cookiestash::CookieStash,
     keyset::{DecodedServerCookie, KeySet},
