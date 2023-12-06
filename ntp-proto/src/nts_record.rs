@@ -619,6 +619,8 @@ pub enum KeyExchangeError {
     InternalServerError,
     #[error("Remote: Error with unknown code {0}")]
     UnknownErrorCode(u16),
+    #[error("The server response is invalid")]
+    BadResponse,
     #[error("No continuation protocol supported by both us and server")]
     NoValidProtocol,
     #[error("No encryption algorithm supported by both us and server")]
@@ -928,7 +930,7 @@ impl KeyExchangeResultDecoder {
                                 state.protocol = Some(protocol);
                                 Continue(state)
                             }
-                            Some(_) => Break(Err(KeyExchangeError::BadRequest)),
+                            Some(_) => Break(Err(KeyExchangeError::BadResponse)),
                         }
                     }
                 }
@@ -938,7 +940,7 @@ impl KeyExchangeResultDecoder {
                 let algorithm_id = match algorithm_ids[..] {
                     [] => return Break(Err(NoValidAlgorithm)),
                     [algorithm_id] => algorithm_id,
-                    _ => return Break(Err(BadRequest)),
+                    _ => return Break(Err(BadResponse)),
                 };
 
                 let selected = Algorithm::IN_ORDER_OF_PREFERENCE
@@ -954,7 +956,7 @@ impl KeyExchangeResultDecoder {
                                 state.algorithm = Some(*algorithm);
                                 Continue(state)
                             }
-                            Some(_) => Break(Err(KeyExchangeError::BadRequest)),
+                            Some(_) => Break(Err(KeyExchangeError::BadResponse)),
                         }
                     }
                 }
@@ -1457,6 +1459,7 @@ impl KeyExchangeServer {
             BadRequest => NtsRecord::BAD_REQUEST,
             InternalServerError | Io(_) => NtsRecord::INTERNAL_SERVER_ERROR,
             UnknownErrorCode(_)
+            | BadResponse
             | NoValidProtocol
             | NoValidAlgorithm
             | InvalidFixedKeyLength
@@ -2019,11 +2022,28 @@ mod test {
         ];
 
         let error = client_decode_records(records.as_slice()).unwrap_err();
-        assert!(matches!(error, KeyExchangeError::BadRequest));
+        assert!(matches!(error, KeyExchangeError::BadResponse));
     }
 
     #[test]
     fn client_decoder_double_aead_algorithm() {
+        let records = vec![
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            NtsRecord::AeadAlgorithm {
+                critical: true,
+                algorithm_ids: vec![15, 16],
+            },
+            NtsRecord::EndOfMessage,
+        ];
+
+        let error = client_decode_records(records.as_slice()).unwrap_err();
+        assert!(matches!(error, KeyExchangeError::BadResponse));
+    }
+
+    #[test]
+    fn client_decoder_twice_aead_algorithm() {
         let records = vec![
             NtsRecord::NextProtocol {
                 protocol_ids: vec![0],
@@ -2040,7 +2060,7 @@ mod test {
         ];
 
         let error = client_decode_records(records.as_slice()).unwrap_err();
-        assert!(matches!(error, KeyExchangeError::BadRequest));
+        assert!(matches!(error, KeyExchangeError::BadResponse));
     }
 
     #[test]
