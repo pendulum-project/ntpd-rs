@@ -94,7 +94,6 @@ impl NtsSpawner {
                 }
                 Err(e) => {
                     warn!(error = ?e, "error while attempting key exchange");
-                    panic!();
                 }
             };
 
