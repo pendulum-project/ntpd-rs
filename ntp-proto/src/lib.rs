@@ -81,6 +81,9 @@ mod exports {
     }
 
     #[cfg(feature = "nts-pool")]
+    pub use super::nts_record::AeadAlgorithm;
+
+    #[cfg(feature = "nts-pool")]
     pub use super::nts_pool_ke::{
         ClientToPoolData, ClientToPoolDecoder, PoolToServerData, PoolToServerDecoder,
         SupportedAlgorithmsDecoder,

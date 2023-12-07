@@ -650,6 +650,26 @@ impl KeyExchangeError {
             _ => Self::UnknownErrorCode(error_code),
         }
     }
+
+    pub fn to_error_code(&self) -> u16 {
+        use KeyExchangeError::*;
+
+        match self {
+            UnrecognizedCriticalRecord => NtsRecord::UNRECOGNIZED_CRITICAL_RECORD,
+            BadRequest => NtsRecord::BAD_REQUEST,
+            InternalServerError | Io(_) => NtsRecord::INTERNAL_SERVER_ERROR,
+            UnknownErrorCode(_)
+            | BadResponse
+            | NoValidProtocol
+            | NoValidAlgorithm
+            | InvalidFixedKeyLength
+            | NoCookies
+            | Tls(_)
+            | Certificate(_)
+            | DnsName(_)
+            | IncompleteResponse => NtsRecord::BAD_REQUEST,
+        }
+    }
 }
 
 /// From https://www.rfc-editor.org/rfc/rfc8915.html#name-network-time-security-next-
@@ -1471,26 +1491,10 @@ impl KeyExchangeServer {
     }
 
     fn send_error_record(tls_connection: &mut rustls::ServerConnection, error: &KeyExchangeError) {
-        use KeyExchangeError::*;
-
-        let errorcode = match error {
-            UnrecognizedCriticalRecord => NtsRecord::UNRECOGNIZED_CRITICAL_RECORD,
-            BadRequest => NtsRecord::BAD_REQUEST,
-            InternalServerError | Io(_) => NtsRecord::INTERNAL_SERVER_ERROR,
-            UnknownErrorCode(_)
-            | BadResponse
-            | NoValidProtocol
-            | NoValidAlgorithm
-            | InvalidFixedKeyLength
-            | NoCookies
-            | Tls(_)
-            | Certificate(_)
-            | DnsName(_)
-            | IncompleteResponse => NtsRecord::BAD_REQUEST,
-        };
-
         let error_records = [
-            NtsRecord::Error { errorcode },
+            NtsRecord::Error {
+                errorcode: error.to_error_code(),
+            },
             NtsRecord::NextProtocol {
                 protocol_ids: vec![ProtocolId::NtpV4 as u16],
             },
