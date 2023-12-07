@@ -2,9 +2,9 @@
 # (the private key of the certificate is public!)
 [nts-pool-ke-server]
 listen = "0.0.0.0:4460"
-certificate-authority-path = "../test-keys/testca.pem"
-certificate-chain-path = "../test-keys/end.fullchain.pem"
-private-key-path = "../test-keys/end.key"
+certificate-authority-path = "test-keys/testca.pem"
+certificate-chain-path = "test-keys/end.fullchain.pem"
+private-key-path = "test-keys/end.key"
 key-exchange-servers = [
     { domain = "localhost", port = 8081 },
     { domain = "localhost", port = 8080 },

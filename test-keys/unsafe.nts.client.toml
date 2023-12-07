@@ -6,7 +6,7 @@ observation-path = "/var/run/ntpd-rs/observe"
 # uses an unsecure certificate!
 [[source]]
 mode = "nts"
-address =  "localhost:4460"
+address = "localhost:4460"
 certificate-authority = "test-keys/testca.pem"
 
 # System parameters used in filtering and steering the clock:
