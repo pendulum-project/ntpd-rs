@@ -1,3 +1,6 @@
+# part of the test setup for the NTS pool KE. Do not use in production!
+# (the private key of the certificate is public!)
+
 [observability]
 # Other values include trace, debug, warn and error
 log-level = "info"

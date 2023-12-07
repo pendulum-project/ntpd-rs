@@ -1,3 +1,5 @@
+# part of the test setup for the NTS pool KE. Do not use in production!
+# (the private key of the certificate is public!)
 [nts-pool-ke-server]
 listen = "0.0.0.0:4460"
 certificate-authority-path = "../test-keys/testca.pem"
