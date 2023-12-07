@@ -265,8 +265,13 @@ async fn pick_nts_ke_servers<'a>(
     connector: &TlsConnector,
     servers: &'a [config::KeyExchangeServer],
     selected_algorithm: AeadAlgorithm,
+    denied_servers: &[String],
 ) -> Result<(&'a str, u16, ServerName), KeyExchangeError> {
     for server in servers {
+        if denied_servers.contains(&server.domain) {
+            continue;
+        }
+
         match pick_nts_ke_server(connector, server, selected_algorithm).await {
             Ok(x) => return Ok(x),
             Err(e) => match e {
@@ -299,36 +304,43 @@ async fn handle_client(
     // next we should pick a server that satisfies the algorithm used and is not denied by the
     // client.
     let connector = pool_to_server_connector(&certificate_authority)?;
-    let (server_name, port, domain) =
-        match pick_nts_ke_servers(&connector, &servers, client_data.algorithm).await {
-            Ok(x) => x,
-            Err(e) => {
-                // for now, just send back to the client that its algorithms were invalid
-                // AeadAlgorithm::AeadAesSivCmac256 should always be supported by servers and clients
-                info!(?e, "could not find a valid KE server");
+    let pick = pick_nts_ke_servers(
+        &connector,
+        &servers,
+        client_data.algorithm,
+        &client_data.denied_servers,
+    )
+    .await;
 
-                let records = [
-                    NtsRecord::NextProtocol {
-                        protocol_ids: vec![0],
-                    },
-                    NtsRecord::Error {
-                        errorcode: e.to_error_code(),
-                    },
-                    NtsRecord::EndOfMessage,
-                ];
+    let (server_name, port, domain) = match pick {
+        Ok(x) => x,
+        Err(e) => {
+            // for now, just send back to the client that its algorithms were invalid
+            // AeadAlgorithm::AeadAesSivCmac256 should always be supported by servers and clients
+            info!(?e, "could not find a valid KE server");
 
-                // now we just forward the response
-                let mut buffer = Vec::with_capacity(1024);
-                for record in records {
-                    record.write(&mut buffer)?;
-                }
+            let records = [
+                NtsRecord::NextProtocol {
+                    protocol_ids: vec![0],
+                },
+                NtsRecord::Error {
+                    errorcode: e.to_error_code(),
+                },
+                NtsRecord::EndOfMessage,
+            ];
 
-                client_stream.write_all(&buffer).await?;
-                client_stream.shutdown().await?;
-
-                return Ok(());
+            // now we just forward the response
+            let mut buffer = Vec::with_capacity(1024);
+            for record in records {
+                record.write(&mut buffer)?;
             }
-        };
+
+            client_stream.write_all(&buffer).await?;
+            client_stream.shutdown().await?;
+
+            return Ok(());
+        }
+    };
 
     // this is inefficient of course, but spec-compliant: the TLS connection is closed when the server
     // receives a EndOfMessage record, so we have to establish a new one. re-using the TCP
