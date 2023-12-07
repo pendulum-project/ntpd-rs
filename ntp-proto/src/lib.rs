@@ -21,6 +21,8 @@ mod system;
 mod time_types;
 
 #[cfg(feature = "nts-pool")]
+mod nts_pool_ke;
+#[cfg(feature = "nts-pool")]
 pub mod tls_utils;
 
 pub(crate) mod exitcode {
@@ -79,9 +81,9 @@ mod exports {
     }
 
     #[cfg(feature = "nts-pool")]
-    pub use super::nts_record::{
-        AeadAlgorithm, ClientToPoolData, ClientToPoolDecoder, KeyExchangeResultDecoder,
-        PartialKeyExchangeData, PoolToServerData, PoolToServerDecoder, SupportedAlgorithmsDecoder,
+    pub use super::nts_pool_ke::{
+        ClientToPoolData, ClientToPoolDecoder, PoolToServerData, PoolToServerDecoder,
+        SupportedAlgorithmsDecoder,
     };
 }
 
