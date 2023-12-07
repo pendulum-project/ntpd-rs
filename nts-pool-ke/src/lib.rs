@@ -244,7 +244,31 @@ async fn handle_client(
         .iter()
         .any(|(algorithm_id, _)| *algorithm_id == client_data.algorithm as u16)
     {
-        unreachable!("the default algorithm must be supported by all clients and servers");
+        // for now, just send back to the client that its algorithms were invalid
+        // AeadAlgorithm::AeadAesSivCmac256 should always be supported by servers and clients
+
+        let records = [
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            NtsRecord::Error {
+                errorcode: NtsRecord::BAD_REQUEST,
+            },
+            NtsRecord::EndOfMessage,
+        ];
+
+        // now we just forward the response
+        let mut buffer = Vec::with_capacity(1024);
+        for record in records {
+            record.write(&mut buffer)?;
+        }
+
+        client_stream.write_all(&buffer).await?;
+        client_stream.shutdown().await?;
+
+        info!("wrote NoValidAlgorithm to client");
+
+        return Ok(());
     }
 
     // this is inefficient of course, but spec-compliant: the TLS connection is closed when the server
