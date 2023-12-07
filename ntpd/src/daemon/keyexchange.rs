@@ -56,7 +56,7 @@ pub(crate) async fn key_exchange_client_with_denied_servers(
     server_name: String,
     port: u16,
     extra_certificates: &[Certificate],
-    denied_servers: Vec<String>,
+    denied_servers: impl IntoIterator<Item = String>,
 ) -> Result<KeyExchangeResult, KeyExchangeError> {
     let socket = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
     let config = build_client_config(extra_certificates)?;
@@ -218,7 +218,7 @@ where
         io: IO,
         server_name: String,
         config: rustls::ClientConfig,
-        denied_servers: Vec<String>,
+        denied_servers: impl IntoIterator<Item = String>,
     ) -> Result<Self, KeyExchangeError> {
         Ok(Self {
             inner: Some(BoundKeyExchangeClientData {

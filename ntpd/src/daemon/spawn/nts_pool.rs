@@ -96,10 +96,7 @@ impl NtsPoolSpawner {
                     self.config.addr.server_name.clone(),
                     self.config.addr.port,
                     &self.config.certificate_authorities,
-                    self.current_peers
-                        .iter()
-                        .map(|peer| peer.remote.clone())
-                        .collect(),
+                    self.current_peers.iter().map(|peer| peer.remote.clone()),
                 )
                 .await
                 {

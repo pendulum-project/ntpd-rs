@@ -1181,7 +1181,7 @@ impl KeyExchangeClient {
     pub fn new(
         server_name: String,
         tls_config: rustls::ClientConfig,
-        denied_servers: Vec<String>,
+        denied_servers: impl IntoIterator<Item = String>,
     ) -> Result<Self, KeyExchangeError> {
         let mut client = Self::new_without_tls_write(server_name, tls_config)?;
 
