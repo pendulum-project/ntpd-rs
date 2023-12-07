@@ -366,7 +366,6 @@ async fn cookie_request(
                 records,
                 algorithm: _,
                 protocol: _,
-                supported_algorithms: _,
             })) => {
                 stream.shutdown().await?;
                 break Ok(records);
