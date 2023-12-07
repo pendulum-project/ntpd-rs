@@ -792,6 +792,7 @@ pub struct NtsKeys {
 }
 
 impl NtsKeys {
+    #[cfg(feature = "nts-pool")]
     pub fn as_fixed_key_request(&self) -> NtsRecord {
         NtsRecord::FixedKeyRequest {
             c2s: self.c2s.key_bytes().to_vec(),
@@ -1532,7 +1533,7 @@ impl KeyExchangeServer {
                             // So then, the other reason we could end up here is if the buffer is
                             // full. But 512 bytes is a lot of space for this interaction, and
                             // should be sufficient in most cases.
-                            self.progress()
+                            ControlFlow::Continue(self)
                         }
                         ControlFlow::Break(Ok(data)) => {
                             // all records have been decoded; send a response
@@ -1600,7 +1601,6 @@ impl KeyExchangeServer {
     #[cfg(feature = "nts-pool")]
     fn extract_nts_keys(&self, data: &ServerKeyExchangeData) -> Result<NtsKeys, KeyExchangeError> {
         if let Some(keys) = &data.fixed_keys {
-            // TODO remove "true" here when the connection checking works
             if self.privileged_connection() {
                 tracing::debug!("using fixed keys for AEAD algorithm");
                 data.algorithm
