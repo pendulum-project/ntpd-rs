@@ -191,7 +191,7 @@ async fn pool_key_exchange_server(
     let mut config = rustls::ServerConfig::builder()
         .with_safe_defaults()
         .with_no_client_auth()
-        .with_single_cert(certificate_chain, private_key)
+        .with_single_cert(certificate_chain.clone(), private_key.clone())
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
 
     config.alpn_protocols.clear();
@@ -206,12 +206,16 @@ async fn pool_key_exchange_server(
         let (client_stream, peer_address) = listener.accept().await?;
         let client_to_pool_config = config.clone();
         let servers = servers.clone();
+        let certificate_chain = certificate_chain.clone();
+        let private_key = private_key.clone();
 
         let certificate_authority = certificate_authority.clone();
         let fut = handle_client(
             client_stream,
             client_to_pool_config,
             certificate_authority,
+            certificate_chain,
+            private_key,
             servers,
         );
 
@@ -290,6 +294,8 @@ async fn handle_client(
     client_stream: tokio::net::TcpStream,
     config: Arc<rustls::ServerConfig>,
     certificate_authority: Arc<[rustls::Certificate]>,
+    certificate_chain: Vec<rustls::Certificate>,
+    private_key: rustls::PrivateKey,
     servers: Arc<[config::KeyExchangeServer]>,
 ) -> Result<(), KeyExchangeError> {
     // handle the initial client to pool
@@ -301,9 +307,9 @@ async fn handle_client(
 
     info!("received records from the client",);
 
-    // next we should pick a server that satisfies the algorithm used and is not denied by the
-    // client.
-    let connector = pool_to_server_connector(&certificate_authority)?;
+    let connector =
+        pool_to_server_connector(&certificate_authority, certificate_chain, private_key)?;
+
     let pick = pick_nts_ke_servers(
         &connector,
         &servers,
@@ -329,7 +335,6 @@ async fn handle_client(
                 NtsRecord::EndOfMessage,
             ];
 
-            // now we just forward the response
             let mut buffer = Vec::with_capacity(1024);
             for record in records {
                 record.write(&mut buffer)?;
@@ -348,24 +353,33 @@ async fn handle_client(
     let server_stream = tokio::net::TcpStream::connect((server_name, port)).await?;
     let server_stream = connector.connect(domain, server_stream).await?;
 
+    info!("fetching cookies from the NTS KE server");
+
     // get the cookies from the NTS KE server
     let records_for_server = prepare_records_for_server(&client_stream, client_data)?;
-    let records_for_client = cookie_request(server_stream, &records_for_server).await?;
+    match cookie_request(server_stream, &records_for_server).await {
+        Err(e) => {
+            warn!(?e, "NTS KE server returned an error");
 
-    info!("received cookies from the NTS KE server");
+            Err(e)
+        }
+        Ok(records_for_client) => {
+            info!("received cookies from the NTS KE server");
 
-    // now we just forward the response
-    let mut buffer = Vec::with_capacity(1024);
-    for record in records_for_client {
-        record.write(&mut buffer)?;
+            // now we just forward the response
+            let mut buffer = Vec::with_capacity(1024);
+            for record in records_for_client {
+                record.write(&mut buffer)?;
+            }
+
+            client_stream.write_all(&buffer).await?;
+            client_stream.shutdown().await?;
+
+            info!("wrote records for client");
+
+            Ok(())
+        }
     }
-
-    client_stream.write_all(&buffer).await?;
-    client_stream.shutdown().await?;
-
-    info!("wrote records for client");
-
-    Ok(())
 }
 
 fn prepare_records_for_server(
@@ -392,6 +406,8 @@ fn prepare_records_for_server(
 
 fn pool_to_server_connector(
     extra_certificates: &[Certificate],
+    certificate_chain: Vec<rustls::Certificate>,
+    private_key: rustls::PrivateKey,
 ) -> Result<tokio_rustls::TlsConnector, KeyExchangeError> {
     let mut roots = rustls::RootCertStore::empty();
     for cert in rustls_native_certs::load_native_certs()? {
@@ -406,7 +422,8 @@ fn pool_to_server_connector(
     let config = rustls::ClientConfig::builder()
         .with_safe_defaults()
         .with_root_certificates(roots)
-        .with_no_client_auth();
+        .with_client_auth_cert(certificate_chain, private_key)
+        .unwrap();
 
     // already has the FixedKeyRequest record
     Ok(tokio_rustls::TlsConnector::from(Arc::new(config)))

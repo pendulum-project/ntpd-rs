@@ -1003,6 +1003,7 @@ impl KeyExchangeResultDecoder {
 
             Unknown { critical, .. } => {
                 if critical {
+                    dbg!("here");
                     Break(Err(KeyExchangeError::UnrecognizedCriticalRecord))
                 } else {
                     Continue(state)
@@ -1430,6 +1431,7 @@ impl KeyExchangeServerDecoder {
 
             Unknown { critical, .. } => {
                 if critical {
+                    dbg!("here");
                     Break(Err(KeyExchangeError::UnrecognizedCriticalRecord))
                 } else {
                     Continue(state)
@@ -1490,7 +1492,7 @@ impl KeyExchangeServer {
         Ok(())
     }
 
-    fn send_error_record(tls_connection: &mut rustls::ServerConnection, error: &KeyExchangeError) {
+    fn send_error_record(mut tls_connection: rustls::ServerConnection, error: &KeyExchangeError) {
         let error_records = [
             NtsRecord::Error {
                 errorcode: error.to_error_code(),
@@ -1501,7 +1503,9 @@ impl KeyExchangeServer {
             NtsRecord::EndOfMessage,
         ];
 
-        if let Err(io) = Self::send_records(tls_connection, &error_records) {
+        dbg!(" sending error records");
+
+        if let Err(io) = Self::send_records(&mut tls_connection, &error_records) {
             tracing::debug!(key_exchange_error = ?error, io_error = ?io, "sending error record failed");
         }
     }
@@ -1522,9 +1526,11 @@ impl KeyExchangeServer {
                 ControlFlow::Break(self.end_of_file())
             }
             Ok(n) => {
+                dbg!(n);
                 match self.state {
                     State::Active { decoder } => match decoder.step_with_slice(&buf[..n]) {
                         ControlFlow::Continue(decoder) => {
+                            dbg!("more bytes needed");
                             // more bytes are needed
                             self.state = State::Active { decoder };
 
@@ -1543,14 +1549,16 @@ impl KeyExchangeServer {
                             // all records have been decoded; send a response
                             // continues for a clean shutdown of the connection by the client
                             self.state = State::Done;
-                            self.decoder_done(data)
+                            dbg!(self.decoder_done(data))
                         }
                         ControlFlow::Break(Err(error)) => {
-                            Self::send_error_record(&mut self.tls_connection, &error);
+                            dbg!(&error);
+                            Self::send_error_record(self.tls_connection, &error);
                             ControlFlow::Break(Err(error))
                         }
                     },
                     State::Done => {
+                        dbg!("ignore");
                         // client is sending more bytes, but we don't expect any more
                         // these extra bytes are ignored
                         ControlFlow::Continue(self)
@@ -1569,7 +1577,7 @@ impl KeyExchangeServer {
                 }
                 _ => {
                     let error = KeyExchangeError::Io(e);
-                    Self::send_error_record(&mut self.tls_connection, &error);
+                    Self::send_error_record(self.tls_connection, &error);
                     ControlFlow::Break(Err(error))
                 }
             },
@@ -1591,14 +1599,11 @@ impl KeyExchangeServer {
 
     #[cfg(feature = "nts-pool")]
     pub fn privileged_connection(&self) -> bool {
+        dbg!(&self.tls_connection.peer_certificates());
         self.tls_connection
             .peer_certificates()
             .and_then(|cert_chain| cert_chain.first())
-            .map(|cert| {
-                self.pool_certificates
-                    .iter()
-                    .any(|allowed_cert| allowed_cert == cert)
-            })
+            .map(|cert| self.pool_certificates.contains(cert))
             .unwrap_or(false)
     }
 
@@ -1664,7 +1669,8 @@ impl KeyExchangeServer {
                 }
             }
             Err(key_extract_error) => {
-                Self::send_error_record(&mut self.tls_connection, &key_extract_error);
+                Self::send_error_record(self.tls_connection, &key_extract_error);
+                dbg!("broke");
                 ControlFlow::Break(Err(key_extract_error))
             }
         }
