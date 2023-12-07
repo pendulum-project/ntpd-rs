@@ -199,8 +199,8 @@ impl ClientToPoolDecoder {
             }
 
             #[cfg(feature = "nts-pool")]
-            NtpServerDeny { _denied } => {
-                state.denied_servers.push(_denied);
+            NtpServerDeny { denied } => {
+                state.denied_servers.push(denied);
                 Continue(state)
             }
 

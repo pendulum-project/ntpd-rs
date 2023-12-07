@@ -4,7 +4,9 @@ use thiserror::Error;
 use tokio::sync::mpsc;
 use tracing::warn;
 
-use super::super::{config::NtsPoolPeerConfig, keyexchange::key_exchange_client};
+use super::super::{
+    config::NtsPoolPeerConfig, keyexchange::key_exchange_client_with_denied_servers,
+};
 
 use super::{BasicSpawner, PeerId, PeerRemovedEvent, SpawnAction, SpawnEvent, SpawnerId};
 
@@ -90,10 +92,14 @@ impl NtsPoolSpawner {
         loop {
             // Try and add peers to our pool
             while self.current_peers.len() < self.config.max_peers {
-                match key_exchange_client(
+                match key_exchange_client_with_denied_servers(
                     self.config.addr.server_name.clone(),
                     self.config.addr.port,
                     &self.config.certificate_authorities,
+                    self.current_peers
+                        .iter()
+                        .map(|peer| peer.remote.clone())
+                        .collect(),
                 )
                 .await
                 {

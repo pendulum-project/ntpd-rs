@@ -48,7 +48,20 @@ pub(crate) async fn key_exchange_client(
     let socket = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
     let config = build_client_config(extra_certificates)?;
 
-    BoundKeyExchangeClient::new(socket, server_name, config)?.await
+    BoundKeyExchangeClient::new(socket, server_name, config, Vec::new())?.await
+}
+
+#[cfg(feature = "unstable_nts-pool")]
+pub(crate) async fn key_exchange_client_with_denied_servers(
+    server_name: String,
+    port: u16,
+    extra_certificates: &[Certificate],
+    denied_servers: Vec<String>,
+) -> Result<KeyExchangeResult, KeyExchangeError> {
+    let socket = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
+    let config = build_client_config(extra_certificates)?;
+
+    BoundKeyExchangeClient::new(socket, server_name, config, denied_servers)?.await
 }
 
 pub fn spawn(
@@ -205,11 +218,12 @@ where
         io: IO,
         server_name: String,
         config: rustls::ClientConfig,
+        denied_servers: Vec<String>,
     ) -> Result<Self, KeyExchangeError> {
         Ok(Self {
             inner: Some(BoundKeyExchangeClientData {
                 io,
-                client: KeyExchangeClient::new(server_name, config)?,
+                client: KeyExchangeClient::new(server_name, config, denied_servers)?,
                 need_flush: false,
             }),
         })
@@ -668,7 +682,7 @@ mod tests {
 
     fn client_key_exchange_message_length() -> usize {
         let mut buffer = Vec::with_capacity(1024);
-        for record in ntp_proto::NtsRecord::client_key_exchange_records() {
+        for record in ntp_proto::NtsRecord::client_key_exchange_records(vec![]).iter() {
             record.write(&mut buffer).unwrap();
         }
 
@@ -868,7 +882,7 @@ mod tests {
 
     #[tokio::test]
     async fn server_expected_client_records() {
-        let records = NtsRecord::client_key_exchange_records().to_vec();
+        let records = NtsRecord::client_key_exchange_records(vec![]).to_vec();
         let result = send_records_to_server(records).await;
 
         assert!(result.is_ok());
