@@ -10,7 +10,7 @@ use super::{BasicSpawner, PeerId, PeerRemovedEvent, SpawnAction, SpawnEvent, Spa
 
 struct PoolPeer {
     id: PeerId,
-    address: SocketAddr,
+    remote: String,
 }
 
 pub struct NtsPoolSpawner {
@@ -72,6 +72,10 @@ impl NtsPoolSpawner {
         None
     }
 
+    fn contains_peer(&self, domain: &str) -> bool {
+        self.current_peers.iter().any(|peer| peer.remote == domain)
+    }
+
     pub async fn fill_pool(
         &mut self,
         action_tx: &mpsc::Sender<SpawnEvent>,
@@ -93,12 +97,15 @@ impl NtsPoolSpawner {
                 )
                 .await
                 {
-                    Ok(ke) => {
+                    Ok(ke) if !self.contains_peer(&ke.remote) => {
                         if let Some(address) =
                             self.resolve_addr((ke.remote.as_str(), ke.port)).await
                         {
                             let id = PeerId::new();
-                            self.current_peers.push(PoolPeer { id, address });
+                            self.current_peers.push(PoolPeer {
+                                id,
+                                remote: ke.remote,
+                            });
                             action_tx
                                 .send(SpawnEvent::new(
                                     self.id,
@@ -112,6 +119,10 @@ impl NtsPoolSpawner {
                                 ))
                                 .await?;
                         }
+                    }
+                    Ok(_) => {
+                        warn!("received an address from pool-ke that we already had, ignoring");
+                        break;
                     }
                     Err(e) => {
                         warn!(error = ?e, "error while attempting key exchange");
