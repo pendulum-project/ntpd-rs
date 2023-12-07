@@ -276,7 +276,7 @@ async fn pick_nts_ke_servers<'a>(
             Ok(x) => return Ok(x),
             Err(e) => match e {
                 KeyExchangeError::Io(e) if e.kind() == ErrorKind::ConnectionRefused => continue,
-                _ => return Err(e.into()),
+                _ => return Err(e),
             },
         }
     }
