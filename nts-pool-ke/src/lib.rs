@@ -3,12 +3,7 @@ mod config;
 
 mod tracing;
 
-use std::{
-    io::{BufRead, ErrorKind},
-    ops::ControlFlow,
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{io::BufRead, ops::ControlFlow, path::PathBuf, sync::Arc};
 
 use ::tracing::{info, warn};
 use cli::NtsPoolKeOptions;
@@ -265,12 +260,20 @@ async fn pick_nts_ke_server<'a>(
     }
 }
 
+// which errors reported by a server are "fatal" for us, and which just mean that
+// the server should be ignored?
+fn is_fatal_error(error: &KeyExchangeError) -> bool {
+    matches!(error, KeyExchangeError::BadRequest)
+}
+
 async fn pick_nts_ke_servers<'a>(
     connector: &TlsConnector,
     servers: &'a [config::KeyExchangeServer],
     selected_algorithm: AeadAlgorithm,
     denied_servers: &[String],
 ) -> Result<(&'a str, u16, ServerName), KeyExchangeError> {
+    let mut downstream_error = false;
+
     for server in servers {
         if denied_servers.contains(&server.domain) {
             continue;
@@ -278,16 +281,20 @@ async fn pick_nts_ke_servers<'a>(
 
         match pick_nts_ke_server(connector, server, selected_algorithm).await {
             Ok(x) => return Ok(x),
-            Err(e) => match e {
-                KeyExchangeError::Io(e) if e.kind() == ErrorKind::ConnectionRefused => continue,
-                _ => return Err(e),
-            },
+            Err(e) if is_fatal_error(&e) => return Err(e),
+            _ => downstream_error = true,
         }
     }
 
     warn!("pool could not find a KE valid server");
 
-    Err(KeyExchangeError::InternalServerError)
+    // if we couldn't find a server because the client used a "ServerDeny"
+    // to exclude them all, that is a BadRequest; otherwise, InternalServerError
+    if downstream_error {
+        Err(KeyExchangeError::InternalServerError)
+    } else {
+        Err(KeyExchangeError::BadRequest)
+    }
 }
 
 async fn handle_client(
