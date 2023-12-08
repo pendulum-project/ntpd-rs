@@ -21,6 +21,38 @@ pub enum NtsSpawnError {
     SendError(#[from] mpsc::error::SendError<SpawnEvent>),
 }
 
+async fn resolve_addr(
+    mut network_wait: std::time::Duration,
+    address: (&str, u16),
+) -> Option<SocketAddr> {
+    const MAX_RETRIES: usize = 5;
+    const BACKOFF_FACTOR: u32 = 2;
+
+    for i in 0..MAX_RETRIES {
+        if i != 0 {
+            // Ensure we dont spam dns
+            tokio::time::sleep(network_wait).await;
+            network_wait *= BACKOFF_FACTOR;
+        }
+        match tokio::net::lookup_host(address).await {
+            Ok(mut addresses) => match addresses.next() {
+                Some(address) => return Some(address),
+                None => {
+                    warn!("received unknown domain name from NTS-ke");
+                    return None;
+                }
+            },
+            Err(e) => {
+                warn!(error = ?e, "error while resolving peer address, retrying");
+            }
+        }
+    }
+
+    warn!("Could not resolve peer address, restarting NTS initialization");
+
+    None
+}
+
 impl NtsSpawner {
     pub fn new(config: NtsPeerConfig, network_wait_period: std::time::Duration) -> NtsSpawner {
         NtsSpawner {
@@ -28,37 +60,6 @@ impl NtsSpawner {
             network_wait_period,
             id: Default::default(),
         }
-    }
-
-    async fn resolve_addr(&mut self, address: (&str, u16)) -> Option<SocketAddr> {
-        const MAX_RETRIES: usize = 5;
-        const BACKOFF_FACTOR: u32 = 2;
-
-        let mut network_wait = self.network_wait_period;
-
-        for i in 0..MAX_RETRIES {
-            if i != 0 {
-                // Ensure we dont spam dns
-                tokio::time::sleep(network_wait).await;
-                network_wait *= BACKOFF_FACTOR;
-            }
-            match tokio::net::lookup_host(address).await {
-                Ok(mut addresses) => match addresses.next() {
-                    Some(address) => return Some(address),
-                    None => {
-                        warn!("received unknown domain name from NTS-ke");
-                        return None;
-                    }
-                },
-                Err(e) => {
-                    warn!(error = ?e, "error while resolving peer address, retrying");
-                }
-            }
-        }
-
-        warn!("Could not resolve peer address, restarting NTS initialization");
-
-        None
     }
 
     async fn spawn(&mut self, action_tx: &mpsc::Sender<SpawnEvent>) -> Result<(), NtsSpawnError> {
@@ -76,7 +77,9 @@ impl NtsSpawner {
             .await
             {
                 Ok(ke) => {
-                    if let Some(address) = self.resolve_addr((ke.remote.as_str(), ke.port)).await {
+                    if let Some(address) =
+                        resolve_addr(self.network_wait_period, (ke.remote.as_str(), ke.port)).await
+                    {
                         action_tx
                             .send(SpawnEvent::new(
                                 self.id,
