@@ -21,7 +21,7 @@ pub enum NtsSpawnError {
     SendError(#[from] mpsc::error::SendError<SpawnEvent>),
 }
 
-async fn resolve_addr(
+pub(super) async fn resolve_addr(
     mut network_wait: std::time::Duration,
     address: (&str, u16),
 ) -> Option<SocketAddr> {

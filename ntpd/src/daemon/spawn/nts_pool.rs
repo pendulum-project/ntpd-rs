@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, ops::Deref};
+use std::ops::Deref;
 
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -9,6 +9,8 @@ use super::super::{
 };
 
 use super::{BasicSpawner, PeerId, PeerRemovedEvent, SpawnAction, SpawnEvent, SpawnerId};
+
+use super::nts::resolve_addr;
 
 struct PoolPeer {
     id: PeerId,
@@ -42,38 +44,6 @@ impl NtsPoolSpawner {
         }
     }
 
-    //NOTE: this is the same code as in nts.rs, so we should introduce some code sharing
-    async fn resolve_addr(&mut self, address: (&str, u16)) -> Option<SocketAddr> {
-        const MAX_RETRIES: usize = 5;
-        const BACKOFF_FACTOR: u32 = 2;
-
-        let mut network_wait = self.network_wait_period;
-
-        for i in 0..MAX_RETRIES {
-            if i != 0 {
-                // Ensure we dont spam dns
-                tokio::time::sleep(network_wait).await;
-                network_wait *= BACKOFF_FACTOR;
-            }
-            match tokio::net::lookup_host(address).await {
-                Ok(mut addresses) => match addresses.next() {
-                    Some(address) => return Some(address),
-                    None => {
-                        warn!("received unknown domain name from NTS-ke");
-                        return None;
-                    }
-                },
-                Err(e) => {
-                    warn!(error = ?e, "error while resolving peer address, retrying");
-                }
-            }
-        }
-
-        warn!("Could not resolve peer address, restarting NTS initialization");
-
-        None
-    }
-
     fn contains_peer(&self, domain: &str) -> bool {
         self.current_peers.iter().any(|peer| peer.remote == domain)
     }
@@ -102,7 +72,8 @@ impl NtsPoolSpawner {
                 {
                     Ok(ke) if !self.contains_peer(&ke.remote) => {
                         if let Some(address) =
-                            self.resolve_addr((ke.remote.as_str(), ke.port)).await
+                            resolve_addr(self.network_wait_period, (ke.remote.as_str(), ke.port))
+                                .await
                         {
                             let id = PeerId::new();
                             self.current_peers.push(PoolPeer {
