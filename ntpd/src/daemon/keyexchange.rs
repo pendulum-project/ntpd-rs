@@ -1000,7 +1000,6 @@ mod tests {
         });
 
         let result = run_server(listener).await;
-        dbg!(&result);
         assert!(matches!(result, Err(KeyExchangeError::IncompleteResponse)));
     }
 
