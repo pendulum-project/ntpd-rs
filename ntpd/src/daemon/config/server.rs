@@ -197,7 +197,7 @@ mod tests {
         assert_eq!(test.server.listen, "127.0.0.1:123".parse().unwrap());
         assert_eq!(test.server.denylist.action, FilterAction::Deny);
 
-        let test = dbg!(toml::from_str::<TestConfig>(
+        let test = toml::from_str::<TestConfig>(
             r#"
             [server]
             listen = "127.0.0.1:123"
@@ -205,7 +205,7 @@ mod tests {
             [server.allowlist]
             filter = ["192.168.33.34/24"]
             "#,
-        ));
+        );
         assert!(test.is_err());
 
         let test = toml::from_str::<TestConfig>(
