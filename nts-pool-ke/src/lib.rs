@@ -368,6 +368,29 @@ async fn handle_client(
 
             // now we just forward the response
             let mut buffer = Vec::with_capacity(1024);
+            let (mut mentions_server, mut mentions_port) = (false, false);
+
+            for record in &records_for_client {
+                mentions_server |= matches!(record, NtsRecord::Server { .. });
+                mentions_port |= matches!(record, NtsRecord::Port { .. });
+            }
+
+            if !mentions_server {
+                NtsRecord::Server {
+                    critical: true,
+                    name: server_name.to_string(),
+                }
+                .write(&mut buffer)?;
+            }
+
+            if !mentions_port {
+                NtsRecord::Port {
+                    critical: true,
+                    port,
+                }
+                .write(&mut buffer)?;
+            }
+
             for record in records_for_client {
                 record.write(&mut buffer)?;
             }
