@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.1.0-alpha.20231123] - 2023-11-23
+## [1.1.0] - 2023-11-23
 
 ### Added
 - Server can now be run without permission to change the system clock so long
@@ -170,7 +170,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
-[1.1.0-alpha.20231123]: https://github.com/pendulum-project/ntpd-rs/compare/v1.0.0...v1.1.0-alpha.20231123
+[1.1.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.7...v1.0.0
 [0.3.7]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.5...v0.3.6
