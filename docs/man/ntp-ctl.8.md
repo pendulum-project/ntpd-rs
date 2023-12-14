@@ -1,5 +1,5 @@
 <!-- ---
-title: NTP-CTL(8) ntpd-rs 1.1.0-alpha.20231123 | ntpd-rs
+title: NTP-CTL(8) ntpd-rs 1.1.0 | ntpd-rs
 --- -->
 
 # NAME
