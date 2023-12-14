@@ -230,7 +230,7 @@ async fn pool_key_exchange_server(
     }
 }
 
-async fn pick_nts_ke_server<'a>(
+async fn try_nts_ke_server<'a>(
     connector: &TlsConnector,
     config::KeyExchangeServer { domain, port }: &'a config::KeyExchangeServer,
     selected_algorithm: AeadAlgorithm,
@@ -271,23 +271,47 @@ async fn pick_nts_ke_servers<'a>(
     selected_algorithm: AeadAlgorithm,
     denied_servers: &[String],
 ) -> Result<(&'a str, u16, ServerName), KeyExchangeError> {
-    for server in servers {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static START_INDEX: AtomicUsize = AtomicUsize::new(0);
+    let start_index = START_INDEX.fetch_add(1, Ordering::Relaxed);
+
+    // rotate the serverlist so that an error caused by a single NTS-KE server doesn't
+    // permanently cripple the pool
+    let (left, right) = servers.split_at(start_index % servers.len());
+    let rotated_servers = right.iter().chain(left.iter());
+    let mut connection_error = false;
+
+    for server in rotated_servers {
         if denied_servers.contains(&server.domain) {
             continue;
         }
 
-        match pick_nts_ke_server(connector, server, selected_algorithm).await {
+        match try_nts_ke_server(connector, server, selected_algorithm).await {
             Ok(x) => return Ok(x),
             Err(e) => match e {
-                KeyExchangeError::Io(e) if e.kind() == ErrorKind::ConnectionRefused => continue,
+                // only if the connection was refused do we try another server during this
+                // connection, because otherwise key material from this TLS connection could have
+                // been shared with multiple servers through the FixedKeyRequest
+                KeyExchangeError::Io(e) if e.kind() == ErrorKind::ConnectionRefused => {
+                    connection_error = true;
+                    ::tracing::debug!("connection refused: {e}");
+                    continue;
+                }
                 _ => return Err(e),
             },
         }
     }
 
-    warn!("pool could not find a KE valid server");
+    warn!("pool could not find a valid KE server");
 
-    Err(KeyExchangeError::InternalServerError)
+    // if finding a KE server failed because of a connection error,
+    // report a Internal Server Error; if it failed because all our servers
+    // were able and willing, but rejected by the client, return a Bad Request
+    if connection_error {
+        Err(KeyExchangeError::InternalServerError)
+    } else {
+        Err(KeyExchangeError::BadRequest)
+    }
 }
 
 async fn handle_client(
