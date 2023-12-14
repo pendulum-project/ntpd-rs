@@ -576,6 +576,7 @@ mod tests {
     async fn key_exchange_roundtrip() {
         let provider = KeySetProvider::new(1);
         let keyset = provider.get();
+        #[cfg(feature = "unstable_nts-pool")]
         let pool_certs = ["testdata/certificates/nos-nl.pem"];
 
         let (_sender, keyset) = tokio::sync::watch::channel(keyset);
