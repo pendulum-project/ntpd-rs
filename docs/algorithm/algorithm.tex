@@ -78,16 +78,15 @@ U &= \begin{pmatrix}
 
 The clock control filter of ntpd-rs consists of 4 stages.
 
-First, on a per-timesource basis, a Kalman filter is used to estimate the offset and frequency error as compared to that specific timesource.
+First, on a per time source basis, a Kalman filter is used to estimate the offset and frequency error as compared to that specific time source.
 During this stage, the remote clock is treated as ground truth and any uncertainty with respect to UTC it reports is ignored.
 Sections~\ref{sec:Kalmanfilter}-\ref{sec:additionalchecks} describe this Kalman filter.
 
 Next, we compare all time sources and see which subset of them is in agreement.
-We also check for each time source whether it is of sufficient quality to us.e
+We also check for each time source whether it is of sufficient quality to use.
 Selection criteria, as well as the used algorithm, are detailed in Section~\ref{sec:selection}.
 
 Having selected which sources to use, these sources' measurements are averaged to produce an estimate of the clock offset.
-A this stage, we also add the error compared to UTC the remote clock estimates itself to the error estimates.
 The procedure for the averaging is described in Section~\ref{sec:averaging}.
 
 Finally this clock offset, and the error bounds on it, are used to steer the system clock to bring it in closer agreement with the remote time sources.
@@ -359,7 +358,7 @@ Note also that, as in the case of process noise estimation, the specific numbers
 
 We evaluated the performance of the new algorithm against the default settings of chrony version 4.0, another NTP client. For this, we connected a Raspberry Pi 4 via a switch to a local GPS-connected NTP server (an Endrun Ninja). Both the Raspberry Pi and the NTP server were configured to produce pulse per second outputs.
 
-For each test, the NTP client under test was started on the Raspberry Pi with a fixed poll interval of 1 second and allowed to stabilize over a period of at least half an hour. Then, the offset between the pulse per second signals of the Raspberry Pi were measured for one hour. The results of these measurements are shown in Figure~\ref{fig:offset-time}. Both chrony and ntpd-rs were configured to use the local server as only timesource, but otherwise used their default configuration.
+For each test, the NTP client under test was started on the Raspberry Pi with a fixed poll interval of 1 second and allowed to stabilize over a period of at least half an hour. Then, the offset between the pulse per second signals of the Raspberry Pi were measured for one hour. The results of these measurements are shown in Figure~\ref{fig:offset-time}. Both chrony and ntpd-rs were configured to use the local server as only time source, but otherwise used their default configuration.
 
 \begin{figure}
 \includegraphics[width=0.5\textwidth]{offset-ntpd-rs.png}\includegraphics[width=0.5\textwidth]{offset-chrony.png}
