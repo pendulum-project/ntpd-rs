@@ -103,7 +103,7 @@ For convenience we will use the same symbols as Wikipedia for the equations for 
 Our state model consists of two parameters: The offset $\Delta$ and the frequency error $\omega$ with respect to the remote clock. These are defined such that
 \begin{align}
 \Delta(t_l) &= t_r(t_l) - t_l, \\
-\omega(t_l) &= \frac{t_r(t_l') - t_r(t_l)}{t_l' - t_l} - 1.
+\omega(t_l) &= \lim_{t_l' \rightarrow t_l}\frac{t_r(t_l') - t_r(t_l)}{t_l' - t_l} - 1 = \frac{\mathrm{d} t_r}{\mathrm{d} t_l}(t_l) - 1.
 \end{align}
 Combined, these form our state vector
 \begin{align}
