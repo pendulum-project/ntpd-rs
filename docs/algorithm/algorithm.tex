@@ -360,7 +360,7 @@ We evaluated the performance of the new algorithm against the default settings o
 
 For each test, the NTP client under test was started on the Raspberry Pi with a fixed poll interval of 1 second and allowed to stabilize over a period of at least half an hour. Then, the offset between the pulse per second signals of the Raspberry Pi were measured for one hour. The results of these measurements are shown in Figure~\ref{fig:offset-time}. Both chrony and ntpd-rs were configured to use the local server as only time source, but otherwise used their default configuration.
 
-\begin{figure}
+\begin{figure}[h]
 \includegraphics[width=0.5\textwidth]{offset-ntpd-rs.png}\includegraphics[width=0.5\textwidth]{offset-chrony.png}
 \caption{Offset of the Raspberry Pi running ntpd-rs (left) and chrony (right) over a time period of 1 hour, compared to the server they were synchronizing to.}\label{fig:offset-time}
 \end{figure}
