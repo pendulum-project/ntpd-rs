@@ -2,7 +2,7 @@
 
 The NTS pool KE experimental feature provides an analogue to the [ntp pool](https://www.ntppool.org/en/) that supports Network Time Security (NTS).
 
-The technical details are described in the [draft RFC](TODO).
+The technical details are described in the [draft RFC](https://github.com/pendulum-project/nts-pool-draft).
 
 ## Building
 
