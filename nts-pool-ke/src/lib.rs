@@ -407,10 +407,11 @@ async fn handle_client(
                 .write(&mut buffer)?;
             }
 
+            const NTP_DEFAULT_PORT: u16 = 123;
             if !mentions_port {
                 NtsRecord::Port {
                     critical: true,
-                    port,
+                    port: NTP_DEFAULT_PORT,
                 }
                 .write(&mut buffer)?;
             }
