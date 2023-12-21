@@ -84,7 +84,7 @@ impl NtsPoolSpawner {
                                 .send(SpawnEvent::new(
                                     self.id,
                                     SpawnAction::create(
-                                        PeerId::new(),
+                                        id,
                                         address,
                                         self.config.addr.deref().clone(),
                                         ke.protocol_version,
