@@ -1,0 +1,30 @@
+name: packaging ntpv5
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - 'release/**'
+  workflow_dispatch:
+
+jobs:
+  package:
+    uses: NLnetLabs/ploutos/.github/workflows/pkg-rust.yml@v7
+    with:
+      workspace_package: ntpd
+
+      package_build_rules: |
+        pkg: ntpd-rs
+        image:
+          - "ubuntu:xenial"
+        target: x86_64
+        extra_build_args: "--features unstable_ntpv5"
+
+      package_test_scripts_path: pkg/test-scripts/test-ntpd-rs.sh
+
+      rpm_scriptlets_path: pkg/rpm/scriptlets.toml
+
+      rpm_extra_build_packages: git
+      deb_extra_build_packages: git
