@@ -189,7 +189,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
                 next_update,
             }
         } else {
-            info!("No concensus cluster found");
+            info!("No consensus cluster found");
             StateUpdate {
                 used_peers: None,
                 time_snapshot: Some(self.timedata),
