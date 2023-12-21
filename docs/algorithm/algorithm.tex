@@ -121,7 +121,7 @@ F(\delta) &= \begin{pmatrix}
 0 & 1
 \end{pmatrix}.
 \end{align}
-Updating the filters state from $t_l$ to $t_l+\delta$ is then given by
+Updating the Kalman filter's state from $t_l$ to $t_l+\delta$ is then given by
 \begin{align}
 x(t_l+\delta) &= F(\delta)x(t_l),\\
 P(t_l+\delta) &= F(\delta)P(t_l)F(\delta)^\mathrm{T} + Q(\delta).
