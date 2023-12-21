@@ -136,6 +136,8 @@ pub struct NtsKeConfig {
     #[serde(default = "default_nts_ke_timeout")]
     pub key_exchange_timeout_ms: u64,
     pub listen: SocketAddr,
+    pub ntp_port: Option<u16>,
+    pub ntp_server: Option<String>,
 }
 
 fn default_nts_ke_timeout() -> u64 {

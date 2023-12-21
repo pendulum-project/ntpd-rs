@@ -274,6 +274,8 @@ impl NtsRecord {
         algorithm: AeadAlgorithm,
         keyset: &KeySet,
         keys: NtsKeys,
+        ntp_port: Option<u16>,
+        ntp_server: Option<String>,
         #[cfg(feature = "nts-pool")] send_supported_algorithms: bool,
     ) -> Box<[NtsRecord]> {
         let cookie = DecodedServerCookie {
@@ -300,6 +302,20 @@ impl NtsRecord {
                     .map(|&algo| (algo as u16, algo.key_size()))
                     .collect(),
             })
+        }
+
+        if let Some(ntp_port) = ntp_port {
+            response.push(NtsRecord::Port {
+                critical: ntp_port != 123,
+                port: ntp_port,
+            });
+        }
+
+        if let Some(ntp_server) = ntp_server {
+            response.push(NtsRecord::Server {
+                critical: true,
+                name: ntp_server,
+            });
         }
 
         response.extend(vec![
@@ -1461,6 +1477,8 @@ pub struct KeyExchangeServer {
     tls_connection: rustls::ServerConnection,
     state: State,
     keyset: Arc<KeySet>,
+    ntp_port: Option<u16>,
+    ntp_server: Option<String>,
     #[cfg(feature = "nts-pool")]
     pool_certificates: Arc<[rustls::Certificate]>,
 }
@@ -1663,6 +1681,8 @@ impl KeyExchangeServer {
                     algorithm,
                     &self.keyset,
                     keys,
+                    self.ntp_port,
+                    self.ntp_server.clone(),
                     #[cfg(feature = "nts-pool")]
                     send_algorithm_list,
                 );
@@ -1682,6 +1702,8 @@ impl KeyExchangeServer {
     pub fn new(
         tls_config: Arc<rustls::ServerConfig>,
         keyset: Arc<KeySet>,
+        ntp_port: Option<u16>,
+        ntp_server: Option<String>,
         pool_certificates: Arc<[rustls::Certificate]>,
     ) -> Result<Self, KeyExchangeError> {
         // Ensure we send only ntske/1 as alpn
@@ -1699,6 +1721,8 @@ impl KeyExchangeServer {
                 decoder: KeyExchangeServerDecoder::new(),
             },
             keyset,
+            ntp_port,
+            ntp_server,
             #[cfg(feature = "nts-pool")]
             pool_certificates,
         })
@@ -2881,7 +2905,8 @@ mod test {
         let client =
             KeyExchangeClient::new_without_tls_write("localhost".into(), clientconfig).unwrap();
         let server =
-            KeyExchangeServer::new(Arc::new(serverconfig), keyset, pool_cert.into()).unwrap();
+            KeyExchangeServer::new(Arc::new(serverconfig), keyset, None, None, pool_cert.into())
+                .unwrap();
 
         (client, server)
     }
