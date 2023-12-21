@@ -2,9 +2,8 @@
 
 # This script generates a private key/certificate for a server, and signs it with the provided CA key
 # based on https://docs.ntpd-rs.pendulum-project.org/development/ca/
-# To generate a CA key, use the script `gen-ca.sh`.
 
-# Since these scripts generate keys without passwords set, they should only be used in a development setting.
+# Because this script generate keys without passwords set, they should only be used in a development setting.
 
 if [ -z "$1" ]; then
 	echo "usage: gen-cert.sh name-of-server [ca-name]"

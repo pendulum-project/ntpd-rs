@@ -8,9 +8,10 @@ observation-path = "/var/run/ntpd-rs/observe"
 
 # See https://docs.ntpd-rs.pendulum-project.org/man/ntp.toml.5/ on how to set up certificates
 [[source]]
-mode = "nts"
+mode = "nts-pool"
 address =  "localhost:4460"
 certificate-authority = "test-keys/testca.pem"
+count = 1
 
 # System parameters used in filtering and steering the clock:
 [synchronization]
