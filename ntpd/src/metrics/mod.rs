@@ -374,6 +374,6 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
         collect_servers!(state, |s| s.stats.nts_nak_packets.get()),
     )?;
 
-    w.write_str("# EOF")?;
+    w.write_str("# EOF\n")?;
     Ok(())
 }
