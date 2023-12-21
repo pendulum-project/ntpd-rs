@@ -234,6 +234,15 @@ untampered with.
 :   Timeout in milliseconds for how long a key exchange may take. If the timeout
     is exceeded the connection will be dropped.
 
+`ntp-port` = *port*
+    Port number the key exchange server should instruct clients to use. Should
+    be used when the port number of the NTP server is not the default.
+
+`ntp-server` = *server-name*
+    Server address (either as ip or as domain name) where clients can find the
+    NTP server. Should be used when this name does not match the name of the
+    NTS key exchange server.
+
 ## `[synchronization]`
 This section of the configuration focusses on how the time information from the
 time sources is gathered and applied to the system clock.
