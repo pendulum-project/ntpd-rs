@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.1.1-alpha.20231221] - 2023-12-21
+
+### Added
+- A work in progress implementation for experimental NTS pools was added
+
+### Changed
+- Updated dependencies
+
+### Fixed
+- Fixed missing newline at the end of the prometheus metrics export
+- Fixed error handling on NTS key exchange sessions
+- Small fixes to the experimental NTPv5 draft support
+
 ## [1.1.0] - 2023-11-23
 
 ### Added
@@ -170,6 +183,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
+[1.1.1-alpha.20231221]: https://github.com/pendulum-project/ntpd-rs/compare/v1.1.0...v1.1.1-alpha.20231221
 [1.1.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.7...v1.0.0
 [0.3.7]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.6...v0.3.7
