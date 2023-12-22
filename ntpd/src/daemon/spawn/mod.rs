@@ -79,6 +79,7 @@ impl SpawnEvent {
 pub enum SystemEvent {
     PeerRemoved(PeerRemovedEvent),
     PeerRegistered(PeerCreateParameters),
+    Idle,
 }
 
 impl SystemEvent {
@@ -271,24 +272,23 @@ where
         action_tx: mpsc::Sender<SpawnEvent>,
         mut system_notify: mpsc::Receiver<SystemEvent>,
     ) -> Result<(), E> {
+        use tokio::time::{timeout, Duration};
         // basic event loop where init is called on startup and then wait for
         // events from the system before doing anything
         self.handle_init(&action_tx).await?;
-        while let Some(event) = {
-            use tokio::time::{timeout, Duration};
-            loop {
-                if let Ok(result) = timeout(Duration::from_secs(60), system_notify.recv()).await {
-                    break result;
-                }
-                self.handle_idle(&action_tx).await?;
-            }
-        } {
+        while let Some(event) = timeout(Duration::from_secs(60), system_notify.recv())
+            .await
+            .unwrap_or(Some(SystemEvent::Idle))
+        {
             match event {
                 SystemEvent::PeerRegistered(peer_params) => {
                     self.handle_registered(peer_params, &action_tx).await?;
                 }
                 SystemEvent::PeerRemoved(removed_peer) => {
                     self.handle_peer_removed(removed_peer, &action_tx).await?;
+                }
+                SystemEvent::Idle => {
+                    self.handle_idle(&action_tx).await?;
                 }
             }
         }
