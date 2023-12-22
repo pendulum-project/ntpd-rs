@@ -213,6 +213,16 @@ pub trait BasicSpawner {
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), Self::Error>;
 
+    /// Function that can be called at regular intervals (once every minute)
+    /// to perform "long" tasks that we do not want to block the main Spawner::run
+    /// function for.
+    async fn handle_idle(
+        &mut self,
+        _action_tx: &mpsc::Sender<SpawnEvent>,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
     /// Event handler for when a peer is removed.
     ///
     /// This is called each time the system notifies this spawner that one of
@@ -264,7 +274,15 @@ where
         // basic event loop where init is called on startup and then wait for
         // events from the system before doing anything
         self.handle_init(&action_tx).await?;
-        while let Some(event) = system_notify.recv().await {
+        while let Some(event) = {
+            use tokio::time::{timeout, Duration};
+            loop {
+                if let Ok(result) = timeout(Duration::from_secs(60), system_notify.recv()).await {
+                    break result;
+                }
+                self.handle_idle(&action_tx).await?;
+            }
+        } {
             match event {
                 SystemEvent::PeerRegistered(peer_params) => {
                     self.handle_registered(peer_params, &action_tx).await?;
