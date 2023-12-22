@@ -94,10 +94,16 @@ impl PoolSpawner {
                 std::time::Duration::from_secs(60)
             };
 
-            wait_period = Ord::min(2 * wait_period, wait_period_max);
             let peers_needed = self.config.max_peers - self.current_peers.len();
             if peers_needed > 0 {
-                warn!(peers_needed, "could not fully fill pool");
+                wait_period *= 2;
+                if wait_period > wait_period_max {
+                    warn!(peers_needed, "could not fully fill pool, giving up");
+                    //NOTE: maybe we want to communicate this up the call chain?
+                    return Ok(());
+                } else {
+                    warn!(peers_needed, "could not fully fill pool, waiting");
+                }
                 tokio::time::sleep(wait_period).await;
             } else {
                 return Ok(());
@@ -111,6 +117,14 @@ impl BasicSpawner for PoolSpawner {
     type Error = PoolSpawnError;
 
     async fn handle_init(
+        &mut self,
+        action_tx: &mpsc::Sender<SpawnEvent>,
+    ) -> Result<(), PoolSpawnError> {
+        self.fill_pool(action_tx).await?;
+        Ok(())
+    }
+
+    async fn handle_idle(
         &mut self,
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), PoolSpawnError> {
