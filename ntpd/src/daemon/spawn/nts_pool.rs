@@ -48,7 +48,7 @@ impl NtsPoolSpawner {
         self.current_peers.iter().any(|peer| peer.remote == domain)
     }
 
-    pub async fn fill_pool(
+    pub async fn try_fill_pool(
         &mut self,
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), NtsPoolSpawnError> {
@@ -111,11 +111,17 @@ impl NtsPoolSpawner {
                 std::time::Duration::from_secs(60)
             };
 
-            wait_period = Ord::min(2 * wait_period, wait_period_max);
             let peers_needed = self.config.max_peers - self.current_peers.len();
             if peers_needed > 0 {
-                warn!(peers_needed, "could not fully fill pool");
+                if wait_period > wait_period_max {
+                    warn!(peers_needed, "could not fully fill pool, giving up");
+                    //NOTE: maybe we want to communicate this up the call chain?
+                    return Ok(());
+                } else {
+                    warn!(peers_needed, "could not fully fill pool, waiting");
+                }
                 tokio::time::sleep(wait_period).await;
+                wait_period *= 2;
             } else {
                 return Ok(());
             }
@@ -131,7 +137,15 @@ impl BasicSpawner for NtsPoolSpawner {
         &mut self,
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), NtsPoolSpawnError> {
-        self.fill_pool(action_tx).await?;
+        self.handle_idle(action_tx).await?;
+        Ok(())
+    }
+
+    async fn handle_idle(
+        &mut self,
+        action_tx: &mpsc::Sender<SpawnEvent>,
+    ) -> Result<(), NtsPoolSpawnError> {
+        self.try_fill_pool(action_tx).await?;
         Ok(())
     }
 
@@ -141,7 +155,7 @@ impl BasicSpawner for NtsPoolSpawner {
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), NtsPoolSpawnError> {
         self.current_peers.retain(|p| p.id != removed_peer.id);
-        self.fill_pool(action_tx).await?;
+        self.try_fill_pool(action_tx).await?;
         Ok(())
     }
 
