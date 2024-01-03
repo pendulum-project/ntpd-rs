@@ -72,7 +72,7 @@ mod exports {
     pub use super::nts_record::fuzz_key_exchange_server_decoder;
     pub use super::nts_record::{
         AeadAlgorithm, KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer,
-        NtsKeys, NtsRecord, NtsRecordDecoder, WriteError,
+        NtsKeys, NtsRecord, NtsRecordDecoder, ProtocolId, WriteError,
     };
 
     #[cfg(feature = "ntpv5")]
