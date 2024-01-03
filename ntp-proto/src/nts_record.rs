@@ -780,7 +780,7 @@ impl AeadAlgorithm {
     const IN_ORDER_OF_PREFERENCE: &'static [Self] =
         &[Self::AeadAesSivCmac512, Self::AeadAesSivCmac256];
 
-    pub(crate) fn extract_nts_keys<ConnectionData>(
+    pub fn extract_nts_keys<ConnectionData>(
         &self,
         protocol: ProtocolId,
         tls_connection: &rustls::ConnectionCommon<ConnectionData>,
