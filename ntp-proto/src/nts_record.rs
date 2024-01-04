@@ -835,8 +835,8 @@ impl AeadAlgorithm {
 }
 
 pub struct NtsKeys {
-    c2s: Box<dyn Cipher>,
-    s2c: Box<dyn Cipher>,
+    pub c2s: Box<dyn Cipher>,
+    pub s2c: Box<dyn Cipher>,
 }
 
 impl NtsKeys {

@@ -13,7 +13,7 @@ use crate::{
 
 use self::{error::ParsingError, extension_fields::ExtensionFieldData, mac::Mac};
 
-mod crypto;
+pub mod crypto;
 mod error;
 mod extension_fields;
 mod mac;

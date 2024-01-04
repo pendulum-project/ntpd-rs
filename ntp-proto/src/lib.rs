@@ -48,8 +48,8 @@ mod exports {
     #[cfg(any(feature = "__internal-fuzz", feature = "__internal-test"))]
     pub use super::packet::ExtensionField;
     pub use super::packet::{
-        Cipher, CipherProvider, EncryptResult, ExtensionHeaderVersion, NoCipher,
-        NtpAssociationMode, NtpHeader, NtpLeapIndicator, NtpPacket, PacketParsingError,
+        crypto::AesSivCmac256, Cipher, CipherProvider, EncryptResult, ExtensionHeaderVersion,
+        NoCipher, NtpAssociationMode, NtpHeader, NtpLeapIndicator, NtpPacket, PacketParsingError,
     };
     #[cfg(feature = "__internal-fuzz")]
     pub use super::peer::fuzz_measurement_from_packet;
@@ -79,9 +79,6 @@ mod exports {
     pub mod v5 {
         pub use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
     }
-
-    #[cfg(feature = "nts-pool")]
-    pub use super::nts_record::AeadAlgorithm;
 
     #[cfg(feature = "nts-pool")]
     pub use super::nts_pool_ke::{
