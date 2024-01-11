@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, ops::Deref};
 
-use ntp_proto::ProtocolVersion;
+use ntp_proto::{Ed25519Public, ProtocolVersion};
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tracing::warn;
@@ -14,6 +14,7 @@ use super::{
 pub struct StandardSpawner {
     id: SpawnerId,
     config: StandardPeerConfig,
+    ed25519_pk: Option<Ed25519Public>,
     network_wait_period: std::time::Duration,
     resolved: Option<SocketAddr>,
 }
@@ -32,6 +33,21 @@ impl StandardSpawner {
         StandardSpawner {
             id: Default::default(),
             config,
+            ed25519_pk: None,
+            network_wait_period,
+            resolved: None,
+        }
+    }
+
+    pub fn new_ed25519(
+        config: StandardPeerConfig,
+        network_wait_period: std::time::Duration,
+        ed25519_pk: Ed25519Public,
+    ) -> StandardSpawner {
+        StandardSpawner {
+            id: Default::default(),
+            config,
+            ed25519_pk: Some(ed25519_pk),
             network_wait_period,
             resolved: None,
         }
@@ -77,6 +93,7 @@ impl StandardSpawner {
                     self.config.address.deref().clone(),
                     ProtocolVersion::default(),
                     None,
+                    self.ed25519_pk.clone(),
                 ),
             ))
             .await?;

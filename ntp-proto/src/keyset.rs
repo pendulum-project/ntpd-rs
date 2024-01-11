@@ -8,9 +8,10 @@ use aead::{generic_array::GenericArray, KeyInit};
 use crate::{
     nts_record::AeadAlgorithm,
     packet::{
-        AesSivCmac256, AesSivCmac512, Cipher, CipherHolder, CipherProvider, DecryptError,
-        EncryptResult, ExtensionField,
+        AesSivCmac256, AesSivCmac512, Cipher, CipherHolder, CipherProvider, CipherType,
+        DecryptError, EncryptResult, ExtensionField,
     },
+    NtpTimestamp,
 };
 
 pub struct DecodedServerCookie {
@@ -210,7 +211,7 @@ impl KeySet {
 
         let nonce = &cookie[6..22];
         let ciphertext = cookie[22..].get(..cipher_text_length).ok_or(DecryptError)?;
-        let plaintext = key.decrypt(nonce, ciphertext, &[])?;
+        let plaintext = key.decrypt(nonce, ciphertext, &[], NtpTimestamp::default())?;
 
         let [b0, b1, ref key_bytes @ ..] = plaintext[..] else {
             return Err(DecryptError);
@@ -264,20 +265,26 @@ impl KeySet {
 }
 
 impl CipherProvider for KeySet {
-    fn get(&self, context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
-        let mut decoded = None;
+    fn get(&self, etype: CipherType, context: &[ExtensionField<'_>]) -> Option<CipherHolder<'_>> {
+        match etype {
+            CipherType::None => None,
+            CipherType::Nts => {
+                let mut decoded = None;
 
-        for ef in context {
-            if let ExtensionField::NtsCookie(cookie) = ef {
-                if decoded.is_some() {
-                    // more than one cookie, abort
-                    return None;
+                for ef in context {
+                    if let ExtensionField::NtsCookie(cookie) = ef {
+                        if decoded.is_some() {
+                            // more than one cookie, abort
+                            return None;
+                        }
+                        decoded = Some(self.decode_cookie(cookie).ok()?);
+                    }
                 }
-                decoded = Some(self.decode_cookie(cookie).ok()?);
-            }
-        }
 
-        decoded.map(CipherHolder::DecodedServerCookie)
+                decoded.map(CipherHolder::DecodedServerCookie)
+            }
+            CipherType::Ed25519 => None,
+        }
     }
 }
 

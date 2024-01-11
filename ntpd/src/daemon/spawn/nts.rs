@@ -89,6 +89,7 @@ impl NtsSpawner {
                                     self.config.address.deref().clone(),
                                     ke.protocol_version,
                                     Some(ke.nts),
+                                    None,
                                 ),
                             ))
                             .await?;

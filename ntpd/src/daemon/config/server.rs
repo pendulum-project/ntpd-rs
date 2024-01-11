@@ -5,6 +5,7 @@ use std::{
     time::Duration,
 };
 
+use ntp_proto::Ed25519Private;
 use serde::{Deserialize, Deserializer};
 
 use super::super::ipfilter::IpFilter;
@@ -87,7 +88,7 @@ impl FilterList {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ServerConfig {
     pub listen: SocketAddr,
@@ -103,12 +104,34 @@ pub struct ServerConfig {
         deserialize_with = "deserialize_rate_limiting_cutoff"
     )]
     pub rate_limiting_cutoff: Duration,
+    #[serde(default, deserialize_with = "deserialize_ed25519")]
+    pub ed25519_key: Option<Ed25519Private>,
 }
 
 fn deserialize_rate_limiting_cutoff<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Duration, D::Error> {
     Ok(Duration::from_millis(u64::deserialize(deserializer)?))
+}
+
+fn deserialize_ed25519<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Ed25519Private>, D::Error> {
+    #[derive(Deserialize)]
+    struct PrivKey {
+        secret_key: String,
+        certificate: String,
+    }
+
+    let key = PrivKey::deserialize(deserializer)?;
+
+    let secret_key = hex::decode(key.secret_key).unwrap();
+    let certificate = hex::decode(key.certificate).unwrap();
+
+    Ok(Some(Ed25519Private::new(
+        secret_key.try_into().unwrap(),
+        certificate,
+    )))
 }
 
 impl TryFrom<&str> for ServerConfig {
@@ -121,6 +144,7 @@ impl TryFrom<&str> for ServerConfig {
             allowlist: FilterList::default_allowlist(),
             rate_limiting_cache_size: Default::default(),
             rate_limiting_cutoff: Default::default(),
+            ed25519_key: None,
         })
     }
 }

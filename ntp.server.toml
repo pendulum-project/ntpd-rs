@@ -3,22 +3,11 @@
 log-level = "info"
 observation-path = "/var/run/ntpd-rs/observe"
 
-# Pool servers from ntppool.org. See http://www.pool.ntp.org/join.html
-# for more information
-[[source]]
-mode = "pool"
-address = "ntpd-rs.pool.ntp.org"
-count = 4
-
-# Alternative configuration for IPv6 only machines
-#[[source]]
-#mode = "pool"
-#address = "2.pool.ntp.org"
-#count = 4
-
 # Serve NTP on any interface (requires permissions to use udp port 123)
 [[server]]
 listen = "[::]:123"
+ed25519-key = { certificate = "8e511b264ead46e556a688cbd058871ad119ee39a779204cdb2168e232f5339f8f239364c0e7b803bd68eeedd696144e4bcac386cbc44bb21750b7e62fb40e04b8425a8a0789b5b9acf5e31e88e18d1d13babbcec4367a0c0574784ef80043a9e8f772b1e96e19b1", secret_key = "d9828a198e6bcfeba4b7cf7dcbd115f632721bb946774f743dd302fd0e7056b4" }
+#public key: 64a4dbb0c61aea3002b80b2ee776c8ea51f5ca1916a22d64a72560bbd6f1bf21
 
 # Below are configured various thresholds beyond which ntpd-rs will not
 # change the system clock. CHANGE THESE TO MATCH YOUR SECURITY NEEDS!
@@ -26,5 +15,6 @@ listen = "[::]:123"
 [synchronization]
 single-step-panic-threshold = 1800
 startup-step-panic-threshold = { forward="inf", backward = 1800 }
+local-stratum = 1
 #accumulated-threshold = 1800
 #minimum-agreeing-sources = 3

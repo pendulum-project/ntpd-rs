@@ -27,6 +27,7 @@ async-trait.workspace = true
 
 serde.workspace = true
 serde_json.workspace = true
+hex.workspace = true
 
 rustls.workspace = true
 rustls-native-certs.workspace = true
