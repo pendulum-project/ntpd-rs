@@ -365,17 +365,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ntp-udp"
-version = "1.1.1"
-dependencies = [
- "libc",
- "ntp-proto",
- "serde",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "ntpd"
 version = "1.1.1"
 dependencies = [
@@ -383,7 +372,6 @@ dependencies = [
  "libc",
  "ntp-os-clock",
  "ntp-proto",
- "ntp-udp",
  "rand",
  "rustls",
  "rustls-native-certs",
@@ -391,6 +379,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "timestamped-socket",
  "tokio",
  "tokio-rustls",
  "toml",
@@ -476,9 +465,9 @@ checksum = "5b40af805b3121feab8a3c29f04d8ad262fa8e0561883e7653e024ae4479e6de"
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.76"
+version = "1.0.78"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95fc56cda0b5c3325f5fbbd7ff9fda9e02bb00bb3dac51252d2f1bfa1cb8cc8c"
+checksum = "e2422ad645d89c99f8f3e6b88a9fdeca7fabeac836b1002371c4367c8f984aae"
 dependencies = [
  "unicode-ident",
 ]
@@ -746,6 +735,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "timestamped-socket"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c5caba8d0c821442603f7e148c7cfc34e916a8c7f66ac3ce56d8a7bf928acbd4"
+dependencies = [
+ "libc",
+ "serde",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "tokio"
 version = "1.35.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -823,6 +824,7 @@ version = "0.1.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3523ab5a71916ccf420eebdf5521fcef02141234bbc0b8a49f2fdc4544364ef"
 dependencies = [
+ "log",
  "pin-project-lite",
  "tracing-attributes",
  "tracing-core",
