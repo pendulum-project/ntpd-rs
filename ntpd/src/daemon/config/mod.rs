@@ -4,7 +4,6 @@ pub mod subnet;
 
 use ntp_os_clock::DefaultNtpClock;
 use ntp_proto::{SourceDefaultsConfig, SynchronizationConfig};
-use ntp_udp::{EnableTimestamps, InterfaceName};
 pub use peer::*;
 use serde::{Deserialize, Deserializer};
 pub use server::*;
@@ -16,6 +15,7 @@ use std::{
     str::FromStr,
 };
 use thiserror::Error;
+use timestamped_socket::interface::InterfaceName;
 use tokio::{fs::read_to_string, io};
 use tracing::{info, warn};
 
@@ -238,6 +238,51 @@ where
     Ok(opt_interface_name)
 }
 
+/// Timestamping mode. This is a hint!
+///
+/// Your OS or hardware might not actually support some timestamping modes.
+/// Unsupported timestamping modes are ignored.
+#[derive(Default, Debug, Clone, Copy, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "kebab-case")]
+pub enum TimestampMode {
+    #[cfg_attr(not(any(target_os = "linux", target_os = "freebsd")), default)]
+    Software,
+    #[cfg_attr(target_os = "freebsd", default)]
+    KernelRecv,
+    #[cfg_attr(target_os = "linux", default)]
+    KernelAll,
+    Hardware,
+}
+
+impl TimestampMode {
+    #[cfg(target_os = "linux")]
+    pub(crate) fn as_interface_mode(self) -> timestamped_socket::socket::InterfaceTimestampMode {
+        use timestamped_socket::socket::InterfaceTimestampMode::*;
+        match self {
+            TimestampMode::Software => None,
+            TimestampMode::KernelRecv => SoftwareRecv,
+            TimestampMode::KernelAll => SoftwareAll,
+            TimestampMode::Hardware => HardwareAll,
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    pub(crate) fn as_general_mode(self) -> timestamped_socket::socket::GeneralTimestampMode {
+        use timestamped_socket::socket::GeneralTimestampMode::*;
+        match self {
+            TimestampMode::Software => None,
+            TimestampMode::KernelRecv => SoftwareRecv,
+            TimestampMode::KernelAll | TimestampMode::Hardware => SoftwareAll,
+        }
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+    pub(crate) fn as_general_mode(self) -> timestamped_socket::socket::GeneralTimestampMode {
+        use timestamped_socket::socket::GeneralTimestampMode::*;
+        None
+    }
+}
+
 #[derive(Deserialize, Debug, Copy, Clone, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ClockConfig {
@@ -245,7 +290,7 @@ pub struct ClockConfig {
     pub clock: DefaultNtpClock,
     #[serde(deserialize_with = "deserialize_interface", default)]
     pub interface: Option<InterfaceName>,
-    pub enable_timestamps: EnableTimestamps,
+    pub timestamp_mode: TimestampMode,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -684,8 +729,7 @@ mod tests {
         let config: Result<ClockConfig, _> = toml::from_str(
             r#"
             interface = "enp0s31f6"
-            enable-timestamps.rx-hardware = true
-            enable-timestamps.tx-software = true
+            timestamp-mode = "software"
             "#,
         );
 
@@ -694,7 +738,6 @@ mod tests {
         let expected = InterfaceName::from_str("enp0s31f6").unwrap();
         assert_eq!(config.interface, Some(expected));
 
-        assert!(config.enable_timestamps.rx_software);
-        assert!(config.enable_timestamps.tx_software);
+        assert_eq!(config.timestamp_mode, TimestampMode::Software);
     }
 }

@@ -1,7 +1,7 @@
 #[cfg(feature = "unstable_nts-pool")]
 use super::spawn::nts_pool::NtsPoolSpawner;
 use super::{
-    config::{ClockConfig, NormalizedAddress, PeerConfig, ServerConfig},
+    config::{ClockConfig, NormalizedAddress, PeerConfig, ServerConfig, TimestampMode},
     peer::{MsgForSystem, PeerChannels},
     peer::{PeerTask, Wait},
     server::{ServerStats, ServerTask},
@@ -18,7 +18,7 @@ use ntp_proto::{
     KalmanClockController, KeySet, NtpClock, NtpDuration, NtpLeapIndicator, PeerSnapshot,
     SourceDefaultsConfig, SynchronizationConfig, SystemSnapshot, TimeSyncController,
 };
-use ntp_udp::{EnableTimestamps, InterfaceName};
+use timestamped_socket::interface::InterfaceName;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{debug, info};
 
@@ -92,7 +92,7 @@ pub async fn spawn(
     let (mut system, channels) = System::new(
         clock_config.clock,
         clock_config.interface,
-        clock_config.enable_timestamps,
+        clock_config.timestamp_mode,
         synchronization_config,
         peer_defaults_config,
         keyset,
@@ -187,18 +187,18 @@ struct System<C: NtpClock, T: Wait> {
     controller: Option<KalmanClockController<C, PeerId>>,
 
     // which timestamps to use (this is a hint, OS or hardware may ignore)
-    enable_timestamps: EnableTimestamps,
+    timestamp_mode: TimestampMode,
 
     // bind the socket to a specific interface. This is relevant for hardware timestamping,
     // because the interface determines which clock is used to produce the timestamps.
     interface: Option<InterfaceName>,
 }
 
-impl<C: NtpClock, T: Wait> System<C, T> {
+impl<C: NtpClock + Sync, T: Wait> System<C, T> {
     fn new(
         clock: C,
         interface: Option<InterfaceName>,
-        enable_timestamps: EnableTimestamps,
+        timestamp_mode: TimestampMode,
         synchronization_config: SynchronizationConfig,
         peer_defaults_config: SourceDefaultsConfig,
         keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
@@ -257,7 +257,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
                 },
                 clock,
                 controller: None,
-                enable_timestamps,
+                timestamp_mode,
                 interface,
             },
             DaemonChannels {
@@ -555,7 +555,7 @@ impl<C: NtpClock, T: Wait> System<C, T> {
             params.addr,
             self.interface,
             self.clock.clone(),
-            self.enable_timestamps,
+            self.timestamp_mode,
             NETWORK_WAIT_PERIOD,
             self.peer_channels.clone(),
             params.protocol_version,
@@ -598,7 +598,6 @@ impl<C: NtpClock, T: Wait> System<C, T> {
             self.peer_channels.system_snapshot_receiver.clone(),
             self.keyset.clone(),
             self.clock.clone(),
-            self.interface,
             NETWORK_WAIT_PERIOD,
         );
         let _ = self.server_data_sender.send(self.servers.clone());
@@ -710,8 +709,8 @@ mod tests {
 
         let (mut system, _) = System::new(
             TestClock {},
-            InterfaceName::DEFAULT,
-            EnableTimestamps::default(),
+            None,
+            TimestampMode::KernelRecv,
             SynchronizationConfig::default(),
             SourceDefaultsConfig::default(),
             keyset,

@@ -14,12 +14,15 @@ use ntp_proto::{
     Cipher, DecodedServerCookie, KeySet, NoCipher, NtpAssociationMode, NtpClock, NtpPacket,
     NtpTimestamp, PacketParsingError, SystemSnapshot,
 };
-use ntp_udp::{InterfaceName, UdpSocket};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use timestamped_socket::socket::{open_ip, Open, RecvResult, Socket};
 use tokio::task::JoinHandle;
 use tracing::{debug, instrument, trace, warn};
 
-use super::config::{FilterAction, ServerConfig};
+use super::{
+    config::{FilterAction, ServerConfig},
+    util::convert_timestamp,
+};
 
 // Maximum size of udp packet we handle
 const MAX_PACKET_SIZE: usize = 1024;
@@ -107,7 +110,6 @@ pub struct ServerTask<C: 'static + NtpClock + Send> {
     system: SystemSnapshot,
     client_cache: TimestampedCache<IpAddr>,
     clock: C,
-    interface: Option<InterfaceName>,
     stats: ServerStats,
 }
 
@@ -205,7 +207,6 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         mut system_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
         keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
         clock: C,
-        interface: Option<InterfaceName>,
         network_wait_period: Duration,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
@@ -219,7 +220,6 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 system_receiver,
                 keyset,
                 clock,
-                interface,
                 client_cache: TimestampedCache::new(rate_limiting_cache_size),
                 stats,
             };
@@ -247,14 +247,19 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         let mut cur_socket = None;
         loop {
             // open socket if it is not already open
-            let socket = match &cur_socket {
+            let socket = match &mut cur_socket {
                 Some(socket) => socket,
                 None => {
                     let new_socket = loop {
-                        match UdpSocket::server(self.config.listen, self.interface).await {
+                        let socket_res = open_ip(
+                            self.config.listen,
+                            timestamped_socket::socket::GeneralTimestampMode::SoftwareRecv,
+                        );
+
+                        match socket_res {
                             Ok(socket) => break socket,
                             Err(error) => {
-                                warn!(?error, ?self.config.listen, ?self.interface, "Could not open server socket");
+                                warn!(?error, ?self.config.listen, "Could not open server socket");
                                 tokio::time::sleep(self.network_wait_period).await;
                             }
                         }
@@ -310,9 +315,9 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
     /// -> call [`Self::generate_response`] to further process the packet
     async fn handle_receive(
         &mut self,
-        socket: &ntp_udp::UdpSocket,
+        socket: &mut Socket<SocketAddr, Open>,
         buf: &[u8],
-        recv_res: std::io::Result<(usize, SocketAddr, Option<NtpTimestamp>)>,
+        recv_res: std::io::Result<RecvResult<SocketAddr>>,
     ) -> SocketConnection {
         match recv_res {
             Err(receive_error) => {
@@ -334,7 +339,11 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     }
                 }
             }
-            Ok((length, peer_addr, opt_timestamp)) => {
+            Ok(RecvResult {
+                bytes_read: length,
+                remote_addr: peer_addr,
+                timestamp: opt_timestamp,
+            }) => {
                 let Some(request_buf) = buf.get(..length) else {
                     warn!("length from socket is out of bounds. This is a bug!");
                     return SocketConnection::Reconnect;
@@ -345,9 +354,12 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                 let mut response_buf = [0; MAX_PACKET_SIZE];
                 let response_buf = &mut response_buf[..length];
 
-                let Some(response) =
-                    self.handle_packet(request_buf, response_buf, peer_addr, opt_timestamp)
-                else {
+                let Some(response) = self.handle_packet(
+                    request_buf,
+                    response_buf,
+                    peer_addr,
+                    opt_timestamp.map(convert_timestamp),
+                ) else {
                     return SocketConnection::KeepAlive;
                 };
 
@@ -617,6 +629,7 @@ mod tests {
         KeySetProvider, NoCipher, NtpDuration, NtpLeapIndicator, PollInterval, PollIntervalLimits,
         ReferenceId,
     };
+    use timestamped_socket::socket::GeneralTimestampMode;
 
     use crate::daemon::config::FilterList;
 
@@ -709,7 +722,6 @@ mod tests {
             system_receiver: system_snapshots,
             client_cache: TimestampedCache::new(rate_limiting_cache_size),
             clock,
-            interface: InterfaceName::DEFAULT,
             stats: Default::default(),
         }
     }
@@ -733,16 +745,15 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
-            InterfaceName::DEFAULT,
             Duration::from_secs(1),
         );
 
-        let mut socket = UdpSocket::client(
+        let socket = open_ip(
             "127.0.0.1:9001".parse().unwrap(),
-            "127.0.0.1:9000".parse().unwrap(),
+            GeneralTimestampMode::SoftwareRecv,
         )
-        .await
         .unwrap();
+        let mut socket = socket.connect("127.0.0.1:9000".parse().unwrap()).unwrap();
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
 
         let serialized = serialize_packet_unencryped(&packet);
@@ -779,16 +790,15 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
-            InterfaceName::DEFAULT,
             Duration::from_secs(1),
         );
 
-        let mut socket = UdpSocket::client(
+        let socket = open_ip(
             "127.0.0.1:9003".parse().unwrap(),
-            "127.0.0.1:9002".parse().unwrap(),
+            GeneralTimestampMode::SoftwareRecv,
         )
-        .await
         .unwrap();
+        let mut socket = socket.connect("127.0.0.1:9002".parse().unwrap()).unwrap();
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
 
         let serialized = serialize_packet_unencryped(&packet);
@@ -826,16 +836,15 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
-            InterfaceName::DEFAULT,
             Duration::from_secs(1),
         );
 
-        let mut socket = UdpSocket::client(
+        let socket = open_ip(
             "127.0.0.1:9005".parse().unwrap(),
-            "127.0.0.1:9004".parse().unwrap(),
+            GeneralTimestampMode::SoftwareRecv,
         )
-        .await
         .unwrap();
+        let mut socket = socket.connect("127.0.0.1:9004".parse().unwrap()).unwrap();
         let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
 
         let serialized = serialize_packet_unencryped(&packet);
@@ -867,16 +876,15 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
-            InterfaceName::DEFAULT,
             Duration::from_secs(1),
         );
 
-        let mut socket = UdpSocket::client(
+        let socket = open_ip(
             "127.0.0.1:9007".parse().unwrap(),
-            "127.0.0.1:9006".parse().unwrap(),
+            GeneralTimestampMode::SoftwareRecv,
         )
-        .await
         .unwrap();
+        let mut socket = socket.connect("127.0.0.1:9006".parse().unwrap()).unwrap();
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
 
         let serialized = serialize_packet_unencryped(&packet);
@@ -913,16 +921,15 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
-            InterfaceName::DEFAULT,
             Duration::from_secs(1),
         );
 
-        let mut socket = UdpSocket::client(
+        let socket = open_ip(
             "127.0.0.1:9009".parse().unwrap(),
-            "127.0.0.1:9008".parse().unwrap(),
+            GeneralTimestampMode::SoftwareRecv,
         )
-        .await
         .unwrap();
+        let mut socket = socket.connect("127.0.0.1:9008".parse().unwrap()).unwrap();
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
 
         let serialized = serialize_packet_unencryped(&packet);
@@ -960,16 +967,15 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
-            InterfaceName::DEFAULT,
             Duration::from_secs(1),
         );
 
-        let mut socket = UdpSocket::client(
+        let socket = open_ip(
             "127.0.0.1:9011".parse().unwrap(),
-            "127.0.0.1:9010".parse().unwrap(),
+            GeneralTimestampMode::SoftwareRecv,
         )
-        .await
         .unwrap();
+        let mut socket = socket.connect("127.0.0.1:9010".parse().unwrap()).unwrap();
         let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
 
         let serialized = serialize_packet_unencryped(&packet);
@@ -1001,16 +1007,15 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
-            InterfaceName::DEFAULT,
             Duration::from_secs(1),
         );
 
-        let mut socket = UdpSocket::client(
+        let socket = open_ip(
             "127.0.0.1:9013".parse().unwrap(),
-            "127.0.0.1:9012".parse().unwrap(),
+            GeneralTimestampMode::SoftwareRecv,
         )
-        .await
         .unwrap();
+        let mut socket = socket.connect("127.0.0.1:9012".parse().unwrap()).unwrap();
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
 
@@ -1079,16 +1084,15 @@ mod tests {
             system_snapshots,
             keyset,
             clock,
-            InterfaceName::DEFAULT,
             Duration::from_secs(1),
         );
 
-        let mut socket = UdpSocket::client(
+        let socket = open_ip(
             "127.0.0.1:9015".parse().unwrap(),
-            "127.0.0.1:9014".parse().unwrap(),
+            GeneralTimestampMode::SoftwareRecv,
         )
-        .await
         .unwrap();
+        let mut socket = socket.connect("127.0.0.1:9014".parse().unwrap()).unwrap();
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
 

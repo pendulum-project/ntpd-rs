@@ -1,22 +1,22 @@
-use std::{
-    future::Future,
-    marker::PhantomData,
-    net::{Ipv4Addr, Ipv6Addr, SocketAddr},
-    pin::Pin,
-};
+use std::{future::Future, marker::PhantomData, net::SocketAddr, pin::Pin};
 
 use ntp_proto::{
     IgnoreReason, Measurement, NtpClock, NtpInstant, NtpTimestamp, Peer, PeerNtsData, PeerSnapshot,
     PollError, ProtocolVersion, SourceDefaultsConfig, SynchronizationConfig, SystemSnapshot,
     Update,
 };
-use ntp_udp::{EnableTimestamps, InterfaceName, UdpSocket};
 use rand::{thread_rng, Rng};
+#[cfg(target_os = "linux")]
+use timestamped_socket::socket::open_interface_udp;
+use timestamped_socket::{
+    interface::InterfaceName,
+    socket::{connect_address, Connected, RecvResult, Socket},
+};
 use tracing::{debug, error, info, instrument, warn, Instrument, Span};
 
 use tokio::time::{Instant, Sleep};
 
-use super::{exitcode, spawn::PeerId};
+use super::{config::TimestampMode, exitcode, spawn::PeerId, util::convert_timestamp};
 
 /// Trait needed to allow injecting of futures other than `tokio::time::Sleep` for testing
 pub trait Wait: Future<Output = ()> {
@@ -57,7 +57,7 @@ pub(crate) struct PeerTask<C: 'static + NtpClock + Send, T: Wait> {
     _wait: PhantomData<T>,
     index: PeerId,
     clock: C,
-    socket: UdpSocket,
+    socket: Socket<SocketAddr, Connected>,
     channels: PeerChannels,
 
     peer: Peer,
@@ -88,7 +88,7 @@ enum PacketResult {
 
 impl<C, T> PeerTask<C, T>
 where
-    C: 'static + NtpClock + Send,
+    C: 'static + NtpClock + Send + Sync,
     T: Wait,
 {
     /// Set the next deadline for the poll interval based on current state
@@ -172,9 +172,11 @@ where
                     _ => {}
                 }
             }
-            Ok((_written, opt_send_timestamp)) => {
+            Ok(opt_send_timestamp) => {
                 // update the last_send_timestamp with the one given by the kernel, if available
-                self.last_send_timestamp = opt_send_timestamp.or(self.last_send_timestamp);
+                self.last_send_timestamp = opt_send_timestamp
+                    .map(convert_timestamp)
+                    .or(self.last_send_timestamp);
             }
         }
 
@@ -252,7 +254,7 @@ where
                 },
                 result = self.socket.recv(&mut buf) => {
                     tracing::debug!("accept packet");
-                    match accept_packet(result, &buf) {
+                    match accept_packet(result, &buf, &self.clock) {
                         AcceptResult::Accept(packet, recv_timestamp) => {
                             let send_timestamp = match self.last_send_timestamp {
                                 Some(ts) => ts,
@@ -284,7 +286,7 @@ where
 
 impl<C> PeerTask<C, Sleep>
 where
-    C: 'static + NtpClock + Send,
+    C: 'static + NtpClock + Send + Sync,
 {
     #[allow(clippy::too_many_arguments)]
     #[instrument(skip(clock, channels))]
@@ -293,7 +295,7 @@ where
         addr: SocketAddr,
         interface: Option<InterfaceName>,
         clock: C,
-        enable_timestamps: EnableTimestamps,
+        timestamp_mode: TimestampMode,
         network_wait_period: std::time::Duration,
         mut channels: PeerChannels,
         protocol_version: ProtocolVersion,
@@ -301,14 +303,20 @@ where
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(
             (async move {
-                let socket_fut = UdpSocket::client_with_timestamping(
-                    unspecified_for(addr),
-                    addr,
-                    interface,
-                    enable_timestamps,
-                );
+                let socket_res = match interface {
+                    #[cfg(target_os = "linux")]
+                    Some(interface) => {
+                        open_interface_udp(
+                            interface,
+                            0, /*lets os choose*/
+                            timestamp_mode.as_interface_mode(),
+                        )
+                        .and_then(|socket| socket.connect(addr))
+                    }
+                    _ => connect_address(addr, timestamp_mode.as_general_mode()),
+                };
 
-                let socket = match socket_fut.await {
+                let socket = match socket_res {
                     Ok(socket) => socket,
                     Err(error) => {
                         warn!(?error, "Could not open socket");
@@ -322,10 +330,10 @@ where
                     }
                 };
                 // Unwrap should be safe because we know the socket was bound to a local addres just before
-                let our_addr = socket.as_ref().local_addr().unwrap();
+                let our_addr = socket.local_addr().unwrap();
 
                 // Unwrap should be safe because we know the socket was connected to a remote peer just before
-                let source_addr = socket.as_ref().peer_addr().unwrap();
+                let source_addr = socket.peer_addr().unwrap();
 
                 let local_clock_time = NtpInstant::now();
                 let config_snapshot = *channels.source_defaults_config_receiver.borrow_and_update();
@@ -376,19 +384,26 @@ enum AcceptResult<'a> {
     NetworkGone,
 }
 
-fn unspecified_for(addr: SocketAddr) -> SocketAddr {
-    match addr {
-        SocketAddr::V4(_) => SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
-        SocketAddr::V6(_) => SocketAddr::from((Ipv6Addr::UNSPECIFIED, 0)),
-    }
-}
-
-fn accept_packet(
-    result: Result<(usize, SocketAddr, Option<NtpTimestamp>), std::io::Error>,
-    buf: &[u8],
-) -> AcceptResult {
+fn accept_packet<'a, C: NtpClock>(
+    result: Result<RecvResult<SocketAddr>, std::io::Error>,
+    buf: &'a [u8],
+    clock: &C,
+) -> AcceptResult<'a> {
     match result {
-        Ok((size, _, Some(recv_timestamp))) => {
+        Ok(RecvResult {
+            bytes_read: size,
+            timestamp,
+            ..
+        }) => {
+            let recv_timestamp = timestamp.map(convert_timestamp).unwrap_or_else(|| {
+                if let Ok(now) = clock.now() {
+                    debug!(?size, "received a packet without a timestamp, substituting");
+                    now
+                } else {
+                    panic!("Received packet without timestamp and couldn't substitute");
+                }
+            });
+
             // Note: packets are allowed to be bigger when including extensions.
             // we don't expect them, but the server may still send them. The
             // extra bytes are guaranteed safe to ignore. `recv` truncates the messages.
@@ -400,11 +415,6 @@ fn accept_packet(
             } else {
                 AcceptResult::Accept(&buf[0..size], recv_timestamp)
             }
-        }
-        Ok((size, _, None)) => {
-            warn!(?size, "received a packet without a timestamp");
-
-            AcceptResult::Ignore
         }
         Err(receive_error) => {
             warn!(?receive_error, "could not receive packet");
@@ -422,12 +432,15 @@ fn accept_packet(
 
 #[cfg(test)]
 mod tests {
-    use std::{io::Cursor, sync::Arc, time::Duration};
+    use std::{io::Cursor, net::Ipv4Addr, sync::Arc, time::Duration};
 
     use ntp_proto::{
         NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket, PollInterval, TimeSnapshot,
     };
+    use timestamped_socket::socket::{open_ip, GeneralTimestampMode};
     use tokio::sync::mpsc;
+
+    use crate::daemon::util::EPOCH_OFFSET;
 
     use super::*;
 
@@ -500,8 +513,6 @@ mod tests {
         }
     }
 
-    const EPOCH_OFFSET: u32 = (70 * 365 + 17) * 86400;
-
     #[derive(Debug, Clone, Default)]
     struct TestClock {}
 
@@ -559,25 +570,30 @@ mod tests {
         port_base: u16,
     ) -> (
         PeerTask<TestClock, T>,
-        UdpSocket,
+        Socket<SocketAddr, Connected>,
         mpsc::Receiver<MsgForSystem>,
     ) {
         // Note: Ports must be unique among tests to deal with parallelism, hence
         // port_base
-        let socket = UdpSocket::client(
+        let socket = open_ip(
             SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
-            SocketAddr::from((Ipv4Addr::LOCALHOST, port_base + 1)),
+            GeneralTimestampMode::SoftwareRecv,
         )
-        .await
         .unwrap();
-        let test_socket = UdpSocket::client(
+        let socket = socket
+            .connect(SocketAddr::from((Ipv4Addr::LOCALHOST, port_base + 1)))
+            .unwrap();
+
+        let test_socket = open_ip(
             SocketAddr::from((Ipv4Addr::LOCALHOST, port_base + 1)),
-            SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
+            GeneralTimestampMode::SoftwareRecv,
         )
-        .await
         .unwrap();
-        let our_addr = socket.as_ref().local_addr().unwrap();
-        let source_addr = socket.as_ref().peer_addr().unwrap();
+        let test_socket = test_socket
+            .connect(SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)))
+            .unwrap();
+        let our_addr = socket.local_addr().unwrap();
+        let source_addr = socket.peer_addr().unwrap();
 
         let (_, system_snapshot_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
         let (_, synchronization_config_receiver) =
@@ -630,7 +646,7 @@ mod tests {
 
         let mut buf = [0; 48];
         let network = socket.recv(&mut buf).await.unwrap();
-        assert_eq!(network.0, 48);
+        assert_eq!(network.bytes_read, 48);
 
         handle.abort();
     }
@@ -669,12 +685,21 @@ mod tests {
         poll_send.notify();
 
         let mut buf = [0; 48];
-        let (size, _, timestamp) = socket.recv(&mut buf).await.unwrap();
+        let RecvResult {
+            bytes_read: size,
+            timestamp,
+            ..
+        } = socket.recv(&mut buf).await.unwrap();
         assert_eq!(size, 48);
         let timestamp = timestamp.unwrap();
 
         let rec_packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap().0;
-        let send_packet = NtpPacket::timestamp_response(&system, rec_packet, timestamp, &clock);
+        let send_packet = NtpPacket::timestamp_response(
+            &system,
+            rec_packet,
+            convert_timestamp(timestamp),
+            &clock,
+        );
 
         let serialized = serialize_packet_unencryped(&send_packet);
         socket.send(&serialized).await.unwrap();
@@ -700,7 +725,11 @@ mod tests {
         poll_send.notify();
 
         let mut buf = [0; 48];
-        let (size, _, timestamp) = socket.recv(&mut buf).await.unwrap();
+        let RecvResult {
+            bytes_read: size,
+            timestamp,
+            ..
+        } = socket.recv(&mut buf).await.unwrap();
         assert_eq!(size, 48);
         assert!(timestamp.is_some());
 
