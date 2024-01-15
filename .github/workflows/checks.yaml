@@ -81,7 +81,7 @@ jobs:
         with:
           tool: cargo-llvm-cov
       - name: Rust cache
-        uses: Swatinem/rust-cache@3cf7f8cc28d1b4e7d01e3783be10a97d55d483c8
+        uses: Swatinem/rust-cache@23bce251a8cd2ffc3c1075eaa2367cf899916d84
         with:
             shared-key: "${{matrix.rust}}-${{matrix.target}}"
       - name: cargo build
@@ -223,7 +223,7 @@ jobs:
         if: ${{matrix.use_zig}}
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@3cf7f8cc28d1b4e7d01e3783be10a97d55d483c8
+        uses: Swatinem/rust-cache@23bce251a8cd2ffc3c1075eaa2367cf899916d84
         with:
             shared-key: "stable-${{matrix.target}}"
 
