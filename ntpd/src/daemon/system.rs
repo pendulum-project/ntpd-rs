@@ -647,7 +647,7 @@ pub struct ServerData {
 mod tests {
     use ntp_proto::{
         peer_snapshot, KeySetProvider, Measurement, NtpDuration, NtpInstant, NtpLeapIndicator,
-        NtpTimestamp, PollInterval,
+        NtpTimestamp,
     };
 
     use super::super::spawn::dummy::DummySpawner;
@@ -673,19 +673,7 @@ mod tests {
             Ok(NtpTimestamp::default())
         }
 
-        fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            Ok(())
-        }
-
         fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            Ok(())
-        }
-
-        fn ntp_algorithm_update(
-            &self,
-            _offset: NtpDuration,
-            _poll_interval: PollInterval,
-        ) -> Result<(), Self::Error> {
             Ok(())
         }
 

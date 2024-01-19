@@ -790,19 +790,7 @@ mod test {
             panic!("Shouldn't be called by peer");
         }
 
-        fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
-        }
-
         fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
-        }
-
-        fn ntp_algorithm_update(
-            &self,
-            _offset: NtpDuration,
-            _poll_interval: PollInterval,
-        ) -> Result<(), Self::Error> {
             panic!("Shouldn't be called by peer");
         }
 

@@ -1434,18 +1434,6 @@ mod tests {
             panic!("Unexpected clock steer");
         }
 
-        fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            panic!("Unexpected clock steer");
-        }
-
-        fn ntp_algorithm_update(
-            &self,
-            _offset: NtpDuration,
-            _poll_interval: PollInterval,
-        ) -> Result<(), Self::Error> {
-            panic!("Unexpected clock steer");
-        }
-
         fn error_estimate_update(
             &self,
             _est_error: NtpDuration,

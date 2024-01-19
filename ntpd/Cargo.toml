@@ -13,7 +13,6 @@ build = "build.rs"
 
 [dependencies]
 ntp-proto.workspace = true
-ntp-os-clock.workspace = true
 
 tokio = { workspace = true, features = ["rt-multi-thread", "io-util", "io-std", "fs", "sync", "net", "macros"] }
 tracing.workspace = true
@@ -24,6 +23,7 @@ rand.workspace = true
 libc.workspace = true
 async-trait.workspace = true
 timestamped-socket.workspace = true
+clock-steering.workspace = true
 
 serde.workspace = true
 serde_json.workspace = true

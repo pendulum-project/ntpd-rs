@@ -388,7 +388,7 @@ mod tests {
     use std::cell::RefCell;
 
     use crate::config::StepThreshold;
-    use crate::time_types::{NtpInstant, PollInterval};
+    use crate::time_types::NtpInstant;
 
     use super::*;
 
@@ -416,18 +416,6 @@ mod tests {
         }
 
         fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            Ok(())
-        }
-
-        fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            Ok(())
-        }
-
-        fn ntp_algorithm_update(
-            &self,
-            _offset: NtpDuration,
-            _poll_interval: PollInterval,
-        ) -> Result<(), Self::Error> {
             Ok(())
         }
 

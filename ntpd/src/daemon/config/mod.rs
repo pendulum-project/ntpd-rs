@@ -2,7 +2,7 @@ mod peer;
 mod server;
 pub mod subnet;
 
-use ntp_os_clock::DefaultNtpClock;
+use clock_steering::unix::UnixClock;
 use ntp_proto::{SourceDefaultsConfig, SynchronizationConfig};
 pub use peer::*;
 use serde::{Deserialize, Deserializer};
@@ -19,7 +19,7 @@ use timestamped_socket::interface::InterfaceName;
 use tokio::{fs::read_to_string, io};
 use tracing::{info, warn};
 
-use super::tracing::LogLevel;
+use super::{clock::NtpClockWrapper, tracing::LogLevel};
 
 const USAGE_MSG: &str = "\
 usage: ntp-daemon [-c PATH] [-l LOG_LEVEL]
@@ -208,7 +208,7 @@ impl NtpDaemonOptions {
     }
 }
 
-fn deserialize_ntp_clock<'de, D>(deserializer: D) -> Result<DefaultNtpClock, D::Error>
+fn deserialize_ntp_clock<'de, D>(deserializer: D) -> Result<NtpClockWrapper, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -216,10 +216,16 @@ where
 
     if let Some(path) = data {
         tracing::info!("using custom clock {path:?}");
-        DefaultNtpClock::from_path(&path).map_err(|e| serde::de::Error::custom(e.to_string()))
+        #[cfg(target_os = "linux")]
+        return Ok(NtpClockWrapper::new(
+            UnixClock::open(path).map_err(|e| serde::de::Error::custom(e.to_string()))?,
+        ));
+
+        #[cfg(not(target_os = "linux"))]
+        panic!("Custom clock paths not supported on this platform");
     } else {
         tracing::debug!("using REALTIME clock");
-        Ok(DefaultNtpClock::realtime())
+        Ok(NtpClockWrapper::new(UnixClock::CLOCK_REALTIME))
     }
 }
 
@@ -287,7 +293,7 @@ impl TimestampMode {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ClockConfig {
     #[serde(deserialize_with = "deserialize_ntp_clock", default)]
-    pub clock: DefaultNtpClock,
+    pub clock: NtpClockWrapper,
     #[serde(deserialize_with = "deserialize_interface", default)]
     pub interface: Option<InterfaceName>,
     pub timestamp_mode: TimestampMode,
