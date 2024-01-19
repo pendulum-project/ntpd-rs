@@ -6,7 +6,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use rustls::Certificate;
+use rustls::pki_types::CertificateDer;
 use serde::{de, Deserialize, Deserializer};
 
 use super::super::keyexchange::certificates_from_file;
@@ -26,12 +26,12 @@ pub struct NtsPeerConfig {
         default = "default_certificate_authorities",
         rename = "certificate-authority"
     )]
-    pub certificate_authorities: Arc<[Certificate]>,
+    pub certificate_authorities: Arc<[CertificateDer<'static>]>,
 }
 
 fn deserialize_certificate_authorities<'de, D>(
     deserializer: D,
-) -> Result<Arc<[Certificate]>, D::Error>
+) -> Result<Arc<[CertificateDer<'static>]>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -46,7 +46,7 @@ where
     }
 }
 
-fn default_certificate_authorities() -> Arc<[Certificate]> {
+fn default_certificate_authorities() -> Arc<[CertificateDer<'static>]> {
     Arc::from([])
 }
 
@@ -74,7 +74,7 @@ pub struct NtsPoolPeerConfig {
         default = "default_certificate_authorities",
         rename = "certificate-authority"
     )]
-    pub certificate_authorities: Arc<[Certificate]>,
+    pub certificate_authorities: Arc<[CertificateDer<'static>]>,
     #[serde(rename = "count", default = "max_peers_default")]
     pub max_peers: usize,
 }
