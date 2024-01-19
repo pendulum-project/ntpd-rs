@@ -18,7 +18,7 @@ __internal-fuzz = ["arbitrary", "__internal-api"]
 __internal-test = ["__internal-api"]
 __internal-api = []
 ntpv5 = []
-nts-pool = [ "rustls/dangerous_configuration" ]
+nts-pool = []
 
 [dependencies]
 # Note: md5 is needed to calculate ReferenceIDs for IPv6 addresses per RFC5905

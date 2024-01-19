@@ -47,10 +47,10 @@ timestamped-socket = "0.2.0"
 clock-steering = "0.2.0"
 
 # TLS
-rustls = "0.21.0"
-rustls-pemfile = "1.0"
-rustls-native-certs = "0.6.0"
-tokio-rustls = "0.24.1" # testing only
+rustls = "0.22.0"
+rustls-pemfile = "2.0"
+rustls-native-certs = "0.7.0"
+tokio-rustls = "0.25.0" # testing only
 
 # crypto
 aead = "0.5.0"

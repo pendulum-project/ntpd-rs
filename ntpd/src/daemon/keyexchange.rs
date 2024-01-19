@@ -11,7 +11,7 @@ use std::{
 use ntp_proto::{
     KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, KeySet,
 };
-use rustls::{Certificate, PrivateKey};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
     net::TcpListener,
@@ -22,20 +22,20 @@ use super::config::NtsKeConfig;
 use super::exitcode;
 
 fn build_client_config(
-    extra_certificates: &[Certificate],
+    extra_certificates: &[CertificateDer],
 ) -> Result<rustls::ClientConfig, KeyExchangeError> {
     let mut roots = rustls::RootCertStore::empty();
     for cert in rustls_native_certs::load_native_certs()? {
-        let cert = rustls::Certificate(cert.0);
-        roots.add(&cert).map_err(KeyExchangeError::Certificate)?;
-    }
-
-    for cert in extra_certificates {
         roots.add(cert).map_err(KeyExchangeError::Certificate)?;
     }
 
+    for cert in extra_certificates {
+        roots
+            .add(cert.clone())
+            .map_err(KeyExchangeError::Certificate)?;
+    }
+
     Ok(rustls::ClientConfig::builder()
-        .with_safe_defaults()
         .with_root_certificates(roots)
         .with_no_client_auth())
 }
@@ -43,7 +43,7 @@ fn build_client_config(
 pub(crate) async fn key_exchange_client(
     server_name: String,
     port: u16,
-    extra_certificates: &[Certificate],
+    extra_certificates: &[CertificateDer<'_>],
 ) -> Result<KeyExchangeResult, KeyExchangeError> {
     let socket = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
     let config = build_client_config(extra_certificates)?;
@@ -55,7 +55,7 @@ pub(crate) async fn key_exchange_client(
 pub(crate) async fn key_exchange_client_with_denied_servers(
     server_name: String,
     port: u16,
-    extra_certificates: &[Certificate],
+    extra_certificates: &[CertificateDer<'_>],
     denied_servers: impl IntoIterator<Item = String>,
 ) -> Result<KeyExchangeResult, KeyExchangeError> {
     let socket = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
@@ -104,14 +104,12 @@ async fn run_nts_ke(
         ))
     })?;
 
-    let cert_chain: Vec<rustls::Certificate> =
-        rustls_pemfile::certs(&mut std::io::BufReader::new(certificate_chain_file))?
-            .into_iter()
-            .map(rustls::Certificate)
-            .collect();
+    let cert_chain: Vec<rustls::pki_types::CertificateDer> =
+        rustls_pemfile::certs(&mut std::io::BufReader::new(certificate_chain_file))
+            .collect::<std::io::Result<Vec<rustls::pki_types::CertificateDer>>>()?;
 
     #[cfg_attr(not(feature = "unstable_nts-pool"), allow(unused_mut))]
-    let mut pool_certs: Vec<rustls::Certificate> = Vec::new();
+    let mut pool_certs: Vec<rustls::pki_types::CertificateDer> = Vec::new();
     #[cfg(feature = "unstable_nts-pool")]
     for client_cert in &nts_ke_config.authorized_pool_server_certificates {
         let pool_certificate_file = std::fs::File::open(client_cert).map_err(|e| {
@@ -120,10 +118,12 @@ async fn run_nts_ke(
                 client_cert, e
             ))
         })?;
-        let mut certs = rustls_pemfile::certs(&mut std::io::BufReader::new(pool_certificate_file))?;
+        let mut certs: Vec<_> =
+            rustls_pemfile::certs(&mut std::io::BufReader::new(pool_certificate_file))
+                .collect::<std::io::Result<Vec<_>>>()?;
         // forbid certificate chains at this point
         if certs.len() == 1 {
-            pool_certs.push(rustls::Certificate(certs.pop().unwrap()))
+            pool_certs.push(certs.pop().unwrap())
         } else {
             return Err(io_error(&format!(
                 "pool certificate file at `{:?}` should contain exactly one certificate",
@@ -132,23 +132,24 @@ async fn run_nts_ke(
         }
     }
 
-    let private_key = private_key_from_bufread(&mut std::io::BufReader::new(private_key_file))?
+    let private_key = rustls_pemfile::private_key(&mut std::io::BufReader::new(private_key_file))?
         .ok_or(io_error("could not parse private key"))?;
 
     key_exchange_server(keyset, nts_ke_config, cert_chain, pool_certs, private_key).await
 }
 
 fn build_server_config(
-    certificate_chain: Vec<Certificate>,
-    private_key: PrivateKey,
+    certificate_chain: Vec<CertificateDer<'static>>,
+    private_key: PrivateKeyDer<'static>,
 ) -> std::io::Result<Arc<rustls::ServerConfig>> {
     let mut config = rustls::ServerConfig::builder()
-        .with_safe_defaults()
         .with_client_cert_verifier(Arc::new(
             #[cfg(not(feature = "unstable_nts-pool"))]
             rustls::server::NoClientAuth,
             #[cfg(feature = "unstable_nts-pool")]
-            ntp_proto::tls_utils::AllowAnyAnonymousOrCertificateBearingClient,
+            ntp_proto::tls_utils::AllowAnyAnonymousOrCertificateBearingClient::new(
+                rustls::crypto::ring::default_provider(),
+            ),
         ))
         .with_single_cert(certificate_chain, private_key)
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
@@ -162,9 +163,9 @@ fn build_server_config(
 async fn key_exchange_server(
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     ke_config: NtsKeConfig,
-    certificate_chain: Vec<Certificate>,
-    pool_certs: Vec<Certificate>,
-    private_key: PrivateKey,
+    certificate_chain: Vec<CertificateDer<'static>>,
+    pool_certs: Vec<CertificateDer<'static>>,
+    private_key: PrivateKeyDer<'static>,
 ) -> std::io::Result<()> {
     let listener = TcpListener::bind(&ke_config.listen).await?;
 
@@ -351,7 +352,7 @@ where
         keyset: Arc<KeySet>,
         ntp_port: Option<u16>,
         ntp_server: Option<String>,
-        pool_certs: Arc<[rustls::Certificate]>,
+        pool_certs: Arc<[rustls::pki_types::CertificateDer<'static>]>,
     ) -> Result<Self, KeyExchangeError> {
         let data = BoundKeyExchangeServerData {
             io,
@@ -368,7 +369,7 @@ where
         keyset: Arc<KeySet>,
         ntp_port: Option<u16>,
         ntp_server: Option<String>,
-        pool_certs: Arc<[rustls::Certificate]>,
+        pool_certs: Arc<[rustls::pki_types::CertificateDer<'static>]>,
     ) -> Result<(), KeyExchangeError> {
         let this = Self::new(io, config, keyset, ntp_port, ntp_server, pool_certs)?;
 
@@ -528,37 +529,17 @@ impl<'a, 'b, T: AsyncRead + Unpin> Read for ReaderAdapter<'a, 'b, T> {
     }
 }
 
-pub(crate) fn certificates_from_file(path: &Path) -> std::io::Result<Vec<Certificate>> {
+pub(crate) fn certificates_from_file(path: &Path) -> std::io::Result<Vec<CertificateDer<'static>>> {
     let file = std::fs::File::open(path)?;
     let reader = BufReader::new(file);
 
-    Ok(certificates_from_bufread(reader))
+    certificates_from_bufread(reader)
 }
 
-fn certificates_from_bufread(mut reader: impl BufRead) -> Vec<Certificate> {
-    rustls_pemfile::certs(&mut reader)
-        .unwrap()
-        .iter()
-        .map(|v| rustls::Certificate(v.clone()))
-        .collect()
-}
-
-fn private_key_from_bufread(
+fn certificates_from_bufread(
     mut reader: impl BufRead,
-) -> std::io::Result<Option<rustls::PrivateKey>> {
-    use rustls_pemfile::Item;
-
-    loop {
-        match rustls_pemfile::read_one(&mut reader)? {
-            Some(Item::RSAKey(key)) => return Ok(Some(rustls::PrivateKey(key))),
-            Some(Item::PKCS8Key(key)) => return Ok(Some(rustls::PrivateKey(key))),
-            Some(Item::ECKey(key)) => return Ok(Some(rustls::PrivateKey(key))),
-            None => break,
-            _ => {}
-        }
-    }
-
-    Ok(None)
+) -> std::io::Result<Vec<CertificateDer<'static>>> {
+    rustls_pemfile::certs(&mut reader).collect()
 }
 
 #[cfg(test)]
@@ -573,7 +554,7 @@ mod tests {
     #[test]
     fn nos_nl_pem() {
         let input = include_bytes!("../../testdata/certificates/nos-nl.pem");
-        let certificates = certificates_from_bufread(input.as_slice());
+        let certificates = certificates_from_bufread(input.as_slice()).unwrap();
 
         assert_eq!(certificates.len(), 1);
     }
@@ -581,7 +562,7 @@ mod tests {
     #[test]
     fn nos_nl_chain_pem() {
         let input = include_bytes!("../../testdata/certificates/nos-nl-chain.pem");
-        let certificates = certificates_from_bufread(input.as_slice());
+        let certificates = certificates_from_bufread(input.as_slice()).unwrap();
 
         assert_eq!(certificates.len(), 3);
     }
@@ -589,23 +570,33 @@ mod tests {
     #[test]
     fn parse_private_keys() {
         let input = include_bytes!("../../test-keys/end.key");
-        let _ = private_key_from_bufread(input.as_slice()).unwrap().unwrap();
+        let _ = rustls_pemfile::private_key(&mut input.as_slice())
+            .unwrap()
+            .unwrap();
 
         let input = include_bytes!("../../test-keys/testca.key");
-        let _ = private_key_from_bufread(input.as_slice()).unwrap().unwrap();
+        let _ = rustls_pemfile::private_key(&mut input.as_slice())
+            .unwrap()
+            .unwrap();
 
         // openssl does no longer seem to want to generate this format
         // so we use https://github.com/rustls/pemfile/blob/main/tests/data/rsa1024.pkcs1.pem
         let input = include_bytes!("../../test-keys/rsa_key.pem");
-        let _ = private_key_from_bufread(input.as_slice()).unwrap().unwrap();
+        let _ = rustls_pemfile::private_key(&mut input.as_slice())
+            .unwrap()
+            .unwrap();
 
         // openssl ecparam -name prime256v1 -genkey -noout -out ec_key.pem
         let input = include_bytes!("../../test-keys/ec_key.pem");
-        let _ = private_key_from_bufread(input.as_slice()).unwrap().unwrap();
+        let _ = rustls_pemfile::private_key(&mut input.as_slice())
+            .unwrap()
+            .unwrap();
 
         // openssl genpkey -algorithm EC -out pkcs8_key.pem -pkeyopt ec_paramgen_curve:prime256v1
         let input = include_bytes!("../../test-keys/pkcs8_key.pem");
-        let _ = private_key_from_bufread(input.as_slice()).unwrap().unwrap();
+        let _ = rustls_pemfile::private_key(&mut input.as_slice())
+            .unwrap()
+            .unwrap();
     }
 
     #[tokio::test]
@@ -636,7 +627,7 @@ mod tests {
         let result = key_exchange_client(
             "localhost".to_string(),
             5431,
-            &certificates_from_bufread(BufReader::new(Cursor::new(ca))),
+            &certificates_from_bufread(BufReader::new(Cursor::new(ca))).unwrap(),
         )
         .await
         .unwrap();
@@ -673,7 +664,7 @@ mod tests {
         let result = key_exchange_client(
             "localhost".to_string(),
             5432,
-            &certificates_from_bufread(BufReader::new(Cursor::new(ca))),
+            &certificates_from_bufread(BufReader::new(Cursor::new(ca))).unwrap(),
         )
         .await
         .unwrap();
@@ -745,10 +736,13 @@ mod tests {
 
         tokio::spawn(async move {
             let cc = include_bytes!("../../test-keys/end.fullchain.pem");
-            let certificate_chain = certificates_from_bufread(BufReader::new(Cursor::new(cc)));
+            let certificate_chain =
+                certificates_from_bufread(BufReader::new(Cursor::new(cc))).unwrap();
 
             let pk = include_bytes!("../../test-keys/end.key");
-            let private_key = private_key_from_bufread(pk.as_slice()).unwrap().unwrap();
+            let private_key = rustls_pemfile::private_key(&mut pk.as_slice())
+                .unwrap()
+                .unwrap();
 
             let config = build_server_config(certificate_chain, private_key).unwrap();
 
@@ -770,17 +764,20 @@ mod tests {
         });
 
         let ca = include_bytes!("../../test-keys/testca.pem");
-        let extra_certificates = &certificates_from_bufread(BufReader::new(Cursor::new(ca)));
+        let extra_certificates =
+            &certificates_from_bufread(BufReader::new(Cursor::new(ca))).unwrap();
 
         key_exchange_client("localhost".to_string(), port, extra_certificates).await
     }
 
     async fn run_server(listener: tokio::net::TcpListener) -> Result<(), KeyExchangeError> {
         let cc = include_bytes!("../../test-keys/end.fullchain.pem");
-        let certificate_chain = certificates_from_bufread(BufReader::new(Cursor::new(cc)));
+        let certificate_chain = certificates_from_bufread(BufReader::new(Cursor::new(cc)))?;
 
         let pk = include_bytes!("../../test-keys/end.key");
-        let private_key = private_key_from_bufread(pk.as_slice()).unwrap().unwrap();
+        let private_key = rustls_pemfile::private_key(&mut pk.as_slice())
+            .unwrap()
+            .unwrap();
 
         let config = build_server_config(certificate_chain, private_key).unwrap();
         let pool_certs = Arc::<[_]>::from(vec![]);
@@ -802,13 +799,15 @@ mod tests {
             .unwrap();
 
         let ca = include_bytes!("../../test-keys/testca.pem");
-        let extra_certificates = &certificates_from_bufread(BufReader::new(Cursor::new(ca)));
+        let extra_certificates =
+            &certificates_from_bufread(BufReader::new(Cursor::new(ca))).unwrap();
 
         let config = build_client_config(extra_certificates).unwrap();
 
-        let domain = rustls::ServerName::try_from(server_name)
+        let domain = rustls::pki_types::ServerName::try_from(server_name)
             .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid dnsname"))
-            .unwrap();
+            .unwrap()
+            .to_owned();
 
         let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
         connector.connect(domain, stream).await.unwrap()

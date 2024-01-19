@@ -4,6 +4,8 @@ use std::{
     sync::Arc,
 };
 
+use rustls::pki_types::ServerName;
+
 use crate::{
     cookiestash::CookieStash,
     keyset::{DecodedServerCookie, KeySet},
@@ -664,7 +666,7 @@ pub enum KeyExchangeError {
     #[error("{0}")]
     Certificate(rustls::Error),
     #[error("{0}")]
-    DnsName(#[from] rustls::client::InvalidDnsNameError),
+    DnsName(#[from] rustls::pki_types::InvalidDnsNameError),
     #[error("Incomplete response")]
     IncompleteResponse,
 }
@@ -1184,7 +1186,7 @@ impl KeyExchangeClient {
         // TLS only works when the server name is a DNS name; an IP address does not work
         let tls_connection = rustls::ClientConnection::new(
             Arc::new(tls_config),
-            (server_name.as_ref() as &str).try_into()?,
+            ServerName::try_from(&server_name as &str)?.to_owned(),
         )?;
 
         Ok(KeyExchangeClient {
@@ -1480,7 +1482,7 @@ pub struct KeyExchangeServer {
     ntp_port: Option<u16>,
     ntp_server: Option<String>,
     #[cfg(feature = "nts-pool")]
-    pool_certificates: Arc<[rustls::Certificate]>,
+    pool_certificates: Arc<[rustls::pki_types::CertificateDer<'static>]>,
 }
 
 #[derive(Debug)]
@@ -1704,7 +1706,7 @@ impl KeyExchangeServer {
         keyset: Arc<KeySet>,
         ntp_port: Option<u16>,
         ntp_server: Option<String>,
-        pool_certificates: Arc<[rustls::Certificate]>,
+        pool_certificates: Arc<[rustls::pki_types::CertificateDer<'static>]>,
     ) -> Result<Self, KeyExchangeError> {
         // Ensure we send only ntske/1 as alpn
         debug_assert_eq!(tls_config.alpn_protocols, &[b"ntske/1".to_vec()]);
@@ -2762,38 +2764,30 @@ mod test {
 
     #[test]
     fn test_keyexchange_client() {
-        let cert_chain: Vec<rustls::Certificate> = rustls_pemfile::certs(
+        let cert_chain: Vec<rustls::pki_types::CertificateDer> = rustls_pemfile::certs(
             &mut std::io::BufReader::new(include_bytes!("../test-keys/end.fullchain.pem") as &[u8]),
         )
-        .unwrap()
-        .into_iter()
-        .map(rustls::Certificate)
+        .map(|res| res.unwrap())
         .collect();
-        let key_der = rustls::PrivateKey(
-            rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(include_bytes!(
-                "../test-keys/end.key"
-            )
-                as &[u8]))
-            .unwrap()
-            .into_iter()
-            .next()
-            .unwrap(),
-        );
+        let key_der = rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(
+            include_bytes!("../test-keys/end.key") as &[u8],
+        ))
+        .map(|res| res.unwrap())
+        .next()
+        .unwrap();
         let serverconfig = rustls::ServerConfig::builder()
-            .with_safe_defaults()
             .with_no_client_auth()
-            .with_single_cert(cert_chain, key_der)
+            .with_single_cert(cert_chain, key_der.into())
             .unwrap();
         let mut root_store = rustls::RootCertStore::empty();
         root_store.add_parsable_certificates(
-            &rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
+            rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
                 "../test-keys/testca.pem"
             ) as &[u8]))
-            .unwrap(),
+            .map(|res| res.unwrap()),
         );
 
         let clientconfig = rustls::ClientConfig::builder()
-            .with_safe_defaults()
             .with_root_certificates(root_store)
             .with_no_client_auth();
 
@@ -2840,40 +2834,35 @@ mod test {
     }
 
     fn client_server_pair(client_type: ClientType) -> (KeyExchangeClient, KeyExchangeServer) {
-        let cert_chain: Vec<rustls::Certificate> = rustls_pemfile::certs(
+        let cert_chain: Vec<rustls::pki_types::CertificateDer> = rustls_pemfile::certs(
             &mut std::io::BufReader::new(include_bytes!("../test-keys/end.fullchain.pem") as &[u8]),
         )
-        .unwrap()
-        .into_iter()
-        .map(rustls::Certificate)
+        .map(|res| res.unwrap())
         .collect();
-        let key_der = rustls::PrivateKey(
-            rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(include_bytes!(
-                "../test-keys/end.key"
-            )
-                as &[u8]))
-            .unwrap()
-            .into_iter()
-            .next()
-            .unwrap(),
-        );
+        let key_der = rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(
+            include_bytes!("../test-keys/end.key") as &[u8],
+        ))
+        .map(|res| res.unwrap())
+        .next()
+        .unwrap();
         let mut root_store = rustls::RootCertStore::empty();
         root_store.add_parsable_certificates(
-            &rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
+            rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
                 "../test-keys/testca.pem"
             ) as &[u8]))
-            .unwrap(),
+            .map(|res| res.unwrap()),
         );
 
         let mut serverconfig = rustls::ServerConfig::builder()
-            .with_safe_defaults()
             .with_client_cert_verifier(Arc::new(
                 #[cfg(not(feature = "nts-pool"))]
                 rustls::server::NoClientAuth,
                 #[cfg(feature = "nts-pool")]
-                crate::tls_utils::AllowAnyAnonymousOrCertificateBearingClient,
+                crate::tls_utils::AllowAnyAnonymousOrCertificateBearingClient::new(
+                    rustls::crypto::ring::default_provider(),
+                ),
             ))
-            .with_single_cert(cert_chain.clone(), key_der.clone())
+            .with_single_cert(cert_chain.clone(), key_der.clone_key().into())
             .unwrap();
 
         serverconfig.alpn_protocols.clear();
@@ -2881,24 +2870,20 @@ mod test {
 
         let clientconfig = match client_type {
             ClientType::Uncertified => rustls::ClientConfig::builder()
-                .with_safe_defaults()
                 .with_root_certificates(root_store)
                 .with_no_client_auth(),
             ClientType::Certified => rustls::ClientConfig::builder()
-                .with_safe_defaults()
                 .with_root_certificates(root_store)
-                .with_client_auth_cert(cert_chain, key_der)
+                .with_client_auth_cert(cert_chain, key_der.into())
                 .unwrap(),
         };
 
         let keyset = KeySetProvider::new(8).get();
 
-        let pool_cert: Vec<rustls::Certificate> = rustls_pemfile::certs(
+        let pool_cert: Vec<rustls::pki_types::CertificateDer> = rustls_pemfile::certs(
             &mut std::io::BufReader::new(include_bytes!("../test-keys/end.pem") as &[u8]),
         )
-        .unwrap()
-        .into_iter()
-        .map(rustls::Certificate)
+        .map(|res| res.unwrap())
         .collect();
         assert!(pool_cert.len() == 1);
 
