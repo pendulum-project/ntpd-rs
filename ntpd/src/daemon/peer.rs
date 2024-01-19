@@ -16,7 +16,7 @@ use tracing::{debug, error, info, instrument, warn, Instrument, Span};
 
 use tokio::time::{Instant, Sleep};
 
-use super::{config::TimestampMode, exitcode, spawn::PeerId, util::convert_timestamp};
+use super::{config::TimestampMode, exitcode, spawn::PeerId, util::convert_net_timestamp};
 
 /// Trait needed to allow injecting of futures other than `tokio::time::Sleep` for testing
 pub trait Wait: Future<Output = ()> {
@@ -175,7 +175,7 @@ where
             Ok(opt_send_timestamp) => {
                 // update the last_send_timestamp with the one given by the kernel, if available
                 self.last_send_timestamp = opt_send_timestamp
-                    .map(convert_timestamp)
+                    .map(convert_net_timestamp)
                     .or(self.last_send_timestamp);
             }
         }
@@ -395,7 +395,7 @@ fn accept_packet<'a, C: NtpClock>(
             timestamp,
             ..
         }) => {
-            let recv_timestamp = timestamp.map(convert_timestamp).unwrap_or_else(|| {
+            let recv_timestamp = timestamp.map(convert_net_timestamp).unwrap_or_else(|| {
                 if let Ok(now) = clock.now() {
                     debug!(?size, "received a packet without a timestamp, substituting");
                     now
@@ -434,9 +434,7 @@ fn accept_packet<'a, C: NtpClock>(
 mod tests {
     use std::{io::Cursor, net::Ipv4Addr, sync::Arc, time::Duration};
 
-    use ntp_proto::{
-        NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket, PollInterval, TimeSnapshot,
-    };
+    use ntp_proto::{NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket, TimeSnapshot};
     use timestamped_socket::socket::{open_ip, GeneralTimestampMode};
     use tokio::sync::mpsc;
 
@@ -537,19 +535,7 @@ mod tests {
             panic!("Shouldn't be called by peer");
         }
 
-        fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
-        }
-
         fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
-        }
-
-        fn ntp_algorithm_update(
-            &self,
-            _offset: NtpDuration,
-            _poll_interval: PollInterval,
-        ) -> Result<(), Self::Error> {
             panic!("Shouldn't be called by peer");
         }
 
@@ -697,7 +683,7 @@ mod tests {
         let send_packet = NtpPacket::timestamp_response(
             &system,
             rec_packet,
-            convert_timestamp(timestamp),
+            convert_net_timestamp(timestamp),
             &clock,
         );
 

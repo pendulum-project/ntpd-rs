@@ -1,6 +1,6 @@
 use crate::{
     packet::NtpLeapIndicator,
-    time_types::{NtpDuration, NtpTimestamp, PollInterval},
+    time_types::{NtpDuration, NtpTimestamp},
 };
 
 /// Interface for a clock settable by the ntp implementation.
@@ -20,16 +20,9 @@ pub trait NtpClock: Clone + Send + 'static {
     fn step_clock(&self, offset: NtpDuration) -> Result<NtpTimestamp, Self::Error>;
 
     // A clock can have a built in NTP clock discipline algorithm
-    // that does more processing on the offsets it receives. These
-    // functions enable/disable that discipline, and allow us to
-    // feed it with the information it needs to function
+    // that does more processing on the offsets it receives. This
+    // functions disables that discipline.
     fn disable_ntp_algorithm(&self) -> Result<(), Self::Error>;
-    fn enable_ntp_algorithm(&self) -> Result<(), Self::Error>;
-    fn ntp_algorithm_update(
-        &self,
-        offset: NtpDuration,
-        poll_interval: PollInterval,
-    ) -> Result<(), Self::Error>;
 
     // Provide the system with our current best estimates for
     // the statistical error of the clock (est_error), and

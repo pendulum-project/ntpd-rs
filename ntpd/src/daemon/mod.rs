@@ -1,3 +1,4 @@
+mod clock;
 pub mod config;
 mod ipfilter;
 pub mod keyexchange;

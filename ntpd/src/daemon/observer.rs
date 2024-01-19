@@ -139,8 +139,8 @@ mod tests {
     #[cfg(feature = "unstable_ntpv5")]
     use ntp_proto::v5::{BloomFilter, ServerId};
     use ntp_proto::{
-        NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, PollInterval, PollIntervalLimits,
-        Reach, ReferenceId, TimeSnapshot,
+        NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, PollIntervalLimits, Reach,
+        ReferenceId, TimeSnapshot,
     };
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
@@ -164,19 +164,7 @@ mod tests {
             Ok(NtpTimestamp::default())
         }
 
-        fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            Ok(())
-        }
-
         fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            Ok(())
-        }
-
-        fn ntp_algorithm_update(
-            &self,
-            _offset: NtpDuration,
-            _poll_interval: PollInterval,
-        ) -> Result<(), Self::Error> {
             Ok(())
         }
 

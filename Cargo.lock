@@ -139,6 +139,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "clock-steering"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8078994a6ef3fefa4c9cc2e69af9ee94cac7804e4ec065d794cd36728c12c02"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "cmac"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -339,15 +348,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ntp-os-clock"
-version = "1.1.1"
-dependencies = [
- "libc",
- "ntp-proto",
- "tracing",
-]
-
-[[package]]
 name = "ntp-proto"
 version = "1.1.1"
 dependencies = [
@@ -369,8 +369,8 @@ name = "ntpd"
 version = "1.1.1"
 dependencies = [
  "async-trait",
+ "clock-steering",
  "libc",
- "ntp-os-clock",
  "ntp-proto",
  "rand",
  "rustls",

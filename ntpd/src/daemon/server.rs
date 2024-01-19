@@ -21,7 +21,7 @@ use tracing::{debug, instrument, trace, warn};
 
 use super::{
     config::{FilterAction, ServerConfig},
-    util::convert_timestamp,
+    util::convert_net_timestamp,
 };
 
 // Maximum size of udp packet we handle
@@ -358,7 +358,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     request_buf,
                     response_buf,
                     peer_addr,
-                    opt_timestamp.map(convert_timestamp),
+                    opt_timestamp.map(convert_net_timestamp),
                 ) else {
                     return SocketConnection::KeepAlive;
                 };
@@ -661,19 +661,7 @@ mod tests {
             panic!("Shouldn't be called by peer");
         }
 
-        fn enable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
-        }
-
         fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
-        }
-
-        fn ntp_algorithm_update(
-            &self,
-            _offset: NtpDuration,
-            _poll_interval: PollInterval,
-        ) -> Result<(), Self::Error> {
             panic!("Shouldn't be called by peer");
         }
 
