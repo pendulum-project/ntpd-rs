@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.1.1-alpha.20240119] - 2024-01-19
+## [1.1.1] - 2024-01-24
 
 ### Added
 - A work in progress implementation for experimental NTS pools was added
@@ -183,7 +183,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
-[1.1.1-alpha.20240119]: https://github.com/pendulum-project/ntpd-rs/compare/v1.1.0...v1.1.1-alpha.20240119
+[1.1.1]: https://github.com/pendulum-project/ntpd-rs/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.7...v1.0.0
 [0.3.7]: https://github.com/pendulum-project/ntpd-rs/compare/v0.3.6...v0.3.7
