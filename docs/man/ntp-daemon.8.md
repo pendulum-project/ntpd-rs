@@ -1,5 +1,5 @@
 <!-- ---
-title: NTP-DAEMON(8) ntpd-rs 1.1.1-alpha.20240119 | ntpd-rs
+title: NTP-DAEMON(8) ntpd-rs 1.1.1 | ntpd-rs
 --- -->
 
 # NAME
