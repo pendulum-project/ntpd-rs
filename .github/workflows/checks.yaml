@@ -269,9 +269,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
-    - uses: EmbarkStudios/cargo-deny-action@2fad0807be2b6f4402fd9dd4225aa4e91b9ad879
+    - uses: EmbarkStudios/cargo-deny-action@748857f070c53667b2b8de8bdf468ac75a6b757c
       with:
         arguments: --workspace --all-features
-    - uses: EmbarkStudios/cargo-deny-action@2fad0807be2b6f4402fd9dd4225aa4e91b9ad879
+    - uses: EmbarkStudios/cargo-deny-action@748857f070c53667b2b8de8bdf468ac75a6b757c
       with:
         arguments: --manifest-path ./fuzz/Cargo.toml --all-features
