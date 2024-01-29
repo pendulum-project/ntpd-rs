@@ -73,7 +73,7 @@ jobs:
           toolchain: "${TARGET_RUST_VERSION}"
           targets: "${{ matrix.target }}"
       - name: Install cross-compilation tools
-        uses: taiki-e/setup-cross-toolchain-action@e0fdbe18d70a8bbed8a44d3319a1842949a63671
+        uses: taiki-e/setup-cross-toolchain-action@c31d54d08f2ab1b6c35447b32b3f0dcb829a5b4f
         with:
           target: ${{ matrix.target }}
       - name: Install cargo-llvm-cov
