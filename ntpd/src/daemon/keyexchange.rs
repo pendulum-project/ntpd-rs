@@ -693,8 +693,8 @@ mod tests {
 
         let (_sender, keyset) = tokio::sync::watch::channel(keyset);
         let nts_ke_config = NtsKeConfig {
-            certificate_chain_path: PathBuf::from("../test-keys/end.fullchain.pem"),
-            private_key_path: PathBuf::from("../test-keys/end.key"),
+            certificate_chain_path: PathBuf::from("test-keys/end.fullchain.pem"),
+            private_key_path: PathBuf::from("test-keys/end.key"),
             authorized_pool_server_certificates: certs.iter().map(PathBuf::from).collect(),
             key_exchange_timeout_ms: 1000,
             listen: "0.0.0.0:5433".parse().unwrap(),
