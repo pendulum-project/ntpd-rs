@@ -2894,7 +2894,7 @@ mod test {
         let keyset = KeySetProvider::new(8).get();
 
         let pool_cert: Vec<rustls::Certificate> = rustls_pemfile::certs(
-            &mut std::io::BufReader::new(include_bytes!("../../test-keys/end.pem") as &[u8]),
+            &mut std::io::BufReader::new(include_bytes!("../test-keys/end.pem") as &[u8]),
         )
         .unwrap()
         .into_iter()

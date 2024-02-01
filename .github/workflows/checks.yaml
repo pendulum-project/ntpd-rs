@@ -130,10 +130,10 @@ jobs:
         run: cargo run --bin ntp-ctl -- -c ./ntp.toml validate
       - name: ./ntp.server.toml
         run: cargo run --bin ntp-ctl -- -c ./ntp.server.toml validate
-      - name: ./test-keys/unsafe.nts.client.toml
-        run: cargo run --bin ntp-ctl -- -c ./test-keys/unsafe.nts.client.toml validate
-      - name: ./test-keys/unsafe.nts.server.toml
-        run: cargo run --bin ntp-ctl -- -c ./test-keys/unsafe.nts.server.toml validate
+      - name: ./ntp-proto/test-keys/unsafe.nts.client.toml
+        run: cargo run --bin ntp-ctl -- -c ./ntp-proto/test-keys/unsafe.nts.client.toml validate
+      - name: ./ntp-proto/test-keys/unsafe.nts.server.toml
+        run: cargo run --bin ntp-ctl -- -c ./ntp-proto/test-keys/unsafe.nts.server.toml validate
       - name: ./config/ntp.demobilize.toml
         run: cargo run --bin ntp-ctl -- -c ./config/ntp.demobilize.toml validate
       - name: ./pkg/common/ntp.toml.default
