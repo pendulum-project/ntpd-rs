@@ -45,11 +45,11 @@ mod exports {
 
     #[cfg(feature = "__internal-fuzz")]
     pub use super::keyset::test_cookie;
-    #[cfg(feature = "__internal-fuzz")]
+    #[cfg(any(feature = "__internal-fuzz", feature = "__internal-test"))]
     pub use super::packet::ExtensionField;
     pub use super::packet::{
-        Cipher, CipherProvider, EncryptResult, ExtensionHeaderVersion, NoCipher,
-        NtpAssociationMode, NtpLeapIndicator, NtpPacket, PacketParsingError,
+        crypto::AesSivCmac256, Cipher, CipherProvider, EncryptResult, ExtensionHeaderVersion,
+        NoCipher, NtpAssociationMode, NtpHeader, NtpLeapIndicator, NtpPacket, PacketParsingError,
     };
     #[cfg(feature = "__internal-fuzz")]
     pub use super::peer::fuzz_measurement_from_packet;
@@ -71,17 +71,14 @@ mod exports {
     #[cfg(feature = "__internal-fuzz")]
     pub use super::nts_record::fuzz_key_exchange_server_decoder;
     pub use super::nts_record::{
-        KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, NtsRecord,
-        NtsRecordDecoder, WriteError,
+        AeadAlgorithm, KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer,
+        NtsKeys, NtsRecord, NtsRecordDecoder, ProtocolId, WriteError,
     };
 
     #[cfg(feature = "ntpv5")]
     pub mod v5 {
         pub use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
     }
-
-    #[cfg(feature = "nts-pool")]
-    pub use super::nts_record::AeadAlgorithm;
 
     #[cfg(feature = "nts-pool")]
     pub use super::nts_pool_ke::{
