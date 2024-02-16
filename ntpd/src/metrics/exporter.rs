@@ -1,3 +1,4 @@
+use timestamped_socket::interface::ChangeDetector;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 
@@ -136,7 +137,27 @@ async fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::erro
         &config.observability.metrics_exporter_listen
     );
 
-    let listener = TcpListener::bind(&config.observability.metrics_exporter_listen).await?;
+    let listener = loop {
+        match TcpListener::bind(&config.observability.metrics_exporter_listen).await {
+            Err(e) if e.kind() == std::io::ErrorKind::AddrNotAvailable => {
+                tracing::info!("Could not open listening socket, waiting for interface to come up");
+                let _ = tokio::time::timeout(
+                    std::time::Duration::from_secs(60),
+                    ChangeDetector::new()?.wait_for_change(),
+                )
+                .await;
+            }
+            Err(e) => {
+                tracing::warn!("Could not open listening socket: {}", e);
+                let _ = tokio::time::timeout(
+                    std::time::Duration::from_secs(60),
+                    ChangeDetector::new()?.wait_for_change(),
+                )
+                .await;
+            }
+            Ok(listener) => break listener,
+        };
+    };
     let mut buf = String::with_capacity(4 * 1024);
 
     loop {
