@@ -129,6 +129,8 @@ key-storage-path="/path/to/store/key/material"
 
 Note that, like with the TLS private key, an attacker having access to the file
 specified under `key-storage-path` can compromise all connections to clients.
+Furthermore, the daemon will not create any parent directories if they don't exist.
+It will create the file if it doesn't exist.
 
 ### Certificates using certbot
 Let's encrypt recommends using certbot for managing certificates on your server.
