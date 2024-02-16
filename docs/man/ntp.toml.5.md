@@ -203,6 +203,9 @@ relevant configuration in the `[[nts-ke-server]]` section.
 :   If set, stores the internal NTS keys in the file indicated by *path*. This
     allows keys to survive a server reboot. If not set, clients using NTS may
     need to redo a key exchange operation to get new NTS cookies.
+    The daemon will not create any parent directories if they don't exist.
+    It will create the file if it doesn't exist.
+
 
 ## `[[nts-ke-server]]`
 The daemon can be configured to operate as an NTS key exchange server by
