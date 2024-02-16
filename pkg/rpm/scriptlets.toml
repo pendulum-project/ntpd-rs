@@ -47,11 +47,19 @@ link_man_page() {
     fi
 }
 
+create_var_folder() {
+    if [ ! -e "/var/lib/ntpd-rs" ]; then
+        install -o ${NTPDRS_USER} -g ${NTPDRS_USER} -m 0700
+    fi
+}
+
 if [ $1 -eq 1 ] ; then
     # Initial installation
     create_user
     link_man_page
     init_systemd_service
+    install -o ${NTPDRS_USER} -g ${NTPDRS_USER}
+    create_var_folder
 fi
 '''
 

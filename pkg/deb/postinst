@@ -4,6 +4,7 @@ set -e
 
 NTPDRS_CONF_SRC="/usr/share/doc/ntpd-rs/ntp.toml.default"
 NTPDRS_CONF_DIR="/etc/ntpd-rs"
+NTPDRS_VAR_DIR="/var/lib/ntpd-rs"
 NTPDRS_CONF="${NTPDRS_CONF_DIR}/ntp.toml"
 NTPDRS_CONF_PERMS=644
 NTPDRS_HOME="/var/lib/ntpd-rs/"
@@ -20,9 +21,16 @@ create_user() {
     fi
 }
 
+create_var_folder() {
+    if [ ! -e ${NTPDRS_VAR_DIR} ]; then
+        install -o ${NTPDRS_USER} -g ${NTPDRS_USER} -m 0700 -d ${NTPDRS_VAR_DIR}
+    fi
+}
+
 case "$1" in
 configure)
     create_user
+    create_var_folder
     ;;
 esac
 

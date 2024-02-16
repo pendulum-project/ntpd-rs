@@ -2,6 +2,7 @@
 set -e
 
 NTPDRS_CONF_DIR="/etc/ntpd-rs"
+NTPDRS_VAR_DIR="/var/lib/ntpd-rs"
 
 case "$1" in
 purge)
@@ -10,6 +11,9 @@ purge)
     #  only deleted when the package is purged."
     if [ -d ${NTPDRS_CONF_DIR} ]; then
         rm -r ${NTPDRS_CONF_DIR}
+    fi
+    if [ -d ${NTPDRS_VAR_DIR} ]; then
+        rm -r ${NTPDRS_VAR_DIR}
     fi
     ;;
 esac
