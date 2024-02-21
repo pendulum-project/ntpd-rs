@@ -1,6 +1,6 @@
 use std::{
     fmt,
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     ops::Deref,
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -57,6 +57,8 @@ pub struct PoolPeerConfig {
     pub addr: NtpAddress,
     #[serde(rename = "count", default = "max_peers_default")]
     pub max_peers: usize,
+    #[serde(default)]
+    pub ignore: Vec<IpAddr>,
 }
 
 fn max_peers_default() -> usize {

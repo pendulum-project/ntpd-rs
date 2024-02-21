@@ -53,9 +53,11 @@ impl PoolSpawner {
                     Ok(addresses) => {
                         // add the addresses looked up to our list of known ips
                         self.known_ips.append(&mut addresses.collect());
-                        // remove known ips that we are already connected to
-                        self.known_ips
-                            .retain(|ip| !self.current_peers.iter().any(|p| p.addr == *ip));
+                        // remove known ips that we are already connected to or that we want to ignore
+                        self.known_ips.retain(|ip| {
+                            !self.current_peers.iter().any(|p| p.addr == *ip)
+                                && !self.config.ignore.iter().any(|ign| *ign == ip.ip())
+                        });
                     }
                     Err(e) => {
                         warn!(error = ?e, "error while resolving peer address, retrying");
@@ -179,6 +181,7 @@ mod tests {
                 addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
                     .into(),
                 max_peers: 2,
+                ignore: vec![],
             },
             NETWORK_WAIT_PERIOD,
         );
@@ -208,6 +211,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn respect_ignores() {
+        let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
+        let addresses = address_strings.map(|addr| addr.parse().unwrap());
+        let ignores = vec!["127.0.0.1".parse().unwrap()];
+
+        let pool = PoolSpawner::new(
+            PoolPeerConfig {
+                addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
+                    .into(),
+                max_peers: 2,
+                ignore: ignores.clone(),
+            },
+            NETWORK_WAIT_PERIOD,
+        );
+        let spawner_id = pool.get_id();
+        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+        let (_notify_tx, notify_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+        tokio::spawn(async move { pool.run(action_tx, notify_rx).await });
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let res = action_rx.try_recv().unwrap();
+        assert_eq!(spawner_id, res.id);
+        let params = get_create_params(res);
+        let addr1 = params.addr;
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let res = action_rx.try_recv().unwrap();
+        assert_eq!(spawner_id, res.id);
+        let params = get_create_params(res);
+        let addr2 = params.addr;
+
+        assert_ne!(addr1, addr2);
+        assert!(addresses.contains(&addr1));
+        assert!(addresses.contains(&addr2));
+        assert!(!ignores.contains(&addr1.ip()));
+        assert!(!ignores.contains(&addr2.ip()));
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let res = action_rx.try_recv().unwrap_err();
+        assert_eq!(res, TryRecvError::Empty);
+    }
+
+    #[tokio::test]
     async fn refills_peers_upto_limit() {
         let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
         let addresses = address_strings.map(|addr| addr.parse().unwrap());
@@ -217,6 +262,7 @@ mod tests {
                 addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
                     .into(),
                 max_peers: 2,
+                ignore: vec![],
             },
             NETWORK_WAIT_PERIOD,
         );
@@ -260,6 +306,7 @@ mod tests {
             PoolPeerConfig {
                 addr: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]).into(),
                 max_peers: 2,
+                ignore: vec![],
             },
             NETWORK_WAIT_PERIOD,
         );
