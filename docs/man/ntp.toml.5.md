@@ -97,6 +97,10 @@ sources.
     connections are lost, up to the maximum specified by this configuration
     value.
 
+`ignore` = *ip addresses*
+:   `pool` mode only. Specifies a list of ip addresses of servers in the pool
+    which should not be used. For example: `["127.0.0.1"]`. Empty by default.
+
 ## `[[server]]`
 The NTP daemon can be configured to distribute time via any number of
 `[[server]]` sections. If no such sections have been defined, the daemon runs in

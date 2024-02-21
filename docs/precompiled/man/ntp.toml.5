@@ -125,6 +125,13 @@ connect to from a pool.
 The daemon will keep retrying to get more sources from the pool when
 connections are lost, up to the maximum specified by this configuration
 value.
+.TP
+\f[V]ignore\f[R] = \f[I]ip addresses\f[R]
+\f[V]pool\f[R] mode only.
+Specifies a list of ip addresses of servers in the pool which should not
+be used.
+For example: \f[V][\[dq]127.0.0.1\[dq]]\f[R].
+Empty by default.
 .SS \f[V][[server]]\f[R]
 .PP
 The NTP daemon can be configured to distribute time via any number of
