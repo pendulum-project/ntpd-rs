@@ -11,7 +11,7 @@ on:
 
 jobs:
   package:
-    uses: NLnetLabs/ploutos/.github/workflows/pkg-rust.yml@v7
+    uses: pendulum-project/ploutos/.github/workflows/pkg-rust.yml@provide-debug-symbols
     with:
       workspace_package: ntpd
 
