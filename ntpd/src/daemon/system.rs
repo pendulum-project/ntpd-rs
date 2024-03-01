@@ -12,7 +12,9 @@ use super::{
     ObservablePeerState, ObservedPeerState,
 };
 
-use std::{collections::HashMap, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
+use std::{
+    collections::HashMap, future::Future, marker::PhantomData, net::IpAddr, pin::Pin, sync::Arc,
+};
 
 use ntp_proto::{
     KalmanClockController, KeySet, NtpClock, NtpDuration, NtpLeapIndicator, PeerSnapshot,
@@ -89,6 +91,8 @@ pub async fn spawn(
     server_configs: &[ServerConfig],
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
 ) -> std::io::Result<(JoinHandle<std::io::Result<()>>, DaemonChannels)> {
+    let ip_list = super::local_ip_provider::spawn()?;
+
     let (mut system, channels) = System::new(
         clock_config.clock,
         clock_config.interface,
@@ -96,6 +100,7 @@ pub async fn spawn(
         synchronization_config,
         peer_defaults_config,
         keyset,
+        ip_list,
     );
 
     for peer_config in peer_configs {
@@ -172,6 +177,7 @@ struct System<C: NtpClock, T: Wait> {
     peer_snapshots_sender: tokio::sync::watch::Sender<Vec<ObservablePeerState>>,
     server_data_sender: tokio::sync::watch::Sender<Vec<ServerData>>,
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
+    ip_list: tokio::sync::watch::Receiver<Arc<[IpAddr]>>,
 
     msg_for_system_rx: mpsc::Receiver<MsgForSystem>,
     spawn_tx: mpsc::Sender<SpawnEvent>,
@@ -202,6 +208,7 @@ impl<C: NtpClock + Sync, T: Wait> System<C, T> {
         synchronization_config: SynchronizationConfig,
         peer_defaults_config: SourceDefaultsConfig,
         keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
+        ip_list: tokio::sync::watch::Receiver<Arc<[IpAddr]>>,
     ) -> (Self, DaemonChannels) {
         // Setup system snapshot
         let mut system = SystemSnapshot {
@@ -241,6 +248,7 @@ impl<C: NtpClock + Sync, T: Wait> System<C, T> {
                 peer_snapshots_sender,
                 server_data_sender,
                 keyset: keyset.clone(),
+                ip_list,
 
                 msg_for_system_rx: msg_for_system_receiver,
                 spawn_rx,
@@ -458,7 +466,11 @@ impl<C: NtpClock + Sync, T: Wait> System<C, T> {
         snapshot: PeerSnapshot,
     ) -> Result<(), C::Error> {
         let usable = snapshot
-            .accept_synchronization(self.synchronization_config.local_stratum, &self.system)
+            .accept_synchronization(
+                self.synchronization_config.local_stratum,
+                self.ip_list.borrow().as_ref(),
+                &self.system,
+            )
             .is_ok();
         self.clock_controller()?.peer_update(index, usable);
         self.peers.get_mut(&index).unwrap().snapshot = Some(snapshot);
@@ -694,6 +706,7 @@ mod tests {
     async fn test_peers() {
         // we always generate the keyset (even if NTS is not used)
         let (_, keyset) = tokio::sync::watch::channel(KeySetProvider::new(1).get());
+        let (_, ip_list) = tokio::sync::watch::channel([].into_iter().collect());
 
         let (mut system, _) = System::new(
             TestClock {},
@@ -702,6 +715,7 @@ mod tests {
             SynchronizationConfig::default(),
             SourceDefaultsConfig::default(),
             keyset,
+            ip_list,
         );
         let wait =
             SingleshotSleep::new_disabled(tokio::time::sleep(std::time::Duration::from_secs(0)));
