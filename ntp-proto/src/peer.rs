@@ -12,7 +12,10 @@ use crate::{
     time_types::{NtpDuration, NtpInstant, NtpTimestamp, PollInterval},
 };
 use serde::{Deserialize, Serialize};
-use std::{io::Cursor, net::SocketAddr};
+use std::{
+    io::Cursor,
+    net::{IpAddr, SocketAddr},
+};
 use tracing::{debug, info, instrument, trace, warn};
 
 const MAX_STRATUM: u8 = 16;
@@ -75,7 +78,6 @@ pub struct Peer {
 
     source_addr: SocketAddr,
     source_id: ReferenceId,
-    our_id: ReferenceId,
     reach: Reach,
     tries: usize,
 
@@ -207,7 +209,6 @@ pub struct PeerSnapshot {
     pub source_addr: SocketAddr,
 
     pub source_id: ReferenceId,
-    pub our_id: ReferenceId,
 
     pub poll_interval: PollInterval,
     pub reach: Reach,
@@ -225,6 +226,7 @@ impl PeerSnapshot {
     pub fn accept_synchronization(
         &self,
         local_stratum: u8,
+        local_ips: &[IpAddr],
         #[cfg_attr(not(feature = "ntpv5"), allow(unused_variables))] system: &SystemSnapshot,
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
@@ -242,7 +244,12 @@ impl PeerSnapshot {
         // if so, we shouldn't sync to them as that would create a loop.
         // Note, this can only ever be an issue if the peer is not using
         // hardware as its source, so ignore reference_id if stratum is 1.
-        if self.stratum != 1 && self.reference_id == self.our_id {
+
+        if self.stratum != 1
+            && local_ips
+                .iter()
+                .any(|ip| ReferenceId::from_ip(*ip) == self.source_id)
+        {
             info!("Peer rejected because of detected synchronization loop (ref id)");
             return Err(Loop);
         }
@@ -269,7 +276,6 @@ impl PeerSnapshot {
         Self {
             source_addr: peer.source_addr,
             source_id: peer.source_id,
-            our_id: peer.our_id,
             stratum: peer.stratum,
             reference_id: peer.reference_id,
             reach: peer.reach,
@@ -283,7 +289,7 @@ impl PeerSnapshot {
 
 #[cfg(feature = "__internal-test")]
 pub fn peer_snapshot() -> PeerSnapshot {
-    use std::net::{IpAddr, Ipv4Addr};
+    use std::net::Ipv4Addr;
 
     let mut reach = crate::peer::Reach::default();
     reach.received_packet();
@@ -294,7 +300,6 @@ pub fn peer_snapshot() -> PeerSnapshot {
         stratum: 0,
         reference_id: ReferenceId::from_int(0),
 
-        our_id: ReferenceId::from_int(1),
         reach,
         poll_interval: crate::time_types::PollIntervalLimits::default().min,
         protocol_version: Default::default(),
@@ -364,7 +369,6 @@ impl Default for ProtocolVersion {
 impl Peer {
     #[instrument]
     pub fn new(
-        our_addr: SocketAddr,
         source_addr: SocketAddr,
         local_clock_time: NtpInstant,
         peer_defaults_config: SourceDefaultsConfig,
@@ -378,7 +382,6 @@ impl Peer {
             remote_min_poll_interval: peer_defaults_config.poll_interval_limits.min,
 
             current_request_identifier: None,
-            our_id: ReferenceId::from_ip(our_addr.ip()),
             source_id: ReferenceId::from_ip(source_addr.ip()),
             source_addr,
             reach: Default::default(),
@@ -398,7 +401,6 @@ impl Peer {
 
     #[instrument]
     pub fn new_nts(
-        our_addr: SocketAddr,
         source_addr: SocketAddr,
         local_clock_time: NtpInstant,
         peer_defaults_config: SourceDefaultsConfig,
@@ -408,7 +410,6 @@ impl Peer {
         Self {
             nts: Some(nts),
             ..Self::new(
-                our_addr,
                 source_addr,
                 local_clock_time,
                 peer_defaults_config,
@@ -692,12 +693,12 @@ impl Peer {
         // make sure in-flight messages are ignored
         self.current_request_identifier = None;
 
-        info!(our_id = ?self.our_id, source_id = ?self.source_id, "Source reset");
+        info!(source_id = ?self.source_id, "Source reset");
     }
 
     #[cfg(test)]
     pub(crate) fn test_peer() -> Self {
-        use std::net::{IpAddr, Ipv4Addr};
+        use std::net::Ipv4Addr;
 
         Peer {
             nts: None,
@@ -710,7 +711,6 @@ impl Peer {
 
             source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
             source_id: ReferenceId::from_int(0),
-            our_id: ReferenceId::from_int(0),
             reach: Reach::default(),
             tries: 0,
 
@@ -896,15 +896,14 @@ mod test {
         macro_rules! accept {
             () => {{
                 let snapshot = PeerSnapshot::from_peer(&peer);
-                snapshot.accept_synchronization(16, &system)
+                snapshot.accept_synchronization(16, &["127.0.0.1".parse().unwrap()], &system)
             }};
         }
 
-        // by default, the packet id and the peer's id are the same, indicating a loop
+        peer.source_id = ReferenceId::from_ip("127.0.0.1".parse().unwrap());
         assert_eq!(accept!(), Err(Loop));
 
-        peer.our_id = ReferenceId::from_int(42);
-
+        peer.source_id = ReferenceId::from_ip("127.0.1.1".parse().unwrap());
         assert_eq!(accept!(), Err(ServerUnreachable));
 
         peer.reach.received_packet();

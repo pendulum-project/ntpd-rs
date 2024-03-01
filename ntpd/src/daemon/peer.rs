@@ -330,8 +330,6 @@ where
                         return;
                     }
                 };
-                // Unwrap should be safe because we know the socket was bound to a local addres just before
-                let our_addr = socket.local_addr().unwrap();
 
                 // Unwrap should be safe because we know the socket was connected to a remote peer just before
                 let source_addr = socket.peer_addr().unwrap();
@@ -340,7 +338,6 @@ where
                 let config_snapshot = *channels.source_defaults_config_receiver.borrow_and_update();
                 let peer = if let Some(nts) = nts {
                     Peer::new_nts(
-                        our_addr,
                         source_addr,
                         local_clock_time,
                         config_snapshot,
@@ -349,7 +346,6 @@ where
                     )
                 } else {
                     Peer::new(
-                        our_addr,
                         source_addr,
                         local_clock_time,
                         config_snapshot,
@@ -579,7 +575,6 @@ mod tests {
         let test_socket = test_socket
             .connect(SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)))
             .unwrap();
-        let our_addr = socket.local_addr().unwrap();
         let source_addr = socket.peer_addr().unwrap();
 
         let (_, system_snapshot_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
@@ -591,7 +586,6 @@ mod tests {
 
         let local_clock_time = NtpInstant::now();
         let peer = Peer::new(
-            our_addr,
             source_addr,
             local_clock_time,
             *peer_defaults_config_receiver.borrow_and_update(),

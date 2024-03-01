@@ -2,6 +2,7 @@ mod clock;
 pub mod config;
 mod ipfilter;
 pub mod keyexchange;
+mod local_ip_provider;
 pub mod nts_key_provider;
 pub mod observer;
 mod peer;

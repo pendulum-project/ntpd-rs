@@ -134,7 +134,6 @@ mod tests {
                 PeerSnapshot {
                     source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
                     source_id: ReferenceId::KISS_DENY,
-                    our_id: ReferenceId::NONE,
                     poll_interval: PollIntervalLimits::default().max,
                     reach: Default::default(),
                     stratum: 2,
@@ -146,7 +145,6 @@ mod tests {
                 PeerSnapshot {
                     source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
                     source_id: ReferenceId::KISS_RATE,
-                    our_id: ReferenceId::KISS_RSTR,
                     poll_interval: PollIntervalLimits::default().max,
                     reach: Default::default(),
                     stratum: 3,
