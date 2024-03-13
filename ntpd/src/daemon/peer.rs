@@ -57,7 +57,11 @@ pub(crate) struct PeerTask<C: 'static + NtpClock + Send, T: Wait> {
     _wait: PhantomData<T>,
     index: PeerId,
     clock: C,
-    socket: Socket<SocketAddr, Connected>,
+    interface: Option<InterfaceName>,
+    timestamp_mode: TimestampMode,
+    source_addr: SocketAddr,
+    network_wait_period: std::time::Duration,
+    socket: Option<Socket<SocketAddr, Connected>>,
     channels: PeerChannels,
 
     peer: Peer,
@@ -84,6 +88,12 @@ enum PollResult {
 enum PacketResult {
     Ok,
     Demobilize,
+}
+
+#[derive(Debug)]
+enum SocketResult {
+    Ok,
+    Abort,
 }
 
 impl<C, T> PeerTask<C, T>
@@ -160,7 +170,11 @@ where
             }
         }
 
-        match self.socket.send(packet).await {
+        if matches!(self.setup_socket().await, SocketResult::Abort) {
+            return PollResult::NetworkGone;
+        }
+
+        match self.socket.as_mut().unwrap().send(packet).await {
             Err(error) => {
                 warn!(?error, "poll message could not be sent");
 
@@ -217,6 +231,8 @@ where
                     }
                 };
                 self.channels.msg_for_system_sender.send(msg).await.ok();
+                // No longer needed since we don't expect any more packets
+                self.socket = None;
             }
             Err(IgnoreReason::KissDemobilize) => {
                 info!("Demobilizing peer connection on request of remote.");
@@ -231,6 +247,33 @@ where
         }
 
         PacketResult::Ok
+    }
+
+    async fn setup_socket(&mut self) -> SocketResult {
+        let socket_res = match self.interface {
+            #[cfg(target_os = "linux")]
+            Some(interface) => {
+                open_interface_udp(
+                    interface,
+                    0, /*lets os choose*/
+                    self.timestamp_mode.as_interface_mode(),
+                    None,
+                )
+                .and_then(|socket| socket.connect(self.source_addr))
+            }
+            _ => connect_address(self.source_addr, self.timestamp_mode.as_general_mode()),
+        };
+
+        self.socket = match socket_res {
+            Ok(socket) => Some(socket),
+            Err(error) => {
+                warn!(?error, "Could not open socket");
+                tokio::time::sleep(self.network_wait_period).await;
+                return SocketResult::Abort;
+            }
+        };
+
+        SocketResult::Ok
     }
 
     async fn run(&mut self, mut poll_wait: Pin<&mut T>) {
@@ -252,7 +295,7 @@ where
                         }
                     }
                 },
-                result = self.socket.recv(&mut buf) => {
+                result = async { if let Some(ref mut socket) = self.socket { socket.recv(&mut buf).await } else { std::future::pending().await }} => {
                     tracing::debug!("accept packet");
                     match accept_packet(result, &buf, &self.clock) {
                         AcceptResult::Accept(packet, recv_timestamp) => {
@@ -292,7 +335,7 @@ where
     #[instrument(skip(clock, channels))]
     pub fn spawn(
         index: PeerId,
-        addr: SocketAddr,
+        source_addr: SocketAddr,
         interface: Option<InterfaceName>,
         clock: C,
         timestamp_mode: TimestampMode,
@@ -303,37 +346,6 @@ where
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(
             (async move {
-                let socket_res = match interface {
-                    #[cfg(target_os = "linux")]
-                    Some(interface) => {
-                        open_interface_udp(
-                            interface,
-                            0, /*lets os choose*/
-                            timestamp_mode.as_interface_mode(),
-                            None,
-                        )
-                        .and_then(|socket| socket.connect(addr))
-                    }
-                    _ => connect_address(addr, timestamp_mode.as_general_mode()),
-                };
-
-                let socket = match socket_res {
-                    Ok(socket) => socket,
-                    Err(error) => {
-                        warn!(?error, "Could not open socket");
-                        tokio::time::sleep(network_wait_period).await;
-                        channels
-                            .msg_for_system_sender
-                            .send(MsgForSystem::NetworkIssue(index))
-                            .await
-                            .ok();
-                        return;
-                    }
-                };
-
-                // Unwrap should be safe because we know the socket was connected to a remote peer just before
-                let source_addr = socket.peer_addr().unwrap();
-
                 let local_clock_time = NtpInstant::now();
                 let config_snapshot = *channels.source_defaults_config_receiver.borrow_and_update();
                 let peer = if let Some(nts) = nts {
@@ -361,7 +373,11 @@ where
                     index,
                     clock,
                     channels,
-                    socket,
+                    interface,
+                    timestamp_mode,
+                    network_wait_period,
+                    source_addr,
+                    socket: None,
                     peer,
                     last_send_timestamp: None,
                     last_poll_sent: Instant::now(),
@@ -432,7 +448,7 @@ mod tests {
     use std::{io::Cursor, net::Ipv4Addr, sync::Arc, time::Duration};
 
     use ntp_proto::{NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket, TimeSnapshot};
-    use timestamped_socket::socket::{open_ip, GeneralTimestampMode};
+    use timestamped_socket::socket::{open_ip, GeneralTimestampMode, Open};
     use tokio::sync::mpsc;
 
     use crate::daemon::util::EPOCH_OFFSET;
@@ -553,29 +569,16 @@ mod tests {
         port_base: u16,
     ) -> (
         PeerTask<TestClock, T>,
-        Socket<SocketAddr, Connected>,
+        Socket<SocketAddr, Open>,
         mpsc::Receiver<MsgForSystem>,
     ) {
         // Note: Ports must be unique among tests to deal with parallelism, hence
         // port_base
-        let socket = open_ip(
+        let test_socket = open_ip(
             SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
             GeneralTimestampMode::SoftwareRecv,
         )
         .unwrap();
-        let socket = socket
-            .connect(SocketAddr::from((Ipv4Addr::LOCALHOST, port_base + 1)))
-            .unwrap();
-
-        let test_socket = open_ip(
-            SocketAddr::from((Ipv4Addr::LOCALHOST, port_base + 1)),
-            GeneralTimestampMode::SoftwareRecv,
-        )
-        .unwrap();
-        let test_socket = test_socket
-            .connect(SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)))
-            .unwrap();
-        let source_addr = socket.peer_addr().unwrap();
 
         let (_, system_snapshot_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
         let (_, synchronization_config_receiver) =
@@ -586,7 +589,7 @@ mod tests {
 
         let local_clock_time = NtpInstant::now();
         let peer = Peer::new(
-            source_addr,
+            SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
             local_clock_time,
             *peer_defaults_config_receiver.borrow_and_update(),
             ProtocolVersion::default(),
@@ -602,7 +605,11 @@ mod tests {
                 synchronization_config_receiver,
                 source_defaults_config_receiver: peer_defaults_config_receiver,
             },
-            socket,
+            source_addr: SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
+            interface: None,
+            timestamp_mode: TimestampMode::KernelAll,
+            socket: None,
+            network_wait_period: std::time::Duration::from_secs(0),
             peer,
             last_send_timestamp: None,
             last_poll_sent: Instant::now(),
@@ -669,7 +676,7 @@ mod tests {
         let RecvResult {
             bytes_read: size,
             timestamp,
-            ..
+            remote_addr,
         } = socket.recv(&mut buf).await.unwrap();
         assert_eq!(size, 48);
         let timestamp = timestamp.unwrap();
@@ -683,7 +690,7 @@ mod tests {
         );
 
         let serialized = serialize_packet_unencryped(&send_packet);
-        socket.send(&serialized).await.unwrap();
+        socket.send_to(&serialized, remote_addr).await.unwrap();
 
         let msg = msg_recv.recv().await.unwrap();
         assert!(matches!(msg, MsgForSystem::NewMeasurement(_, _, _)));
@@ -709,7 +716,7 @@ mod tests {
         let RecvResult {
             bytes_read: size,
             timestamp,
-            ..
+            remote_addr,
         } = socket.recv(&mut buf).await.unwrap();
         assert_eq!(size, 48);
         assert!(timestamp.is_some());
@@ -718,7 +725,7 @@ mod tests {
         let send_packet = NtpPacket::deny_response(rec_packet);
         let serialized = serialize_packet_unencryped(&send_packet);
 
-        socket.send(&serialized).await.unwrap();
+        socket.send_to(&serialized, remote_addr).await.unwrap();
 
         let msg = msg_recv.recv().await.unwrap();
         assert!(matches!(msg, MsgForSystem::MustDemobilize(_)));
