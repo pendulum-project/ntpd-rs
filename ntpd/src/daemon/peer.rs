@@ -310,6 +310,7 @@ where
                             interface,
                             0, /*lets os choose*/
                             timestamp_mode.as_interface_mode(),
+                            None,
                         )
                         .and_then(|socket| socket.connect(addr))
                     }
