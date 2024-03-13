@@ -43,7 +43,7 @@ libc = "0.2.145"
 tokio = "1.32"
 toml = ">=0.5.0,<0.9.0"
 async-trait = "0.1.22"
-timestamped-socket = "0.2.0"
+timestamped-socket = "0.2.1"
 clock-steering = "0.2.0"
 
 # TLS
@@ -62,6 +62,3 @@ zeroize = "1.5"
 # our own crates used as dependencies, same version as the workspace version
 # NOTE: keep this part at the bottom of the file, do not change this line
 ntp-proto = { version = "1.1.2", path = "./ntp-proto", features = ["__internal-api"] }
-
-[patch.crates-io]
-timestamped-socket = { git="https://github.com/pendulum-project/timestamped-socket", branch = "add-interface-change-detector" }

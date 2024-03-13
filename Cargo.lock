@@ -737,8 +737,9 @@ dependencies = [
 
 [[package]]
 name = "timestamped-socket"
-version = "0.2.0"
-source = "git+https://github.com/pendulum-project/timestamped-socket?branch=add-interface-change-detector#eb816a5ddc7bb91f55fce4f99b12aabfb1f83d4e"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "145a47b252af2c28b6a957c3cc3f0db382a2024728fd6deb511f5ea5201d949b"
 dependencies = [
  "libc",
  "serde",
