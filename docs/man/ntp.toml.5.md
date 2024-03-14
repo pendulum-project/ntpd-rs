@@ -13,7 +13,7 @@ toml format is in lots of ways similar to a simple ini with several extensions
 allowing a json-like syntax.
 
 The ntpd-rs configuration file consists of several sections, each of which
-configures a separate part of the ntp-daemon process. Each of the secions is
+configures a separate part of the ntp-daemon process. Each of the sections is
 described in the rest of this document. Many settings will have defaults, which
 will be indicated by each configuration setting shown.
 
