@@ -14,7 +14,6 @@ use super::{
 pub struct StandardSpawner {
     id: SpawnerId,
     config: StandardPeerConfig,
-    network_wait_period: std::time::Duration,
     resolved: Option<SocketAddr>,
     has_spawned: bool,
 }
@@ -26,42 +25,35 @@ pub enum StandardSpawnError {
 }
 
 impl StandardSpawner {
-    pub fn new(
-        config: StandardPeerConfig,
-        network_wait_period: std::time::Duration,
-    ) -> StandardSpawner {
+    pub fn new(config: StandardPeerConfig) -> StandardSpawner {
         StandardSpawner {
             id: Default::default(),
             config,
-            network_wait_period,
             resolved: None,
             has_spawned: false,
         }
     }
 
-    async fn do_resolve(&mut self, force_resolve: bool) -> SocketAddr {
+    async fn do_resolve(&mut self, force_resolve: bool) -> Option<SocketAddr> {
         if let (false, Some(addr)) = (force_resolve, self.resolved) {
-            addr
+            Some(addr)
         } else {
-            let addr = loop {
-                match self.config.address.lookup_host().await {
-                    Ok(mut addresses) => match addresses.next() {
-                        None => {
-                            warn!("Could not resolve peer address, retrying");
-                            tokio::time::sleep(self.network_wait_period).await;
-                        }
-                        Some(first) => {
-                            break first;
-                        }
-                    },
-                    Err(e) => {
-                        warn!(error = ?e, "error while resolving peer address, retrying");
-                        tokio::time::sleep(self.network_wait_period).await;
+            match self.config.address.lookup_host().await {
+                Ok(mut addresses) => match addresses.next() {
+                    None => {
+                        warn!("Could not resolve peer address, retrying");
+                        None
                     }
+                    Some(first) => {
+                        self.resolved = Some(first);
+                        self.resolved
+                    }
+                },
+                Err(e) => {
+                    warn!(error = ?e, "error while resolving peer address, retrying");
+                    None
                 }
-            };
-            self.resolved = Some(addr);
-            addr
+            }
         }
     }
 }
@@ -74,7 +66,9 @@ impl BasicSpawner for StandardSpawner {
         &mut self,
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), StandardSpawnError> {
-        let addr = self.do_resolve(false).await;
+        let Some(addr) = self.do_resolve(false).await else {
+            return Ok(());
+        };
         action_tx
             .send(SpawnEvent::new(
                 self.id,
@@ -132,22 +126,19 @@ mod tests {
             standard::StandardSpawner, tests::get_create_params, BasicSpawner, PeerRemovalReason,
             PeerRemovedEvent,
         },
-        system::{MESSAGE_BUFFER_SIZE, NETWORK_WAIT_PERIOD},
+        system::MESSAGE_BUFFER_SIZE,
     };
 
     #[tokio::test]
     async fn creates_a_peer() {
-        let mut spawner = StandardSpawner::new(
-            StandardPeerConfig {
-                address: NormalizedAddress::with_hardcoded_dns(
-                    "example.com",
-                    123,
-                    vec!["127.0.0.1:123".parse().unwrap()],
-                )
-                .into(),
-            },
-            NETWORK_WAIT_PERIOD,
-        );
+        let mut spawner = StandardSpawner::new(StandardPeerConfig {
+            address: NormalizedAddress::with_hardcoded_dns(
+                "example.com",
+                123,
+                vec!["127.0.0.1:123".parse().unwrap()],
+            )
+            .into(),
+        });
         let spawner_id = spawner.get_id();
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
@@ -164,17 +155,14 @@ mod tests {
 
     #[tokio::test]
     async fn recreates_a_peer() {
-        let mut spawner = StandardSpawner::new(
-            StandardPeerConfig {
-                address: NormalizedAddress::with_hardcoded_dns(
-                    "example.com",
-                    123,
-                    vec!["127.0.0.1:123".parse().unwrap()],
-                )
-                .into(),
-            },
-            NETWORK_WAIT_PERIOD,
-        );
+        let mut spawner = StandardSpawner::new(StandardPeerConfig {
+            address: NormalizedAddress::with_hardcoded_dns(
+                "example.com",
+                123,
+                vec!["127.0.0.1:123".parse().unwrap()],
+            )
+            .into(),
+        });
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
         assert!(!spawner.is_complete());
@@ -204,17 +192,14 @@ mod tests {
         let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
         let addresses = address_strings.map(|addr| addr.parse().unwrap());
 
-        let mut spawner = StandardSpawner::new(
-            StandardPeerConfig {
-                address: NormalizedAddress::with_hardcoded_dns(
-                    "europe.pool.ntp.org",
-                    123,
-                    addresses.to_vec(),
-                )
-                .into(),
-            },
-            NETWORK_WAIT_PERIOD,
-        );
+        let mut spawner = StandardSpawner::new(StandardPeerConfig {
+            address: NormalizedAddress::with_hardcoded_dns(
+                "europe.pool.ntp.org",
+                123,
+                addresses.to_vec(),
+            )
+            .into(),
+        });
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
         assert!(!spawner.is_complete());
@@ -264,13 +249,9 @@ mod tests {
 
     #[tokio::test]
     async fn works_if_address_does_not_resolve() {
-        let mut spawner = StandardSpawner::new(
-            StandardPeerConfig {
-                address: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![])
-                    .into(),
-            },
-            NETWORK_WAIT_PERIOD,
-        );
+        let mut spawner = StandardSpawner::new(StandardPeerConfig {
+            address: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]).into(),
+        });
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
         spawner.try_spawn(&action_tx).await.unwrap();

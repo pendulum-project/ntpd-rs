@@ -112,7 +112,7 @@ pub async fn spawn(
         match peer_config {
             PeerConfig::Standard(cfg) => {
                 system
-                    .add_spawner(StandardSpawner::new(cfg.clone(), NETWORK_WAIT_PERIOD))
+                    .add_spawner(StandardSpawner::new(cfg.clone()))
                     .map_err(|e| {
                         tracing::error!("Could not spawn peer: {}", e);
                         std::io::Error::new(std::io::ErrorKind::Other, e)
