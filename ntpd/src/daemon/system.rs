@@ -120,7 +120,7 @@ pub async fn spawn(
             }
             PeerConfig::Nts(cfg) => {
                 system
-                    .add_spawner(NtsSpawner::new(cfg.clone(), NETWORK_WAIT_PERIOD))
+                    .add_spawner(NtsSpawner::new(cfg.clone()))
                     .map_err(|e| {
                         tracing::error!("Could not spawn peer: {}", e);
                         std::io::Error::new(std::io::ErrorKind::Other, e)
@@ -137,7 +137,7 @@ pub async fn spawn(
             #[cfg(feature = "unstable_nts-pool")]
             PeerConfig::NtsPool(cfg) => {
                 system
-                    .add_spawner(NtsPoolSpawner::new(cfg.clone(), NETWORK_WAIT_PERIOD))
+                    .add_spawner(NtsPoolSpawner::new(cfg.clone()))
                     .map_err(|e| {
                         tracing::error!("Could not spawn peer: {}", e);
                         std::io::Error::new(std::io::ErrorKind::Other, e)
