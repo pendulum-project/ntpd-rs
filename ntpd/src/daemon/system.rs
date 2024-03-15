@@ -128,7 +128,7 @@ pub async fn spawn(
             }
             PeerConfig::Pool(cfg) => {
                 system
-                    .add_spawner(PoolSpawner::new(cfg.clone(), NETWORK_WAIT_PERIOD))
+                    .add_spawner(PoolSpawner::new(cfg.clone()))
                     .map_err(|e| {
                         tracing::error!("Could not spawn peer: {}", e);
                         std::io::Error::new(std::io::ErrorKind::Other, e)
