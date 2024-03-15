@@ -207,7 +207,9 @@ pub trait BasicSpawner {
 
     /// Try to create all desired peers. Should return immediately on failure
     ///
-    ///
+    /// It is ok for this function to use some time when spawning a new client.
+    /// However, it should not implement it's own retry or backoff feature, but
+    /// rather rely on that provided by the basic spawner.
     async fn try_spawn(&mut self, action_tx: &mpsc::Sender<SpawnEvent>) -> Result<(), Self::Error>;
 
     /// Is there desire to spawn new peers?
@@ -263,7 +265,7 @@ where
         let mut last_ticket_time = Instant::now();
 
         loop {
-            if Instant::now() - last_ticket_time >= NETWORK_WAIT_PERIOD {
+            if last_ticket_time.elapsed() >= NETWORK_WAIT_PERIOD {
                 has_ticket = true;
             }
 
@@ -277,7 +279,7 @@ where
                 system_notify.recv().await
             } else {
                 timeout(
-                    last_ticket_time + NETWORK_WAIT_PERIOD - Instant::now(),
+                    NETWORK_WAIT_PERIOD - last_ticket_time.elapsed(),
                     system_notify.recv(),
                 )
                 .await

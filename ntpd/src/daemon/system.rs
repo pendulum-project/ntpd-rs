@@ -568,7 +568,6 @@ impl<C: NtpClock + Sync, T: Wait> System<C, T> {
             self.interface,
             self.clock.clone(),
             self.timestamp_mode,
-            NETWORK_WAIT_PERIOD,
             self.peer_channels.clone(),
             params.protocol_version,
             params.nts.take(),

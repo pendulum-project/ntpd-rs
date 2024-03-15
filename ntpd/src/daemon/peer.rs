@@ -60,7 +60,6 @@ pub(crate) struct PeerTask<C: 'static + NtpClock + Send, T: Wait> {
     interface: Option<InterfaceName>,
     timestamp_mode: TimestampMode,
     source_addr: SocketAddr,
-    network_wait_period: std::time::Duration,
     socket: Option<Socket<SocketAddr, Connected>>,
     channels: PeerChannels,
 
@@ -268,7 +267,6 @@ where
             Ok(socket) => Some(socket),
             Err(error) => {
                 warn!(?error, "Could not open socket");
-                tokio::time::sleep(self.network_wait_period).await;
                 return SocketResult::Abort;
             }
         };
@@ -339,7 +337,6 @@ where
         interface: Option<InterfaceName>,
         clock: C,
         timestamp_mode: TimestampMode,
-        network_wait_period: std::time::Duration,
         mut channels: PeerChannels,
         protocol_version: ProtocolVersion,
         nts: Option<Box<PeerNtsData>>,
@@ -375,7 +372,6 @@ where
                     channels,
                     interface,
                     timestamp_mode,
-                    network_wait_period,
                     source_addr,
                     socket: None,
                     peer,
@@ -609,7 +605,6 @@ mod tests {
             interface: None,
             timestamp_mode: TimestampMode::KernelAll,
             socket: None,
-            network_wait_period: std::time::Duration::from_secs(0),
             peer,
             last_send_timestamp: None,
             last_poll_sent: Instant::now(),
