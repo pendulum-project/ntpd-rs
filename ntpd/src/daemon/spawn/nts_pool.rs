@@ -19,7 +19,6 @@ struct PoolPeer {
 
 pub struct NtsPoolSpawner {
     config: NtsPoolPeerConfig,
-    network_wait_period: std::time::Duration,
     id: SpawnerId,
     current_peers: Vec<PoolPeer>,
 }
@@ -31,13 +30,9 @@ pub enum NtsPoolSpawnError {
 }
 
 impl NtsPoolSpawner {
-    pub fn new(
-        config: NtsPoolPeerConfig,
-        network_wait_period: std::time::Duration,
-    ) -> NtsPoolSpawner {
+    pub fn new(config: NtsPoolPeerConfig) -> NtsPoolSpawner {
         NtsPoolSpawner {
             config,
-            network_wait_period,
             id: Default::default(),
             current_peers: Default::default(),
             //known_ips: Default::default(),
@@ -57,80 +52,52 @@ impl BasicSpawner for NtsPoolSpawner {
         &mut self,
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), NtsPoolSpawnError> {
-        let mut wait_period = self.network_wait_period;
-
-        // early return if there is nothing to do
-        if self.current_peers.len() >= self.config.max_peers {
-            return Ok(());
-        }
-
-        loop {
-            // Try and add peers to our pool
-            while self.current_peers.len() < self.config.max_peers {
-                match key_exchange_client_with_denied_servers(
-                    self.config.addr.server_name.clone(),
-                    self.config.addr.port,
-                    &self.config.certificate_authorities,
-                    self.current_peers.iter().map(|peer| peer.remote.clone()),
-                )
-                .await
-                {
-                    Ok(ke) if !self.contains_peer(&ke.remote) => {
-                        if let Some(address) =
-                            resolve_addr(self.network_wait_period, (ke.remote.as_str(), ke.port))
-                                .await
-                        {
-                            let id = PeerId::new();
-                            self.current_peers.push(PoolPeer {
-                                id,
-                                remote: ke.remote,
-                            });
-                            action_tx
-                                .send(SpawnEvent::new(
-                                    self.id,
-                                    SpawnAction::create(
-                                        id,
-                                        address,
-                                        self.config.addr.deref().clone(),
-                                        ke.protocol_version,
-                                        Some(ke.nts),
-                                    ),
-                                ))
-                                .await?;
-                        }
+        for _ in 0..self
+            .config
+            .max_peers
+            .saturating_sub(self.current_peers.len())
+        {
+            match key_exchange_client_with_denied_servers(
+                self.config.addr.server_name.clone(),
+                self.config.addr.port,
+                &self.config.certificate_authorities,
+                self.current_peers.iter().map(|peer| peer.remote.clone()),
+            )
+            .await
+            {
+                Ok(ke) if !self.contains_peer(&ke.remote) => {
+                    if let Some(address) = resolve_addr((ke.remote.as_str(), ke.port)).await {
+                        let id = PeerId::new();
+                        self.current_peers.push(PoolPeer {
+                            id,
+                            remote: ke.remote,
+                        });
+                        action_tx
+                            .send(SpawnEvent::new(
+                                self.id,
+                                SpawnAction::create(
+                                    id,
+                                    address,
+                                    self.config.addr.deref().clone(),
+                                    ke.protocol_version,
+                                    Some(ke.nts),
+                                ),
+                            ))
+                            .await?;
                     }
-                    Ok(_) => {
-                        warn!("received an address from pool-ke that we already had, ignoring");
-                        break;
-                    }
-                    Err(e) => {
-                        warn!(error = ?e, "error while attempting key exchange");
-                        break;
-                    }
-                };
-            }
-
-            let wait_period_max = if cfg!(test) {
-                std::time::Duration::default()
-            } else {
-                std::time::Duration::from_secs(60)
-            };
-
-            let peers_needed = self.config.max_peers - self.current_peers.len();
-            if peers_needed > 0 {
-                if wait_period > wait_period_max {
-                    warn!(peers_needed, "could not fully fill pool, giving up");
-                    //NOTE: maybe we want to communicate this up the call chain?
-                    return Ok(());
-                } else {
-                    warn!(peers_needed, "could not fully fill pool, waiting");
                 }
-                tokio::time::sleep(wait_period).await;
-                wait_period *= 2;
-            } else {
-                return Ok(());
-            }
+                Ok(_) => {
+                    warn!("received an address from pool-ke that we already had, ignoring");
+                    continue;
+                }
+                Err(e) => {
+                    warn!(error = ?e, "error while attempting key exchange");
+                    break;
+                }
+            };
         }
+
+        Ok(())
     }
 
     fn is_complete(&self) -> bool {
