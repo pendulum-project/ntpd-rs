@@ -35,8 +35,13 @@ impl PoolSpawner {
             known_ips: Default::default(),
         }
     }
+}
 
-    pub async fn fill_pool(
+#[async_trait::async_trait]
+impl BasicSpawner for PoolSpawner {
+    type Error = PoolSpawnError;
+
+    async fn try_spawn(
         &mut self,
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), PoolSpawnError> {
@@ -112,35 +117,16 @@ impl PoolSpawner {
             }
         }
     }
-}
 
-#[async_trait::async_trait]
-impl BasicSpawner for PoolSpawner {
-    type Error = PoolSpawnError;
-
-    async fn handle_init(
-        &mut self,
-        action_tx: &mpsc::Sender<SpawnEvent>,
-    ) -> Result<(), PoolSpawnError> {
-        self.fill_pool(action_tx).await?;
-        Ok(())
-    }
-
-    async fn handle_idle(
-        &mut self,
-        action_tx: &mpsc::Sender<SpawnEvent>,
-    ) -> Result<(), PoolSpawnError> {
-        self.fill_pool(action_tx).await?;
-        Ok(())
+    fn is_complete(&self) -> bool {
+        self.current_peers.len() >= self.config.max_peers
     }
 
     async fn handle_peer_removed(
         &mut self,
         removed_peer: PeerRemovedEvent,
-        action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), PoolSpawnError> {
         self.current_peers.retain(|p| p.id != removed_peer.id);
-        self.fill_pool(action_tx).await?;
         Ok(())
     }
 
@@ -159,14 +145,13 @@ impl BasicSpawner for PoolSpawner {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use tokio::sync::mpsc::{self, error::TryRecvError};
 
     use crate::daemon::{
         config::{NormalizedAddress, PoolPeerConfig},
         spawn::{
-            pool::PoolSpawner, tests::get_create_params, PeerRemovalReason, Spawner, SystemEvent,
+            pool::PoolSpawner, tests::get_create_params, BasicSpawner, PeerRemovalReason,
+            PeerRemovedEvent,
         },
         system::{MESSAGE_BUFFER_SIZE, NETWORK_WAIT_PERIOD},
     };
@@ -176,7 +161,7 @@ mod tests {
         let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
         let addresses = address_strings.map(|addr| addr.parse().unwrap());
 
-        let pool = PoolSpawner::new(
+        let mut pool = PoolSpawner::new(
             PoolPeerConfig {
                 addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
                     .into(),
@@ -187,15 +172,14 @@ mod tests {
         );
         let spawner_id = pool.get_id();
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
-        let (_notify_tx, notify_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
-        tokio::spawn(async move { pool.run(action_tx, notify_rx).await });
-        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        assert!(!pool.is_complete());
+        pool.try_spawn(&action_tx).await.unwrap();
         let res = action_rx.try_recv().unwrap();
         assert_eq!(spawner_id, res.id);
         let params = get_create_params(res);
         let addr1 = params.addr;
 
-        tokio::time::sleep(Duration::from_millis(10)).await;
         let res = action_rx.try_recv().unwrap();
         assert_eq!(spawner_id, res.id);
         let params = get_create_params(res);
@@ -205,9 +189,9 @@ mod tests {
         assert!(addresses.contains(&addr1));
         assert!(addresses.contains(&addr2));
 
-        tokio::time::sleep(Duration::from_millis(10)).await;
         let res = action_rx.try_recv().unwrap_err();
         assert_eq!(res, TryRecvError::Empty);
+        assert!(pool.is_complete());
     }
 
     #[tokio::test]
@@ -216,7 +200,7 @@ mod tests {
         let addresses = address_strings.map(|addr| addr.parse().unwrap());
         let ignores = vec!["127.0.0.1".parse().unwrap()];
 
-        let pool = PoolSpawner::new(
+        let mut pool = PoolSpawner::new(
             PoolPeerConfig {
                 addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
                     .into(),
@@ -227,15 +211,14 @@ mod tests {
         );
         let spawner_id = pool.get_id();
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
-        let (_notify_tx, notify_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
-        tokio::spawn(async move { pool.run(action_tx, notify_rx).await });
-        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        assert!(!pool.is_complete());
+        pool.try_spawn(&action_tx).await.unwrap();
         let res = action_rx.try_recv().unwrap();
         assert_eq!(spawner_id, res.id);
         let params = get_create_params(res);
         let addr1 = params.addr;
 
-        tokio::time::sleep(Duration::from_millis(10)).await;
         let res = action_rx.try_recv().unwrap();
         assert_eq!(spawner_id, res.id);
         let params = get_create_params(res);
@@ -247,9 +230,9 @@ mod tests {
         assert!(!ignores.contains(&addr1.ip()));
         assert!(!ignores.contains(&addr2.ip()));
 
-        tokio::time::sleep(Duration::from_millis(10)).await;
         let res = action_rx.try_recv().unwrap_err();
         assert_eq!(res, TryRecvError::Empty);
+        assert!(pool.is_complete());
     }
 
     #[tokio::test]
@@ -257,7 +240,7 @@ mod tests {
         let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
         let addresses = address_strings.map(|addr| addr.parse().unwrap());
 
-        let pool = PoolSpawner::new(
+        let mut pool = PoolSpawner::new(
             PoolPeerConfig {
                 addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
                     .into(),
@@ -267,27 +250,26 @@ mod tests {
             NETWORK_WAIT_PERIOD,
         );
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
-        let (notify_tx, notify_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
-        tokio::spawn(async move { pool.run(action_tx, notify_rx).await });
-        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        assert!(!pool.is_complete());
+        pool.try_spawn(&action_tx).await.unwrap();
         let res = action_rx.try_recv().unwrap();
         let params = get_create_params(res);
         let addr1 = params.addr;
-        tokio::time::sleep(Duration::from_millis(10)).await;
         let res = action_rx.try_recv().unwrap();
         let params = get_create_params(res);
         let addr2 = params.addr;
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        assert!(pool.is_complete());
 
-        notify_tx
-            .send(SystemEvent::peer_removed(
-                params.id,
-                PeerRemovalReason::NetworkIssue,
-            ))
-            .await
-            .unwrap();
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        pool.handle_peer_removed(PeerRemovedEvent {
+            id: params.id,
+            reason: PeerRemovalReason::NetworkIssue,
+        })
+        .await
+        .unwrap();
 
+        assert!(!pool.is_complete());
+        pool.try_spawn(&action_tx).await.unwrap();
         let res = action_rx.try_recv().unwrap();
         let params = get_create_params(res);
         let addr3 = params.addr;
@@ -298,11 +280,12 @@ mod tests {
         assert_ne!(addr3, addr1);
 
         assert!(addresses.contains(&addr3));
+        assert!(pool.is_complete());
     }
 
     #[tokio::test]
     async fn works_if_address_does_not_resolve() {
-        let pool = PoolSpawner::new(
+        let mut pool = PoolSpawner::new(
             PoolPeerConfig {
                 addr: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]).into(),
                 max_peers: 2,
@@ -311,10 +294,10 @@ mod tests {
             NETWORK_WAIT_PERIOD,
         );
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
-        let (_notify_tx, notify_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
-        tokio::spawn(async move { pool.run(action_tx, notify_rx).await });
-        tokio::time::sleep(Duration::from_millis(1000)).await;
+        assert!(!pool.is_complete());
+        pool.try_spawn(&action_tx).await.unwrap();
         let res = action_rx.try_recv().unwrap_err();
         assert_eq!(res, TryRecvError::Empty);
+        assert!(!pool.is_complete());
     }
 }

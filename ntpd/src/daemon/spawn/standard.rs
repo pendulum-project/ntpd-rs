@@ -16,6 +16,7 @@ pub struct StandardSpawner {
     config: StandardPeerConfig,
     network_wait_period: std::time::Duration,
     resolved: Option<SocketAddr>,
+    has_spawned: bool,
 }
 
 #[derive(Error, Debug)]
@@ -34,6 +35,7 @@ impl StandardSpawner {
             config,
             network_wait_period,
             resolved: None,
+            has_spawned: false,
         }
     }
 
@@ -62,8 +64,13 @@ impl StandardSpawner {
             addr
         }
     }
+}
 
-    async fn spawn(
+#[async_trait::async_trait]
+impl BasicSpawner for StandardSpawner {
+    type Error = StandardSpawnError;
+
+    async fn try_spawn(
         &mut self,
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), StandardSpawnError> {
@@ -80,35 +87,26 @@ impl StandardSpawner {
                 ),
             ))
             .await?;
+        self.has_spawned = true;
         Ok(())
     }
-}
 
-#[async_trait::async_trait]
-impl BasicSpawner for StandardSpawner {
-    type Error = StandardSpawnError;
-
-    async fn handle_init(
-        &mut self,
-        action_tx: &mpsc::Sender<SpawnEvent>,
-    ) -> Result<(), StandardSpawnError> {
-        self.spawn(action_tx).await
+    fn is_complete(&self) -> bool {
+        self.has_spawned
     }
 
     async fn handle_peer_removed(
         &mut self,
         removed_peer: PeerRemovedEvent,
-        action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), StandardSpawnError> {
         if removed_peer.reason == PeerRemovalReason::Unreachable {
             // force new resolution
             self.resolved = None;
         }
         if removed_peer.reason != PeerRemovalReason::Demobilized {
-            self.spawn(action_tx).await
-        } else {
-            Ok(())
+            self.has_spawned = false;
         }
+        Ok(())
     }
 
     fn get_id(&self) -> SpawnerId {
@@ -126,22 +124,20 @@ impl BasicSpawner for StandardSpawner {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use tokio::sync::mpsc::{self, error::TryRecvError};
 
     use crate::daemon::{
         config::{NormalizedAddress, StandardPeerConfig},
         spawn::{
-            standard::StandardSpawner, tests::get_create_params, PeerRemovalReason, Spawner,
-            SystemEvent,
+            standard::StandardSpawner, tests::get_create_params, BasicSpawner, PeerRemovalReason,
+            PeerRemovedEvent,
         },
         system::{MESSAGE_BUFFER_SIZE, NETWORK_WAIT_PERIOD},
     };
 
     #[tokio::test]
     async fn creates_a_peer() {
-        let spawner = StandardSpawner::new(
+        let mut spawner = StandardSpawner::new(
             StandardPeerConfig {
                 address: NormalizedAddress::with_hardcoded_dns(
                     "example.com",
@@ -154,24 +150,21 @@ mod tests {
         );
         let spawner_id = spawner.get_id();
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
-        let (_notify_tx, notify_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
-        tokio::spawn(async move { spawner.run(action_tx, notify_rx).await });
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        assert!(!spawner.is_complete());
+        spawner.try_spawn(&action_tx).await.unwrap();
         let res = action_rx.try_recv().unwrap();
         assert_eq!(res.id, spawner_id);
         let params = get_create_params(res);
         assert_eq!(params.addr.to_string(), "127.0.0.1:123");
 
-        // and now we should no longer receive anything
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        let res = action_rx.try_recv().unwrap_err();
-        assert_eq!(res, TryRecvError::Empty);
+        // Should be complete after spawning
+        assert!(spawner.is_complete());
     }
 
     #[tokio::test]
     async fn recreates_a_peer() {
-        let spawner = StandardSpawner::new(
+        let mut spawner = StandardSpawner::new(
             StandardPeerConfig {
                 address: NormalizedAddress::with_hardcoded_dns(
                     "example.com",
@@ -183,25 +176,27 @@ mod tests {
             NETWORK_WAIT_PERIOD,
         );
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
-        let (notify_tx, notify_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
-        tokio::spawn(async move { spawner.run(action_tx, notify_rx).await });
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        assert!(!spawner.is_complete());
+        spawner.try_spawn(&action_tx).await.unwrap();
         let res = action_rx.try_recv().unwrap();
         let params = get_create_params(res);
+        assert!(spawner.is_complete());
 
-        notify_tx
-            .send(SystemEvent::peer_removed(
-                params.id,
-                PeerRemovalReason::NetworkIssue,
-            ))
+        spawner
+            .handle_peer_removed(PeerRemovedEvent {
+                id: params.id,
+                reason: PeerRemovalReason::NetworkIssue,
+            })
             .await
             .unwrap();
-        tokio::time::sleep(Duration::from_millis(10)).await;
 
+        assert!(!spawner.is_complete());
+        spawner.try_spawn(&action_tx).await.unwrap();
         let res = action_rx.try_recv().unwrap();
         let params = get_create_params(res);
         assert_eq!(params.addr.to_string(), "127.0.0.1:123");
+        assert!(spawner.is_complete());
     }
 
     #[tokio::test]
@@ -209,7 +204,7 @@ mod tests {
         let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
         let addresses = address_strings.map(|addr| addr.parse().unwrap());
 
-        let spawner = StandardSpawner::new(
+        let mut spawner = StandardSpawner::new(
             StandardPeerConfig {
                 address: NormalizedAddress::with_hardcoded_dns(
                     "europe.pool.ntp.org",
@@ -221,27 +216,32 @@ mod tests {
             NETWORK_WAIT_PERIOD,
         );
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
-        let (notify_tx, notify_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
-        tokio::spawn(async move { spawner.run(action_tx, notify_rx).await });
+        assert!(!spawner.is_complete());
+        spawner.try_spawn(&action_tx).await.unwrap();
         let res = action_rx.recv().await.unwrap();
         let params = get_create_params(res);
         let initial_addr = params.addr;
+        assert!(spawner.is_complete());
 
         // We repeat multiple times and check at least one is different to be less
         // sensitive to dns resolver giving the same pool ip.
         let mut seen_addresses = vec![];
         for _ in 0..5 {
-            notify_tx
-                .send(SystemEvent::peer_removed(
-                    params.id,
-                    PeerRemovalReason::Unreachable,
-                ))
+            spawner
+                .handle_peer_removed(PeerRemovedEvent {
+                    id: params.id,
+                    reason: PeerRemovalReason::Unreachable,
+                })
                 .await
                 .unwrap();
+
+            assert!(!spawner.is_complete());
+            spawner.try_spawn(&action_tx).await.unwrap();
             let res = action_rx.recv().await.unwrap();
             let params = get_create_params(res);
             seen_addresses.push(params.addr);
+            assert!(spawner.is_complete());
         }
         let seen_addresses = seen_addresses;
 
@@ -264,7 +264,7 @@ mod tests {
 
     #[tokio::test]
     async fn works_if_address_does_not_resolve() {
-        let spawner = StandardSpawner::new(
+        let mut spawner = StandardSpawner::new(
             StandardPeerConfig {
                 address: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![])
                     .into(),
@@ -272,10 +272,9 @@ mod tests {
             NETWORK_WAIT_PERIOD,
         );
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
-        let (_notify_tx, notify_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
-        tokio::spawn(async move { spawner.run(action_tx, notify_rx).await });
 
-        tokio::time::sleep(Duration::from_millis(1000)).await;
+        spawner.try_spawn(&action_tx).await.unwrap();
+
         let res = action_rx.try_recv().unwrap_err();
         assert_eq!(res, TryRecvError::Empty);
     }

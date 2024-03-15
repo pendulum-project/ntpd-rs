@@ -34,11 +34,13 @@ impl DummySpawner {
     pub fn empty() -> DummySpawner {
         Self::simple(vec![], 0)
     }
+}
 
-    async fn spawn(
-        &mut self,
-        action_tx: &mpsc::Sender<SpawnEvent>,
-    ) -> Result<(), DummySpawnerError> {
+#[async_trait::async_trait]
+impl BasicSpawner for DummySpawner {
+    type Error = DummySpawnerError;
+
+    async fn try_spawn(&mut self, action_tx: &mpsc::Sender<SpawnEvent>) -> Result<(), Self::Error> {
         while self.to_activate > 0 {
             if self.to_spawn.is_empty() {
                 return Ok(());
@@ -57,25 +59,16 @@ impl DummySpawner {
 
         Ok(())
     }
-}
 
-#[async_trait::async_trait]
-impl BasicSpawner for DummySpawner {
-    type Error = DummySpawnerError;
-
-    async fn handle_init(
-        &mut self,
-        action_tx: &mpsc::Sender<SpawnEvent>,
-    ) -> Result<(), DummySpawnerError> {
-        self.spawn(action_tx).await
+    fn is_complete(&self) -> bool {
+        self.to_activate == 0
     }
 
     async fn handle_peer_removed(
         &mut self,
         _removed_peer: PeerRemovedEvent,
-        action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), DummySpawnerError> {
-        self.spawn(action_tx).await
+        Ok(())
     }
 
     fn get_id(&self) -> SpawnerId {

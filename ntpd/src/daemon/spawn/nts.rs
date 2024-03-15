@@ -13,6 +13,7 @@ pub struct NtsSpawner {
     config: NtsPeerConfig,
     network_wait_period: std::time::Duration,
     id: SpawnerId,
+    has_spawned: bool,
 }
 
 #[derive(Error, Debug)]
@@ -59,10 +60,19 @@ impl NtsSpawner {
             config,
             network_wait_period,
             id: Default::default(),
+            has_spawned: false,
         }
     }
+}
 
-    async fn spawn(&mut self, action_tx: &mpsc::Sender<SpawnEvent>) -> Result<(), NtsSpawnError> {
+#[async_trait::async_trait]
+impl BasicSpawner for NtsSpawner {
+    type Error = NtsSpawnError;
+
+    async fn try_spawn(
+        &mut self,
+        action_tx: &mpsc::Sender<SpawnEvent>,
+    ) -> Result<(), NtsSpawnError> {
         const MAX_BACKOFF: u32 = 64;
         const BACKOFF_FACTOR: u32 = 2;
 
@@ -92,6 +102,7 @@ impl NtsSpawner {
                                 ),
                             ))
                             .await?;
+                        self.has_spawned = true;
                         return Ok(());
                     }
                 }
@@ -107,25 +118,17 @@ impl NtsSpawner {
             );
         }
     }
-}
 
-#[async_trait::async_trait]
-impl BasicSpawner for NtsSpawner {
-    type Error = NtsSpawnError;
-
-    async fn handle_init(
-        &mut self,
-        action_tx: &mpsc::Sender<SpawnEvent>,
-    ) -> Result<(), NtsSpawnError> {
-        self.spawn(action_tx).await
+    fn is_complete(&self) -> bool {
+        self.has_spawned
     }
 
     async fn handle_peer_removed(
         &mut self,
         _removed_peer: PeerRemovedEvent,
-        action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), NtsSpawnError> {
-        self.handle_init(action_tx).await
+        self.has_spawned = false;
+        Ok(())
     }
 
     fn get_id(&self) -> SpawnerId {
