@@ -13,6 +13,7 @@ mod clock;
 mod config;
 mod cookiestash;
 mod identifiers;
+mod io;
 mod keyset;
 mod nts_record;
 mod packet;

@@ -8,9 +8,9 @@ use rustls::pki_types::ServerName;
 
 use crate::{
     cookiestash::CookieStash,
+    io::{NonBlockingRead, NonBlockingWrite},
     keyset::{DecodedServerCookie, KeySet},
-    packet::AesSivCmac512,
-    packet::{AesSivCmac256, Cipher},
+    packet::{AesSivCmac256, AesSivCmac512, Cipher},
     peer::{PeerNtsData, ProtocolVersion},
 };
 
@@ -174,25 +174,28 @@ pub enum NtsRecord {
     },
 }
 
-fn read_u16_be(reader: &mut impl Read) -> std::io::Result<u16> {
+fn read_u16_be(reader: &mut impl NonBlockingRead) -> std::io::Result<u16> {
     let mut bytes = [0, 0];
     reader.read_exact(&mut bytes)?;
 
     Ok(u16::from_be_bytes(bytes))
 }
 
-fn read_u16s_be(reader: &mut impl Read, length: usize) -> std::io::Result<Vec<u16>> {
+fn read_u16s_be(reader: &mut impl NonBlockingRead, length: usize) -> std::io::Result<Vec<u16>> {
     (0..length).map(|_| read_u16_be(reader)).collect()
 }
 
 #[cfg(feature = "nts-pool")]
-fn read_u16_tuples_be(reader: &mut impl Read, length: usize) -> std::io::Result<Vec<(u16, u16)>> {
+fn read_u16_tuples_be(
+    reader: &mut impl NonBlockingRead,
+    length: usize,
+) -> std::io::Result<Vec<(u16, u16)>> {
     (0..length)
         .map(|_| Ok((read_u16_be(reader)?, read_u16_be(reader)?)))
         .collect()
 }
 
-fn read_bytes_exact(reader: &mut impl Read, length: usize) -> std::io::Result<Vec<u8>> {
+fn read_bytes_exact(reader: &mut impl NonBlockingRead, length: usize) -> std::io::Result<Vec<u8>> {
     let mut output = vec![0; length];
     reader.read_exact(&mut output)?;
 
@@ -342,7 +345,7 @@ impl NtsRecord {
         response.into_boxed_slice()
     }
 
-    pub fn read<A: Read>(reader: &mut A) -> std::io::Result<NtsRecord> {
+    pub fn read(reader: &mut impl NonBlockingRead) -> std::io::Result<NtsRecord> {
         let raw_record_type = read_u16_be(reader)?;
         let critical = raw_record_type & 0x8000 != 0;
         let record_type = raw_record_type & !0x8000;
@@ -435,7 +438,7 @@ impl NtsRecord {
         })
     }
 
-    pub fn write<A: Write>(&self, writer: &mut A) -> std::io::Result<()> {
+    pub fn write(&self, mut writer: impl NonBlockingWrite) -> std::io::Result<()> {
         // error out early when the record is invalid
         if let Err(e) = self.validate() {
             return Err(std::io::Error::new(std::io::ErrorKind::Other, e));

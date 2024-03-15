@@ -1,5 +1,8 @@
 #![warn(clippy::missing_const_for_fn)]
-use crate::{NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, PollInterval, SystemSnapshot};
+use crate::{
+    io::NonBlockingWrite, NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, PollInterval,
+    SystemSnapshot,
+};
 use rand::random;
 
 mod error;
@@ -284,7 +287,7 @@ impl NtpHeaderV5 {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn serialize<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
+    pub(crate) fn serialize(&self, mut w: impl NonBlockingWrite) -> std::io::Result<()> {
         w.write_all(&[(self.leap.to_bits() << 6) | (Self::VERSION << 3) | self.mode.to_bits()])?;
         w.write_all(&[self.stratum, self.poll.as_byte(), self.precision as u8])?;
         w.write_all(&[self.timescale.to_bits()])?;
@@ -414,8 +417,8 @@ mod tests {
         assert_eq!(parsed.transmit_timestamp, NtpTimestamp::from_fixed_int(0x0));
 
         let mut buffer: [u8; 48] = [0u8; 48];
-        let mut cursor = Cursor::new(buffer.as_mut_slice());
-        parsed.serialize(&mut cursor).unwrap();
+        let cursor = Cursor::new(buffer.as_mut_slice());
+        parsed.serialize(cursor).unwrap();
 
         assert_eq!(data, buffer);
     }
@@ -487,8 +490,8 @@ mod tests {
         );
 
         let mut buffer: [u8; 48] = [0u8; 48];
-        let mut cursor = Cursor::new(buffer.as_mut_slice());
-        parsed.serialize(&mut cursor).unwrap();
+        let cursor = Cursor::new(buffer.as_mut_slice());
+        parsed.serialize(cursor).unwrap();
 
         assert_eq!(data, buffer);
     }

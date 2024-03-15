@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     clock::NtpClock,
     identifiers::ReferenceId,
+    io::NonBlockingWrite,
     keyset::{DecodedServerCookie, KeySet},
     system::SystemSnapshot,
     time_types::{NtpDuration, NtpTimestamp, PollInterval},
@@ -195,7 +196,7 @@ impl NtpHeaderV3V4 {
         ))
     }
 
-    fn serialize<W: std::io::Write>(&self, w: &mut W, version: u8) -> std::io::Result<()> {
+    fn serialize(&self, mut w: impl NonBlockingWrite, version: u8) -> std::io::Result<()> {
         w.write_all(&[(self.leap.to_bits() << 6) | (version << 3) | self.mode.to_bits()])?;
         w.write_all(&[self.stratum, self.poll.as_byte(), self.precision as u8])?;
         w.write_all(&self.root_delay.to_bits_short())?;
@@ -453,25 +454,27 @@ impl<'a> NtpPacket<'a> {
         let start = w.position();
 
         match self.header {
-            NtpHeader::V3(header) => header.serialize(w, 3)?,
-            NtpHeader::V4(header) => header.serialize(w, 4)?,
+            NtpHeader::V3(header) => header.serialize(&mut *w, 3)?,
+            NtpHeader::V4(header) => header.serialize(&mut *w, 4)?,
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(header) => header.serialize(w)?,
+            NtpHeader::V5(header) => header.serialize(&mut *w)?,
         };
 
         match self.header {
             NtpHeader::V3(_) => { /* No extension fields in V3 */ }
-            NtpHeader::V4(_) => self
-                .efdata
-                .serialize(w, cipher, ExtensionHeaderVersion::V4)?,
+            NtpHeader::V4(_) => {
+                self.efdata
+                    .serialize(&mut *w, cipher, ExtensionHeaderVersion::V4)?
+            }
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_) => self
-                .efdata
-                .serialize(w, cipher, ExtensionHeaderVersion::V5)?,
+            NtpHeader::V5(_) => {
+                self.efdata
+                    .serialize(&mut *w, cipher, ExtensionHeaderVersion::V5)?
+            }
         }
 
         if let Some(ref mac) = self.mac {
-            mac.serialize(w)?;
+            mac.serialize(&mut *w)?;
         }
 
         #[cfg(feature = "ntpv5")]

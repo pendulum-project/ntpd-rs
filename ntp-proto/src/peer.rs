@@ -490,7 +490,7 @@ impl Peer {
         }
 
         // Write packet to buffer
-        let mut cursor = Cursor::new(buf);
+        let mut cursor: Cursor<&mut [u8]> = Cursor::new(buf);
         packet.serialize(
             &mut cursor,
             &self.nts.as_ref().map(|nts| nts.c2s.as_ref()),

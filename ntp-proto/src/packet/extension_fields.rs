@@ -3,7 +3,7 @@ use std::{
     io::{Cursor, Write},
 };
 
-use crate::keyset::DecodedServerCookie;
+use crate::{io::NonBlockingWrite, keyset::DecodedServerCookie};
 
 #[cfg(feature = "ntpv5")]
 use crate::packet::v5::extension_fields::{ReferenceIdRequest, ReferenceIdResponse};
@@ -157,9 +157,9 @@ impl<'a> ExtensionField<'a> {
         }
     }
 
-    pub(crate) fn serialize<W: std::io::Write>(
+    pub(crate) fn serialize(
         &self,
-        w: &mut W,
+        w: impl NonBlockingWrite,
         minimum_size: u16,
         version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
@@ -191,17 +191,17 @@ impl<'a> ExtensionField<'a> {
     }
 
     #[cfg(feature = "__internal-fuzz")]
-    pub fn serialize_pub<W: std::io::Write>(
+    pub fn serialize_pub(
         &self,
-        w: &mut W,
+        w: impl NonBlockingWrite,
         minimum_size: u16,
         version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
         self.serialize(w, minimum_size, version)
     }
 
-    fn encode_framing<W: std::io::Write>(
-        w: &mut W,
+    fn encode_framing(
+        mut w: impl NonBlockingWrite,
         ef_id: ExtensionFieldTypeId,
         data_length: usize,
         minimum_size: u16,
@@ -226,8 +226,8 @@ impl<'a> ExtensionField<'a> {
         w.write_all(&actual_length.to_be_bytes())
     }
 
-    fn encode_padding<W: std::io::Write>(
-        w: &mut W,
+    fn encode_padding(
+        w: impl NonBlockingWrite,
         data_length: usize,
         minimum_size: u16,
     ) -> std::io::Result<()> {
@@ -249,7 +249,7 @@ impl<'a> ExtensionField<'a> {
         )
     }
 
-    fn write_zeros(w: &mut impl std::io::Write, n: usize) -> std::io::Result<()> {
+    fn write_zeros(mut w: impl NonBlockingWrite, n: usize) -> std::io::Result<()> {
         let mut remaining = n;
         let padding_bytes = [0_u8; 32];
         while remaining > 0 {
@@ -262,14 +262,14 @@ impl<'a> ExtensionField<'a> {
         Ok(())
     }
 
-    fn encode_unique_identifier<W: std::io::Write>(
-        w: &mut W,
+    fn encode_unique_identifier(
+        mut w: impl NonBlockingWrite,
         identifier: &[u8],
         minimum_size: u16,
         version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
         Self::encode_framing(
-            w,
+            &mut w,
             ExtensionFieldTypeId::UniqueIdentifier,
             identifier.len(),
             minimum_size,
@@ -279,14 +279,14 @@ impl<'a> ExtensionField<'a> {
         Self::encode_padding(w, identifier.len(), minimum_size)
     }
 
-    fn encode_nts_cookie<W: std::io::Write>(
-        w: &mut W,
+    fn encode_nts_cookie(
+        mut w: impl NonBlockingWrite,
         cookie: &[u8],
         minimum_size: u16,
         version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
         Self::encode_framing(
-            w,
+            &mut w,
             ExtensionFieldTypeId::NtsCookie,
             cookie.len(),
             minimum_size,
@@ -300,36 +300,36 @@ impl<'a> ExtensionField<'a> {
         Ok(())
     }
 
-    fn encode_nts_cookie_placeholder<W: std::io::Write>(
-        w: &mut W,
+    fn encode_nts_cookie_placeholder(
+        mut w: impl NonBlockingWrite,
         cookie_length: u16,
         minimum_size: u16,
         version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
         Self::encode_framing(
-            w,
+            &mut w,
             ExtensionFieldTypeId::NtsCookiePlaceholder,
             cookie_length as usize,
             minimum_size,
             version,
         )?;
 
-        Self::write_zeros(w, cookie_length as usize)?;
+        Self::write_zeros(&mut w, cookie_length as usize)?;
 
         Self::encode_padding(w, cookie_length as usize, minimum_size)?;
 
         Ok(())
     }
 
-    fn encode_unknown<W: std::io::Write>(
-        w: &mut W,
+    fn encode_unknown(
+        mut w: impl NonBlockingWrite,
         type_id: u16,
         data: &[u8],
         minimum_size: u16,
         version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
         Self::encode_framing(
-            w,
+            &mut w,
             ExtensionFieldTypeId::Unknown { type_id },
             data.len(),
             minimum_size,
@@ -366,7 +366,7 @@ impl<'a> ExtensionField<'a> {
             // RFC 8915, section 5.5: contrary to the RFC 7822 requirement that fields have a minimum length of 16 or 28 octets,
             // encrypted extension fields MAY be arbitrarily short (but still MUST be a multiple of 4 octets in length)
             let minimum_size = 0;
-            field.serialize(w, minimum_size, version)?;
+            field.serialize(&mut *w, minimum_size, version)?;
         }
 
         let plaintext_length = w.position() - plaintext_start;
@@ -432,13 +432,13 @@ impl<'a> ExtensionField<'a> {
 
     #[cfg(feature = "ntpv5")]
     fn encode_draft_identification(
-        w: &mut impl Write,
+        mut w: impl NonBlockingWrite,
         data: &str,
         minimum_size: u16,
         version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
         Self::encode_framing(
-            w,
+            &mut w,
             ExtensionFieldTypeId::DraftIdentification,
             data.len(),
             minimum_size,
@@ -454,20 +454,20 @@ impl<'a> ExtensionField<'a> {
 
     #[cfg(feature = "ntpv5")]
     pub fn encode_padding_field(
-        w: &mut impl Write,
+        mut w: impl NonBlockingWrite,
         length: usize,
         minimum_size: u16,
         version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
         Self::encode_framing(
-            w,
+            &mut w,
             ExtensionFieldTypeId::DraftIdentification,
             length - Self::HEADER_LENGTH,
             minimum_size,
             version,
         )?;
 
-        Self::write_zeros(w, length - Self::HEADER_LENGTH)?;
+        Self::write_zeros(&mut w, length - Self::HEADER_LENGTH)?;
         Self::encode_padding(w, length - Self::HEADER_LENGTH, minimum_size)?;
 
         Ok(())
@@ -607,7 +607,7 @@ impl<'a> ExtensionFieldData<'a> {
             let minimum_size = 16;
 
             for field in &self.authenticated {
-                field.serialize(w, minimum_size, version)?;
+                field.serialize(&mut *w, minimum_size, version)?;
             }
 
             // RFC 8915, section 5.5: contrary to the RFC 7822 requirement that fields have a minimum length of 16 or 28 octets,
@@ -626,7 +626,7 @@ impl<'a> ExtensionFieldData<'a> {
                 #[cfg(feature = "ntpv5")]
                 ExtensionHeaderVersion::V5 => 4,
             };
-            field.serialize(w, minimum_size, version)?;
+            field.serialize(&mut *w, minimum_size, version)?;
         }
 
         Ok(())
