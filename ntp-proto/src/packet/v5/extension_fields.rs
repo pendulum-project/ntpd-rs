@@ -1,9 +1,9 @@
+use crate::io::NonBlockingWrite;
 use crate::packet::error::ParsingError;
 use crate::packet::v5::server_reference_id::BloomFilter;
 use crate::packet::ExtensionField;
 use std::borrow::Cow;
 use std::convert::Infallible;
-use std::io::Write;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Type {
@@ -102,7 +102,7 @@ impl ReferenceIdRequest {
         Some(ReferenceIdResponse { bytes })
     }
 
-    pub fn serialize(&self, mut writer: impl Write) -> std::io::Result<()> {
+    pub fn serialize(&self, mut writer: impl NonBlockingWrite) -> std::io::Result<()> {
         let payload_len = self.payload_len;
         let ef_len: u16 = payload_len + 4;
 
@@ -167,7 +167,7 @@ impl<'a> ReferenceIdResponse<'a> {
         }
     }
 
-    pub fn serialize(&self, mut writer: impl Write) -> std::io::Result<()> {
+    pub fn serialize(&self, mut writer: impl NonBlockingWrite) -> std::io::Result<()> {
         let len: u16 = self.bytes.len().try_into().unwrap();
         let len = len + 4; // Add room for type and length
         assert_eq!(len % 4, 0);

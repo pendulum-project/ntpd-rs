@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use crate::io::NonBlockingWrite;
+
 use super::error::ParsingError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,7 +24,7 @@ impl<'a> Mac<'a> {
         }
     }
 
-    pub(super) fn serialize<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
+    pub(super) fn serialize(&self, mut w: impl NonBlockingWrite) -> std::io::Result<()> {
         w.write_all(&self.keyid.to_be_bytes())?;
         w.write_all(&self.mac)
     }
