@@ -47,8 +47,13 @@ impl NtsPoolSpawner {
     fn contains_peer(&self, domain: &str) -> bool {
         self.current_peers.iter().any(|peer| peer.remote == domain)
     }
+}
 
-    pub async fn try_fill_pool(
+#[async_trait::async_trait]
+impl BasicSpawner for NtsPoolSpawner {
+    type Error = NtsPoolSpawnError;
+
+    async fn try_spawn(
         &mut self,
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), NtsPoolSpawnError> {
@@ -127,35 +132,16 @@ impl NtsPoolSpawner {
             }
         }
     }
-}
 
-#[async_trait::async_trait]
-impl BasicSpawner for NtsPoolSpawner {
-    type Error = NtsPoolSpawnError;
-
-    async fn handle_init(
-        &mut self,
-        action_tx: &mpsc::Sender<SpawnEvent>,
-    ) -> Result<(), NtsPoolSpawnError> {
-        self.handle_idle(action_tx).await?;
-        Ok(())
-    }
-
-    async fn handle_idle(
-        &mut self,
-        action_tx: &mpsc::Sender<SpawnEvent>,
-    ) -> Result<(), NtsPoolSpawnError> {
-        self.try_fill_pool(action_tx).await?;
-        Ok(())
+    fn is_complete(&self) -> bool {
+        self.current_peers.len() >= self.config.max_peers
     }
 
     async fn handle_peer_removed(
         &mut self,
         removed_peer: PeerRemovedEvent,
-        action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), NtsPoolSpawnError> {
         self.current_peers.retain(|p| p.id != removed_peer.id);
-        self.try_fill_pool(action_tx).await?;
         Ok(())
     }
 

@@ -2,9 +2,12 @@ use std::{net::SocketAddr, sync::atomic::AtomicU64};
 
 use ntp_proto::{PeerNtsData, ProtocolVersion};
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc;
+use tokio::{
+    sync::mpsc,
+    time::{timeout, Instant},
+};
 
-use super::config::NormalizedAddress;
+use super::{config::NormalizedAddress, system::NETWORK_WAIT_PERIOD};
 
 #[cfg(test)]
 pub mod dummy;
@@ -202,27 +205,13 @@ pub trait Spawner {
 pub trait BasicSpawner {
     type Error: std::error::Error + Send;
 
-    /// Handle initial spawning.
+    /// Try to create all desired peers. Should return immediately on failure
     ///
-    /// This is called on startup of the spawner and is meant to setup the
-    /// initial set of peers when nothing else would have been spawned by this
-    /// spawner. Once this function completes the system should be aware of at
-    /// least one peer for this spawner, otherwise no events will ever be sent
-    /// to the spawner and nothing will ever happen.
-    async fn handle_init(
-        &mut self,
-        action_tx: &mpsc::Sender<SpawnEvent>,
-    ) -> Result<(), Self::Error>;
+    ///
+    async fn try_spawn(&mut self, action_tx: &mpsc::Sender<SpawnEvent>) -> Result<(), Self::Error>;
 
-    /// Function that can be called at regular intervals (once every minute)
-    /// to perform "long" tasks that we do not want to block the main Spawner::run
-    /// function for.
-    async fn handle_idle(
-        &mut self,
-        _action_tx: &mpsc::Sender<SpawnEvent>,
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
+    /// Is there desire to spawn new peers?
+    fn is_complete(&self) -> bool;
 
     /// Event handler for when a peer is removed.
     ///
@@ -230,22 +219,20 @@ pub trait BasicSpawner {
     /// the spawned peers was removed from the system. The spawner can then add
     /// additional peers or do nothing, depending on its configuration and
     /// algorithm.
-    async fn handle_peer_removed(
-        &mut self,
-        event: PeerRemovedEvent,
-        action_tx: &mpsc::Sender<SpawnEvent>,
-    ) -> Result<(), Self::Error>;
+    ///
+    /// This should just do bookkeeping, any adding of peers should be done
+    /// in try_add.
+    async fn handle_peer_removed(&mut self, event: PeerRemovedEvent) -> Result<(), Self::Error>;
 
     /// Event handler for when a peer is succesfully registered in the system
     ///
     /// Every time the spawner sends a peer to the system this handler will
     /// eventually be called when the system has sucessfully registered the peer
     /// and will start polling it for ntp packets.
-    async fn handle_registered(
-        &mut self,
-        _event: PeerCreateParameters,
-        _action_tx: &mpsc::Sender<SpawnEvent>,
-    ) -> Result<(), Self::Error> {
+    ///
+    /// This should just do bookkeeping, any adding of peers should be done
+    /// in try_add.
+    async fn handle_registered(&mut self, _event: PeerCreateParameters) -> Result<(), Self::Error> {
         Ok(())
     }
 
@@ -272,24 +259,43 @@ where
         action_tx: mpsc::Sender<SpawnEvent>,
         mut system_notify: mpsc::Receiver<SystemEvent>,
     ) -> Result<(), E> {
-        use tokio::time::{timeout, Duration};
-        // basic event loop where init is called on startup and then wait for
-        // events from the system before doing anything
-        self.handle_init(&action_tx).await?;
-        while let Some(event) = timeout(Duration::from_secs(60), system_notify.recv())
-            .await
-            .unwrap_or(Some(SystemEvent::Idle))
-        {
+        let mut has_ticket = true;
+        let mut last_ticket_time = Instant::now();
+
+        loop {
+            if Instant::now() - last_ticket_time >= NETWORK_WAIT_PERIOD {
+                has_ticket = true;
+            }
+
+            if has_ticket && !self.is_complete() {
+                self.try_spawn(&action_tx).await?;
+                has_ticket = false;
+                last_ticket_time = Instant::now();
+            }
+
+            let event = if has_ticket {
+                system_notify.recv().await
+            } else {
+                timeout(
+                    last_ticket_time + NETWORK_WAIT_PERIOD - Instant::now(),
+                    system_notify.recv(),
+                )
+                .await
+                .unwrap_or(Some(SystemEvent::Idle))
+            };
+
+            let Some(event) = event else {
+                break;
+            };
+
             match event {
                 SystemEvent::PeerRegistered(peer_params) => {
-                    self.handle_registered(peer_params, &action_tx).await?;
+                    self.handle_registered(peer_params).await?;
                 }
                 SystemEvent::PeerRemoved(removed_peer) => {
-                    self.handle_peer_removed(removed_peer, &action_tx).await?;
+                    self.handle_peer_removed(removed_peer).await?;
                 }
-                SystemEvent::Idle => {
-                    self.handle_idle(&action_tx).await?;
-                }
+                SystemEvent::Idle => {}
             }
         }
 
