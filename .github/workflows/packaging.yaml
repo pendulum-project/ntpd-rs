@@ -11,20 +11,134 @@ on:
 
 jobs:
   package:
-    uses: pendulum-project/ploutos/.github/workflows/pkg-rust.yml@provide-debug-symbols
-    with:
-      workspace_package: ntpd
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - aarch64-unknown-linux-gnu
+          - armv7-unknown-linux-gnueabihf
+          - x86_64-unknown-linux-gnu
+          - i686-unknown-linux-gnu
+    steps:
+      - name: Setup packaging tools for cross compiled artifacts
+        uses: awalsh128/cache-apt-pkgs-action@a6c3917cc929dd0345bfb2d3feaf9101823370ad # v1.4.2
+        with:
+          packages: qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
+          version: 1
 
-      package_build_rules: |
-        pkg: ntpd-rs
-        image:
-          - "rockylinux:9"
-          - "ubuntu:xenial"
-        target: x86_64
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@be73d7920c329f220ce78e0234b8f96b7ae60248
+        with:
+          toolchain: "stable"
+          components: "llvm-tools"
 
-      package_test_scripts_path: pkg/test-scripts/test-ntpd-rs.sh
+      - name: Install cross, cargo-deb and cargo-generate-rpm
+        uses: taiki-e/install-action@4abee32ddd6d3482e57ba21814317997e6268efe
+        with:
+          tool: cross, cargo-deb, cargo-generate-rpm
 
-      rpm_scriptlets_path: pkg/rpm/scriptlets.toml
+      - name: Checkout sources
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
 
-      rpm_extra_build_packages: git
-      deb_extra_build_packages: git
+      - name: Build the release binaries
+        run: RELEASE_TARGETS="${{ matrix.target }}" utils/build-release.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
+        with:
+          name: release-binaries-${{ matrix.target }}
+          path: target/pkg/
+          if-no-files-found: error
+
+  gather:
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@c850b930e6ba138125429b7e5c93fc707a7f8427 # v4.1.4
+        with:
+          pattern: release-binaries-*
+          path: target/pkg/
+          merge-multiple: true
+      - name: Create a SHA256SUMS file
+        run: |
+          cd target/pkg/
+          rm -rf SHA256SUMS
+          sha256sum -b * > SHA256SUMS
+      - name: Upload artifacts
+        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
+        with:
+          name: release-binaries
+          path: target/pkg/
+          if-no-files-found: error
+
+  checks:
+    uses: './.github/workflows/checks.yaml'
+
+  release:
+    needs: [gather, checks]
+    runs-on: ubuntu-latest
+    if: ${{ startsWith(github.ref, 'refs/heads/release/') }}
+    permissions:
+      # This part of the release pipeline needs to create a tag and a release
+      contents: write
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Download artifacts
+        uses: actions/download-artifact@c850b930e6ba138125429b7e5c93fc707a7f8427 # v4.1.4
+        with:
+          name: release-binaries
+          path: target/pkg/
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@be73d7920c329f220ce78e0234b8f96b7ae60248
+        with:
+          toolchain: "stable"
+          components: "llvm-tools"
+
+      - name: Check that the release commit is verified
+        run: |
+          commit_url="${{ github.api_url }}/repos/${{ github.repository }}/commits/${{ github.sha }}"
+          json_accept_header="Accept: application/vnd.github+json"
+          auth_bearer_header="Authorization: Bearer ${{ github.token }}"
+          test "$(curl -sf -H "$json_accept_header" -H "$auth_bearer_header" "$commit_url" | jq .commit.verification.verified)" == "true"
+
+      - name: Read the version from the manifest file
+        run: echo "release_version=$(cargo read-manifest --manifest-path ntpd/Cargo.toml | jq -r .version)" >> "$GITHUB_ENV"
+
+      - name: Version in Cargo.toml must match the branch name
+        run: test "release/$release_version" == "${{ github.ref_name }}"
+
+      - name: Ensure there is not already a released tag with a non-draft release
+        run: test "$(gh release view "v$release_version" --json isDraft --jq .isDraft 2>/dev/null || echo "true")" == "true"
+
+      - name: Verify that the changelog top most entry concerns this release
+        run: |
+          release_notes="$(awk '/^## / && !found { found=1; print; next } /^## / && found { exit } found { print }' CHANGELOG.md)"
+          release_notes_header="$(echo "$release_notes" | head -1)"
+          echo "Found release notes for '$release_notes_header'"
+          release_notes_body="$(echo "$release_notes" | tail +2)"
+          release_notes_body="${release_notes_body#"${release_notes_body%%[![:space:]]*}"}"
+          release_notes_body="${release_notes_body%"${release_notes_body##*[![:space:]]}"}"
+          release_notes_version="$(echo "$release_notes_header" | cut -d' ' -f2 | sed 's/[][]//g')"
+          echo "Found version '$release_notes_version' in release notes"
+          test "$release_notes_version" == "${{ env.release_version }}"
+          {
+            echo "release_notes_body<<RELEASE_NOTES_EOF"
+            echo "$release_notes_body"
+            echo RELEASE_NOTES_EOF
+          } >> "$GITHUB_ENV"
+
+      - name: Create a draft release
+        uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564 # v2.0.4
+        with:
+          draft: true
+          fail_on_unmatched_files: true
+          tag_name: "v${{ env.release_version }}"
+          target_commitish: "${{ github.sha }}"
+          name: "Version ${{ env.release_version }}"
+          files: target/pkg/*
+          body: "${{ env.release_notes_body }}"
+
