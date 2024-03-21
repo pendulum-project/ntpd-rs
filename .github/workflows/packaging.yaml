@@ -20,5 +20,14 @@ jobs:
         with:
           packages: crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
           version: 1
+
+      - name: Install cross
+        uses: taiki-e/install-action@4abee32ddd6d3482e57ba21814317997e6268efe
+        with:
+          tool: cross
+
+      - name: Checkout sources
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+
       - name: Build the release binaries
         run: utils/build-release.sh
