@@ -24,14 +24,14 @@ jobs:
       - name: Setup arm64 foreign architecture
         run: sudo dpkg --add-architecture arm64
 
-      - name: Install libgcc for foreign architectures
-        run: apt update && apt install -y libgcc1:i386 libgcc1:armhf libgcc1:arm64
-
       - name: Setup packaging tools for cross compiled artifacts
         uses: awalsh128/cache-apt-pkgs-action@a6c3917cc929dd0345bfb2d3feaf9101823370ad # v1.4.2
         with:
           packages: crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
           version: 1
+
+      - name: Install libgcc for foreign architectures
+        run: sudo apt update && sudo apt install -y libgcc1:i386 libgcc1:armhf libgcc1:arm64
 
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@be73d7920c329f220ce78e0234b8f96b7ae60248
