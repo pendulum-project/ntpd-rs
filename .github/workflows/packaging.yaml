@@ -27,10 +27,10 @@ jobs:
           toolchain: "stable"
           components: "llvm-tools"
 
-      - name: Install cross for cross compilation
+      - name: Install cross, cargo-deb and cargo-generate-rpm
         uses: taiki-e/install-action@4abee32ddd6d3482e57ba21814317997e6268efe
         with:
-          tool: cross
+          tool: cross, cargo-deb, cargo-generate-rpm
 
       - name: Checkout sources
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
