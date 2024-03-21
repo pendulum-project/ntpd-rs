@@ -15,13 +15,19 @@ jobs:
     runs-on: ubuntu-latest
     name:
     steps:
-      - name: Setup tools for cross compilation
+      - name: Setup packaging tools for cross compiled artifacts
         uses: awalsh128/cache-apt-pkgs-action@a6c3917cc929dd0345bfb2d3feaf9101823370ad # v1.4.2
         with:
           packages: crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
           version: 1
 
-      - name: Install cross
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@be73d7920c329f220ce78e0234b8f96b7ae60248
+        with:
+          toolchain: "stable"
+          components: "llvm-tools"
+
+      - name: Install cross for cross compilation
         uses: taiki-e/install-action@4abee32ddd6d3482e57ba21814317997e6268efe
         with:
           tool: cross
