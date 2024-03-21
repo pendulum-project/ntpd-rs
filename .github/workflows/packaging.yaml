@@ -16,13 +16,13 @@ jobs:
     name:
     steps:
       - name: Setup i386 foreign architecture
-        run: dpkg --add-architecture i386
+        run: sudo dpkg --add-architecture i386
 
       - name: Setup armhf foreign architecture
-        run: dpkg --add-architecture armhf
+        run: sudo dpkg --add-architecture armhf
 
       - name: Setup arm64 foreign architecture
-        run: dpkg --add-architecture arm64
+        run: sudo dpkg --add-architecture arm64
 
       - name: Setup packaging tools for cross compiled artifacts
         uses: awalsh128/cache-apt-pkgs-action@a6c3917cc929dd0345bfb2d3feaf9101823370ad # v1.4.2
