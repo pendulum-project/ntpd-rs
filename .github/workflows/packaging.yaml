@@ -27,7 +27,7 @@ jobs:
       - name: Setup packaging tools for cross compiled artifacts
         uses: awalsh128/cache-apt-pkgs-action@a6c3917cc929dd0345bfb2d3feaf9101823370ad # v1.4.2
         with:
-          packages: crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386 libgcc1:i385 libgcc1:armhf libgcc1:arm64
+          packages: libgcc1:i386 libgcc1:armhf libgcc1:arm64 crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
           version: 1
 
       - name: Install toolchain
