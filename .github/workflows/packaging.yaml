@@ -12,20 +12,13 @@ on:
 
 jobs:
   package:
-    uses: pendulum-project/ploutos/.github/workflows/pkg-rust.yml@provide-debug-symbols
-    with:
-      workspace_package: ntpd
-
-      package_build_rules: |
-        pkg: ntpd-rs
-        image:
-          - "rockylinux:9"
-          - "ubuntu:xenial"
-        target: x86_64
-
-      package_test_scripts_path: pkg/test-scripts/test-ntpd-rs.sh
-
-      rpm_scriptlets_path: pkg/rpm/scriptlets.toml
-
-      rpm_extra_build_packages: git
-      deb_extra_build_packages: git
+    runs-on: ubuntu-latest
+    name:
+    steps:
+      - name: Setup tools for cross compilation
+        uses: awalsh128/cache-apt-pkgs-action@a6c3917cc929dd0345bfb2d3feaf9101823370ad # v1.4.2
+        with:
+          packages: crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
+          version: 1
+      - name: Build the release binaries
+        run: utils/build-release.sh

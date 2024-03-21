@@ -2,7 +2,7 @@
 
 set -eo pipefail
 
-targets=("aarch64-unknown-linux-gnu" "x86_64-unknown-linux-gnu") # ("x86_64-unknown-linux-gnu")
+targets=("aarch64-unknown-linux-gnu" "armv7-unknown-linux-gnueabihf" "x86_64-unknown-linux-gnu" "i686-unknown-linux-gnu")
 
 target_dir="target/pkg"
 
