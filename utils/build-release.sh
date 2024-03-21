@@ -34,14 +34,14 @@ for target in "${targets[@]}"; do
             echo "--- Removing all symbols from binary '$file'"
             "$llvm_tools_path/llvm-strip" -s "$file"
         done
-    )
+    );
 
     echo "--- Create tar for debug symbols"
     (
         cd "target/$target/release"
         rm -f "$dbg_sym_tar"
         find . -maxdepth 1 -type f -name '*.dbg' -exec tar uvf "$dbg_sym_tar" {} +
-    )
+    );
 
     echo "--- Creating deb package"
     cargo deb --no-build --no-strip --target "$target" --compress-type xz --package ntpd
