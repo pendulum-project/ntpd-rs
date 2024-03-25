@@ -8,12 +8,13 @@ on:
     branches:
       - 'release/**'
       - packaging-rework
+    tags:
+      - 'v**'
   workflow_dispatch:
 
 jobs:
   package:
     runs-on: ubuntu-latest
-    name:
     steps:
       - name: Setup packaging tools for cross compiled artifacts
         uses: awalsh128/cache-apt-pkgs-action@a6c3917cc929dd0345bfb2d3feaf9101823370ad # v1.4.2
@@ -37,3 +38,63 @@ jobs:
 
       - name: Build the release binaries
         run: utils/build-release.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
+        with:
+          name: release-binaries
+          path: target/pkg/
+          if-no-files-found: error
+
+  release:
+    needs: package
+    runs-on: ubuntu-latest
+    if: ${{ startsWith(github.ref, 'refs/heads/release/') }}
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Download artifacts
+        uses: actions/download-artifact@c850b930e6ba138125429b7e5c93fc707a7f8427 # v4.1.4
+        with:
+          name: release-binaries
+          path: target/pkg/
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@be73d7920c329f220ce78e0234b8f96b7ae60248
+        with:
+          toolchain: "stable"
+          components: "llvm-tools"
+
+      - name: Read the version from the manifest file
+        run: echo "release_version=$(cargo read-manifest --manifest-path ntpd/Cargo.toml | jq -r .version)" >> "$GITHUB_ENV"
+
+      - name: Version in Cargo.toml must match the branch name
+        run: test "release/$release_version" == "${{ github.ref_name }}"
+
+      - name: Ensure there is not already a released tag with a non-draft release
+        run: test "$(gh release view "v$release_version" --json isDraft --jq .isDraft 2>/dev/null || echo "true")" == "true"
+
+      # TODO: verify the actual changelog header
+      - name: Verify that the changelog top most entry concerns this release
+        run: |
+          release_notes="$(awk '/^## / && !found { found=1; print; next } /^## / && found { exit } found { print }' CHANGELOG.md)"
+          release_notes_header="$(echo "$release_notes" | head -1)"
+          release_notes_body="$(echo "$release_notes" | tail +2)"
+          release_notes_body="${release_notes_body#"${release_notes_body%%[![:space:]]*}"}"
+          release_notes_body="${release_notes_body%"${release_notes_body##*[![:space:]]}"}"
+          {
+            echo "release_notes_body<<RELEASE_NOTES_EOF"
+            echo "$release_notes_body"
+            echo RELEASE_NOTES_EOF
+          } >> "$GITHUB_ENV"
+
+      - name: Create a draft release
+        uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564 # v2.0.4
+        with:
+          draft: true
+          fail_on_unmatched_files: true
+          tag_name: "v${{ env.release_version }}"
+          files: target/pkg/*
+          body: "${{ env.release_notes_body}}"
+
