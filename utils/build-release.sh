@@ -2,7 +2,8 @@
 
 set -eo pipefail
 
-targets=("aarch64-unknown-linux-gnu" "armv7-unknown-linux-gnueabihf" "x86_64-unknown-linux-gnu" "i686-unknown-linux-gnu")
+: "${RELEASE_TARGETS:=aarch64-unknown-linux-gnu,armv7-unknown-linux-gnueabihf,x86_64-unknown-linux-gnu,i686-unknown-linux-gnu}"
+IFS=',' read -r -a targets <<< "$RELEASE_TARGETS"
 
 target_dir="target/pkg"
 
