@@ -63,6 +63,7 @@ if [ $1 -eq 0 ] ; then
     # Package removal, not upgrade
     # Run commands equivalent to what the RPM systemd macros would do
     systemd_preun ntpd-rs.service
+    systemd_preun ntpd-rs-metrics.service
     systemd_triggers
 fi
 '''
