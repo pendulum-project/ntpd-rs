@@ -1,6 +1,5 @@
 mod clock;
 pub mod config;
-mod ipfilter;
 pub mod keyexchange;
 mod local_ip_provider;
 pub mod nts_key_provider;
@@ -17,8 +16,6 @@ use std::{error::Error, path::PathBuf};
 
 use ::tracing::info;
 pub use config::Config;
-#[cfg(feature = "__internal-fuzz")]
-pub use ipfilter::fuzz::fuzz_ipfilter;
 pub use observer::{ObservablePeerState, ObservableState, ObservedPeerState};
 pub use system::spawn;
 use tracing_subscriber::util::SubscriberInitExt;

@@ -22,10 +22,6 @@ features = ["arbitrary-derive"]
 path = "../ntp-proto"
 features = ["__internal-fuzz"]
 
-[dependencies.ntpd]
-path = "../ntpd"
-features = ["__internal-fuzz"]
-
 # Prevent this from interfering with workspaces
 [workspace]
 members = ["."]

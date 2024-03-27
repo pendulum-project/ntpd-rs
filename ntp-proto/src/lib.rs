@@ -14,10 +14,12 @@ mod config;
 mod cookiestash;
 mod identifiers;
 mod io;
+mod ipfilter;
 mod keyset;
 mod nts_record;
 mod packet;
 mod peer;
+mod server;
 mod system;
 mod time_types;
 
@@ -42,6 +44,8 @@ mod exports {
     pub use super::clock::NtpClock;
     pub use super::config::{SourceDefaultsConfig, StepThreshold, SynchronizationConfig};
     pub use super::identifiers::ReferenceId;
+    #[cfg(feature = "__internal-fuzz")]
+    pub use super::ipfilter::fuzz::fuzz_ipfilter;
     pub use super::keyset::{DecodedServerCookie, KeySet, KeySetProvider};
 
     #[cfg(feature = "__internal-fuzz")]
@@ -59,6 +63,10 @@ mod exports {
     pub use super::peer::{
         AcceptSynchronizationError, IgnoreReason, Measurement, Peer, PeerNtsData, PeerSnapshot,
         PollError, ProtocolVersion, Reach, Update,
+    };
+    pub use super::server::{
+        FilterAction, FilterList, IpSubnet, Server, ServerAction, ServerConfig, ServerReason,
+        ServerResponse, ServerStatHandler, SubnetParseError,
     };
     pub use super::system::{SystemSnapshot, TimeSnapshot};
     #[cfg(feature = "__internal-fuzz")]
