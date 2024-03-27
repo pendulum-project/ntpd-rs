@@ -636,7 +636,7 @@ impl<'a> ExtensionFieldData<'a> {
     pub(super) fn deserialize(
         data: &'a [u8],
         header_size: usize,
-        cipher: &impl CipherProvider,
+        cipher: &(impl CipherProvider + ?Sized),
         version: ExtensionHeaderVersion,
     ) -> Result<DeserializedExtensionField<'a>, ParsingError<InvalidNtsExtensionField<'a>>> {
         use ExtensionField::InvalidNtsEncryptedField;

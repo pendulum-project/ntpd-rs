@@ -296,7 +296,7 @@ impl<'a> NtpPacket<'a> {
     #[allow(clippy::result_large_err)]
     pub fn deserialize(
         data: &'a [u8],
-        cipher: &impl CipherProvider,
+        cipher: &(impl CipherProvider + ?Sized),
     ) -> Result<(Self, Option<DecodedServerCookie>), PacketParsingError<'a>> {
         if data.is_empty() {
             return Err(PacketParsingError::IncorrectLength);
