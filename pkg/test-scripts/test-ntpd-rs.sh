@@ -13,6 +13,7 @@ case $1 in
       # and configuration validates.
       echo -e "\nNTPD-RS HELP OUTPUT:"
       /usr/bin/ntp-daemon --help
+      /usr/bin/ntp-metrics-exporter --help
       /usr/bin/ntp-ctl validate
 
       # # Ensure that the systemd service is running
