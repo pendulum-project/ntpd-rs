@@ -6,7 +6,7 @@ use libfuzzer_sys::{
     },
     fuzz_target,
 };
-use ntpd::fuzz::{fuzz_ipfilter, IpSubnet};
+use ntp_proto::{fuzz_ipfilter, IpSubnet};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 #[derive(Debug, Clone, PartialEq, Eq)]

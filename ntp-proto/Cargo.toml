@@ -35,3 +35,4 @@ zeroize.workspace = true
 
 [dev-dependencies]
 rustls-pemfile.workspace = true
+serde_test.workspace = true

@@ -5,9 +5,8 @@ use std::{
     time::Duration,
 };
 
+use ntp_proto::FilterList;
 use serde::{Deserialize, Deserializer};
-
-use super::super::ipfilter::IpFilter;
 
 #[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -42,58 +41,13 @@ fn default_stale_key_count() -> usize {
     7
 }
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum FilterAction {
-    Ignore,
-    Deny,
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
-pub struct FilterList {
-    pub filter: IpFilter,
-    pub action: FilterAction,
-}
-
-impl FilterList {
-    #[cfg(test)]
-    pub fn new(subnets: &[super::subnet::IpSubnet], action: FilterAction) -> Self {
-        Self {
-            filter: IpFilter::new(subnets),
-            action,
-        }
-    }
-
-    pub fn all(action: FilterAction) -> Self {
-        Self {
-            filter: IpFilter::all(),
-            action,
-        }
-    }
-
-    pub fn none(action: FilterAction) -> Self {
-        Self {
-            filter: IpFilter::none(),
-            action,
-        }
-    }
-
-    pub fn default_denylist() -> Self {
-        Self::none(FilterAction::Ignore)
-    }
-
-    pub fn default_allowlist() -> Self {
-        Self::all(FilterAction::Ignore)
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ServerConfig {
     pub listen: SocketAddr,
-    #[serde(default = "FilterList::default_denylist")]
+    #[serde(default = "default_denylist")]
     pub denylist: FilterList,
-    #[serde(default = "FilterList::default_allowlist")]
+    #[serde(default = "default_allowlist")]
     pub allowlist: FilterList,
     #[serde(default)]
     pub rate_limiting_cache_size: usize,
@@ -103,6 +57,20 @@ pub struct ServerConfig {
         deserialize_with = "deserialize_rate_limiting_cutoff"
     )]
     pub rate_limiting_cutoff: Duration,
+}
+
+fn default_denylist() -> FilterList {
+    FilterList {
+        filter: vec![],
+        action: ntp_proto::FilterAction::Deny,
+    }
+}
+
+fn default_allowlist() -> FilterList {
+    FilterList {
+        filter: vec!["::/0".parse().unwrap(), "0.0.0.0/0".parse().unwrap()],
+        action: ntp_proto::FilterAction::Ignore,
+    }
 }
 
 fn deserialize_rate_limiting_cutoff<'de, D: Deserializer<'de>>(
@@ -117,11 +85,22 @@ impl TryFrom<&str> for ServerConfig {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Ok(ServerConfig {
             listen: SocketAddr::from_str(value)?,
-            denylist: FilterList::default_denylist(),
-            allowlist: FilterList::default_allowlist(),
+            denylist: default_denylist(),
+            allowlist: default_allowlist(),
             rate_limiting_cache_size: Default::default(),
             rate_limiting_cutoff: Default::default(),
         })
+    }
+}
+
+impl From<ServerConfig> for ntp_proto::ServerConfig {
+    fn from(value: ServerConfig) -> Self {
+        ntp_proto::ServerConfig {
+            denylist: value.denylist,
+            allowlist: value.allowlist,
+            rate_limiting_cache_size: value.rate_limiting_cache_size,
+            rate_limiting_cutoff: value.rate_limiting_cutoff,
+        }
     }
 }
 
@@ -164,10 +143,11 @@ mod tests {
         .unwrap();
         assert_eq!(test.server.listen, "0.0.0.0:123".parse().unwrap());
         // Defaults
-        assert_eq!(test.server.allowlist.filter, IpFilter::all());
-        assert_eq!(test.server.allowlist.action, FilterAction::Ignore);
-        assert_eq!(test.server.denylist.filter, IpFilter::none());
-        assert_eq!(test.server.denylist.action, FilterAction::Ignore);
+        assert_eq!(
+            test.server.allowlist.action,
+            ntp_proto::FilterAction::Ignore
+        );
+        assert_eq!(test.server.denylist.action, ntp_proto::FilterAction::Deny);
 
         let test: TestConfig = toml::from_str(
             r#"
@@ -197,7 +177,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(test.server.listen, "127.0.0.1:123".parse().unwrap());
-        assert_eq!(test.server.denylist.action, FilterAction::Deny);
+        assert_eq!(test.server.denylist.action, ntp_proto::FilterAction::Deny);
 
         let test = toml::from_str::<TestConfig>(
             r#"

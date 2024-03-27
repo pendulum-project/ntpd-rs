@@ -1,8 +1,6 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-use serde::{Deserialize, Deserializer};
-
-use super::config::subnet::IpSubnet;
+use crate::server::IpSubnet;
 
 /// One part of a `BitTree`
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
@@ -170,7 +168,7 @@ impl BitTree {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IpFilter {
+pub(crate) struct IpFilter {
     ipv4_filter: BitTree,
     ipv6_filter: BitTree,
 }
@@ -200,24 +198,6 @@ impl IpFilter {
         }
     }
 
-    pub fn all() -> Self {
-        let mut temp_v4 = [(0, 0)];
-        let mut temp_v6 = [(0, 0)];
-        IpFilter {
-            ipv4_filter: BitTree::create(&mut temp_v4),
-            ipv6_filter: BitTree::create(&mut temp_v6),
-        }
-    }
-
-    pub fn none() -> Self {
-        let mut temp_v4 = [];
-        let mut temp_v6 = [];
-        IpFilter {
-            ipv4_filter: BitTree::create(&mut temp_v4),
-            ipv6_filter: BitTree::create(&mut temp_v6),
-        }
-    }
-
     /// Check whether a given ip address is contained in the filter.
     /// Complexity: O(1)
     pub fn is_in(&self, addr: &IpAddr) -> bool {
@@ -234,13 +214,6 @@ impl IpFilter {
 
     fn is_in6(&self, addr: &Ipv6Addr) -> bool {
         self.ipv6_filter.lookup(u128::from_be_bytes(addr.octets()))
-    }
-}
-
-impl<'de> Deserialize<'de> for IpFilter {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let data = Vec::<IpSubnet>::deserialize(deserializer)?;
-        Ok(IpFilter::new(&data))
     }
 }
 
