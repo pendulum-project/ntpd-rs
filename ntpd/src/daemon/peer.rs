@@ -603,7 +603,7 @@ mod tests {
             },
             source_addr: SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
             interface: None,
-            timestamp_mode: TimestampMode::KernelAll,
+            timestamp_mode: TimestampMode::KernelRecv,
             socket: None,
             peer,
             last_send_timestamp: None,
