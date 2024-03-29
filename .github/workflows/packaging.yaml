@@ -114,7 +114,6 @@ jobs:
       - name: Ensure there is not already a released tag with a non-draft release
         run: test "$(gh release view "v$release_version" --json isDraft --jq .isDraft 2>/dev/null || echo "true")" == "true"
 
-      # TODO: verify the actual changelog header
       - name: Verify that the changelog top most entry concerns this release
         run: |
           release_notes="$(awk '/^## / && !found { found=1; print; next } /^## / && found { exit } found { print }' CHANGELOG.md)"
@@ -122,7 +121,8 @@ jobs:
           release_notes_body="$(echo "$release_notes" | tail +2)"
           release_notes_body="${release_notes_body#"${release_notes_body%%[![:space:]]*}"}"
           release_notes_body="${release_notes_body%"${release_notes_body##*[![:space:]]}"}"
-
+          release_notes_version="$(echo "$release_notes_header" | cut -d' ' -f2 | sed 's/[][]//g')"
+          test "$release_notes_version" == "${{ env.release_version }}"
           {
             echo "release_notes_body<<RELEASE_NOTES_EOF"
             echo "$release_notes_body"
@@ -135,6 +135,8 @@ jobs:
           draft: true
           fail_on_unmatched_files: true
           tag_name: "v${{ env.release_version }}"
+          target_commitish: "${{ github.sha }}"
+          name: "Version ${{ env.release_version }}"
           files: target/pkg/*
           body: "${{ env.release_notes_body }}"
 
