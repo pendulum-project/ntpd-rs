@@ -98,6 +98,13 @@ jobs:
           toolchain: "stable"
           components: "llvm-tools"
 
+      - name: Check that the release commit is verified
+        run: |
+          commit_url="${{ github.api_url }}/repos/${{ github.repository }}/commits/${{ github.sha }}"
+          json_accept_header="Accept: application/vnd.github+json"
+          auth_bearer_header="Authorization: Bearer ${{ github.token }}"
+          test "$(curl -sf -H "$json_accept_header" -H "$auth_bearer_header" "$commit_url" | jq .commit.verification.verified)" == "true"
+
       - name: Read the version from the manifest file
         run: echo "release_version=$(cargo read-manifest --manifest-path ntpd/Cargo.toml | jq -r .version)" >> "$GITHUB_ENV"
 
@@ -115,6 +122,7 @@ jobs:
           release_notes_body="$(echo "$release_notes" | tail +2)"
           release_notes_body="${release_notes_body#"${release_notes_body%%[![:space:]]*}"}"
           release_notes_body="${release_notes_body%"${release_notes_body##*[![:space:]]}"}"
+
           {
             echo "release_notes_body<<RELEASE_NOTES_EOF"
             echo "$release_notes_body"
