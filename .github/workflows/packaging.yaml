@@ -118,10 +118,12 @@ jobs:
         run: |
           release_notes="$(awk '/^## / && !found { found=1; print; next } /^## / && found { exit } found { print }' CHANGELOG.md)"
           release_notes_header="$(echo "$release_notes" | head -1)"
+          echo "Found release notes for '$release_notes_header'"
           release_notes_body="$(echo "$release_notes" | tail +2)"
           release_notes_body="${release_notes_body#"${release_notes_body%%[![:space:]]*}"}"
           release_notes_body="${release_notes_body%"${release_notes_body##*[![:space:]]}"}"
           release_notes_version="$(echo "$release_notes_header" | cut -d' ' -f2 | sed 's/[][]//g')"
+          echo "Found version '$release_notes_version' in release notes"
           test "$release_notes_version" == "${{ env.release_version }}"
           {
             echo "release_notes_body<<RELEASE_NOTES_EOF"
