@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.1.3] - 2023-11-23
+
+### Added
+- Server can now be run without permission to change the system clock so long
+  as no time sources are configured.
+- Experimental NTPv5 draft support was added behind a feature flag (disabled by
+  default)
+
+### Changed
+- The sources section can be left out of the configuration now.
+- When no sources are configured, the daemon will merely state it won't change
+  system time, rather than warn
+- The MSRV was raised to 1.67
+
 ## [1.1.2] - 2024-02-01
 
 ### Fixed
