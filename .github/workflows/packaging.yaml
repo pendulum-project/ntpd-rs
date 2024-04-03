@@ -75,8 +75,11 @@ jobs:
           path: target/pkg/
           if-no-files-found: error
 
+  checks:
+    uses: './.github/workflows/checks.yaml'
+
   release:
-    needs: gather
+    needs: [gather, checks]
     runs-on: ubuntu-latest
     if: ${{ startsWith(github.ref, 'refs/heads/release/') }}
     permissions:
