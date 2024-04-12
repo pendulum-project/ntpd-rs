@@ -1404,8 +1404,6 @@ impl<'a> Default for NtpPacket<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::borrow::Cow;
-
     use crate::{
         keyset::KeySetProvider, nts_record::AeadAlgorithm, system::TimeSnapshot,
         time_types::PollIntervalLimits,

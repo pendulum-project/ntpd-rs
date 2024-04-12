@@ -72,13 +72,18 @@ impl<T: Wait> Wait for SingleshotSleep<T> {
 }
 
 pub struct DaemonChannels {
+    #[allow(unused)]
     pub synchronization_config_receiver: tokio::sync::watch::Receiver<SynchronizationConfig>,
+    #[allow(unused)]
     pub synchronization_config_sender: tokio::sync::watch::Sender<SynchronizationConfig>,
+    #[allow(unused)]
     pub peer_defaults_config_receiver: tokio::sync::watch::Receiver<SourceDefaultsConfig>,
+    #[allow(unused)]
     pub peer_defaults_config_sender: tokio::sync::watch::Sender<SourceDefaultsConfig>,
     pub peer_snapshots_receiver: tokio::sync::watch::Receiver<Vec<ObservablePeerState>>,
     pub server_data_receiver: tokio::sync::watch::Receiver<Vec<ServerData>>,
     pub system_snapshot_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
+    #[allow(unused)]
     pub keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
 }
 
@@ -656,10 +661,7 @@ pub struct ServerData {
 
 #[cfg(test)]
 mod tests {
-    use ntp_proto::{
-        peer_snapshot, KeySetProvider, Measurement, NtpDuration, NtpInstant, NtpLeapIndicator,
-        NtpTimestamp,
-    };
+    use ntp_proto::{peer_snapshot, KeySetProvider, Measurement, NtpInstant, NtpTimestamp};
 
     use super::super::spawn::dummy::DummySpawner;
 

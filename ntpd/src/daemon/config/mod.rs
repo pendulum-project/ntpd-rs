@@ -464,8 +464,6 @@ pub enum ConfigError {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use ntp_proto::{NtpDuration, StepThreshold};
 
     use super::*;

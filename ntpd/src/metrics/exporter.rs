@@ -210,8 +210,6 @@ fn format_response(buf: &mut String, state: &ObservableState) -> std::fmt::Resul
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
     use super::*;
 
     const BINARY: &str = "/usr/bin/ntp-metrics-exporter";
