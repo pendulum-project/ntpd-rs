@@ -63,12 +63,10 @@ For more details on how to install and use ntpd-rs, see our [documentation websi
 In Q1 2023 we completed our work on NTS. Our implementation is now
 full-featured, it supports NTP client and server with NTS.
 
-Our roadmap for 2023-2024:
+Our roadmap for 2024:
 
-* Q3 2023: Stable release
-* Q4 2023: Experimental features, NTS pool, NTPv5
-* Q4 2023 / Q1 2024: Packaging for Linux distributions
-* Q1-Q4 2024: Packaging and industry adoption, maintenance & community work
+* Q2-Q4 2024: Packaging and industry adoption, maintenance & community work
+* Q4 2024: NTS Pool (pending funding)
 
 We seek sponsorship for features and maintenance to continue our work. Contact
 us via pendulum@tweedegolf.com if you are interested!
