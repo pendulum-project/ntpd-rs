@@ -116,8 +116,8 @@ where
         let system_snapshot = *self.channels.system_snapshot_receiver.borrow();
 
         let mut buf = [0; 1024];
-        let packet = match self.peer.generate_poll_message(&mut buf, system_snapshot) {
-            Ok(packet) => packet,
+        let (packet, snapshot) = match self.peer.generate_poll_message(&mut buf, system_snapshot) {
+            Ok(result) => result,
             Err(PollError::Io(e)) => {
                 warn!(error = ?e, "Could not generate poll message");
                 // not exactly a network gone situation, but needs the same response
@@ -140,7 +140,6 @@ where
         // Skipping the message prevents confusing log messages from being emitted.
         if !is_first_snapshot {
             // NOTE: fitness check is not performed here, but by System
-            let snapshot = PeerSnapshot::from_peer(&self.peer);
             let msg = MsgForSystem::UpdatedSnapshot(self.index, snapshot);
             self.channels.msg_for_system_sender.send(msg).await.ok();
         }
@@ -330,22 +329,10 @@ where
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(
             (async move {
-                let local_clock_time = NtpInstant::now();
                 let peer = if let Some(nts) = nts {
-                    Peer::new_nts(
-                        source_addr,
-                        local_clock_time,
-                        config_snapshot,
-                        protocol_version,
-                        nts,
-                    )
+                    Peer::new_nts(source_addr, config_snapshot, protocol_version, nts)
                 } else {
-                    Peer::new(
-                        source_addr,
-                        local_clock_time,
-                        config_snapshot,
-                        protocol_version,
-                    )
+                    Peer::new(source_addr, config_snapshot, protocol_version)
                 };
 
                 let poll_wait = tokio::time::sleep(std::time::Duration::default());
@@ -565,10 +552,8 @@ mod tests {
         let (_, system_snapshot_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
         let (msg_for_system_sender, msg_for_system_receiver) = mpsc::channel(1);
 
-        let local_clock_time = NtpInstant::now();
         let peer = Peer::new(
             SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
-            local_clock_time,
             SourceDefaultsConfig::default(),
             ProtocolVersion::default(),
         );

@@ -370,7 +370,6 @@ impl Peer {
     #[instrument]
     pub fn new(
         source_addr: SocketAddr,
-        local_clock_time: NtpInstant,
         peer_defaults_config: SourceDefaultsConfig,
         protocol_version: ProtocolVersion,
     ) -> Self {
@@ -402,19 +401,13 @@ impl Peer {
     #[instrument]
     pub fn new_nts(
         source_addr: SocketAddr,
-        local_clock_time: NtpInstant,
         peer_defaults_config: SourceDefaultsConfig,
         protocol_version: ProtocolVersion,
         nts: Box<PeerNtsData>,
     ) -> Self {
         Self {
             nts: Some(nts),
-            ..Self::new(
-                source_addr,
-                local_clock_time,
-                peer_defaults_config,
-                protocol_version,
-            )
+            ..Self::new(source_addr, peer_defaults_config, protocol_version)
         }
     }
 
@@ -431,7 +424,7 @@ impl Peer {
         &mut self,
         buf: &'a mut [u8],
         system: SystemSnapshot,
-    ) -> Result<&'a [u8], PollError> {
+    ) -> Result<(&'a [u8], PeerSnapshot), PollError> {
         if !self.reach.is_reachable() && self.tries >= STARTUP_TRIES_THRESHOLD {
             return Err(PollError::PeerUnreachable);
         }
@@ -497,7 +490,7 @@ impl Peer {
         // update the poll interval
         self.last_poll_interval = poll_interval;
 
-        Ok(result)
+        Ok((result, PeerSnapshot::from_peer(self)))
     }
 
     #[instrument(skip(self, system), fields(peer = debug(self.source_id)))]
@@ -683,14 +676,6 @@ impl Peer {
         Update::NewMeasurement(PeerSnapshot::from_peer(self), measurement)
     }
 
-    #[instrument(level="trace", skip(self), fields(peer = debug(self.source_id)))]
-    pub fn reset(&mut self) {
-        // make sure in-flight messages are ignored
-        self.current_request_identifier = None;
-
-        info!(source_id = ?self.source_id, "Source reset");
-    }
-
     #[cfg(test)]
     pub(crate) fn test_peer() -> Self {
         use std::net::Ipv4Addr;
@@ -756,7 +741,7 @@ mod test {
 
     use super::*;
     #[cfg(feature = "ntpv5")]
-    use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
+    use crate::packet::v5::server_reference_id::ServerId;
     #[cfg(feature = "ntpv5")]
     use rand::thread_rng;
     use std::time::Duration;
@@ -885,7 +870,7 @@ mod test {
 
         #[cfg(feature = "ntpv5")]
         {
-            system.server_id = ServerId::new(&mut rand::thread_rng());
+            system.server_id = ServerId::new(&mut thread_rng());
         }
 
         macro_rules! accept {
@@ -933,7 +918,7 @@ mod test {
 
         let prev = peer.current_poll_interval(system);
         let mut buf = [0; 1024];
-        let packetbuf = peer.generate_poll_message(&mut buf, system).unwrap();
+        let packetbuf = peer.generate_poll_message(&mut buf, system).unwrap().0;
         let packet = NtpPacket::deserialize(packetbuf, &NoCipher).unwrap().0;
         assert!(peer.current_poll_interval(system) > prev);
         let mut response = NtpPacket::test();
@@ -953,7 +938,7 @@ mod test {
 
         let prev = peer.current_poll_interval(system);
         let mut buf = [0; 1024];
-        let packetbuf = peer.generate_poll_message(&mut buf, system).unwrap();
+        let packetbuf = peer.generate_poll_message(&mut buf, system).unwrap().0;
         let packet = NtpPacket::deserialize(packetbuf, &NoCipher).unwrap().0;
         assert!(peer.current_poll_interval(system) > prev);
         let mut response = NtpPacket::test();
@@ -981,7 +966,7 @@ mod test {
 
         let system = SystemSnapshot::default();
         let mut buf = [0; 1024];
-        let outgoingbuf = peer.generate_poll_message(&mut buf, system).unwrap();
+        let outgoingbuf = peer.generate_poll_message(&mut buf, system).unwrap().0;
         let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
@@ -1033,7 +1018,7 @@ mod test {
 
         let system = SystemSnapshot::default();
         let mut buf = [0; 1024];
-        let outgoingbuf = peer.generate_poll_message(&mut buf, system).unwrap();
+        let outgoingbuf = peer.generate_poll_message(&mut buf, system).unwrap().0;
         let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
@@ -1073,7 +1058,7 @@ mod test {
 
         let system = SystemSnapshot::default();
         let mut buf = [0; 1024];
-        let outgoingbuf = peer.generate_poll_message(&mut buf, system).unwrap();
+        let outgoingbuf = peer.generate_poll_message(&mut buf, system).unwrap().0;
         let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
@@ -1127,7 +1112,7 @@ mod test {
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         let mut buf = [0; 1024];
-        let outgoingbuf = peer.generate_poll_message(&mut buf, system).unwrap();
+        let outgoingbuf = peer.generate_poll_message(&mut buf, system).unwrap().0;
         let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
         packet.set_reference_id(ReferenceId::KISS_RSTR);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
@@ -1160,7 +1145,7 @@ mod test {
 
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
-        let outgoingbuf = peer.generate_poll_message(&mut buf, system).unwrap();
+        let outgoingbuf = peer.generate_poll_message(&mut buf, system).unwrap().0;
         let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
         packet.set_reference_id(ReferenceId::KISS_DENY);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
@@ -1196,7 +1181,7 @@ mod test {
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         let mut buf = [0; 1024];
-        let outgoingbuf = peer.generate_poll_message(&mut buf, system).unwrap();
+        let outgoingbuf = peer.generate_poll_message(&mut buf, system).unwrap().0;
         let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
         packet.set_reference_id(ReferenceId::KISS_RATE);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
@@ -1227,7 +1212,7 @@ mod test {
         ));
 
         for _ in 0..8 {
-            let poll = peer.generate_poll_message(&mut buf, system).unwrap();
+            let poll = peer.generate_poll_message(&mut buf, system).unwrap().0;
 
             let poll_len: usize = poll.len();
             let (poll, _) = NtpPacket::deserialize(poll, &NoCipher).unwrap();
@@ -1253,7 +1238,7 @@ mod test {
             .unwrap();
         }
 
-        let poll = peer.generate_poll_message(&mut buf, system).unwrap();
+        let poll = peer.generate_poll_message(&mut buf, system).unwrap().0;
         let (poll, _) = NtpPacket::deserialize(poll, &NoCipher).unwrap();
         assert_eq!(poll.version(), 4);
         assert!(!poll.is_upgrade());
@@ -1272,7 +1257,7 @@ mod test {
             ProtocolVersion::V4UpgradingToV5 { .. }
         ));
 
-        let poll = peer.generate_poll_message(&mut buf, system).unwrap();
+        let poll = peer.generate_poll_message(&mut buf, system).unwrap().0;
 
         let poll_len = poll.len();
         let (poll, _) = NtpPacket::deserialize(poll, &NoCipher).unwrap();
@@ -1297,7 +1282,7 @@ mod test {
         // We should have received a upgrade response and updated to NTPv5
         assert!(matches!(peer.protocol_version, ProtocolVersion::V5));
 
-        let poll = peer.generate_poll_message(&mut buf, system).unwrap();
+        let poll = peer.generate_poll_message(&mut buf, system).unwrap().0;
         let (poll, _) = NtpPacket::deserialize(poll, &NoCipher).unwrap();
         assert_eq!(poll.version(), 5);
     }
@@ -1323,7 +1308,7 @@ mod test {
 
         while client.bloom_filter.full_filter().is_none() && tries < 100 {
             let mut buf = [0; 1024];
-            let req = client.generate_poll_message(&mut buf, system).unwrap();
+            let req = client.generate_poll_message(&mut buf, system).unwrap().0;
 
             let (req, _) = NtpPacket::deserialize(req, &NoCipher).unwrap();
             let response =
