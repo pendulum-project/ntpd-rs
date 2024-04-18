@@ -2,8 +2,7 @@ use std::{future::Future, marker::PhantomData, net::SocketAddr, pin::Pin};
 
 use ntp_proto::{
     IgnoreReason, Measurement, NtpClock, NtpInstant, NtpTimestamp, Peer, PeerNtsData, PeerSnapshot,
-    PollError, ProtocolVersion, SourceDefaultsConfig, SynchronizationConfig, SystemSnapshot,
-    Update,
+    PollError, ProtocolVersion, SourceDefaultsConfig, SystemSnapshot, Update,
 };
 use rand::{thread_rng, Rng};
 #[cfg(target_os = "linux")]
@@ -49,8 +48,6 @@ pub enum MsgForSystem {
 pub struct PeerChannels {
     pub msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
     pub system_snapshot_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
-    pub synchronization_config_receiver: tokio::sync::watch::Receiver<SynchronizationConfig>,
-    pub source_defaults_config_receiver: tokio::sync::watch::Receiver<SourceDefaultsConfig>,
 }
 
 pub(crate) struct PeerTask<C: 'static + NtpClock + Send, T: Wait> {
@@ -117,17 +114,9 @@ where
 
     async fn handle_poll(&mut self, poll_wait: &mut Pin<&mut T>) -> PollResult {
         let system_snapshot = *self.channels.system_snapshot_receiver.borrow();
-        let peer_defaults_snapshot_system = *self
-            .channels
-            .source_defaults_config_receiver
-            .borrow_and_update();
 
         let mut buf = [0; 1024];
-        let packet = match self.peer.generate_poll_message(
-            &mut buf,
-            system_snapshot,
-            &peer_defaults_snapshot_system,
-        ) {
+        let packet = match self.peer.generate_poll_message(&mut buf, system_snapshot) {
             Ok(packet) => packet,
             Err(PollError::Io(e)) => {
                 warn!(error = ?e, "Could not generate poll message");
@@ -317,9 +306,6 @@ where
                         AcceptResult::Ignore => {},
                     }
                 },
-                _ = self.channels.synchronization_config_receiver.changed(), if self.channels.synchronization_config_receiver.has_changed().is_ok() => {
-                    self.peer.update_config(*self.channels.source_defaults_config_receiver.borrow_and_update());
-                },
             }
         }
     }
@@ -337,14 +323,14 @@ where
         interface: Option<InterfaceName>,
         clock: C,
         timestamp_mode: TimestampMode,
-        mut channels: PeerChannels,
+        channels: PeerChannels,
         protocol_version: ProtocolVersion,
+        config_snapshot: SourceDefaultsConfig,
         nts: Option<Box<PeerNtsData>>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(
             (async move {
                 let local_clock_time = NtpInstant::now();
-                let config_snapshot = *channels.source_defaults_config_receiver.borrow_and_update();
                 let peer = if let Some(nts) = nts {
                     Peer::new_nts(
                         source_addr,
@@ -577,17 +563,13 @@ mod tests {
         .unwrap();
 
         let (_, system_snapshot_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
-        let (_, synchronization_config_receiver) =
-            tokio::sync::watch::channel(SynchronizationConfig::default());
-        let (_, mut peer_defaults_config_receiver) =
-            tokio::sync::watch::channel(SourceDefaultsConfig::default());
         let (msg_for_system_sender, msg_for_system_receiver) = mpsc::channel(1);
 
         let local_clock_time = NtpInstant::now();
         let peer = Peer::new(
             SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
             local_clock_time,
-            *peer_defaults_config_receiver.borrow_and_update(),
+            SourceDefaultsConfig::default(),
             ProtocolVersion::default(),
         );
 
@@ -598,8 +580,6 @@ mod tests {
             channels: PeerChannels {
                 msg_for_system_sender,
                 system_snapshot_receiver,
-                synchronization_config_receiver,
-                source_defaults_config_receiver: peer_defaults_config_receiver,
             },
             source_addr: SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
             interface: None,

@@ -72,19 +72,9 @@ impl<T: Wait> Wait for SingleshotSleep<T> {
 }
 
 pub struct DaemonChannels {
-    #[allow(unused)]
-    pub synchronization_config_receiver: tokio::sync::watch::Receiver<SynchronizationConfig>,
-    #[allow(unused)]
-    pub synchronization_config_sender: tokio::sync::watch::Sender<SynchronizationConfig>,
-    #[allow(unused)]
-    pub peer_defaults_config_receiver: tokio::sync::watch::Receiver<SourceDefaultsConfig>,
-    #[allow(unused)]
-    pub peer_defaults_config_sender: tokio::sync::watch::Sender<SourceDefaultsConfig>,
     pub peer_snapshots_receiver: tokio::sync::watch::Receiver<Vec<ObservablePeerState>>,
     pub server_data_receiver: tokio::sync::watch::Receiver<Vec<ServerData>>,
     pub system_snapshot_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
-    #[allow(unused)]
-    pub keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
 }
 
 /// Spawn the NTP daemon
@@ -176,8 +166,6 @@ struct System<C: NtpClock, T: Wait> {
     peer_defaults_config: SourceDefaultsConfig,
     system: SystemSnapshot,
 
-    synchronization_config_receiver: tokio::sync::watch::Receiver<SynchronizationConfig>,
-    peer_defaults_config_receiver: tokio::sync::watch::Receiver<SourceDefaultsConfig>,
     system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
     peer_snapshots_sender: tokio::sync::watch::Sender<Vec<ObservablePeerState>>,
     server_data_sender: tokio::sync::watch::Sender<Vec<ServerData>>,
@@ -227,10 +215,6 @@ impl<C: NtpClock + Sync, T: Wait> System<C, T> {
         }
 
         // Create communication channels
-        let (synchronization_config_sender, synchronization_config_receiver) =
-            tokio::sync::watch::channel(synchronization_config);
-        let (peer_defaults_config_sender, peer_defaults_config_receiver) =
-            tokio::sync::watch::channel(peer_defaults_config);
         let (system_snapshot_sender, system_snapshot_receiver) =
             tokio::sync::watch::channel(system);
         let (peer_snapshots_sender, peer_snapshots_receiver) = tokio::sync::watch::channel(vec![]);
@@ -247,8 +231,6 @@ impl<C: NtpClock + Sync, T: Wait> System<C, T> {
                 peer_defaults_config,
                 system,
 
-                synchronization_config_receiver: synchronization_config_receiver.clone(),
-                peer_defaults_config_receiver: peer_defaults_config_receiver.clone(),
                 system_snapshot_sender,
                 peer_snapshots_sender,
                 server_data_sender,
@@ -265,8 +247,6 @@ impl<C: NtpClock + Sync, T: Wait> System<C, T> {
                 peer_channels: PeerChannels {
                     msg_for_system_sender,
                     system_snapshot_receiver: system_snapshot_receiver.clone(),
-                    synchronization_config_receiver: synchronization_config_receiver.clone(),
-                    source_defaults_config_receiver: peer_defaults_config_receiver.clone(),
                 },
                 clock,
                 controller: None,
@@ -274,14 +254,9 @@ impl<C: NtpClock + Sync, T: Wait> System<C, T> {
                 interface,
             },
             DaemonChannels {
-                synchronization_config_receiver,
-                synchronization_config_sender,
-                peer_defaults_config_receiver,
-                peer_defaults_config_sender,
                 peer_snapshots_receiver,
                 server_data_receiver,
                 system_snapshot_receiver,
-                keyset,
             },
         )
     }
@@ -344,28 +319,11 @@ impl<C: NtpClock + Sync, T: Wait> System<C, T> {
                 () = &mut wait => {
                     self.handle_timer(&mut wait);
                 }
-                _ = self.synchronization_config_receiver.changed(), if self.synchronization_config_receiver.has_changed().is_ok() => {
-                    self.handle_config_update();
-                }
             }
         }
 
         // the channel closed and has no more messages in it
         Ok(())
-    }
-
-    fn handle_config_update(&mut self) {
-        let synchronization_config = *self.synchronization_config_receiver.borrow_and_update();
-        let peer_defaults_config = *self.peer_defaults_config_receiver.borrow_and_update();
-        if let Some(controller) = self.controller.as_mut() {
-            controller.update_config(
-                synchronization_config,
-                peer_defaults_config,
-                synchronization_config.algorithm,
-            );
-        }
-        self.synchronization_config = synchronization_config;
-        self.peer_defaults_config = peer_defaults_config;
     }
 
     fn handle_timer(&mut self, wait: &mut Pin<&mut SingleshotSleep<T>>) {
@@ -575,6 +533,7 @@ impl<C: NtpClock + Sync, T: Wait> System<C, T> {
             self.timestamp_mode,
             self.peer_channels.clone(),
             params.protocol_version,
+            self.peer_defaults_config,
             params.nts.take(),
         );
 
