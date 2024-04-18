@@ -59,10 +59,10 @@ mod exports {
     #[cfg(feature = "__internal-fuzz")]
     pub use super::peer::fuzz_measurement_from_packet;
     #[cfg(feature = "__internal-test")]
-    pub use super::peer::peer_snapshot;
+    pub use super::peer::{peer_snapshot, Measurement};
     pub use super::peer::{
-        AcceptSynchronizationError, IgnoreReason, Measurement, Peer, PeerNtsData, PeerSnapshot,
-        PollError, ProtocolVersion, Reach, Update,
+        AcceptSynchronizationError, Peer, PeerAction, PeerActionIterator, PeerNtsData,
+        PeerSnapshot, PeerUpdate, ProtocolVersion, Reach,
     };
     pub use super::server::{
         FilterAction, FilterList, IpSubnet, Server, ServerAction, ServerConfig, ServerReason,

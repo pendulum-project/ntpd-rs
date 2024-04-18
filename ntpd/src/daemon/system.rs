@@ -330,18 +330,10 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
                     unreachable!("Could not demobilize peer: {}", e);
                 };
             }
-            MsgForSystem::NewMeasurement(index, snapshot, measurement) => {
-                match self
-                    .system
-                    .handle_peer_measurement(index, snapshot, measurement)
-                {
+            MsgForSystem::PeerUpdate(index, update) => {
+                match self.system.handle_peer_update(index, update) {
                     Err(e) => unreachable!("Could not process peer measurement: {}", e),
                     Ok(timer) => self.handle_state_update(timer, wait),
-                }
-            }
-            MsgForSystem::UpdatedSnapshot(index, snapshot) => {
-                if let Err(e) = self.system.handle_peer_snapshot(index, snapshot) {
-                    unreachable!("Could not update peer snapshot: {}", e);
                 }
             }
             MsgForSystem::NetworkIssue(index) => {
@@ -535,7 +527,7 @@ pub struct ServerData {
 mod tests {
     use ntp_proto::{
         peer_snapshot, KeySetProvider, Measurement, NtpDuration, NtpInstant, NtpLeapIndicator,
-        NtpTimestamp,
+        NtpTimestamp, PeerUpdate,
     };
 
     use super::super::spawn::dummy::DummySpawner;
@@ -628,23 +620,25 @@ mod tests {
 
         system
             .handle_peer_update(
-                MsgForSystem::NewMeasurement(
+                MsgForSystem::PeerUpdate(
                     indices[0],
-                    peer_snapshot(),
-                    Measurement {
-                        delay: NtpDuration::from_seconds(0.1),
-                        offset: NtpDuration::from_seconds(0.),
-                        transmit_timestamp: NtpTimestamp::default(),
-                        receive_timestamp: NtpTimestamp::default(),
-                        localtime: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 0),
-                        monotime: base,
+                    PeerUpdate::measurement(
+                        peer_snapshot(),
+                        Measurement {
+                            delay: NtpDuration::from_seconds(0.1),
+                            offset: NtpDuration::from_seconds(0.),
+                            transmit_timestamp: NtpTimestamp::default(),
+                            receive_timestamp: NtpTimestamp::default(),
+                            localtime: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 0),
+                            monotime: base,
 
-                        stratum: 0,
-                        root_delay: NtpDuration::default(),
-                        root_dispersion: NtpDuration::default(),
-                        leap: NtpLeapIndicator::NoWarning,
-                        precision: 0,
-                    },
+                            stratum: 0,
+                            root_delay: NtpDuration::default(),
+                            root_dispersion: NtpDuration::default(),
+                            leap: NtpLeapIndicator::NoWarning,
+                            precision: 0,
+                        },
+                    ),
                 ),
                 &mut wait,
             )
@@ -664,23 +658,25 @@ mod tests {
 
         system
             .handle_peer_update(
-                MsgForSystem::NewMeasurement(
+                MsgForSystem::PeerUpdate(
                     indices[0],
-                    peer_snapshot(),
-                    Measurement {
-                        delay: NtpDuration::from_seconds(0.1),
-                        offset: NtpDuration::from_seconds(0.),
-                        transmit_timestamp: NtpTimestamp::default(),
-                        receive_timestamp: NtpTimestamp::default(),
-                        localtime: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 0),
-                        monotime: base,
+                    PeerUpdate::measurement(
+                        peer_snapshot(),
+                        Measurement {
+                            delay: NtpDuration::from_seconds(0.1),
+                            offset: NtpDuration::from_seconds(0.),
+                            transmit_timestamp: NtpTimestamp::default(),
+                            receive_timestamp: NtpTimestamp::default(),
+                            localtime: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 0),
+                            monotime: base,
 
-                        stratum: 0,
-                        root_delay: NtpDuration::default(),
-                        root_dispersion: NtpDuration::default(),
-                        leap: NtpLeapIndicator::NoWarning,
-                        precision: 0,
-                    },
+                            stratum: 0,
+                            root_delay: NtpDuration::default(),
+                            root_dispersion: NtpDuration::default(),
+                            leap: NtpLeapIndicator::NoWarning,
+                            precision: 0,
+                        },
+                    ),
                 ),
                 &mut wait,
             )
@@ -700,7 +696,7 @@ mod tests {
 
         system
             .handle_peer_update(
-                MsgForSystem::UpdatedSnapshot(indices[1], peer_snapshot()),
+                MsgForSystem::PeerUpdate(indices[1], PeerUpdate::snapshot(peer_snapshot())),
                 &mut wait,
             )
             .await

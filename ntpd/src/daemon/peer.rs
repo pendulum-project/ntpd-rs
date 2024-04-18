@@ -1,17 +1,16 @@
 use std::{future::Future, marker::PhantomData, net::SocketAddr, pin::Pin};
 
 use ntp_proto::{
-    IgnoreReason, Measurement, NtpClock, NtpInstant, NtpTimestamp, Peer, PeerNtsData, PeerSnapshot,
-    PollError, ProtocolVersion, SourceDefaultsConfig, SystemSnapshot, Update,
+    NtpClock, NtpInstant, NtpTimestamp, Peer, PeerActionIterator, PeerNtsData, PeerUpdate,
+    ProtocolVersion, SourceDefaultsConfig, SystemSnapshot,
 };
-use rand::{thread_rng, Rng};
 #[cfg(target_os = "linux")]
 use timestamped_socket::socket::open_interface_udp;
 use timestamped_socket::{
     interface::InterfaceName,
     socket::{connect_address, Connected, RecvResult, Socket},
 };
-use tracing::{debug, error, info, instrument, warn, Instrument, Span};
+use tracing::{debug, error, instrument, warn, Instrument, Span};
 
 use tokio::time::{Instant, Sleep};
 
@@ -29,6 +28,7 @@ impl Wait for Sleep {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum MsgForSystem {
     /// Received a Kiss-o'-Death and must demobilize
     MustDemobilize(PeerId),
@@ -36,12 +36,8 @@ pub enum MsgForSystem {
     NetworkIssue(PeerId),
     /// Source is unreachable, and should be restarted with new resolved addr.
     Unreachable(PeerId),
-    /// Received an acceptable packet and made a new peer snapshot
-    /// A new measurement should try to trigger a clock select
-    NewMeasurement(PeerId, PeerSnapshot, Measurement),
-    /// A snapshot may have been updated, but this should not
-    /// trigger a clock select in System
-    UpdatedSnapshot(PeerId, PeerSnapshot),
+    /// Update from peer
+    PeerUpdate(PeerId, PeerUpdate),
 }
 
 #[derive(Debug, Clone)]
@@ -68,22 +64,6 @@ pub(crate) struct PeerTask<C: 'static + NtpClock + Send, T: Wait> {
     // actual origin timestamp ourselves.
     /// Timestamp of the last packet that we sent
     last_send_timestamp: Option<NtpTimestamp>,
-
-    /// Instant last poll message was sent (used for timing the wait)
-    last_poll_sent: Instant,
-}
-
-#[derive(Debug)]
-enum PollResult {
-    Ok,
-    NetworkGone,
-    Unreachable,
-}
-
-#[derive(Debug)]
-enum PacketResult {
-    Ok,
-    Demobilize,
 }
 
 #[derive(Debug)]
@@ -97,145 +77,6 @@ where
     C: 'static + NtpClock + Send + Sync,
     T: Wait,
 {
-    /// Set the next deadline for the poll interval based on current state
-    fn update_poll_wait(&self, poll_wait: &mut Pin<&mut T>, system_snapshot: SystemSnapshot) {
-        let poll_interval = self
-            .peer
-            .current_poll_interval(system_snapshot)
-            .as_system_duration();
-
-        // randomize the poll interval a little to make it harder to predict poll requests
-        let poll_interval = poll_interval.mul_f64(thread_rng().gen_range(1.01..=1.05));
-
-        poll_wait
-            .as_mut()
-            .reset(self.last_poll_sent + poll_interval);
-    }
-
-    async fn handle_poll(&mut self, poll_wait: &mut Pin<&mut T>) -> PollResult {
-        let system_snapshot = *self.channels.system_snapshot_receiver.borrow();
-
-        let mut buf = [0; 1024];
-        let (packet, snapshot) = match self.peer.generate_poll_message(&mut buf, system_snapshot) {
-            Ok(result) => result,
-            Err(PollError::Io(e)) => {
-                warn!(error = ?e, "Could not generate poll message");
-                // not exactly a network gone situation, but needs the same response
-                return PollResult::NetworkGone;
-            }
-            Err(PollError::PeerUnreachable) => {
-                warn!("Peer is no longer reachable over network, restarting");
-                return PollResult::Unreachable;
-            }
-        };
-
-        // Sent a poll, so update waiting to match deadline of next
-        self.last_poll_sent = Instant::now();
-        self.update_poll_wait(poll_wait, system_snapshot);
-
-        // the last_send_timestamp is only None at startup
-        let is_first_snapshot = self.last_send_timestamp.is_none();
-
-        // The first snapshot does not contain useful data (stratum is invalid)
-        // Skipping the message prevents confusing log messages from being emitted.
-        if !is_first_snapshot {
-            // NOTE: fitness check is not performed here, but by System
-            let msg = MsgForSystem::UpdatedSnapshot(self.index, snapshot);
-            self.channels.msg_for_system_sender.send(msg).await.ok();
-        }
-
-        match self.clock.now() {
-            Err(e) => {
-                // we cannot determine the origin_timestamp
-                error!(error = ?e, "There was an error retrieving the current time");
-
-                // report as no permissions, since this seems the most likely
-                std::process::exit(exitcode::NOPERM);
-            }
-            Ok(ts) => {
-                self.last_send_timestamp = Some(ts);
-            }
-        }
-
-        if matches!(self.setup_socket().await, SocketResult::Abort) {
-            return PollResult::NetworkGone;
-        }
-
-        match self.socket.as_mut().unwrap().send(packet).await {
-            Err(error) => {
-                warn!(?error, "poll message could not be sent");
-
-                match error.raw_os_error() {
-                    Some(libc::EHOSTDOWN)
-                    | Some(libc::EHOSTUNREACH)
-                    | Some(libc::ENETDOWN)
-                    | Some(libc::ENETUNREACH) => return PollResult::NetworkGone,
-                    _ => {}
-                }
-            }
-            Ok(opt_send_timestamp) => {
-                // update the last_send_timestamp with the one given by the kernel, if available
-                self.last_send_timestamp = opt_send_timestamp
-                    .map(convert_net_timestamp)
-                    .or(self.last_send_timestamp);
-            }
-        }
-
-        PollResult::Ok
-    }
-
-    async fn handle_packet<'a>(
-        &mut self,
-        poll_wait: &mut Pin<&mut T>,
-        packet: &'a [u8],
-        send_timestamp: NtpTimestamp,
-        recv_timestamp: NtpTimestamp,
-    ) -> PacketResult {
-        let ntp_instant = NtpInstant::now();
-
-        let system_snapshot = *self.channels.system_snapshot_receiver.borrow();
-        let result = self.peer.handle_incoming(
-            system_snapshot,
-            packet,
-            ntp_instant,
-            send_timestamp,
-            recv_timestamp,
-        );
-
-        // Handle incoming may have changed poll interval based on message, respect that change
-        self.update_poll_wait(poll_wait, system_snapshot);
-
-        match result {
-            Ok(update) => {
-                debug!("packet accepted");
-
-                // NOTE: fitness check is not performed here, but by System
-
-                let msg = match update {
-                    Update::BareUpdate(update) => MsgForSystem::UpdatedSnapshot(self.index, update),
-                    Update::NewMeasurement(update, measurement) => {
-                        MsgForSystem::NewMeasurement(self.index, update, measurement)
-                    }
-                };
-                self.channels.msg_for_system_sender.send(msg).await.ok();
-                // No longer needed since we don't expect any more packets
-                self.socket = None;
-            }
-            Err(IgnoreReason::KissDemobilize) => {
-                info!("Demobilizing peer connection on request of remote.");
-                let msg = MsgForSystem::MustDemobilize(self.index);
-                self.channels.msg_for_system_sender.send(msg).await.ok();
-
-                return PacketResult::Demobilize;
-            }
-            Err(ignore_reason) => {
-                debug!(?ignore_reason, "packet ignored");
-            }
-        }
-
-        PacketResult::Ok
-    }
-
     async fn setup_socket(&mut self) -> SocketResult {
         let socket_res = match self.interface {
             #[cfg(target_os = "linux")]
@@ -266,45 +107,141 @@ where
         loop {
             let mut buf = [0_u8; 1024];
 
-            tokio::select! {
+            enum SelectResult {
+                Timer,
+                Recv(Result<RecvResult<SocketAddr>, std::io::Error>),
+            }
+
+            let selected = tokio::select! {
                 () = &mut poll_wait => {
-                    tracing::debug!("wait completed");
-                    match self.handle_poll(&mut poll_wait).await {
-                        PollResult::Ok => {},
-                        PollResult::NetworkGone => {
-                            self.channels.msg_for_system_sender.send(MsgForSystem::NetworkIssue(self.index)).await.ok();
-                            break;
-                        }
-                        PollResult::Unreachable => {
-                            self.channels.msg_for_system_sender.send(MsgForSystem::Unreachable(self.index)).await.ok();
-                            break;
-                        }
-                    }
+                    SelectResult::Timer
                 },
                 result = async { if let Some(ref mut socket) = self.socket { socket.recv(&mut buf).await } else { std::future::pending().await }} => {
+                    SelectResult::Recv(result)
+                },
+            };
+
+            let actions = match selected {
+                SelectResult::Recv(result) => {
                     tracing::debug!("accept packet");
                     match accept_packet(result, &buf, &self.clock) {
                         AcceptResult::Accept(packet, recv_timestamp) => {
                             let send_timestamp = match self.last_send_timestamp {
                                 Some(ts) => ts,
                                 None => {
-                                    debug!("we received a message without having sent one; discarding");
+                                    debug!(
+                                        "we received a message without having sent one; discarding"
+                                    );
                                     continue;
                                 }
                             };
 
-                            match self.handle_packet(&mut poll_wait, packet, send_timestamp, recv_timestamp).await {
-                                PacketResult::Ok => {},
-                                PacketResult::Demobilize => break,
-                            }
-                        },
+                            let system_snapshot = *self.channels.system_snapshot_receiver.borrow();
+                            self.peer.handle_incoming(
+                                system_snapshot,
+                                packet,
+                                NtpInstant::now(),
+                                send_timestamp,
+                                recv_timestamp,
+                            )
+                        }
                         AcceptResult::NetworkGone => {
-                            self.channels.msg_for_system_sender.send(MsgForSystem::NetworkIssue(self.index)).await.ok();
-                            break;
-                        },
-                        AcceptResult::Ignore => {},
+                            self.channels
+                                .msg_for_system_sender
+                                .send(MsgForSystem::NetworkIssue(self.index))
+                                .await
+                                .ok();
+                            return;
+                        }
+                        AcceptResult::Ignore => PeerActionIterator::default(),
                     }
-                },
+                }
+                SelectResult::Timer => {
+                    tracing::debug!("wait completed");
+                    let system_snapshot = *self.channels.system_snapshot_receiver.borrow();
+                    self.peer.handle_timer(system_snapshot)
+                }
+            };
+
+            for action in actions {
+                match action {
+                    ntp_proto::PeerAction::Send(packet) => {
+                        if matches!(self.setup_socket().await, SocketResult::Abort) {
+                            self.channels
+                                .msg_for_system_sender
+                                .send(MsgForSystem::NetworkIssue(self.index))
+                                .await
+                                .ok();
+                            return;
+                        }
+
+                        match self.clock.now() {
+                            Err(e) => {
+                                // we cannot determine the origin_timestamp
+                                error!(error = ?e, "There was an error retrieving the current time");
+
+                                // report as no permissions, since this seems the most likely
+                                std::process::exit(exitcode::NOPERM);
+                            }
+                            Ok(ts) => {
+                                self.last_send_timestamp = Some(ts);
+                            }
+                        }
+
+                        match self.socket.as_mut().unwrap().send(&packet).await {
+                            Err(error) => {
+                                warn!(?error, "poll message could not be sent");
+
+                                match error.raw_os_error() {
+                                    Some(libc::EHOSTDOWN)
+                                    | Some(libc::EHOSTUNREACH)
+                                    | Some(libc::ENETDOWN)
+                                    | Some(libc::ENETUNREACH) => {
+                                        self.channels
+                                            .msg_for_system_sender
+                                            .send(MsgForSystem::NetworkIssue(self.index))
+                                            .await
+                                            .ok();
+                                        return;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            Ok(opt_send_timestamp) => {
+                                // update the last_send_timestamp with the one given by the kernel, if available
+                                self.last_send_timestamp = opt_send_timestamp
+                                    .map(convert_net_timestamp)
+                                    .or(self.last_send_timestamp);
+                            }
+                        }
+                    }
+                    ntp_proto::PeerAction::UpdateSystem(update) => {
+                        self.channels
+                            .msg_for_system_sender
+                            .send(MsgForSystem::PeerUpdate(self.index, update))
+                            .await
+                            .ok();
+                    }
+                    ntp_proto::PeerAction::SetTimer(timeout) => {
+                        poll_wait.as_mut().reset(Instant::now() + timeout)
+                    }
+                    ntp_proto::PeerAction::Reset => {
+                        self.channels
+                            .msg_for_system_sender
+                            .send(MsgForSystem::Unreachable(self.index))
+                            .await
+                            .ok();
+                        return;
+                    }
+                    ntp_proto::PeerAction::Demobilize => {
+                        self.channels
+                            .msg_for_system_sender
+                            .send(MsgForSystem::MustDemobilize(self.index))
+                            .await
+                            .ok();
+                        return;
+                    }
+                }
             }
         }
     }
@@ -329,7 +266,7 @@ where
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(
             (async move {
-                let peer = if let Some(nts) = nts {
+                let (peer, initial_actions) = if let Some(nts) = nts {
                     Peer::new_nts(source_addr, config_snapshot, protocol_version, nts)
                 } else {
                     Peer::new(source_addr, config_snapshot, protocol_version)
@@ -337,6 +274,26 @@ where
 
                 let poll_wait = tokio::time::sleep(std::time::Duration::default());
                 tokio::pin!(poll_wait);
+
+                for action in initial_actions {
+                    match action {
+                        ntp_proto::PeerAction::Send(_) => {
+                            unreachable!("Should not be sending messages from startup")
+                        }
+                        ntp_proto::PeerAction::UpdateSystem(_) => {
+                            unreachable!("Should not be updating system from startup")
+                        }
+                        ntp_proto::PeerAction::SetTimer(timeout) => {
+                            poll_wait.as_mut().reset(Instant::now() + timeout)
+                        }
+                        ntp_proto::PeerAction::Reset => {
+                            unreachable!("Should not be resetting from startup")
+                        }
+                        ntp_proto::PeerAction::Demobilize => {
+                            todo!("Should not be demobilizing from startup")
+                        }
+                    }
+                }
 
                 let mut process = PeerTask {
                     _wait: PhantomData,
@@ -349,7 +306,6 @@ where
                     socket: None,
                     peer,
                     last_send_timestamp: None,
-                    last_poll_sent: Instant::now(),
                 };
 
                 process.run(poll_wait).await;
@@ -552,7 +508,7 @@ mod tests {
         let (_, system_snapshot_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
         let (msg_for_system_sender, msg_for_system_receiver) = mpsc::channel(1);
 
-        let peer = Peer::new(
+        let (peer, _) = Peer::new(
             SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
             SourceDefaultsConfig::default(),
             ProtocolVersion::default(),
@@ -572,7 +528,6 @@ mod tests {
             socket: None,
             peer,
             last_send_timestamp: None,
-            last_poll_sent: Instant::now(),
         };
 
         (process, test_socket, msg_for_system_receiver)
@@ -653,7 +608,7 @@ mod tests {
         socket.send_to(&serialized, remote_addr).await.unwrap();
 
         let msg = msg_recv.recv().await.unwrap();
-        assert!(matches!(msg, MsgForSystem::NewMeasurement(_, _, _)));
+        assert!(matches!(msg, MsgForSystem::PeerUpdate(_, _)));
 
         handle.abort();
     }
@@ -684,6 +639,9 @@ mod tests {
         let rec_packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap().0;
         let send_packet = NtpPacket::deny_response(rec_packet);
         let serialized = serialize_packet_unencryped(&send_packet);
+
+        // Flush earlier messages
+        while msg_recv.try_recv().is_ok() {}
 
         socket.send_to(&serialized, remote_addr).await.unwrap();
 
