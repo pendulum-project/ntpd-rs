@@ -7,6 +7,7 @@ use std::{fmt::Debug, hash::Hash};
 
 #[cfg(feature = "ntpv5")]
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
+use crate::peer::PeerUpdate;
 #[cfg(feature = "ntpv5")]
 use crate::peer::ProtocolVersion;
 use crate::{
@@ -15,7 +16,7 @@ use crate::{
     config::{SourceDefaultsConfig, SynchronizationConfig},
     identifiers::ReferenceId,
     packet::NtpLeapIndicator,
-    peer::{Measurement, PeerSnapshot},
+    peer::PeerSnapshot,
     time_types::{NtpDuration, PollInterval},
 };
 
@@ -183,12 +184,13 @@ impl<C: NtpClock, PeerId: Hash + Eq + Copy + Debug> System<C, PeerId> {
         Ok(())
     }
 
-    pub fn handle_peer_snapshot(
+    pub fn handle_peer_update(
         &mut self,
         id: PeerId,
-        snapshot: PeerSnapshot,
-    ) -> Result<(), C::Error> {
-        let usable = snapshot
+        update: PeerUpdate,
+    ) -> Result<Option<Duration>, C::Error> {
+        let usable = update
+            .snapshot
             .accept_synchronization(
                 self.synchronization_config.local_stratum,
                 self.ip_list.as_ref(),
@@ -196,22 +198,13 @@ impl<C: NtpClock, PeerId: Hash + Eq + Copy + Debug> System<C, PeerId> {
             )
             .is_ok();
         self.clock_controller()?.peer_update(id, usable);
-        *self.peers.get_mut(&id).unwrap() = Some(snapshot);
-        Ok(())
-    }
-
-    pub fn handle_peer_measurement(
-        &mut self,
-        id: PeerId,
-        snapshot: PeerSnapshot,
-        measurement: Measurement,
-    ) -> Result<Option<Duration>, C::Error> {
-        if let Err(e) = self.handle_peer_snapshot(id, snapshot) {
-            panic!("Could not handle peer snapshot: {}", e);
+        *self.peers.get_mut(&id).unwrap() = Some(update.snapshot);
+        if let Some(measurement) = update.measurement {
+            let update = self.clock_controller()?.peer_measurement(id, measurement);
+            Ok(self.handle_algorithm_state_update(update))
+        } else {
+            Ok(None)
         }
-        // note: local needed for borrow checker
-        let update = self.clock_controller()?.peer_measurement(id, measurement);
-        Ok(self.handle_algorithm_state_update(update))
     }
 
     fn handle_algorithm_state_update(&mut self, update: StateUpdate<PeerId>) -> Option<Duration> {

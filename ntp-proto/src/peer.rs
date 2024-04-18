@@ -11,32 +11,18 @@ use crate::{
     system::SystemSnapshot,
     time_types::{NtpDuration, NtpInstant, NtpTimestamp, PollInterval},
 };
+use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use std::{
-    fmt::Display,
     io::Cursor,
     net::{IpAddr, SocketAddr},
+    time::Duration,
 };
 use tracing::{debug, info, instrument, trace, warn};
 
 const MAX_STRATUM: u8 = 16;
 const POLL_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
 const STARTUP_TRIES_THRESHOLD: usize = 3;
-
-#[derive(Debug)]
-pub enum NtsError {
-    OutOfCookies,
-}
-
-impl Display for NtsError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::OutOfCookies => write!(f, "Ran out of NTS cookies"),
-        }
-    }
-}
-
-impl std::error::Error for NtsError {}
 
 pub struct PeerNtsData {
     pub(crate) cookies: CookieStash,
@@ -70,8 +56,6 @@ impl std::fmt::Debug for PeerNtsData {
 pub struct Peer {
     nts: Option<Box<PeerNtsData>>,
 
-    // Poll interval dictated by unreachability backoff
-    backoff_interval: PollInterval,
     // Poll interval used when sending last poll mesage.
     last_poll_interval: PollInterval,
     // The poll interval desired by the remove server.
@@ -92,6 +76,8 @@ pub struct Peer {
     tries: usize,
 
     peer_defaults_config: SourceDefaultsConfig,
+
+    buffer: [u8; 1024],
 
     protocol_version: ProtocolVersion,
 
@@ -190,28 +176,6 @@ impl Reach {
     pub fn unanswered_polls(&self) -> u32 {
         self.0.trailing_zeros()
     }
-}
-
-#[derive(Debug)]
-pub enum IgnoreReason {
-    /// The packet doesn't parse
-    InvalidPacket,
-    /// The association mode is not one that this peer supports
-    InvalidMode,
-    /// The NTP version is not one that this implementation supports
-    InvalidVersion,
-    /// The stratum of the server is too high
-    InvalidStratum,
-    /// The send time on the received packet is not the time we sent it at
-    InvalidPacketTime,
-    /// Received a Kiss-o'-Death https://datatracker.ietf.org/doc/html/rfc5905#section-7.4
-    KissIgnore,
-    /// Received a DENY or RSTR Kiss-o'-Death, and must demobilize the association
-    KissDemobilize,
-    /// Received a matching NTS-Nack, no further action needed.
-    KissNtsNack,
-    /// The best packet is older than the peer's current time
-    TooOld,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -327,35 +291,6 @@ pub enum AcceptSynchronizationError {
     Stratum,
 }
 
-#[derive(Debug)]
-pub enum Update {
-    BareUpdate(PeerSnapshot),
-    NewMeasurement(PeerSnapshot, Measurement),
-}
-
-#[derive(Debug)]
-pub enum PollError {
-    Io(std::io::Error),
-    PeerUnreachable,
-}
-
-impl Display for PollError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Io(e) => write!(f, "{e}"),
-            Self::PeerUnreachable => write!(f, "peer unreachable"),
-        }
-    }
-}
-
-impl std::error::Error for PollError {}
-
-impl From<std::io::Error> for PollError {
-    fn from(value: std::io::Error) -> Self {
-        Self::Io(value)
-    }
-}
-
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ProtocolVersion {
     V4,
@@ -391,36 +326,115 @@ impl Default for ProtocolVersion {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
+pub struct PeerUpdate {
+    pub(crate) snapshot: PeerSnapshot,
+    pub(crate) measurement: Option<Measurement>,
+}
+
+#[cfg(feature = "__internal-test")]
+impl PeerUpdate {
+    pub fn snapshot(snapshot: PeerSnapshot) -> Self {
+        PeerUpdate {
+            snapshot,
+            measurement: None,
+        }
+    }
+
+    pub fn measurement(snapshot: PeerSnapshot, measurement: Measurement) -> Self {
+        PeerUpdate {
+            snapshot,
+            measurement: Some(measurement),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
+pub enum PeerAction {
+    /// Send a message over the network. When this is issued, the network port maybe changed.
+    Send(Vec<u8>),
+    /// Send an update to [`System`](crate::system::System)
+    UpdateSystem(PeerUpdate),
+    /// Call [`Peer::handle_timer`] after given duration
+    SetTimer(Duration),
+    /// A complete reset of the connection is necessary, including a potential new NTSKE client session and/or DNS lookup.
+    Reset,
+    /// We must stop talking to this particular server.
+    Demobilize,
+}
+
+#[derive(Debug)]
+pub struct PeerActionIterator {
+    iter: <Vec<PeerAction> as IntoIterator>::IntoIter,
+}
+
+impl Default for PeerActionIterator {
+    fn default() -> Self {
+        Self {
+            iter: vec![].into_iter(),
+        }
+    }
+}
+
+impl Iterator for PeerActionIterator {
+    type Item = PeerAction;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+}
+
+impl PeerActionIterator {
+    fn from(data: Vec<PeerAction>) -> Self {
+        Self {
+            iter: data.into_iter(),
+        }
+    }
+}
+
+macro_rules! actions {
+    [$($action:expr),*] => {
+        {
+            PeerActionIterator::from(vec![$($action),*])
+        }
+    }
+}
+
 impl Peer {
     #[instrument]
     pub fn new(
         source_addr: SocketAddr,
         peer_defaults_config: SourceDefaultsConfig,
         protocol_version: ProtocolVersion,
-    ) -> Self {
-        Self {
-            nts: None,
+    ) -> (Self, PeerActionIterator) {
+        (
+            Self {
+                nts: None,
 
-            last_poll_interval: peer_defaults_config.poll_interval_limits.min,
-            backoff_interval: peer_defaults_config.poll_interval_limits.min,
-            remote_min_poll_interval: peer_defaults_config.poll_interval_limits.min,
+                last_poll_interval: peer_defaults_config.poll_interval_limits.min,
+                remote_min_poll_interval: peer_defaults_config.poll_interval_limits.min,
 
-            current_request_identifier: None,
-            source_id: ReferenceId::from_ip(source_addr.ip()),
-            source_addr,
-            reach: Default::default(),
-            tries: 0,
+                current_request_identifier: None,
+                source_id: ReferenceId::from_ip(source_addr.ip()),
+                source_addr,
+                reach: Default::default(),
+                tries: 0,
 
-            stratum: 16,
-            reference_id: ReferenceId::NONE,
+                stratum: 16,
+                reference_id: ReferenceId::NONE,
 
-            peer_defaults_config,
+                peer_defaults_config,
 
-            protocol_version, // TODO make this configurable
+                buffer: [0; 1024],
 
-            #[cfg(feature = "ntpv5")]
-            bloom_filter: RemoteBloomFilter::new(16).expect("16 is a valid chunk size"),
-        }
+                protocol_version, // TODO make this configurable
+
+                #[cfg(feature = "ntpv5")]
+                bloom_filter: RemoteBloomFilter::new(16).expect("16 is a valid chunk size"),
+            },
+            actions!(PeerAction::SetTimer(Duration::from_secs(0))),
+        )
     }
 
     #[instrument]
@@ -429,29 +443,28 @@ impl Peer {
         peer_defaults_config: SourceDefaultsConfig,
         protocol_version: ProtocolVersion,
         nts: Box<PeerNtsData>,
-    ) -> Self {
-        Self {
-            nts: Some(nts),
-            ..Self::new(source_addr, peer_defaults_config, protocol_version)
-        }
+    ) -> (Self, PeerActionIterator) {
+        let (base, actions) = Self::new(source_addr, peer_defaults_config, protocol_version);
+        (
+            Self {
+                nts: Some(nts),
+                ..base
+            },
+            actions,
+        )
     }
 
     pub fn current_poll_interval(&self, system: SystemSnapshot) -> PollInterval {
         system
             .time_snapshot
             .poll_interval
-            .max(self.backoff_interval)
             .max(self.remote_min_poll_interval)
     }
 
     #[cfg_attr(not(feature = "ntpv5"), allow(unused_mut))]
-    pub fn generate_poll_message<'a>(
-        &mut self,
-        buf: &'a mut [u8],
-        system: SystemSnapshot,
-    ) -> Result<(&'a [u8], PeerSnapshot), PollError> {
+    pub fn handle_timer(&mut self, system: SystemSnapshot) -> PeerActionIterator {
         if !self.reach.is_reachable() && self.tries >= STARTUP_TRIES_THRESHOLD {
-            return Err(PollError::PeerUnreachable);
+            return actions!(PeerAction::Reset);
         }
 
         self.reach.poll();
@@ -460,9 +473,9 @@ impl Peer {
         let poll_interval = self.current_poll_interval(system);
         let (mut packet, identifier) = match &mut self.nts {
             Some(nts) => {
-                let cookie = nts.cookies.get().ok_or_else(|| {
-                    std::io::Error::new(std::io::ErrorKind::Other, NtsError::OutOfCookies)
-                })?;
+                let Some(cookie) = nts.cookies.get() else {
+                    return actions!(PeerAction::Reset);
+                };
                 // Do ensure we don't exceed the buffer size
                 // when requesting new cookies. We keep 350
                 // bytes of margin for header, ids, extension
@@ -470,7 +483,7 @@ impl Peer {
                 let new_cookies = nts
                     .cookies
                     .gap()
-                    .min(((buf.len() - 300) / cookie.len()).min(u8::MAX as usize) as u8);
+                    .min(((self.buffer.len() - 300) / cookie.len()).min(u8::MAX as usize) as u8);
                 match self.protocol_version {
                     ProtocolVersion::V4 => {
                         NtpPacket::nts_poll_message(&cookie, new_cookies, poll_interval)
@@ -493,29 +506,42 @@ impl Peer {
         };
         self.current_request_identifier = Some((identifier, NtpInstant::now() + POLL_WINDOW));
 
-        // Ensure we don't spam the remote with polls if it is not reachable
-        self.backoff_interval = poll_interval.inc(self.peer_defaults_config.poll_interval_limits);
-
         #[cfg(feature = "ntpv5")]
         if let NtpHeader::V5(header) = packet.header() {
             let req_ef = self.bloom_filter.next_request(header.client_cookie);
             packet.push_additional(ExtensionField::ReferenceIdRequest(req_ef));
         }
 
-        // Write packet to buffer
-        let mut cursor: Cursor<&mut [u8]> = Cursor::new(buf);
-        packet.serialize(
-            &mut cursor,
-            &self.nts.as_ref().map(|nts| nts.c2s.as_ref()),
-            None,
-        )?;
-        let used = cursor.position();
-        let result = &cursor.into_inner()[..used as usize];
-
         // update the poll interval
         self.last_poll_interval = poll_interval;
 
-        Ok((result, PeerSnapshot::from_peer(self)))
+        let snapshot = PeerSnapshot::from_peer(self);
+
+        // Write packet to buffer
+        let mut cursor: Cursor<&mut [u8]> = Cursor::new(&mut self.buffer);
+        packet
+            .serialize(
+                &mut cursor,
+                &self.nts.as_ref().map(|nts| nts.c2s.as_ref()),
+                None,
+            )
+            .expect("Internal error: could not serialize packet");
+        let used = cursor.position();
+        let result = &cursor.into_inner()[..used as usize];
+
+        actions!(
+            PeerAction::Send(result.into()),
+            PeerAction::UpdateSystem(PeerUpdate {
+                snapshot,
+                measurement: None
+            }),
+            // randomize the poll interval a little to make it harder to predict poll requests
+            PeerAction::SetTimer(
+                poll_interval
+                    .as_system_duration()
+                    .mul_f64(thread_rng().gen_range(1.01..=1.05))
+            )
+        )
     }
 
     #[instrument(skip(self, system), fields(peer = debug(self.source_id)))]
@@ -526,18 +552,18 @@ impl Peer {
         local_clock_time: NtpInstant,
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
-    ) -> Result<Update, IgnoreReason> {
+    ) -> PeerActionIterator {
         let message =
             match NtpPacket::deserialize(message, &self.nts.as_ref().map(|nts| nts.s2c.as_ref())) {
                 Ok((packet, _)) => packet,
                 Err(e) => {
                     warn!("received invalid packet: {}", e);
-                    return Err(IgnoreReason::InvalidPacket);
+                    return actions!();
                 }
             };
 
         if message.version() != self.protocol_version.expected_incoming_version() {
-            return Err(IgnoreReason::InvalidVersion);
+            return actions!();
         }
 
         let request_identifier = match self.current_request_identifier {
@@ -546,7 +572,7 @@ impl Peer {
             }
             _ => {
                 debug!("Received old/unexpected packet from peer");
-                return Err(IgnoreReason::InvalidPacketTime);
+                return actions!();
             }
         };
 
@@ -575,7 +601,7 @@ impl Peer {
             // packet that is not a response will leave us vulnerable
             // to denial of service attacks.
             debug!("Received old/unexpected packet from peer");
-            Err(IgnoreReason::InvalidPacketTime)
+            actions!()
         } else if message.is_kiss_rate() {
             // KISS packets may not have correct timestamps at all, handle them anyway
             self.remote_min_poll_interval = Ord::max(
@@ -584,36 +610,33 @@ impl Peer {
                 self.last_poll_interval,
             );
             warn!(?self.remote_min_poll_interval, "Peer requested rate limit");
-            Err(IgnoreReason::KissIgnore)
+            actions!()
         } else if message.is_kiss_rstr() || message.is_kiss_deny() {
             warn!("Peer denied service");
             // KISS packets may not have correct timestamps at all, handle them anyway
-            Err(IgnoreReason::KissDemobilize)
+            actions!(PeerAction::Demobilize)
         } else if message.is_kiss_ntsn() {
             warn!("Received nts not-acknowledge");
             // as these can be easily faked, we dont immediately give up on receiving
-            // a response, however, for the purpose of backoff we do count it as a response.
-            // This ensures that if we have expired cookies, we get through them
-            // fairly quickly.
-            self.backoff_interval = self.peer_defaults_config.poll_interval_limits.min;
-            Err(IgnoreReason::KissNtsNack)
+            // a response.
+            actions!()
         } else if message.is_kiss() {
             warn!("Unrecognized KISS Message from peer");
             // Ignore unrecognized control messages
-            Err(IgnoreReason::KissIgnore)
+            actions!()
         } else if message.stratum() > MAX_STRATUM {
             // A servers stratum should be between 1 and MAX_STRATUM (16) inclusive.
             warn!(
                 "Received message from server with excessive stratum {}",
                 message.stratum()
             );
-            Err(IgnoreReason::InvalidStratum)
+            actions!()
         } else if message.mode() != NtpAssociationMode::Server {
             // we currently only support a client <-> server association
             warn!("Received packet with invalid mode");
-            Err(IgnoreReason::InvalidMode)
+            actions!()
         } else {
-            Ok(self.process_message(system, message, local_clock_time, send_time, recv_time))
+            self.process_message(system, message, local_clock_time, send_time, recv_time)
         }
     }
 
@@ -625,13 +648,10 @@ impl Peer {
         local_clock_time: NtpInstant,
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
-    ) -> Update {
+    ) -> PeerActionIterator {
         trace!("Packet accepted for processing");
         // For reachability, mark that we have had a response
         self.reach.received_packet();
-
-        // Got a response, so no need for unreachability backoff
-        self.backoff_interval = self.peer_defaults_config.poll_interval_limits.min;
 
         // we received this packet, and don't want to accept future ones with this next_expected_origin
         self.current_request_identifier = None;
@@ -698,7 +718,10 @@ impl Peer {
             }
         }
 
-        Update::NewMeasurement(PeerSnapshot::from_peer(self), measurement)
+        actions!(PeerAction::UpdateSystem(PeerUpdate {
+            snapshot: PeerSnapshot::from_peer(self),
+            measurement: Some(measurement),
+        }))
     }
 
     #[cfg(test)]
@@ -709,7 +732,6 @@ impl Peer {
             nts: None,
 
             last_poll_interval: PollInterval::default(),
-            backoff_interval: PollInterval::default(),
             remote_min_poll_interval: PollInterval::default(),
 
             current_request_identifier: None,
@@ -723,6 +745,8 @@ impl Peer {
             reference_id: ReferenceId::from_int(0),
 
             peer_defaults_config: SourceDefaultsConfig::default(),
+
+            buffer: [0; 1024],
 
             protocol_version: Default::default(),
 
@@ -769,7 +793,6 @@ mod test {
     use crate::packet::v5::server_reference_id::ServerId;
     #[cfg(feature = "ntpv5")]
     use rand::thread_rng;
-    use std::time::Duration;
 
     #[derive(Debug, Clone, Default)]
     struct TestClock {}
@@ -921,7 +944,6 @@ mod test {
 
     #[test]
     fn test_poll_interval() {
-        let base = NtpInstant::now();
         let mut peer = Peer::test_peer();
         let mut system = SystemSnapshot::default();
 
@@ -938,50 +960,6 @@ mod test {
 
         assert!(peer.current_poll_interval(system) >= peer.remote_min_poll_interval);
         assert!(peer.current_poll_interval(system) >= system.time_snapshot.poll_interval);
-
-        peer.remote_min_poll_interval = PollIntervalLimits::default().min;
-
-        let prev = peer.current_poll_interval(system);
-        let mut buf = [0; 1024];
-        let packetbuf = peer.generate_poll_message(&mut buf, system).unwrap().0;
-        let packet = NtpPacket::deserialize(packetbuf, &NoCipher).unwrap().0;
-        assert!(peer.current_poll_interval(system) > prev);
-        let mut response = NtpPacket::test();
-        response.set_mode(NtpAssociationMode::Server);
-        response.set_stratum(1);
-        response.set_origin_timestamp(packet.transmit_timestamp());
-        assert!(peer
-            .handle_incoming(
-                system,
-                &response.serialize_without_encryption_vec(None).unwrap(),
-                base,
-                NtpTimestamp::default(),
-                NtpTimestamp::default()
-            )
-            .is_ok());
-        assert_eq!(peer.current_poll_interval(system), prev);
-
-        let prev = peer.current_poll_interval(system);
-        let mut buf = [0; 1024];
-        let packetbuf = peer.generate_poll_message(&mut buf, system).unwrap().0;
-        let packet = NtpPacket::deserialize(packetbuf, &NoCipher).unwrap().0;
-        assert!(peer.current_poll_interval(system) > prev);
-        let mut response = NtpPacket::test();
-        response.set_mode(NtpAssociationMode::Server);
-        response.set_stratum(0);
-        response.set_origin_timestamp(packet.transmit_timestamp());
-        response.set_reference_id(ReferenceId::KISS_RATE);
-        assert!(peer
-            .handle_incoming(
-                system,
-                &response.serialize_without_encryption_vec(None).unwrap(),
-                base,
-                NtpTimestamp::default(),
-                NtpTimestamp::default()
-            )
-            .is_err());
-        assert!(peer.current_poll_interval(system) > prev);
-        assert!(peer.remote_min_poll_interval > prev);
     }
 
     #[test]
@@ -990,9 +968,19 @@ mod test {
         let mut peer = Peer::test_peer();
 
         let system = SystemSnapshot::default();
-        let mut buf = [0; 1024];
-        let outgoingbuf = peer.generate_poll_message(&mut buf, system).unwrap().0;
-        let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
+        let actions = peer.handle_timer(system);
+        let mut outgoingbuf = None;
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Reset | PeerAction::Demobilize
+            ));
+            if let PeerAction::Send(buf) = action {
+                outgoingbuf = Some(buf);
+            }
+        }
+        let outgoingbuf = outgoingbuf.unwrap();
+        let outgoing = NtpPacket::deserialize(&outgoingbuf, &NoCipher).unwrap().0;
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_stratum(1);
@@ -1001,39 +989,60 @@ mod test {
         packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(100));
         packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(200));
 
-        assert!(peer
-            .handle_incoming(
-                system,
-                &packet.serialize_without_encryption_vec(None).unwrap(),
-                base + Duration::from_secs(1),
-                NtpTimestamp::from_fixed_int(0),
-                NtpTimestamp::from_fixed_int(400)
-            )
-            .is_ok());
+        let actions = peer.handle_incoming(
+            system,
+            &packet.serialize_without_encryption_vec(None).unwrap(),
+            base + Duration::from_secs(1),
+            NtpTimestamp::from_fixed_int(0),
+            NtpTimestamp::from_fixed_int(400),
+        );
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Reset
+                    | PeerAction::Demobilize
+                    | PeerAction::SetTimer(_)
+                    | PeerAction::Send(_)
+            ));
+        }
         //assert_eq!(peer.timestate.last_packet, packet);
-        assert!(peer
-            .handle_incoming(
-                system,
-                &packet.serialize_without_encryption_vec(None).unwrap(),
-                base + Duration::from_secs(1),
-                NtpTimestamp::from_fixed_int(0),
-                NtpTimestamp::from_fixed_int(500)
-            )
-            .is_err());
+        let mut actions = peer.handle_incoming(
+            system,
+            &packet.serialize_without_encryption_vec(None).unwrap(),
+            base + Duration::from_secs(1),
+            NtpTimestamp::from_fixed_int(0),
+            NtpTimestamp::from_fixed_int(500),
+        );
+        assert!(actions.next().is_none());
     }
 
     #[test]
     fn test_startup_unreachable() {
         let mut peer = Peer::test_peer();
         let system = SystemSnapshot::default();
-        let mut buf = [0; 1024];
-        assert!(peer.generate_poll_message(&mut buf, system).is_ok());
-        assert!(peer.generate_poll_message(&mut buf, system).is_ok());
-        assert!(peer.generate_poll_message(&mut buf, system).is_ok());
-        assert!(matches!(
-            peer.generate_poll_message(&mut buf, system),
-            Err(PollError::PeerUnreachable)
-        ));
+        let actions = peer.handle_timer(system);
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Reset | PeerAction::Demobilize
+            ));
+        }
+        let actions = peer.handle_timer(system);
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Reset | PeerAction::Demobilize
+            ));
+        }
+        let actions = peer.handle_timer(system);
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Reset | PeerAction::Demobilize
+            ));
+        }
+        let mut actions = peer.handle_timer(system);
+        assert!(matches!(actions.next(), Some(PeerAction::Reset)));
     }
 
     #[test]
@@ -1042,9 +1051,19 @@ mod test {
         let mut peer = Peer::test_peer();
 
         let system = SystemSnapshot::default();
-        let mut buf = [0; 1024];
-        let outgoingbuf = peer.generate_poll_message(&mut buf, system).unwrap().0;
-        let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
+        let actions = peer.handle_timer(system);
+        let mut outgoingbuf = None;
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Reset | PeerAction::Demobilize
+            ));
+            if let PeerAction::Send(buf) = action {
+                outgoingbuf = Some(buf);
+            }
+        }
+        let outgoingbuf = outgoingbuf.unwrap();
+        let outgoing = NtpPacket::deserialize(&outgoingbuf, &NoCipher).unwrap().0;
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_stratum(1);
@@ -1052,28 +1071,81 @@ mod test {
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(100));
         packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(200));
-        assert!(peer
-            .handle_incoming(
-                system,
-                &packet.serialize_without_encryption_vec(None).unwrap(),
-                base + Duration::from_secs(1),
-                NtpTimestamp::from_fixed_int(0),
-                NtpTimestamp::from_fixed_int(400)
-            )
-            .is_ok());
+        let actions = peer.handle_incoming(
+            system,
+            &packet.serialize_without_encryption_vec(None).unwrap(),
+            base + Duration::from_secs(1),
+            NtpTimestamp::from_fixed_int(0),
+            NtpTimestamp::from_fixed_int(400),
+        );
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Reset
+                    | PeerAction::Demobilize
+                    | PeerAction::SetTimer(_)
+                    | PeerAction::Send(_)
+            ));
+        }
 
-        assert!(peer.generate_poll_message(&mut buf, system).is_ok());
-        assert!(peer.generate_poll_message(&mut buf, system).is_ok());
-        assert!(peer.generate_poll_message(&mut buf, system).is_ok());
-        assert!(peer.generate_poll_message(&mut buf, system).is_ok());
-        assert!(peer.generate_poll_message(&mut buf, system).is_ok());
-        assert!(peer.generate_poll_message(&mut buf, system).is_ok());
-        assert!(peer.generate_poll_message(&mut buf, system).is_ok());
-        assert!(peer.generate_poll_message(&mut buf, system).is_ok());
-        assert!(matches!(
-            peer.generate_poll_message(&mut buf, system),
-            Err(PollError::PeerUnreachable)
-        ));
+        let actions = peer.handle_timer(system);
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Reset | PeerAction::Demobilize
+            ));
+        }
+        let actions = peer.handle_timer(system);
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Reset | PeerAction::Demobilize
+            ));
+        }
+        let actions = peer.handle_timer(system);
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Reset | PeerAction::Demobilize
+            ));
+        }
+        let actions = peer.handle_timer(system);
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Reset | PeerAction::Demobilize
+            ));
+        }
+        let actions = peer.handle_timer(system);
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Reset | PeerAction::Demobilize
+            ));
+        }
+        let actions = peer.handle_timer(system);
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Reset | PeerAction::Demobilize
+            ));
+        }
+        let actions = peer.handle_timer(system);
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Reset | PeerAction::Demobilize
+            ));
+        }
+        let actions = peer.handle_timer(system);
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Reset | PeerAction::Demobilize
+            ));
+        }
+        let mut actions = peer.handle_timer(system);
+        assert!(matches!(actions.next(), Some(PeerAction::Reset)));
     }
 
     #[test]
@@ -1082,9 +1154,19 @@ mod test {
         let mut peer = Peer::test_peer();
 
         let system = SystemSnapshot::default();
-        let mut buf = [0; 1024];
-        let outgoingbuf = peer.generate_poll_message(&mut buf, system).unwrap().0;
-        let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
+        let actions = peer.handle_timer(system);
+        let mut outgoingbuf = None;
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Reset | PeerAction::Demobilize
+            ));
+            if let PeerAction::Send(buf) = action {
+                outgoingbuf = Some(buf);
+            }
+        }
+        let outgoingbuf = outgoingbuf.unwrap();
+        let outgoing = NtpPacket::deserialize(&outgoingbuf, &NoCipher).unwrap().0;
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_stratum(MAX_STRATUM + 1);
@@ -1092,26 +1174,24 @@ mod test {
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(100));
         packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(200));
-        assert!(peer
-            .handle_incoming(
-                system,
-                &packet.serialize_without_encryption_vec(None).unwrap(),
-                base + Duration::from_secs(1),
-                NtpTimestamp::from_fixed_int(0),
-                NtpTimestamp::from_fixed_int(500)
-            )
-            .is_err());
+        let mut actions = peer.handle_incoming(
+            system,
+            &packet.serialize_without_encryption_vec(None).unwrap(),
+            base + Duration::from_secs(1),
+            NtpTimestamp::from_fixed_int(0),
+            NtpTimestamp::from_fixed_int(500),
+        );
+        assert!(actions.next().is_none());
 
         packet.set_stratum(0);
-        assert!(peer
-            .handle_incoming(
-                system,
-                &packet.serialize_without_encryption_vec(None).unwrap(),
-                base + Duration::from_secs(1),
-                NtpTimestamp::from_fixed_int(0),
-                NtpTimestamp::from_fixed_int(500)
-            )
-            .is_err());
+        let mut actions = peer.handle_incoming(
+            system,
+            &packet.serialize_without_encryption_vec(None).unwrap(),
+            base + Duration::from_secs(1),
+            NtpTimestamp::from_fixed_int(0),
+            NtpTimestamp::from_fixed_int(500),
+        );
+        assert!(actions.next().is_none());
     }
 
     #[test]
@@ -1123,103 +1203,124 @@ mod test {
         let system = SystemSnapshot::default();
         packet.set_reference_id(ReferenceId::KISS_RSTR);
         packet.set_mode(NtpAssociationMode::Server);
-        assert!(!matches!(
-            peer.handle_incoming(
-                system,
-                &packet.serialize_without_encryption_vec(None).unwrap(),
-                base + Duration::from_secs(1),
-                NtpTimestamp::from_fixed_int(0),
-                NtpTimestamp::from_fixed_int(100)
-            ),
-            Err(IgnoreReason::KissDemobilize)
-        ));
+        let mut actions = peer.handle_incoming(
+            system,
+            &packet.serialize_without_encryption_vec(None).unwrap(),
+            base + Duration::from_secs(1),
+            NtpTimestamp::from_fixed_int(0),
+            NtpTimestamp::from_fixed_int(100),
+        );
+        assert!(actions.next().is_none());
 
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
-        let mut buf = [0; 1024];
-        let outgoingbuf = peer.generate_poll_message(&mut buf, system).unwrap().0;
-        let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
+        let actions = peer.handle_timer(system);
+        let mut outgoingbuf = None;
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Reset | PeerAction::Demobilize
+            ));
+            if let PeerAction::Send(buf) = action {
+                outgoingbuf = Some(buf);
+            }
+        }
+        let outgoingbuf = outgoingbuf.unwrap();
+        let outgoing = NtpPacket::deserialize(&outgoingbuf, &NoCipher).unwrap().0;
         packet.set_reference_id(ReferenceId::KISS_RSTR);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
-        assert!(matches!(
-            peer.handle_incoming(
-                system,
-                &packet.serialize_without_encryption_vec(None).unwrap(),
-                base + Duration::from_secs(1),
-                NtpTimestamp::from_fixed_int(0),
-                NtpTimestamp::from_fixed_int(100)
-            ),
-            Err(IgnoreReason::KissDemobilize)
-        ));
+        let mut actions = peer.handle_incoming(
+            system,
+            &packet.serialize_without_encryption_vec(None).unwrap(),
+            base + Duration::from_secs(1),
+            NtpTimestamp::from_fixed_int(0),
+            NtpTimestamp::from_fixed_int(100),
+        );
+        assert!(matches!(actions.next(), Some(PeerAction::Demobilize)));
 
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_reference_id(ReferenceId::KISS_DENY);
         packet.set_mode(NtpAssociationMode::Server);
-        assert!(!matches!(
-            peer.handle_incoming(
-                system,
-                &packet.serialize_without_encryption_vec(None).unwrap(),
-                base + Duration::from_secs(1),
-                NtpTimestamp::from_fixed_int(0),
-                NtpTimestamp::from_fixed_int(100)
-            ),
-            Err(IgnoreReason::KissDemobilize)
-        ));
+        let mut actions = peer.handle_incoming(
+            system,
+            &packet.serialize_without_encryption_vec(None).unwrap(),
+            base + Duration::from_secs(1),
+            NtpTimestamp::from_fixed_int(0),
+            NtpTimestamp::from_fixed_int(100),
+        );
+        assert!(actions.next().is_none());
 
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
-        let outgoingbuf = peer.generate_poll_message(&mut buf, system).unwrap().0;
-        let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
+        let actions = peer.handle_timer(system);
+        let mut outgoingbuf = None;
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Reset | PeerAction::Demobilize
+            ));
+            if let PeerAction::Send(buf) = action {
+                outgoingbuf = Some(buf);
+            }
+        }
+        let outgoingbuf = outgoingbuf.unwrap();
+        let outgoing = NtpPacket::deserialize(&outgoingbuf, &NoCipher).unwrap().0;
         packet.set_reference_id(ReferenceId::KISS_DENY);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
-        assert!(matches!(
-            peer.handle_incoming(
-                system,
-                &packet.serialize_without_encryption_vec(None).unwrap(),
-                base + Duration::from_secs(1),
-                NtpTimestamp::from_fixed_int(0),
-                NtpTimestamp::from_fixed_int(100)
-            ),
-            Err(IgnoreReason::KissDemobilize)
-        ));
+        let mut actions = peer.handle_incoming(
+            system,
+            &packet.serialize_without_encryption_vec(None).unwrap(),
+            base + Duration::from_secs(1),
+            NtpTimestamp::from_fixed_int(0),
+            NtpTimestamp::from_fixed_int(100),
+        );
+        assert!(matches!(actions.next(), Some(PeerAction::Demobilize)));
 
         let old_remote_interval = peer.remote_min_poll_interval;
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_reference_id(ReferenceId::KISS_RATE);
         packet.set_mode(NtpAssociationMode::Server);
-        assert!(peer
-            .handle_incoming(
-                system,
-                &packet.serialize_without_encryption_vec(None).unwrap(),
-                base + Duration::from_secs(1),
-                NtpTimestamp::from_fixed_int(0),
-                NtpTimestamp::from_fixed_int(100)
-            )
-            .is_err());
+        let mut actions = peer.handle_incoming(
+            system,
+            &packet.serialize_without_encryption_vec(None).unwrap(),
+            base + Duration::from_secs(1),
+            NtpTimestamp::from_fixed_int(0),
+            NtpTimestamp::from_fixed_int(100),
+        );
+        assert!(actions.next().is_none());
         assert_eq!(peer.remote_min_poll_interval, old_remote_interval);
 
         let old_remote_interval = peer.remote_min_poll_interval;
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
-        let mut buf = [0; 1024];
-        let outgoingbuf = peer.generate_poll_message(&mut buf, system).unwrap().0;
-        let outgoing = NtpPacket::deserialize(outgoingbuf, &NoCipher).unwrap().0;
+        let actions = peer.handle_timer(system);
+        let mut outgoingbuf = None;
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Reset | PeerAction::Demobilize
+            ));
+            if let PeerAction::Send(buf) = action {
+                outgoingbuf = Some(buf);
+            }
+        }
+        let outgoingbuf = outgoingbuf.unwrap();
+        let outgoing = NtpPacket::deserialize(&outgoingbuf, &NoCipher).unwrap().0;
         packet.set_reference_id(ReferenceId::KISS_RATE);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
-        assert!(peer
-            .handle_incoming(
-                system,
-                &packet.serialize_without_encryption_vec(None).unwrap(),
-                base + Duration::from_secs(1),
-                NtpTimestamp::from_fixed_int(0),
-                NtpTimestamp::from_fixed_int(100)
-            )
-            .is_err());
+        let mut actions = peer.handle_incoming(
+            system,
+            &packet.serialize_without_encryption_vec(None).unwrap(),
+            base + Duration::from_secs(1),
+            NtpTimestamp::from_fixed_int(0),
+            NtpTimestamp::from_fixed_int(100),
+        );
+        assert!(actions.next().is_none());
         assert!(peer.remote_min_poll_interval >= old_remote_interval);
     }
 
@@ -1227,7 +1328,6 @@ mod test {
     #[test]
     fn upgrade_state_machine_does_stop() {
         let mut peer = Peer::test_peer();
-        let mut buf = [0; 1024];
         let system = SystemSnapshot::default();
         let clock = TestClock {};
 
@@ -1237,10 +1337,21 @@ mod test {
         ));
 
         for _ in 0..8 {
-            let poll = peer.generate_poll_message(&mut buf, system).unwrap().0;
+            let actions = peer.handle_timer(system);
+            let mut outgoingbuf = None;
+            for action in actions {
+                assert!(!matches!(
+                    action,
+                    PeerAction::Reset | PeerAction::Demobilize
+                ));
+                if let PeerAction::Send(buf) = action {
+                    outgoingbuf = Some(buf);
+                }
+            }
+            let poll = outgoingbuf.unwrap();
 
             let poll_len: usize = poll.len();
-            let (poll, _) = NtpPacket::deserialize(poll, &NoCipher).unwrap();
+            let (poll, _) = NtpPacket::deserialize(&poll, &NoCipher).unwrap();
             assert_eq!(poll.version(), 4);
             assert!(poll.is_upgrade());
 
@@ -1253,18 +1364,34 @@ mod test {
             // Kill the reference timestamp
             response[16] = 0;
 
-            peer.handle_incoming(
+            let actions = peer.handle_incoming(
                 system,
                 &response,
                 NtpInstant::now(),
                 NtpTimestamp::default(),
                 NtpTimestamp::default(),
-            )
-            .unwrap();
+            );
+            for action in actions {
+                assert!(!matches!(
+                    action,
+                    PeerAction::Demobilize | PeerAction::Reset
+                ));
+            }
         }
 
-        let poll = peer.generate_poll_message(&mut buf, system).unwrap().0;
-        let (poll, _) = NtpPacket::deserialize(poll, &NoCipher).unwrap();
+        let actions = peer.handle_timer(system);
+        let mut outgoingbuf = None;
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Reset | PeerAction::Demobilize
+            ));
+            if let PeerAction::Send(buf) = action {
+                outgoingbuf = Some(buf);
+            }
+        }
+        let poll = outgoingbuf.unwrap();
+        let (poll, _) = NtpPacket::deserialize(&poll, &NoCipher).unwrap();
         assert_eq!(poll.version(), 4);
         assert!(!poll.is_upgrade());
     }
@@ -1273,7 +1400,6 @@ mod test {
     #[test]
     fn upgrade_state_machine_does_upgrade() {
         let mut peer = Peer::test_peer();
-        let mut buf = [0; 1024];
         let system = SystemSnapshot::default();
         let clock = TestClock {};
 
@@ -1282,10 +1408,21 @@ mod test {
             ProtocolVersion::V4UpgradingToV5 { .. }
         ));
 
-        let poll = peer.generate_poll_message(&mut buf, system).unwrap().0;
+        let actions = peer.handle_timer(system);
+        let mut outgoingbuf = None;
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Reset | PeerAction::Demobilize
+            ));
+            if let PeerAction::Send(buf) = action {
+                outgoingbuf = Some(buf);
+            }
+        }
+        let poll = outgoingbuf.unwrap();
 
         let poll_len = poll.len();
-        let (poll, _) = NtpPacket::deserialize(poll, &NoCipher).unwrap();
+        let (poll, _) = NtpPacket::deserialize(&poll, &NoCipher).unwrap();
         assert_eq!(poll.version(), 4);
         assert!(poll.is_upgrade());
 
@@ -1295,20 +1432,36 @@ mod test {
             .serialize_without_encryption_vec(Some(poll_len))
             .unwrap();
 
-        peer.handle_incoming(
+        let actions = peer.handle_incoming(
             system,
             &response,
             NtpInstant::now(),
             NtpTimestamp::default(),
             NtpTimestamp::default(),
-        )
-        .unwrap();
+        );
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Demobilize | PeerAction::Reset
+            ));
+        }
 
         // We should have received a upgrade response and updated to NTPv5
         assert!(matches!(peer.protocol_version, ProtocolVersion::V5));
 
-        let poll = peer.generate_poll_message(&mut buf, system).unwrap().0;
-        let (poll, _) = NtpPacket::deserialize(poll, &NoCipher).unwrap();
+        let actions = peer.handle_timer(system);
+        let mut outgoingbuf = None;
+        for action in actions {
+            assert!(!matches!(
+                action,
+                PeerAction::Reset | PeerAction::Demobilize
+            ));
+            if let PeerAction::Send(buf) = action {
+                outgoingbuf = Some(buf);
+            }
+        }
+        let poll = outgoingbuf.unwrap();
+        let (poll, _) = NtpPacket::deserialize(&poll, &NoCipher).unwrap();
         assert_eq!(poll.version(), 5);
     }
 
@@ -1332,23 +1485,37 @@ mod test {
         let mut tries = 0;
 
         while client.bloom_filter.full_filter().is_none() && tries < 100 {
-            let mut buf = [0; 1024];
-            let req = client.generate_poll_message(&mut buf, system).unwrap().0;
+            let actions = client.handle_timer(system);
+            let mut outgoingbuf = None;
+            for action in actions {
+                assert!(!matches!(
+                    action,
+                    PeerAction::Reset | PeerAction::Demobilize
+                ));
+                if let PeerAction::Send(buf) = action {
+                    outgoingbuf = Some(buf);
+                }
+            }
+            let req = outgoingbuf.unwrap();
 
-            let (req, _) = NtpPacket::deserialize(req, &NoCipher).unwrap();
+            let (req, _) = NtpPacket::deserialize(&req, &NoCipher).unwrap();
             let response =
                 NtpPacket::timestamp_response(&server_system, req, NtpTimestamp::default(), &clock);
             let resp_bytes = response.serialize_without_encryption_vec(None).unwrap();
 
-            client
-                .handle_incoming(
-                    system,
-                    &resp_bytes,
-                    NtpInstant::now(),
-                    NtpTimestamp::default(),
-                    NtpTimestamp::default(),
-                )
-                .unwrap();
+            let actions = client.handle_incoming(
+                system,
+                &resp_bytes,
+                NtpInstant::now(),
+                NtpTimestamp::default(),
+                NtpTimestamp::default(),
+            );
+            for action in actions {
+                assert!(!matches!(
+                    action,
+                    PeerAction::Demobilize | PeerAction::Reset
+                ));
+            }
 
             tries += 1;
         }
