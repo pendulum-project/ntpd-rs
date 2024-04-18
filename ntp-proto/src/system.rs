@@ -1,14 +1,21 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::net::IpAddr;
+use std::sync::Arc;
+use std::time::Duration;
+use std::{fmt::Debug, hash::Hash};
 
 #[cfg(feature = "ntpv5")]
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 #[cfg(feature = "ntpv5")]
 use crate::peer::ProtocolVersion;
 use crate::{
-    config::SynchronizationConfig,
+    algorithm::{KalmanClockController, ObservablePeerTimedata, StateUpdate, TimeSyncController},
+    clock::NtpClock,
+    config::{SourceDefaultsConfig, SynchronizationConfig},
     identifiers::ReferenceId,
     packet::NtpLeapIndicator,
-    peer::PeerSnapshot,
+    peer::{Measurement, PeerSnapshot},
     time_types::{NtpDuration, PollInterval},
 };
 
@@ -106,9 +113,153 @@ impl Default for SystemSnapshot {
     }
 }
 
+pub struct System<C: NtpClock, PeerId: Hash + Eq + Copy + Debug> {
+    synchronization_config: SynchronizationConfig,
+    peer_defaults_config: SourceDefaultsConfig,
+    system: SystemSnapshot,
+    ip_list: Arc<[IpAddr]>,
+
+    peers: HashMap<PeerId, Option<PeerSnapshot>>,
+
+    clock: C,
+    controller: Option<KalmanClockController<C, PeerId>>,
+}
+
+impl<C: NtpClock, PeerId: Hash + Eq + Copy + Debug> System<C, PeerId> {
+    pub fn new(
+        clock: C,
+        synchronization_config: SynchronizationConfig,
+        peer_defaults_config: SourceDefaultsConfig,
+        ip_list: Arc<[IpAddr]>,
+    ) -> Self {
+        // Setup system snapshot
+        let mut system = SystemSnapshot {
+            stratum: synchronization_config.local_stratum,
+            ..Default::default()
+        };
+
+        if synchronization_config.local_stratum == 1 {
+            // We are a stratum 1 server so mark our selves synchronized.
+            system.time_snapshot.leap_indicator = NtpLeapIndicator::NoWarning;
+        }
+
+        System {
+            synchronization_config,
+            peer_defaults_config,
+            system,
+            ip_list,
+            peers: Default::default(),
+            clock,
+            controller: None,
+        }
+    }
+
+    pub fn system_snapshot(&self) -> SystemSnapshot {
+        self.system
+    }
+
+    fn clock_controller(&mut self) -> Result<&mut KalmanClockController<C, PeerId>, C::Error> {
+        let controller = match self.controller.take() {
+            Some(controller) => controller,
+            None => KalmanClockController::new(
+                self.clock.clone(),
+                self.synchronization_config,
+                self.peer_defaults_config,
+                self.synchronization_config.algorithm,
+            )?,
+        };
+        Ok(self.controller.insert(controller))
+    }
+
+    pub fn handle_peer_create(&mut self, id: PeerId) -> Result<(), C::Error> {
+        self.clock_controller()?.peer_add(id);
+        self.peers.insert(id, None);
+        Ok(())
+    }
+
+    pub fn handle_peer_remove(&mut self, id: PeerId) -> Result<(), C::Error> {
+        self.clock_controller()?.peer_remove(id);
+        self.peers.remove(&id);
+        Ok(())
+    }
+
+    pub fn handle_peer_snapshot(
+        &mut self,
+        id: PeerId,
+        snapshot: PeerSnapshot,
+    ) -> Result<(), C::Error> {
+        let usable = snapshot
+            .accept_synchronization(
+                self.synchronization_config.local_stratum,
+                self.ip_list.as_ref(),
+                &self.system,
+            )
+            .is_ok();
+        self.clock_controller()?.peer_update(id, usable);
+        *self.peers.get_mut(&id).unwrap() = Some(snapshot);
+        Ok(())
+    }
+
+    pub fn handle_peer_measurement(
+        &mut self,
+        id: PeerId,
+        snapshot: PeerSnapshot,
+        measurement: Measurement,
+    ) -> Result<Option<Duration>, C::Error> {
+        if let Err(e) = self.handle_peer_snapshot(id, snapshot) {
+            panic!("Could not handle peer snapshot: {}", e);
+        }
+        // note: local needed for borrow checker
+        let update = self.clock_controller()?.peer_measurement(id, measurement);
+        Ok(self.handle_algorithm_state_update(update))
+    }
+
+    fn handle_algorithm_state_update(&mut self, update: StateUpdate<PeerId>) -> Option<Duration> {
+        if let Some(ref used_peers) = update.used_peers {
+            self.system.update_used_peers(used_peers.iter().map(|v| {
+                self.peers.get(v).and_then(|snapshot| *snapshot).expect(
+                    "Critical error: Peer used for synchronization that is not known to system",
+                )
+            }));
+        }
+        if let Some(time_snapshot) = update.time_snapshot {
+            self.system
+                .update_timedata(time_snapshot, &self.synchronization_config);
+        }
+        update.next_update
+    }
+
+    pub fn handle_timer(&mut self) -> Option<Duration> {
+        tracing::debug!("Timer expired");
+        // note: local needed for borrow checker
+        if let Some(controller) = self.controller.as_mut() {
+            let update = controller.time_update();
+            self.handle_algorithm_state_update(update)
+        } else {
+            None
+        }
+    }
+
+    pub fn observe_peer(&self, id: PeerId) -> Option<(PeerSnapshot, ObservablePeerTimedata)> {
+        if let Some(ref controller) = self.controller {
+            self.peers
+                .get(&id)
+                .copied()
+                .flatten()
+                .and_then(|v| controller.peer_snapshot(id).map(|s| (v, s)))
+        } else {
+            None
+        }
+    }
+
+    pub fn update_ip_list(&mut self, ip_list: Arc<[IpAddr]>) {
+        self.ip_list = ip_list;
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::net::{Ipv4Addr, SocketAddr};
 
     use crate::time_types::PollIntervalLimits;
 

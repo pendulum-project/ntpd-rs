@@ -1,4 +1,4 @@
-use std::{fmt::Debug, hash::Hash};
+use std::{fmt::Debug, hash::Hash, time::Duration};
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -29,7 +29,7 @@ pub struct StateUpdate<PeerID: Eq + Copy + Debug> {
     // Update to the used peers, if any
     pub used_peers: Option<Vec<PeerID>>,
     // Requested timestamp for next non-measurement update
-    pub next_update: Option<NtpTimestamp>,
+    pub next_update: Option<Duration>,
 }
 
 // Note: this default implementation is neccessary since the

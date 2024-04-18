@@ -2,8 +2,7 @@
 use super::spawn::nts_pool::NtsPoolSpawner;
 use super::{
     config::{ClockConfig, NormalizedAddress, PeerConfig, ServerConfig, TimestampMode},
-    peer::{MsgForSystem, PeerChannels},
-    peer::{PeerTask, Wait},
+    peer::{MsgForSystem, PeerChannels, PeerTask, Wait},
     server::{ServerStats, ServerTask},
     spawn::{
         nts::NtsSpawner, pool::PoolSpawner, standard::StandardSpawner, PeerCreateParameters,
@@ -14,11 +13,11 @@ use super::{
 
 use std::{
     collections::HashMap, future::Future, marker::PhantomData, net::IpAddr, pin::Pin, sync::Arc,
+    time::Duration,
 };
 
 use ntp_proto::{
-    KalmanClockController, KeySet, NtpClock, NtpDuration, NtpLeapIndicator, PeerSnapshot,
-    SourceDefaultsConfig, SynchronizationConfig, SystemSnapshot, TimeSyncController,
+    KeySet, NtpClock, SourceDefaultsConfig, SynchronizationConfig, System, SystemSnapshot,
 };
 use timestamped_socket::interface::InterfaceName;
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -88,7 +87,7 @@ pub async fn spawn(
 ) -> std::io::Result<(JoinHandle<std::io::Result<()>>, DaemonChannels)> {
     let ip_list = super::local_ip_provider::spawn()?;
 
-    let (mut system, channels) = System::new(
+    let (mut system, channels) = SystemTask::new(
         clock_config.clock,
         clock_config.interface,
         clock_config.timestamp_mode,
@@ -99,11 +98,6 @@ pub async fn spawn(
     );
 
     for peer_config in peer_configs {
-        // Force early clock controller initialization when peers are configured
-        system.clock_controller().map_err(|e| {
-            tracing::error!("Could not start clock controller: {}", e);
-            std::io::Error::new(std::io::ErrorKind::Other, e)
-        })?;
         match peer_config {
             PeerConfig::Standard(cfg) => {
                 system
@@ -160,11 +154,10 @@ struct SystemSpawnerData {
     notify_tx: mpsc::Sender<SystemEvent>,
 }
 
-struct System<C: NtpClock, T: Wait> {
+struct SystemTask<C: NtpClock, T: Wait> {
     _wait: PhantomData<SingleshotSleep<T>>,
-    synchronization_config: SynchronizationConfig,
     peer_defaults_config: SourceDefaultsConfig,
-    system: SystemSnapshot,
+    system: System<C, PeerId>,
 
     system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
     peer_snapshots_sender: tokio::sync::watch::Sender<Vec<ObservablePeerState>>,
@@ -181,9 +174,7 @@ struct System<C: NtpClock, T: Wait> {
     spawners: Vec<SystemSpawnerData>,
 
     peer_channels: PeerChannels,
-
     clock: C,
-    controller: Option<KalmanClockController<C, PeerId>>,
 
     // which timestamps to use (this is a hint, OS or hardware may ignore)
     timestamp_mode: TimestampMode,
@@ -193,7 +184,7 @@ struct System<C: NtpClock, T: Wait> {
     interface: Option<InterfaceName>,
 }
 
-impl<C: NtpClock + Sync, T: Wait> System<C, T> {
+impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
     fn new(
         clock: C,
         interface: Option<InterfaceName>,
@@ -203,20 +194,16 @@ impl<C: NtpClock + Sync, T: Wait> System<C, T> {
         keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
         ip_list: tokio::sync::watch::Receiver<Arc<[IpAddr]>>,
     ) -> (Self, DaemonChannels) {
-        // Setup system snapshot
-        let mut system = SystemSnapshot {
-            stratum: synchronization_config.local_stratum,
-            ..Default::default()
-        };
-
-        if synchronization_config.local_stratum == 1 {
-            // We are a stratum 1 server so mark our selves synchronized.
-            system.time_snapshot.leap_indicator = NtpLeapIndicator::NoWarning;
-        }
+        let system = System::new(
+            clock.clone(),
+            synchronization_config,
+            peer_defaults_config,
+            ip_list.borrow().clone(),
+        );
 
         // Create communication channels
         let (system_snapshot_sender, system_snapshot_receiver) =
-            tokio::sync::watch::channel(system);
+            tokio::sync::watch::channel(system.system_snapshot());
         let (peer_snapshots_sender, peer_snapshots_receiver) = tokio::sync::watch::channel(vec![]);
         let (server_data_sender, server_data_receiver) = tokio::sync::watch::channel(vec![]);
         let (msg_for_system_sender, msg_for_system_receiver) =
@@ -225,9 +212,8 @@ impl<C: NtpClock + Sync, T: Wait> System<C, T> {
 
         // Build System and its channels
         (
-            System {
+            SystemTask {
                 _wait: PhantomData,
-                synchronization_config,
                 peer_defaults_config,
                 system,
 
@@ -249,7 +235,6 @@ impl<C: NtpClock + Sync, T: Wait> System<C, T> {
                     system_snapshot_receiver: system_snapshot_receiver.clone(),
                 },
                 clock,
-                controller: None,
                 timestamp_mode,
                 interface,
             },
@@ -259,19 +244,6 @@ impl<C: NtpClock + Sync, T: Wait> System<C, T> {
                 system_snapshot_receiver,
             },
         )
-    }
-
-    fn clock_controller(&mut self) -> Result<&mut KalmanClockController<C, PeerId>, C::Error> {
-        let controller = match self.controller.take() {
-            Some(controller) => controller,
-            None => KalmanClockController::new(
-                self.clock.clone(),
-                self.synchronization_config,
-                self.peer_defaults_config,
-                self.synchronization_config.algorithm,
-            )?,
-        };
-        Ok(self.controller.insert(controller))
     }
 
     fn add_spawner(
@@ -316,8 +288,12 @@ impl<C: NtpClock + Sync, T: Wait> System<C, T> {
                         }
                     }
                 }
+                _ = self.ip_list.changed(), if self.ip_list.has_changed().is_ok() => {
+                    self.system.update_ip_list(self.ip_list.borrow_and_update().clone());
+                }
                 () = &mut wait => {
-                    self.handle_timer(&mut wait);
+                    let timer = self.system.handle_timer();
+                    self.handle_state_update(timer, &mut wait);
                 }
             }
         }
@@ -326,12 +302,18 @@ impl<C: NtpClock + Sync, T: Wait> System<C, T> {
         Ok(())
     }
 
-    fn handle_timer(&mut self, wait: &mut Pin<&mut SingleshotSleep<T>>) {
-        tracing::debug!("Timer expired");
-        // note: local needed for borrow checker
-        if let Some(controller) = self.controller.as_mut() {
-            let update = controller.time_update();
-            self.handle_algorithm_state_update(update, wait);
+    fn handle_state_update(
+        &mut self,
+        timer: Option<Duration>,
+        wait: &mut Pin<&mut SingleshotSleep<T>>,
+    ) {
+        // Don't care if there is no receiver.
+        let _ = self
+            .system_snapshot_sender
+            .send(self.system.system_snapshot());
+
+        if let Some(duration) = timer {
+            wait.as_mut().reset(tokio::time::Instant::now() + duration);
         }
     }
 
@@ -349,12 +331,16 @@ impl<C: NtpClock + Sync, T: Wait> System<C, T> {
                 };
             }
             MsgForSystem::NewMeasurement(index, snapshot, measurement) => {
-                if let Err(e) = self.handle_peer_measurement(index, snapshot, measurement, wait) {
-                    unreachable!("Could not process peer measurement: {}", e);
+                match self
+                    .system
+                    .handle_peer_measurement(index, snapshot, measurement)
+                {
+                    Err(e) => unreachable!("Could not process peer measurement: {}", e),
+                    Ok(timer) => self.handle_state_update(timer, wait),
                 }
             }
             MsgForSystem::UpdatedSnapshot(index, snapshot) => {
-                if let Err(e) = self.handle_peer_snapshot(index, snapshot) {
+                if let Err(e) = self.system.handle_peer_snapshot(index, snapshot) {
                     unreachable!("Could not update peer snapshot: {}", e);
                 }
             }
@@ -376,9 +362,9 @@ impl<C: NtpClock + Sync, T: Wait> System<C, T> {
     }
 
     async fn handle_peer_network_issue(&mut self, index: PeerId) -> std::io::Result<()> {
-        self.clock_controller()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
-            .peer_remove(index);
+        self.system
+            .handle_peer_remove(index)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
         // Restart the peer reusing its configuration.
         let state = self.peers.remove(&index).unwrap();
@@ -400,9 +386,9 @@ impl<C: NtpClock + Sync, T: Wait> System<C, T> {
     }
 
     async fn handle_peer_unreachable(&mut self, index: PeerId) -> std::io::Result<()> {
-        self.clock_controller()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
-            .peer_remove(index);
+        self.system
+            .handle_peer_remove(index)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
         // Restart the peer reusing its configuration.
         let state = self.peers.remove(&index).unwrap();
@@ -423,74 +409,11 @@ impl<C: NtpClock + Sync, T: Wait> System<C, T> {
         Ok(())
     }
 
-    fn handle_peer_snapshot(
-        &mut self,
-        index: PeerId,
-        snapshot: PeerSnapshot,
-    ) -> Result<(), C::Error> {
-        let usable = snapshot
-            .accept_synchronization(
-                self.synchronization_config.local_stratum,
-                self.ip_list.borrow().as_ref(),
-                &self.system,
-            )
-            .is_ok();
-        self.clock_controller()?.peer_update(index, usable);
-        self.peers.get_mut(&index).unwrap().snapshot = Some(snapshot);
-        Ok(())
-    }
-
-    fn handle_peer_measurement(
-        &mut self,
-        index: PeerId,
-        snapshot: PeerSnapshot,
-        measurement: ntp_proto::Measurement,
-        wait: &mut Pin<&mut SingleshotSleep<T>>,
-    ) -> Result<(), C::Error> {
-        if let Err(e) = self.handle_peer_snapshot(index, snapshot) {
-            panic!("Could not handle peer snapshot: {}", e);
-        }
-        // note: local needed for borrow checker
-        let update = self
-            .clock_controller()?
-            .peer_measurement(index, measurement);
-        self.handle_algorithm_state_update(update, wait);
-        Ok(())
-    }
-
-    fn handle_algorithm_state_update(
-        &mut self,
-        update: ntp_proto::StateUpdate<PeerId>,
-        wait: &mut Pin<&mut SingleshotSleep<T>>,
-    ) {
-        if let Some(ref used_peers) = update.used_peers {
-            self.system.update_used_peers(used_peers.iter().map(|v| {
-                self.peers.get(v).and_then(|data| data.snapshot).expect(
-                    "Critical error: Peer used for synchronization that is not known to system",
-                )
-            }));
-        }
-        if let Some(time_snapshot) = update.time_snapshot {
-            self.system
-                .update_timedata(time_snapshot, &self.synchronization_config);
-        }
-        if let Some(timestamp) = update.next_update {
-            let duration = timestamp - self.clock.now().expect("Could not get current time");
-            let duration =
-                std::time::Duration::from_secs_f64(duration.max(NtpDuration::ZERO).to_seconds());
-            wait.as_mut().reset(tokio::time::Instant::now() + duration);
-        }
-        if update.used_peers.is_some() || update.time_snapshot.is_some() {
-            // Don't care if there is no receiver.
-            let _ = self.system_snapshot_sender.send(self.system);
-        }
-    }
-
     async fn handle_peer_demobilize(&mut self, index: PeerId) -> Result<(), C::Error> {
-        self.clock_controller()?.peer_remove(index);
-        let state = self.peers.remove(&index).unwrap();
+        self.system.handle_peer_remove(index)?;
 
         // Restart the peer reusing its configuration.
+        let state = self.peers.remove(&index).unwrap();
         let spawner_id = state.spawner_id;
         let source_id = state.source_id;
         let opt_spawner = self.spawners.iter().find(|s| s.id == spawner_id);
@@ -517,13 +440,12 @@ impl<C: NtpClock + Sync, T: Wait> System<C, T> {
         self.peers.insert(
             source_id,
             PeerState {
-                snapshot: None,
                 peer_address: params.normalized_addr.clone(),
                 source_id,
                 spawner_id,
             },
         );
-        self.clock_controller()?.peer_add(source_id);
+        self.system.handle_peer_create(source_id)?;
 
         PeerTask::spawn(
             source_id,
@@ -580,33 +502,24 @@ impl<C: NtpClock + Sync, T: Wait> System<C, T> {
 
     fn observe_peers(&self) -> impl Iterator<Item = ObservablePeerState> + '_ {
         self.peers.iter().map(|(index, data)| {
-            data.snapshot
-                .map(|snapshot| {
-                    if let Some(timedata) = self
-                        .controller
-                        .as_ref()
-                        .and_then(|c| c.peer_snapshot(*index))
-                    {
-                        ObservablePeerState::Observable(ObservedPeerState {
-                            timedata,
-                            unanswered_polls: snapshot.reach.unanswered_polls(),
-                            poll_interval: snapshot.poll_interval,
-                            name: data.peer_address.to_string(),
-                            address: snapshot.source_addr.to_string(),
-                            id: data.source_id,
-                        })
-                    } else {
-                        ObservablePeerState::Nothing
-                    }
+            if let Some((snapshot, timedata)) = self.system.observe_peer(*index) {
+                ObservablePeerState::Observable(ObservedPeerState {
+                    timedata,
+                    unanswered_polls: snapshot.reach.unanswered_polls(),
+                    poll_interval: snapshot.poll_interval,
+                    name: data.peer_address.to_string(),
+                    address: snapshot.source_addr.to_string(),
+                    id: data.source_id,
                 })
-                .unwrap_or(ObservablePeerState::Nothing)
+            } else {
+                ObservablePeerState::Nothing
+            }
         })
     }
 }
 
 #[derive(Debug)]
 struct PeerState {
-    snapshot: Option<PeerSnapshot>,
     peer_address: NormalizedAddress,
     spawner_id: SpawnerId,
     source_id: PeerId,
@@ -620,7 +533,10 @@ pub struct ServerData {
 
 #[cfg(test)]
 mod tests {
-    use ntp_proto::{peer_snapshot, KeySetProvider, Measurement, NtpInstant, NtpTimestamp};
+    use ntp_proto::{
+        peer_snapshot, KeySetProvider, Measurement, NtpDuration, NtpInstant, NtpLeapIndicator,
+        NtpTimestamp,
+    };
 
     use super::super::spawn::dummy::DummySpawner;
 
@@ -668,7 +584,7 @@ mod tests {
         let (_, keyset) = tokio::sync::watch::channel(KeySetProvider::new(1).get());
         let (_, ip_list) = tokio::sync::watch::channel([].into_iter().collect());
 
-        let (mut system, _) = System::new(
+        let (mut system, _) = SystemTask::new(
             TestClock {},
             None,
             TimestampMode::KernelRecv,
@@ -701,8 +617,8 @@ mod tests {
         assert_eq!(
             system
                 .peers
-                .values()
-                .map(|v| match v.snapshot {
+                .keys()
+                .map(|index| match system.system.observe_peer(*index) {
                     Some(_) => 1,
                     None => 0,
                 })
@@ -737,8 +653,8 @@ mod tests {
         assert_eq!(
             system
                 .peers
-                .values()
-                .map(|v| match v.snapshot {
+                .keys()
+                .map(|index| match system.system.observe_peer(*index) {
                     Some(_) => 1,
                     None => 0,
                 })
@@ -773,8 +689,8 @@ mod tests {
         assert_eq!(
             system
                 .peers
-                .values()
-                .map(|v| match v.snapshot {
+                .keys()
+                .map(|index| match system.system.observe_peer(*index) {
                     Some(_) => 1,
                     None => 0,
                 })
@@ -792,13 +708,13 @@ mod tests {
         assert_eq!(
             system
                 .peers
-                .values()
-                .map(|v| match v.snapshot {
+                .keys()
+                .map(|index| match system.system.observe_peer(*index) {
                     Some(_) => 1,
                     None => 0,
                 })
                 .sum::<i32>(),
-            2
+            1
         );
 
         system
@@ -808,8 +724,8 @@ mod tests {
         assert_eq!(
             system
                 .peers
-                .values()
-                .map(|v| match v.snapshot {
+                .keys()
+                .map(|index| match system.system.observe_peer(*index) {
                     Some(_) => 1,
                     None => 0,
                 })

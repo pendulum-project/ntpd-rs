@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug, hash::Hash};
+use std::{collections::HashMap, fmt::Debug, hash::Hash, time::Duration};
 
 use tracing::{error, info, instrument};
 
@@ -233,7 +233,7 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
         }
     }
 
-    fn steer_offset(&mut self, change: f64, freq_delta: f64) -> Option<NtpTimestamp> {
+    fn steer_offset(&mut self, change: f64, freq_delta: f64) -> Option<Duration> {
         if change.abs() > self.algo_config.step_threshold {
             // jump
             self.check_offset_steer(change);
@@ -251,13 +251,14 @@ impl<C: NtpClock, PeerID: Hash + Eq + Copy + Debug> KalmanClockController<C, Pee
                 .algo_config
                 .slew_maximum_frequency_offset
                 .min(change.abs() / self.algo_config.slew_minimum_duration);
-            let duration = NtpDuration::from_seconds(change.abs() / freq);
+            let duration = Duration::from_secs_f64(change.abs() / freq);
             info!(
                 "Slewing by {}ms over {}s",
                 change * 1e3,
-                duration.to_seconds()
+                duration.as_secs_f64(),
             );
-            Some(self.change_desired_frequency(-freq * change.signum(), freq_delta) + duration)
+            self.change_desired_frequency(-freq * change.signum(), freq_delta);
+            Some(duration)
         }
     }
 
