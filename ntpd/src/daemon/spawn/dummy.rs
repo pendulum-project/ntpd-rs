@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{fmt::Display, net::SocketAddr};
 
 use super::{
     BasicSpawner, PeerCreateParameters, PeerRemovedEvent, SpawnAction, SpawnEvent, SpawnerId,
@@ -11,8 +11,16 @@ pub struct DummySpawner {
     to_activate: isize,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum DummySpawnerError {}
+
+impl Display for DummySpawnerError {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        unreachable!()
+    }
+}
+
+impl std::error::Error for DummySpawnerError {}
 
 impl DummySpawner {
     pub fn new(to_spawn: Vec<PeerCreateParameters>, keep_active: usize) -> DummySpawner {

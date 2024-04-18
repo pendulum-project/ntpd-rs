@@ -1,11 +1,11 @@
 use std::{
+    fmt::Display,
     net::SocketAddr,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
 
 use serde::Deserialize;
-use thiserror::Error;
 use tracing::{info, warn};
 
 #[derive(Deserialize, Debug)]
@@ -16,13 +16,34 @@ pub struct Config {
     pub observability: ObservabilityConfig,
 }
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum ConfigError {
-    #[error("io error while reading config: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("config toml parsing error: {0}")]
-    Toml(#[from] toml::de::Error),
+    Io(std::io::Error),
+    Toml(toml::de::Error),
 }
+
+impl From<std::io::Error> for ConfigError {
+    fn from(value: std::io::Error) -> Self {
+        Self::Io(value)
+    }
+}
+
+impl From<toml::de::Error> for ConfigError {
+    fn from(value: toml::de::Error) -> Self {
+        Self::Toml(value)
+    }
+}
+
+impl Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(e) => write!(f, "io error while reading config: {e}"),
+            Self::Toml(e) => write!(f, "config toml parsing error: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for ConfigError {}
 
 impl Config {
     pub fn check(&self) -> bool {

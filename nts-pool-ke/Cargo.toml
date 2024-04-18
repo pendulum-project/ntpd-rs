@@ -11,7 +11,7 @@ publish.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-tokio = { workspace = true, features = ["rt-multi-thread", "io-util", "io-std", "fs", "sync", "net", "macros", "time"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "io-util", "fs", "net", "macros", "time" ] }
 toml.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "0.3.0", default-features = false, features = ["std", "fmt", "ansi"] }
@@ -19,7 +19,6 @@ rustls.workspace = true
 rustls-pemfile.workspace = true
 rustls-native-certs.workspace = true
 serde.workspace = true
-thiserror.workspace = true
 ntp-proto = { workspace = true, features = ["nts-pool"] }
 tokio-rustls.workspace = true
 

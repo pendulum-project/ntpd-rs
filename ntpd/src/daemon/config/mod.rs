@@ -8,13 +8,13 @@ pub use peer::*;
 use serde::{Deserialize, Deserializer};
 pub use server::*;
 use std::{
+    fmt::Display,
     io::ErrorKind,
     net::SocketAddr,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     str::FromStr,
 };
-use thiserror::Error;
 use timestamped_socket::interface::InterfaceName;
 use tokio::{fs::read_to_string, io};
 use tracing::{info, warn};
@@ -454,12 +454,33 @@ impl Config {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum ConfigError {
-    #[error("io error while reading config: {0}")]
-    Io(#[from] io::Error),
-    #[error("config toml parsing error: {0}")]
-    Toml(#[from] toml::de::Error),
+    Io(io::Error),
+    Toml(toml::de::Error),
+}
+
+impl std::error::Error for ConfigError {}
+
+impl Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(e) => write!(f, "io error while reading config: {e}"),
+            Self::Toml(e) => write!(f, "config toml parsing error: {e}"),
+        }
+    }
+}
+
+impl From<io::Error> for ConfigError {
+    fn from(value: io::Error) -> Self {
+        Self::Io(value)
+    }
+}
+
+impl From<toml::de::Error> for ConfigError {
+    fn from(value: toml::de::Error) -> Self {
+        Self::Toml(value)
+    }
 }
 
 #[cfg(test)]

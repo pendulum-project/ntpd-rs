@@ -1,7 +1,7 @@
+use std::fmt::Display;
 use std::net::SocketAddr;
 use std::ops::Deref;
 
-use thiserror::Error;
 use tokio::sync::mpsc;
 use tracing::warn;
 
@@ -15,10 +15,25 @@ pub struct NtsSpawner {
     has_spawned: bool,
 }
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum NtsSpawnError {
-    #[error("Channel send error: {0}")]
-    SendError(#[from] mpsc::error::SendError<SpawnEvent>),
+    SendError(mpsc::error::SendError<SpawnEvent>),
+}
+
+impl std::error::Error for NtsSpawnError {}
+
+impl Display for NtsSpawnError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SendError(e) => write!(f, "Channel send error: {e}"),
+        }
+    }
+}
+
+impl From<mpsc::error::SendError<SpawnEvent>> for NtsSpawnError {
+    fn from(value: mpsc::error::SendError<SpawnEvent>) -> Self {
+        Self::SendError(value)
+    }
 }
 
 pub(super) async fn resolve_addr(address: (&str, u16)) -> Option<SocketAddr> {

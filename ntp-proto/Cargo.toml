@@ -28,7 +28,6 @@ tracing.workspace = true
 serde.workspace = true
 arbitrary = { workspace = true, optional = true }
 rustls.workspace = true
-thiserror.workspace = true
 aead.workspace = true
 aes-siv.workspace = true
 zeroize.workspace = true

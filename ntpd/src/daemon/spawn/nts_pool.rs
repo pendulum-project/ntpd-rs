@@ -1,6 +1,6 @@
+use std::fmt::Display;
 use std::ops::Deref;
 
-use thiserror::Error;
 use tokio::sync::mpsc;
 use tracing::warn;
 
@@ -23,10 +23,25 @@ pub struct NtsPoolSpawner {
     current_peers: Vec<PoolPeer>,
 }
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum NtsPoolSpawnError {
-    #[error("Channel send error: {0}")]
-    SendError(#[from] mpsc::error::SendError<SpawnEvent>),
+    SendError(mpsc::error::SendError<SpawnEvent>),
+}
+
+impl std::error::Error for NtsPoolSpawnError {}
+
+impl Display for NtsPoolSpawnError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SendError(e) => write!(f, "Channel send error: {e}"),
+        }
+    }
+}
+
+impl From<mpsc::error::SendError<SpawnEvent>> for NtsPoolSpawnError {
+    fn from(value: mpsc::error::SendError<SpawnEvent>) -> Self {
+        Self::SendError(value)
+    }
 }
 
 impl NtsPoolSpawner {

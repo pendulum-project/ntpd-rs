@@ -1,4 +1,5 @@
 use std::{
+    fmt::Display,
     io::{Read, Write},
     ops::ControlFlow,
     sync::Arc,
@@ -642,37 +643,74 @@ impl NtsRecordDecoder {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum KeyExchangeError {
-    #[error("Unrecognized record is marked as critical")]
     UnrecognizedCriticalRecord,
-    #[error("Remote: Bad request")]
     BadRequest,
-    #[error("Remote: Internal server error")]
     InternalServerError,
-    #[error("Remote: Error with unknown code {0}")]
     UnknownErrorCode(u16),
-    #[error("The server response is invalid")]
     BadResponse,
-    #[error("No continuation protocol supported by both us and server")]
     NoValidProtocol,
-    #[error("No encryption algorithm supported by both us and server")]
     NoValidAlgorithm,
-    #[error("The length of a fixed key does not match the algorithm used")]
     InvalidFixedKeyLength,
-    #[error("Missing cookies")]
     NoCookies,
-    #[error("{0}")]
-    Io(#[from] std::io::Error),
-    #[error("{0}")]
-    Tls(#[from] rustls::Error),
-    #[error("{0}")]
+    Io(std::io::Error),
+    Tls(rustls::Error),
     Certificate(rustls::Error),
-    #[error("{0}")]
-    DnsName(#[from] rustls::pki_types::InvalidDnsNameError),
-    #[error("Incomplete response")]
+    DnsName(rustls::pki_types::InvalidDnsNameError),
     IncompleteResponse,
 }
+
+impl Display for KeyExchangeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnrecognizedCriticalRecord => {
+                write!(f, "Unrecognized record is marked as critical")
+            }
+            Self::BadRequest => write!(f, "Remote: Bad request"),
+            Self::InternalServerError => write!(f, "Remote: Internal server error"),
+            Self::UnknownErrorCode(e) => write!(f, "Remote: Error with unknown code {e}"),
+            Self::BadResponse => write!(f, "The server response is invalid"),
+            Self::NoValidProtocol => write!(
+                f,
+                "No continuation protocol supported by both us and server"
+            ),
+            Self::NoValidAlgorithm => {
+                write!(f, "No encryption algorithm supported by both us and server")
+            }
+            Self::InvalidFixedKeyLength => write!(
+                f,
+                "The length of a fixed key does not match the algorithm used"
+            ),
+            Self::NoCookies => write!(f, "Missing cookies"),
+            Self::Io(e) => write!(f, "{e}"),
+            Self::Tls(e) => write!(f, "{e}"),
+            Self::Certificate(e) => write!(f, "{e}"),
+            Self::DnsName(e) => write!(f, "{e}"),
+            Self::IncompleteResponse => write!(f, "Incomplete response"),
+        }
+    }
+}
+
+impl From<std::io::Error> for KeyExchangeError {
+    fn from(value: std::io::Error) -> Self {
+        Self::Io(value)
+    }
+}
+
+impl From<rustls::Error> for KeyExchangeError {
+    fn from(value: rustls::Error) -> Self {
+        Self::Tls(value)
+    }
+}
+
+impl From<rustls::pki_types::InvalidDnsNameError> for KeyExchangeError {
+    fn from(value: rustls::pki_types::InvalidDnsNameError) -> Self {
+        Self::DnsName(value)
+    }
+}
+
+impl std::error::Error for KeyExchangeError {}
 
 impl KeyExchangeError {
     pub(crate) fn from_error_code(error_code: u16) -> Self {

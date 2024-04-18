@@ -1,19 +1,34 @@
+use std::fmt::Display;
+
 use aes_siv::{siv::Aes128Siv, siv::Aes256Siv, Key, KeyInit};
 use rand::Rng;
-use tracing::error;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::keyset::DecodedServerCookie;
 
 use super::extension_fields::ExtensionField;
 
-#[derive(Debug, thiserror::Error)]
-#[error("Could not decrypt ciphertext")]
+#[derive(Debug)]
 pub struct DecryptError;
 
-#[derive(Debug, thiserror::Error)]
-#[error("Invalid key")]
+impl Display for DecryptError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Could not decrypt ciphertext")
+    }
+}
+
+impl std::error::Error for DecryptError {}
+
+#[derive(Debug)]
 pub struct KeyError;
+
+impl Display for KeyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Invalid key")
+    }
+}
+
+impl std::error::Error for KeyError {}
 
 struct Buffer<'a> {
     buffer: &'a mut [u8],
