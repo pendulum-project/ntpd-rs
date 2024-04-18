@@ -68,7 +68,7 @@ mod exports {
         FilterAction, FilterList, IpSubnet, Server, ServerAction, ServerConfig, ServerReason,
         ServerResponse, ServerStatHandler, SubnetParseError,
     };
-    pub use super::system::{SystemSnapshot, TimeSnapshot};
+    pub use super::system::{System, SystemSnapshot, TimeSnapshot};
     #[cfg(feature = "__internal-fuzz")]
     pub use super::time_types::fuzz_duration_from_seconds;
     pub use super::time_types::{
