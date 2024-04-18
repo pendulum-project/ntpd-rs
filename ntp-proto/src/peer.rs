@@ -13,6 +13,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
+    fmt::Display,
     io::Cursor,
     net::{IpAddr, SocketAddr},
 };
@@ -22,11 +23,20 @@ const MAX_STRATUM: u8 = 16;
 const POLL_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
 const STARTUP_TRIES_THRESHOLD: usize = 3;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum NtsError {
-    #[error("Ran out of nts cookies")]
     OutOfCookies,
 }
+
+impl Display for NtsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::OutOfCookies => write!(f, "Ran out of NTS cookies"),
+        }
+    }
+}
+
+impl std::error::Error for NtsError {}
 
 pub struct PeerNtsData {
     pub(crate) cookies: CookieStash,
@@ -323,12 +333,27 @@ pub enum Update {
     NewMeasurement(PeerSnapshot, Measurement),
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum PollError {
-    #[error("{0}")]
-    Io(#[from] std::io::Error),
-    #[error("peer unreachable")]
+    Io(std::io::Error),
     PeerUnreachable,
+}
+
+impl Display for PollError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(e) => write!(f, "{e}"),
+            Self::PeerUnreachable => write!(f, "peer unreachable"),
+        }
+    }
+}
+
+impl std::error::Error for PollError {}
+
+impl From<std::io::Error> for PollError {
+    fn from(value: std::io::Error) -> Self {
+        Self::Io(value)
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

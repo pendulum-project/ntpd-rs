@@ -1,6 +1,8 @@
 use serde::{de, Deserialize, Deserializer};
-use std::net::{AddrParseError, IpAddr};
-use thiserror::Error;
+use std::{
+    fmt::Display,
+    net::{AddrParseError, IpAddr},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IpSubnet {
@@ -8,14 +10,29 @@ pub struct IpSubnet {
     pub mask: u8,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SubnetParseError {
-    #[error("Invalid subnet syntax")]
     Subnet,
-    #[error("{0} in subnet")]
-    Ip(#[from] AddrParseError),
-    #[error("Invalid subnet mask")]
+    Ip(AddrParseError),
     Mask,
+}
+
+impl std::error::Error for SubnetParseError {}
+
+impl Display for SubnetParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Subnet => write!(f, "Invalid subnet syntax"),
+            Self::Ip(e) => write!(f, "{e} in subnet"),
+            Self::Mask => write!(f, "Invalid subnet mask"),
+        }
+    }
+}
+
+impl From<AddrParseError> for SubnetParseError {
+    fn from(value: AddrParseError) -> Self {
+        Self::Ip(value)
+    }
 }
 
 impl std::str::FromStr for IpSubnet {

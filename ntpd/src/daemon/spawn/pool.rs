@@ -1,7 +1,7 @@
+use std::fmt::Display;
 use std::{net::SocketAddr, ops::Deref};
 
 use ntp_proto::ProtocolVersion;
-use thiserror::Error;
 use tokio::sync::mpsc;
 use tracing::warn;
 
@@ -21,8 +21,16 @@ pub struct PoolSpawner {
     known_ips: Vec<SocketAddr>,
 }
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum PoolSpawnError {}
+
+impl Display for PoolSpawnError {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        unreachable!()
+    }
+}
+
+impl std::error::Error for PoolSpawnError {}
 
 impl PoolSpawner {
     pub fn new(config: PoolPeerConfig) -> PoolSpawner {
