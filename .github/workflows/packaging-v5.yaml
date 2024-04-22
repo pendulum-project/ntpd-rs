@@ -38,7 +38,7 @@ jobs:
           tool: cross, cargo-deb, cargo-generate-rpm
 
       - name: Checkout sources
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        uses: actions/checkout@1d96c772d19495a3b5c517cd2bc0cb401ea0529f
 
       - name: Build the release binaries
         run: RELEASE_TARGETS="${{ matrix.target }}" RELEASE_FEATURES="unstable_ntpv5" utils/build-release.sh
