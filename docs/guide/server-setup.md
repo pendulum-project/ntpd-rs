@@ -1,7 +1,7 @@
 # Setting up an NTP server
 
 By default, ntpd-rs only acts as an ntp client, and doesn't serve time on any
-network interface. To enable nptd-rs as a server, the following can be added to
+network interface. To enable ntpd-rs as a server, the following can be added to
 the configuration:
 ```toml
 [[server]]
