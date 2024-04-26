@@ -1,13 +1,13 @@
 use std::{fmt::Display, net::SocketAddr};
 
 use super::{
-    BasicSpawner, PeerCreateParameters, PeerRemovedEvent, SpawnAction, SpawnEvent, SpawnerId,
+    BasicSpawner, SourceCreateParameters, SourceRemovedEvent, SpawnAction, SpawnEvent, SpawnerId,
 };
 use tokio::sync::mpsc;
 
 pub struct DummySpawner {
     id: SpawnerId,
-    to_spawn: Vec<PeerCreateParameters>,
+    to_spawn: Vec<SourceCreateParameters>,
     to_activate: isize,
 }
 
@@ -23,7 +23,7 @@ impl Display for DummySpawnerError {
 impl std::error::Error for DummySpawnerError {}
 
 impl DummySpawner {
-    pub fn new(to_spawn: Vec<PeerCreateParameters>, keep_active: usize) -> DummySpawner {
+    pub fn new(to_spawn: Vec<SourceCreateParameters>, keep_active: usize) -> DummySpawner {
         DummySpawner {
             id: SpawnerId::new(),
             to_spawn,
@@ -34,7 +34,7 @@ impl DummySpawner {
     pub fn simple(addr: Vec<SocketAddr>, keep_active: usize) -> DummySpawner {
         let to_spawn = addr
             .into_iter()
-            .map(PeerCreateParameters::from_new_addr)
+            .map(SourceCreateParameters::from_new_addr)
             .collect();
         Self::new(to_spawn, keep_active)
     }
@@ -72,9 +72,9 @@ impl BasicSpawner for DummySpawner {
         self.to_activate == 0
     }
 
-    async fn handle_peer_removed(
+    async fn handle_source_removed(
         &mut self,
-        _removed_peer: PeerRemovedEvent,
+        _removed_source: SourceRemovedEvent,
     ) -> Result<(), DummySpawnerError> {
         Ok(())
     }

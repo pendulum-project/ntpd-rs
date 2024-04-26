@@ -173,7 +173,7 @@ async fn key_exchange_server(
     let pool_certs = Arc::<[_]>::from(pool_certs);
 
     loop {
-        let (stream, peer_addr) = listener.accept().await?;
+        let (stream, source_addr) = listener.accept().await?;
         let config = config.clone();
         let keyset = keyset.borrow().clone();
         let pool_certs = pool_certs.clone();
@@ -197,9 +197,9 @@ async fn key_exchange_server(
         tokio::spawn(async move {
             let timeout = std::time::Duration::from_millis(timeout_ms);
             match tokio::time::timeout(timeout, fut).await {
-                Err(_) => tracing::debug!(?peer_addr, "NTS KE timed out"),
-                Ok(Err(err)) => tracing::debug!(?err, ?peer_addr, "NTS KE failed"),
-                Ok(Ok(())) => tracing::debug!(?peer_addr, "NTS KE completed"),
+                Err(_) => tracing::debug!(?source_addr, "NTS KE timed out"),
+                Ok(Err(err)) => tracing::debug!(?err, ?source_addr, "NTS KE failed"),
+                Ok(Ok(())) => tracing::debug!(?source_addr, "NTS KE completed"),
             }
         });
     }

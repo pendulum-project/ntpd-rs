@@ -5,15 +5,16 @@ use ntp_proto::ProtocolVersion;
 use tokio::sync::mpsc;
 use tracing::warn;
 
-use super::super::config::StandardPeerConfig;
+use super::super::config::StandardSource;
 
 use super::{
-    BasicSpawner, PeerId, PeerRemovalReason, PeerRemovedEvent, SpawnAction, SpawnEvent, SpawnerId,
+    BasicSpawner, SourceId, SourceRemovalReason, SourceRemovedEvent, SpawnAction, SpawnEvent,
+    SpawnerId,
 };
 
 pub struct StandardSpawner {
     id: SpawnerId,
-    config: StandardPeerConfig,
+    config: StandardSource,
     resolved: Option<SocketAddr>,
     has_spawned: bool,
 }
@@ -40,7 +41,7 @@ impl From<mpsc::error::SendError<SpawnEvent>> for StandardSpawnError {
 impl std::error::Error for StandardSpawnError {}
 
 impl StandardSpawner {
-    pub fn new(config: StandardPeerConfig) -> StandardSpawner {
+    pub fn new(config: StandardSource) -> StandardSpawner {
         StandardSpawner {
             id: Default::default(),
             config,
@@ -56,7 +57,7 @@ impl StandardSpawner {
             match self.config.address.lookup_host().await {
                 Ok(mut addresses) => match addresses.next() {
                     None => {
-                        warn!("Could not resolve peer address, retrying");
+                        warn!("Could not resolve source address, retrying");
                         None
                     }
                     Some(first) => {
@@ -65,7 +66,7 @@ impl StandardSpawner {
                     }
                 },
                 Err(e) => {
-                    warn!(error = ?e, "error while resolving peer address, retrying");
+                    warn!(error = ?e, "error while resolving source address, retrying");
                     None
                 }
             }
@@ -88,7 +89,7 @@ impl BasicSpawner for StandardSpawner {
             .send(SpawnEvent::new(
                 self.id,
                 SpawnAction::create(
-                    PeerId::new(),
+                    SourceId::new(),
                     addr,
                     self.config.address.deref().clone(),
                     ProtocolVersion::default(),
@@ -104,15 +105,15 @@ impl BasicSpawner for StandardSpawner {
         self.has_spawned
     }
 
-    async fn handle_peer_removed(
+    async fn handle_source_removed(
         &mut self,
-        removed_peer: PeerRemovedEvent,
+        removed_source: SourceRemovedEvent,
     ) -> Result<(), StandardSpawnError> {
-        if removed_peer.reason == PeerRemovalReason::Unreachable {
+        if removed_source.reason == SourceRemovalReason::Unreachable {
             // force new resolution
             self.resolved = None;
         }
-        if removed_peer.reason != PeerRemovalReason::Demobilized {
+        if removed_source.reason != SourceRemovalReason::Demobilized {
             self.has_spawned = false;
         }
         Ok(())
@@ -136,17 +137,17 @@ mod tests {
     use tokio::sync::mpsc::{self, error::TryRecvError};
 
     use crate::daemon::{
-        config::{NormalizedAddress, StandardPeerConfig},
+        config::{NormalizedAddress, StandardSource},
         spawn::{
-            standard::StandardSpawner, tests::get_create_params, BasicSpawner, PeerRemovalReason,
-            PeerRemovedEvent,
+            standard::StandardSpawner, tests::get_create_params, BasicSpawner, SourceRemovalReason,
+            SourceRemovedEvent,
         },
         system::MESSAGE_BUFFER_SIZE,
     };
 
     #[tokio::test]
-    async fn creates_a_peer() {
-        let mut spawner = StandardSpawner::new(StandardPeerConfig {
+    async fn creates_a_source() {
+        let mut spawner = StandardSpawner::new(StandardSource {
             address: NormalizedAddress::with_hardcoded_dns(
                 "example.com",
                 123,
@@ -169,8 +170,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn recreates_a_peer() {
-        let mut spawner = StandardSpawner::new(StandardPeerConfig {
+    async fn recreates_a_source() {
+        let mut spawner = StandardSpawner::new(StandardSource {
             address: NormalizedAddress::with_hardcoded_dns(
                 "example.com",
                 123,
@@ -187,9 +188,9 @@ mod tests {
         assert!(spawner.is_complete());
 
         spawner
-            .handle_peer_removed(PeerRemovedEvent {
+            .handle_source_removed(SourceRemovedEvent {
                 id: params.id,
-                reason: PeerRemovalReason::NetworkIssue,
+                reason: SourceRemovalReason::NetworkIssue,
             })
             .await
             .unwrap();
@@ -207,7 +208,7 @@ mod tests {
         let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
         let addresses = address_strings.map(|addr| addr.parse().unwrap());
 
-        let mut spawner = StandardSpawner::new(StandardPeerConfig {
+        let mut spawner = StandardSpawner::new(StandardSource {
             address: NormalizedAddress::with_hardcoded_dns(
                 "europe.pool.ntp.org",
                 123,
@@ -229,9 +230,9 @@ mod tests {
         let mut seen_addresses = vec![];
         for _ in 0..5 {
             spawner
-                .handle_peer_removed(PeerRemovedEvent {
+                .handle_source_removed(SourceRemovedEvent {
                     id: params.id,
-                    reason: PeerRemovalReason::Unreachable,
+                    reason: SourceRemovalReason::Unreachable,
                 })
                 .await
                 .unwrap();
@@ -264,7 +265,7 @@ mod tests {
 
     #[tokio::test]
     async fn works_if_address_does_not_resolve() {
-        let mut spawner = StandardSpawner::new(StandardPeerConfig {
+        let mut spawner = StandardSpawner::new(StandardSource {
             address: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]).into(),
         });
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);

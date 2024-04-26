@@ -13,13 +13,13 @@ use super::super::keyexchange::certificates_from_file;
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 #[serde(deny_unknown_fields)]
-pub struct StandardPeerConfig {
+pub struct StandardSource {
     pub address: NtpAddress,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 #[serde(deny_unknown_fields)]
-pub struct NtsPeerConfig {
+pub struct NtsSourceConfig {
     pub address: NtsKeAddress,
     #[serde(
         deserialize_with = "deserialize_certificate_authorities",
@@ -52,23 +52,23 @@ fn default_certificate_authorities() -> Arc<[CertificateDer<'static>]> {
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 #[serde(deny_unknown_fields)]
-pub struct PoolPeerConfig {
+pub struct PoolSourceConfig {
     #[serde(rename = "address")]
     pub addr: NtpAddress,
-    #[serde(rename = "count", default = "max_peers_default")]
-    pub max_peers: usize,
+    #[serde(default = "max_sources_default")]
+    pub count: usize,
     #[serde(default)]
     pub ignore: Vec<IpAddr>,
 }
 
-fn max_peers_default() -> usize {
+fn max_sources_default() -> usize {
     4
 }
 
 #[cfg(feature = "unstable_nts-pool")]
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 #[serde(deny_unknown_fields)]
-pub struct NtsPoolPeerConfig {
+pub struct NtsPoolSourceConfig {
     #[serde(rename = "address")]
     pub addr: NtsKeAddress,
     #[serde(
@@ -77,23 +77,22 @@ pub struct NtsPoolPeerConfig {
         rename = "certificate-authority"
     )]
     pub certificate_authorities: Arc<[CertificateDer<'static>]>,
-    #[serde(rename = "count", default = "max_peers_default")]
-    pub max_peers: usize,
+    #[serde(default = "max_sources_default")]
+    pub count: usize,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 #[serde(tag = "mode")]
-pub enum PeerConfig {
+pub enum NtpSourceConfig {
     #[serde(rename = "server")]
-    Standard(StandardPeerConfig),
+    Standard(StandardSource),
     #[serde(rename = "nts")]
-    Nts(NtsPeerConfig),
+    Nts(NtsSourceConfig),
     #[serde(rename = "pool")]
-    Pool(PoolPeerConfig),
-    // Consul(ConsulPeerConfig),
+    Pool(PoolSourceConfig),
     #[cfg(feature = "unstable_nts-pool")]
     #[serde(rename = "nts-pool")]
-    NtsPool(NtsPoolPeerConfig),
+    NtsPool(NtsPoolSourceConfig),
 }
 
 /// A normalized address has a host and a port part. However, the host may be
@@ -306,7 +305,7 @@ impl std::fmt::Display for NormalizedAddress {
     }
 }
 
-impl TryFrom<&str> for StandardPeerConfig {
+impl TryFrom<&str> for StandardSource {
     type Error = std::io::Error;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
@@ -316,11 +315,11 @@ impl TryFrom<&str> for StandardPeerConfig {
     }
 }
 
-impl<'a> TryFrom<&'a str> for PeerConfig {
+impl<'a> TryFrom<&'a str> for NtpSourceConfig {
     type Error = std::io::Error;
 
     fn try_from(value: &'a str) -> Result<Self, Self::Error> {
-        StandardPeerConfig::try_from(value).map(Self::Standard)
+        StandardSource::try_from(value).map(Self::Standard)
     }
 }
 
@@ -328,95 +327,95 @@ impl<'a> TryFrom<&'a str> for PeerConfig {
 mod tests {
     use super::*;
 
-    fn peer_addr(config: &PeerConfig) -> String {
+    fn source_addr(config: &NtpSourceConfig) -> String {
         match config {
-            PeerConfig::Standard(c) => c.address.to_string(),
-            PeerConfig::Nts(c) => c.address.to_string(),
-            PeerConfig::Pool(c) => c.addr.to_string(),
+            NtpSourceConfig::Standard(c) => c.address.to_string(),
+            NtpSourceConfig::Nts(c) => c.address.to_string(),
+            NtpSourceConfig::Pool(c) => c.addr.to_string(),
             #[cfg(feature = "unstable_nts-pool")]
-            PeerConfig::NtsPool(c) => c.addr.to_string(),
+            NtpSourceConfig::NtsPool(c) => c.addr.to_string(),
         }
     }
 
     #[test]
-    fn test_deserialize_peer() {
+    fn test_deserialize_source() {
         #[derive(Deserialize, Debug)]
         struct TestConfig {
-            peer: PeerConfig,
+            source: NtpSourceConfig,
         }
 
         let test: TestConfig = toml::from_str(
             r#"
-            [peer]
+            [source]
             mode = "server"
             address = "example.com"
             "#,
         )
         .unwrap();
-        assert_eq!(peer_addr(&test.peer), "example.com:123");
-        assert!(matches!(test.peer, PeerConfig::Standard(_)));
+        assert_eq!(source_addr(&test.source), "example.com:123");
+        assert!(matches!(test.source, NtpSourceConfig::Standard(_)));
 
         let test: TestConfig = toml::from_str(
             r#"
-            [peer]
+            [source]
             mode = "server"
             address = "example.com:5678"
             "#,
         )
         .unwrap();
-        assert_eq!(peer_addr(&test.peer), "example.com:5678");
-        assert!(matches!(test.peer, PeerConfig::Standard(_)));
+        assert_eq!(source_addr(&test.source), "example.com:5678");
+        assert!(matches!(test.source, NtpSourceConfig::Standard(_)));
 
         let test: TestConfig = toml::from_str(
             r#"
-            [peer]
+            [source]
             mode = "server"
             address = "example.com"
             "#,
         )
         .unwrap();
-        assert_eq!(peer_addr(&test.peer), "example.com:123");
-        assert!(matches!(test.peer, PeerConfig::Standard(_)));
+        assert_eq!(source_addr(&test.source), "example.com:123");
+        assert!(matches!(test.source, NtpSourceConfig::Standard(_)));
 
         let test: TestConfig = toml::from_str(
             r#"
-            [peer]
+            [source]
             address = "example.com"
             mode = "pool"
             "#,
         )
         .unwrap();
-        assert!(matches!(test.peer, PeerConfig::Pool(_)));
-        if let PeerConfig::Pool(config) = test.peer {
+        assert!(matches!(test.source, NtpSourceConfig::Pool(_)));
+        if let NtpSourceConfig::Pool(config) = test.source {
             assert_eq!(config.addr.to_string(), "example.com:123");
-            assert_eq!(config.max_peers, 4);
+            assert_eq!(config.count, 4);
         }
 
         let test: TestConfig = toml::from_str(
             r#"
-            [peer]
+            [source]
             address = "example.com"
             mode = "pool"
             count = 42
             "#,
         )
         .unwrap();
-        assert!(matches!(test.peer, PeerConfig::Pool(_)));
-        if let PeerConfig::Pool(config) = test.peer {
+        assert!(matches!(test.source, NtpSourceConfig::Pool(_)));
+        if let NtpSourceConfig::Pool(config) = test.source {
             assert_eq!(config.addr.to_string(), "example.com:123");
-            assert_eq!(config.max_peers, 42);
+            assert_eq!(config.count, 42);
         }
 
         let test: TestConfig = toml::from_str(
             r#"
-            [peer]
+            [source]
             address = "example.com"
             mode = "nts"
             "#,
         )
         .unwrap();
-        assert!(matches!(test.peer, PeerConfig::Nts(_)));
-        if let PeerConfig::Nts(config) = test.peer {
+        assert!(matches!(test.source, NtpSourceConfig::Nts(_)));
+        if let NtpSourceConfig::Nts(config) = test.source {
             assert_eq!(config.address.to_string(), "example.com:4460");
         }
 
@@ -424,33 +423,33 @@ mod tests {
         {
             let test: TestConfig = toml::from_str(
                 r#"
-            [peer]
+            [source]
             address = "example.com"
             mode = "nts-pool"
             "#,
             )
             .unwrap();
-            assert!(matches!(test.peer, PeerConfig::NtsPool(_)));
-            if let PeerConfig::Nts(config) = test.peer {
+            assert!(matches!(test.source, NtpSourceConfig::NtsPool(_)));
+            if let NtpSourceConfig::Nts(config) = test.source {
                 assert_eq!(config.address.to_string(), "example.com:4460");
             }
         }
     }
 
     #[test]
-    fn test_deserialize_peer_pem_certificate() {
+    fn test_deserialize_source_pem_certificate() {
         let contents = include_bytes!("../../../testdata/certificates/nos-nl.pem");
         let path = std::env::temp_dir().join("nos-nl.pem");
         std::fs::write(&path, contents).unwrap();
 
         #[derive(Deserialize, Debug)]
         struct TestConfig {
-            peer: PeerConfig,
+            source: NtpSourceConfig,
         }
 
         let test: TestConfig = toml::from_str(&format!(
             r#"
-                [peer]
+                [source]
                 address = "example.com"
                 certificate-authority = "{}"
                 mode = "nts"
@@ -458,21 +457,21 @@ mod tests {
             path.display()
         ))
         .unwrap();
-        assert!(matches!(test.peer, PeerConfig::Nts(_)));
-        if let PeerConfig::Nts(config) = test.peer {
+        assert!(matches!(test.source, NtpSourceConfig::Nts(_)));
+        if let NtpSourceConfig::Nts(config) = test.source {
             assert_eq!(config.address.to_string(), "example.com:4460");
         }
     }
 
     #[test]
-    fn test_peer_from_string() {
-        let peer = PeerConfig::try_from("example.com").unwrap();
-        assert_eq!(peer_addr(&peer), "example.com:123");
-        assert!(matches!(peer, PeerConfig::Standard(_)));
+    fn test_source_from_string() {
+        let source = NtpSourceConfig::try_from("example.com").unwrap();
+        assert_eq!(source_addr(&source), "example.com:123");
+        assert!(matches!(source, NtpSourceConfig::Standard(_)));
 
-        let peer = PeerConfig::try_from("example.com:5678").unwrap();
-        assert_eq!(peer_addr(&peer), "example.com:5678");
-        assert!(matches!(peer, PeerConfig::Standard(_)));
+        let source = NtpSourceConfig::try_from("example.com:5678").unwrap();
+        assert_eq!(source_addr(&source), "example.com:5678");
+        assert!(matches!(source, NtpSourceConfig::Standard(_)));
     }
 
     #[test]

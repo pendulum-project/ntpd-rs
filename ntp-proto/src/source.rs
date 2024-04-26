@@ -24,7 +24,7 @@ const MAX_STRATUM: u8 = 16;
 const POLL_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
 const STARTUP_TRIES_THRESHOLD: usize = 3;
 
-pub struct PeerNtsData {
+pub struct SourceNtsData {
     pub(crate) cookies: CookieStash,
     // Note: we use Box<dyn Cipher> to support the use
     // of multiple different ciphers, that might differ
@@ -34,7 +34,7 @@ pub struct PeerNtsData {
 }
 
 #[cfg(any(test, feature = "__internal-test"))]
-impl PeerNtsData {
+impl SourceNtsData {
     pub fn get_cookie(&mut self) -> Option<Vec<u8>> {
         self.cookies.get()
     }
@@ -44,17 +44,17 @@ impl PeerNtsData {
     }
 }
 
-impl std::fmt::Debug for PeerNtsData {
+impl std::fmt::Debug for SourceNtsData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PeerNtsData")
+        f.debug_struct("SourceNtsData")
             .field("cookies", &self.cookies)
             .finish()
     }
 }
 
 #[derive(Debug)]
-pub struct Peer {
-    nts: Option<Box<PeerNtsData>>,
+pub struct NtpSource {
+    nts: Option<Box<SourceNtsData>>,
 
     // Poll interval used when sending last poll mesage.
     last_poll_interval: PollInterval,
@@ -75,7 +75,7 @@ pub struct Peer {
     reach: Reach,
     tries: usize,
 
-    peer_defaults_config: SourceDefaultsConfig,
+    source_defaults_config: SourceDefaultsConfig,
 
     buffer: [u8; 1024],
 
@@ -161,13 +161,13 @@ impl Reach {
         self.0 != 0
     }
 
-    /// We have just received a packet, so the peer is definitely reachable
+    /// We have just received a packet, so the source is definitely reachable
     pub(crate) fn received_packet(&mut self) {
         self.0 |= 1;
     }
 
     /// A packet received some number of poll intervals ago is decreasingly relevant for
-    /// determining that a peer is still reachable. We discount the packets received so far.
+    /// determining that a source is still reachable. We discount the packets received so far.
     fn poll(&mut self) {
         self.0 <<= 1;
     }
@@ -179,7 +179,7 @@ impl Reach {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct PeerSnapshot {
+pub struct NtpSourceSnapshot {
     pub source_addr: SocketAddr,
 
     pub source_id: ReferenceId,
@@ -196,7 +196,7 @@ pub struct PeerSnapshot {
     pub bloom_filter: Option<BloomFilter>,
 }
 
-impl PeerSnapshot {
+impl NtpSourceSnapshot {
     pub fn accept_synchronization(
         &self,
         local_stratum: u8,
@@ -207,16 +207,16 @@ impl PeerSnapshot {
 
         if self.stratum >= local_stratum {
             info!(
-                peer_stratum = self.stratum,
+                source_stratum = self.stratum,
                 own_stratum = local_stratum,
-                "Peer rejected due to invalid stratum. The stratum of a peer must be lower than the own stratum",
+                "Source rejected due to invalid stratum. The stratum of a source must be lower than the own stratum",
             );
             return Err(Stratum);
         }
 
         // Detect whether the remote uses us as their main time reference.
         // if so, we shouldn't sync to them as that would create a loop.
-        // Note, this can only ever be an issue if the peer is not using
+        // Note, this can only ever be an issue if the source is not using
         // hardware as its source, so ignore reference_id if stratum is 1.
 
         if self.stratum != 1
@@ -224,14 +224,14 @@ impl PeerSnapshot {
                 .iter()
                 .any(|ip| ReferenceId::from_ip(*ip) == self.source_id)
         {
-            info!("Peer rejected because of detected synchronization loop (ref id)");
+            info!("Source rejected because of detected synchronization loop (ref id)");
             return Err(Loop);
         }
 
         #[cfg(feature = "ntpv5")]
         match self.bloom_filter {
             Some(filter) if filter.contains_id(&system.server_id) => {
-                info!("Peer rejected because of detected synchronization loop (bloom filter)");
+                info!("Source rejected because of detected synchronization loop (bloom filter)");
                 return Err(Loop);
             }
             _ => {}
@@ -239,36 +239,36 @@ impl PeerSnapshot {
 
         // An unreachable error occurs if the server is unreachable.
         if !self.reach.is_reachable() {
-            info!("Peer is unreachable");
+            info!("Source is unreachable");
             return Err(ServerUnreachable);
         }
 
         Ok(())
     }
 
-    pub fn from_peer(peer: &Peer) -> Self {
+    pub fn from_source(source: &NtpSource) -> Self {
         Self {
-            source_addr: peer.source_addr,
-            source_id: peer.source_id,
-            stratum: peer.stratum,
-            reference_id: peer.reference_id,
-            reach: peer.reach,
-            poll_interval: peer.last_poll_interval,
-            protocol_version: peer.protocol_version,
+            source_addr: source.source_addr,
+            source_id: source.source_id,
+            stratum: source.stratum,
+            reference_id: source.reference_id,
+            reach: source.reach,
+            poll_interval: source.last_poll_interval,
+            protocol_version: source.protocol_version,
             #[cfg(feature = "ntpv5")]
-            bloom_filter: peer.bloom_filter.full_filter().copied(),
+            bloom_filter: source.bloom_filter.full_filter().copied(),
         }
     }
 }
 
 #[cfg(feature = "__internal-test")]
-pub fn peer_snapshot() -> PeerSnapshot {
+pub fn source_snapshot() -> NtpSourceSnapshot {
     use std::net::Ipv4Addr;
 
-    let mut reach = crate::peer::Reach::default();
+    let mut reach = crate::source::Reach::default();
     reach.received_packet();
 
-    PeerSnapshot {
+    NtpSourceSnapshot {
         source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
         source_id: ReferenceId::from_int(0),
         stratum: 0,
@@ -327,22 +327,22 @@ impl Default for ProtocolVersion {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct PeerUpdate {
-    pub(crate) snapshot: PeerSnapshot,
+pub struct NtpSourceUpdate {
+    pub(crate) snapshot: NtpSourceSnapshot,
     pub(crate) measurement: Option<Measurement>,
 }
 
 #[cfg(feature = "__internal-test")]
-impl PeerUpdate {
-    pub fn snapshot(snapshot: PeerSnapshot) -> Self {
-        PeerUpdate {
+impl NtpSourceUpdate {
+    pub fn snapshot(snapshot: NtpSourceSnapshot) -> Self {
+        NtpSourceUpdate {
             snapshot,
             measurement: None,
         }
     }
 
-    pub fn measurement(snapshot: PeerSnapshot, measurement: Measurement) -> Self {
-        PeerUpdate {
+    pub fn measurement(snapshot: NtpSourceSnapshot, measurement: Measurement) -> Self {
+        NtpSourceUpdate {
             snapshot,
             measurement: Some(measurement),
         }
@@ -351,12 +351,12 @@ impl PeerUpdate {
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
-pub enum PeerAction {
+pub enum NtpSourceAction {
     /// Send a message over the network. When this is issued, the network port maybe changed.
     Send(Vec<u8>),
     /// Send an update to [`System`](crate::system::System)
-    UpdateSystem(PeerUpdate),
-    /// Call [`Peer::handle_timer`] after given duration
+    UpdateSystem(NtpSourceUpdate),
+    /// Call [`NtpSource::handle_timer`] after given duration
     SetTimer(Duration),
     /// A complete reset of the connection is necessary, including a potential new NTSKE client session and/or DNS lookup.
     Reset,
@@ -365,11 +365,11 @@ pub enum PeerAction {
 }
 
 #[derive(Debug)]
-pub struct PeerActionIterator {
-    iter: <Vec<PeerAction> as IntoIterator>::IntoIter,
+pub struct NtpSourceActionIterator {
+    iter: <Vec<NtpSourceAction> as IntoIterator>::IntoIter,
 }
 
-impl Default for PeerActionIterator {
+impl Default for NtpSourceActionIterator {
     fn default() -> Self {
         Self {
             iter: vec![].into_iter(),
@@ -377,16 +377,16 @@ impl Default for PeerActionIterator {
     }
 }
 
-impl Iterator for PeerActionIterator {
-    type Item = PeerAction;
+impl Iterator for NtpSourceActionIterator {
+    type Item = NtpSourceAction;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next()
     }
 }
 
-impl PeerActionIterator {
-    fn from(data: Vec<PeerAction>) -> Self {
+impl NtpSourceActionIterator {
+    fn from(data: Vec<NtpSourceAction>) -> Self {
         Self {
             iter: data.into_iter(),
         }
@@ -396,24 +396,24 @@ impl PeerActionIterator {
 macro_rules! actions {
     [$($action:expr),*] => {
         {
-            PeerActionIterator::from(vec![$($action),*])
+            NtpSourceActionIterator::from(vec![$($action),*])
         }
     }
 }
 
-impl Peer {
+impl NtpSource {
     #[instrument]
     pub fn new(
         source_addr: SocketAddr,
-        peer_defaults_config: SourceDefaultsConfig,
+        source_defaults_config: SourceDefaultsConfig,
         protocol_version: ProtocolVersion,
-    ) -> (Self, PeerActionIterator) {
+    ) -> (Self, NtpSourceActionIterator) {
         (
             Self {
                 nts: None,
 
-                last_poll_interval: peer_defaults_config.poll_interval_limits.min,
-                remote_min_poll_interval: peer_defaults_config.poll_interval_limits.min,
+                last_poll_interval: source_defaults_config.poll_interval_limits.min,
+                remote_min_poll_interval: source_defaults_config.poll_interval_limits.min,
 
                 current_request_identifier: None,
                 source_id: ReferenceId::from_ip(source_addr.ip()),
@@ -424,7 +424,7 @@ impl Peer {
                 stratum: 16,
                 reference_id: ReferenceId::NONE,
 
-                peer_defaults_config,
+                source_defaults_config,
 
                 buffer: [0; 1024],
 
@@ -433,18 +433,18 @@ impl Peer {
                 #[cfg(feature = "ntpv5")]
                 bloom_filter: RemoteBloomFilter::new(16).expect("16 is a valid chunk size"),
             },
-            actions!(PeerAction::SetTimer(Duration::from_secs(0))),
+            actions!(NtpSourceAction::SetTimer(Duration::from_secs(0))),
         )
     }
 
     #[instrument]
     pub fn new_nts(
         source_addr: SocketAddr,
-        peer_defaults_config: SourceDefaultsConfig,
+        source_defaults_config: SourceDefaultsConfig,
         protocol_version: ProtocolVersion,
-        nts: Box<PeerNtsData>,
-    ) -> (Self, PeerActionIterator) {
-        let (base, actions) = Self::new(source_addr, peer_defaults_config, protocol_version);
+        nts: Box<SourceNtsData>,
+    ) -> (Self, NtpSourceActionIterator) {
+        let (base, actions) = Self::new(source_addr, source_defaults_config, protocol_version);
         (
             Self {
                 nts: Some(nts),
@@ -462,9 +462,9 @@ impl Peer {
     }
 
     #[cfg_attr(not(feature = "ntpv5"), allow(unused_mut))]
-    pub fn handle_timer(&mut self, system: SystemSnapshot) -> PeerActionIterator {
+    pub fn handle_timer(&mut self, system: SystemSnapshot) -> NtpSourceActionIterator {
         if !self.reach.is_reachable() && self.tries >= STARTUP_TRIES_THRESHOLD {
-            return actions!(PeerAction::Reset);
+            return actions!(NtpSourceAction::Reset);
         }
 
         self.reach.poll();
@@ -474,7 +474,7 @@ impl Peer {
         let (mut packet, identifier) = match &mut self.nts {
             Some(nts) => {
                 let Some(cookie) = nts.cookies.get() else {
-                    return actions!(PeerAction::Reset);
+                    return actions!(NtpSourceAction::Reset);
                 };
                 // Do ensure we don't exceed the buffer size
                 // when requesting new cookies. We keep 350
@@ -515,7 +515,7 @@ impl Peer {
         // update the poll interval
         self.last_poll_interval = poll_interval;
 
-        let snapshot = PeerSnapshot::from_peer(self);
+        let snapshot = NtpSourceSnapshot::from_source(self);
 
         // Write packet to buffer
         let mut cursor: Cursor<&mut [u8]> = Cursor::new(&mut self.buffer);
@@ -530,13 +530,13 @@ impl Peer {
         let result = &cursor.into_inner()[..used as usize];
 
         actions!(
-            PeerAction::Send(result.into()),
-            PeerAction::UpdateSystem(PeerUpdate {
+            NtpSourceAction::Send(result.into()),
+            NtpSourceAction::UpdateSystem(NtpSourceUpdate {
                 snapshot,
                 measurement: None
             }),
             // randomize the poll interval a little to make it harder to predict poll requests
-            PeerAction::SetTimer(
+            NtpSourceAction::SetTimer(
                 poll_interval
                     .as_system_duration()
                     .mul_f64(thread_rng().gen_range(1.01..=1.05))
@@ -544,7 +544,7 @@ impl Peer {
         )
     }
 
-    #[instrument(skip(self, system), fields(peer = debug(self.source_id)))]
+    #[instrument(skip(self, system), fields(source = debug(self.source_id)))]
     pub fn handle_incoming(
         &mut self,
         system: SystemSnapshot,
@@ -552,7 +552,7 @@ impl Peer {
         local_clock_time: NtpInstant,
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
-    ) -> PeerActionIterator {
+    ) -> NtpSourceActionIterator {
         let message =
             match NtpPacket::deserialize(message, &self.nts.as_ref().map(|nts| nts.s2c.as_ref())) {
                 Ok((packet, _)) => packet,
@@ -571,7 +571,7 @@ impl Peer {
                 next_expected_origin
             }
             _ => {
-                debug!("Received old/unexpected packet from peer");
+                debug!("Received old/unexpected packet from source");
                 return actions!();
             }
         };
@@ -600,28 +600,28 @@ impl Peer {
             // We do this as the first check since accepting even a KISS
             // packet that is not a response will leave us vulnerable
             // to denial of service attacks.
-            debug!("Received old/unexpected packet from peer");
+            debug!("Received old/unexpected packet from source");
             actions!()
         } else if message.is_kiss_rate() {
             // KISS packets may not have correct timestamps at all, handle them anyway
             self.remote_min_poll_interval = Ord::max(
                 self.remote_min_poll_interval
-                    .inc(self.peer_defaults_config.poll_interval_limits),
+                    .inc(self.source_defaults_config.poll_interval_limits),
                 self.last_poll_interval,
             );
-            warn!(?self.remote_min_poll_interval, "Peer requested rate limit");
+            warn!(?self.remote_min_poll_interval, "Source requested rate limit");
             actions!()
         } else if message.is_kiss_rstr() || message.is_kiss_deny() {
-            warn!("Peer denied service");
+            warn!("Source denied service");
             // KISS packets may not have correct timestamps at all, handle them anyway
-            actions!(PeerAction::Demobilize)
+            actions!(NtpSourceAction::Demobilize)
         } else if message.is_kiss_ntsn() {
             warn!("Received nts not-acknowledge");
             // as these can be easily faked, we dont immediately give up on receiving
             // a response.
             actions!()
         } else if message.is_kiss() {
-            warn!("Unrecognized KISS Message from peer");
+            warn!("Unrecognized KISS Message from source");
             // Ignore unrecognized control messages
             actions!()
         } else if message.stratum() > MAX_STRATUM {
@@ -648,7 +648,7 @@ impl Peer {
         local_clock_time: NtpInstant,
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
-    ) -> PeerActionIterator {
+    ) -> NtpSourceActionIterator {
         trace!("Packet accepted for processing");
         // For reachability, mark that we have had a response
         self.reach.received_packet();
@@ -697,7 +697,7 @@ impl Peer {
                     .bloom_filter
                     .handle_response(header.client_cookie, ref_id);
                 if let Err(err) = result {
-                    info!(?err, "Invalid ReferenceIdResponse from peer, ignoring...")
+                    info!(?err, "Invalid ReferenceIdResponse from source, ignoring...")
                 }
             }
         }
@@ -718,17 +718,17 @@ impl Peer {
             }
         }
 
-        actions!(PeerAction::UpdateSystem(PeerUpdate {
-            snapshot: PeerSnapshot::from_peer(self),
+        actions!(NtpSourceAction::UpdateSystem(NtpSourceUpdate {
+            snapshot: NtpSourceSnapshot::from_source(self),
             measurement: Some(measurement),
         }))
     }
 
     #[cfg(test)]
-    pub(crate) fn test_peer() -> Self {
+    pub(crate) fn test_ntp_source() -> Self {
         use std::net::Ipv4Addr;
 
-        Peer {
+        NtpSource {
             nts: None,
 
             last_poll_interval: PollInterval::default(),
@@ -744,7 +744,7 @@ impl Peer {
             stratum: 0,
             reference_id: ReferenceId::from_int(0),
 
-            peer_defaults_config: SourceDefaultsConfig::default(),
+            source_defaults_config: SourceDefaultsConfig::default(),
 
             buffer: [0; 1024],
 
@@ -811,15 +811,15 @@ mod test {
         }
 
         fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
-            panic!("Shouldn't be called by peer");
+            panic!("Shouldn't be called by source");
         }
 
         fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
-            panic!("Shouldn't be called by peer");
+            panic!("Shouldn't be called by source");
         }
 
         fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
+            panic!("Shouldn't be called by source");
         }
 
         fn error_estimate_update(
@@ -827,11 +827,11 @@ mod test {
             _est_error: NtpDuration,
             _max_error: NtpDuration,
         ) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
+            panic!("Shouldn't be called by source");
         }
 
         fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
+            panic!("Shouldn't be called by source");
         }
     }
 
@@ -885,12 +885,12 @@ mod test {
         assert!(!reach.is_reachable());
 
         // when we receive a packet, we set the right-most bit;
-        // we just received a packet from the peer, so it is reachable
+        // we just received a packet from the source, so it is reachable
         reach.received_packet();
         assert!(reach.is_reachable());
 
         // on every poll, the register is shifted to the left, and there are
-        // 8 bits. So we can poll 7 times and the peer is still considered reachable
+        // 8 bits. So we can poll 7 times and the source is still considered reachable
         for _ in 0..7 {
             reach.poll();
         }
@@ -898,7 +898,7 @@ mod test {
         assert!(reach.is_reachable());
 
         // but one more poll and all 1 bits have been shifted out;
-        // the peer is no longer reachable
+        // the source is no longer reachable
         reach.poll();
         assert!(!reach.is_reachable());
 
@@ -911,7 +911,7 @@ mod test {
     fn test_accept_synchronization() {
         use AcceptSynchronizationError::*;
 
-        let mut peer = Peer::test_peer();
+        let mut source = NtpSource::test_ntp_source();
 
         #[cfg_attr(not(feature = "ntpv5"), allow(unused_mut))]
         let mut system = SystemSnapshot::default();
@@ -923,59 +923,59 @@ mod test {
 
         macro_rules! accept {
             () => {{
-                let snapshot = PeerSnapshot::from_peer(&peer);
+                let snapshot = NtpSourceSnapshot::from_source(&source);
                 snapshot.accept_synchronization(16, &["127.0.0.1".parse().unwrap()], &system)
             }};
         }
 
-        peer.source_id = ReferenceId::from_ip("127.0.0.1".parse().unwrap());
+        source.source_id = ReferenceId::from_ip("127.0.0.1".parse().unwrap());
         assert_eq!(accept!(), Err(Loop));
 
-        peer.source_id = ReferenceId::from_ip("127.0.1.1".parse().unwrap());
+        source.source_id = ReferenceId::from_ip("127.0.1.1".parse().unwrap());
         assert_eq!(accept!(), Err(ServerUnreachable));
 
-        peer.reach.received_packet();
+        source.reach.received_packet();
 
         assert_eq!(accept!(), Ok(()));
 
-        peer.stratum = 42;
+        source.stratum = 42;
         assert_eq!(accept!(), Err(Stratum));
     }
 
     #[test]
     fn test_poll_interval() {
-        let mut peer = Peer::test_peer();
+        let mut source = NtpSource::test_ntp_source();
         let mut system = SystemSnapshot::default();
 
-        assert!(peer.current_poll_interval(system) >= peer.remote_min_poll_interval);
-        assert!(peer.current_poll_interval(system) >= system.time_snapshot.poll_interval);
+        assert!(source.current_poll_interval(system) >= source.remote_min_poll_interval);
+        assert!(source.current_poll_interval(system) >= system.time_snapshot.poll_interval);
 
         system.time_snapshot.poll_interval = PollIntervalLimits::default().max;
 
-        assert!(peer.current_poll_interval(system) >= peer.remote_min_poll_interval);
-        assert!(peer.current_poll_interval(system) >= system.time_snapshot.poll_interval);
+        assert!(source.current_poll_interval(system) >= source.remote_min_poll_interval);
+        assert!(source.current_poll_interval(system) >= system.time_snapshot.poll_interval);
 
         system.time_snapshot.poll_interval = PollIntervalLimits::default().min;
-        peer.remote_min_poll_interval = PollIntervalLimits::default().max;
+        source.remote_min_poll_interval = PollIntervalLimits::default().max;
 
-        assert!(peer.current_poll_interval(system) >= peer.remote_min_poll_interval);
-        assert!(peer.current_poll_interval(system) >= system.time_snapshot.poll_interval);
+        assert!(source.current_poll_interval(system) >= source.remote_min_poll_interval);
+        assert!(source.current_poll_interval(system) >= system.time_snapshot.poll_interval);
     }
 
     #[test]
     fn test_handle_incoming() {
         let base = NtpInstant::now();
-        let mut peer = Peer::test_peer();
+        let mut source = NtpSource::test_ntp_source();
 
         let system = SystemSnapshot::default();
-        let actions = peer.handle_timer(system);
+        let actions = source.handle_timer(system);
         let mut outgoingbuf = None;
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Reset | PeerAction::Demobilize
+                NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
-            if let PeerAction::Send(buf) = action {
+            if let NtpSourceAction::Send(buf) = action {
                 outgoingbuf = Some(buf);
             }
         }
@@ -989,7 +989,7 @@ mod test {
         packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(100));
         packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(200));
 
-        let actions = peer.handle_incoming(
+        let actions = source.handle_incoming(
             system,
             &packet.serialize_without_encryption_vec(None).unwrap(),
             base + Duration::from_secs(1),
@@ -999,14 +999,13 @@ mod test {
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Reset
-                    | PeerAction::Demobilize
-                    | PeerAction::SetTimer(_)
-                    | PeerAction::Send(_)
+                NtpSourceAction::Reset
+                    | NtpSourceAction::Demobilize
+                    | NtpSourceAction::SetTimer(_)
+                    | NtpSourceAction::Send(_)
             ));
         }
-        //assert_eq!(peer.timestate.last_packet, packet);
-        let mut actions = peer.handle_incoming(
+        let mut actions = source.handle_incoming(
             system,
             &packet.serialize_without_encryption_vec(None).unwrap(),
             base + Duration::from_secs(1),
@@ -1018,47 +1017,47 @@ mod test {
 
     #[test]
     fn test_startup_unreachable() {
-        let mut peer = Peer::test_peer();
+        let mut source = NtpSource::test_ntp_source();
         let system = SystemSnapshot::default();
-        let actions = peer.handle_timer(system);
+        let actions = source.handle_timer(system);
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Reset | PeerAction::Demobilize
+                NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
         }
-        let actions = peer.handle_timer(system);
+        let actions = source.handle_timer(system);
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Reset | PeerAction::Demobilize
+                NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
         }
-        let actions = peer.handle_timer(system);
+        let actions = source.handle_timer(system);
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Reset | PeerAction::Demobilize
+                NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
         }
-        let mut actions = peer.handle_timer(system);
-        assert!(matches!(actions.next(), Some(PeerAction::Reset)));
+        let mut actions = source.handle_timer(system);
+        assert!(matches!(actions.next(), Some(NtpSourceAction::Reset)));
     }
 
     #[test]
     fn test_running_unreachable() {
         let base = NtpInstant::now();
-        let mut peer = Peer::test_peer();
+        let mut source = NtpSource::test_ntp_source();
 
         let system = SystemSnapshot::default();
-        let actions = peer.handle_timer(system);
+        let actions = source.handle_timer(system);
         let mut outgoingbuf = None;
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Reset | PeerAction::Demobilize
+                NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
-            if let PeerAction::Send(buf) = action {
+            if let NtpSourceAction::Send(buf) = action {
                 outgoingbuf = Some(buf);
             }
         }
@@ -1071,7 +1070,7 @@ mod test {
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(100));
         packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(200));
-        let actions = peer.handle_incoming(
+        let actions = source.handle_incoming(
             system,
             &packet.serialize_without_encryption_vec(None).unwrap(),
             base + Duration::from_secs(1),
@@ -1081,87 +1080,87 @@ mod test {
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Reset
-                    | PeerAction::Demobilize
-                    | PeerAction::SetTimer(_)
-                    | PeerAction::Send(_)
+                NtpSourceAction::Reset
+                    | NtpSourceAction::Demobilize
+                    | NtpSourceAction::SetTimer(_)
+                    | NtpSourceAction::Send(_)
             ));
         }
 
-        let actions = peer.handle_timer(system);
+        let actions = source.handle_timer(system);
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Reset | PeerAction::Demobilize
+                NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
         }
-        let actions = peer.handle_timer(system);
+        let actions = source.handle_timer(system);
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Reset | PeerAction::Demobilize
+                NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
         }
-        let actions = peer.handle_timer(system);
+        let actions = source.handle_timer(system);
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Reset | PeerAction::Demobilize
+                NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
         }
-        let actions = peer.handle_timer(system);
+        let actions = source.handle_timer(system);
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Reset | PeerAction::Demobilize
+                NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
         }
-        let actions = peer.handle_timer(system);
+        let actions = source.handle_timer(system);
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Reset | PeerAction::Demobilize
+                NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
         }
-        let actions = peer.handle_timer(system);
+        let actions = source.handle_timer(system);
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Reset | PeerAction::Demobilize
+                NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
         }
-        let actions = peer.handle_timer(system);
+        let actions = source.handle_timer(system);
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Reset | PeerAction::Demobilize
+                NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
         }
-        let actions = peer.handle_timer(system);
+        let actions = source.handle_timer(system);
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Reset | PeerAction::Demobilize
+                NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
         }
-        let mut actions = peer.handle_timer(system);
-        assert!(matches!(actions.next(), Some(PeerAction::Reset)));
+        let mut actions = source.handle_timer(system);
+        assert!(matches!(actions.next(), Some(NtpSourceAction::Reset)));
     }
 
     #[test]
     fn test_stratum_checks() {
         let base = NtpInstant::now();
-        let mut peer = Peer::test_peer();
+        let mut source = NtpSource::test_ntp_source();
 
         let system = SystemSnapshot::default();
-        let actions = peer.handle_timer(system);
+        let actions = source.handle_timer(system);
         let mut outgoingbuf = None;
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Reset | PeerAction::Demobilize
+                NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
-            if let PeerAction::Send(buf) = action {
+            if let NtpSourceAction::Send(buf) = action {
                 outgoingbuf = Some(buf);
             }
         }
@@ -1174,7 +1173,7 @@ mod test {
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(100));
         packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(200));
-        let mut actions = peer.handle_incoming(
+        let mut actions = source.handle_incoming(
             system,
             &packet.serialize_without_encryption_vec(None).unwrap(),
             base + Duration::from_secs(1),
@@ -1184,7 +1183,7 @@ mod test {
         assert!(actions.next().is_none());
 
         packet.set_stratum(0);
-        let mut actions = peer.handle_incoming(
+        let mut actions = source.handle_incoming(
             system,
             &packet.serialize_without_encryption_vec(None).unwrap(),
             base + Duration::from_secs(1),
@@ -1197,13 +1196,13 @@ mod test {
     #[test]
     fn test_handle_kod() {
         let base = NtpInstant::now();
-        let mut peer = Peer::test_peer();
+        let mut source = NtpSource::test_ntp_source();
 
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_reference_id(ReferenceId::KISS_RSTR);
         packet.set_mode(NtpAssociationMode::Server);
-        let mut actions = peer.handle_incoming(
+        let mut actions = source.handle_incoming(
             system,
             &packet.serialize_without_encryption_vec(None).unwrap(),
             base + Duration::from_secs(1),
@@ -1214,14 +1213,14 @@ mod test {
 
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
-        let actions = peer.handle_timer(system);
+        let actions = source.handle_timer(system);
         let mut outgoingbuf = None;
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Reset | PeerAction::Demobilize
+                NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
-            if let PeerAction::Send(buf) = action {
+            if let NtpSourceAction::Send(buf) = action {
                 outgoingbuf = Some(buf);
             }
         }
@@ -1230,20 +1229,20 @@ mod test {
         packet.set_reference_id(ReferenceId::KISS_RSTR);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
-        let mut actions = peer.handle_incoming(
+        let mut actions = source.handle_incoming(
             system,
             &packet.serialize_without_encryption_vec(None).unwrap(),
             base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(100),
         );
-        assert!(matches!(actions.next(), Some(PeerAction::Demobilize)));
+        assert!(matches!(actions.next(), Some(NtpSourceAction::Demobilize)));
 
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_reference_id(ReferenceId::KISS_DENY);
         packet.set_mode(NtpAssociationMode::Server);
-        let mut actions = peer.handle_incoming(
+        let mut actions = source.handle_incoming(
             system,
             &packet.serialize_without_encryption_vec(None).unwrap(),
             base + Duration::from_secs(1),
@@ -1254,14 +1253,14 @@ mod test {
 
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
-        let actions = peer.handle_timer(system);
+        let actions = source.handle_timer(system);
         let mut outgoingbuf = None;
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Reset | PeerAction::Demobilize
+                NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
-            if let PeerAction::Send(buf) = action {
+            if let NtpSourceAction::Send(buf) = action {
                 outgoingbuf = Some(buf);
             }
         }
@@ -1270,21 +1269,21 @@ mod test {
         packet.set_reference_id(ReferenceId::KISS_DENY);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
-        let mut actions = peer.handle_incoming(
+        let mut actions = source.handle_incoming(
             system,
             &packet.serialize_without_encryption_vec(None).unwrap(),
             base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(100),
         );
-        assert!(matches!(actions.next(), Some(PeerAction::Demobilize)));
+        assert!(matches!(actions.next(), Some(NtpSourceAction::Demobilize)));
 
-        let old_remote_interval = peer.remote_min_poll_interval;
+        let old_remote_interval = source.remote_min_poll_interval;
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
         packet.set_reference_id(ReferenceId::KISS_RATE);
         packet.set_mode(NtpAssociationMode::Server);
-        let mut actions = peer.handle_incoming(
+        let mut actions = source.handle_incoming(
             system,
             &packet.serialize_without_encryption_vec(None).unwrap(),
             base + Duration::from_secs(1),
@@ -1292,19 +1291,19 @@ mod test {
             NtpTimestamp::from_fixed_int(100),
         );
         assert!(actions.next().is_none());
-        assert_eq!(peer.remote_min_poll_interval, old_remote_interval);
+        assert_eq!(source.remote_min_poll_interval, old_remote_interval);
 
-        let old_remote_interval = peer.remote_min_poll_interval;
+        let old_remote_interval = source.remote_min_poll_interval;
         let mut packet = NtpPacket::test();
         let system = SystemSnapshot::default();
-        let actions = peer.handle_timer(system);
+        let actions = source.handle_timer(system);
         let mut outgoingbuf = None;
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Reset | PeerAction::Demobilize
+                NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
-            if let PeerAction::Send(buf) = action {
+            if let NtpSourceAction::Send(buf) = action {
                 outgoingbuf = Some(buf);
             }
         }
@@ -1313,7 +1312,7 @@ mod test {
         packet.set_reference_id(ReferenceId::KISS_RATE);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
-        let mut actions = peer.handle_incoming(
+        let mut actions = source.handle_incoming(
             system,
             &packet.serialize_without_encryption_vec(None).unwrap(),
             base + Duration::from_secs(1),
@@ -1321,30 +1320,30 @@ mod test {
             NtpTimestamp::from_fixed_int(100),
         );
         assert!(actions.next().is_none());
-        assert!(peer.remote_min_poll_interval >= old_remote_interval);
+        assert!(source.remote_min_poll_interval >= old_remote_interval);
     }
 
     #[cfg(feature = "ntpv5")]
     #[test]
     fn upgrade_state_machine_does_stop() {
-        let mut peer = Peer::test_peer();
+        let mut source = NtpSource::test_ntp_source();
         let system = SystemSnapshot::default();
         let clock = TestClock {};
 
         assert!(matches!(
-            peer.protocol_version,
+            source.protocol_version,
             ProtocolVersion::V4UpgradingToV5 { .. }
         ));
 
         for _ in 0..8 {
-            let actions = peer.handle_timer(system);
+            let actions = source.handle_timer(system);
             let mut outgoingbuf = None;
             for action in actions {
                 assert!(!matches!(
                     action,
-                    PeerAction::Reset | PeerAction::Demobilize
+                    NtpSourceAction::Reset | NtpSourceAction::Demobilize
                 ));
-                if let PeerAction::Send(buf) = action {
+                if let NtpSourceAction::Send(buf) = action {
                     outgoingbuf = Some(buf);
                 }
             }
@@ -1364,7 +1363,7 @@ mod test {
             // Kill the reference timestamp
             response[16] = 0;
 
-            let actions = peer.handle_incoming(
+            let actions = source.handle_incoming(
                 system,
                 &response,
                 NtpInstant::now(),
@@ -1374,19 +1373,19 @@ mod test {
             for action in actions {
                 assert!(!matches!(
                     action,
-                    PeerAction::Demobilize | PeerAction::Reset
+                    NtpSourceAction::Demobilize | NtpSourceAction::Reset
                 ));
             }
         }
 
-        let actions = peer.handle_timer(system);
+        let actions = source.handle_timer(system);
         let mut outgoingbuf = None;
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Reset | PeerAction::Demobilize
+                NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
-            if let PeerAction::Send(buf) = action {
+            if let NtpSourceAction::Send(buf) = action {
                 outgoingbuf = Some(buf);
             }
         }
@@ -1399,23 +1398,23 @@ mod test {
     #[cfg(feature = "ntpv5")]
     #[test]
     fn upgrade_state_machine_does_upgrade() {
-        let mut peer = Peer::test_peer();
+        let mut source = NtpSource::test_ntp_source();
         let system = SystemSnapshot::default();
         let clock = TestClock {};
 
         assert!(matches!(
-            peer.protocol_version,
+            source.protocol_version,
             ProtocolVersion::V4UpgradingToV5 { .. }
         ));
 
-        let actions = peer.handle_timer(system);
+        let actions = source.handle_timer(system);
         let mut outgoingbuf = None;
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Reset | PeerAction::Demobilize
+                NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
-            if let PeerAction::Send(buf) = action {
+            if let NtpSourceAction::Send(buf) = action {
                 outgoingbuf = Some(buf);
             }
         }
@@ -1432,7 +1431,7 @@ mod test {
             .serialize_without_encryption_vec(Some(poll_len))
             .unwrap();
 
-        let actions = peer.handle_incoming(
+        let actions = source.handle_incoming(
             system,
             &response,
             NtpInstant::now(),
@@ -1442,21 +1441,21 @@ mod test {
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Demobilize | PeerAction::Reset
+                NtpSourceAction::Demobilize | NtpSourceAction::Reset
             ));
         }
 
         // We should have received a upgrade response and updated to NTPv5
-        assert!(matches!(peer.protocol_version, ProtocolVersion::V5));
+        assert!(matches!(source.protocol_version, ProtocolVersion::V5));
 
-        let actions = peer.handle_timer(system);
+        let actions = source.handle_timer(system);
         let mut outgoingbuf = None;
         for action in actions {
             assert!(!matches!(
                 action,
-                PeerAction::Reset | PeerAction::Demobilize
+                NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
-            if let PeerAction::Send(buf) = action {
+            if let NtpSourceAction::Send(buf) = action {
                 outgoingbuf = Some(buf);
             }
         }
@@ -1471,7 +1470,7 @@ mod test {
         let mut server_filter = BloomFilter::new();
         server_filter.add_id(&ServerId::new(&mut thread_rng()));
 
-        let mut client = Peer::test_peer();
+        let mut client = NtpSource::test_ntp_source();
         client.protocol_version = ProtocolVersion::V5;
 
         let clock = TestClock::default();
@@ -1490,9 +1489,9 @@ mod test {
             for action in actions {
                 assert!(!matches!(
                     action,
-                    PeerAction::Reset | PeerAction::Demobilize
+                    NtpSourceAction::Reset | NtpSourceAction::Demobilize
                 ));
-                if let PeerAction::Send(buf) = action {
+                if let NtpSourceAction::Send(buf) = action {
                     outgoingbuf = Some(buf);
                 }
             }
@@ -1513,7 +1512,7 @@ mod test {
             for action in actions {
                 assert!(!matches!(
                     action,
-                    PeerAction::Demobilize | PeerAction::Reset
+                    NtpSourceAction::Demobilize | NtpSourceAction::Reset
                 ));
             }
 

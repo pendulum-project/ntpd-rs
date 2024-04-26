@@ -1,6 +1,6 @@
 pub mod exporter;
 
-use crate::daemon::{ObservablePeerState, ObservableState};
+use crate::daemon::{ObservableSourceState, ObservableState};
 
 struct Measurement<T> {
     labels: Vec<(&'static str, String)>,
@@ -96,7 +96,7 @@ macro_rules! collect_sources {
     ($from: expr, |$ident: ident| $value: expr $(,)?) => {{
         let mut data = vec![];
         for tmp in &$from.sources {
-            if let crate::metrics::ObservablePeerState::Observable($ident) = tmp {
+            if let crate::metrics::ObservableSourceState::Observable($ident) = tmp {
                 let labels = vec![
                     ("name", $ident.name.clone()),
                     ("address", $ident.address.clone()),

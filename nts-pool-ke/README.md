@@ -34,10 +34,10 @@ The server should show something like this
 ```
 > sudo target/release/ntp-daemon -c nts-pool-ke/unsafe.nts.server.toml
 
-2023-12-21T10:49:12.702642Z  INFO ntpd::daemon::system: new peer source_id=PeerId(1) addr=213.109.127.82:123 spawner=SpawnerId(1)
-2023-12-21T10:49:12.702693Z  INFO ntpd::daemon::system: new peer source_id=PeerId(2) addr=94.198.159.16:123 spawner=SpawnerId(1)
-2023-12-21T10:49:12.702706Z  INFO ntpd::daemon::system: new peer source_id=PeerId(3) addr=154.51.12.215:123 spawner=SpawnerId(1)
-2023-12-21T10:49:12.702719Z  INFO ntpd::daemon::system: new peer source_id=PeerId(4) addr=45.138.55.60:123 spawner=SpawnerId(1)
+2023-12-21T10:49:12.702642Z  INFO ntpd::daemon::system: new source source_id=SourceId(1) addr=213.109.127.82:123 spawner=SpawnerId(1)
+2023-12-21T10:49:12.702693Z  INFO ntpd::daemon::system: new source source_id=SourceId(2) addr=94.198.159.16:123 spawner=SpawnerId(1)
+2023-12-21T10:49:12.702706Z  INFO ntpd::daemon::system: new source source_id=SourceId(3) addr=154.51.12.215:123 spawner=SpawnerId(1)
+2023-12-21T10:49:12.702719Z  INFO ntpd::daemon::system: new source source_id=SourceId(4) addr=45.138.55.60:123 spawner=SpawnerId(1)
 2023-12-21T10:49:12.709153Z  INFO ntp_proto::algorithm::kalman: Offset: 2.2252593194659007+-70.88905127356101ms, frequency: 0+-10000000ppm
 2023-12-21T10:49:12.709438Z  INFO ntp_proto::algorithm::kalman: Offset: 1.6675194083763052+-50.70180376962068ms, frequency: 0+-7071067.811865476ppm
 2023-12-21T10:49:12.711005Z  INFO ntp_proto::algorithm::kalman: Offset: 1.3434683112795662+-43.24338657667398ms, frequency: 0+-5773502.691896257ppm
@@ -64,7 +64,7 @@ Finally the client should show
 ```
 > sudo target/release/ntp-daemon -c nts-pool-ke/unsafe.nts.client.toml
 
-2023-12-21T13:11:03.577635Z  INFO ntpd::daemon::system: new peer source_id=PeerId(1) addr=127.0.0.1:123 spawner=SpawnerId(1)
+2023-12-21T13:11:03.577635Z  INFO ntpd::daemon::system: new source source_id=SourceId(1) addr=127.0.0.1:123 spawner=SpawnerId(1)
 2023-12-21T13:11:03.580097Z  INFO ntp_proto::algorithm::kalman: Offset: -0.043484615172139515+-44.92576728378405ms, frequency: 0+-10000000ppm
 ```
 

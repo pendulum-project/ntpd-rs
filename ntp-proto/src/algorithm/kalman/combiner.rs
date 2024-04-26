@@ -3,18 +3,18 @@ use crate::{packet::NtpLeapIndicator, time_types::NtpDuration};
 use super::{
     config::AlgorithmConfig,
     matrix::{Matrix, Vector},
-    sqr, PeerSnapshot,
+    sqr, SourceSnapshot,
 };
 
 pub(super) struct Combine<Index: Copy> {
     pub estimate: Vector<2>,
     pub uncertainty: Matrix<2, 2>,
-    pub peers: Vec<Index>,
+    pub sources: Vec<Index>,
     pub delay: NtpDuration,
     pub leap_indicator: Option<NtpLeapIndicator>,
 }
 
-fn vote_leap<Index: Copy>(selection: &[PeerSnapshot<Index>]) -> Option<NtpLeapIndicator> {
+fn vote_leap<Index: Copy>(selection: &[SourceSnapshot<Index>]) -> Option<NtpLeapIndicator> {
     let mut votes_59 = 0;
     let mut votes_61 = 0;
     let mut votes_none = 0;
@@ -24,7 +24,7 @@ fn vote_leap<Index: Copy>(selection: &[PeerSnapshot<Index>]) -> Option<NtpLeapIn
             NtpLeapIndicator::Leap61 => votes_61 += 1,
             NtpLeapIndicator::Leap59 => votes_59 += 1,
             NtpLeapIndicator::Unknown => {
-                panic!("Unsynchronized peer selected for synchronization!")
+                panic!("Unsynchronized source selected for synchronization!")
             }
         }
     }
@@ -40,7 +40,7 @@ fn vote_leap<Index: Copy>(selection: &[PeerSnapshot<Index>]) -> Option<NtpLeapIn
 }
 
 pub(super) fn combine<Index: Copy>(
-    selection: &[PeerSnapshot<Index>],
+    selection: &[SourceSnapshot<Index>],
     algo_config: &AlgorithmConfig,
 ) -> Option<Combine<Index>> {
     selection.first().map(|first| {
@@ -49,39 +49,42 @@ pub(super) fn combine<Index: Copy>(
             first.uncertainty
         } else {
             first.uncertainty
-                + Matrix::new([[sqr(first.peer_uncertainty.to_seconds()), 0.], [0., 0.]])
+                + Matrix::new([[sqr(first.source_uncertainty.to_seconds()), 0.], [0., 0.]])
         };
 
-        let mut used_peers = vec![(first.index, uncertainty.determinant())];
+        let mut used_sources = vec![(first.index, uncertainty.determinant())];
 
         for snapshot in selection.iter().skip(1) {
-            let peer_estimate = snapshot.state;
-            let peer_uncertainty = if algo_config.ignore_server_dispersion {
+            let source_estimate = snapshot.state;
+            let source_uncertainty = if algo_config.ignore_server_dispersion {
                 snapshot.uncertainty
             } else {
                 snapshot.uncertainty
-                    + Matrix::new([[sqr(snapshot.peer_uncertainty.to_seconds()), 0.], [0., 0.]])
+                    + Matrix::new([
+                        [sqr(snapshot.source_uncertainty.to_seconds()), 0.],
+                        [0., 0.],
+                    ])
             };
 
-            used_peers.push((snapshot.index, peer_uncertainty.determinant()));
+            used_sources.push((snapshot.index, source_uncertainty.determinant()));
 
             // Merge measurements
-            let mixer = (uncertainty + peer_uncertainty).inverse();
-            estimate = estimate + uncertainty * mixer * (peer_estimate - estimate);
-            uncertainty = uncertainty * mixer * peer_uncertainty;
+            let mixer = (uncertainty + source_uncertainty).inverse();
+            estimate = estimate + uncertainty * mixer * (source_estimate - estimate);
+            uncertainty = uncertainty * mixer * source_uncertainty;
         }
 
-        used_peers.sort_by(|a, b| a.1.total_cmp(&b.1));
+        used_sources.sort_by(|a, b| a.1.total_cmp(&b.1));
 
         Combine {
             estimate,
             uncertainty,
-            peers: used_peers.iter().map(|v| v.0).collect(),
+            sources: used_sources.iter().map(|v| v.0).collect(),
             delay: selection
                 .iter()
-                .map(|v| NtpDuration::from_seconds(v.delay) + v.peer_delay)
+                .map(|v| NtpDuration::from_seconds(v.delay) + v.source_delay)
                 .min()
-                .unwrap_or(NtpDuration::from_seconds(first.delay) + first.peer_delay),
+                .unwrap_or(NtpDuration::from_seconds(first.delay) + first.source_delay),
             leap_indicator: vote_leap(selection),
         }
     })
@@ -96,15 +99,15 @@ mod tests {
     fn snapshot_for_state(
         state: Vector<2>,
         uncertainty: Matrix<2, 2>,
-        peer_uncertainty: f64,
-    ) -> PeerSnapshot<usize> {
-        PeerSnapshot {
+        source_uncertainty: f64,
+    ) -> SourceSnapshot<usize> {
+        SourceSnapshot {
             index: 0,
             state,
             uncertainty,
             delay: 0.0,
-            peer_uncertainty: NtpDuration::from_seconds(peer_uncertainty),
-            peer_delay: NtpDuration::from_seconds(0.01),
+            source_uncertainty: NtpDuration::from_seconds(source_uncertainty),
+            source_delay: NtpDuration::from_seconds(0.01),
             leap_indicator: NtpLeapIndicator::NoWarning,
             last_update: NtpTimestamp::from_fixed_int(0),
         }
@@ -112,7 +115,7 @@ mod tests {
 
     #[test]
     fn test_none() {
-        let selected: Vec<PeerSnapshot<usize>> = vec![];
+        let selected: Vec<SourceSnapshot<usize>> = vec![];
         let algconfig = AlgorithmConfig::default();
         assert!(combine(&selected, &algconfig).is_none());
     }
@@ -196,7 +199,7 @@ mod tests {
             ..Default::default()
         };
         let result = combine(&selected, &algconfig).unwrap();
-        assert_eq!(result.peers, vec![0, 1]);
+        assert_eq!(result.sources, vec![0, 1]);
 
         let mut selected = vec![
             snapshot_for_state(
@@ -217,17 +220,17 @@ mod tests {
             ..Default::default()
         };
         let result = combine(&selected, &algconfig).unwrap();
-        assert_eq!(result.peers, vec![1, 0]);
+        assert_eq!(result.sources, vec![1, 0]);
     }
 
-    fn snapshot_for_leap(leap: NtpLeapIndicator) -> PeerSnapshot<usize> {
-        PeerSnapshot {
+    fn snapshot_for_leap(leap: NtpLeapIndicator) -> SourceSnapshot<usize> {
+        SourceSnapshot {
             index: 0,
             state: Vector::new_vector([0.0, 0.0]),
             uncertainty: Matrix::new([[1e-6, 0.0], [0.0, 1e-12]]),
             delay: 0.0,
-            peer_uncertainty: NtpDuration::from_seconds(0.0),
-            peer_delay: NtpDuration::from_seconds(0.0),
+            source_uncertainty: NtpDuration::from_seconds(0.0),
+            source_delay: NtpDuration::from_seconds(0.0),
             leap_indicator: leap,
             last_update: NtpTimestamp::from_fixed_int(0),
         }

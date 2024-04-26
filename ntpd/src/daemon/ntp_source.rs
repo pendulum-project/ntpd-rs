@@ -1,8 +1,8 @@
 use std::{future::Future, marker::PhantomData, net::SocketAddr, pin::Pin};
 
 use ntp_proto::{
-    NtpClock, NtpInstant, NtpTimestamp, Peer, PeerActionIterator, PeerNtsData, PeerUpdate,
-    ProtocolVersion, SourceDefaultsConfig, SystemSnapshot,
+    NtpClock, NtpInstant, NtpSource, NtpSourceActionIterator, NtpSourceUpdate, NtpTimestamp,
+    ProtocolVersion, SourceDefaultsConfig, SourceNtsData, SystemSnapshot,
 };
 #[cfg(target_os = "linux")]
 use timestamped_socket::socket::open_interface_udp;
@@ -14,7 +14,7 @@ use tracing::{debug, error, instrument, warn, Instrument, Span};
 
 use tokio::time::{Instant, Sleep};
 
-use super::{config::TimestampMode, exitcode, spawn::PeerId, util::convert_net_timestamp};
+use super::{config::TimestampMode, exitcode, spawn::SourceId, util::convert_net_timestamp};
 
 /// Trait needed to allow injecting of futures other than `tokio::time::Sleep` for testing
 pub trait Wait: Future<Output = ()> {
@@ -31,32 +31,32 @@ impl Wait for Sleep {
 #[allow(clippy::large_enum_variant)]
 pub enum MsgForSystem {
     /// Received a Kiss-o'-Death and must demobilize
-    MustDemobilize(PeerId),
+    MustDemobilize(SourceId),
     /// Experienced a network issue and must be restarted
-    NetworkIssue(PeerId),
+    NetworkIssue(SourceId),
     /// Source is unreachable, and should be restarted with new resolved addr.
-    Unreachable(PeerId),
-    /// Update from peer
-    PeerUpdate(PeerId, PeerUpdate),
+    Unreachable(SourceId),
+    /// Update from source
+    SourceUpdate(SourceId, NtpSourceUpdate),
 }
 
 #[derive(Debug, Clone)]
-pub struct PeerChannels {
+pub struct SourceChannels {
     pub msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
     pub system_snapshot_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
 }
 
-pub(crate) struct PeerTask<C: 'static + NtpClock + Send, T: Wait> {
+pub(crate) struct SourceTask<C: 'static + NtpClock + Send, T: Wait> {
     _wait: PhantomData<T>,
-    index: PeerId,
+    index: SourceId,
     clock: C,
     interface: Option<InterfaceName>,
     timestamp_mode: TimestampMode,
     source_addr: SocketAddr,
     socket: Option<Socket<SocketAddr, Connected>>,
-    channels: PeerChannels,
+    channels: SourceChannels,
 
-    peer: Peer,
+    source: NtpSource,
 
     // we don't store the real origin timestamp in the packet, because that would leak our
     // system time to the network (and could make attacks easier). So instead there is some
@@ -72,7 +72,7 @@ enum SocketResult {
     Abort,
 }
 
-impl<C, T> PeerTask<C, T>
+impl<C, T> SourceTask<C, T>
 where
     C: 'static + NtpClock + Send + Sync,
     T: Wait,
@@ -137,7 +137,7 @@ where
                             };
 
                             let system_snapshot = *self.channels.system_snapshot_receiver.borrow();
-                            self.peer.handle_incoming(
+                            self.source.handle_incoming(
                                 system_snapshot,
                                 packet,
                                 NtpInstant::now(),
@@ -153,19 +153,19 @@ where
                                 .ok();
                             return;
                         }
-                        AcceptResult::Ignore => PeerActionIterator::default(),
+                        AcceptResult::Ignore => NtpSourceActionIterator::default(),
                     }
                 }
                 SelectResult::Timer => {
                     tracing::debug!("wait completed");
                     let system_snapshot = *self.channels.system_snapshot_receiver.borrow();
-                    self.peer.handle_timer(system_snapshot)
+                    self.source.handle_timer(system_snapshot)
                 }
             };
 
             for action in actions {
                 match action {
-                    ntp_proto::PeerAction::Send(packet) => {
+                    ntp_proto::NtpSourceAction::Send(packet) => {
                         if matches!(self.setup_socket().await, SocketResult::Abort) {
                             self.channels
                                 .msg_for_system_sender
@@ -215,17 +215,17 @@ where
                             }
                         }
                     }
-                    ntp_proto::PeerAction::UpdateSystem(update) => {
+                    ntp_proto::NtpSourceAction::UpdateSystem(update) => {
                         self.channels
                             .msg_for_system_sender
-                            .send(MsgForSystem::PeerUpdate(self.index, update))
+                            .send(MsgForSystem::SourceUpdate(self.index, update))
                             .await
                             .ok();
                     }
-                    ntp_proto::PeerAction::SetTimer(timeout) => {
+                    ntp_proto::NtpSourceAction::SetTimer(timeout) => {
                         poll_wait.as_mut().reset(Instant::now() + timeout)
                     }
-                    ntp_proto::PeerAction::Reset => {
+                    ntp_proto::NtpSourceAction::Reset => {
                         self.channels
                             .msg_for_system_sender
                             .send(MsgForSystem::Unreachable(self.index))
@@ -233,7 +233,7 @@ where
                             .ok();
                         return;
                     }
-                    ntp_proto::PeerAction::Demobilize => {
+                    ntp_proto::NtpSourceAction::Demobilize => {
                         self.channels
                             .msg_for_system_sender
                             .send(MsgForSystem::MustDemobilize(self.index))
@@ -247,29 +247,29 @@ where
     }
 }
 
-impl<C> PeerTask<C, Sleep>
+impl<C> SourceTask<C, Sleep>
 where
     C: 'static + NtpClock + Send + Sync,
 {
     #[allow(clippy::too_many_arguments)]
     #[instrument(skip(clock, channels))]
     pub fn spawn(
-        index: PeerId,
+        index: SourceId,
         source_addr: SocketAddr,
         interface: Option<InterfaceName>,
         clock: C,
         timestamp_mode: TimestampMode,
-        channels: PeerChannels,
+        channels: SourceChannels,
         protocol_version: ProtocolVersion,
         config_snapshot: SourceDefaultsConfig,
-        nts: Option<Box<PeerNtsData>>,
+        nts: Option<Box<SourceNtsData>>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(
             (async move {
-                let (peer, initial_actions) = if let Some(nts) = nts {
-                    Peer::new_nts(source_addr, config_snapshot, protocol_version, nts)
+                let (source, initial_actions) = if let Some(nts) = nts {
+                    NtpSource::new_nts(source_addr, config_snapshot, protocol_version, nts)
                 } else {
-                    Peer::new(source_addr, config_snapshot, protocol_version)
+                    NtpSource::new(source_addr, config_snapshot, protocol_version)
                 };
 
                 let poll_wait = tokio::time::sleep(std::time::Duration::default());
@@ -277,25 +277,25 @@ where
 
                 for action in initial_actions {
                     match action {
-                        ntp_proto::PeerAction::Send(_) => {
+                        ntp_proto::NtpSourceAction::Send(_) => {
                             unreachable!("Should not be sending messages from startup")
                         }
-                        ntp_proto::PeerAction::UpdateSystem(_) => {
+                        ntp_proto::NtpSourceAction::UpdateSystem(_) => {
                             unreachable!("Should not be updating system from startup")
                         }
-                        ntp_proto::PeerAction::SetTimer(timeout) => {
+                        ntp_proto::NtpSourceAction::SetTimer(timeout) => {
                             poll_wait.as_mut().reset(Instant::now() + timeout)
                         }
-                        ntp_proto::PeerAction::Reset => {
+                        ntp_proto::NtpSourceAction::Reset => {
                             unreachable!("Should not be resetting from startup")
                         }
-                        ntp_proto::PeerAction::Demobilize => {
+                        ntp_proto::NtpSourceAction::Demobilize => {
                             todo!("Should not be demobilizing from startup")
                         }
                     }
                 }
 
-                let mut process = PeerTask {
+                let mut process = SourceTask {
                     _wait: PhantomData,
                     index,
                     clock,
@@ -304,7 +304,7 @@ where
                     timestamp_mode,
                     source_addr,
                     socket: None,
-                    peer,
+                    source,
                     last_send_timestamp: None,
                 };
 
@@ -466,15 +466,15 @@ mod tests {
         }
 
         fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
-            panic!("Shouldn't be called by peer");
+            panic!("Shouldn't be called by source");
         }
 
         fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
-            panic!("Shouldn't be called by peer");
+            panic!("Shouldn't be called by source");
         }
 
         fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
+            panic!("Shouldn't be called by source");
         }
 
         fn error_estimate_update(
@@ -482,18 +482,18 @@ mod tests {
             _est_error: NtpDuration,
             _max_error: NtpDuration,
         ) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
+            panic!("Shouldn't be called by source");
         }
 
         fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
+            panic!("Shouldn't be called by source");
         }
     }
 
     async fn test_startup<T: Wait>(
         port_base: u16,
     ) -> (
-        PeerTask<TestClock, T>,
+        SourceTask<TestClock, T>,
         Socket<SocketAddr, Open>,
         mpsc::Receiver<MsgForSystem>,
     ) {
@@ -508,17 +508,17 @@ mod tests {
         let (_, system_snapshot_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
         let (msg_for_system_sender, msg_for_system_receiver) = mpsc::channel(1);
 
-        let (peer, _) = Peer::new(
+        let (source, _) = NtpSource::new(
             SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
             SourceDefaultsConfig::default(),
             ProtocolVersion::default(),
         );
 
-        let process = PeerTask {
+        let process = SourceTask {
             _wait: PhantomData,
-            index: PeerId::new(),
+            index: SourceId::new(),
             clock: TestClock {},
-            channels: PeerChannels {
+            channels: SourceChannels {
                 msg_for_system_sender,
                 system_snapshot_receiver,
             },
@@ -526,7 +526,7 @@ mod tests {
             interface: None,
             timestamp_mode: TimestampMode::KernelRecv,
             socket: None,
-            peer,
+            source,
             last_send_timestamp: None,
         };
 
@@ -608,7 +608,7 @@ mod tests {
         socket.send_to(&serialized, remote_addr).await.unwrap();
 
         let msg = msg_recv.recv().await.unwrap();
-        assert!(matches!(msg, MsgForSystem::PeerUpdate(_, _)));
+        assert!(matches!(msg, MsgForSystem::SourceUpdate(_, _)));
 
         handle.abort();
     }

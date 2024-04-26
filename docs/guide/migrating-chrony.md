@@ -62,7 +62,7 @@ initial-poll-interval = <desired initial poll interval>
 
 There is currently no support for bursting in ntpd-rs. When any bursting option (`burst` or `iburst`) is present, these usually can be ignored, although if custom poll limits are in place, these may need to be relaxed.
 
-### Peer directives
+### Time source directives
 
 Symmetric peer modes are not supported in ntpd-rs, and are unlikely to be supported in the future. When migrating a configuration with symmetric peer connections, we recommend replacing these with client-server mode connections on both clients (see also [Server directives](#server-directives) above).
 

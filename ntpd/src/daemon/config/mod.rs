@@ -1,10 +1,10 @@
-mod peer;
+mod ntp_source;
 mod server;
 pub mod subnet;
 
 use clock_steering::unix::UnixClock;
 use ntp_proto::{SourceDefaultsConfig, SynchronizationConfig};
-pub use peer::*;
+pub use ntp_source::*;
 use serde::{Deserialize, Deserializer};
 pub use server::*;
 use std::{
@@ -335,7 +335,7 @@ fn default_metrics_exporter_listen() -> SocketAddr {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Config {
     #[serde(rename = "source", default)]
-    pub sources: Vec<PeerConfig>,
+    pub sources: Vec<NtpSourceConfig>,
     #[serde(rename = "server", default)]
     pub servers: Vec<ServerConfig>,
     #[serde(rename = "nts-ke-server", default)]
@@ -393,16 +393,16 @@ impl Config {
 
     pub async fn from_args(
         file: Option<impl AsRef<Path>>,
-        peers: Vec<PeerConfig>,
+        sources: Vec<NtpSourceConfig>,
         servers: Vec<ServerConfig>,
     ) -> Result<Config, ConfigError> {
         let mut config = Config::from_first_file(file.as_ref()).await?;
 
-        if !peers.is_empty() {
+        if !sources.is_empty() {
             if !config.sources.is_empty() {
-                info!("overriding peers from configuration");
+                info!("overriding sources from configuration");
             }
-            config.sources = peers;
+            config.sources = sources;
         }
 
         if !servers.is_empty() {
@@ -415,16 +415,16 @@ impl Config {
         Ok(config)
     }
 
-    /// Count potential number of peers in configuration
-    fn count_peers(&self) -> usize {
+    /// Count potential number of sources in configuration
+    fn count_sources(&self) -> usize {
         let mut count = 0;
-        for peer in &self.sources {
-            match peer {
-                PeerConfig::Standard(_) => count += 1,
-                PeerConfig::Nts(_) => count += 1,
-                PeerConfig::Pool(config) => count += config.max_peers,
+        for source in &self.sources {
+            match source {
+                NtpSourceConfig::Standard(_) => count += 1,
+                NtpSourceConfig::Nts(_) => count += 1,
+                NtpSourceConfig::Pool(config) => count += config.count,
                 #[cfg(feature = "unstable_nts-pool")]
-                PeerConfig::NtsPool(config) => count += config.max_peers,
+                NtpSourceConfig::NtsPool(config) => count += config.count,
             }
         }
         count
@@ -444,7 +444,7 @@ impl Config {
         }
 
         if !self.sources.is_empty()
-            && self.count_peers() < self.synchronization.minimum_agreeing_sources
+            && self.count_sources() < self.synchronization.minimum_agreeing_sources
         {
             warn!("Fewer sources configured than are required to agree on the current time. Daemon will not change system time.");
             ok = false;
@@ -495,7 +495,7 @@ mod tests {
             toml::from_str("[[source]]\nmode = \"server\"\naddress = \"example.com\"").unwrap();
         assert_eq!(
             config.sources,
-            vec![PeerConfig::Standard(StandardPeerConfig {
+            vec![NtpSourceConfig::Standard(StandardSource {
                 address: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
@@ -508,7 +508,7 @@ mod tests {
         assert_eq!(config.observability.log_level, Some(LogLevel::Info));
         assert_eq!(
             config.sources,
-            vec![PeerConfig::Standard(StandardPeerConfig {
+            vec![NtpSourceConfig::Standard(StandardSource {
                 address: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
@@ -519,7 +519,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             config.sources,
-            vec![PeerConfig::Standard(StandardPeerConfig {
+            vec![NtpSourceConfig::Standard(StandardSource {
                 address: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
@@ -538,7 +538,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             config.sources,
-            vec![PeerConfig::Standard(StandardPeerConfig {
+            vec![NtpSourceConfig::Standard(StandardSource {
                 address: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
@@ -578,7 +578,7 @@ mod tests {
 
         assert_eq!(
             config.sources,
-            vec![PeerConfig::Standard(StandardPeerConfig {
+            vec![NtpSourceConfig::Standard(StandardSource {
                 address: NormalizedAddress::new_unchecked("example.com", 123).into(),
             })]
         );
@@ -633,7 +633,7 @@ mod tests {
     }
 
     #[test]
-    fn toml_peers_invalid() {
+    fn toml_sources_invalid() {
         let config: Result<Config, _> = toml::from_str(
             r#"
             [[source]]
@@ -646,7 +646,7 @@ mod tests {
     }
 
     #[test]
-    fn toml_allow_no_peers() {
+    fn toml_allow_no_sources() {
         let config: Result<Config, _> = toml::from_str(
             r#"
             [[server]]

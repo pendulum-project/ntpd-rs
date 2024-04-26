@@ -18,8 +18,8 @@ mod ipfilter;
 mod keyset;
 mod nts_record;
 mod packet;
-mod peer;
 mod server;
+mod source;
 mod system;
 mod time_types;
 
@@ -38,7 +38,7 @@ pub(crate) mod exitcode {
 
 mod exports {
     pub use super::algorithm::{
-        AlgorithmConfig, KalmanClockController, ObservablePeerTimedata, StateUpdate,
+        AlgorithmConfig, KalmanClockController, ObservableSourceTimedata, StateUpdate,
         TimeSyncController,
     };
     pub use super::clock::NtpClock;
@@ -56,17 +56,17 @@ mod exports {
         Cipher, CipherProvider, EncryptResult, ExtensionHeaderVersion, NoCipher,
         NtpAssociationMode, NtpLeapIndicator, NtpPacket, PacketParsingError,
     };
-    #[cfg(feature = "__internal-fuzz")]
-    pub use super::peer::fuzz_measurement_from_packet;
-    #[cfg(feature = "__internal-test")]
-    pub use super::peer::{peer_snapshot, Measurement};
-    pub use super::peer::{
-        AcceptSynchronizationError, Peer, PeerAction, PeerActionIterator, PeerNtsData,
-        PeerSnapshot, PeerUpdate, ProtocolVersion, Reach,
-    };
     pub use super::server::{
         FilterAction, FilterList, IpSubnet, Server, ServerAction, ServerConfig, ServerReason,
         ServerResponse, ServerStatHandler, SubnetParseError,
+    };
+    #[cfg(feature = "__internal-fuzz")]
+    pub use super::source::fuzz_measurement_from_packet;
+    #[cfg(feature = "__internal-test")]
+    pub use super::source::{source_snapshot, Measurement};
+    pub use super::source::{
+        AcceptSynchronizationError, NtpSource, NtpSourceAction, NtpSourceActionIterator,
+        NtpSourceSnapshot, NtpSourceUpdate, ProtocolVersion, Reach, SourceNtsData,
     };
     pub use super::system::{System, SystemSnapshot, TimeSnapshot};
     #[cfg(feature = "__internal-fuzz")]

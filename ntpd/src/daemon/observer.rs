@@ -1,8 +1,8 @@
 use super::server::ServerStats;
 use super::sockets::create_unix_socket_with_permissions;
-use super::spawn::PeerId;
+use super::spawn::SourceId;
 use super::system::ServerData;
-use ntp_proto::{ObservablePeerTimedata, PollInterval, SystemSnapshot};
+use ntp_proto::{ObservableSourceTimedata, PollInterval, SystemSnapshot};
 use std::os::unix::fs::PermissionsExt;
 use std::{net::SocketAddr, time::Instant};
 use tokio::task::JoinHandle;
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 pub struct ObservableState {
     pub program: ProgramData,
     pub system: SystemSnapshot,
-    pub sources: Vec<ObservablePeerState>,
+    pub sources: Vec<ObservableSourceState>,
     pub servers: Vec<ObservableServerState>,
 }
 
@@ -62,31 +62,31 @@ impl From<&ServerData> for ObservableServerState {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum ObservablePeerState {
+pub enum ObservableSourceState {
     Nothing,
-    Observable(ObservedPeerState),
+    Observable(ObservedSourceState),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ObservedPeerState {
+pub struct ObservedSourceState {
     #[serde(flatten)]
-    pub timedata: ObservablePeerTimedata,
+    pub timedata: ObservableSourceTimedata,
     pub unanswered_polls: u32,
     pub poll_interval: PollInterval,
     pub name: String,
     pub address: String,
-    pub id: PeerId,
+    pub id: SourceId,
 }
 
 pub async fn spawn(
     config: &super::config::ObservabilityConfig,
-    peers_reader: tokio::sync::watch::Receiver<Vec<ObservablePeerState>>,
+    sources_reader: tokio::sync::watch::Receiver<Vec<ObservableSourceState>>,
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
     system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
 ) -> JoinHandle<std::io::Result<()>> {
     let config = config.clone();
     tokio::spawn(async move {
-        let result = observer(config, peers_reader, server_reader, system_reader).await;
+        let result = observer(config, sources_reader, server_reader, system_reader).await;
         if let Err(ref e) = result {
             warn!("Abnormal termination of the state observer: {e}");
             warn!("The state observer will not be available");
@@ -97,7 +97,7 @@ pub async fn spawn(
 
 async fn observer(
     config: super::config::ObservabilityConfig,
-    peers_reader: tokio::sync::watch::Receiver<Vec<ObservablePeerState>>,
+    sources_reader: tokio::sync::watch::Receiver<Vec<ObservableSourceState>>,
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
     system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
 ) -> std::io::Result<()> {
@@ -114,14 +114,14 @@ async fn observer(
     let permissions: std::fs::Permissions =
         PermissionsExt::from_mode(config.observation_permissions);
 
-    let peers_listener = create_unix_socket_with_permissions(&path, permissions)?;
+    let sources_listener = create_unix_socket_with_permissions(&path, permissions)?;
 
     loop {
-        let (mut stream, _addr) = peers_listener.accept().await?;
+        let (mut stream, _addr) = sources_listener.accept().await?;
 
         let observe = ObservableState {
             program: ProgramData::with_uptime(start_time.elapsed().as_secs_f64()),
-            sources: peers_reader.borrow().to_owned(),
+            sources: sources_reader.borrow().to_owned(),
             system: *system_reader.borrow(),
             servers: server_reader.borrow().iter().map(|s| s.into()).collect(),
         };
@@ -192,16 +192,16 @@ mod tests {
             ..Default::default()
         };
 
-        let (_, peers_reader) = tokio::sync::watch::channel(vec![
-            ObservablePeerState::Nothing,
-            ObservablePeerState::Nothing,
-            ObservablePeerState::Observable(ObservedPeerState {
+        let (_, sources_reader) = tokio::sync::watch::channel(vec![
+            ObservableSourceState::Nothing,
+            ObservableSourceState::Nothing,
+            ObservableSourceState::Observable(ObservedSourceState {
                 timedata: Default::default(),
                 unanswered_polls: Reach::default().unanswered_polls(),
                 poll_interval: PollIntervalLimits::default().min,
                 name: "127.0.0.3:123".into(),
                 address: "127.0.0.3:123".into(),
-                id: PeerId::new(),
+                id: SourceId::new(),
             }),
         ]);
 
@@ -226,7 +226,7 @@ mod tests {
         });
 
         let handle = tokio::spawn(async move {
-            observer(config, peers_reader, servers_reader, system_reader)
+            observer(config, sources_reader, servers_reader, system_reader)
                 .await
                 .unwrap();
         });
@@ -241,8 +241,8 @@ mod tests {
 
         // Deal with randomized order
         let mut count = 0;
-        for peer in &result.sources {
-            if matches!(peer, ObservablePeerState::Observable { .. }) {
+        for source in &result.sources {
+            if matches!(source, ObservableSourceState::Observable { .. }) {
                 count += 1;
             }
         }
@@ -262,16 +262,16 @@ mod tests {
             ..Default::default()
         };
 
-        let (mut peers_writer, peers_reader) = tokio::sync::watch::channel(vec![
-            ObservablePeerState::Nothing,
-            ObservablePeerState::Nothing,
-            ObservablePeerState::Observable(ObservedPeerState {
+        let (mut sources_writer, sources_reader) = tokio::sync::watch::channel(vec![
+            ObservableSourceState::Nothing,
+            ObservableSourceState::Nothing,
+            ObservableSourceState::Observable(ObservedSourceState {
                 timedata: Default::default(),
                 unanswered_polls: Reach::default().unanswered_polls(),
                 poll_interval: PollIntervalLimits::default().min,
                 name: "127.0.0.3:123".into(),
                 address: "127.0.0.3:123".into(),
-                id: PeerId::new(),
+                id: SourceId::new(),
             }),
         ]);
 
@@ -296,7 +296,7 @@ mod tests {
         });
 
         let handle = tokio::spawn(async move {
-            observer(config, peers_reader, servers_reader, system_reader)
+            observer(config, sources_reader, servers_reader, system_reader)
                 .await
                 .unwrap();
         });
@@ -314,7 +314,7 @@ mod tests {
 
         // Ensure none of the locks is held long term
         let _ = system_writer.borrow_mut();
-        let _ = peers_writer.borrow_mut();
+        let _ = sources_writer.borrow_mut();
         let _ = server_writer.borrow_mut();
 
         handle.abort();

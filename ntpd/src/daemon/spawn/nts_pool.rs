@@ -5,22 +5,22 @@ use tokio::sync::mpsc;
 use tracing::warn;
 
 use super::super::{
-    config::NtsPoolPeerConfig, keyexchange::key_exchange_client_with_denied_servers,
+    config::NtsPoolSourceConfig, keyexchange::key_exchange_client_with_denied_servers,
 };
 
-use super::{BasicSpawner, PeerId, PeerRemovedEvent, SpawnAction, SpawnEvent, SpawnerId};
+use super::{BasicSpawner, SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, SpawnerId};
 
 use super::nts::resolve_addr;
 
-struct PoolPeer {
-    id: PeerId,
+struct PoolSource {
+    id: SourceId,
     remote: String,
 }
 
 pub struct NtsPoolSpawner {
-    config: NtsPoolPeerConfig,
+    config: NtsPoolSourceConfig,
     id: SpawnerId,
-    current_peers: Vec<PoolPeer>,
+    current_sources: Vec<PoolSource>,
 }
 
 #[derive(Debug)]
@@ -45,17 +45,19 @@ impl From<mpsc::error::SendError<SpawnEvent>> for NtsPoolSpawnError {
 }
 
 impl NtsPoolSpawner {
-    pub fn new(config: NtsPoolPeerConfig) -> NtsPoolSpawner {
+    pub fn new(config: NtsPoolSourceConfig) -> NtsPoolSpawner {
         NtsPoolSpawner {
             config,
             id: Default::default(),
-            current_peers: Default::default(),
+            current_sources: Default::default(),
             //known_ips: Default::default(),
         }
     }
 
-    fn contains_peer(&self, domain: &str) -> bool {
-        self.current_peers.iter().any(|peer| peer.remote == domain)
+    fn contains_source(&self, domain: &str) -> bool {
+        self.current_sources
+            .iter()
+            .any(|source| source.remote == domain)
     }
 }
 
@@ -67,23 +69,21 @@ impl BasicSpawner for NtsPoolSpawner {
         &mut self,
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), NtsPoolSpawnError> {
-        for _ in 0..self
-            .config
-            .max_peers
-            .saturating_sub(self.current_peers.len())
-        {
+        for _ in 0..self.config.count.saturating_sub(self.current_sources.len()) {
             match key_exchange_client_with_denied_servers(
                 self.config.addr.server_name.clone(),
                 self.config.addr.port,
                 &self.config.certificate_authorities,
-                self.current_peers.iter().map(|peer| peer.remote.clone()),
+                self.current_sources
+                    .iter()
+                    .map(|source| source.remote.clone()),
             )
             .await
             {
-                Ok(ke) if !self.contains_peer(&ke.remote) => {
+                Ok(ke) if !self.contains_source(&ke.remote) => {
                     if let Some(address) = resolve_addr((ke.remote.as_str(), ke.port)).await {
-                        let id = PeerId::new();
-                        self.current_peers.push(PoolPeer {
+                        let id = SourceId::new();
+                        self.current_sources.push(PoolSource {
                             id,
                             remote: ke.remote,
                         });
@@ -116,14 +116,14 @@ impl BasicSpawner for NtsPoolSpawner {
     }
 
     fn is_complete(&self) -> bool {
-        self.current_peers.len() >= self.config.max_peers
+        self.current_sources.len() >= self.config.count
     }
 
-    async fn handle_peer_removed(
+    async fn handle_source_removed(
         &mut self,
-        removed_peer: PeerRemovedEvent,
+        removed_source: SourceRemovedEvent,
     ) -> Result<(), NtsPoolSpawnError> {
-        self.current_peers.retain(|p| p.id != removed_peer.id);
+        self.current_sources.retain(|p| p.id != removed_source.id);
         Ok(())
     }
 
@@ -132,7 +132,7 @@ impl BasicSpawner for NtsPoolSpawner {
     }
 
     fn get_addr_description(&self) -> String {
-        format!("{} ({})", self.config.addr.deref(), self.config.max_peers)
+        format!("{} ({})", self.config.addr.deref(), self.config.count)
     }
 
     fn get_description(&self) -> &str {

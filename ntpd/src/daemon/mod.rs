@@ -2,9 +2,9 @@ mod clock;
 pub mod config;
 pub mod keyexchange;
 mod local_ip_provider;
+mod ntp_source;
 pub mod nts_key_provider;
 pub mod observer;
-mod peer;
 mod server;
 pub mod sockets;
 pub mod spawn;
@@ -16,7 +16,7 @@ use std::{error::Error, path::PathBuf};
 
 use ::tracing::info;
 pub use config::Config;
-pub use observer::{ObservablePeerState, ObservableState, ObservedPeerState};
+pub use observer::{ObservableSourceState, ObservableState, ObservedSourceState};
 pub use system::spawn;
 use tracing_subscriber::util::SubscriberInitExt;
 
@@ -116,7 +116,7 @@ async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
 
     observer::spawn(
         &config.observability,
-        channels.peer_snapshots_receiver,
+        channels.source_snapshots_receiver,
         channels.server_data_receiver,
         channels.system_snapshot_receiver,
     )

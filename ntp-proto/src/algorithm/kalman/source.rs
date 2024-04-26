@@ -76,14 +76,14 @@ use tracing::{debug, info, trace};
 
 use crate::{
     config::SourceDefaultsConfig,
-    peer::Measurement,
+    source::Measurement,
     time_types::{NtpDuration, NtpTimestamp, PollInterval, PollIntervalLimits},
 };
 
 use super::{
     config::AlgorithmConfig,
     matrix::{Matrix, Vector},
-    sqr, PeerSnapshot,
+    sqr, SourceSnapshot,
 };
 
 #[derive(Debug, Default, Copy, Clone)]
@@ -128,7 +128,7 @@ impl AveragingBuffer {
 }
 
 #[derive(Debug, Clone)]
-struct InitialPeerFilter {
+struct InitialSourceFilter {
     roundtriptime_stats: AveragingBuffer,
     init_offset: AveragingBuffer,
     last_measurement: Option<Measurement>,
@@ -136,14 +136,14 @@ struct InitialPeerFilter {
     samples: i32,
 }
 
-impl InitialPeerFilter {
+impl InitialSourceFilter {
     fn update(&mut self, measurement: Measurement) {
         self.roundtriptime_stats
             .update(measurement.delay.to_seconds());
         self.init_offset.update(measurement.offset.to_seconds());
         self.samples += 1;
         self.last_measurement = Some(measurement);
-        debug!(samples = self.samples, "Initial peer update");
+        debug!(samples = self.samples, "Initial source update");
     }
 
     fn process_offset_steering(&mut self, steer: f64) {
@@ -154,7 +154,7 @@ impl InitialPeerFilter {
 }
 
 #[derive(Debug, Clone)]
-struct PeerFilter {
+struct SourceFilter {
     state: Vector<2>,
     uncertainty: Matrix<2, 2>,
     clock_wander: f64,
@@ -174,7 +174,7 @@ struct PeerFilter {
     filter_time: NtpTimestamp,
 }
 
-impl PeerFilter {
+impl SourceFilter {
     /// Move the filter forward to reflect the situation at a new, later timestamp
     fn progress_filtertime(&mut self, time: NtpTimestamp) {
         debug_assert!(
@@ -247,7 +247,7 @@ impl PeerFilter {
     /// not so much that each individual poll message gives us very little new information.
     fn update_desired_poll(
         &mut self,
-        peer_defaults_config: &SourceDefaultsConfig,
+        source_defaults_config: &SourceDefaultsConfig,
         algo_config: &AlgorithmConfig,
         p: f64,
         weight: f64,
@@ -268,18 +268,18 @@ impl PeerFilter {
         }
         trace!(poll_score = self.poll_score, ?weight, "Poll desire update");
         if p <= algo_config.poll_interval_step_threshold {
-            self.desired_poll_interval = peer_defaults_config.poll_interval_limits.min;
+            self.desired_poll_interval = source_defaults_config.poll_interval_limits.min;
             self.poll_score = 0;
         } else if self.poll_score <= -algo_config.poll_interval_hysteresis {
             self.desired_poll_interval = self
                 .desired_poll_interval
-                .inc(peer_defaults_config.poll_interval_limits);
+                .inc(source_defaults_config.poll_interval_limits);
             self.poll_score = 0;
             info!(interval = ?self.desired_poll_interval, "Increased poll interval");
         } else if self.poll_score >= algo_config.poll_interval_hysteresis {
             self.desired_poll_interval = self
                 .desired_poll_interval
-                .dec(peer_defaults_config.poll_interval_limits);
+                .dec(source_defaults_config.poll_interval_limits);
             self.poll_score = 0;
             info!(interval = ?self.desired_poll_interval, "Decreased poll interval");
         }
@@ -325,7 +325,7 @@ impl PeerFilter {
     /// Update our estimates based on a new measurement.
     fn update(
         &mut self,
-        peer_defaults_config: &SourceDefaultsConfig,
+        source_defaults_config: &SourceDefaultsConfig,
         algo_config: &AlgorithmConfig,
         measurement: Measurement,
     ) -> bool {
@@ -359,7 +359,7 @@ impl PeerFilter {
 
         self.update_wander_estimate(algo_config, p, weight);
         self.update_desired_poll(
-            peer_defaults_config,
+            source_defaults_config,
             algo_config,
             p,
             weight,
@@ -367,7 +367,7 @@ impl PeerFilter {
         );
 
         debug!(
-            "peer offset {}±{}ms, freq {}±{}ppm",
+            "source offset {}±{}ms, freq {}±{}ppm",
             self.state.ventry(0) * 1000.,
             (self.uncertainty.entry(0, 0)
                 + sqr(self.last_measurement.root_dispersion.to_seconds()))
@@ -398,17 +398,17 @@ impl PeerFilter {
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
-enum PeerStateInner {
-    Initial(InitialPeerFilter),
-    Stable(PeerFilter),
+enum SourceStateInner {
+    Initial(InitialSourceFilter),
+    Stable(SourceFilter),
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct PeerState(PeerStateInner);
+pub(super) struct SourceState(SourceStateInner);
 
-impl PeerState {
+impl SourceState {
     pub fn new() -> Self {
-        PeerState(PeerStateInner::Initial(InitialPeerFilter {
+        SourceState(SourceStateInner::Initial(InitialSourceFilter {
             roundtriptime_stats: AveragingBuffer::default(),
             init_offset: AveragingBuffer::default(),
             last_measurement: None,
@@ -419,15 +419,15 @@ impl PeerState {
     // Returs whether the clock may need adjusting.
     pub fn update_self_using_measurement(
         &mut self,
-        peer_defaults_config: &SourceDefaultsConfig,
+        source_defaults_config: &SourceDefaultsConfig,
         algo_config: &AlgorithmConfig,
         measurement: Measurement,
     ) -> bool {
         match &mut self.0 {
-            PeerStateInner::Initial(filter) => {
+            SourceStateInner::Initial(filter) => {
                 filter.update(measurement);
                 if filter.samples == 8 {
-                    *self = PeerState(PeerStateInner::Stable(PeerFilter {
+                    *self = SourceState(SourceStateInner::Stable(SourceFilter {
                         state: Vector::new_vector([filter.init_offset.mean(), 0.]),
                         uncertainty: Matrix::new([
                             [filter.init_offset.variance(), 0.],
@@ -437,17 +437,17 @@ impl PeerState {
                         roundtriptime_stats: filter.roundtriptime_stats,
                         precision_score: 0,
                         poll_score: 0,
-                        desired_poll_interval: peer_defaults_config.initial_poll_interval,
+                        desired_poll_interval: source_defaults_config.initial_poll_interval,
                         last_measurement: measurement,
                         prev_was_outlier: false,
                         last_iter: measurement.localtime,
                         filter_time: measurement.localtime,
                     }));
-                    debug!("Initial peer measurements complete");
+                    debug!("Initial source measurements complete");
                 }
                 true
             }
-            PeerStateInner::Stable(filter) => {
+            SourceStateInner::Stable(filter) => {
                 // We check that the difference between the localtime and monotonic
                 // times of the measurement is in line with what would be expected
                 // from recent steering. This check needs to be done here since we
@@ -464,7 +464,7 @@ impl PeerState {
                     let msg = "Detected clock meddling. Has another process updated the clock?";
                     tracing::warn!(msg);
 
-                    *self = PeerState(PeerStateInner::Initial(InitialPeerFilter {
+                    *self = SourceState(SourceStateInner::Initial(InitialSourceFilter {
                         roundtriptime_stats: AveragingBuffer::default(),
                         init_offset: AveragingBuffer::default(),
                         last_measurement: None,
@@ -473,15 +473,15 @@ impl PeerState {
 
                     false
                 } else {
-                    filter.update(peer_defaults_config, algo_config, measurement)
+                    filter.update(source_defaults_config, algo_config, measurement)
                 }
             }
         }
     }
 
-    pub fn snapshot<Index: Copy>(&self, index: Index) -> Option<PeerSnapshot<Index>> {
+    pub fn snapshot<Index: Copy>(&self, index: Index) -> Option<SourceSnapshot<Index>> {
         match &self.0 {
-            PeerStateInner::Initial(InitialPeerFilter {
+            SourceStateInner::Initial(InitialSourceFilter {
                 roundtriptime_stats,
                 init_offset,
                 last_measurement: Some(last_measurement),
@@ -499,10 +499,10 @@ impl PeerState {
                             Some(v2)
                         }
                     })?;
-                Some(PeerSnapshot {
+                Some(SourceSnapshot {
                     index,
-                    peer_uncertainty: last_measurement.root_dispersion,
-                    peer_delay: last_measurement.root_delay,
+                    source_uncertainty: last_measurement.root_dispersion,
+                    source_delay: last_measurement.root_delay,
                     leap_indicator: last_measurement.leap,
                     last_update: last_measurement.localtime,
                     delay: max_roundtrip,
@@ -520,13 +520,13 @@ impl PeerState {
                     ]),
                 })
             }
-            PeerStateInner::Stable(filter) => Some(PeerSnapshot {
+            SourceStateInner::Stable(filter) => Some(SourceSnapshot {
                 index,
                 state: filter.state,
                 uncertainty: filter.uncertainty,
                 delay: filter.roundtriptime_stats.mean(),
-                peer_uncertainty: filter.last_measurement.root_dispersion,
-                peer_delay: filter.last_measurement.root_delay,
+                source_uncertainty: filter.last_measurement.root_dispersion,
+                source_delay: filter.last_measurement.root_delay,
                 leap_indicator: filter.last_measurement.leap,
                 last_update: filter.last_iter,
             }),
@@ -536,36 +536,36 @@ impl PeerState {
 
     pub fn get_filtertime(&self) -> Option<NtpTimestamp> {
         match &self.0 {
-            PeerStateInner::Initial(_) => None,
-            PeerStateInner::Stable(filter) => Some(filter.filter_time),
+            SourceStateInner::Initial(_) => None,
+            SourceStateInner::Stable(filter) => Some(filter.filter_time),
         }
     }
 
     pub fn get_desired_poll(&self, limits: &PollIntervalLimits) -> PollInterval {
         match &self.0 {
-            PeerStateInner::Initial(_) => limits.min,
-            PeerStateInner::Stable(filter) => filter.desired_poll_interval,
+            SourceStateInner::Initial(_) => limits.min,
+            SourceStateInner::Stable(filter) => filter.desired_poll_interval,
         }
     }
 
     pub fn progress_filtertime(&mut self, time: NtpTimestamp) {
         match &mut self.0 {
-            PeerStateInner::Initial(_) => {}
-            PeerStateInner::Stable(filter) => filter.progress_filtertime(time),
+            SourceStateInner::Initial(_) => {}
+            SourceStateInner::Stable(filter) => filter.progress_filtertime(time),
         }
     }
 
     pub fn process_offset_steering(&mut self, steer: f64) {
         match &mut self.0 {
-            PeerStateInner::Initial(filter) => filter.process_offset_steering(steer),
-            PeerStateInner::Stable(filter) => filter.process_offset_steering(steer),
+            SourceStateInner::Initial(filter) => filter.process_offset_steering(steer),
+            SourceStateInner::Stable(filter) => filter.process_offset_steering(steer),
         }
     }
 
     pub fn process_frequency_steering(&mut self, time: NtpTimestamp, steer: f64) {
         match &mut self.0 {
-            PeerStateInner::Initial(_) => {}
-            PeerStateInner::Stable(filter) => filter.process_frequency_steering(time, steer),
+            SourceStateInner::Initial(_) => {}
+            SourceStateInner::Stable(filter) => filter.process_frequency_steering(time, steer),
         }
     }
 }
@@ -583,7 +583,7 @@ mod tests {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
 
-        let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
+        let mut source = SourceState(SourceStateInner::Stable(SourceFilter {
             state: Vector::new_vector([20e-3, 0.]),
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
@@ -612,7 +612,7 @@ mod tests {
             last_iter: base,
             filter_time: base,
         }));
-        peer.update_self_using_measurement(
+        source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -630,9 +630,9 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(matches!(peer, PeerState(PeerStateInner::Initial(_))));
+        assert!(matches!(source, SourceState(SourceStateInner::Initial(_))));
 
-        let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
+        let mut source = SourceState(SourceStateInner::Stable(SourceFilter {
             state: Vector::new_vector([20e-3, 0.]),
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
@@ -661,8 +661,8 @@ mod tests {
             last_iter: base,
             filter_time: base,
         }));
-        peer.process_offset_steering(-1800.0);
-        peer.update_self_using_measurement(
+        source.process_offset_steering(-1800.0);
+        source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -680,9 +680,9 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(matches!(peer, PeerState(PeerStateInner::Stable(_))));
+        assert!(matches!(source, SourceState(SourceStateInner::Stable(_))));
 
-        let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
+        let mut source = SourceState(SourceStateInner::Stable(SourceFilter {
             state: Vector::new_vector([20e-3, 0.]),
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
@@ -711,8 +711,8 @@ mod tests {
             last_iter: base,
             filter_time: base,
         }));
-        peer.process_offset_steering(1800.0);
-        peer.update_self_using_measurement(
+        source.process_offset_steering(1800.0);
+        source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -730,14 +730,14 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(matches!(peer, PeerState(PeerStateInner::Stable(_))));
+        assert!(matches!(source, SourceState(SourceStateInner::Stable(_))));
     }
 
     #[test]
     fn test_offset_steering_and_measurements() {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
-        let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
+        let mut source = SourceState(SourceStateInner::Stable(SourceFilter {
             state: Vector::new_vector([20e-3, 0.]),
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
@@ -767,15 +767,15 @@ mod tests {
             filter_time: base,
         }));
 
-        peer.process_offset_steering(20e-3);
-        assert!(peer.snapshot(0_usize).unwrap().state.ventry(0).abs() < 1e-7);
+        source.process_offset_steering(20e-3);
+        assert!(source.snapshot(0_usize).unwrap().state.ventry(0).abs() < 1e-7);
 
         assert!(catch_unwind(
-            move || peer.progress_filtertime(base + NtpDuration::from_seconds(10e-3))
+            move || source.progress_filtertime(base + NtpDuration::from_seconds(10e-3))
         )
         .is_err());
 
-        let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
+        let mut source = SourceState(SourceStateInner::Stable(SourceFilter {
             state: Vector::new_vector([20e-3, 0.]),
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 0.0,
@@ -805,10 +805,10 @@ mod tests {
             filter_time: base,
         }));
 
-        peer.process_offset_steering(20e-3);
-        assert!(peer.snapshot(0_usize).unwrap().state.ventry(0).abs() < 1e-7);
+        source.process_offset_steering(20e-3);
+        assert!(source.snapshot(0_usize).unwrap().state.ventry(0).abs() < 1e-7);
 
-        peer.update_self_using_measurement(
+        source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -827,10 +827,10 @@ mod tests {
             },
         );
 
-        assert!(dbg!((peer.snapshot(0_usize).unwrap().state.ventry(0) - 20e-3).abs()) < 1e-7);
-        assert!((peer.snapshot(0_usize).unwrap().state.ventry(1) - 20e-6).abs() < 1e-7);
+        assert!(dbg!((source.snapshot(0_usize).unwrap().state.ventry(0) - 20e-3).abs()) < 1e-7);
+        assert!((source.snapshot(0_usize).unwrap().state.ventry(1) - 20e-6).abs() < 1e-7);
 
-        let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
+        let mut source = SourceState(SourceStateInner::Stable(SourceFilter {
             state: Vector::new_vector([-20e-3, 0.]),
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 0.0,
@@ -860,12 +860,12 @@ mod tests {
             filter_time: base,
         }));
 
-        peer.process_offset_steering(-20e-3);
-        assert!(peer.snapshot(0_usize).unwrap().state.ventry(0).abs() < 1e-7);
+        source.process_offset_steering(-20e-3);
+        assert!(source.snapshot(0_usize).unwrap().state.ventry(0).abs() < 1e-7);
 
-        peer.progress_filtertime(base - NtpDuration::from_seconds(10e-3)); // should succeed
+        source.progress_filtertime(base - NtpDuration::from_seconds(10e-3)); // should succeed
 
-        peer.update_self_using_measurement(
+        source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -884,15 +884,15 @@ mod tests {
             },
         );
 
-        assert!(dbg!((peer.snapshot(0_usize).unwrap().state.ventry(0) - -20e-3).abs()) < 1e-7);
-        assert!((peer.snapshot(0_usize).unwrap().state.ventry(1) - -20e-6).abs() < 1e-7);
+        assert!(dbg!((source.snapshot(0_usize).unwrap().state.ventry(0) - -20e-3).abs()) < 1e-7);
+        assert!((source.snapshot(0_usize).unwrap().state.ventry(1) - -20e-6).abs() < 1e-7);
     }
 
     #[test]
     fn test_freq_steering() {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
-        let mut peer = PeerFilter {
+        let mut source = SourceFilter {
             state: Vector::new_vector([0.0, 0.]),
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
@@ -922,16 +922,16 @@ mod tests {
             filter_time: base,
         };
 
-        peer.process_frequency_steering(base + NtpDuration::from_seconds(5.0), 200e-6);
-        assert!((peer.state.ventry(1) - -200e-6).abs() < 1e-10);
-        assert!(peer.state.ventry(0).abs() < 1e-8);
-        assert!((peer.last_measurement.offset.to_seconds() - 1e-3).abs() < 1e-8);
-        peer.process_frequency_steering(base + NtpDuration::from_seconds(10.0), -200e-6);
-        assert!(peer.state.ventry(1).abs() < 1e-10);
-        assert!((peer.state.ventry(0) - -1e-3).abs() < 1e-8);
-        assert!((peer.last_measurement.offset.to_seconds() - -1e-3).abs() < 1e-8);
+        source.process_frequency_steering(base + NtpDuration::from_seconds(5.0), 200e-6);
+        assert!((source.state.ventry(1) - -200e-6).abs() < 1e-10);
+        assert!(source.state.ventry(0).abs() < 1e-8);
+        assert!((source.last_measurement.offset.to_seconds() - 1e-3).abs() < 1e-8);
+        source.process_frequency_steering(base + NtpDuration::from_seconds(10.0), -200e-6);
+        assert!(source.state.ventry(1).abs() < 1e-10);
+        assert!((source.state.ventry(0) - -1e-3).abs() < 1e-8);
+        assert!((source.last_measurement.offset.to_seconds() - -1e-3).abs() < 1e-8);
 
-        let mut peer = PeerState(PeerStateInner::Stable(PeerFilter {
+        let mut source = SourceState(SourceStateInner::Stable(SourceFilter {
             state: Vector::new_vector([0.0, 0.]),
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
@@ -961,21 +961,21 @@ mod tests {
             filter_time: base,
         }));
 
-        peer.process_frequency_steering(base + NtpDuration::from_seconds(5.0), 200e-6);
-        assert!((peer.snapshot(0_usize).unwrap().state.ventry(1) - -200e-6).abs() < 1e-10);
-        assert!(peer.snapshot(0_usize).unwrap().state.ventry(0).abs() < 1e-8);
-        peer.process_frequency_steering(base + NtpDuration::from_seconds(10.0), -200e-6);
-        assert!(peer.snapshot(0_usize).unwrap().state.ventry(1).abs() < 1e-10);
-        assert!((peer.snapshot(0_usize).unwrap().state.ventry(0) - -1e-3).abs() < 1e-8);
+        source.process_frequency_steering(base + NtpDuration::from_seconds(5.0), 200e-6);
+        assert!((source.snapshot(0_usize).unwrap().state.ventry(1) - -200e-6).abs() < 1e-10);
+        assert!(source.snapshot(0_usize).unwrap().state.ventry(0).abs() < 1e-8);
+        source.process_frequency_steering(base + NtpDuration::from_seconds(10.0), -200e-6);
+        assert!(source.snapshot(0_usize).unwrap().state.ventry(1).abs() < 1e-10);
+        assert!((source.snapshot(0_usize).unwrap().state.ventry(0) - -1e-3).abs() < 1e-8);
     }
 
     #[test]
     fn test_init() {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
-        let mut peer = PeerState::new();
-        assert!(peer.snapshot(0_usize).is_none());
-        peer.update_self_using_measurement(
+        let mut source = SourceState::new();
+        assert!(source.snapshot(0_usize).is_none());
+        source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -993,8 +993,8 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
-        peer.update_self_using_measurement(
+        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -1012,8 +1012,8 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
-        peer.update_self_using_measurement(
+        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -1031,8 +1031,8 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
-        peer.update_self_using_measurement(
+        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -1050,8 +1050,8 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
-        peer.update_self_using_measurement(
+        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -1069,8 +1069,8 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
-        peer.update_self_using_measurement(
+        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -1088,8 +1088,8 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
-        peer.update_self_using_measurement(
+        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -1107,8 +1107,8 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
-        peer.update_self_using_measurement(
+        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -1126,17 +1126,17 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!((peer.snapshot(0_usize).unwrap().state.ventry(0) - 3.5e-3).abs() < 1e-7);
-        assert!((peer.snapshot(0_usize).unwrap().uncertainty.entry(0, 0) - 1e-6) > 0.);
+        assert!((source.snapshot(0_usize).unwrap().state.ventry(0) - 3.5e-3).abs() < 1e-7);
+        assert!((source.snapshot(0_usize).unwrap().uncertainty.entry(0, 0) - 1e-6) > 0.);
     }
 
     #[test]
     fn test_steer_during_init() {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
-        let mut peer = PeerState::new();
-        assert!(peer.snapshot(0_usize).is_none());
-        peer.update_self_using_measurement(
+        let mut source = SourceState::new();
+        assert!(source.snapshot(0_usize).is_none());
+        source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -1154,8 +1154,8 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
-        peer.update_self_using_measurement(
+        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -1173,8 +1173,8 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
-        peer.update_self_using_measurement(
+        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -1192,8 +1192,8 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
-        peer.update_self_using_measurement(
+        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -1211,9 +1211,9 @@ mod tests {
                 precision: 0,
             },
         );
-        peer.process_offset_steering(4e-3);
-        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
-        peer.update_self_using_measurement(
+        source.process_offset_steering(4e-3);
+        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -1231,8 +1231,8 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
-        peer.update_self_using_measurement(
+        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -1250,8 +1250,8 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
-        peer.update_self_using_measurement(
+        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -1269,8 +1269,8 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(peer.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
-        peer.update_self_using_measurement(
+        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -1288,8 +1288,8 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!((peer.snapshot(0_usize).unwrap().state.ventry(0) - 3.5e-3).abs() < 1e-7);
-        assert!((peer.snapshot(0_usize).unwrap().uncertainty.entry(0, 0) - 1e-6) > 0.);
+        assert!((source.snapshot(0_usize).unwrap().state.ventry(0) - 3.5e-3).abs() < 1e-7);
+        assert!((source.snapshot(0_usize).unwrap().uncertainty.entry(0, 0) - 1e-6) > 0.);
     }
 
     #[test]
@@ -1302,7 +1302,7 @@ mod tests {
 
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
-        let mut peer = PeerFilter {
+        let mut source = SourceFilter {
             state: Vector::new_vector([0.0, 0.]),
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
@@ -1332,89 +1332,89 @@ mod tests {
             filter_time: base,
         };
 
-        let baseinterval = peer.desired_poll_interval.as_duration().to_seconds();
-        let pollup = peer
+        let baseinterval = source.desired_poll_interval.as_duration().to_seconds();
+        let pollup = source
             .desired_poll_interval
             .inc(PollIntervalLimits::default());
-        peer.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval * 2.);
-        assert_eq!(peer.poll_score, 0);
+        source.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval * 2.);
+        assert_eq!(source.poll_score, 0);
         assert_eq!(
-            peer.desired_poll_interval,
+            source.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        peer.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval * 2.);
-        assert_eq!(peer.poll_score, -1);
+        source.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval * 2.);
+        assert_eq!(source.poll_score, -1);
         assert_eq!(
-            peer.desired_poll_interval,
+            source.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        peer.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval * 2.);
-        assert_eq!(peer.poll_score, 0);
-        assert_eq!(peer.desired_poll_interval, pollup);
-        peer.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval * 3.);
-        assert_eq!(peer.poll_score, 0);
-        assert_eq!(peer.desired_poll_interval, pollup);
-        peer.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval);
-        assert_eq!(peer.poll_score, 0);
-        assert_eq!(peer.desired_poll_interval, pollup);
-        peer.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval * 3.);
-        assert_eq!(peer.poll_score, 0);
+        source.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval * 2.);
+        assert_eq!(source.poll_score, 0);
+        assert_eq!(source.desired_poll_interval, pollup);
+        source.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval * 3.);
+        assert_eq!(source.poll_score, 0);
+        assert_eq!(source.desired_poll_interval, pollup);
+        source.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval);
+        assert_eq!(source.poll_score, 0);
+        assert_eq!(source.desired_poll_interval, pollup);
+        source.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval * 3.);
+        assert_eq!(source.poll_score, 0);
         assert_eq!(
-            peer.desired_poll_interval,
+            source.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        peer.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval * 2.);
-        assert_eq!(peer.poll_score, -1);
+        source.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval * 2.);
+        assert_eq!(source.poll_score, -1);
         assert_eq!(
-            peer.desired_poll_interval,
+            source.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        peer.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval * 2.);
-        assert_eq!(peer.poll_score, 0);
-        assert_eq!(peer.desired_poll_interval, pollup);
-        peer.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval);
-        assert_eq!(peer.poll_score, 1);
-        assert_eq!(peer.desired_poll_interval, pollup);
-        peer.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval);
-        assert_eq!(peer.poll_score, 0);
+        source.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval * 2.);
+        assert_eq!(source.poll_score, 0);
+        assert_eq!(source.desired_poll_interval, pollup);
+        source.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval);
+        assert_eq!(source.poll_score, 1);
+        assert_eq!(source.desired_poll_interval, pollup);
+        source.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval);
+        assert_eq!(source.poll_score, 0);
         assert_eq!(
-            peer.desired_poll_interval,
+            source.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        peer.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval);
-        assert_eq!(peer.poll_score, -1);
+        source.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval);
+        assert_eq!(source.poll_score, -1);
         assert_eq!(
-            peer.desired_poll_interval,
+            source.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        peer.update_desired_poll(
+        source.update_desired_poll(
             &config,
             &algo_config,
             1.0,
             (algo_config.poll_interval_high_weight + algo_config.poll_interval_low_weight) / 2.,
             baseinterval,
         );
-        assert_eq!(peer.poll_score, 0);
+        assert_eq!(source.poll_score, 0);
         assert_eq!(
-            peer.desired_poll_interval,
+            source.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        peer.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval);
-        assert_eq!(peer.poll_score, 1);
+        source.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval);
+        assert_eq!(source.poll_score, 1);
         assert_eq!(
-            peer.desired_poll_interval,
+            source.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        peer.update_desired_poll(
+        source.update_desired_poll(
             &config,
             &algo_config,
             1.0,
             (algo_config.poll_interval_high_weight + algo_config.poll_interval_low_weight) / 2.,
             baseinterval,
         );
-        assert_eq!(peer.poll_score, 0);
+        assert_eq!(source.poll_score, 0);
         assert_eq!(
-            peer.desired_poll_interval,
+            source.desired_poll_interval,
             PollIntervalLimits::default().min
         );
     }
@@ -1428,7 +1428,7 @@ mod tests {
 
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
-        let mut peer = PeerFilter {
+        let mut source = SourceFilter {
             state: Vector::new_vector([0.0, 0.]),
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
@@ -1458,40 +1458,40 @@ mod tests {
             filter_time: base,
         };
 
-        peer.update_wander_estimate(&algo_config, 1.0, 0.0);
-        assert_eq!(peer.precision_score, 0);
-        assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
-        peer.update_wander_estimate(&algo_config, 1.0, 1.0);
-        assert_eq!(peer.precision_score, -1);
-        assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
-        peer.update_wander_estimate(&algo_config, 1.0, 1.0);
-        assert_eq!(peer.precision_score, 0);
-        assert!(dbg!((peer.clock_wander - 0.25e-8).abs()) < 1e-12);
-        peer.update_wander_estimate(&algo_config, 0.0, 0.0);
-        assert_eq!(peer.precision_score, 1);
-        assert!(dbg!((peer.clock_wander - 0.25e-8).abs()) < 1e-12);
-        peer.update_wander_estimate(&algo_config, 0.0, 1.0);
-        assert_eq!(peer.precision_score, 0);
-        assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
-        peer.update_wander_estimate(&algo_config, 0.0, 0.0);
-        assert_eq!(peer.precision_score, 1);
-        assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
-        peer.update_wander_estimate(
+        source.update_wander_estimate(&algo_config, 1.0, 0.0);
+        assert_eq!(source.precision_score, 0);
+        assert!((source.clock_wander - 1e-8).abs() < 1e-12);
+        source.update_wander_estimate(&algo_config, 1.0, 1.0);
+        assert_eq!(source.precision_score, -1);
+        assert!((source.clock_wander - 1e-8).abs() < 1e-12);
+        source.update_wander_estimate(&algo_config, 1.0, 1.0);
+        assert_eq!(source.precision_score, 0);
+        assert!(dbg!((source.clock_wander - 0.25e-8).abs()) < 1e-12);
+        source.update_wander_estimate(&algo_config, 0.0, 0.0);
+        assert_eq!(source.precision_score, 1);
+        assert!(dbg!((source.clock_wander - 0.25e-8).abs()) < 1e-12);
+        source.update_wander_estimate(&algo_config, 0.0, 1.0);
+        assert_eq!(source.precision_score, 0);
+        assert!((source.clock_wander - 1e-8).abs() < 1e-12);
+        source.update_wander_estimate(&algo_config, 0.0, 0.0);
+        assert_eq!(source.precision_score, 1);
+        assert!((source.clock_wander - 1e-8).abs() < 1e-12);
+        source.update_wander_estimate(
             &algo_config,
             (algo_config.precision_high_probability + algo_config.precision_low_probability) / 2.0,
             0.0,
         );
-        assert_eq!(peer.precision_score, 0);
-        assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
-        peer.update_wander_estimate(&algo_config, 1.0, 1.0);
-        assert_eq!(peer.precision_score, -1);
-        assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
-        peer.update_wander_estimate(
+        assert_eq!(source.precision_score, 0);
+        assert!((source.clock_wander - 1e-8).abs() < 1e-12);
+        source.update_wander_estimate(&algo_config, 1.0, 1.0);
+        assert_eq!(source.precision_score, -1);
+        assert!((source.clock_wander - 1e-8).abs() < 1e-12);
+        source.update_wander_estimate(
             &algo_config,
             (algo_config.precision_high_probability + algo_config.precision_low_probability) / 2.0,
             0.0,
         );
-        assert_eq!(peer.precision_score, 0);
-        assert!((peer.clock_wander - 1e-8).abs() < 1e-12);
+        assert_eq!(source.precision_score, 0);
+        assert!((source.clock_wander - 1e-8).abs() < 1e-12);
     }
 }

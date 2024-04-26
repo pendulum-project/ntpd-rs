@@ -46,10 +46,10 @@ main NTP daemon. Running it from the command line to test it should provide outp
 > sudo target/release/ntp-daemon -c pkg/common/ntp.toml.default
 2023-09-04T12:01:44.055104Z  WARN ntpd::daemon::observer: Abnormal termination of the state observer: Could not create observe socket at "/run/ntpd-rs/observe" because its parent directory does not exist
 2023-09-04T12:01:44.055183Z  WARN ntpd::daemon::observer: The state observer will not be available
-2023-09-04T12:01:44.071353Z  INFO ntpd::daemon::system: new peer source_id=PeerId(1) addr=185.172.91.110:123 spawner=SpawnerId(1)
-2023-09-04T12:01:44.071735Z  INFO ntpd::daemon::system: new peer source_id=PeerId(2) addr=162.159.200.1:123 spawner=SpawnerId(1)
-2023-09-04T12:01:44.071944Z  INFO ntpd::daemon::system: new peer source_id=PeerId(3) addr=45.138.55.62:123 spawner=SpawnerId(1)
-2023-09-04T12:01:44.072150Z  INFO ntpd::daemon::system: new peer source_id=PeerId(4) addr=213.154.236.182:123 spawner=SpawnerId(1)
+2023-09-04T12:01:44.071353Z  INFO ntpd::daemon::system: new source source_id=SourceId(1) addr=185.172.91.110:123 spawner=SpawnerId(1)
+2023-09-04T12:01:44.071735Z  INFO ntpd::daemon::system: new source source_id=SourceId(2) addr=162.159.200.1:123 spawner=SpawnerId(1)
+2023-09-04T12:01:44.071944Z  INFO ntpd::daemon::system: new source source_id=SourceId(3) addr=45.138.55.62:123 spawner=SpawnerId(1)
+2023-09-04T12:01:44.072150Z  INFO ntpd::daemon::system: new source source_id=SourceId(4) addr=213.154.236.182:123 spawner=SpawnerId(1)
 2023-09-04T12:01:44.084626Z  INFO ntp_proto::algorithm::kalman: No concensus cluster found
 2023-09-04T12:01:44.085422Z  INFO ntp_proto::algorithm::kalman: No concensus cluster found
 2023-09-04T12:01:44.086879Z  INFO ntp_proto::algorithm::kalman: Offset: 2.3686082232975885+-72.6249392570874ms, frequency: 0+-5773502.691896258ppm
