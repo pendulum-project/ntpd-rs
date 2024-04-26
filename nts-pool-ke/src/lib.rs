@@ -193,7 +193,7 @@ async fn pool_key_exchange_server(
     info!("listening on '{:?}'", listener.local_addr());
 
     loop {
-        let (client_stream, peer_address) = listener.accept().await?;
+        let (client_stream, source_address) = listener.accept().await?;
         let client_to_pool_config = config.clone();
         let servers = servers.clone();
         let certificate_chain = certificate_chain.clone();
@@ -212,9 +212,9 @@ async fn pool_key_exchange_server(
         tokio::spawn(async move {
             let timeout = std::time::Duration::from_millis(timeout_ms);
             match tokio::time::timeout(timeout, fut).await {
-                Err(_) => ::tracing::debug!(?peer_address, "NTS Pool KE timed out"),
-                Ok(Err(err)) => ::tracing::debug!(?err, ?peer_address, "NTS Pool KE failed"),
-                Ok(Ok(())) => ::tracing::debug!(?peer_address, "NTS Pool KE completed"),
+                Err(_) => ::tracing::debug!(?source_address, "NTS Pool KE timed out"),
+                Ok(Err(err)) => ::tracing::debug!(?err, ?source_address, "NTS Pool KE failed"),
+                Ok(Ok(())) => ::tracing::debug!(?source_address, "NTS Pool KE completed"),
             }
         });
     }

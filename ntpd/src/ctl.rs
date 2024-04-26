@@ -216,10 +216,10 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
 
     match print {
         Format::Plain => {
-            // Sort peers by address and then id (to deal with pools), servers just by address
+            // Sort sources by address and then id (to deal with pools), servers just by address
             output.sources.sort_by_key(|p| match p {
-                crate::daemon::ObservablePeerState::Nothing => None,
-                crate::daemon::ObservablePeerState::Observable(s) => Some((s.name.clone(), s.id)),
+                crate::daemon::ObservableSourceState::Nothing => None,
+                crate::daemon::ObservableSourceState::Observable(s) => Some((s.name.clone(), s.id)),
             });
             output.servers.sort_by_key(|s| s.address);
 
@@ -241,11 +241,11 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
             println!("Stratum: {}", output.system.stratum);
             println!();
             println!("Sources:");
-            for peer in &output.sources {
-                match peer {
-                    crate::daemon::ObservablePeerState::Nothing => {}
-                    crate::daemon::ObservablePeerState::Observable(
-                        crate::daemon::ObservedPeerState {
+            for source in &output.sources {
+                match source {
+                    crate::daemon::ObservableSourceState::Nothing => {}
+                    crate::daemon::ObservableSourceState::Observable(
+                        crate::daemon::ObservedSourceState {
                             timedata,
                             unanswered_polls,
                             poll_interval,
@@ -277,10 +277,10 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
             let in_startup = output
                 .sources
                 .iter()
-                .filter(|peer| matches!(peer, crate::daemon::ObservablePeerState::Nothing))
+                .filter(|source| matches!(source, crate::daemon::ObservableSourceState::Nothing))
                 .count();
             match in_startup {
-                0 => {} // no peers in startup, so no line for that
+                0 => {} // no sources in startup, so no line for that
                 1 => println!("1 source still in startup"),
                 _ => println!("{} sources still in startup", in_startup),
             }
@@ -345,7 +345,7 @@ mod tests {
         let permissions: std::fs::Permissions =
             PermissionsExt::from_mode(config.observation_permissions);
 
-        let peers_listener = create_unix_socket_with_permissions(&path, permissions)?;
+        let sources_listener = create_unix_socket_with_permissions(&path, permissions)?;
 
         let fut = super::print_state(command, path);
         let handle = tokio::spawn(fut);
@@ -357,7 +357,7 @@ mod tests {
             servers: vec![],
         };
 
-        let (mut stream, _addr) = peers_listener.accept().await?;
+        let (mut stream, _addr) = sources_listener.accept().await?;
         write_json(&mut stream, &value).await?;
 
         let result = handle.await.unwrap();
@@ -366,7 +366,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_control_socket_peer() -> std::io::Result<()> {
+    async fn test_control_socket_source() -> std::io::Result<()> {
         // be careful with copying: tests run concurrently and should use a unique socket name!
         let result = write_socket_helper(Format::Plain, "ntp-test-stream-6").await?;
 
@@ -392,7 +392,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_control_socket_peer_invalid_input() -> std::io::Result<()> {
+    async fn test_control_socket_source_invalid_input() -> std::io::Result<()> {
         let config: ObservabilityConfig = Default::default();
 
         // be careful with copying: tests run concurrently and should use a unique socket name!
@@ -404,14 +404,14 @@ mod tests {
         let permissions: std::fs::Permissions =
             PermissionsExt::from_mode(config.observation_permissions);
 
-        let peers_listener = create_unix_socket_with_permissions(&path, permissions)?;
+        let sources_listener = create_unix_socket_with_permissions(&path, permissions)?;
 
         let fut = super::print_state(Format::Plain, path);
         let handle = tokio::spawn(fut);
 
         let value = 42u32;
 
-        let (mut stream, _addr) = peers_listener.accept().await?;
+        let (mut stream, _addr) = sources_listener.accept().await?;
         write_json(&mut stream, &value).await?;
 
         let result = handle.await.unwrap();

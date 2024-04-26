@@ -7,16 +7,16 @@ use std::{fmt::Debug, hash::Hash};
 
 #[cfg(feature = "ntpv5")]
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
-use crate::peer::PeerUpdate;
+use crate::source::NtpSourceUpdate;
 #[cfg(feature = "ntpv5")]
-use crate::peer::ProtocolVersion;
+use crate::source::ProtocolVersion;
 use crate::{
-    algorithm::{KalmanClockController, ObservablePeerTimedata, StateUpdate, TimeSyncController},
+    algorithm::{KalmanClockController, ObservableSourceTimedata, StateUpdate, TimeSyncController},
     clock::NtpClock,
     config::{SourceDefaultsConfig, SynchronizationConfig},
     identifiers::ReferenceId,
     packet::NtpLeapIndicator,
-    peer::PeerSnapshot,
+    source::NtpSourceSnapshot,
     time_types::{NtpDuration, PollInterval},
 };
 
@@ -77,21 +77,21 @@ impl SystemSnapshot {
         self.accumulated_steps_threshold = config.accumulated_step_panic_threshold;
     }
 
-    pub fn update_used_peers(&mut self, used_peers: impl Iterator<Item = PeerSnapshot>) {
-        let mut used_peers = used_peers.peekable();
-        if let Some(system_peer_snapshot) = used_peers.peek() {
-            self.stratum = system_peer_snapshot.stratum.saturating_add(1);
-            self.reference_id = system_peer_snapshot.source_id;
+    pub fn update_used_sources(&mut self, used_sources: impl Iterator<Item = NtpSourceSnapshot>) {
+        let mut used_sources = used_sources.peekable();
+        if let Some(system_source_snapshot) = used_sources.peek() {
+            self.stratum = system_source_snapshot.stratum.saturating_add(1);
+            self.reference_id = system_source_snapshot.source_id;
         }
 
         #[cfg(feature = "ntpv5")]
         {
             self.bloom_filter = BloomFilter::new();
-            for peer in used_peers {
-                if let Some(bf) = &peer.bloom_filter {
+            for source in used_sources {
+                if let Some(bf) = &source.bloom_filter {
                     self.bloom_filter.add(bf);
-                } else if let ProtocolVersion::V5 = peer.protocol_version {
-                    tracing::warn!("Using NTPv5 peer without a bloom filter!");
+                } else if let ProtocolVersion::V5 = source.protocol_version {
+                    tracing::warn!("Using NTPv5 source without a bloom filter!");
                 }
             }
             self.bloom_filter.add_id(&self.server_id);
@@ -114,23 +114,23 @@ impl Default for SystemSnapshot {
     }
 }
 
-pub struct System<C: NtpClock, PeerId: Hash + Eq + Copy + Debug> {
+pub struct System<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> {
     synchronization_config: SynchronizationConfig,
-    peer_defaults_config: SourceDefaultsConfig,
+    source_defaults_config: SourceDefaultsConfig,
     system: SystemSnapshot,
     ip_list: Arc<[IpAddr]>,
 
-    peers: HashMap<PeerId, Option<PeerSnapshot>>,
+    sources: HashMap<SourceId, Option<NtpSourceSnapshot>>,
 
     clock: C,
-    controller: Option<KalmanClockController<C, PeerId>>,
+    controller: Option<KalmanClockController<C, SourceId>>,
 }
 
-impl<C: NtpClock, PeerId: Hash + Eq + Copy + Debug> System<C, PeerId> {
+impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
     pub fn new(
         clock: C,
         synchronization_config: SynchronizationConfig,
-        peer_defaults_config: SourceDefaultsConfig,
+        source_defaults_config: SourceDefaultsConfig,
         ip_list: Arc<[IpAddr]>,
     ) -> Self {
         // Setup system snapshot
@@ -146,10 +146,10 @@ impl<C: NtpClock, PeerId: Hash + Eq + Copy + Debug> System<C, PeerId> {
 
         System {
             synchronization_config,
-            peer_defaults_config,
+            source_defaults_config,
             system,
             ip_list,
-            peers: Default::default(),
+            sources: Default::default(),
             clock,
             controller: None,
         }
@@ -159,35 +159,35 @@ impl<C: NtpClock, PeerId: Hash + Eq + Copy + Debug> System<C, PeerId> {
         self.system
     }
 
-    fn clock_controller(&mut self) -> Result<&mut KalmanClockController<C, PeerId>, C::Error> {
+    fn clock_controller(&mut self) -> Result<&mut KalmanClockController<C, SourceId>, C::Error> {
         let controller = match self.controller.take() {
             Some(controller) => controller,
             None => KalmanClockController::new(
                 self.clock.clone(),
                 self.synchronization_config,
-                self.peer_defaults_config,
+                self.source_defaults_config,
                 self.synchronization_config.algorithm,
             )?,
         };
         Ok(self.controller.insert(controller))
     }
 
-    pub fn handle_peer_create(&mut self, id: PeerId) -> Result<(), C::Error> {
-        self.clock_controller()?.peer_add(id);
-        self.peers.insert(id, None);
+    pub fn handle_source_create(&mut self, id: SourceId) -> Result<(), C::Error> {
+        self.clock_controller()?.add_source(id);
+        self.sources.insert(id, None);
         Ok(())
     }
 
-    pub fn handle_peer_remove(&mut self, id: PeerId) -> Result<(), C::Error> {
-        self.clock_controller()?.peer_remove(id);
-        self.peers.remove(&id);
+    pub fn handle_source_remove(&mut self, id: SourceId) -> Result<(), C::Error> {
+        self.clock_controller()?.remove_source(id);
+        self.sources.remove(&id);
         Ok(())
     }
 
-    pub fn handle_peer_update(
+    pub fn handle_source_update(
         &mut self,
-        id: PeerId,
-        update: PeerUpdate,
+        id: SourceId,
+        update: NtpSourceUpdate,
     ) -> Result<Option<Duration>, C::Error> {
         let usable = update
             .snapshot
@@ -197,23 +197,24 @@ impl<C: NtpClock, PeerId: Hash + Eq + Copy + Debug> System<C, PeerId> {
                 &self.system,
             )
             .is_ok();
-        self.clock_controller()?.peer_update(id, usable);
-        *self.peers.get_mut(&id).unwrap() = Some(update.snapshot);
+        self.clock_controller()?.source_update(id, usable);
+        *self.sources.get_mut(&id).unwrap() = Some(update.snapshot);
         if let Some(measurement) = update.measurement {
-            let update = self.clock_controller()?.peer_measurement(id, measurement);
+            let update = self.clock_controller()?.source_measurement(id, measurement);
             Ok(self.handle_algorithm_state_update(update))
         } else {
             Ok(None)
         }
     }
 
-    fn handle_algorithm_state_update(&mut self, update: StateUpdate<PeerId>) -> Option<Duration> {
-        if let Some(ref used_peers) = update.used_peers {
-            self.system.update_used_peers(used_peers.iter().map(|v| {
-                self.peers.get(v).and_then(|snapshot| *snapshot).expect(
-                    "Critical error: Peer used for synchronization that is not known to system",
+    fn handle_algorithm_state_update(&mut self, update: StateUpdate<SourceId>) -> Option<Duration> {
+        if let Some(ref used_sources) = update.used_sources {
+            self.system
+                .update_used_sources(used_sources.iter().map(|v| {
+                    self.sources.get(v).and_then(|snapshot| *snapshot).expect(
+                    "Critical error: Source used for synchronization that is not known to system",
                 )
-            }));
+                }));
         }
         if let Some(time_snapshot) = update.time_snapshot {
             self.system
@@ -233,13 +234,16 @@ impl<C: NtpClock, PeerId: Hash + Eq + Copy + Debug> System<C, PeerId> {
         }
     }
 
-    pub fn observe_peer(&self, id: PeerId) -> Option<(PeerSnapshot, ObservablePeerTimedata)> {
+    pub fn observe_source(
+        &self,
+        id: SourceId,
+    ) -> Option<(NtpSourceSnapshot, ObservableSourceTimedata)> {
         if let Some(ref controller) = self.controller {
-            self.peers
+            self.sources
                 .get(&id)
                 .copied()
                 .flatten()
-                .and_then(|v| controller.peer_snapshot(id).map(|s| (v, s)))
+                .and_then(|v| controller.source_snapshot(id).map(|s| (v, s)))
         } else {
             None
         }
@@ -259,23 +263,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_empty_peer_update() {
+    fn test_empty_source_update() {
         let mut system = SystemSnapshot::default();
 
         // Should do nothing
-        system.update_used_peers(std::iter::empty());
+        system.update_used_sources(std::iter::empty());
 
         assert_eq!(system.stratum, 16);
         assert_eq!(system.reference_id, ReferenceId::NONE);
     }
 
     #[test]
-    fn test_peer_update() {
+    fn test_source_update() {
         let mut system = SystemSnapshot::default();
 
-        system.update_used_peers(
+        system.update_used_sources(
             vec![
-                PeerSnapshot {
+                NtpSourceSnapshot {
                     source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
                     source_id: ReferenceId::KISS_DENY,
                     poll_interval: PollIntervalLimits::default().max,
@@ -286,7 +290,7 @@ mod tests {
                     #[cfg(feature = "ntpv5")]
                     bloom_filter: None,
                 },
-                PeerSnapshot {
+                NtpSourceSnapshot {
                     source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
                     source_id: ReferenceId::KISS_RATE,
                     poll_interval: PollIntervalLimits::default().max,

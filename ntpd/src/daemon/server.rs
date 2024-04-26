@@ -180,14 +180,14 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     match recv_res {
                         Ok(RecvResult {
                             bytes_read: length,
-                            remote_addr: peer_addr,
+                            remote_addr: source_addr,
                             timestamp: Some(timestamp),
                         }) => {
                             let mut send_buf = [0u8; MAX_PACKET_SIZE];
-                            match self.server.handle(peer_addr.ip(), convert_net_timestamp(timestamp), &buf[..length], &mut send_buf[..length], &mut self.stats) {
+                            match self.server.handle(source_addr.ip(), convert_net_timestamp(timestamp), &buf[..length], &mut send_buf[..length], &mut self.stats) {
                                 ntp_proto::ServerAction::Ignore => { /* explicitly do nothing */ },
                                 ntp_proto::ServerAction::Respond { message } => {
-                                    if let Err(send_err) = socket.send_to(message, peer_addr).await {
+                                    if let Err(send_err) = socket.send_to(message, source_addr).await {
                                         self.stats.response_send_errors.inc();
                                         debug!(error=?send_err, "Could not send response packet");
                                     }
@@ -251,15 +251,15 @@ mod tests {
         }
 
         fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
-            panic!("Shouldn't be called by peer");
+            panic!("Shouldn't be called by source");
         }
 
         fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
-            panic!("Shouldn't be called by peer");
+            panic!("Shouldn't be called by source");
         }
 
         fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
+            panic!("Shouldn't be called by source");
         }
 
         fn error_estimate_update(
@@ -267,11 +267,11 @@ mod tests {
             _est_error: NtpDuration,
             _max_error: NtpDuration,
         ) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
+            panic!("Shouldn't be called by source");
         }
 
         fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
+            panic!("Shouldn't be called by source");
         }
     }
 

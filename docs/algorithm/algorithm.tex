@@ -350,7 +350,7 @@ There is one final thing we haven't touched on yet, and that is how ntpd-rs choo
 
 For this, first a desired poll interval is selected for each time source such that the measurement noise is between 40 and 60 percent of the total uncertainty on the difference between prediction and measurement. This is again done with a counter mechanism similar to the process noise estimation. This time, any measurement for which less than 40 percent of the difference uncertainty is measurement is a vote for a longer poll interval, anything where it is more than 60 percent is a vote for a shorter poll interval and anything in between pushes the counter back to 0.
 
-Then the overall desired poll interval is the minimum of the desired poll intervals of all the time sources. This is currently done as a global indicator primarily because of limitations in the architecture of ntpd-rs. In the future, this may change to a desired poll interval that is different for each peer.
+Then the overall desired poll interval is the minimum of the desired poll intervals of all the time sources. This is currently done as a global indicator primarily because of limitations in the architecture of ntpd-rs. In the future, this may change to a desired poll interval that is different for each source.
 
 Note also that, as in the case of process noise estimation, the specific numbers mentioned above are configurable. The values above are the current default values used by ntpd-rs.
 

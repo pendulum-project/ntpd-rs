@@ -5,12 +5,12 @@ use std::ops::Deref;
 use tokio::sync::mpsc;
 use tracing::warn;
 
-use super::super::{config::NtsPeerConfig, keyexchange::key_exchange_client};
+use super::super::{config::NtsSourceConfig, keyexchange::key_exchange_client};
 
-use super::{BasicSpawner, PeerId, PeerRemovedEvent, SpawnAction, SpawnEvent, SpawnerId};
+use super::{BasicSpawner, SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, SpawnerId};
 
 pub struct NtsSpawner {
-    config: NtsPeerConfig,
+    config: NtsSourceConfig,
     id: SpawnerId,
     has_spawned: bool,
 }
@@ -46,14 +46,14 @@ pub(super) async fn resolve_addr(address: (&str, u16)) -> Option<SocketAddr> {
             }
         },
         Err(e) => {
-            warn!(error = ?e, "error while resolving peer address, retrying");
+            warn!(error = ?e, "error while resolving source address, retrying");
             None
         }
     }
 }
 
 impl NtsSpawner {
-    pub fn new(config: NtsPeerConfig) -> NtsSpawner {
+    pub fn new(config: NtsSourceConfig) -> NtsSpawner {
         NtsSpawner {
             config,
             id: Default::default(),
@@ -83,7 +83,7 @@ impl BasicSpawner for NtsSpawner {
                         .send(SpawnEvent::new(
                             self.id,
                             SpawnAction::create(
-                                PeerId::new(),
+                                SourceId::new(),
                                 address,
                                 self.config.address.deref().clone(),
                                 ke.protocol_version,
@@ -106,9 +106,9 @@ impl BasicSpawner for NtsSpawner {
         self.has_spawned
     }
 
-    async fn handle_peer_removed(
+    async fn handle_source_removed(
         &mut self,
-        _removed_peer: PeerRemovedEvent,
+        _removed_source: SourceRemovedEvent,
     ) -> Result<(), NtsSpawnError> {
         self.has_spawned = false;
         Ok(())

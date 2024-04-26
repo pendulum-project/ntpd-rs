@@ -271,7 +271,7 @@ impl<C: NtpClock> Server<C> {
 
 /// A size-bounded cache where each entry is timestamped.
 ///
-/// The planned use is in rate limiting: we keep track of when a peer last checked in. If it checks
+/// The planned use is in rate limiting: we keep track of when a source last checked in. If it checks
 /// in too often, we issue a rate limiting KISS code.
 ///
 /// For this use case we want fast
@@ -440,7 +440,7 @@ mod tests {
         }
 
         fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by peer");
+            panic!("Shouldn't be called by source");
         }
     }
 

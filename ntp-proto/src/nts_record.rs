@@ -12,7 +12,7 @@ use crate::{
     io::{NonBlockingRead, NonBlockingWrite},
     keyset::{DecodedServerCookie, KeySet},
     packet::{AesSivCmac256, AesSivCmac512, Cipher},
-    peer::{PeerNtsData, ProtocolVersion},
+    source::{ProtocolVersion, SourceNtsData},
 };
 
 #[derive(Debug)]
@@ -1127,7 +1127,7 @@ impl KeyExchangeResultDecoder {
 pub struct KeyExchangeResult {
     pub remote: String,
     pub port: u16,
-    pub nts: Box<PeerNtsData>,
+    pub nts: Box<SourceNtsData>,
     pub protocol_version: ProtocolVersion,
 
     #[cfg(feature = "nts-pool")]
@@ -1185,7 +1185,7 @@ impl KeyExchangeClient {
                                 Err(e) => return ControlFlow::Break(Err(KeyExchangeError::Tls(e))),
                             };
 
-                            let nts = Box::new(PeerNtsData {
+                            let nts = Box::new(SourceNtsData {
                                 cookies: result.cookies,
                                 c2s: keys.c2s,
                                 s2c: keys.s2c,

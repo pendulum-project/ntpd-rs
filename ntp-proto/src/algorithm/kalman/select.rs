@@ -1,6 +1,6 @@
 use crate::config::SynchronizationConfig;
 
-use super::{config::AlgorithmConfig, PeerSnapshot};
+use super::{config::AlgorithmConfig, SourceSnapshot};
 
 enum BoundType {
     Start,
@@ -12,14 +12,14 @@ enum BoundType {
 // of the NTP convention that all centers need to be within each others confidence
 // intervals.
 // The advantage of doing this is that the algorithm becomes a lot simpler, and it
-// is also statistically more sound. Any difference (larger set of accepted peers)
+// is also statistically more sound. Any difference (larger set of accepted sources)
 // can be compensated for if desired by setting tighter bounds on the weights
 // determining the confidence interval.
 pub(super) fn select<Index: Copy>(
     synchronization_config: &SynchronizationConfig,
     algo_config: &AlgorithmConfig,
-    candidates: Vec<PeerSnapshot<Index>>,
-) -> Vec<PeerSnapshot<Index>> {
+    candidates: Vec<SourceSnapshot<Index>>,
+) -> Vec<SourceSnapshot<Index>> {
     let mut bounds: Vec<(f64, BoundType)> = Vec::with_capacity(2 * candidates.len());
 
     for snapshot in candidates.iter() {
@@ -84,14 +84,14 @@ mod tests {
 
     use super::*;
 
-    fn snapshot_for_range(center: f64, uncertainty: f64, delay: f64) -> PeerSnapshot<usize> {
-        PeerSnapshot {
+    fn snapshot_for_range(center: f64, uncertainty: f64, delay: f64) -> SourceSnapshot<usize> {
+        SourceSnapshot {
             index: 0,
             state: Vector::new_vector([center, 0.0]),
             uncertainty: Matrix::new([[sqr(uncertainty), 0.0], [0.0, 10e-12]]),
             delay,
-            peer_uncertainty: NtpDuration::from_seconds(0.01),
-            peer_delay: NtpDuration::from_seconds(0.01),
+            source_uncertainty: NtpDuration::from_seconds(0.01),
+            source_delay: NtpDuration::from_seconds(0.01),
             leap_indicator: NtpLeapIndicator::NoWarning,
             last_update: NtpTimestamp::from_fixed_int(0),
         }
@@ -143,7 +143,7 @@ mod tests {
 
     #[test]
     fn test_rejection() {
-        // Test peers get properly rejected as rejection bound gets tightened.
+        // Test sources get properly rejected as rejection bound gets tightened.
         let candidates = vec![
             snapshot_for_range(0.0, 1.0, 1.0),
             snapshot_for_range(0.0, 0.1, 0.1),
