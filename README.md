@@ -54,6 +54,7 @@ ntpd-rs.pool.ntp.org:123/162.159.200.123:123 (4): +0.000111±0.000076(±0.004066
 
 Servers:
 ```
+
 The top part shows the overal quality of the time synchronization, and the time sources section shows which servers are used as well as offsets and uncertainties of those individual servers.
 
 For more details on how to install and use ntpd-rs, see our [documentation website].
@@ -65,8 +66,8 @@ full-featured, it supports NTP client and server with NTS.
 
 Our roadmap for 2024:
 
-* Q2-Q4 2024: Packaging and industry adoption, maintenance & community work
-* Q4 2024: NTS Pool (pending funding)
+- Q2-Q4 2024: Packaging and industry adoption, maintenance & community work
+- Q4 2024: NTS Pool (pending funding)
 
 We seek sponsorship for features and maintenance to continue our work. Contact
 us via pendulum@tweedegolf.com if you are interested!
