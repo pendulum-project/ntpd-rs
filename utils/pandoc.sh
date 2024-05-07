@@ -1,3 +1,5 @@
 #!/usr/bin/env bash
 
-exec docker run --rm -v "$(pwd):/data" -u "$(id -u):$(id -g)" pandoc/core "$@"
+export PANDOC_VERSION="3.1.1"
+
+exec docker run --rm -v "$(pwd):/data" -u "$(id -u):$(id -g)" "pandoc/core:$PANDOC_VERSION" "$@"
