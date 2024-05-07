@@ -21,13 +21,18 @@ use tokio::{
 use super::config::NtsKeConfig;
 use super::exitcode;
 
-fn build_client_config(
-    extra_certificates: &[CertificateDer],
+async fn build_client_config(
+    extra_certificates: &[CertificateDer<'_>],
 ) -> Result<rustls::ClientConfig, KeyExchangeError> {
-    let mut roots = rustls::RootCertStore::empty();
-    for cert in rustls_native_certs::load_native_certs()? {
-        roots.add(cert).map_err(KeyExchangeError::Certificate)?;
-    }
+    let mut roots = tokio::task::spawn_blocking(move || {
+        let mut roots = rustls::RootCertStore::empty();
+        for cert in rustls_native_certs::load_native_certs()? {
+            roots.add(cert).map_err(KeyExchangeError::Certificate)?;
+        }
+        Ok::<_, KeyExchangeError>(roots)
+    })
+    .await
+    .expect("Unexpected error while loading root certificates")?;
 
     for cert in extra_certificates {
         roots
@@ -46,7 +51,7 @@ pub(crate) async fn key_exchange_client(
     extra_certificates: &[CertificateDer<'_>],
 ) -> Result<KeyExchangeResult, KeyExchangeError> {
     let socket = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
-    let config = build_client_config(extra_certificates)?;
+    let config = build_client_config(extra_certificates).await?;
 
     BoundKeyExchangeClient::new(socket, server_name, config, Vec::new())?.await
 }
@@ -59,7 +64,7 @@ pub(crate) async fn key_exchange_client_with_denied_servers(
     denied_servers: impl IntoIterator<Item = String>,
 ) -> Result<KeyExchangeResult, KeyExchangeError> {
     let socket = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
-    let config = build_client_config(extra_certificates)?;
+    let config = build_client_config(extra_certificates).await?;
 
     BoundKeyExchangeClient::new(socket, server_name, config, denied_servers)?.await
 }
@@ -802,7 +807,7 @@ mod tests {
         let extra_certificates =
             &certificates_from_bufread(BufReader::new(Cursor::new(ca))).unwrap();
 
-        let config = build_client_config(extra_certificates).unwrap();
+        let config = build_client_config(extra_certificates).await.unwrap();
 
         let domain = rustls::pki_types::ServerName::try_from(server_name)
             .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid dnsname"))
