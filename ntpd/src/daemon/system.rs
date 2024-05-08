@@ -13,11 +13,11 @@ use super::{
 
 use std::{
     collections::HashMap, future::Future, marker::PhantomData, net::IpAddr, pin::Pin, sync::Arc,
-    time::Duration,
 };
 
 use ntp_proto::{
-    KeySet, NtpClock, SourceDefaultsConfig, SynchronizationConfig, System, SystemSnapshot,
+    KeySet, NtpClock, SourceDefaultsConfig, SynchronizationConfig, System, SystemActionIterator,
+    SystemSnapshot, SystemSourceUpdate,
 };
 use timestamped_socket::interface::InterfaceName;
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -156,16 +156,17 @@ struct SystemSpawnerData {
 
 struct SystemTask<C: NtpClock, T: Wait> {
     _wait: PhantomData<SingleshotSleep<T>>,
-    source_defaults_config: SourceDefaultsConfig,
     system: System<C, SourceId>,
 
     system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
+    system_update_sender: tokio::sync::broadcast::Sender<SystemSourceUpdate>,
     source_snapshots_sender: tokio::sync::watch::Sender<Vec<ObservableSourceState>>,
     server_data_sender: tokio::sync::watch::Sender<Vec<ServerData>>,
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     ip_list: tokio::sync::watch::Receiver<Arc<[IpAddr]>>,
 
     msg_for_system_rx: mpsc::Receiver<MsgForSystem>,
+    msg_for_system_tx: mpsc::Sender<MsgForSystem>,
     spawn_tx: mpsc::Sender<SpawnEvent>,
     spawn_rx: mpsc::Receiver<SpawnEvent>,
 
@@ -173,7 +174,6 @@ struct SystemTask<C: NtpClock, T: Wait> {
     servers: Vec<ServerData>,
     spawners: Vec<SystemSpawnerData>,
 
-    source_channels: SourceChannels,
     clock: C,
 
     // which timestamps to use (this is a hint, OS or hardware may ignore)
@@ -209,32 +209,30 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
         let (server_data_sender, server_data_receiver) = tokio::sync::watch::channel(vec![]);
         let (msg_for_system_sender, msg_for_system_receiver) =
             tokio::sync::mpsc::channel(MESSAGE_BUFFER_SIZE);
+        let (system_update_sender, _) = tokio::sync::broadcast::channel(MESSAGE_BUFFER_SIZE);
         let (spawn_tx, spawn_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
         // Build System and its channels
         (
             SystemTask {
                 _wait: PhantomData,
-                source_defaults_config,
                 system,
 
                 system_snapshot_sender,
+                system_update_sender,
                 source_snapshots_sender,
                 server_data_sender,
                 keyset: keyset.clone(),
                 ip_list,
 
                 msg_for_system_rx: msg_for_system_receiver,
+                msg_for_system_tx: msg_for_system_sender,
                 spawn_rx,
                 spawn_tx,
 
                 sources: Default::default(),
                 servers: Default::default(),
                 spawners: Default::default(),
-                source_channels: SourceChannels {
-                    msg_for_system_sender,
-                    system_snapshot_receiver: system_snapshot_receiver.clone(),
-                },
                 clock,
                 timestamp_mode,
                 interface,
@@ -305,7 +303,7 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
 
     fn handle_state_update(
         &mut self,
-        timer: Option<Duration>,
+        actions: SystemActionIterator,
         wait: &mut Pin<&mut SingleshotSleep<T>>,
     ) {
         // Don't care if there is no receiver.
@@ -313,8 +311,15 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
             .system_snapshot_sender
             .send(self.system.system_snapshot());
 
-        if let Some(duration) = timer {
-            wait.as_mut().reset(tokio::time::Instant::now() + duration);
+        for action in actions {
+            match action {
+                ntp_proto::SystemAction::UpdateSources(update) => {
+                    let _ = self.system_update_sender.send(update);
+                }
+                ntp_proto::SystemAction::SetTimer(duration) => {
+                    wait.as_mut().reset(tokio::time::Instant::now() + duration)
+                }
+            }
         }
     }
 
@@ -438,7 +443,14 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
                 spawner_id,
             },
         );
-        self.system.handle_source_create(source_id)?;
+
+        let (source, initial_actions) = if let Some(nts) = params.nts.take() {
+            self.system
+                .create_nts_source(source_id, params.addr, params.protocol_version, nts)?
+        } else {
+            self.system
+                .create_ntp_source(source_id, params.addr, params.protocol_version)?
+        };
 
         SourceTask::spawn(
             source_id,
@@ -446,10 +458,12 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
             self.interface,
             self.clock.clone(),
             self.timestamp_mode,
-            self.source_channels.clone(),
-            params.protocol_version,
-            self.source_defaults_config,
-            params.nts.take(),
+            SourceChannels {
+                msg_for_system_sender: self.msg_for_system_tx.clone(),
+                system_update_receiver: self.system_update_sender.subscribe(),
+            },
+            source,
+            initial_actions,
         );
 
         // Don't care if there is no receiver
@@ -488,7 +502,7 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
         ServerTask::spawn(
             config,
             stats,
-            self.source_channels.system_snapshot_receiver.clone(),
+            self.system_snapshot_sender.subscribe(),
             self.keyset.clone(),
             self.clock.clone(),
             NETWORK_WAIT_PERIOD,

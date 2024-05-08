@@ -8,7 +8,7 @@ use crate::{
     cookiestash::CookieStash,
     identifiers::ReferenceId,
     packet::{Cipher, NtpAssociationMode, NtpLeapIndicator, NtpPacket, RequestIdentifier},
-    system::SystemSnapshot,
+    system::{SystemSnapshot, SystemSourceUpdate},
     time_types::{NtpDuration, NtpInstant, NtpTimestamp, PollInterval},
 };
 use rand::{thread_rng, Rng};
@@ -76,6 +76,7 @@ pub struct NtpSource {
     tries: usize,
 
     source_defaults_config: SourceDefaultsConfig,
+    system_snapshot: SystemSnapshot,
 
     buffer: [u8; 1024],
 
@@ -403,9 +404,10 @@ macro_rules! actions {
 
 impl NtpSource {
     #[instrument]
-    pub fn new(
+    pub(crate) fn new(
         source_addr: SocketAddr,
         source_defaults_config: SourceDefaultsConfig,
+        system_snapshot: SystemSnapshot,
         protocol_version: ProtocolVersion,
     ) -> (Self, NtpSourceActionIterator) {
         (
@@ -425,6 +427,7 @@ impl NtpSource {
                 reference_id: ReferenceId::NONE,
 
                 source_defaults_config,
+                system_snapshot,
 
                 buffer: [0; 1024],
 
@@ -438,13 +441,19 @@ impl NtpSource {
     }
 
     #[instrument]
-    pub fn new_nts(
+    pub(crate) fn new_nts(
         source_addr: SocketAddr,
         source_defaults_config: SourceDefaultsConfig,
+        system_snapshot: SystemSnapshot,
         protocol_version: ProtocolVersion,
         nts: Box<SourceNtsData>,
     ) -> (Self, NtpSourceActionIterator) {
-        let (base, actions) = Self::new(source_addr, source_defaults_config, protocol_version);
+        let (base, actions) = Self::new(
+            source_addr,
+            source_defaults_config,
+            system_snapshot,
+            protocol_version,
+        );
         (
             Self {
                 nts: Some(nts),
@@ -454,15 +463,15 @@ impl NtpSource {
         )
     }
 
-    pub fn current_poll_interval(&self, system: SystemSnapshot) -> PollInterval {
-        system
+    pub fn current_poll_interval(&self) -> PollInterval {
+        self.system_snapshot
             .time_snapshot
             .poll_interval
             .max(self.remote_min_poll_interval)
     }
 
     #[cfg_attr(not(feature = "ntpv5"), allow(unused_mut))]
-    pub fn handle_timer(&mut self, system: SystemSnapshot) -> NtpSourceActionIterator {
+    pub fn handle_timer(&mut self) -> NtpSourceActionIterator {
         if !self.reach.is_reachable() && self.tries >= STARTUP_TRIES_THRESHOLD {
             return actions!(NtpSourceAction::Reset);
         }
@@ -470,7 +479,7 @@ impl NtpSource {
         self.reach.poll();
         self.tries = self.tries.saturating_add(1);
 
-        let poll_interval = self.current_poll_interval(system);
+        let poll_interval = self.current_poll_interval();
         let (mut packet, identifier) = match &mut self.nts {
             Some(nts) => {
                 let Some(cookie) = nts.cookies.get() else {
@@ -544,10 +553,15 @@ impl NtpSource {
         )
     }
 
-    #[instrument(skip(self, system), fields(source = debug(self.source_id)))]
+    #[instrument(skip(self), fields(source = debug(self.source_id)))]
+    pub fn handle_system_update(&mut self, update: SystemSourceUpdate) -> NtpSourceActionIterator {
+        self.system_snapshot = update.system_snapshot;
+        actions!()
+    }
+
+    #[instrument(skip(self), fields(source = debug(self.source_id)))]
     pub fn handle_incoming(
         &mut self,
-        system: SystemSnapshot,
         message: &[u8],
         local_clock_time: NtpInstant,
         send_time: NtpTimestamp,
@@ -636,14 +650,12 @@ impl NtpSource {
             warn!("Received packet with invalid mode");
             actions!()
         } else {
-            self.process_message(system, message, local_clock_time, send_time, recv_time)
+            self.process_message(message, local_clock_time, send_time, recv_time)
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn process_message(
         &mut self,
-        system: SystemSnapshot,
         message: NtpPacket,
         local_clock_time: NtpInstant,
         send_time: NtpTimestamp,
@@ -708,7 +720,7 @@ impl NtpSource {
             send_time,
             recv_time,
             local_clock_time,
-            system.time_snapshot.precision,
+            self.system_snapshot.time_snapshot.precision,
         );
 
         // Process new cookies
@@ -745,6 +757,7 @@ impl NtpSource {
             reference_id: ReferenceId::from_int(0),
 
             source_defaults_config: SourceDefaultsConfig::default(),
+            system_snapshot: SystemSnapshot::default(),
 
             buffer: [0; 1024],
 
@@ -947,19 +960,25 @@ mod test {
         let mut source = NtpSource::test_ntp_source();
         let mut system = SystemSnapshot::default();
 
-        assert!(source.current_poll_interval(system) >= source.remote_min_poll_interval);
-        assert!(source.current_poll_interval(system) >= system.time_snapshot.poll_interval);
+        assert!(source.current_poll_interval() >= source.remote_min_poll_interval);
+        assert!(source.current_poll_interval() >= system.time_snapshot.poll_interval);
 
         system.time_snapshot.poll_interval = PollIntervalLimits::default().max;
+        source.handle_system_update(SystemSourceUpdate {
+            system_snapshot: system,
+        });
 
-        assert!(source.current_poll_interval(system) >= source.remote_min_poll_interval);
-        assert!(source.current_poll_interval(system) >= system.time_snapshot.poll_interval);
+        assert!(source.current_poll_interval() >= source.remote_min_poll_interval);
+        assert!(source.current_poll_interval() >= system.time_snapshot.poll_interval);
 
         system.time_snapshot.poll_interval = PollIntervalLimits::default().min;
         source.remote_min_poll_interval = PollIntervalLimits::default().max;
+        source.handle_system_update(SystemSourceUpdate {
+            system_snapshot: system,
+        });
 
-        assert!(source.current_poll_interval(system) >= source.remote_min_poll_interval);
-        assert!(source.current_poll_interval(system) >= system.time_snapshot.poll_interval);
+        assert!(source.current_poll_interval() >= source.remote_min_poll_interval);
+        assert!(source.current_poll_interval() >= system.time_snapshot.poll_interval);
     }
 
     #[test]
@@ -967,8 +986,7 @@ mod test {
         let base = NtpInstant::now();
         let mut source = NtpSource::test_ntp_source();
 
-        let system = SystemSnapshot::default();
-        let actions = source.handle_timer(system);
+        let actions = source.handle_timer();
         let mut outgoingbuf = None;
         for action in actions {
             assert!(!matches!(
@@ -982,7 +1000,6 @@ mod test {
         let outgoingbuf = outgoingbuf.unwrap();
         let outgoing = NtpPacket::deserialize(&outgoingbuf, &NoCipher).unwrap().0;
         let mut packet = NtpPacket::test();
-        let system = SystemSnapshot::default();
         packet.set_stratum(1);
         packet.set_mode(NtpAssociationMode::Server);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
@@ -990,7 +1007,6 @@ mod test {
         packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(200));
 
         let actions = source.handle_incoming(
-            system,
             &packet.serialize_without_encryption_vec(None).unwrap(),
             base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
@@ -1006,7 +1022,6 @@ mod test {
             ));
         }
         let mut actions = source.handle_incoming(
-            system,
             &packet.serialize_without_encryption_vec(None).unwrap(),
             base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
@@ -1018,29 +1033,28 @@ mod test {
     #[test]
     fn test_startup_unreachable() {
         let mut source = NtpSource::test_ntp_source();
-        let system = SystemSnapshot::default();
-        let actions = source.handle_timer(system);
+        let actions = source.handle_timer();
         for action in actions {
             assert!(!matches!(
                 action,
                 NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
         }
-        let actions = source.handle_timer(system);
+        let actions = source.handle_timer();
         for action in actions {
             assert!(!matches!(
                 action,
                 NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
         }
-        let actions = source.handle_timer(system);
+        let actions = source.handle_timer();
         for action in actions {
             assert!(!matches!(
                 action,
                 NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
         }
-        let mut actions = source.handle_timer(system);
+        let mut actions = source.handle_timer();
         assert!(matches!(actions.next(), Some(NtpSourceAction::Reset)));
     }
 
@@ -1049,8 +1063,7 @@ mod test {
         let base = NtpInstant::now();
         let mut source = NtpSource::test_ntp_source();
 
-        let system = SystemSnapshot::default();
-        let actions = source.handle_timer(system);
+        let actions = source.handle_timer();
         let mut outgoingbuf = None;
         for action in actions {
             assert!(!matches!(
@@ -1064,14 +1077,12 @@ mod test {
         let outgoingbuf = outgoingbuf.unwrap();
         let outgoing = NtpPacket::deserialize(&outgoingbuf, &NoCipher).unwrap().0;
         let mut packet = NtpPacket::test();
-        let system = SystemSnapshot::default();
         packet.set_stratum(1);
         packet.set_mode(NtpAssociationMode::Server);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(100));
         packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(200));
         let actions = source.handle_incoming(
-            system,
             &packet.serialize_without_encryption_vec(None).unwrap(),
             base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
@@ -1087,63 +1098,63 @@ mod test {
             ));
         }
 
-        let actions = source.handle_timer(system);
+        let actions = source.handle_timer();
         for action in actions {
             assert!(!matches!(
                 action,
                 NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
         }
-        let actions = source.handle_timer(system);
+        let actions = source.handle_timer();
         for action in actions {
             assert!(!matches!(
                 action,
                 NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
         }
-        let actions = source.handle_timer(system);
+        let actions = source.handle_timer();
         for action in actions {
             assert!(!matches!(
                 action,
                 NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
         }
-        let actions = source.handle_timer(system);
+        let actions = source.handle_timer();
         for action in actions {
             assert!(!matches!(
                 action,
                 NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
         }
-        let actions = source.handle_timer(system);
+        let actions = source.handle_timer();
         for action in actions {
             assert!(!matches!(
                 action,
                 NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
         }
-        let actions = source.handle_timer(system);
+        let actions = source.handle_timer();
         for action in actions {
             assert!(!matches!(
                 action,
                 NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
         }
-        let actions = source.handle_timer(system);
+        let actions = source.handle_timer();
         for action in actions {
             assert!(!matches!(
                 action,
                 NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
         }
-        let actions = source.handle_timer(system);
+        let actions = source.handle_timer();
         for action in actions {
             assert!(!matches!(
                 action,
                 NtpSourceAction::Reset | NtpSourceAction::Demobilize
             ));
         }
-        let mut actions = source.handle_timer(system);
+        let mut actions = source.handle_timer();
         assert!(matches!(actions.next(), Some(NtpSourceAction::Reset)));
     }
 
@@ -1152,8 +1163,7 @@ mod test {
         let base = NtpInstant::now();
         let mut source = NtpSource::test_ntp_source();
 
-        let system = SystemSnapshot::default();
-        let actions = source.handle_timer(system);
+        let actions = source.handle_timer();
         let mut outgoingbuf = None;
         for action in actions {
             assert!(!matches!(
@@ -1167,14 +1177,12 @@ mod test {
         let outgoingbuf = outgoingbuf.unwrap();
         let outgoing = NtpPacket::deserialize(&outgoingbuf, &NoCipher).unwrap().0;
         let mut packet = NtpPacket::test();
-        let system = SystemSnapshot::default();
         packet.set_stratum(MAX_STRATUM + 1);
         packet.set_mode(NtpAssociationMode::Server);
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(100));
         packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(200));
         let mut actions = source.handle_incoming(
-            system,
             &packet.serialize_without_encryption_vec(None).unwrap(),
             base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
@@ -1184,7 +1192,6 @@ mod test {
 
         packet.set_stratum(0);
         let mut actions = source.handle_incoming(
-            system,
             &packet.serialize_without_encryption_vec(None).unwrap(),
             base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
@@ -1199,11 +1206,9 @@ mod test {
         let mut source = NtpSource::test_ntp_source();
 
         let mut packet = NtpPacket::test();
-        let system = SystemSnapshot::default();
         packet.set_reference_id(ReferenceId::KISS_RSTR);
         packet.set_mode(NtpAssociationMode::Server);
         let mut actions = source.handle_incoming(
-            system,
             &packet.serialize_without_encryption_vec(None).unwrap(),
             base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
@@ -1212,8 +1217,7 @@ mod test {
         assert!(actions.next().is_none());
 
         let mut packet = NtpPacket::test();
-        let system = SystemSnapshot::default();
-        let actions = source.handle_timer(system);
+        let actions = source.handle_timer();
         let mut outgoingbuf = None;
         for action in actions {
             assert!(!matches!(
@@ -1230,7 +1234,6 @@ mod test {
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
         let mut actions = source.handle_incoming(
-            system,
             &packet.serialize_without_encryption_vec(None).unwrap(),
             base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
@@ -1239,11 +1242,9 @@ mod test {
         assert!(matches!(actions.next(), Some(NtpSourceAction::Demobilize)));
 
         let mut packet = NtpPacket::test();
-        let system = SystemSnapshot::default();
         packet.set_reference_id(ReferenceId::KISS_DENY);
         packet.set_mode(NtpAssociationMode::Server);
         let mut actions = source.handle_incoming(
-            system,
             &packet.serialize_without_encryption_vec(None).unwrap(),
             base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
@@ -1252,8 +1253,7 @@ mod test {
         assert!(actions.next().is_none());
 
         let mut packet = NtpPacket::test();
-        let system = SystemSnapshot::default();
-        let actions = source.handle_timer(system);
+        let actions = source.handle_timer();
         let mut outgoingbuf = None;
         for action in actions {
             assert!(!matches!(
@@ -1270,7 +1270,6 @@ mod test {
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
         let mut actions = source.handle_incoming(
-            system,
             &packet.serialize_without_encryption_vec(None).unwrap(),
             base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
@@ -1280,11 +1279,9 @@ mod test {
 
         let old_remote_interval = source.remote_min_poll_interval;
         let mut packet = NtpPacket::test();
-        let system = SystemSnapshot::default();
         packet.set_reference_id(ReferenceId::KISS_RATE);
         packet.set_mode(NtpAssociationMode::Server);
         let mut actions = source.handle_incoming(
-            system,
             &packet.serialize_without_encryption_vec(None).unwrap(),
             base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
@@ -1295,8 +1292,7 @@ mod test {
 
         let old_remote_interval = source.remote_min_poll_interval;
         let mut packet = NtpPacket::test();
-        let system = SystemSnapshot::default();
-        let actions = source.handle_timer(system);
+        let actions = source.handle_timer();
         let mut outgoingbuf = None;
         for action in actions {
             assert!(!matches!(
@@ -1313,7 +1309,6 @@ mod test {
         packet.set_origin_timestamp(outgoing.transmit_timestamp());
         packet.set_mode(NtpAssociationMode::Server);
         let mut actions = source.handle_incoming(
-            system,
             &packet.serialize_without_encryption_vec(None).unwrap(),
             base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
@@ -1327,7 +1322,6 @@ mod test {
     #[test]
     fn upgrade_state_machine_does_stop() {
         let mut source = NtpSource::test_ntp_source();
-        let system = SystemSnapshot::default();
         let clock = TestClock {};
 
         assert!(matches!(
@@ -1336,7 +1330,7 @@ mod test {
         ));
 
         for _ in 0..8 {
-            let actions = source.handle_timer(system);
+            let actions = source.handle_timer();
             let mut outgoingbuf = None;
             for action in actions {
                 assert!(!matches!(
@@ -1354,8 +1348,12 @@ mod test {
             assert_eq!(poll.version(), 4);
             assert!(poll.is_upgrade());
 
-            let response =
-                NtpPacket::timestamp_response(&system, poll, NtpTimestamp::default(), &clock);
+            let response = NtpPacket::timestamp_response(
+                &SystemSnapshot::default(),
+                poll,
+                NtpTimestamp::default(),
+                &clock,
+            );
             let mut response = response
                 .serialize_without_encryption_vec(Some(poll_len))
                 .unwrap();
@@ -1364,7 +1362,6 @@ mod test {
             response[16] = 0;
 
             let actions = source.handle_incoming(
-                system,
                 &response,
                 NtpInstant::now(),
                 NtpTimestamp::default(),
@@ -1378,7 +1375,7 @@ mod test {
             }
         }
 
-        let actions = source.handle_timer(system);
+        let actions = source.handle_timer();
         let mut outgoingbuf = None;
         for action in actions {
             assert!(!matches!(
@@ -1399,7 +1396,6 @@ mod test {
     #[test]
     fn upgrade_state_machine_does_upgrade() {
         let mut source = NtpSource::test_ntp_source();
-        let system = SystemSnapshot::default();
         let clock = TestClock {};
 
         assert!(matches!(
@@ -1407,7 +1403,7 @@ mod test {
             ProtocolVersion::V4UpgradingToV5 { .. }
         ));
 
-        let actions = source.handle_timer(system);
+        let actions = source.handle_timer();
         let mut outgoingbuf = None;
         for action in actions {
             assert!(!matches!(
@@ -1425,14 +1421,17 @@ mod test {
         assert_eq!(poll.version(), 4);
         assert!(poll.is_upgrade());
 
-        let response =
-            NtpPacket::timestamp_response(&system, poll, NtpTimestamp::default(), &clock);
+        let response = NtpPacket::timestamp_response(
+            &SystemSnapshot::default(),
+            poll,
+            NtpTimestamp::default(),
+            &clock,
+        );
         let response = response
             .serialize_without_encryption_vec(Some(poll_len))
             .unwrap();
 
         let actions = source.handle_incoming(
-            system,
             &response,
             NtpInstant::now(),
             NtpTimestamp::default(),
@@ -1448,7 +1447,7 @@ mod test {
         // We should have received a upgrade response and updated to NTPv5
         assert!(matches!(source.protocol_version, ProtocolVersion::V5));
 
-        let actions = source.handle_timer(system);
+        let actions = source.handle_timer();
         let mut outgoingbuf = None;
         for action in actions {
             assert!(!matches!(
@@ -1474,7 +1473,6 @@ mod test {
         client.protocol_version = ProtocolVersion::V5;
 
         let clock = TestClock::default();
-        let system = SystemSnapshot::default();
 
         let server_system = SystemSnapshot {
             bloom_filter: server_filter,
@@ -1484,7 +1482,7 @@ mod test {
         let mut tries = 0;
 
         while client.bloom_filter.full_filter().is_none() && tries < 100 {
-            let actions = client.handle_timer(system);
+            let actions = client.handle_timer();
             let mut outgoingbuf = None;
             for action in actions {
                 assert!(!matches!(
@@ -1503,7 +1501,6 @@ mod test {
             let resp_bytes = response.serialize_without_encryption_vec(None).unwrap();
 
             let actions = client.handle_incoming(
-                system,
                 &resp_bytes,
                 NtpInstant::now(),
                 NtpTimestamp::default(),

@@ -2,7 +2,7 @@ use std::{future::Future, marker::PhantomData, net::SocketAddr, pin::Pin};
 
 use ntp_proto::{
     NtpClock, NtpInstant, NtpSource, NtpSourceActionIterator, NtpSourceUpdate, NtpTimestamp,
-    ProtocolVersion, SourceDefaultsConfig, SourceNtsData, SystemSnapshot,
+    SystemSourceUpdate,
 };
 #[cfg(target_os = "linux")]
 use timestamped_socket::socket::open_interface_udp;
@@ -40,10 +40,10 @@ pub enum MsgForSystem {
     SourceUpdate(SourceId, NtpSourceUpdate),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SourceChannels {
     pub msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
-    pub system_snapshot_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
+    pub system_update_receiver: tokio::sync::broadcast::Receiver<SystemSourceUpdate>,
 }
 
 pub(crate) struct SourceTask<C: 'static + NtpClock + Send, T: Wait> {
@@ -107,14 +107,19 @@ where
         loop {
             let mut buf = [0_u8; 1024];
 
+            #[allow(clippy::large_enum_variant)]
             enum SelectResult {
                 Timer,
                 Recv(Result<RecvResult<SocketAddr>, std::io::Error>),
+                SystemUpdate(Result<SystemSourceUpdate, tokio::sync::broadcast::error::RecvError>),
             }
 
             let selected = tokio::select! {
                 () = &mut poll_wait => {
                     SelectResult::Timer
+                },
+                result = self.channels.system_update_receiver.recv() => {
+                    SelectResult::SystemUpdate(result)
                 },
                 result = async { if let Some(ref mut socket) = self.socket { socket.recv(&mut buf).await } else { std::future::pending().await }} => {
                     SelectResult::Recv(result)
@@ -135,10 +140,7 @@ where
                                     continue;
                                 }
                             };
-
-                            let system_snapshot = *self.channels.system_snapshot_receiver.borrow();
                             self.source.handle_incoming(
-                                system_snapshot,
                                 packet,
                                 NtpInstant::now(),
                                 send_timestamp,
@@ -158,9 +160,12 @@ where
                 }
                 SelectResult::Timer => {
                     tracing::debug!("wait completed");
-                    let system_snapshot = *self.channels.system_snapshot_receiver.borrow();
-                    self.source.handle_timer(system_snapshot)
+                    self.source.handle_timer()
                 }
+                SelectResult::SystemUpdate(result) => match result {
+                    Ok(update) => self.source.handle_system_update(update),
+                    Err(_) => NtpSourceActionIterator::default(),
+                },
             };
 
             for action in actions {
@@ -260,17 +265,16 @@ where
         clock: C,
         timestamp_mode: TimestampMode,
         channels: SourceChannels,
-        protocol_version: ProtocolVersion,
-        config_snapshot: SourceDefaultsConfig,
-        nts: Option<Box<SourceNtsData>>,
+        source: NtpSource,
+        initial_actions: NtpSourceActionIterator,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(
             (async move {
-                let (source, initial_actions) = if let Some(nts) = nts {
+                /*let (source, initial_actions) = if let Some(nts) = nts {
                     NtpSource::new_nts(source_addr, config_snapshot, protocol_version, nts)
                 } else {
                     NtpSource::new(source_addr, config_snapshot, protocol_version)
-                };
+                };*/
 
                 let poll_wait = tokio::time::sleep(std::time::Duration::default());
                 tokio::pin!(poll_wait);
@@ -372,9 +376,12 @@ fn accept_packet<'a, C: NtpClock>(
 mod tests {
     use std::{io::Cursor, net::Ipv4Addr, sync::Arc, time::Duration};
 
-    use ntp_proto::{NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket, TimeSnapshot};
+    use ntp_proto::{
+        NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket, ProtocolVersion, SourceDefaultsConfig,
+        SynchronizationConfig, SystemSnapshot, TimeSnapshot,
+    };
     use timestamped_socket::socket::{open_ip, GeneralTimestampMode, Open};
-    use tokio::sync::mpsc;
+    use tokio::sync::{broadcast, mpsc};
 
     use crate::daemon::util::EPOCH_OFFSET;
 
@@ -466,7 +473,8 @@ mod tests {
         }
 
         fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
-            panic!("Shouldn't be called by source");
+            self.now()
+            //ignore
         }
 
         fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
@@ -474,7 +482,8 @@ mod tests {
         }
 
         fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by source");
+            Ok(())
+            //ignore
         }
 
         fn error_estimate_update(
@@ -486,7 +495,8 @@ mod tests {
         }
 
         fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by source");
+            Ok(())
+            //ignore
         }
     }
 
@@ -496,6 +506,7 @@ mod tests {
         SourceTask<TestClock, T>,
         Socket<SocketAddr, Open>,
         mpsc::Receiver<MsgForSystem>,
+        broadcast::Sender<SystemSourceUpdate>,
     ) {
         // Note: Ports must be unique among tests to deal with parallelism, hence
         // port_base
@@ -505,22 +516,32 @@ mod tests {
         )
         .unwrap();
 
-        let (_, system_snapshot_receiver) = tokio::sync::watch::channel(SystemSnapshot::default());
+        let (system_update_sender, system_update_receiver) = tokio::sync::broadcast::channel(1);
         let (msg_for_system_sender, msg_for_system_receiver) = mpsc::channel(1);
 
-        let (source, _) = NtpSource::new(
-            SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
+        let index = SourceId::new();
+        let mut system = ntp_proto::System::new(
+            TestClock {},
+            SynchronizationConfig::default(),
             SourceDefaultsConfig::default(),
-            ProtocolVersion::default(),
+            Arc::new([]),
         );
+
+        let Ok((source, _)) = system.create_ntp_source(
+            index,
+            SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
+            ProtocolVersion::default(),
+        ) else {
+            panic!("Could not create test source");
+        };
 
         let process = SourceTask {
             _wait: PhantomData,
-            index: SourceId::new(),
+            index,
             clock: TestClock {},
             channels: SourceChannels {
                 msg_for_system_sender,
-                system_snapshot_receiver,
+                system_update_receiver,
             },
             source_addr: SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
             interface: None,
@@ -530,13 +551,18 @@ mod tests {
             last_send_timestamp: None,
         };
 
-        (process, test_socket, msg_for_system_receiver)
+        (
+            process,
+            test_socket,
+            msg_for_system_receiver,
+            system_update_sender,
+        )
     }
 
     #[tokio::test]
     async fn test_poll_sends_state_update_and_packet() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, socket, _) = test_startup(8006).await;
+        let (mut process, socket, _, _system_update_sender) = test_startup(8006).await;
 
         let (poll_wait, poll_send) = TestWait::new();
 
@@ -567,7 +593,8 @@ mod tests {
     #[tokio::test]
     async fn test_timeroundtrip() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, mut socket, mut msg_recv) = test_startup(8008).await;
+        let (mut process, mut socket, mut msg_recv, _system_update_sender) =
+            test_startup(8008).await;
 
         let system = SystemSnapshot {
             time_snapshot: TimeSnapshot {
@@ -616,7 +643,8 @@ mod tests {
     #[tokio::test]
     async fn test_deny_stops_poll() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, mut socket, mut msg_recv) = test_startup(8010).await;
+        let (mut process, mut socket, mut msg_recv, _system_update_sender) =
+            test_startup(8010).await;
 
         let (poll_wait, poll_send) = TestWait::new();
 
