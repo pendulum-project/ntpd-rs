@@ -60,8 +60,6 @@ mod exports {
         FilterAction, FilterList, IpSubnet, Server, ServerAction, ServerConfig, ServerReason,
         ServerResponse, ServerStatHandler, SubnetParseError,
     };
-    #[cfg(feature = "__internal-fuzz")]
-    pub use super::source::fuzz_measurement_from_packet;
     #[cfg(feature = "__internal-test")]
     pub use super::source::{source_snapshot, Measurement};
     pub use super::source::{

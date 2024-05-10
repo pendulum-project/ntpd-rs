@@ -109,12 +109,10 @@ impl Measurement {
         send_timestamp: NtpTimestamp,
         recv_timestamp: NtpTimestamp,
         local_clock_time: NtpInstant,
-        precision: NtpDuration,
     ) -> Self {
         Self {
             delay: ((recv_timestamp - send_timestamp)
-                - (packet.transmit_timestamp() - packet.receive_timestamp()))
-            .max(precision),
+                - (packet.transmit_timestamp() - packet.receive_timestamp())),
             offset: ((packet.receive_timestamp() - send_timestamp)
                 + (packet.transmit_timestamp() - recv_timestamp))
                 / 2,
@@ -715,13 +713,8 @@ impl NtpSource {
         }
 
         // generate a measurement
-        let measurement = Measurement::from_packet(
-            &message,
-            send_time,
-            recv_time,
-            local_clock_time,
-            self.system_snapshot.time_snapshot.precision,
-        );
+        let measurement =
+            Measurement::from_packet(&message, send_time, recv_time, local_clock_time);
 
         // Process new cookies
         if let Some(nts) = self.nts.as_mut() {
@@ -767,34 +760,6 @@ impl NtpSource {
             bloom_filter: RemoteBloomFilter::new(16).unwrap(),
         }
     }
-}
-
-#[cfg(feature = "__internal-fuzz")]
-pub fn fuzz_measurement_from_packet(
-    client: u64,
-    client_interval: u32,
-    server: u64,
-    server_interval: u32,
-    client_precision: i8,
-    server_precision: i8,
-) {
-    let mut packet = NtpPacket::test();
-    packet.set_origin_timestamp(NtpTimestamp::from_fixed_int(client));
-    packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(server));
-    packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(
-        server.wrapping_add(server_interval as u64),
-    ));
-    packet.set_precision(server_precision);
-
-    let result = Measurement::from_packet(
-        &packet,
-        NtpTimestamp::from_fixed_int(client),
-        NtpTimestamp::from_fixed_int(client.wrapping_add(client_interval as u64)),
-        NtpInstant::now(),
-        NtpDuration::from_exponent(client_precision),
-    );
-
-    assert!(result.delay >= NtpDuration::ZERO);
 }
 
 #[cfg(test)]
@@ -860,7 +825,6 @@ mod test {
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(3),
             instant,
-            NtpDuration::from_exponent(-32),
         );
         assert_eq!(result.offset, NtpDuration::from_fixed_int(0));
         assert_eq!(result.delay, NtpDuration::from_fixed_int(2));
@@ -872,7 +836,6 @@ mod test {
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(3),
             instant,
-            NtpDuration::from_exponent(-32),
         );
         assert_eq!(result.offset, NtpDuration::from_fixed_int(1));
         assert_eq!(result.delay, NtpDuration::from_fixed_int(2));
@@ -884,10 +847,9 @@ mod test {
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(3),
             instant,
-            NtpDuration::from_exponent(-32),
         );
         assert_eq!(result.offset, NtpDuration::from_fixed_int(1));
-        assert_eq!(result.delay, NtpDuration::from_fixed_int(1));
+        assert_eq!(result.delay, NtpDuration::from_fixed_int(-2));
     }
 
     #[test]
