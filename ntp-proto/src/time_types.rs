@@ -106,7 +106,7 @@ impl NtpTimestamp {
         self - other < NtpDuration::ZERO
     }
 
-    #[cfg(any(test, feature = "__internal-fuzz"))]
+    #[cfg(test)]
     pub(crate) const fn from_fixed_int(timestamp: u64) -> NtpTimestamp {
         NtpTimestamp { timestamp }
     }
@@ -306,12 +306,12 @@ impl NtpDuration {
     }
 
     /// Interpret an exponent `k` as `2^k` seconds, expressed as an NtpDuration
-    pub fn from_exponent(input: i8) -> Self {
+    pub const fn from_exponent(input: i8) -> Self {
         Self {
             duration: match input {
                 exp if exp > 30 => std::i64::MAX,
                 exp if exp > 0 && exp <= 30 => 0x1_0000_0000_i64 << exp,
-                exp if (-32..=0).contains(&exp) => 0x1_0000_0000_i64 >> -exp,
+                exp if exp >= -32 && exp <= 0 => 0x1_0000_0000_i64 >> -exp,
                 _ => 0,
             },
         }

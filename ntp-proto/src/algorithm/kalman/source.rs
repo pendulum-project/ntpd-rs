@@ -406,6 +406,8 @@ enum SourceStateInner {
 #[derive(Debug, Clone)]
 pub(super) struct SourceState(SourceStateInner);
 
+const MIN_DELAY: NtpDuration = NtpDuration::from_exponent(-18);
+
 impl SourceState {
     pub fn new() -> Self {
         SourceState(SourceStateInner::Initial(InitialSourceFilter {
@@ -418,6 +420,18 @@ impl SourceState {
 
     // Returs whether the clock may need adjusting.
     pub fn update_self_using_measurement(
+        &mut self,
+        source_defaults_config: &SourceDefaultsConfig,
+        algo_config: &AlgorithmConfig,
+        mut measurement: Measurement,
+    ) -> bool {
+        // preprocessing
+        measurement.delay = measurement.delay.max(MIN_DELAY);
+
+        self.update_self_using_raw_measurement(source_defaults_config, algo_config, measurement)
+    }
+
+    fn update_self_using_raw_measurement(
         &mut self,
         source_defaults_config: &SourceDefaultsConfig,
         algo_config: &AlgorithmConfig,
@@ -808,7 +822,7 @@ mod tests {
         source.process_offset_steering(20e-3);
         assert!(source.snapshot(0_usize).unwrap().state.ventry(0).abs() < 1e-7);
 
-        source.update_self_using_measurement(
+        source.update_self_using_raw_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
@@ -865,7 +879,7 @@ mod tests {
 
         source.progress_filtertime(base - NtpDuration::from_seconds(10e-3)); // should succeed
 
-        source.update_self_using_measurement(
+        source.update_self_using_raw_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
