@@ -78,7 +78,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@040f0ebba5461501fd9919d75244fd045c3774b3
+        uses: taiki-e/install-action@c2927f0c5b5adc6a76bc4a7847bc6e0503754bed
         with:
           tool: cargo-llvm-cov
       - name: Rust cache
@@ -110,7 +110,7 @@ jobs:
         with:
           toolchain: nightly
       - name: Install udeps
-        uses: taiki-e/install-action@040f0ebba5461501fd9919d75244fd045c3774b3
+        uses: taiki-e/install-action@c2927f0c5b5adc6a76bc4a7847bc6e0503754bed
         with:
           tool: cargo-udeps
       - name: cargo udeps
@@ -214,7 +214,7 @@ jobs:
           version: 0.9.0
         if: ${{matrix.use_zig}}
       - name: Install cargo-zigbuild
-        uses: taiki-e/install-action@040f0ebba5461501fd9919d75244fd045c3774b3
+        uses: taiki-e/install-action@c2927f0c5b5adc6a76bc4a7847bc6e0503754bed
         with:
           tool: cargo-zigbuild
         if: ${{matrix.use_zig}}
@@ -255,7 +255,7 @@ jobs:
         with:
           toolchain: nightly
       - name: Install cargo fuzz
-        uses: taiki-e/install-action@040f0ebba5461501fd9919d75244fd045c3774b3
+        uses: taiki-e/install-action@c2927f0c5b5adc6a76bc4a7847bc6e0503754bed
         with:
           tool: cargo-fuzz
       - name: Smoke-test fuzz targets
