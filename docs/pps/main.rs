@@ -5,8 +5,12 @@ use std::mem::MaybeUninit;
 use libc::{self, timespec, clock_gettime, CLOCK_REALTIME};
 use chrono::{NaiveDateTime, NaiveTimeZone, Utc};
 use std::time::{Duration, Instant};
+use std::ops::Sub;
 
-// Define the NtpDuration struct and its implementation
+/// NtpDuration is used to represent signed intervals between NtpTimestamps.
+/// A negative duration interval is interpreted to mean that the first
+/// timestamp used to define the interval represents a point in time after
+/// the second timestamp.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct NtpDuration {
     duration: i64,
@@ -150,7 +154,6 @@ impl NtpTimestamp {
     }
 }
 
-
 impl Sub for NtpTimestamp {
     type Output = NtpDuration;
 
@@ -171,7 +174,8 @@ impl Sub for NtpDuration {
     }
 }
 
-// Define the NtpInstant struct and its implementation
+/// NtpInstant is a monotonically increasing value modelling the uptime of the NTP service
+/// It is used to validate packets that we send out, and to order internal operations.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct NtpInstant {
     instant: Instant,
@@ -208,7 +212,7 @@ impl NtpInstant {
     }
 }
 
-fn get_pps_time(fd: RawFd) -> Result<(), Error> {
+fn get_pps_time(fd: RawFd, last_ntp_timestamp: &mut NtpTimestamp) -> Result<(), Error> {
     let mut ts = MaybeUninit::<timespec>::uninit();
 
     unsafe {
@@ -230,15 +234,11 @@ fn get_pps_time(fd: RawFd) -> Result<(), Error> {
 
     println!("Current NTP Instant: {:?}", ntp_instant);
 
-    // Create an NtpDuration from the current timestamp
-    let ntp_duration = NtpDuration::from_seconds(timestamp as f64);
-
-    println!("Current NTP Duration: {:?}", ntp_duration);
-
     // Print the difference between two timestamps
-    let last_ntp_timestamp = NtpTimestamp::from_unix_timestamp(0);
-    let time_diff = ntp_timestamp - last_ntp_timestamp;
+    let time_diff = ntp_timestamp - *last_ntp_timestamp; // Dereference last_ntp_timestamp
     println!("Time difference: {:?}", time_diff);
+    // Update the last NTP timestamp
+    *last_ntp_timestamp = ntp_timestamp; // Update last_ntp_timestamp
 
     Ok(())
 }
@@ -248,8 +248,11 @@ fn main() -> std::io::Result<()> {
     let file = File::open(path)?;
     let fd = file.as_raw_fd();
 
+    // Initialize the last NTP timestamp to 0
+    let mut last_ntp_timestamp = NtpTimestamp::from_unix_timestamp(0);
+
     loop {
-        get_pps_time(fd)?;
+        get_pps_time(fd, &mut last_ntp_timestamp)?; // Pass last_ntp_timestamp as mutable reference
     }
 }
 
