@@ -1,14 +1,9 @@
 use crate::{packet::NtpLeapIndicator, time_types::NtpDuration};
 
-use super::{
-    config::AlgorithmConfig,
-    matrix::{Matrix, Vector},
-    sqr, SourceSnapshot,
-};
+use super::{config::AlgorithmConfig, source::KalmanState, SourceSnapshot};
 
 pub(super) struct Combine<Index: Copy> {
-    pub estimate: Vector<2>,
-    pub uncertainty: Matrix<2, 2>,
+    pub estimate: KalmanState,
     pub sources: Vec<Index>,
     pub delay: NtpDuration,
     pub leap_indicator: Option<NtpLeapIndicator>,
@@ -44,41 +39,31 @@ pub(super) fn combine<Index: Copy>(
     algo_config: &AlgorithmConfig,
 ) -> Option<Combine<Index>> {
     selection.first().map(|first| {
-        let mut estimate = first.state;
-        let mut uncertainty = if algo_config.ignore_server_dispersion {
-            first.uncertainty
-        } else {
-            first.uncertainty
-                + Matrix::new([[sqr(first.source_uncertainty.to_seconds()), 0.], [0., 0.]])
-        };
+        let mut estimate = first.state.clone();
+        if !algo_config.ignore_server_dispersion {
+            estimate = estimate.add_server_dispersion(first.source_uncertainty.to_seconds())
+        }
 
-        let mut used_sources = vec![(first.index, uncertainty.determinant())];
+        let mut used_sources = vec![(first.index, estimate.uncertainty.determinant())];
 
         for snapshot in selection.iter().skip(1) {
-            let source_estimate = snapshot.state;
-            let source_uncertainty = if algo_config.ignore_server_dispersion {
-                snapshot.uncertainty
+            let source_estimate = if algo_config.ignore_server_dispersion {
+                snapshot.state.clone()
             } else {
-                snapshot.uncertainty
-                    + Matrix::new([
-                        [sqr(snapshot.source_uncertainty.to_seconds()), 0.],
-                        [0., 0.],
-                    ])
+                snapshot
+                    .state
+                    .add_server_dispersion(snapshot.source_uncertainty.to_seconds())
             };
 
-            used_sources.push((snapshot.index, source_uncertainty.determinant()));
+            used_sources.push((snapshot.index, source_estimate.uncertainty.determinant()));
 
-            // Merge measurements
-            let mixer = (uncertainty + source_uncertainty).inverse();
-            estimate = estimate + uncertainty * mixer * (source_estimate - estimate);
-            uncertainty = uncertainty * mixer * source_uncertainty;
+            estimate = estimate.merge(&source_estimate);
         }
 
         used_sources.sort_by(|a, b| a.1.total_cmp(&b.1));
 
         Combine {
             estimate,
-            uncertainty,
             sources: used_sources.iter().map(|v| v.0).collect(),
             delay: selection
                 .iter()
@@ -92,7 +77,13 @@ pub(super) fn combine<Index: Copy>(
 
 #[cfg(test)]
 mod tests {
-    use crate::time_types::NtpTimestamp;
+    use crate::{
+        algorithm::kalman::{
+            matrix::{Matrix, Vector},
+            source::KalmanState,
+        },
+        time_types::NtpTimestamp,
+    };
 
     use super::*;
 
@@ -103,8 +94,11 @@ mod tests {
     ) -> SourceSnapshot<usize> {
         SourceSnapshot {
             index: 0,
-            state,
-            uncertainty,
+            state: KalmanState {
+                state,
+                uncertainty,
+                time: NtpTimestamp::from_fixed_int(0),
+            },
             delay: 0.0,
             source_uncertainty: NtpDuration::from_seconds(source_uncertainty),
             source_delay: NtpDuration::from_seconds(0.01),
@@ -132,15 +126,14 @@ mod tests {
             ..Default::default()
         };
         let result = combine(&selected, &algconfig).unwrap();
-        assert!((result.uncertainty.entry(0, 0) - 2e-6).abs() < 1e-12);
-        assert!((result.uncertainty.entry(0, 0) - 2e-6).abs() < 1e-12);
+        assert!((result.estimate.offset_variance() - 2e-6).abs() < 1e-12);
 
         let algconfig = AlgorithmConfig {
             ignore_server_dispersion: true,
             ..Default::default()
         };
         let result = combine(&selected, &algconfig).unwrap();
-        assert!((result.uncertainty.entry(0, 0) - 1e-6).abs() < 1e-12);
+        assert!((result.estimate.offset_variance() - 1e-6).abs() < 1e-12);
     }
 
     #[test]
@@ -162,20 +155,20 @@ mod tests {
             ..Default::default()
         };
         let result = combine(&selected, &algconfig).unwrap();
-        assert!((result.estimate.ventry(0) - 5e-4).abs() < 1e-8);
-        assert!(result.estimate.ventry(1).abs() < 1e-8);
-        assert!((result.uncertainty.entry(0, 0) - 1e-6).abs() < 1e-12);
-        assert!((result.uncertainty.entry(1, 1) - 5e-13).abs() < 1e-16);
+        assert!((result.estimate.offset() - 5e-4).abs() < 1e-8);
+        assert!(result.estimate.frequency().abs() < 1e-8);
+        assert!((result.estimate.offset_variance() - 1e-6).abs() < 1e-12);
+        assert!((result.estimate.frequency_variance() - 5e-13).abs() < 1e-16);
 
         let algconfig = AlgorithmConfig {
             ignore_server_dispersion: true,
             ..Default::default()
         };
         let result = combine(&selected, &algconfig).unwrap();
-        assert!((result.estimate.ventry(0) - 5e-4).abs() < 1e-8);
-        assert!(result.estimate.ventry(1).abs() < 1e-8);
-        assert!((result.uncertainty.entry(0, 0) - 5e-7).abs() < 1e-12);
-        assert!((result.uncertainty.entry(1, 1) - 5e-13).abs() < 1e-16);
+        assert!((result.estimate.offset() - 5e-4).abs() < 1e-8);
+        assert!(result.estimate.frequency().abs() < 1e-8);
+        assert!((result.estimate.offset_variance() - 5e-7).abs() < 1e-12);
+        assert!((result.estimate.frequency_variance() - 5e-13).abs() < 1e-16);
     }
 
     #[test]
@@ -226,8 +219,11 @@ mod tests {
     fn snapshot_for_leap(leap: NtpLeapIndicator) -> SourceSnapshot<usize> {
         SourceSnapshot {
             index: 0,
-            state: Vector::new_vector([0.0, 0.0]),
-            uncertainty: Matrix::new([[1e-6, 0.0], [0.0, 1e-12]]),
+            state: KalmanState {
+                state: Vector::new_vector([0.0, 0.0]),
+                uncertainty: Matrix::new([[1e-6, 0.0], [0.0, 1e-12]]),
+                time: NtpTimestamp::from_fixed_int(0),
+            },
             delay: 0.0,
             source_uncertainty: NtpDuration::from_seconds(0.0),
             source_delay: NtpDuration::from_seconds(0.0),
