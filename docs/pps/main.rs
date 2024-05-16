@@ -1,16 +1,12 @@
-use std::os::unix::io::{AsRawFd, RawFd};
-use std::io::{Error, Result};
 use std::fs::File;
+use std::io::{self, Result};
+use std::os::unix::io::{AsRawFd, RawFd};
 use std::mem::MaybeUninit;
-use libc::{self, timespec, clock_gettime, CLOCK_REALTIME};
-use chrono::{NaiveDateTime, NaiveTimeZone, Utc};
-use std::time::{Duration, Instant};
+use libc::{timespec, clock_gettime, CLOCK_REALTIME};
+use std::thread::sleep;
+use std::time::{Duration, Instant, UNIX_EPOCH};
 use std::ops::Sub;
 
-/// NtpDuration is used to represent signed intervals between NtpTimestamps.
-/// A negative duration interval is interpreted to mean that the first
-/// timestamp used to define the interval represents a point in time after
-/// the second timestamp.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct NtpDuration {
     duration: i64,
@@ -31,15 +27,15 @@ impl NtpDuration {
         }
     }
 
-    pub(crate) const fn to_bits_short(self) -> [u8; 4] {
+    pub(crate) fn to_bits_short(self) -> [u8; 4] {
         assert!(self.duration >= 0);
         debug_assert!(self.duration <= 0x0000FFFFFFFFFFFF);
 
-        match self.duration > 0x0000FFFFFFFFFFFF {
-            true => [0xFF, 0xFF, 0xFF, 0xFF],
-            false => ((self.duration & 0x0000FFFFFFFF0000) >> 16) as u32,
+        if self.duration > 0x0000FFFFFFFFFFFF {
+            [0xFF, 0xFF, 0xFF, 0xFF]
+        } else {
+            (((self.duration & 0x0000FFFFFFFF0000) >> 16) as u32).to_be_bytes()
         }
-        .to_be_bytes()
     }
 
     pub fn to_seconds(self) -> f64 {
@@ -128,26 +124,20 @@ impl NtpTimestamp {
     pub const fn to_bits(self) -> [u8; 8] {
         self.timestamp.to_be_bytes()
     }
+
     /// Create an NTP timestamp from the number of seconds and nanoseconds that have
     /// passed since the last ntp era boundary.
     pub const fn from_seconds_nanos_since_ntp_era(seconds: u32, nanos: u32) -> Self {
-        // Although having a valid interpretation, providing more
-        // than 1 second worth of nanoseconds as input probably
-        // indicates an error from the caller.        
         debug_assert!(nanos < 1_000_000_000);
-        // NTP uses 1/2^32 sec as its unit of fractional time.
-        // our time is in nanoseconds, so 1/1e9 seconds        
-        let fraction = ((nanos as u64) << 32) / 1_000_000_000;
 
-        // alternatively, abuse FP arithmetic to save an instruction
-        // let fraction = (nanos as f64 * 4.294967296) as u64;        
+        let fraction = ((nanos as u64) << 32) / 1_000_000_000;
         let timestamp = ((seconds as u64) << 32) + fraction;
         NtpTimestamp::from_bits(timestamp.to_be_bytes())
     }
 
     pub fn from_unix_timestamp(unix_timestamp: u64) -> Self {
-        let system_time = std::time::UNIX_EPOCH + std::time::Duration::from_secs(unix_timestamp);
-        let duration_since_epoch = system_time.duration_since(std::time::UNIX_EPOCH).unwrap();
+        let system_time = UNIX_EPOCH + Duration::from_secs(unix_timestamp);
+        let duration_since_epoch = system_time.duration_since(UNIX_EPOCH).unwrap();
         let seconds = duration_since_epoch.as_secs() as u32;
         let nanos = duration_since_epoch.subsec_nanos();
         NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, nanos)
@@ -203,56 +193,57 @@ impl NtpInstant {
         NtpDuration::from_system_duration(duration)
     }
 
-    pub const fn from_unix_timestamp(unix_timestamp: u64) -> Self {
-        let system_time = std::time::UNIX_EPOCH + std::time::Duration::from_secs(unix_timestamp);
-        let duration_since_epoch = system_time.duration_since(std::time::UNIX_EPOCH).unwrap();
+    pub fn from_unix_timestamp(unix_timestamp: u64) -> Self {
+        let system_time = UNIX_EPOCH + Duration::from_secs(unix_timestamp);
+        let duration_since_epoch = system_time.duration_since(UNIX_EPOCH).unwrap();
         NtpInstant {
-            instant: Instant::from(duration_since_epoch),
+            instant: Instant::now() - duration_since_epoch,
         }
     }
 }
 
-fn get_pps_time(fd: RawFd, last_ntp_timestamp: &mut NtpTimestamp) -> Result<(), Error> {
+fn get_pps_time(_fd: RawFd, last_ntp_timestamp: &mut NtpTimestamp) -> Result<()> {
     let mut ts = MaybeUninit::<timespec>::uninit();
 
     unsafe {
         if clock_gettime(CLOCK_REALTIME, ts.as_mut_ptr()) != 0 {
-            return Err(std::io::Error::last_os_error());
+            return Err(io::Error::last_os_error());
         }
     }
 
     let ts = unsafe { ts.assume_init() };
     let timestamp = ts.tv_sec as u64;
 
-    // Convert Unix timestamp to NtpTimestamp
+    // Convert the Unix timestamp into the required NtpTimestamp
     let ntp_timestamp = NtpTimestamp::from_unix_timestamp(timestamp);
 
     println!("Current NTP Timestamp: {:?}", ntp_timestamp);
 
-    // Convert Unix timestamp to NtpInstant
+    // Convert the Unix timestamp into the required NtpTimestamp
     let ntp_instant = NtpInstant::from_unix_timestamp(timestamp);
 
     println!("Current NTP Instant: {:?}", ntp_instant);
 
-    // Print the difference between two timestamps
-    let time_diff = ntp_timestamp - *last_ntp_timestamp; // Dereference last_ntp_timestamp
+    // Print the difference between the two timestamps
+    let time_diff = ntp_timestamp - *last_ntp_timestamp; //calculate the difference 
     println!("Time difference: {:?}", time_diff);
+
     // Update the last NTP timestamp
-    *last_ntp_timestamp = ntp_timestamp; // Update last_ntp_timestamp
+    *last_ntp_timestamp = ntp_timestamp;  
 
     Ok(())
 }
 
-fn main() -> std::io::Result<()> {
+fn main() -> io::Result<()> {
     let path = "/dev/pps0";
     let file = File::open(path)?;
     let fd = file.as_raw_fd();
 
-    // Initialize the last NTP timestamp to 0
+    // Initialize the last NTP timestamp to the current time
     let mut last_ntp_timestamp = NtpTimestamp::from_unix_timestamp(0);
 
     loop {
-        get_pps_time(fd, &mut last_ntp_timestamp)?; // Pass last_ntp_timestamp as mutable reference
+        get_pps_time(fd, &mut last_ntp_timestamp)?; 
+        sleep(Duration::from_secs(1)); // Sleep for 1 second
     }
 }
-
