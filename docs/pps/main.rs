@@ -6,6 +6,7 @@ use libc::{timespec, clock_gettime, CLOCK_REALTIME};
 use std::thread::sleep;
 use std::time::{Duration, Instant, UNIX_EPOCH};
 use std::ops::Sub;
+use chrono::{DateTime, NaiveDateTime, Utc};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct NtpDuration {
@@ -108,7 +109,6 @@ impl NtpDuration {
     }
 }
 
-// Define the NtpTimestamp struct and its implementation
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
 struct NtpTimestamp {
     timestamp: u64,
@@ -125,8 +125,6 @@ impl NtpTimestamp {
         self.timestamp.to_be_bytes()
     }
 
-    /// Create an NTP timestamp from the number of seconds and nanoseconds that have
-    /// passed since the last ntp era boundary.
     pub const fn from_seconds_nanos_since_ntp_era(seconds: u32, nanos: u32) -> Self {
         debug_assert!(nanos < 1_000_000_000);
 
@@ -135,13 +133,58 @@ impl NtpTimestamp {
         NtpTimestamp::from_bits(timestamp.to_be_bytes())
     }
 
-    pub fn from_unix_timestamp(unix_timestamp: u64) -> Self {
-        let system_time = UNIX_EPOCH + Duration::from_secs(unix_timestamp);
-        let duration_since_epoch = system_time.duration_since(UNIX_EPOCH).unwrap();
-        let seconds = duration_since_epoch.as_secs() as u32;
-        let nanos = duration_since_epoch.subsec_nanos();
-        NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, nanos)
+    pub fn from_unix_timestamp(unix_timestamp: u64, nanos: u32) -> Self {
+        const UNIX_TO_NTP_OFFSET: u64 = 2_208_988_800; // Offset in seconds between Unix epoch and NTP epoch
+        const NTP_SCALE_FRAC: u64 = 4_294_967_296; // 2^32 for scaling nanoseconds to fraction
+        // Calculate NTP seconds
+        let ntp_seconds = unix_timestamp + UNIX_TO_NTP_OFFSET;
+
+        // Calculate the fractional part of the NTP timestamp
+        let fraction = ((nanos as u64 * NTP_SCALE_FRAC) / 1_000_000_000) as u64;
+
+        // Combine NTP seconds and fraction to form the complete NTP timestamp
+        let timestamp = (ntp_seconds << 32) | fraction;
+
+        println!("Unix Timestamp: {}, Nanos: {}, NTP Seconds: {}, Fraction: {}", unix_timestamp, nanos, ntp_seconds, fraction);
+        println!("Combined NTP Timestamp: {:#018X}", timestamp);
+
+        NtpTimestamp { timestamp }
     }
+
+    // pub fn from_unix_timestamp(unix_timestamp: u64, nanos: u32) -> Self {
+    //     let ntp_seconds = unix_timestamp + UNIX_TO_NTP_OFFSET;
+    //     //let fraction = ((nanos as u64) << 32) / 1_000_000_000;
+    //     let fraction = ((nanos as u64 * NTP_SCALE_FRAC) / 1_000_000_000) as u64;
+    //     let timestamp = (ntp_seconds << 32) + fraction;
+    //     println!("Current NTP seconds: {:?}", ntp_seconds);
+    //     NtpTimestamp { timestamp }
+    // }
+    // pub fn from_unix_timestamp(unix_timestamp: u64, nanos: u32) -> Self {
+    //     let ntp_seconds = unix_timestamp + UNIX_TO_NTP_OFFSET;
+    //     let fraction = ((nanos as u64 * NTP_SCALE_FRAC) / 1_000_000_000) as u64;
+    //     //let timestamp = (ntp_seconds << 32) + ((fraction >> 32) as u64);
+    //     let timestamp = (ntp_seconds << 32) | fraction;
+    //     // let fraction_upper = (fraction >> 32) as u32; // Upper 32 bits of fraction
+    //     // let fraction_lower = (fraction & 0xFFFFFFFF) as u32; // Lower 32 bits of fraction
+    //     // let timestamp = (ntp_seconds << 32) | (fraction_lower as u64);
+    //     // Shift NTP Seconds and extract fraction upper and lower parts
+    //     // let fraction_upper = (fraction >> 32) as u32; // Upper 32 bits of fraction
+    //     // let fraction_lower = (fraction & 0xFFFFFFFF) as u32; // Lower 32 bits of fraction
+
+    //     // // Combine upper parts (NTP seconds and upper fraction bits)
+    //     // let timestamp_upper = (ntp_seconds << 32) | (fraction_upper as u64);
+
+    //     // // Combine lower parts (lower fraction bits)
+    //     // let timestamp_lower = fraction_lower as u64;
+
+    //     // // Combine upper and lower parts to form the complete NTP timestamp
+    //     // let timestamp = (timestamp_upper << 32) | timestamp_lower;
+
+    //     println!("Unix Timestamp: {}, Nanos: {}, NTP Seconds: {}, Fraction: {}", unix_timestamp, nanos, ntp_seconds, fraction);
+    //     println!("Combined NTP Timestamp: {:#018X}", timestamp);
+    //     NtpTimestamp { timestamp }
+    // }
+    
 }
 
 impl Sub for NtpTimestamp {
@@ -164,8 +207,6 @@ impl Sub for NtpDuration {
     }
 }
 
-/// NtpInstant is a monotonically increasing value modelling the uptime of the NTP service
-/// It is used to validate packets that we send out, and to order internal operations.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct NtpInstant {
     instant: Instant,
@@ -193,13 +234,14 @@ impl NtpInstant {
         NtpDuration::from_system_duration(duration)
     }
 
-    pub fn from_unix_timestamp(unix_timestamp: u64) -> Self {
-        let system_time = UNIX_EPOCH + Duration::from_secs(unix_timestamp);
+    pub fn from_unix_timestamp(unix_timestamp: u64, nanos: u32) -> Self {
+        let system_time = UNIX_EPOCH + Duration::from_secs(unix_timestamp) + Duration::from_nanos(nanos as u64);
         let duration_since_epoch = system_time.duration_since(UNIX_EPOCH).unwrap();
         NtpInstant {
             instant: Instant::now() - duration_since_epoch,
         }
     }
+    
 }
 
 fn get_pps_time(_fd: RawFd, last_ntp_timestamp: &mut NtpTimestamp) -> Result<()> {
@@ -213,23 +255,27 @@ fn get_pps_time(_fd: RawFd, last_ntp_timestamp: &mut NtpTimestamp) -> Result<()>
 
     let ts = unsafe { ts.assume_init() };
     let timestamp = ts.tv_sec as u64;
+    let nanos = ts.tv_nsec as u32;
 
-    // Convert the Unix timestamp into the required NtpTimestamp
-    let ntp_timestamp = NtpTimestamp::from_unix_timestamp(timestamp);
+    // Debugging: print raw Unix timestamp and nanoseconds
+    println!("Raw Unix Timestamp: {}, Nanoseconds: {}", timestamp, nanos);
 
+    let ntp_timestamp = NtpTimestamp::from_unix_timestamp(timestamp, nanos);
+
+    // Debugging: print the converted NTP timestamp
     println!("Current NTP Timestamp: {:?}", ntp_timestamp);
 
-    // Convert the Unix timestamp into the required NtpTimestamp
-    let ntp_instant = NtpInstant::from_unix_timestamp(timestamp);
+    let time_diff = ntp_timestamp - *last_ntp_timestamp;
 
-    println!("Current NTP Instant: {:?}", ntp_instant);
-
-    // Print the difference between the two timestamps
-    let time_diff = ntp_timestamp - *last_ntp_timestamp; //calculate the difference 
+    // Debugging: print the time difference
     println!("Time difference: {:?}", time_diff);
 
-    // Update the last NTP timestamp
-    *last_ntp_timestamp = ntp_timestamp;  
+    *last_ntp_timestamp = ntp_timestamp;
+
+    // Convert the timestamp to a readable format using chrono for verification
+    let naive_datetime = NaiveDateTime::from_timestamp(timestamp as i64, nanos);
+    let datetime: DateTime<Utc> = DateTime::from_utc(naive_datetime, Utc);
+    println!("Readable time: {}", datetime);
 
     Ok(())
 }
@@ -239,11 +285,10 @@ fn main() -> io::Result<()> {
     let file = File::open(path)?;
     let fd = file.as_raw_fd();
 
-    // Initialize the last NTP timestamp to the current time
-    let mut last_ntp_timestamp = NtpTimestamp::from_unix_timestamp(0);
+    let mut last_ntp_timestamp = NtpTimestamp::from_unix_timestamp(0, 0);
 
     loop {
-        get_pps_time(fd, &mut last_ntp_timestamp)?; 
-        sleep(Duration::from_secs(1)); // Sleep for 1 second
+        get_pps_time(fd, &mut last_ntp_timestamp)?;
+        sleep(Duration::from_secs(1));
     }
 }
