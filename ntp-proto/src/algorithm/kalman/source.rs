@@ -86,6 +86,137 @@ use super::{
     sqr, SourceSnapshot,
 };
 
+#[derive(Debug, Clone)]
+pub(super) struct KalmanState {
+    pub state: Vector<2>,
+    pub uncertainty: Matrix<2, 2>,
+    // current time of the filter state
+    pub time: NtpTimestamp,
+}
+
+pub(super) struct MeasurementStats {
+    // Probability that the measurement was as close or closer to the prediction from the filter
+    pub observe_probability: f64,
+    // How much the measurement affected the filter state
+    pub weight: f64,
+}
+
+impl KalmanState {
+    pub fn progress_time(&self, time: NtpTimestamp, wander: f64) -> KalmanState {
+        debug_assert!(!time.is_before(self.time));
+        if time.is_before(self.time) {
+            return self.clone();
+        }
+
+        // Time step paremeters
+        let delta_t = (time - self.time).to_seconds();
+        let update = Matrix::new([[1.0, delta_t], [0.0, 1.0]]);
+        let process_noise = Matrix::new([
+            [
+                wander * delta_t * delta_t * delta_t / 3.,
+                wander * delta_t * delta_t / 2.,
+            ],
+            [wander * delta_t * delta_t / 2., wander * delta_t],
+        ]);
+
+        // Kalman filter update
+        KalmanState {
+            state: update * self.state,
+            uncertainty: update * self.uncertainty * update.transpose() + process_noise,
+            time,
+        }
+    }
+
+    pub fn absorb_measurement(
+        &self,
+        measurement: Matrix<1, 2>,
+        value: Vector<1>,
+        noise: Matrix<1, 1>,
+    ) -> (KalmanState, MeasurementStats) {
+        let difference = value - measurement * self.state;
+        let difference_covariance =
+            measurement * self.uncertainty * measurement.transpose() + noise;
+        let update_strength =
+            self.uncertainty * measurement.transpose() * difference_covariance.inverse();
+
+        // Statistics
+        let observe_probability =
+            chi_1(difference.inner(difference_covariance.inverse() * difference));
+        // Calculate an indicator of how much of the measurement was incorporated
+        // into the state. 1.0 - is needed here as this should become lower as
+        // measurement noise's contribution to difference uncertainty increases.
+        let weight = 1.0 - noise.determinant() / difference_covariance.determinant();
+
+        (
+            KalmanState {
+                state: self.state + update_strength * difference,
+                uncertainty: ((Matrix::unit() - update_strength * measurement) * self.uncertainty)
+                    .symmetrize(),
+                time: self.time,
+            },
+            MeasurementStats {
+                observe_probability,
+                weight,
+            },
+        )
+    }
+
+    pub fn merge(&self, other: &KalmanState) -> KalmanState {
+        debug_assert_eq!(self.time, other.time);
+
+        let mixer = (self.uncertainty + other.uncertainty).inverse();
+
+        KalmanState {
+            state: self.state + self.uncertainty * mixer * (other.state - self.state),
+            uncertainty: self.uncertainty * mixer * other.uncertainty,
+            time: self.time,
+        }
+    }
+
+    pub fn add_server_dispersion(&self, dispersion: f64) -> KalmanState {
+        KalmanState {
+            state: self.state,
+            uncertainty: self.uncertainty + Matrix::new([[sqr(dispersion), 0.0], [0.0, 0.0]]),
+            time: self.time,
+        }
+    }
+
+    pub fn offset(&self) -> f64 {
+        self.state.ventry(0)
+    }
+
+    pub fn offset_variance(&self) -> f64 {
+        self.uncertainty.entry(0, 0)
+    }
+
+    pub fn frequency(&self) -> f64 {
+        self.state.ventry(1)
+    }
+
+    pub fn frequency_variance(&self) -> f64 {
+        self.uncertainty.entry(1, 1)
+    }
+
+    fn process_offset_steering(&self, steer: f64) -> KalmanState {
+        KalmanState {
+            state: self.state - Vector::new_vector([steer, 0.0]),
+            uncertainty: self.uncertainty,
+            time: self.time + NtpDuration::from_seconds(steer),
+        }
+    }
+
+    fn process_frequency_steering(
+        &self,
+        time: NtpTimestamp,
+        steer: f64,
+        wander: f64,
+    ) -> KalmanState {
+        let mut result = self.progress_time(time, wander);
+        result.state = result.state - Vector::new_vector([0.0, steer]);
+        result
+    }
+}
+
 #[derive(Debug, Default, Copy, Clone)]
 struct AveragingBuffer {
     data: [f64; 8],
@@ -155,8 +286,7 @@ impl InitialSourceFilter {
 
 #[derive(Debug, Clone)]
 struct SourceFilter {
-    state: Vector<2>,
-    uncertainty: Matrix<2, 2>,
+    state: KalmanState,
     clock_wander: f64,
 
     roundtriptime_stats: AveragingBuffer,
@@ -170,40 +300,12 @@ struct SourceFilter {
 
     // Last time a packet was processed
     last_iter: NtpTimestamp,
-    // Current time of the filter state.
-    filter_time: NtpTimestamp,
 }
 
 impl SourceFilter {
     /// Move the filter forward to reflect the situation at a new, later timestamp
     fn progress_filtertime(&mut self, time: NtpTimestamp) {
-        debug_assert!(
-            !time.is_before(self.filter_time),
-            "time {time:?} is before filter_time {:?}",
-            self.filter_time
-        );
-        if time.is_before(self.filter_time) {
-            return;
-        }
-
-        // Time step paremeters
-        let delta_t = (time - self.filter_time).to_seconds();
-        let update = Matrix::new([[1.0, delta_t], [0.0, 1.0]]);
-        let process_noise = Matrix::new([
-            [
-                self.clock_wander * delta_t * delta_t * delta_t / 3.,
-                self.clock_wander * delta_t * delta_t / 2.,
-            ],
-            [
-                self.clock_wander * delta_t * delta_t / 2.,
-                self.clock_wander * delta_t,
-            ],
-        ]);
-
-        // Kalman filter update
-        self.state = update * self.state;
-        self.uncertainty = update * self.uncertainty * update.transpose() + process_noise;
-        self.filter_time = time;
+        self.state = self.state.progress_time(time, self.clock_wander);
 
         trace!(?time, "Filter progressed");
     }
@@ -218,29 +320,22 @@ impl SourceFilter {
         let measurement_vec = Vector::new_vector([measurement.offset.to_seconds()]);
         let measurement_transform = Matrix::new([[1., 0.]]);
         let measurement_noise = Matrix::new([[delay_variance / 4.]]);
-        let difference = measurement_vec - measurement_transform * self.state;
-        let difference_covariance =
-            measurement_transform * self.uncertainty * measurement_transform.transpose()
-                + measurement_noise;
-        let update_strength =
-            self.uncertainty * measurement_transform.transpose() * difference_covariance.inverse();
-        self.state = self.state + update_strength * difference;
-        self.uncertainty = ((Matrix::unit() - update_strength * measurement_transform)
-            * self.uncertainty)
-            .symmetrize();
+        let (new_state, stats) = self.state.absorb_measurement(
+            measurement_transform,
+            measurement_vec,
+            measurement_noise,
+        );
 
-        // Statistics
-        let p = chi_1(difference.inner(difference_covariance.inverse() * difference));
-        // Calculate an indicator of how much of the measurement was incorporated
-        // into the state. 1.0 - is needed here as this should become lower as
-        // measurement noise's contribution to difference uncertainty increases.
-        let weight = 1.0 - measurement_noise.determinant() / difference_covariance.determinant();
-
+        self.state = new_state;
         self.last_measurement = measurement;
 
-        trace!(p, weight, "Measurement absorbed");
+        trace!(
+            stats.observe_probability,
+            stats.weight,
+            "Measurement absorbed"
+        );
 
-        (p, weight, m_delta_t)
+        (stats.observe_probability, stats.weight, m_delta_t)
     }
 
     /// Ensure we poll often enough to keep the filter well-fed with information, but
@@ -335,7 +430,7 @@ impl SourceFilter {
         self.last_measurement.stratum = measurement.stratum;
         self.last_measurement.leap = measurement.leap;
 
-        if measurement.localtime.is_before(self.filter_time) {
+        if measurement.localtime.is_before(self.state.time) {
             // Ignore the past
             return false;
         }
@@ -368,28 +463,28 @@ impl SourceFilter {
 
         debug!(
             "source offset {}±{}ms, freq {}±{}ppm",
-            self.state.ventry(0) * 1000.,
-            (self.uncertainty.entry(0, 0)
+            self.state.offset() * 1000.,
+            (self.state.offset_variance()
                 + sqr(self.last_measurement.root_dispersion.to_seconds()))
             .sqrt()
                 * 1000.,
-            self.state.ventry(1) * 1e6,
-            self.uncertainty.entry(1, 1).sqrt() * 1e6
+            self.state.frequency() * 1e6,
+            self.state.frequency_variance().sqrt() * 1e6
         );
 
         true
     }
 
     fn process_offset_steering(&mut self, steer: f64) {
-        self.state = self.state - Vector::new_vector([steer, 0.0]);
+        self.state = self.state.process_offset_steering(steer);
         self.last_measurement.offset -= NtpDuration::from_seconds(steer);
         self.last_measurement.localtime += NtpDuration::from_seconds(steer);
-        self.filter_time += NtpDuration::from_seconds(steer);
     }
 
     fn process_frequency_steering(&mut self, time: NtpTimestamp, steer: f64) {
-        self.progress_filtertime(time);
-        self.state = self.state - Vector::new_vector([0.0, steer]);
+        self.state = self
+            .state
+            .process_frequency_steering(time, steer, self.clock_wander);
         self.last_measurement.offset += NtpDuration::from_seconds(
             steer * (time - self.last_measurement.localtime).to_seconds(),
         );
@@ -442,11 +537,14 @@ impl SourceState {
                 filter.update(measurement);
                 if filter.samples == 8 {
                     *self = SourceState(SourceStateInner::Stable(SourceFilter {
-                        state: Vector::new_vector([filter.init_offset.mean(), 0.]),
-                        uncertainty: Matrix::new([
-                            [filter.init_offset.variance(), 0.],
-                            [0., sqr(algo_config.initial_frequency_uncertainty)],
-                        ]),
+                        state: KalmanState {
+                            state: Vector::new_vector([filter.init_offset.mean(), 0.]),
+                            uncertainty: Matrix::new([
+                                [filter.init_offset.variance(), 0.],
+                                [0., sqr(algo_config.initial_frequency_uncertainty)],
+                            ]),
+                            time: measurement.localtime,
+                        },
                         clock_wander: sqr(algo_config.initial_wander),
                         roundtriptime_stats: filter.roundtriptime_stats,
                         precision_score: 0,
@@ -455,7 +553,6 @@ impl SourceState {
                         last_measurement: measurement,
                         prev_was_outlier: false,
                         last_iter: measurement.localtime,
-                        filter_time: measurement.localtime,
                     }));
                     debug!("Initial source measurements complete");
                 }
@@ -520,24 +617,26 @@ impl SourceState {
                     leap_indicator: last_measurement.leap,
                     last_update: last_measurement.localtime,
                     delay: max_roundtrip,
-                    state: Vector::new_vector([
-                        init_offset.data[..*samples as usize]
-                            .iter()
-                            .copied()
-                            .sum::<f64>()
-                            / (*samples as f64),
-                        0.0,
-                    ]),
-                    uncertainty: Matrix::new([
-                        [max_roundtrip, 0.0],
-                        [0.0, INITIALIZATION_FREQ_UNCERTAINTY],
-                    ]),
+                    state: KalmanState {
+                        state: Vector::new_vector([
+                            init_offset.data[..*samples as usize]
+                                .iter()
+                                .copied()
+                                .sum::<f64>()
+                                / (*samples as f64),
+                            0.0,
+                        ]),
+                        uncertainty: Matrix::new([
+                            [max_roundtrip, 0.0],
+                            [0.0, INITIALIZATION_FREQ_UNCERTAINTY],
+                        ]),
+                        time: last_measurement.localtime,
+                    },
                 })
             }
             SourceStateInner::Stable(filter) => Some(SourceSnapshot {
                 index,
-                state: filter.state,
-                uncertainty: filter.uncertainty,
+                state: filter.state.clone(),
                 delay: filter.roundtriptime_stats.mean(),
                 source_uncertainty: filter.last_measurement.root_dispersion,
                 source_delay: filter.last_measurement.root_delay,
@@ -551,7 +650,7 @@ impl SourceState {
     pub fn get_filtertime(&self) -> Option<NtpTimestamp> {
         match &self.0 {
             SourceStateInner::Initial(_) => None,
-            SourceStateInner::Stable(filter) => Some(filter.filter_time),
+            SourceStateInner::Stable(filter) => Some(filter.state.time),
         }
     }
 
@@ -598,8 +697,11 @@ mod tests {
         let basei = NtpInstant::now();
 
         let mut source = SourceState(SourceStateInner::Stable(SourceFilter {
-            state: Vector::new_vector([20e-3, 0.]),
-            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+            state: KalmanState {
+                state: Vector::new_vector([20e-3, 0.]),
+                uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+                time: base,
+            },
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -624,7 +726,6 @@ mod tests {
             },
             prev_was_outlier: false,
             last_iter: base,
-            filter_time: base,
         }));
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
@@ -647,8 +748,11 @@ mod tests {
         assert!(matches!(source, SourceState(SourceStateInner::Initial(_))));
 
         let mut source = SourceState(SourceStateInner::Stable(SourceFilter {
-            state: Vector::new_vector([20e-3, 0.]),
-            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+            state: KalmanState {
+                state: Vector::new_vector([20e-3, 0.]),
+                uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+                time: base,
+            },
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -673,7 +777,6 @@ mod tests {
             },
             prev_was_outlier: false,
             last_iter: base,
-            filter_time: base,
         }));
         source.process_offset_steering(-1800.0);
         source.update_self_using_measurement(
@@ -697,8 +800,11 @@ mod tests {
         assert!(matches!(source, SourceState(SourceStateInner::Stable(_))));
 
         let mut source = SourceState(SourceStateInner::Stable(SourceFilter {
-            state: Vector::new_vector([20e-3, 0.]),
-            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+            state: KalmanState {
+                state: Vector::new_vector([20e-3, 0.]),
+                uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+                time: base,
+            },
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -723,7 +829,6 @@ mod tests {
             },
             prev_was_outlier: false,
             last_iter: base,
-            filter_time: base,
         }));
         source.process_offset_steering(1800.0);
         source.update_self_using_measurement(
@@ -752,8 +857,11 @@ mod tests {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
         let mut source = SourceState(SourceStateInner::Stable(SourceFilter {
-            state: Vector::new_vector([20e-3, 0.]),
-            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+            state: KalmanState {
+                state: Vector::new_vector([20e-3, 0.]),
+                uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+                time: base,
+            },
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -778,11 +886,10 @@ mod tests {
             },
             prev_was_outlier: false,
             last_iter: base,
-            filter_time: base,
         }));
 
         source.process_offset_steering(20e-3);
-        assert!(source.snapshot(0_usize).unwrap().state.ventry(0).abs() < 1e-7);
+        assert!(source.snapshot(0_usize).unwrap().state.offset().abs() < 1e-7);
 
         assert!(catch_unwind(
             move || source.progress_filtertime(base + NtpDuration::from_seconds(10e-3))
@@ -790,8 +897,11 @@ mod tests {
         .is_err());
 
         let mut source = SourceState(SourceStateInner::Stable(SourceFilter {
-            state: Vector::new_vector([20e-3, 0.]),
-            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+            state: KalmanState {
+                state: Vector::new_vector([20e-3, 0.]),
+                uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+                time: base,
+            },
             clock_wander: 0.0,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -816,11 +926,10 @@ mod tests {
             },
             prev_was_outlier: false,
             last_iter: base,
-            filter_time: base,
         }));
 
         source.process_offset_steering(20e-3);
-        assert!(source.snapshot(0_usize).unwrap().state.ventry(0).abs() < 1e-7);
+        assert!(source.snapshot(0_usize).unwrap().state.offset().abs() < 1e-7);
 
         source.update_self_using_raw_measurement(
             &SourceDefaultsConfig::default(),
@@ -841,12 +950,15 @@ mod tests {
             },
         );
 
-        assert!(dbg!((source.snapshot(0_usize).unwrap().state.ventry(0) - 20e-3).abs()) < 1e-7);
-        assert!((source.snapshot(0_usize).unwrap().state.ventry(1) - 20e-6).abs() < 1e-7);
+        assert!(dbg!((source.snapshot(0_usize).unwrap().state.offset() - 20e-3).abs()) < 1e-7);
+        assert!((source.snapshot(0_usize).unwrap().state.frequency() - 20e-6).abs() < 1e-7);
 
         let mut source = SourceState(SourceStateInner::Stable(SourceFilter {
-            state: Vector::new_vector([-20e-3, 0.]),
-            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+            state: KalmanState {
+                state: Vector::new_vector([-20e-3, 0.]),
+                uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+                time: base,
+            },
             clock_wander: 0.0,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -871,11 +983,10 @@ mod tests {
             },
             prev_was_outlier: false,
             last_iter: base,
-            filter_time: base,
         }));
 
         source.process_offset_steering(-20e-3);
-        assert!(source.snapshot(0_usize).unwrap().state.ventry(0).abs() < 1e-7);
+        assert!(source.snapshot(0_usize).unwrap().state.offset().abs() < 1e-7);
 
         source.progress_filtertime(base - NtpDuration::from_seconds(10e-3)); // should succeed
 
@@ -898,8 +1009,8 @@ mod tests {
             },
         );
 
-        assert!(dbg!((source.snapshot(0_usize).unwrap().state.ventry(0) - -20e-3).abs()) < 1e-7);
-        assert!((source.snapshot(0_usize).unwrap().state.ventry(1) - -20e-6).abs() < 1e-7);
+        assert!(dbg!((source.snapshot(0_usize).unwrap().state.offset() - -20e-3).abs()) < 1e-7);
+        assert!((source.snapshot(0_usize).unwrap().state.frequency() - -20e-6).abs() < 1e-7);
     }
 
     #[test]
@@ -907,8 +1018,11 @@ mod tests {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
         let mut source = SourceFilter {
-            state: Vector::new_vector([0.0, 0.]),
-            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+            state: KalmanState {
+                state: Vector::new_vector([0.0, 0.]),
+                uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+                time: base,
+            },
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -933,21 +1047,23 @@ mod tests {
             },
             prev_was_outlier: false,
             last_iter: base,
-            filter_time: base,
         };
 
         source.process_frequency_steering(base + NtpDuration::from_seconds(5.0), 200e-6);
-        assert!((source.state.ventry(1) - -200e-6).abs() < 1e-10);
-        assert!(source.state.ventry(0).abs() < 1e-8);
+        assert!((source.state.frequency() - -200e-6).abs() < 1e-10);
+        assert!(source.state.offset().abs() < 1e-8);
         assert!((source.last_measurement.offset.to_seconds() - 1e-3).abs() < 1e-8);
         source.process_frequency_steering(base + NtpDuration::from_seconds(10.0), -200e-6);
-        assert!(source.state.ventry(1).abs() < 1e-10);
-        assert!((source.state.ventry(0) - -1e-3).abs() < 1e-8);
+        assert!(source.state.frequency().abs() < 1e-10);
+        assert!((source.state.offset() - -1e-3).abs() < 1e-8);
         assert!((source.last_measurement.offset.to_seconds() - -1e-3).abs() < 1e-8);
 
         let mut source = SourceState(SourceStateInner::Stable(SourceFilter {
-            state: Vector::new_vector([0.0, 0.]),
-            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+            state: KalmanState {
+                state: Vector::new_vector([0.0, 0.]),
+                uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+                time: base,
+            },
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -972,15 +1088,14 @@ mod tests {
             },
             prev_was_outlier: false,
             last_iter: base,
-            filter_time: base,
         }));
 
         source.process_frequency_steering(base + NtpDuration::from_seconds(5.0), 200e-6);
-        assert!((source.snapshot(0_usize).unwrap().state.ventry(1) - -200e-6).abs() < 1e-10);
-        assert!(source.snapshot(0_usize).unwrap().state.ventry(0).abs() < 1e-8);
+        assert!((source.snapshot(0_usize).unwrap().state.frequency() - -200e-6).abs() < 1e-10);
+        assert!(source.snapshot(0_usize).unwrap().state.offset().abs() < 1e-8);
         source.process_frequency_steering(base + NtpDuration::from_seconds(10.0), -200e-6);
-        assert!(source.snapshot(0_usize).unwrap().state.ventry(1).abs() < 1e-10);
-        assert!((source.snapshot(0_usize).unwrap().state.ventry(0) - -1e-3).abs() < 1e-8);
+        assert!(source.snapshot(0_usize).unwrap().state.frequency().abs() < 1e-10);
+        assert!((source.snapshot(0_usize).unwrap().state.offset() - -1e-3).abs() < 1e-8);
     }
 
     #[test]
@@ -1007,7 +1122,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1026,7 +1141,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1045,7 +1160,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1064,7 +1179,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1083,7 +1198,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1102,7 +1217,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1121,7 +1236,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1140,8 +1255,8 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!((source.snapshot(0_usize).unwrap().state.ventry(0) - 3.5e-3).abs() < 1e-7);
-        assert!((source.snapshot(0_usize).unwrap().uncertainty.entry(0, 0) - 1e-6) > 0.);
+        assert!((source.snapshot(0_usize).unwrap().state.offset() - 3.5e-3).abs() < 1e-7);
+        assert!((source.snapshot(0_usize).unwrap().state.offset_variance() - 1e-6) > 0.);
     }
 
     #[test]
@@ -1168,7 +1283,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1187,7 +1302,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1206,7 +1321,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1226,7 +1341,7 @@ mod tests {
             },
         );
         source.process_offset_steering(4e-3);
-        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1245,7 +1360,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1264,7 +1379,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1283,7 +1398,7 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
+        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1302,8 +1417,8 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!((source.snapshot(0_usize).unwrap().state.ventry(0) - 3.5e-3).abs() < 1e-7);
-        assert!((source.snapshot(0_usize).unwrap().uncertainty.entry(0, 0) - 1e-6) > 0.);
+        assert!((source.snapshot(0_usize).unwrap().state.offset() - 3.5e-3).abs() < 1e-7);
+        assert!((source.snapshot(0_usize).unwrap().state.offset_variance() - 1e-6) > 0.);
     }
 
     #[test]
@@ -1317,8 +1432,11 @@ mod tests {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
         let mut source = SourceFilter {
-            state: Vector::new_vector([0.0, 0.]),
-            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+            state: KalmanState {
+                state: Vector::new_vector([0.0, 0.]),
+                uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+                time: base,
+            },
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -1343,7 +1461,6 @@ mod tests {
             },
             prev_was_outlier: false,
             last_iter: base,
-            filter_time: base,
         };
 
         let baseinterval = source.desired_poll_interval.as_duration().to_seconds();
@@ -1443,8 +1560,11 @@ mod tests {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
         let mut source = SourceFilter {
-            state: Vector::new_vector([0.0, 0.]),
-            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+            state: KalmanState {
+                state: Vector::new_vector([0.0, 0.]),
+                uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+                time: base,
+            },
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
@@ -1469,7 +1589,6 @@ mod tests {
             },
             prev_was_outlier: false,
             last_iter: base,
-            filter_time: base,
         };
 
         source.update_wander_estimate(&algo_config, 1.0, 0.0);

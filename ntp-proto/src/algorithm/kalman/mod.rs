@@ -14,8 +14,7 @@ use crate::{
 use self::{
     combiner::combine,
     config::AlgorithmConfig,
-    matrix::{Matrix, Vector},
-    source::SourceState,
+    source::{KalmanState, SourceState},
 };
 
 use super::{ObservableSourceTimedata, StateUpdate, TimeSyncController};
@@ -33,8 +32,7 @@ fn sqr(x: f64) -> f64 {
 #[derive(Debug, Clone)]
 struct SourceSnapshot<Index: Copy> {
     index: Index,
-    state: Vector<2>,
-    uncertainty: Matrix<2, 2>,
+    state: KalmanState,
     delay: f64,
 
     source_uncertainty: NtpDuration,
@@ -46,11 +44,11 @@ struct SourceSnapshot<Index: Copy> {
 
 impl<Index: Copy> SourceSnapshot<Index> {
     fn offset(&self) -> f64 {
-        self.state.ventry(0)
+        self.state.offset()
     }
 
     fn offset_uncertainty(&self) -> f64 {
-        self.uncertainty.entry(0, 0).sqrt()
+        self.state.offset_variance().sqrt()
     }
 
     fn observe(&self) -> ObservableSourceTimedata {
@@ -126,16 +124,16 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
         if let Some(combined) = combine(&selection, &self.algo_config) {
             info!(
                 "Offset: {}+-{}ms, frequency: {}+-{}ppm",
-                combined.estimate.ventry(0) * 1e3,
-                combined.uncertainty.entry(0, 0).sqrt() * 1e3,
-                combined.estimate.ventry(1) * 1e6,
-                combined.uncertainty.entry(1, 1).sqrt() * 1e6
+                combined.estimate.offset() * 1e3,
+                combined.estimate.offset_variance().sqrt() * 1e3,
+                combined.estimate.frequency() * 1e6,
+                combined.estimate.frequency_variance().sqrt() * 1e6
             );
 
-            let freq_delta = combined.estimate.ventry(1) - self.desired_freq;
-            let freq_uncertainty = combined.uncertainty.entry(1, 1).sqrt();
-            let offset_delta = combined.estimate.ventry(0);
-            let offset_uncertainty = combined.uncertainty.entry(0, 0).sqrt();
+            let freq_delta = combined.estimate.frequency() - self.desired_freq;
+            let freq_uncertainty = combined.estimate.frequency_variance().sqrt();
+            let offset_delta = combined.estimate.offset();
+            let offset_uncertainty = combined.estimate.offset_variance().sqrt();
             let next_update = if self.desired_freq == 0.0
                 && offset_delta.abs() > offset_uncertainty * self.algo_config.steer_offset_threshold
             {
@@ -170,7 +168,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
 
             self.timedata.root_delay = combined.delay;
             self.timedata.root_dispersion =
-                NtpDuration::from_seconds(combined.uncertainty.entry(0, 0).sqrt());
+                NtpDuration::from_seconds(combined.estimate.offset_variance().sqrt());
             self.clock
                 .error_estimate_update(self.timedata.root_dispersion, self.timedata.root_delay)
                 .expect("Cannot update clock");

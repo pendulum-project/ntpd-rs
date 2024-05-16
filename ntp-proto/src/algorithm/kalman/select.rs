@@ -73,6 +73,7 @@ pub(super) fn select<Index: Copy>(
 #[cfg(test)]
 mod tests {
     use crate::{
+        algorithm::kalman::source::KalmanState,
         packet::NtpLeapIndicator,
         time_types::{NtpDuration, NtpTimestamp},
     };
@@ -87,8 +88,11 @@ mod tests {
     fn snapshot_for_range(center: f64, uncertainty: f64, delay: f64) -> SourceSnapshot<usize> {
         SourceSnapshot {
             index: 0,
-            state: Vector::new_vector([center, 0.0]),
-            uncertainty: Matrix::new([[sqr(uncertainty), 0.0], [0.0, 10e-12]]),
+            state: KalmanState {
+                state: Vector::new_vector([center, 0.0]),
+                uncertainty: Matrix::new([[sqr(uncertainty), 0.0], [0.0, 10e-12]]),
+                time: NtpTimestamp::from_fixed_int(0),
+            },
             delay,
             source_uncertainty: NtpDuration::from_seconds(0.01),
             source_delay: NtpDuration::from_seconds(0.01),
