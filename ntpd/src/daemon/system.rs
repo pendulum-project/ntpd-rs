@@ -1,23 +1,27 @@
 #[cfg(feature = "unstable_nts-pool")]
 use super::spawn::nts_pool::NtsPoolSpawner;
 use super::{
-    config::{ClockConfig, NormalizedAddress, NtpSourceConfig, ServerConfig, TimestampMode},
+    config::{ClockConfig, NtpSourceConfig, ServerConfig, TimestampMode},
     ntp_source::{MsgForSystem, SourceChannels, SourceTask, Wait},
     server::{ServerStats, ServerTask},
     spawn::{
         nts::NtsSpawner, pool::PoolSpawner, standard::StandardSpawner, SourceCreateParameters,
         SourceId, SourceRemovalReason, SpawnAction, SpawnEvent, Spawner, SpawnerId, SystemEvent,
     },
-    ObservableSourceState, ObservedSourceState,
 };
 
 use std::{
-    collections::HashMap, future::Future, marker::PhantomData, net::IpAddr, pin::Pin, sync::Arc,
+    collections::HashMap,
+    future::Future,
+    marker::PhantomData,
+    net::IpAddr,
+    pin::Pin,
+    sync::{Arc, RwLock},
 };
 
 use ntp_proto::{
-    KeySet, NtpClock, SourceDefaultsConfig, SynchronizationConfig, System, SystemActionIterator,
-    SystemSnapshot, SystemSourceUpdate,
+    KalmanSourceController, KeySet, NtpClock, ObservableSourceState, SourceDefaultsConfig,
+    SynchronizationConfig, System, SystemActionIterator, SystemSnapshot, SystemSourceUpdate,
 };
 use timestamped_socket::interface::InterfaceName;
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -71,7 +75,8 @@ impl<T: Wait> Wait for SingleshotSleep<T> {
 }
 
 pub struct DaemonChannels {
-    pub source_snapshots_receiver: tokio::sync::watch::Receiver<Vec<ObservableSourceState>>,
+    pub source_snapshots:
+        Arc<std::sync::RwLock<HashMap<SourceId, ObservableSourceState<SourceId>>>>,
     pub server_data_receiver: tokio::sync::watch::Receiver<Vec<ServerData>>,
     pub system_snapshot_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
 }
@@ -159,8 +164,9 @@ struct SystemTask<C: NtpClock, T: Wait> {
     system: System<C, SourceId>,
 
     system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
-    system_update_sender: tokio::sync::broadcast::Sender<SystemSourceUpdate>,
-    source_snapshots_sender: tokio::sync::watch::Sender<Vec<ObservableSourceState>>,
+    system_update_sender:
+        tokio::sync::broadcast::Sender<SystemSourceUpdate<KalmanSourceController<SourceId>>>,
+    source_snapshots: Arc<std::sync::RwLock<HashMap<SourceId, ObservableSourceState<SourceId>>>>,
     server_data_sender: tokio::sync::watch::Sender<Vec<ServerData>>,
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     ip_list: tokio::sync::watch::Receiver<Arc<[IpAddr]>>,
@@ -204,8 +210,7 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
         // Create communication channels
         let (system_snapshot_sender, system_snapshot_receiver) =
             tokio::sync::watch::channel(system.system_snapshot());
-        let (source_snapshots_sender, source_snapshots_receiver) =
-            tokio::sync::watch::channel(vec![]);
+        let source_snapshots = Arc::new(RwLock::new(HashMap::new()));
         let (server_data_sender, server_data_receiver) = tokio::sync::watch::channel(vec![]);
         let (msg_for_system_sender, msg_for_system_receiver) =
             tokio::sync::mpsc::channel(MESSAGE_BUFFER_SIZE);
@@ -220,7 +225,7 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
 
                 system_snapshot_sender,
                 system_update_sender,
-                source_snapshots_sender,
+                source_snapshots: source_snapshots.clone(),
                 server_data_sender,
                 keyset: keyset.clone(),
                 ip_list,
@@ -238,7 +243,7 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
                 interface,
             },
             DaemonChannels {
-                source_snapshots_receiver,
+                source_snapshots,
                 server_data_receiver,
                 system_snapshot_receiver,
             },
@@ -303,7 +308,7 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
 
     fn handle_state_update(
         &mut self,
-        actions: SystemActionIterator,
+        actions: SystemActionIterator<KalmanSourceController<SourceId>>,
         wait: &mut Pin<&mut SingleshotSleep<T>>,
     ) {
         // Don't care if there is no receiver.
@@ -349,12 +354,6 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
                 self.handle_source_unreachable(index).await?;
             }
         }
-
-        // Don't care if there is no receiver for source snapshots (which might happen if
-        // we don't enable observing in the configuration)
-        let _ = self
-            .source_snapshots_sender
-            .send(self.observe_sources().collect());
 
         Ok(())
     }
@@ -438,7 +437,6 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
         self.sources.insert(
             source_id,
             SourceState {
-                source_address: params.normalized_addr.clone(),
                 source_id,
                 spawner_id,
             },
@@ -454,6 +452,7 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
 
         SourceTask::spawn(
             source_id,
+            params.normalized_addr.to_string(),
             params.addr,
             self.interface,
             self.clock.clone(),
@@ -461,15 +460,11 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
             SourceChannels {
                 msg_for_system_sender: self.msg_for_system_tx.clone(),
                 system_update_receiver: self.system_update_sender.subscribe(),
+                source_snapshots: self.source_snapshots.clone(),
             },
             source,
             initial_actions,
         );
-
-        // Don't care if there is no receiver
-        let _ = self
-            .source_snapshots_sender
-            .send(self.observe_sources().collect());
 
         // Try and find a related spawner and notify that spawner.
         // This makes sure that the spawner that initially sent the create event
@@ -509,28 +504,10 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
         );
         let _ = self.server_data_sender.send(self.servers.clone());
     }
-
-    fn observe_sources(&self) -> impl Iterator<Item = ObservableSourceState> + '_ {
-        self.sources.iter().map(|(index, data)| {
-            if let Some((snapshot, timedata)) = self.system.observe_source(*index) {
-                ObservableSourceState::Observable(ObservedSourceState {
-                    timedata,
-                    unanswered_polls: snapshot.reach.unanswered_polls(),
-                    poll_interval: snapshot.poll_interval,
-                    name: data.source_address.to_string(),
-                    address: snapshot.source_addr.to_string(),
-                    id: data.source_id,
-                })
-            } else {
-                ObservableSourceState::Nothing
-            }
-        })
-    }
 }
 
 #[derive(Debug)]
 struct SourceState {
-    source_address: NormalizedAddress,
     spawner_id: SpawnerId,
     source_id: SourceId,
 }
@@ -539,215 +516,4 @@ struct SourceState {
 pub struct ServerData {
     pub stats: ServerStats,
     pub config: ServerConfig,
-}
-
-#[cfg(test)]
-mod tests {
-    use ntp_proto::{
-        source_snapshot, KeySetProvider, Measurement, NtpDuration, NtpInstant, NtpLeapIndicator,
-        NtpSourceUpdate, NtpTimestamp,
-    };
-
-    use super::super::spawn::dummy::DummySpawner;
-
-    use super::*;
-
-    #[derive(Debug, Clone, Default)]
-    struct TestClock {}
-
-    impl NtpClock for TestClock {
-        type Error = std::io::Error;
-
-        fn now(&self) -> std::result::Result<NtpTimestamp, Self::Error> {
-            // Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
-            Ok(NtpTimestamp::default())
-        }
-
-        fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
-            Ok(NtpTimestamp::default())
-        }
-
-        fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
-            Ok(NtpTimestamp::default())
-        }
-
-        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            Ok(())
-        }
-
-        fn error_estimate_update(
-            &self,
-            _est_error: NtpDuration,
-            _max_error: NtpDuration,
-        ) -> Result<(), Self::Error> {
-            Ok(())
-        }
-
-        fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
-            Ok(())
-        }
-    }
-
-    #[tokio::test]
-    async fn test_sources() {
-        // we always generate the keyset (even if NTS is not used)
-        let (_, keyset) = tokio::sync::watch::channel(KeySetProvider::new(1).get());
-        let (_, ip_list) = tokio::sync::watch::channel([].into_iter().collect());
-
-        let (mut system, _) = SystemTask::new(
-            TestClock {},
-            None,
-            TimestampMode::KernelRecv,
-            SynchronizationConfig::default(),
-            SourceDefaultsConfig::default(),
-            keyset,
-            ip_list,
-        );
-        let wait =
-            SingleshotSleep::new_disabled(tokio::time::sleep(std::time::Duration::from_secs(0)));
-        tokio::pin!(wait);
-
-        let id = system.add_spawner(DummySpawner::empty()).unwrap();
-
-        let mut indices = vec![];
-
-        for i in 0..4 {
-            indices.push(
-                system
-                    .create_source(
-                        id,
-                        SourceCreateParameters::from_new_ip_and_port(format!("127.0.0.{i}"), 123),
-                    )
-                    .await
-                    .unwrap(),
-            );
-        }
-
-        let base = NtpInstant::now();
-        assert_eq!(
-            system
-                .sources
-                .keys()
-                .map(|index| match system.system.observe_source(*index) {
-                    Some(_) => 1,
-                    None => 0,
-                })
-                .sum::<i32>(),
-            0
-        );
-
-        system
-            .handle_source_update(
-                MsgForSystem::SourceUpdate(
-                    indices[0],
-                    NtpSourceUpdate::measurement(
-                        source_snapshot(),
-                        Measurement {
-                            delay: NtpDuration::from_seconds(0.1),
-                            offset: NtpDuration::from_seconds(0.),
-                            transmit_timestamp: NtpTimestamp::default(),
-                            receive_timestamp: NtpTimestamp::default(),
-                            localtime: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 0),
-                            monotime: base,
-
-                            stratum: 0,
-                            root_delay: NtpDuration::default(),
-                            root_dispersion: NtpDuration::default(),
-                            leap: NtpLeapIndicator::NoWarning,
-                            precision: 0,
-                        },
-                    ),
-                ),
-                &mut wait,
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            system
-                .sources
-                .keys()
-                .map(|index| match system.system.observe_source(*index) {
-                    Some(_) => 1,
-                    None => 0,
-                })
-                .sum::<i32>(),
-            1
-        );
-
-        system
-            .handle_source_update(
-                MsgForSystem::SourceUpdate(
-                    indices[0],
-                    NtpSourceUpdate::measurement(
-                        source_snapshot(),
-                        Measurement {
-                            delay: NtpDuration::from_seconds(0.1),
-                            offset: NtpDuration::from_seconds(0.),
-                            transmit_timestamp: NtpTimestamp::default(),
-                            receive_timestamp: NtpTimestamp::default(),
-                            localtime: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 0),
-                            monotime: base,
-
-                            stratum: 0,
-                            root_delay: NtpDuration::default(),
-                            root_dispersion: NtpDuration::default(),
-                            leap: NtpLeapIndicator::NoWarning,
-                            precision: 0,
-                        },
-                    ),
-                ),
-                &mut wait,
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            system
-                .sources
-                .keys()
-                .map(|index| match system.system.observe_source(*index) {
-                    Some(_) => 1,
-                    None => 0,
-                })
-                .sum::<i32>(),
-            1
-        );
-
-        system
-            .handle_source_update(
-                MsgForSystem::SourceUpdate(
-                    indices[1],
-                    NtpSourceUpdate::snapshot(source_snapshot()),
-                ),
-                &mut wait,
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            system
-                .sources
-                .keys()
-                .map(|index| match system.system.observe_source(*index) {
-                    Some(_) => 1,
-                    None => 0,
-                })
-                .sum::<i32>(),
-            1
-        );
-
-        system
-            .handle_source_update(MsgForSystem::MustDemobilize(indices[1]), &mut wait)
-            .await
-            .unwrap();
-        assert_eq!(
-            system
-                .sources
-                .keys()
-                .map(|index| match system.system.observe_source(*index) {
-                    Some(_) => 1,
-                    None => 0,
-                })
-                .sum::<i32>(),
-            1
-        );
-    }
 }

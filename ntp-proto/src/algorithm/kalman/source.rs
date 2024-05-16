@@ -75,9 +75,11 @@
 use tracing::{debug, info, trace};
 
 use crate::{
+    algorithm::{KalmanControllerMessage, KalmanSourceMessage, SourceController},
     config::SourceDefaultsConfig,
     source::Measurement,
     time_types::{NtpDuration, NtpTimestamp, PollInterval, PollIntervalLimits},
+    ObservableSourceTimedata,
 };
 
 use super::{
@@ -86,7 +88,7 @@ use super::{
     sqr, SourceSnapshot,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub(super) struct KalmanState {
     pub state: Vector<2>,
     pub uncertainty: Matrix<2, 2>,
@@ -105,7 +107,7 @@ impl KalmanState {
     pub fn progress_time(&self, time: NtpTimestamp, wander: f64) -> KalmanState {
         debug_assert!(!time.is_before(self.time));
         if time.is_before(self.time) {
-            return self.clone();
+            return *self;
         }
 
         // Time step paremeters
@@ -197,7 +199,7 @@ impl KalmanState {
         self.uncertainty.entry(1, 1)
     }
 
-    fn process_offset_steering(&self, steer: f64) -> KalmanState {
+    pub fn process_offset_steering(&self, steer: f64) -> KalmanState {
         KalmanState {
             state: self.state - Vector::new_vector([steer, 0.0]),
             uncertainty: self.uncertainty,
@@ -205,7 +207,7 @@ impl KalmanState {
         }
     }
 
-    fn process_frequency_steering(
+    pub fn process_frequency_steering(
         &self,
         time: NtpTimestamp,
         steer: f64,
@@ -504,7 +506,7 @@ pub(super) struct SourceState(SourceStateInner);
 const MIN_DELAY: NtpDuration = NtpDuration::from_exponent(-18);
 
 impl SourceState {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         SourceState(SourceStateInner::Initial(InitialSourceFilter {
             roundtriptime_stats: AveragingBuffer::default(),
             init_offset: AveragingBuffer::default(),
@@ -590,7 +592,11 @@ impl SourceState {
         }
     }
 
-    pub fn snapshot<Index: Copy>(&self, index: Index) -> Option<SourceSnapshot<Index>> {
+    fn snapshot<Index: Copy>(
+        &self,
+        index: Index,
+        config: &AlgorithmConfig,
+    ) -> Option<SourceSnapshot<Index>> {
         match &self.0 {
             SourceStateInner::Initial(InitialSourceFilter {
                 roundtriptime_stats,
@@ -632,11 +638,13 @@ impl SourceState {
                         ]),
                         time: last_measurement.localtime,
                     },
+                    wander: config.initial_wander,
                 })
             }
             SourceStateInner::Stable(filter) => Some(SourceSnapshot {
                 index,
-                state: filter.state.clone(),
+                state: filter.state,
+                wander: filter.clock_wander,
                 delay: filter.roundtriptime_stats.mean(),
                 source_uncertainty: filter.last_measurement.root_dispersion,
                 source_delay: filter.last_measurement.root_delay,
@@ -647,24 +655,10 @@ impl SourceState {
         }
     }
 
-    pub fn get_filtertime(&self) -> Option<NtpTimestamp> {
-        match &self.0 {
-            SourceStateInner::Initial(_) => None,
-            SourceStateInner::Stable(filter) => Some(filter.state.time),
-        }
-    }
-
     pub fn get_desired_poll(&self, limits: &PollIntervalLimits) -> PollInterval {
         match &self.0 {
             SourceStateInner::Initial(_) => limits.min,
             SourceStateInner::Stable(filter) => filter.desired_poll_interval,
-        }
-    }
-
-    pub fn progress_filtertime(&mut self, time: NtpTimestamp) {
-        match &mut self.0 {
-            SourceStateInner::Initial(_) => {}
-            SourceStateInner::Stable(filter) => filter.progress_filtertime(time),
         }
     }
 
@@ -683,10 +677,80 @@ impl SourceState {
     }
 }
 
+#[derive(Debug)]
+pub struct KalmanSourceController<SourceId> {
+    index: SourceId,
+    state: SourceState,
+    algo_config: AlgorithmConfig,
+    source_defaults_config: SourceDefaultsConfig,
+}
+
+impl<SourceId: Copy> KalmanSourceController<SourceId> {
+    pub(super) fn new(
+        index: SourceId,
+        algo_config: AlgorithmConfig,
+        source_defaults_config: SourceDefaultsConfig,
+    ) -> Self {
+        KalmanSourceController {
+            index,
+            state: SourceState::new(),
+            algo_config,
+            source_defaults_config,
+        }
+    }
+}
+
+impl<SourceId: std::fmt::Debug + Copy> SourceController for KalmanSourceController<SourceId> {
+    type ControllerMessage = KalmanControllerMessage;
+    type SourceMessage = KalmanSourceMessage<SourceId>;
+
+    fn handle_message(&mut self, message: Self::ControllerMessage) {
+        match message.inner {
+            super::KalmanControllerMessageInner::Step { steer } => {
+                self.state.process_offset_steering(steer);
+            }
+            super::KalmanControllerMessageInner::FreqChange { steer, time } => {
+                self.state.process_frequency_steering(time, steer)
+            }
+        }
+    }
+
+    fn handle_measurement(&mut self, measurement: Measurement) -> Option<Self::SourceMessage> {
+        if self.state.update_self_using_measurement(
+            &self.source_defaults_config,
+            &self.algo_config,
+            measurement,
+        ) {
+            self.state
+                .snapshot(self.index, &self.algo_config)
+                .map(|snapshot| KalmanSourceMessage { inner: snapshot })
+        } else {
+            None
+        }
+    }
+
+    fn desired_poll_interval(&self) -> PollInterval {
+        self.state
+            .get_desired_poll(&self.source_defaults_config.poll_interval_limits)
+    }
+
+    fn observe(&self) -> super::super::ObservableSourceTimedata {
+        self.state
+            .snapshot(&self.index, &self.algo_config)
+            .map(|snapshot| snapshot.observe())
+            .unwrap_or(ObservableSourceTimedata {
+                offset: NtpDuration::ZERO,
+                uncertainty: NtpDuration::MAX,
+                delay: NtpDuration::MAX,
+                remote_delay: NtpDuration::MAX,
+                remote_uncertainty: NtpDuration::MAX,
+                last_update: NtpTimestamp::default(),
+            })
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::panic::catch_unwind;
-
     use crate::{packet::NtpLeapIndicator, time_types::NtpInstant};
 
     use super::*;
@@ -889,12 +953,15 @@ mod tests {
         }));
 
         source.process_offset_steering(20e-3);
-        assert!(source.snapshot(0_usize).unwrap().state.offset().abs() < 1e-7);
-
-        assert!(catch_unwind(
-            move || source.progress_filtertime(base + NtpDuration::from_seconds(10e-3))
-        )
-        .is_err());
+        assert!(
+            source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .offset()
+                .abs()
+                < 1e-7
+        );
 
         let mut source = SourceState(SourceStateInner::Stable(SourceFilter {
             state: KalmanState {
@@ -929,7 +996,15 @@ mod tests {
         }));
 
         source.process_offset_steering(20e-3);
-        assert!(source.snapshot(0_usize).unwrap().state.offset().abs() < 1e-7);
+        assert!(
+            source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .offset()
+                .abs()
+                < 1e-7
+        );
 
         source.update_self_using_raw_measurement(
             &SourceDefaultsConfig::default(),
@@ -950,8 +1025,26 @@ mod tests {
             },
         );
 
-        assert!(dbg!((source.snapshot(0_usize).unwrap().state.offset() - 20e-3).abs()) < 1e-7);
-        assert!((source.snapshot(0_usize).unwrap().state.frequency() - 20e-6).abs() < 1e-7);
+        assert!(
+            dbg!((source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .offset()
+                - 20e-3)
+                .abs())
+                < 1e-7
+        );
+        assert!(
+            (source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .frequency()
+                - 20e-6)
+                .abs()
+                < 1e-7
+        );
 
         let mut source = SourceState(SourceStateInner::Stable(SourceFilter {
             state: KalmanState {
@@ -986,9 +1079,15 @@ mod tests {
         }));
 
         source.process_offset_steering(-20e-3);
-        assert!(source.snapshot(0_usize).unwrap().state.offset().abs() < 1e-7);
-
-        source.progress_filtertime(base - NtpDuration::from_seconds(10e-3)); // should succeed
+        assert!(
+            source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .offset()
+                .abs()
+                < 1e-7
+        );
 
         source.update_self_using_raw_measurement(
             &SourceDefaultsConfig::default(),
@@ -1009,8 +1108,26 @@ mod tests {
             },
         );
 
-        assert!(dbg!((source.snapshot(0_usize).unwrap().state.offset() - -20e-3).abs()) < 1e-7);
-        assert!((source.snapshot(0_usize).unwrap().state.frequency() - -20e-6).abs() < 1e-7);
+        assert!(
+            dbg!((source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .offset()
+                - -20e-3)
+                .abs())
+                < 1e-7
+        );
+        assert!(
+            (source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .frequency()
+                - -20e-6)
+                .abs()
+                < 1e-7
+        );
     }
 
     #[test]
@@ -1091,11 +1208,45 @@ mod tests {
         }));
 
         source.process_frequency_steering(base + NtpDuration::from_seconds(5.0), 200e-6);
-        assert!((source.snapshot(0_usize).unwrap().state.frequency() - -200e-6).abs() < 1e-10);
-        assert!(source.snapshot(0_usize).unwrap().state.offset().abs() < 1e-8);
+        assert!(
+            (source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .frequency()
+                - -200e-6)
+                .abs()
+                < 1e-10
+        );
+        assert!(
+            source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .offset()
+                .abs()
+                < 1e-8
+        );
         source.process_frequency_steering(base + NtpDuration::from_seconds(10.0), -200e-6);
-        assert!(source.snapshot(0_usize).unwrap().state.frequency().abs() < 1e-10);
-        assert!((source.snapshot(0_usize).unwrap().state.offset() - -1e-3).abs() < 1e-8);
+        assert!(
+            source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .frequency()
+                .abs()
+                < 1e-10
+        );
+        assert!(
+            (source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .offset()
+                - -1e-3)
+                .abs()
+                < 1e-8
+        );
     }
 
     #[test]
@@ -1103,7 +1254,9 @@ mod tests {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
         let mut source = SourceState::new();
-        assert!(source.snapshot(0_usize).is_none());
+        assert!(source
+            .snapshot(0_usize, &AlgorithmConfig::default())
+            .is_none());
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1122,7 +1275,14 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
+        assert!(
+            source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .frequency_variance()
+                > 1.0
+        );
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1141,7 +1301,14 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
+        assert!(
+            source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .frequency_variance()
+                > 1.0
+        );
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1160,7 +1327,14 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
+        assert!(
+            source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .frequency_variance()
+                > 1.0
+        );
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1179,7 +1353,14 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
+        assert!(
+            source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .frequency_variance()
+                > 1.0
+        );
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1198,7 +1379,14 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
+        assert!(
+            source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .frequency_variance()
+                > 1.0
+        );
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1217,7 +1405,14 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
+        assert!(
+            source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .frequency_variance()
+                > 1.0
+        );
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1236,7 +1431,14 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
+        assert!(
+            source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .frequency_variance()
+                > 1.0
+        );
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1255,8 +1457,25 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!((source.snapshot(0_usize).unwrap().state.offset() - 3.5e-3).abs() < 1e-7);
-        assert!((source.snapshot(0_usize).unwrap().state.offset_variance() - 1e-6) > 0.);
+        assert!(
+            (source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .offset()
+                - 3.5e-3)
+                .abs()
+                < 1e-7
+        );
+        assert!(
+            (source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .offset_variance()
+                - 1e-6)
+                > 0.
+        );
     }
 
     #[test]
@@ -1264,7 +1483,9 @@ mod tests {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
         let mut source = SourceState::new();
-        assert!(source.snapshot(0_usize).is_none());
+        assert!(source
+            .snapshot(0_usize, &AlgorithmConfig::default())
+            .is_none());
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1283,7 +1504,14 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
+        assert!(
+            source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .frequency_variance()
+                > 1.0
+        );
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1302,7 +1530,14 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
+        assert!(
+            source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .frequency_variance()
+                > 1.0
+        );
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1321,7 +1556,14 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
+        assert!(
+            source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .frequency_variance()
+                > 1.0
+        );
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1341,7 +1583,14 @@ mod tests {
             },
         );
         source.process_offset_steering(4e-3);
-        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
+        assert!(
+            source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .frequency_variance()
+                > 1.0
+        );
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1360,7 +1609,14 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
+        assert!(
+            source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .frequency_variance()
+                > 1.0
+        );
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1379,7 +1635,14 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
+        assert!(
+            source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .frequency_variance()
+                > 1.0
+        );
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1398,7 +1661,14 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!(source.snapshot(0_usize).unwrap().state.frequency_variance() > 1.0);
+        assert!(
+            source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .frequency_variance()
+                > 1.0
+        );
         source.update_self_using_measurement(
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
@@ -1417,8 +1687,25 @@ mod tests {
                 precision: 0,
             },
         );
-        assert!((source.snapshot(0_usize).unwrap().state.offset() - 3.5e-3).abs() < 1e-7);
-        assert!((source.snapshot(0_usize).unwrap().state.offset_variance() - 1e-6) > 0.);
+        assert!(
+            (source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .offset()
+                - 3.5e-3)
+                .abs()
+                < 1e-7
+        );
+        assert!(
+            (source
+                .snapshot(0_usize, &AlgorithmConfig::default())
+                .unwrap()
+                .state
+                .offset_variance()
+                - 1e-6)
+                > 0.
+        );
     }
 
     #[test]

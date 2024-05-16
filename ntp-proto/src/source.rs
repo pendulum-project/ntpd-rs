@@ -4,6 +4,7 @@ use crate::packet::{
     ExtensionField, NtpHeader,
 };
 use crate::{
+    algorithm::{ObservableSourceTimedata, SourceController},
     config::SourceDefaultsConfig,
     cookiestash::CookieStash,
     identifiers::ReferenceId,
@@ -53,7 +54,7 @@ impl std::fmt::Debug for SourceNtsData {
 }
 
 #[derive(Debug)]
-pub struct NtpSource {
+pub struct NtpSource<Controller: SourceController> {
     nts: Option<Box<SourceNtsData>>,
 
     // Poll interval used when sending last poll mesage.
@@ -75,8 +76,9 @@ pub struct NtpSource {
     reach: Reach,
     tries: usize,
 
+    controller: Controller,
+
     source_defaults_config: SourceDefaultsConfig,
-    system_snapshot: SystemSnapshot,
 
     buffer: [u8; 1024],
 
@@ -245,7 +247,7 @@ impl NtpSourceSnapshot {
         Ok(())
     }
 
-    pub fn from_source(source: &NtpSource) -> Self {
+    pub fn from_source<Controller: SourceController>(source: &NtpSource<Controller>) -> Self {
         Self {
             source_addr: source.source_addr,
             source_id: source.source_id,
@@ -325,36 +327,54 @@ impl Default for ProtocolVersion {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-pub struct NtpSourceUpdate {
+pub struct NtpSourceUpdate<Controller: SourceController> {
     pub(crate) snapshot: NtpSourceSnapshot,
-    pub(crate) measurement: Option<Measurement>,
+    pub(crate) message: Option<Controller::SourceMessage>,
+}
+
+impl<Controller: SourceController> std::fmt::Debug for NtpSourceUpdate<Controller> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NtpSourceUpdate")
+            .field("snapshot", &self.snapshot)
+            .field("message", &self.message)
+            .finish()
+    }
+}
+
+impl<Controller: SourceController> Clone for NtpSourceUpdate<Controller> {
+    fn clone(&self) -> Self {
+        Self {
+            snapshot: self.snapshot,
+            message: self.message.clone(),
+        }
+    }
 }
 
 #[cfg(feature = "__internal-test")]
-impl NtpSourceUpdate {
+impl<Controller: SourceController> NtpSourceUpdate<Controller> {
     pub fn snapshot(snapshot: NtpSourceSnapshot) -> Self {
         NtpSourceUpdate {
             snapshot,
-            measurement: None,
+            message: None,
         }
     }
 
-    pub fn measurement(snapshot: NtpSourceSnapshot, measurement: Measurement) -> Self {
+    // TODO: Cleanup
+    /*pub fn measurement(snapshot: NtpSourceSnapshot, measurement: Measurement) -> Self {
         NtpSourceUpdate {
             snapshot,
             measurement: Some(measurement),
         }
-    }
+    }*/
 }
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
-pub enum NtpSourceAction {
+pub enum NtpSourceAction<Controller: SourceController> {
     /// Send a message over the network. When this is issued, the network port maybe changed.
     Send(Vec<u8>),
     /// Send an update to [`System`](crate::system::System)
-    UpdateSystem(NtpSourceUpdate),
+    UpdateSystem(NtpSourceUpdate<Controller>),
     /// Call [`NtpSource::handle_timer`] after given duration
     SetTimer(Duration),
     /// A complete reset of the connection is necessary, including a potential new NTSKE client session and/or DNS lookup.
@@ -364,11 +384,11 @@ pub enum NtpSourceAction {
 }
 
 #[derive(Debug)]
-pub struct NtpSourceActionIterator {
-    iter: <Vec<NtpSourceAction> as IntoIterator>::IntoIter,
+pub struct NtpSourceActionIterator<Controller: SourceController> {
+    iter: <Vec<NtpSourceAction<Controller>> as IntoIterator>::IntoIter,
 }
 
-impl Default for NtpSourceActionIterator {
+impl<Controller: SourceController> Default for NtpSourceActionIterator<Controller> {
     fn default() -> Self {
         Self {
             iter: vec![].into_iter(),
@@ -376,16 +396,16 @@ impl Default for NtpSourceActionIterator {
     }
 }
 
-impl Iterator for NtpSourceActionIterator {
-    type Item = NtpSourceAction;
+impl<Controller: SourceController> Iterator for NtpSourceActionIterator<Controller> {
+    type Item = NtpSourceAction<Controller>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next()
     }
 }
 
-impl NtpSourceActionIterator {
-    fn from(data: Vec<NtpSourceAction>) -> Self {
+impl<Controller: SourceController> NtpSourceActionIterator<Controller> {
+    fn from(data: Vec<NtpSourceAction<Controller>>) -> Self {
         Self {
             iter: data.into_iter(),
         }
@@ -400,14 +420,25 @@ macro_rules! actions {
     }
 }
 
-impl NtpSource {
-    #[instrument]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ObservableSourceState<SourceId> {
+    #[serde(flatten)]
+    pub timedata: ObservableSourceTimedata,
+    pub unanswered_polls: u32,
+    pub poll_interval: PollInterval,
+    pub name: String,
+    pub address: String,
+    pub id: SourceId,
+}
+
+impl<Controller: SourceController> NtpSource<Controller> {
+    #[instrument(skip(controller))]
     pub(crate) fn new(
         source_addr: SocketAddr,
         source_defaults_config: SourceDefaultsConfig,
-        system_snapshot: SystemSnapshot,
         protocol_version: ProtocolVersion,
-    ) -> (Self, NtpSourceActionIterator) {
+        controller: Controller,
+    ) -> (Self, NtpSourceActionIterator<Controller>) {
         (
             Self {
                 nts: None,
@@ -425,7 +456,7 @@ impl NtpSource {
                 reference_id: ReferenceId::NONE,
 
                 source_defaults_config,
-                system_snapshot,
+                controller,
 
                 buffer: [0; 1024],
 
@@ -438,19 +469,20 @@ impl NtpSource {
         )
     }
 
-    #[instrument]
+    #[instrument(skip(controller))]
     pub(crate) fn new_nts(
         source_addr: SocketAddr,
         source_defaults_config: SourceDefaultsConfig,
         system_snapshot: SystemSnapshot,
         protocol_version: ProtocolVersion,
+        controller: Controller,
         nts: Box<SourceNtsData>,
-    ) -> (Self, NtpSourceActionIterator) {
+    ) -> (Self, NtpSourceActionIterator<Controller>) {
         let (base, actions) = Self::new(
             source_addr,
             source_defaults_config,
-            system_snapshot,
             protocol_version,
+            controller,
         );
         (
             Self {
@@ -461,15 +493,25 @@ impl NtpSource {
         )
     }
 
+    pub fn observe<SourceId>(&self, name: String, id: SourceId) -> ObservableSourceState<SourceId> {
+        ObservableSourceState {
+            timedata: self.controller.observe(),
+            unanswered_polls: self.reach.unanswered_polls(),
+            poll_interval: self.last_poll_interval,
+            name,
+            address: self.source_addr.to_string(),
+            id,
+        }
+    }
+
     pub fn current_poll_interval(&self) -> PollInterval {
-        self.system_snapshot
-            .time_snapshot
-            .poll_interval
+        self.controller
+            .desired_poll_interval()
             .max(self.remote_min_poll_interval)
     }
 
     #[cfg_attr(not(feature = "ntpv5"), allow(unused_mut))]
-    pub fn handle_timer(&mut self) -> NtpSourceActionIterator {
+    pub fn handle_timer(&mut self) -> NtpSourceActionIterator<Controller> {
         if !self.reach.is_reachable() && self.tries >= STARTUP_TRIES_THRESHOLD {
             return actions!(NtpSourceAction::Reset);
         }
@@ -540,7 +582,7 @@ impl NtpSource {
             NtpSourceAction::Send(result.into()),
             NtpSourceAction::UpdateSystem(NtpSourceUpdate {
                 snapshot,
-                measurement: None
+                message: None
             }),
             // randomize the poll interval a little to make it harder to predict poll requests
             NtpSourceAction::SetTimer(
@@ -551,9 +593,12 @@ impl NtpSource {
         )
     }
 
-    #[instrument(skip(self), fields(source = debug(self.source_id)))]
-    pub fn handle_system_update(&mut self, update: SystemSourceUpdate) -> NtpSourceActionIterator {
-        self.system_snapshot = update.system_snapshot;
+    #[instrument(skip(self, update), fields(source = debug(self.source_id)))]
+    pub fn handle_system_update(
+        &mut self,
+        update: SystemSourceUpdate<Controller>,
+    ) -> NtpSourceActionIterator<Controller> {
+        self.controller.handle_message(update.message);
         actions!()
     }
 
@@ -564,7 +609,7 @@ impl NtpSource {
         local_clock_time: NtpInstant,
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
-    ) -> NtpSourceActionIterator {
+    ) -> NtpSourceActionIterator<Controller> {
         let message =
             match NtpPacket::deserialize(message, &self.nts.as_ref().map(|nts| nts.s2c.as_ref())) {
                 Ok((packet, _)) => packet,
@@ -658,7 +703,7 @@ impl NtpSource {
         local_clock_time: NtpInstant,
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
-    ) -> NtpSourceActionIterator {
+    ) -> NtpSourceActionIterator<Controller> {
         trace!("Packet accepted for processing");
         // For reachability, mark that we have had a response
         self.reach.received_packet();
@@ -712,9 +757,11 @@ impl NtpSource {
             }
         }
 
-        // generate a measurement
+        // generate and handle measurement
         let measurement =
             Measurement::from_packet(&message, send_time, recv_time, local_clock_time);
+
+        let controller_message = self.controller.handle_measurement(measurement);
 
         // Process new cookies
         if let Some(nts) = self.nts.as_mut() {
@@ -725,12 +772,12 @@ impl NtpSource {
 
         actions!(NtpSourceAction::UpdateSystem(NtpSourceUpdate {
             snapshot: NtpSourceSnapshot::from_source(self),
-            measurement: Some(measurement),
+            message: controller_message,
         }))
     }
 
     #[cfg(test)]
-    pub(crate) fn test_ntp_source() -> Self {
+    pub(crate) fn test_ntp_source(controller: Controller) -> Self {
         use std::net::Ipv4Addr;
 
         NtpSource {
@@ -750,7 +797,7 @@ impl NtpSource {
             reference_id: ReferenceId::from_int(0),
 
             source_defaults_config: SourceDefaultsConfig::default(),
-            system_snapshot: SystemSnapshot::default(),
+            controller,
 
             buffer: [0; 1024],
 
@@ -810,6 +857,29 @@ mod test {
 
         fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
             panic!("Shouldn't be called by source");
+        }
+    }
+
+    struct NoopController;
+    impl SourceController for NoopController {
+        type ControllerMessage = ();
+        type SourceMessage = ();
+
+        fn handle_message(&mut self, _: Self::ControllerMessage) {
+            // do nothing
+        }
+
+        fn handle_measurement(&mut self, _: Measurement) -> Option<Self::SourceMessage> {
+            // do nothing
+            Some(())
+        }
+
+        fn desired_poll_interval(&self) -> PollInterval {
+            PollInterval::default()
+        }
+
+        fn observe(&self) -> crate::ObservableSourceTimedata {
+            panic!("Not implemented on noop controller");
         }
     }
 
@@ -886,7 +956,7 @@ mod test {
     fn test_accept_synchronization() {
         use AcceptSynchronizationError::*;
 
-        let mut source = NtpSource::test_ntp_source();
+        let mut source = NtpSource::test_ntp_source(NoopController);
 
         #[cfg_attr(not(feature = "ntpv5"), allow(unused_mut))]
         let mut system = SystemSnapshot::default();
@@ -919,34 +989,48 @@ mod test {
 
     #[test]
     fn test_poll_interval() {
-        let mut source = NtpSource::test_ntp_source();
-        let mut system = SystemSnapshot::default();
+        struct PollIntervalController(PollInterval);
+        impl SourceController for PollIntervalController {
+            type ControllerMessage = ();
+            type SourceMessage = ();
+
+            fn handle_message(&mut self, _: Self::ControllerMessage) {}
+
+            fn handle_measurement(&mut self, _: Measurement) -> Option<Self::SourceMessage> {
+                None
+            }
+
+            fn desired_poll_interval(&self) -> PollInterval {
+                self.0
+            }
+
+            fn observe(&self) -> crate::ObservableSourceTimedata {
+                unimplemented!()
+            }
+        }
+
+        let mut source =
+            NtpSource::test_ntp_source(PollIntervalController(PollIntervalLimits::default().min));
 
         assert!(source.current_poll_interval() >= source.remote_min_poll_interval);
-        assert!(source.current_poll_interval() >= system.time_snapshot.poll_interval);
+        assert!(source.current_poll_interval() >= source.controller.0);
 
-        system.time_snapshot.poll_interval = PollIntervalLimits::default().max;
-        source.handle_system_update(SystemSourceUpdate {
-            system_snapshot: system,
-        });
+        source.controller.0 = PollIntervalLimits::default().max;
 
         assert!(source.current_poll_interval() >= source.remote_min_poll_interval);
-        assert!(source.current_poll_interval() >= system.time_snapshot.poll_interval);
+        assert!(source.current_poll_interval() >= source.controller.0);
 
-        system.time_snapshot.poll_interval = PollIntervalLimits::default().min;
+        source.controller.0 = PollIntervalLimits::default().min;
         source.remote_min_poll_interval = PollIntervalLimits::default().max;
-        source.handle_system_update(SystemSourceUpdate {
-            system_snapshot: system,
-        });
 
         assert!(source.current_poll_interval() >= source.remote_min_poll_interval);
-        assert!(source.current_poll_interval() >= system.time_snapshot.poll_interval);
+        assert!(source.current_poll_interval() >= source.controller.0);
     }
 
     #[test]
     fn test_handle_incoming() {
         let base = NtpInstant::now();
-        let mut source = NtpSource::test_ntp_source();
+        let mut source = NtpSource::test_ntp_source(NoopController);
 
         let actions = source.handle_timer();
         let mut outgoingbuf = None;
@@ -994,7 +1078,7 @@ mod test {
 
     #[test]
     fn test_startup_unreachable() {
-        let mut source = NtpSource::test_ntp_source();
+        let mut source = NtpSource::test_ntp_source(NoopController);
         let actions = source.handle_timer();
         for action in actions {
             assert!(!matches!(
@@ -1023,7 +1107,7 @@ mod test {
     #[test]
     fn test_running_unreachable() {
         let base = NtpInstant::now();
-        let mut source = NtpSource::test_ntp_source();
+        let mut source = NtpSource::test_ntp_source(NoopController);
 
         let actions = source.handle_timer();
         let mut outgoingbuf = None;
@@ -1123,7 +1207,7 @@ mod test {
     #[test]
     fn test_stratum_checks() {
         let base = NtpInstant::now();
-        let mut source = NtpSource::test_ntp_source();
+        let mut source = NtpSource::test_ntp_source(NoopController);
 
         let actions = source.handle_timer();
         let mut outgoingbuf = None;
@@ -1165,7 +1249,7 @@ mod test {
     #[test]
     fn test_handle_kod() {
         let base = NtpInstant::now();
-        let mut source = NtpSource::test_ntp_source();
+        let mut source = NtpSource::test_ntp_source(NoopController);
 
         let mut packet = NtpPacket::test();
         packet.set_reference_id(ReferenceId::KISS_RSTR);
@@ -1283,7 +1367,7 @@ mod test {
     #[cfg(feature = "ntpv5")]
     #[test]
     fn upgrade_state_machine_does_stop() {
-        let mut source = NtpSource::test_ntp_source();
+        let mut source = NtpSource::test_ntp_source(NoopController);
         let clock = TestClock {};
 
         assert!(matches!(
@@ -1357,7 +1441,7 @@ mod test {
     #[cfg(feature = "ntpv5")]
     #[test]
     fn upgrade_state_machine_does_upgrade() {
-        let mut source = NtpSource::test_ntp_source();
+        let mut source = NtpSource::test_ntp_source(NoopController);
         let clock = TestClock {};
 
         assert!(matches!(
@@ -1431,7 +1515,7 @@ mod test {
         let mut server_filter = BloomFilter::new();
         server_filter.add_id(&ServerId::new(&mut thread_rng()));
 
-        let mut client = NtpSource::test_ntp_source();
+        let mut client = NtpSource::test_ntp_source(NoopController);
         client.protocol_version = ProtocolVersion::V5;
 
         let clock = TestClock::default();

@@ -1,21 +1,16 @@
 use std::{collections::HashMap, fmt::Debug, hash::Hash, time::Duration};
 
-use tracing::{error, info, instrument};
+use tracing::{error, info};
 
 use crate::{
     clock::NtpClock,
     config::{SourceDefaultsConfig, SynchronizationConfig},
     packet::NtpLeapIndicator,
-    source::Measurement,
     system::TimeSnapshot,
     time_types::{NtpDuration, NtpTimestamp},
 };
 
-use self::{
-    combiner::combine,
-    config::AlgorithmConfig,
-    source::{KalmanState, SourceState},
-};
+use self::{combiner::combine, config::AlgorithmConfig, source::KalmanState};
 
 use super::{ObservableSourceTimedata, StateUpdate, TimeSyncController};
 
@@ -25,14 +20,17 @@ mod matrix;
 mod select;
 mod source;
 
+pub use source::KalmanSourceController;
+
 fn sqr(x: f64) -> f64 {
     x * x
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 struct SourceSnapshot<Index: Copy> {
     index: Index,
     state: KalmanState,
+    wander: f64,
     delay: f64,
 
     source_uncertainty: NtpDuration,
@@ -64,8 +62,24 @@ impl<Index: Copy> SourceSnapshot<Index> {
 }
 
 #[derive(Debug, Clone)]
+pub struct KalmanControllerMessage {
+    inner: KalmanControllerMessageInner,
+}
+
+#[derive(Debug, Clone)]
+enum KalmanControllerMessageInner {
+    Step { steer: f64 },
+    FreqChange { steer: f64, time: NtpTimestamp },
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct KalmanSourceMessage<SourceId: Copy> {
+    inner: SourceSnapshot<SourceId>,
+}
+
+#[derive(Debug, Clone)]
 pub struct KalmanClockController<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> {
-    sources: HashMap<SourceId, (SourceState, bool)>,
+    sources: HashMap<SourceId, (Option<SourceSnapshot<SourceId>>, bool)>,
     clock: C,
     synchronization_config: SynchronizationConfig,
     source_defaults_config: SourceDefaultsConfig,
@@ -77,33 +91,28 @@ pub struct KalmanClockController<C: NtpClock, SourceId: Hash + Eq + Copy + Debug
 }
 
 impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, SourceId> {
-    #[instrument(skip(self))]
-    fn update_source(&mut self, id: SourceId, measurement: Measurement) -> bool {
-        self.sources.get_mut(&id).map(|state| {
-            state.0.update_self_using_measurement(
-                &self.source_defaults_config,
-                &self.algo_config,
-                measurement,
-            ) && state.1
-        }) == Some(true)
-    }
-
-    fn update_clock(&mut self, time: NtpTimestamp) -> StateUpdate<SourceId> {
+    fn update_clock(
+        &mut self,
+        time: NtpTimestamp,
+    ) -> StateUpdate<SourceId, KalmanControllerMessage> {
         // ensure all filters represent the same (current) time
         if self
             .sources
             .iter()
-            .filter_map(|(_, (state, _))| state.get_filtertime())
+            .filter_map(|(_, (state, _))| state.map(|v| v.state.time))
             .any(|sourcetime| time - sourcetime < NtpDuration::ZERO)
         {
             return StateUpdate {
+                source_message: None,
                 used_sources: None,
                 time_snapshot: Some(self.timedata),
                 next_update: None,
             };
         }
         for (_, (state, _)) in self.sources.iter_mut() {
-            state.progress_filtertime(time);
+            if let Some(ref mut snapshot) = state {
+                snapshot.state = snapshot.state.progress_time(time, snapshot.wander)
+            }
         }
 
         let selection = select::select(
@@ -111,13 +120,16 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
             &self.algo_config,
             self.sources
                 .iter()
-                .filter_map(|(index, (state, usable))| {
-                    if *usable {
-                        state.snapshot(*index)
-                    } else {
-                        None
-                    }
-                })
+                .filter_map(
+                    |(_, (state, usable))| {
+                        if *usable {
+                            state.as_ref()
+                        } else {
+                            None
+                        }
+                    },
+                )
+                .cloned()
                 .collect(),
         );
 
@@ -160,10 +172,9 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                         - freq_uncertainty
                             * self.algo_config.steer_frequency_leftover
                             * freq_delta.signum(),
-                );
-                None
+                )
             } else {
-                None
+                StateUpdate::default()
             };
 
             self.timedata.root_delay = combined.delay;
@@ -184,14 +195,13 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
             StateUpdate {
                 used_sources: Some(combined.sources),
                 time_snapshot: Some(self.timedata),
-                next_update,
+                ..next_update
             }
         } else {
             info!("No consensus cluster found");
             StateUpdate {
-                used_sources: None,
                 time_snapshot: Some(self.timedata),
-                next_update: None,
+                ..StateUpdate::default()
             }
         }
     }
@@ -231,7 +241,11 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
         }
     }
 
-    fn steer_offset(&mut self, change: f64, freq_delta: f64) -> Option<Duration> {
+    fn steer_offset(
+        &mut self,
+        change: f64,
+        freq_delta: f64,
+    ) -> StateUpdate<SourceId, KalmanControllerMessage> {
         if change.abs() > self.algo_config.step_threshold {
             // jump
             self.check_offset_steer(change);
@@ -239,10 +253,17 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 .step_clock(NtpDuration::from_seconds(change))
                 .expect("Cannot adjust clock");
             for (state, _) in self.sources.values_mut() {
-                state.process_offset_steering(change);
+                if let Some(ref mut state) = state {
+                    state.state.process_offset_steering(change);
+                }
             }
             info!("Jumped offset by {}ms", change * 1e3);
-            None
+            StateUpdate {
+                source_message: Some(KalmanControllerMessage {
+                    inner: KalmanControllerMessageInner::Step { steer: change },
+                }),
+                ..StateUpdate::default()
+            }
         } else {
             // start slew
             let freq = self
@@ -255,18 +276,25 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 change * 1e3,
                 duration.as_secs_f64(),
             );
-            self.change_desired_frequency(-freq * change.signum(), freq_delta);
-            Some(duration)
+            let update = self.change_desired_frequency(-freq * change.signum(), freq_delta);
+            StateUpdate {
+                next_update: Some(duration),
+                ..update
+            }
         }
     }
 
-    fn change_desired_frequency(&mut self, new_freq: f64, freq_delta: f64) -> NtpTimestamp {
+    fn change_desired_frequency(
+        &mut self,
+        new_freq: f64,
+        freq_delta: f64,
+    ) -> StateUpdate<SourceId, KalmanControllerMessage> {
         let change = self.desired_freq - new_freq + freq_delta;
         self.desired_freq = new_freq;
         self.steer_frequency(change)
     }
 
-    fn steer_frequency(&mut self, change: f64) -> NtpTimestamp {
+    fn steer_frequency(&mut self, change: f64) -> StateUpdate<SourceId, KalmanControllerMessage> {
         let new_freq_offset = ((1.0 + self.freq_offset) * (1.0 + change) - 1.0).clamp(
             -self.algo_config.maximum_frequency_steer,
             self.algo_config.maximum_frequency_steer,
@@ -278,25 +306,27 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
             .set_frequency(self.freq_offset)
             .expect("Cannot adjust clock");
         for (state, _) in self.sources.values_mut() {
-            state.process_frequency_steering(freq_update, actual_change);
+            if let Some(ref mut state) = state {
+                state.state =
+                    state
+                        .state
+                        .process_frequency_steering(freq_update, actual_change, state.wander)
+            }
         }
         info!(
             "Changed frequency, current steer {}ppm, desired freq {}ppm",
             self.freq_offset * 1e6,
             self.desired_freq * 1e6,
         );
-        freq_update
-    }
-
-    fn update_desired_poll(&mut self) {
-        self.timedata.poll_interval = self
-            .sources
-            .values()
-            .map(|(state, _)| {
-                state.get_desired_poll(&self.source_defaults_config.poll_interval_limits)
-            })
-            .min()
-            .unwrap_or(self.source_defaults_config.poll_interval_limits.max);
+        StateUpdate {
+            source_message: Some(KalmanControllerMessage {
+                inner: KalmanControllerMessageInner::FreqChange {
+                    steer: actual_change,
+                    time: freq_update,
+                },
+            }),
+            ..StateUpdate::default()
+        }
     }
 }
 
@@ -304,6 +334,9 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> TimeSyncController<C, Sour
     for KalmanClockController<C, SourceId>
 {
     type AlgorithmConfig = AlgorithmConfig;
+    type ControllerMessage = KalmanControllerMessage;
+    type SourceMessage = KalmanSourceMessage<SourceId>;
+    type SourceController = KalmanSourceController<SourceId>;
 
     fn new(
         clock: C,
@@ -329,19 +362,9 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> TimeSyncController<C, Sour
         })
     }
 
-    fn update_config(
-        &mut self,
-        synchronization_config: SynchronizationConfig,
-        source_defaults_config: SourceDefaultsConfig,
-        algo_config: Self::AlgorithmConfig,
-    ) {
-        self.synchronization_config = synchronization_config;
-        self.source_defaults_config = source_defaults_config;
-        self.algo_config = algo_config;
-    }
-
-    fn add_source(&mut self, id: SourceId) {
-        self.sources.insert(id, (SourceState::new(), false));
+    fn add_source(&mut self, id: SourceId) -> Self::SourceController {
+        self.sources.insert(id, (None, false));
+        KalmanSourceController::new(id, self.algo_config, self.source_defaults_config)
     }
 
     fn remove_source(&mut self, id: SourceId) {
@@ -353,36 +376,25 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> TimeSyncController<C, Sour
             state.1 = usable;
         }
     }
-
-    fn source_measurement(
-        &mut self,
-        id: SourceId,
-        measurement: Measurement,
-    ) -> StateUpdate<SourceId> {
-        let should_update_clock = self.update_source(id, measurement);
-        self.update_desired_poll();
-        if should_update_clock {
-            self.update_clock(measurement.localtime)
-        } else {
-            StateUpdate {
-                used_sources: None,
-                time_snapshot: Some(self.timedata),
-                next_update: None,
-            }
-        }
-    }
-
-    fn time_update(&mut self) -> StateUpdate<SourceId> {
+    fn time_update(&mut self) -> StateUpdate<SourceId, Self::ControllerMessage> {
         // End slew
         self.change_desired_frequency(0.0, 0.0);
         StateUpdate::default()
     }
 
-    fn source_snapshot(&self, id: SourceId) -> Option<ObservableSourceTimedata> {
-        self.sources
-            .get(&id)
-            .and_then(|v| v.0.snapshot(id))
-            .map(|v| v.observe())
+    fn source_message(
+        &mut self,
+        id: SourceId,
+        message: Self::SourceMessage,
+    ) -> StateUpdate<SourceId, Self::ControllerMessage> {
+        if let Some(source) = self.sources.get_mut(&id) {
+            let time = message.inner.last_update;
+            source.0 = Some(message.inner);
+            self.update_clock(time)
+        } else {
+            error!("Internal error: Update from non-existing source");
+            StateUpdate::default()
+        }
     }
 }
 
@@ -390,7 +402,9 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> TimeSyncController<C, Sour
 mod tests {
     use std::cell::RefCell;
 
+    use crate::algorithm::SourceController;
     use crate::config::StepThreshold;
+    use crate::source::Measurement;
     use crate::time_types::NtpInstant;
 
     use super::*;
@@ -458,7 +472,7 @@ mod tests {
         // ignore startup steer of frequency.
         *algo.clock.has_steered.borrow_mut() = false;
 
-        algo.add_source(0);
+        let mut source = algo.add_source(0);
         algo.source_update(0, true);
 
         assert!(algo.in_startup);
@@ -469,23 +483,27 @@ mod tests {
             cur_instant = cur_instant + std::time::Duration::from_secs(1);
             algo.clock.current_time += NtpDuration::from_seconds(1.0);
             noise += 1e-9;
-            algo.source_measurement(
-                0,
-                Measurement {
-                    delay: NtpDuration::from_seconds(0.001 + noise),
-                    offset: NtpDuration::from_seconds(1700.0 + noise),
-                    transmit_timestamp: Default::default(),
-                    receive_timestamp: Default::default(),
-                    localtime: algo.clock.current_time,
-                    monotime: cur_instant,
 
-                    stratum: 0,
-                    root_delay: NtpDuration::default(),
-                    root_dispersion: NtpDuration::default(),
-                    leap: NtpLeapIndicator::NoWarning,
-                    precision: 0,
-                },
-            );
+            let message = source.handle_measurement(Measurement {
+                delay: NtpDuration::from_seconds(0.001 + noise),
+                offset: NtpDuration::from_seconds(1700.0 + noise),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
+                localtime: algo.clock.current_time,
+                monotime: cur_instant,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
+            });
+            if let Some(message) = message {
+                let actions = algo.source_message(0, message);
+                if let Some(source_message) = actions.source_message {
+                    source.handle_message(source_message);
+                }
+            }
         }
 
         assert!(!algo.in_startup);
@@ -579,32 +597,36 @@ mod tests {
         // ignore startup steer of frequency.
         *algo.clock.has_steered.borrow_mut() = false;
 
-        algo.add_source(0);
+        let mut source = algo.add_source(0);
         algo.source_update(0, true);
 
         let mut noise = 1e-9;
 
         loop {
             cur_instant = cur_instant + std::time::Duration::from_secs(1);
-            algo.clock.current_time += NtpDuration::from_seconds(1.0);
+            algo.clock.current_time += NtpDuration::from_seconds(1800.0);
             noise += 1e-9;
-            algo.source_measurement(
-                0,
-                Measurement {
-                    delay: NtpDuration::from_seconds(0.001 + noise),
-                    offset: NtpDuration::from_seconds(1700.0 + noise),
-                    transmit_timestamp: Default::default(),
-                    receive_timestamp: Default::default(),
-                    localtime: algo.clock.current_time,
-                    monotime: cur_instant,
 
-                    stratum: 0,
-                    root_delay: NtpDuration::default(),
-                    root_dispersion: NtpDuration::default(),
-                    leap: NtpLeapIndicator::NoWarning,
-                    precision: 0,
-                },
-            );
+            let message = source.handle_measurement(Measurement {
+                delay: NtpDuration::from_seconds(0.001 + noise),
+                offset: NtpDuration::from_seconds(1700.0 + noise),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
+                localtime: algo.clock.current_time,
+                monotime: cur_instant,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
+            });
+            if let Some(message) = message {
+                let actions = algo.source_message(0, message);
+                if let Some(source_message) = actions.source_message {
+                    source.handle_message(source_message);
+                }
+            }
         }
     }
 
@@ -636,7 +658,7 @@ mod tests {
         // ignore startup steer of frequency.
         *algo.clock.has_steered.borrow_mut() = false;
 
-        algo.add_source(0);
+        let mut source = algo.add_source(0);
         algo.source_update(0, true);
 
         let mut noise = 1e-9;
@@ -645,23 +667,27 @@ mod tests {
             cur_instant = cur_instant + std::time::Duration::from_secs(1);
             algo.clock.current_time += NtpDuration::from_seconds(1.0);
             noise *= -1.0;
-            algo.source_measurement(
-                0,
-                Measurement {
-                    delay: NtpDuration::from_seconds(0.001 + noise),
-                    offset: NtpDuration::from_seconds(-3600.0 + noise),
-                    transmit_timestamp: Default::default(),
-                    receive_timestamp: Default::default(),
-                    localtime: algo.clock.current_time,
-                    monotime: cur_instant,
 
-                    stratum: 0,
-                    root_delay: NtpDuration::default(),
-                    root_dispersion: NtpDuration::default(),
-                    leap: NtpLeapIndicator::NoWarning,
-                    precision: 0,
-                },
-            );
+            let message = source.handle_measurement(Measurement {
+                delay: NtpDuration::from_seconds(0.001 + noise),
+                offset: NtpDuration::from_seconds(-3600.0 + noise),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
+                localtime: algo.clock.current_time,
+                monotime: cur_instant,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
+            });
+            if let Some(message) = message {
+                let actions = algo.source_message(0, message);
+                if let Some(source_message) = actions.source_message {
+                    source.handle_message(source_message);
+                }
+            }
         }
     }
 }

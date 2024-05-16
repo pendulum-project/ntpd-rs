@@ -5,11 +5,13 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt::Debug, hash::Hash};
 
+use crate::algorithm::{KalmanSourceController, SourceController};
 #[cfg(feature = "ntpv5")]
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::source::NtpSourceUpdate;
+use crate::KalmanControllerMessage;
 use crate::{
-    algorithm::{KalmanClockController, ObservableSourceTimedata, StateUpdate, TimeSyncController},
+    algorithm::{KalmanClockController, StateUpdate, TimeSyncController},
     clock::NtpClock,
     config::{SourceDefaultsConfig, SynchronizationConfig},
     identifiers::ReferenceId,
@@ -17,13 +19,11 @@ use crate::{
     source::{
         NtpSource, NtpSourceActionIterator, NtpSourceSnapshot, ProtocolVersion, SourceNtsData,
     },
-    time_types::{NtpDuration, PollInterval},
+    time_types::NtpDuration,
 };
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TimeSnapshot {
-    /// Desired poll interval
-    pub poll_interval: PollInterval,
     /// Precision of the local clock
     pub precision: NtpDuration,
     /// Current root delay
@@ -39,7 +39,6 @@ pub struct TimeSnapshot {
 impl Default for TimeSnapshot {
     fn default() -> Self {
         Self {
-            poll_interval: PollInterval::default(),
             precision: NtpDuration::from_exponent(-18),
             root_delay: NtpDuration::ZERO,
             root_dispersion: NtpDuration::ZERO,
@@ -114,24 +113,39 @@ impl Default for SystemSnapshot {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct SystemSourceUpdate {
-    pub(crate) system_snapshot: SystemSnapshot,
+pub struct SystemSourceUpdate<Controller: SourceController> {
+    pub(crate) message: Controller::ControllerMessage,
+}
+
+impl<Controller: SourceController> std::fmt::Debug for SystemSourceUpdate<Controller> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SystemSourceUpdate")
+            .field("message", &self.message)
+            .finish()
+    }
+}
+
+impl<Controller: SourceController> Clone for SystemSourceUpdate<Controller> {
+    fn clone(&self) -> Self {
+        Self {
+            message: self.message.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
-pub enum SystemAction {
-    UpdateSources(SystemSourceUpdate),
+pub enum SystemAction<Controller: SourceController> {
+    UpdateSources(SystemSourceUpdate<Controller>),
     SetTimer(Duration),
 }
 
 #[derive(Debug)]
-pub struct SystemActionIterator {
-    iter: <Vec<SystemAction> as IntoIterator>::IntoIter,
+pub struct SystemActionIterator<Controller: SourceController> {
+    iter: <Vec<SystemAction<Controller>> as IntoIterator>::IntoIter,
 }
 
-impl Default for SystemActionIterator {
+impl<Controller: SourceController> Default for SystemActionIterator<Controller> {
     fn default() -> Self {
         Self {
             iter: vec![].into_iter(),
@@ -139,16 +153,18 @@ impl Default for SystemActionIterator {
     }
 }
 
-impl From<Vec<SystemAction>> for SystemActionIterator {
-    fn from(value: Vec<SystemAction>) -> Self {
+impl<Controller: SourceController> From<Vec<SystemAction<Controller>>>
+    for SystemActionIterator<Controller>
+{
+    fn from(value: Vec<SystemAction<Controller>>) -> Self {
         Self {
             iter: value.into_iter(),
         }
     }
 }
 
-impl Iterator for SystemActionIterator {
-    type Item = SystemAction;
+impl<Controller: SourceController> Iterator for SystemActionIterator<Controller> {
+    type Item = SystemAction<Controller>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next()
@@ -221,36 +237,51 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
         Ok(self.controller.insert(controller))
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn create_ntp_source(
         &mut self,
         id: SourceId,
         source_addr: SocketAddr,
         protocol_version: ProtocolVersion,
-    ) -> Result<(NtpSource, NtpSourceActionIterator), C::Error> {
-        self.clock_controller()?.add_source(id);
+    ) -> Result<
+        (
+            NtpSource<KalmanSourceController<SourceId>>,
+            NtpSourceActionIterator<KalmanSourceController<SourceId>>,
+        ),
+        C::Error,
+    > {
+        let controller = self.clock_controller()?.add_source(id);
         self.sources.insert(id, None);
         Ok(NtpSource::new(
             source_addr,
             self.source_defaults_config,
-            self.system,
             protocol_version,
+            controller,
         ))
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn create_nts_source(
         &mut self,
         id: SourceId,
         source_addr: SocketAddr,
         protocol_version: ProtocolVersion,
         nts: Box<SourceNtsData>,
-    ) -> Result<(NtpSource, NtpSourceActionIterator), C::Error> {
-        self.clock_controller()?.add_source(id);
+    ) -> Result<
+        (
+            NtpSource<KalmanSourceController<SourceId>>,
+            NtpSourceActionIterator<KalmanSourceController<SourceId>>,
+        ),
+        C::Error,
+    > {
+        let controller = self.clock_controller()?.add_source(id);
         self.sources.insert(id, None);
         Ok(NtpSource::new_nts(
             source_addr,
             self.source_defaults_config,
             self.system,
             protocol_version,
+            controller,
             nts,
         ))
     }
@@ -264,8 +295,8 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
     pub fn handle_source_update(
         &mut self,
         id: SourceId,
-        update: NtpSourceUpdate,
-    ) -> Result<SystemActionIterator, C::Error> {
+        update: NtpSourceUpdate<KalmanSourceController<SourceId>>,
+    ) -> Result<SystemActionIterator<KalmanSourceController<SourceId>>, C::Error> {
         let usable = update
             .snapshot
             .accept_synchronization(
@@ -276,8 +307,8 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
             .is_ok();
         self.clock_controller()?.source_update(id, usable);
         *self.sources.get_mut(&id).unwrap() = Some(update.snapshot);
-        if let Some(measurement) = update.measurement {
-            let update = self.clock_controller()?.source_measurement(id, measurement);
+        if let Some(message) = update.message {
+            let update = self.clock_controller()?.source_message(id, message);
             Ok(self.handle_algorithm_state_update(update))
         } else {
             Ok(actions!())
@@ -286,8 +317,8 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
 
     fn handle_algorithm_state_update(
         &mut self,
-        update: StateUpdate<SourceId>,
-    ) -> SystemActionIterator {
+        update: StateUpdate<SourceId, KalmanControllerMessage>,
+    ) -> SystemActionIterator<KalmanSourceController<SourceId>> {
         let mut actions = vec![];
         if let Some(ref used_sources) = update.used_sources {
             self.system
@@ -300,17 +331,17 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
         if let Some(time_snapshot) = update.time_snapshot {
             self.system
                 .update_timedata(time_snapshot, &self.synchronization_config);
-            actions.push(SystemAction::UpdateSources(SystemSourceUpdate {
-                system_snapshot: self.system,
-            }));
         }
         if let Some(timeout) = update.next_update {
             actions.push(SystemAction::SetTimer(timeout));
         }
+        if let Some(message) = update.source_message {
+            actions.push(SystemAction::UpdateSources(SystemSourceUpdate { message }))
+        }
         actions.into()
     }
 
-    pub fn handle_timer(&mut self) -> SystemActionIterator {
+    pub fn handle_timer(&mut self) -> SystemActionIterator<KalmanSourceController<SourceId>> {
         tracing::debug!("Timer expired");
         // note: local needed for borrow checker
         if let Some(controller) = self.controller.as_mut() {
@@ -318,21 +349,6 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
             self.handle_algorithm_state_update(update)
         } else {
             actions!()
-        }
-    }
-
-    pub fn observe_source(
-        &self,
-        id: SourceId,
-    ) -> Option<(NtpSourceSnapshot, ObservableSourceTimedata)> {
-        if let Some(ref controller) = self.controller {
-            self.sources
-                .get(&id)
-                .copied()
-                .flatten()
-                .and_then(|v| controller.source_snapshot(id).map(|s| (v, s)))
-        } else {
-            None
         }
     }
 

@@ -9,8 +9,6 @@ use tokio::{
 
 use super::{config::NormalizedAddress, system::NETWORK_WAIT_PERIOD};
 
-#[cfg(test)]
-pub mod dummy;
 pub mod nts;
 #[cfg(feature = "unstable_nts-pool")]
 pub mod nts_pool;
@@ -138,46 +136,6 @@ pub struct SourceCreateParameters {
     pub normalized_addr: NormalizedAddress,
     pub protocol_version: ProtocolVersion,
     pub nts: Option<Box<SourceNtsData>>,
-}
-
-#[cfg(test)]
-impl SourceCreateParameters {
-    pub fn from_new_addr(addr: SocketAddr) -> SourceCreateParameters {
-        Self::from_addr(SourceId::new(), addr)
-    }
-
-    pub fn from_addr(id: SourceId, addr: SocketAddr) -> SourceCreateParameters {
-        SourceCreateParameters {
-            id,
-            addr,
-            normalized_addr: NormalizedAddress::from_string_ntp(format!(
-                "{}:{}",
-                addr.ip(),
-                addr.port()
-            ))
-            .unwrap(),
-            protocol_version: ProtocolVersion::default(),
-            nts: None,
-        }
-    }
-
-    pub fn from_ip_and_port(
-        id: SourceId,
-        ip: impl Into<String>,
-        port: u16,
-    ) -> SourceCreateParameters {
-        Self::from_addr(
-            id,
-            SocketAddr::new(
-                ip.into().parse().expect("Invalid ip address specified"),
-                port,
-            ),
-        )
-    }
-
-    pub fn from_new_ip_and_port(ip: impl Into<String>, port: u16) -> SourceCreateParameters {
-        Self::from_ip_and_port(SourceId::new(), ip, port)
-    }
 }
 
 #[async_trait::async_trait]

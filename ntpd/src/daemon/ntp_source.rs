@@ -1,8 +1,10 @@
-use std::{future::Future, marker::PhantomData, net::SocketAddr, pin::Pin};
+use std::{
+    collections::HashMap, future::Future, marker::PhantomData, net::SocketAddr, pin::Pin, sync::Arc,
+};
 
 use ntp_proto::{
-    NtpClock, NtpInstant, NtpSource, NtpSourceActionIterator, NtpSourceUpdate, NtpTimestamp,
-    SystemSourceUpdate,
+    KalmanSourceController, NtpClock, NtpInstant, NtpSource, NtpSourceActionIterator,
+    NtpSourceUpdate, NtpTimestamp, ObservableSourceState, SystemSourceUpdate,
 };
 #[cfg(target_os = "linux")]
 use timestamped_socket::socket::open_interface_udp;
@@ -37,13 +39,16 @@ pub enum MsgForSystem {
     /// Source is unreachable, and should be restarted with new resolved addr.
     Unreachable(SourceId),
     /// Update from source
-    SourceUpdate(SourceId, NtpSourceUpdate),
+    SourceUpdate(SourceId, NtpSourceUpdate<KalmanSourceController<SourceId>>),
 }
 
 #[derive(Debug)]
 pub struct SourceChannels {
     pub msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
-    pub system_update_receiver: tokio::sync::broadcast::Receiver<SystemSourceUpdate>,
+    pub system_update_receiver:
+        tokio::sync::broadcast::Receiver<SystemSourceUpdate<KalmanSourceController<SourceId>>>,
+    pub source_snapshots:
+        Arc<std::sync::RwLock<HashMap<SourceId, ObservableSourceState<SourceId>>>>,
 }
 
 pub(crate) struct SourceTask<C: 'static + NtpClock + Send, T: Wait> {
@@ -52,11 +57,12 @@ pub(crate) struct SourceTask<C: 'static + NtpClock + Send, T: Wait> {
     clock: C,
     interface: Option<InterfaceName>,
     timestamp_mode: TimestampMode,
+    name: String,
     source_addr: SocketAddr,
     socket: Option<Socket<SocketAddr, Connected>>,
     channels: SourceChannels,
 
-    source: NtpSource,
+    source: NtpSource<KalmanSourceController<SourceId>>,
 
     // we don't store the real origin timestamp in the packet, because that would leak our
     // system time to the network (and could make attacks easier). So instead there is some
@@ -111,7 +117,12 @@ where
             enum SelectResult {
                 Timer,
                 Recv(Result<RecvResult<SocketAddr>, std::io::Error>),
-                SystemUpdate(Result<SystemSourceUpdate, tokio::sync::broadcast::error::RecvError>),
+                SystemUpdate(
+                    Result<
+                        SystemSourceUpdate<KalmanSourceController<SourceId>>,
+                        tokio::sync::broadcast::error::RecvError,
+                    >,
+                ),
             }
 
             let selected = tokio::select! {
@@ -140,12 +151,21 @@ where
                                     continue;
                                 }
                             };
-                            self.source.handle_incoming(
+                            let actions = self.source.handle_incoming(
                                 packet,
                                 NtpInstant::now(),
                                 send_timestamp,
                                 recv_timestamp,
-                            )
+                            );
+                            self.channels
+                                .source_snapshots
+                                .write()
+                                .expect("Unexpected poisoned mutex")
+                                .insert(
+                                    self.index,
+                                    self.source.observe(self.name.clone(), self.index),
+                                );
+                            actions
                         }
                         AcceptResult::NetworkGone => {
                             self.channels
@@ -153,6 +173,11 @@ where
                                 .send(MsgForSystem::NetworkIssue(self.index))
                                 .await
                                 .ok();
+                            self.channels
+                                .source_snapshots
+                                .write()
+                                .expect("Unexpected poisoned mutex")
+                                .remove(&self.index);
                             return;
                         }
                         AcceptResult::Ignore => NtpSourceActionIterator::default(),
@@ -160,10 +185,30 @@ where
                 }
                 SelectResult::Timer => {
                     tracing::debug!("wait completed");
-                    self.source.handle_timer()
+                    let actions = self.source.handle_timer();
+                    self.channels
+                        .source_snapshots
+                        .write()
+                        .expect("Unexpected poisoned mutex")
+                        .insert(
+                            self.index,
+                            self.source.observe(self.name.clone(), self.index),
+                        );
+                    actions
                 }
                 SelectResult::SystemUpdate(result) => match result {
-                    Ok(update) => self.source.handle_system_update(update),
+                    Ok(update) => {
+                        let actions = self.source.handle_system_update(update);
+                        self.channels
+                            .source_snapshots
+                            .write()
+                            .expect("Unexpected poisoned mutex")
+                            .insert(
+                                self.index,
+                                self.source.observe(self.name.clone(), self.index),
+                            );
+                        actions
+                    }
                     Err(_) => NtpSourceActionIterator::default(),
                 },
             };
@@ -177,6 +222,11 @@ where
                                 .send(MsgForSystem::NetworkIssue(self.index))
                                 .await
                                 .ok();
+                            self.channels
+                                .source_snapshots
+                                .write()
+                                .expect("Unexpected poisoned mutex")
+                                .remove(&self.index);
                             return;
                         }
 
@@ -207,6 +257,11 @@ where
                                             .send(MsgForSystem::NetworkIssue(self.index))
                                             .await
                                             .ok();
+                                        self.channels
+                                            .source_snapshots
+                                            .write()
+                                            .expect("Unexpected poisoned mutex")
+                                            .remove(&self.index);
                                         return;
                                     }
                                     _ => {}
@@ -236,6 +291,11 @@ where
                             .send(MsgForSystem::Unreachable(self.index))
                             .await
                             .ok();
+                        self.channels
+                            .source_snapshots
+                            .write()
+                            .expect("Unexpected poisoned mutex")
+                            .remove(&self.index);
                         return;
                     }
                     ntp_proto::NtpSourceAction::Demobilize => {
@@ -244,6 +304,11 @@ where
                             .send(MsgForSystem::MustDemobilize(self.index))
                             .await
                             .ok();
+                        self.channels
+                            .source_snapshots
+                            .write()
+                            .expect("Unexpected poisoned mutex")
+                            .remove(&self.index);
                         return;
                     }
                 }
@@ -260,13 +325,14 @@ where
     #[instrument(skip(clock, channels))]
     pub fn spawn(
         index: SourceId,
+        name: String,
         source_addr: SocketAddr,
         interface: Option<InterfaceName>,
         clock: C,
         timestamp_mode: TimestampMode,
         channels: SourceChannels,
-        source: NtpSource,
-        initial_actions: NtpSourceActionIterator,
+        source: NtpSource<KalmanSourceController<SourceId>>,
+        initial_actions: NtpSourceActionIterator<KalmanSourceController<SourceId>>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(
             (async move {
@@ -302,6 +368,7 @@ where
                 let mut process = SourceTask {
                     _wait: PhantomData,
                     index,
+                    name,
                     clock,
                     channels,
                     interface,
@@ -374,7 +441,12 @@ fn accept_packet<'a, C: NtpClock>(
 
 #[cfg(test)]
 mod tests {
-    use std::{io::Cursor, net::Ipv4Addr, sync::Arc, time::Duration};
+    use std::{
+        io::Cursor,
+        net::Ipv4Addr,
+        sync::{Arc, RwLock},
+        time::Duration,
+    };
 
     use ntp_proto::{
         NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket, ProtocolVersion, SourceDefaultsConfig,
@@ -506,7 +578,7 @@ mod tests {
         SourceTask<TestClock, T>,
         Socket<SocketAddr, Open>,
         mpsc::Receiver<MsgForSystem>,
-        broadcast::Sender<SystemSourceUpdate>,
+        broadcast::Sender<SystemSourceUpdate<KalmanSourceController<SourceId>>>,
     ) {
         // Note: Ports must be unique among tests to deal with parallelism, hence
         // port_base
@@ -538,10 +610,12 @@ mod tests {
         let process = SourceTask {
             _wait: PhantomData,
             index,
+            name: "test".into(),
             clock: TestClock {},
             channels: SourceChannels {
                 msg_for_system_sender,
                 system_update_receiver,
+                source_snapshots: Arc::new(RwLock::new(HashMap::new())),
             },
             source_addr: SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
             interface: None,

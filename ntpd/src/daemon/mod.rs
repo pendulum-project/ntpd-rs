@@ -16,7 +16,7 @@ use std::{error::Error, path::PathBuf};
 
 use ::tracing::info;
 pub use config::Config;
-pub use observer::{ObservableSourceState, ObservableState, ObservedSourceState};
+pub use observer::ObservableState;
 pub use system::spawn;
 use tracing_subscriber::util::SubscriberInitExt;
 
@@ -116,7 +116,7 @@ async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
 
     observer::spawn(
         &config.observability,
-        channels.source_snapshots_receiver,
+        channels.source_snapshots,
         channels.server_data_receiver,
         channels.system_snapshot_receiver,
     )
