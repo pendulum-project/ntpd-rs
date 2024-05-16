@@ -203,6 +203,7 @@ impl std::fmt::Debug for NtpDuration {
 
 impl NtpDuration {
     pub const ZERO: Self = Self { duration: 0 };
+    pub const MAX: Self = Self { duration: i64::MAX };
 
     pub(crate) const fn from_bits(bits: [u8; 8]) -> Self {
         Self {

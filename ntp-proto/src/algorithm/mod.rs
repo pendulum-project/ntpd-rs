@@ -8,6 +8,7 @@ use crate::{
     source::Measurement,
     system::TimeSnapshot,
     time_types::{NtpDuration, NtpTimestamp},
+    PollInterval,
 };
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -23,7 +24,9 @@ pub struct ObservableSourceTimedata {
 }
 
 #[derive(Debug, Clone)]
-pub struct StateUpdate<SourceId: Eq + Copy + Debug> {
+pub struct StateUpdate<SourceId: Eq + Copy + Debug, ControllerMessage: Clone> {
+    // Message for all sources, if any
+    pub source_message: Option<ControllerMessage>,
     // Update to the time snapshot, if any
     pub time_snapshot: Option<TimeSnapshot>,
     // Update to the used sources, if any
@@ -35,9 +38,12 @@ pub struct StateUpdate<SourceId: Eq + Copy + Debug> {
 // Note: this default implementation is neccessary since the
 // derive only works if SourceId is Default (which it isn't
 // neccessarily)
-impl<SourceId: Eq + Copy + Debug> Default for StateUpdate<SourceId> {
+impl<SourceId: Eq + Copy + Debug, ControllerMessage: Clone> Default
+    for StateUpdate<SourceId, ControllerMessage>
+{
     fn default() -> Self {
         Self {
+            source_message: None,
             time_snapshot: None,
             used_sources: None,
             next_update: None,
@@ -47,6 +53,12 @@ impl<SourceId: Eq + Copy + Debug> Default for StateUpdate<SourceId> {
 
 pub trait TimeSyncController<C: NtpClock, SourceId: Hash + Eq + Copy + Debug>: Sized {
     type AlgorithmConfig: Debug + Copy + DeserializeOwned;
+    type ControllerMessage: Debug + Clone;
+    type SourceMessage: Debug + Clone;
+    type SourceController: SourceController<
+        ControllerMessage = Self::ControllerMessage,
+        SourceMessage = Self::SourceMessage,
+    >;
 
     /// Create a new clock controller controling the given clock
     fn new(
@@ -55,15 +67,9 @@ pub trait TimeSyncController<C: NtpClock, SourceId: Hash + Eq + Copy + Debug>: S
         source_defaults_config: SourceDefaultsConfig,
         algorithm_config: Self::AlgorithmConfig,
     ) -> Result<Self, C::Error>;
-    /// Update used system config
-    fn update_config(
-        &mut self,
-        synchronization_config: SynchronizationConfig,
-        source_defaults_config: SourceDefaultsConfig,
-        algorithm_config: Self::AlgorithmConfig,
-    );
-    /// Notify the controller that there is a new source
-    fn add_source(&mut self, id: SourceId);
+
+    /// Create a new source with given identity
+    fn add_source(&mut self, id: SourceId) -> Self::SourceController;
     /// Notify the controller that a previous source has gone
     fn remove_source(&mut self, id: SourceId);
     /// Notify the controller that the status of a source (whether
@@ -72,18 +78,31 @@ pub trait TimeSyncController<C: NtpClock, SourceId: Hash + Eq + Copy + Debug>: S
     /// Notify the controller of a new measurement from a source.
     /// The list of SourceIds is used for loop detection, with the
     /// first SourceId given considered the primary source used.
-    fn source_measurement(
+    fn source_message(
         &mut self,
         id: SourceId,
-        measurement: Measurement,
-    ) -> StateUpdate<SourceId>;
-    /// Non-measurement driven update (queued via next_update)
-    fn time_update(&mut self) -> StateUpdate<SourceId>;
-    /// Get a snapshot of the timekeeping state of a source.
-    fn source_snapshot(&self, id: SourceId) -> Option<ObservableSourceTimedata>;
+        message: Self::SourceMessage,
+    ) -> StateUpdate<SourceId, Self::ControllerMessage>;
+    /// Non-message driven update (queued via next_update)
+    fn time_update(&mut self) -> StateUpdate<SourceId, Self::ControllerMessage>;
+}
+
+pub trait SourceController: Sized {
+    type ControllerMessage: Debug + Clone;
+    type SourceMessage: Debug + Clone;
+
+    fn handle_message(&mut self, message: Self::ControllerMessage);
+
+    fn handle_measurement(&mut self, measurement: Measurement) -> Option<Self::SourceMessage>;
+
+    fn desired_poll_interval(&self) -> PollInterval;
+
+    fn observe(&self) -> ObservableSourceTimedata;
 }
 
 mod kalman;
 
-pub use kalman::config::AlgorithmConfig;
-pub use kalman::KalmanClockController;
+pub use kalman::{
+    config::AlgorithmConfig, KalmanClockController, KalmanControllerMessage,
+    KalmanSourceController, KalmanSourceMessage,
+};

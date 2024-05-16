@@ -38,8 +38,8 @@ pub(crate) mod exitcode {
 
 mod exports {
     pub use super::algorithm::{
-        AlgorithmConfig, KalmanClockController, ObservableSourceTimedata, StateUpdate,
-        TimeSyncController,
+        AlgorithmConfig, KalmanClockController, KalmanControllerMessage, KalmanSourceController,
+        KalmanSourceMessage, ObservableSourceTimedata, StateUpdate, TimeSyncController,
     };
     pub use super::clock::NtpClock;
     pub use super::config::{SourceDefaultsConfig, StepThreshold, SynchronizationConfig};
@@ -64,7 +64,8 @@ mod exports {
     pub use super::source::{source_snapshot, Measurement};
     pub use super::source::{
         AcceptSynchronizationError, NtpSource, NtpSourceAction, NtpSourceActionIterator,
-        NtpSourceSnapshot, NtpSourceUpdate, ProtocolVersion, Reach, SourceNtsData,
+        NtpSourceSnapshot, NtpSourceUpdate, ObservableSourceState, ProtocolVersion, Reach,
+        SourceNtsData,
     };
     pub use super::system::{
         System, SystemAction, SystemActionIterator, SystemSnapshot, SystemSourceUpdate,

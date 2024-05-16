@@ -217,10 +217,7 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
     match print {
         Format::Plain => {
             // Sort sources by address and then id (to deal with pools), servers just by address
-            output.sources.sort_by_key(|p| match p {
-                crate::daemon::ObservableSourceState::Nothing => None,
-                crate::daemon::ObservableSourceState::Observable(s) => Some((s.name.clone(), s.id)),
-            });
+            output.sources.sort_by_key(|s| (s.name.clone(), s.id));
             output.servers.sort_by_key(|s| s.address);
 
             println!("Synchronization status:");
@@ -229,60 +226,27 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
                 output.system.time_snapshot.root_dispersion.to_seconds(),
                 output.system.time_snapshot.root_delay.to_seconds()
             );
-            println!(
-                "Desired poll interval: {:.0}s",
-                output
-                    .system
-                    .time_snapshot
-                    .poll_interval
-                    .as_duration()
-                    .to_seconds()
-            );
             println!("Stratum: {}", output.system.stratum);
             println!();
             println!("Sources:");
             for source in &output.sources {
-                match source {
-                    crate::daemon::ObservableSourceState::Nothing => {}
-                    crate::daemon::ObservableSourceState::Observable(
-                        crate::daemon::ObservedSourceState {
-                            timedata,
-                            unanswered_polls,
-                            poll_interval,
-                            name: address,
-                            address: ip,
-                            id,
-                        },
-                    ) => {
-                        println!(
-                            concat!(
-                                "{}/{} ({}): {:+.6}±{:.6}(±{:.6})s\n",
-                                "    poll interval: {:.0}s, missing polls: {}\n",
-                                "    root dispersion: {:.6}s, root delay:{:.6}s"
-                            ),
-                            address,
-                            ip,
-                            id,
-                            timedata.offset.to_seconds(),
-                            timedata.uncertainty.to_seconds(),
-                            timedata.delay.to_seconds(),
-                            poll_interval.as_duration().to_seconds(),
-                            unanswered_polls,
-                            timedata.remote_uncertainty.to_seconds(),
-                            timedata.remote_delay.to_seconds(),
-                        );
-                    }
-                }
-            }
-            let in_startup = output
-                .sources
-                .iter()
-                .filter(|source| matches!(source, crate::daemon::ObservableSourceState::Nothing))
-                .count();
-            match in_startup {
-                0 => {} // no sources in startup, so no line for that
-                1 => println!("1 source still in startup"),
-                _ => println!("{} sources still in startup", in_startup),
+                println!(
+                    concat!(
+                        "{}/{} ({}): {:+.6}±{:.6}(±{:.6})s\n",
+                        "    poll interval: {:.0}s, missing polls: {}\n",
+                        "    root dispersion: {:.6}s, root delay:{:.6}s"
+                    ),
+                    source.name,
+                    source.address,
+                    source.id,
+                    source.timedata.offset.to_seconds(),
+                    source.timedata.uncertainty.to_seconds(),
+                    source.timedata.delay.to_seconds(),
+                    source.poll_interval.as_duration().to_seconds(),
+                    source.unanswered_polls,
+                    source.timedata.remote_uncertainty.to_seconds(),
+                    source.timedata.remote_delay.to_seconds(),
+                );
             }
             println!();
             println!("Servers:");

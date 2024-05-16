@@ -2,8 +2,10 @@ use super::server::ServerStats;
 use super::sockets::create_unix_socket_with_permissions;
 use super::spawn::SourceId;
 use super::system::ServerData;
-use ntp_proto::{ObservableSourceTimedata, PollInterval, SystemSnapshot};
+use ntp_proto::{ObservableSourceState, SystemSnapshot};
+use std::collections::HashMap;
 use std::os::unix::fs::PermissionsExt;
+use std::sync::Arc;
 use std::{net::SocketAddr, time::Instant};
 use tokio::task::JoinHandle;
 use tracing::warn;
@@ -14,7 +16,7 @@ use serde::{Deserialize, Serialize};
 pub struct ObservableState {
     pub program: ProgramData,
     pub system: SystemSnapshot,
-    pub sources: Vec<ObservableSourceState>,
+    pub sources: Vec<ObservableSourceState<SourceId>>,
     pub servers: Vec<ObservableServerState>,
 }
 
@@ -61,26 +63,9 @@ impl From<&ServerData> for ObservableServerState {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum ObservableSourceState {
-    Nothing,
-    Observable(ObservedSourceState),
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ObservedSourceState {
-    #[serde(flatten)]
-    pub timedata: ObservableSourceTimedata,
-    pub unanswered_polls: u32,
-    pub poll_interval: PollInterval,
-    pub name: String,
-    pub address: String,
-    pub id: SourceId,
-}
-
 pub async fn spawn(
     config: &super::config::ObservabilityConfig,
-    sources_reader: tokio::sync::watch::Receiver<Vec<ObservableSourceState>>,
+    sources_reader: Arc<std::sync::RwLock<HashMap<SourceId, ObservableSourceState<SourceId>>>>,
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
     system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
 ) -> JoinHandle<std::io::Result<()>> {
@@ -97,7 +82,7 @@ pub async fn spawn(
 
 async fn observer(
     config: super::config::ObservabilityConfig,
-    sources_reader: tokio::sync::watch::Receiver<Vec<ObservableSourceState>>,
+    sources_reader: Arc<std::sync::RwLock<HashMap<SourceId, ObservableSourceState<SourceId>>>>,
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
     system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
 ) -> std::io::Result<()> {
@@ -121,7 +106,12 @@ async fn observer(
 
         let observe = ObservableState {
             program: ProgramData::with_uptime(start_time.elapsed().as_secs_f64()),
-            sources: sources_reader.borrow().to_owned(),
+            sources: sources_reader
+                .read()
+                .expect("Unexpected poisoned mutex")
+                .values()
+                .cloned()
+                .collect(),
             system: *system_reader.borrow(),
             servers: server_reader.borrow().iter().map(|s| s.into()).collect(),
         };
@@ -192,18 +182,21 @@ mod tests {
             ..Default::default()
         };
 
-        let (_, sources_reader) = tokio::sync::watch::channel(vec![
-            ObservableSourceState::Nothing,
-            ObservableSourceState::Nothing,
-            ObservableSourceState::Observable(ObservedSourceState {
+        let mut source_snapshots = HashMap::new();
+        let id = SourceId::new();
+        source_snapshots.insert(
+            id,
+            ObservableSourceState {
                 timedata: Default::default(),
                 unanswered_polls: Reach::default().unanswered_polls(),
                 poll_interval: PollIntervalLimits::default().min,
                 name: "127.0.0.3:123".into(),
                 address: "127.0.0.3:123".into(),
-                id: SourceId::new(),
-            }),
-        ]);
+                id,
+            },
+        );
+
+        let source_snapshots = Arc::new(std::sync::RwLock::new(source_snapshots));
 
         let (_, servers_reader) = tokio::sync::watch::channel(vec![]);
 
@@ -212,7 +205,6 @@ mod tests {
             reference_id: ReferenceId::NONE,
             accumulated_steps_threshold: None,
             time_snapshot: TimeSnapshot {
-                poll_interval: PollIntervalLimits::default().min,
                 precision: NtpDuration::from_seconds(1e-3),
                 root_delay: NtpDuration::ZERO,
                 root_dispersion: NtpDuration::ZERO,
@@ -226,7 +218,7 @@ mod tests {
         });
 
         let handle = tokio::spawn(async move {
-            observer(config, sources_reader, servers_reader, system_reader)
+            observer(config, source_snapshots, servers_reader, system_reader)
                 .await
                 .unwrap();
         });
@@ -240,13 +232,7 @@ mod tests {
         let result: ObservableState = serde_json::from_slice(&buf).unwrap();
 
         // Deal with randomized order
-        let mut count = 0;
-        for source in &result.sources {
-            if matches!(source, ObservableSourceState::Observable { .. }) {
-                count += 1;
-            }
-        }
-        assert_eq!(count, 1);
+        assert_eq!(result.sources.len(), 1);
 
         handle.abort();
     }
@@ -262,18 +248,22 @@ mod tests {
             ..Default::default()
         };
 
-        let (mut sources_writer, sources_reader) = tokio::sync::watch::channel(vec![
-            ObservableSourceState::Nothing,
-            ObservableSourceState::Nothing,
-            ObservableSourceState::Observable(ObservedSourceState {
+        let mut source_snapshots = HashMap::new();
+        let id = SourceId::new();
+        source_snapshots.insert(
+            id,
+            ObservableSourceState {
                 timedata: Default::default(),
                 unanswered_polls: Reach::default().unanswered_polls(),
                 poll_interval: PollIntervalLimits::default().min,
                 name: "127.0.0.3:123".into(),
                 address: "127.0.0.3:123".into(),
-                id: SourceId::new(),
-            }),
-        ]);
+                id,
+            },
+        );
+
+        let source_snapshots = Arc::new(std::sync::RwLock::new(source_snapshots));
+        let source_snapshots_clone = source_snapshots.clone();
 
         let (mut server_writer, servers_reader) = tokio::sync::watch::channel(vec![]);
 
@@ -282,7 +272,6 @@ mod tests {
             reference_id: ReferenceId::NONE,
             accumulated_steps_threshold: None,
             time_snapshot: TimeSnapshot {
-                poll_interval: PollIntervalLimits::default().min,
                 precision: NtpDuration::from_seconds(1e-3),
                 root_delay: NtpDuration::ZERO,
                 root_dispersion: NtpDuration::ZERO,
@@ -296,7 +285,7 @@ mod tests {
         });
 
         let handle = tokio::spawn(async move {
-            observer(config, sources_reader, servers_reader, system_reader)
+            observer(config, source_snapshots, servers_reader, system_reader)
                 .await
                 .unwrap();
         });
@@ -314,7 +303,10 @@ mod tests {
 
         // Ensure none of the locks is held long term
         let _ = system_writer.borrow_mut();
-        let _ = sources_writer.borrow_mut();
+        let _ = source_snapshots_clone
+            .write()
+            .expect("Unexpected poisoned mutex")
+            .len();
         let _ = server_writer.borrow_mut();
 
         handle.abort();

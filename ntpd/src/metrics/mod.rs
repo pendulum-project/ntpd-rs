@@ -1,6 +1,8 @@
 pub mod exporter;
 
-use crate::daemon::{ObservableSourceState, ObservableState};
+use ntp_proto::PollIntervalLimits;
+
+use crate::daemon::ObservableState;
 
 struct Measurement<T> {
     labels: Vec<(&'static str, String)>,
@@ -95,16 +97,14 @@ fn format_metric<T: std::fmt::Display>(
 macro_rules! collect_sources {
     ($from: expr, |$ident: ident| $value: expr $(,)?) => {{
         let mut data = vec![];
-        for tmp in &$from.sources {
-            if let crate::metrics::ObservableSourceState::Observable($ident) = tmp {
-                let labels = vec![
-                    ("name", $ident.name.clone()),
-                    ("address", $ident.address.clone()),
-                    ("id", format!("{}", $ident.id)),
-                ];
-                let value = $value;
-                data.push(Measurement { labels, value });
-            }
+        for $ident in &$from.sources {
+            let labels = vec![
+                ("name", $ident.name.clone()),
+                ("address", $ident.address.clone()),
+                ("id", format!("{}", $ident.id)),
+            ];
+            let value = $value;
+            data.push(Measurement { labels, value });
         }
         data
     }};
@@ -142,14 +142,16 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
     format_metric(
         w,
         "ntp_system_poll_interval",
-        "Time between polls of the system",
+        "[DEPRECATED] Time between polls of the system",
         MetricType::Gauge,
         Some(Unit::Seconds),
         Measurement::simple(
             state
-                .system
-                .time_snapshot
-                .poll_interval
+                .sources
+                .iter()
+                .map(|s| s.poll_interval)
+                .min()
+                .unwrap_or(PollIntervalLimits::default().min)
                 .as_duration()
                 .to_seconds(),
         ),

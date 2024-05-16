@@ -93,6 +93,7 @@ mod tests {
                 uncertainty: Matrix::new([[sqr(uncertainty), 0.0], [0.0, 10e-12]]),
                 time: NtpTimestamp::from_fixed_int(0),
             },
+            wander: 0.0,
             delay,
             source_uncertainty: NtpDuration::from_seconds(0.01),
             source_delay: NtpDuration::from_seconds(0.01),

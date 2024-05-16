@@ -39,7 +39,7 @@ pub(super) fn combine<Index: Copy>(
     algo_config: &AlgorithmConfig,
 ) -> Option<Combine<Index>> {
     selection.first().map(|first| {
-        let mut estimate = first.state.clone();
+        let mut estimate = first.state;
         if !algo_config.ignore_server_dispersion {
             estimate = estimate.add_server_dispersion(first.source_uncertainty.to_seconds())
         }
@@ -48,7 +48,7 @@ pub(super) fn combine<Index: Copy>(
 
         for snapshot in selection.iter().skip(1) {
             let source_estimate = if algo_config.ignore_server_dispersion {
-                snapshot.state.clone()
+                snapshot.state
             } else {
                 snapshot
                     .state
@@ -99,6 +99,7 @@ mod tests {
                 uncertainty,
                 time: NtpTimestamp::from_fixed_int(0),
             },
+            wander: 0.0,
             delay: 0.0,
             source_uncertainty: NtpDuration::from_seconds(source_uncertainty),
             source_delay: NtpDuration::from_seconds(0.01),
@@ -224,6 +225,7 @@ mod tests {
                 uncertainty: Matrix::new([[1e-6, 0.0], [0.0, 1e-12]]),
                 time: NtpTimestamp::from_fixed_int(0),
             },
+            wander: 0.0,
             delay: 0.0,
             source_uncertainty: NtpDuration::from_seconds(0.0),
             source_delay: NtpDuration::from_seconds(0.0),
