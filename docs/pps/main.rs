@@ -78,12 +78,11 @@ impl NtpDuration {
         }
     }
 
-    pub fn log2(self) -> i8 {
-        if self == NtpDuration::ZERO {
-            return i8::MIN;
+    pub fn log2(self) -> Option<i8> {
+        if self.duration == 0 {
+            return None; 
         }
-
-        31 - (self.duration.leading_zeros() as i8)
+        Some(63 - self.duration.leading_zeros() as i8) 
     }
 
     pub fn from_system_duration(duration: Duration) -> Self {
@@ -246,3 +245,4 @@ fn main() -> io::Result<()> {
         sleep(Duration::from_secs(1));
     }
 }
+
