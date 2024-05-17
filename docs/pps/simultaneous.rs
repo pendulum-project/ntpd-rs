@@ -293,6 +293,11 @@ fn main() -> io::Result<()> {
                 // Debugging: print the converted NTP timestamp
                 println!("PPS NTP Timestamp: {:?}", pps_ntp_timestamp);
 
+                let pps_gps_ntp_timestamp = NtpTimestamp::from_unix_timestamp(u64_timestamp, nanos);
+
+                // Debugging: print the converted NTP timestamp that is combined from pps and gps
+                println!("PPS AND GPS NTP Timestamp: {:?}", pps_gps_ntp_timestamp);
+
                 let time_diff = pps_ntp_timestamp - last_ntp_timestamp;
 
                 // Debugging: print the time difference
