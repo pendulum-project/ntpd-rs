@@ -245,4 +245,92 @@ fn main() -> io::Result<()> {
         sleep(Duration::from_secs(1));
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    //NtpDuration Tests:
+    #[test]
+    fn test_ntp_duration_from_bits() {
+        let bits = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00];
+        let duration = NtpDuration::from_bits(bits);
+        assert_eq!(duration.duration, 256);
+    }
+
+    #[test]
+    fn test_ntp_duration_from_bits_short() {
+        let bits = [0x00, 0x00, 0x01, 0x00];
+        let duration = NtpDuration::from_bits_short(bits);
+        assert_eq!(duration.duration, 16777216); 
+    }
+
+    #[test]
+    fn test_ntp_duration_to_seconds() {
+        let duration = NtpDuration { duration: 4294967296 }; 
+        assert!((duration.to_seconds() - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_ntp_duration_from_seconds() {
+        let duration = NtpDuration::from_seconds(1.0);
+        assert_eq!(duration.duration, 4294967296); 
+    }
+
+    #[test]
+    fn test_ntp_duration_abs() {
+        let duration = NtpDuration { duration: -5 };
+        assert_eq!(duration.abs().duration, 5);
+    }
+
+    #[test]
+    fn test_ntp_duration_abs_diff() {
+        let duration1 = NtpDuration { duration: 10 };
+        let duration2 = NtpDuration { duration: 2 };
+        assert_eq!(duration1.abs_diff(duration2).duration, 8);
+    }
+
+    #[test]
+    fn test_ntp_duration_as_seconds_nanos() {
+        let duration = NtpDuration { duration: 4294967296 }; 
+        assert_eq!(duration.as_seconds_nanos(), (1, 0));
+    }
+
+    #[test]
+    fn test_ntp_duration_from_exponent() {
+        let duration = NtpDuration::from_exponent(3);
+        assert_eq!(duration.duration, 34359738368); 
+    }
+
+    #[test]
+    fn test_ntp_duration_log2() {
+        let duration = NtpDuration { duration: 4294967296 }; 
+        assert_eq!(duration.log2(), Some(32)); 
+    
+        let duration = NtpDuration { duration: 1 }; 
+        assert_eq!(duration.log2(), Some(0)); 
+    
+        let duration = NtpDuration { duration: 2 }; 
+        assert_eq!(duration.log2(), Some(1)); 
+    
+        let duration = NtpDuration { duration: 16 }; 
+        assert_eq!(duration.log2(), Some(4)); 
+    
+        let duration = NtpDuration { duration: 0 }; 
+        assert_eq!(duration.log2(), None); 
+    }
+
+    #[test]
+    fn test_ntp_duration_from_system_duration() {
+        let system_duration = Duration::new(1, 0);
+        let ntp_duration = NtpDuration::from_system_duration(system_duration);
+        assert_eq!(ntp_duration.duration, 4294967296); 
+    }
+
+    #[test]
+    fn test_ntp_duration_sub() {
+        let duration1 = NtpDuration { duration: 8 };
+        let duration2 = NtpDuration { duration: 2 };
+        assert_eq!((duration1 - duration2).duration, 6);
+    }
+}
 
