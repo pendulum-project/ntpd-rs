@@ -28,17 +28,6 @@ impl NtpDuration {
         }
     }
 
-    pub(crate) fn to_bits_short(self) -> [u8; 4] {
-        assert!(self.duration >= 0);
-        debug_assert!(self.duration <= 0x0000FFFFFFFFFFFF);
-
-        if self.duration > 0x0000FFFFFFFFFFFF {
-            [0xFF, 0xFF, 0xFF, 0xFF]
-        } else {
-            (((self.duration & 0x0000FFFFFFFF0000) >> 16) as u32).to_be_bytes()
-        }
-    }
-
     pub fn to_seconds(self) -> f64 {
         self.duration as f64 / u32::MAX as f64
     }
@@ -150,41 +139,6 @@ impl NtpTimestamp {
 
         NtpTimestamp { timestamp }
     }
-
-    // pub fn from_unix_timestamp(unix_timestamp: u64, nanos: u32) -> Self {
-    //     let ntp_seconds = unix_timestamp + UNIX_TO_NTP_OFFSET;
-    //     //let fraction = ((nanos as u64) << 32) / 1_000_000_000;
-    //     let fraction = ((nanos as u64 * NTP_SCALE_FRAC) / 1_000_000_000) as u64;
-    //     let timestamp = (ntp_seconds << 32) + fraction;
-    //     println!("Current NTP seconds: {:?}", ntp_seconds);
-    //     NtpTimestamp { timestamp }
-    // }
-    // pub fn from_unix_timestamp(unix_timestamp: u64, nanos: u32) -> Self {
-    //     let ntp_seconds = unix_timestamp + UNIX_TO_NTP_OFFSET;
-    //     let fraction = ((nanos as u64 * NTP_SCALE_FRAC) / 1_000_000_000) as u64;
-    //     //let timestamp = (ntp_seconds << 32) + ((fraction >> 32) as u64);
-    //     let timestamp = (ntp_seconds << 32) | fraction;
-    //     // let fraction_upper = (fraction >> 32) as u32; // Upper 32 bits of fraction
-    //     // let fraction_lower = (fraction & 0xFFFFFFFF) as u32; // Lower 32 bits of fraction
-    //     // let timestamp = (ntp_seconds << 32) | (fraction_lower as u64);
-    //     // Shift NTP Seconds and extract fraction upper and lower parts
-    //     // let fraction_upper = (fraction >> 32) as u32; // Upper 32 bits of fraction
-    //     // let fraction_lower = (fraction & 0xFFFFFFFF) as u32; // Lower 32 bits of fraction
-
-    //     // // Combine upper parts (NTP seconds and upper fraction bits)
-    //     // let timestamp_upper = (ntp_seconds << 32) | (fraction_upper as u64);
-
-    //     // // Combine lower parts (lower fraction bits)
-    //     // let timestamp_lower = fraction_lower as u64;
-
-    //     // // Combine upper and lower parts to form the complete NTP timestamp
-    //     // let timestamp = (timestamp_upper << 32) | timestamp_lower;
-
-    //     println!("Unix Timestamp: {}, Nanos: {}, NTP Seconds: {}, Fraction: {}", unix_timestamp, nanos, ntp_seconds, fraction);
-    //     println!("Combined NTP Timestamp: {:#018X}", timestamp);
-    //     NtpTimestamp { timestamp }
-    // }
-    
 }
 
 impl Sub for NtpTimestamp {
