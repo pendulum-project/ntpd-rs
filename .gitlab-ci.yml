@@ -16,7 +16,7 @@ stages:
   - build
   - publish
 
-lint_clippy:
+lint-clippy:
   stage: lint
   image: rust
   script:
