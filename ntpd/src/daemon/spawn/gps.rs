@@ -1,21 +1,12 @@
 use std::fmt::Display;
-use std::{net::SocketAddr, ops::Deref};
-
-use ntp_proto::ProtocolVersion;
 use tokio::sync::mpsc;
-use tracing::warn;
-
-use super::super::config::PoolSourceConfig;
-
 use super::{BasicSpawner, SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, SpawnerId};
 
 struct GpsSource {
     id: SourceId,
-    device: String,
 }
 
 pub struct GpsSpawner {
-    config: GpsConfig,
     id: SpawnerId,
     current_sources: Vec<GpsSource>,
 }
@@ -24,7 +15,7 @@ pub struct GpsSpawner {
 pub enum GpsSpawnError {}
 
 impl Display for GpsSpawnError {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "GpsSpawnError")
     }
 }
@@ -32,9 +23,8 @@ impl Display for GpsSpawnError {
 impl std::error::Error for GpsSpawnError {}
 
 impl GpsSpawner {
-    pub fn new(config: GpsConfig) -> GpsSpawner {
+    pub fn new() -> GpsSpawner {
         GpsSpawner {
-            config,
             id: Default::default(),
             current_sources: Default::default(),
         }
@@ -54,20 +44,18 @@ impl BasicSpawner for GpsSpawner {
             return Ok(());
         }
 
+        // Here we just make a GpsSource the device we are using is in the confi
         let id = SourceId::new();
         self.current_sources.push(GpsSource {
             id,
-            device: self.config.device.clone(),
         });
 
-        let action = SpawnAction::create(
+        let action = SpawnAction::create_gps(
             id,
-            self.config.device.clone(),
-            None,
         );
 
         tracing::debug!(?action, "intending to spawn new GPS source");
-        
+       
         action_tx
             .send(SpawnEvent::new(self.id, action))
             .await
@@ -93,9 +81,8 @@ impl BasicSpawner for GpsSpawner {
     fn get_id(&self) -> SpawnerId {
         self.id
     }
-
-    fn get_device_description(&self) -> String {
-        format!("{}", self.config.device)
+    fn get_addr_description(&self) -> String {
+        "gps".to_string()
     }
 
     fn get_description(&self) -> &str {

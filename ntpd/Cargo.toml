@@ -13,6 +13,8 @@ build = "build.rs"
 
 [dependencies]
 ntp-proto.workspace = true
+gpsd_client = "0.1.5"
+chrono= "0.4.38"
 
 tokio = { workspace = true, features = ["rt-multi-thread", "io-util", "io-std", "fs", "sync", "net", "macros"] }
 tracing.workspace = true

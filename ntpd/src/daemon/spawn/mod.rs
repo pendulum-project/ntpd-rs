@@ -16,6 +16,7 @@ pub mod nts;
 pub mod nts_pool;
 pub mod pool;
 pub mod standard;
+pub mod gps;
 
 /// Unique identifier for a spawner.
 /// This is used to identify which spawner was used to create a source
@@ -82,6 +83,7 @@ impl SpawnEvent {
 pub enum SystemEvent {
     SourceRemoved(SourceRemovedEvent),
     SourceRegistered(SourceCreateParameters),
+    GpsSourceRegistered(GpsSourceCreateParameters),
     Idle,
 }
 
@@ -110,6 +112,7 @@ pub enum SourceRemovalReason {
 #[derive(Debug)]
 pub enum SpawnAction {
     Create(SourceCreateParameters),
+    CreateGps(GpsSourceCreateParameters),
     // Remove(()),
 }
 
@@ -129,6 +132,14 @@ impl SpawnAction {
             nts,
         })
     }
+
+    pub fn create_gps(
+        id: SourceId,
+    ) -> SpawnAction{
+        SpawnAction::CreateGps(GpsSourceCreateParameters {
+            id,
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -138,6 +149,11 @@ pub struct SourceCreateParameters {
     pub normalized_addr: NormalizedAddress,
     pub protocol_version: ProtocolVersion,
     pub nts: Option<Box<SourceNtsData>>,
+}
+
+#[derive(Debug)]
+pub struct GpsSourceCreateParameters {
+    pub id: SourceId,
 }
 
 #[cfg(test)]
@@ -246,6 +262,13 @@ pub trait BasicSpawner {
         Ok(())
     }
 
+    async fn handle_gps_registered(
+        &mut self,
+        _event: GpsSourceCreateParameters,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
     /// Get the id of the spawner
     fn get_id(&self) -> SpawnerId;
 
@@ -305,6 +328,9 @@ where
                 SystemEvent::SourceRemoved(removed_source) => {
                     self.handle_source_removed(removed_source).await?;
                 }
+                SystemEvent::GpsSourceRegistered(source_params) => {
+                    self.handle_gps_registered(source_params).await?;
+                }
                 SystemEvent::Idle => {}
             }
         }
@@ -330,7 +356,12 @@ mod tests {
     use super::{SourceCreateParameters, SpawnAction, SpawnEvent};
 
     pub fn get_create_params(res: SpawnEvent) -> SourceCreateParameters {
-        let SpawnAction::Create(params) = res.action;
-        params
+        if let SpawnAction::Create(params) = res.action {
+            params
+        } else {
+            panic!("Expected SpawnAction::Create variant");
+        }
     }
+
+   
 }

@@ -106,8 +106,7 @@ impl NtpTimestamp {
         self - other < NtpDuration::ZERO
     }
 
-    #[cfg(any(test, feature = "__internal-fuzz"))]
-    pub(crate) const fn from_fixed_int(timestamp: u64) -> NtpTimestamp {
+    pub const fn from_fixed_int(timestamp: u64) -> NtpTimestamp {
         NtpTimestamp { timestamp }
     }
 }

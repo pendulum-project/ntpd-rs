@@ -434,7 +434,7 @@ impl Config {
     /// configuration is egregious, although it doesn't do so currently.
     pub fn check(&self) -> bool {
         let mut ok = true;
-
+        info!("hello");
         // Note: since we only check once logging is fully configured,
         // using those fields should always work. This is also
         // probably a good policy in general (config should always work

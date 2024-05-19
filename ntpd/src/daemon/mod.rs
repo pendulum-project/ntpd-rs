@@ -3,6 +3,7 @@ pub mod config;
 pub mod keyexchange;
 mod local_ip_provider;
 mod ntp_source;
+pub mod gps_source;
 pub mod nts_key_provider;
 pub mod observer;
 mod server;
@@ -79,8 +80,9 @@ pub(crate) async fn initialize_logging_parse_config(
 }
 
 async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
+    info!("atleast?");
     let config = initialize_logging_parse_config(options.log_level, options.config).await;
-
+    info!("-1");
     // give the user a warning that we use the command line option
     if config.observability.log_level.is_some() && options.log_level.is_some() {
         info!("Log level override from command line arguments is active");

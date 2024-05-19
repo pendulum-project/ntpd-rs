@@ -22,7 +22,11 @@ mod server;
 mod source;
 mod system;
 mod time_types;
-
+pub mod gps_source;
+pub use gps_source::GpsSource;
+pub use gps_source::GpsSourceAction;
+pub use gps_source::GpsSourceActionIterator;
+pub use gps_source::GpsSourceUpdate;
 #[cfg(feature = "nts-pool")]
 mod nts_pool_ke;
 #[cfg(feature = "nts-pool")]

@@ -1,8 +1,7 @@
 use std::{future::Future, marker::PhantomData, net::SocketAddr, pin::Pin};
 
 use ntp_proto::{
-    NtpClock, NtpInstant, NtpSource, NtpSourceActionIterator, NtpSourceUpdate, NtpTimestamp,
-    ProtocolVersion, SourceDefaultsConfig, SourceNtsData, SystemSnapshot,
+    GpsSourceUpdate, NtpClock, NtpInstant, NtpSource, NtpSourceActionIterator, NtpSourceUpdate, NtpTimestamp, ProtocolVersion, SourceDefaultsConfig, SourceNtsData, SystemSnapshot
 };
 #[cfg(target_os = "linux")]
 use timestamped_socket::socket::open_interface_udp;
@@ -38,6 +37,7 @@ pub enum MsgForSystem {
     Unreachable(SourceId),
     /// Update from source
     SourceUpdate(SourceId, NtpSourceUpdate),
+    GpsSourceUpdate(SourceId, GpsSourceUpdate),
 }
 
 #[derive(Debug, Clone)]
