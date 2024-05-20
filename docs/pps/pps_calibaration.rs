@@ -44,14 +44,4 @@ impl PpsCalibration {
         timestamp + self.pps_offset
     }
 
-    // Optional: Convert SystemTime to a readable format using chrono for verification
-    // pub fn format_time(&self, timestamp: SystemTime) -> String {
-    //     let duration_since_epoch = timestamp.duration_since(UNIX_EPOCH).unwrap();
-    //     let naive_datetime = NaiveDateTime::from_timestamp(
-    //         duration_since_epoch.as_secs() as i64,
-    //         duration_since_epoch.subsec_nanos(),
-    //     );
-    //     let datetime: DateTime<Utc> = DateTime::from_utc(naive_datetime, Utc);
-    //     datetime.to_string()
-    // }
 }
