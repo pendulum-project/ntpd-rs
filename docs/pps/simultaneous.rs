@@ -11,19 +11,26 @@ use std::collections::VecDeque;
 use serialport::SerialPort;
 use std::io::{self, BufRead, BufReader, Result};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+mod kalman_filter;
+use kalman_filter::KalmanFilterState;
 
 
 pub struct PpsCalibration {
     pps_offset: Duration,
+    kalman_filter: KalmanFilterState,  
+    last_measurement_time: Option<SystemTime>,  
 }
 
 impl PpsCalibration {
     pub fn new() -> Self {
         PpsCalibration {
             pps_offset: Duration::from_secs(0),
+            kalman_filter: KalmanFilterState::new(),  
+            last_measurement_time: None,  
         }
     }
 
+    
     pub fn calculate_offset(&mut self, gps_time: SystemTime) -> io::Result<()> {
         let mut ts = MaybeUninit::<timespec>::uninit();
 
@@ -36,7 +43,17 @@ impl PpsCalibration {
         let ts = unsafe { ts.assume_init() };
         let pps_time = UNIX_EPOCH + Duration::new(ts.tv_sec as u64, ts.tv_nsec as u32);
 
-        self.pps_offset = gps_time.duration_since(pps_time).unwrap_or(Duration::from_secs(0));
+        let offset = gps_time.duration_since(pps_time).unwrap_or(Duration::from_secs(0));
+        let offset_secs = offset.as_secs_f64();
+
+        if let Some(last_time) = self.last_measurement_time {
+            let delta_t = gps_time.duration_since(last_time).unwrap_or(Duration::from_secs(0)).as_secs_f64();
+            self.kalman_filter.predict(delta_t, 1e-5); // Process noise
+            self.kalman_filter.update(offset_secs, delta_t, 1e-2); // Measurement noise
+        }
+
+        self.last_measurement_time = Some(gps_time);
+        self.pps_offset = Duration::from_secs_f64(self.kalman_filter.D);
 
         println!("Calculated PPS Offset: {:?}", self.pps_offset);
         Ok(())
