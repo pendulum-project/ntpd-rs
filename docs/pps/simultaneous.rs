@@ -10,6 +10,10 @@ use gpsd_client::*;
 use std::process;
 use serde::{Serialize, Deserialize};
 use std::ops::Sub;
+use pps_calibration::PpsCalibration;
+use std::collections::VecDeque;
+
+
 
 /// Converts ISO8601 string (what's received from the GPS) into Unix Timestamp (u64)
 fn iso8601_to_u64(iso8601_string: &str) -> u64 {
@@ -221,27 +225,40 @@ fn get_pps_time(_fd: RawFd, last_ntp_timestamp: &mut NtpTimestamp) -> Result<()>
     let timestamp = ts.tv_sec as u64;
     let nanos = ts.tv_nsec as u32;
 
-    // Debugging: print raw Unix timestamp and nanoseconds
+    //Print raw Unix timestamp and nanoseconds
     println!("Raw Unix Timestamp: {}, Nanoseconds: {}", timestamp, nanos);
 
     let ntp_timestamp = NtpTimestamp::from_unix_timestamp(timestamp, nanos);
 
-    // Debugging: print the converted NTP timestamp
+    //Print the converted NTP timestamp
     println!("Current NTP Timestamp: {:?}", ntp_timestamp);
 
     let time_diff = ntp_timestamp - *last_ntp_timestamp;
 
-    // Debugging: print the time difference
+    //Print the time difference
     println!("Time difference: {:?}", time_diff);
 
     *last_ntp_timestamp = ntp_timestamp;
 
-    // Convert the timestamp to a readable format using chrono for verification
+    /// Convert the timestamp to a readable format using chrono for verification
     let naive_datetime = NaiveDateTime::from_timestamp(timestamp as i64, nanos);
     let datetime: DateTime<Utc> = DateTime::from_utc(naive_datetime, Utc);
     println!("Readable time: {}", datetime);
 
     Ok(())
+}
+
+///compute the mean and standard deviation of the differences stored in VecDeque<Duration>. 
+/// Used in order to evaluatethe accuracy and consistency of the PPS calibration.
+fn calculate_statistics(diffs: &VecDeque<Duration>) -> (f64, f64) {
+    let n = diffs.len() as f64;
+    let mean: f64 = diffs.iter().map(|d| d.as_secs_f64()).sum::<f64>() / n;
+    let variance: f64 = diffs.iter().map(|d| {
+        let diff = d.as_secs_f64() - mean;
+        diff * diff
+    }).sum::<f64>() / n;
+    let stddev = variance.sqrt();
+    (mean, stddev)
 }
 
 fn main() -> io::Result<()> {
@@ -256,9 +273,46 @@ fn main() -> io::Result<()> {
         }
     };
 
+    let mut pps_calibration = PpsCalibration::new();
     let mut last_ntp_timestamp = NtpTimestamp::from_unix_timestamp(0, 0);
 
+    // Warm-up period variables
+    const WARM_UP_PERIOD: i32 = 10; // Number of seconds to warm up
+    let mut warm_up_counter = 0;
+
+    // Collect differences for statistical analysis
+    let mut differences = VecDeque::new();
+    let mut cal_diffs = VecDeque::new(); //calibarated differences
+
+
     loop {
+        /// Discard initial readings in order to acquire stable gps readings
+        if warm_up_counter < WARM_UP_PERIOD {
+            match gps.current_data() {
+                Ok(_) => {
+                    // Get PPS time to discard
+                    let mut ts = MaybeUninit::<libc::timespec>::uninit();
+                    unsafe {
+                        if libc::clock_gettime(libc::CLOCK_REALTIME, ts.as_mut_ptr()) != 0 {
+                            println!("Error during PPS warm-up period: {}", std::io::Error::last_os_error());
+                            sleep(Duration::from_secs(1));
+                            continue;
+                        }
+                    }
+
+                    println!("Warming up... {}/{}", warm_up_counter + 1, WARM_UP_PERIOD);
+                    warm_up_counter += 1;
+                    sleep(Duration::from_secs(1));
+                    continue;
+                }
+                Err(e) => {
+                    println!("Error during warm-up period: {}", e);
+                    sleep(Duration::from_secs(1));
+                    continue;
+                }
+            }
+        }
+
         match gps.current_data() {
             Ok(data) => {
                 let my_time: String = match data.convert_time("UTC") {
@@ -268,54 +322,67 @@ fn main() -> io::Result<()> {
                         continue;
                     }
                 };
-                let u64_timestamp = iso8601_to_u64(&my_time); 
-                println!("Gps Unix timestamp: {:?}", u64_timestamp);
-                let ntp_timestamp = u64_to_ntpTimestamp(u64_timestamp);
-                println!("Gps NTP timestamp: {:?}", ntp_timestamp);
+                let gps_timestamp = match DateTime::parse_from_rfc3339(&my_time) {
+                    Ok(dt) => SystemTime::UNIX_EPOCH + Duration::new(dt.timestamp() as u64, dt.timestamp_subsec_nanos()),
+                    Err(e) => {
+                        println!("Error parsing GPS time: {}", e);
+                        continue;
+                    }
+                };
 
-                // Get PPS time
-                let mut ts = MaybeUninit::<timespec>::uninit();
+                // Calculate PPS offset using GPS time
+                if let Err(e) = pps_calibration.calculate_offset(gps_timestamp) {
+                    println!("Error calculating PPS offset: {}", e);
+                    continue;
+                }
+
+                // Get the PPS time and apply the offset
+                let mut ts = MaybeUninit::<libc::timespec>::uninit();
                 unsafe {
-                    if clock_gettime(CLOCK_REALTIME, ts.as_mut_ptr()) != 0 {
-                        return Err(io::Error::last_os_error());
+                    if libc::clock_gettime(libc::CLOCK_REALTIME, ts.as_mut_ptr()) != 0 {
+                        println!("Error getting PPS time: {}", std::io::Error::last_os_error());
+                        continue;
                     }
                 }
 
                 let ts = unsafe { ts.assume_init() };
-                let timestamp = ts.tv_sec as u64;
-                let nanos = ts.tv_nsec as u32;
+                let pps_time = UNIX_EPOCH + Duration::new(ts.tv_sec as u64, ts.tv_nsec as u32);
+                let calibrated_pps_time = pps_calibration.apply_offset(pps_time);
 
-                // Debugging: print raw Unix timestamp and nanoseconds
-                println!("PPS Raw Unix Timestamp: {}, Nanoseconds: {}", timestamp, nanos);
+                // Calculate and store differences
+                let difference = gps_timestamp.duration_since(pps_time).unwrap_or(Duration::from_secs(0));
+                let cal_diff = gps_timestamp.duration_since(calibrated_pps_time).unwrap_or(Duration::from_secs(0));
 
-                let pps_ntp_timestamp = NtpTimestamp::from_unix_timestamp(timestamp, nanos);
+                differences.push_back(difference);
+                cal_diffs.push_back(cal_diff);
 
-                // Debugging: print the converted NTP timestamp
-                println!("PPS NTP Timestamp: {:?}", pps_ntp_timestamp);
+                // Limit the size of the deque to avoid excessive memory usage
+                if differences.len() > 1000 {
+                    differences.pop_front();
+                }
+                if cal_diffs.len() > 1000 {
+                    cal_diffs.pop_front();
+                }
 
-                let pps_gps_ntp_timestamp = NtpTimestamp::from_unix_timestamp(u64_timestamp, nanos);
+                // Print statistics every 10 iterations
+                if differences.len() % 10 == 0 {
+                    let (mean_raw, stddev_raw) = calculate_statistics(&differences);
+                    let (mean_calibrated, stddev_calibrated) = calculate_statistics(&cal_diffs);
 
-                // Debugging: print the converted NTP timestamp that is combined from pps and gps
-                println!("PPS AND GPS NTP Timestamp: {:?}", pps_gps_ntp_timestamp);
+                    println!("Raw PPS Time difference mean: {:.6}, stddev: {:.6}", mean_raw, stddev_raw);
+                    println!("Calibrated PPS Time difference mean: {:.6}, stddev: {:.6}", mean_calibrated, stddev_calibrated);
+                }
 
-                let time_diff = pps_ntp_timestamp - last_ntp_timestamp;
+                println!("GPS time: {}", pps_calibration.format_time(gps_timestamp));
+                println!("PPS time (raw): {}", pps_calibration.format_time(pps_time));
+                println!("PPS time (calibrated): {}", pps_calibration.format_time(calibrated_pps_time));
 
-                // Debugging: print the time difference
-                println!("PPS Time difference: {:?}", time_diff);
-
-                last_ntp_timestamp = pps_ntp_timestamp;
-
-                // Convert the timestamp to a readable format using chrono for verification
-                let naive_datetime = NaiveDateTime::from_timestamp(timestamp as i64, nanos);
-                let datetime: DateTime<Utc> = DateTime::from_utc(naive_datetime, Utc);
-                println!("PPS Readable time: {}", datetime);
-                
             },
             Err(e) => {
                 println!("Error getting GPS and PPS data: {}", e);
             }
         }
-        
+
         sleep(Duration::from_secs(1));
     }
 
