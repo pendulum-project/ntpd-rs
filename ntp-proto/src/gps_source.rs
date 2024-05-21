@@ -2,11 +2,12 @@ use crate::{
     cookiestash::CookieStash,
    
     packet::{Cipher, NtpLeapIndicator, RequestIdentifier},
-    time_types::{NtpDuration, NtpInstant, NtpTimestamp},
+    time_types::{NtpDuration, NtpInstant, NtpTimestamp} ,
 };
+use crate::source::Measurement;
 use std::time::Duration;
 
-use tracing::{instrument, warn};
+use tracing::{info, instrument, warn};
 
 pub struct SourceNtsData {
     pub(crate) cookies: CookieStash,
@@ -47,44 +48,44 @@ pub struct GpsSource {
 
 }
 
-#[derive(Debug, Copy, Clone)]
-pub struct Measurement {
-    pub delay: NtpDuration,
-    pub offset: NtpDuration,
-    pub transmit_timestamp: NtpTimestamp,
-    pub receive_timestamp: NtpTimestamp,
-    pub localtime: NtpTimestamp,
-    pub monotime: NtpInstant,
+// #[derive(Debug, Copy, Clone)]
+// pub struct Measurement {
+//     pub delay: NtpDuration,
+//     pub offset: NtpDuration,
+//     pub transmit_timestamp: NtpTimestamp,
+//     pub receive_timestamp: NtpTimestamp,
+//     pub localtime: NtpTimestamp,
+//     pub monotime: NtpInstant,
 
-    pub stratum: u8,
-    pub root_delay: NtpDuration,
-    pub root_dispersion: NtpDuration,
-    pub leap: NtpLeapIndicator,
-    pub precision: i8,
-}
+//     pub stratum: u8,
+//     pub root_delay: NtpDuration,
+//     pub root_dispersion: NtpDuration,
+//     pub leap: NtpLeapIndicator,
+//     pub precision: i8,
+// }
 
-impl Measurement {
-    fn from_packet(
-        send_timestamp: NtpTimestamp,
-        recv_timestamp: NtpTimestamp,
-        local_clock_time: NtpInstant,
-    ) -> Self {
-        Self {
-            delay: NtpDuration::default(),
-            offset: NtpDuration::default(),
-            transmit_timestamp: send_timestamp,
-            receive_timestamp: recv_timestamp,
-            localtime: send_timestamp + (recv_timestamp - send_timestamp) / 2,
-            monotime: local_clock_time,
+// impl Measurement {
+//     fn from_packet(
+//         send_timestamp: NtpTimestamp,
+//         recv_timestamp: NtpTimestamp,
+//         local_clock_time: NtpInstant,
+//     ) -> Self {
+//         Self {
+//             delay: NtpDuration::default(),
+//             offset: NtpDuration::default(),
+//             transmit_timestamp: send_timestamp,
+//             receive_timestamp: recv_timestamp,
+//             localtime: send_timestamp + (recv_timestamp - send_timestamp) / 2,
+//             monotime: local_clock_time,
 
-            stratum: 16,
-            root_delay: NtpDuration::default(),
-            root_dispersion: NtpDuration::default(),
-            leap: NtpLeapIndicator::NoWarning,
-            precision: 0,
-        }
-    }
-}
+//             stratum: 16,
+//             root_delay: NtpDuration::default(),
+//             root_dispersion: NtpDuration::default(),
+//             leap: NtpLeapIndicator::NoWarning,
+//             precision: 0,
+//         }
+//     }
+// }
 
 
 
@@ -331,15 +332,15 @@ impl GpsSource {
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
     ) -> GpsSourceActionIterator {
-       
+        
         // generate a measurement
-        let measurement = Measurement::from_packet(
+        let measurement = Measurement::from_gps(
             send_time,
             recv_time,
             local_clock_time,
         );
        
-       
+        // info!("set actionupdate");
         actions!(GpsSourceAction::UpdateSystem(GpsSourceUpdate {
             measurement: Some(measurement),
         }))

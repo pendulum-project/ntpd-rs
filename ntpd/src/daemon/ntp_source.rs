@@ -9,7 +9,7 @@ use timestamped_socket::{
     interface::InterfaceName,
     socket::{connect_address, Connected, RecvResult, Socket},
 };
-use tracing::{debug, error, instrument, warn, Instrument, Span};
+use tracing::{debug, error, info, instrument, warn, Instrument, Span};
 
 use tokio::time::{Instant, Sleep};
 
@@ -105,6 +105,7 @@ where
 
     async fn run(&mut self, mut poll_wait: Pin<&mut T>) {
         loop {
+            info!("Receiving result");
             let mut buf = [0_u8; 1024];
 
             enum SelectResult {
@@ -136,6 +137,7 @@ where
                                 }
                             };
 
+                            info!("Handling income:");
                             let system_snapshot = *self.channels.system_snapshot_receiver.borrow();
                             self.source.handle_incoming(
                                 system_snapshot,

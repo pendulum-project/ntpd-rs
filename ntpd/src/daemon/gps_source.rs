@@ -10,7 +10,7 @@ use ntp_proto::{
 
 use timestamped_socket::socket::{ Connected, Socket};
 
-use tracing::{debug, error, instrument, warn, Instrument, Span};
+use tracing::{debug, error, info, info_span, instrument, warn, Instrument, Span};
 use chrono::DateTime;
 
 use crate::daemon::ntp_source::MsgForSystem;
@@ -52,12 +52,13 @@ where
     T: Wait,
 {
     async fn run(&mut self, mut poll_wait: Pin<&mut T>) {
+        // info!("running gps source task:");
         loop {
             enum SelectResult {
                 Timer,
                 Recv(Result<GPSData, GPSError>),
             }
-           
+            // info!("get gps result:"); 
             let selected = tokio::select! {
                 () = &mut poll_wait => {
                     SelectResult::Timer
@@ -69,9 +70,11 @@ where
 
             let actions = match selected {
                 SelectResult::Recv(result) => {
-                    tracing::debug!("accept gps time stamp");
+                    //tracing::debug!("accept gps time stamp");
+            
                     match accept_gps_time::<C>(result) {
                         AcceptResult::Accept(recv_timestamp) => {
+                            //info!("gps time has result");
                             let send_timestamp = match self.last_send_timestamp {
                                 Some(ts) => ts,
                                 None => {
@@ -99,11 +102,12 @@ where
                     GpsSourceActionIterator::default()
                 }
             };
-
+            
+            // info!("retrieved actions");
             for action in actions {
                 match action {
                     ntp_proto::GpsSourceAction::Send(packet) => {
-
+                        //info!("some timer things")
                         match self.clock.now() {
                             Err(e) => {
                                 // we cannot determine the origin_timestamp
@@ -119,6 +123,7 @@ where
 
                     }
                     ntp_proto::GpsSourceAction::UpdateSystem(update) => {
+                        //info!("update source action")
                         self.channels
                             .msg_for_system_sender
                             .send(MsgForSystem::GpsSourceUpdate(self.index, update))
@@ -163,13 +168,13 @@ where
         channels: SourceChannels,
         gps: GPS,
     ) -> tokio::task::JoinHandle<()> {
+        info!("spawning gps source?");
         tokio::spawn(
             (async move {
                
                 let (source, initial_actions)  = GpsSource::new();
                 let poll_wait = tokio::time::sleep(std::time::Duration::default());
                 tokio::pin!(poll_wait);
-
                 for action in initial_actions {
                     match action {
                         ntp_proto::GpsSourceAction::Send(_) => {
@@ -190,7 +195,7 @@ where
                     }
                 }
 
-
+                let last_send_timestamp = clock.clone().now().ok();
                 let mut process = GpsSourceTask {
                     _wait: PhantomData,
                     index,
@@ -198,7 +203,7 @@ where
                     channels,
                     source,
                     gps,
-                    last_send_timestamp: None,
+                    last_send_timestamp,
                 };
 
                 process.run(poll_wait).await;
@@ -267,8 +272,8 @@ pub fn from_unix_timestamp(unix_timestamp: u64) -> NtpTimestamp {
     // Combine NTP seconds and fraction to form the complete NTP timestamp
     let timestamp = ((ntp_seconds as u64) << 32) | (fraction as u64);
 
-    println!("Unix Timestamp: {}, NTP Seconds: {}, Fraction: {}", unix_timestamp, ntp_seconds, fraction);
-    println!("Combined NTP Timestamp: {:#018X}", timestamp);
+    // println!("Unix Timestamp: {}, NTP Seconds: {}, Fraction: {}", unix_timestamp, ntp_seconds, fraction);
+    // println!("Combined NTP Timestamp: {:#018X}", timestamp);
 
     NtpTimestamp::from_fixed_int(timestamp)
 }

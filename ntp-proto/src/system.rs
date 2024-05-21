@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use tracing::info;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -10,6 +11,7 @@ use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::source::NtpSourceUpdate;
 #[cfg(feature = "ntpv5")]
 use crate::source::ProtocolVersion;
+use crate::gps_source::GpsSourceUpdate;
 use crate::{
     algorithm::{KalmanClockController, ObservableSourceTimedata, StateUpdate, TimeSyncController},
     clock::NtpClock,
@@ -173,6 +175,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
     }
 
     pub fn handle_source_create(&mut self, id: SourceId) -> Result<(), C::Error> {
+        info!("adding source to clock controller");
         self.clock_controller()?.add_source(id);
         self.sources.insert(id, None);
         Ok(())
@@ -189,6 +192,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
         id: SourceId,
         update: NtpSourceUpdate,
     ) -> Result<Option<Duration>, C::Error> {
+        info!("adjusting clock");
         let usable = update
             .snapshot
             .accept_synchronization(
@@ -200,6 +204,30 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
         self.clock_controller()?.source_update(id, usable);
         *self.sources.get_mut(&id).unwrap() = Some(update.snapshot);
         if let Some(measurement) = update.measurement {
+            let update = self.clock_controller()?.source_measurement(id, measurement);
+            Ok(self.handle_algorithm_state_update(update))
+        } else {
+            Ok(None)
+        }
+    }
+    pub fn handle_gps_source_update(
+        &mut self,
+        id: SourceId,
+        update: GpsSourceUpdate,
+    ) -> Result<Option<Duration>, C::Error> {
+        info!("adjusting gps clock");
+        // let usable = update
+        //     .snapshot
+        //     .accept_synchronization(
+        //         self.synchronization_config.local_stratum,
+        //         self.ip_list.as_ref(),
+        //         &self.system,
+        //     )
+        //     .is_ok();
+        //self.clock_controller()?.source_update(id, usable);
+        // *self.sources.get_mut(&id).unwrap() = Some(update.snapshot);
+        if let Some(measurement) = update.measurement {
+            info!("gps measurement in clockcontroller");
             let update = self.clock_controller()?.source_measurement(id, measurement);
             Ok(self.handle_algorithm_state_update(update))
         } else {

@@ -129,6 +129,29 @@ impl Measurement {
             precision: packet.precision(),
         }
     }
+
+    pub fn from_gps(
+        send_timestamp: NtpTimestamp,
+        recv_timestamp: NtpTimestamp,
+        local_clock_time: NtpInstant,
+    ) -> Self {
+        Self {
+            delay: NtpDuration::default(),
+            offset: NtpDuration::default(),
+            transmit_timestamp: send_timestamp,
+            receive_timestamp: recv_timestamp,
+            localtime: send_timestamp + (recv_timestamp - send_timestamp) / 2,
+            monotime: local_clock_time,
+
+            stratum: 16,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+        }
+    }
+
+
 }
 
 /// Used to determine whether the server is reachable and the data are fresh
@@ -636,6 +659,7 @@ impl NtpSource {
             warn!("Received packet with invalid mode");
             actions!()
         } else {
+            info!("Porcessing message:");
             self.process_message(system, message, local_clock_time, send_time, recv_time)
         }
     }
@@ -717,7 +741,7 @@ impl NtpSource {
                 nts.cookies.store(cookie);
             }
         }
-
+        info!("set actionupdate");
         actions!(NtpSourceAction::UpdateSystem(NtpSourceUpdate {
             snapshot: NtpSourceSnapshot::from_source(self),
             measurement: Some(measurement),

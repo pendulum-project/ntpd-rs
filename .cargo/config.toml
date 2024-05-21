@@ -11,3 +11,9 @@ rustflags = ["-C", "force-unwind-tables"]
 #
 # [target.x86_64-unknown-freebsd]
 # linker = "~/.cargo/bin/cargo-zigbuild zig cc -- -target freebsd -g"
+
+[target.arm-unknown-linux-musleabi]
+linker = "arm-linux-gnueabihf-ld"
+
+[target.aarch64-unknown-linux-musl]
+linker = "aarch64-linux-musl-gcc"
