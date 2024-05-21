@@ -1806,9 +1806,6 @@ pub fn fuzz_key_exchange_result_decoder(data: &[u8]) {
 #[cfg(test)]
 mod test {
     use std::io::Cursor;
-
-    use crate::keyset::KeySetProvider;
-
     use super::*;
 
     #[test]
@@ -2809,68 +2806,4 @@ mod test {
         Certified,
     }
 
-    fn keyexchange_loop(
-        mut client: KeyExchangeClient,
-        mut server: KeyExchangeServer,
-    ) -> Result<KeyExchangeResult, KeyExchangeError> {
-        let mut buf = [0; 4096];
-
-        'result: loop {
-            while server.wants_write() {
-                let size = server.write_socket(&mut &mut buf[..]).unwrap();
-                let mut offset = 0;
-                while offset < size {
-                    let cur = client
-                        .tls_connection
-                        .read_tls(&mut &buf[offset..size])
-                        .unwrap();
-                    offset += cur;
-                    client = match client.progress() {
-                        ControlFlow::Continue(client) => client,
-                        ControlFlow::Break(result) => break 'result result,
-                    }
-                }
-            }
-
-            if client.wants_write() {
-                let size = client.tls_connection.write_tls(&mut &mut buf[..]).unwrap();
-                let mut offset = 0;
-                while offset < size {
-                    let cur = server.read_socket(&mut &buf[offset..size]).unwrap();
-                    offset += cur;
-
-                    match server.progress() {
-                        ControlFlow::Continue(new) => server = new,
-                        ControlFlow::Break(Err(key_exchange_error)) => {
-                            return Err(key_exchange_error)
-                        }
-                        ControlFlow::Break(Ok(mut tls_connection)) => {
-                            // the server is now done but the client still needs to complete
-                            while tls_connection.wants_write() {
-                                let size = tls_connection.write_tls(&mut &mut buf[..]).unwrap();
-                                let mut offset = 0;
-                                while offset < size {
-                                    let cur = client
-                                        .tls_connection
-                                        .read_tls(&mut &buf[offset..size])
-                                        .unwrap();
-                                    offset += cur;
-                                    client = match client.progress() {
-                                        ControlFlow::Continue(client) => client,
-                                        ControlFlow::Break(result) => return result,
-                                    }
-                                }
-                            }
-
-                            unreachable!("client should finish up when the server is done")
-                        }
-                    }
-                }
-            }
-
-            if !server.wants_write() && !client.wants_write() {
-                client.tls_connection.send_close_notify();
-            }
-        }
-    }
 }

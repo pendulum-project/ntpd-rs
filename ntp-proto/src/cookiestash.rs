@@ -55,11 +55,6 @@ impl CookieStash {
         (self.cookies.len() - self.valid) as u8
     }
 
-    #[cfg(test)]
-    pub fn len(&self) -> usize {
-        self.valid
-    }
-
     pub fn is_empty(&self) -> bool {
         self.valid == 0
     }

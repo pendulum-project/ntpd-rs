@@ -69,7 +69,7 @@ where
                 SelectResult::Recv(result) => {
                     //tracing::debug!("accept gps time stamp");
             
-                    match accept_gps_time::<C>(result) {
+                    match accept_gps_time::<>(result) {
                         AcceptResult::Accept(recv_timestamp) => {
                             //info!("gps time has result");
                             let send_timestamp = match self.last_send_timestamp {
@@ -216,7 +216,7 @@ enum AcceptResult {
     Ignore,
 }
 
-fn accept_gps_time<'a, C: NtpClock>(
+fn accept_gps_time(
     result: Result<GPSData, GPSError>,
 ) -> AcceptResult {
     match result {
@@ -267,7 +267,7 @@ pub fn from_unix_timestamp(unix_timestamp: u64) -> NtpTimestamp {
     let fraction = 0u32;
 
     // Combine NTP seconds and fraction to form the complete NTP timestamp
-    let timestamp = ((ntp_seconds as u64) << 32) | (fraction as u64);
+    let timestamp = (ntp_seconds << 32) | (fraction as u64);
 
     // println!("Unix Timestamp: {}, NTP Seconds: {}, Fraction: {}", unix_timestamp, ntp_seconds, fraction);
     // println!("Combined NTP Timestamp: {:#018X}", timestamp);
