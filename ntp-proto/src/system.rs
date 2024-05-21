@@ -216,16 +216,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
         update: GpsSourceUpdate,
     ) -> Result<Option<Duration>, C::Error> {
         info!("adjusting gps clock");
-        // let usable = update
-        //     .snapshot
-        //     .accept_synchronization(
-        //         self.synchronization_config.local_stratum,
-        //         self.ip_list.as_ref(),
-        //         &self.system,
-        //     )
-        //     .is_ok();
-        //self.clock_controller()?.source_update(id, usable);
-        // *self.sources.get_mut(&id).unwrap() = Some(update.snapshot);
+        self.clock_controller()?.source_update(id, true);
         if let Some(measurement) = update.measurement {
             info!("gps measurement in clockcontroller");
             let update = self.clock_controller()?.source_measurement(id, measurement);
