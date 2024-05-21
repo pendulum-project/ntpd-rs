@@ -182,7 +182,6 @@ struct SystemTask<C: NtpClock, T: Wait> {
     sources: HashMap<SourceId, SourceState>,
     servers: Vec<ServerData>,
     spawners: Vec<SystemSpawnerData>,
-    gps_source: Vec<GpsSourceState>,
     source_channels: SourceChannels,
     clock: C,
 
@@ -248,7 +247,6 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
                 clock,
                 timestamp_mode,
                 interface,
-                gps_source: Default::default(),
 
             },
             DaemonChannels {
@@ -504,21 +502,9 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
         let source_id = params.id;
         info!(source_id=?source_id, spawner=?spawner_id, "new gps source");
         info!("gps first");
-        self.gps_source.push(
-            GpsSourceState {
-                source_id,
-                spawner_id,
-            });
        
         self.system.handle_source_create(source_id)?;
 
-        // index: SourceId,
-        // source_addr: SocketAddr,
-        // interface: Option<InterfaceName>,
-        // clock: C,
-        // timestamp_mode: TimestampMode,
-        // channels: SourceChannels,
-        // gps: GPS,
         info!("creating gps instance:");
         let gps: GPS = GPS::connect().unwrap();
  
@@ -607,10 +593,6 @@ struct SourceState {
     source_id: SourceId,
 }
 
-struct GpsSourceState {
-    spawner_id: SpawnerId,
-    source_id: SourceId,
-}
 
 #[derive(Debug, Clone)]
 pub struct ServerData {
