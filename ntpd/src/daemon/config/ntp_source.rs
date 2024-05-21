@@ -436,33 +436,6 @@ mod tests {
         }
     }
 
-    // #[test]
-    // fn test_deserialize_source_pem_certificate() {
-    //     let contents = include_bytes!("../../../testdata/certificates/nos-nl.pem");
-    //     let path = std::env::temp_dir().join("nos-nl.pem");
-    //     std::fs::write(&path, contents).unwrap();
-
-    //     #[derive(Deserialize, Debug)]
-    //     struct TestConfig {
-    //         source: NtpSourceConfig,
-    //     }
-
-    //     let test: TestConfig = toml::from_str(&format!(
-    //         r#"
-    //             [source]
-    //             address = "example.com"
-    //             certificate-authority = "{}"
-    //             mode = "nts"
-    //             "#,
-    //         path.display()
-    //     ))
-    //     .unwrap();
-    //     assert!(matches!(test.source, NtpSourceConfig::Nts(_)));
-    //     if let NtpSourceConfig::Nts(config) = test.source {
-    //         assert_eq!(config.address.to_string(), "example.com:4460");
-    //     }
-    // }
-
     #[test]
     fn test_source_from_string() {
         let source = NtpSourceConfig::try_from("example.com").unwrap();
