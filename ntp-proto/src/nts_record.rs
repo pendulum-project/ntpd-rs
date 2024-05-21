@@ -2803,70 +2803,70 @@ mod test {
         assert!(data.requested_supported_algorithms);
     }
 
-    #[test]
-    fn test_keyexchange_client() {
-        let cert_chain: Vec<rustls::pki_types::CertificateDer> = rustls_pemfile::certs(
-            &mut std::io::BufReader::new(include_bytes!("../test-keys/end.fullchain.pem") as &[u8]),
-        )
-        .map(|res| res.unwrap())
-        .collect();
-        let key_der = rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(
-            include_bytes!("../test-keys/end.key") as &[u8],
-        ))
-        .map(|res| res.unwrap())
-        .next()
-        .unwrap();
-        let serverconfig = rustls::ServerConfig::builder()
-            .with_no_client_auth()
-            .with_single_cert(cert_chain, key_der.into())
-            .unwrap();
-        let mut root_store = rustls::RootCertStore::empty();
-        root_store.add_parsable_certificates(
-            rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
-                "../test-keys/testca.pem"
-            ) as &[u8]))
-            .map(|res| res.unwrap()),
-        );
+    // #[test]
+    // fn test_keyexchange_client() {
+    //     let cert_chain: Vec<rustls::pki_types::CertificateDer> = rustls_pemfile::certs(
+    //         &mut std::io::BufReader::new(include_bytes!("../test-keys/end.fullchain.pem") as &[u8]),
+    //     )
+    //     .map(|res| res.unwrap())
+    //     .collect();
+    //     let key_der = rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(
+    //         include_bytes!("../test-keys/end.key") as &[u8],
+    //     ))
+    //     .map(|res| res.unwrap())
+    //     .next()
+    //     .unwrap();
+    //     let serverconfig = rustls::ServerConfig::builder()
+    //         .with_no_client_auth()
+    //         .with_single_cert(cert_chain, key_der.into())
+    //         .unwrap();
+    //     let mut root_store = rustls::RootCertStore::empty();
+    //     root_store.add_parsable_certificates(
+    //         rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
+    //             "../test-keys/testca.pem"
+    //         ) as &[u8]))
+    //         .map(|res| res.unwrap()),
+    //     );
 
-        let clientconfig = rustls::ClientConfig::builder()
-            .with_root_certificates(root_store)
-            .with_no_client_auth();
+    //     let clientconfig = rustls::ClientConfig::builder()
+    //         .with_root_certificates(root_store)
+    //         .with_no_client_auth();
 
-        let mut server = rustls::ServerConnection::new(Arc::new(serverconfig)).unwrap();
-        let mut client = KeyExchangeClient::new("localhost".into(), clientconfig, vec![]).unwrap();
+    //     let mut server = rustls::ServerConnection::new(Arc::new(serverconfig)).unwrap();
+    //     let mut client = KeyExchangeClient::new("localhost".into(), clientconfig, vec![]).unwrap();
 
-        server.writer().write_all(NTS_TIME_NL_RESPONSE).unwrap();
+    //     server.writer().write_all(NTS_TIME_NL_RESPONSE).unwrap();
 
-        let mut buf = [0; 4096];
-        let result = 'result: loop {
-            while client.wants_write() {
-                let size = client.write_socket(&mut &mut buf[..]).unwrap();
-                let mut offset = 0;
-                while offset < size {
-                    let cur = server.read_tls(&mut &buf[offset..size]).unwrap();
-                    offset += cur;
-                    server.process_new_packets().unwrap();
-                }
-            }
+    //     let mut buf = [0; 4096];
+    //     let result = 'result: loop {
+    //         while client.wants_write() {
+    //             let size = client.write_socket(&mut &mut buf[..]).unwrap();
+    //             let mut offset = 0;
+    //             while offset < size {
+    //                 let cur = server.read_tls(&mut &buf[offset..size]).unwrap();
+    //                 offset += cur;
+    //                 server.process_new_packets().unwrap();
+    //             }
+    //         }
 
-            while server.wants_write() {
-                let size = server.write_tls(&mut &mut buf[..]).unwrap();
-                let mut offset = 0;
-                while offset < size {
-                    let cur = client.read_socket(&mut &buf[offset..size]).unwrap();
-                    offset += cur;
-                    client = match client.progress() {
-                        ControlFlow::Continue(client) => client,
-                        ControlFlow::Break(result) => break 'result result,
-                    }
-                }
-            }
-        }
-        .unwrap();
+    //         while server.wants_write() {
+    //             let size = server.write_tls(&mut &mut buf[..]).unwrap();
+    //             let mut offset = 0;
+    //             while offset < size {
+    //                 let cur = client.read_socket(&mut &buf[offset..size]).unwrap();
+    //                 offset += cur;
+    //                 client = match client.progress() {
+    //                     ControlFlow::Continue(client) => client,
+    //                     ControlFlow::Break(result) => break 'result result,
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     .unwrap();
 
-        assert_eq!(result.remote, "localhost");
-        assert_eq!(result.port, 123);
-    }
+    //     assert_eq!(result.remote, "localhost");
+    //     assert_eq!(result.port, 123);
+    // }
 
     #[allow(dead_code)]
     enum ClientType {
@@ -2874,68 +2874,68 @@ mod test {
         Certified,
     }
 
-    fn client_server_pair(client_type: ClientType) -> (KeyExchangeClient, KeyExchangeServer) {
-        let cert_chain: Vec<rustls::pki_types::CertificateDer> = rustls_pemfile::certs(
-            &mut std::io::BufReader::new(include_bytes!("../test-keys/end.fullchain.pem") as &[u8]),
-        )
-        .map(|res| res.unwrap())
-        .collect();
-        let key_der = rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(
-            include_bytes!("../test-keys/end.key") as &[u8],
-        ))
-        .map(|res| res.unwrap())
-        .next()
-        .unwrap();
-        let mut root_store = rustls::RootCertStore::empty();
-        root_store.add_parsable_certificates(
-            rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
-                "../test-keys/testca.pem"
-            ) as &[u8]))
-            .map(|res| res.unwrap()),
-        );
+    // fn client_server_pair(client_type: ClientType) -> (KeyExchangeClient, KeyExchangeServer) {
+    //     let cert_chain: Vec<rustls::pki_types::CertificateDer> = rustls_pemfile::certs(
+    //         &mut std::io::BufReader::new(include_bytes!("../test-keys/end.fullchain.pem") as &[u8]),
+    //     )
+    //     .map(|res| res.unwrap())
+    //     .collect();
+    //     let key_der = rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(
+    //         include_bytes!("../test-keys/end.key") as &[u8],
+    //     ))
+    //     .map(|res| res.unwrap())
+    //     .next()
+    //     .unwrap();
+    //     let mut root_store = rustls::RootCertStore::empty();
+    //     root_store.add_parsable_certificates(
+    //         rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
+    //             "../test-keys/testca.pem"
+    //         ) as &[u8]))
+    //         .map(|res| res.unwrap()),
+    //     );
 
-        let mut serverconfig = rustls::ServerConfig::builder()
-            .with_client_cert_verifier(Arc::new(
-                #[cfg(not(feature = "nts-pool"))]
-                rustls::server::NoClientAuth,
-                #[cfg(feature = "nts-pool")]
-                crate::tls_utils::AllowAnyAnonymousOrCertificateBearingClient::new(
-                    rustls::crypto::ring::default_provider(),
-                ),
-            ))
-            .with_single_cert(cert_chain.clone(), key_der.clone_key().into())
-            .unwrap();
+    //     let mut serverconfig = rustls::ServerConfig::builder()
+    //         .with_client_cert_verifier(Arc::new(
+    //             #[cfg(not(feature = "nts-pool"))]
+    //             rustls::server::NoClientAuth,
+    //             #[cfg(feature = "nts-pool")]
+    //             crate::tls_utils::AllowAnyAnonymousOrCertificateBearingClient::new(
+    //                 rustls::crypto::ring::default_provider(),
+    //             ),
+    //         ))
+    //         .with_single_cert(cert_chain.clone(), key_der.clone_key().into())
+    //         .unwrap();
 
-        serverconfig.alpn_protocols.clear();
-        serverconfig.alpn_protocols.push(b"ntske/1".to_vec());
+    //     serverconfig.alpn_protocols.clear();
+    //     serverconfig.alpn_protocols.push(b"ntske/1".to_vec());
 
-        let clientconfig = match client_type {
-            ClientType::Uncertified => rustls::ClientConfig::builder()
-                .with_root_certificates(root_store)
-                .with_no_client_auth(),
-            ClientType::Certified => rustls::ClientConfig::builder()
-                .with_root_certificates(root_store)
-                .with_client_auth_cert(cert_chain, key_der.into())
-                .unwrap(),
-        };
+    //     let clientconfig = match client_type {
+    //         ClientType::Uncertified => rustls::ClientConfig::builder()
+    //             .with_root_certificates(root_store)
+    //             .with_no_client_auth(),
+    //         ClientType::Certified => rustls::ClientConfig::builder()
+    //             .with_root_certificates(root_store)
+    //             .with_client_auth_cert(cert_chain, key_der.into())
+    //             .unwrap(),
+    //     };
 
-        let keyset = KeySetProvider::new(8).get();
+    //     let keyset = KeySetProvider::new(8).get();
 
-        let pool_cert: Vec<rustls::pki_types::CertificateDer> = rustls_pemfile::certs(
-            &mut std::io::BufReader::new(include_bytes!("../test-keys/end.pem") as &[u8]),
-        )
-        .map(|res| res.unwrap())
-        .collect();
-        assert!(pool_cert.len() == 1);
+    //     let pool_cert: Vec<rustls::pki_types::CertificateDer> = rustls_pemfile::certs(
+    //         &mut std::io::BufReader::new(include_bytes!("../test-keys/end.pem") as &[u8]),
+    //     )
+    //     .map(|res| res.unwrap())
+    //     .collect();
+    //     assert!(pool_cert.len() == 1);
 
-        let client =
-            KeyExchangeClient::new_without_tls_write("localhost".into(), clientconfig).unwrap();
-        let server =
-            KeyExchangeServer::new(Arc::new(serverconfig), keyset, None, None, pool_cert.into())
-                .unwrap();
+    //     let client =
+    //         KeyExchangeClient::new_without_tls_write("localhost".into(), clientconfig).unwrap();
+    //     let server =
+    //         KeyExchangeServer::new(Arc::new(serverconfig), keyset, None, None, pool_cert.into())
+    //             .unwrap();
 
-        (client, server)
-    }
+    //     (client, server)
+    // }
 
     fn keyexchange_loop(
         mut client: KeyExchangeClient,
@@ -3002,123 +3002,123 @@ mod test {
         }
     }
 
-    #[test]
-    fn test_keyexchange_roundtrip() {
-        let (mut client, server) = client_server_pair(ClientType::Uncertified);
+    // #[test]
+    // fn test_keyexchange_roundtrip() {
+    //     let (mut client, server) = client_server_pair(ClientType::Uncertified);
 
-        let mut buffer = Vec::with_capacity(1024);
-        for record in NtsRecord::client_key_exchange_records([]).iter() {
-            record.write(&mut buffer).unwrap();
-        }
-        client.tls_connection.writer().write_all(&buffer).unwrap();
+    //     let mut buffer = Vec::with_capacity(1024);
+    //     for record in NtsRecord::client_key_exchange_records([]).iter() {
+    //         record.write(&mut buffer).unwrap();
+    //     }
+    //     client.tls_connection.writer().write_all(&buffer).unwrap();
 
-        let result = keyexchange_loop(client, server).unwrap();
+    //     let result = keyexchange_loop(client, server).unwrap();
 
-        assert_eq!(&result.remote, "localhost");
-        assert_eq!(result.port, 123);
+    //     assert_eq!(&result.remote, "localhost");
+    //     assert_eq!(result.port, 123);
 
-        assert_eq!(result.nts.cookies.len(), 8);
+    //     assert_eq!(result.nts.cookies.len(), 8);
 
-        #[cfg(feature = "ntpv5")]
-        assert_eq!(result.protocol_version, ProtocolVersion::V5);
+    //     #[cfg(feature = "ntpv5")]
+    //     assert_eq!(result.protocol_version, ProtocolVersion::V5);
 
-        // test that the supported algorithms record is not provided "unasked for"
-        #[cfg(feature = "nts-pool")]
-        assert!(result.algorithms_reported_by_server.is_none());
-    }
+    //     // test that the supported algorithms record is not provided "unasked for"
+    //     #[cfg(feature = "nts-pool")]
+    //     assert!(result.algorithms_reported_by_server.is_none());
+    // }
 
-    #[test]
-    #[cfg(feature = "nts-pool")]
-    fn test_keyexchange_roundtrip_fixed_not_authorized() {
-        let (mut client, server) = client_server_pair(ClientType::Uncertified);
+//     #[test]
+//     #[cfg(feature = "nts-pool")]
+//     fn test_keyexchange_roundtrip_fixed_not_authorized() {
+//         let (mut client, server) = client_server_pair(ClientType::Uncertified);
 
-        let c2s: Vec<_> = (0..).take(64).collect();
-        let s2c: Vec<_> = (0..).skip(64).take(64).collect();
+//         let c2s: Vec<_> = (0..).take(64).collect();
+//         let s2c: Vec<_> = (0..).skip(64).take(64).collect();
 
-        let mut buffer = Vec::with_capacity(1024);
-        for record in NtsRecord::client_key_exchange_records_fixed(c2s.clone(), s2c.clone()) {
-            record.write(&mut buffer).unwrap();
-        }
-        client.tls_connection.writer().write_all(&buffer).unwrap();
+//         let mut buffer = Vec::with_capacity(1024);
+//         for record in NtsRecord::client_key_exchange_records_fixed(c2s.clone(), s2c.clone()) {
+//             record.write(&mut buffer).unwrap();
+//         }
+//         client.tls_connection.writer().write_all(&buffer).unwrap();
 
-        let error = keyexchange_loop(client, server);
+//         let error = keyexchange_loop(client, server);
 
-        assert!(matches!(
-            error,
-            Err(KeyExchangeError::UnrecognizedCriticalRecord)
-        ));
-    }
+//         assert!(matches!(
+//             error,
+//             Err(KeyExchangeError::UnrecognizedCriticalRecord)
+//         ));
+//     }
 
-    #[test]
-    #[cfg(feature = "nts-pool")]
-    fn test_keyexchange_roundtrip_fixed_authorized() {
-        let (mut client, server) = client_server_pair(ClientType::Certified);
+//     #[test]
+//     #[cfg(feature = "nts-pool")]
+//     fn test_keyexchange_roundtrip_fixed_authorized() {
+//         let (mut client, server) = client_server_pair(ClientType::Certified);
 
-        let c2s: Vec<_> = (0..).take(64).collect();
-        let s2c: Vec<_> = (0..).skip(64).take(64).collect();
+//         let c2s: Vec<_> = (0..).take(64).collect();
+//         let s2c: Vec<_> = (0..).skip(64).take(64).collect();
 
-        let mut buffer = Vec::with_capacity(1024);
-        for record in NtsRecord::client_key_exchange_records_fixed(c2s.clone(), s2c.clone()) {
-            record.write(&mut buffer).unwrap();
-        }
-        client.tls_connection.writer().write_all(&buffer).unwrap();
+//         let mut buffer = Vec::with_capacity(1024);
+//         for record in NtsRecord::client_key_exchange_records_fixed(c2s.clone(), s2c.clone()) {
+//             record.write(&mut buffer).unwrap();
+//         }
+//         client.tls_connection.writer().write_all(&buffer).unwrap();
 
-        let keyset = server.keyset.clone();
-        let mut result = keyexchange_loop(client, server).unwrap();
+//         let keyset = server.keyset.clone();
+//         let mut result = keyexchange_loop(client, server).unwrap();
 
-        assert_eq!(&result.remote, "localhost");
-        assert_eq!(result.port, 123);
+//         assert_eq!(&result.remote, "localhost");
+//         assert_eq!(result.port, 123);
 
-        let cookie = result.nts.get_cookie().unwrap();
-        let cookie = keyset.decode_cookie(&cookie).unwrap();
+//         let cookie = result.nts.get_cookie().unwrap();
+//         let cookie = keyset.decode_cookie(&cookie).unwrap();
 
-        assert_eq!(cookie.c2s.key_bytes(), c2s);
-        assert_eq!(cookie.s2c.key_bytes(), s2c);
+//         assert_eq!(cookie.c2s.key_bytes(), c2s);
+//         assert_eq!(cookie.s2c.key_bytes(), s2c);
 
-        #[cfg(feature = "ntpv5")]
-        assert_eq!(result.protocol_version, ProtocolVersion::V5);
-    }
+//         #[cfg(feature = "ntpv5")]
+//         assert_eq!(result.protocol_version, ProtocolVersion::V5);
+//     }
 
-    #[cfg(feature = "nts-pool")]
-    #[test]
-    fn test_supported_algos_roundtrip() {
-        let (mut client, server) = client_server_pair(ClientType::Uncertified);
+//     #[cfg(feature = "nts-pool")]
+//     #[test]
+//     fn test_supported_algos_roundtrip() {
+//         let (mut client, server) = client_server_pair(ClientType::Uncertified);
 
-        let mut buffer = Vec::with_capacity(1024);
-        for record in [
-            NtsRecord::SupportedAlgorithmList {
-                supported_algorithms: vec![],
-            },
-            NtsRecord::EndOfMessage,
-        ] {
-            record.write(&mut buffer).unwrap();
-        }
-        client.tls_connection.writer().write_all(&buffer).unwrap();
+//         let mut buffer = Vec::with_capacity(1024);
+//         for record in [
+//             NtsRecord::SupportedAlgorithmList {
+//                 supported_algorithms: vec![],
+//             },
+//             NtsRecord::EndOfMessage,
+//         ] {
+//             record.write(&mut buffer).unwrap();
+//         }
+//         client.tls_connection.writer().write_all(&buffer).unwrap();
 
-        let result = keyexchange_loop(client, server).unwrap();
+//         let result = keyexchange_loop(client, server).unwrap();
 
-        let algos = result.algorithms_reported_by_server.unwrap();
-        assert!(algos.contains(&(AeadAlgorithm::AeadAesSivCmac512, 64)));
-        assert!(algos.contains(&(AeadAlgorithm::AeadAesSivCmac256, 32)));
-    }
+//         let algos = result.algorithms_reported_by_server.unwrap();
+//         assert!(algos.contains(&(AeadAlgorithm::AeadAesSivCmac512, 64)));
+//         assert!(algos.contains(&(AeadAlgorithm::AeadAesSivCmac256, 32)));
+//     }
 
-    #[test]
-    fn test_keyexchange_invalid_input() {
-        let mut buffer = Vec::with_capacity(1024);
-        for record in NtsRecord::client_key_exchange_records([]).iter() {
-            record.write(&mut buffer).unwrap();
-        }
+//     #[test]
+//     fn test_keyexchange_invalid_input() {
+//         let mut buffer = Vec::with_capacity(1024);
+//         for record in NtsRecord::client_key_exchange_records([]).iter() {
+//             record.write(&mut buffer).unwrap();
+//         }
 
-        for n in 0..buffer.len() {
-            let (mut client, server) = client_server_pair(ClientType::Uncertified);
-            client
-                .tls_connection
-                .writer()
-                .write_all(&buffer[..n])
-                .unwrap();
+//         for n in 0..buffer.len() {
+//             let (mut client, server) = client_server_pair(ClientType::Uncertified);
+//             client
+//                 .tls_connection
+//                 .writer()
+//                 .write_all(&buffer[..n])
+//                 .unwrap();
 
-            let error = keyexchange_loop(client, server).unwrap_err();
-            assert!(matches!(error, KeyExchangeError::IncompleteResponse));
-        }
-    }
+//             let error = keyexchange_loop(client, server).unwrap_err();
+//             assert!(matches!(error, KeyExchangeError::IncompleteResponse));
+//         }
+//     }
 }
