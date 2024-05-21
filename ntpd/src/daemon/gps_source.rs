@@ -1,4 +1,4 @@
-use std::{future::Future, marker::PhantomData, net::SocketAddr, pin::Pin};
+use std::{future::Future, marker::PhantomData, pin::Pin};
 use tokio::time::{Instant, Sleep};
 use gpsd_client::*;
 
@@ -6,16 +6,13 @@ use ntp_proto::{
     NtpClock, NtpInstant, NtpTimestamp,
      GpsSourceActionIterator, GpsSource
 };
-#[cfg(target_os = "linux")]
 
-use timestamped_socket::socket::{ Connected, Socket};
-
-use tracing::{debug, error, info, info_span, instrument, warn, Instrument, Span};
+use tracing::{debug, error, info, instrument, warn, Instrument, Span};
 use chrono::DateTime;
 
 use crate::daemon::ntp_source::MsgForSystem;
 
-use super::{config::TimestampMode, exitcode, ntp_source::SourceChannels, spawn::SourceId, util::convert_net_timestamp};
+use super::{config::TimestampMode, exitcode, ntp_source::SourceChannels, spawn::SourceId};
 
 /// Trait needed to allow injecting of futures other than `tokio::time::Sleep` for testing
 pub trait Wait: Future<Output = ()> {
@@ -106,7 +103,7 @@ where
             // info!("retrieved actions");
             for action in actions {
                 match action {
-                    ntp_proto::GpsSourceAction::Send(packet) => {
+                    ntp_proto::GpsSourceAction::Send() => {
                         //info!("some timer things")
                         match self.clock.now() {
                             Err(e) => {
@@ -177,7 +174,7 @@ where
                 tokio::pin!(poll_wait);
                 for action in initial_actions {
                     match action {
-                        ntp_proto::GpsSourceAction::Send(_) => {
+                        ntp_proto::GpsSourceAction::Send() => {
                             unreachable!("Should not be sending messages from startup")
                         }
                         ntp_proto::GpsSourceAction::UpdateSystem(_) => {

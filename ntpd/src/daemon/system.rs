@@ -94,7 +94,10 @@ pub async fn spawn(
 
     //add the gps spawner here
     // might want to do conditionally but for now
-    system.add_spawner(GpsSpawner::new());
+    system.add_spawner(GpsSpawner::new()).map_err(|e| {
+        tracing::error!("Could not spawn gps source: {}", e);
+        std::io::Error::new(std::io::ErrorKind::Other, e)
+    })?;
     info!("Gps added");
 
 
@@ -179,7 +182,7 @@ struct SystemTask<C: NtpClock, T: Wait> {
     sources: HashMap<SourceId, SourceState>,
     servers: Vec<ServerData>,
     spawners: Vec<SystemSpawnerData>,
-    gpsSource: Vec<GpsSourceState>,
+    gps_source: Vec<GpsSourceState>,
     source_channels: SourceChannels,
     clock: C,
 
@@ -245,7 +248,7 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
                 clock,
                 timestamp_mode,
                 interface,
-                gpsSource: Default::default(),
+                gps_source: Default::default(),
 
             },
             DaemonChannels {
@@ -496,12 +499,12 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
     async fn create_gps_source(
         &mut self,
         spawner_id: SpawnerId,
-        mut params: GpsSourceCreateParameters,
+        params: GpsSourceCreateParameters,
     ) -> Result<SourceId, C::Error> {
         let source_id = params.id;
         info!(source_id=?source_id, spawner=?spawner_id, "new gps source");
         info!("gps first");
-        self.gpsSource.push(
+        self.gps_source.push(
             GpsSourceState {
                 source_id,
                 spawner_id,
@@ -517,7 +520,7 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
         // channels: SourceChannels,
         // gps: GPS,
         info!("creating gps instance:");
-        let mut gps: GPS = GPS::connect().unwrap();
+        let gps: GPS = GPS::connect().unwrap();
  
         info!("creating gps source task:");
         GpsSourceTask::spawn(
