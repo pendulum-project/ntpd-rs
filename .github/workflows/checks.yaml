@@ -95,6 +95,7 @@ jobs:
         uses: codecov/codecov-action@125fc84a9a348dbcf27191600683ec096ec9021c
         with:
           files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
   unused:
