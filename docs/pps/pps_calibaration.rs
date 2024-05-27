@@ -33,8 +33,14 @@ impl PpsCalibration {
         let pps_time = UNIX_EPOCH + Duration::new(ts.tv_sec as u64, ts.tv_nsec as u32);
 
         // Calculate the offset as the difference between GPS time and PPS time
-        self.pps_offset = gps_time.duration_since(pps_time).unwrap_or(Duration::from_secs(0));
-
+        self.pps_offset = match gps_time.duration_since(pps_time) {
+            Ok(duration) => duration,
+            Err(e) => {
+                println!("Warning: GPS time is earlier than PPS time: {}", e);
+                Duration::from_secs(0)
+            }
+        };
+        
         println!("Calculated PPS Offset: {:?}", self.pps_offset);
         Ok(())
     }

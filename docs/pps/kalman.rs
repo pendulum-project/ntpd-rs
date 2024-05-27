@@ -1,4 +1,3 @@
-
 #[derive(Debug, Clone, Copy)]
 pub struct KalmanFilterState {
     pub D: f64,
@@ -34,13 +33,15 @@ impl KalmanFilterState {
                 }
             }
         }
+        let mut P_temp = [[0.0; 2]; 2];
         for i in 0..2 {
             for j in 0..2 {
                 for k in 0..2 {
-                    self.P[i][j] = P_new[i][k] * F[j][k];
+                    P_temp[i][j] += P_new[i][k] * F[j][k];
                 }
             }
         }
+        self.P = P_temp;
 
         // Add process noise
         for i in 0..2 {
@@ -82,7 +83,9 @@ impl KalmanFilterState {
         let mut P_new = [[0.0; 2]; 2];
         for i in 0..2 {
             for j in 0..2 {
-                P_new[i][j] = self.P[i][j] - K[i][j] * S[i][j];
+                for k in 0..2 {
+                    P_new[i][j] += (1.0 - K[i][j]) * self.P[i][k];
+                }
             }
         }
 

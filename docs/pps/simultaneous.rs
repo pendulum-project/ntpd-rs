@@ -30,7 +30,15 @@ impl PpsCalibration {
         }
     }
 
-    
+    /// Calculates the PPS offset using the provided GPS time.
+    ///
+    /// # Arguments
+    ///
+    /// * `gps_time` - The current GPS time.
+    ///
+    /// # Returns
+    ///
+    /// * `io::Result<()>` - The result of the offset calculation.
     pub fn calculate_offset(&mut self, gps_time: SystemTime) -> io::Result<()> {
         let mut ts = MaybeUninit::<timespec>::uninit();
 
@@ -59,11 +67,30 @@ impl PpsCalibration {
         Ok(())
     }
 
+    /// Applies the calculated PPS offset to the given timestamp.
+    ///
+    /// # Arguments
+    ///
+    /// * `timestamp` - The original timestamp.
+    ///
+    /// # Returns
+    ///
+    /// * `SystemTime` - The timestamp adjusted by the PPS offset.
     pub fn apply_offset(&self, timestamp: SystemTime) -> SystemTime {
         timestamp + self.pps_offset
     }
 }
 
+/// Converts NMEA time and date strings to a Unix timestamp.
+///
+/// # Arguments
+///
+/// * `nmea_time` - The NMEA time string.
+/// * `nmea_date` - The NMEA date string.
+///
+/// # Returns
+///
+/// * `Option<SystemTime>` - The corresponding Unix timestamp, or `None` if the conversion fails.
 fn nmea_time_date_to_unix_timestamp(nmea_time: &str, nmea_date: &str) -> Option<SystemTime> {
     let (hour, minute, second) = parse_nmea_time(nmea_time)?;
     let (day, month, year) = parse_nmea_date(nmea_date)?;
@@ -82,6 +109,15 @@ fn nmea_time_date_to_unix_timestamp(nmea_time: &str, nmea_date: &str) -> Option<
     Some(timestamp)
 }
 
+/// Parses an NMEA time string into hours, minutes, and seconds.
+///
+/// # Arguments
+///
+/// * `nmea_time` - The NMEA time string.
+///
+/// # Returns
+///
+/// * `Option<(u32, u32, f64)>` - A tuple containing hours, minutes, and seconds, or `None` if parsing fails.
 fn parse_nmea_time(nmea_time: &str) -> Option<(u32, u32, f64)> {
     let hour: u32 = nmea_time.get(0..2)?.parse().ok()?;
     let minute: u32 = nmea_time.get(2..4)?.parse().ok()?;
@@ -89,6 +125,15 @@ fn parse_nmea_time(nmea_time: &str) -> Option<(u32, u32, f64)> {
     Some((hour, minute, second))
 }
 
+/// Parses an NMEA date string into day, month, and year.
+///
+/// # Arguments
+///
+/// * `nmea_date` - The NMEA date string.
+///
+/// # Returns
+///
+/// * `Option<(u32, u32, u32)>` - A tuple containing day, month, and year, or `None` if parsing fails.
 fn parse_nmea_date(nmea_date: &str) -> Option<(u32, u32, u32)> {
     let day: u32 = nmea_date.get(0..2)?.parse().ok()?;
     let month: u32 = nmea_date.get(2..4)?.parse().ok()?;
@@ -96,6 +141,12 @@ fn parse_nmea_date(nmea_date: &str) -> Option<(u32, u32, u32)> {
     Some((day, month, year))
 }
 
+/// Processes GNRMC fields to update the current date.
+///
+/// # Arguments
+///
+/// * `fields` - The GNRMC fields.
+/// * `current_date` - The current date to be updated.
 fn process_gnrmc(fields: &[&str], current_date: &mut Option<String>) {
     if is_valid_gnrmc(fields) {
         if let Some(date) = fields.get(9) {
@@ -104,10 +155,29 @@ fn process_gnrmc(fields: &[&str], current_date: &mut Option<String>) {
     }
 }
 
+/// Checks if GNRMC fields are valid.
+///
+/// # Arguments
+///
+/// * `fields` - The GNRMC fields.
+///
+/// # Returns
+///
+/// * `bool` - `true` if the fields are valid, otherwise `false`.
 fn is_valid_gnrmc(fields: &[&str]) -> bool {
     fields.len() > 9 && fields[2] == "A"
 }
 
+/// Processes GNGGA fields to return a Unix timestamp.
+///
+/// # Arguments
+///
+/// * `fields` - The GNGGA fields.
+/// * `current_date` - The current date.
+///
+/// # Returns
+///
+/// * `Option<SystemTime>` - The Unix timestamp, or `None` if processing fails.
 fn process_gngga(fields: &[&str], current_date: &Option<String>) -> Option<SystemTime> {
     if let Some(time) = fields.get(1) {
         if let Some(date) = current_date {
@@ -126,11 +196,27 @@ fn process_gngga(fields: &[&str], current_date: &Option<String>) -> Option<Syste
     None
 }
 
+/// Prints a Unix timestamp in a readable format.
+///
+/// # Arguments
+///
+/// * `timestamp` - The Unix timestamp to be printed.
 fn print_unix_timestamp(timestamp: SystemTime) {
     let duration_since_epoch = timestamp.duration_since(UNIX_EPOCH).unwrap();
     println!("Unix timestamp with fractional seconds: {:.6}", duration_since_epoch.as_secs_f64());
 }
 
+/// Opens a serial port with the specified settings.
+///
+/// # Arguments
+///
+/// * `port_name` - The name of the serial port.
+/// * `baud_rate` - The baud rate for the serial port.
+/// * `timeout` - The timeout duration for the serial port.
+///
+/// # Returns
+///
+/// * `io::Result<Box<dyn SerialPort>>` - The opened serial port, or an error if opening fails.
 fn open_serial_port(port_name: &str, baud_rate: u32, timeout: Duration) -> io::Result<Box<dyn SerialPort>> {
     match serialport::new(port_name, baud_rate).timeout(timeout).open() {
         Ok(port) => Ok(port),
