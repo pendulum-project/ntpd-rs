@@ -3,6 +3,16 @@ use serialport::SerialPort;
 use std::io::{self, BufRead, BufReader};
 use std::time::Duration;
 
+/// Converts NMEA time and date strings to a Unix timestamp.
+///
+/// # Arguments
+///
+/// * `nmea_time` - The NMEA time string.
+/// * `nmea_date` - The NMEA date string.
+///
+/// # Returns
+///
+/// * `Option<f64>` - The corresponding Unix timestamp with fractional seconds, or `None` if the conversion fails.
 fn nmea_time_date_to_unix_timestamp(nmea_time: &str, nmea_date: &str) -> Option<f64> {
     let (hour, minute, second) = parse_nmea_time(nmea_time)?;
     let (day, month, year) = parse_nmea_date(nmea_date)?;
@@ -21,6 +31,15 @@ fn nmea_time_date_to_unix_timestamp(nmea_time: &str, nmea_date: &str) -> Option<
     Some(timestamp)
 }
 
+/// Parses an NMEA time string into hours, minutes, and seconds.
+///
+/// # Arguments
+///
+/// * `nmea_time` - The NMEA time string.
+///
+/// # Returns
+///
+/// * `Option<(u32, u32, f64)>` - A tuple containing hours, minutes, and seconds, or `None` if parsing fails.
 fn parse_nmea_time(nmea_time: &str) -> Option<(u32, u32, f64)> {
     let hour: u32 = nmea_time.get(0..2)?.parse().ok()?;
     let minute: u32 = nmea_time.get(2..4)?.parse().ok()?;
@@ -28,6 +47,15 @@ fn parse_nmea_time(nmea_time: &str) -> Option<(u32, u32, f64)> {
     Some((hour, minute, second))
 }
 
+/// Parses an NMEA date string into day, month, and year.
+///
+/// # Arguments
+///
+/// * `nmea_date` - The NMEA date string.
+///
+/// # Returns
+///
+/// * `Option<(u32, u32, u32)>` - A tuple containing day, month, and year, or `None` if parsing fails.
 fn parse_nmea_date(nmea_date: &str) -> Option<(u32, u32, u32)> {
     let day: u32 = nmea_date.get(0..2)?.parse().ok()?;
     let month: u32 = nmea_date.get(2..4)?.parse().ok()?;
@@ -35,6 +63,12 @@ fn parse_nmea_date(nmea_date: &str) -> Option<(u32, u32, u32)> {
     Some((day, month, year))
 }
 
+/// Processes GNRMC fields to update the current date.
+///
+/// # Arguments
+///
+/// * `fields` - The GNRMC fields.
+/// * `current_date` - The current date to be updated.
 fn process_gnrmc(fields: &[&str], current_date: &mut Option<String>) {
     if is_valid_gnrmc(fields) {
         if let Some(date) = fields.get(9) {
@@ -43,10 +77,25 @@ fn process_gnrmc(fields: &[&str], current_date: &mut Option<String>) {
     }
 }
 
+/// Checks if GNRMC fields are valid.
+///
+/// # Arguments
+///
+/// * `fields` - The GNRMC fields.
+///
+/// # Returns
+///
+/// * `bool` - `true` if the fields are valid, otherwise `false`.
 fn is_valid_gnrmc(fields: &[&str]) -> bool {
     fields.len() > 9 && fields[2] == "A"
 }
 
+/// Processes GNGGA fields to print the Unix timestamp.
+///
+/// # Arguments
+///
+/// * `fields` - The GNGGA fields.
+/// * `current_date` - The current date.
 fn process_gngga(fields: &[&str], current_date: &Option<String>) {
     if let Some(time) = fields.get(1) {
         if let Some(date) = current_date {
@@ -63,10 +112,25 @@ fn process_gngga(fields: &[&str], current_date: &Option<String>) {
     }
 }
 
+/// Prints a Unix timestamp in a readable format.
+///
+/// # Arguments
+///
+/// * `timestamp` - The Unix timestamp to be printed.
 fn print_unix_timestamp(timestamp: f64) {
     println!("Unix timestamp with fractional seconds: {:.6}", timestamp);
 }
 
+/// Reads and processes lines from the serial port.
+///
+/// # Arguments
+///
+/// * `reader` - A buffered reader for the serial port.
+/// * `current_date` - The current date to be updated.
+///
+/// # Returns
+///
+/// * `io::Result<()>` - The result of reading and processing lines.
 fn read_and_process_lines(reader: &mut BufReader<Box<dyn SerialPort>>, current_date: &mut Option<String>) -> io::Result<()> {
     let mut line = String::new();
     loop {
@@ -89,6 +153,11 @@ fn read_and_process_lines(reader: &mut BufReader<Box<dyn SerialPort>>, current_d
     Ok(())
 }
 
+/// The main function to open the serial port and process GPS data.
+///
+/// # Returns
+///
+/// * `io::Result<()>` - The result of running the main function.
 fn main() -> io::Result<()> {
     let port_name = "/dev/serial0";
 
@@ -111,6 +180,17 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
+/// Opens a serial port with the specified settings.
+///
+/// # Arguments
+///
+/// * `port_name` - The name of the serial port.
+/// * `baud_rate` - The baud rate for the serial port.
+/// * `timeout` - The timeout duration for the serial port.
+///
+/// # Returns
+///
+/// * `io::Result<Box<dyn SerialPort>>` - The opened serial port, or an error if opening fails.
 fn open_serial_port(port_name: &str, baud_rate: u32, timeout: Duration) -> io::Result<Box<dyn SerialPort>> {
     match serialport::new(port_name, baud_rate).timeout(timeout).open() {
         Ok(port) => Ok(port),
