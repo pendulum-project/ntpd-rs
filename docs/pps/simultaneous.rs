@@ -3,419 +3,33 @@ use std::os::unix::io::{AsRawFd, RawFd};
 use std::mem::MaybeUninit;
 use libc::{timespec, clock_gettime, CLOCK_REALTIME};
 use std::thread::sleep;
-use chrono::{DateTime, NaiveDateTime, Utc, NaiveDate, NaiveTime};
-use std::process;
-use serde::{Serialize, Deserialize};
-use std::ops::Sub;
-use std::collections::VecDeque;
-use serialport::SerialPort;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use std::io::{self, BufRead, BufReader, Result};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::collections::VecDeque;
+use serialport::SerialPort;
+use serde::{Serialize, Deserialize};
+use std::ops::Sub;
+
+mod gps_without_gpsd;
+use gps_without_gpsd::{nmea_time_date_to_unix_timestamp, parse_nmea_time, parse_nmea_date, process_gnrmc, process_gngga, open_serial_port};
+
+mod pps_calibration;
+use pps_calibration::PpsCalibration;
+
 mod kalman_filter;
 use kalman_filter::KalmanFilterState;
 
-
-pub struct PpsCalibration {
-    pps_offset: Duration,
-    kalman_filter: KalmanFilterState,  
-    last_measurement_time: Option<SystemTime>,  
-}
-
-impl PpsCalibration {
-    pub fn new() -> Self {
-        PpsCalibration {
-            pps_offset: Duration::from_secs(0),
-            kalman_filter: KalmanFilterState::new(),  
-            last_measurement_time: None,  
-        }
-    }
-
-    /// Calculates the PPS offset using the provided GPS time.
-    ///
-    /// # Arguments
-    ///
-    /// * `gps_time` - The current GPS time.
-    ///
-    /// # Returns
-    ///
-    /// * `io::Result<()>` - The result of the offset calculation.
-    pub fn calculate_offset(&mut self, gps_time: SystemTime) -> io::Result<()> {
-        let mut ts = MaybeUninit::<timespec>::uninit();
-
-        unsafe {
-            if clock_gettime(CLOCK_REALTIME, ts.as_mut_ptr()) != 0 {
-                return Err(io::Error::last_os_error());
-            }
-        }
-
-        let ts = unsafe { ts.assume_init() };
-        let pps_time = UNIX_EPOCH + Duration::new(ts.tv_sec as u64, ts.tv_nsec as u32);
-
-        let offset = gps_time.duration_since(pps_time).unwrap_or(Duration::from_secs(0));
-        let offset_secs = offset.as_secs_f64();
-
-        if let Some(last_time) = self.last_measurement_time {
-            let delta_t = gps_time.duration_since(last_time).unwrap_or(Duration::from_secs(0)).as_secs_f64();
-            self.kalman_filter.predict(delta_t, 1e-5); // Process noise
-            self.kalman_filter.update(offset_secs, delta_t, 1e-2); // Measurement noise
-        }
-
-        self.last_measurement_time = Some(gps_time);
-        self.pps_offset = Duration::from_secs_f64(self.kalman_filter.D);
-
-        println!("Calculated PPS Offset: {:?}", self.pps_offset);
-        Ok(())
-    }
-
-    /// Applies the calculated PPS offset to the given timestamp.
-    ///
-    /// # Arguments
-    ///
-    /// * `timestamp` - The original timestamp.
-    ///
-    /// # Returns
-    ///
-    /// * `SystemTime` - The timestamp adjusted by the PPS offset.
-    pub fn apply_offset(&self, timestamp: SystemTime) -> SystemTime {
-        timestamp + self.pps_offset
-    }
-}
-
-/// Converts NMEA time and date strings to a Unix timestamp.
+/// Gets the PPS time and updates the last NTP timestamp.
 ///
 /// # Arguments
 ///
-/// * `nmea_time` - The NMEA time string.
-/// * `nmea_date` - The NMEA date string.
+/// * `_fd` - The file descriptor for the PPS device.
+/// * `last_ntp_timestamp` - The last NTP timestamp to be updated.
 ///
 /// # Returns
 ///
-/// * `Option<SystemTime>` - The corresponding Unix timestamp, or `None` if the conversion fails.
-fn nmea_time_date_to_unix_timestamp(nmea_time: &str, nmea_date: &str) -> Option<SystemTime> {
-    let (hour, minute, second) = parse_nmea_time(nmea_time)?;
-    let (day, month, year) = parse_nmea_date(nmea_date)?;
-
-    let naive_date = NaiveDate::from_ymd_opt(2000 + year as i32, month, day)?;
-    let naive_time = NaiveTime::from_hms_micro_opt(
-        hour,
-        minute,
-        second.trunc() as u32,
-        (second.fract() * 1_000_000.0) as u32,
-    )?;
-
-    let naive_datetime = NaiveDateTime::new(naive_date, naive_time);
-    let timestamp = UNIX_EPOCH + Duration::from_secs(naive_datetime.timestamp() as u64) + Duration::from_micros(naive_datetime.timestamp_subsec_micros() as u64);
-
-    Some(timestamp)
-}
-
-/// Parses an NMEA time string into hours, minutes, and seconds.
-///
-/// # Arguments
-///
-/// * `nmea_time` - The NMEA time string.
-///
-/// # Returns
-///
-/// * `Option<(u32, u32, f64)>` - A tuple containing hours, minutes, and seconds, or `None` if parsing fails.
-fn parse_nmea_time(nmea_time: &str) -> Option<(u32, u32, f64)> {
-    let hour: u32 = nmea_time.get(0..2)?.parse().ok()?;
-    let minute: u32 = nmea_time.get(2..4)?.parse().ok()?;
-    let second: f64 = nmea_time.get(4..10)?.parse().ok()?;
-    Some((hour, minute, second))
-}
-
-/// Parses an NMEA date string into day, month, and year.
-///
-/// # Arguments
-///
-/// * `nmea_date` - The NMEA date string.
-///
-/// # Returns
-///
-/// * `Option<(u32, u32, u32)>` - A tuple containing day, month, and year, or `None` if parsing fails.
-fn parse_nmea_date(nmea_date: &str) -> Option<(u32, u32, u32)> {
-    let day: u32 = nmea_date.get(0..2)?.parse().ok()?;
-    let month: u32 = nmea_date.get(2..4)?.parse().ok()?;
-    let year: u32 = nmea_date.get(4..6)?.parse().ok()?;
-    Some((day, month, year))
-}
-
-/// Processes GNRMC fields to update the current date.
-///
-/// # Arguments
-///
-/// * `fields` - The GNRMC fields.
-/// * `current_date` - The current date to be updated.
-fn process_gnrmc(fields: &[&str], current_date: &mut Option<String>) {
-    if is_valid_gnrmc(fields) {
-        if let Some(date) = fields.get(9) {
-            *current_date = Some(date.to_string());
-        }
-    }
-}
-
-/// Checks if GNRMC fields are valid.
-///
-/// # Arguments
-///
-/// * `fields` - The GNRMC fields.
-///
-/// # Returns
-///
-/// * `bool` - `true` if the fields are valid, otherwise `false`.
-fn is_valid_gnrmc(fields: &[&str]) -> bool {
-    fields.len() > 9 && fields[2] == "A"
-}
-
-/// Processes GNGGA fields to return a Unix timestamp.
-///
-/// # Arguments
-///
-/// * `fields` - The GNGGA fields.
-/// * `current_date` - The current date.
-///
-/// # Returns
-///
-/// * `Option<SystemTime>` - The Unix timestamp, or `None` if processing fails.
-fn process_gngga(fields: &[&str], current_date: &Option<String>) -> Option<SystemTime> {
-    if let Some(time) = fields.get(1) {
-        if let Some(date) = current_date {
-            if let Some(unix_timestamp) = nmea_time_date_to_unix_timestamp(time, date) {
-                print_unix_timestamp(unix_timestamp);
-                return Some(unix_timestamp);
-            } else {
-                eprintln!("Error: Invalid NMEA time/date format");
-            }
-        } else {
-            eprintln!("Error: Current date is missing for GNGGA processing");
-        }
-    } else {
-        eprintln!("Error: Time field is missing in GNGGA sentence");
-    }
-    None
-}
-
-/// Prints a Unix timestamp in a readable format.
-///
-/// # Arguments
-///
-/// * `timestamp` - The Unix timestamp to be printed.
-fn print_unix_timestamp(timestamp: SystemTime) {
-    let duration_since_epoch = timestamp.duration_since(UNIX_EPOCH).unwrap();
-    println!("Unix timestamp with fractional seconds: {:.6}", duration_since_epoch.as_secs_f64());
-}
-
-/// Opens a serial port with the specified settings.
-///
-/// # Arguments
-///
-/// * `port_name` - The name of the serial port.
-/// * `baud_rate` - The baud rate for the serial port.
-/// * `timeout` - The timeout duration for the serial port.
-///
-/// # Returns
-///
-/// * `io::Result<Box<dyn SerialPort>>` - The opened serial port, or an error if opening fails.
-fn open_serial_port(port_name: &str, baud_rate: u32, timeout: Duration) -> io::Result<Box<dyn SerialPort>> {
-    match serialport::new(port_name, baud_rate).timeout(timeout).open() {
-        Ok(port) => Ok(port),
-        Err(e) => {
-            eprintln!("Failed to open port {}: {}", port_name, e);
-            Err(e.into())
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
-pub struct NtpDuration {
-    duration: i64,
-}
-
-impl NtpDuration {
-    pub const ZERO: Self = Self { duration: 0 };
-
-    pub(crate) const fn from_bits(bits: [u8; 8]) -> Self {
-        Self {
-            duration: i64::from_be_bytes(bits),
-        }
-    }
-
-    pub(crate) const fn from_bits_short(bits: [u8; 4]) -> Self {
-        NtpDuration {
-            duration: (u32::from_be_bytes(bits) as i64) << 16,
-        }
-    }
-
-    pub fn to_seconds(self) -> f64 {
-        self.duration as f64 / u32::MAX as f64
-    }
-
-    pub fn from_seconds(seconds: f64) -> Self {
-        debug_assert!(!(seconds.is_nan() || seconds.is_infinite()));
-
-        let i = seconds.floor();
-        let f = seconds - i;
-
-        let duration = match i as i64 {
-            i if i >= std::i32::MIN as i64 && i <= std::i32::MAX as i64 => {
-                (i << 32) | (f * u32::MAX as f64) as i64
-            }
-            i if i < std::i32::MIN as i64 => std::i64::MIN,
-            i if i > std::i32::MAX as i64 => std::i64::MAX,
-            _ => unreachable!(),
-        };
-
-        Self { duration }
-    }
-
-    pub const fn abs(self) -> Self {
-        Self {
-            duration: self.duration.abs(),
-        }
-    }
-
-    pub fn abs_diff(self, other: Self) -> Self {
-        (self - other).abs()
-    }
-
-    pub const fn as_seconds_nanos(self) -> (i32, u32) {
-        (
-            (self.duration >> 32) as i32,
-            (((self.duration & 0xFFFFFFFF) * 1_000_000_000) >> 32) as u32,
-        )
-    }
-
-    pub fn from_exponent(input: i8) -> Self {
-        Self {
-            duration: match input {
-                exp if exp > 30 => std::i64::MAX,
-                exp if exp > 0 && exp <= 30 => 0x1_0000_0000_i64 << exp,
-                exp if (-32..=0).contains(&exp) => 0x1_0000_0000_i64 >> -exp,
-                _ => 0,
-            },
-        }
-    }
-
-    pub fn log2(self) -> Option<i8> {
-        if self.duration == 0 {
-            return None; 
-        }
-        Some(63 - self.duration.leading_zeros() as i8) 
-    }
-
-    pub fn from_system_duration(duration: Duration) -> Self {
-        let seconds = duration.as_secs();
-        let nanos = duration.subsec_nanos();
-        debug_assert!(nanos < 1_000_000_000);
-
-        let fraction = ((nanos as u64) << 32) / 1_000_000_000;
-
-        let timestamp = (seconds << 32) + fraction;
-        NtpDuration::from_bits(timestamp.to_be_bytes())
-    }
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
-struct NtpTimestamp {
-    timestamp: u64,
-}
-
-impl NtpTimestamp {
-    pub const fn from_bits(bits: [u8; 8]) -> NtpTimestamp {
-        NtpTimestamp {
-            timestamp: u64::from_be_bytes(bits),
-        }
-    }
-
-    pub const fn from_seconds_nanos_since_ntp_era(seconds: u32, nanos: u32) -> Self {
-        let fraction = ((nanos as u64) << 32) / 1_000_000_000;
-        let timestamp = ((seconds as u64) << 32) + fraction;
-        NtpTimestamp::from_bits(timestamp.to_be_bytes())
-    }
-
-    pub fn from_unix_timestamp(unix_timestamp: u64, nanos: u32) -> Self {
-        const UNIX_TO_NTP_OFFSET: u64 = 2_208_988_800;
-        const NTP_SCALE_FRAC: u64 = 4_294_967_296;
-
-        let ntp_seconds = unix_timestamp + UNIX_TO_NTP_OFFSET;
-        let fraction = ((nanos as u64 * NTP_SCALE_FRAC) / 1_000_000_000) as u64;
-
-        let timestamp = (ntp_seconds << 32) | fraction;
-        NtpTimestamp { timestamp }
-    }
-
-    pub fn from_unix_timestamp1(unix_timestamp: u64) -> Self {
-        const UNIX_TO_NTP_OFFSET: u64 = 2_208_988_800;
-
-        let ntp_seconds = unix_timestamp + UNIX_TO_NTP_OFFSET;
-        let fraction = 0u32;
-
-        let timestamp = ((ntp_seconds as u64) << 32) | (fraction as u64);
-        NtpTimestamp { timestamp }
-    }
-}
-
-fn u64_to_ntpTimestamp(gps_time: u64) -> NtpTimestamp {
-    NtpTimestamp::from_unix_timestamp1(gps_time)
-}
-
-impl Sub for NtpTimestamp {
-    type Output = NtpDuration;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        NtpDuration {
-            duration: self.timestamp.wrapping_sub(rhs.timestamp) as i64,
-        }
-    }
-}
-
-impl Sub for NtpDuration {
-    type Output = NtpDuration;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        NtpDuration {
-            duration: self.duration.saturating_sub(rhs.duration),
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
-pub struct NtpInstant {
-    instant: std::time::Instant,
-}
-
-impl NtpInstant {
-    pub fn now() -> Self {
-        Self {
-            instant: std::time::Instant::now(),
-        }
-    }
-
-    pub fn abs_diff(self, rhs: Self) -> NtpDuration {
-        let duration = if self.instant >= rhs.instant {
-            self.instant - rhs.instant
-        } else {
-            rhs.instant - self.instant
-        };
-
-        NtpDuration::from_system_duration(duration)
-    }
-
-    pub fn elapsed(&self) -> NtpDuration {
-        let duration = self.instant.elapsed();
-        NtpDuration::from_system_duration(duration)
-    }
-
-    pub fn from_unix_timestamp(unix_timestamp: u64, nanos: u32) -> Self {
-        let system_time = UNIX_EPOCH + Duration::from_secs(unix_timestamp) + Duration::from_nanos(nanos as u64);
-        let duration_since_epoch = system_time.duration_since(UNIX_EPOCH).unwrap();
-        NtpInstant {
-            instant: std::time::Instant::now() - duration_since_epoch,
-        }
-    }
-}
-
+/// * `io::Result<()>` - The result of getting the PPS time.
 fn get_pps_time(_fd: RawFd, last_ntp_timestamp: &mut NtpTimestamp) -> io::Result<()> {
     let mut ts = MaybeUninit::<timespec>::uninit();
 
@@ -452,7 +66,7 @@ fn get_pps_time(_fd: RawFd, last_ntp_timestamp: &mut NtpTimestamp) -> io::Result
     Ok(())
 }
 
-///compute the mean and standard deviation of the differences stored in VecDeque<Duration>. 
+/// Compute the mean and standard deviation of the differences stored in VecDeque<Duration>. 
 /// Used in order to evaluatethe accuracy and consistency of the PPS calibration.
 fn calculate_statistics(diffs: &VecDeque<Duration>) -> (f64, f64) {
     let n = diffs.len() as f64;
@@ -465,6 +79,11 @@ fn calculate_statistics(diffs: &VecDeque<Duration>) -> (f64, f64) {
     (mean, stddev)
 }
 
+/// The main function to run the PPS calibration process.
+///
+/// # Returns
+///
+/// * `io::Result<()>` - The result of running the main function.
 fn main() -> io::Result<()> {
     let path = "/dev/pps0";
     let file = File::open(path)?;
