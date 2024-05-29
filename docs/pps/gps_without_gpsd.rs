@@ -35,15 +35,20 @@ fn nmea_time_date_to_unix_timestamp(nmea_time: &str, nmea_date: &str) -> Option<
 ///
 /// # Arguments
 ///
-/// * `nmea_time` - The NMEA time string.
+/// * `nmea_time` - The NMEA time string in the format `HHMMSS` or `HHMMSS.SS`.
 ///
 /// # Returns
 ///
-/// * `Option<(u32, u32, f64)>` - A tuple containing hours, minutes, and seconds, or `None` if parsing fails.
+/// * `Option<(u32, u32, f64)>` - A tuple containing hours, minutes and seconds, or `None` if parsing fails.
 fn parse_nmea_time(nmea_time: &str) -> Option<(u32, u32, f64)> {
+    if nmea_time.len() < 6 {
+        return None;
+    }
+
     let hour: u32 = nmea_time.get(0..2)?.parse().ok()?;
     let minute: u32 = nmea_time.get(2..4)?.parse().ok()?;
-    let second: f64 = nmea_time.get(4..10)?.parse().ok()?;
+    let second: f64 = nmea_time.get(4..).unwrap_or("0").parse().ok()?;
+    
     Some((hour, minute, second))
 }
 
@@ -51,15 +56,20 @@ fn parse_nmea_time(nmea_time: &str) -> Option<(u32, u32, f64)> {
 ///
 /// # Arguments
 ///
-/// * `nmea_date` - The NMEA date string.
+/// * `nmea_date` - The NMEA date string in the format `DDMMYY`.
 ///
 /// # Returns
 ///
-/// * `Option<(u32, u32, u32)>` - A tuple containing day, month, and year, or `None` if parsing fails.
+/// * `Option<(u32, u32, u32)>` - A tuple containing day, month and year, or `None` if parsing fails.
 fn parse_nmea_date(nmea_date: &str) -> Option<(u32, u32, u32)> {
+    if nmea_date.len() < 6 {
+        return None;
+    }
+
     let day: u32 = nmea_date.get(0..2)?.parse().ok()?;
     let month: u32 = nmea_date.get(2..4)?.parse().ok()?;
     let year: u32 = nmea_date.get(4..6)?.parse().ok()?;
+
     Some((day, month, year))
 }
 
@@ -198,5 +208,127 @@ fn open_serial_port(port_name: &str, baud_rate: u32, timeout: Duration) -> io::R
             eprintln!("Failed to open port {}: {}", port_name, e);
             Err(e.into())
         }
+    }
+}#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{self, BufRead, BufReader, Cursor};
+    use std::time::Duration;
+    use serialport::SerialPort;
+
+    #[test]
+    fn test_parse_nmea_time() {
+        let result = parse_nmea_time("123519");
+        assert_eq!(result, Some((12, 35, 19.0)));
+
+        let result = parse_nmea_time("123519.00");
+        assert_eq!(result, Some((12, 35, 19.00)));
+
+        let result = parse_nmea_time("1234");
+        assert_eq!(result, None);
+
+        let result = parse_nmea_time("ab3519");
+        assert_eq!(result, None);
+
+        let result = parse_nmea_time("12ab19");
+        assert_eq!(result, None);
+
+        let result = parse_nmea_time("1235ab");
+        assert_eq!(result, None);
+
+        let result = parse_nmea_time("000000");
+        assert_eq!(result, Some((0, 0, 0.0)));
+    }
+
+    #[test]
+    fn test_parse_nmea_date() {
+        let result = parse_nmea_date("230394");
+        assert_eq!(result, Some((23, 3, 94)));
+
+        let result = parse_nmea_date("2303");
+        assert_eq!(result, None);
+
+        let result = parse_nmea_date("ab0394");
+        assert_eq!(result, None);
+
+        let result = parse_nmea_date("23ab94");
+        assert_eq!(result, None);
+
+        let result = parse_nmea_date("2303ab");
+        assert_eq!(result, None);
+
+        let result = parse_nmea_date("010100");
+        assert_eq!(result, Some((1, 1, 0)));
+    }
+
+    #[test]
+    fn test_nmea_time_date_to_unix_timestamp() {
+        let result = nmea_time_date_to_unix_timestamp("123519.00", "250320");
+        assert_eq!(result, Some(1585139719.00));
+
+        let result = nmea_time_date_to_unix_timestamp("1234", "250320");
+        assert_eq!(result, None);
+
+        let result = nmea_time_date_to_unix_timestamp("123519.00", "2503");
+        assert_eq!(result, None);
+
+        let result = nmea_time_date_to_unix_timestamp("12ab19.00", "250320");
+        assert_eq!(result, None);
+
+        let result = nmea_time_date_to_unix_timestamp("123519.00", "25ab20");
+        assert_eq!(result, None);
+
+        let result = nmea_time_date_to_unix_timestamp("000000.00", "010100");
+        assert_eq!(result, Some(946684800.00)); 
+    }
+
+    #[test]
+    fn test_process_gnrmc_with_valid_data() {
+        let mut current_date = None;
+        let fields = vec!["GNRMC", "123519.00", "A", "4807.038", "N", "01131.000", "E", "022.4", "084.4", "250320"];
+        process_gnrmc(&fields, &mut current_date);
+        assert_eq!(current_date, Some("250320".to_string()));
+    }
+
+    #[test]
+    fn test_process_gnrmc_with_invalid_data() {
+        let mut current_date = None;
+        let fields = vec!["GNRMC", "123519.00", "V", "4807.038", "N", "01131.000", "E", "022.4", "084.4", "250320"];
+        process_gnrmc(&fields, &mut current_date);
+        assert_eq!(current_date, None);
+    }
+
+    #[test]
+    fn test_process_gnrmc_with_insufficient_fields() {
+        let mut current_date = None;
+        let fields = vec!["GNRMC", "123519.00", "A"];
+        process_gnrmc(&fields, &mut current_date);
+        assert_eq!(current_date, None);
+    }
+
+    #[test]
+    fn test_process_gnrmc_updates_current_date() {
+        let mut current_date = Some("240320".to_string());
+        let fields = vec!["GNRMC", "123519.00", "A", "4807.038", "N", "01131.000", "E", "022.4", "084.4", "250320"];
+        process_gnrmc(&fields, &mut current_date);
+        assert_eq!(current_date, Some("250320".to_string()));
+    }
+
+    #[test]
+    fn test_is_valid_gnrmc_with_valid_data() {
+        let fields = vec!["GNRMC", "123519.00", "A", "4807.038", "N", "01131.000", "E", "022.4", "084.4", "250320"];
+        assert!(is_valid_gnrmc(&fields));
+    }
+
+    #[test]
+    fn test_is_valid_gnrmc_with_invalid_status() {
+        let fields = vec!["GNRMC", "123519.00", "V", "4807.038", "N", "01131.000", "E", "022.4", "084.4", "250320"];
+        assert!(!is_valid_gnrmc(&fields));
+    }
+
+    #[test]
+    fn test_is_valid_gnrmc_with_insufficient_fields() {
+        let fields = vec!["GNRMC", "123519.00", "A"];
+        assert!(!is_valid_gnrmc(&fields));
     }
 }
