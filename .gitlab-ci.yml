@@ -1,6 +1,6 @@
 # Official language image. Look for the different tagged releases at:
 # https://hub.docker.com/r/library/rust/tags/
-image: "rust:latest"
+image: "rust:1.78.0"
 
 stages:
   - lint
