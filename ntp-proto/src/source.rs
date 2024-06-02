@@ -87,6 +87,15 @@ pub struct NtpSource {
 }
 
 #[derive(Debug, Copy, Clone)]
+pub struct GpsMeasurement {
+    pub delay: NtpDuration,
+    pub offset: NtpDuration,
+    pub ntptimestamp: NtpTimestamp,
+    pub ntpduration: NtpDuration,
+    pub ntpinstant: NtpInstant,
+}
+
+#[derive(Debug, Copy, Clone)]
 pub struct Measurement {
     pub delay: NtpDuration,
     pub offset: NtpDuration,
@@ -100,6 +109,9 @@ pub struct Measurement {
     pub root_dispersion: NtpDuration,
     pub leap: NtpLeapIndicator,
     pub precision: i8,
+
+    // New fields from GpsMeasurement
+    pub gps: GpsMeasurement,
 }
 
 impl Measurement {
@@ -121,12 +133,19 @@ impl Measurement {
             receive_timestamp: packet.receive_timestamp(),
             localtime: send_timestamp + (recv_timestamp - send_timestamp) / 2,
             monotime: local_clock_time,
-
             stratum: packet.stratum(),
             root_delay: packet.root_delay(),
             root_dispersion: packet.root_dispersion(),
             leap: packet.leap(),
             precision: packet.precision(),
+
+            gps: GpsMeasurement {
+                delay: NtpDuration::ZERO,
+                offset: NtpDuration::ZERO,
+                ntptimestamp: NtpTimestamp::default(),
+                ntpduration: NtpDuration::ZERO,
+                ntpinstant: NtpInstant::now(),
+            },
         }
     }
 

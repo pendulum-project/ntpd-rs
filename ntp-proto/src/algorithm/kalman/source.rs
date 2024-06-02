@@ -144,6 +144,10 @@ impl InitialSourceFilter {
         self.samples += 1;
         self.last_measurement = Some(measurement);
         debug!(samples = self.samples, "Initial source update");
+
+        // Process GPS data
+        self.roundtriptime_stats.update(measurement.gps.delay.to_seconds());
+        self.init_offset.update(measurement.gps.offset.to_seconds());
     }
 
     fn process_offset_steering(&mut self, steer: f64) {
@@ -214,7 +218,11 @@ impl SourceFilter {
         let delay_variance = self.roundtriptime_stats.variance();
         let m_delta_t = (measurement.localtime - self.last_measurement.localtime).to_seconds();
 
-        // Kalman filter update
+        // Incorporate GPS measurements
+        let gps_delay = measurement.gps.delay.to_seconds();
+        let gps_offset = measurement.gps.offset.to_seconds();
+
+        // Kalman filter update for NTP
         let measurement_vec = Vector::new_vector([measurement.offset.to_seconds()]);
         let measurement_transform = Matrix::new([[1., 0.]]);
         let measurement_noise = Matrix::new([[delay_variance / 4.]]);
@@ -228,6 +236,14 @@ impl SourceFilter {
         self.uncertainty = ((Matrix::unit() - update_strength * measurement_transform)
             * self.uncertainty)
             .symmetrize();
+
+        // Kalman filter update for GPS
+        let gps_measurement_vec = Vector::new_vector([gps_offset]);
+        let gps_difference = gps_measurement_vec - measurement_transform * self.state;
+        let gps_difference_covariance = measurement_transform * self.uncertainty * measurement_transform.transpose() + measurement_noise;
+        let gps_update_strength = self.uncertainty * measurement_transform.transpose() * gps_difference_covariance.inverse();
+        self.state = self.state + gps_update_strength * gps_difference;
+        self.uncertainty = ((Matrix::unit() - gps_update_strength * measurement_transform) * self.uncertainty).symmetrize();
 
         // Statistics
         let p = chi_1(difference.inner(difference_covariance.inverse() * difference));
@@ -385,6 +401,9 @@ impl SourceFilter {
         self.last_measurement.offset -= NtpDuration::from_seconds(steer);
         self.last_measurement.localtime += NtpDuration::from_seconds(steer);
         self.filter_time += NtpDuration::from_seconds(steer);
+
+        // Process GPS offset steering
+        self.last_measurement.gps.offset -= NtpDuration::from_seconds(steer);
     }
 
     fn process_frequency_steering(&mut self, time: NtpTimestamp, steer: f64) {
@@ -393,6 +412,9 @@ impl SourceFilter {
         self.last_measurement.offset += NtpDuration::from_seconds(
             steer * (time - self.last_measurement.localtime).to_seconds(),
         );
+
+        // Process GPS frequency steering
+        self.last_measurement.gps.ntptimestamp += NtpDuration::from_seconds(steer);
     }
 }
 
