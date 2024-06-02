@@ -145,9 +145,11 @@ impl InitialSourceFilter {
         self.last_measurement = Some(measurement);
         debug!(samples = self.samples, "Initial source update");
 
-        // Process GPS data
-        self.roundtriptime_stats.update(measurement.gps.delay.to_seconds());
-        self.init_offset.update(measurement.gps.offset.to_seconds());
+        // Process GPS data if it exists
+        if let Some(gps_measurement) = &measurement.gps {
+            self.roundtriptime_stats.update(gps_measurement.delay.to_seconds());
+            self.init_offset.update(gps_measurement.offset.to_seconds());
+        }
     }
 
     fn process_offset_steering(&mut self, steer: f64) {
@@ -218,9 +220,13 @@ impl SourceFilter {
         let delay_variance = self.roundtriptime_stats.variance();
         let m_delta_t = (measurement.localtime - self.last_measurement.localtime).to_seconds();
 
-        // Incorporate GPS measurements
-        let gps_delay = measurement.gps.delay.to_seconds();
-        let gps_offset = measurement.gps.offset.to_seconds();
+        // Incorporate GPS measurements if they exist, or provide default values
+        let (gps_delay, gps_offset) = if let Some(gps_measurement) = &measurement.gps {
+            (gps_measurement.delay.to_seconds(), gps_measurement.offset.to_seconds())
+        } else {
+            // Provide default values for gps_delay and gps_offset
+            (0.0, 0.0)
+        };
 
         // Kalman filter update for NTP
         let measurement_vec = Vector::new_vector([measurement.offset.to_seconds()]);
@@ -402,8 +408,10 @@ impl SourceFilter {
         self.last_measurement.localtime += NtpDuration::from_seconds(steer);
         self.filter_time += NtpDuration::from_seconds(steer);
 
-        // Process GPS offset steering
-        self.last_measurement.gps.offset -= NtpDuration::from_seconds(steer);
+        // Process GPS offset steering if it exists
+        if let Some(ref mut gps_measurement) = self.last_measurement.gps {
+            gps_measurement.offset -= NtpDuration::from_seconds(steer);
+        }
     }
 
     fn process_frequency_steering(&mut self, time: NtpTimestamp, steer: f64) {
@@ -413,8 +421,10 @@ impl SourceFilter {
             steer * (time - self.last_measurement.localtime).to_seconds(),
         );
 
-        // Process GPS frequency steering
-        self.last_measurement.gps.ntptimestamp += NtpDuration::from_seconds(steer);
+        // Process GPS frequency steering if it exists
+        if let Some(ref mut gps_measurement) = self.last_measurement.gps {
+            gps_measurement.ntptimestamp += NtpDuration::from_seconds(steer);
+        }
     }
 }
 
@@ -629,6 +639,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -650,6 +661,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
         );
         assert!(matches!(source, SourceState(SourceStateInner::Initial(_))));
@@ -678,6 +690,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -700,6 +713,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
         );
         assert!(matches!(source, SourceState(SourceStateInner::Stable(_))));
@@ -728,6 +742,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -750,6 +765,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
         );
         assert!(matches!(source, SourceState(SourceStateInner::Stable(_))));
@@ -783,6 +799,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -821,6 +838,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -846,6 +864,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
         );
 
@@ -876,6 +895,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -903,6 +923,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
         );
 
@@ -938,6 +959,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -977,6 +999,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -1013,6 +1036,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1032,6 +1056,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1051,6 +1076,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1070,6 +1096,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1089,6 +1116,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1108,6 +1136,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1127,6 +1156,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1146,6 +1176,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
         );
         assert!((source.snapshot(0_usize).unwrap().state.ventry(0) - 3.5e-3).abs() < 1e-7);
@@ -1174,6 +1205,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1193,6 +1225,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1212,6 +1245,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1230,7 +1264,8 @@ mod tests {
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
-                precision: 0,
+                precision: 0, 
+                gps: None,
             },
         );
         source.process_offset_steering(4e-3);
@@ -1250,7 +1285,8 @@ mod tests {
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
-                precision: 0,
+                precision: 0, 
+                gps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1269,7 +1305,8 @@ mod tests {
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
-                precision: 0,
+                precision: 0, 
+                gps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1288,7 +1325,8 @@ mod tests {
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
-                precision: 0,
+                precision: 0, 
+                gps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1307,7 +1345,8 @@ mod tests {
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
-                precision: 0,
+                precision: 0, 
+                gps: None,
             },
         );
         assert!((source.snapshot(0_usize).unwrap().state.ventry(0) - 3.5e-3).abs() < 1e-7);
@@ -1348,6 +1387,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None, 
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -1474,6 +1514,7 @@ mod tests {
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
+                gps: None,
             },
             prev_was_outlier: false,
             last_iter: base,

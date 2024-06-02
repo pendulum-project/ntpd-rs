@@ -111,7 +111,7 @@ pub struct Measurement {
     pub precision: i8,
 
     // New fields from GpsMeasurement
-    pub gps: GpsMeasurement,
+    pub gps: Option<GpsMeasurement>,
 }
 
 impl Measurement {
@@ -138,14 +138,13 @@ impl Measurement {
             root_dispersion: packet.root_dispersion(),
             leap: packet.leap(),
             precision: packet.precision(),
-
-            gps: GpsMeasurement {
+            gps: Some(GpsMeasurement {
                 delay: NtpDuration::ZERO,
                 offset: NtpDuration::ZERO,
                 ntptimestamp: NtpTimestamp::default(),
                 ntpduration: NtpDuration::ZERO,
                 ntpinstant: NtpInstant::now(),
-            },
+            }),
         }
     }
 
