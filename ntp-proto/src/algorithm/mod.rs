@@ -83,7 +83,7 @@ pub trait TimeSyncController<C: NtpClock, SourceId: Hash + Eq + Copy + Debug>: S
     fn source_snapshot(&self, id: SourceId) -> Option<ObservableSourceTimedata>;
 }
 
-mod kalman;
+pub mod kalman;
 
 pub use kalman::config::AlgorithmConfig;
 pub use kalman::KalmanClockController;
