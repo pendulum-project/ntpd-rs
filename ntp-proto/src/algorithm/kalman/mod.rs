@@ -486,7 +486,7 @@ mod tests {
                     root_dispersion: NtpDuration::default(),
                     leap: NtpLeapIndicator::NoWarning,
                     precision: 0,
-                    gps: None, // Add the missing gps field
+                    gps: None,
                 },
             );
         }
