@@ -1586,7 +1586,6 @@ mod test {
             gps: None,
         };
 
-        // Assert that the fields are correctly set
         assert_eq!(measurement.delay, NtpDuration::from_seconds(0.001));
         assert_eq!(measurement.offset, NtpDuration::from_seconds(1.0));
         assert!(measurement.gps.is_none());
@@ -1778,7 +1777,6 @@ mod test {
             filter_time: NtpTimestamp::default(),
         };
 
-        // Assert that the fields are correctly set
         assert_eq!(source_filter.state.entry(0, 0), 0.0);
         assert_eq!(source_filter.state.entry(1, 0), 0.0);
         assert_eq!(source_filter.uncertainty.entry(0, 0), 1.0);
@@ -1817,7 +1815,7 @@ mod test {
         };
 
         let outlier_measurement = Measurement {
-            delay: NtpDuration::from_seconds(100.0),  // Simulate a large delay
+            delay: NtpDuration::from_seconds(100.0),
             offset: NtpDuration::from_seconds(50.0),
             transmit_timestamp: NtpTimestamp::default(),
             receive_timestamp: NtpTimestamp::default(),
@@ -1865,7 +1863,6 @@ mod test {
             gps: Some(gps_measurement),
         };
 
-        // Assert that the fields are correctly set
         assert_eq!(measurement.delay, max_duration);
         assert_eq!(measurement.offset, max_duration);
         assert!(measurement.gps.is_some());
@@ -1910,11 +1907,10 @@ mod test {
 
         initial_filter.update(measurement);
 
-        // Assert that the filter has updated
         assert_eq!(initial_filter.samples, 1);
         assert!(initial_filter.last_measurement.is_some());
 
-        // Reset the filter
+        // Reset filter
         initial_filter = InitialSourceFilter {
             roundtriptime_stats: Default::default(),
             init_offset: Default::default(),
@@ -1922,7 +1918,7 @@ mod test {
             samples: 0,
         };
 
-        // Assert that the filter has reset
+        // Assert filter has reset
         assert_eq!(initial_filter.samples, 0);
         assert!(initial_filter.last_measurement.is_none());
     }
