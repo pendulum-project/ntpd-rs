@@ -1923,4 +1923,105 @@ mod test {
         assert!(initial_filter.last_measurement.is_none());
     }
 
+    #[test]
+    fn test_poll_interval_calculation() {
+        let mut source = NtpSource::test_ntp_source();
+        let mut system = SystemSnapshot::default();
+
+        system.time_snapshot.poll_interval = PollIntervalLimits::default().max;
+        assert_eq!(
+            source.current_poll_interval(system),
+            PollIntervalLimits::default().max
+        );
+
+        system.time_snapshot.poll_interval = PollIntervalLimits::default().min;
+        source.remote_min_poll_interval = PollIntervalLimits::default().max;
+        assert_eq!(
+            source.current_poll_interval(system),
+            PollIntervalLimits::default().max
+        );
+    }
+
+    #[test]
+    fn test_handle_rate_limiting() {
+        let base = NtpInstant::now();
+        let mut source = NtpSource::test_ntp_source();
+
+        let system = SystemSnapshot::default();
+        let actions = source.handle_timer(system);
+        let mut outgoingbuf = None;
+        for action in actions {
+            if let NtpSourceAction::Send(buf) = action {
+                outgoingbuf = Some(buf);
+            }
+        }
+        let outgoingbuf = outgoingbuf.unwrap();
+        let outgoing = NtpPacket::deserialize(&outgoingbuf, &NoCipher).unwrap().0;
+        let mut packet = NtpPacket::test();
+        packet.set_reference_id(ReferenceId::KISS_RATE);
+        packet.set_origin_timestamp(outgoing.transmit_timestamp());
+        packet.set_mode(NtpAssociationMode::Server);
+
+        let actions = source.handle_incoming(
+            system,
+            &packet.serialize_without_encryption_vec(None).unwrap(),
+            base + Duration::from_secs(1),
+            NtpTimestamp::from_fixed_int(0),
+            NtpTimestamp::from_fixed_int(400),
+        );
+        for action in actions {
+            assert!(matches!(action, NtpSourceAction::UpdateSystem(_))); //update the system without taking further actions
+        }
+        assert_eq!(
+            source.remote_min_poll_interval,
+            source.last_poll_interval.inc(source.source_defaults_config.poll_interval_limits)
+        );
+    }
+
+    #[test]
+    fn test_gps_data_processing() {
+        let gps_measurement = GpsMeasurement {
+            delay: NtpDuration::from_seconds(0.001),
+            offset: NtpDuration::from_seconds(1.0),
+            ntptimestamp: NtpTimestamp::default(),
+            ntpduration: NtpDuration::default(),
+            ntpinstant: NtpInstant::now(),
+        };
+
+        let measurement = Measurement {
+            delay: NtpDuration::from_seconds(0.001),
+            offset: NtpDuration::from_seconds(1.0),
+            transmit_timestamp: NtpTimestamp::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            localtime: NtpTimestamp::default(),
+            monotime: NtpInstant::now(),
+            stratum: 0,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+            gps: Some(gps_measurement),
+        };
+
+        let mut source_filter = SourceFilter {
+            state: Vector::new_vector([0.0, 0.0]),
+            uncertainty: Matrix::new([[1.0, 0.0], [0.0, 1.0]]),
+            clock_wander: 1.0,
+            roundtriptime_stats: Default::default(),
+            precision_score: 0,
+            poll_score: 0,
+            desired_poll_interval: Default::default(),
+            last_measurement: measurement.clone(),
+            prev_was_outlier: false,
+            last_iter: NtpTimestamp::default(),
+            filter_time: NtpTimestamp::default(),
+        };
+
+        let (p, weight, m_delta_t) = source_filter.absorb_measurement(measurement);
+
+        assert!(p >= 0.0 && p <= 1.0);
+        assert!(weight >= 0.0 && weight <= 1.0);
+        assert!(m_delta_t >= 0.0);
+    }    
+
 }
