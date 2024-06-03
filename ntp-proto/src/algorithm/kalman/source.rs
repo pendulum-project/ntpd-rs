@@ -609,6 +609,8 @@ mod tests {
 
     use super::*;
 
+    use crate::source::GpsMeasurement;
+
     #[test]
     fn test_meddling_detection() {
         let base = NtpTimestamp::from_fixed_int(0);
@@ -1564,4 +1566,136 @@ mod tests {
         assert_eq!(source.precision_score, 0);
         assert!((source.clock_wander - 1e-8).abs() < 1e-12);
     }
+
+    #[test]
+    fn test_transition_to_stable_state() {
+        let base = NtpTimestamp::from_fixed_int(0);
+        let basei = NtpInstant::now();
+        let mut source = SourceState::new();
+        let measurement = Measurement {
+            delay: NtpDuration::from_seconds(0.0),
+            offset: NtpDuration::from_seconds(0e-3),
+            transmit_timestamp: Default::default(),
+            receive_timestamp: Default::default(),
+            localtime: base + NtpDuration::from_seconds(1000.0),
+            monotime: basei + std::time::Duration::from_secs(1000),
+    
+            stratum: 0,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+            gps: None,
+        };
+    
+        for _ in 0..7 {
+            source.update_self_using_measurement(
+                &SourceDefaultsConfig::default(),
+                &AlgorithmConfig::default(),
+                measurement.clone(),
+            );
+            assert!(matches!(source.0, SourceStateInner::Initial(_)));
+        }
+    
+        // This measurement should transition the state to Stable
+        source.update_self_using_measurement(
+            &SourceDefaultsConfig::default(),
+            &AlgorithmConfig::default(),
+            measurement,
+        );
+        assert!(matches!(source.0, SourceStateInner::Stable(_)));
+    }
+    
+    #[test]
+    fn test_outlier_detection() {
+        let base = NtpTimestamp::from_fixed_int(0);
+        let basei = NtpInstant::now();
+
+        let mut source = SourceState(SourceStateInner::Stable(SourceFilter {
+            state: Vector::new_vector([0.0, 0.]),
+            uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
+            clock_wander: 1e-8,
+            roundtriptime_stats: AveragingBuffer {
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                next_idx: 0,
+            },
+            precision_score: 0,
+            poll_score: 0,
+            desired_poll_interval: PollIntervalLimits::default().min,
+            last_measurement: Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(0.0),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
+                localtime: base,
+                monotime: basei,
+
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
+                gps: None,
+            },
+            prev_was_outlier: false,
+            last_iter: base,
+            filter_time: base,
+        }));
+
+        // Update with a normal measurement
+        let normal_measurement = Measurement {
+            delay: NtpDuration::from_seconds(0.0),
+            offset: NtpDuration::from_seconds(20e-3),
+            transmit_timestamp: Default::default(),
+            receive_timestamp: Default::default(),
+            localtime: base + NtpDuration::from_seconds(1000.0),
+            monotime: basei + std::time::Duration::from_secs(1000),
+            stratum: 0,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+            gps: None,
+        };
+
+        source.update_self_using_measurement(
+            &SourceDefaultsConfig::default(),
+            &AlgorithmConfig::default(),
+            normal_measurement,
+        );
+
+        // Update with an outlier measurement
+        let outlier_measurement = Measurement {
+            delay: NtpDuration::from_seconds(10.0), // Outlier delay
+            offset: NtpDuration::from_seconds(20e-3),
+            transmit_timestamp: Default::default(),
+            receive_timestamp: Default::default(),
+            localtime: base + NtpDuration::from_seconds(2000.0),
+            monotime: basei + std::time::Duration::from_secs(2000),
+            stratum: 0,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+            gps: None,
+        };
+
+        let result = source.update_self_using_measurement(
+            &SourceDefaultsConfig::default(),
+            &AlgorithmConfig::default(),
+            outlier_measurement,
+        );
+
+        // Ensure the outlier is detected
+        assert!(!result, "Outlier was not detected");
+
+        // Ensure normal measurement is processed
+        let result = source.update_self_using_measurement(
+            &SourceDefaultsConfig::default(),
+            &AlgorithmConfig::default(),
+            normal_measurement,
+        );
+        assert!(result, "Normal measurement was not processed after an outlier");
+    }    
+            
 }
