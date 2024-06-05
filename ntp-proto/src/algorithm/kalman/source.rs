@@ -603,13 +603,10 @@ impl SourceState {
 
 #[cfg(test)]
 mod tests {
-    use std::panic::catch_unwind;
 
     use crate::{packet::NtpLeapIndicator, time_types::NtpInstant};
 
     use super::*;
-
-    use crate::source::GpsMeasurement;
 
     #[test]
     fn test_meddling_detection() {
