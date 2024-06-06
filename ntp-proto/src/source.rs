@@ -166,6 +166,13 @@ impl Measurement {
             root_dispersion: NtpDuration::default(),
             leap: NtpLeapIndicator::NoWarning,
             precision: 0,
+            gps: Some(GpsMeasurement {
+                delay: NtpDuration::ZERO,
+                offset: NtpDuration::from_seconds(0.01),
+                ntptimestamp: NtpTimestamp::default(),
+                ntpduration: NtpDuration::ZERO,
+                ntpinstant: NtpInstant::now(),
+            }),
         }
     }
 
