@@ -68,11 +68,20 @@ jobs:
           persist-credentials: false
       - name: Set target rust version
         run: echo "TARGET_RUST_VERSION=$(if [ "${{matrix.rust}}" = "msrv" ]; then grep rust-version Cargo.toml | grep MSRV | cut -d'"' -f2; else echo "${{matrix.rust}}"; fi)" >> $GITHUB_ENV
+      - name: Install nightly toolchain for direct-minimal-versions
+        uses: dtolnay/rust-toolchain@d8352f6b1d2e870bc5716e7a6d9b65c4cc244a1a
+        with:
+          toolchain: nightly
+          targets: "${{ matrix.target }}"
+        if: ${{ matrix.rust == 'msrv' }}
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@d8352f6b1d2e870bc5716e7a6d9b65c4cc244a1a
         with:
           toolchain: "${TARGET_RUST_VERSION}"
           targets: "${{ matrix.target }}"
+      - name: Downgrade direct dependencies to minimal versions
+        run: cargo +nightly update -Z direct-minimal-versions
+        if: ${{ matrix.rust == 'msrv' }}
       - name: Install cross-compilation tools
         uses: taiki-e/setup-cross-toolchain-action@241e9bf5f01f63286a020946ddaa3fd6d9c32cca
         with:

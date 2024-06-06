@@ -153,7 +153,9 @@ fn build_server_config(
             rustls::server::NoClientAuth,
             #[cfg(feature = "unstable_nts-pool")]
             ntp_proto::tls_utils::AllowAnyAnonymousOrCertificateBearingClient::new(
-                rustls::crypto::ring::default_provider(),
+                // We know that our previous call to ServerConfig::builder already
+                // installed a default provider, but this is undocumented
+                rustls::crypto::CryptoProvider::get_default().unwrap(),
             ),
         ))
         .with_single_cert(certificate_chain, private_key)
