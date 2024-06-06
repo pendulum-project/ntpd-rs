@@ -128,6 +128,7 @@ pub struct System<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> {
     controller: Option<KalmanClockController<C, SourceId>>,
 }
 
+
 impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
     pub fn new(
         clock: C,
@@ -205,7 +206,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
         *self.sources.get_mut(&id).unwrap() = Some(update.snapshot);
         if let Some(measurement) = update.measurement {
             let update = self.clock_controller()?.source_measurement(id, measurement);
-            Ok(self.handle_algorithm_state_update(update))
+            Ok(self.handle_algorithm_state_update(update, false))
         } else {
             Ok(None)
         }
@@ -220,20 +221,26 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
         if let Some(measurement) = update.measurement {
             info!("gps measurement in clockcontroller");
             let update = self.clock_controller()?.source_measurement(id, measurement);
-            Ok(self.handle_algorithm_state_update(update))
+            Ok(self.handle_algorithm_state_update(update, true))
         } else {
             Ok(None)
         }
     }
 
-    fn handle_algorithm_state_update(&mut self, update: StateUpdate<SourceId>) -> Option<Duration> {
+    
+
+    fn handle_algorithm_state_update(&mut self, update: StateUpdate<SourceId>, gps: bool) -> Option<Duration> {
         if let Some(ref used_sources) = update.used_sources {
-            self.system
-                .update_used_sources(used_sources.iter().map(|v| {
-                    self.sources.get(v).and_then(|snapshot| *snapshot).expect(
-                    "Critical error: Source used for synchronization that is not known to system",
-                )
-                }));
+            if !gps {
+                self.system
+                    .update_used_sources(used_sources.iter().map(|v| {
+                        println!("hello {:?}", v);
+                        println!("whatsup {:?}", self.sources);
+                        self.sources.get(v).and_then(|snapshot| *snapshot).expect(
+                        "Critical error: Source used for synchronization that is not known to system",
+                    )
+                    }));
+            }
         }
         if let Some(time_snapshot) = update.time_snapshot {
             self.system
@@ -247,7 +254,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
         // note: local needed for borrow checker
         if let Some(controller) = self.controller.as_mut() {
             let update = controller.time_update();
-            self.handle_algorithm_state_update(update)
+            self.handle_algorithm_state_update(update, false)
         } else {
             None
         }

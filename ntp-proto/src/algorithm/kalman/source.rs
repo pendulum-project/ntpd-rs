@@ -450,16 +450,18 @@ impl SourceState {
         }))
     }
 
-    // Returs whether the clock may need adjusting.
+    // Returns whether the clock may need adjusting.
     pub fn update_self_using_measurement(
         &mut self,
         source_defaults_config: &SourceDefaultsConfig,
         algo_config: &AlgorithmConfig,
         measurement: Measurement,
     ) -> bool {
+        info!("inside updating source");
         match &mut self.0 {
             SourceStateInner::Initial(filter) => {
                 filter.update(measurement);
+                println!("filter samples: {}", filter.samples);
                 if filter.samples == 8 {
                     *self = SourceState(SourceStateInner::Stable(SourceFilter {
                         state: Vector::new_vector([filter.init_offset.mean(), 0.]),
