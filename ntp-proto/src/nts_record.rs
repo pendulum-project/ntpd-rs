@@ -2900,7 +2900,9 @@ mod test {
                 rustls::server::NoClientAuth,
                 #[cfg(feature = "nts-pool")]
                 crate::tls_utils::AllowAnyAnonymousOrCertificateBearingClient::new(
-                    rustls::crypto::ring::default_provider(),
+                    // We know that our previous call to ServerConfig::builder already
+                    // installed a default provider, but this is undocumented
+                    rustls::crypto::CryptoProvider::get_default().unwrap(),
                 ),
             ))
             .with_single_cert(cert_chain.clone(), key_der.clone_key().into())
