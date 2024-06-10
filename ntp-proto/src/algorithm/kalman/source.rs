@@ -224,7 +224,7 @@ impl SourceFilter {
             (gps_measurement.delay.to_seconds(), gps_measurement.offset.to_seconds())
         } else {
             // Provide default values for gps_delay and gps_offset
-            (0.0, 0.0)
+            (1.0, 1.0)
         };
 
         // Kalman filter update for NTP
