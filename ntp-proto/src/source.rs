@@ -138,13 +138,7 @@ impl Measurement {
             root_dispersion: packet.root_dispersion(),
             leap: packet.leap(),
             precision: packet.precision(),
-            gps: Some(GpsMeasurement {
-                delay: NtpDuration::ZERO,
-                offset: NtpDuration::ZERO,
-                ntptimestamp: NtpTimestamp::default(),
-                ntpduration: NtpDuration::ZERO,
-                ntpinstant: NtpInstant::now(),
-            }),
+            gps: None, 
         }
     }
 
