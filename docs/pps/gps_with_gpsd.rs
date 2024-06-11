@@ -1,9 +1,9 @@
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Write, Read}; 
 use std::net::TcpStream;
-use std::thread;
 use std::time::Duration as StdDuration;
+use std::thread; 
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "class")]
@@ -24,9 +24,9 @@ enum GpsdResponse {
 }
 
 fn connect_to_gpsd() -> io::Result<TcpStream> {
-    let gpsd_address = "127.0.0.1:2947";
+    let gpsd_address = "127.0.0.1:2947"; // Default GPSD address
     let stream = TcpStream::connect(gpsd_address)?;
-    stream.set_read_timeout(Some(StdDuration::from_secs(10)))?;
+    stream.set_nonblocking(true)?;
     Ok(stream)
 }
 
@@ -62,10 +62,7 @@ fn process_response(line: &str) {
             }
             GpsdResponse::PPS { real_sec, real_nsec } => {
                 if let (Some(real_sec), Some(real_nsec)) = (real_sec, real_nsec) {
-                    let pps_time = DateTime::<Utc>::from_utc(
-                        chrono::NaiveDateTime::from_timestamp(real_sec, real_nsec as u32),
-                        Utc,
-                    );
+                    let pps_time = Utc.timestamp(real_sec, real_nsec as u32); 
                     println!("PPS time: {}", pps_time);
 
                     let now = Utc::now();
@@ -101,18 +98,17 @@ fn process_response(line: &str) {
 
 fn read_and_process_lines(reader: &mut BufReader<TcpStream>) -> io::Result<()> {
     let mut line = String::new();
+    let mut buffer = [0; 512];
     loop {
-        line.clear();
-        match reader.read_line(&mut line) {
-            Ok(_) => {
-                if line.is_empty() {
-                    break;
-                }
+        match reader.get_mut().read(&mut buffer) {
+            Ok(n) if n > 0 => {
+                line.clear();
+                line.push_str(&String::from_utf8_lossy(&buffer[..n]));
                 process_response(&line);
             }
+            Ok(_) => {}
             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                thread::sleep(StdDuration::from_millis(100));
-                continue;
+                thread::sleep(StdDuration::from_millis(10)); 
             }
             Err(e) => {
                 eprintln!("Error reading from GPSD: {}", e);
