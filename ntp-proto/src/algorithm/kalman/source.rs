@@ -141,11 +141,12 @@ impl InitialSourceFilter {
         if let Some(gps_measurement) = &measurement.gps {
             self.roundtriptime_stats.update(gps_measurement.delay.to_seconds());
             self.init_offset.update(gps_measurement.offset.to_seconds());
+        }else{
+            self.roundtriptime_stats
+            .update(measurement.delay.to_seconds());
+             self.init_offset.update(measurement.offset.to_seconds());
         }
 
-        self.roundtriptime_stats
-            .update(measurement.delay.to_seconds());
-        self.init_offset.update(measurement.offset.to_seconds());
         self.samples += 1;
         self.last_measurement = Some(measurement);
         debug!(samples = self.samples, "Initial source update");
