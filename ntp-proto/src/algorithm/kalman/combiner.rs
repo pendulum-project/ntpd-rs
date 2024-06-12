@@ -43,7 +43,6 @@ pub(super) fn combine<Index: Copy>(
     selection: &[SourceSnapshot<Index>],
     algo_config: &AlgorithmConfig,
 ) -> Option<Combine<Index>> {
-    println!("Length of selection: {}", selection.len());
     selection.first().map(|first| {
         let mut estimate = first.state;
         let mut uncertainty = if algo_config.ignore_server_dispersion {

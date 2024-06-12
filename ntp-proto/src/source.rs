@@ -671,7 +671,6 @@ impl NtpSource {
             warn!("Received packet with invalid mode");
             actions!()
         } else {
-            info!("Porcessing message:");
             self.process_message(system, message, local_clock_time, send_time, recv_time)
         }
     }
@@ -753,7 +752,6 @@ impl NtpSource {
                 nts.cookies.store(cookie);
             }
         }
-        info!("set actionupdate");
         actions!(NtpSourceAction::UpdateSystem(NtpSourceUpdate {
             snapshot: NtpSourceSnapshot::from_source(self),
             measurement: Some(measurement),

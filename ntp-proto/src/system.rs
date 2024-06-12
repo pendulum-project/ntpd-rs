@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use tracing::info;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -176,7 +175,6 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
     }
 
     pub fn handle_source_create(&mut self, id: SourceId) -> Result<(), C::Error> {
-        info!("adding source to clock controller");
         self.clock_controller()?.add_source(id);
         self.sources.insert(id, None);
         Ok(())
@@ -193,7 +191,6 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
         id: SourceId,
         update: NtpSourceUpdate,
     ) -> Result<Option<Duration>, C::Error> {
-        info!("adjusting clock");
         let usable = update
             .snapshot
             .accept_synchronization(
@@ -216,10 +213,8 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
         id: SourceId,
         update: GpsSourceUpdate,
     ) -> Result<Option<Duration>, C::Error> {
-        info!("adjusting gps clock");
         self.clock_controller()?.source_update(id, true);
         if let Some(measurement) = update.measurement {
-            info!("gps measurement in clockcontroller");
             let update = self.clock_controller()?.source_measurement(id, measurement);
             Ok(self.handle_algorithm_state_update(update, true))
         } else {
@@ -234,8 +229,6 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
             if !gps {
                 self.system
                     .update_used_sources(used_sources.iter().map(|v| {
-                        println!("hello {:?}", v);
-                        println!("whatsup {:?}", self.sources);
                         self.sources.get(v).and_then(|snapshot| *snapshot).expect(
                         "Critical error: Source used for synchronization that is not known to system",
                     )

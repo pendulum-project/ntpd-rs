@@ -1,7 +1,14 @@
 use super::{
-    config::{ClockConfig, NormalizedAddress, NtpSourceConfig, ServerConfig, TimestampMode}, gps_source::GpsSourceTask, ntp_source::{MsgForSystem, SourceChannels, SourceTask, Wait}, server::{ServerStats, ServerTask}, spawn::{
-        gps::GpsSpawner, nts::NtsSpawner, pool::PoolSpawner, standard::StandardSpawner, GpsSourceCreateParameters, SourceCreateParameters, SourceId, SourceRemovalReason, SpawnAction, SpawnEvent, Spawner, SpawnerId, SystemEvent
-    }, ObservableSourceState, ObservedSourceState
+    config::{ClockConfig, NormalizedAddress, NtpSourceConfig, ServerConfig, TimestampMode},
+    gps_source::GpsSourceTask,
+    ntp_source::{MsgForSystem, SourceChannels, SourceTask, Wait},
+    server::{ServerStats, ServerTask},
+    spawn::{
+        gps::GpsSpawner, nts::NtsSpawner, pool::PoolSpawner, standard::StandardSpawner,
+        GpsSourceCreateParameters, SourceCreateParameters, SourceId, SourceRemovalReason,
+        SpawnAction, SpawnEvent, Spawner, SpawnerId, SystemEvent,
+    },
+    ObservableSourceState, ObservedSourceState,
 };
 
 use std::{
@@ -9,13 +16,13 @@ use std::{
     time::Duration,
 };
 
+use super::gps_without_gpsd::Gps;
 use ntp_proto::{
     KeySet, NtpClock, SourceDefaultsConfig, SynchronizationConfig, System, SystemSnapshot,
 };
 use timestamped_socket::interface::InterfaceName;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{debug, info};
-use super::gps_without_gpsd::Gps;
 
 pub const NETWORK_WAIT_PERIOD: std::time::Duration = std::time::Duration::from_secs(1);
 
@@ -90,21 +97,14 @@ pub async fn spawn(
         keyset,
         ip_list,
     );
-    info!("spawn ntp-deamon");
-
-    //add the gps spawner here
-    // might want to do conditionally but for now
     system.add_spawner(GpsSpawner::new()).map_err(|e| {
         tracing::error!("Could not spawn gps source: {}", e);
         std::io::Error::new(std::io::ErrorKind::Other, e)
     })?;
-    info!("Gps added");
-
 
     for source_config in source_configs {
         match source_config {
             NtpSourceConfig::Standard(cfg) => {
-                info!("standard");
                 system
                     .add_spawner(StandardSpawner::new(cfg.clone()))
                     .map_err(|e| {
@@ -113,7 +113,6 @@ pub async fn spawn(
                     })?;
             }
             NtpSourceConfig::Nts(cfg) => {
-                info!("Nts");
                 system
                     .add_spawner(NtsSpawner::new(cfg.clone()))
                     .map_err(|e| {
@@ -122,7 +121,6 @@ pub async fn spawn(
                     })?;
             }
             NtpSourceConfig::Pool(cfg) => {
-                info!("add pool spawner");
                 system
                     .add_spawner(PoolSpawner::new(cfg.clone()))
                     .map_err(|e| {
@@ -132,7 +130,6 @@ pub async fn spawn(
             }
             #[cfg(feature = "unstable_nts-pool")]
             NtpSourceConfig::NtsPool(cfg) => {
-                info!("NTSpool");
                 system
                     .add_spawner(NtsPoolSpawner::new(cfg.clone()))
                     .map_err(|e| {
@@ -144,11 +141,9 @@ pub async fn spawn(
     }
 
     for server_config in server_configs.iter() {
-        info!("add server");
         system.add_server(server_config.to_owned()).await;
     }
 
-    info!("done with spawning");
     let handle = tokio::spawn(async move {
         let sleep =
             SingleshotSleep::new_disabled(tokio::time::sleep_until(tokio::time::Instant::now()));
@@ -247,7 +242,6 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
                 clock,
                 timestamp_mode,
                 interface,
-
             },
             DaemonChannels {
                 source_snapshots_receiver,
@@ -272,7 +266,6 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
     }
 
     async fn run(&mut self, mut wait: Pin<&mut SingleshotSleep<T>>) -> std::io::Result<()> {
-        info!("system run");
         loop {
             tokio::select! {
                 opt_msg_for_system = self.msg_for_system_rx.recv() => {
@@ -282,14 +275,12 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
                             break
                         }
                         Some(msg_for_system) => {
-                            info!("received source update message");
                             self.handle_source_update(msg_for_system, &mut wait)
                                 .await?;
                         }
                     }
                 }
                 opt_spawn_event = self.spawn_rx.recv() => {
-                    info!("spawn event:");
                     match opt_spawn_event {
                         None => {
                             let msg = "the spawn channel closed unexpectedly. ntpd-rs is likely in an invalid state!";
@@ -337,7 +328,6 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
         wait: &mut Pin<&mut SingleshotSleep<T>>,
     ) -> std::io::Result<()> {
         tracing::debug!(?msg, "updating source");
-        info!("handling source update");
 
         match msg {
             MsgForSystem::MustDemobilize(index) => {
@@ -352,7 +342,6 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
                 }
             }
             MsgForSystem::GpsSourceUpdate(index, update) => {
-                info!("updating gos source:");
                 match self.system.handle_gps_source_update(index, update) {
                     Err(e) => unreachable!("Could not process source measurement: {}", e),
                     Ok(timer) => self.handle_state_update(timer, wait),
@@ -366,7 +355,6 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
                 self.handle_source_unreachable(index).await?;
             }
         }
-        info!("clock adjusted or not");
         // Don't care if there is no receiver for source snapshots (which might happen if
         // we don't enable observing in the configuration)
         let _ = self
@@ -450,7 +438,6 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
         spawner_id: SpawnerId,
         mut params: SourceCreateParameters,
     ) -> Result<SourceId, C::Error> {
-        info!("creating source:");
         let source_id = params.id;
         info!(source_id=?source_id, addr=?params.addr, spawner=?spawner_id, "new source");
         self.sources.insert(
@@ -474,7 +461,6 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
             self.source_defaults_config,
             params.nts.take(),
         );
-        info!("spawned source task");
 
         // Don't care if there is no receiver
         let _ = self
@@ -501,8 +487,7 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
     ) -> Result<SourceId, C::Error> {
         let source_id = params.id;
         info!(source_id=?source_id, spawner=?spawner_id, "new gps source");
-        info!("gps first");
-       
+
         self.system.handle_source_create(source_id)?;
 
         info!("creating gps instance:");
@@ -510,18 +495,17 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
         let baud_rate = 9600;
         let timeout = Duration::from_secs(10);
         let gps: Gps = Gps::new(port_name, baud_rate, timeout).unwrap();
-        
+
         info!("creating gps source task:");
+
         GpsSourceTask::spawn(
             source_id,
             self.clock.clone(),
             self.timestamp_mode,
             self.source_channels.clone(),
             gps,
-
         );
 
-        info!("done creating gps source task");
         // Don't care if there is no receiver
         let _ = self
             .source_snapshots_sender
@@ -541,13 +525,11 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
     }
 
     async fn handle_spawn_event(&mut self, event: SpawnEvent) -> Result<(), C::Error> {
-
         match event.action {
             SpawnAction::Create(params) => {
                 self.create_source(event.id, params).await?;
             }
-            SpawnAction::CreateGps(params) =>{
-                info!("spawn gps event?");
+            SpawnAction::CreateGps(params) => {
                 self.create_gps_source(event.id, params).await?;
             }
         }
@@ -595,7 +577,6 @@ struct SourceState {
     spawner_id: SpawnerId,
     source_id: SourceId,
 }
-
 
 #[derive(Debug, Clone)]
 pub struct ServerData {
@@ -717,7 +698,7 @@ mod tests {
                             root_dispersion: NtpDuration::default(),
                             leap: NtpLeapIndicator::NoWarning,
                             precision: 0,
-                            gps: None, 
+                            gps: None,
                         },
                     ),
                 ),

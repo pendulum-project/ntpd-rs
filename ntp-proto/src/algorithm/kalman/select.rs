@@ -1,5 +1,3 @@
-use tracing::info;
-
 use crate::config::SynchronizationConfig;
 
 use super::{config::AlgorithmConfig, SourceSnapshot};
@@ -24,10 +22,7 @@ pub(super) fn select<Index: Copy>(
     candidates: Vec<SourceSnapshot<Index>>,
 ) -> Vec<SourceSnapshot<Index>> {
     let mut bounds: Vec<(f64, BoundType)> = Vec::with_capacity(2 * candidates.len());
-    info!("selection:");
-    println!("selecting from {} candidates", candidates.len());
     for snapshot in candidates.iter() {
-        println!("current snapshot: {}, {}", snapshot.offset(), snapshot.offset_uncertainty(), );
         let radius = snapshot.offset_uncertainty() * algo_config.range_statistical_weight
             + snapshot.delay * algo_config.range_delay_weight;
         if radius > algo_config.maximum_source_uncertainty
@@ -56,8 +51,6 @@ pub(super) fn select<Index: Copy>(
             maxt = *time;
         }
     }
-    println!("first one: {}, second one: {}",max >= synchronization_config.minimum_agreeing_sources, max * 4 > bounds.len());
-    println!("whats this then? {}", synchronization_config.minimum_agreeing_sources);
     if max >= synchronization_config.minimum_agreeing_sources && max * 4 > bounds.len() {
         candidates
             .iter()
@@ -72,7 +65,6 @@ pub(super) fn select<Index: Copy>(
             .cloned()
             .collect()
     } else {
-        info!("are we then here?");
         vec![]
     }
 }

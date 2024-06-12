@@ -287,7 +287,7 @@ impl Default for SynchronizationConfig {
 }
 
 fn default_minimum_agreeing_sources() -> usize {
-    1
+    3
 }
 
 fn default_single_step_panic_threshold() -> StepThreshold {

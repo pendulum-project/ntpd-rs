@@ -92,7 +92,6 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
 
     fn update_clock(&mut self, time: NtpTimestamp) -> StateUpdate<SourceId> {
         // ensure all filters represent the same (current) time
-        info!("updating clock");
         if self
             .sources
             .iter()
@@ -107,12 +106,8 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
         }
         
         for (_, (state, _)) in self.sources.iter_mut() {
-            println!("or is it the state: {:?}", state);
             state.progress_filtertime(time);
         }
-        //selection phase starts
-        info!("hello");
-        println!("lenght of the sources hashmap: {}", self.sources.len());
         let selection = select::select(
             &self.synchronization_config,
             &self.algo_config,
@@ -120,16 +115,14 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 .iter()
                 .filter_map(|(index, (state, usable))| {
                     if *usable {
-                        let hello = state.snapshot(*index);
-                        println!("which snapshot we getting? {:?}", hello);
-                        hello
+                        state.snapshot(*index)
                     } else {
                         None
                     }
                 })
                 .collect(),
         );
-
+        println!("selection lenght: {}", selection.len());
         if let Some(combined) = combine(&selection, &self.algo_config) {
             info!(
                 "Offset: {}+-{}ms, frequency: {}+-{}ppm",
@@ -358,7 +351,6 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> TimeSyncController<C, Sour
     }
 
     fn source_update(&mut self, id: SourceId, usable: bool) {
-        info!("source update");
         if let Some(state) = self.sources.get_mut(&id) {
             state.1 = usable;
         }

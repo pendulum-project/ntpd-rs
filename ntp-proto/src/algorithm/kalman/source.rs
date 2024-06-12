@@ -146,7 +146,6 @@ impl InitialSourceFilter {
             .update(measurement.delay.to_seconds());
              self.init_offset.update(measurement.offset.to_seconds());
         }
-
         self.samples += 1;
         self.last_measurement = Some(measurement);
         debug!(samples = self.samples, "Initial source update");

@@ -14,7 +14,6 @@ If a feature you need is missing please let us know by opening an issue.
 ## Documentation
 
 Be sure to check out the [documentation website] as it includes guides on getting started, installation and migration, as well as a high-level overview of the code structure.
-
 ## Usage
 
 You can install the packages from the [releases page]. These packages configure ntpd-rs to synchronize your computers clock to servers from the [NTP pool]. After installation, check the status of the ntpd-rs daemon with
