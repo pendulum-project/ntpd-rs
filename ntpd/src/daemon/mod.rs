@@ -9,6 +9,7 @@ pub mod observer;
 mod server;
 pub mod sockets;
 pub mod spawn;
+pub mod gps_without_gpsd;
 mod system;
 pub mod tracing;
 mod util;

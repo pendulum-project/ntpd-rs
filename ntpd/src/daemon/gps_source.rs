@@ -12,6 +12,8 @@ use chrono::DateTime;
 
 use crate::daemon::ntp_source::MsgForSystem;
 
+use super::gps_without_gpsd::{read_and_process_lines, open_serial_port};
+
 use super::{config::TimestampMode, exitcode, ntp_source::SourceChannels, spawn::SourceId};
 
 /// Trait needed to allow injecting of futures other than `tokio::time::Sleep` for testing
@@ -55,14 +57,17 @@ where
                 Timer,
                 Recv(Result<GPSData, GPSError>),
             }
-            // info!("get gps result:"); 
             let selected = tokio::select! {
                 () = &mut poll_wait => {
                     SelectResult::Timer
                 },
-                result = async{self.gps.current_data()} => SelectResult::Recv(result)
-               
-               
+                result = read_and_process_lines(&mut reader, &mut current_date) => {
+                    if result.is_err() {
+                        SelectResult::Recv(Err(GPSError::new("Error reading from GPS")))
+                    } else {
+                        SelectResult::Recv(Ok(GPSData::new("GPS data processed successfully")))
+                    }
+                }
             };
 
             let actions = match selected {
@@ -274,3 +279,4 @@ pub fn from_unix_timestamp(unix_timestamp: u64) -> NtpTimestamp {
 
     NtpTimestamp::from_fixed_int(timestamp)
 }
+
