@@ -61,6 +61,9 @@ fn test_status() {
 
     spawn(move || {
         let (mut stream, _) = socket.accept().unwrap();
+        stream
+            .write_all(&(EXAMPLE_SOCKET_OUTPUT.len() as u64).to_be_bytes())
+            .unwrap();
         stream.write_all(EXAMPLE_SOCKET_OUTPUT.as_bytes()).unwrap();
     });
 
