@@ -226,10 +226,10 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(10)).await;
 
         let mut reader = UnixStream::connect(path).await.unwrap();
-
         let mut buf = vec![];
-        while reader.read_buf(&mut buf).await.unwrap() != 0 {}
-        let result: ObservableState = serde_json::from_slice(&buf).unwrap();
+        let result: ObservableState = crate::daemon::sockets::read_json(&mut reader, &mut buf)
+            .await
+            .unwrap();
 
         // Deal with randomized order
         assert_eq!(result.sources.len(), 1);

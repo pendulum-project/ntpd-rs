@@ -9,6 +9,7 @@ where
     T: serde::Serialize,
 {
     let bytes = serde_json::to_vec(value).unwrap();
+    stream.write_u64(bytes.len() as u64).await?;
     stream.write_all(&bytes).await
 }
 
@@ -20,10 +21,9 @@ where
     T: serde::Deserialize<'a>,
 {
     buffer.clear();
-
-    let n = stream.read_buf(buffer).await?;
-    buffer.truncate(n);
-
+    let msg_size = stream.read_u64().await? as usize;
+    buffer.resize(msg_size, 0);
+    stream.read_exact(buffer).await?;
     serde_json::from_slice(buffer)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
 }
@@ -101,14 +101,12 @@ mod tests {
 
         let (mut reader, _) = listener.accept().await.unwrap();
 
-        let object = vec![0usize, 10];
+        let object = vec![10u64; 1_000];
 
         write_json(&mut writer, &object).await.unwrap();
 
         let mut buf = Vec::new();
-        let output = read_json::<Vec<usize>>(&mut reader, &mut buf)
-            .await
-            .unwrap();
+        let output = read_json::<Vec<u64>>(&mut reader, &mut buf).await.unwrap();
 
         assert_eq!(object, output);
 
@@ -130,6 +128,7 @@ mod tests {
 
         // write data that cannot be parsed
         let data = [0; 24];
+        writer.write_u64(data.len() as u64).await.unwrap();
         writer.write_all(&data).await.unwrap();
 
         let mut buf = Vec::new();
