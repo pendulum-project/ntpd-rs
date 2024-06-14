@@ -1,5 +1,6 @@
-use crate::time_types::{ NtpInstant, NtpTimestamp};
+use crate::time_types::{ NtpInstant};
 use crate::source::Measurement;
+use crate::NtpDuration;
 use std::time::Duration;
 
 use tracing::{instrument, warn};
@@ -90,14 +91,12 @@ impl GpsSource {
     pub fn handle_incoming(
         &mut self,
         local_clock_time: NtpInstant,
-        send_time: NtpTimestamp,
-        recv_time: NtpTimestamp,
+        offset: NtpDuration,
     ) -> GpsSourceActionIterator {
         
         // generate a measurement
         let measurement = Measurement::from_gps(
-            send_time,
-            recv_time,
+            offset,
             local_clock_time,
         );
        

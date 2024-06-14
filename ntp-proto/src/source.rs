@@ -140,16 +140,15 @@ impl Measurement {
     }
 
     pub fn from_gps(
-        send_timestamp: NtpTimestamp,
-        recv_timestamp: NtpTimestamp,
+        offset: NtpDuration, 
         local_clock_time: NtpInstant,
     ) -> Self {
         Self {
             delay: NtpDuration::default(),
             offset: NtpDuration::default(),
-            transmit_timestamp: send_timestamp,
-            receive_timestamp: recv_timestamp,
-            localtime: send_timestamp + (recv_timestamp - send_timestamp) / 2,
+            transmit_timestamp: NtpTimestamp::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            localtime: NtpTimestamp::default(),
             monotime: local_clock_time,
 
             stratum: 16,
@@ -159,7 +158,7 @@ impl Measurement {
             precision: 0,
             gps: Some(GpsMeasurement {
                 measurementnoise: NtpDuration::ZERO,
-                offset: NtpDuration::from_seconds(0.01),
+                offset: offset,
             }),
         }
     }

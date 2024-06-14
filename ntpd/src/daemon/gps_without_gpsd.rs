@@ -1,8 +1,10 @@
 use chrono::{NaiveDate, NaiveTime, NaiveDateTime, Utc};
+use tracing::info;
 use std::io::{self, BufRead, BufReader};
 use std::time::Duration;
 use serialport::{SerialPort};
 
+#[derive(Debug)]
 pub struct GPS {
     reader: BufReader<Box<dyn SerialPort>>,
     current_date: Option<String>,
@@ -167,13 +169,16 @@ impl GPS {
                 let line = line.trim().to_string(); 
                 self.line.clear();
                 self.line.push_str(&line); 
-
+                info!("please heree");
                 let fields: Vec<&str> = line.split(',').collect(); 
                 if line.starts_with("$GNRMC") {
+                    info!("or here");
                     self.process_gnrmc(&fields);
                 } else if line.starts_with("$GNGGA") {
+                    info!("no we here");
                     return Ok(self.process_gngga(&fields));
                 }
+                info!("we hereß");
                 Ok(None)
             },
             Err(e) => {
@@ -184,37 +189,37 @@ impl GPS {
     }
 }
 
-fn open_serial_port(port_name: &str, baud_rate: u32, timeout: Duration) -> io::Result<Box<dyn SerialPort>> {
-    serialport::new(port_name, baud_rate)
-        .timeout(timeout)
-        .open()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-}
+// fn open_serial_port(port_name: &str, baud_rate: u32, timeout: Duration) -> io::Result<Box<dyn SerialPort>> {
+//     serialport::new(port_name, baud_rate)
+//         .timeout(timeout)
+//         .open()
+//         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+// }
 
-#[tokio::main]
-async fn main() -> io::Result<()> {
-    let port_name = "/dev/serial0";
-    let baud_rate = 9600;
-    let timeout = Duration::from_secs(10);
+// #[tokio::main]
+// async fn main() -> io::Result<()> {
+//     let port_name = "/dev/serial0";
+//     let baud_rate = 9600;
+//     let timeout = Duration::from_secs(10);
 
-    match GPS::new(port_name, baud_rate, timeout) {
-        Ok(mut gps) => {
-            loop {
-                match gps.current_data().await {
-                    Ok(Some(offset)) => println!("Offset between GPS time and system time: {:.6} seconds", offset),
-                    Ok(None) => continue,
-                    Err(e) => {
-                        eprintln!("Error processing GPS data: {}", e);
-                        break;
-                    }
-                }
-            }
-        }
-        Err(e) => eprintln!("Failed to initialize GPS: {}", e),
-    }
+//     match GPS::new(port_name, baud_rate, timeout) {
+//         Ok(mut gps) => {
+//             loop {
+//                 match gps.current_data().await {
+//                     Ok(Some(offset)) => println!("Offset between GPS time and system time: {:.6} seconds", offset),
+//                     Ok(None) => continue,
+//                     Err(e) => {
+//                         eprintln!("Error processing GPS data: {}", e);
+//                         break;
+//                     }
+//                 }
+//             }
+//         }
+//         Err(e) => eprintln!("Failed to initialize GPS: {}", e),
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 
 // #[cfg(test)]
