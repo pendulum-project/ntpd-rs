@@ -88,11 +88,8 @@ pub struct NtpSource {
 
 #[derive(Debug, Copy, Clone)]
 pub struct GpsMeasurement {
-    pub delay: NtpDuration,
+    pub MeasurementNoise: NtpDuration,
     pub offset: NtpDuration,
-    pub ntptimestamp: NtpTimestamp,
-    pub ntpduration: NtpDuration,
-    pub ntpinstant: NtpInstant,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -161,11 +158,8 @@ impl Measurement {
             leap: NtpLeapIndicator::NoWarning,
             precision: 0,
             gps: Some(GpsMeasurement {
-                delay: NtpDuration::ZERO,
+                MeasurementNoise: NtpDuration::ZERO,
                 offset: NtpDuration::from_seconds(0.01),
-                ntptimestamp: NtpTimestamp::default(),
-                ntpduration: NtpDuration::ZERO,
-                ntpinstant: NtpInstant::now(),
             }),
         }
     }
@@ -1596,11 +1590,8 @@ mod test {
     #[test]
     fn test_measurement_with_gps() {
         let gps_measurement = GpsMeasurement {
-            delay: NtpDuration::from_seconds(0.001),
+            MeasurementNoise: NtpDuration::from_seconds(0.001),
             offset: NtpDuration::from_seconds(1.0),
-            ntptimestamp: NtpTimestamp::default(),
-            ntpduration: NtpDuration::default(),
-            ntpinstant: NtpInstant::now(),
         };
 
         let measurement = Measurement {
@@ -1624,7 +1615,7 @@ mod test {
         assert!(measurement.gps.is_some());
 
         let gps = measurement.gps.unwrap();
-        assert_eq!(gps.delay, NtpDuration::from_seconds(0.001));
+        assert_eq!(gps.MeasurementNoise, NtpDuration::from_seconds(0.001));
         assert_eq!(gps.offset, NtpDuration::from_seconds(1.0));
     }
 
@@ -1632,11 +1623,8 @@ mod test {
     #[test]
     fn test_initial_source_filter_update_with_gps() {
         let gps_measurement = GpsMeasurement {
-            delay: NtpDuration::from_seconds(0.001),
+            MeasurementNoise: NtpDuration::from_seconds(0.001),
             offset: NtpDuration::from_seconds(1.0),
-            ntptimestamp: NtpTimestamp::default(),
-            ntpduration: NtpDuration::default(),
-            ntpinstant: NtpInstant::now(),
         };
 
         let measurement = Measurement {
@@ -1674,11 +1662,8 @@ mod test {
     #[test]
     fn test_absorb_measurement_with_gps() {
         let gps_measurement = GpsMeasurement {
-            delay: NtpDuration::from_seconds(0.001),
+            MeasurementNoise: NtpDuration::from_seconds(0.001),
             offset: NtpDuration::from_seconds(1.0),
-            ntptimestamp: NtpTimestamp::default(),
-            ntpduration: NtpDuration::default(),
-            ntpinstant: NtpInstant::now(),
         };
 
         let measurement = Measurement {
@@ -1721,11 +1706,8 @@ mod test {
     #[test]
     fn test_measurement_with_zero_duration() {
         let gps_measurement = GpsMeasurement {
-            delay: NtpDuration::ZERO,
+            MeasurementNoise: NtpDuration::ZERO,
             offset: NtpDuration::ZERO,
-            ntptimestamp: NtpTimestamp::default(),
-            ntpduration: NtpDuration::ZERO,
-            ntpinstant: NtpInstant::now(),
         };
 
         let measurement = Measurement {
@@ -1842,11 +1824,8 @@ mod test {
         let max_duration = NtpDuration::from_seconds(u64::MAX as f64);
 
         let gps_measurement = GpsMeasurement {
-            delay: max_duration,
+            MeasurementNoise: max_duration,
             offset: max_duration,
-            ntptimestamp: NtpTimestamp::default(),
-            ntpduration: max_duration,
-            ntpinstant: NtpInstant::now(),
         };
 
         let measurement = Measurement {
@@ -1869,7 +1848,7 @@ mod test {
         assert!(measurement.gps.is_some());
 
         let gps = measurement.gps.unwrap();
-        assert_eq!(gps.delay, max_duration);
+        assert_eq!(gps.MeasurementNoise, max_duration);
         assert_eq!(gps.offset, max_duration);
     }
 
@@ -1877,11 +1856,8 @@ mod test {
     #[test]
     fn test_initial_source_filter_reset() {
         let gps_measurement = GpsMeasurement {
-            delay: NtpDuration::from_seconds(0.001),
+            MeasurementNoise: NtpDuration::from_seconds(0.001),
             offset: NtpDuration::from_seconds(1.0),
-            ntptimestamp: NtpTimestamp::default(),
-            ntpduration: NtpDuration::default(),
-            ntpinstant: NtpInstant::now(),
         };
 
         let measurement = Measurement {
@@ -1982,11 +1958,8 @@ mod test {
     #[test]
     fn test_gps_data_processing() {
         let gps_measurement = GpsMeasurement {
-            delay: NtpDuration::from_seconds(0.001),
+            MeasurementNoise: NtpDuration::from_seconds(0.001),
             offset: NtpDuration::from_seconds(1.0),
-            ntptimestamp: NtpTimestamp::default(),
-            ntpduration: NtpDuration::default(),
-            ntpinstant: NtpInstant::now(),
         };
 
         let measurement = Measurement {

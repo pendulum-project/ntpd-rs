@@ -139,7 +139,7 @@ impl InitialSourceFilter {
     pub fn update(&mut self, measurement: Measurement) {
         // Process GPS data if it exists
         if let Some(gps_measurement) = &measurement.gps {
-            self.roundtriptime_stats.update(gps_measurement.delay.to_seconds());
+            self.roundtriptime_stats.update(gps_measurement.MeasurementNoise.to_seconds());
             self.init_offset.update(gps_measurement.offset.to_seconds());
         }else{
             self.roundtriptime_stats
@@ -222,10 +222,10 @@ impl SourceFilter {
         let m_delta_t = (measurement.localtime - self.last_measurement.localtime).to_seconds();
 
         // Incorporate GPS measurements if they exist, or provide default values
-        let (_gps_delay, gps_offset) = if let Some(gps_measurement) = &measurement.gps {
-            (gps_measurement.delay.to_seconds(), gps_measurement.offset.to_seconds())
+        let (_gps_noise, gps_offset) = if let Some(gps_measurement) = &measurement.gps {
+            (gps_measurement.MeasurementNoise.to_seconds(), gps_measurement.offset.to_seconds())
         } else {
-            // Provide default values for gps_delay and gps_offset
+            // Provide default values for gps_noise and gps_offset
             (1.0, 1.0)
         };
 
@@ -247,7 +247,7 @@ impl SourceFilter {
         // Kalman filter update for GPS
         let gps_measurement_vec = Vector::new_vector([gps_offset]);
         let gps_difference = gps_measurement_vec - measurement_transform * self.state;
-        let gps_difference_covariance = measurement_transform * self.uncertainty * measurement_transform.transpose() + measurement_noise;
+        let gps_difference_covariance = measurement_transform * self.uncertainty * measurement_transform.transpose() + _gps_noise;
         let gps_update_strength = self.uncertainty * measurement_transform.transpose() * gps_difference_covariance.inverse();
         self.state = self.state + gps_update_strength * gps_difference;
         self.uncertainty = ((Matrix::unit() - gps_update_strength * measurement_transform) * self.uncertainty).symmetrize();
@@ -424,7 +424,7 @@ impl SourceFilter {
 
         // Process GPS frequency steering if it exists
         if let Some(ref mut gps_measurement) = self.last_measurement.gps {
-            gps_measurement.ntptimestamp += NtpDuration::from_seconds(steer);
+            self.last_measurement.receive_timestamp += NtpDuration::from_seconds(steer);
         }
     }
 }
