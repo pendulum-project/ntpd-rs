@@ -245,9 +245,10 @@ impl SourceFilter {
             .symmetrize();
 
         // Kalman filter update for GPS
+        let gps_measurement_noise = Matrix::new([[_gps_noise / 4.]]);
         let gps_measurement_vec = Vector::new_vector([gps_offset]);
         let gps_difference = gps_measurement_vec - measurement_transform * self.state;
-        let gps_difference_covariance = measurement_transform * self.uncertainty * measurement_transform.transpose() + _gps_noise;
+        let gps_difference_covariance = measurement_transform * self.uncertainty * measurement_transform.transpose() + gps_measurement_noise;
         let gps_update_strength = self.uncertainty * measurement_transform.transpose() * gps_difference_covariance.inverse();
         self.state = self.state + gps_update_strength * gps_difference;
         self.uncertainty = ((Matrix::unit() - gps_update_strength * measurement_transform) * self.uncertainty).symmetrize();
@@ -423,7 +424,7 @@ impl SourceFilter {
         );
 
         // Process GPS frequency steering if it exists
-        if let Some(ref mut gps_measurement) = self.last_measurement.gps {
+        if let Some(ref mut _gps_measurement) = self.last_measurement.gps {
             self.last_measurement.receive_timestamp += NtpDuration::from_seconds(steer);
         }
     }
