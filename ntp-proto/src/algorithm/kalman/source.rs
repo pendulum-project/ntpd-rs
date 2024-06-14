@@ -139,7 +139,7 @@ impl InitialSourceFilter {
     pub fn update(&mut self, measurement: Measurement) {
         // Process GPS data if it exists
         if let Some(gps_measurement) = &measurement.gps {
-            self.roundtriptime_stats.update(gps_measurement.MeasurementNoise.to_seconds());
+            self.roundtriptime_stats.update(gps_measurement.measurementnoise.to_seconds());
             self.init_offset.update(gps_measurement.offset.to_seconds());
         }else{
             self.roundtriptime_stats
@@ -223,7 +223,7 @@ impl SourceFilter {
 
         // Incorporate GPS measurements if they exist, or provide default values
         let (_gps_noise, gps_offset) = if let Some(gps_measurement) = &measurement.gps {
-            (gps_measurement.MeasurementNoise.to_seconds(), gps_measurement.offset.to_seconds())
+            (gps_measurement.measurementnoise.to_seconds(), gps_measurement.offset.to_seconds())
         } else {
             // Provide default values for gps_noise and gps_offset
             (1.0, 1.0)
