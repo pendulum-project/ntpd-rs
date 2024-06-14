@@ -16,8 +16,7 @@ ntp-proto.workspace = true
 gpsd_client = "0.1.5"
 chrono= "0.4.38"
 serialport = "4.0"
-tokio = { version = "1", features = ["full"] }
-tokio-serial = "4.5"
+tokio-serial = "5.4.4"
 
 tokio = { workspace = true, features = ["rt-multi-thread", "io-util", "io-std", "fs", "sync", "net", "macros"] }
 tracing.workspace = true
