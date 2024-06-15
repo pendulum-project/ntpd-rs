@@ -37,7 +37,9 @@ rustls-pemfile.workspace = true
 
 [dev-dependencies]
 ntp-proto = { workspace = true, features = ["__internal-test",] }
+tokio = { version = "1.14", features = ["macros"] }
 tokio-rustls.workspace = true
+
 
 [features]
 default = []

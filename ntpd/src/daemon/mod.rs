@@ -13,6 +13,8 @@ pub mod gps_without_gpsd;
 mod system;
 pub mod tracing;
 mod util;
+pub mod pps_polling;
+
 
 use std::{error::Error, path::PathBuf};
 
