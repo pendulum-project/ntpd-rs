@@ -115,9 +115,7 @@ where
                             match accept_gps_time::<>(result) {
                                             AcceptResult::Accept(offset) => {
                                                 println!("offset: {:?}", offset);
-                                                self.source.handle_incoming(NtpInstant::now(),offset,)
-                                                    
-                                                    
+                                                self.source.handle_incoming(NtpInstant::now(),offset,) 
                                             }
                                             AcceptResult::Ignore => GpsSourceActionIterator::default(),
 
@@ -260,6 +258,25 @@ enum AcceptResult {
     Ignore,
 }
 
+pub fn from_seconds(seconds: f64) -> NtpDuration {
+    let whole_seconds = seconds as i64;
+    let fraction = seconds.fract();
+    let ntp_fraction = (fraction * (1u64 << 32) as f64) as u32;
+
+    println!("Seconds: {}, Whole seconds: {}, Fraction: {}", seconds, whole_seconds, ntp_fraction);
+
+    NtpDuration::from_seconds(seconds)
+}
+
+fn parse_gps_time(data: &Option<f64>) -> Result<NtpDuration, Box<dyn std::error::Error>> {
+    if let Some(offset) = data {
+        let ntp_duration = from_seconds(*offset);
+        Ok(ntp_duration)
+    } else {
+        Err("Failed to parse GPS time".into())
+    }
+}
+
 fn accept_gps_time(
     result: io::Result<Option<f64>>,
 ) -> AcceptResult {
@@ -267,52 +284,45 @@ fn accept_gps_time(
         Ok(data) => {
             println!("data: {:?}", data);
             match parse_gps_time(&data) {
-                Ok(gps_time) => AcceptResult::Accept(gps_time),
+                Ok(gps_duration) => AcceptResult::Accept(gps_duration),
                 Err(_) => AcceptResult::Ignore,
             }
         }
         Err(receive_error) => {
             warn!(?receive_error, "could not receive GPS data");
 
-            // Here you might want to handle specific errors from the GPS library,
-            // for now we'll just log and ignore them
             AcceptResult::Ignore
         }
     }
 }
 
-fn parse_gps_time(data: &std::option::Option<f64>) -> Result<NtpDuration, Box<dyn std::error::Error>> {
-    // Implement the logic to parse GPS time from the GPSData struct.
-    // This is a placeholder implementation.
-    info!(data);
-    let unix_timestamp =  Some(data.unwrap() as i64);
-    // Handle the Option<u64>
-    let ntp_timestamp = match unix_timestamp {
-        Some(ts) => from_unix_timestamp(ts),
-        None => return Err("Failed to parse GPS time".into()),
-    };
+// fn parse_gps_time(data: &std::option::Option<f64>) -> Result<NtpDuration, Box<dyn std::error::Error>> {
+//     // Implement the logic to parse GPS time from the GPSData struct.
+//     // This is a placeholder implementation.
+//     info!(data);
+//     println!("in parse_gps_time: data = {:?}", data);
+//     let unix_timestamp =  Some(data.unwrap() as i64);
+//     // Handle the Option<u64>
+//     let ntp_timestamp = match unix_timestamp {
+//         Some(ts) => from_unix_timestamp(ts),
+//         None => return Err("Failed to parse GPS time".into()),
+//     };
 
-    //let ntpTimestamp = from_unix_timestamp(unix_timestamp);
+//     //let ntpTimestamp = from_unix_timestamp(unix_timestamp);
 
 
- // Replace this with actual parsing logic
-    Ok(ntp_timestamp)
-}
+//  // Replace this with actual parsing logic
+//     Ok(ntp_timestamp)
+// }
 
-pub fn from_unix_timestamp(unix_timestamp: i64) -> NtpDuration {
-    const UNIX_TO_NTP_OFFSET: i64 = 2_208_988_800; // Offset in seconds between Unix epoch and NTP epoch
-    // Calculate NTP seconds
-    let ntp_seconds = unix_timestamp + UNIX_TO_NTP_OFFSET;
+// pub fn from_unix_timestamp(unix_timestamp: i64) -> NtpDuration {
+//     const UNIX_TO_NTP_OFFSET: i64 = 2_208_988_800; 
+//     let ntp_seconds = unix_timestamp + UNIX_TO_NTP_OFFSET;
 
-    // Calculate the fractional part of the NTP timestamp
-    let fraction = 0u32;
+//     let fraction = 0u32;
 
-    // Combine NTP seconds and fraction to form the complete NTP timestamp
-    let timestamp = (ntp_seconds << 32) | (fraction as i64);
+//     let timestamp = (ntp_seconds << 32) | (fraction as i64);
 
-    // println!("Unix Timestamp: {}, NTP Seconds: {}, Fraction: {}", unix_timestamp, ntp_seconds, fraction);
-    // println!("Combined NTP Timestamp: {:#018X}", timestamp);
-
-    NtpDuration::from_fixed_int(timestamp)
-}
+//     NtpDuration::from_fixed_int(timestamp)
+// }
 
