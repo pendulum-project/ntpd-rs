@@ -38,9 +38,6 @@ test:cargo:
 
 build-job:
   stage: build
-  before_script:
-    - apt-get update
-    - apt-get install -y libudev-dev pkg-config
   script:
     - echo "Compiling the code..."
     - cargo build --workspace --verbose
