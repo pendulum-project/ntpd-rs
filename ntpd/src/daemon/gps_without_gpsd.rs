@@ -5,13 +5,13 @@ use std::time::Duration;
 use serialport::{SerialPort};
 
 #[derive(Debug)]
-pub struct GPS {
+pub struct Gps {
     reader: BufReader<Box<dyn SerialPort>>,
     current_date: Option<String>,
     line: String,
 }
 
-impl GPS {
+impl Gps {
     /// Creates a new `GPS` instance.
     ///
     /// This function initializes a new `GPS` struct with a serial port reader,
@@ -32,7 +32,7 @@ impl GPS {
             .timeout(timeout)
             .open()?;
         let reader = BufReader::new(port);
-        Ok(GPS {
+        Ok(Gps {
             reader,
             current_date: None,
             line: String::new(),

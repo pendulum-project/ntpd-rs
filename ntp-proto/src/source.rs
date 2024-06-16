@@ -158,7 +158,7 @@ impl Measurement {
             precision: 0,
             gps: Some(GpsMeasurement {
                 measurementnoise: NtpDuration::ZERO,
-                offset: offset,
+                offset,
             }),
         }
     }

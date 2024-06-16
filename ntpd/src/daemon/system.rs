@@ -15,7 +15,7 @@ use ntp_proto::{
 use timestamped_socket::interface::InterfaceName;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{debug, info};
-use super::gps_without_gpsd::GPS;
+use super::gps_without_gpsd::Gps;
 
 pub const NETWORK_WAIT_PERIOD: std::time::Duration = std::time::Duration::from_secs(1);
 
@@ -509,7 +509,7 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
         let port_name = "/dev/serial0";
         let baud_rate = 9600;
         let timeout = Duration::from_secs(10);
-        let gps: GPS = GPS::new(port_name, baud_rate, timeout).unwrap();
+        let gps: Gps = Gps::new(port_name, baud_rate, timeout).unwrap();
         
         info!("creating gps source task:");
         GpsSourceTask::spawn(

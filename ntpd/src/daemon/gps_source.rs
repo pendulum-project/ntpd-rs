@@ -10,7 +10,7 @@ use tracing::{error, info, instrument, warn, Instrument, Span};
 
 use crate::daemon::ntp_source::MsgForSystem;
 
-use super::gps_without_gpsd::GPS;
+use super::gps_without_gpsd::Gps;
 
 use super::{config::TimestampMode, exitcode, ntp_source::SourceChannels, spawn::SourceId};
 
@@ -40,7 +40,7 @@ pub(crate) struct GpsSourceTask<C: 'static + NtpClock + Send, T: Wait> {
     // actual origin timestamp ourselves.
     /// Timestamp of the last packet that we sent
     last_send_timestamp: Option<NtpTimestamp>,
-    gps: GPS,
+    gps: Gps,
 }
 
 impl<C, T> GpsSourceTask<C, T>
@@ -205,7 +205,7 @@ where
         clock: C,
         timestamp_mode: TimestampMode,
         channels: SourceChannels,
-        gps: GPS,
+        gps: Gps,
     ) -> tokio::task::JoinHandle<()> {
         info!("spawning gps source?");
         tokio::spawn(
