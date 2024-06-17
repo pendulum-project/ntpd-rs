@@ -8,6 +8,10 @@ stages:
   - build
   - deploy
 
+before_script:
+  - apt-get update
+  - apt-get install -y pkg-config libudev-dev
+
 lint-clippy:
   stage: lint
   script:
@@ -18,14 +22,14 @@ lint-clippy:
     - merge_requests
 
 # Use cargo to test the project
-test:cargo:
+test_cargo:
   stage: test
   script:
     - rustc --version && cargo --version  # Print version info for debugging
     - cargo test --workspace --verbose
 
 # Optional: Use a third party library to generate GitLab JUnit reports
-# test:junit-report:
+# test_junit_report:
 #   stage: test
 #   script:
 #     # Should be specified in Cargo.toml
@@ -36,7 +40,7 @@ test:cargo:
 #     reports:
 #       junit: $CI_PROJECT_DIR/tests/*.xml
 
-build-job:
+build_job:
   stage: build
   script:
     - echo "Compiling the code..."
