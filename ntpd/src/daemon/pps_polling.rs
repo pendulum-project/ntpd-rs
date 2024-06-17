@@ -6,34 +6,25 @@ use std::time::Duration;
 use libc::{timespec, clock_gettime, CLOCK_REALTIME};
 use ntp_proto::NtpTimestamp;
 use chrono::{Utc, DateTime};
-use tokio::io::BufReader;
-use tokio_serial::{SerialPort, SerialPortSettings, DataBits, FlowControl, Parity, StopBits};
 
 /// Struct to encapsulate the PPS polling information.
 #[derive(Debug)]
 pub struct Pps {
     fd: RawFd,
-    serial_port: BufReader<Box<dyn SerialPort>>,
-    //latest_ntp_timestamp: Option<NtpTimestamp>, if later needed
-    //latest_system_time: Option<DateTime<Utc>>,if later needed
     latest_offset: Option<f64>,
 }
 
 impl Pps {
     /// Opens the PPS device and creates a new Pps instance.
-    pub fn open(pps_path: &str, serial_path: &str, baud_rate: u32, timeout: Duration) -> Result<Self, io::Error> {
+    pub fn open(pps_path: &str) -> Result<Self, io::Error> {
         // Open PPS device
         let file = File::open(pps_path)?;
         let fd = file.as_raw_fd();
 
-        // Open Serial Port
-        let serial_port = open_serial_port(serial_path, baud_rate, timeout)?;
+        println!("Opened PPS device at {}", pps_path);
 
         Ok(Pps {
             fd,
-            serial_port: BufReader::new(serial_port),
-            //latest_ntp_timestamp: None, if later needed
-            //latest_system_time: None, if later needed
             latest_offset: None,
         })
     }
@@ -57,17 +48,22 @@ impl Pps {
 
         let ntp_timestamp = Self::from_unix_timestamp(pps_timestamp_secs, pps_timestamp_nanos);
 
+        println!("PPS Timestamp - Seconds: {}, Nanoseconds: {}", pps_timestamp_secs, pps_timestamp_nanos);
+        println!("NTP Timestamp: {:?}", ntp_timestamp);
+
         // Get the system time in seconds
         let system_time = Utc::now();
         let system_time_secs = system_time.timestamp() as f64 + system_time.timestamp_subsec_micros() as f64 * 1e-6;
+
+        println!("System Time: {}", system_time_secs);
 
         // Calculate the offset
         let pps_time = pps_timestamp_secs as f64 + pps_timestamp_nanos as f64 * 1e-9;
         let offset = (system_time_secs - pps_time).abs();
 
+        println!("Offset: {}", offset);
+
         // Update the struct fields with the latest values
-        //self.latest_ntp_timestamp = Some(ntp_timestamp); if later needed
-        // self.latest_system_time = Some(system_time); if later needed
         self.latest_offset = Some(offset);
 
         Ok((ntp_timestamp, system_time_secs, offset))
@@ -96,35 +92,16 @@ impl Pps {
     /// Result handling for PPS polling.
     pub fn accept_pps_time(result: Result<(NtpTimestamp, f64, f64), String>) -> AcceptResult {
         match result {
-            Ok((timestamp, system_time, offset)) => AcceptResult::Accept(timestamp, system_time, offset),
+            Ok((timestamp, system_time, offset)) => {
+                println!("Accepted PPS Time - NTP Timestamp: {:?}, System Time: {}, Offset: {}", timestamp, system_time, offset);
+                AcceptResult::Accept(timestamp, system_time, offset)
+            },
             Err(receive_error) => {
-                warn!(?receive_error, "could not receive PPS signal");
+                println!("Could not receive PPS signal: {:?}", receive_error);
                 AcceptResult::Ignore
             }
         }
     }
-}
-
-/// Opens a serial port with the given settings.
-fn open_serial_port(port_name: &str, baud_rate: u32, timeout: Duration) -> Result<Box<dyn SerialPort>, io::Error> {
-    let settings = SerialPortSettings {
-        baud_rate,
-        data_bits: DataBits::Eight,
-        flow_control: FlowControl::None,
-        parity: Parity::None,
-        stop_bits: StopBits::One,
-        timeout,
-    };
-
-    let port = tokio_serial::new(port_name, baud_rate)
-        .data_bits(settings.data_bits)
-        .flow_control(settings.flow_control)
-        .parity(settings.parity)
-        .stop_bits(settings.stop_bits)
-        .timeout(settings.timeout)
-        .open_native_async()?;
-
-    Ok(Box::new(port))
 }
 
 /// Enum to represent the result of PPS polling.
@@ -171,11 +148,8 @@ mod tests {
     #[tokio::test]
     async fn test_poll_pps_signal() {
         let pps_path = "/dev/pps0"; // Replace with the actual PPS device path
-        let serial_path = "/dev/serial0"; // Replace with the actual serial port path
-        let baud_rate = 9600;
-        let timeout = Duration::from_secs(10);
 
-        let mut pps = Pps::open(pps_path, serial_path, baud_rate, timeout).expect("Failed to open PPS device and/or serial port");
+        let mut pps = Pps::open(pps_path).expect("Failed to open PPS device");
 
         match pps.poll_pps_signal().await {
             Ok((ntp_timestamp, system_time, offset)) => {
