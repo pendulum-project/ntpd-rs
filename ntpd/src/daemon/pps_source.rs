@@ -2,7 +2,7 @@ use std::{future::Future, marker::PhantomData, pin::Pin};
 use tokio::time::{Instant, Sleep};
 use ntp_proto::{NtpClock, NtpInstant, NtpTimestamp, PpsSourceActionIterator, PpsSource};
 use tracing::{debug, error, info, instrument, warn, Instrument, Span};
-use super::pps_polling::PPS;
+use super::pps_polling::Pps;
 
 
 use crate::daemon::ntp_source::MsgForSystem;
@@ -26,7 +26,11 @@ pub(crate) struct PpsSourceTask<C: 'static + NtpClock + Send, T: Wait> {
     channels: SourceChannels,
     source: PpsSource,
     last_send_timestamp: Option<NtpTimestamp>,
+<<<<<<< HEAD
     pps: Pps,
+=======
+    pps:Pps,
+>>>>>>> b2e59c2 (fixing issues)
 }
 
 impl<C, T> PpsSourceTask<C, T>
@@ -137,6 +141,7 @@ where
         clock: C,
         timestamp_mode: TimestampMode,
         channels: SourceChannels,
+        pps: Pps,
     ) -> tokio::task::JoinHandle<()> {
         info!("spawning pps source");
         tokio::spawn(

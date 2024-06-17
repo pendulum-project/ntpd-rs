@@ -16,7 +16,7 @@ pub struct Pps {
 
 impl Pps {
     /// Opens the PPS device and creates a new Pps instance.
-    pub fn open(pps_path: &str) -> Result<Self, io::Error> {
+    pub fn new(pps_path: &str) -> Result<Self, io::Error> {
         // Open PPS device
         let file = File::open(pps_path)?;
         let fd = file.as_raw_fd();
@@ -149,7 +149,7 @@ mod tests {
     async fn test_poll_pps_signal() {
         let pps_path = "/dev/pps0"; // Replace with the actual PPS device path
 
-        let mut pps = Pps::open(pps_path).expect("Failed to open PPS device");
+        let mut pps = Pps::new(pps_path).expect("Failed to open PPS device");
 
         match pps.poll_pps_signal().await {
             Ok((ntp_timestamp, system_time, offset)) => {

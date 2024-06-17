@@ -4,36 +4,32 @@ use ntp_proto::ProtocolVersion;
 use tokio::sync::mpsc;
 use tracing::warn;
 
-use super::super::config::PoolSourceConfig;
 
 use super::{BasicSpawner, SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, SpawnerId};
 
-struct ppsSource {
+struct PpsSource {
     id: SourceId,
-    device: String,
 }
 
-pub struct ppsSpawner {
-    config: ppsConfig,
+pub struct PpsSpawner {
     id: SpawnerId,
-    current_sources: Vec<pssSource>,
+    current_sources: Vec<PpsSource>,
 }
 
 #[derive(Debug)]
-pub enum ppsSpawnError {}
+pub enum PpsSpawnError {}
 
-impl Display for ppsSpawnError {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for PpsSpawnError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "ppsSpawnError")
     }
 }
 
-impl std::error::Error for ppsSpawnError {}
+impl std::error::Error for PpsSpawnError {}
 
-impl ppsSpawner {
-    pub fn new(config: ppsConfig) -> ppsSpawner {
-        ppsSpawner {
-            config,
+impl PpsSpawner {
+    pub fn new() -> PpsSpawner {
+        PpsSpawner {
             id: Default::default(),
             current_sources: Default::default(),
         }
@@ -41,28 +37,25 @@ impl ppsSpawner {
 }
 
 #[async_trait::async_trait]
-impl BasicSpawner for ppsSpawner {
-    type Error = ppsSpawnError;
+impl BasicSpawner for PpsSpawner {
+    type Error = PpsSpawnError;
 
     async fn try_spawn(
         &mut self,
         action_tx: &mpsc::Sender<SpawnEvent>,
-    ) -> Result<(), ppsSpawnError> {
+    ) -> Result<(), PpsSpawnError> {
         // Early return if there is already a pps source
         if !self.current_sources.is_empty() {
             return Ok(());
         }
 
         let id = SourceId::new();
-        self.current_sources.push(ppsSource {
+        self.current_sources.push(PpsSource {
             id,
-            device: self.config.device.clone(),
         });
 
-        let action = SpawnAction::create(
+        let action = SpawnAction::create_pps(
             id,
-            self.config.device.clone(),
-            None,
         );
 
         tracing::debug!(?action, "intending to spawn new pps source");
@@ -84,7 +77,7 @@ impl BasicSpawner for ppsSpawner {
     async fn handle_source_removed(
         &mut self,
         removed_source: SourceRemovedEvent,
-    ) -> Result<(), ppsSpawnError> {
+    ) -> Result<(), PpsSpawnError> {
         self.current_sources.retain(|p| p.id != removed_source.id);
         Ok(())
     }
@@ -92,9 +85,8 @@ impl BasicSpawner for ppsSpawner {
     fn get_id(&self) -> SpawnerId {
         self.id
     }
-
-    fn get_device_description(&self) -> String {
-        format!("{}", self.config.device)
+    fn get_addr_description(&self) -> String {
+        "pps".to_string()
     }
 
     fn get_description(&self) -> &str {

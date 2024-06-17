@@ -2,11 +2,13 @@ use super::{
     config::{ClockConfig, NormalizedAddress, NtpSourceConfig, ServerConfig, TimestampMode},
     gps_source::GpsSourceTask,
     ntp_source::{MsgForSystem, SourceChannels, SourceTask, Wait},
+    pps_source::PpsSourceTask,
     server::{ServerStats, ServerTask},
     spawn::{
-        gps::GpsSpawner, nts::NtsSpawner, pool::PoolSpawner, standard::StandardSpawner,
-        GpsSourceCreateParameters, SourceCreateParameters, SourceId, SourceRemovalReason,
-        SpawnAction, SpawnEvent, Spawner, SpawnerId, SystemEvent,
+        gps::GpsSpawner, nts::NtsSpawner, pool::PoolSpawner, pps::PpsSpawner,
+        standard::StandardSpawner, GpsSourceCreateParameters, PpsSourceCreateParameters,
+        SourceCreateParameters, SourceId, SourceRemovalReason, SpawnAction, SpawnEvent, Spawner,
+        SpawnerId, SystemEvent,
     },
     ObservableSourceState, ObservedSourceState,
 };
@@ -17,6 +19,7 @@ use std::{
 };
 
 use super::gps_without_gpsd::Gps;
+use super::pps_polling::Pps;
 use ntp_proto::{
     KeySet, NtpClock, SourceDefaultsConfig, SynchronizationConfig, System, SystemSnapshot,
 };
@@ -497,7 +500,6 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
         let gps: Gps = Gps::new(port_name, baud_rate, timeout).unwrap();
 
         info!("creating gps source task:");
-
         GpsSourceTask::spawn(
             source_id,
             self.clock.clone(),
@@ -524,6 +526,48 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
         Ok(source_id)
     }
 
+    async fn create_pps_source(
+        &mut self,
+        spawner_id: SpawnerId,
+        params: PpsSourceCreateParameters,
+    ) -> Result<SourceId, C::Error> {
+        let source_id = params.id;
+        info!(source_id=?source_id, spawner=?spawner_id, "new pps source");
+
+        self.system.handle_source_create(source_id)?;
+
+        info!("creating pps instance:");
+        let port_name = "/dev/pps0";
+        let timeout = Duration::from_secs(10);
+        let pps: Pps = Pps::new(port_name).unwrap();
+
+        info!("creating pps source task:");
+        PpsSourceTask::spawn(
+            source_id,
+            self.clock.clone(),
+            self.timestamp_mode,
+            self.source_channels.clone(),
+            pps,
+        );
+
+        // Don't care if there is no receiver
+        let _ = self
+            .source_snapshots_sender
+            .send(self.observe_sources().collect());
+
+        // Try and find a related spawner and notify that spawner.
+        // This makes sure that the spawner that initially sent the create event
+        // is now aware that the source was added to the system.
+        if let Some(s) = self.spawners.iter().find(|s| s.id == spawner_id) {
+            let _ = s
+                .notify_tx
+                .send(SystemEvent::PpsSourceRegistered(params))
+                .await;
+        }
+
+        Ok(source_id)
+    }
+
     async fn handle_spawn_event(&mut self, event: SpawnEvent) -> Result<(), C::Error> {
         match event.action {
             SpawnAction::Create(params) => {
@@ -531,6 +575,9 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
             }
             SpawnAction::CreateGps(params) => {
                 self.create_gps_source(event.id, params).await?;
+            }
+            SpawnAction::CreatePps(params) => {
+                self.create_pps_source(event.id, params).await?;
             }
         }
         Ok(())
