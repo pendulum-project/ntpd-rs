@@ -41,16 +41,16 @@ rand = "0.8.0"
 arbitrary = { version = "1.0" }
 libc = "0.2.145"
 tokio = "1.32"
-toml = { version = ">=0.5.0,<0.9.0", default-features = false, features = ["parse"] }
+toml = { version = "0.8.14", default-features = false, features = ["parse"] }
 async-trait = "0.1.22"
 timestamped-socket = "0.2.1"
 clock-steering = "0.2.0"
 
 # TLS
-rustls = "0.22.0"
+rustls = "0.23.1"
 rustls-pemfile = "2.0"
 rustls-native-certs = "0.7.0"
-tokio-rustls = "0.25.0" # testing only
+tokio-rustls = "0.26.0" # testing only
 
 # crypto
 aead = "0.5.0"
