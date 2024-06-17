@@ -7,11 +7,14 @@ stages:
   - build
   - deploy
 
+variables:
+  PKG_CONFIG_PATH: "/usr/lib/x86_64-linux-gnu/pkgconfig"
+
 setup-job:
   stage: setup
   script:
     - apt-get update
-    - apt-get install -y libudev-dev
+    - apt-get install -y libudev-dev pkg-config
   only:
     - branches
     - merge_requests
