@@ -115,6 +115,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 .iter()
                 .filter_map(|(index, (state, usable))| {
                     if *usable {
+                        println!("state {:?}", state);
                         state.snapshot(*index)
                     } else {
                         None
