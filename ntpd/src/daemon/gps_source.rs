@@ -1,13 +1,16 @@
-use gpsd_client::*;
+use std::io;
 use std::{future::Future, marker::PhantomData, pin::Pin};
 use tokio::time::{Instant, Sleep};
 
-use ntp_proto::{GpsSource, GpsSourceActionIterator, NtpClock, NtpInstant, NtpTimestamp};
+use ntp_proto::{
+    GpsSource, GpsSourceActionIterator, NtpClock, NtpDuration, NtpInstant, NtpTimestamp,
+};
 
-use chrono::DateTime;
-use tracing::{debug, error, instrument, warn, Instrument, Span};
+use tracing::{error, instrument, warn, Instrument, Span};
 
 use crate::daemon::ntp_source::MsgForSystem;
+
+use super::gps_without_gpsd::Gps;
 
 use super::{config::TimestampMode, exitcode, ntp_source::SourceChannels, spawn::SourceId};
 
@@ -36,7 +39,7 @@ pub(crate) struct GpsSourceTask<C: 'static + NtpClock + Send, T: Wait> {
     // actual origin timestamp ourselves.
     /// Timestamp of the last packet that we sent
     last_send_timestamp: Option<NtpTimestamp>,
-    gps: GPS,
+    gps: Gps,
 }
 
 impl<C, T> GpsSourceTask<C, T>
@@ -48,39 +51,86 @@ where
         loop {
             enum SelectResult {
                 Timer,
-                Recv(Result<GPSData, GPSError>),
+                Recv(io::Result<Option<f64>>),
             }
             let selected = tokio::select! {
                 () = &mut poll_wait => {
                     SelectResult::Timer
                 },
-                result = async{self.gps.current_data()} => SelectResult::Recv(result)
+                // result = self.gps.current_data() => SelectResult::Recv(result)
+                result = self.gps.current_data() => {
+                    if result.is_err() {
+                        SelectResult::Recv(Err(result.unwrap_err()))
+                    } else {
+                        SelectResult::Recv(result)
+                    }
+                }
+                // result = match gps.current_data() {
+                //     Ok(Some(offset)) => SelectResult::Recv(result),
+                //     // Ok(None) => continue,
+                //     Err(e) => {
+                //         eprintln!("Error processing GPS data: {}", e);
+                //     }
+                // }
+
             };
 
             let actions = match selected {
                 SelectResult::Recv(result) => {
                     //tracing::debug!("accept gps time stamp");
+                    // match result {
+                    //     Ok(None) => continue,
+                    //     Err(e) => info!("there was an error"),
+                    //     Some(result) => {
+                    //     //    match accept_gps_time::<>(result) {
+                    //     //         AcceptResult::Accept(offset) => {
+                    //     //             //info!("gps time has result");
+                    //     //             // let send_timestamp = match self.last_send_timestamp {
+                    //     //             //     Some(ts) => ts,
+                    //     //             //     None => {
+                    //     //             //         debug!(
+                    //     //             //             "we received a message without having sent one; discarding"
+                    //     //             //         );
+                    //     //             //         continue;
+                    //     //             //     }
+                    //     //             // };
+                    //     //             println!("offset: {:?}", offset);
+                    //     //             self.source.handle_incoming(
+                    //     //                 NtpInstant::now(),
+                    //     //                 offset,
+                    //     //             )
+                    //     //         }
 
-                    match accept_gps_time(result) {
-                        AcceptResult::Accept(recv_timestamp) => {
-                            let send_timestamp = match self.last_send_timestamp {
-                                Some(ts) => ts,
-                                None => {
-                                    debug!(
-                                        "we received a message without having sent one; discarding"
-                                    );
-                                    continue;
+                    //     //         AcceptResult::Ignore => GpsSourceActionIterator::default(),
+                    //     //     }
+                    //     GpsSourceActionIterator::default()
+                    //     }
+                    // }
+                    match result {
+                        Ok(Some(data)) => {
+                            // Process GPS data
+                            println!(
+                                "Offset between GPS time and system time: {:.6} seconds",
+                                data
+                            );
+                            match accept_gps_time(result) {
+                                AcceptResult::Accept(offset) => {
+                                    println!("offset: {:?}", offset);
+                                    self.source.handle_incoming(NtpInstant::now(), offset)
                                 }
-                            };
-
-                            self.source.handle_incoming(
-                                NtpInstant::now(),
-                                send_timestamp,
-                                recv_timestamp,
-                            )
+                                AcceptResult::Ignore => GpsSourceActionIterator::default(),
+                            }
                         }
-
-                        AcceptResult::Ignore => GpsSourceActionIterator::default(),
+                        Ok(None) => {
+                            // Handle the case where no data is available
+                            println!("No GPS data available");
+                            GpsSourceActionIterator::default()
+                        }
+                        Err(e) => {
+                            // Handle the error
+                            eprintln!("Error processing GPS data: {}", e);
+                            GpsSourceActionIterator::default()
+                        }
                     }
                 }
                 SelectResult::Timer => {
@@ -150,7 +200,7 @@ where
         clock: C,
         timestamp_mode: TimestampMode,
         channels: SourceChannels,
-        gps: GPS,
+        gps: Gps,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(
             (async move {
@@ -197,59 +247,74 @@ where
 
 #[derive(Debug)]
 enum AcceptResult {
-    Accept(NtpTimestamp),
+    Accept(NtpDuration),
     Ignore,
 }
 
-fn accept_gps_time(result: Result<GPSData, GPSError>) -> AcceptResult {
+pub fn from_seconds(seconds: f64) -> NtpDuration {
+    let whole_seconds = seconds as i64;
+    let fraction = seconds.fract();
+    let ntp_fraction = (fraction * (1u64 << 32) as f64) as u32;
+
+    println!(
+        "Seconds: {}, Whole seconds: {}, Fraction: {}",
+        seconds, whole_seconds, ntp_fraction
+    );
+
+    NtpDuration::from_seconds(seconds)
+}
+
+fn parse_gps_time(data: &Option<f64>) -> Result<NtpDuration, Box<dyn std::error::Error>> {
+    if let Some(offset) = data {
+        let ntp_duration = from_seconds(*offset);
+        Ok(ntp_duration)
+    } else {
+        Err("Failed to parse GPS time".into())
+    }
+}
+
+fn accept_gps_time(result: io::Result<Option<f64>>) -> AcceptResult {
     match result {
-        Ok(data) => match parse_gps_time(&data) {
-            Ok(gps_time) => AcceptResult::Accept(gps_time),
-            Err(_) => AcceptResult::Ignore,
-        },
+        Ok(data) => {
+            println!("data: {:?}", data);
+            match parse_gps_time(&data) {
+                Ok(gps_duration) => AcceptResult::Accept(gps_duration),
+                Err(_) => AcceptResult::Ignore,
+            }
+        }
         Err(receive_error) => {
             warn!(?receive_error, "could not receive GPS data");
 
-            // Here you might want to handle specific errors from the GPS library,
-            // for now we'll just log and ignore them
             AcceptResult::Ignore
         }
     }
 }
 
-fn parse_gps_time(data: &GPSData) -> Result<NtpTimestamp, Box<dyn std::error::Error>> {
-    // Implement the logic to parse GPS time from the GPSData struct.
-    // This is a placeholder implementation.
-    let unix_timestamp = match DateTime::parse_from_rfc3339(&data.time) {
-        Ok(dt) => Some(dt.timestamp() as u64),
-        Err(_) => None,
-    };
+// fn parse_gps_time(data: &std::option::Option<f64>) -> Result<NtpDuration, Box<dyn std::error::Error>> {
+//     // Implement the logic to parse GPS time from the GPSData struct.
+//     // This is a placeholder implementation.
+//     info!(data);
+//     println!("in parse_gps_time: data = {:?}", data);
+//     let unix_timestamp =  Some(data.unwrap() as i64);
+//     // Handle the Option<u64>
+//     let ntp_timestamp = match unix_timestamp {
+//         Some(ts) => from_unix_timestamp(ts),
+//         None => return Err("Failed to parse GPS time".into()),
+//     };
 
-    // Handle the Option<u64>
-    let ntp_timestamp = match unix_timestamp {
-        Some(ts) => from_unix_timestamp(ts),
-        None => return Err("Failed to parse GPS time".into()),
-    };
+//     //let ntpTimestamp = from_unix_timestamp(unix_timestamp);
 
-    //let ntpTimestamp = from_unix_timestamp(unix_timestamp);
+//  // Replace this with actual parsing logic
+//     Ok(ntp_timestamp)
+// }
 
-    // Replace this with actual parsing logic
-    Ok(ntp_timestamp)
-}
+// pub fn from_unix_timestamp(unix_timestamp: i64) -> NtpDuration {
+//     const UNIX_TO_NTP_OFFSET: i64 = 2_208_988_800;
+//     let ntp_seconds = unix_timestamp + UNIX_TO_NTP_OFFSET;
 
-pub fn from_unix_timestamp(unix_timestamp: u64) -> NtpTimestamp {
-    const UNIX_TO_NTP_OFFSET: u64 = 2_208_988_800; // Offset in seconds between Unix epoch and NTP epoch
-                                                   // Calculate NTP seconds
-    let ntp_seconds = unix_timestamp + UNIX_TO_NTP_OFFSET;
+//     let fraction = 0u32;
 
-    // Calculate the fractional part of the NTP timestamp
-    let fraction = 0u32;
+//     let timestamp = (ntp_seconds << 32) | (fraction as i64);
 
-    // Combine NTP seconds and fraction to form the complete NTP timestamp
-    let timestamp = (ntp_seconds << 32) | (fraction as u64);
-
-    // println!("Unix Timestamp: {}, NTP Seconds: {}, Fraction: {}", unix_timestamp, ntp_seconds, fraction);
-    // println!("Combined NTP Timestamp: {:#018X}", timestamp);
-
-    NtpTimestamp::from_fixed_int(timestamp)
-}
+//     NtpDuration::from_fixed_int(timestamp)
+// }
