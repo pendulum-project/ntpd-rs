@@ -183,21 +183,23 @@ where
     }
 }
 
-pub fn from_unix_timestamp(unix_timestamp: u64, nanos: u32) -> NtpTimestamp {
-    const UNIX_TO_NTP_OFFSET: u64 = 2_208_988_800; // Offset in seconds between Unix epoch and NTP epoch
-    const NTP_SCALE_FRAC: u64 = 4_294_967_296; // 2^32 for scaling nanoseconds to fraction
 
-    // Calculate NTP seconds
-    let ntp_seconds = unix_timestamp + UNIX_TO_NTP_OFFSET;
+// pub fn from_unix_timestamp(unix_timestamp: u64, nanos: u32) -> NtpTimestamp {
+//     const UNIX_TO_NTP_OFFSET: u64 = 2_208_988_800; // Offset in seconds between Unix epoch and NTP epoch
+//     const NTP_SCALE_FRAC: u64 = 4_294_967_296; // 2^32 for scaling nanoseconds to fraction
 
-    // Calculate the fractional part of the NTP timestamp
-    let fraction = ((nanos as u64 * NTP_SCALE_FRAC) / 1_000_000_000) as u64;
+//     // Calculate NTP seconds
+//     let ntp_seconds = unix_timestamp + UNIX_TO_NTP_OFFSET;
 
-    // Combine NTP seconds and fraction to form the complete NTP timestamp
-    let timestamp = (ntp_seconds << 32) | fraction;
+//     // Calculate the fractional part of the NTP timestamp
+//     let fraction = ((nanos as u64 * NTP_SCALE_FRAC) / 1_000_000_000) as u64;
 
-    println!("Unix Timestamp: {}, Nanos: {}, NTP Seconds: {}, Fraction: {}", unix_timestamp, nanos, ntp_seconds, fraction);
-    println!("Combined NTP Timestamp: {:#018X}", timestamp);
+//     // Combine NTP seconds and fraction to form the complete NTP timestamp
+//     let timestamp = (ntp_seconds << 32) | fraction;
 
-    NtpTimestamp::from_fixed_int(timestamp)
-}
+//     println!("Unix Timestamp: {}, Nanos: {}, NTP Seconds: {}, Fraction: {}", unix_timestamp, nanos, ntp_seconds, fraction);
+//     println!("Combined NTP Timestamp: {:#018X}", timestamp);
+
+//     NtpTimestamp::from_fixed_int(timestamp)
+// }
+
