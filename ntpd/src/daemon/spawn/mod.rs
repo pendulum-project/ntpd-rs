@@ -17,6 +17,7 @@ pub mod nts_pool;
 pub mod pool;
 pub mod standard;
 pub mod gps;
+pub mod pps;
 
 /// Unique identifier for a spawner.
 /// This is used to identify which spawner was used to create a source
@@ -84,6 +85,7 @@ pub enum SystemEvent {
     SourceRemoved(SourceRemovedEvent),
     SourceRegistered(SourceCreateParameters),
     GpsSourceRegistered(GpsSourceCreateParameters),
+    PpsSourceRegistered(PpsSourceCreateParameters),
     Idle,
 }
 
@@ -113,6 +115,8 @@ pub enum SourceRemovalReason {
 pub enum SpawnAction {
     Create(SourceCreateParameters),
     CreateGps(GpsSourceCreateParameters),
+    CreatePps(PpsSourceCreateParameters),
+
     // Remove(()),
 }
 
@@ -140,6 +144,15 @@ impl SpawnAction {
             id,
         })
     }
+
+    pub fn create_pps(
+        id: SourceId,
+    ) -> SpawnAction {
+        SpawnAction::CreatePps(PpsSourceCreateParameters {
+            id,
+        })
+    }
+
 }
 
 #[derive(Debug)]
@@ -153,6 +166,11 @@ pub struct SourceCreateParameters {
 
 #[derive(Debug)]
 pub struct GpsSourceCreateParameters {
+    pub id: SourceId,
+}
+
+#[derive(Debug)]
+pub struct PpsSourceCreateParameters {
     pub id: SourceId,
 }
 
@@ -269,6 +287,13 @@ pub trait BasicSpawner {
         Ok(())
     }
 
+    async fn handle_pps_registered(
+        &mut self,
+        _event: PpsSourceCreateParameters,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
     /// Get the id of the spawner
     fn get_id(&self) -> SpawnerId;
 
@@ -330,6 +355,9 @@ where
                 }
                 SystemEvent::GpsSourceRegistered(source_params) => {
                     self.handle_gps_registered(source_params).await?;
+                }
+                SystemEvent::PpsSourceRegistered(source_params) => {
+                    self.handle_pps_registered(source_params).await?;
                 }
                 SystemEvent::Idle => {}
             }
