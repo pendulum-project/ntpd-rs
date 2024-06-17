@@ -1,18 +1,28 @@
-# Official language image. Look for the different tagged releases at:
-# https://hub.docker.com/r/library/rust/tags/
 image: "rust:1.78.0"
 
 stages:
+  - setup
   - lint
   - test
   - build
   - deploy
+
+setup-job:
+  stage: setup
+  script:
+    - apt-get update
+    - apt-get install -y libudev-dev
+  only:
+    - branches
+    - merge_requests
 
 lint-clippy:
   stage: lint
   script:
     - rustup component add clippy
     - cargo clippy -- -D warnings
+  needs:
+    - setup-job
   only:
     - branches
     - merge_requests
@@ -23,6 +33,8 @@ test:cargo:
   script:
     - rustc --version && cargo --version  # Print version info for debugging
     - cargo test --workspace --verbose
+  needs:
+    - setup-job
 
 # Optional: Use a third party library to generate GitLab JUnit reports
 # test:junit-report:
@@ -41,8 +53,12 @@ build-job:
   script:
     - echo "Compiling the code..."
     - cargo build --workspace --verbose
+  needs:
+    - setup-job
 
 deploy:
   stage: deploy
   script: echo "Define your deployment script!"
   environment: production
+  needs:
+    - setup-job
