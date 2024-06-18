@@ -85,21 +85,20 @@ impl PpsSource {
         )
     }
 
+
+
     #[instrument(skip(self))]
-    pub fn handle_incoming(
-        &mut self,
-        local_clock_time: NtpInstant,
-        offset: NtpDuration,
-    ) -> PpsSourceActionIterator {
-        
-        // generate a measurement
-        let measurement = Measurement::from_pps(
-            offset,
-            local_clock_time,
-        );
-       
-        actions!(PpsSourceAction::UpdateSystem(PpsSourceUpdate {
-            measurement: Some(measurement),
-        }))
+        pub fn handle_incoming(
+            &mut self,
+            local_clock_time: NtpInstant,
+            offset: NtpDuration,
+        ) -> PpsSourceActionIterator {
+            // generate a measurement
+            let measurement = Measurement::from_pps(offset, local_clock_time);
+           
+            actions!(PpsSourceAction::UpdateSystem(PpsSourceUpdate {
+                measurement: Some(measurement),
+            }))
     }
 }
+    

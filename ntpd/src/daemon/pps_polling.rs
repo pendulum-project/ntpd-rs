@@ -33,7 +33,7 @@ impl Pps {
     /// # Returns
     ///
     /// * `Result<(NtpTimestamp, f64, f64), String>` - The result of getting the PPS time, the system time, and the offset.
-    pub async fn poll_pps_signal(&mut self) -> Result<(NtpTimestamp, f64, f64), String> {
+    pub async fn poll_pps_signal(&mut self) -> io::Result<Option<f64>> {
         let mut ts = MaybeUninit::<timespec>::uninit();
         unsafe {
             // Safety: clock_gettime is inherently unsafe and requires an initialized timespec struct.
@@ -43,7 +43,7 @@ impl Pps {
             }
         }
 
-        let ts = unsafe { ts.assume_init() };
+        let ts = unsafe { ts.assume_init()};
         let pps_timestamp_secs = ts.tv_sec as u64;
         let pps_timestamp_nanos = ts.tv_nsec as u32;
 
@@ -67,7 +67,7 @@ impl Pps {
         // Update the struct fields with the latest values
         self.latest_offset = Some(offset);
 
-        Ok((ntp_timestamp, system_time_secs, offset))
+        Ok((offset))
     }
 
     /// Converts Unix timestamp to NtpTimestamp.
@@ -90,20 +90,12 @@ impl Pps {
         NtpTimestamp::from_fixed_int(timestamp)
     }
 
-    /// Result handling for PPS polling.
-    pub fn accept_pps_time(result: Result<(NtpTimestamp, f64, f64), String>) -> AcceptResult {
-        match result {
-            Ok((timestamp, system_time, offset)) => {
-                println!("Accepted PPS Time - NTP Timestamp: {:?}, System Time: {}, Offset: {}", timestamp, system_time, offset);
-                AcceptResult::Accept(timestamp, system_time, offset)
-            },
-            Err(receive_error) => {
-                println!("Could not receive PPS signal: {:?}", receive_error);
-                AcceptResult::Ignore
-            }
-        }
-    }
+
 }
+
+
+
+
 
 /// Enum to represent the result of PPS polling.
 #[derive(Debug)]

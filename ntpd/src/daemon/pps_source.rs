@@ -1,6 +1,6 @@
 use std::{future::Future, marker::PhantomData, pin::Pin};
 use tokio::time::{Instant, Sleep};
-use ntp_proto::{NtpClock, NtpInstant, NtpTimestamp, PpsSource, PpsSourceActionIterator, PpsSourceAction};
+use ntp_proto::{NtpClock, NtpInstant, NtpTimestamp, NtpDuration, PpsSource, PpsSourceActionIterator, PpsSourceAction};
 use tracing::{debug, error, info, instrument, warn, Instrument, Span};
 use super::pps_polling::Pps;
 use super::pps_polling::AcceptResult;
@@ -61,8 +61,8 @@ where
 
             let actions = match selected {
                 SelectResult::PpsSignal(result) => {
-                    match Pps::accept_pps_time(result) {
-                        AcceptResult::Accept(recv_timestamp, system_time, offset) => {
+                    match accept_pps_time(result) {
+                        AcceptResult::Accept(offset) => {
                             let send_timestamp = match self.last_send_timestamp {
                                 Some(ts) => ts,
                                 None => {
@@ -73,11 +73,7 @@ where
                                 }
                             };
 
-                            self.source.handle_incoming(
-                                NtpInstant::now(),
-                                send_timestamp,
-                                recv_timestamp,
-                            )
+                            self.source.handle_incoming(NtpInstant::now(),offset,)
                         }
                         AcceptResult::Ignore => PpsSourceActionIterator::default(),
 
@@ -132,6 +128,7 @@ where
         }
     }
 }
+
 
 impl<C> PpsSourceTask<C, Sleep>
 where
@@ -192,12 +189,35 @@ where
 }
 
 
-// pub fn from_unix_timestamp(unix_timestamp: u64, nanos: u32) -> NtpTimestamp {
-//     const UNIX_TO_NTP_OFFSET: u64 = 2_208_988_800; // Offset in seconds between Unix epoch and NTP epoch
-//     const NTP_SCALE_FRAC: u64 = 4_294_967_296; // 2^32 for scaling nanoseconds to fraction
+    /// Result handling for PPS polling.
+    pub fn accept_pps_time(result: io::Result<Option<f64>>) -> AcceptResult {
+        match result {
+            Ok(Some(data)) => {
+                println!("data: {:?}", data);
+                match parse_pps_time(data) {
+                    Ok(pps_duration) => AcceptResult::Accept(pps_duration),
+                    Err(_) => AcceptResult::Ignore,
+                }
+            }
+            Ok(None) => {
+                println!("No PPS data received");
+                AcceptResult::Ignore
+            }
+            Err(receive_error) => {
+                println!("Could not receive PPS signal: {:?}", receive_error);
+                AcceptResult::Ignore
+            }
+        }
+    }
 
-//     // Calculate NTP seconds
-//     let ntp_seconds = unix_timestamp + UNIX_TO_NTP_OFFSET;
+    fn parse_pps_time(data: &Option<f64>) -> Result<NtpDuration, Box<dyn std::error::Error>> {
+        if let Some(offset) = data {
+            let ntp_duration = from_seconds(*offset);
+            Ok(ntp_duration)
+        } else {
+            Err("Failed to parse GPS time".into())
+        }
+    }
 
 //     // Calculate the fractional part of the NTP timestamp
 //     let fraction = ((nanos as u64 * NTP_SCALE_FRAC) / 1_000_000_000) as u64;
@@ -211,3 +231,12 @@ where
 //     NtpTimestamp::from_fixed_int(timestamp)
 // }
 
+    pub fn from_seconds(seconds: f64) -> NtpDuration {
+        let whole_seconds = seconds as i64;
+        let fraction = seconds.fract();
+        let ntp_fraction = (fraction * (1u64 << 32) as f64) as u32;
+    
+        println!("Seconds: {}, Whole seconds: {}, Fraction: {}", seconds, whole_seconds, ntp_fraction);
+    
+        NtpDuration::from_seconds(seconds)
+    }

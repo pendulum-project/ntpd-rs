@@ -1,7 +1,7 @@
 use std::{future::Future, marker::PhantomData, net::SocketAddr, pin::Pin};
 
 use ntp_proto::{
-    GpsSourceUpdate, NtpClock, NtpInstant, NtpSource, NtpSourceActionIterator, NtpSourceUpdate, NtpTimestamp, ProtocolVersion, SourceDefaultsConfig, SourceNtsData, SystemSnapshot
+    PpsSourceUpdate, GpsSourceUpdate, NtpClock, NtpInstant, NtpSource, NtpSourceActionIterator, NtpSourceUpdate, NtpTimestamp, ProtocolVersion, SourceDefaultsConfig, SourceNtsData, SystemSnapshot
 };
 #[cfg(target_os = "linux")]
 use timestamped_socket::socket::open_interface_udp;
@@ -38,6 +38,7 @@ pub enum MsgForSystem {
     /// Update from source
     SourceUpdate(SourceId, NtpSourceUpdate),
     GpsSourceUpdate(SourceId, GpsSourceUpdate),
+    PpsSourceUpdate(SourceId, PpsSourceUpdate)
 }
 
 #[derive(Debug, Clone)]
