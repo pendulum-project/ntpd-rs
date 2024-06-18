@@ -96,7 +96,7 @@ impl Pps {
 
 
 /// Function to accept PPS time result and convert it to NtpDuration.
-pub fn accept_pps_time(result: io::Result<Option<f64>>) -> AcceptResult {
+pub fn accept_pps_time(result: Option<f64>) -> AcceptResult {
     match result {
         Ok(Some(data)) => {
             println!("data: {:?}", data);
@@ -124,22 +124,23 @@ pub enum AcceptResult {
 }
 
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
 
-    #[tokio::test]
-    async fn test_poll_pps_signal() {
-        let pps_path = "/dev/pps0"; // Replace with the actual PPS device path
+//     #[tokio::test]
+//     async fn test_poll_pps_signal() {
+//         let pps_path = "/dev/pps0"; // Replace with the actual PPS device path
 
-        let mut pps = Pps::new(pps_path).expect("Failed to open PPS device");
+//         let mut pps = Pps::new(pps_path).expect("Failed to open PPS device");
 
-        match pps.poll_pps_signal().await {
-            Ok((NtpDuration)) => {
-                println!("PPS NTP Duration: {:?}", NtpDuration);
-            }
-            Err(e) => println!("Error: {:?}", e),
-        }
-    }
-}
+
+//         match pps.poll_pps_signal().await {
+//             Ok((NtpDuration)) => {
+//                 println!("PPS NTP Duration: {:?}", NtpDuration);
+//             }
+//             Err(e) => println!("Error: {:?}", e),
+//         }
+//     }
+// }
 

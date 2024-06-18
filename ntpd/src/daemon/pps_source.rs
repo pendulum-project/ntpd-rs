@@ -4,9 +4,7 @@ use ntp_proto::{NtpClock, NtpInstant, NtpTimestamp, NtpDuration, PpsSource, PpsS
 use tracing::{debug, error, info, instrument, warn, Instrument, Span};
 use super::pps_polling::Pps;
 use super::pps_polling::AcceptResult;
-use tokio::io;
-
-//alex
+use std::io;
 
 
 use crate::daemon::ntp_source::MsgForSystem;
