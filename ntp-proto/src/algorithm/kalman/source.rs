@@ -665,7 +665,7 @@ mod tests {
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
-                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],
                 next_idx: 0,
             },
             precision_score: 0,
@@ -716,7 +716,7 @@ mod tests {
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
-                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],
                 next_idx: 0,
             },
             precision_score: 0,
@@ -768,7 +768,7 @@ mod tests {
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
-                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],
                 next_idx: 0,
             },
             precision_score: 0,
@@ -993,7 +993,7 @@ mod tests {
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
-                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],
                 next_idx: 0,
             },
             precision_score: 0,
@@ -1033,7 +1033,7 @@ mod tests {
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
-                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],
                 next_idx: 0,
             },
             precision_score: 0,
@@ -1421,7 +1421,7 @@ mod tests {
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
-                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],
                 next_idx: 0,
             },
             precision_score: 0,
@@ -1548,7 +1548,7 @@ mod tests {
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
-                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],
                 next_idx: 0,
             },
             precision_score: 0,
@@ -1660,7 +1660,7 @@ mod tests {
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
-                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],
                 next_idx: 0,
             },
             precision_score: 0,
