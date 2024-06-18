@@ -88,7 +88,7 @@ use super::{
 
 #[derive(Debug, Default, Copy, Clone)]
 pub struct AveragingBuffer {
-    data: [f64; 8],
+    data: [f64; 30],
     next_idx: usize,
 }
 
@@ -241,7 +241,7 @@ impl SourceFilter {
         // Kalman filter update for GPS
             let gps_measurement_noise = Matrix::new([[_gps_noise]]);
             println!("gps_measuremtn noise matrix {:?}", gps_measurement_noise);
-            let gps_measurement_vec = Vector::new_vector([gps_offset]);
+            let gps_measurement_vec = Vector::new_vector([_gps_measurement.offset.to_seconds()]);
             println!("gps_measurement vector {:?}", gps_measurement_vec);
             let gps_difference = gps_measurement_vec - measurement_transform * self.state;
             println!("gps_difference {:?}", gps_difference);
@@ -502,7 +502,7 @@ impl SourceState {
             SourceStateInner::Initial(filter) => {
                 filter.update(measurement);
                 println!("filter samples: {}", filter.samples);
-                if filter.samples == 8 {
+                if filter.samples == 30 {
                     println!("state matrix: {:?}", [filter.init_offset.mean(), 0.]);
                     *self = SourceState(SourceStateInner::Stable(SourceFilter {
                         state: Vector::new_vector([filter.init_offset.mean(), 0.]),
