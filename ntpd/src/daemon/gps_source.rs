@@ -33,10 +33,10 @@ pub(crate) struct GpsSourceTask<C: 'static + NtpClock + Send, T: Wait> {
 
     source: GpsSource,
 
-    // we don't store the real origin timestamp in the packet, because that would leak our
-    // system time to the network (and could make attacks easier). So instead there is some
-    // garbage data in the origin_timestamp field, and we need to track and pass along the
-    // actual origin timestamp ourselves.
+    /// we don't store the real origin timestamp in the packet, because that would leak our
+    /// system time to the network (and could make attacks easier). So instead there is some
+    /// garbage data in the origin_timestamp field, and we need to track and pass along the
+    /// actual origin timestamp ourselves.
     /// Timestamp of the last packet that we sent
     last_send_timestamp: Option<NtpTimestamp>,
     gps: Gps,

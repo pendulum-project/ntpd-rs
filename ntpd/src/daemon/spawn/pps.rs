@@ -7,7 +7,7 @@ use tracing::warn;
 
 use super::{BasicSpawner, SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, SpawnerId};
 
-struct PpsSource {
+pub struct PpsSource {
     id: SourceId,
 }
 

@@ -1,4 +1,4 @@
-use crate::time_types::{ NtpInstant};
+use crate::time_types::{NtpInstant};
 use crate::source::Measurement;
 use crate::{NtpDuration, NtpTimestamp};
 use std::time::Duration;

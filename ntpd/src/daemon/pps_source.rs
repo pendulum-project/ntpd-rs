@@ -1,8 +1,10 @@
 use std::{future::Future, marker::PhantomData, pin::Pin};
 use tokio::time::{Instant, Sleep};
-use ntp_proto::{NtpClock, NtpInstant, NtpTimestamp, PpsSourceActionIterator, PpsSource};
+use ntp_proto::{NtpClock, NtpInstant, NtpTimestamp, PpsSource, PpsSourceActionIterator, PpsSourceAction};
 use tracing::{debug, error, info, instrument, warn, Instrument, Span};
 use super::pps_polling::Pps;
+use super::pps_polling::AcceptResult;
+
 
 
 use crate::daemon::ntp_source::MsgForSystem;
@@ -51,15 +53,15 @@ where
                 () = &mut poll_wait => {
                     SelectResult::Timer
                 },
-                result = poll_pps_signal(self.index.as_raw_fd()) => {
+                result = self.pps.poll_pps_signal() => {
                     SelectResult::PpsSignal(result)
                 },
             };
 
             let actions = match selected {
                 SelectResult::PpsSignal(result) => {
-                    match accept_pps_time(result) {
-                        AcceptResult::Accept(recv_timestamp) => {
+                    match Pps::accept_pps_time(result) {
+                        AcceptResult::Accept(recv_timestamp, system_time, offset) => {
                             let send_timestamp = match self.last_send_timestamp {
                                 Some(ts) => ts,
                                 None => {

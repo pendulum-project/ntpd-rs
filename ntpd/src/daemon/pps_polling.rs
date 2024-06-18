@@ -2,10 +2,9 @@ use std::fs::File;
 use std::io;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::mem::MaybeUninit;
-use std::time::Duration;
 use libc::{timespec, clock_gettime, CLOCK_REALTIME};
 use ntp_proto::NtpTimestamp;
-use chrono::{Utc, DateTime};
+use chrono::Utc;
 
 /// Struct to encapsulate the PPS polling information.
 #[derive(Debug)]
@@ -37,6 +36,8 @@ impl Pps {
     pub async fn poll_pps_signal(&mut self) -> Result<(NtpTimestamp, f64, f64), String> {
         let mut ts = MaybeUninit::<timespec>::uninit();
         unsafe {
+            // Safety: clock_gettime is inherently unsafe and requires an initialized timespec struct.
+            // We ensure it's properly initialized here.
             if clock_gettime(CLOCK_REALTIME, ts.as_mut_ptr()) != 0 {
                 return Err(io::Error::last_os_error().to_string());
             }
@@ -111,35 +112,6 @@ pub enum AcceptResult {
     Ignore,
 }
 
-pub fn accept_pps_time(result: Result<(NtpTimestamp, f64, f64), String>) -> AcceptResult {
-    match result {
-        Ok((timestamp, system_time, offset)) => AcceptResult::Accept(timestamp, system_time, offset),
-        Err(receive_error) => {
-            warn!(?receive_error, "could not receive PPS signal");
-            AcceptResult::Ignore
-        }
-    }
-}
-
-
-pub fn from_unix_timestamp(unix_timestamp: u64, nanos: u32) -> NtpTimestamp {
-    const UNIX_TO_NTP_OFFSET: u64 = 2_208_988_800; // Offset in seconds between Unix epoch and NTP epoch
-    const NTP_SCALE_FRAC: u64 = 4_294_967_296; // 2^32 for scaling nanoseconds to fraction
-
-    // Calculate NTP seconds
-    let ntp_seconds = unix_timestamp + UNIX_TO_NTP_OFFSET;
-
-    // Calculate the fractional part of the NTP timestamp
-    let fraction = ((nanos as u64 * NTP_SCALE_FRAC) / 1_000_000_000) as u64;
-
-    // Combine NTP seconds and fraction to form the complete NTP timestamp
-    let timestamp = (ntp_seconds << 32) | fraction;
-
-    println!("Unix Timestamp: {}, Nanos: {}, NTP Seconds: {}, Fraction: {}", unix_timestamp, nanos, ntp_seconds, fraction);
-    println!("Combined NTP Timestamp: {:#018X}", timestamp);
-
-    NtpTimestamp::from_fixed_int(timestamp)
-}
 
 #[cfg(test)]
 mod tests {
