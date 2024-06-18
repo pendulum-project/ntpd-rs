@@ -1,11 +1,10 @@
 use std::fs::File;
-use std::io;
+use std::io::{self, Result};
 use std::os::unix::io::{AsRawFd, RawFd};
-use std::mem::MaybeUninit;
-use libc::{timespec, clock_gettime, CLOCK_REALTIME};
-use ntp_proto::NtpDuration;
-use ntp_proto::NtpTimestamp;
-use chrono::Utc;
+use std::time::{SystemTime, UNIX_EPOCH};
+use nix::time::{clock_gettime, ClockId};
+use ntp_proto::{NtpDuration, NtpTimestamp};
+
 
 /// Struct to encapsulate the PPS polling information.
 #[derive(Debug)]
@@ -16,7 +15,7 @@ pub struct Pps {
 
 impl Pps {
     /// Opens the PPS device and creates a new Pps instance.
-    pub fn new(pps_path: &str) -> Result<Self, io::Error> {
+    pub fn new(pps_path: &str) -> Result<Self,> {
         // Open PPS device
         let file = File::open(pps_path)?;
         let fd = file.as_raw_fd();
@@ -35,18 +34,16 @@ impl Pps {
     ///
     /// * `Result<(NtpTimestamp, f64, f64), String>` - The result of getting the PPS time, the system time, and the offset.
     pub async fn poll_pps_signal(&mut self) -> Option<f64> {
-        let mut ts = MaybeUninit::<timespec>::uninit();
-        unsafe {
-            // Safety: clock_gettime is inherently unsafe and requires an initialized timespec struct.
-            // We ensure it's properly initialized here.
-            if clock_gettime(CLOCK_REALTIME, ts.as_mut_ptr()) != 0 {
-                return Err(io::Error::last_os_error());
+        let ts = match clock_gettime(ClockId::CLOCK_REALTIME) {
+            Ok(ts) => ts,
+            Err(e) => {
+                println!("Error getting time: {:?}", e);
+                return None;
             }
-        }
+        };
 
-        let ts = unsafe { ts.assume_init()};
-        let pps_timestamp_secs = ts.tv_sec as u64;
-        let pps_timestamp_nanos = ts.tv_nsec as u32;
+        let pps_timestamp_secs = ts.tv_sec() as u64;
+        let pps_timestamp_nanos = ts.tv_nsec() as u32;
 
         let ntp_timestamp = Self::from_unix_timestamp(pps_timestamp_secs, pps_timestamp_nanos);
 
@@ -54,8 +51,8 @@ impl Pps {
         println!("NTP Timestamp: {:?}", ntp_timestamp);
 
         // Get the system time in seconds
-        let system_time = Utc::now();
-        let system_time_secs = system_time.timestamp() as f64 + system_time.timestamp_subsec_micros() as f64 * 1e-6;
+        let system_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+        let system_time_secs = system_time.as_secs() as f64 + system_time.subsec_nanos() as f64 * 1e-9;
 
         println!("System Time: {}", system_time_secs);
 
@@ -68,7 +65,7 @@ impl Pps {
         // Update the struct fields with the latest values
         self.latest_offset = Some(offset);
 
-        Ok(offset)
+        Some(offset)
     }
 
     /// Converts Unix timestamp to NtpTimestamp.
@@ -96,7 +93,7 @@ impl Pps {
 
 
 /// Function to accept PPS time result and convert it to NtpDuration.
-pub fn accept_pps_time(result: Option<f64>) -> AcceptResult {
+pub fn accept_pps_time(result: io::Result<Option<f64>>) -> AcceptResult {
     match result {
         Ok(Some(data)) => {
             println!("data: {:?}", data);

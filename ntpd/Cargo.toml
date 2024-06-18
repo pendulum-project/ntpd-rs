@@ -15,14 +15,10 @@ build = "build.rs"
 ntp-proto.workspace = true
 gpsd_client = "0.1.5"
 chrono= "0.4.38"
-<<<<<<< HEAD
-tokio-serial = "4.3"
-tokio = { version = "1.14", features = ["full"] }
-=======
 tokio = { version = "1.14", features = ["full"] }
 serialport = "4.0"
 tokio-serial = "5.4.4"
->>>>>>> b2e59c2 (fixing issues)
+nix = "0.23"
 
 tracing.workspace = true
 tracing-subscriber.workspace = true
