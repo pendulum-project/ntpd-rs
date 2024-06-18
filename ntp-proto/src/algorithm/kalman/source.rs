@@ -685,6 +685,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -707,6 +708,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(matches!(source, SourceState(SourceStateInner::Initial(_))));
@@ -736,6 +738,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -759,6 +762,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(matches!(source, SourceState(SourceStateInner::Stable(_))));
@@ -788,6 +792,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -811,6 +816,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(matches!(source, SourceState(SourceStateInner::Stable(_))));
@@ -1013,6 +1019,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -1053,6 +1060,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -1090,6 +1098,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1110,6 +1119,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1130,6 +1140,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1150,6 +1161,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1170,6 +1182,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1190,6 +1203,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1210,6 +1224,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1230,6 +1245,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!((source.snapshot(0_usize).unwrap().state.ventry(0) - 3.5e-3).abs() < 1e-7);
@@ -1259,6 +1275,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1279,6 +1296,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1299,6 +1317,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1319,6 +1338,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0, 
                 gps: None,
+                pps: None,
             },
         );
         source.process_offset_steering(4e-3);
@@ -1340,6 +1360,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0, 
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1360,6 +1381,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0, 
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1380,6 +1402,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0, 
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1400,6 +1423,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0, 
                 gps: None,
+                pps: None,
             },
         );
         assert!((source.snapshot(0_usize).unwrap().state.ventry(0) - 3.5e-3).abs() < 1e-7);
@@ -1441,6 +1465,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None, 
+                pps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -1568,6 +1593,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -1630,6 +1656,7 @@ mod tests {
             leap: NtpLeapIndicator::NoWarning,
             precision: 0,
             gps: None,
+            pps: None,
         };
     
         for _ in 0..7 {
@@ -1680,6 +1707,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -1700,6 +1728,7 @@ mod tests {
             leap: NtpLeapIndicator::NoWarning,
             precision: 0,
             gps: None,
+            pps: None,
         };
 
         source.update_self_using_measurement(
@@ -1722,6 +1751,7 @@ mod tests {
             leap: NtpLeapIndicator::NoWarning,
             precision: 0,
             gps: None,
+            pps: None,
         };
 
         let result = source.update_self_using_measurement(

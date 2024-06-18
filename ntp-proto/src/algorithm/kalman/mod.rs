@@ -104,7 +104,6 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 next_update: None,
             };
         }
-        
         for (_, (state, _)) in self.sources.iter_mut() {
             state.progress_filtertime(time);
         }
@@ -488,6 +487,7 @@ mod tests {
                     leap: NtpLeapIndicator::NoWarning,
                     precision: 0,
                     gps: None,
+                    pps: None,
                 },
             );
         }
@@ -608,6 +608,7 @@ mod tests {
                     leap: NtpLeapIndicator::NoWarning,
                     precision: 0,
                     gps: None,
+                    pps: None,
                 },
             );
         }
@@ -666,6 +667,7 @@ mod tests {
                     leap: NtpLeapIndicator::NoWarning,
                     precision: 0,
                     gps: None,
+                    pps: None,
                 },
             );
         }

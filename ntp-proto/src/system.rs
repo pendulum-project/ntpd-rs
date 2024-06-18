@@ -11,6 +11,7 @@ use crate::source::NtpSourceUpdate;
 #[cfg(feature = "ntpv5")]
 use crate::source::ProtocolVersion;
 use crate::gps_source::GpsSourceUpdate;
+use crate::PpsSourceUpdate;
 use crate::{
     algorithm::{KalmanClockController, ObservableSourceTimedata, StateUpdate, TimeSyncController},
     clock::NtpClock,
@@ -212,6 +213,20 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
         &mut self,
         id: SourceId,
         update: GpsSourceUpdate,
+    ) -> Result<Option<Duration>, C::Error> {
+        self.clock_controller()?.source_update(id, true);
+        if let Some(measurement) = update.measurement {
+            let update = self.clock_controller()?.source_measurement(id, measurement);
+            Ok(self.handle_algorithm_state_update(update, true))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn handle_pps_source_update(
+        &mut self,
+        id: SourceId,
+        update: PpsSourceUpdate,
     ) -> Result<Option<Duration>, C::Error> {
         self.clock_controller()?.source_update(id, true);
         if let Some(measurement) = update.measurement {

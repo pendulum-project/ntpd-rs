@@ -33,12 +33,12 @@ impl Pps {
     /// # Returns
     ///
     /// * `Result<(NtpTimestamp, f64, f64), String>` - The result of getting the PPS time, the system time, and the offset.
-    pub async fn poll_pps_signal(&mut self) -> Option<f64> {
+    pub async fn poll_pps_signal(&mut self) -> io::Result<Option<f64>> {
         let ts = match clock_gettime(ClockId::CLOCK_REALTIME) {
             Ok(ts) => ts,
             Err(e) => {
                 println!("Error getting time: {:?}", e);
-                return None;
+                return Ok(None);
             }
         };
 
@@ -48,7 +48,7 @@ impl Pps {
         let ntp_timestamp = Self::from_unix_timestamp(pps_timestamp_secs, pps_timestamp_nanos);
 
         println!("PPS Timestamp - Seconds: {}, Nanoseconds: {}", pps_timestamp_secs, pps_timestamp_nanos);
-        println!("NTP Timestamp: {:?}", ntp_timestamp);
+        println!("PPS NTP Timestamp: {:?}", ntp_timestamp);
 
         // Get the system time in seconds
         let system_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
@@ -60,12 +60,12 @@ impl Pps {
         let pps_time = pps_timestamp_secs as f64 + pps_timestamp_nanos as f64 * 1e-9;
         let offset = (system_time_secs - pps_time).abs();
 
-        println!("Offset: {}", offset);
+        println!("PPS Offset: {}", offset);
 
         // Update the struct fields with the latest values
         self.latest_offset = Some(offset);
 
-        Some(offset)
+        Ok(Some(offset))
     }
 
     /// Converts Unix timestamp to NtpTimestamp.
@@ -91,26 +91,6 @@ impl Pps {
 
 }
 
-
-/// Function to accept PPS time result and convert it to NtpDuration.
-pub fn accept_pps_time(result: io::Result<Option<f64>>) -> AcceptResult {
-    match result {
-        Ok(Some(data)) => {
-            println!("data: {:?}", data);
-            // Convert the offset data to NtpDuration
-            let pps_duration = NtpDuration::from_seconds(data);
-            AcceptResult::Accept(pps_duration)
-        }
-        Ok(None) => {
-            println!("No PPS data received");
-            AcceptResult::Ignore
-        }
-        Err(receive_error) => {
-            println!("Could not receive PPS signal: {:?}", receive_error);
-            AcceptResult::Ignore
-        }
-    }
-}
 
 
 /// Enum to represent the result of PPS polling.
