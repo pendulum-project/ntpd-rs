@@ -221,13 +221,9 @@ where
         }
     }
 
-    fn parse_pps_time(data: &Option<f64>) -> Result<NtpDuration, Box<dyn std::error::Error>> {
-        if let Some(offset) = data {
-            let ntp_duration = from_seconds(*offset);
-            Ok(ntp_duration)
-        } else {
-            Err("Failed to parse GPS time".into())
-        }
+    fn parse_pps_time(data: f64) -> Result<NtpDuration, Box<dyn std::error::Error>> {
+        let ntp_duration = from_seconds(data);
+        Ok(ntp_duration)
     }
 
 //     // Calculate the fractional part of the NTP timestamp
