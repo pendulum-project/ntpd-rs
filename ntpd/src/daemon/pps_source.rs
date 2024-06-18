@@ -4,6 +4,7 @@ use ntp_proto::{NtpClock, NtpInstant, NtpTimestamp, NtpDuration, PpsSource, PpsS
 use tracing::{debug, error, info, instrument, warn, Instrument, Span};
 use super::pps_polling::Pps;
 use super::pps_polling::AcceptResult;
+use tokio::io;
 
 //alex
 
@@ -29,11 +30,7 @@ pub(crate) struct PpsSourceTask<C: 'static + NtpClock + Send, T: Wait> {
     channels: SourceChannels,
     source: PpsSource,
     last_send_timestamp: Option<NtpTimestamp>,
-<<<<<<< HEAD
-    pps: Pps,
-=======
     pps:Pps,
->>>>>>> b2e59c2 (fixing issues)
 }
 
 impl<C, T> PpsSourceTask<C, T>
@@ -47,7 +44,7 @@ where
             // Enum to handle the selection of either a Timer or PPS Signal event
             enum SelectResult {
                 Timer,
-                PpsSignal(Result<NtpTimestamp, String>),
+                Recv(io::Result<Option<f64>>),
             }
             
             let selected = tokio::select! {
@@ -55,31 +52,45 @@ where
                     SelectResult::Timer
                 },
                 result = self.pps.poll_pps_signal() => {
-                    SelectResult::PpsSignal(result)
-                },
+                    if result.is_err() {
+                        SelectResult::Recv(Err(result.unwrap_err()))
+                    } else {
+                        SelectResult::Recv(result)
+                    }
+                }
             };
 
             let actions = match selected {
-                SelectResult::PpsSignal(result) => {
-                    match accept_pps_time(result) {
-                        AcceptResult::Accept(offset) => {
-                            let send_timestamp = match self.last_send_timestamp {
-                                Some(ts) => ts,
-                                None => {
-                                    debug!(
-                                        "we received a PPS signal without having sent one; discarding"
-                                    );
-                                    continue;
+                SelectResult::Recv(result) => {
+                    match result {
+                        Ok(Some(data)) => {
+                            println!("Offset between PPS time and system time: {:.6} seconds", data);
+                            match accept_pps_time(result) {
+                                AcceptResult::Accept(offset) => {
+                                    println!("offset: {:?}", offset);
+                                    self.source.handle_incoming(NtpInstant::now(), offset)
                                 }
-                            };
-
-                            self.source.handle_incoming(NtpInstant::now(),offset,)
+                                AcceptResult::Ignore => PpsSourceActionIterator::default(),
+                            }
+                        }
+                        Ok(None) => {
+                            // Handle the case where no data is available
+                            println!("No PPS data available");
+                            PpsSourceActionIterator::default()
+                        }
+                        Err(e) => {
+                            // Handle the error
+                            eprintln!("Error processing PPS data: {}", e);
+                            PpsSourceActionIterator::default()
                         }
                         AcceptResult::Ignore => PpsSourceActionIterator::default(),
 
                     }
                 }
                 SelectResult::Timer => {
+                    // tracing::debug!("wait completed");
+                    // let system_snapshot = *self.channels.system_snapshot_receiver.borrow();
+                    // self.source.handle_timer(system_snapshot);
                     PpsSourceActionIterator::default()
                 }
             };

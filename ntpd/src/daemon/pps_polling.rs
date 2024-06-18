@@ -3,6 +3,7 @@ use std::io;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::mem::MaybeUninit;
 use libc::{timespec, clock_gettime, CLOCK_REALTIME};
+use ntp_proto::NtpDuration;
 use ntp_proto::NtpTimestamp;
 use chrono::Utc;
 
@@ -33,13 +34,13 @@ impl Pps {
     /// # Returns
     ///
     /// * `Result<(NtpTimestamp, f64, f64), String>` - The result of getting the PPS time, the system time, and the offset.
-    pub async fn poll_pps_signal(&mut self) -> io::Result<Option<f64>> {
+    pub async fn poll_pps_signal(&mut self) -> Option<f64> {
         let mut ts = MaybeUninit::<timespec>::uninit();
         unsafe {
             // Safety: clock_gettime is inherently unsafe and requires an initialized timespec struct.
             // We ensure it's properly initialized here.
             if clock_gettime(CLOCK_REALTIME, ts.as_mut_ptr()) != 0 {
-                return Err(io::Error::last_os_error().to_string());
+                return Err(io::Error::last_os_error());
             }
         }
 
@@ -67,7 +68,7 @@ impl Pps {
         // Update the struct fields with the latest values
         self.latest_offset = Some(offset);
 
-        Ok((offset))
+        Ok(offset)
     }
 
     /// Converts Unix timestamp to NtpTimestamp.
@@ -94,13 +95,31 @@ impl Pps {
 }
 
 
-
+/// Function to accept PPS time result and convert it to NtpDuration.
+pub fn accept_pps_time(result: io::Result<Option<f64>>) -> AcceptResult {
+    match result {
+        Ok(Some(data)) => {
+            println!("data: {:?}", data);
+            // Convert the offset data to NtpDuration
+            let pps_duration = NtpDuration::from_seconds(data);
+            AcceptResult::Accept(pps_duration)
+        }
+        Ok(None) => {
+            println!("No PPS data received");
+            AcceptResult::Ignore
+        }
+        Err(receive_error) => {
+            println!("Could not receive PPS signal: {:?}", receive_error);
+            AcceptResult::Ignore
+        }
+    }
+}
 
 
 /// Enum to represent the result of PPS polling.
 #[derive(Debug)]
 pub enum AcceptResult {
-    Accept(NtpTimestamp, f64, f64),
+    Accept(NtpDuration),
     Ignore,
 }
 
@@ -116,10 +135,8 @@ mod tests {
         let mut pps = Pps::new(pps_path).expect("Failed to open PPS device");
 
         match pps.poll_pps_signal().await {
-            Ok((ntp_timestamp, system_time, offset)) => {
-                println!("PPS NTP Timestamp: {:?}", ntp_timestamp);
-                println!("System Time: {:?}", system_time);
-                println!("Offset: {:?}", offset);
+            Ok((NtpDuration)) => {
+                println!("PPS NTP Duration: {:?}", NtpDuration);
             }
             Err(e) => println!("Error: {:?}", e),
         }
