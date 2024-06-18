@@ -91,6 +91,11 @@ pub struct GpsMeasurement {
     pub measurementnoise: NtpDuration,
     pub offset: NtpDuration,
 }
+#[derive(Debug, Copy, Clone)]
+pub struct PpsMeasurement {
+    pub measurementnoise: NtpDuration,
+    pub offset: NtpDuration,
+}
 
 #[derive(Debug, Copy, Clone)]
 pub struct Measurement {
@@ -109,6 +114,8 @@ pub struct Measurement {
 
     // New fields from GpsMeasurement
     pub gps: Option<GpsMeasurement>,
+    // New fields from PpsMeasurement
+    pub pps: Option<PpsMeasurement>,
 }
 
 impl Measurement {
@@ -136,6 +143,7 @@ impl Measurement {
             leap: packet.leap(),
             precision: packet.precision(),
             gps: None, 
+            pps:None,
         }
     }
 
@@ -161,11 +169,35 @@ impl Measurement {
                 measurementnoise: NtpDuration::from_seconds(0.2),
                 offset,
             }),
+            pps:None,
         }
     }
+    pub fn from_pps(
+        offset: NtpDuration, 
+        local_clock_time: NtpInstant,
+    ) -> Self {
+        Self {
+            delay: NtpDuration::default(),
+            offset: NtpDuration::default(),
+            transmit_timestamp: NtpTimestamp::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            localtime: NtpTimestamp::default(),
+            monotime: local_clock_time,
 
-
+            stratum: 16,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+            gps: None,
+            pps: Some(PpsMeasurement {
+                measurementnoise: NtpDuration::ZERO,
+                offset,
+            }),
+        }
+    }
 }
+
 
 /// Used to determine whether the server is reachable and the data are fresh
 ///
