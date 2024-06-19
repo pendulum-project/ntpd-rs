@@ -88,7 +88,7 @@ use super::{
 
 #[derive(Debug, Default, Copy, Clone)]
 pub struct AveragingBuffer {
-    data: [f64; 8],
+    data: [f64; 30],
     next_idx: usize,
 }
 
@@ -503,6 +503,7 @@ impl SourceState {
                 filter.update(measurement);
                 println!("filter samples: {}", filter.samples);
                 if filter.samples == 8 {
+
                     println!("state matrix: {:?}", [filter.init_offset.mean(), 0.]);
                     *self = SourceState(SourceStateInner::Stable(SourceFilter {
                         state: Vector::new_vector([filter.init_offset.mean(), 0.]),
@@ -665,7 +666,7 @@ mod tests {
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
-                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],
                 next_idx: 0,
             },
             precision_score: 0,
@@ -718,7 +719,7 @@ mod tests {
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
-                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],
                 next_idx: 0,
             },
             precision_score: 0,
@@ -772,7 +773,7 @@ mod tests {
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
-                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],
                 next_idx: 0,
             },
             precision_score: 0,
@@ -999,7 +1000,7 @@ mod tests {
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
-                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],
                 next_idx: 0,
             },
             precision_score: 0,
@@ -1040,7 +1041,7 @@ mod tests {
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
-                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],
                 next_idx: 0,
             },
             precision_score: 0,
@@ -1445,7 +1446,7 @@ mod tests {
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
-                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],
                 next_idx: 0,
             },
             precision_score: 0,
@@ -1573,7 +1574,7 @@ mod tests {
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
-                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],
                 next_idx: 0,
             },
             precision_score: 0,
@@ -1687,7 +1688,7 @@ mod tests {
             uncertainty: Matrix::new([[1e-6, 0.], [0., 1e-8]]),
             clock_wander: 1e-8,
             roundtriptime_stats: AveragingBuffer {
-                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
+                data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],
                 next_idx: 0,
             },
             precision_score: 0,

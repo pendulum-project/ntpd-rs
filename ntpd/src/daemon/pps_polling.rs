@@ -56,16 +56,28 @@ impl Pps {
 
         println!("System Time: {}", system_time_secs);
 
-        // Calculate the offset
-        let pps_time = pps_timestamp_secs as f64 + pps_timestamp_nanos as f64 * 1e-9;
-        let offset = (system_time_secs - pps_time).abs();
 
-        println!("PPS Offset: {}", offset);
+        let offset = 0.0 as f64 + pps_timestamp_nanos as f64 * 1e-9;
+
+        if offset > 0.5 {
+            self.latest_offset = Some(offset - 1.0);
+            Ok(Some(offset - 1.0))
+        } else {
+            self.latest_offset = Some(offset);
+            Ok(Some(offset))
+        }
+
+        // Calculate the offset
+        // let pps_time = pps_timestamp_secs as f64 + pps_timestamp_nanos as f64 * 1e-9;
+        // let offset = (system_time_secs - pps_time).abs();
+
+        // println!("PPS Offset: {}", offset);
 
         // Update the struct fields with the latest values
-        self.latest_offset = Some(offset);
+        // self.latest_offset = Some(offset);
 
-        Ok(Some(offset))
+        // Ok(Some(offset))
+
     }
 
     /// Converts Unix timestamp to NtpTimestamp.

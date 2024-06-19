@@ -62,7 +62,7 @@ where
                 SelectResult::Recv(result) => {
                     match result {
                         Ok(Some(data)) => {
-                            println!("Offset between PPS time and system time: {:.6} seconds", data);
+                            println!("PPS OFFSET CALCULATED: {:.6} seconds", data);
                             match accept_pps_time(result) {
                                 AcceptResult::Accept(offset) => {
                                     println!("offset: {:?}", offset);

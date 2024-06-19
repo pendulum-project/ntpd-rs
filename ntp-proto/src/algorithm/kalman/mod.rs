@@ -25,6 +25,7 @@ pub(super) mod config;
 pub mod matrix;
 mod select;
 pub mod source;
+mod combine_with_pps;
 
 fn sqr(x: f64) -> f64 {
     x * x
@@ -107,6 +108,19 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
         for (_, (state, _)) in self.sources.iter_mut() {
             state.progress_filtertime(time);
         }
+        
+        let combined_with_pps = combine_with_pps::combine_with_pps(self.sources
+            .iter()
+            .filter_map(|(index, (state, usable))| {
+                if *usable {
+                    state.snapshot(*index)
+                } else {
+                    None
+                }
+            })
+            .collect(),
+        );
+        
         let selection = select::select(
             &self.synchronization_config,
             &self.algo_config,
