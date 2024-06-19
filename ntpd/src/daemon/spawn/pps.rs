@@ -1,8 +1,5 @@
 use std::fmt::Display;
-use std::{net::SocketAddr, ops::Deref};
-use ntp_proto::ProtocolVersion;
 use tokio::sync::mpsc;
-use tracing::warn;
 
 
 use super::{BasicSpawner, SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, SpawnerId};

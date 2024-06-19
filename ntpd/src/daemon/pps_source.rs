@@ -1,7 +1,7 @@
 use std::{future::Future, marker::PhantomData, pin::Pin};
 use tokio::time::{Instant, Sleep};
-use ntp_proto::{NtpClock, NtpInstant, NtpTimestamp, NtpDuration, PpsSource, PpsSourceActionIterator, PpsSourceAction};
-use tracing::{debug, error, info, instrument, warn, Instrument, Span};
+use ntp_proto::{NtpClock, NtpInstant, NtpTimestamp, NtpDuration, PpsSource, PpsSourceActionIterator};
+use tracing::{error, info, instrument, warn, Instrument, Span};
 use super::pps_polling::Pps;
 use super::pps_polling::AcceptResult;
 use std::io;

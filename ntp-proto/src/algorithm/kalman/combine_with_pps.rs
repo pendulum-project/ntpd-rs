@@ -1,6 +1,4 @@
-use crate::config::SynchronizationConfig;
-
-use super::{config::AlgorithmConfig, SourceSnapshot};
+use super::SourceSnapshot;
 
 
 pub(crate) fn combine_with_pps<Index: Copy>(candidates: Vec<SourceSnapshot<Index>>) -> Vec<SourceSnapshot<Index>> {
