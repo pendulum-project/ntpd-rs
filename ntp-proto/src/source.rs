@@ -157,7 +157,7 @@ impl Measurement {
             leap: NtpLeapIndicator::NoWarning,
             precision: 0,
             gps: Some(GpsMeasurement {
-                measurementnoise: NtpDuration::ZERO,
+                measurementnoise: NtpDuration::from_seconds(0.01),
                 offset,
             }),
         }

@@ -139,7 +139,7 @@ impl InitialSourceFilter {
     pub fn update(&mut self, measurement: Measurement) {
         // Process GPS data if it exists
         if let Some(gps_measurement) = &measurement.gps {
-            // self.roundtriptime_stats.update(gps_measurement.measurementnoise.to_seconds());
+            self.roundtriptime_stats.update(gps_measurement.measurementnoise.to_seconds());
             println!("gps_measurements offset in seconds: {:?}", gps_measurement.offset.to_seconds());
             self.init_offset.update(gps_measurement.offset.to_seconds());
         }else{
@@ -397,22 +397,22 @@ impl SourceFilter {
         self.last_measurement.stratum = measurement.stratum;
         self.last_measurement.leap = measurement.leap;
 
-        if measurement.localtime.is_before(self.filter_time) {
-            // Ignore the past
-            println!("is it a local time thing?");
-            return false;
-        }
+        // if measurement.localtime.is_before(self.filter_time) {
+        //     // Ignore the past
+        //     println!("is it a local time thing?");
+        //     return false;
+        // }
 
-        // Filter out one-time outliers (based on delay!)
-        if !self.prev_was_outlier
-            && (measurement.delay.to_seconds() - self.roundtriptime_stats.mean())
-                > algo_config.delay_outlier_threshold * self.roundtriptime_stats.variance().sqrt()
-        {          
-            println!("is it a outlier thing?");  
-            self.prev_was_outlier = true;
-            self.last_iter = measurement.localtime;
-            return false;
-        }
+        // // Filter out one-time outliers (based on delay!)
+        // if !self.prev_was_outlier
+        //     && (measurement.delay.to_seconds() - self.roundtriptime_stats.mean())
+        //         > algo_config.delay_outlier_threshold * self.roundtriptime_stats.variance().sqrt()
+        // {          
+        //     println!("is it a outlier thing?");  
+        //     self.prev_was_outlier = true;
+        //     self.last_iter = measurement.localtime;
+        //     return false;
+        // }
 
         // Environment update
         self.progress_filtertime(measurement.localtime);
@@ -535,24 +535,24 @@ impl SourceState {
                     .monotime
                     .abs_diff(filter.last_measurement.monotime);
 
-                if localtime_difference.abs_diff(monotime_difference)
-                    > algo_config.meddling_threshold
-                {
-                    let msg = "Detected clock meddling. Has another process updated the clock?";
-                    tracing::warn!(msg);
-                    println!("detected clock meddling");
-                    *self = SourceState(SourceStateInner::Initial(InitialSourceFilter {
-                        roundtriptime_stats: AveragingBuffer::default(),
-                        init_offset: AveragingBuffer::default(),
-                        last_measurement: None,
-                        samples: 0,
-                    }));
+                // if localtime_difference.abs_diff(monotime_difference)
+                //     > algo_config.meddling_threshold
+                // {
+                //     let msg = "Detected clock meddling. Has another process updated the clock?";
+                //     tracing::warn!(msg);
+                //     println!("detected clock meddling");
+                //     *self = SourceState(SourceStateInner::Initial(InitialSourceFilter {
+                //         roundtriptime_stats: AveragingBuffer::default(),
+                //         init_offset: AveragingBuffer::default(),
+                //         last_measurement: None,
+                //         samples: 0,
+                //     }));
 
-                    false
-                } else {
-                    println!("updating source stable filter");
-                    filter.update(source_defaults_config, algo_config, measurement)
-                }
+                //     false
+                // } else {
+                println!("updating source stable filter");
+                filter.update(source_defaults_config, algo_config, measurement)
+                // }
             }
         }
     }
