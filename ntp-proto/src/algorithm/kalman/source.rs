@@ -278,8 +278,8 @@ impl SourceFilter {
             trace!(p, weight, "Measurement absorbed");
 
             println!("done absorbing message: {} {} {}", p, weight, m_delta_t);
-            (p, weight, m_delta_t)
-        } else if let Some(_pps_measurement) = &measurement.pps {
+            return (p, weight, m_delta_t);
+        } if let Some(_pps_measurement) = &measurement.pps {
             let pps_measurement_noise = Matrix::new([[_pps_noise]]);
             let pps_measurement_vec = Vector::new_vector([_pps_measurement.offset.to_seconds()]);
             let pps_difference = pps_measurement_vec - measurement_transform * self.state;
@@ -317,6 +317,7 @@ impl SourceFilter {
                 .symmetrize();
 
             // Statistics
+            
             let p = chi_1(difference.inner(difference_covariance.inverse() * difference));
             println!("p statistic {}", p);
             // Calculate an indicator of how much of the measurement was incorporated

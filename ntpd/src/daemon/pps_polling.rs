@@ -20,7 +20,7 @@ impl Pps {
         let file = File::open(pps_path)?;
         let fd = file.as_raw_fd();
 
-        println!("Opened PPS device at {}", pps_path);
+        // println!("Opened PPS device at {}", pps_path);
 
         Ok(Pps {
             fd,
@@ -47,14 +47,14 @@ impl Pps {
 
         let ntp_timestamp = Self::from_unix_timestamp(pps_timestamp_secs, pps_timestamp_nanos);
 
-        println!("PPS Timestamp - Seconds: {}, Nanoseconds: {}", pps_timestamp_secs, pps_timestamp_nanos);
-        println!("PPS NTP Timestamp: {:?}", ntp_timestamp);
+        // println!("PPS Timestamp - Seconds: {}, Nanoseconds: {}", pps_timestamp_secs, pps_timestamp_nanos);
+        // println!("PPS NTP Timestamp: {:?}", ntp_timestamp);
 
         // Get the system time in seconds
         let system_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
         let system_time_secs = system_time.as_secs() as f64 + system_time.subsec_nanos() as f64 * 1e-9;
 
-        println!("System Time: {}", system_time_secs);
+        // println!("System Time: {}", system_time_secs);
 
 
         let offset = 0.0 as f64 + pps_timestamp_nanos as f64 * 1e-9;
@@ -94,8 +94,8 @@ impl Pps {
         // Combine NTP seconds and fraction to form the complete NTP timestamp
         let timestamp = (ntp_seconds << 32) | fraction;
 
-        println!("Unix Timestamp: {}, Nanos: {}, NTP Seconds: {}, Fraction: {}", unix_timestamp, nanos, ntp_seconds, fraction);
-        println!("Combined NTP Timestamp: {:#018X}", timestamp);
+        // println!("Unix Timestamp: {}, Nanos: {}, NTP Seconds: {}, Fraction: {}", unix_timestamp, nanos, ntp_seconds, fraction);
+        // println!("Combined NTP Timestamp: {:#018X}", timestamp);
 
         NtpTimestamp::from_fixed_int(timestamp)
     }
