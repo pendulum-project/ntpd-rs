@@ -104,10 +104,10 @@ pub async fn spawn(
         tracing::error!("Could not spawn gps source: {}", e);
         std::io::Error::new(std::io::ErrorKind::Other, e)
     })?;
-    system.add_spawner(PpsSpawner::new()).map_err(|e| {
-        tracing::error!("Could not spawn pps source: {}", e);
-        std::io::Error::new(std::io::ErrorKind::Other, e)
-    })?;
+    // system.add_spawner(PpsSpawner::new()).map_err(|e| {
+    //     tracing::error!("Could not spawn pps source: {}", e);
+    //     std::io::Error::new(std::io::ErrorKind::Other, e)
+    // })?;
 
     for source_config in source_configs {
         match source_config {

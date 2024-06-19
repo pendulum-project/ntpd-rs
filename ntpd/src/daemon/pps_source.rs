@@ -1,3 +1,4 @@
+use std::time::Duration;
 use std::{future::Future, marker::PhantomData, pin::Pin};
 use tokio::time::{Instant, Sleep};
 use ntp_proto::{NtpClock, NtpInstant, NtpTimestamp, NtpDuration, PpsSource, PpsSourceActionIterator};
@@ -134,6 +135,7 @@ where
                     }
                 }
             }
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
     }
 }

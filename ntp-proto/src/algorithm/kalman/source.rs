@@ -247,7 +247,7 @@ impl SourceFilter {
         println!("noise: {}, offset {}", _gps_noise, gps_offset);
         let measurement_transform = Matrix::new([[1., 0.]]);
 
-        if let Some(_gps_measurement) = &measurement.gps{
+        if let Some(_gps_measurement) = &measurement.gps {
         // Kalman filter update for GPS
             let gps_measurement_noise = Matrix::new([[_gps_noise]]);
             println!("gps_measuremtn noise matrix {:?}", gps_measurement_noise);
@@ -279,7 +279,9 @@ impl SourceFilter {
 
             println!("done absorbing message: {} {} {}", p, weight, m_delta_t);
             return (p, weight, m_delta_t);
+
         } if let Some(_pps_measurement) = &measurement.pps {
+            println!("YES IS DOES ARDA");
             let pps_measurement_noise = Matrix::new([[_pps_noise]]);
             let pps_measurement_vec = Vector::new_vector([_pps_measurement.offset.to_seconds()]);
             let pps_difference = pps_measurement_vec - measurement_transform * self.state;
