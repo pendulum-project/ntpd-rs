@@ -142,10 +142,10 @@ impl InitialSourceFilter {
             self.roundtriptime_stats.update(gps_measurement.measurementnoise.to_seconds());
             println!("gps_measurements offset in seconds: {:?}", gps_measurement.offset.to_seconds());
             self.init_offset.update(gps_measurement.offset.to_seconds());
-        }else if let Some(pps_measurement) = &measurement.pps {
+        } if let Some(pps_measurement) = &measurement.pps {
             //self.roundtriptime_stats.update(pps_measurement.measurementnoise.to_seconds());
             self.init_offset.update(pps_measurement.offset.to_seconds());
-        }else{
+        } else{
             self.roundtriptime_stats
             .update(measurement.delay.to_seconds());
              self.init_offset.update(measurement.offset.to_seconds());
@@ -253,6 +253,8 @@ impl SourceFilter {
             println!("gps_measuremtn noise matrix {:?}", gps_measurement_noise);
             let gps_measurement_vec = Vector::new_vector([_gps_measurement.offset.to_seconds()]);
             println!("gps_measurement vector {:?}", gps_measurement_vec);
+            println!("state: {:?}", self.state);
+            println!("measurement_transform: {:?}", measurement_transform);
             let gps_difference = gps_measurement_vec - measurement_transform * self.state;
             println!("gps_difference {:?}", gps_difference);
             let gps_difference_covariance = measurement_transform * self.uncertainty * measurement_transform.transpose() + gps_measurement_noise;
