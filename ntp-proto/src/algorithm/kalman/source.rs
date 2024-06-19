@@ -142,7 +142,7 @@ impl InitialSourceFilter {
             self.roundtriptime_stats.update(gps_measurement.measurementnoise.to_seconds());
             println!("gps_measurements offset in seconds: {:?}", gps_measurement.offset.to_seconds());
             self.init_offset.update(gps_measurement.offset.to_seconds());
-        }if let Some(pps_measurement) = &measurement.pps {
+        }else if let Some(pps_measurement) = &measurement.pps {
             //self.roundtriptime_stats.update(pps_measurement.measurementnoise.to_seconds());
             self.init_offset.update(pps_measurement.offset.to_seconds());
         }else{
@@ -237,7 +237,7 @@ impl SourceFilter {
             (0.0, 0.0)
         };
         // Incorporate PPS measurements if they exist, or provide default values
-        let (_pps_noise, pps_offset) = if let Some(pps_measurement) = &measurement.pps {
+        let (_pps_noise, _pps_offset) = if let Some(pps_measurement) = &measurement.pps {
             (pps_measurement.measurementnoise.to_seconds(), pps_measurement.offset.to_seconds())
         } else {
             // Provide default values for pps_noise and pps_offset
