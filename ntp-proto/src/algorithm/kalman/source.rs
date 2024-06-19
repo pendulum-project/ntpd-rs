@@ -279,7 +279,7 @@ impl SourceFilter {
 
             println!("done absorbing message: {} {} {}", p, weight, m_delta_t);
             (p, weight, m_delta_t)
-        }else if let Some(_pps_measurement) = &measurement.pps {
+        } else if let Some(_pps_measurement) = &measurement.pps {
             let pps_measurement_noise = Matrix::new([[_pps_noise]]);
             let pps_measurement_vec = Vector::new_vector([_pps_measurement.offset.to_seconds()]);
             let pps_difference = pps_measurement_vec - measurement_transform * self.state;
