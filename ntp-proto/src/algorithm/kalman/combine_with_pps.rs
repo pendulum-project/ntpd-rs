@@ -1,30 +1,30 @@
-use super::SourceSnapshot;
+// use super::SourceSnapshot;
 
 
-pub(crate) fn combine_with_pps<Index: Copy>(candidates: Vec<SourceSnapshot<Index>>) -> Vec<SourceSnapshot<Index>> {
+// pub(crate) fn combine_with_pps<Index: Copy>(candidates: Vec<SourceSnapshot<Index>>) -> Vec<SourceSnapshot<Index>> {
 
-    // for snapshot in &candidates {
-    //     println!("COMBINE WITH PPS");
-    //     println!("{:?}", snapshot);
-    // }
-    for snapshot in candidates.iter() {
-        println!("COMBINE PPS uncetainty: {:?}, offsetL {:?}", snapshot.offset_uncertainty(), snapshot.offset());
-    }
+//     // for snapshot in &candidates {
+//     //     println!("COMBINE WITH PPS");
+//     //     println!("{:?}", snapshot);
+//     // }
+//     for snapshot in candidates.iter() {
+//         println!("COMBINE PPS uncetainty: {:?}, offsetL {:?}", snapshot.offset_uncertainty(), snapshot.offset());
+//     }
 
 
-    let pps_snapshot = candidates.iter().find(|snapshot| {
-        // Replace this condition with the actual condition to identify the PPS snapshot
-        // For example:
-        // snapshot.is_pps()
-        true // Placeholder condition
-    });
+//     let pps_snapshot = candidates.iter().find(|snapshot| {
+//         // Replace this condition with the actual condition to identify the PPS snapshot
+//         // For example:
+//         // snapshot.is_pps()
+//         true // Placeholder condition
+//     });
 
-    // If found, return it in a new vector, otherwise return an empty vector
-    match pps_snapshot {
-        Some(snapshot) => vec![snapshot.clone()],
-        None => vec![],
-    }
-}
+//     // If found, return it in a new vector, otherwise return an empty vector
+//     match pps_snapshot {
+//         Some(snapshot) => vec![snapshot.clone()],
+//         None => vec![],
+//     }
+// }
 
 // fn combine_sources<Index: Copy>(
 //     pps_snapshot: SourceSnapshot<Index>,

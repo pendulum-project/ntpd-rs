@@ -142,7 +142,9 @@ impl InitialSourceFilter {
             self.roundtriptime_stats.update(gps_measurement.measurementnoise.to_seconds());
             println!("gps_measurements offset in seconds: {:?}", gps_measurement.offset.to_seconds());
             self.init_offset.update(gps_measurement.offset.to_seconds());
-        } if let Some(pps_measurement) = &measurement.pps {
+        } 
+        
+        if let Some(pps_measurement) = &measurement.pps {
             self.roundtriptime_stats.update(pps_measurement.measurementnoise.to_seconds());
             self.init_offset.update(pps_measurement.offset.to_seconds());
         } else{
@@ -282,7 +284,9 @@ impl SourceFilter {
             println!("done absorbing message: {} {} {}", p, weight, m_delta_t);
             return (p, weight, m_delta_t);
 
-        } if let Some(_pps_measurement) = &measurement.pps {
+        } 
+        
+        if let Some(_pps_measurement) = &measurement.pps {
             println!("YES IS DOES ARDA");
             let pps_measurement_noise = Matrix::new([[_pps_noise]]);
             let pps_measurement_vec = Vector::new_vector([_pps_offset]);

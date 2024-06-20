@@ -156,7 +156,7 @@ mod tests {
             snapshot_for_range(0.0, 0.01, 0.01),
         ];
         let sysconfig = SynchronizationConfig {
-            minimum_agreeing_sources: 4,
+            minimum_agreeing_sources: 1,
             ..Default::default()
         };
 

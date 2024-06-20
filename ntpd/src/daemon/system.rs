@@ -547,8 +547,8 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
         self.system.handle_source_create(source_id)?;
 
         info!("creating pps instance:");
-        let pps_path = "/dev/pps0"; // Replace with the actual path to your PPS device
-        let pps: Pps = Pps::new(pps_path).unwrap();
+        //let pps_path = "/dev/pps0"; // Replace with the actual path to your PPS device
+        let pps: Pps = Pps::new().unwrap();
 
         info!("creating pps source task:");
         PpsSourceTask::spawn(

@@ -1,7 +1,4 @@
-use std::fs::File;
 use std::io::{self, Result};
-use std::os::unix::io::{AsRawFd, RawFd};
-use std::time::{SystemTime, UNIX_EPOCH};
 use nix::time::{clock_gettime, ClockId};
 use ntp_proto::{NtpDuration, NtpTimestamp};
 
@@ -9,21 +6,17 @@ use ntp_proto::{NtpDuration, NtpTimestamp};
 /// Struct to encapsulate the PPS polling information.
 #[derive(Debug)]
 pub struct Pps {
-    fd: RawFd,
     latest_offset: Option<f64>,
 }
 
 impl Pps {
     /// Opens the PPS device and creates a new Pps instance.
-    pub fn new(pps_path: &str) -> Result<Self,> {
+    pub fn new() -> Result<Self,> {
         // Open PPS device
-        let file = File::open(pps_path)?;
-        let fd = file.as_raw_fd();
 
         // println!("Opened PPS device at {}", pps_path);
 
         Ok(Pps {
-            fd,
             latest_offset: None,
         })
     }
@@ -47,17 +40,7 @@ impl Pps {
 
         let ntp_timestamp = Self::from_unix_timestamp(pps_timestamp_secs, pps_timestamp_nanos);
 
-        // println!("PPS Timestamp - Seconds: {}, Nanoseconds: {}", pps_timestamp_secs, pps_timestamp_nanos);
-        // println!("PPS NTP Timestamp: {:?}", ntp_timestamp);
-
-        // Get the system time in seconds
-        let system_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-        let system_time_secs = system_time.as_secs() as f64 + system_time.subsec_nanos() as f64 * 1e-9;
-
-        // println!("System Time: {}", system_time_secs);
-
-
-        let offset = 0.0 as f64 + pps_timestamp_nanos as f64 * 1e-9;
+        let offset = 0.0 + pps_timestamp_nanos as f64 * 1e-9;
 
         if offset > 0.5 {
             self.latest_offset = Some(offset - 1.0);
@@ -66,17 +49,6 @@ impl Pps {
             self.latest_offset = Some(offset);
             Ok(Some((offset, ntp_timestamp)))
         }
-
-        // Calculate the offset
-        // let pps_time = pps_timestamp_secs as f64 + pps_timestamp_nanos as f64 * 1e-9;
-        // let offset = (system_time_secs - pps_time).abs();
-
-        // println!("PPS Offset: {}", offset);
-
-        // Update the struct fields with the latest values
-        // self.latest_offset = Some(offset);
-
-        // Ok(Some(offset))
 
     }
 
@@ -89,7 +61,7 @@ impl Pps {
         let ntp_seconds = unix_timestamp + UNIX_TO_NTP_OFFSET;
 
         // Calculate the fractional part of the NTP timestamp
-        let fraction = ((nanos as u64 * NTP_SCALE_FRAC) / 1_000_000_000) as u64;
+        let fraction = (nanos as u64 * NTP_SCALE_FRAC) / 1_000_000_000;
 
         // Combine NTP seconds and fraction to form the complete NTP timestamp
         let timestamp = (ntp_seconds << 32) | fraction;
