@@ -1,10 +1,13 @@
+use libc::{ECONNABORTED, EMFILE, ENFILE, ENOBUFS, ENOMEM};
 use timestamped_socket::interface::ChangeDetector;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
+use tracing::{debug, error, trace, warn};
 
 use std::{
     fmt::Write,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use crate::daemon::{config::CliArg, initialize_logging_parse_config, ObservableState};
@@ -123,9 +126,10 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::error::Error>> {
     let config = initialize_logging_parse_config(None, options.config).await;
+    let timeout = std::time::Duration::from_millis(1000);
 
     let observation_socket_path = match config.observability.observation_path {
-        Some(path) => path,
+        Some(path) => Arc::new(path),
         None => {
             eprintln!("An observation socket path must be configured using the observation-path option in the [observability] section of the configuration");
             std::process::exit(1);
@@ -158,29 +162,76 @@ async fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::erro
             Ok(listener) => break listener,
         };
     };
-    let mut buf = String::with_capacity(4 * 1024);
+
+    // this has a lot more permits than the daemon observer has, but we expect http transfers to
+    // take longer than how much time the daemon needs to return observability data
+    let permits = Arc::new(tokio::sync::Semaphore::new(100));
 
     loop {
-        let (mut tcp_stream, _) = listener.accept().await?;
-
-        buf.clear();
-        match handler(&mut buf, &observation_socket_path).await {
-            Ok(()) => {
-                tcp_stream.write_all(buf.as_bytes()).await?;
+        let permit = permits
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("semaphore was unexpectedly closed");
+        let (mut tcp_stream, _) = match listener.accept().await {
+            Ok(a) => a,
+            Err(e) if matches!(e.raw_os_error(), Some(ECONNABORTED)) => {
+                debug!("Client unexpectedly closed connection: {e}");
+                continue;
+            }
+            Err(e)
+                if matches!(
+                    e.raw_os_error(),
+                    Some(ENFILE) | Some(EMFILE) | Some(ENOMEM) | Some(ENOBUFS)
+                ) =>
+            {
+                error!("Not enough resources available to accept incoming connection: {e}");
+                tokio::time::sleep(timeout).await;
+                continue;
             }
             Err(e) => {
-                tracing::warn!("hit an error: {e}");
-
-                const ERROR_REPONSE: &str = concat!(
-                    "HTTP/1.1 500 Internal Server Error\r\n",
-                    "content-type: text/plain\r\n",
-                    "content-length: 0\r\n\r\n",
-                );
-
-                tcp_stream.write_all(ERROR_REPONSE.as_bytes()).await?;
+                error!("Could not accept incoming connection: {e}");
+                return Err(e.into());
             }
+        };
+        let path = observation_socket_path.clone();
+
+        // handle each connection on a separate task
+        let fut = async move { handle_connection(&mut tcp_stream, &path).await };
+
+        tokio::spawn(async move {
+            match tokio::time::timeout(timeout, fut).await {
+                Err(_) => debug!("connection timed out"),
+                Ok(Err(e)) => warn!("error handling connection: {e}"),
+                Ok(_) => trace!("connection handled successfully"),
+            }
+            drop(permit);
+        });
+    }
+}
+
+async fn handle_connection(
+    stream: &mut (impl tokio::io::AsyncWrite + Unpin),
+    observation_socket_path: &Path,
+) -> std::io::Result<()> {
+    let mut buf = String::with_capacity(4 * 1024);
+    match handler(&mut buf, observation_socket_path).await {
+        Ok(()) => {
+            stream.write_all(buf.as_bytes()).await?;
+        }
+        Err(e) => {
+            tracing::warn!("hit an error: {e}");
+
+            const ERROR_REPONSE: &str = concat!(
+                "HTTP/1.1 500 Internal Server Error\r\n",
+                "content-type: text/plain\r\n",
+                "content-length: 0\r\n\r\n",
+            );
+
+            stream.write_all(ERROR_REPONSE.as_bytes()).await?;
         }
     }
+    Ok(())
 }
 
 async fn handler(buf: &mut String, observation_socket_path: &Path) -> std::io::Result<()> {
