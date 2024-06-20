@@ -151,6 +151,7 @@ impl Measurement {
         offset: NtpDuration, 
         local_clock_time: NtpInstant,
         timestamp: NtpTimestamp,
+        measuremet_noise: f64,
     ) -> Self {
         Self {
             delay: NtpDuration::default(),
@@ -166,7 +167,7 @@ impl Measurement {
             leap: NtpLeapIndicator::NoWarning,
             precision: 0,
             gps: Some(GpsMeasurement {
-                measurementnoise: NtpDuration::from_seconds(0.02),
+                measurementnoise: NtpDuration::from_seconds(measuremet_noise),
                 offset,
             }),
             pps:None,

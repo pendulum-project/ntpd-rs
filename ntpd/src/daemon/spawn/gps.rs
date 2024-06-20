@@ -1,5 +1,8 @@
-use std::fmt::Display;
+use std::{fmt::Display, time::Duration};
 use tokio::sync::mpsc;
+use crate::daemon::config::GpsConfigSource;
+use serialport;
+
 use super::{BasicSpawner, SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, SpawnerId};
 
 struct GpsSource {
@@ -8,11 +11,14 @@ struct GpsSource {
 
 pub struct GpsSpawner {
     id: SpawnerId,
+    config: GpsConfigSource,
     current_sources: Vec<GpsSource>,
 }
 
 #[derive(Debug)]
-pub enum GpsSpawnError {}
+pub enum GpsSpawnError {
+    PortNotOpen,
+}
 
 impl Display for GpsSpawnError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -23,9 +29,10 @@ impl Display for GpsSpawnError {
 impl std::error::Error for GpsSpawnError {}
 
 impl GpsSpawner {
-    pub fn new() -> GpsSpawner {
+    pub fn new(config: GpsConfigSource) -> GpsSpawner {
         GpsSpawner {
             id: Default::default(),
+            config,
             current_sources: Default::default(),
         }
     }
@@ -35,10 +42,39 @@ impl GpsSpawner {
 impl BasicSpawner for GpsSpawner {
     type Error = GpsSpawnError;
 
+    async fn check_port(&self, port_name: String, baud_rate: u32) -> Result<(), GpsSpawnError> {
+        let timeout = Duration::from_secs(1);
+
+        let mut port = serialport::new(port_name, baud_rate)
+            .timeout(timeout)
+            .open()
+            .map_err(|e| {
+                println!("Error opening serial port: {}", e);
+                GpsSpawnError::PortNotOpen
+            })?;
+
+        // Example: set timeout after opening
+        if let Err(e) = port.set_timeout(timeout) {
+            println!("Error setting timeout: {}", e);
+            return Err(GpsSpawnError::PortNotOpen)
+        }
+
+        drop(port);
+
+        Ok(())
+    }
+
+
     async fn try_spawn(
         &mut self,
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), GpsSpawnError> {
+        match self.check_port(self.config.address.clone(), self.config.baud_rate).await {
+            Ok(_) => println!("Serial port check successful"),
+            Err(e) => return Err(e),
+        }
+        
+
         // Early return if there is already a GPS source
         if !self.current_sources.is_empty() {
             return Ok(());
@@ -52,6 +88,9 @@ impl BasicSpawner for GpsSpawner {
 
         let action = SpawnAction::create_gps(
             id,
+            self.config.address.clone(),
+            self.config.measurement_noise,
+            self.config.baud_rate, 
         );
 
         tracing::debug!(?action, "intending to spawn new GPS source");

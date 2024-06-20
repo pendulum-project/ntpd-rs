@@ -93,6 +93,7 @@ impl GpsSource {
         local_clock_time: NtpInstant,
         offset: NtpDuration,
         timestamp: NtpTimestamp,
+        measurement_noise: f64,
     ) -> GpsSourceActionIterator {
         
         // generate a measurement
@@ -100,6 +101,7 @@ impl GpsSource {
             offset,
             local_clock_time,
             timestamp,
+            measurement_noise,
         );
        
         actions!(GpsSourceAction::UpdateSystem(GpsSourceUpdate {

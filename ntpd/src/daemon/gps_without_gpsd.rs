@@ -10,6 +10,7 @@ pub struct Gps {
     reader: BufReader<Box<dyn SerialPort>>,
     current_date: Option<String>,
     line: String,
+    pub measurement_noise: f64,
 }
 
 impl Gps {
@@ -28,7 +29,7 @@ impl Gps {
     ///
     /// * `io::Result<Self>` - A result containing the new `GPS` instance if successful,
     ///   or an `io::Error` if opening the serial port fails.
-    pub fn new(port_name: &str, baud_rate: u32, timeout: Duration) -> io::Result<Self> {
+    pub fn new(port_name: &str, baud_rate: u32, timeout: Duration, measurement_noise: f64) -> io::Result<Self> {
         let port = serialport::new(port_name, baud_rate)
             .timeout(timeout)
             .open()?;
@@ -37,6 +38,7 @@ impl Gps {
             reader,
             current_date: None,
             line: String::new(),
+            measurement_noise,
         })
     }
 

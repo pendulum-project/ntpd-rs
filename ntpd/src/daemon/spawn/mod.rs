@@ -1,5 +1,6 @@
 use std::{net::SocketAddr, sync::atomic::AtomicU64};
 
+use gps::GpsSpawnError;
 use ntp_proto::{ProtocolVersion, SourceNtsData};
 use serde::{Deserialize, Serialize};
 use tokio::{
@@ -139,9 +140,16 @@ impl SpawnAction {
 
     pub fn create_gps(
         id: SourceId,
+        addr: String,
+        measurement_noise: f64,
+        baud_rate: u32,
+
     ) -> SpawnAction{
         SpawnAction::CreateGps(GpsSourceCreateParameters {
             id,
+            addr,
+            measurement_noise,
+            baud_rate,
         })
     }
 
@@ -167,6 +175,9 @@ pub struct SourceCreateParameters {
 #[derive(Debug)]
 pub struct GpsSourceCreateParameters {
     pub id: SourceId,
+    pub addr: String,
+    pub measurement_noise: f64,
+    pub baud_rate: u32,
 }
 
 #[derive(Debug)]
@@ -294,6 +305,10 @@ pub trait BasicSpawner {
         Ok(())
     }
 
+    /// Checks if the port is open
+    async fn check_port(&self, _port_name: String, _baud_rate: u32) -> Result<(), GpsSpawnError> {
+        Ok(())
+    }
     /// Get the id of the spawner
     fn get_id(&self) -> SpawnerId;
 

@@ -79,6 +79,7 @@ where
                                         NtpInstant::now(),
                                         offset,
                                         timestamp,
+                                        self.gps.measurement_noise,
                                     )
                                 }
                                 AcceptResult::Ignore => GpsSourceActionIterator::default(),

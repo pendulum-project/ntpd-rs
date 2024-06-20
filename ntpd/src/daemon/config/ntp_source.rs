@@ -17,6 +17,14 @@ pub struct StandardSource {
     pub address: NtpAddress,
 }
 
+#[derive(Deserialize, Debug, PartialEq, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct GpsConfigSource {
+    pub address: String,
+    pub measurement_noise: f64,
+    pub baud_rate: u32,
+}
+
 #[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct NtsSourceConfig {
@@ -81,9 +89,11 @@ pub struct NtsPoolSourceConfig {
     pub count: usize,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
+#[derive(Debug, Deserialize, PartialEq, Clone)]
 #[serde(tag = "mode")]
 pub enum NtpSourceConfig {
+    #[serde(rename = "Gps")]
+    Gps(GpsConfigSource),
     #[serde(rename = "server")]
     Standard(StandardSource),
     #[serde(rename = "nts")]
@@ -133,6 +143,9 @@ impl From<Vec<SocketAddr>> for HardcodedDnsResolve {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NtpAddress(pub NormalizedAddress);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpsPort(pub NormalizedAddress);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NtsKeAddress(pub NormalizedAddress);
@@ -325,6 +338,8 @@ impl<'a> TryFrom<&'a str> for NtpSourceConfig {
 
 #[cfg(test)]
 mod tests {
+    use ntp_proto::NtpSource;
+
     use super::*;
 
     fn source_addr(config: &NtpSourceConfig) -> String {
@@ -332,6 +347,7 @@ mod tests {
             NtpSourceConfig::Standard(c) => c.address.to_string(),
             NtpSourceConfig::Nts(c) => c.address.to_string(),
             NtpSourceConfig::Pool(c) => c.addr.to_string(),
+            NtpSourceConfig::Gps(c) => c.address.to_string(),
             #[cfg(feature = "unstable_nts-pool")]
             NtpSourceConfig::NtsPool(c) => c.addr.to_string(),
         }
