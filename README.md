@@ -14,6 +14,9 @@ If a feature you need is missing please let us know by opening an issue.
 ## Documentation
 
 Be sure to check out the [documentation website] as it includes guides on getting started, installation and migration, as well as a high-level overview of the code structure.
+
+Be sure to check out the [documentation website] as it includes guides on getting started, installation and migration, as well as a high-level overview of the code structure.
+
 ## Usage
 
 You can install the packages from the [releases page]. These packages configure ntpd-rs to synchronize your computers clock to servers from the [NTP pool]. After installation, check the status of the ntpd-rs daemon with
@@ -54,7 +57,12 @@ ntpd-rs.pool.ntp.org:123/162.159.200.123:123 (4): +0.000111±0.000076(±0.004066
 Servers:
 ```
 
-The top part shows the overal quality of the time synchronization, and the time sources section shows which servers are used as well as offsets and uncertainties of those individual servers.
+<<<<<<< HEAD
+
+=======
+
+> > > > > > > aa070d6a (Added the project's official README content)
+> > > > > > > The top part shows the overal quality of the time synchronization, and the time sources section shows which servers are used as well as offsets and uncertainties of those individual servers.
 
 For more details on how to install and use ntpd-rs, see our [documentation website].
 
@@ -65,8 +73,14 @@ full-featured, it supports NTP client and server with NTS.
 
 Our roadmap for 2024:
 
+<<<<<<< HEAD
+
 - Q2-Q4 2024: Packaging and industry adoption, maintenance & community work
-- Q4 2024: NTS Pool (pending funding)
+- # Q4 2024: NTS Pool (pending funding)
+
+* Q2-Q4 2024: Packaging and industry adoption, maintenance & community work
+* Q4 2024: NTS Pool (pending funding)
+  > > > > > > > aa070d6a (Added the project's official README content)
 
 We seek sponsorship for features and maintenance to continue our work. Contact
 us via pendulum@tweedegolf.com if you are interested!
@@ -104,4 +118,10 @@ In July of 2023 the [Sovereign Tech Fund] invested in Pendulum, securing ntpd-rs
 [NTP initiative page]: https://www.memorysafety.org/initiative/ntp
 [NTP announcement]: https://www.memorysafety.org/blog/ntp-and-nts-have-arrived/
 [Project Pendulum]: https://github.com/pendulum-project
+
+<<<<<<< HEAD
 [Sovereign Tech Fund]: https://sovereigntechfund.de/en/
+=======
+[Sovereign Tech Fund]: https://sovereigntechfund.de/en/
+
+> > > > > > > aa070d6a (Added the project's official README content)
