@@ -82,8 +82,6 @@ where
                             eprintln!("Error processing PPS data: {}", e);
                             PpsSourceActionIterator::default()
                         }
-                        AcceptResult::Ignore => PpsSourceActionIterator::default(),
-
                     }
                 }
                 SelectResult::Timer => {

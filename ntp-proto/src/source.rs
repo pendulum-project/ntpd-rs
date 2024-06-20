@@ -191,7 +191,7 @@ impl Measurement {
             precision: 0,
             gps: None,
             pps: Some(PpsMeasurement {
-                measurementnoise: NtpDuration::ZERO,
+                measurementnoise: NtpDuration::from_seconds(0.2),
                 offset,
             }),
         }
