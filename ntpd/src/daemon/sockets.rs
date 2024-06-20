@@ -1,10 +1,9 @@
 use std::fs::Permissions;
 use std::path::Path;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::UnixStream;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-pub async fn write_json<T>(stream: &mut UnixStream, value: &T) -> std::io::Result<()>
+pub async fn write_json<T>(stream: &mut (impl AsyncWrite + Unpin), value: &T) -> std::io::Result<()>
 where
     T: serde::Serialize,
 {
@@ -14,7 +13,7 @@ where
 }
 
 pub async fn read_json<'a, T>(
-    stream: &mut UnixStream,
+    stream: &mut (impl AsyncRead + Unpin),
     buffer: &'a mut Vec<u8>,
 ) -> std::io::Result<T>
 where
@@ -85,7 +84,7 @@ fn create_unix_socket(path: &Path) -> std::io::Result<tokio::net::UnixListener> 
 
 #[cfg(test)]
 mod tests {
-    use tokio::net::UnixListener;
+    use tokio::net::{UnixListener, UnixStream};
 
     use super::*;
 
