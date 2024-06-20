@@ -66,7 +66,7 @@ impl Gps {
         let timestamp = naive_datetime.and_utc().timestamp() as f64
             + naive_datetime.and_utc().timestamp_subsec_nanos() as f64;
 
-        Some((timestamp, naive_datetime.and_utc().timestamp() as u64, naive_datetime.and_utc().timestamp_subsec_nanos() as u32))
+        Some((timestamp, naive_datetime.and_utc().timestamp() as u64, naive_datetime.and_utc().timestamp_subsec_nanos()))
     }
 
     /// Parses an NMEA time string into hours, minutes, and seconds.
