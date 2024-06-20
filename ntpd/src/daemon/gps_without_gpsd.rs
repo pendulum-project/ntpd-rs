@@ -153,8 +153,7 @@ impl Gps {
             if let Some(date) = &self.current_date {
                 if let Some(gps_timestamp) = self.nmea_time_date_to_unix_timestamp(time, date) {
                     let system_time = Utc::now().timestamp() as f64 + Utc::now().timestamp_subsec_micros() as f64 * 1e-6;
-
-                    return Some((gps_timestamp.0 - system_time, NtpTimestamp::from_unix_timestamp(gps_timestamp.1, gps_timestamp.2)));
+                    return Some((system_time - gps_timestamp.0, NtpTimestamp::from_unix_timestamp(gps_timestamp.1, gps_timestamp.2)));
                 }
             }
         }
