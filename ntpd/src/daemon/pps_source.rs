@@ -43,7 +43,7 @@ where
             // Enum to handle the selection of either a Timer or PPS Signal event
             enum SelectResult {
                 Timer,
-                Recv(io::Result<Option<f64>>),
+                Recv(io::Result<Option<(f64, NtpTimestamp)>>),
             }
             
             let selected = tokio::select! {
@@ -63,11 +63,11 @@ where
                 SelectResult::Recv(result) => {
                     match result {
                         Ok(Some(data)) => {
-                            println!("PPS OFFSET CALCULATED: {:.6} seconds", data);
+                            println!("PPS OFFSET CALCULATED: {:.6} seconds, with timestamp: {:?}", data.0, data.1);
                             match accept_pps_time(result) {
-                                AcceptResult::Accept(offset) => {
+                                AcceptResult::Accept(offset, ntp_timestamp) => {
                                     println!("offset: {:?}", offset);
-                                    self.source.handle_incoming(NtpInstant::now(), offset)
+                                    self.source.handle_incoming(NtpInstant::now(), offset, ntp_timestamp)
                                 }
                                 AcceptResult::Ignore => PpsSourceActionIterator::default(),
                             }
@@ -133,7 +133,7 @@ where
                     }
                 }
             }
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            tokio::time::sleep(Duration::from_millis(1000)).await;
         }
     }
 }
@@ -199,12 +199,12 @@ where
 
 
     /// Result handling for PPS polling.
-    pub fn accept_pps_time(result: io::Result<Option<f64>>) -> AcceptResult {
+    pub fn accept_pps_time(result: io::Result<Option<(f64, NtpTimestamp)>>) -> AcceptResult {
         match result {
             Ok(Some(data)) => {
                 println!("data: {:?}", data);
                 match parse_pps_time(data) {
-                    Ok(pps_duration) => AcceptResult::Accept(pps_duration),
+                    Ok((pps_duration, pps_timestamp)) => AcceptResult::Accept(pps_duration, pps_timestamp),
                     Err(_) => AcceptResult::Ignore,
                 }
             }
@@ -219,9 +219,9 @@ where
         }
     }
 
-    fn parse_pps_time(data: f64) -> Result<NtpDuration, Box<dyn std::error::Error>> {
-        let ntp_duration = from_seconds(data);
-        Ok(ntp_duration)
+    fn parse_pps_time(data: (f64, NtpTimestamp)) -> Result<(NtpDuration, NtpTimestamp), Box<dyn std::error::Error>> {
+        let ntp_duration = from_seconds(data.0);
+        Ok((ntp_duration, data.1))
     }
 
 //     // Calculate the fractional part of the NTP timestamp

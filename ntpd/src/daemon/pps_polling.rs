@@ -33,7 +33,7 @@ impl Pps {
     /// # Returns
     ///
     /// * `Result<(NtpTimestamp, f64, f64), String>` - The result of getting the PPS time, the system time, and the offset.
-    pub async fn poll_pps_signal(&mut self) -> io::Result<Option<f64>> {
+    pub async fn poll_pps_signal(&mut self) -> io::Result<Option<(f64, NtpTimestamp)>> {
         let ts = match clock_gettime(ClockId::CLOCK_REALTIME) {
             Ok(ts) => ts,
             Err(e) => {
@@ -61,10 +61,10 @@ impl Pps {
 
         if offset > 0.5 {
             self.latest_offset = Some(offset - 1.0);
-            Ok(Some(offset - 1.0))
+            Ok(Some((offset - 1.0, ntp_timestamp)))
         } else {
             self.latest_offset = Some(offset);
-            Ok(Some(offset))
+            Ok(Some((offset, ntp_timestamp)))
         }
 
         // Calculate the offset
@@ -108,7 +108,7 @@ impl Pps {
 /// Enum to represent the result of PPS polling.
 #[derive(Debug)]
 pub enum AcceptResult {
-    Accept(NtpDuration),
+    Accept(NtpDuration, NtpTimestamp),
     Ignore,
 }
 

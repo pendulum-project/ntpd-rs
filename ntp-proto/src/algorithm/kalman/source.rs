@@ -143,7 +143,7 @@ impl InitialSourceFilter {
             println!("gps_measurements offset in seconds: {:?}", gps_measurement.offset.to_seconds());
             self.init_offset.update(gps_measurement.offset.to_seconds());
         } if let Some(pps_measurement) = &measurement.pps {
-            //self.roundtriptime_stats.update(pps_measurement.measurementnoise.to_seconds());
+            self.roundtriptime_stats.update(pps_measurement.measurementnoise.to_seconds());
             self.init_offset.update(pps_measurement.offset.to_seconds());
         } else{
             self.roundtriptime_stats
@@ -251,7 +251,7 @@ impl SourceFilter {
         // Kalman filter update for GPS
             let gps_measurement_noise = Matrix::new([[_gps_noise]]);
             println!("gps_measuremtn noise matrix {:?}", gps_measurement_noise);
-            let gps_measurement_vec = Vector::new_vector([_gps_measurement.offset.to_seconds()]);
+            let gps_measurement_vec = Vector::new_vector([gps_offset]);
             println!("gps_measurement vector {:?}", gps_measurement_vec);
             println!("state: {:?}", self.state);
             println!("measurement_transform: {:?}", measurement_transform);
@@ -285,7 +285,7 @@ impl SourceFilter {
         } if let Some(_pps_measurement) = &measurement.pps {
             println!("YES IS DOES ARDA");
             let pps_measurement_noise = Matrix::new([[_pps_noise]]);
-            let pps_measurement_vec = Vector::new_vector([_pps_measurement.offset.to_seconds()]);
+            let pps_measurement_vec = Vector::new_vector([_pps_offset]);
             let pps_difference = pps_measurement_vec - measurement_transform * self.state;
             let pps_difference_covariance = measurement_transform * self.uncertainty * measurement_transform.transpose() + pps_measurement_noise;
             let pps_update_strength = self.uncertainty * measurement_transform.transpose() * pps_difference_covariance.inverse();

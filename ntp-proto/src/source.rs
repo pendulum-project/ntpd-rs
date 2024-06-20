@@ -160,13 +160,13 @@ impl Measurement {
             localtime: timestamp,
             monotime: local_clock_time,
 
-            stratum: 16,
+            stratum: 1,
             root_delay: NtpDuration::default(),
             root_dispersion: NtpDuration::default(),
             leap: NtpLeapIndicator::NoWarning,
             precision: 0,
             gps: Some(GpsMeasurement {
-                measurementnoise: NtpDuration::from_seconds(0.2),
+                measurementnoise: NtpDuration::from_seconds(0.02),
                 offset,
             }),
             pps:None,
@@ -175,23 +175,24 @@ impl Measurement {
     pub fn from_pps(
         offset: NtpDuration, 
         local_clock_time: NtpInstant,
+        ntp_timestamp: NtpTimestamp,
     ) -> Self {
         Self {
             delay: NtpDuration::default(),
             offset: NtpDuration::default(),
             transmit_timestamp: NtpTimestamp::default(),
             receive_timestamp: NtpTimestamp::default(),
-            localtime: NtpTimestamp::default(),
+            localtime: ntp_timestamp,
             monotime: local_clock_time,
 
-            stratum: 16,
+            stratum: 1,
             root_delay: NtpDuration::default(),
             root_dispersion: NtpDuration::default(),
             leap: NtpLeapIndicator::NoWarning,
             precision: 0,
             gps: None,
             pps: Some(PpsMeasurement {
-                measurementnoise: NtpDuration::from_seconds(0.2),
+                measurementnoise: NtpDuration::from_seconds(0.02),
                 offset,
             }),
         }

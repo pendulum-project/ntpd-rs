@@ -1,6 +1,6 @@
 use crate::time_types::{NtpInstant};
 use crate::source::Measurement;
-use crate::NtpDuration;
+use crate::{NtpDuration, NtpTimestamp};
 use std::time::Duration;
 
 use tracing::{instrument, warn};
@@ -92,9 +92,10 @@ impl PpsSource {
             &mut self,
             local_clock_time: NtpInstant,
             offset: NtpDuration,
+            ntp_timestamp: NtpTimestamp,
         ) -> PpsSourceActionIterator {
             // generate a measurement
-            let measurement = Measurement::from_pps(offset, local_clock_time);
+            let measurement = Measurement::from_pps(offset, local_clock_time, ntp_timestamp);
            
             actions!(PpsSourceAction::UpdateSystem(PpsSourceUpdate {
                 measurement: Some(measurement),

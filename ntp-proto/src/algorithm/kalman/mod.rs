@@ -109,17 +109,17 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
             state.progress_filtertime(time);
         }
         
-        let combined_with_pps = combine_with_pps::combine_with_pps(self.sources
-            .iter()
-            .filter_map(|(index, (state, usable))| {
-                if *usable {
-                    state.snapshot(*index)
-                } else {
-                    None
-                }
-            })
-            .collect(),
-        );
+        // let combined_with_pps = combine_with_pps::combine_with_pps(self.sources
+        //     .iter()
+        //     .filter_map(|(index, (state, usable))| {
+        //         if *usable {
+        //             state.snapshot(*index)
+        //         } else {
+        //             None
+        //         }
+        //     })
+        //     .collect(),
+        // );
         
         let selection = select::select(
             &self.synchronization_config,
