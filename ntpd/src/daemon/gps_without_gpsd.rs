@@ -1,4 +1,5 @@
 use chrono::{NaiveDate, NaiveTime, NaiveDateTime, Utc};
+use ntp_proto::NtpTimestamp;
 use tracing::info;
 use std::io::{self, BufRead, BufReader};
 use std::time::Duration;
@@ -49,7 +50,7 @@ impl Gps {
     /// # Returns
     ///
     /// * `Option<f64>` - The corresponding Unix timestamp with fractional seconds, or `None` if the conversion fails.
-    fn nmea_time_date_to_unix_timestamp(&self, nmea_time: &str, nmea_date: &str) -> Option<f64> {
+    fn nmea_time_date_to_unix_timestamp(&self, nmea_time: &str, nmea_date: &str) -> Option<(f64, u64, u32)> {
         let (hour, minute, second) = self.parse_nmea_time(nmea_time)?;
         let (day, month, year) = self.parse_nmea_date(nmea_date)?;
 
@@ -63,9 +64,9 @@ impl Gps {
 
         let naive_datetime = NaiveDateTime::new(naive_date, naive_time);
         let timestamp = naive_datetime.and_utc().timestamp() as f64
-            + naive_datetime.and_utc().timestamp_subsec_micros() as f64 * 1e-6;
+            + naive_datetime.and_utc().timestamp_subsec_nanos() as f64;
 
-        Some(timestamp)
+        Some((timestamp, naive_datetime.and_utc().timestamp() as u64, naive_datetime.and_utc().timestamp_subsec_nanos() as u32))
     }
 
     /// Parses an NMEA time string into hours, minutes, and seconds.
@@ -136,6 +137,8 @@ impl Gps {
         fields.len() > 9 && fields[2] == "A"
     }
 
+    
+
     /// Processes GNGGA fields and returns the offset between the GPS time and the system time.
     ///
     /// # Arguments
@@ -145,12 +148,13 @@ impl Gps {
     /// # Returns
     ///
     /// * `Option<f64>` - The offset in seconds, or `None` if processing fails.
-    fn process_gngga(&mut self, fields: &[&str]) -> Option<f64> {
+    fn process_gngga(&mut self, fields: &[&str]) -> Option<(f64, NtpTimestamp)> {
         if let Some(time) = fields.get(1) {
             if let Some(date) = &self.current_date {
                 if let Some(gps_timestamp) = self.nmea_time_date_to_unix_timestamp(time, date) {
                     let system_time = Utc::now().timestamp() as f64 + Utc::now().timestamp_subsec_micros() as f64 * 1e-6;
-                    return Some(gps_timestamp - system_time);
+
+                    return Some((gps_timestamp.0 - system_time, NtpTimestamp::from_unix_timestamp(gps_timestamp.1, gps_timestamp.2)));
                 }
             }
         }
@@ -162,7 +166,7 @@ impl Gps {
     /// # Returns
     ///
     /// * `io::Result<Option<f64>>` - The result of reading and processing lines with an optional offset.
-    pub async fn current_data(&mut self) -> io::Result<Option<f64>> {
+    pub async fn current_data(&mut self) -> io::Result<Option<(f64, NtpTimestamp)>> {
         let mut line = String::new();
         match self.reader.read_line(&mut line) {
             Ok(_) => {
@@ -178,7 +182,6 @@ impl Gps {
                     info!("no we here");
                     return Ok(self.process_gngga(&fields));
                 }
-                info!("we hereß");
                 Ok(None)
             },
             Err(e) => {

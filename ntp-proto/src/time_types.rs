@@ -109,6 +109,24 @@ impl NtpTimestamp {
     pub const fn from_fixed_int(timestamp: u64) -> NtpTimestamp {
         NtpTimestamp { timestamp }
     }
+    
+    pub fn from_unix_timestamp(unix_timestamp: u64, nanos: u32) -> Self {
+        const UNIX_TO_NTP_OFFSET: u64 = 2_208_988_800; // Offset in seconds between Unix epoch and NTP epoch
+        const NTP_SCALE_FRAC: u64 = 4_294_967_296; // 2^32 for scaling nanoseconds to fraction
+        // Calculate NTP seconds
+        let ntp_seconds = unix_timestamp + UNIX_TO_NTP_OFFSET;
+
+        // Calculate the fractional part of the NTP timestamp
+        let fraction = ((nanos as u64 * NTP_SCALE_FRAC) / 1_000_000_000) as u64;
+
+        // Combine NTP seconds and fraction to form the complete NTP timestamp
+        let timestamp = (ntp_seconds << 32) | fraction;
+
+        println!("Unix Timestamp: {}, Nanos: {}, NTP Seconds: {}, Fraction: {}", unix_timestamp, nanos, ntp_seconds, fraction);
+        println!("Combined NTP Timestamp: {:#018X}", timestamp);
+
+        NtpTimestamp { timestamp }
+    }
 }
 
 // In order to provide increased entropy on origin timestamps,

@@ -51,7 +51,7 @@ where
         loop {
             enum SelectResult {
                 Timer,
-                Recv(io::Result<Option<f64>>),
+                Recv(io::Result<Option<(f64, NtpTimestamp)>>),
             }
             let selected = tokio::select! {
                 () = &mut poll_wait => {
@@ -109,14 +109,15 @@ where
                     match result {
                         Ok(Some(data)) => {
                             // Process GPS data
-                            println!(
-                                "Offset between GPS time and system time: {:.6} seconds",
-                                data
-                            );
+                            println!("Offset between GPS time and system time: {:.6} seconds and the gps time is {:?}", data.0, data.1);
                             match accept_gps_time(result) {
-                                AcceptResult::Accept(offset) => {
+                                AcceptResult::Accept((offset, timestamp)) => {
                                     println!("offset: {:?}", offset);
-                                    self.source.handle_incoming(NtpInstant::now(), offset)
+                                    self.source.handle_incoming(
+                                        NtpInstant::now(),
+                                        offset,
+                                        timestamp,
+                                    )
                                 }
                                 AcceptResult::Ignore => GpsSourceActionIterator::default(),
                             }
@@ -247,7 +248,7 @@ where
 
 #[derive(Debug)]
 enum AcceptResult {
-    Accept(NtpDuration),
+    Accept((NtpDuration, NtpTimestamp)),
     Ignore,
 }
 
@@ -264,21 +265,25 @@ pub fn from_seconds(seconds: f64) -> NtpDuration {
     NtpDuration::from_seconds(seconds)
 }
 
-fn parse_gps_time(data: &Option<f64>) -> Result<NtpDuration, Box<dyn std::error::Error>> {
+fn parse_gps_time(
+    data: &Option<(f64, NtpTimestamp)>,
+) -> Result<(NtpDuration, NtpTimestamp), Box<dyn std::error::Error>> {
     if let Some(offset) = data {
-        let ntp_duration = from_seconds(*offset);
-        Ok(ntp_duration)
+        let ntp_duration = from_seconds(offset.0);
+        Ok((ntp_duration, offset.1))
     } else {
         Err("Failed to parse GPS time".into())
     }
 }
 
-fn accept_gps_time(result: io::Result<Option<f64>>) -> AcceptResult {
+fn accept_gps_time(result: io::Result<Option<(f64, NtpTimestamp)>>) -> AcceptResult {
     match result {
         Ok(data) => {
             println!("data: {:?}", data);
             match parse_gps_time(&data) {
-                Ok(gps_duration) => AcceptResult::Accept(gps_duration),
+                Ok((gps_duration, gps_timestamp)) => {
+                    AcceptResult::Accept((gps_duration, gps_timestamp))
+                }
                 Err(_) => AcceptResult::Ignore,
             }
         }
