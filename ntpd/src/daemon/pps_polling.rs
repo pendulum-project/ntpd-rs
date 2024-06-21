@@ -104,3 +104,56 @@ pub enum AcceptResult {
     Ignore,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+//     #[tokio::test]
+//     async fn test_poll_pps_signal() {
+//         let mut pps = Pps::new().expect("Failed to open PPS device");
+
+//         match pps.poll_pps_signal().await {
+//         Ok(Some((offset, ntp_timestamp))) => {
+//             println!("PPS Offset: {}, NTP Timestamp: {:?}", offset, ntp_timestamp);
+//         }
+//         Ok(None) => println!("No PPS signal found."),
+//         Err(e) => println!("Error: {:?}", e),
+//     }
+// }
+
+    #[test]
+    fn test_from_unix_timestamp() {
+        let unix_timestamp = 1_614_774_800; // This is equivalent to some date in 2021
+        let nanos = 500_000_000; // 0.5 seconds
+
+        let ntp_timestamp = Pps::from_unix_timestamp(unix_timestamp, nanos);
+        
+        // Expected NTP timestamp calculated manually
+        let expected_ntp_timestamp = NtpTimestamp::from_fixed_int(
+            ((unix_timestamp + 2_208_988_800) << 32) | ((nanos as u64 * 4_294_967_296) / 1_000_000_000)
+        );
+
+        assert_eq!(ntp_timestamp, expected_ntp_timestamp);
+    }
+    
+    #[test]
+    fn test_parse_ppstest_output() {
+        let line = "source 0 - assert 1614774800.500000000, sequence: 0 - clear";
+        let result = Pps::parse_ppstest_output(line);
+
+        assert!(result.is_some());
+        
+        let (timestamp, nanos) = result.unwrap();
+        assert_eq!(timestamp, 1_614_774_800);
+        assert_eq!(nanos, 500_000_000);
+    }
+
+    #[test]
+    fn test_parse_ppstest_output_invalid() {
+        let line = "invalid line without proper format";
+        let result = Pps::parse_ppstest_output(line);
+
+        assert!(result.is_none());
+    }
+}
+ 
