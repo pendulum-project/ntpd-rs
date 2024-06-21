@@ -1,38 +1,41 @@
 use super::{matrix::{Matrix, Vector}, SourceSnapshot};
 
 
-pub(crate) fn combine_with_pps<Index: Copy>(candidates: Vec<SourceSnapshot<Index>>, pps_source_id: i32) -> Vec<SourceSnapshot<Index>> {
+pub(crate) fn combine_with_pps<Index: Copy, SourceId:Eq + Copy>(candidates: Vec<SourceSnapshot<Index>>, pps_source_id: SourceId) -> Vec<SourceSnapshot<Index>> {
     println!("COMBINE WITH PPS: Number of candidates: {}", candidates.len());
-    for snapshot in candidates.iter() {
-        println!("COMBINE PPS uncertainty: {:?}, offset: {:?}", snapshot.offset_uncertainty(), snapshot.offset());
-    }
+    candidates
+    // for snapshot in candidates.iter() {
+    //     println!("COMBINE PPS uncertainty: {:?}, offset: {:?}", snapshot.offset_uncertainty(), snapshot.offset());
+    // }
 
     
     // Convert PPS source ID to zero-based index
-    let pps_index = pps_source_id - 1;
+    //geen int meer
+    //let pps_index = pps_source_id - 1;
 
-    let mut results = Vec::new();
-    let mut pps_snapshot = None;
+    // let mut results = Vec::new();
+    // let mut pps_snapshot = None;
 
-    for (i, snapshot) in candidates.into_iter().enumerate() {
-        if i == pps_index as usize {
-            pps_snapshot = Some(snapshot);
-        } else {
-            results.push(snapshot.clone());
-        }
-    }
+    // geen int meer
+    // for (i, snapshot) in candidates.into_iter().enumerate() {
+    //     if i == pps_index as usize {
+    //         pps_snapshot = Some(snapshot);
+    //     } else {
+    //         results.push(snapshot.clone());
+    //     }
+    // }
 
-    if let Some(pps) = pps_snapshot {
-        let mut final_candidates = Vec::new();
-        for snapshot in results.clone() {
-            let combined = combine_sources(pps.clone(), snapshot.clone());
-            final_candidates.push(snapshot);
-            final_candidates.push(combined);
-        }
-        final_candidates
-    } else {
-        results
-    }
+    // if let Some(pps) = pps_snapshot {
+    //     let mut final_candidates = Vec::new();
+    //     for snapshot in results.clone() {
+    //         let combined = combine_sources(pps.clone(), snapshot.clone());
+    //         final_candidates.push(snapshot);
+    //         final_candidates.push(combined);
+    //     }
+    //     final_candidates
+    // } else {
+    //     results
+    // }
 }
 
 

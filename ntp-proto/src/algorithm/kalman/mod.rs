@@ -80,12 +80,15 @@ pub struct KalmanClockController<C: NtpClock, SourceId: Hash + Eq + Copy + Debug
     timedata: TimeSnapshot,
     desired_freq: f64,
     in_startup: bool,
-    pps_source_id: i32,
+    pps_source_id: Option<SourceId>,
 }
 
 impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, SourceId> {
     #[instrument(skip(self))]
     fn update_source(&mut self, id: SourceId, measurement: Measurement) -> bool {
+        if let Some(_pps_measurement) = &measurement.gps{
+            self.pps_source_id = Some(id);
+        }
         self.sources.get_mut(&id).map(|state| {
             state.0.update_self_using_measurement(
                 &self.source_defaults_config,
@@ -116,7 +119,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
 
 
 
-        println!("PPS SOURCE INDEX {:?}", self.pps_source_id - 1);
+        println!("PPS SOURCE INDEX {:?}", self.pps_source_id);
 
 
         let candidates = combine_with_pps::combine_with_pps(self.sources
@@ -329,7 +332,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> TimeSyncController<C, Sour
         synchronization_config: SynchronizationConfig,
         source_defaults_config: SourceDefaultsConfig,
         algo_config: Self::AlgorithmConfig,
-        pps_source_id: i32,
+        pps_source_id: Option<SourceId>,
     ) -> Result<Self, C::Error> {
         // Setup clock
         clock.disable_ntp_algorithm()?;
@@ -375,7 +378,32 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> TimeSyncController<C, Sour
         }
     }
 
+    fn source_pps_update(&mut self, id: SourceId, usable: bool) {
+        if let Some(state) = self.sources.get_mut(&id) {
+            state.1 = usable;
+        }
+    }
+
     fn source_measurement(
+        &mut self,
+        id: SourceId,
+        measurement: Measurement,
+    ) -> StateUpdate<SourceId> {
+
+        let should_update_clock = self.update_source(id, measurement);
+        self.update_desired_poll();
+        if should_update_clock {
+            self.update_clock(measurement.localtime)
+        } else {
+            StateUpdate {
+                used_sources: None,
+                time_snapshot: Some(self.timedata),
+                next_update: None,
+            }
+        }
+    }
+
+    fn source_pps_measurement(
         &mut self,
         id: SourceId,
         measurement: Measurement,
@@ -473,7 +501,7 @@ mod tests {
             synchronization_config,
             source_defaults_config,
             algo_config,
-            -1,
+            None,
         )
         .unwrap();
         let mut cur_instant = NtpInstant::now();
@@ -542,7 +570,7 @@ mod tests {
             synchronization_config,
             source_defaults_config,
             algo_config,
-            -1,
+            None,
         )
         .unwrap();
 
@@ -573,7 +601,7 @@ mod tests {
             synchronization_config,
             source_defaults_config,
             algo_config,
-            -1,
+            None,
         )
         .unwrap();
 
@@ -599,7 +627,7 @@ mod tests {
             synchronization_config,
             source_defaults_config,
             algo_config,
-            -1,
+            None,
         )
         .unwrap();
         let mut cur_instant = NtpInstant::now();
@@ -659,7 +687,7 @@ mod tests {
             synchronization_config,
             source_defaults_config,
             algo_config,
-            -1,
+            None,
         )
         .unwrap();
         let mut cur_instant = NtpInstant::now();
