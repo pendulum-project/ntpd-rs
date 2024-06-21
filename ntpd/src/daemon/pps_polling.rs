@@ -6,13 +6,17 @@ use ntp_proto::{NtpDuration, NtpTimestamp};
 #[derive(Debug)]
 pub struct Pps {
     latest_offset: Option<f64>,
+    port_name: String,
+    pub measurement_noise: f64,
 }
 
 impl Pps {
     /// Opens the PPS device and creates a new Pps instance.
-    pub fn new() -> io::Result<Self> {
+    pub fn new(port_name: String, measurement_noise: f64) -> io::Result<Self> {
         Ok(Pps {
             latest_offset: None,
+            port_name,
+            measurement_noise,
         })
     }
 
@@ -24,7 +28,7 @@ impl Pps {
     pub async fn poll_pps_signal(&mut self) -> io::Result<Option<(f64, NtpTimestamp)>> {
         let mut child = Command::new("sudo")
             .arg("ppstest")
-            .arg("/dev/pps0")
+            .arg(self.port_name.as_str())
             .stdout(Stdio::piped())
             .spawn()
             .expect("Failed to start ppstest");
@@ -100,20 +104,3 @@ pub enum AcceptResult {
     Ignore,
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-
-//     #[tokio::test]
-//     async fn test_poll_pps_signal() {
-//         let mut pps = Pps::new().expect("Failed to open PPS device");
-
-//         match pps.poll_pps_signal().await {
-//             Ok(Some((offset, ntp_timestamp))) => {
-//                 println!("PPS Offset: {}, NTP Timestamp: {:?}", offset, ntp_timestamp);
-//             }
-//             Ok(None) => println!("No PPS signal found."),
-//             Err(e) => println!("Error: {:?}", e),
-//         }
-//     }
-// }

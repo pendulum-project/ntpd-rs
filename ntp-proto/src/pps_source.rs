@@ -93,9 +93,10 @@ impl PpsSource {
             local_clock_time: NtpInstant,
             offset: NtpDuration,
             ntp_timestamp: NtpTimestamp,
+            measurement_noise: f64,
         ) -> PpsSourceActionIterator {
             // generate a measurement
-            let measurement = Measurement::from_pps(offset, local_clock_time, ntp_timestamp);
+            let measurement = Measurement::from_pps(offset, local_clock_time, ntp_timestamp, measurement_noise);
            
             actions!(PpsSourceAction::UpdateSystem(PpsSourceUpdate {
                 measurement: Some(measurement),

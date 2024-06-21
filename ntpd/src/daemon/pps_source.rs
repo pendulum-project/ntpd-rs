@@ -67,7 +67,7 @@ where
                             match accept_pps_time(result) {
                                 AcceptResult::Accept(offset, ntp_timestamp) => {
                                     println!("offset: {:?}", offset);
-                                    self.source.handle_incoming(NtpInstant::now(), offset, ntp_timestamp)
+                                    self.source.handle_incoming(NtpInstant::now(), offset, ntp_timestamp, self.pps.measurement_noise)
                                 }
                                 AcceptResult::Ignore => PpsSourceActionIterator::default(),
                             }

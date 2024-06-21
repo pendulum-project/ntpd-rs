@@ -155,9 +155,13 @@ impl SpawnAction {
 
     pub fn create_pps(
         id: SourceId,
+        addr: String,
+        measurement_noise: f64,
     ) -> SpawnAction {
         SpawnAction::CreatePps(PpsSourceCreateParameters {
             id,
+            addr,
+            measurement_noise,
         })
     }
 
@@ -183,6 +187,8 @@ pub struct GpsSourceCreateParameters {
 #[derive(Debug)]
 pub struct PpsSourceCreateParameters {
     pub id: SourceId,
+    pub addr: String,
+    pub measurement_noise: f64,
 }
 
 #[cfg(test)]

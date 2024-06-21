@@ -25,6 +25,13 @@ pub struct GpsConfigSource {
     pub baud_rate: u32,
 }
 
+#[derive(Deserialize, Debug, PartialEq, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct PpsConfigSource {
+    pub address: String,
+    pub measurement_noise: f64,
+}
+
 #[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct NtsSourceConfig {
@@ -94,6 +101,8 @@ pub struct NtsPoolSourceConfig {
 pub enum NtpSourceConfig {
     #[serde(rename = "Gps")]
     Gps(GpsConfigSource),
+    #[serde(rename = "Pps")]
+    Pps(PpsConfigSource),
     #[serde(rename = "server")]
     Standard(StandardSource),
     #[serde(rename = "nts")]
@@ -348,6 +357,7 @@ mod tests {
             NtpSourceConfig::Nts(c) => c.address.to_string(),
             NtpSourceConfig::Pool(c) => c.addr.to_string(),
             NtpSourceConfig::Gps(c) => c.address.to_string(),
+            NtpSourceConfig::Pps(c) => c.address.to_string(),
             #[cfg(feature = "unstable_nts-pool")]
             NtpSourceConfig::NtsPool(c) => c.addr.to_string(),
         }

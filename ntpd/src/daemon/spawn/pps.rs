@@ -2,6 +2,8 @@ use std::fmt::Display;
 use tokio::sync::mpsc;
 
 
+use crate::daemon::config::PpsConfigSource;
+
 use super::{BasicSpawner, SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, SpawnerId};
 
 pub struct PpsSource {
@@ -11,6 +13,7 @@ pub struct PpsSource {
 pub struct PpsSpawner {
     id: SpawnerId,
     current_sources: Vec<PpsSource>,
+    config: PpsConfigSource,
 }
 
 #[derive(Debug)]
@@ -25,10 +28,11 @@ impl Display for PpsSpawnError {
 impl std::error::Error for PpsSpawnError {}
 
 impl PpsSpawner {
-    pub fn new() -> PpsSpawner {
+    pub fn new(config: PpsConfigSource) -> PpsSpawner {
         PpsSpawner {
             id: Default::default(),
             current_sources: Default::default(),
+            config,
         }
     }
 }
@@ -53,6 +57,8 @@ impl BasicSpawner for PpsSpawner {
 
         let action = SpawnAction::create_pps(
             id,
+            self.config.address.clone(),
+            self.config.measurement_noise,
         );
 
         tracing::debug!(?action, "intending to spawn new pps source");
