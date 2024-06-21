@@ -2,6 +2,7 @@ use crate::config::SynchronizationConfig;
 
 use super::{config::AlgorithmConfig, SourceSnapshot};
 
+#[derive(Debug)]
 enum BoundType {
     Start,
     End,
