@@ -54,6 +54,7 @@ pub trait TimeSyncController<C: NtpClock, SourceId: Hash + Eq + Copy + Debug>: S
         synchronization_config: SynchronizationConfig,
         source_defaults_config: SourceDefaultsConfig,
         algorithm_config: Self::AlgorithmConfig,
+        pps_source_id: i32,
     ) -> Result<Self, C::Error>;
     /// Update used system config
     fn update_config(

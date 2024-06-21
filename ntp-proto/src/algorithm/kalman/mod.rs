@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Debug, hash::Hash, time::Duration};
 use tracing::{error, info, instrument};
 
 use crate::{
-    clock::NtpClock, config::{SourceDefaultsConfig, SynchronizationConfig}, packet::NtpLeapIndicator, pps_source, source::Measurement, system::TimeSnapshot, time_types::{NtpDuration, NtpTimestamp}
+    clock::NtpClock, config::{SourceDefaultsConfig, SynchronizationConfig}, packet::NtpLeapIndicator, source::Measurement, system::TimeSnapshot, time_types::{NtpDuration, NtpTimestamp}
 };
 
 use self::{
@@ -72,6 +72,7 @@ pub struct KalmanClockController<C: NtpClock, SourceId: Hash + Eq + Copy + Debug
     timedata: TimeSnapshot,
     desired_freq: f64,
     in_startup: bool,
+    pps_source_id: i32,
 }
 
 impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, SourceId> {
@@ -88,6 +89,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
 
     fn update_clock(&mut self, time: NtpTimestamp) -> StateUpdate<SourceId> {
         // ensure all filters represent the same (current) time
+        println!("PPS SOURCE INDEX {:?}", self.pps_source_id);
         if self
             .sources
             .iter()
@@ -321,6 +323,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> TimeSyncController<C, Sour
         synchronization_config: SynchronizationConfig,
         source_defaults_config: SourceDefaultsConfig,
         algo_config: Self::AlgorithmConfig,
+        pps_source_id: i32,
     ) -> Result<Self, C::Error> {
         // Setup clock
         clock.disable_ntp_algorithm()?;
@@ -337,6 +340,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> TimeSyncController<C, Sour
             desired_freq: 0.0,
             timedata: TimeSnapshot::default(),
             in_startup: true,
+            pps_source_id,
         })
     }
 
@@ -370,6 +374,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> TimeSyncController<C, Sour
         id: SourceId,
         measurement: Measurement,
     ) -> StateUpdate<SourceId> {
+
         let should_update_clock = self.update_source(id, measurement);
         self.update_desired_poll();
         if should_update_clock {
@@ -462,6 +467,7 @@ mod tests {
             synchronization_config,
             source_defaults_config,
             algo_config,
+            -1,
         )
         .unwrap();
         let mut cur_instant = NtpInstant::now();
@@ -530,6 +536,7 @@ mod tests {
             synchronization_config,
             source_defaults_config,
             algo_config,
+            -1,
         )
         .unwrap();
 
@@ -560,6 +567,7 @@ mod tests {
             synchronization_config,
             source_defaults_config,
             algo_config,
+            -1,
         )
         .unwrap();
 
@@ -585,6 +593,7 @@ mod tests {
             synchronization_config,
             source_defaults_config,
             algo_config,
+            -1,
         )
         .unwrap();
         let mut cur_instant = NtpInstant::now();
@@ -644,6 +653,7 @@ mod tests {
             synchronization_config,
             source_defaults_config,
             algo_config,
+            -1,
         )
         .unwrap();
         let mut cur_instant = NtpInstant::now();

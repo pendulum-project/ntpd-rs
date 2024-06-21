@@ -287,7 +287,6 @@ impl SourceFilter {
         } 
         
         if let Some(_pps_measurement) = &measurement.pps {
-            println!("YES IS DOES ARDA");
             let pps_measurement_noise = Matrix::new([[_pps_noise]]);
             let pps_measurement_vec = Vector::new_vector([_pps_offset]);
             let pps_difference = pps_measurement_vec - measurement_transform * self.state;

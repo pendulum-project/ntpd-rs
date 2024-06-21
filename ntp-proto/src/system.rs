@@ -126,6 +126,7 @@ pub struct System<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> {
 
     clock: C,
     controller: Option<KalmanClockController<C, SourceId>>,
+    pps_source_id: i32,
 }
 
 
@@ -135,6 +136,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
         synchronization_config: SynchronizationConfig,
         source_defaults_config: SourceDefaultsConfig,
         ip_list: Arc<[IpAddr]>,
+        pps_source_id: i32,
     ) -> Self {
         // Setup system snapshot
         let mut system = SystemSnapshot {
@@ -155,6 +157,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
             sources: Default::default(),
             clock,
             controller: None,
+            pps_source_id,
         }
     }
 
@@ -170,6 +173,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
                 self.synchronization_config,
                 self.source_defaults_config,
                 self.synchronization_config.algorithm,
+                self.pps_source_id,
             )?,
         };
         Ok(self.controller.insert(controller))

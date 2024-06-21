@@ -99,15 +99,24 @@ pub async fn spawn(
         source_defaults_config,
         keyset,
         ip_list,
+        -1,
     );
     system.add_spawner(GpsSpawner::new()).map_err(|e| {
         tracing::error!("Could not spawn gps source: {}", e);
         std::io::Error::new(std::io::ErrorKind::Other, e)
     })?;
-    system.add_spawner(PpsSpawner::new()).map_err(|e| {
-        tracing::error!("Could not spawn pps source: {}", e);
-        std::io::Error::new(std::io::ErrorKind::Other, e)
-    })?;
+    let pps_source_id = system
+        .add_spawner(PpsSpawner::new())
+        .map_err(|e| {
+            tracing::error!("Could not spawn pps source: {}", e);
+            std::io::Error::new(std::io::ErrorKind::Other, e)
+        })?
+        .as_i32();
+
+    // Update the pps_source_id in system
+    system.update_pps_source_id(pps_source_id);
+
+    println!("PPS SOURCE INDEX IN DAEMON {:?}", system.pps_source_id);
 
     for source_config in source_configs {
         match source_config {
@@ -169,30 +178,24 @@ struct SystemSpawnerData {
 struct SystemTask<C: NtpClock, T: Wait> {
     _wait: PhantomData<SingleshotSleep<T>>,
     source_defaults_config: SourceDefaultsConfig,
+    synchronization_config: SynchronizationConfig, // Add this field
+    clock: C,                                      // Add this field
     system: System<C, SourceId>,
-
     system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
     source_snapshots_sender: tokio::sync::watch::Sender<Vec<ObservableSourceState>>,
     server_data_sender: tokio::sync::watch::Sender<Vec<ServerData>>,
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     ip_list: tokio::sync::watch::Receiver<Arc<[IpAddr]>>,
-
     msg_for_system_rx: mpsc::Receiver<MsgForSystem>,
     spawn_tx: mpsc::Sender<SpawnEvent>,
     spawn_rx: mpsc::Receiver<SpawnEvent>,
-
     sources: HashMap<SourceId, SourceState>,
     servers: Vec<ServerData>,
     spawners: Vec<SystemSpawnerData>,
     source_channels: SourceChannels,
-    clock: C,
-
-    // which timestamps to use (this is a hint, OS or hardware may ignore)
     timestamp_mode: TimestampMode,
-
-    // bind the socket to a specific interface. This is relevant for hardware timestamping,
-    // because the interface determines which clock is used to produce the timestamps.
     interface: Option<InterfaceName>,
+    pps_source_id: i32,
 }
 
 impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
@@ -204,12 +207,14 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
         source_defaults_config: SourceDefaultsConfig,
         keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
         ip_list: tokio::sync::watch::Receiver<Arc<[IpAddr]>>,
+        pps_source_id: i32,
     ) -> (Self, DaemonChannels) {
         let system = System::new(
             clock.clone(),
-            synchronization_config,
-            source_defaults_config,
+            synchronization_config.clone(),
+            source_defaults_config.clone(),
             ip_list.borrow().clone(),
+            pps_source_id,
         );
 
         // Create communication channels
@@ -227,18 +232,17 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
             SystemTask {
                 _wait: PhantomData,
                 source_defaults_config,
+                synchronization_config,
+                clock: clock.clone(),
                 system,
-
                 system_snapshot_sender,
                 source_snapshots_sender,
                 server_data_sender,
                 keyset: keyset.clone(),
                 ip_list,
-
                 msg_for_system_rx: msg_for_system_receiver,
                 spawn_rx,
                 spawn_tx,
-
                 sources: Default::default(),
                 servers: Default::default(),
                 spawners: Default::default(),
@@ -246,9 +250,9 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
                     msg_for_system_sender,
                     system_snapshot_receiver: system_snapshot_receiver.clone(),
                 },
-                clock,
                 timestamp_mode,
                 interface,
+                pps_source_id,
             },
             DaemonChannels {
                 source_snapshots_receiver,
@@ -256,6 +260,18 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
                 system_snapshot_receiver,
             },
         )
+    }
+
+    // Method to update pps_source_id and reinitialize system
+    fn update_pps_source_id(&mut self, pps_source_id: i32) {
+        self.pps_source_id = pps_source_id;
+        self.system = System::new(
+            self.clock.clone(),
+            self.synchronization_config.clone(),
+            self.source_defaults_config.clone(),
+            self.ip_list.borrow().clone(),
+            pps_source_id,
+        );
     }
 
     fn add_spawner(
@@ -701,6 +717,7 @@ mod tests {
             SourceDefaultsConfig::default(),
             keyset,
             ip_list,
+            -1,
         );
         let wait =
             SingleshotSleep::new_disabled(tokio::time::sleep(std::time::Duration::from_secs(0)));
