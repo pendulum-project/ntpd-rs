@@ -304,13 +304,13 @@ pub enum ProtocolVersion {
 }
 
 impl ProtocolVersion {
-    pub fn expected_incoming_version(&self) -> u8 {
+    pub fn is_expected_incoming_version(&self, incoming_version: u8) -> bool {
         match self {
-            ProtocolVersion::V4 => 4,
+            ProtocolVersion::V4 => incoming_version == 4 || incoming_version == 3,
             #[cfg(feature = "ntpv5")]
-            ProtocolVersion::V4UpgradingToV5 { .. } => 4,
+            ProtocolVersion::V4UpgradingToV5 { .. } => incoming_version == 4,
             #[cfg(feature = "ntpv5")]
-            ProtocolVersion::V5 => 5,
+            ProtocolVersion::V5 => incoming_version == 5,
         }
     }
 }
@@ -619,7 +619,15 @@ impl<Controller: SourceController> NtpSource<Controller> {
                 }
             };
 
-        if message.version() != self.protocol_version.expected_incoming_version() {
+        if !self
+            .protocol_version
+            .is_expected_incoming_version(message.version())
+        {
+            warn!(
+                incoming_version = message.version(),
+                expected_version = ?self.protocol_version,
+                "Received packet with unexpected version from source"
+            );
             return actions!();
         }
 
