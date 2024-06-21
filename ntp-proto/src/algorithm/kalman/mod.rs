@@ -20,7 +20,7 @@ pub(super) mod config;
 pub mod matrix;
 mod select;
 pub mod source;
-mod combine_with_pps;
+pub mod combine_with_pps;
 
 fn sqr(x: f64) -> f64 {
     x * x
@@ -86,7 +86,7 @@ pub struct KalmanClockController<C: NtpClock, SourceId: Hash + Eq + Copy + Debug
 impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, SourceId> {
     #[instrument(skip(self))]
     fn update_source(&mut self, id: SourceId, measurement: Measurement) -> bool {
-        if let Some(_pps_measurement) = &measurement.gps{
+        if let Some(_pps_measurement) = &measurement.pps{
             self.pps_source_id = Some(id);
         }
         self.sources.get_mut(&id).map(|state| {
@@ -115,25 +115,71 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
         for (_, (state, _)) in self.sources.iter_mut() {
             state.progress_filtertime(time);
         }
+        let candidates = if let Some(pps_source) = self.pps_source_id {
+            println!("PPS SOURCE INDEX {:?}", pps_source);
+        
+            // Extract the PPS SourceSnapshot
+            let pps_snapshot = self.sources.iter()
+                .filter_map(|(index, (state, usable))| {
+                    if *index == pps_source && *usable {
+                        state.snapshot(*index)
+                    } else {
+                        None
+                    }
+                })
+                .next();
+        
+            // Collect the other candidates
+            let other_candidates: Vec<_> = self.sources.iter()
+                .filter_map(|(index, (state, usable))| {
+                    if *usable && *index != pps_source {
+                        state.snapshot(*index)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+        
+            // Combine the PPS snapshot with other candidates if PPS snapshot is found
+            if let Some(pps_snapshot) = pps_snapshot {
+                combine_with_pps::combine_with_pps::<SourceId, SourceId>(pps_snapshot, other_candidates)
+            } else {
+                other_candidates
+            }
+        } else {
+            // If pps_source_id is None, just use other_candidates
+            self.sources.iter()
+                .filter_map(|(index, (state, usable))| {
+                    if *usable {
+                        state.snapshot(*index)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        };
 
 
+        // let candidates = combine_with_pps::combine_with_pps(self.sources
+        //     .iter()
+        //     .filter_map(|(index, (state, usable))| {
+        //         if *usable {
+        //             state.snapshot(*index)
+        //         } else {
+        //             None
+        //         }
+        //     })
+        //     .collect(),
+        //     self.pps_source_id,
+        // );
 
-
-        println!("PPS SOURCE INDEX {:?}", self.pps_source_id);
-
-
-        let candidates = combine_with_pps::combine_with_pps(self.sources
-            .iter()
-            .filter_map(|(index, (state, usable))| {
-                if *usable {
-                    state.snapshot(*index)
-                } else {
-                    None
-                }
-            })
-            .collect(),
-            self.pps_source_id,
-        );
+        // let candidates = combine_with_pps::combine_with_pps(self.sources
+        //     .iter()
+        //     .filter(|(index, (state, usable))| 
+        //         index == pps_source)
+        //     .collect(),
+        //     self.pps_source_id,
+        // );
         println!("AFTER COMMBINE WITH PPS: Number of candidates: {}", candidates.len());
 
         

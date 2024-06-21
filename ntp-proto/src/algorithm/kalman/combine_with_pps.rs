@@ -1,41 +1,27 @@
 use super::{matrix::{Matrix, Vector}, SourceSnapshot};
 
-
-pub(crate) fn combine_with_pps<Index: Copy, SourceId:Eq + Copy>(candidates: Vec<SourceSnapshot<Index>>, pps_source_id: SourceId) -> Vec<SourceSnapshot<Index>> {
+pub(crate) fn combine_with_pps<Index: Copy + PartialEq + std::fmt::Debug, SourceId: Eq + Copy>(
+    pps: SourceSnapshot<Index>,
+    candidates: Vec<SourceSnapshot<Index>>,
+) -> Vec<SourceSnapshot<Index>> {
     println!("COMBINE WITH PPS: Number of candidates: {}", candidates.len());
-    candidates
-    // for snapshot in candidates.iter() {
-    //     println!("COMBINE PPS uncertainty: {:?}, offset: {:?}", snapshot.offset_uncertainty(), snapshot.offset());
-    // }
+    for snapshot in &candidates {
+        println!(
+            "COMBINE PPS uncertainty: {:?}, offset: {:?}",
+            snapshot.offset_uncertainty(),
+            snapshot.offset()
+        );
+    }
 
-    
-    // Convert PPS source ID to zero-based index
-    //geen int meer
-    //let pps_index = pps_source_id - 1;
+    let mut results = Vec::new();
 
-    // let mut results = Vec::new();
-    // let mut pps_snapshot = None;
+    for snapshot in &candidates {
+        results.push(snapshot.clone());
+        let combined = combine_sources(pps.clone(), snapshot.clone());
+        results.push(combined.clone());
+    }
 
-    // geen int meer
-    // for (i, snapshot) in candidates.into_iter().enumerate() {
-    //     if i == pps_index as usize {
-    //         pps_snapshot = Some(snapshot);
-    //     } else {
-    //         results.push(snapshot.clone());
-    //     }
-    // }
-
-    // if let Some(pps) = pps_snapshot {
-    //     let mut final_candidates = Vec::new();
-    //     for snapshot in results.clone() {
-    //         let combined = combine_sources(pps.clone(), snapshot.clone());
-    //         final_candidates.push(snapshot);
-    //         final_candidates.push(combined);
-    //     }
-    //     final_candidates
-    // } else {
-    //     results
-    // }
+    results
 }
 
 
