@@ -19,6 +19,8 @@ tokio = { version = "1.14", features = ["full"] }
 serialport = "4.0"
 tokio-serial = "5.4.4"
 nix = "0.23"
+smoke = "0.3.1"
+
 
 tracing.workspace = true
 tracing-subscriber.workspace = true
@@ -40,7 +42,8 @@ rustls-pemfile.workspace = true
 ntp-proto = { workspace = true, features = ["__internal-test",] }
 tokio = { version = "1.14", features = ["macros"] }
 tokio-rustls.workspace = true
-
+tracing = "0.1"
+smoke = "0.3.1"
 
 [features]
 default = []
