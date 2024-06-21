@@ -3,12 +3,7 @@ use std::{collections::HashMap, fmt::Debug, hash::Hash, time::Duration};
 use tracing::{error, info, instrument};
 
 use crate::{
-    clock::NtpClock,
-    config::{SourceDefaultsConfig, SynchronizationConfig},
-    packet::NtpLeapIndicator,
-    source::Measurement,
-    system::TimeSnapshot,
-    time_types::{NtpDuration, NtpTimestamp},
+    clock::NtpClock, config::{SourceDefaultsConfig, SynchronizationConfig}, packet::NtpLeapIndicator, pps_source, source::Measurement, system::TimeSnapshot, time_types::{NtpDuration, NtpTimestamp}
 };
 
 use self::{
