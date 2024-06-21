@@ -49,6 +49,14 @@ impl<Index: Copy> SourceSnapshot<Index> {
         self.uncertainty.entry(0, 0).sqrt()
     }
 
+    fn get_state_vector(&self) -> Vector<2> {
+        self.state.clone()
+    }
+
+    fn get_uncertainty_matrix(&self) -> Matrix<2, 2> {
+        self.uncertainty.clone()
+    }
+
     fn observe(&self) -> ObservableSourceTimedata {
         ObservableSourceTimedata {
             offset: NtpDuration::from_seconds(self.offset()),
@@ -106,7 +114,11 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
         }
 
 
+
+
         println!("PPS SOURCE INDEX {:?}", self.pps_source_id - 1);
+
+
         let candidates = combine_with_pps::combine_with_pps(self.sources
             .iter()
             .filter_map(|(index, (state, usable))| {
