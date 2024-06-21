@@ -160,7 +160,6 @@ impl Measurement {
             receive_timestamp: NtpTimestamp::default(),
             localtime: timestamp,
             monotime: local_clock_time,
-
             stratum: 1,
             root_delay: NtpDuration::default(),
             root_dispersion: NtpDuration::default(),
