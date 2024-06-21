@@ -29,10 +29,6 @@ impl SpawnerId {
         static COUNTER: AtomicU64 = AtomicU64::new(1);
         SpawnerId(COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
     }
-
-    pub fn as_i32(&self) -> i32 {
-        self.0 as i32 
-    }
 }
 
 impl Default for SpawnerId {

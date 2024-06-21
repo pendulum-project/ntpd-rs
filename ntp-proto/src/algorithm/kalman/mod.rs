@@ -27,7 +27,7 @@ fn sqr(x: f64) -> f64 {
 }
 
 #[derive(Debug, Clone)]
-struct SourceSnapshot<Index: Copy> {
+pub struct SourceSnapshot<Index: Copy> {
     index: Index,
     state: Vector<2>,
     uncertainty: Matrix<2, 2>,
@@ -142,7 +142,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
         
             // Combine the PPS snapshot with other candidates if PPS snapshot is found
             if let Some(pps_snapshot) = pps_snapshot {
-                combine_with_pps::combine_with_pps::<SourceId, SourceId>(pps_snapshot, other_candidates)
+                combine_with_pps::combine_with_pps::<SourceId>(pps_snapshot, other_candidates)
             } else {
                 other_candidates
             }

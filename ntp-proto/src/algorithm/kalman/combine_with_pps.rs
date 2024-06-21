@@ -1,6 +1,6 @@
 use super::{matrix::{Matrix, Vector}, SourceSnapshot};
 
-pub(crate) fn combine_with_pps<Index: Copy + PartialEq + std::fmt::Debug, SourceId: Eq + Copy>(
+pub(crate) fn combine_with_pps<Index: Copy + PartialEq + std::fmt::Debug>(
     pps: SourceSnapshot<Index>,
     candidates: Vec<SourceSnapshot<Index>>,
 ) -> Vec<SourceSnapshot<Index>> {

@@ -1,6 +1,5 @@
 use std::process::{Command, Stdio};
 use std::io::{self, BufRead, BufReader};
-use nix::time::{clock_gettime, ClockId};
 use ntp_proto::{NtpDuration, NtpTimestamp};
 
 /// Struct to encapsulate the PPS polling information.
