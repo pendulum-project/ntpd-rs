@@ -1,9 +1,8 @@
-use std::{fmt::Display, time::Duration};
+use std::{fmt::Display, sync::Arc};
 use tokio::sync::mpsc;
 use crate::daemon::config::GpsConfigSource;
-use serialport;
 
-use super::{BasicSpawner, SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, SpawnerId};
+use super::{BasicSpawner, PortChecker, RealPortChecker, SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, SpawnerId};
 
 struct GpsSource {
     id: SourceId,
@@ -13,6 +12,7 @@ pub struct GpsSpawner {
     id: SpawnerId,
     config: GpsConfigSource,
     current_sources: Vec<GpsSource>,
+    port_checker: Arc<dyn PortChecker>,
 }
 
 #[derive(Debug)]
@@ -34,7 +34,16 @@ impl GpsSpawner {
             id: Default::default(),
             config,
             current_sources: Default::default(),
+            port_checker: Arc::new(RealPortChecker),
         }
+    }
+
+    #[cfg(test)]
+    pub fn with_mock_port_checker(mut self) -> Self {
+        use super::MockPortChecker;
+
+        self.port_checker = Arc::new(MockPortChecker);
+        self
     }
 }
 
@@ -42,34 +51,34 @@ impl GpsSpawner {
 impl BasicSpawner for GpsSpawner {
     type Error = GpsSpawnError;
 
-    async fn check_port(&self, port_name: String, baud_rate: u32) -> Result<(), GpsSpawnError> {
-        let timeout = Duration::from_secs(1);
+    // async fn check_port(&mut self, port_name: String, baud_rate: u32) -> Result<(), GpsSpawnError> {
+    //     let timeout = Duration::from_secs(1);
 
-        let mut port = serialport::new(port_name, baud_rate)
-            .timeout(timeout)
-            .open()
-            .map_err(|e| {
-                println!("Error opening serial port: {}", e);
-                GpsSpawnError::PortNotOpen
-            })?;
+    //     let mut port = serialport::new(port_name, baud_rate)
+    //         .timeout(timeout)
+    //         .open()
+    //         .map_err(|e| {
+    //             println!("Error opening serial port: {}", e);
+    //             GpsSpawnError::PortNotOpen
+    //         })?;
 
-        // Example: set timeout after opening
-        if let Err(e) = port.set_timeout(timeout) {
-            println!("Error setting timeout: {}", e);
-            return Err(GpsSpawnError::PortNotOpen)
-        }
+    //     // Example: set timeout after opening
+    //     if let Err(e) = port.set_timeout(timeout) {
+    //         println!("Error setting timeout: {}", e);
+    //         return Err(GpsSpawnError::PortNotOpen)
+    //     }
 
-        drop(port);
+    //     drop(port);
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
 
     async fn try_spawn(
         &mut self,
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), GpsSpawnError> {
-        match self.check_port(self.config.address.clone(), self.config.baud_rate).await {
+        match self.port_checker.check_port(self.config.address.clone(), self.config.baud_rate).await {
             Ok(_) => println!("Serial port check successful"),
             Err(e) => return Err(e),
         }
@@ -126,5 +135,71 @@ impl BasicSpawner for GpsSpawner {
 
     fn get_description(&self) -> &str {
         "GPS"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use tokio::sync::mpsc::{self};
+
+    use crate::daemon::{
+        config::{GpsConfigSource},
+        spawn::{
+            gps::GpsSpawner, tests::{get_create_gps_params}, BasicSpawner, SourceRemovalReason, SourceRemovedEvent
+        },
+        system::MESSAGE_BUFFER_SIZE,
+    };
+
+    #[tokio::test]
+    async fn creates_a_source() {
+        let mut spawner = GpsSpawner::new(GpsConfigSource {
+            address: "/dev/example".to_string(),
+            baud_rate: 9600,
+            measurement_noise: 0.001,
+        }).with_mock_port_checker();
+        let spawner_id = spawner.get_id();
+        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+
+        assert!(!spawner.is_complete());
+        spawner.try_spawn(&action_tx).await.unwrap();
+        let res = action_rx.try_recv().unwrap();
+        assert_eq!(res.id, spawner_id);
+        let params = get_create_gps_params(res);
+        assert_eq!(params.addr.to_string(), "/dev/example");
+
+        // Should be complete after spawning
+        assert!(spawner.is_complete());
+    }
+
+    #[tokio::test]
+    async fn recreates_a_source() {
+        let mut spawner = GpsSpawner::new(GpsConfigSource {
+            address: "/dev/example".to_string(),
+            baud_rate: 9600,
+            measurement_noise: 0.001,
+        }).with_mock_port_checker();
+        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+
+        assert!(!spawner.is_complete());
+        spawner.try_spawn(&action_tx).await.unwrap();
+        let res = action_rx.try_recv().unwrap();
+        let params = get_create_gps_params(res);
+        assert!(spawner.is_complete());
+
+        spawner
+            .handle_source_removed(SourceRemovedEvent {
+                id: params.id,
+                reason: SourceRemovalReason::NetworkIssue,
+            })
+            .await
+            .unwrap();
+
+        assert!(!spawner.is_complete());
+        spawner.try_spawn(&action_tx).await.unwrap();
+        let res = action_rx.try_recv().unwrap();
+        let params = get_create_gps_params(res);
+        assert_eq!(params.addr.to_string(), "/dev/example");
+        assert!(spawner.is_complete());
     }
 }

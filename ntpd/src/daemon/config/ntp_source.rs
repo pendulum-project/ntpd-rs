@@ -347,8 +347,6 @@ impl<'a> TryFrom<&'a str> for NtpSourceConfig {
 
 #[cfg(test)]
 mod tests {
-    use ntp_proto::NtpSource;
-
     use super::*;
 
     fn source_addr(config: &NtpSourceConfig) -> String {
