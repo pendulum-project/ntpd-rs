@@ -88,8 +88,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
     }
 
     fn update_clock(&mut self, time: NtpTimestamp) -> StateUpdate<SourceId> {
-        // ensure all filters represent the same (current) time
-        println!("PPS SOURCE INDEX {:?}", self.pps_source_id);
+        //ensure all filters represent the same (current) time
         if self
             .sources
             .iter()
@@ -105,33 +104,28 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
         for (_, (state, _)) in self.sources.iter_mut() {
             state.progress_filtertime(time);
         }
-        
-        // let combined_with_pps = combine_with_pps::combine_with_pps(self.sources
-        //     .iter()
-        //     .filter_map(|(index, (state, usable))| {
-        //         if *usable {
-        //             state.snapshot(*index)
-        //         } else {
-        //             None
-        //         }
-        //     })
-        //     .collect(),
-        // );
+
+
+        println!("PPS SOURCE INDEX {:?}", self.pps_source_id - 1);
+        let candidates = combine_with_pps::combine_with_pps(self.sources
+            .iter()
+            .filter_map(|(index, (state, usable))| {
+                if *usable {
+                    state.snapshot(*index)
+                } else {
+                    None
+                }
+            })
+            .collect(),
+            self.pps_source_id,
+        );
+        println!("AFTER COMMBINE WITH PPS: Number of candidates: {}", candidates.len());
+
         
         let selection = select::select(
             &self.synchronization_config,
             &self.algo_config,
-            self.sources
-                .iter()
-                .filter_map(|(index, (state, usable))| {
-                    if *usable {
-                        println!("state {:?}", state);
-                        state.snapshot(*index)
-                    } else {
-                        None
-                    }
-                })
-                .collect(),
+            candidates,
         );
         println!("selection lenght: {}", selection.len());
         if let Some(combined) = combine(&selection, &self.algo_config) {
