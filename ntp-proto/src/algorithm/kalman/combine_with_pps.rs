@@ -8,34 +8,31 @@ pub(crate) fn combine_with_pps<Index: Copy>(candidates: Vec<SourceSnapshot<Index
         println!("COMBINE PPS uncertainty: {:?}, offset: {:?}", snapshot.offset_uncertainty(), snapshot.offset());
     }
 
+    
     // Convert PPS source ID to zero-based index
     let pps_index = pps_source_id - 1;
 
-    if pps_index >= 0 && (pps_index as usize) < candidates.len() {
-        let mut combined_candidates = Vec::new();
-        let mut pps_snapshot = None;
+    let mut results = Vec::new();
+    let mut pps_snapshot = None;
 
-        for (i, snapshot) in candidates.into_iter().enumerate() {
-            if i == pps_index as usize {
-                pps_snapshot = Some(snapshot);
-            } else {
-                combined_candidates.push(snapshot);
-            }
-        }
-
-        if let Some(pps) = pps_snapshot {
-            let mut final_candidates = Vec::new();
-            for snapshot in combined_candidates {
-                let combined = combine_sources(pps.clone(), snapshot);
-                final_candidates.push(combined);
-            }
-            final_candidates
+    for (i, snapshot) in candidates.into_iter().enumerate() {
+        if i == pps_index as usize {
+            pps_snapshot = Some(snapshot);
         } else {
-            // If somehow PPS snapshot was not found, return original candidates without modification
-            combined_candidates
+            results.push(snapshot.clone());
         }
+    }
+
+    if let Some(pps) = pps_snapshot {
+        let mut final_candidates = Vec::new();
+        for snapshot in results.clone() {
+            let combined = combine_sources(pps.clone(), snapshot.clone());
+            final_candidates.push(snapshot);
+            final_candidates.push(combined);
+        }
+        final_candidates
     } else {
-        candidates
+        results
     }
 }
 
