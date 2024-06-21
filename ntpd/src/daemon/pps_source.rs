@@ -245,3 +245,71 @@ where
     
         NtpDuration::from_seconds(seconds)
     }
+    #[cfg(test)]
+mod tests {
+    use super::*;
+    use ntp_proto::{NtpTimestamp, NtpDuration};
+    use std::io;
+
+    // Assuming `AcceptResult` is defined somewhere in your module and doesn't implement `PartialEq`
+    #[derive(Debug, PartialEq)]
+    pub enum TestAcceptResult {
+        Accept(NtpDuration, NtpTimestamp),
+        Ignore,
+    }
+
+    // A conversion function if your actual `AcceptResult` doesn't match the test enum
+    fn convert_accept_result(result: AcceptResult) -> TestAcceptResult {
+        match result {
+            AcceptResult::Accept(duration, timestamp) => TestAcceptResult::Accept(duration, timestamp),
+            AcceptResult::Ignore => TestAcceptResult::Ignore,
+        }
+    }
+
+    #[test]
+    fn test_accept_pps_time_with_valid_data() {
+        let timestamp = NtpTimestamp::default();
+        let duration = 1.0;
+        let result = Ok(Some((duration, timestamp)));
+
+        let expected_duration = NtpDuration::from_seconds(duration);
+        let expected = TestAcceptResult::Accept(expected_duration, timestamp);
+
+        assert_eq!(convert_accept_result(accept_pps_time(result)), expected);
+    }
+
+    #[test]
+    fn test_accept_pps_time_with_none_data() {
+        let result = Ok(None);
+        let expected = TestAcceptResult::Ignore;
+
+        assert_eq!(convert_accept_result(accept_pps_time(result)), expected);
+    }
+
+    #[test]
+    fn test_accept_pps_time_with_error() {
+        let result: io::Result<Option<(f64, NtpTimestamp)>> = Err(io::Error::new(io::ErrorKind::Other, "test error"));
+        let expected = TestAcceptResult::Ignore;
+
+        assert_eq!(convert_accept_result(accept_pps_time(result)), expected);
+    }
+
+    #[test]
+    fn test_parse_pps_time() {
+        let timestamp = NtpTimestamp::default();
+        let duration = 1.0;
+
+        let result = parse_pps_time((duration, timestamp)).unwrap();
+        let expected_duration = NtpDuration::from_seconds(duration);
+
+        assert_eq!(result, (expected_duration, timestamp));
+    }
+
+    #[test]
+    fn test_from_seconds() {
+        let duration = 1.5;
+        let ntp_duration = from_seconds(duration);
+
+        assert_eq!(ntp_duration, NtpDuration::from_seconds(duration));
+    }
+}
