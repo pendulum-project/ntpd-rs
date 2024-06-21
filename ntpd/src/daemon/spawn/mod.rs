@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::atomic::AtomicU64};
+use std::{net::SocketAddr, sync::atomic::AtomicU64, time::Duration};
 
 use gps::GpsSpawnError;
 use ntp_proto::{ProtocolVersion, SourceNtsData};
@@ -117,7 +117,6 @@ pub enum SpawnAction {
     Create(SourceCreateParameters),
     CreateGps(GpsSourceCreateParameters),
     CreatePps(PpsSourceCreateParameters),
-
     // Remove(()),
 }
 
@@ -157,14 +156,13 @@ impl SpawnAction {
         id: SourceId,
         addr: String,
         measurement_noise: f64,
-    ) -> SpawnAction {
+    ) -> SpawnAction{
         SpawnAction::CreatePps(PpsSourceCreateParameters {
             id,
             addr,
             measurement_noise,
         })
     }
-
 }
 
 #[derive(Debug)]
@@ -231,6 +229,45 @@ impl SourceCreateParameters {
     }
 }
 
+#[async_trait::async_trait]
+pub trait PortChecker: Send + Sync {
+    async fn check_port(&self, port_name: String, baud_rate: u32) -> Result<(), GpsSpawnError>;
+}
+
+pub struct RealPortChecker;
+
+#[async_trait::async_trait]
+impl PortChecker for RealPortChecker {
+    async fn check_port(&self, port_name: String, baud_rate: u32) -> Result<(), GpsSpawnError> {
+        let timeout = Duration::from_secs(1);
+
+        let mut port = serialport::new(port_name, baud_rate)
+            .timeout(timeout)
+            .open()
+            .map_err(|e| {
+                println!("Error opening serial port: {}", e);
+                GpsSpawnError::PortNotOpen
+            })?;
+
+        if let Err(e) = port.set_timeout(timeout) {
+            println!("Error setting timeout: {}", e);
+            return Err(GpsSpawnError::PortNotOpen)
+        }
+
+        drop(port);
+
+        Ok(())
+    }
+}
+
+pub struct MockPortChecker;
+
+#[async_trait::async_trait]
+impl PortChecker for MockPortChecker {
+    async fn check_port(&self, _port_name: String, _baud_rate: u32) -> Result<(), GpsSpawnError> {
+        Ok(())
+    }
+}
 #[async_trait::async_trait]
 pub trait Spawner {
     type Error: std::error::Error + Send;
@@ -311,10 +348,7 @@ pub trait BasicSpawner {
         Ok(())
     }
 
-    /// Checks if the port is open
-    async fn check_port(&self, _port_name: String, _baud_rate: u32) -> Result<(), GpsSpawnError> {
-        Ok(())
-    }
+
     /// Get the id of the spawner
     fn get_id(&self) -> SpawnerId;
 
@@ -402,10 +436,26 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{SourceCreateParameters, SpawnAction, SpawnEvent};
+    use super::{GpsSourceCreateParameters, PpsSourceCreateParameters, SourceCreateParameters, SpawnAction, SpawnEvent};
 
     pub fn get_create_params(res: SpawnEvent) -> SourceCreateParameters {
         if let SpawnAction::Create(params) = res.action {
+            params
+        } else {
+            panic!("Expected SpawnAction::Create variant");
+        }
+    }
+
+    pub fn get_create_gps_params(res: SpawnEvent) -> GpsSourceCreateParameters {
+        if let SpawnAction::CreateGps(params) = res.action {
+            params
+        } else {
+            panic!("Expected SpawnAction::Create variant");
+        }
+    }
+
+    pub fn get_create_pps_params(res: SpawnEvent) -> PpsSourceCreateParameters {
+        if let SpawnAction::CreatePps(params) = res.action {
             params
         } else {
             panic!("Expected SpawnAction::Create variant");
