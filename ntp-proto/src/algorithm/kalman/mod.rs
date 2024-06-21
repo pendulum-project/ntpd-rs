@@ -50,11 +50,11 @@ impl<Index: Copy> SourceSnapshot<Index> {
     }
 
     fn get_state_vector(&self) -> Vector<2> {
-        self.state.clone()
+        self.state
     }
 
     fn get_uncertainty_matrix(&self) -> Matrix<2, 2> {
-        self.uncertainty.clone()
+        self.uncertainty
     }
 
     fn observe(&self) -> ObservableSourceTimedata {
