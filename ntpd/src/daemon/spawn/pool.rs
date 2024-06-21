@@ -7,7 +7,7 @@ use tracing::warn;
 
 use super::super::config::PoolSourceConfig;
 
-use super::{BasicSpawner, SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, SpawnerId};
+use super::{SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId};
 
 struct PoolSource {
     id: SourceId,
@@ -44,7 +44,7 @@ impl PoolSpawner {
 }
 
 #[async_trait::async_trait]
-impl BasicSpawner for PoolSpawner {
+impl Spawner for PoolSpawner {
     type Error = PoolSpawnError;
 
     async fn try_spawn(
@@ -132,8 +132,8 @@ mod tests {
     use crate::daemon::{
         config::{NormalizedAddress, PoolSourceConfig},
         spawn::{
-            pool::PoolSpawner, tests::get_create_params, BasicSpawner, SourceRemovalReason,
-            SourceRemovedEvent,
+            pool::PoolSpawner, tests::get_create_params, SourceRemovalReason, SourceRemovedEvent,
+            Spawner,
         },
         system::MESSAGE_BUFFER_SIZE,
     };

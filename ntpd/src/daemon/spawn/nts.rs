@@ -7,7 +7,7 @@ use tracing::warn;
 
 use super::super::{config::NtsSourceConfig, keyexchange::key_exchange_client};
 
-use super::{BasicSpawner, SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, SpawnerId};
+use super::{SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId};
 
 pub struct NtsSpawner {
     config: NtsSourceConfig,
@@ -63,7 +63,7 @@ impl NtsSpawner {
 }
 
 #[async_trait::async_trait]
-impl BasicSpawner for NtsSpawner {
+impl Spawner for NtsSpawner {
     type Error = NtsSpawnError;
 
     async fn try_spawn(

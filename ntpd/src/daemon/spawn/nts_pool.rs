@@ -8,7 +8,7 @@ use super::super::{
     config::NtsPoolSourceConfig, keyexchange::key_exchange_client_with_denied_servers,
 };
 
-use super::{BasicSpawner, SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, SpawnerId};
+use super::{SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId};
 
 use super::nts::resolve_addr;
 
@@ -62,7 +62,7 @@ impl NtsPoolSpawner {
 }
 
 #[async_trait::async_trait]
-impl BasicSpawner for NtsPoolSpawner {
+impl Spawner for NtsPoolSpawner {
     type Error = NtsPoolSpawnError;
 
     async fn try_spawn(

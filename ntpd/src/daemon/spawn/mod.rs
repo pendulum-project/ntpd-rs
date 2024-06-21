@@ -142,31 +142,6 @@ pub struct SourceCreateParameters {
 pub trait Spawner {
     type Error: std::error::Error + Send;
 
-    /// Run a spawner
-    ///
-    /// Actions that the system has to execute can be sent through the
-    /// `action_tx` channel and event coming in from the system that the spawner
-    /// should know about will be sent through the `system_notify` channel.
-    async fn run(
-        self,
-        action_tx: mpsc::Sender<SpawnEvent>,
-        system_notify: mpsc::Receiver<SystemEvent>,
-    ) -> Result<(), Self::Error>;
-
-    /// Returns the id of this spawner
-    fn get_id(&self) -> SpawnerId;
-
-    /// Get a description of the address that this spawner is connected to
-    fn get_addr_description(&self) -> String;
-
-    /// Get a description of the type of spawner
-    fn get_description(&self) -> &str;
-}
-
-#[async_trait::async_trait]
-pub trait BasicSpawner {
-    type Error: std::error::Error + Send;
-
     /// Try to create all desired sources. Should return immediately on failure
     ///
     /// It is ok for this function to use some time when spawning a new client.
@@ -214,73 +189,52 @@ pub trait BasicSpawner {
     fn get_description(&self) -> &str;
 }
 
-#[async_trait::async_trait]
-impl<T, E> Spawner for T
-where
-    T: BasicSpawner<Error = E> + Send + 'static,
-    E: std::error::Error + Send + 'static,
-{
-    type Error = E;
+pub async fn spawner_task<S: Spawner + Send + 'static>(
+    mut spawner: S,
+    action_tx: mpsc::Sender<SpawnEvent>,
+    mut system_notify: mpsc::Receiver<SystemEvent>,
+) -> Result<(), S::Error> {
+    let mut has_ticket = true;
+    let mut last_ticket_time = Instant::now();
 
-    async fn run(
-        mut self,
-        action_tx: mpsc::Sender<SpawnEvent>,
-        mut system_notify: mpsc::Receiver<SystemEvent>,
-    ) -> Result<(), E> {
-        let mut has_ticket = true;
-        let mut last_ticket_time = Instant::now();
-
-        loop {
-            if last_ticket_time.elapsed() >= NETWORK_WAIT_PERIOD {
-                has_ticket = true;
-            }
-
-            if has_ticket && !self.is_complete() {
-                self.try_spawn(&action_tx).await?;
-                has_ticket = false;
-                last_ticket_time = Instant::now();
-            }
-
-            let event = if has_ticket {
-                system_notify.recv().await
-            } else {
-                timeout(
-                    NETWORK_WAIT_PERIOD - last_ticket_time.elapsed(),
-                    system_notify.recv(),
-                )
-                .await
-                .unwrap_or(Some(SystemEvent::Idle))
-            };
-
-            let Some(event) = event else {
-                break;
-            };
-
-            match event {
-                SystemEvent::SourceRegistered(source_params) => {
-                    self.handle_registered(source_params).await?;
-                }
-                SystemEvent::SourceRemoved(removed_source) => {
-                    self.handle_source_removed(removed_source).await?;
-                }
-                SystemEvent::Idle => {}
-            }
+    loop {
+        if last_ticket_time.elapsed() >= NETWORK_WAIT_PERIOD {
+            has_ticket = true;
         }
 
-        Ok(())
+        if has_ticket && !spawner.is_complete() {
+            spawner.try_spawn(&action_tx).await?;
+            has_ticket = false;
+            last_ticket_time = Instant::now();
+        }
+
+        let event = if has_ticket {
+            system_notify.recv().await
+        } else {
+            timeout(
+                NETWORK_WAIT_PERIOD - last_ticket_time.elapsed(),
+                system_notify.recv(),
+            )
+            .await
+            .unwrap_or(Some(SystemEvent::Idle))
+        };
+
+        let Some(event) = event else {
+            break;
+        };
+
+        match event {
+            SystemEvent::SourceRegistered(source_params) => {
+                spawner.handle_registered(source_params).await?;
+            }
+            SystemEvent::SourceRemoved(removed_source) => {
+                spawner.handle_source_removed(removed_source).await?;
+            }
+            SystemEvent::Idle => {}
+        }
     }
 
-    fn get_id(&self) -> SpawnerId {
-        self.get_id()
-    }
-
-    fn get_addr_description(&self) -> String {
-        self.get_addr_description()
-    }
-
-    fn get_description(&self) -> &str {
-        self.get_description()
-    }
+    Ok(())
 }
 
 #[cfg(test)]

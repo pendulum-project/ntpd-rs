@@ -8,8 +8,7 @@ use tracing::warn;
 use super::super::config::StandardSource;
 
 use super::{
-    BasicSpawner, SourceId, SourceRemovalReason, SourceRemovedEvent, SpawnAction, SpawnEvent,
-    SpawnerId,
+    SourceId, SourceRemovalReason, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId,
 };
 
 pub struct StandardSpawner {
@@ -75,7 +74,7 @@ impl StandardSpawner {
 }
 
 #[async_trait::async_trait]
-impl BasicSpawner for StandardSpawner {
+impl Spawner for StandardSpawner {
     type Error = StandardSpawnError;
 
     async fn try_spawn(
@@ -139,8 +138,8 @@ mod tests {
     use crate::daemon::{
         config::{NormalizedAddress, StandardSource},
         spawn::{
-            standard::StandardSpawner, tests::get_create_params, BasicSpawner, SourceRemovalReason,
-            SourceRemovedEvent,
+            standard::StandardSpawner, tests::get_create_params, SourceRemovalReason,
+            SourceRemovedEvent, Spawner,
         },
         system::MESSAGE_BUFFER_SIZE,
     };

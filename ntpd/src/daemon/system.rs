@@ -1,3 +1,5 @@
+use crate::daemon::spawn::spawner_task;
+
 #[cfg(feature = "unstable_nts-pool")]
 use super::spawn::nts_pool::NtsPoolSpawner;
 use super::{
@@ -260,7 +262,8 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
         debug!(id=?spawner_data.id, ty=spawner.get_description(), addr=spawner.get_addr_description(), "Running spawner");
         self.spawners.push(spawner_data);
         let spawn_tx = self.spawn_tx.clone();
-        tokio::spawn(async move { spawner.run(spawn_tx, notify_rx).await });
+        // tokio::spawn(async move { spawner.run(spawn_tx, notify_rx).await });
+        tokio::spawn(spawner_task(spawner, spawn_tx, notify_rx));
         Ok(id)
     }
 
