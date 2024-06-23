@@ -29,27 +29,39 @@ fn combine_sources<Index: Copy>(
     pps_snapshot: SourceSnapshot<Index>,
     other_snapshot: SourceSnapshot<Index>,
 ) -> SourceSnapshot<Index> {
+    // assign the offset of pps after each measurement
     let pps_offset = pps_snapshot.offset();
+    // assign the frequency error of pps after each measurement
     let pps_offset_uncertainty = pps_snapshot.offset_uncertainty();
+    // assign the offset of other sources after each measurement
     let other_offset = other_snapshot.offset();
+    // assign the frequency error of other sources after each measurement
     let other_offset_uncertainty = other_snapshot.offset_uncertainty();
 
+    // find the smaller whole second the other source is in range of ie if offset 12.3 this assigns 12.0
     let full_second_floor = other_offset.floor();
+    // find the larger whole second the other source is in range of ie if offset 12.3 this assigns 13.0
     let full_second_ceil = other_offset.ceil();
 
+    // create 4 endpoints for both the larger and smaller whole seconds the offset of current measurement is in range of
+    // use the pps offset by adding and subtracting from the whole seconds to find the endpoints of the combined source
+    // these endpoints will then be used to compare with the uncombined source range to fins the closest endpoint
     let pps_floor_positive = full_second_floor + pps_offset;
     let pps_floor_negative = full_second_floor - pps_offset;
     let pps_ceil_positive = full_second_ceil + pps_offset;
     let pps_ceil_negative = full_second_ceil - pps_offset;
 
+    // calculate the uncombined endpoints of the source
     let other_minimum = other_offset - other_offset_uncertainty;
     let other_maximum = other_offset + other_offset_uncertainty;
 
+    // calculate the difference of each combined endpoint from the uncombined endpoint
     let floor_positive_diff = (pps_floor_positive - other_minimum).abs();
     let floor_negative_diff = (pps_floor_negative - other_minimum).abs();
     let ceil_positive_diff = (pps_ceil_positive - other_maximum).abs();
     let ceil_negative_diff = (pps_ceil_negative - other_maximum).abs();
 
+    // assign the minimum difference
     let min_diff = floor_positive_diff
         .min(floor_negative_diff)
         .min(ceil_positive_diff)
@@ -67,13 +79,16 @@ fn combine_sources<Index: Copy>(
         new_offset = pps_ceil_negative;
     }
 
+    // assign the new offset for the combined source
     let combined_state = Vector::<2>::new([
         [new_offset],
         [other_snapshot.get_state_vector().ventry(1)],
     ]);
 
+    // uncombined source frequency error stays the same
     let other_uncertainty_matrix = other_snapshot.get_uncertainty_matrix();
 
+    // assign the frequency error of pps to the combined source
     let combined_uncertainty = Matrix::<2, 2>::new([
         [pps_offset_uncertainty, other_uncertainty_matrix.entry(0, 1)],
         [other_uncertainty_matrix.entry(1, 0), other_uncertainty_matrix.entry(1, 1)],
