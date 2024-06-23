@@ -138,12 +138,21 @@ pub struct InitialSourceFilter {
 impl InitialSourceFilter {
     pub fn update(&mut self, measurement: Measurement) {
         // Process GPS data if it exists
+        // The statistics of the measurement noise of gps data is needed in order to 
+        // have a constant value that changes the covariance matrix and the uncertainity of gps data
+        // This is needed since we assume delay as 0 and set a default noise value which can be changed from the config
+        // There should also be an estimated offset that is the first input of kalman filter
+        // This estimated offset is then changed by the stable filter after each measurement
+        // This estimated offset is needed since the Stable filter needs to have an estimate so that 
+        // any anomaly data that gets inputted to the stable filter doesnt change the offset as much
+        // The averaging buffer claculates these statistics by the variance and mean of 8 samples
         if let Some(gps_measurement) = &measurement.gps {
             self.roundtriptime_stats.update(gps_measurement.measurementnoise.to_seconds());
             println!("gps_measurements offset in seconds: {:?}", gps_measurement.offset.to_seconds());
             self.init_offset.update(gps_measurement.offset.to_seconds());
         } 
-        
+        // Process PPS data if it exists
+        // The above documentation applies the same way to the pps data
         if let Some(pps_measurement) = &measurement.pps {
             self.roundtriptime_stats.update(pps_measurement.measurementnoise.to_seconds());
             self.init_offset.update(pps_measurement.offset.to_seconds());
@@ -251,20 +260,27 @@ impl SourceFilter {
 
         if let Some(_gps_measurement) = &measurement.gps {
         // Kalman filter update for GPS
+            // The noise of the current measurement is inputted into a 1,1 by matrix
             let gps_measurement_noise = Matrix::new([[_gps_noise]]);
             println!("gps_measuremtn noise matrix {:?}", gps_measurement_noise);
+            // The offset of the current measurement is inputted into a 1,1 by matrix
             let gps_measurement_vec = Vector::new_vector([gps_offset]);
             println!("gps_measurement vector {:?}", gps_measurement_vec);
             println!("state: {:?}", self.state);
             println!("measurement_transform: {:?}", measurement_transform);
+            // Calculate the difference of current measurement offset and the estimated offset
             let gps_difference = gps_measurement_vec - measurement_transform * self.state;
             println!("gps_difference {:?}", gps_difference);
+            // Calculate a covariance matrix for the frequency error
             let gps_difference_covariance = measurement_transform * self.uncertainty * measurement_transform.transpose() + gps_measurement_noise;
             println!("gps_difference_covariance {:?}", gps_difference_covariance);
+            // calculate how much the estimated offset and the frequency error needs to change
             let gps_update_strength = self.uncertainty * measurement_transform.transpose() * gps_difference_covariance.inverse();
             println!("gps_update_strenght {:?}", gps_update_strength);
+            // update the estimated offset
             self.state = self.state + gps_update_strength * gps_difference;
             println!("state {:?}", self.state);
+            // update the frequency error
             self.uncertainty = ((Matrix::unit() - gps_update_strength * measurement_transform) * self.uncertainty).symmetrize();
             println!("uncertainty {:?}", self.uncertainty);
 
@@ -276,7 +292,7 @@ impl SourceFilter {
             // measurement noise's contribution to difference uncertainty increases.
             let weight = 1.0 - gps_measurement_noise.determinant() / gps_difference_covariance.determinant();
         
-
+            // update last measurement
             self.last_measurement = measurement;
 
             trace!(p, weight, "Measurement absorbed");
@@ -287,12 +303,20 @@ impl SourceFilter {
         } 
         
         if let Some(_pps_measurement) = &measurement.pps {
+        // Kalman filter update for PPS
+            // The noise of the current measurement is inputted into a 1,1 by matrix
             let pps_measurement_noise = Matrix::new([[_pps_noise]]);
+            // The offset of the current measurement is inputted into a 1,1 by matrix
             let pps_measurement_vec = Vector::new_vector([_pps_offset]);
+            // Calculate the difference of current measurement offset and the estimated offset
             let pps_difference = pps_measurement_vec - measurement_transform * self.state;
+            // Calculate a covariance matrix for the frequency error
             let pps_difference_covariance = measurement_transform * self.uncertainty * measurement_transform.transpose() + pps_measurement_noise;
+            // calculate how much the estimated offset and the frequency error needs to change
             let pps_update_strength = self.uncertainty * measurement_transform.transpose() * pps_difference_covariance.inverse();
+            // update the estimated offset
             self.state = self.state + pps_update_strength * pps_difference;
+            // update the frequency error
             self.uncertainty = ((Matrix::unit() - pps_update_strength * measurement_transform) * self.uncertainty).symmetrize();
 
             // Statistics
@@ -303,7 +327,7 @@ impl SourceFilter {
             // measurement noise's contribution to difference uncertainty increases.
             let weight = 1.0 - pps_measurement_noise.determinant() / pps_difference_covariance.determinant();
         
-
+            // update last measurement
             self.last_measurement = measurement;
 
             trace!(p, weight, "Measurement absorbed");
