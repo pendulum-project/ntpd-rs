@@ -110,6 +110,7 @@ impl NtpTimestamp {
         NtpTimestamp { timestamp }
     }
 
+    // convert from unix timestamp to ntp timestamp
     pub fn from_unix_timestamp(unix_timestamp: u64, nanos: u32) -> Self {
         const UNIX_TO_NTP_OFFSET: u64 = 2_208_988_800; // Offset in seconds between Unix epoch and NTP epoch
         const NTP_SCALE_FRAC: u64 = 4_294_967_296; // 2^32 for scaling nanoseconds to fraction
