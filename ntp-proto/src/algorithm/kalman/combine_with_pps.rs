@@ -103,6 +103,7 @@ mod tests {
     use crate::algorithm::kalman::matrix::{Matrix, Vector};
     use crate::algorithm::kalman::SourceSnapshot;
     use crate::time_types::NtpTimestamp;
+    use crate::time_types::NtpDuration;
 
     // Helper to create the snapshots, to be used in testing
     fn create_snapshot<Index: Copy>(
@@ -117,9 +118,9 @@ mod tests {
             state: Vector::new_vector(state_vector),
             uncertainty: Matrix::new(uncertainty_matrix),
             delay: 0.0,
-            source_uncertainty: 0.0,
-            source_delay: 0.0,
-            leap_indicator: Default::default(),
+            source_uncertainty: NtpDuration::from_seconds(0.0),
+            source_delay: NtpDuration::from_seconds(0.0),
+            leap_indicator: crate::NtpLeapIndicator::NoWarning,
             last_update: NtpTimestamp::from_fixed_int(0),
         }
     }
