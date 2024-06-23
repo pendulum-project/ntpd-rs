@@ -104,3 +104,86 @@ impl PpsSource {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pps_source_new() {
+        let (pps_source, action_iter) = PpsSource::new();
+        let actions: Vec<_> = action_iter.collect();
+        assert_eq!(actions.len(), 1);
+        if let PpsSourceAction::SetTimer(duration) = &actions[0] {
+            assert_eq!(*duration, Duration::from_secs(0));
+        } else {
+            panic!("Expected SetTimer action");
+        }
+    }
+
+    #[test]
+    fn test_pps_source_handle_incoming() {
+        let mut pps_source = PpsSource::new().0;
+        let local_clock_time = NtpInstant::now();
+        let offset = NtpDuration::from_seconds(0.0);
+        let ntp_timestamp = NtpTimestamp::from_fixed_int(0);
+        let measurement_noise = 0.0;
+
+        let action_iter = pps_source.handle_incoming(
+            local_clock_time,
+            offset,
+            ntp_timestamp,
+            measurement_noise,
+        );
+        let actions: Vec<_> = action_iter.collect();
+        assert_eq!(actions.len(), 1);
+        if let PpsSourceAction::UpdateSystem(update) = &actions[0] {
+            assert!(update.measurement.is_some());
+        } else {
+            panic!("Expected UpdateSystem action");
+        }
+    }
+
+    #[test]
+    fn test_pps_source_action_set_timer() {
+        let duration = Duration::from_secs(10);
+        let action = PpsSourceAction::SetTimer(duration);
+        if let PpsSourceAction::SetTimer(d) = action {
+            assert_eq!(d, duration);
+        } else {
+            panic!("Expected SetTimer action");
+        }
+    }
+
+    #[test]
+    fn test_pps_source_action_reset() {
+        let action = PpsSourceAction::Reset;
+        match action {
+            PpsSourceAction::Reset => (),
+            _ => panic!("Expected Reset action"),
+        }
+    }
+
+    #[test]
+    fn test_pps_source_action_demobilize() {
+        let action = PpsSourceAction::Demobilize;
+        match action {
+            PpsSourceAction::Demobilize => (),
+            _ => panic!("Expected Demobilize action"),
+        }
+    }
+
+    #[test]
+    fn test_pps_source_action_send() {
+        let action = PpsSourceAction::Send();
+        match action {
+            PpsSourceAction::Send() => (),
+            _ => panic!("Expected Send action"),
+        }
+    }
+
+    #[test]
+    fn test_pps_source_default_action_iterator() {
+        let action_iter = PpsSourceActionIterator::default();
+        assert_eq!(action_iter.count(), 0);
+    }
+}
