@@ -352,129 +352,6 @@ impl Gps {
 // }
 
 // Mock of SerialPort, testing
-struct MockSerialPort {
-    data: Cursor<String>,
-}
-
-impl io::Read for MockSerialPort {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.data.read(buf)
-    }
-}
-
-impl io::Write for MockSerialPort {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-impl SerialPort for MockSerialPort {
-    fn name(&self) -> Option<String> {
-        Some("MockSerialPort".to_string())
-    }
-
-    fn baud_rate(&self) -> serialport::Result<u32> {
-        Ok(9600)
-    }
-
-    fn data_bits(&self) -> serialport::Result<serialport::DataBits> {
-        Ok(serialport::DataBits::Eight)
-    }
-
-    fn flow_control(&self) -> serialport::Result<serialport::FlowControl> {
-        Ok(serialport::FlowControl::None)
-    }
-
-    fn parity(&self) -> serialport::Result<serialport::Parity> {
-        Ok(serialport::Parity::None)
-    }
-
-    fn stop_bits(&self) -> serialport::Result<serialport::StopBits> {
-        Ok(serialport::StopBits::One)
-    }
-
-    fn timeout(&self) -> Duration {
-        Duration::from_secs(1)
-    }
-
-    fn set_baud_rate(&mut self, _: u32) -> serialport::Result<()> {
-        Ok(())
-    }
-
-    fn set_data_bits(&mut self, _: serialport::DataBits) -> serialport::Result<()> {
-        Ok(())
-    }
-
-    fn set_flow_control(&mut self, _: serialport::FlowControl) -> serialport::Result<()> {
-        Ok(())
-    }
-
-    fn set_parity(&mut self, _: serialport::Parity) -> serialport::Result<()> {
-        Ok(())
-    }
-
-    fn set_stop_bits(&mut self, _: serialport::StopBits) -> serialport::Result<()> {
-        Ok(())
-    }
-
-    fn set_timeout(&mut self, _: Duration) -> serialport::Result<()> {
-        Ok(())
-    }
-
-    fn write_request_to_send(&mut self, _: bool) -> serialport::Result<()> {
-        Ok(())
-    }
-
-    fn write_data_terminal_ready(&mut self, _: bool) -> serialport::Result<()> {
-        Ok(())
-    }
-
-    fn read_clear_to_send(&mut self) -> serialport::Result<bool> {
-        Ok(true)
-    }
-
-    fn read_data_set_ready(&mut self) -> serialport::Result<bool> {
-        Ok(true)
-    }
-
-    fn read_ring_indicator(&mut self) -> serialport::Result<bool> {
-        Ok(false)
-    }
-
-    fn read_carrier_detect(&mut self) -> serialport::Result<bool> {
-        Ok(true)
-    }
-
-    fn bytes_to_read(&self) -> serialport::Result<u32> {
-        Ok(self.data.get_ref().len() as u32)
-    }
-
-    fn bytes_to_write(&self) -> serialport::Result<u32> {
-        Ok(0)
-    }
-
-    fn clear(&self, _: serialport::ClearBuffer) -> serialport::Result<()> {
-        Ok(())
-    }
-
-    fn try_clone(&self) -> serialport::Result<Box<dyn SerialPort>> {
-        Ok(Box::new(MockSerialPort {
-            data: self.data.clone(),
-        }))
-    }
-
-    fn set_break(&self) -> serialport::Result<()> {
-        Ok(())
-    }
-
-    fn clear_break(&self) -> serialport::Result<()> {
-        Ok(())
-    }
-}
 
 // Some MOCK testing
 #[cfg(test)]
@@ -482,6 +359,132 @@ mod tests {
     use super::*;
     use chrono::{NaiveDate, NaiveTime, NaiveDateTime};
     use std::io::Cursor;
+
+    struct MockSerialPort {
+        data: Cursor<String>,
+    }
+    
+    impl io::Read for MockSerialPort {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            self.data.read(buf)
+        }
+    }
+    
+    impl io::Write for MockSerialPort {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            Ok(buf.len())
+        }
+    
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    
+    impl SerialPort for MockSerialPort {
+        fn name(&self) -> Option<String> {
+            Some("MockSerialPort".to_string())
+        }
+    
+        fn baud_rate(&self) -> serialport::Result<u32> {
+            Ok(9600)
+        }
+    
+        fn data_bits(&self) -> serialport::Result<serialport::DataBits> {
+            Ok(serialport::DataBits::Eight)
+        }
+    
+        fn flow_control(&self) -> serialport::Result<serialport::FlowControl> {
+            Ok(serialport::FlowControl::None)
+        }
+    
+        fn parity(&self) -> serialport::Result<serialport::Parity> {
+            Ok(serialport::Parity::None)
+        }
+    
+        fn stop_bits(&self) -> serialport::Result<serialport::StopBits> {
+            Ok(serialport::StopBits::One)
+        }
+    
+        fn timeout(&self) -> Duration {
+            Duration::from_secs(1)
+        }
+    
+        fn set_baud_rate(&mut self, _: u32) -> serialport::Result<()> {
+            Ok(())
+        }
+    
+        fn set_data_bits(&mut self, _: serialport::DataBits) -> serialport::Result<()> {
+            Ok(())
+        }
+    
+        fn set_flow_control(&mut self, _: serialport::FlowControl) -> serialport::Result<()> {
+            Ok(())
+        }
+    
+        fn set_parity(&mut self, _: serialport::Parity) -> serialport::Result<()> {
+            Ok(())
+        }
+    
+        fn set_stop_bits(&mut self, _: serialport::StopBits) -> serialport::Result<()> {
+            Ok(())
+        }
+    
+        fn set_timeout(&mut self, _: Duration) -> serialport::Result<()> {
+            Ok(())
+        }
+    
+        fn write_request_to_send(&mut self, _: bool) -> serialport::Result<()> {
+            Ok(())
+        }
+    
+        fn write_data_terminal_ready(&mut self, _: bool) -> serialport::Result<()> {
+            Ok(())
+        }
+    
+        fn read_clear_to_send(&mut self) -> serialport::Result<bool> {
+            Ok(true)
+        }
+    
+        fn read_data_set_ready(&mut self) -> serialport::Result<bool> {
+            Ok(true)
+        }
+    
+        fn read_ring_indicator(&mut self) -> serialport::Result<bool> {
+            Ok(false)
+        }
+    
+        fn read_carrier_detect(&mut self) -> serialport::Result<bool> {
+            Ok(true)
+        }
+    
+        fn bytes_to_read(&self) -> serialport::Result<u32> {
+            Ok(self.data.get_ref().len() as u32)
+        }
+    
+        fn bytes_to_write(&self) -> serialport::Result<u32> {
+            Ok(0)
+        }
+    
+        fn clear(&self, _: serialport::ClearBuffer) -> serialport::Result<()> {
+            Ok(())
+        }
+    
+        fn try_clone(&self) -> serialport::Result<Box<dyn SerialPort>> {
+            Ok(Box::new(MockSerialPort {
+                data: self.data.clone(),
+            }))
+        }
+    
+        fn set_break(&self) -> serialport::Result<()> {
+            Ok(())
+        }
+    
+        fn clear_break(&self) -> serialport::Result<()> {
+            Ok(())
+        }
+    }
+
+
 
     //mock the gps data
     fn create_gps_with_mock_reader(data: &str) -> Gps {
