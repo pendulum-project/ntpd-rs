@@ -1836,5 +1836,81 @@ mod tests {
         );
         assert!(result, "Normal measurement was not processed after an outlier");
     }    
-            
+
+    #[test]
+    fn test_initial_source_filter_update_with_gps_and_pps() {
+        let mut init_filter = InitialSourceFilter {
+            roundtriptime_stats: AveragingBuffer::default(),
+            init_offset: AveragingBuffer::default(),
+            last_measurement: None,
+            samples: 0,
+        };
+    
+        let measurement = Measurement {
+            delay: NtpDuration::from_seconds(0.0),
+            offset: NtpDuration::from_seconds(0.0),
+            transmit_timestamp: Default::default(),
+            receive_timestamp: Default::default(),
+            localtime: NtpTimestamp::from_fixed_int(0),
+            monotime: NtpInstant::now(),
+            stratum: 0,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+            gps: Some(crate::source::GpsMeasurement {
+                measurementnoise: NtpDuration::from_seconds(1.0),
+                offset: NtpDuration::from_seconds(2.0),
+            }),
+            pps: Some(crate::source::PpsMeasurement {
+                measurementnoise: NtpDuration::from_seconds(0.5),
+                offset: NtpDuration::from_seconds(1.5),
+            }),
+        };
+    
+        init_filter.update(measurement.clone());
+        assert_eq!(init_filter.samples, 1);
+        assert!(init_filter.roundtriptime_stats.mean() > 0.0);
+        assert!(init_filter.init_offset.mean() > 0.0);
+        assert!(init_filter.init_offset.mean() < 1.0);
+    }
+
+    #[test]
+    fn test_source_filter_progress_filtertime() {
+        let base = NtpTimestamp::from_fixed_int(0);
+        let mut src_filter = SourceFilter {
+            state: Vector::new_vector([0.0, 0.0]),
+            uncertainty: Matrix::new([[1e-6, 0.0], [0.0, 1e-8]]),
+            clock_wander: 1e-8,
+            roundtriptime_stats: AveragingBuffer::default(),
+            precision_score: 0,
+            poll_score: 0,
+            desired_poll_interval: PollIntervalLimits::default().min,
+            last_measurement: Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(0.0),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
+                localtime: base,
+                monotime: NtpInstant::now(),
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
+                gps: None,
+                pps: None,
+            },
+            prev_was_outlier: false,
+            last_iter: base,
+            filter_time: base,
+        };
+    
+        let new_time = base + NtpDuration::from_seconds(10.0);
+        src_filter.progress_filtertime(new_time);
+    
+        assert_eq!(src_filter.filter_time, new_time);
+        assert!(src_filter.state.ventry(0).abs() < 1e-6);
+        assert!(src_filter.uncertainty.entry(0, 0) > 1e-6);
+    }
 }
