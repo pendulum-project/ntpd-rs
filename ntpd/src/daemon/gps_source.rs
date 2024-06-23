@@ -258,6 +258,77 @@ fn accept_gps_time(result: io::Result<Option<(f64, NtpTimestamp)>>) -> AcceptRes
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ntp_proto::{NtpTimestamp};
+
+    #[tokio::test]
+    async fn test_accept_gps_time_with_valid_data() {
+        let gps_timestamp = NtpTimestamp::from_fixed_int(1_614_505_748);
+        let result = Ok(Some((123.456789, gps_timestamp)));
+        let accept_result = accept_gps_time(result);
+
+        if let AcceptResult::Accept((duration, timestamp)) = accept_result {
+            assert_eq!(duration.to_seconds(), 123.45678902847152);
+            assert_eq!(timestamp, gps_timestamp);
+        } else {
+            panic!("Expected Accept result");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_accept_gps_time_with_invalid_data() {
+        let result: io::Result<Option<(f64, NtpTimestamp)>> = Ok(None);
+        let accept_result = accept_gps_time(result);
+
+        if let AcceptResult::Ignore = accept_result {
+            // Expected outcome
+        } else {
+            panic!("Expected Ignore result");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_accept_gps_time_with_error() {
+        let result: io::Result<Option<(f64, NtpTimestamp)>> = Err(io::Error::new(io::ErrorKind::Other, "error"));
+        let accept_result = accept_gps_time(result);
+
+        if let AcceptResult::Ignore = accept_result {
+            // Expected outcome
+        } else {
+            panic!("Expected Ignore result");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_parse_gps_time_with_valid_data() {
+        let gps_timestamp = NtpTimestamp::from_fixed_int(1_614_505_748);
+        let data = Some((123.456789, gps_timestamp));
+        let result = parse_gps_time(&data);
+
+        assert!(result.is_ok());
+        let (duration, timestamp) = result.unwrap();
+        assert_eq!(duration.to_seconds(), 123.45678902847152);
+        assert_eq!(timestamp, gps_timestamp);
+    }
+
+    #[tokio::test]
+    async fn test_parse_gps_time_with_invalid_data() {
+        let data: Option<(f64, NtpTimestamp)> = None;
+        let result = parse_gps_time(&data);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_from_seconds() {
+        let seconds = 123.456789;
+        let duration = from_seconds(seconds);
+        assert_eq!(duration.to_seconds(), 123.45678902847152);
+    }
+}
+
 // fn parse_gps_time(data: &std::option::Option<f64>) -> Result<NtpDuration, Box<dyn std::error::Error>> {
 //     // Implement the logic to parse GPS time from the GPSData struct.
 //     // This is a placeholder implementation.
