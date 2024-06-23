@@ -911,4 +911,82 @@ mod tests {
             assert_eq!(bits, out_bits);
         }
     }
+
+    #[test]
+    fn test_from_unix_timestamp() {
+        let unix_timestamp = 1_614_505_748; // Unix timestamp for 2021-02-24 16:15:48 UTC
+        let nanos = 123_456_789; // 123.456789 milliseconds
+
+        let ntp_timestamp = NtpTimestamp::from_unix_timestamp(unix_timestamp, nanos);
+        let expected_seconds = unix_timestamp + 2_208_988_800;
+        let expected_fraction = (nanos as u64 * 4_294_967_296) / 1_000_000_000;
+        let expected_timestamp = (expected_seconds << 32) | expected_fraction;
+
+        assert_eq!(ntp_timestamp.timestamp, expected_timestamp);
+    }
+
+    #[test]
+    fn test_from_unix_timestamp_zero() {
+        let unix_timestamp = 0; // Unix epoch
+        let nanos = 0;
+
+        let ntp_timestamp = NtpTimestamp::from_unix_timestamp(unix_timestamp, nanos);
+        let expected_seconds = unix_timestamp + 2_208_988_800;
+        let expected_fraction = (nanos as u64 * 4_294_967_296) / 1_000_000_000;
+        let expected_timestamp = (expected_seconds << 32) | expected_fraction;
+
+        assert_eq!(ntp_timestamp.timestamp, expected_timestamp);
+    }
+
+    #[test]
+    fn test_from_unix_timestamp_with_max_nanos() {
+        let unix_timestamp = 1_614_505_748; // Unix timestamp for 2021-02-24 16:15:48 UTC
+        let nanos = 999_999_999; // Almost one second
+
+        let ntp_timestamp = NtpTimestamp::from_unix_timestamp(unix_timestamp, nanos);
+        let expected_seconds = unix_timestamp + 2_208_988_800;
+        let expected_fraction = (nanos as u64 * 4_294_967_296) / 1_000_000_000;
+        let expected_timestamp = (expected_seconds << 32) | expected_fraction;
+
+        assert_eq!(ntp_timestamp.timestamp, expected_timestamp);
+    }
+
+    #[test]
+    fn test_from_unix_timestamp_with_min_nanos() {
+        let unix_timestamp = 1_614_505_748; // Unix timestamp for 2021-02-24 16:15:48 UTC
+        let nanos = 1; // Minimum non-zero nanoseconds
+
+        let ntp_timestamp = NtpTimestamp::from_unix_timestamp(unix_timestamp, nanos);
+        let expected_seconds = unix_timestamp + 2_208_988_800;
+        let expected_fraction = (nanos as u64 * 4_294_967_296) / 1_000_000_000;
+        let expected_timestamp = (expected_seconds << 32) | expected_fraction;
+
+        assert_eq!(ntp_timestamp.timestamp, expected_timestamp);
+    }
+
+    #[test]
+    fn test_from_unix_timestamp_with_large_nanos() {
+        let unix_timestamp = 1_614_505_748; // Unix timestamp for 2021-02-24 16:15:48 UTC
+        let nanos = u32::MAX; // Maximum possible value for nanoseconds
+
+        let ntp_timestamp = NtpTimestamp::from_unix_timestamp(unix_timestamp, nanos);
+        let expected_seconds = unix_timestamp + 2_208_988_800;
+        let expected_fraction = (nanos as u64 * 4_294_967_296) / 1_000_000_000;
+        let expected_timestamp = (expected_seconds << 32) | expected_fraction;
+
+        assert_eq!(ntp_timestamp.timestamp, expected_timestamp);
+    }
+
+    #[test]
+    fn test_from_unix_timestamp_with_small_nanos() {
+        let unix_timestamp = 1_614_505_748; // Unix timestamp for 2021-02-24 16:15:48 UTC
+        let nanos = 1; // Smallest possible non-zero value for nanoseconds
+
+        let ntp_timestamp = NtpTimestamp::from_unix_timestamp(unix_timestamp, nanos);
+        let expected_seconds = unix_timestamp + 2_208_988_800;
+        let expected_fraction = (nanos as u64 * 4_294_967_296) / 1_000_000_000;
+        let expected_timestamp = (expected_seconds << 32) | expected_fraction;
+
+        assert_eq!(ntp_timestamp.timestamp, expected_timestamp);
+    }
 }
