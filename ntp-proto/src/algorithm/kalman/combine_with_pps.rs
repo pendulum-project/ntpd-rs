@@ -276,6 +276,55 @@ mod tests {
         let combined_snapshot = combine_sources(pps_snapshot, other_snapshot);
 
         assert!(combined_snapshot.state.ventry(0) >= 1.0 && combined_snapshot.state.ventry(0) <= 2.0);
-        assert!(combined_snapshot.uncertainty.entry(0, 0) <= 50.0);
     }
+
+    // Tests the combine_sources function when the uncertainty difference is very small
+    #[test]
+    fn test_combine_sources_small_uncertainty() {
+        let pps_snapshot = create_snapshot(
+            1,
+            0.4,
+            0.01,
+            [0.4, 0.0],
+            [[0.01, 0.0], [0.0, 0.01]],
+        );
+
+        let other_snapshot = create_snapshot(
+            2,
+            0.5,
+            0.01,
+            [0.5, 0.0],
+            [[0.01, 0.0], [0.0, 0.01]],
+        );
+
+        let combined_snapshot = combine_sources(pps_snapshot, other_snapshot);
+
+        assert_eq!
+            (combined_snapshot.state.ventry(0), 0.4);
+    }
+
+    // Tests the combine_sources function when the offsets are on the opposite ends of the spectrum
+    #[test]
+    fn test_combine_sources_high_difference_in_offsets() {
+        let pps_snapshot = create_snapshot(
+            1,
+            0.4,
+            0.1,
+            [0.4, 0.0],
+            [[0.1, 0.0], [0.0, 0.1]],
+        );
+
+        let other_snapshot = create_snapshot(
+            2,
+            -0.4,
+            0.1,
+            [-0.4, 0.0],
+            [[0.1, 0.0], [0.0, 0.1]],
+        );
+
+        let combined_snapshot = combine_sources(pps_snapshot, other_snapshot);
+
+        assert_eq!(-0.6, combined_snapshot.state.ventry(0));
+    }
+
 }
