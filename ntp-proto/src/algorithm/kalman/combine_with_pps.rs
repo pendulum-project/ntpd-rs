@@ -106,3 +106,33 @@ fn combine_sources<Index: Copy>(
         last_update: other_snapshot.last_update,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::algorithm::kalman::SourceSnapshot;
+    use crate::algorithm::kalman::matrix::{Matrix, Vector};
+    use crate::time_types::NtpTimestamp;
+
+    // Helper to create the snapshots, to be used in testing
+    fn create_snapshot<Index: Copy>(
+        index: Index,
+        offset: f64,
+        offset_uncertainty: f64,
+        state_vector: [f64; 2],
+        uncertainty_matrix: [[f64; 2]; 2],
+    ) -> SourceSnapshot<Index> {
+        SourceSnapshot {
+            index,
+            state: Vector::new_vector(state_vector),
+            uncertainty: Matrix::new(uncertainty_matrix),
+            delay: 0.0,
+            source_uncertainty: 0.0,
+            source_delay: 0.0,
+            leap_indicator: Default::default(),
+            last_update: NtpTimestamp::from_fixed_int(0),
+        }
+    }
+
+    // TESTS TO COME HERE
+}
