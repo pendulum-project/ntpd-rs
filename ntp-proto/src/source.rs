@@ -147,6 +147,18 @@ impl Measurement {
         }
     }
 
+    // create a new measurement for gps by the data recieved
+    // the fields needed are the offset, monotime, timestamp and noise.
+    // offset is one of the inputs for the stable and initial kalman which is used to measure
+    // how much off the current measurement varies from the system time
+    // monotime is recieved immediately when we recieve the measurement from the settalite
+    // this is needed in the latter stages of the algorithm to check if the clock is steered in an unusual way
+    // since the monotime or instant is a seperate clock that doesn't get affected by steering and always moves forward
+    // timestamp is the measurement we recieve from the settalite which is also sent to the kalman
+    // because the filter uses the last measurement time and the current measurement time to update
+    // the estiamted offset and frequency error. this is done by calculating a delta t 
+    // (how much time have passed during each measurement according to this source)
+    // lastly a noise is recieved which in this case can be changed from the config and this depends on the hardware used
     pub fn from_gps(
         offset: NtpDuration, 
         local_clock_time: NtpInstant,
@@ -172,6 +184,18 @@ impl Measurement {
             pps:None,
         }
     }
+    // create a new measurement for pps by the data recieved
+    // the fields needed are the offset, monotime, timestamp and noise.
+    // offset is one of the inputs for the stable and initial kalman which is used to measure
+    // how much off the current measurement varies from the system time
+    // monotime is recieved immediately when we recieve the measurement from the kernel
+    // this is needed in the latter stages of the algorithm to check if the clock is steered in an unusual way
+    // since the monotime or instant is a seperate clock that doesn't get affected by steering and always moves forward
+    // timestamp is the measurement we recieve from the kernel which is also sent to the kalman
+    // because the filter uses the last measurement time and the current measurement time to update
+    // the estiamted offset and frequency error. this is done by calculating a delta t 
+    // (how much time have passed during each measurement according to this source)
+    // lastly a noise is recieved which in this case can be changed from the config and this depends on the hardware used
     pub fn from_pps(
         offset: NtpDuration, 
         local_clock_time: NtpInstant,
