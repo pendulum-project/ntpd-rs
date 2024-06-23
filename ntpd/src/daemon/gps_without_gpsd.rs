@@ -482,7 +482,6 @@ mod tests {
     use super::*;
     use chrono::{NaiveDate, NaiveTime, NaiveDateTime};
     use std::io::Cursor;
-    use std::time::Duration;
 
     //mock the gps data
     fn create_gps_with_mock_reader(data: &str) -> Gps {
