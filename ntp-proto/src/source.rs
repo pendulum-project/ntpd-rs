@@ -2452,5 +2452,51 @@ mod test {
             assert_eq!(source_filter.uncertainty.entry(1, 1), 1.0);
             assert_eq!(source_filter.clock_wander, 1.0);
         }
+
+    #[test]
+    fn test_measurement_from_gps() {
+        let offset = NtpDuration::from_seconds(1.0);
+        let local_clock_time = NtpInstant::now();
+        let timestamp = NtpTimestamp::from_fixed_int(0);
+        let measurement_noise = 0.1;
+
+        let measurement = Measurement::from_gps(
+            offset,
+            local_clock_time,
+            timestamp,
+            measurement_noise,
+        );
+
+        assert_eq!(measurement.offset, NtpDuration::from_seconds(0.0));
+        assert!(measurement.gps.is_some());
+        assert!(measurement.pps.is_none());
+
+        let gps_measurement = measurement.gps.unwrap();
+        assert_eq!(gps_measurement.offset, offset);
+        assert_eq!(gps_measurement.measurementnoise, NtpDuration::from_seconds(measurement_noise));
+    }
+
+    #[test]
+    fn test_measurement_from_pps() {
+        let offset = NtpDuration::from_seconds(1.0);
+        let local_clock_time = NtpInstant::now();
+        let ntp_timestamp = NtpTimestamp::from_fixed_int(0);
+        let measurement_noise = 0.1;
+
+        let measurement = Measurement::from_pps(
+            offset,
+            local_clock_time,
+            ntp_timestamp,
+            measurement_noise,
+        );
+
+        assert_eq!(measurement.offset, NtpDuration::from_seconds(0.0));
+        assert!(measurement.gps.is_none());
+        assert!(measurement.pps.is_some());
+
+        let pps_measurement = measurement.pps.unwrap();
+        assert_eq!(pps_measurement.offset, offset);
+        assert_eq!(pps_measurement.measurementnoise, NtpDuration::from_seconds(measurement_noise));
+    }
 } 
     
