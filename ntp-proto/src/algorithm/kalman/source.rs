@@ -1837,6 +1837,7 @@ mod tests {
         assert!(result, "Normal measurement was not processed after an outlier");
     }    
 
+    // Ensure that the initial source filter is updated correctly with gps and pps measurement sample
     #[test]
     fn test_initial_source_filter_update_with_gps_and_pps() {
         let mut init_filter = InitialSourceFilter {
@@ -1875,6 +1876,7 @@ mod tests {
         assert!(init_filter.init_offset.mean() < 1.0);
     }
 
+    // Ensure that source filter's progress_filtertime method updates the filter time correctly
     #[test]
     fn test_source_filter_progress_filtertime() {
         let base = NtpTimestamp::from_fixed_int(0);
@@ -1913,4 +1915,103 @@ mod tests {
         assert!(src_filter.state.ventry(0).abs() < 1e-6);
         assert!(src_filter.uncertainty.entry(0, 0) > 1e-6);
     }
+
+    // Ensures that the source transitions from initial to stable state after required number of measurements
+    // It's supposed to stay Initial in the first 7 measurements, then transform to Stable on the 8th measurement
+    #[test]
+    fn test_source_state_transition_to_stable() {
+        let base = NtpTimestamp::from_fixed_int(0);
+        let mut source = SourceState::new();
+        let measurement = Measurement {
+            delay: NtpDuration::from_seconds(0.0),
+            offset: NtpDuration::from_seconds(0e-3),
+            transmit_timestamp: Default::default(),
+            receive_timestamp: Default::default(),
+            localtime: base + NtpDuration::from_seconds(1000.0),
+            monotime: NtpInstant::now() + std::time::Duration::from_secs(1000),
+            stratum: 0,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+            gps: None,
+            pps: None,
+        };
+        for _ in 0..7 {
+            source.update_self_using_measurement(
+                &SourceDefaultsConfig::default(),
+                &AlgorithmConfig::default(),
+                measurement.clone(),
+            );
+            assert!(matches!(source.0, SourceStateInner::Initial(_)));
+        }
+    
+        //Thefunc this test focuses on
+        source.update_self_using_measurement(
+            &SourceDefaultsConfig::default(),
+            &AlgorithmConfig::default(),
+            measurement,
+        );
+        assert!(matches!(source.0, SourceStateInner::Stable(_)));
+    }
+
+    // Ensures that absorb_measurement method updates the source filter state and uncertainty correctly
+    #[test]
+    fn test_source_filter_absorb_measurement() {
+        let base = NtpTimestamp::from_fixed_int(0);
+        let mut filter = SourceFilter {
+            state: Vector::new_vector([0.0, 0.0]),
+            uncertainty: Matrix::new([[1e-6, 0.0], [0.0, 1e-8]]),
+            clock_wander: 1e-8,
+            roundtriptime_stats: AveragingBuffer::default(),
+            precision_score: 0,
+            poll_score: 0,
+            desired_poll_interval: PollIntervalLimits::default().min,
+            last_measurement: Measurement {
+                delay: NtpDuration::from_seconds(0.0),
+                offset: NtpDuration::from_seconds(0.0),
+                transmit_timestamp: Default::default(),
+                receive_timestamp: Default::default(),
+                localtime: base,
+                monotime: NtpInstant::now(),
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
+                gps: None,
+                pps: None,
+            },
+            prev_was_outlier: false,
+            last_iter: base,
+            filter_time: base,
+        };
+    
+        let gps_measurement = Measurement {
+            delay: NtpDuration::from_seconds(0.0),
+            offset: NtpDuration::from_seconds(0.0),
+            transmit_timestamp: Default::default(),
+            receive_timestamp: Default::default(),
+            localtime: base + NtpDuration::from_seconds(1000.0),
+            monotime: NtpInstant::now() + std::time::Duration::from_secs(1000),
+            stratum: 0,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+            gps: Some(crate::source::GpsMeasurement {
+                measurementnoise: NtpDuration::from_seconds(1.0),
+                offset: NtpDuration::from_seconds(2.0),
+            }),
+            pps: None,
+        };
+    
+        filter.absorb_measurement(gps_measurement);
+        
+        // Check that the state has been updated
+        assert!(filter.state.ventry(0) > 0.0);
+        // Check that the uncertainty has been updated and is different from the initial value
+        assert!(filter.uncertainty.entry(0, 0) < 1e-6);
+    }
+
 }

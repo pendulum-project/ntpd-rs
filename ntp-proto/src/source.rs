@@ -2224,7 +2224,9 @@ mod test {
             assert!(p >= 0.0 && p <= 1.0);
             assert!(weight >= 0.0 && weight <= 1.0);
             assert!(m_delta_t >= 0.0);
-        }    
+        }
+
+        #[test]    
         fn test_initial_source_filter_update_with_gps_and_pps() {
             let gps_measurement = GpsMeasurement {
                 measurementnoise: NtpDuration::from_seconds(0.001),
