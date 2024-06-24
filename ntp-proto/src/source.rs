@@ -30,8 +30,8 @@ pub struct SourceNtsData {
     // Note: we use Box<dyn Cipher> to support the use
     // of multiple different ciphers, that might differ
     // in the key information they need to keep.
-    pub(crate) c2s: Box<dyn Cipher>,
-    pub(crate) s2c: Box<dyn Cipher>,
+    pub c2s: Box<dyn Cipher>,
+    pub s2c: Box<dyn Cipher>,
 }
 
 #[cfg(any(test, feature = "__internal-test"))]
@@ -106,7 +106,7 @@ pub struct Measurement {
 }
 
 impl Measurement {
-    fn from_packet(
+    pub fn from_packet(
         packet: &NtpPacket,
         send_timestamp: NtpTimestamp,
         recv_timestamp: NtpTimestamp,
@@ -520,38 +520,13 @@ impl<Controller: SourceController> NtpSource<Controller> {
         self.tries = self.tries.saturating_add(1);
 
         let poll_interval = self.current_poll_interval();
-        let (mut packet, identifier) = match &mut self.nts {
-            Some(nts) => {
-                let Some(cookie) = nts.cookies.get() else {
-                    return actions!(NtpSourceAction::Reset);
-                };
-                // Do ensure we don't exceed the buffer size
-                // when requesting new cookies. We keep 350
-                // bytes of margin for header, ids, extension
-                // field headers and signature.
-                let new_cookies = nts
-                    .cookies
-                    .gap()
-                    .min(((self.buffer.len() - 300) / cookie.len()).min(u8::MAX as usize) as u8);
-                match self.protocol_version {
-                    ProtocolVersion::V4 => {
-                        NtpPacket::nts_poll_message(&cookie, new_cookies, poll_interval)
-                    }
-                    #[cfg(feature = "ntpv5")]
-                    ProtocolVersion::V4UpgradingToV5 { .. } | ProtocolVersion::V5 => {
-                        NtpPacket::nts_poll_message_v5(&cookie, new_cookies, poll_interval)
-                    }
-                }
-            }
-            None => match self.protocol_version {
-                ProtocolVersion::V4 => NtpPacket::poll_message(poll_interval),
-                #[cfg(feature = "ntpv5")]
-                ProtocolVersion::V4UpgradingToV5 { .. } => {
-                    NtpPacket::poll_message_upgrade_request(poll_interval)
-                }
-                #[cfg(feature = "ntpv5")]
-                ProtocolVersion::V5 => NtpPacket::poll_message_v5(poll_interval),
-            },
+        let Some((mut packet, identifier)) = make_ntp_packet(
+            poll_interval,
+            &mut self.nts,
+            self.protocol_version,
+            self.buffer.len() - 300,
+        ) else {
+            return actions!(NtpSourceAction::Reset);
         };
         self.current_request_identifier = Some((identifier, NtpInstant::now() + POLL_WINDOW));
 
@@ -807,6 +782,45 @@ impl<Controller: SourceController> NtpSource<Controller> {
             bloom_filter: RemoteBloomFilter::new(16).unwrap(),
         }
     }
+}
+
+pub fn make_ntp_packet(
+    poll_interval: PollInterval,
+    nts: &mut Option<Box<SourceNtsData>>,
+    protocol_version: ProtocolVersion,
+    size_for_cookies: usize,
+) -> Option<(NtpPacket<'static>, RequestIdentifier)> {
+    Some(match nts {
+        Some(nts) => {
+            let cookie = nts.cookies.get()?;
+            // Do ensure we don't exceed the buffer size
+            // when requesting new cookies. We keep 350
+            // bytes of margin for header, ids, extension
+            // field headers and signature.
+            let new_cookies = nts
+                .cookies
+                .gap()
+                .min((size_for_cookies / cookie.len()).min(u8::MAX as usize) as u8);
+            match protocol_version {
+                ProtocolVersion::V4 => {
+                    NtpPacket::nts_poll_message(&cookie, new_cookies, poll_interval)
+                }
+                #[cfg(feature = "ntpv5")]
+                ProtocolVersion::V4UpgradingToV5 { .. } | ProtocolVersion::V5 => {
+                    NtpPacket::nts_poll_message_v5(&cookie, new_cookies, poll_interval)
+                }
+            }
+        }
+        None => match protocol_version {
+            ProtocolVersion::V4 => NtpPacket::poll_message(poll_interval),
+            #[cfg(feature = "ntpv5")]
+            ProtocolVersion::V4UpgradingToV5 { .. } => {
+                NtpPacket::poll_message_upgrade_request(poll_interval)
+            }
+            #[cfg(feature = "ntpv5")]
+            ProtocolVersion::V5 => NtpPacket::poll_message_v5(poll_interval),
+        },
+    })
 }
 
 #[cfg(test)]
