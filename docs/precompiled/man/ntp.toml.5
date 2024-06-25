@@ -209,6 +209,15 @@ When \f[V]ignore\f[R] is specified, messages are discarded with no
 response sent.
 The default value is equivalent to allowing any IP address, and would be
 equivalent to setting the filter to \f[V][]\f[R], with either action.
+.TP
+\f[V]require-nts\f[R] = \f[V]true\f[R] | \f[V]false\f[R] | \f[V]\[dq]deny\[dq]\f[R] | \f[V]\[dq]ignore\[dq]\f[R] (\f[B]false\f[R])
+Whether incoming requests to the server must have NTS enabled.
+When set to \f[V]true\f[R] or \f[V]\[dq]ignore\[dq]\f[R] any non-NTS
+enabled messages will be ignored.
+When set to \f[V]\[dq]deny\[dq]\f[R] non-NTS enabled messages will be
+explicitly denied with an NTP \f[V]DENY\f[R] kiss code.
+When set to \f[V]false\f[R] (the default), normal NTP messages are also
+allowed.
 .SS \f[V][observability]\f[R]
 .PP
 Settings in this section configure how you can observe the behavior of
