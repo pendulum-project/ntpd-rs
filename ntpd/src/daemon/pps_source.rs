@@ -224,18 +224,6 @@ where
         Ok((ntp_duration, data.1))
     }
 
-//     // Calculate the fractional part of the NTP timestamp
-//     let fraction = ((nanos as u64 * NTP_SCALE_FRAC) / 1_000_000_000) as u64;
-
-//     // Combine NTP seconds and fraction to form the complete NTP timestamp
-//     let timestamp = (ntp_seconds << 32) | fraction;
-
-//     println!("Unix Timestamp: {}, Nanos: {}, NTP Seconds: {}, Fraction: {}", unix_timestamp, nanos, ntp_seconds, fraction);
-//     println!("Combined NTP Timestamp: {:#018X}", timestamp);
-
-//     NtpTimestamp::from_fixed_int(timestamp)
-// }
-
     pub fn from_seconds(seconds: f64) -> NtpDuration {
         let whole_seconds = seconds as i64;
         let fraction = seconds.fract();

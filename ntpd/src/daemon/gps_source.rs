@@ -261,7 +261,7 @@ fn accept_gps_time(result: io::Result<Option<(f64, NtpTimestamp)>>) -> AcceptRes
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ntp_proto::{NtpTimestamp};
+    use ntp_proto::NtpTimestamp;
 
     #[tokio::test]
     async fn test_accept_gps_time_with_valid_data() {
@@ -291,7 +291,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_accept_gps_time_with_error() {
-        let result: io::Result<Option<(f64, NtpTimestamp)>> = Err(io::Error::new(io::ErrorKind::Other, "error"));
+        let result: io::Result<Option<(f64, NtpTimestamp)>> =
+            Err(io::Error::new(io::ErrorKind::Other, "error"));
         let accept_result = accept_gps_time(result);
 
         if let AcceptResult::Ignore = accept_result {
@@ -328,32 +329,3 @@ mod tests {
         assert_eq!(duration.to_seconds(), 123.45678902847152);
     }
 }
-
-// fn parse_gps_time(data: &std::option::Option<f64>) -> Result<NtpDuration, Box<dyn std::error::Error>> {
-//     // Implement the logic to parse GPS time from the GPSData struct.
-//     // This is a placeholder implementation.
-//     info!(data);
-//     println!("in parse_gps_time: data = {:?}", data);
-//     let unix_timestamp =  Some(data.unwrap() as i64);
-//     // Handle the Option<u64>
-//     let ntp_timestamp = match unix_timestamp {
-//         Some(ts) => from_unix_timestamp(ts),
-//         None => return Err("Failed to parse GPS time".into()),
-//     };
-
-//     //let ntpTimestamp = from_unix_timestamp(unix_timestamp);
-
-//  // Replace this with actual parsing logic
-//     Ok(ntp_timestamp)
-// }
-
-// pub fn from_unix_timestamp(unix_timestamp: i64) -> NtpDuration {
-//     const UNIX_TO_NTP_OFFSET: i64 = 2_208_988_800;
-//     let ntp_seconds = unix_timestamp + UNIX_TO_NTP_OFFSET;
-
-//     let fraction = 0u32;
-
-//     let timestamp = (ntp_seconds << 32) | (fraction as i64);
-
-//     NtpDuration::from_fixed_int(timestamp)
-// }

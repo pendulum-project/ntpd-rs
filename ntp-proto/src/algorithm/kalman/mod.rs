@@ -159,27 +159,6 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 .collect()
         };
 
-
-        // let candidates = combine_with_pps::combine_with_pps(self.sources
-        //     .iter()
-        //     .filter_map(|(index, (state, usable))| {
-        //         if *usable {
-        //             state.snapshot(*index)
-        //         } else {
-        //             None
-        //         }
-        //     })
-        //     .collect(),
-        //     self.pps_source_id,
-        // );
-
-        // let candidates = combine_with_pps::combine_with_pps(self.sources
-        //     .iter()
-        //     .filter(|(index, (state, usable))| 
-        //         index == pps_source)
-        //     .collect(),
-        //     self.pps_source_id,
-        // );
         println!("AFTER COMMBINE WITH PPS: Number of candidates: {}", candidates.len());
 
         

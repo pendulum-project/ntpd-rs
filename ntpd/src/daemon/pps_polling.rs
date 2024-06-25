@@ -108,19 +108,6 @@ pub enum AcceptResult {
 mod tests {
     use super::*;
 
-//     #[tokio::test]
-//     async fn test_poll_pps_signal() {
-//         let mut pps = Pps::new().expect("Failed to open PPS device");
-
-//         match pps.poll_pps_signal().await {
-//         Ok(Some((offset, ntp_timestamp))) => {
-//             println!("PPS Offset: {}, NTP Timestamp: {:?}", offset, ntp_timestamp);
-//         }
-//         Ok(None) => println!("No PPS signal found."),
-//         Err(e) => println!("Error: {:?}", e),
-//     }
-// }
-
     #[test]
     fn test_from_unix_timestamp() {
         let unix_timestamp = 1_614_774_800; // This is equivalent to some date in 2021
