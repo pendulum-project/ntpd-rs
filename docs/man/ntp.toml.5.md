@@ -159,6 +159,13 @@ time.
     address, and would be equivalent to setting the filter to `[]`, with either
     action.
 
+`require-nts` = `true` | `false` | `"deny"` | `"ignore"` (**false**)
+:   Whether incoming requests to the server must have NTS enabled. When set to
+    `true` or `"ignore"` any non-NTS enabled messages will be ignored. When set
+    to `"deny"` non-NTS enabled messages will be explicitly denied with an NTP
+    `DENY` kiss code. When set to `false` (the default), normal NTP messages are
+    also allowed.
+
 ## `[observability]`
 Settings in this section configure how you can observe the behavior of the
 daemon. Currently the daemon can be observed either through the logs or by

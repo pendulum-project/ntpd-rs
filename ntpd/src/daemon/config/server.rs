@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use ntp_proto::FilterList;
+use ntp_proto::{FilterAction, FilterList};
 use serde::{Deserialize, Deserializer};
 
 #[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
@@ -57,6 +57,48 @@ pub struct ServerConfig {
         deserialize_with = "deserialize_rate_limiting_cutoff"
     )]
     pub rate_limiting_cutoff: Duration,
+    #[serde(default, deserialize_with = "deserialize_require_nts")]
+    pub require_nts: Option<FilterAction>,
+}
+
+fn deserialize_require_nts<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<FilterAction>, D::Error> {
+    struct FilterActionVisitor;
+    impl<'de> serde::de::Visitor<'de> for FilterActionVisitor {
+        type Value = Option<FilterAction>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a string (`ignore` or `deny`), or boolean")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            match value {
+                "ignore" => Ok(Some(FilterAction::Ignore)),
+                "deny" => Ok(Some(FilterAction::Deny)),
+                _ => Err(serde::de::Error::unknown_variant(
+                    value,
+                    &["ignore", "deny"],
+                )),
+            }
+        }
+
+        fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            if v {
+                Ok(Some(FilterAction::Ignore))
+            } else {
+                Ok(None)
+            }
+        }
+    }
+
+    deserializer.deserialize_any(FilterActionVisitor)
 }
 
 fn default_denylist() -> FilterList {
@@ -89,6 +131,7 @@ impl TryFrom<&str> for ServerConfig {
             allowlist: default_allowlist(),
             rate_limiting_cache_size: Default::default(),
             rate_limiting_cutoff: Default::default(),
+            require_nts: None,
         })
     }
 }
@@ -100,6 +143,7 @@ impl From<ServerConfig> for ntp_proto::ServerConfig {
             allowlist: value.allowlist,
             rate_limiting_cache_size: value.rate_limiting_cache_size,
             rate_limiting_cutoff: value.rate_limiting_cutoff,
+            require_nts: value.require_nts,
         }
     }
 }
