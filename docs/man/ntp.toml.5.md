@@ -234,6 +234,10 @@ untampered with.
 :   Timeout in milliseconds for how long a key exchange may take. If the timeout
     is exceeded the connection will be dropped.
 
+`concurrent-connections` = *number* (**512**)
+:   Maximum number of concurrent connections the key exchange server will handle.
+    Any connections above the threshold will be held in an OS level queue.
+
 `ntp-port` = *port*
     Port number the key exchange server should instruct clients to use. Should
     be used when the port number of the NTP server is not the default.
