@@ -587,7 +587,6 @@ impl<'a> NtpPacket<'a> {
         let (mut header, id) = NtpHeaderV3V4::poll_message(poll_interval);
 
         header.reference_timestamp = v5::UPGRADE_TIMESTAMP;
-        let draft_id = ExtensionField::DraftIdentification(Cow::Borrowed(v5::DRAFT_VERSION));
 
         (
             NtpPacket {
@@ -595,7 +594,7 @@ impl<'a> NtpPacket<'a> {
                 efdata: ExtensionFieldData {
                     authenticated: vec![],
                     encrypted: vec![],
-                    untrusted: vec![draft_id],
+                    untrusted: vec![],
                 },
                 mac: None,
             },
@@ -644,19 +643,13 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V4(header) => {
                 let mut response_header =
                     NtpHeaderV3V4::timestamp_response(system, *header, recv_timestamp, clock);
-                let mut extra_ef = None;
 
                 #[cfg(feature = "ntpv5")]
                 {
                     // Respond with the upgrade timestamp (NTP5NTP5) iff the input had it and the packet
                     // had the correct draft identification
-                    if let (v5::UPGRADE_TIMESTAMP, Some(v5::DRAFT_VERSION)) =
-                        (header.reference_timestamp, input.draft_id())
-                    {
+                    if header.reference_timestamp == v5::UPGRADE_TIMESTAMP {
                         response_header.reference_timestamp = v5::UPGRADE_TIMESTAMP;
-                        extra_ef = Some(ExtensionField::DraftIdentification(Cow::Borrowed(
-                            v5::DRAFT_VERSION,
-                        )));
                     };
                 }
 
@@ -672,7 +665,6 @@ impl<'a> NtpPacket<'a> {
                             .into_iter()
                             .chain(input.efdata.authenticated)
                             .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
-                            .chain(extra_ef)
                             .collect(),
                     },
                     mac: None,
@@ -1179,37 +1171,59 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V3(header) => header.stratum == 0,
             NtpHeader::V4(header) => header.stratum == 0,
             #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(header) => header.flags.status_message,
+            NtpHeader::V5(header) => header.stratum == 0,
         }
     }
 
     pub fn is_kiss_deny(&self) -> bool {
-        self.is_kiss() && self.kiss_code().is_deny()
+        self.is_kiss()
+            && match self.header {
+                NtpHeader::V3(_) | NtpHeader::V4(_) => self.kiss_code().is_deny(),
+                #[cfg(feature = "ntpv5")]
+                NtpHeader::V5(header) => header.poll == PollInterval::NEVER,
+            }
     }
 
-    pub fn is_kiss_rate(&self) -> bool {
-        self.is_kiss() && self.kiss_code().is_rate()
+    pub fn is_kiss_rate(
+        &self,
+        #[cfg_attr(not(feature = "ntpv5"), allow(unused))] own_interval: PollInterval,
+    ) -> bool {
+        self.is_kiss()
+            && match self.header {
+                NtpHeader::V3(_) | NtpHeader::V4(_) => self.kiss_code().is_rate(),
+                #[cfg(feature = "ntpv5")]
+                NtpHeader::V5(header) => {
+                    header.poll > own_interval && header.poll != PollInterval::NEVER
+                }
+            }
     }
 
     pub fn is_kiss_rstr(&self) -> bool {
-        self.is_kiss() && self.kiss_code().is_rstr()
+        self.is_kiss()
+            && match self.header {
+                NtpHeader::V3(_) | NtpHeader::V4(_) => self.kiss_code().is_rstr(),
+                #[cfg(feature = "ntpv5")]
+                NtpHeader::V5(_) => false,
+            }
     }
 
     pub fn is_kiss_ntsn(&self) -> bool {
-        self.is_kiss() && self.kiss_code().is_ntsn()
+        self.is_kiss()
+            && match self.header {
+                NtpHeader::V3(_) | NtpHeader::V4(_) => self.kiss_code().is_ntsn(),
+                #[cfg(feature = "ntpv5")]
+                NtpHeader::V5(header) => header.flags.authnak,
+            }
     }
 
     #[cfg(feature = "ntpv5")]
     pub fn is_upgrade(&self) -> bool {
         matches!(
-            (self.header, self.draft_id()),
-            (
-                NtpHeader::V4(NtpHeaderV3V4 {
-                    reference_timestamp: v5::UPGRADE_TIMESTAMP,
-                    ..
-                }),
-                Some(v5::DRAFT_VERSION),
-            )
+            self.header,
+            NtpHeader::V4(NtpHeaderV3V4 {
+                reference_timestamp: v5::UPGRADE_TIMESTAMP,
+                ..
+            }),
         )
     }
 
@@ -1806,7 +1820,7 @@ mod tests {
 
         assert_eq!(
             header.reference_timestamp,
-            NtpTimestamp::from_fixed_int(0x4E5450354E545035)
+            NtpTimestamp::from_fixed_int(0x4E54503544524654)
         );
     }
 
@@ -2239,7 +2253,7 @@ mod tests {
             .unwrap();
         assert_eq!(packet_id, response_id);
         assert_eq!(response.new_cookies().count(), 0);
-        assert!(response.is_kiss_rate());
+        assert!(response.is_kiss_rate(PollIntervalLimits::default().min));
 
         let (mut packet, _) =
             NtpPacket::nts_poll_message(&cookie, 1, PollIntervalLimits::default().min);
@@ -2274,7 +2288,7 @@ mod tests {
             .unwrap();
         assert_eq!(packet_id, response_id);
         assert_eq!(response.new_cookies().count(), 0);
-        assert!(response.is_kiss_rate());
+        assert!(response.is_kiss_rate(PollIntervalLimits::default().min));
 
         let (packet, _) =
             NtpPacket::nts_poll_message(&cookie, 1, PollIntervalLimits::default().min);
@@ -2305,7 +2319,7 @@ mod tests {
             .unwrap();
         assert_eq!(packet_id, response_id);
         assert_eq!(response.new_cookies().count(), 0);
-        assert!(response.is_kiss_rate());
+        assert!(response.is_kiss_rate(PollIntervalLimits::default().min));
 
         let (mut packet, _) =
             NtpPacket::nts_poll_message(&cookie, 1, PollIntervalLimits::default().min);
@@ -2327,7 +2341,7 @@ mod tests {
             })
             .is_none());
         assert_eq!(response.new_cookies().count(), 0);
-        assert!(response.is_kiss_rate());
+        assert!(response.is_kiss_rate(PollIntervalLimits::default().min));
     }
 
     #[test]
