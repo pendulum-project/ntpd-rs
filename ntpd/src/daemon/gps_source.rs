@@ -69,7 +69,7 @@ where
             let actions = match selected {
                 SelectResult::Recv(result) => {
                     match result {
-                        Ok(Some(data)) => {
+                        Ok(Some(_data)) => {
                             // Process GPS data
                             match accept_gps_time(result) {
                                 AcceptResult::Accept((offset, timestamp)) => {
@@ -87,7 +87,7 @@ where
                             // Handle the case where no data is available
                             GpsSourceActionIterator::default()
                         }
-                        Err(e) => {
+                        Err(_e) => {
                             // Handle the error
                             GpsSourceActionIterator::default()
                         }
@@ -207,10 +207,6 @@ enum AcceptResult {
 }
 
 pub fn from_seconds(seconds: f64) -> NtpDuration {
-    let whole_seconds = seconds as i64;
-    let fraction = seconds.fract();
-    let ntp_fraction = (fraction * (1u64 << 32) as f64) as u32;
-
     NtpDuration::from_seconds(seconds)
 }
 

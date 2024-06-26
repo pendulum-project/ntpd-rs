@@ -244,11 +244,11 @@ impl PortChecker for RealPortChecker {
         let mut port = serialport::new(port_name, baud_rate)
             .timeout(timeout)
             .open()
-            .map_err(|e| {
+            .map_err(|_e| {
                 GpsSpawnError::PortNotOpen
             })?;
 
-        if let Err(e) = port.set_timeout(timeout) {
+        if let Err(_e) = port.set_timeout(timeout) {
             return Err(GpsSpawnError::PortNotOpen)
         }
 

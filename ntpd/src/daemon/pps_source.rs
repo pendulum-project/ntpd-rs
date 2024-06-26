@@ -62,7 +62,7 @@ where
             let actions = match selected {
                 SelectResult::Recv(result) => {
                     match result {
-                        Ok(Some(data)) => {
+                        Ok(Some(_data)) => {
                             match accept_pps_time(result) {
                                 AcceptResult::Accept(offset, ntp_timestamp) => {
                                     self.source.handle_incoming(NtpInstant::now(), offset, ntp_timestamp, self.pps.measurement_noise)
@@ -74,7 +74,7 @@ where
                             // Handle the case where no data is available
                             PpsSourceActionIterator::default()
                         }
-                        Err(e) => {
+                        Err(_e) => {
                             // Handle the error
                             PpsSourceActionIterator::default()
                         }
@@ -206,7 +206,7 @@ where
             Ok(None) => {
                 AcceptResult::Ignore
             }
-            Err(receive_error) => {
+            Err(_receive_error) => {
                 AcceptResult::Ignore
             }
         }
@@ -218,10 +218,6 @@ where
     }
 
     pub fn from_seconds(seconds: f64) -> NtpDuration {
-        let whole_seconds = seconds as i64;
-        let fraction = seconds.fract();
-        let ntp_fraction = (fraction * (1u64 << 32) as f64) as u32;
-    
         NtpDuration::from_seconds(seconds)
     }
     #[cfg(test)]

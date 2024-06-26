@@ -1,6 +1,5 @@
 use chrono::{NaiveDate, NaiveTime, NaiveDateTime, Utc};
 use ntp_proto::NtpTimestamp;
-use tracing::info;
 use std::io::{self, BufRead, BufReader};
 use std::time::Duration;
 use serialport::{SerialPort};
