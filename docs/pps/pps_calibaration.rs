@@ -36,12 +36,10 @@ impl PpsCalibration {
         self.pps_offset = match gps_time.duration_since(pps_time) {
             Ok(duration) => duration,
             Err(e) => {
-                println!("Warning: GPS time is earlier than PPS time: {}", e);
                 Duration::from_secs(0)
             }
         };
         
-        println!("Calculated PPS Offset: {:?}", self.pps_offset);
         Ok(())
     }
 

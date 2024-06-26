@@ -44,17 +44,9 @@ fn process_response(line: &str) {
                     match DateTime::parse_from_rfc3339(&timestamp) {
                         Ok(datetime) => {
                             let datetime = datetime.with_timezone(&Utc);
-                            println!("Timestamp: {}", datetime);
-
                             let now = Utc::now();
                             let duration = now.signed_duration_since(datetime);
-                            println!("Duration since GPS timestamp: {}", duration);
-
                             let offset = duration.num_nanoseconds().unwrap_or(0) as f64 / 1e9;
-                            println!("Offset: {} seconds", offset);
-
-                            let instant = now;
-                            println!("Instant: {}", instant);
                         }
                         Err(e) => eprintln!("Failed to parse timestamp: {}", e),
                     }
@@ -66,17 +58,9 @@ fn process_response(line: &str) {
             } => {
                 if let (Some(real_sec), Some(real_nsec)) = (real_sec, real_nsec) {
                     let pps_time = Utc.timestamp(real_sec, real_nsec as u32); 
-                    println!("PPS time: {}", pps_time);
-
                     let now = Utc::now();
                     let duration = now.signed_duration_since(pps_time);
-                    println!("Duration since PPS: {}", duration);
-
                     let offset = duration.num_nanoseconds().unwrap_or(0) as f64 / 1e9;
-                    println!("Offset: {} seconds", offset);
-
-                    let instant = now;
-                    println!("Instant: {}", instant);
                 }
             }
             GpsdResponse::VERSION {} => {

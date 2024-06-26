@@ -104,7 +104,6 @@ pub async fn spawn(
     for source_config in source_configs {
         match source_config {
             NtpSourceConfig::Gps(cfg) => {
-                println!("spawning gps");
                 system
                     .add_spawner(GpsSpawner::new(cfg.clone()))
                     .map_err(|e| {
@@ -113,7 +112,6 @@ pub async fn spawn(
                     })?;
             }
             NtpSourceConfig::Pps(cfg) => {
-                println!("spawning pps");
                 system
                     .add_spawner(PpsSpawner::new(cfg.clone()))
                     .map_err(|e| {

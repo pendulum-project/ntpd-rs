@@ -123,9 +123,6 @@ impl NtpTimestamp {
         // Combine NTP seconds and fraction to form the complete NTP timestamp
         let timestamp = (ntp_seconds << 32) | fraction;
 
-        println!("Unix Timestamp: {}, Nanos: {}, NTP Seconds: {}, Fraction: {}", unix_timestamp, nanos, ntp_seconds, fraction);
-        println!("Combined NTP Timestamp: {:#018X}", timestamp);
-
         NtpTimestamp { timestamp }
     }
 }

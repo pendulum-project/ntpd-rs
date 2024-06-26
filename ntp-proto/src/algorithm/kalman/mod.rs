@@ -116,8 +116,6 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
             state.progress_filtertime(time);
         }
         let candidates = if let Some(pps_source) = self.pps_source_id {
-            println!("PPS SOURCE INDEX {:?}", pps_source);
-        
             // Extract the PPS SourceSnapshot
             let pps_snapshot = self.sources.iter()
                 .filter_map(|(index, (state, usable))| {
@@ -159,15 +157,12 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 .collect()
         };
 
-        println!("AFTER COMMBINE WITH PPS: Number of candidates: {}", candidates.len());
-
-        
         let selection = select::select(
             &self.synchronization_config,
             &self.algo_config,
             candidates,
         );
-        println!("selection lenght: {}", selection.len());
+        
         if let Some(combined) = combine(&selection, &self.algo_config) {
             info!(
                 "Offset: {}+-{}ms, frequency: {}+-{}ppm",

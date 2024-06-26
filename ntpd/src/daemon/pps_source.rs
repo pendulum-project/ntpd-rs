@@ -63,10 +63,8 @@ where
                 SelectResult::Recv(result) => {
                     match result {
                         Ok(Some(data)) => {
-                            println!("PPS OFFSET CALCULATED: {:.6} seconds, with timestamp: {:?}", data.0, data.1);
                             match accept_pps_time(result) {
                                 AcceptResult::Accept(offset, ntp_timestamp) => {
-                                    println!("offset: {:?}", offset);
                                     self.source.handle_incoming(NtpInstant::now(), offset, ntp_timestamp, self.pps.measurement_noise)
                                 }
                                 AcceptResult::Ignore => PpsSourceActionIterator::default(),
@@ -74,12 +72,10 @@ where
                         }
                         Ok(None) => {
                             // Handle the case where no data is available
-                            println!("No PPS data available");
                             PpsSourceActionIterator::default()
                         }
                         Err(e) => {
                             // Handle the error
-                            eprintln!("Error processing PPS data: {}", e);
                             PpsSourceActionIterator::default()
                         }
                     }
@@ -202,18 +198,15 @@ where
     pub fn accept_pps_time(result: io::Result<Option<(f64, NtpTimestamp)>>) -> AcceptResult {
         match result {
             Ok(Some(data)) => {
-                println!("data: {:?}", data);
                 match parse_pps_time(data) {
                     Ok((pps_duration, pps_timestamp)) => AcceptResult::Accept(pps_duration, pps_timestamp),
                     Err(_) => AcceptResult::Ignore,
                 }
             }
             Ok(None) => {
-                println!("No PPS data received");
                 AcceptResult::Ignore
             }
             Err(receive_error) => {
-                println!("Could not receive PPS signal: {:?}", receive_error);
                 AcceptResult::Ignore
             }
         }

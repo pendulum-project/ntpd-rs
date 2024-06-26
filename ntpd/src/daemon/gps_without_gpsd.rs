@@ -175,13 +175,10 @@ impl Gps {
                 let line = line.trim().to_string(); 
                 self.line.clear();
                 self.line.push_str(&line); 
-                info!("please heree");
                 let fields: Vec<&str> = line.split(',').collect(); 
                 if line.starts_with("$GNRMC") {
-                    info!("or here");
                     self.process_gnrmc(&fields);
                 } else if line.starts_with("$GNGGA") {
-                    info!("no we here");
                     return Ok(self.process_gngga(&fields));
                 }
                 Ok(None)
@@ -194,164 +191,6 @@ impl Gps {
     }
 }
 
-// fn open_serial_port(port_name: &str, baud_rate: u32, timeout: Duration) -> io::Result<Box<dyn SerialPort>> {
-//     serialport::new(port_name, baud_rate)
-//         .timeout(timeout)
-//         .open()
-//         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-// }
-
-// #[tokio::main]
-// async fn main() -> io::Result<()> {
-//     let port_name = "/dev/serial0";
-//     let baud_rate = 9600;
-//     let timeout = Duration::from_secs(10);
-
-//     match GPS::new(port_name, baud_rate, timeout) {
-//         Ok(mut gps) => {
-//             loop {
-//                 match gps.current_data().await {
-//                     Ok(Some(offset)) => println!("Offset between GPS time and system time: {:.6} seconds", offset),
-//                     Ok(None) => continue,
-//                     Err(e) => {
-//                         eprintln!("Error processing GPS data: {}", e);
-//                         break;
-//                     }
-//                 }
-//             }
-//         }
-//         Err(e) => eprintln!("Failed to initialize GPS: {}", e),
-//     }
-
-//     Ok(())
-// }
-
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use std::io::{self, BufRead, BufReader, Cursor};
-//     use std::time::Duration;
-//     use serialport::SerialPort;
-
-//     #[test]
-//     fn test_parse_nmea_time() {
-//         let result = parse_nmea_time("123519");
-//         assert_eq!(result, Some((12, 35, 19.0)));
-
-//         let result = parse_nmea_time("123519.00");
-//         assert_eq!(result, Some((12, 35, 19.00)));
-
-//         let result = parse_nmea_time("1234");
-//         assert_eq!(result, None);
-
-//         let result = parse_nmea_time("ab3519");
-//         assert_eq!(result, None);
-
-//         let result = parse_nmea_time("12ab19");
-//         assert_eq!(result, None);
-
-//         let result = parse_nmea_time("1235ab");
-//         assert_eq!(result, None);
-
-//         let result = parse_nmea_time("000000");
-//         assert_eq!(result, Some((0, 0, 0.0)));
-//     }
-
-//     #[test]
-//     fn test_parse_nmea_date() {
-//         let result = parse_nmea_date("230394");
-//         assert_eq!(result, Some((23, 3, 94)));
-
-//         let result = parse_nmea_date("2303");
-//         assert_eq!(result, None);
-
-//         let result = parse_nmea_date("ab0394");
-//         assert_eq!(result, None);
-
-//         let result = parse_nmea_date("23ab94");
-//         assert_eq!(result, None);
-
-//         let result = parse_nmea_date("2303ab");
-//         assert_eq!(result, None);
-
-//         let result = parse_nmea_date("010100");
-//         assert_eq!(result, Some((1, 1, 0)));
-//     }
-
-//     #[test]
-//     fn test_nmea_time_date_to_unix_timestamp() {
-//         let result = nmea_time_date_to_unix_timestamp("123519.00", "250320");
-//         assert_eq!(result, Some(1585139719.00));
-
-//         let result = nmea_time_date_to_unix_timestamp("1234", "250320");
-//         assert_eq!(result, None);
-
-//         let result = nmea_time_date_to_unix_timestamp("123519.00", "2503");
-//         assert_eq!(result, None);
-
-//         let result = nmea_time_date_to_unix_timestamp("12ab19.00", "250320");
-//         assert_eq!(result, None);
-
-//         let result = nmea_time_date_to_unix_timestamp("123519.00", "25ab20");
-//         assert_eq!(result, None);
-
-//         let result = nmea_time_date_to_unix_timestamp("000000.00", "010100");
-//         assert_eq!(result, Some(946684800.00)); 
-//     }
-
-//     #[test]
-//     fn test_process_gnrmc_with_valid_data() {
-//         let mut current_date = None;
-//         let fields = vec!["GNRMC", "123519.00", "A", "4807.038", "N", "01131.000", "E", "022.4", "084.4", "250320"];
-//         process_gnrmc(&fields, &mut current_date);
-//         assert_eq!(current_date, Some("250320".to_string()));
-//     }
-
-//     #[test]
-//     fn test_process_gnrmc_with_invalid_data() {
-//         let mut current_date = None;
-//         let fields = vec!["GNRMC", "123519.00", "V", "4807.038", "N", "01131.000", "E", "022.4", "084.4", "250320"];
-//         process_gnrmc(&fields, &mut current_date);
-//         assert_eq!(current_date, None);
-//     }
-
-//     #[test]
-//     fn test_process_gnrmc_with_insufficient_fields() {
-//         let mut current_date = None;
-//         let fields = vec!["GNRMC", "123519.00", "A"];
-//         process_gnrmc(&fields, &mut current_date);
-//         assert_eq!(current_date, None);
-//     }
-
-//     #[test]
-//     fn test_process_gnrmc_updates_current_date() {
-//         let mut current_date = Some("240320".to_string());
-//         let fields = vec!["GNRMC", "123519.00", "A", "4807.038", "N", "01131.000", "E", "022.4", "084.4", "250320"];
-//         process_gnrmc(&fields, &mut current_date);
-//         assert_eq!(current_date, Some("250320".to_string()));
-//     }
-
-//     #[test]
-//     fn test_is_valid_gnrmc_with_valid_data() {
-//         let fields = vec!["GNRMC", "123519.00", "A", "4807.038", "N", "01131.000", "E", "022.4", "084.4", "250320"];
-//         assert!(is_valid_gnrmc(&fields));
-//     }
-
-//     #[test]
-//     fn test_is_valid_gnrmc_with_invalid_status() {
-//         let fields = vec!["GNRMC", "123519.00", "V", "4807.038", "N", "01131.000", "E", "022.4", "084.4", "250320"];
-//         assert!(!is_valid_gnrmc(&fields));
-//     }
-
-//     #[test]
-//     fn test_is_valid_gnrmc_with_insufficient_fields() {
-//         let fields = vec!["GNRMC", "123519.00", "A"];
-//         assert!(!is_valid_gnrmc(&fields));
-//     }
-// }
-
-// Mock of SerialPort, testing
 
 // Some MOCK testing
 #[cfg(test)]

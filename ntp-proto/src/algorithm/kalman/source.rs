@@ -227,8 +227,6 @@ impl SourceFilter {
 
         // Kalman filter update
         self.state = update * self.state;
-        println!("progress update: {}", update);
-        println!("progress filter state: {}", self.state);
         self.uncertainty = update * self.uncertainty * update.transpose() + process_noise;
         self.filter_time = time;
 
@@ -238,20 +236,17 @@ impl SourceFilter {
     /// Absorb knowledge from a measurement
     pub fn absorb_measurement(&mut self, measurement: Measurement) -> (f64, f64, f64) {
         // Measurement parameters
-        println!("are we in absort measurement?");
         let delay_variance = self.roundtriptime_stats.variance();
         let m_delta_t = (measurement.localtime - self.last_measurement.localtime).to_seconds();
 
         // Incorporate GPS measurements if they exist, or provide default values
         let (_gps_noise, gps_offset) = if let Some(gps_measurement) = &measurement.gps {
-            println!("Yes gps meassurement");
             (
                 gps_measurement.measurementnoise.to_seconds(),
                 gps_measurement.offset.to_seconds(),
             )
         } else {
             // Provide default values for gps_noise and gps_offset
-            println!("No gps meassurement");
             (0.0, 0.0)
         };
         // Incorporate PPS measurements if they exist, or provide default values
@@ -265,45 +260,34 @@ impl SourceFilter {
             (0.0, 0.0)
         };
 
-        println!("noise: {}, offset {}", _gps_noise, gps_offset);
         let measurement_transform = Matrix::new([[1., 0.]]);
 
         if let Some(_gps_measurement) = &measurement.gps {
             // Kalman filter update for GPS
             // The noise of the current measurement is inputted into a 1,1 by matrix
             let gps_measurement_noise = Matrix::new([[_gps_noise]]);
-            println!("gps_measuremtn noise matrix {:?}", gps_measurement_noise);
             // The offset of the current measurement is inputted into a 1,1 by matrix
             let gps_measurement_vec = Vector::new_vector([gps_offset]);
-            println!("gps_measurement vector {:?}", gps_measurement_vec);
-            println!("state: {:?}", self.state);
-            println!("measurement_transform: {:?}", measurement_transform);
             // Calculate the difference of current measurement offset and the estimated offset
             let gps_difference = gps_measurement_vec - measurement_transform * self.state;
-            println!("gps_difference {:?}", gps_difference);
             // Calculate a covariance matrix for the frequency error
             let gps_difference_covariance =
                 measurement_transform * self.uncertainty * measurement_transform.transpose()
                     + gps_measurement_noise;
-            println!("gps_difference_covariance {:?}", gps_difference_covariance);
             // calculate how much the estimated offset and the frequency error needs to change
             let gps_update_strength = self.uncertainty
                 * measurement_transform.transpose()
                 * gps_difference_covariance.inverse();
-            println!("gps_update_strenght {:?}", gps_update_strength);
             // update the estimated offset
             self.state = self.state + gps_update_strength * gps_difference;
-            println!("state {:?}", self.state);
             // update the frequency error
             self.uncertainty = ((Matrix::unit() - gps_update_strength * measurement_transform)
                 * self.uncertainty)
                 .symmetrize();
-            println!("uncertainty {:?}", self.uncertainty);
 
             // Statistics
             let p =
                 chi_1(gps_difference.inner(gps_difference_covariance.inverse() * gps_difference));
-            println!("p statistic {}", p);
             // Calculate an indicator of how much of the measurement was incorporated
             // into the state. 1.0 - is needed here as this should become lower as
             // measurement noise's contribution to difference uncertainty increases.
@@ -315,7 +299,6 @@ impl SourceFilter {
 
             trace!(p, weight, "Measurement absorbed");
 
-            println!("done absorbing message: {} {} {}", p, weight, m_delta_t);
             return (p, weight, m_delta_t);
         }
 
@@ -345,7 +328,6 @@ impl SourceFilter {
             // Statistics
             let p =
                 chi_1(pps_difference.inner(pps_difference_covariance.inverse() * pps_difference));
-            println!("p statistic {}", p);
             // Calculate an indicator of how much of the measurement was incorporated
             // into the state. 1.0 - is needed here as this should become lower as
             // measurement noise's contribution to difference uncertainty increases.
@@ -374,9 +356,7 @@ impl SourceFilter {
                 .symmetrize();
 
             // Statistics
-
             let p = chi_1(difference.inner(difference_covariance.inverse() * difference));
-            println!("p statistic {}", p);
             // Calculate an indicator of how much of the measurement was incorporated
             // into the state. 1.0 - is needed here as this should become lower as
             // measurement noise's contribution to difference uncertainty increases.
@@ -386,8 +366,6 @@ impl SourceFilter {
             self.last_measurement = measurement;
 
             trace!(p, weight, "Measurement absorbed");
-
-            println!("done absorbing message: {} {} {}", p, weight, m_delta_t);
             (p, weight, m_delta_t)
         }
     }
@@ -478,7 +456,6 @@ impl SourceFilter {
         algo_config: &AlgorithmConfig,
         measurement: Measurement,
     ) -> bool {
-        println!("we are updating");
         // Always update the root_delay, root_dispersion, leap second status and stratum, as they always represent the most accurate state.
         self.last_measurement.root_delay = measurement.root_delay;
         self.last_measurement.root_dispersion = measurement.root_dispersion;
@@ -487,7 +464,6 @@ impl SourceFilter {
 
         if measurement.localtime.is_before(self.filter_time) {
             // Ignore the past
-            println!("is it a local time thing?");
             return false;
         }
 
@@ -496,7 +472,6 @@ impl SourceFilter {
             && (measurement.delay.to_seconds() - self.roundtriptime_stats.mean())
                 > algo_config.delay_outlier_threshold * self.roundtriptime_stats.variance().sqrt()
         {
-            println!("is it a outlier thing?");
             self.prev_was_outlier = true;
             self.last_iter = measurement.localtime;
             return false;
@@ -585,13 +560,10 @@ impl SourceState {
         algo_config: &AlgorithmConfig,
         measurement: Measurement,
     ) -> bool {
-        info!("inside updating source");
         match &mut self.0 {
             SourceStateInner::Initial(filter) => {
                 filter.update(measurement);
-                println!("filter samples: {}", filter.samples);
                 if filter.samples == 8 {
-                    println!("state matrix: {:?}", [filter.init_offset.mean(), 0.]);
                     *self = SourceState(SourceStateInner::Stable(SourceFilter {
                         state: Vector::new_vector([filter.init_offset.mean(), 0.]),
                         uncertainty: Matrix::new([
@@ -628,17 +600,14 @@ impl SourceState {
                 {
                     let msg = "Detected clock meddling. Has another process updated the clock?";
                     tracing::warn!(msg);
-                    println!("detected clock meddling");
                     *self = SourceState(SourceStateInner::Initial(InitialSourceFilter {
                         roundtriptime_stats: AveragingBuffer::default(),
                         init_offset: AveragingBuffer::default(),
                         last_measurement: None,
                         samples: 0,
                     }));
-
                     false
                 } else {
-                    println!("updating source stable filter");
                     filter.update(source_defaults_config, algo_config, measurement)
                 }
             }

@@ -51,29 +51,6 @@ impl GpsSpawner {
 impl BasicSpawner for GpsSpawner {
     type Error = GpsSpawnError;
 
-    // async fn check_port(&mut self, port_name: String, baud_rate: u32) -> Result<(), GpsSpawnError> {
-    //     let timeout = Duration::from_secs(1);
-
-    //     let mut port = serialport::new(port_name, baud_rate)
-    //         .timeout(timeout)
-    //         .open()
-    //         .map_err(|e| {
-    //             println!("Error opening serial port: {}", e);
-    //             GpsSpawnError::PortNotOpen
-    //         })?;
-
-    //     // Example: set timeout after opening
-    //     if let Err(e) = port.set_timeout(timeout) {
-    //         println!("Error setting timeout: {}", e);
-    //         return Err(GpsSpawnError::PortNotOpen)
-    //     }
-
-    //     drop(port);
-
-    //     Ok(())
-    // }
-
-
     async fn try_spawn(
         &mut self,
         action_tx: &mpsc::Sender<SpawnEvent>,

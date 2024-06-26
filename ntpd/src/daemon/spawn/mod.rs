@@ -245,12 +245,10 @@ impl PortChecker for RealPortChecker {
             .timeout(timeout)
             .open()
             .map_err(|e| {
-                println!("Error opening serial port: {}", e);
                 GpsSpawnError::PortNotOpen
             })?;
 
         if let Err(e) = port.set_timeout(timeout) {
-            println!("Error setting timeout: {}", e);
             return Err(GpsSpawnError::PortNotOpen)
         }
 
