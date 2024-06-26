@@ -461,7 +461,7 @@ impl<'a> ExtensionField<'a> {
     ) -> std::io::Result<()> {
         Self::encode_framing(
             &mut w,
-            ExtensionFieldTypeId::DraftIdentification,
+            ExtensionFieldTypeId::Padding,
             length - Self::HEADER_LENGTH,
             minimum_size,
             version,

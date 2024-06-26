@@ -16,8 +16,8 @@ pub use error::V5Error;
 use super::RequestIdentifier;
 
 #[allow(dead_code)]
-pub(crate) const DRAFT_VERSION: &str = "draft-ietf-ntp-ntpv5-01";
-pub(crate) const UPGRADE_TIMESTAMP: NtpTimestamp = NtpTimestamp::from_bits(*b"NTP5NTP5");
+pub(crate) const DRAFT_VERSION: &str = "draft-ietf-ntp-ntpv5-02";
+pub(crate) const UPGRADE_TIMESTAMP: NtpTimestamp = NtpTimestamp::from_bits(*b"NTP5DRFT");
 
 #[repr(u8)]
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -82,7 +82,7 @@ pub struct NtpEra(pub u8);
 pub struct NtpFlags {
     pub unknown_leap: bool,
     pub interleaved_mode: bool,
-    pub status_message: bool,
+    pub authnak: bool,
 }
 
 impl NtpFlags {
@@ -94,7 +94,7 @@ impl NtpFlags {
         Ok(Self {
             unknown_leap: bits[1] & 0b01 != 0,
             interleaved_mode: bits[1] & 0b10 != 0,
-            status_message: bits[1] & 0b100 != 0,
+            authnak: bits[1] & 0b100 != 0,
         })
     }
 
@@ -109,7 +109,7 @@ impl NtpFlags {
             flags |= 0b10;
         }
 
-        if self.status_message {
+        if self.authnak {
             flags |= 0b100;
         }
 
@@ -182,7 +182,7 @@ impl NtpHeaderV5 {
             flags: NtpFlags {
                 unknown_leap: false,
                 interleaved_mode: false,
-                status_message: false,
+                authnak: false,
             },
             server_cookie: NtpServerCookie([0; 8]),
             client_cookie: NtpClientCookie([0; 8]),
@@ -210,7 +210,7 @@ impl NtpHeaderV5 {
             flags: NtpFlags {
                 unknown_leap: false,
                 interleaved_mode: false,
-                status_message: false,
+                authnak: false,
             },
             root_delay: system.time_snapshot.root_delay,
             root_dispersion: system.time_snapshot.root_dispersion,
@@ -221,16 +221,17 @@ impl NtpHeaderV5 {
         }
     }
 
-    fn kiss_response(packet_from_client: Self, code: [u8; 4]) -> Self {
+    fn kiss_response(packet_from_client: Self) -> Self {
         Self {
             mode: NtpMode::Response,
             flags: NtpFlags {
                 unknown_leap: false,
                 interleaved_mode: false,
-                status_message: true,
+                authnak: false,
             },
-            server_cookie: NtpServerCookie([code[0], code[1], code[2], code[3], 0, 0, 0, 0]),
+            server_cookie: NtpServerCookie::new_random(),
             client_cookie: packet_from_client.client_cookie,
+            stratum: 0,
             ..Self::new()
         }
     }
@@ -238,16 +239,26 @@ impl NtpHeaderV5 {
     pub(crate) fn rate_limit_response(packet_from_client: Self) -> Self {
         Self {
             poll: packet_from_client.poll.force_inc(),
-            ..Self::kiss_response(packet_from_client, *b"RATE")
+            ..Self::kiss_response(packet_from_client)
         }
     }
 
     pub(crate) fn deny_response(packet_from_client: Self) -> Self {
-        Self::kiss_response(packet_from_client, *b"DENY")
+        Self {
+            poll: PollInterval::NEVER,
+            ..Self::kiss_response(packet_from_client)
+        }
     }
 
     pub(crate) fn nts_nak_response(packet_from_client: Self) -> Self {
-        Self::kiss_response(packet_from_client, *b"NTSN")
+        Self {
+            flags: NtpFlags {
+                unknown_leap: false,
+                interleaved_mode: false,
+                authnak: true,
+            },
+            ..Self::kiss_response(packet_from_client)
+        }
     }
 
     const WIRE_LENGTH: usize = 48;
@@ -510,7 +521,7 @@ mod tests {
                 flags: NtpFlags {
                     unknown_leap: i % 3 == 0,
                     interleaved_mode: i % 4 == 0,
-                    status_message: i % 5 == 0,
+                    authnak: i % 5 == 0,
                 },
                 root_delay: NtpDuration::from_bits_time32([i; 4]),
                 root_dispersion: NtpDuration::from_bits_time32([i.wrapping_add(1); 4]),

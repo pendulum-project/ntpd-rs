@@ -556,6 +556,9 @@ impl std::fmt::Debug for PollInterval {
 }
 
 impl PollInterval {
+    #[cfg(feature = "ntpv5")]
+    pub(crate) const NEVER: PollInterval = PollInterval(i8::MAX);
+
     #[cfg(test)]
     pub fn test_new(value: i8) -> Self {
         Self(value)

@@ -667,7 +667,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
             // to denial of service attacks.
             debug!("Received old/unexpected packet from source");
             actions!()
-        } else if message.is_kiss_rate() {
+        } else if message.is_kiss_rate(self.last_poll_interval) {
             // KISS packets may not have correct timestamps at all, handle them anyway
             self.remote_min_poll_interval = Ord::max(
                 self.remote_min_poll_interval
