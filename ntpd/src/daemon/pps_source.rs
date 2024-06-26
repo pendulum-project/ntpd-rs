@@ -222,8 +222,6 @@ where
         let fraction = seconds.fract();
         let ntp_fraction = (fraction * (1u64 << 32) as f64) as u32;
     
-        println!("Seconds: {}, Whole seconds: {}, Fraction: {}", seconds, whole_seconds, ntp_fraction);
-    
         NtpDuration::from_seconds(seconds)
     }
     #[cfg(test)]
