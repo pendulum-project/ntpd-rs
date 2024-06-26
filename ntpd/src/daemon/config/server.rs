@@ -114,6 +114,8 @@ pub struct NtsKeConfig {
     pub authorized_pool_server_certificates: Vec<PathBuf>,
     #[serde(default = "default_nts_ke_timeout")]
     pub key_exchange_timeout_ms: u64,
+    #[serde(default = "default_concurrent_connections")]
+    pub concurrent_connections: usize,
     pub listen: SocketAddr,
     pub ntp_port: Option<u16>,
     pub ntp_server: Option<String>,
@@ -121,6 +123,10 @@ pub struct NtsKeConfig {
 
 fn default_nts_ke_timeout() -> u64 {
     1000
+}
+
+fn default_concurrent_connections() -> usize {
+    512
 }
 
 #[cfg(test)]
