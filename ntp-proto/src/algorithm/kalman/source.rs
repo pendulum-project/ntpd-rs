@@ -437,13 +437,16 @@ impl SourceFilter {
             return false;
         }
 
+        // This was a valid measurement, so no matter what this represents our current itertation time
+        // for the purposes of synchronizing
+        self.last_iter = measurement.localtime;
+
         // Filter out one-time outliers (based on delay!)
         if !self.prev_was_outlier
             && (measurement.delay.to_seconds() - self.roundtriptime_stats.mean())
                 > algo_config.delay_outlier_threshold * self.roundtriptime_stats.variance().sqrt()
         {
             self.prev_was_outlier = true;
-            self.last_iter = measurement.localtime;
             return false;
         }
 
