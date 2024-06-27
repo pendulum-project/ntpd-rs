@@ -378,8 +378,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> TimeSyncController<C, Sour
     }
     fn time_update(&mut self) -> StateUpdate<SourceId, Self::ControllerMessage> {
         // End slew
-        self.change_desired_frequency(0.0, 0.0);
-        StateUpdate::default()
+        self.change_desired_frequency(0.0, 0.0)
     }
 
     fn source_message(
