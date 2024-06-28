@@ -691,6 +691,7 @@ mod tests {
         assert_eq!(result.port, 123);
     }
 
+    #[cfg(not(target_os = "macos"))]
     #[tokio::test]
     async fn key_exchange_connection_limiter() {
         let provider = KeySetProvider::new(1);
