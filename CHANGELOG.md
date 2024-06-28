@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.2.0-alpha.20240628] - 2024-06-28
+
+### Added
+- Pool mode sources can be set up to ignore some addresses returned by the pool
+- NTP sources use a random client port for every request sent
+- The metrics exporter will keep trying to startup while its network interface is not yet available
+
+### Changed
+- Updated dependencies
+- ntp-udp and ntp-os-clock were replaced by timestamped-socket and clock-steering
+- Minor improvements to NTS keyset storage errors
+- Loop detection is handled globally instead of per source
+- The MSRV was raised to 1.70
+- The metrics exporter is better able to handle multiple simultaneous connections
+- Pendulum is now part of Trifecta Tech Foundation (copyright was updated)
+- Large parts of the daemon code have been refactored to simplify the code
+
+### Fixed
+- Metrics would not synchronize if the metrics data was too large
+- ntpd-rs would ignore responses from servers implementing NTPv3
+
 ## [1.1.3] - 2024-06-28
 
 ### Fixed
@@ -193,6 +214,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
+[1.2.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.1.3...v1.2.0-alpha.20240628
 [1.1.3]: https://github.com/pendulum-project/ntpd-rs/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/pendulum-project/ntpd-rs/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/pendulum-project/ntpd-rs/compare/v1.1.0...v1.1.1
