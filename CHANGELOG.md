@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.1.3] - 2024-06-28
+
+### Fixed
+- Unlimited number of NTS-KE connections could crash ntpd-rs server (CVE-2024-38528)
+
 ## [1.1.2] - 2024-02-01
 
 ### Fixed
@@ -188,6 +193,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
+[1.1.3]: https://github.com/pendulum-project/ntpd-rs/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/pendulum-project/ntpd-rs/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/pendulum-project/ntpd-rs/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.0.0...v1.1.0
