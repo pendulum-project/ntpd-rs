@@ -84,19 +84,7 @@ where
     T: Wait,
 {
     async fn setup_socket(&mut self) -> SocketResult {
-        let socket_res = match self.interface {
-            #[cfg(target_os = "linux")]
-            Some(interface) => {
-                open_interface_udp(
-                    interface,
-                    0, /*lets os choose*/
-                    self.timestamp_mode.as_interface_mode(),
-                    None,
-                )
-                .and_then(|socket| socket.connect(self.source_addr))
-            }
-            _ => connect_address(self.source_addr, self.timestamp_mode.as_general_mode()),
-        };
+        let socket_res = create_socket(self.source_addr, self.interface, self.timestamp_mode);
 
         self.socket = match socket_res {
             Ok(socket) => Some(socket),
@@ -317,6 +305,26 @@ where
     }
 }
 
+pub fn create_socket(
+    source_addr: SocketAddr,
+    interface: Option<InterfaceName>,
+    timestamp_mode: TimestampMode,
+) -> std::io::Result<Socket<SocketAddr, Connected>> {
+    match interface {
+        #[cfg(target_os = "linux")]
+        Some(interface) => {
+            open_interface_udp(
+                interface,
+                0, /*lets os choose*/
+                timestamp_mode.as_interface_mode(),
+                None,
+            )
+            .and_then(|socket| socket.connect(source_addr))
+        }
+        _ => connect_address(source_addr, timestamp_mode.as_general_mode()),
+    }
+}
+
 impl<C> SourceTask<C, Sleep>
 where
     C: 'static + NtpClock + Send + Sync,
@@ -387,13 +395,13 @@ where
 }
 
 #[derive(Debug)]
-enum AcceptResult<'a> {
+pub enum AcceptResult<'a> {
     Accept(&'a [u8], NtpTimestamp),
     Ignore,
     NetworkGone,
 }
 
-fn accept_packet<'a, C: NtpClock>(
+pub fn accept_packet<'a, C: NtpClock>(
     result: Result<RecvResult<SocketAddr>, std::io::Error>,
     buf: &'a [u8],
     clock: &C,

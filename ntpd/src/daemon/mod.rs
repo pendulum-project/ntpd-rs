@@ -2,15 +2,15 @@ mod clock;
 pub mod config;
 pub mod keyexchange;
 mod local_ip_provider;
-mod ntp_source;
+pub mod ntp_source;
 pub mod nts_key_provider;
 pub mod observer;
 mod server;
 pub mod sockets;
 pub mod spawn;
-mod system;
+pub mod system;
 pub mod tracing;
-mod util;
+pub mod util;
 
 use std::{error::Error, path::PathBuf};
 
