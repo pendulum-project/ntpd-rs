@@ -265,7 +265,7 @@ jobs:
         with:
           toolchain: nightly
       - name: Install cargo fuzz
-        uses: taiki-e/install-action@4e38715ddc7c4e1fd3e44ab4c124a2dcca7306fd
+        uses: taiki-e/install-action@69538e210385989f3d117cd67f71a1f21dc0f742
         with:
           tool: cargo-fuzz
       - name: Smoke-test fuzz targets
