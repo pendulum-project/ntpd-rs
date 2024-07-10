@@ -265,9 +265,10 @@ jobs:
         with:
           toolchain: nightly
       - name: Install cargo fuzz
-        uses: taiki-e/install-action@4e38715ddc7c4e1fd3e44ab4c124a2dcca7306fd
-        with:
-          tool: cargo-fuzz
+        # We install cargo-fuzz directly as the prebuilt version of
+        # cargo fuzz is not compatible with our toolchain.
+        run: |
+          cargo install cargo-fuzz
       - name: Smoke-test fuzz targets
         run: |
           cargo fuzz build ${{ matrix.features }}
