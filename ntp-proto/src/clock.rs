@@ -15,6 +15,10 @@ pub trait NtpClock: Clone + Send + 'static {
     // Change the frequency of the clock, returning the time
     // at which the change was applied.
     fn set_frequency(&self, freq: f64) -> Result<NtpTimestamp, Self::Error>;
+
+    // Get the frequency of the clock
+    fn get_frequency(&self) -> Result<f64, Self::Error>;
+
     // Change the current time of the clock by offset. Returns
     // the time at which the change was applied.
     fn step_clock(&self, offset: NtpDuration) -> Result<NtpTimestamp, Self::Error>;
