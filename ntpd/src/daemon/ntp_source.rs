@@ -549,6 +549,10 @@ mod tests {
             //ignore
         }
 
+        fn get_frequency(&self) -> Result<f64, Self::Error> {
+            Ok(0.0)
+        }
+
         fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
             panic!("Shouldn't be called by source");
         }
@@ -597,7 +601,8 @@ mod tests {
             SynchronizationConfig::default(),
             SourceDefaultsConfig::default(),
             Arc::new([]),
-        );
+        )
+        .unwrap();
 
         let Ok((source, _)) = system.create_ntp_source(
             index,

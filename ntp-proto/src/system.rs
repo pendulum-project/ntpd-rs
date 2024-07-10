@@ -187,8 +187,8 @@ pub struct System<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> {
 
     sources: HashMap<SourceId, Option<NtpSourceSnapshot>>,
 
-    clock: C,
-    controller: Option<KalmanClockController<C, SourceId>>,
+    controller: KalmanClockController<C, SourceId>,
+    controller_took_control: bool,
 }
 
 impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
@@ -197,7 +197,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
         synchronization_config: SynchronizationConfig,
         source_defaults_config: SourceDefaultsConfig,
         ip_list: Arc<[IpAddr]>,
-    ) -> Self {
+    ) -> Result<Self, C::Error> {
         // Setup system snapshot
         let mut system = SystemSnapshot {
             stratum: synchronization_config.local_stratum,
@@ -209,32 +209,36 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
             system.time_snapshot.leap_indicator = NtpLeapIndicator::NoWarning;
         }
 
-        System {
+        Ok(System {
             synchronization_config,
             source_defaults_config,
             system,
             ip_list,
             sources: Default::default(),
-            clock,
-            controller: None,
-        }
+            controller: KalmanClockController::new(
+                clock,
+                synchronization_config,
+                source_defaults_config,
+                synchronization_config.algorithm,
+            )?,
+            controller_took_control: false,
+        })
     }
 
     pub fn system_snapshot(&self) -> SystemSnapshot {
         self.system
     }
 
-    fn clock_controller(&mut self) -> Result<&mut KalmanClockController<C, SourceId>, C::Error> {
-        let controller = match self.controller.take() {
-            Some(controller) => controller,
-            None => KalmanClockController::new(
-                self.clock.clone(),
-                self.synchronization_config,
-                self.source_defaults_config,
-                self.synchronization_config.algorithm,
-            )?,
-        };
-        Ok(self.controller.insert(controller))
+    pub fn check_clock_access(&mut self) -> Result<(), C::Error> {
+        self.ensure_controller_control()
+    }
+
+    fn ensure_controller_control(&mut self) -> Result<(), C::Error> {
+        if !self.controller_took_control {
+            self.controller.take_control()?;
+            self.controller_took_control = true;
+        }
+        Ok(())
     }
 
     #[allow(clippy::type_complexity)]
@@ -250,7 +254,8 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
         ),
         C::Error,
     > {
-        let controller = self.clock_controller()?.add_source(id);
+        self.ensure_controller_control()?;
+        let controller = self.controller.add_source(id);
         self.sources.insert(id, None);
         Ok(NtpSource::new(
             source_addr,
@@ -274,7 +279,8 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
         ),
         C::Error,
     > {
-        let controller = self.clock_controller()?.add_source(id);
+        self.ensure_controller_control()?;
+        let controller = self.controller.add_source(id);
         self.sources.insert(id, None);
         Ok(NtpSource::new_nts(
             source_addr,
@@ -287,7 +293,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
     }
 
     pub fn handle_source_remove(&mut self, id: SourceId) -> Result<(), C::Error> {
-        self.clock_controller()?.remove_source(id);
+        self.controller.remove_source(id);
         self.sources.remove(&id);
         Ok(())
     }
@@ -305,10 +311,10 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
                 &self.system,
             )
             .is_ok();
-        self.clock_controller()?.source_update(id, usable);
+        self.controller.source_update(id, usable);
         *self.sources.get_mut(&id).unwrap() = Some(update.snapshot);
         if let Some(message) = update.message {
-            let update = self.clock_controller()?.source_message(id, message);
+            let update = self.controller.source_message(id, message);
             Ok(self.handle_algorithm_state_update(update))
         } else {
             Ok(actions!())
@@ -343,13 +349,8 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
 
     pub fn handle_timer(&mut self) -> SystemActionIterator<KalmanSourceController<SourceId>> {
         tracing::debug!("Timer expired");
-        // note: local needed for borrow checker
-        if let Some(controller) = self.controller.as_mut() {
-            let update = controller.time_update();
-            self.handle_algorithm_state_update(update)
-        } else {
-            actions!()
-        }
+        let update = self.controller.time_update();
+        self.handle_algorithm_state_update(update)
     }
 
     pub fn update_ip_list(&mut self, ip_list: Arc<[IpAddr]>) {

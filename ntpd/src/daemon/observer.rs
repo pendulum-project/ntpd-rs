@@ -213,6 +213,10 @@ mod tests {
             Ok(NtpTimestamp::default())
         }
 
+        fn get_frequency(&self) -> Result<f64, Self::Error> {
+            Ok(0.0)
+        }
+
         fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
             Ok(NtpTimestamp::default())
         }

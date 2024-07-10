@@ -1441,6 +1441,10 @@ mod tests {
             panic!("Unexpected clock steer");
         }
 
+        fn get_frequency(&self) -> Result<f64, Self::Error> {
+            Ok(0.0)
+        }
+
         fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
             panic!("Unexpected clock steer");
         }

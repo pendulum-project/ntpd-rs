@@ -847,6 +847,10 @@ mod test {
             panic!("Shouldn't be called by source");
         }
 
+        fn get_frequency(&self) -> Result<f64, Self::Error> {
+            Ok(0.0)
+        }
+
         fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
             panic!("Shouldn't be called by source");
         }

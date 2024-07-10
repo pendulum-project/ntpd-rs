@@ -68,6 +68,9 @@ pub trait TimeSyncController<C: NtpClock, SourceId: Hash + Eq + Copy + Debug>: S
         algorithm_config: Self::AlgorithmConfig,
     ) -> Result<Self, C::Error>;
 
+    /// Take control of the clock (should not be done in new!)
+    fn take_control(&mut self) -> Result<(), C::Error>;
+
     /// Create a new source with given identity
     fn add_source(&mut self, id: SourceId) -> Self::SourceController;
     /// Notify the controller that a previous source has gone

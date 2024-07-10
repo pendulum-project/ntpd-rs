@@ -142,6 +142,12 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 combined.estimate.frequency_variance().sqrt() * 1e6
             );
 
+            if self.in_startup {
+                self.clock
+                    .disable_ntp_algorithm()
+                    .expect("Cannot update clock");
+            }
+
             let freq_delta = combined.estimate.frequency() - self.desired_freq;
             let freq_uncertainty = combined.estimate.frequency_variance().sqrt();
             let offset_delta = combined.estimate.offset();
@@ -345,9 +351,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> TimeSyncController<C, Sour
         algo_config: Self::AlgorithmConfig,
     ) -> Result<Self, C::Error> {
         // Setup clock
-        clock.disable_ntp_algorithm()?;
-        clock.status_update(NtpLeapIndicator::Unknown)?;
-        clock.set_frequency(0.0)?;
+        let freq_offset = clock.get_frequency()?;
 
         Ok(KalmanClockController {
             sources: HashMap::new(),
@@ -355,11 +359,17 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> TimeSyncController<C, Sour
             synchronization_config,
             source_defaults_config,
             algo_config,
-            freq_offset: 0.0,
+            freq_offset,
             desired_freq: 0.0,
             timedata: TimeSnapshot::default(),
             in_startup: true,
         })
+    }
+
+    fn take_control(&mut self) -> Result<(), <C as NtpClock>::Error> {
+        self.clock.disable_ntp_algorithm()?;
+        self.clock.status_update(NtpLeapIndicator::Unknown)?;
+        Ok(())
     }
 
     fn add_source(&mut self, id: SourceId) -> Self::SourceController {
@@ -424,6 +434,10 @@ mod tests {
         fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
             *self.has_steered.borrow_mut() = true;
             Ok(self.current_time)
+        }
+
+        fn get_frequency(&self) -> Result<f64, Self::Error> {
+            Ok(0.0)
         }
 
         fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {

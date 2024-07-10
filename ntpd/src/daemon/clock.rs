@@ -31,6 +31,10 @@ impl NtpClock for NtpClockWrapper {
             .map(convert_clock_timestamp)
     }
 
+    fn get_frequency(&self) -> Result<f64, Self::Error> {
+        self.0.get_frequency().map(|v| v * 1e-6)
+    }
+
     fn step_clock(
         &self,
         offset: ntp_proto::NtpDuration,

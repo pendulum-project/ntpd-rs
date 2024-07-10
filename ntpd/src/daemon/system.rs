@@ -102,6 +102,7 @@ pub async fn spawn(
         source_defaults_config,
         keyset,
         ip_list,
+        !source_configs.is_empty(),
     );
 
     for source_config in source_configs {
@@ -193,6 +194,7 @@ struct SystemTask<C: NtpClock, T: Wait> {
 }
 
 impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         clock: C,
         interface: Option<InterfaceName>,
@@ -201,13 +203,24 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
         source_defaults_config: SourceDefaultsConfig,
         keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
         ip_list: tokio::sync::watch::Receiver<Arc<[IpAddr]>>,
+        have_sources: bool,
     ) -> (Self, DaemonChannels) {
-        let system = System::new(
+        let Ok(mut system) = System::new(
             clock.clone(),
             synchronization_config,
             source_defaults_config,
             ip_list.borrow().clone(),
-        );
+        ) else {
+            tracing::error!("Could not start system");
+            std::process::exit(70);
+        };
+
+        if have_sources {
+            if let Err(e) = system.check_clock_access() {
+                tracing::error!("Could not control clock: {}", e);
+                std::process::exit(70);
+            }
+        }
 
         // Create communication channels
         let (system_snapshot_sender, system_snapshot_receiver) =
